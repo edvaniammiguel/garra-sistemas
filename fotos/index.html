@@ -1,0 +1,1178 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Garra — Sistema de Fotos Jardinagem</title>
+<style>
+:root{
+  --bl:#1A2A5E;--bl2:#1E3A8A;--bl3:#2563EB;--bl4:#DBEAFE;
+  --or:#F97316;--or2:#EA580C;--olt:#FED7AA;--oy:#FFF7ED;
+  --bg:#EEF2FF;--card:#fff;--brd:#CBD5E1;--brd2:#E2E8F0;
+  --txt:#1E293B;--mut:#64748B;--mut2:#94A3B8;
+  --grn:#16A34A;--glt:#DCFCE7;--red:#DC2626;--rlt:#FEE2E2;
+  --r:10px;--r2:7px;
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:system-ui,-apple-system,Segoe UI,sans-serif;background:var(--bg);color:var(--txt);height:100vh;display:flex;flex-direction:column;overflow:hidden;}
+button,input,select{font-family:inherit;}
+.hdr{background:var(--bl);border-bottom:4px solid var(--or);height:58px;padding:0 1.25rem;display:flex;align-items:center;justify-content:space-between;flex-shrink:0;}
+.hdr-l{display:flex;align-items:center;gap:12px;}
+.hdr-logo{width:36px;height:36px;background:var(--or);border-radius:8px;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:18px;color:#fff;}
+.hdr-title{font-weight:700;font-size:16px;color:#fff;}
+.hdr-sub{font-size:11px;color:#93C5FD;margin-top:1px;}
+.hdr-r{display:flex;gap:8px;}
+.layout{display:flex;flex:1;overflow:hidden;}
+.sidebar{width:220px;background:var(--bl);overflow-y:auto;flex-shrink:0;}
+.sb-ttl{font-size:11px;font-weight:700;color:#93C5FD;text-transform:uppercase;letter-spacing:.06em;padding:.75rem 1rem .4rem;}
+.sb-item{display:flex;align-items:center;gap:8px;padding:8px 12px 8px 20px;cursor:pointer;border-left:3px solid transparent;transition:.15s;}
+.sb-item:hover{background:rgba(255,255,255,.06);}
+.sb-item.active{background:rgba(249,115,22,.15);border-left-color:var(--or);}
+.sb-ico{font-size:14px;flex-shrink:0;}
+.sb-label{font-size:12px;font-weight:600;color:#fff;}
+.sb-sub{font-size:10px;color:#93C5FD;margin-top:1px;}
+.sb-empty{padding:.75rem 1rem;color:#93C5FD;font-size:12px;}
+.sb-ano{display:flex;align-items:center;justify-content:space-between;padding:7px 12px 5px;cursor:pointer;user-select:none;border-top:1px solid rgba(255,255,255,.07);margin-top:2px;}
+.sb-ano:first-child{border-top:none;margin-top:0;}
+.sb-ano-label{font-size:11px;font-weight:700;color:#F97316;text-transform:uppercase;letter-spacing:.05em;}
+.sb-ano-info{display:flex;align-items:center;gap:6px;}
+.sb-ano-count{font-size:10px;color:#64748B;}
+.sb-ano-tog{font-size:11px;color:#93C5FD;transition:transform .2s;display:inline-block;}
+.sb-ano-tog.fechado{transform:rotate(-90deg);}
+.sb-ano-meses{overflow:hidden;transition:max-height .25s ease;}
+.sb-ano-meses.fechado{max-height:0!important;}
+.main{flex:1;display:flex;flex-direction:column;overflow:hidden;}
+.welcome{text-align:center;padding:4rem 1rem;color:var(--mut);overflow-y:auto;flex:1;}
+.welcome-ico{font-size:48px;margin-bottom:.75rem;}
+.welcome-ttl{font-size:22px;font-weight:700;color:var(--bl);margin-bottom:.5rem;}
+.welcome-desc{font-size:13px;margin-bottom:1.5rem;line-height:1.6;}
+.mes-toolbar{display:flex;align-items:center;justify-content:space-between;background:var(--card);border:1px solid var(--brd);border-radius:var(--r);padding:.875rem 1.25rem;margin-bottom:1rem;}
+.mes-titulo{font-size:18px;font-weight:700;color:var(--bl);}
+.mes-sub{font-size:11px;color:var(--mut);margin-top:2px;}
+.mes-pad{padding:1.25rem 1.25rem 0;flex-shrink:0;}.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:1rem;}
+.kpi{background:var(--card);border:1px solid var(--brd);border-top:3px solid var(--or);border-radius:var(--r);padding:11px 14px;}
+.kpi.b{border-top-color:var(--bl3);}.kpi.g{border-top-color:var(--grn);}.kpi.p{border-top-color:#7C3AED;}
+.kpi-l{font-size:10px;font-weight:700;color:var(--mut);text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px;}
+.kpi-v{font-size:24px;font-weight:700;color:var(--txt);line-height:1.1;}
+.kpi-s{font-size:10px;color:var(--mut2);margin-top:1px;}
+.btn{padding:7px 14px;border-radius:var(--r2);font-size:12px;font-weight:700;cursor:pointer;border:none;transition:.15s;display:inline-flex;align-items:center;gap:5px;}
+.btn-pri{background:var(--bl2);color:#fff;}.btn-pri:hover{background:var(--bl);}
+.btn-or{background:var(--or);color:#fff;}.btn-or:hover{background:var(--or2);}
+.btn-out{background:transparent;color:var(--bl2);border:1.5px solid var(--bl2);}.btn-out:hover{background:var(--bl4);}
+.btn-red{background:var(--rlt);color:var(--red);}.btn-red:hover{background:#FECACA;}
+.btn-sm{padding:5px 10px;font-size:11px;}.btn-xs{padding:3px 7px;font-size:10px;}
+/* BANCADA */
+.bancada{display:none;flex-shrink:0;background:#FFFBEB;
+  border-top:2px solid var(--olt);border-bottom:2px solid var(--olt);
+  box-shadow:0 4px 12px rgba(120,53,15,.12);}
+.bancada-grid-wrap{height:180px;overflow-y:auto;overflow-x:hidden;}
+.bancada-hdr{background:linear-gradient(90deg,#78350F,#92400E);padding:10px 16px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;}
+.bancada-ttl{font-size:15px;font-weight:700;color:#fff;}
+.bancada-sub{font-size:11px;color:#FDE68A;font-weight:600;}
+.bancada-desc{font-size:12px;color:#78350F;background:#FEF3C7;padding:8px 16px;line-height:1.5;}
+.bancada-grid{display:flex;flex-wrap:wrap;gap:8px;padding:10px 12px;align-content:flex-start;}
+.bancada-grid.b-over,.org-bancada-grid.b-over{background:#FEF9C3;outline:2px dashed var(--or);outline-offset:-4px;}
+.bth{position:relative;width:110px;flex-shrink:0;border:2px solid var(--olt);border-radius:var(--r2);overflow:hidden;background:#000;transition:border-color .15s;}
+.bth:hover{border-color:var(--or);}
+.bth img{width:100%;aspect-ratio:4/3;object-fit:cover;display:block;cursor:grab;}
+.bth img:active{cursor:grabbing;}
+.bth-ia{position:absolute;top:4px;left:4px;background:rgba(124,58,237,.85);color:#fff;font-size:8px;font-weight:700;padding:1px 5px;border-radius:6px;}
+.bth-num{position:absolute;top:4px;right:24px;background:rgba(0,0,0,.6);color:#fff;font-size:8px;font-weight:700;padding:1px 5px;border-radius:6px;}
+.bth-name{position:absolute;bottom:0;left:0;right:0;background:rgba(120,53,15,.85);color:#FEF3C7;font-size:9px;padding:3px 6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.bth-rm{position:absolute;top:3px;right:3px;background:rgba(220,38,38,.9);color:#fff;border:none;border-radius:50%;width:18px;height:18px;font-size:10px;font-weight:900;cursor:pointer;display:flex;align-items:center;justify-content:center;z-index:5;}
+/* SEMANA */
+.week-block{margin-bottom:1.5rem;}
+.wb-hdr{display:flex;align-items:center;justify-content:space-between;background:var(--bl);border-radius:var(--r) var(--r) 0 0;padding:10px 16px;border-bottom:3px solid var(--or);}
+.wb-ttl{font-size:15px;font-weight:700;color:#fff;}
+.wb-info{font-size:11px;color:#93C5FD;}
+.wb-body{background:var(--card);border:1px solid var(--brd);border-top:none;border-radius:0 0 var(--r) var(--r);padding:1rem;display:grid;grid-template-columns:repeat(auto-fill,minmax(420px,1fr));gap:12px;}
+/* PAR */
+.pc{position:relative;border:1.5px solid var(--brd);border-radius:var(--r2);overflow:hidden;background:#FAFBFF;}
+.pc-pend{border:2px solid var(--or)!important;}
+.pc-pend .pc-hdr{background:var(--or2)!important;}
+.pc-pend-badge{position:absolute;top:-1px;right:8px;background:var(--or);color:#fff;font-size:9px;font-weight:700;padding:2px 8px;border-radius:0 0 6px 6px;z-index:10;}
+.pc-hdr{background:var(--bl2);padding:7px 10px;display:flex;align-items:center;gap:8px;}
+.pc-code{font-size:12px;font-weight:700;color:var(--or);background:rgba(0,0,0,.25);padding:2px 8px;border-radius:6px;white-space:nowrap;}
+.pc-nome{background:transparent;border:none;border-bottom:1.5px solid rgba(255,255,255,.3);color:#fff;font-size:12px;font-weight:600;flex:1;padding:2px 4px;outline:none;min-width:0;}
+.pc-nome:focus{border-bottom-color:var(--or);}
+.pc-nome::placeholder{color:rgba(255,255,255,.4);font-style:italic;}
+.pc-photos{display:grid;grid-template-columns:1fr 1fr;}
+/* SLOT */
+.slot{position:relative;aspect-ratio:4/3;overflow:hidden;display:flex;flex-direction:column;align-items:center;justify-content:center;}
+.slot:first-child{border-right:1px solid var(--brd);}
+.slot-e{background:#E2E8F8;}
+.slot-f{background:#111;cursor:pointer;}
+.slot-f img{width:100%;height:100%;object-fit:cover;display:block;opacity:.93;}
+.slot-f:hover img{opacity:1;}
+/* DROP HIGHLIGHT — adicionado via JS classList */
+.slot.over{outline:3px dashed var(--or)!important;outline-offset:-3px;background:var(--oy)!important;}
+.slot-f.over img{opacity:.5;}
+.sbadge{position:absolute;top:5px;left:5px;padding:2px 7px;border-radius:7px;font-size:9px;font-weight:700;text-transform:uppercase;z-index:3;pointer-events:none;}
+.sb-a{background:var(--bl2);color:#fff;}.sb-d{background:var(--or);color:#fff;}
+.snum{position:absolute;bottom:5px;right:5px;background:rgba(0,0,0,.6);color:#fff;font-size:9px;font-weight:700;padding:1px 6px;border-radius:7px;z-index:3;pointer-events:none;}
+.srm{position:absolute;top:4px;right:4px;background:rgba(220,38,38,.9);color:#fff;border:none;border-radius:50%;width:20px;height:20px;font-size:12px;font-weight:900;cursor:pointer;display:flex;align-items:center;justify-content:center;z-index:5;line-height:1;}
+.srm:hover{background:#B91C1C;}
+.ia-badge{position:absolute;bottom:5px;left:5px;background:rgba(124,58,237,.85);color:#fff;font-size:8px;font-weight:700;padding:1px 5px;border-radius:6px;z-index:3;pointer-events:none;}
+.slot-label{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;z-index:2;}
+.slot-label input{display:none;}
+.slot-ico{font-size:22px;color:#94A3B8;margin-bottom:3px;}
+.slot-txt{font-size:10px;color:#94A3B8;font-weight:600;text-align:center;line-height:1.4;}
+.pc-ftr{padding:5px 8px;display:flex;gap:5px;align-items:center;background:#F8FAFC;border-top:1px solid var(--brd2);}
+.ia-desc{font-size:9px;color:var(--mut2);font-style:italic;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:180px;flex:1;}
+/* SALVAR BAR */
+.semanas-pad{padding:1rem 1.25rem 2rem;flex:1;overflow-y:auto;}.salvar-bar{display:none;position:sticky;bottom:0;background:#fff;border:2px solid var(--or);border-radius:var(--r);padding:12px 20px;align-items:center;justify-content:space-between;box-shadow:0 -4px 20px rgba(249,115,22,.2);margin-top:1rem;z-index:50;}
+/* MODAIS */
+.modal-bg{display:none;position:fixed;inset:0;background:rgba(5,10,35,.72);z-index:500;align-items:center;justify-content:center;}
+.modal-bg.open{display:flex;}
+.modal{background:#fff;border-radius:var(--r);width:90%;max-width:440px;box-shadow:0 8px 32px rgba(0,0,0,.28);}
+.modal-lg{max-width:680px;}
+.modal-hdr{display:flex;align-items:center;justify-content:space-between;padding:.875rem 1.25rem;border-bottom:1px solid var(--brd);font-size:15px;font-weight:700;color:var(--bl);}
+.modal-x{background:none;border:none;font-size:18px;cursor:pointer;color:var(--mut);}
+.modal-body{padding:1.25rem;max-height:72vh;overflow-y:auto;}
+.modal-ftr{display:flex;justify-content:flex-end;gap:8px;padding:.875rem 1.25rem;border-top:1px solid var(--brd);}
+.form-row{display:flex;flex-direction:column;gap:4px;margin-bottom:.75rem;}
+.form-row label{font-size:11px;font-weight:700;color:var(--mut);text-transform:uppercase;letter-spacing:.04em;}
+.form-row input,.form-row select{border:1px solid var(--brd);border-radius:6px;padding:8px 10px;font-size:13px;color:var(--txt);background:#F8FAFC;}
+.form-row input:focus,.form-row select:focus{outline:none;border-color:var(--bl3);}
+.form-row small{font-size:10px;color:var(--mut2);}
+.info-box{background:var(--bl4);border:1px solid #BFDBFE;border-radius:var(--r2);padding:10px 14px;font-size:12px;color:var(--bl2);line-height:1.5;margin-bottom:.75rem;}
+.drop-zone{border:2.5px dashed var(--brd);border-radius:var(--r);padding:1.75rem;text-align:center;transition:.2s;position:relative;margin:.5rem 0;}
+.drop-zone:hover,.drop-zone.dz-over{border-color:var(--or);background:var(--oy);}
+.drop-zone input{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%;}
+.dz-ico{font-size:34px;margin-bottom:.5rem;}
+.dz-ttl{font-size:18px;font-weight:700;color:var(--bl);margin-bottom:4px;}
+.dz-desc{font-size:11px;color:var(--mut);}
+.dz-btn{display:inline-block;margin-top:10px;background:var(--bl2);color:#fff;padding:8px 18px;border-radius:var(--r2);font-size:12px;font-weight:700;pointer-events:none;}
+.upload-prev{display:grid;grid-template-columns:repeat(auto-fill,minmax(80px,1fr));gap:6px;margin-top:.5rem;max-height:200px;overflow-y:auto;}
+.pth{position:relative;aspect-ratio:4/3;border-radius:5px;overflow:hidden;background:#000;}
+.pth img{width:100%;height:100%;object-fit:cover;display:block;}
+.pth-rm{position:absolute;top:2px;right:2px;background:rgba(220,38,38,.9);color:#fff;border:none;border-radius:50%;width:16px;height:16px;font-size:10px;font-weight:900;cursor:pointer;display:flex;align-items:center;justify-content:center;}
+.prog-wrap{margin:.75rem 0;}
+.prog-lbl{font-size:12px;font-weight:600;color:var(--bl);margin-bottom:5px;}
+.prog-bg{height:8px;background:var(--olt);border-radius:4px;overflow:hidden;}
+.prog-fill{height:100%;background:var(--or);border-radius:4px;width:0%;transition:width .2s;}
+.prog-ia{display:flex;align-items:center;gap:6px;font-size:11px;color:#7C3AED;margin-top:6px;font-weight:600;}
+.spin{display:inline-block;animation:spin 1s linear infinite;}
+@keyframes spin{to{transform:rotate(360deg);}}
+.toggle-label{display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;font-weight:600;color:var(--bl);}
+.toggle-label input{width:16px;height:16px;accent-color:var(--or);}
+/* GHOST */
+#ghost{position:fixed;pointer-events:none;z-index:9999;width:110px;border-radius:8px;overflow:hidden;box-shadow:0 8px 24px rgba(0,0,0,.5);border:3px solid var(--or);display:none;}
+#ghost img{width:100%;aspect-ratio:4/3;object-fit:cover;display:block;}
+/* LIGHTBOX */
+.lb{display:none;position:fixed;inset:0;background:rgba(5,10,35,.94);z-index:1000;align-items:center;justify-content:center;flex-direction:column;gap:10px;}
+.lb.open{display:flex;}
+.lb img{max-width:88vw;max-height:78vh;border-radius:8px;box-shadow:0 8px 40px rgba(0,0,0,.7);}
+.lb-cap{color:#fff;font-size:14px;font-weight:700;}.lb-sub{color:#93C5FD;font-size:12px;}
+.lb-x{position:fixed;top:12px;right:16px;background:rgba(255,255,255,.15);color:#fff;border:none;border-radius:50%;width:36px;height:36px;font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center;}
+.lb-nav{position:fixed;top:50%;transform:translateY(-50%);background:rgba(255,255,255,.15);color:#fff;border:none;border-radius:50%;width:44px;height:44px;font-size:22px;cursor:pointer;display:flex;align-items:center;justify-content:center;}
+.lb-nav:hover{background:rgba(255,255,255,.3);}
+.lb-l{left:12px;}.lb-r{right:12px;}
+.toast{position:fixed;bottom:20px;right:20px;background:var(--bl);color:#fff;padding:10px 18px;border-radius:8px;font-size:12px;font-weight:700;border-left:4px solid var(--or);box-shadow:0 4px 16px rgba(0,0,0,.22);opacity:0;transform:translateY(10px);transition:.25s;z-index:9999;pointer-events:none;}
+.toast.show{opacity:1;transform:translateY(0);}
+@media print{.hdr,.sidebar,.mes-toolbar .btn,.kpis,.wb-hdr .btn,.pc-ftr .btn,.srm,.slot-label,.bancada,.salvar-bar,.lb,.toast,.modal-bg{display:none!important;}body{background:#fff;overflow:auto;}.layout{display:block;}.main{overflow:visible;padding:0;}.wb-hdr,.pc-hdr{-webkit-print-color-adjust:exact;print-color-adjust:exact;}.wb-body{grid-template-columns:1fr 1fr;}}
+
+/* ── MODAL DE ORGANIZAÇÃO ─────────────────────────────── */
+.org-bg{display:none;position:fixed;inset:0;background:rgba(5,10,35,.96);z-index:600;flex-direction:column;}
+.org-bg.open{display:flex;}
+.org-hdr{background:var(--bl);border-bottom:3px solid var(--or);padding:0 1.25rem;height:54px;
+  display:flex;align-items:center;justify-content:space-between;flex-shrink:0;}
+.org-hdr-l{display:flex;align-items:center;gap:12px;}
+.org-hdr-title{font-size:15px;font-weight:700;color:#fff;}
+.org-hdr-sub{font-size:11px;color:#93C5FD;}
+.org-body{display:flex;flex-direction:column;flex:1;overflow:hidden;}
+
+/* bancada no modal */
+.org-bancada{flex-shrink:0;background:#FFFBEB;border-bottom:2px solid var(--olt);}
+.org-bancada-hdr{background:linear-gradient(90deg,#78350F,#92400E);padding:8px 16px;
+  display:flex;align-items:center;justify-content:space-between;gap:8px;}
+.org-bancada-ttl{font-size:13px;font-weight:700;color:#fff;}
+.org-bancada-sub{font-size:11px;color:#FDE68A;font-weight:600;}
+.org-bancada-grid{display:flex;flex-wrap:wrap;gap:8px;padding:10px 14px;
+  max-height:200px;overflow-y:auto;align-content:flex-start;}
+
+/* seletor de semana */
+.org-sem-sel{background:var(--bl2);padding:8px 16px;display:flex;align-items:center;
+  gap:10px;flex-shrink:0;border-bottom:1px solid rgba(255,255,255,.1);}
+.org-sem-sel label{font-size:11px;font-weight:700;color:#93C5FD;text-transform:uppercase;letter-spacing:.05em;}
+.org-sem-chips{display:flex;gap:6px;flex-wrap:wrap;}
+.org-chip{padding:5px 14px;border-radius:20px;font-size:12px;font-weight:700;cursor:pointer;
+  border:1.5px solid rgba(255,255,255,.25);background:transparent;color:#fff;transition:.15s;}
+.org-chip:hover{border-color:var(--or);color:var(--or);}
+.org-chip.sel{background:var(--or);border-color:var(--or);color:#fff;}
+
+/* pares no modal */
+.org-pares{flex:1;overflow-y:auto;padding:1rem;}
+.org-pares-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(380px,1fr));gap:12px;}
+
+/* bth no modal — ligeiramente maior */
+.org-bancada-grid .bth{width:120px;}
+
+/* salvar fixo no rodapé */
+.org-ftr{flex-shrink:0;background:#fff;border-top:2px solid var(--or);
+  padding:10px 20px;display:flex;align-items:center;justify-content:space-between;
+  box-shadow:0 -4px 16px rgba(249,115,22,.15);}
+.org-ftr-info{font-size:12px;color:var(--mut);}
+.org-ftr-info strong{color:var(--bl);font-size:14px;}
+</style>
+</head>
+<body>
+
+<header class="hdr">
+  <div class="hdr-l">
+    <div class="hdr-logo">G</div>
+    <div>
+      <div class="hdr-title">Sistema de Fotos — Jardinagem</div>
+      <div class="hdr-sub">Águas de Pará de Minas · Garra Terraplenagem</div>
+    </div>
+  </div>
+  <div class="hdr-r">
+    <button class="btn btn-out btn-sm" onclick="window.print()">🖨 Imprimir</button>
+    <button class="btn btn-or btn-sm" onclick="abrirModalMes()">+ Novo Mês</button>
+  </div>
+</header>
+
+<div class="layout">
+  <aside class="sidebar">
+    <div class="sb-ttl">Histórico Mensal</div>
+    <div id="listaMeses"><div class="sb-empty">Carregando...</div></div>
+  </aside>
+  <main class="main">
+
+    <div class="welcome" id="welcome">
+      <div class="welcome-ico">📷</div>
+      <div class="welcome-ttl">Selecione ou crie um mês</div>
+      <div class="welcome-desc">Use o painel lateral para acessar meses já cadastrados ou crie um novo.</div>
+      <button class="btn btn-or" onclick="abrirModalMes()">+ Criar Primeiro Mês</button>
+    </div>
+
+    <div id="mesContent" style="display:none;flex-direction:column;flex:1;overflow:hidden;">
+      <div class="mes-pad">
+      <div class="mes-toolbar">
+        <div>
+          <div class="mes-titulo" id="mesTitulo">—</div>
+          <div class="mes-sub" id="mesSub">—</div>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+          <button class="btn btn-pri btn-sm" onclick="abrirUpload()">📷 Carregar Fotos</button>
+          <button class="btn btn-or btn-sm" onclick="abrirOrg()">🗂 Organizar Pares</button>
+          <button class="btn btn-out btn-sm" onclick="adicionarSemanaAtual()">+ Semana</button>
+          <button class="btn btn-out btn-sm" onclick="adicionarParAtual()">+ Par vazio</button>
+        </div>
+      </div>
+
+      <div class="kpis">
+        <div class="kpi"><div class="kpi-l">Fotos na bancada</div><div class="kpi-v" id="kB">0</div><div class="kpi-s">aguardando encaixe</div></div>
+        <div class="kpi b"><div class="kpi-l">Pares salvos</div><div class="kpi-v" id="kP">0</div><div class="kpi-s">no banco</div></div>
+        <div class="kpi g"><div class="kpi-l">Pares completos</div><div class="kpi-v" id="kC">0</div><div class="kpi-s">antes + depois</div></div>
+        <div class="kpi p"><div class="kpi-l">Próx. código</div><div class="kpi-v" id="kCod">—</div><div class="kpi-s">sequencial</div></div>
+      </div>
+      </div><!-- /mes-pad -->
+
+      <div class="bancada" id="bancada">
+        <div class="bancada-hdr">
+          <div style="display:flex;align-items:center;gap:10px">
+            <span class="bancada-ttl">📋 Bancada — Fotos aguardando encaixe</span>
+            <span class="bancada-sub" id="bancadaCount">0 foto(s)</span>
+          </div>
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-sm" style="background:var(--grn);color:#fff" onclick="gerarParesAuto()">⚡ Gerar pares auto</button>
+            <button class="btn btn-red btn-sm" onclick="limparBancada()">🗑 Limpar</button>
+          </div>
+        </div>
+        <div class="bancada-desc">
+          <strong>Como usar:</strong> Segure e arraste qualquer foto para o slot <strong>Antes</strong> ou <strong>Depois</strong> do par correto abaixo.
+          A foto sai da bancada automaticamente — sem duplicatas. Clique em <strong>↩</strong> no slot para devolver à bancada.
+          Quando pronto, clique em <strong>💾 Salvar</strong>.
+        </div>
+        <div class="bancada-grid-wrap"><div class="bancada-grid" id="bancada-grid"></div></div>
+      </div><!-- /bancada -->
+      <div class="semanas-pad">
+      <div id="semanasWrap"></div>
+
+      <div class="salvar-bar" id="salvarBar">
+        <div>
+          <div style="font-size:13px;font-weight:700;color:var(--bl)">Pares prontos para salvar</div>
+          <div style="font-size:11px;color:var(--mut)" id="salvarInfo">—</div>
+        </div>
+        <button class="btn btn-or" style="padding:10px 22px" onclick="salvarTodos()">💾 Salvar no banco</button>
+      </div><!-- /salvar-bar -->
+      </div><!-- /semanas-pad -->
+    </div><!-- /mesContent -->
+  </main>
+</div>
+
+<!-- ghost visual de drag -->
+<div id="ghost"><img src="" alt="" draggable="false"></div>
+
+<!-- MODAL MÊS -->
+<div class="modal-bg" id="modalMes">
+  <div class="modal">
+    <div class="modal-hdr"><span>Novo Mês de Referência</span><button class="modal-x" onclick="fecharModal('modalMes')">✕</button></div>
+    <div class="modal-body">
+      <div class="form-row"><label>Mês</label>
+        <select id="inputMes"><option value="1">Janeiro</option><option value="2">Fevereiro</option><option value="3">Março</option><option value="4">Abril</option><option value="5" selected>Maio</option><option value="6">Junho</option><option value="7">Julho</option><option value="8">Agosto</option><option value="9">Setembro</option><option value="10">Outubro</option><option value="11">Novembro</option><option value="12">Dezembro</option></select>
+      </div>
+      <div class="form-row"><label>Ano</label><input type="number" id="inputAno" value="2026" min="2024" max="2099"></div>
+      <div class="form-row"><label>Label</label><input type="text" id="inputMesLabel" value="Maio/2026" placeholder="ex: Maio/2026"></div>
+    </div>
+    <div class="modal-ftr">
+      <button class="btn btn-out" onclick="fecharModal('modalMes')">Cancelar</button>
+      <button class="btn btn-or" onclick="criarMes()">Criar Mês</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL UPLOAD -->
+<div class="modal-bg" id="modalUpload">
+  <div class="modal modal-lg">
+    <div class="modal-hdr"><span>📷 Carregar Fotos para Bancada</span><button class="modal-x" onclick="fecharModal('modalUpload')">✕</button></div>
+    <div class="modal-body">
+      <div class="info-box">Fotos vão para a <strong>bancada</strong>. Arraste cada uma para o slot correto. Só são salvas no banco quando clicar em <strong>💾 Salvar</strong>.</div>
+      <div style="background:#F8FAFC;border:1px solid var(--brd);border-radius:var(--r2);padding:.75rem;margin:.5rem 0">
+        <label class="toggle-label"><input type="checkbox" id="chkIA"> 🤖 Usar IA para analisar e sugerir pares automaticamente</label>
+        <div id="iaKeyWrap" style="display:none;margin-top:.5rem">
+          <div class="form-row"><label>Chave API Anthropic (opcional)</label><input type="password" id="iaKey" placeholder="sk-ant-..."><small>Deixe vazio para usar variável de ambiente</small></div>
+        </div>
+      </div>
+      <div class="drop-zone" id="uploadDrop">
+        <input type="file" id="uploadInput" accept="image/*" multiple>
+        <div class="dz-ico">📷</div>
+        <div class="dz-ttl">Solte as fotos aqui</div>
+        <div class="dz-desc">ou clique para selecionar do computador — selecione todas as fotos da semana de uma vez</div>
+        <div class="dz-btn">Selecionar Fotos</div>
+      </div>
+      <div id="uploadPrev" class="upload-prev"></div>
+      <div id="uploadProg" style="display:none" class="prog-wrap">
+        <div class="prog-lbl" id="progLbl">Lendo...</div>
+        <div class="prog-bg"><div class="prog-fill" id="progFill"></div></div>
+        <div class="prog-ia" id="progIA" style="display:none"><span class="spin">⟳</span> IA analisando fotos...</div>
+      </div>
+    </div>
+    <div class="modal-ftr">
+      <button class="btn btn-out" onclick="fecharModal('modalUpload')">Cancelar</button>
+      <button class="btn btn-or" id="btnEnviar" onclick="confirmarUpload()" disabled>📋 Enviar para Bancada</button>
+    </div>
+  </div>
+</div>
+
+<!-- LIGHTBOX -->
+<div class="lb" id="lb" onclick="lbX(event)">
+  <button class="lb-x" onclick="lbX()">✕</button>
+  <button class="lb-nav lb-l" onclick="lbN(-1);event.stopPropagation()">‹</button>
+  <button class="lb-nav lb-r" onclick="lbN(1);event.stopPropagation()">›</button>
+  <img id="lbImg" src="" alt="" draggable="false">
+  <div class="lb-cap" id="lbCap"></div>
+  <div class="lb-sub" id="lbSub"></div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+var mesAtual=null, bancada=[], quadrante=[], _tid=0, lbList=[], lbIdx=0, uploadFiles=[];
+function tid(){return 'T'+(++_tid);}
+
+/* ─── DRAG STATE ──────────────────────────────────────── */
+var D={on:false,src:'',bIdx:-1,pId:'',sTipo:''};
+
+/* ─── INIT ───────────────────────────────────────────── */
+window.addEventListener('load',function(){
+  carregarMeses();
+  initUpload();
+  document.addEventListener('mousemove',mMove);
+  document.addEventListener('mouseup',mUp);
+  document.addEventListener('keydown',function(e){
+    if(e.key==='Escape'){cancelDrag();lbX();}
+    if(document.getElementById('lb').classList.contains('open')){
+      if(e.key==='ArrowLeft')lbN(-1);
+      if(e.key==='ArrowRight')lbN(1);
+    }
+  });
+});
+
+/* ─── DRAG: START (chamado por onmousedown no HTML) ──── */
+function dStart(e,src,bIdx,pId,sTipo,imgSrc){
+  if(e.button!==0)return;
+  e.preventDefault();
+  D={on:true,src:src,bIdx:bIdx,pId:pId,sTipo:sTipo};
+  var g=document.getElementById('ghost');
+  g.querySelector('img').src=imgSrc;
+  g.style.display='block';
+  g.style.left=(e.clientX-55)+'px';
+  g.style.top=(e.clientY-41)+'px';
+  document.body.style.cursor='grabbing';
+  document.body.style.userSelect='none';
+  // highlight slots
+  document.querySelectorAll('.slot').forEach(function(s){
+    if(!s.dataset.sid) s.classList.add('can-drop');
+  });
+}
+
+function mMove(e){
+  if(!D.on)return;
+  var g=document.getElementById('ghost');
+  g.style.left=(e.clientX-55)+'px';
+  g.style.top=(e.clientY-41)+'px';
+  // highlight
+  document.querySelectorAll('.slot.over').forEach(function(s){s.classList.remove('over');});
+  document.getElementById('bancada-grid').classList.remove('b-over');
+  var el=document.elementFromPoint(e.clientX,e.clientY);
+  if(el){
+    var sl=el.closest('.slot');
+    var bg=el.closest('#bancada-grid');
+    if(sl&&!sl.dataset.sid)sl.classList.add('over');
+    if(bg&&D.src==='slot')document.getElementById('bancada-grid').classList.add('b-over');
+  }
+}
+
+function mUp(e){
+  if(!D.on)return;
+  endDrag();
+  document.querySelectorAll('.slot.over').forEach(function(s){s.classList.remove('over');});
+  document.querySelectorAll('.slot.can-drop').forEach(function(s){s.classList.remove('can-drop');});
+  // clear both bancada grids
+  var bg1=document.getElementById('bancada-grid');
+  var bg2=document.getElementById('orgBancadaGrid');
+  if(bg1) bg1.classList.remove('b-over');
+  if(bg2) bg2.classList.remove('b-over');
+  document.body.style.cursor='';
+  document.body.style.userSelect='';
+  var el=document.elementFromPoint(e.clientX,e.clientY);
+  if(!el){D.on=false;return;}
+  // walk up to find slot or bancada grid
+  var sl=el.closest('.slot');
+  var bg=el.closest('#bancada-grid, #orgBancadaGrid');
+  if(sl){
+    // only drop if slot has no saved photo
+    var hasSaved = sl.dataset.sid && sl.dataset.sid!=='';
+    if(!hasSaved){
+      dropOnSlot(sl.dataset.pid, sl.dataset.tipo);
+    }
+  } else if(bg && D.src==='slot'){
+    dropOnBancada();
+  }
+  D.on=false;
+}
+
+function endDrag(){
+  document.getElementById('ghost').style.display='none';
+}
+
+function cancelDrag(){endDrag();D.on=false;
+  document.querySelectorAll('.slot.over,.slot.can-drop').forEach(function(s){s.classList.remove('over','can-drop');});
+  document.getElementById('bancada-grid').classList.remove('b-over');
+  document.body.style.cursor='';document.body.style.userSelect='';}
+
+/* ─── DROPS ───────────────────────────────────────────── */
+function dropOnSlot(destPId,destTipo){
+  var destPar=findPar(destPId);
+  if(!destPar)return;
+  if(D.src==='bancada'){
+    var foto=bancada[D.bIdx];
+    if(!foto)return;
+    if(destPar[destTipo]&&!destPar[destTipo].sid) bancada.push(destPar[destTipo]);
+    destPar[destTipo]=foto;
+    destPar.salvo=false;
+    bancada.splice(D.bIdx,1);
+    reRender();
+  } else if(D.src==='slot'){
+    var origPar=findPar(D.pId);
+    if(!origPar||origPar===destPar&&D.sTipo===destTipo)return;
+    var fo=origPar[D.sTipo];
+    if(!fo||fo.sid)return;
+    var fd=destPar[destTipo];
+    if(fd&&fd.sid){toast('Slot com foto salva — remova antes.');return;}
+    origPar[D.sTipo]=fd||null;
+    destPar[destTipo]=fo;
+    origPar.salvo=false;destPar.salvo=false;
+    reRender();
+  }
+}
+
+function dropOnBancada(){
+  var p=findPar(D.pId);
+  if(!p)return;
+  var fo=p[D.sTipo];
+  if(!fo||fo.sid)return;
+  bancada.push(fo);
+  p[D.sTipo]=null;p.salvo=false;
+  renderAll();toast('Foto devolvida à bancada.');
+}
+
+function findPar(id){
+  var r=null;
+  quadrante.forEach(function(sem){sem.pares.forEach(function(p){if(p.tid===id)r=p;});});
+  return r;
+}
+
+/* ─── MESES ───────────────────────────────────────────── */
+
+function salvarNomePar(tid, nome){
+  var par = findPar(tid);
+  if(!par) return;
+  par.nome = nome;
+  // Se já tem dbId, persiste no banco imediatamente
+  if(par.dbId){
+    fetch('/api/pares/'+par.dbId, {
+      method:'PATCH',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({local_nome: nome})
+    }).catch(function(){ toast('Erro ao salvar nome.'); });
+  }
+}
+
+function reRender(){
+  var orgOpen = document.getElementById('orgModal').classList.contains('open');
+  if(orgOpen) orgRenderTudo();
+  else renderAll();
+}
+function carregarMeses(){
+  fetch('/api/meses').then(r=>r.json()).then(function(list){
+    var el=document.getElementById('listaMeses');
+    if(!list.length){el.innerHTML='<div class="sb-empty">Nenhum mês cadastrado</div>';return;}
+
+    // Agrupar por ano
+    var anos={};
+    list.forEach(function(m){
+      if(!anos[m.ano]) anos[m.ano]=[];
+      anos[m.ano].push(m);
+    });
+    var anosOrdenados=Object.keys(anos).map(Number).sort(function(a,b){return b-a;});
+    var anoAtual=new Date().getFullYear();
+    var html2='';
+
+    anosOrdenados.forEach(function(ano){
+      var meses=anos[ano];
+      var aberto=(ano===anoAtual);
+      var maxH=aberto?(meses.length*62)+'px':'0';
+      html2+='<div class="sb-ano" onclick="toggleAno(this,\'ano_'+ano+'\')">';
+      html2+='<span class="sb-ano-label">'+ano+'</span>';
+      html2+='<div class="sb-ano-info">';
+      html2+='<span class="sb-ano-count">'+meses.length+(meses.length>1?' meses':' mês')+'</span>';
+      html2+='<span class="sb-ano-tog'+(aberto?'':' fechado')+'">▾</span>';
+      html2+='</div></div>';
+      html2+='<div class="sb-ano-meses'+(aberto?'':' fechado')+'" id="ano_'+ano+'" style="max-height:'+maxH+';">';
+      meses.forEach(function(m){
+        html2+='<div class="sb-item" id="sbm_'+m.id+'" onclick="abrirMes('+m.id+')">';
+        html2+='<span class="sb-ico">📅</span>';
+        html2+='<div><div class="sb-label">'+esc(m.label)+'</div>';
+        html2+='<div class="sb-sub">'+m.total_pares+' pares · '+m.total_fotos+' fotos</div>';
+        html2+='</div></div>';
+      });
+      html2+='</div>';
+    });
+
+    el.innerHTML=html2;
+    if(mesAtual){var sb=document.getElementById('sbm_'+mesAtual.id);if(sb)sb.classList.add('active');}
+  }).catch(function(){toast('Erro ao carregar meses');});
+}
+
+function toggleAno(headerEl,grpId){
+  var grp=document.getElementById(grpId);
+  var tog=headerEl.querySelector('.sb-ano-tog');
+  if(!grp||!tog)return;
+  var fechado=grp.classList.contains('fechado');
+  if(fechado){
+    grp.classList.remove('fechado');
+    tog.classList.remove('fechado');
+    grp.style.maxHeight=grp.scrollHeight+'px';
+  } else {
+    grp.classList.add('fechado');
+    tog.classList.add('fechado');
+    grp.style.maxHeight='0';
+  }
+}
+
+function abrirMes(id){
+  document.querySelectorAll('.sb-item').forEach(function(e){e.classList.remove('active');});
+  var sb=document.getElementById('sbm_'+id);
+  if(sb){
+    sb.classList.add('active');
+    // Se o grupo do ano estiver fechado, abre
+    var grp=sb.closest('.sb-ano-meses');
+    if(grp&&grp.classList.contains('fechado')){
+      var hdr=grp.previousElementSibling;
+      if(hdr)toggleAno(hdr,grp.id);
+    }
+  }
+  document.getElementById('welcome').style.display='none';
+  document.getElementById('mesContent').style.display='flex';
+  document.getElementById('mesTitulo').textContent='Carregando...';
+  fetch('/api/meses/'+id).then(r=>r.json()).then(function(data){
+    mesAtual=data;bancada=[];
+    quadrante=data.semanas.map(function(sem){
+      return{semId:sem.id,label:sem.label,pares:sem.pares.map(function(par){
+        var fA=par.fotos.find(f=>f.tipo==='antes'),fD=par.fotos.find(f=>f.tipo==='depois');
+        return{tid:tid(),dbId:par.id,codA:par.codigo_a,codD:par.codigo_d,
+          nome:par.local_nome,dataLabel:par.data_label,
+          antes:fA?{src:'/thumbs/'+fA.filename,nome:fA.original,iaL:fA.ia_local||'',iaD:fA.ia_descricao||'',sid:fA.id}:null,
+          depois:fD?{src:'/thumbs/'+fD.filename,nome:fD.original,iaL:fD.ia_local||'',iaD:fD.ia_descricao||'',sid:fD.id}:null,
+          salvo:true};
+      })};
+    });
+    renderAll();
+  }).catch(function(){toast('Erro ao carregar mês');});
+}
+
+/* ─── RENDER ──────────────────────────────────────────── */
+function renderAll(){
+  if(!mesAtual)return;
+  var ns=['','Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+  document.getElementById('mesTitulo').textContent=mesAtual.label;
+  document.getElementById('mesSub').textContent=ns[mesAtual.mes]+' de '+mesAtual.ano+' — Jardinagem Águas de Pará de Minas';
+  var salvos=0,comp=0;
+  quadrante.forEach(function(s){s.pares.forEach(function(p){if(p.salvo)salvos++;if(p.antes&&p.depois)comp++;});});
+  document.getElementById('kB').textContent=bancada.length;
+  document.getElementById('kP').textContent=salvos;
+  document.getElementById('kC').textContent=comp;
+  fetch('/api/config').then(r=>r.json()).then(function(c){document.getElementById('kCod').textContent=c.next_code||'—';}).catch(function(){});
+  rBancada();rSemanas();rSalvar();
+}
+
+function rBancada(){
+  var sec=document.getElementById('bancada');
+  var grid=document.getElementById('bancada-grid');
+  document.getElementById('bancadaCount').textContent=bancada.length+' foto(s)';
+  document.getElementById('kB').textContent=bancada.length;
+  sec.style.display=bancada.length?'block':'none';
+  if(!bancada.length){grid.innerHTML='';return;}
+  grid.innerHTML=bancada.map(function(f,i){
+    return '<div class="bth" id="bth_'+i+'">'
+      +'<img src="'+f.src+'" alt="" draggable="false" '
+      +'onmousedown="dStart(event,\'bancada\','+i+',\'\',\'\',\''+f.src+'\')" '
+      +'style="cursor:grab">'
+      +(f.iaE?'<span class="bth-ia">'+esc(f.iaE)+'</span>':'')
+      +'<span class="bth-num">#'+(i+1)+'</span>'
+      +'<div class="bth-name">'+esc(f.nome)+'</div>'
+      +'<button class="bth-rm" onmousedown="ev(event)" onclick="rmB('+i+')">✕</button>'
+      +'</div>';
+  }).join('');
+}
+
+function rSemanas(){
+  var w=document.getElementById('semanasWrap');
+  if(!quadrante.length){w.innerHTML='<div style="text-align:center;padding:2rem;color:var(--mut)">Nenhuma semana — clique em "+ Semana"</div>';return;}
+  w.innerHTML=quadrante.map(function(sem,si){
+    var comp=sem.pares.filter(p=>p.antes&&p.depois).length;
+    var pend=sem.pares.filter(p=>!p.salvo).length;
+    return'<div class="week-block">'
+      +'<div class="wb-hdr"><span class="wb-ttl">📅 '+esc(sem.label)+'</span>'
+      +'<div style="display:flex;align-items:center;gap:8px">'
+      +'<span class="wb-info">'+sem.pares.length+' pares · '+comp+' completos'+(pend?' · <span style="color:#FDE68A">'+pend+' não salvos</span>':'')+'</span>'
+      +'<button class="btn btn-xs" style="background:rgba(255,255,255,.15);color:#fff;border:1px solid rgba(255,255,255,.25)" onclick="renSem('+si+')">✎</button>'
+      +'<button class="btn btn-xs" style="background:rgba(220,38,38,.2);color:#fca5a5;border:1px solid rgba(220,38,38,.3)" onclick="delSem('+si+')">🗑</button>'
+      +'</div></div>'
+      +'<div class="wb-body">'+rPares(sem,si)
+      +'<div style="grid-column:1/-1;display:flex;gap:8px;padding:4px 0 2px">'
+      +'<button class="btn btn-out btn-sm" onclick="addPar('+si+')">+ Par</button>'
+      +(si===quadrante.length-1?'<button class="btn btn-pri btn-sm" onclick="addSem()">+ Semana</button>':'')
+      +'</div></div></div>';
+  }).join('');
+}
+
+function rPares(sem,si){
+  if(!sem.pares.length)return'<div style="grid-column:1/-1;text-align:center;padding:1.5rem;color:var(--mut);font-size:13px">Arraste fotos da bancada ou clique em "+ Par".</div>';
+  return sem.pares.map(function(par,pi){
+    var pct=Math.round(((par.antes?1:0)+(par.depois?1:0))/2*100);
+    var cor=pct===100?'var(--grn)':pct>0?'var(--or)':'var(--mut2)';
+    return'<div class="pc'+(par.salvo?'':' pc-pend')+'" id="pc_'+par.tid+'">'
+      +(par.salvo?'':'<div class="pc-pend-badge">não salvo</div>')
+      +'<div class="pc-hdr">'
+      +(par.codA?'<span class="pc-code">'+par.codA+'ª–'+par.codD+'ª</span>':'<span class="pc-code" style="opacity:.6">pendente</span>')
+      +'<input class="pc-nome" type="text" placeholder="📍 Nome do local..." value="'+esc(par.nome)+'" '
+      +'oninput="var _p=findPar(\''+par.tid+'\');if(_p)_p.nome=this.value;" onchange="salvarNomePar(\''+par.tid+'\',this.value)">'
+      +'</div>'
+      +'<div class="pc-photos">'+rSlot(par,'antes')+rSlot(par,'depois')+'</div>'
+      +'<div class="pc-ftr">'
+      +'<span style="font-size:10px;color:'+cor+'">● '+pct+'%</span>'
+      +(par.antes&&par.antes.iaD?'<span class="ia-desc">🤖 '+esc(par.antes.iaD)+'</span>':'')
+      +'<button class="btn btn-xs btn-out" onclick="addParDepois('+si+','+pi+')">+</button>'
+      +'<button class="btn btn-xs btn-red" onclick="delPar('+si+','+pi+')">🗑</button>'
+      +'</div></div>';
+  }).join('');
+}
+
+function rSlot(par,tipo){
+  var f=par[tipo];
+  var cod=tipo==='antes'?par.codA:par.codD;
+  var badge=tipo==='antes'?'<span class="sbadge sb-a">Antes</span>':'<span class="sbadge sb-d">Depois</span>';
+  var num='<span class="snum">'+(cod?cod+'ª':'?')+'</span>';
+  if(f){
+    return'<div class="slot slot-f" data-pid="'+par.tid+'" data-tipo="'+tipo+'"'+(f.sid?' data-sid="'+f.sid+'"':'')
+      +' onclick="lbOpen(\''+par.tid+'\',\''+tipo+'\')">'
+      +'<img src="'+f.src+'" alt="" draggable="false" style="cursor:'+(f.sid?'pointer':'grab')+'" '
+      +(f.sid?'':' onmousedown="dStart(event,\'slot\',-1,\''+par.tid+'\',\''+tipo+'\',\''+f.src+'\')"')
+      +'>'
+      +badge+num
+      +(f.iaL?'<span class="ia-badge">🤖 '+esc(f.iaL)+'</span>':'')
+      +(f.sid
+        ?'<button class="srm" onmousedown="ev(event)" onclick="delFS(event,'+f.sid+',\''+par.tid+'\',\''+tipo+'\')">✕</button>'
+        :'<button class="srm" onmousedown="ev(event)" onclick="devolver(event,\''+par.tid+'\',\''+tipo+'\')">↩</button>')
+      +'</div>';
+  }
+  return'<div class="slot slot-e" data-pid="'+par.tid+'" data-tipo="'+tipo+'">'
+    +badge+num
+    +'<label class="slot-label">'
+    +'<input type="file" accept="image/*" onchange="fileSlot(this,\''+par.tid+'\',\''+tipo+'\')">'
+    +'<div class="slot-ico">'+(tipo==='antes'?'📷':'✅')+'</div>'
+    +'<div class="slot-txt">Arraste da bancada<br>ou clique aqui</div>'
+    +'</label></div>';
+}
+
+function rSalvar(){
+  var pend=[];
+  quadrante.forEach(function(s){s.pares.forEach(function(p){if(!p.salvo&&(p.antes||p.depois))pend.push(p);});});
+  var bar=document.getElementById('salvarBar');
+  bar.style.display=pend.length?'flex':'none';
+  if(pend.length){
+    var c=pend.filter(p=>p.antes&&p.depois).length;
+    document.getElementById('salvarInfo').textContent=pend.length+' par(es) prontos — '+c+' completos';
+  }
+}
+
+/* ─── AÇÕES BANCADA ───────────────────────────────────── */
+function rmB(i){bancada.splice(i,1);rBancada();document.getElementById('kB').textContent=bancada.length;}
+function limparBancada(){if(!confirm('Limpar toda a bancada?'))return;bancada=[];rBancada();document.getElementById('kB').textContent=0;}
+
+function gerarParesAuto(){
+  if(!bancada.length){toast('Bancada vazia!');return;}
+  if(!quadrante.length){toast('Crie uma semana primeiro!');return;}
+  var sem=quadrante[quadrante.length-1];
+  var grupos={},livres=[];
+  bancada.forEach(function(f,i){var iv=(f.idV||'').trim();if(iv){if(!grupos[iv])grupos[iv]=[];grupos[iv].push(i);}else livres.push(i);});
+  var usados=[];
+  Object.values(grupos).forEach(function(idxs){
+    var antes=idxs.filter(i=>bancada[i].iaE==='antes'),depois=idxs.filter(i=>bancada[i].iaE==='depois');
+    var n=Math.max(antes.length,depois.length,1);
+    for(var k=0;k<n;k++){
+      var par=novoPar();
+      if(antes[k]!==undefined){par.antes=bancada[antes[k]];par.nome=bancada[antes[k]].iaL||'';usados.push(antes[k]);}
+      if(depois[k]!==undefined){par.depois=bancada[depois[k]];usados.push(depois[k]);}
+      sem.pares.push(par);
+    }
+  });
+  for(var i=0;i<livres.length;i+=2){
+    var par=novoPar();par.antes=bancada[livres[i]];usados.push(livres[i]);
+    if(livres[i+1]!==undefined){par.depois=bancada[livres[i+1]];usados.push(livres[i+1]);}
+    sem.pares.push(par);
+  }
+  usados.sort((a,b)=>b-a);usados.forEach(i=>bancada.splice(i,1));
+  renderAll();toast('Pares criados! Nomeie os locais e salve.');
+}
+
+/* ─── AÇÕES SLOTS ─────────────────────────────────────── */
+function devolver(e,pId,tipo){
+  ev(e);var p=findPar(pId);if(!p)return;
+  var f=p[tipo];if(!f||f.sid)return;
+  bancada.push(f);p[tipo]=null;p.salvo=false;renderAll();toast('Foto devolvida à bancada.');
+}
+function fileSlot(input,pId,tipo){
+  var file=input.files[0];if(!file)return;
+  var r=new FileReader();
+  r.onload=function(e){
+    var p=findPar(pId);if(!p)return;
+    if(p[tipo]&&!p[tipo].sid)bancada.push(p[tipo]);
+    p[tipo]={src:e.target.result,nome:file.name,iaL:'',iaD:'',sid:null};
+    p.salvo=false;renderAll();toast('Foto adicionada!');
+  };r.readAsDataURL(file);
+}
+function delFS(e,fid,pId,tipo){
+  ev(e);if(!confirm('Remover foto salva do banco?'))return;
+  fetch('/api/fotos/'+fid,{method:'DELETE'}).then(()=>{abrirMes(mesAtual.id);toast('Foto removida.');}).catch(()=>toast('Erro.'));
+}
+
+/* ─── SALVAR NO BANCO ─────────────────────────────────── */
+function salvarTodos(){
+  var lista=[];
+  quadrante.forEach(function(sem){sem.pares.forEach(function(p){if(!p.salvo&&(p.antes||p.depois))lista.push({sem,p});});});
+  if(!lista.length){toast('Nada para salvar.');return;}
+  toast('Salvando '+lista.length+' par(es)...');
+  Promise.all(lista.map(x=>salvarPar(x.sem,x.p)))
+    .then(()=>{abrirMes(mesAtual.id);carregarMeses();toast('✅ Salvo!');})
+    .catch(e=>toast('Erro: '+e.message));
+}
+function salvarPar(sem,par){
+  var criar=par.dbId?Promise.resolve({id:par.dbId})
+    :fetch('/api/pares',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({semana_id:sem.semId,local_nome:par.nome||'',data_label:par.dataLabel||''})
+    }).then(r=>r.json());
+  return criar.then(function(resp){
+    par.dbId=resp.id;
+    var ups=[];
+    ['antes','depois'].forEach(function(tipo){
+      var f=par[tipo];if(!f||f.sid)return;
+      var blob=b64toBlob(f.src);
+      var fd=new FormData();fd.append('par_id',par.dbId);fd.append('tipo',tipo);fd.append('foto',blob,f.nome||tipo+'.jpg');
+      ups.push(fetch('/api/fotos/avulsa',{method:'POST',body:fd}).then(r=>r.json()).then(r=>{f.sid=r.id;}));
+    });
+    if(par.nome)ups.push(fetch('/api/pares/'+par.dbId,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({local_nome:par.nome})}));
+    return Promise.all(ups).then(()=>{par.salvo=true;});
+  });
+}
+function b64toBlob(d){var p=d.split(','),m=p[0].match(/:(.*?);/)[1],b=atob(p[1]),a=new Uint8Array(b.length);for(var i=0;i<b.length;i++)a[i]=b.charCodeAt(i);return new Blob([a],{type:m});}
+
+/* ─── UPLOAD ──────────────────────────────────────────── */
+function initUpload(){
+  var dz=document.getElementById('uploadDrop');
+  dz.addEventListener('dragover',e=>{e.preventDefault();dz.classList.add('dz-over');});
+  dz.addEventListener('dragleave',()=>dz.classList.remove('dz-over'));
+  dz.addEventListener('drop',e=>{e.preventDefault();dz.classList.remove('dz-over');setFiles(e.dataTransfer.files);});
+  document.getElementById('uploadInput').addEventListener('change',function(){setFiles(this.files);});
+  document.getElementById('chkIA').addEventListener('change',function(){document.getElementById('iaKeyWrap').style.display=this.checked?'block':'none';});
+}
+function abrirUpload(){
+  if(!mesAtual){toast('Selecione um mês primeiro!');return;}
+  uploadFiles=[];document.getElementById('uploadPrev').innerHTML='';
+  document.getElementById('btnEnviar').disabled=true;
+  document.getElementById('uploadProg').style.display='none';
+  abrirModal('modalUpload');
+}
+function setFiles(files){
+  uploadFiles=Array.from(files);
+  document.getElementById('uploadPrev').innerHTML=uploadFiles.map((f,i)=>
+    '<div class="pth"><img src="'+URL.createObjectURL(f)+'">'
+    +'<button class="pth-rm" onclick="rmFile('+i+')">✕</button></div>').join('');
+  document.getElementById('btnEnviar').disabled=!uploadFiles.length;
+}
+function rmFile(i){uploadFiles.splice(i,1);setFiles(uploadFiles);}
+function confirmarUpload(){
+  if(!uploadFiles.length)return;
+  var usarIA=document.getElementById('chkIA').checked;
+  var apiKey=(document.getElementById('iaKey').value||'').trim();
+  document.getElementById('uploadProg').style.display='block';
+  document.getElementById('progIA').style.display='none';
+  document.getElementById('btnEnviar').disabled=true;
+  var sorted=uploadFiles.slice().sort((a,b)=>a.name.localeCompare(b.name,undefined,{numeric:true}));
+  var done=0,total=sorted.length,lidas=[];
+  document.getElementById('progLbl').textContent='Lendo '+total+' foto(s)...';
+  sorted.forEach(function(file){
+    var r=new FileReader();
+    r.onload=function(e){
+      lidas.push({src:e.target.result,nome:file.name,dataLabel:parseData(file.name),iaL:'',iaE:'',iaD:'',idV:''});
+      done++;document.getElementById('progFill').style.width=Math.round(done/total*(usarIA?50:100))+'%';
+      if(done===total){
+        if(usarIA){document.getElementById('progIA').style.display='flex';document.getElementById('progLbl').textContent='IA analisando...';analisarIA(lidas,apiKey);}
+        else{bancada=bancada.concat(lidas);setTimeout(()=>{fecharModal('modalUpload');renderAll();abrirOrg();},300);}
+      }
+    };r.readAsDataURL(file);
+  });
+}
+function parseData(nome){
+  var m=nome.match(/(\d{4})\D?(\d{2})\D?(\d{2})/);
+  if(m){var y=+m[1],mo=+m[2],d=+m[3];
+    if(y>2000&&y<2100&&mo>=1&&mo<=12&&d>=1&&d<=31){
+      var dt=new Date(y,mo-1,d),ds=['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
+      return ds[dt.getDay()]+' '+pad(d)+'/'+pad(mo)+'/'+y;}}
+  var t=new Date(),ds=['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
+  return ds[t.getDay()]+' '+pad(t.getDate())+'/'+pad(t.getMonth()+1)+'/'+t.getFullYear();
+}
+function pad(n){return n<10?'0'+n:''+n;}
+function analisarIA(lidas,apiKey){
+  var done=0;
+  Promise.all(lidas.map(function(f){
+    var body={src:f.src,nome:f.nome};if(apiKey)body.api_key=apiKey;
+    return fetch('/api/fotos/analisar-ia',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})
+      .then(r=>r.json()).then(function(resp){f.iaL=resp.local||'';f.iaE=resp.estado||'';f.iaD=resp.descricao||'';f.idV=resp.id_visual||'';})
+      .catch(()=>{}).finally(()=>{done++;document.getElementById('progFill').style.width=Math.round(50+done/lidas.length*50)+'%';document.getElementById('progLbl').textContent='IA: '+done+'/'+lidas.length;});
+  })).then(()=>{
+    bancada=bancada.concat(lidas);document.getElementById('progIA').style.display='none';
+    setTimeout(()=>{fecharModal('modalUpload');renderAll();abrirOrg();},300);
+  });
+}
+
+/* ─── ESTRUTURA ───────────────────────────────────────── */
+function novoPar(){return{tid:tid(),dbId:null,codA:null,codD:null,nome:'',dataLabel:'',antes:null,depois:null,salvo:false};}
+function criarMes(){
+  var mes=+document.getElementById('inputMes').value,ano=+document.getElementById('inputAno').value;
+  var label=document.getElementById('inputMesLabel').value.trim()||('Mês '+mes+'/'+ano);
+  fetch('/api/meses',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mes,ano,label})})
+    .then(r=>r.json()).then(function(d){
+      fecharModal('modalMes');carregarMeses();
+      return fetch('/api/semanas',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mes_id:d.id,label:'Semana 1 — '+label,ordem:0})}).then(()=>abrirMes(d.id));
+    }).catch(()=>toast('Erro'));
+}
+function addSem(){
+  if(!mesAtual)return;var l=prompt('Período da semana:','');if(!l)return;
+  fetch('/api/semanas',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mes_id:mesAtual.id,label:l,ordem:quadrante.length})})
+    .then(r=>r.json()).then(function(s){quadrante.push({semId:s.id,label:s.label,pares:[]});renderAll();}).catch(()=>toast('Erro'));
+}
+function renSem(si){var l=prompt('Novo nome:',quadrante[si].label);if(!l)return;
+  fetch('/api/semanas/'+quadrante[si].semId,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({label:l})})
+    .then(()=>{quadrante[si].label=l;rSemanas();}).catch(()=>toast('Erro'));}
+function delSem(si){if(!confirm('Deletar semana e todos os pares?'))return;
+  fetch('/api/semanas/'+quadrante[si].semId,{method:'DELETE'}).then(()=>{quadrante.splice(si,1);renderAll();carregarMeses();}).catch(()=>toast('Erro'));}
+function addPar(si){quadrante[si].pares.push(novoPar());renderAll();}
+function adicionarParAtual(){if(quadrante.length)addPar(quadrante.length-1);else toast('Crie uma semana primeiro!');}
+function adicionarSemanaAtual(){addSem();}
+function addParDepois(si,pi){quadrante[si].pares.splice(pi+1,0,novoPar());renderAll();}
+function delPar(si,pi){
+  var par=quadrante[si].pares[pi];
+  if(par.dbId){if(!confirm('Remover par salvo?'))return;
+    fetch('/api/pares/'+par.dbId,{method:'DELETE'}).then(()=>{quadrante[si].pares.splice(pi,1);renderAll();carregarMeses();}).catch(()=>toast('Erro'));}
+  else{if(par.antes)bancada.push(par.antes);if(par.depois)bancada.push(par.depois);quadrante[si].pares.splice(pi,1);renderAll();if(par.antes||par.depois)toast('Fotos devolvidas à bancada.');}
+}
+
+/* ─── LIGHTBOX ────────────────────────────────────────── */
+function lbOpen(pId,tipo){
+  lbList=[];
+  quadrante.forEach(function(s){s.pares.forEach(function(p){
+    if(p.antes)lbList.push({src:p.antes.src,cap:p.nome||'Sem nome',sub:(p.codA||'?')+'ª — Antes'});
+    if(p.depois)lbList.push({src:p.depois.src,cap:p.nome||'Sem nome',sub:(p.codD||'?')+'ª — Depois'});
+  });});
+  var p=findPar(pId);if(!p)return;var f=p[tipo];if(!f)return;
+  lbIdx=lbList.findIndex(it=>it.src===f.src);if(lbIdx<0)lbIdx=0;
+  lbShow();document.getElementById('lb').classList.add('open');
+}
+function lbShow(){var it=lbList[lbIdx];if(!it)return;
+  document.getElementById('lbImg').src=it.src;
+  document.getElementById('lbCap').textContent=it.cap;
+  document.getElementById('lbSub').textContent=it.sub+' ('+(lbIdx+1)+'/'+lbList.length+')';}
+function lbN(d){lbIdx=(lbIdx+d+lbList.length)%lbList.length;lbShow();}
+function lbX(e){if(!e||e.target===document.getElementById('lb'))document.getElementById('lb').classList.remove('open');}
+
+/* UTILS */
+function abrirModal(id){document.getElementById(id).classList.add('open');}
+function fecharModal(id){document.getElementById(id).classList.remove('open');}
+function abrirModalMes(){abrirModal('modalMes');}
+function ev(e){e.stopPropagation();}
+function esc(s){return(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+function toast(msg){var el=document.getElementById('toast');el.innerHTML=msg;el.classList.add('show');clearTimeout(el._t);el._t=setTimeout(()=>el.classList.remove('show'),3200);}
+
+/* ═══════════════════════════════════════════════════════
+   MODAL DE ORGANIZAÇÃO
+   ═══════════════════════════════════════════════════════ */
+var orgSemIdx = 0;  // semana ativa no modal
+
+function abrirOrg(){
+  if(!mesAtual){ toast('Selecione um mês primeiro!'); return; }
+  if(!quadrante.length){ toast('Crie uma semana primeiro!'); return; }
+  // Pré-seleciona última semana
+  orgSemIdx = quadrante.length - 1;
+  document.getElementById('orgMesLabel').textContent = mesAtual.label;
+  document.getElementById('orgModal').classList.add('open');
+  orgRenderTudo();
+}
+
+function fecharOrg(){
+  document.getElementById('orgModal').classList.remove('open');
+  renderAll(); // atualiza view principal
+}
+
+function orgRenderTudo(){
+  orgRenderBancada();
+  orgRenderChips();
+  orgRenderPares();
+  orgUpdateCount();
+}
+
+function orgUpdateCount(){
+  var pend = 0;
+  quadrante.forEach(function(s){ s.pares.forEach(function(p){ if(!p.salvo&&(p.antes||p.depois)) pend++; }); });
+  document.getElementById('orgFotoCount').textContent =
+    bancada.length + ' na bancada · ' + pend + ' par(es) não salvos';
+  document.getElementById('orgBancadaCount').textContent = bancada.length + ' foto(s)';
+}
+
+function orgRenderBancada(){
+  var grid = document.getElementById('orgBancadaGrid');
+  if(!bancada.length){
+    grid.innerHTML = '<div style="color:#92400E;font-size:12px;padding:.25rem .5rem;">Bancada vazia — carregue fotos.</div>';
+    document.getElementById('orgBancada').style.display = bancada.length ? 'block' : 'block'; // always show
+    return;
+  }
+  grid.innerHTML = bancada.map(function(f,i){
+    var ms = "dStart(event,'bancada',"+i+",'','','"+f.src+"')";
+    return '<div class="bth" id="orgbth_'+i+'">'
+      +'<img src="'+f.src+'" alt="" draggable="false" style="cursor:grab" onmousedown="'+ms+'">'
+      +(f.iaE?'<span class="bth-ia">'+esc(f.iaE)+'</span>':'')
+      +'<span class="bth-num">#'+(i+1)+'</span>'
+      +'<div class="bth-name">'+esc(f.nome)+'</div>'
+      +'<button class="bth-rm" onmousedown="ev(event)" onclick="orgRmBancada('+i+')">✕</button>'
+      +'</div>';
+  }).join('');
+}
+
+function orgRmBancada(i){
+  bancada.splice(i,1);
+  orgRenderTudo();
+}
+
+function orgLimparBancada(){
+  if(!confirm('Limpar toda a bancada?')) return;
+  bancada = [];
+  orgRenderTudo();
+}
+
+function orgBancadaDragOver(e){ e.preventDefault(); }
+function orgBancadaDrop(e){
+  e.preventDefault();
+  // devolve slot para bancada (mouseup cuida disso via dropOnBancada)
+}
+
+function orgRenderChips(){
+  var chips = document.getElementById('orgChips');
+  chips.innerHTML = quadrante.map(function(sem,i){
+    var pendentes = sem.pares.filter(function(p){ return !p.salvo; }).length;
+    return '<button class="org-chip'+(i===orgSemIdx?' sel':'')+'" onclick="orgSelSem('+i+')">'
+      + esc(sem.label)
+      + (pendentes ? ' <span style="background:var(--or);border-radius:10px;padding:1px 6px;font-size:10px;">'+pendentes+'</span>' : '')
+      +'</button>';
+  }).join('');
+}
+
+function orgSelSem(i){
+  orgSemIdx = i;
+  orgRenderChips();
+  orgRenderPares();
+}
+
+function orgAddPar(){
+  quadrante[orgSemIdx].pares.push(novoPar());
+  orgRenderTudo();
+}
+
+function orgRenderPares(){
+  var grid = document.getElementById('orgParesGrid');
+  var sem = quadrante[orgSemIdx];
+  if(!sem){ grid.innerHTML=''; return; }
+  if(!sem.pares.length){
+    grid.innerHTML = '<div style="text-align:center;padding:2rem;color:#94A3B8;font-size:13px">Sem pares — clique em "+ Par vazio" ou use "⚡ Gerar auto"</div>';
+    return;
+  }
+  grid.innerHTML = sem.pares.map(function(par,pi){
+    var pct = Math.round(((par.antes?1:0)+(par.depois?1:0))/2*100);
+    var cor = pct===100?'var(--grn)':pct>0?'var(--or)':'var(--mut2)';
+    return '<div class="pc'+(par.salvo?'':' pc-pend')+'" id="orgpc_'+par.tid+'">'
+      +(par.salvo?'':'<div class="pc-pend-badge">não salvo</div>')
+      +'<div class="pc-hdr">'
+      +(par.codA?'<span class="pc-code">'+par.codA+'ª–'+par.codD+'ª</span>':'<span class="pc-code" style="opacity:.6">pendente</span>')
+      +'<input class="pc-nome" type="text" placeholder="📍 Nome do local..." value="'+esc(par.nome)+'" '
+      +'onchange="var _p=findPar(\''+par.tid+'\');if(_p)_p.nome=this.value;">'
+      +'</div>'
+      +'<div class="pc-photos">'+rSlot(par,'antes')+rSlot(par,'depois')+'</div>'
+      +'<div class="pc-ftr">'
+      +'<span style="font-size:10px;color:'+cor+'">● '+pct+'%</span>'
+      +'<button class="btn btn-xs btn-out" onclick="orgAddParDepois('+pi+')">+</button>'
+      +'<button class="btn btn-xs btn-red" onclick="orgDelPar('+pi+')">🗑</button>'
+      +'</div></div>';
+  }).join('');
+}
+
+function orgAddParDepois(pi){
+  quadrante[orgSemIdx].pares.splice(pi+1,0,novoPar());
+  orgRenderTudo();
+}
+
+function orgDelPar(pi){
+  var par = quadrante[orgSemIdx].pares[pi];
+  if(par.dbId){ if(!confirm('Remover par salvo?')) return;
+    fetch('/api/pares/'+par.dbId,{method:'DELETE'}).then(function(){
+      quadrante[orgSemIdx].pares.splice(pi,1); orgRenderTudo(); carregarMeses();
+    }).catch(function(){ toast('Erro'); });
+  } else {
+    if(par.antes) bancada.push(par.antes);
+    if(par.depois) bancada.push(par.depois);
+    quadrante[orgSemIdx].pares.splice(pi,1);
+    orgRenderTudo();
+    if(par.antes||par.depois) toast('Fotos devolvidas à bancada.');
+  }
+}
+
+function orgGerarAuto(){
+  if(!bancada.length){ toast('Bancada vazia!'); return; }
+  var sem = quadrante[orgSemIdx];
+  var grupos={}, livres=[];
+  bancada.forEach(function(f,i){
+    var iv=(f.idV||'').trim();
+    if(iv){ if(!grupos[iv]) grupos[iv]=[]; grupos[iv].push(i); }
+    else livres.push(i);
+  });
+  var usados=[];
+  Object.values(grupos).forEach(function(idxs){
+    var antes=idxs.filter(function(i){ return bancada[i].iaE==='antes'; });
+    var depois=idxs.filter(function(i){ return bancada[i].iaE==='depois'; });
+    var n=Math.max(antes.length,depois.length,1);
+    for(var k=0;k<n;k++){
+      var par=novoPar();
+      if(antes[k]!==undefined){ par.antes=bancada[antes[k]]; par.nome=bancada[antes[k]].iaL||''; usados.push(antes[k]); }
+      if(depois[k]!==undefined){ par.depois=bancada[depois[k]]; usados.push(depois[k]); }
+      sem.pares.push(par);
+    }
+  });
+  for(var i=0;i<livres.length;i+=2){
+    var par=novoPar(); par.antes=bancada[livres[i]]; usados.push(livres[i]);
+    if(livres[i+1]!==undefined){ par.depois=bancada[livres[i+1]]; usados.push(livres[i+1]); }
+    sem.pares.push(par);
+  }
+  usados.sort(function(a,b){ return b-a; });
+  usados.forEach(function(i){ bancada.splice(i,1); });
+  orgRenderTudo();
+  toast('Pares criados! Nomeie os locais e salve.');
+}
+
+function orgSalvar(){
+  var lista=[];
+  quadrante.forEach(function(sem){ sem.pares.forEach(function(p){
+    if(!p.salvo&&(p.antes||p.depois)) lista.push({sem:sem,p:p});
+  });});
+  if(!lista.length){ fecharOrg(); return; }
+  toast('Salvando '+lista.length+' par(es)...');
+  Promise.all(lista.map(function(x){ return salvarPar(x.sem,x.p); }))
+    .then(function(){ abrirMes(mesAtual.id); carregarMeses(); fecharOrg(); toast('✅ Salvo!'); })
+    .catch(function(e){ toast('Erro: '+e.message); });
+}
+
+</script>
+
+<!-- MODAL ORGANIZAÇÃO DE PARES -->
+<div class="org-bg" id="orgModal">
+  <div class="org-hdr">
+    <div class="org-hdr-l">
+      <div class="hdr-logo">G</div>
+      <div>
+        <div class="org-hdr-title">Organizar Pares — <span id="orgMesLabel">—</span></div>
+        <div class="org-hdr-sub">Arraste as fotos da bancada para os slots Antes / Depois</div>
+      </div>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center">
+      <span id="orgFotoCount" style="font-size:11px;color:#93C5FD"></span>
+      <button class="btn btn-sm" style="background:var(--grn);color:#fff" onclick="orgGerarAuto()">⚡ Gerar auto</button>
+      <button class="btn btn-or btn-sm" onclick="orgSalvar()">💾 Salvar e fechar</button>
+      <button class="btn btn-sm" style="background:rgba(255,255,255,.15);color:#fff;border:1px solid rgba(255,255,255,.2)" onclick="fecharOrg()">✕ Fechar</button>
+    </div>
+  </div>
+  <div class="org-body">
+
+    <!-- Bancada -->
+    <div class="org-bancada" id="orgBancada">
+      <div class="org-bancada-hdr">
+        <div style="display:flex;align-items:center;gap:10px">
+          <span class="org-bancada-ttl">📋 Bancada</span>
+          <span class="org-bancada-sub" id="orgBancadaCount">0 fotos</span>
+        </div>
+        <div style="display:flex;gap:6px">
+          <button class="btn btn-xs" style="background:var(--grn);color:#fff" onclick="orgGerarAuto()">⚡ Gerar pares automático</button>
+          <button class="btn btn-xs btn-red" onclick="orgLimparBancada()">🗑 Limpar</button>
+        </div>
+      </div>
+      <div class="org-bancada-grid" id="orgBancadaGrid">
+      </div>
+    </div>
+
+    <!-- Seletor de semana -->
+    <div class="org-sem-sel" id="orgSemSel">
+      <label>Semana:</label>
+      <div class="org-sem-chips" id="orgChips"></div>
+      <button class="btn btn-xs btn-pri" onclick="orgAddPar()">+ Par vazio</button>
+    </div>
+
+    <!-- Pares da semana selecionada -->
+    <div class="org-pares" id="orgParesArea">
+      <div class="org-pares-grid" id="orgParesGrid"></div>
+    </div>
+
+  </div>
+</div>
+
+</body>
+</html>
