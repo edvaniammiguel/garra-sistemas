@@ -1,0 +1,562 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
+  <meta name="theme-color" content="#1a2158" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <title>Garra – Check List Digital</title>
+  <link rel="manifest" href="manifest.json" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=Barlow:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+
+<!-- ════ LOGIN ════ -->
+<div id="screen-login" class="screen active">
+  <div class="login-bg">
+    <div class="login-orb orb1"></div><div class="login-orb orb2"></div><div class="login-orb orb3"></div>
+  </div>
+  <div class="login-card">
+    <div class="logo-wrap">
+      <img src="icons/logo.jpg" alt="Garra Terraplenagem e Caçambas" class="login-logo-img" />
+    </div>
+    <h2 class="login-title">Check List Digital</h2>
+    <p class="login-sub">Acesse com suas credenciais</p>
+    <div class="field-group"><label>Usuário</label><input type="text" id="login-user" placeholder="seu.nome" autocomplete="username" /></div>
+    <div class="field-group"><label>Senha</label><input type="password" id="login-pass" placeholder="••••••" autocomplete="current-password" /></div>
+    <div id="login-error" class="login-error hidden">Usuário ou senha incorretos.</div>
+    <button class="btn-primary full" onclick="doLogin()">Entrar</button>
+    <div class="offline-badge" id="offline-badge"><span class="dot offline"></span> Modo Offline – dados salvos localmente</div>
+  </div>
+</div>
+
+<!-- ════ MOTORISTA ════ -->
+<div id="screen-driver" class="screen">
+  <header class="top-bar">
+    <div class="tb-logo">
+      <img src="icons/logo.jpg" alt="Garra" class="tb-logo-img" />
+    </div>
+    <div class="tb-right">
+      <div class="sync-indicator"><span class="dot" id="sync-dot"></span><span id="sync-label">Online</span></div>
+      <div class="user-badge" id="user-badge-driver"></div>
+      <button class="btn-icon" onclick="doLogout()" title="Sair">⏏</button>
+    </div>
+  </header>
+  <div class="driver-content">
+    <div class="score-card">
+      <div class="sc-left"><div class="sc-pts" id="driver-pts">0</div><div class="sc-label">pontos</div></div>
+      <div class="sc-right"><div class="sc-rank" id="driver-rank">#–</div><div class="sc-label">ranking</div><div class="sc-streak" id="driver-streak">🔥 0 envios</div></div>
+      <div class="sc-bar-wrap"><div class="sc-bar" id="driver-bar"></div></div>
+    </div>
+    <div class="pending-banner" id="pending-banner" style="display:none">
+      <span>📦 <strong id="pending-count">0</strong> aguardando sincronização</span>
+      <button onclick="syncNow()">Sincronizar agora</button>
+    </div>
+    <h3 class="section-title">Selecionar Check List</h3>
+    <div class="checklist-cards" id="driver-cl-cards"></div>
+    <h3 class="section-title">Meus Últimos Envios</h3>
+    <div id="driver-history" class="history-list"></div>
+  </div>
+</div>
+
+<!-- ════ FORMULÁRIO ════ -->
+<div id="screen-form" class="screen">
+  <header class="top-bar">
+    <button class="btn-icon" onclick="goBack()">‹</button>
+    <div class="tb-title" id="form-title">Check List</div>
+    <div class="tb-right"><div class="form-progress-wrap"><div class="form-progress-bar" id="form-prog-bar"></div></div></div>
+  </header>
+  <div class="form-content" id="form-content"></div>
+  <div class="form-footer">
+    <button class="btn-secondary" onclick="formPrev()" id="btn-prev">Anterior</button>
+    <span id="form-step-label">1 / N</span>
+    <button class="btn-primary" onclick="formNext()" id="btn-next">Próximo</button>
+  </div>
+</div>
+
+<!-- ════ GESTOR ════ -->
+<div id="screen-manager" class="screen">
+  <header class="top-bar">
+    <div class="tb-logo">
+      <img src="icons/logo.jpg" alt="Garra" class="tb-logo-img" />
+      <span class="tb-logo-label">Gestão</span>
+    </div>
+    <div class="tb-right">
+      <div class="sync-indicator"><span class="dot" id="mgr-sync-dot"></span><span id="mgr-sync-label">Online</span></div>
+      <div class="user-badge" id="user-badge-mgr"></div>
+      <button class="btn-icon" onclick="doLogout()" title="Sair">⏏</button>
+    </div>
+  </header>
+  <div class="mgr-tabs">
+    <button class="tab active" onclick="mgrTab('overview',this)">Visão Geral</button>
+    <button class="tab" onclick="mgrTab('ranking',this)">Ranking</button>
+    <button class="tab" onclick="mgrTab('submissions',this)">Envios</button>
+    <button class="tab" onclick="mgrTab('fleet',this)">Frota</button>
+    <button class="tab" onclick="mgrTab('logistics',this)">Logística</button>
+    <button class="tab" onclick="mgrTab('checklists',this)">Check Lists</button>
+    <button class="tab" onclick="mgrTab('users',this)">Usuários</button>
+  </div>
+  <div class="mgr-content">
+
+    <!-- OVERVIEW -->
+    <div id="tab-overview" class="tab-panel active">
+      <div class="kpi-grid">
+        <div class="kpi-card"><div class="kpi-val" id="kpi-total">0</div><div class="kpi-label">Total de Envios</div></div>
+        <div class="kpi-card accent"><div class="kpi-val" id="kpi-week">0</div><div class="kpi-label">Esta Semana</div></div>
+        <div class="kpi-card"><div class="kpi-val" id="kpi-pending-sync">0</div><div class="kpi-label">Pendentes Sync</div></div>
+        <div class="kpi-card warn"><div class="kpi-val" id="kpi-nc">0</div><div class="kpi-label">Não Conformes</div></div>
+      </div>
+      <h3 class="section-title">Envios por Tipo de Check List</h3>
+      <div class="bar-chart" id="chart-types"></div>
+      <h3 class="section-title">Conformidade por Colaborador</h3>
+      <div id="compliance-list" class="compliance-list"></div>
+    </div>
+
+    <!-- RANKING -->
+    <div id="tab-ranking" class="tab-panel">
+      <div class="podium-wrap" id="podium"></div>
+      <div id="full-ranking" class="ranking-list"></div>
+    </div>
+
+    <!-- ENVIOS -->
+    <div id="tab-submissions" class="tab-panel">
+      <div class="filter-bar">
+        <select id="filter-type" onchange="renderSubmissions()"><option value="">Todos os tipos</option></select>
+        <select id="filter-user" onchange="renderSubmissions()"><option value="">Todos</option></select>
+        <select id="filter-status" onchange="renderSubmissions()">
+          <option value="">Todos</option>
+          <option value="ok">✓ Conforme</option>
+          <option value="nc">⚠ Não Conforme</option>
+          <option value="archived">📦 Equip. Removido</option>
+        </select>
+      </div>
+      <div id="submissions-list" class="submissions-list"></div>
+    </div>
+
+    <!-- FROTA -->
+    <div id="tab-fleet" class="tab-panel">
+      <div class="tab-action-bar">
+        <button class="btn-primary" onclick="openFleetModal()">+ Novo Equipamento</button>
+      </div>
+      <div id="fleet-groups"></div>
+    </div>
+
+    <!-- LOGÍSTICA -->
+    <div id="tab-logistics" class="tab-panel">
+      <!-- Sub-tabs internos da logística -->
+      <div class="log-subtabs">
+        <button class="log-subtab active" onclick="logSubTab('registros',this)">📋 Registros</button>
+        <button class="log-subtab" onclick="logSubTab('motoristas',this)">👤 Motoristas</button>
+        <button class="log-subtab" onclick="logSubTab('veiculos',this)">🚗 Veículos</button>
+      </div>
+
+      <!-- SUB: REGISTROS -->
+      <div id="log-sub-registros" class="log-subpanel active">
+        <div class="tab-action-bar">
+          <button class="btn-primary" onclick="openLogModal()">+ Novo Registro</button>
+          <button class="btn-secondary" onclick="printLogReport()">🖨 Imprimir</button>
+        </div>
+        <div class="kpi-grid" style="margin-bottom:14px">
+          <div class="kpi-card accent"><div class="kpi-val" id="log-kpi-active">0</div><div class="kpi-label">Em Campo</div></div>
+          <div class="kpi-card"><div class="kpi-val" id="log-kpi-idle">0</div><div class="kpi-label">Disponíveis</div></div>
+          <div class="kpi-card"><div class="kpi-val" id="log-kpi-drivers">0</div><div class="kpi-label">Motoristas Alocados</div></div>
+          <div class="kpi-card warn"><div class="kpi-val" id="log-kpi-total">0</div><div class="kpi-label">Total Registros</div></div>
+        </div>
+        <h3 class="section-title">Situação Atual da Frota</h3>
+        <div id="log-current-fleet" class="log-fleet-grid"></div>
+        <h3 class="section-title" style="margin-top:20px">Histórico de Registros</h3>
+        <div class="filter-bar">
+          <select id="log-filter-car" onchange="renderLogHistory()"><option value="">Todos os carros</option></select>
+          <select id="log-filter-resp" onchange="renderLogHistory()"><option value="">Todos responsáveis</option></select>
+          <input type="date" id="log-filter-date" onchange="renderLogHistory()" style="flex:1;padding:8px 10px;border:1.5px solid var(--gray-light);border-radius:var(--radius-sm);font-size:12px;font-family:var(--fb);outline:none;" />
+        </div>
+        <div id="log-history-list" class="log-history-list"></div>
+      </div>
+
+      <!-- SUB: MOTORISTAS -->
+      <div id="log-sub-motoristas" class="log-subpanel">
+        <div class="tab-action-bar">
+          <button class="btn-primary" onclick="openLogDriverModal()">+ Novo Motorista</button>
+        </div>
+        <div id="log-drivers-list" class="log-cadastro-list"></div>
+      </div>
+
+      <!-- SUB: VEÍCULOS DE APOIO -->
+      <div id="log-sub-veiculos" class="log-subpanel">
+        <div class="tab-action-bar">
+          <button class="btn-primary" onclick="openLogCarModal()">+ Novo Veículo</button>
+        </div>
+        <div id="log-cars-list" class="log-cadastro-list"></div>
+      </div>
+    </div>
+
+    <!-- CHECK LISTS -->
+    <div id="tab-checklists" class="tab-panel">
+      <div class="tab-action-bar">
+        <p class="hint-text">Os 3 check lists padrão não podem ser editados. Crie check lists personalizados abaixo.</p>
+        <button class="btn-primary" onclick="openBuilder(null)">+ Novo Check List</button>
+      </div>
+      <h3 class="section-title">Padrão (sistema)</h3>
+      <div id="default-cl-list" class="custom-cl-list"></div>
+      <h3 class="section-title" style="margin-top:20px">Personalizados</h3>
+      <div id="custom-cl-list" class="custom-cl-list"></div>
+    </div>
+
+    <!-- USUÁRIOS -->
+    <div id="tab-users" class="tab-panel">
+      <div class="tab-action-bar">
+        <button class="btn-primary" onclick="openModal('user-modal')">+ Novo Usuário</button>
+      </div>
+      <div id="users-list" class="users-list"></div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ════ BUILDER DE CHECK LIST (Google Forms-style) ════ -->
+<div id="screen-builder" class="screen">
+  <header class="top-bar">
+    <button class="btn-icon" onclick="closeBuilder()">‹</button>
+    <div class="tb-title" id="builder-screen-title">Novo Check List</div>
+    <div class="tb-right">
+      <button class="btn-secondary" style="padding:7px 12px;font-size:12px" onclick="previewChecklist()">👁 Preview</button>
+      <button class="btn-save" onclick="saveChecklist()">Salvar ✓</button>
+    </div>
+  </header>
+
+  <div class="builder-content">
+
+    <!-- CABEÇALHO DO FORMULÁRIO -->
+    <div class="bl-form-header">
+      <div class="bl-header-stripe"></div>
+      <div class="bl-header-body">
+        <input type="text" id="bl-name" class="bl-form-title-input" placeholder="Título do Check List" />
+        <input type="text" id="bl-desc" class="bl-form-desc-input" placeholder="Descrição (opcional)" />
+        <div class="bl-header-meta">
+          <div class="field-group" style="flex:0 0 70px;margin:0">
+            <label>Ícone</label>
+            <input type="text" id="bl-icon" placeholder="📋" maxlength="4" />
+          </div>
+          <div class="field-group" style="flex:1;margin:0">
+            <label>Categoria de frota vinculada</label>
+            <select id="bl-vehicle-cat">
+              <option value="maquinas">🚜 Máquinas</option>
+              <option value="carro">🚗 Carros de Apoio</option>
+              <option value="caminhao">🚛 Caminhões</option>
+              <option value="none">Nenhuma (campo livre)</option>
+            </select>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- PONTUAÇÃO -->
+    <div class="bl-pts-card">
+      <div class="bl-pts-title">⭐ Regras de Pontuação</div>
+      <div class="pts-rules-grid">
+        <div class="pts-rule-row"><span>Tudo conforme / completo</span><div class="pts-input-wrap"><input type="number" id="pts-full" value="100" min="0" max="999"/><span>pts</span></div></div>
+        <div class="pts-rule-row"><span>Com NC mas reportou</span><div class="pts-input-wrap"><input type="number" id="pts-nc-base" value="60" min="0" max="999"/><span>pts</span></div></div>
+        <div class="pts-rule-row"><span>Observações detalhadas</span><div class="pts-input-wrap"><input type="number" id="pts-obs" value="20" min="0" max="999"/><span>pts</span></div></div>
+        <div class="pts-rule-row"><span>Envio no dia correto</span><div class="pts-input-wrap"><input type="number" id="pts-ontime" value="10" min="0" max="999"/><span>pts</span></div></div>
+      </div>
+    </div>
+
+    <!-- PERGUNTAS -->
+    <div id="builder-questions"></div>
+
+    <!-- FAB: adicionar pergunta -->
+    <div class="bl-fab-bar">
+      <div class="bl-fab-label">Adicionar</div>
+      <button class="bl-fab-btn" onclick="addQuestion('checklist')"   title="Conforme/NC">✅ Conformidade</button>
+      <button class="bl-fab-btn" onclick="addQuestion('text')"        title="Texto curto">Tz Texto Curto</button>
+      <button class="bl-fab-btn" onclick="addQuestion('textarea')"    title="Parágrafo">¶ Parágrafo</button>
+      <button class="bl-fab-btn" onclick="addQuestion('radio')"       title="Múltipla escolha">◉ Radio</button>
+      <button class="bl-fab-btn" onclick="addQuestion('checkbox')"    title="Caixas de seleção">☑ Checkbox</button>
+      <button class="bl-fab-btn" onclick="addQuestion('select')"      title="Lista suspensa">▾ Select</button>
+      <button class="bl-fab-btn" onclick="addQuestion('scale')"       title="Escala">⭐ Escala</button>
+      <button class="bl-fab-btn" onclick="addQuestion('date')"        title="Data">📅 Data</button>
+      <button class="bl-fab-btn" onclick="addQuestion('photo')"       title="Foto">📷 Foto</button>
+      <button class="bl-fab-btn" onclick="addQuestion('section')"     title="Nova seção">── Seção</button>
+    </div>
+
+    <div style="height:120px"></div>
+  </div>
+</div>
+
+<!-- ════ DETALHE DO ENVIO ════ -->
+<div id="screen-detail" class="screen">
+  <header class="top-bar">
+    <button class="btn-icon" onclick="closeDetail()">‹</button>
+    <div class="tb-title">Detalhe do Envio</div>
+    <div class="tb-right"></div>
+  </header>
+  <div id="detail-content" class="detail-content"></div>
+</div>
+
+<!-- ════ SUCESSO ════ -->
+<div id="screen-success" class="screen">
+  <div class="success-wrap">
+    <div class="success-anim">
+      <div class="check-circle">
+        <svg viewBox="0 0 60 60"><polyline points="15,30 26,41 45,20" stroke="#fff" stroke-width="4" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </div>
+    </div>
+    <h2 id="success-title">Check List Enviado!</h2>
+    <p id="success-msg">Salvo com sucesso.</p>
+    <div class="pts-earned" id="pts-earned"></div>
+    <button class="btn-primary" style="max-width:240px;margin:0 auto" onclick="goToDashboard()">Voltar ao Painel</button>
+  </div>
+</div>
+
+<!-- ════ MODAIS GLOBAIS ════ -->
+<div id="user-modal" class="modal hidden">
+  <div class="modal-card">
+    <h3>Novo Usuário</h3>
+    <div class="field-group"><label>Nome completo</label><input type="text" id="nu-name" placeholder="Ex.: João Silva" /></div>
+    <div class="field-group"><label>Login</label><input type="text" id="nu-user" placeholder="joao.silva" /></div>
+    <div class="field-group"><label>Senha</label><input type="password" id="nu-pass" placeholder="••••••" /></div>
+    <div class="field-group"><label>Perfil</label>
+      <select id="nu-role"><option value="driver">Motorista / Operador</option><option value="superior">Superior Direto (Logística)</option><option value="manager">Gestor</option></select>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-secondary" onclick="closeModal('user-modal')">Cancelar</button>
+      <button class="btn-primary" onclick="saveNewUser()">Salvar</button>
+    </div>
+  </div>
+</div>
+
+<div id="user-remove-modal" class="modal hidden">
+  <div class="modal-card">
+    <h3>Remover Usuário</h3>
+    <p style="color:var(--text-light);margin:0 0 16px;font-size:14px">Os check lists enviados serão mantidos no histórico.</p>
+    <div class="info-box warn" id="user-remove-info"></div>
+    <div class="modal-actions">
+      <button class="btn-secondary" onclick="closeModal('user-remove-modal')">Cancelar</button>
+      <button class="btn-danger" onclick="confirmRemoveUser()">Remover</button>
+    </div>
+  </div>
+</div>
+
+<div id="fleet-modal" class="modal hidden">
+  <div class="modal-card">
+    <h3 id="fleet-modal-title">Novo Equipamento</h3>
+    <input type="hidden" id="fleet-edit-key" />
+    <div class="field-group"><label>Categoria</label>
+      <select id="fleet-category">
+        <option value="maquinas">🚜 Máquinas</option>
+        <option value="carro">🚗 Carros de Apoio</option>
+        <option value="caminhao">🚛 Caminhões</option>
+      </select>
+    </div>
+    <div class="field-group"><label>Identificação (ex.: EH-99, CB-50)</label><input type="text" id="fleet-id-input" placeholder="XX-00" /></div>
+    <div class="field-group"><label>Descrição (opcional)</label><input type="text" id="fleet-desc-input" placeholder="Ex.: Escavadeira hidráulica CAT 320" /></div>
+    <div class="modal-actions">
+      <button class="btn-secondary" onclick="closeModal('fleet-modal')">Cancelar</button>
+      <button class="btn-primary" onclick="saveFleetItem()">Salvar</button>
+    </div>
+  </div>
+</div>
+
+<div id="fleet-remove-modal" class="modal hidden">
+  <div class="modal-card">
+    <h3>Remover Equipamento</h3>
+    <p style="color:var(--text-light);margin:0 0 12px;font-size:14px">O equipamento ficará <strong>inativo</strong>. Os check lists enviados serão arquivados com a tag <em>"Equipamento Removido"</em>.</p>
+    <div class="info-box warn" id="fleet-remove-info"></div>
+    <div class="modal-actions">
+      <button class="btn-secondary" onclick="closeModal('fleet-remove-modal')">Cancelar</button>
+      <button class="btn-danger" onclick="confirmRemoveFleet()">Remover</button>
+    </div>
+  </div>
+</div>
+
+<div id="cl-remove-modal" class="modal hidden">
+  <div class="modal-card">
+    <h3>Excluir Check List</h3>
+    <p style="color:var(--text-light);margin:0 0 12px;font-size:14px">Os envios já realizados serão mantidos no histórico. O check list não ficará mais disponível para novos envios.</p>
+    <div class="info-box warn" id="cl-remove-info"></div>
+    <div class="modal-actions">
+      <button class="btn-secondary" onclick="closeModal('cl-remove-modal')">Cancelar</button>
+      <button class="btn-danger" onclick="confirmRemoveCL()">Excluir</button>
+    </div>
+  </div>
+</div>
+
+<!-- ════ MODAL LOGÍSTICA ════ -->
+<div id="log-modal" class="modal hidden">
+  <div class="modal-card" style="max-height:90vh;overflow-y:auto">
+    <h3 id="log-modal-title">Novo Registro de Logística</h3>
+    <input type="hidden" id="log-edit-id" />
+
+    <div class="field-group">
+      <label>Responsável pela Logística</label>
+      <input type="text" id="log-resp" placeholder="Nome do responsável" />
+    </div>
+    <div class="field-group">
+      <label>Data / Hora</label>
+      <input type="datetime-local" id="log-datetime" />
+    </div>
+
+    <h4 style="font-family:var(--fd);font-size:16px;color:var(--navy);margin:16px 0 10px;text-transform:uppercase;letter-spacing:.5px">Alocação dos Carros de Apoio</h4>
+    <p style="font-size:12px;color:var(--text-light);margin-bottom:14px">Para cada carro, informe destino e motorista responsável.</p>
+
+    <div id="log-car-rows"></div>
+
+    <button class="btn-secondary" style="width:100%;margin-top:10px" onclick="addLogCarRow()">+ Adicionar Carro</button>
+
+    <div class="modal-actions" style="margin-top:16px">
+      <button class="btn-secondary" onclick="closeModal('log-modal')">Cancelar</button>
+      <button class="btn-primary" onclick="saveLogEntry()">Salvar Registro</button>
+    </div>
+  </div>
+</div>
+
+<!-- ════ RELATÓRIO LOGÍSTICA (para impressão) ════ -->
+<div id="screen-log-report" class="screen">
+  <header class="top-bar no-print">
+    <button class="btn-icon" onclick="closeLogReport()">‹</button>
+    <div class="tb-title">Relatório de Logística</div>
+    <div class="tb-right">
+      <button class="btn-save" onclick="window.print()">🖨 Imprimir</button>
+    </div>
+  </header>
+  <div id="log-report-content" class="log-report-content"></div>
+</div>
+
+<!-- ════ SUPERIOR / LOGÍSTICA DASHBOARD ════ -->
+<div id="screen-superior" class="screen">
+  <header class="top-bar">
+    <div class="tb-logo">
+      <img src="icons/logo.jpg" alt="Garra" class="tb-logo-img" />
+      <span class="tb-logo-label">Operação</span>
+    </div>
+    <div class="tb-right">
+      <div class="sync-indicator"><span class="dot" id="sup-sync-dot"></span><span id="sup-sync-label">Online</span></div>
+      <div class="user-badge" id="user-badge-sup"></div>
+      <button class="btn-icon" onclick="doLogout()" title="Sair">⏏</button>
+    </div>
+  </header>
+  <div class="mgr-tabs">
+    <button class="tab active" onclick="supTab('logistics',this)">🚗 Logística</button>
+    <button class="tab" onclick="supTab('checklists',this)">📋 Check Lists</button>
+    <button class="tab" onclick="supTab('report',this)">🖨 Relatório</button>
+  </div>
+  <div class="mgr-content">
+    <div id="sup-tab-logistics" class="tab-panel active">
+      <div class="tab-action-bar">
+        <button class="btn-primary" onclick="openLogModal()">+ Novo Registro</button>
+        <button class="btn-secondary" onclick="printLogReport()">🖨 Imprimir</button>
+      </div>
+      <div class="kpi-grid" style="margin-bottom:14px">
+        <div class="kpi-card accent"><div class="kpi-val" id="sup-log-active">0</div><div class="kpi-label">Carros em Campo</div></div>
+        <div class="kpi-card"><div class="kpi-val" id="sup-log-idle">0</div><div class="kpi-label">Disponíveis</div></div>
+        <div class="kpi-card"><div class="kpi-val" id="sup-log-drivers">0</div><div class="kpi-label">Motoristas Alocados</div></div>
+        <div class="kpi-card warn"><div class="kpi-val" id="sup-log-total">0</div><div class="kpi-label">Total Registros</div></div>
+      </div>
+      <h3 class="section-title">Situação Atual</h3>
+      <div id="sup-current-fleet" class="log-fleet-grid"></div>
+      <h3 class="section-title" style="margin-top:20px">Histórico Recente</h3>
+      <div id="sup-log-history" class="log-history-list"></div>
+    </div>
+
+    <div id="sup-tab-checklists" class="tab-panel">
+      <div class="tab-action-bar">
+        <button class="btn-primary" onclick="openBuilder(null)">+ Novo Check List</button>
+      </div>
+      <h3 class="section-title">Preencher Check List</h3>
+      <div id="sup-cl-cards" class="checklist-cards"></div>
+    </div>
+
+    <div id="sup-tab-report" class="tab-panel">
+      <div class="tab-action-bar">
+        <button class="btn-secondary" onclick="printLogReport()">🖨 Imprimir Relatório Completo</button>
+      </div>
+      <div id="sup-report-preview" class="log-report-content" style="background:var(--white);border-radius:var(--radius);padding:20px;box-shadow:var(--shadow-sm)"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ════ MODAL: MOTORISTA LOGÍSTICA ════ -->
+<div id="log-driver-modal" class="modal hidden">
+  <div class="modal-card" style="max-height:85vh;overflow-y:auto">
+    <h3 id="log-driver-modal-title">Novo Motorista</h3>
+    <input type="hidden" id="log-driver-edit-id" />
+    <div class="field-group"><label>Nome completo</label><input type="text" id="ld-name" placeholder="Ex.: João da Silva" /></div>
+    <div class="field-group"><label>CPF (opcional)</label><input type="text" id="ld-cpf" placeholder="000.000.000-00" /></div>
+    <div class="field-group"><label>CNH / Categoria</label><input type="text" id="ld-cnh" placeholder="Ex.: 12345678 – Cat. B" /></div>
+    <div class="field-group"><label>Telefone</label><input type="tel" id="ld-tel" placeholder="(37) 99999-9999" /></div>
+    <div class="field-group"><label>Status</label>
+      <select id="ld-status">
+        <option value="ativo">✅ Ativo</option>
+        <option value="ferias">🏖 Férias</option>
+        <option value="afastado">⚠ Afastado</option>
+        <option value="inativo">❌ Inativo</option>
+      </select>
+    </div>
+    <div class="field-group"><label>Observações</label>
+      <textarea id="ld-obs" rows="2" placeholder="Anotações relevantes..." style="resize:vertical"></textarea>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-secondary" onclick="closeModal('log-driver-modal')">Cancelar</button>
+      <button class="btn-primary" onclick="saveLogDriver()">Salvar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ════ MODAL: VEÍCULO LOGÍSTICA ════ -->
+<div id="log-car-modal" class="modal hidden">
+  <div class="modal-card" style="max-height:85vh;overflow-y:auto">
+    <h3 id="log-car-modal-title">Novo Veículo de Apoio</h3>
+    <input type="hidden" id="lc-edit-id" />
+    <div class="log-car-modal-grid">
+      <div class="field-group"><label>Identificação (ex.: CA-50)</label><input type="text" id="lc-id" placeholder="CA-00" /></div>
+      <div class="field-group"><label>Placa</label><input type="text" id="lc-plate" placeholder="ABC-1234" /></div>
+    </div>
+    <div class="field-group"><label>Modelo / Marca</label><input type="text" id="lc-model" placeholder="Ex.: Fiat Strada, VW Gol..." /></div>
+    <div class="field-group"><label>Ano</label><input type="number" id="lc-year" placeholder="2020" min="1990" max="2030" /></div>
+    <div class="field-group"><label>Cor</label><input type="text" id="lc-color" placeholder="Ex.: Branco, Prata..." /></div>
+    <div class="field-group"><label>Status</label>
+      <select id="lc-status">
+        <option value="disponivel">✅ Disponível</option>
+        <option value="em-campo">🟠 Em Campo</option>
+        <option value="manutencao">🔧 Em Manutenção</option>
+        <option value="inativo">❌ Inativo</option>
+      </select>
+    </div>
+
+    <!-- Campos extras dinâmicos estilo Google Forms -->
+    <div style="margin:14px 0 8px;display:flex;align-items:center;justify-content:space-between">
+      <span style="font-size:12px;font-weight:700;color:var(--text-light);text-transform:uppercase;letter-spacing:.5px">Campos Adicionais</span>
+      <button class="bl-add-option" style="font-size:12px;padding:4px 10px;border:1.5px solid var(--gray-light);border-radius:6px;background:var(--white)" onclick="addLogCarExtraField()">+ Campo</button>
+    </div>
+    <div id="lc-extra-fields"></div>
+
+    <div class="field-group"><label>Observações gerais</label>
+      <textarea id="lc-obs" rows="2" placeholder="Anotações, documentação, revisão..." style="resize:vertical"></textarea>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-secondary" onclick="closeModal('log-car-modal')">Cancelar</button>
+      <button class="btn-primary" onclick="saveLogCar()">Salvar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ════ MODAL: CONFIRM DELETE ════ -->
+<div id="log-delete-modal" class="modal hidden">
+  <div class="modal-card">
+    <h3>Confirmar Exclusão</h3>
+    <p style="font-size:14px;color:var(--text-light);margin:0 0 14px" id="log-delete-msg"></p>
+    <div class="modal-actions">
+      <button class="btn-secondary" onclick="closeModal('log-delete-modal')">Cancelar</button>
+      <button class="btn-danger" onclick="confirmLogDelete()">Excluir</button>
+    </div>
+  </div>
+</div>
+
+<script src="js/data.js"></script>
+<script src="js/app.js"></script>
+<script src="js/logistics.js"></script>
+</body>
+</html>
