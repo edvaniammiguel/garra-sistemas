@@ -179,25 +179,44 @@ async function doLogin() {
   const err   =  document.getElementById('login-error');
   const btn   =  document.querySelector('#screen-login .btn-primary');
   if (btn) { btn.textContent = 'Entrando...'; btn.disabled = true; }
+  err.classList.add('hidden');
   try {
-    const user = await GarraDB.login(login, pass);
-    err.classList.add('hidden');
-    localStorage.setItem('garra_current_user', JSON.stringify(user));
-    // Mescla perfil com dados locais (funcao, veiculo, pass)
-    const loc = DB.users().find(u => u.login === user.login) || {};
-    currentUser = { ...loc, ...user, name: user.nome || loc.name, role: user.perfil || loc.role };
+    // LOGIN VIA BANCO — fonte da verdade
+    const apiUser = await GarraDB.login(login, pass);
+
+    // Busca extras locais (funcao, veiculo) que só existem no localStorage
+    const loc = DB.users().find(u => u.login === apiUser.login) || {};
+
+    // Monta usuário com perfil do banco + extras locais
+    currentUser = {
+      login:       apiUser.login,
+      name:        apiUser.name,
+      role:        apiUser.role,        // ← SEMPRE do banco
+      pts:         apiUser.pts || loc.pts || 0,
+      submissions: apiUser.submissions || loc.submissions || 0,
+      funcao:      loc.funcao  || '',   // só local por enquanto
+      veiculo:     loc.veiculo || '',   // só local por enquanto
+      pass:        pass,                // salva para fallback offline
+    };
+
+    // Atualiza localStorage com dados frescos
+    DB.saveUser(currentUser);
+    localStorage.setItem('garra_current_user', JSON.stringify(currentUser));
+
     _navigate();
   } catch(e) {
-    // Fallback offline
-    const cached = DB.users().find(u => u.login === login && u.pass === pass);
-    if (cached) {
-      err.classList.add('hidden');
-      currentUser = cached;
-      _navigate();
-    } else {
-      err.textContent = isOnline ? 'Usuário ou senha incorretos.' : 'Offline – usuário não encontrado no cache.';
-      err.classList.remove('hidden');
+    if (e.message === 'OFFLINE' || e.message === 'TIMEOUT' || e.message.includes('fetch')) {
+      // FALLBACK OFFLINE — usa cache local
+      const cached = DB.users().find(u => u.login === login && u.pass === pass);
+      if (cached) {
+        err.classList.add('hidden');
+        currentUser = cached;
+        _navigate();
+        return;
+      }
     }
+    err.textContent = 'Usuário ou senha incorretos.';
+    err.classList.remove('hidden');
   } finally {
     if (btn) { btn.textContent = 'Entrar'; btn.disabled = false; }
   }
@@ -675,49 +694,111 @@ function renderUsers() {
 }
 
 function openUserEdit(login) {
+  const u = DB.users().find(u => u.login === login);
+  if (!u) return;
+  editingUserLogin = login;
+
+  // Popula funções e veículos PRIMEIRO
   populateUserModalFuncoes();
-  const u=DB.users().find(u=>u.login===login); if(!u)return;
-  editingUserLogin=login;
-  document.getElementById('eu-name').value=u.name;
-  document.getElementById('eu-login').textContent=u.login;
-  document.getElementById('eu-role').value=u.role;
-  document.getElementById('eu-pass').value='';
-  setTimeout(()=>{
-    const ef=document.getElementById('eu-funcao');  if(ef)ef.value=u.funcao||'';
-    const ev=document.getElementById('eu-veiculo'); if(ev)ev.value=u.veiculo||'';
-  },50);
+
+  // Preenche campos básicos
+  document.getElementById('eu-name').value = u.name;
+  document.getElementById('eu-login').textContent = u.login;
+  document.getElementById('eu-role').value = u.role;
+  document.getElementById('eu-pass').value = '';
+
+  // Preenche função e veículo após render dos selects
+  setTimeout(() => {
+    const ef = document.getElementById('eu-funcao');
+    const ev = document.getElementById('eu-veiculo');
+    if (ef && u.funcao) ef.value = u.funcao;
+    if (ev && u.veiculo) ev.value = u.veiculo;
+  }, 100);
+
   openModal('user-edit-modal');
 }
 
 async function saveEditUser() {
-  const name   =document.getElementById('eu-name').value.trim();
-  const role   =document.getElementById('eu-role').value;
-  const pass   =document.getElementById('eu-pass').value;
-  const funcao =document.getElementById('eu-funcao')?.value||'';
-  const veiculo=document.getElementById('eu-veiculo')?.value||'';
-  if(!name){alert('Informe o nome.');return;}
-  const btn=document.querySelector('#user-edit-modal .btn-primary');
-  if(btn){btn.textContent='Salvando...';btn.disabled=true;}
+  const name   = document.getElementById('eu-name').value.trim();
+  const role   = document.getElementById('eu-role').value;
+  const pass   = document.getElementById('eu-pass').value;
+  const funcao = document.getElementById('eu-funcao')?.value  || '';
+  const veiculo= document.getElementById('eu-veiculo')?.value || '';
+  if (!name) { alert('Informe o nome.'); return; }
+
+  const btn = document.querySelector('#user-edit-modal .btn-primary');
+  if (btn) { btn.textContent = 'Salvando...'; btn.disabled = true; }
+
   try {
-    const users=DB.users(),idx=users.findIndex(u=>u.login===editingUserLogin);
-    if(idx>=0){users[idx].name=name;users[idx].role=role;users[idx].funcao=funcao;users[idx].veiculo=veiculo;if(pass)users[idx].pass=pass;DB.set('garra_users',users);}
-    if(editingUserLogin===currentUser.login){currentUser.name=name;currentUser.role=role;}
-    editingUserLogin=null;closeModal('user-edit-modal');renderUsers();populateSubmissionFilters();
-  } catch(e){alert('Erro ao salvar: '+e.message);}
-  finally{if(btn){btn.textContent='Salvar Alterações';btn.disabled=false;}}
+    // 1. SALVA NO BANCO PRIMEIRO
+    await GarraDB.editarUsuario(editingUserLogin, {
+      nome:   name,
+      perfil: role,
+      senha:  pass || null,
+    });
+
+    // 2. Atualiza localStorage com dados consistentes
+    const users = DB.users();
+    const idx   = users.findIndex(u => u.login === editingUserLogin);
+    if (idx >= 0) {
+      users[idx].name    = name;
+      users[idx].role    = role;
+      users[idx].funcao  = funcao;
+      users[idx].veiculo = veiculo;
+      if (pass) users[idx].pass = pass;
+      DB.set('garra_users', users);
+    }
+
+    // 3. Atualiza currentUser se for o próprio usuário logado
+    if (editingUserLogin === currentUser.login) {
+      currentUser.name   = name;
+      currentUser.role   = role;
+      currentUser.funcao = funcao;
+    }
+
+    editingUserLogin = null;
+    closeModal('user-edit-modal');
+    renderUsers();
+    populateSubmissionFilters();
+    console.log('✅ Colaborador atualizado no banco:', name, role);
+
+  } catch(e) {
+    if (e.message === 'OFFLINE' || e.message === 'TIMEOUT') {
+      // Offline: salva local e enfileira para sync
+      const users = DB.users();
+      const idx   = users.findIndex(u => u.login === editingUserLogin);
+      if (idx >= 0) {
+        users[idx].name=name; users[idx].role=role;
+        users[idx].funcao=funcao; users[idx].veiculo=veiculo;
+        if(pass) users[idx].pass=pass;
+        DB.set('garra_users', users);
+      }
+      OfflineQueue.add({
+        path: `/usuarios/${editingUserLogin}/editar`,
+        options: { method:'POST', body: JSON.stringify({nome:name, perfil:role, senha:pass||null}) }
+      });
+      editingUserLogin = null;
+      closeModal('user-edit-modal');
+      renderUsers();
+      alert('⚠️ Salvo localmente. Sincronizará quando online.');
+    } else {
+      alert('Erro ao salvar: ' + e.message);
+    }
+  } finally {
+    if (btn) { btn.textContent = 'Salvar Alterações'; btn.disabled = false; }
+  }
 }
 
 async function saveNewUser() {
-  const name   =document.getElementById('nu-name').value.trim();
-  const login  =document.getElementById('nu-user').value.trim().toLowerCase();
-  const pass   =document.getElementById('nu-pass').value;
-  const role   =document.getElementById('nu-role').value;
-  const funcao =document.getElementById('nu-funcao')?.value||'';
-  const veiculo=document.getElementById('nu-veiculo')?.value||'';
-  if(!name||!login||!pass){alert('Preencha todos os campos.');return;}
-  if(DB.users().find(u=>u.login===login)){alert('Login já existe.');return;}
-  const btn=document.querySelector('#user-modal .btn-primary');
-  if(btn){btn.textContent='Salvando...';btn.disabled=true;}
+  const name   = document.getElementById('nu-name').value.trim();
+  const login  = document.getElementById('nu-user').value.trim().toLowerCase();
+  const pass   = document.getElementById('nu-pass').value;
+  const role   = document.getElementById('nu-role').value;
+  const funcao = document.getElementById('nu-funcao')?.value  || '';
+  const veiculo= document.getElementById('nu-veiculo')?.value || '';
+  if (!name || !login || !pass) { alert('Preencha todos os campos.'); return; }
+  const btn = document.querySelector('#user-modal .btn-primary');
+  if (btn) { btn.textContent = 'Salvando...'; btn.disabled = true; }
   try {
     await GarraDB.criarUsuario({login,nome:name,senha:pass,perfil:role});
     DB.saveUser({name,login,pass,role,funcao,veiculo,pts:0,submissions:0});
@@ -741,8 +822,34 @@ function openUserRemove(login) {
 }
 async function confirmRemoveUser() {
   if(!pendingRemoveUserLogin)return;
-  try{await GarraDB.removerUsuario(pendingRemoveUserLogin);}catch(e){console.warn('API remove:',e.message);}
-  DB.removeUser(pendingRemoveUserLogin);pendingRemoveUserLogin=null;closeModal('user-remove-modal');renderUsers();populateSubmissionFilters();
+  const loginParaRemover = pendingRemoveUserLogin;
+  
+  // 1. Remove do banco via API
+  try {
+    await GarraDB.removerUsuario(loginParaRemover);
+    console.log('✅ Removido do banco:', loginParaRemover);
+  } catch(e) {
+    console.warn('⚠️ API remove falhou:', e.message);
+  }
+  
+  // 2. Remove do localStorage imediatamente
+  DB.removeUser(loginParaRemover);
+  
+  // 3. Marca na lista de deletados para não voltar na sync
+  const deleted = DB.get('garra_deleted_users') || [];
+  if (!deleted.includes(loginParaRemover)) {
+    deleted.push(loginParaRemover);
+    DB.set('garra_deleted_users', deleted);
+  }
+  
+  // 4. Força nova sync para garantir consistência
+  pendingRemoveUserLogin = null;
+  closeModal('user-remove-modal');
+  
+  // Re-sync e re-render
+  await syncUsersFromAPI();
+  renderUsers();
+  populateSubmissionFilters();
 }
 
 // ── FUNÇÕES ──────────────────────────────────────
@@ -1018,22 +1125,41 @@ function atualizarApp() {
 // ─── SINCRONIZA USUÁRIOS DA API ────────────────────
 async function syncUsersFromAPI() {
   try {
-    const apiUsers=await GarraDB.getUsuarios(); if(!apiUsers?.length)return;
-    const local=DB.users();
-    const merged=apiUsers.map(au=>{
-      const loc=local.find(l=>l.login===au.login)||{};
-      // Preserve local pts if API returns 0 (API may not have pts yet)
-      const apiPts = au.pts || 0;
-      const locPts = loc.pts || 0;
-      const finalPts = apiPts > 0 ? apiPts : locPts;
-      const apiSubs = au.total_envios || 0;
-      const locSubs = loc.submissions || 0;
-      const finalSubs = apiSubs > 0 ? apiSubs : locSubs;
-      return{login:au.login,name:au.nome||loc.name||au.login,pass:loc.pass||'***',role:au.perfil||loc.role||'driver',funcao:loc.funcao||'',veiculo:loc.veiculo||'',pts:finalPts,submissions:finalSubs};
+    const apiUsers = await GarraDB.getUsuarios();
+    if (!apiUsers?.length) return;
+
+    const local   = DB.users();
+    const deleted = DB.get('garra_deleted_users') || [];
+
+    // Para cada usuário do banco, mescla com dados locais extras
+    const merged = apiUsers
+      .filter(au => !deleted.includes(au.login))
+      .map(au => {
+        const loc = local.find(l => l.login === au.login) || {};
+        return {
+          login:       au.login,
+          name:        au.nome   || loc.name || au.login,
+          role:        au.perfil || loc.role || 'driver',  // banco tem prioridade
+          pass:        loc.pass  || '***',
+          funcao:      loc.funcao  || '',   // só local por enquanto
+          veiculo:     loc.veiculo || '',   // só local por enquanto
+          pts:         Math.max(au.pts || 0, loc.pts || 0),
+          submissions: Math.max(au.total_envios || 0, loc.submissions || 0),
+        };
+      });
+
+    // Mantém usuários criados offline que ainda não foram para o banco
+    local.forEach(lu => {
+      if (!merged.find(m => m.login === lu.login) && !deleted.includes(lu.login)) {
+        merged.push(lu);
+      }
     });
-    DB.set('garra_users',merged);
-    console.log('✅ Usuários sincronizados:',merged.length);
-  } catch(e){console.warn('⚠️ Sync usuários falhou:',e.message);}
+
+    DB.set('garra_users', merged);
+    console.log('✅ Sync concluída:', merged.length, 'usuários');
+  } catch(e) {
+    console.warn('⚠️ Sync falhou (offline?):', e.message);
+  }
 }
 
 // ─── INIT ──────────────────────────────────────────
@@ -1192,6 +1318,12 @@ function renderRankingTab() {
   const cicloAtual = CicloDB.atual();
   const hoje = new Date();
 
+  // Atualiza visibilidade dos botões
+  const btnNovo   = document.getElementById('btn-novo-ciclo');
+  const btnFechar = document.getElementById('btn-fechar-ciclo');
+  if (btnNovo)   btnNovo.style.display   = cicloAtual ? 'none' : '';
+  if (btnFechar) btnFechar.style.display = cicloAtual ? '' : 'none';
+
   // Banner do ciclo ativo
   const bannerEl = document.getElementById('ciclo-banner');
   if (bannerEl) {
@@ -1216,9 +1348,8 @@ function renderRankingTab() {
         <div class="ciclo-banner inativo">
           <div class="ciclo-banner-info">
             <div class="ciclo-banner-nome">⏸ Nenhum ciclo ativo</div>
-            <div class="ciclo-banner-periodo">Inicie um novo ciclo para acompanhar a pontuação por período</div>
+            <div class="ciclo-banner-periodo">Use o botão acima para iniciar um novo ciclo de pontuação</div>
           </div>
-          <button class="btn-primary" onclick="openNovoCiclo()">+ Novo Ciclo</button>
         </div>`;
     }
   }
@@ -1328,3 +1459,18 @@ function preencherPeriodo(dias) {
 }
 
 // renderRankingTab é chamado diretamente no mgrTab via renderManagerDashboard
+
+// ── TOGGLE SENHA ────────────────────────────────────
+function toggleSenha(inputId, btn) {
+  const input = document.getElementById(inputId);
+  if (!input) return;
+  if (input.type === 'password') {
+    input.type = 'text';
+    btn.textContent = '🔒';
+    btn.title = 'Ocultar senha';
+  } else {
+    input.type = 'password';
+    btn.textContent = '👁';
+    btn.title = 'Mostrar senha';
+  }
+}
