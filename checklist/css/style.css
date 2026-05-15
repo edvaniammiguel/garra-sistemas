@@ -133,7 +133,7 @@ html,body { height:100%; overflow:hidden; font-family:var(--fb); background:var(
   background:var(--navy);box-shadow:0 2px 12px rgba(26,33,88,.3);
   flex-shrink:0;z-index:10;
 }
-.tb-logo{display:flex;align-items:center;gap:8px;font-family:var(--fd);font-size:20px;font-weight:800;color:var(--white);flex:1;}
+.tb-logo{display:flex;align-items:center;gap:8px;font-family:var(--fd);font-size:20px;font-weight:800;color:var(--white);flex:1;min-height:40px;}
 .tb-logo em{color:var(--orange);font-style:normal;}
 .tb-title{flex:1;text-align:center;font-family:var(--fd);font-size:17px;font-weight:700;color:var(--white);}
 .tb-right{display:flex;align-items:center;gap:8px;}
@@ -882,11 +882,13 @@ html,body { height:100%; overflow:hidden; font-family:var(--fb); background:var(
   filter: drop-shadow(0 2px 8px rgba(0,0,0,.3));
 }
 .tb-logo-img {
-  height: 32px;
+  height: 36px;
   width: auto;
+  max-width: 140px;
   object-fit: contain;
-  filter: brightness(0) invert(1); /* branco no fundo escuro */
+  filter: brightness(0) invert(1); /* logo branco no fundo azul escuro */
   flex-shrink: 0;
+  display: block;
 }
 .tb-logo-label {
   font-family: var(--fd);
@@ -1082,3 +1084,72 @@ html,body { height:100%; overflow:hidden; font-family:var(--fb); background:var(
 .funcao-card-name { font-size: 14px; font-weight: 700; color: var(--navy); }
 .funcao-card-meta { font-size: 12px; color: var(--text-light); margin-top: 2px; }
 .funcao-card-cls  { font-size: 11px; color: var(--orange); margin-top: 3px; font-weight: 600; }
+
+/* ══════════════════════════════════════
+   CICLOS DE PONTUAÇÃO
+══════════════════════════════════════ */
+
+/* Banner do ciclo ativo */
+.ciclo-banner {
+  border-radius: var(--radius-sm); padding: 14px 16px;
+  display: flex; align-items: center; gap: 14px;
+  margin-bottom: 4px;
+}
+.ciclo-banner.ativo   { background: linear-gradient(135deg, var(--navy), #2a3580); color: var(--white); }
+.ciclo-banner.urgente { background: linear-gradient(135deg, #c0392b, #e74c3c); color: var(--white); }
+.ciclo-banner.inativo { background: var(--off-white); border: 1.5px dashed var(--gray-light); color: var(--text-light); }
+.ciclo-banner-info    { flex: 1; }
+.ciclo-banner-nome    { font-size: 15px; font-weight: 800; font-family: var(--fd); }
+.ciclo-banner-periodo { font-size: 12px; opacity: .8; margin-top: 2px; }
+.ciclo-banner-desc    { font-size: 11px; opacity: .7; margin-top: 3px; font-style: italic; }
+.ciclo-banner-right   { text-align: center; flex-shrink: 0; }
+.ciclo-dias           { font-size: 36px; font-weight: 900; font-family: var(--fd); line-height: 1; color: var(--orange); }
+.ciclo-banner.ativo .ciclo-dias { color: #ffd166; }
+.ciclo-banner.urgente .ciclo-dias { color: #ffd166; }
+.ciclo-dias.urgente   { animation: pulse 1s infinite; }
+.ciclo-dias-label     { font-size: 10px; opacity: .7; text-transform: uppercase; letter-spacing: .5px; margin-bottom: 6px; }
+.ciclo-fechar-btn     { font-size: 11px; padding: 5px 10px; border-radius: 6px; margin-top: 4px; }
+
+/* Cards de ciclo no histórico */
+.ciclo-card {
+  background: var(--white); border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-sm); margin-bottom: 10px; overflow: hidden;
+}
+.ciclo-card-header {
+  display: flex; align-items: center; gap: 12px;
+  padding: 14px 16px; cursor: pointer;
+  transition: background .15s;
+}
+.ciclo-card-header:hover { background: var(--off-white); }
+.ciclo-card-info    { flex: 1; }
+.ciclo-card-nome    { font-size: 14px; font-weight: 700; color: var(--navy); }
+.ciclo-card-periodo { font-size: 11px; color: var(--text-light); margin-top: 2px; }
+.ciclo-card-vencedor{ font-size: 12px; font-weight: 600; color: var(--orange); white-space: nowrap; }
+.ciclo-card-toggle  { font-size: 12px; color: var(--gray); flex-shrink: 0; }
+.ciclo-card-detalhes{
+  border-top: 1px solid var(--gray-light); padding: 14px 16px;
+  background: var(--off-white);
+}
+
+/* Pódio mini dentro do card */
+.ciclo-podio-mini { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
+.ciclo-podio-item { display: flex; align-items: center; gap: 10px; font-size: 13px; }
+.ciclo-podio-item span:first-child { font-size: 18px; min-width: 24px; }
+.ciclo-podio-item span:nth-child(2){ flex: 1; font-weight: 600; color: var(--navy); }
+
+/* Ranking completo dentro do card */
+.ciclo-ranking-completo { border-top: 1px solid var(--gray-light); padding-top: 12px; }
+.ciclo-rank-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 5px 0; border-bottom: 1px solid var(--gray-light);
+  font-size: 12px;
+}
+.ciclo-rank-pos  { min-width: 24px; font-weight: 700; color: var(--text-light); }
+.ciclo-rank-name { flex: 1; font-weight: 600; color: var(--navy); }
+.ciclo-rank-sub  { font-size: 11px; color: var(--text-light); }
+.ciclo-rank-pts  { font-weight: 700; color: var(--orange); min-width: 50px; text-align: right; }
+
+@keyframes pulse {
+  0%,100% { opacity: 1; }
+  50%      { opacity: .6; }
+}
