@@ -699,6 +699,16 @@ async function saveEditUser() {
   const btn=document.querySelector('#user-edit-modal .btn-primary');
   if(btn){btn.textContent='Salvando...';btn.disabled=true;}
   try {
+    // Atualiza no banco via API
+    try {
+      await apiFetch('/usuarios/'+editingUserLogin+'/editar', {
+        method:'POST',
+        body:JSON.stringify({nome:name, perfil:role, senha:pass||null, funcao, veiculo})
+      });
+    } catch(apiErr) {
+      console.warn('API edit falhou, salvando local:', apiErr.message);
+    }
+    // Sempre atualiza localStorage
     const users=DB.users(),idx=users.findIndex(u=>u.login===editingUserLogin);
     if(idx>=0){users[idx].name=name;users[idx].role=role;users[idx].funcao=funcao;users[idx].veiculo=veiculo;if(pass)users[idx].pass=pass;DB.set('garra_users',users);}
     if(editingUserLogin===currentUser.login){currentUser.name=name;currentUser.role=role;}
@@ -741,8 +751,34 @@ function openUserRemove(login) {
 }
 async function confirmRemoveUser() {
   if(!pendingRemoveUserLogin)return;
-  try{await GarraDB.removerUsuario(pendingRemoveUserLogin);}catch(e){console.warn('API remove:',e.message);}
-  DB.removeUser(pendingRemoveUserLogin);pendingRemoveUserLogin=null;closeModal('user-remove-modal');renderUsers();populateSubmissionFilters();
+  const loginParaRemover = pendingRemoveUserLogin;
+  
+  // 1. Remove do banco via API
+  try {
+    await GarraDB.removerUsuario(loginParaRemover);
+    console.log('✅ Removido do banco:', loginParaRemover);
+  } catch(e) {
+    console.warn('⚠️ API remove falhou:', e.message);
+  }
+  
+  // 2. Remove do localStorage imediatamente
+  DB.removeUser(loginParaRemover);
+  
+  // 3. Marca na lista de deletados para não voltar na sync
+  const deleted = DB.get('garra_deleted_users') || [];
+  if (!deleted.includes(loginParaRemover)) {
+    deleted.push(loginParaRemover);
+    DB.set('garra_deleted_users', deleted);
+  }
+  
+  // 4. Força nova sync para garantir consistência
+  pendingRemoveUserLogin = null;
+  closeModal('user-remove-modal');
+  
+  // Re-sync e re-render
+  await syncUsersFromAPI();
+  renderUsers();
+  populateSubmissionFilters();
 }
 
 // ── FUNÇÕES ──────────────────────────────────────
@@ -1020,20 +1056,34 @@ async function syncUsersFromAPI() {
   try {
     const apiUsers=await GarraDB.getUsuarios(); if(!apiUsers?.length)return;
     const local=DB.users();
-    const merged=apiUsers.map(au=>{
-      const loc=local.find(l=>l.login===au.login)||{};
-      // Preserve local pts if API returns 0 (API may not have pts yet)
-      const apiPts = au.pts || 0;
-      const locPts = loc.pts || 0;
-      const finalPts = apiPts > 0 ? apiPts : locPts;
-      const apiSubs = au.total_envios || 0;
-      const locSubs = loc.submissions || 0;
-      const finalSubs = apiSubs > 0 ? apiSubs : locSubs;
-      return{login:au.login,name:au.nome||loc.name||au.login,pass:loc.pass||'***',role:au.perfil||loc.role||'driver',funcao:loc.funcao||'',veiculo:loc.veiculo||'',pts:finalPts,submissions:finalSubs};
+    const deleted=DB.get('garra_deleted_users')||[];
+    const merged=apiUsers
+      .filter(au=>!deleted.includes(au.login)) // ignora usuários deletados localmente
+      .map(au=>{
+        const loc=local.find(l=>l.login===au.login)||{};
+        // Preserva pts local se API retornar 0
+        const finalPts = (au.pts||0) > 0 ? (au.pts||0) : (loc.pts||0);
+        const finalSubs= (au.total_envios||0) > 0 ? (au.total_envios||0) : (loc.submissions||0);
+        return{
+          login:   au.login,
+          name:    au.nome||loc.name||au.login,
+          pass:    loc.pass||'***',
+          role:    au.perfil||loc.role||'driver',
+          funcao:  loc.funcao||'',   // preserva função local
+          veiculo: loc.veiculo||'',  // preserva veículo local
+          pts:     finalPts,
+          submissions: finalSubs,
+        };
+      });
+    // Adiciona usuários que existem só local (criados offline)
+    local.forEach(lu=>{
+      if(!merged.find(m=>m.login===lu.login) && !deleted.includes(lu.login)){
+        merged.push(lu);
+      }
     });
     DB.set('garra_users',merged);
     console.log('✅ Usuários sincronizados:',merged.length);
-  } catch(e){console.warn('⚠️ Sync usuários falhou:',e.message);}
+  } catch(e){console.warn('⚠️ Sync usuários falhou (offline?):',e.message);}
 }
 
 // ─── INIT ──────────────────────────────────────────
