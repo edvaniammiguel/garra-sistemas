@@ -992,3 +992,93 @@ html,body { height:100%; overflow:hidden; font-family:var(--fb); background:var(
 #screen-login .field-group input::placeholder { color:var(--gray); }
 #screen-login .field-group input:focus { border-color:var(--orange);background:var(--white); }
 #screen-login .offline-badge { color:var(--text-light); }
+
+/* ══════════════════════════════════════
+   FUNÇÕES / CARGOS
+══════════════════════════════════════ */
+
+/* Tag de função no card do usuário */
+.funcao-tag {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 10px; font-weight: 700; padding: 3px 9px;
+  border-radius: 20px; text-transform: uppercase;
+  letter-spacing: .4px; flex-shrink: 0;
+}
+.funcao-tag.navy   { background: rgba(26,33,88,.12);  color: #1a2158; }
+.funcao-tag.orange { background: rgba(240,124,30,.15); color: #c9610a; }
+.funcao-tag.green  { background: rgba(34,201,124,.15); color: #0e7a4f; }
+.funcao-tag.purple { background: rgba(124,77,255,.12); color: #5c35cc; }
+.funcao-tag.red    { background: rgba(232,57,77,.12);  color: #b71c1c; }
+.funcao-tag.teal   { background: rgba(0,137,123,.12);  color: #00695c; }
+.funcao-tag.brown  { background: rgba(121,85,72,.12);  color: #4e342e; }
+.funcao-tag.gray   { background: rgba(139,149,184,.15);color: #5a6494; }
+
+/* Veículo fixo vinculado */
+.veiculo-tag {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 10px; font-weight: 600; padding: 2px 7px;
+  border-radius: 6px; background: var(--off-white);
+  color: var(--text-light); border: 1px solid var(--gray-light);
+  flex-shrink: 0;
+}
+
+/* User card atualizado */
+.user-item {
+  background: var(--white); border-radius: var(--radius-sm);
+  padding: 13px 14px; box-shadow: var(--shadow-sm);
+  margin-bottom: 8px;
+}
+.user-item-top {
+  display: flex; align-items: flex-start; gap: 10px;
+}
+.user-item-tags {
+  display: flex; flex-wrap: wrap; gap: 5px;
+  margin-top: 7px; padding-left: 48px;
+}
+
+/* Color picker */
+.color-picker-row {
+  display: flex; gap: 8px; flex-wrap: wrap; margin-top: 6px;
+}
+.color-opt {
+  width: 32px; height: 32px; border-radius: 50%;
+  border: 3px solid transparent; cursor: pointer;
+  transition: transform .15s, border-color .15s;
+}
+.color-opt:hover  { transform: scale(1.15); }
+.color-opt.active { border-color: var(--navy); transform: scale(1.1); }
+
+/* CL checkbox list in funcao modal */
+.funcao-cls-list {
+  display: flex; flex-direction: column; gap: 8px;
+}
+.funcao-cl-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 12px; border-radius: var(--radius-sm);
+  border: 1.5px solid var(--gray-light); background: var(--off-white);
+  cursor: pointer; transition: border-color .15s, background .15s;
+}
+.funcao-cl-item:has(input:checked) {
+  border-color: var(--orange); background: rgba(240,124,30,.06);
+}
+.funcao-cl-item input[type=checkbox] {
+  width: 18px; height: 18px; accent-color: var(--orange);
+  cursor: pointer; flex-shrink: 0;
+}
+.funcao-cl-icon { font-size: 18px; }
+.funcao-cl-name { font-size: 13px; font-weight: 600; color: var(--navy); }
+.funcao-cl-desc { font-size: 11px; color: var(--text-light); }
+
+/* Funcao card na lista */
+.funcao-card {
+  background: var(--white); border-radius: var(--radius-sm);
+  padding: 13px 14px; display: flex; align-items: center;
+  gap: 12px; box-shadow: var(--shadow-sm); margin-bottom: 8px;
+}
+.funcao-card-dot {
+  width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0;
+}
+.funcao-card-body { flex: 1; }
+.funcao-card-name { font-size: 14px; font-weight: 700; color: var(--navy); }
+.funcao-card-meta { font-size: 12px; color: var(--text-light); margin-top: 2px; }
+.funcao-card-cls  { font-size: 11px; color: var(--orange); margin-top: 3px; font-weight: 600; }
