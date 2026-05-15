@@ -179,7 +179,9 @@ async def login(req: LoginRequest, db=Depends(get_db)):
 
 @app.get("/usuarios")
 async def listar_usuarios(db=Depends(get_db)):
-    rows = await db.fetch("SELECT id, login, nome, perfil, pts, total_envios, ativo FROM usuarios ORDER BY nome")
+    rows = await db.fetch(
+        "SELECT id, login, nome, perfil, pts, total_envios, ativo FROM usuarios WHERE ativo=TRUE ORDER BY nome"
+    )
     return [dict(r) for r in rows]
 
 @app.post("/usuarios")
@@ -194,10 +196,31 @@ async def criar_usuario(u: UsuarioCreate, db=Depends(get_db)):
     )
     return dict(row)
 
+@app.post("/usuarios/{login}/editar")
+async def editar_usuario(login: str, dados: dict, db=Depends(get_db)):
+    nome   = dados.get("nome")
+    perfil = dados.get("perfil")
+    senha  = dados.get("senha")
+    if nome and perfil:
+        await db.execute(
+            "UPDATE usuarios SET nome=$1, perfil=$2, atualizado_em=NOW() WHERE login=$3",
+            nome, perfil, login
+        )
+    if senha:
+        hash_senha = bcrypt.hashpw(senha.encode(), bcrypt.gensalt()).decode()
+        await db.execute(
+            "UPDATE usuarios SET senha_hash=$1, atualizado_em=NOW() WHERE login=$2",
+            hash_senha, login
+        )
+    return {"ok": True}
+
 @app.delete("/usuarios/{login}")
 async def remover_usuario(login: str, db=Depends(get_db)):
-    await db.execute("UPDATE usuarios SET ativo=FALSE WHERE login=$1", login)
-    return {"ok": True}
+    # Marca como inativo E atualiza timestamp
+    await db.execute(
+        "UPDATE usuarios SET ativo=FALSE, atualizado_em=NOW() WHERE login=$1", login
+    )
+    return {"ok": True, "login": login}
 
 @app.patch("/usuarios/{login}/pts")
 async def atualizar_pts(login: str, pts: int, db=Depends(get_db)):
