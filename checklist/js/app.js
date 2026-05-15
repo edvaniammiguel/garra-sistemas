@@ -986,7 +986,34 @@ function formatDate(iso)     { if(!iso)return'–';return new Date(iso).toLocale
 function formatDateTime(iso) { if(!iso)return'–';return new Date(iso).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}); }
 
 // ─── SERVICE WORKER ────────────────────────────────
-if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('sw.js').then(reg => {
+    setInterval(() => reg.update(), 60000);
+    reg.addEventListener('updatefound', () => {
+      const newSW = reg.installing;
+      newSW.addEventListener('statechange', () => {
+        if (newSW.state === 'installed' && navigator.serviceWorker.controller) {
+          showUpdateBanner();
+        }
+      });
+    });
+  }).catch(() => {});
+  navigator.serviceWorker.addEventListener('controllerchange', () => window.location.reload());
+}
+
+function showUpdateBanner() {
+  if (document.getElementById('sw-update-banner')) return;
+  const b = document.createElement('div');
+  b.id = 'sw-update-banner';
+  b.style.cssText = 'position:fixed;bottom:70px;left:50%;transform:translateX(-50%);background:var(--navy);color:var(--white);padding:12px 18px;border-radius:10px;font-size:13px;font-family:var(--fb);box-shadow:0 4px 20px rgba(0,0,0,.3);z-index:9999;display:flex;align-items:center;gap:12px;max-width:90vw;';
+  b.innerHTML = '<span>🔄 Nova versão disponível!</span><button onclick="atualizarApp()" style="background:var(--orange);color:white;border:none;padding:6px 12px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer">Atualizar agora</button><button onclick="this.parentElement.remove()" style="background:none;border:none;color:rgba(255,255,255,.6);cursor:pointer;font-size:16px">✕</button>';
+  document.body.appendChild(b);
+}
+
+function atualizarApp() {
+  if (navigator.serviceWorker.controller) navigator.serviceWorker.controller.postMessage('SKIP_WAITING');
+  window.location.reload(true);
+}
 
 // ─── SINCRONIZA USUÁRIOS DA API ────────────────────
 async function syncUsersFromAPI() {
