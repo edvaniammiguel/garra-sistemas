@@ -11,10 +11,6 @@ let currentStep  = 0;
 let formAnswers  = {};
 let formMeta     = {};
 
-// Temporário para o builder
-let builderSections = [];
-let builderEditId   = null;
-
 // Temporário para remoções pendentes confirmação
 let pendingRemoveFleetKey  = null;
 let pendingRemoveUserLogin = null;
