@@ -214,6 +214,7 @@ function renderSupChecklistCards() {
       <div class="clc-arrow">›</div>
     </div>`).join('');
 }
+function showManager() {
   showScreen('screen-manager');
   document.getElementById('user-badge-mgr').textContent = currentUser.name.charAt(0).toUpperCase();
   renderManagerDashboard();
