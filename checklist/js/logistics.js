@@ -209,7 +209,7 @@ function renderLogFiltered() {
   const date = document.getElementById('log-filter-date')?.value || '';
   renderLogHistory('log-history-list', 100, car, resp, date);
 }
-window.renderLogHistory = function() { renderLogFiltered(); };
+window.onLogFilterChange = function() { renderLogFiltered(); };
 
 // ─── REGISTRO MODAL ────────────────────────────────────
 let logCarRowCount = 0;
