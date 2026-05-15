@@ -169,9 +169,9 @@
         <div id="log-current-fleet" class="log-fleet-grid"></div>
         <h3 class="section-title" style="margin-top:20px">Histórico de Registros</h3>
         <div class="filter-bar">
-          <select id="log-filter-car" onchange="renderLogHistory()"><option value="">Todos os carros</option></select>
-          <select id="log-filter-resp" onchange="renderLogHistory()"><option value="">Todos responsáveis</option></select>
-          <input type="date" id="log-filter-date" onchange="renderLogHistory()" style="flex:1;padding:8px 10px;border:1.5px solid var(--gray-light);border-radius:var(--radius-sm);font-size:12px;font-family:var(--fb);outline:none;" />
+          <select id="log-filter-car" onchange="onLogFilterChange()"><option value="">Todos os carros</option></select>
+          <select id="log-filter-resp" onchange="onLogFilterChange()"><option value="">Todos responsáveis</option></select>
+          <input type="date" id="log-filter-date" onchange="onLogFilterChange()" style="flex:1;padding:8px 10px;border:1.5px solid var(--gray-light);border-radius:var(--radius-sm);font-size:12px;font-family:var(--fb);outline:none;" />
         </div>
         <div id="log-history-list" class="log-history-list"></div>
       </div>
@@ -554,7 +554,7 @@
     </div>
   </div>
 </div>
-<script src="js/db.js"></script>
+
 <script src="js/data.js"></script>
 <script src="js/app.js"></script>
 <script src="js/logistics.js"></script>
