@@ -26,7 +26,13 @@
     <h2 class="login-title">Check List Digital</h2>
     <p class="login-sub">Acesse com suas credenciais</p>
     <div class="field-group"><label>Usuário</label><input type="text" id="login-user" placeholder="seu.nome" autocomplete="username" /></div>
-    <div class="field-group"><label>Senha</label><input type="password" id="login-pass" placeholder="••••••" autocomplete="current-password" /></div>
+    <div class="field-group">
+      <label>Senha</label>
+      <div style="position:relative">
+        <input type="password" id="login-pass" placeholder="••••••" autocomplete="current-password" style="width:100%;padding-right:44px" />
+        <button type="button" onclick="toggleSenha('login-pass',this)" style="position:absolute;right:10px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;font-size:18px;color:var(--text-light);padding:4px">👁</button>
+      </div>
+    </div>
     <div id="login-error" class="login-error hidden">Usuário ou senha incorretos.</div>
     <button class="btn-primary full" onclick="doLogin()">Entrar</button>
     <div class="offline-badge" id="offline-badge"><span class="dot offline"></span> Modo Offline – dados salvos localmente</div>
@@ -118,13 +124,7 @@
     <!-- RANKING -->
     <div id="tab-ranking" class="tab-panel">
 
-      <!-- Barra de ações do ciclo -->
-      <div class="tab-action-bar">
-        <button class="btn-primary" onclick="openNovoCiclo()">🏆 Novo Ciclo</button>
-        <button class="btn-secondary" onclick="openFecharCiclo()">✓ Fechar Ciclo Atual</button>
-      </div>
-
-      <!-- Banner do ciclo ativo -->
+      <!-- Banner do ciclo ativo (botões ficam dentro do banner dinâmico) -->
       <div id="ciclo-banner"></div>
 
       <!-- Pódio atual -->
@@ -239,7 +239,8 @@
           </select>
           <select id="filter-role" onchange="renderUsers()">
             <option value="">Todos os perfis</option>
-            <option value="driver">Operador / Motorista</option>
+            <option value="driver">Operacional</option>
+            <option value="diarista">Diarista / Terceirizado</option>
             <option value="superior">Superior</option>
             <option value="manager">Gestor</option>
           </select>
@@ -365,7 +366,8 @@
     <div class="field-group">
       <label>Perfil de acesso</label>
       <select id="nu-role">
-        <option value="driver">Operador / Motorista</option>
+        <option value="driver">Operacional</option>
+        <option value="diarista">Diarista / Terceirizado</option>
         <option value="superior">Superior Direto (Logística)</option>
         <option value="manager">Gestor</option>
       </select>
@@ -399,7 +401,8 @@
     <div class="field-group">
       <label>Perfil de acesso</label>
       <select id="eu-role">
-        <option value="driver">Operador / Motorista</option>
+        <option value="driver">Operacional</option>
+        <option value="diarista">Diarista / Terceirizado</option>
         <option value="superior">Superior Direto (Logística)</option>
         <option value="manager">Gestor</option>
       </select>
