@@ -21,7 +21,7 @@
   </div>
   <div class="login-card">
     <div class="logo-wrap">
-      <img src="icons/logo.jpg" alt="Garra Terraplenagem e Caçambas" class="login-logo-img" />
+      <img src="icons/logo.jpg" alt="Garra Terraplenagem e Caçambas" class="login-logo-img" onerror="this.style.opacity='0'" />
     </div>
     <h2 class="login-title">Check List Digital</h2>
     <p class="login-sub">Acesse com suas credenciais</p>
@@ -37,7 +37,7 @@
 <div id="screen-driver" class="screen">
   <header class="top-bar">
     <div class="tb-logo">
-      <img src="icons/logo.jpg" alt="Garra" class="tb-logo-img" />
+      <img src="icons/logo.jpg" alt="Garra" class="tb-logo-img" onerror="this.style.display='none';this.nextElementSibling&&(this.nextElementSibling.style.display='block')" /><span class="tb-logo-fallback">GARRA</span>
     </div>
     <div class="tb-right">
       <div class="sync-indicator"><span class="dot" id="sync-dot"></span><span id="sync-label">Online</span></div>
@@ -81,7 +81,7 @@
 <div id="screen-manager" class="screen">
   <header class="top-bar">
     <div class="tb-logo">
-      <img src="icons/logo.jpg" alt="Garra" class="tb-logo-img" />
+      <img src="icons/logo.jpg" alt="Garra" class="tb-logo-img" onerror="this.style.display='none';this.nextElementSibling&&(this.nextElementSibling.style.display='block')" /><span class="tb-logo-fallback">GARRA</span>
       <span class="tb-logo-label">Gestão</span>
     </div>
     <div class="tb-right">
@@ -117,6 +117,13 @@
 
     <!-- RANKING -->
     <div id="tab-ranking" class="tab-panel">
+
+      <!-- Barra de ações do ciclo -->
+      <div class="tab-action-bar">
+        <button class="btn-primary" onclick="openNovoCiclo()">🏆 Novo Ciclo</button>
+        <button class="btn-secondary" onclick="openFecharCiclo()">✓ Fechar Ciclo Atual</button>
+      </div>
+
       <!-- Banner do ciclo ativo -->
       <div id="ciclo-banner"></div>
 
@@ -521,7 +528,7 @@
 <div id="screen-superior" class="screen">
   <header class="top-bar">
     <div class="tb-logo">
-      <img src="icons/logo.jpg" alt="Garra" class="tb-logo-img" />
+      <img src="icons/logo.jpg" alt="Garra" class="tb-logo-img" onerror="this.style.display='none';this.nextElementSibling&&(this.nextElementSibling.style.display='block')" /><span class="tb-logo-fallback">GARRA</span>
       <span class="tb-logo-label">Operação</span>
     </div>
     <div class="tb-right">
