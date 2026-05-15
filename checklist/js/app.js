@@ -459,7 +459,8 @@ function renderCheckItem(item) {
     case 'checklist': {
       const selOk=ans.val==='C'?'selected-ok':'', selNc=ans.val==='NC'?'selected-nc':'', selNa=ans.val==='NA'?'selected-na':'';
       const obsVis = ans.val==='NC'?'visible':'';
-      const photoMode=item.photoMode||'off', showPhoto=photoMode==='always'||(photoMode==='nc_only'&&ans.val==='NC');
+      // photoMode padrão: nc_only para itens de check list
+      const photoMode=item.photoMode||'nc_only', showPhoto=photoMode==='always'||(photoMode==='nc_only'&&ans.val==='NC');
       const photoHtml = showPhoto?`<div class="ci-photo-wrap" style="margin-top:8px">${ans.photo?`<img src="${ans.photo}" class="ci-photo-preview" alt="Foto" />`:''}
         <label class="ci-photo-btn">📷 ${ans.photo?'Trocar foto':photoMode==='nc_only'?'Foto da NC':'Adicionar foto'}<input type="file" accept="image/*" capture="environment" style="display:none" onchange="setPhotoAnswer('${item.id}',this)" /></label>
         ${ans.photo?`<button class="ci-photo-remove" onclick="clearPhotoAnswer('${item.id}')">✕ Remover</button>`:''}</div>`:'';
@@ -518,7 +519,77 @@ function saveCurrentStep() {
   if(step.type==='meta')step.fields.forEach(f=>{const el=document.getElementById('meta-'+f.id);if(el)formMeta[f.id]=el.value;});
   else if(step.type==='obs')step.fields.forEach(f=>{const el=document.getElementById('obs-'+f.id);if(el)formMeta[f.id]=el.value;});
 }
-function formNext() { saveCurrentStep(); const cl=getCL(); if(currentStep<cl.steps.length-1){currentStep++;renderFormStep();}else submitChecklist(); }
+function formNext() {
+  saveCurrentStep();
+  const cl   = getCL();
+  const step = cl.steps[currentStep];
+
+  // ── VALIDAÇÃO ──────────────────────────────────
+  const erros = [];
+
+  // Meta: campos obrigatórios (equipamento, operador)
+  if (step.type === 'meta') {
+    step.fields.forEach(f => {
+      const el  = document.getElementById('meta-'+f.id);
+      const val = el?.value?.trim() || '';
+      if (!val && (f.id === 'equipamento' || f.id === 'veiculo' || f.id === 'operador')) {
+        erros.push(`"${f.label}" é obrigatório`);
+        if (el) el.style.borderColor = 'var(--danger)';
+      } else if (el) {
+        el.style.borderColor = '';
+      }
+    });
+  }
+
+  // Checklist: itens do tipo checklist PRECISAM ser respondidos
+  if (step.type === 'checklist' || step.type === 'custom') {
+    step.items.forEach(item => {
+      // Pula itens condicionais não visíveis
+      if (item.conditionalOn) {
+        const depAns = formAnswers[item.conditionalOn];
+        const depVal = depAns?.val ?? depAns?.text ?? depAns?.selected ?? '';
+        if (depVal !== item.conditionalValue) return;
+      }
+      const ans = formAnswers[item.id];
+      // Items do tipo checklist (C/NC/NA) são sempre obrigatórios
+      if (item.type === 'checklist' || !item.type) {
+        if (!ans || !ans.val) {
+          erros.push(`"${item.label}"`);
+          const el = document.getElementById('ci-'+item.id);
+          if (el) el.style.outline = '2px solid var(--danger)';
+        } else {
+          const el = document.getElementById('ci-'+item.id);
+          if (el) el.style.outline = '';
+        }
+      }
+      // Itens marcados como required
+      if (item.required && item.type !== 'checklist') {
+        const val = ans?.text || ans?.selected || ans?.photo || '';
+        if (!val) {
+          erros.push(`"${item.label}" é obrigatório`);
+          const el = document.getElementById('ans-'+item.id);
+          if (el) el.style.borderColor = 'var(--danger)';
+        }
+      }
+    });
+  }
+
+  if (erros.length) {
+    // Mostra alerta e rola até o primeiro erro
+    const msg = erros.length === 1
+      ? `⚠️ Campo obrigatório não preenchido:\n${erros[0]}`
+      : `⚠️ ${erros.length} campos obrigatórios não preenchidos:\n${erros.slice(0,3).join('\n')}${erros.length>3?'\n...e mais '+( erros.length-3):''}`;
+    alert(msg);
+    // Rola até o primeiro item sem resposta
+    const firstErr = document.querySelector('[style*="outline: 2px solid"], [style*="border-color: var(--danger)"]');
+    if (firstErr) firstErr.scrollIntoView({behavior:'smooth', block:'center'});
+    return;
+  }
+
+  // Avança normalmente
+  if (currentStep < cl.steps.length - 1) { currentStep++; renderFormStep(); }
+  else submitChecklist();
+}
 function formPrev() { saveCurrentStep(); if(currentStep>0){currentStep--;renderFormStep();} }
 
 // ─── PONTUAÇÃO ─────────────────────────────────────

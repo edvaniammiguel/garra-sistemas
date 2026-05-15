@@ -65,48 +65,48 @@ const DEFAULT_CHECKLISTS = {
       {
         title:'Sistemas Gerais', sub:'Lubrificação, abastecimento e limpeza', type:'checklist',
         items:[
-          {id:'lubrificacao', label:'Lubrificação geral', pts:1},
-          {id:'abastecimento',label:'Abastecimento / Tampa do combustível', pts:1},
-          {id:'limpeza',      label:'Limpeza e higiene (interior da cabine)', pts:1},
-          {id:'filtro_ar',    label:'Filtros de Ar', pts:1},
-          {id:'filtro_oleo',  label:'Filtro de Óleo do Motor', pts:1},
-          {id:'nivel_oleo',   label:'Nível de óleo (Motor e Transmissão)', pts:2},
-          {id:'radiador',     label:'Radiador (água / tampa)', pts:1},
+          {id:'lubrificacao', label:'Lubrificação geral', pts:1, photoMode:'nc_only'},
+          {id:'abastecimento', label:'Abastecimento / Tampa do combustível', pts:1, photoMode:'nc_only'},
+          {id:'limpeza', label:'Limpeza e higiene (interior da cabine)', pts:1, photoMode:'nc_only'},
+          {id:'filtro_ar', label:'Filtros de Ar', pts:1, photoMode:'nc_only'},
+          {id:'filtro_oleo', label:'Filtro de Óleo do Motor', pts:1, photoMode:'nc_only'},
+          {id:'nivel_oleo', label:'Nível de óleo (Motor e Transmissão)', pts:2, photoMode:'nc_only'},
+          {id:'radiador', label:'Radiador (água / tampa)', pts:1, photoMode:'nc_only'},
         ]
       },
       {
         title:'Rodagem e Estrutura', sub:'Pneus, rodas, esteiras e suspensão', type:'checklist',
         items:[
-          {id:'pneu_rodas',      label:'Pneu / Rodas ou Esteiras', pts:2},
-          {id:'suspensao',       label:'Suspensão / Pistons', pts:2},
-          {id:'material_rodante',label:'Material rodante (roldanas / desgastes)', pts:1},
-          {id:'mangueiras',      label:'Conexões / Mangueiras', pts:1},
-          {id:'protecao_helice', label:'Proteção de Hélice', pts:1},
+          {id:'pneu_rodas', label:'Pneu / Rodas ou Esteiras', pts:2, photoMode:'nc_only'},
+          {id:'suspensao', label:'Suspensão / Pistons', pts:2, photoMode:'nc_only'},
+          {id:'material_rodante', label:'Material rodante (roldanas / desgastes)', pts:1, photoMode:'nc_only'},
+          {id:'mangueiras', label:'Conexões / Mangueiras', pts:1, photoMode:'nc_only'},
+          {id:'protecao_helice', label:'Proteção de Hélice', pts:1, photoMode:'nc_only'},
         ]
       },
       {
         title:'Cabine e Segurança', sub:'Visibilidade, alarmes e proteções', type:'checklist',
         items:[
-          {id:'retrovisor', label:'Retrovisor Externo', pts:1},
-          {id:'farois',     label:'Faróis (Alto / Baixo / Setas / Luzes)', pts:2},
-          {id:'buzina',     label:'Buzina', pts:1},
-          {id:'bancos',     label:'Bancos / Cinto de segurança', pts:2},
-          {id:'alarmes',    label:'Alarmes Sonoros (Buzina / Ré)', pts:1},
-          {id:'limpador',   label:'Limpador e água de Para-brisa', pts:1},
-          {id:'pedais',     label:'Pedais / Alavancas', pts:1},
-          {id:'vidros',     label:'Vidros (Para-brisa / Laterais)', pts:1},
-          {id:'travas',     label:'Travas de Segurança (calços)', pts:2},
+          {id:'retrovisor', label:'Retrovisor Externo', pts:1, photoMode:'nc_only'},
+          {id:'farois', label:'Faróis (Alto / Baixo / Setas / Luzes)', pts:2, photoMode:'nc_only'},
+          {id:'buzina', label:'Buzina', pts:1, photoMode:'nc_only'},
+          {id:'bancos', label:'Bancos / Cinto de segurança', pts:2, photoMode:'nc_only'},
+          {id:'alarmes', label:'Alarmes Sonoros (Buzina / Ré)', pts:1, photoMode:'nc_only'},
+          {id:'limpador', label:'Limpador e água de Para-brisa', pts:1, photoMode:'nc_only'},
+          {id:'pedais', label:'Pedais / Alavancas', pts:1, photoMode:'nc_only'},
+          {id:'vidros', label:'Vidros (Para-brisa / Laterais)', pts:1, photoMode:'nc_only'},
+          {id:'travas', label:'Travas de Segurança (calços)', pts:2, photoMode:'nc_only'},
         ]
       },
       {
         title:'Elétrico e Implementos', sub:'Painel, giro e implementos de trabalho', type:'checklist',
         items:[
-          {id:'eletrico',    label:'Sistema Elétrico', pts:2},
-          {id:'painel',      label:'Painel / Velocímetro', pts:1},
-          {id:'giro',        label:'Sistema de Giro', pts:1},
-          {id:'angular',     label:'Indicador Angular da Lança / Nivelador', pts:1},
-          {id:'implementos', label:'Conchas / Unhas / Perfuratriz / Lâminas', pts:2},
-          {id:'estado_geral',label:'Estado Geral de Conservação / Lataria', pts:1},
+          {id:'eletrico', label:'Sistema Elétrico', pts:2, photoMode:'nc_only'},
+          {id:'painel', label:'Painel / Velocímetro', pts:1, photoMode:'nc_only'},
+          {id:'giro', label:'Sistema de Giro', pts:1, photoMode:'nc_only'},
+          {id:'angular', label:'Indicador Angular da Lança / Nivelador', pts:1, photoMode:'nc_only'},
+          {id:'implementos', label:'Conchas / Unhas / Perfuratriz / Lâminas', pts:2, photoMode:'nc_only'},
+          {id:'estado_geral', label:'Estado Geral de Conservação / Lataria', pts:1, photoMode:'nc_only'},
         ]
       },
       {
@@ -139,39 +139,39 @@ const DEFAULT_CHECKLISTS = {
       {
         title:'Documentação e Segurança', sub:'Itens obrigatórios', type:'checklist',
         items:[
-          {id:'crv',      label:'CRV (Certificado de Registro)', pts:2},
-          {id:'triangulo',label:'Triângulo / Macaco / Chave de Roda / Estepe', pts:2},
-          {id:'extintor', label:'Extintor de Incêndio (validade e pressão)', pts:2},
+          {id:'crv', label:'CRV (Certificado de Registro)', pts:2, photoMode:'nc_only'},
+          {id:'triangulo', label:'Triângulo / Macaco / Chave de Roda / Estepe', pts:2, photoMode:'nc_only'},
+          {id:'extintor', label:'Extintor de Incêndio (validade e pressão)', pts:2, photoMode:'nc_only'},
         ]
       },
       {
         title:'Estado Físico e Pneus', sub:'Lataria, pneus e suspensão', type:'checklist',
         items:[
-          {id:'lataria',       label:'Lataria / Pintura', pts:1},
-          {id:'pneus',         label:'Pneus / Rodas (calibragem)', pts:2},
-          {id:'amortecedores', label:'Amortecedores', pts:1},
-          {id:'abastecimento', label:'Abastecimento', pts:1},
+          {id:'lataria', label:'Lataria / Pintura', pts:1, photoMode:'nc_only'},
+          {id:'pneus', label:'Pneus / Rodas (calibragem)', pts:2, photoMode:'nc_only'},
+          {id:'amortecedores', label:'Amortecedores', pts:1, photoMode:'nc_only'},
+          {id:'abastecimento', label:'Abastecimento', pts:1, photoMode:'nc_only'},
         ]
       },
       {
         title:'Cabine e Visibilidade', sub:'Espelhos, vidros e fluidos', type:'checklist',
         items:[
-          {id:'limpeza',    label:'Limpeza e higiene interior', pts:1},
-          {id:'retrovisor', label:'Retrovisor Externo e Interno', pts:1},
-          {id:'limpador',   label:'Limpador / Água de Para-brisa / Palhetas', pts:1},
-          {id:'parabrisa',  label:'Para-brisa (trincas e estado)', pts:1},
-          {id:'nivel_oleo', label:'Nível de Óleo', pts:2},
-          {id:'radiador',   label:'Radiador (Água / Tampa)', pts:1},
-          {id:'mangueiras', label:'Conexões / Mangueiras (vazamentos)', pts:1},
+          {id:'limpeza', label:'Limpeza e higiene interior', pts:1, photoMode:'nc_only'},
+          {id:'retrovisor', label:'Retrovisor Externo e Interno', pts:1, photoMode:'nc_only'},
+          {id:'limpador', label:'Limpador / Água de Para-brisa / Palhetas', pts:1, photoMode:'nc_only'},
+          {id:'parabrisa', label:'Para-brisa (trincas e estado)', pts:1, photoMode:'nc_only'},
+          {id:'nivel_oleo', label:'Nível de Óleo', pts:2, photoMode:'nc_only'},
+          {id:'radiador', label:'Radiador (Água / Tampa)', pts:1, photoMode:'nc_only'},
+          {id:'mangueiras', label:'Conexões / Mangueiras (vazamentos)', pts:1, photoMode:'nc_only'},
         ]
       },
       {
         title:'Luzes, Freios e Painel', sub:'Iluminação e frenagem', type:'checklist',
         items:[
-          {id:'luzes',  label:'Luzes (Faróis / Freio / Lanternas / Ré)', pts:2},
-          {id:'buzina', label:'Buzina', pts:1},
-          {id:'freios', label:'Freios de Pé / Mão', pts:2},
-          {id:'painel', label:'Painel / Velocímetro', pts:1},
+          {id:'luzes', label:'Luzes (Faróis / Freio / Lanternas / Ré)', pts:2, photoMode:'nc_only'},
+          {id:'buzina', label:'Buzina', pts:1, photoMode:'nc_only'},
+          {id:'freios', label:'Freios de Pé / Mão', pts:2, photoMode:'nc_only'},
+          {id:'painel', label:'Painel / Velocímetro', pts:1, photoMode:'nc_only'},
         ]
       },
       {
@@ -203,41 +203,41 @@ const DEFAULT_CHECKLISTS = {
       {
         title:'Fluidos e Motor', sub:'Lubrificação, óleo e combustível', type:'checklist',
         items:[
-          {id:'lubrificacao', label:'Lubrificação geral', pts:1},
-          {id:'abastecimento',label:'Abastecimento / Tampa do combustível', pts:1},
-          {id:'filtro_ar',    label:'Filtro de Ar', pts:1},
-          {id:'nivel_oleo',   label:'Nível de Óleo (Motor e Transmissão)', pts:2},
-          {id:'radiador',     label:'Radiador (Água / Tampa)', pts:1},
-          {id:'mangueiras',   label:'Conexões / Mangueiras (vazamentos)', pts:1},
-          {id:'temperatura',  label:'Marcador de Temperatura', pts:1},
+          {id:'lubrificacao', label:'Lubrificação geral', pts:1, photoMode:'nc_only'},
+          {id:'abastecimento', label:'Abastecimento / Tampa do combustível', pts:1, photoMode:'nc_only'},
+          {id:'filtro_ar', label:'Filtro de Ar', pts:1, photoMode:'nc_only'},
+          {id:'nivel_oleo', label:'Nível de Óleo (Motor e Transmissão)', pts:2, photoMode:'nc_only'},
+          {id:'radiador', label:'Radiador (Água / Tampa)', pts:1, photoMode:'nc_only'},
+          {id:'mangueiras', label:'Conexões / Mangueiras (vazamentos)', pts:1, photoMode:'nc_only'},
+          {id:'temperatura', label:'Marcador de Temperatura', pts:1, photoMode:'nc_only'},
         ]
       },
       {
         title:'Pneus, Rodas e Suspensão', sub:'Estado dos pneus', type:'checklist',
         items:[
-          {id:'pneus',          label:'Pneus / Rodas (calibragem e estado)', pts:2},
-          {id:'suspensao',      label:'Suspensão / Molas (trincas)', pts:2},
-          {id:'faixa_refletiva',label:'Faixa Refletiva da Carroceria', pts:1},
-          {id:'limpeza',        label:'Limpeza e higiene', pts:1},
+          {id:'pneus', label:'Pneus / Rodas (calibragem e estado)', pts:2, photoMode:'nc_only'},
+          {id:'suspensao', label:'Suspensão / Molas (trincas)', pts:2, photoMode:'nc_only'},
+          {id:'faixa_refletiva', label:'Faixa Refletiva da Carroceria', pts:1, photoMode:'nc_only'},
+          {id:'limpeza', label:'Limpeza e higiene', pts:1, photoMode:'nc_only'},
         ]
       },
       {
         title:'Documentação e Segurança', sub:'Itens obrigatórios', type:'checklist',
         items:[
-          {id:'crv',       label:'CRV (Certificado do Registro do Veículo)', pts:2},
-          {id:'triangulo', label:'Triângulo de Sinalização', pts:2},
-          {id:'extintor',  label:'Extintor de Incêndio (validade e pressão)', pts:2},
-          {id:'retrovisor',label:'Retrovisor Externo', pts:1},
+          {id:'crv', label:'CRV (Certificado do Registro do Veículo)', pts:2, photoMode:'nc_only'},
+          {id:'triangulo', label:'Triângulo de Sinalização', pts:2, photoMode:'nc_only'},
+          {id:'extintor', label:'Extintor de Incêndio (validade e pressão)', pts:2, photoMode:'nc_only'},
+          {id:'retrovisor', label:'Retrovisor Externo', pts:1, photoMode:'nc_only'},
         ]
       },
       {
         title:'Luzes, Alarmes e Painel', sub:'Iluminação e freios', type:'checklist',
         items:[
-          {id:'luzes',   label:'Luzes (Faróis / Freio / Lanternas / Ré / Pisca)', pts:2},
-          {id:'alarmes', label:'Alarmes Sonoros (Buzina / Ré / Dispositivo Caçamba)', pts:2},
-          {id:'freios',  label:'Freios de Pé / Mão', pts:2},
-          {id:'painel',  label:'Painel / Velocímetro / Tacógrafo', pts:1},
-          {id:'limpador',label:'Limpador / Água de Para-brisa / Palhetas', pts:1},
+          {id:'luzes', label:'Luzes (Faróis / Freio / Lanternas / Ré / Pisca)', pts:2, photoMode:'nc_only'},
+          {id:'alarmes', label:'Alarmes Sonoros (Buzina / Ré / Dispositivo Caçamba)', pts:2, photoMode:'nc_only'},
+          {id:'freios', label:'Freios de Pé / Mão', pts:2, photoMode:'nc_only'},
+          {id:'painel', label:'Painel / Velocímetro / Tacógrafo', pts:1, photoMode:'nc_only'},
+          {id:'limpador', label:'Limpador / Água de Para-brisa / Palhetas', pts:1, photoMode:'nc_only'},
         ]
       },
       {
