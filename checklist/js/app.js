@@ -1934,3 +1934,240 @@ window.renderManagerDashboard = function renderManagerDashboard() {
   populateFuncaoFilters();
   populateUserModalFuncoes();
 };
+
+// ═══════════════════════════════════════════════════
+// INTEGRAÇÃO COM API — substitui localStorage para
+// operações críticas (login, usuários, envios)
+// ═══════════════════════════════════════════════════
+
+// ── LOGIN VIA API ──────────────────────────────────
+window.doLogin = async function doLogin() {
+  const login = (document.getElementById('login-user').value || '').trim().toLowerCase();
+  const pass  =  document.getElementById('login-pass').value || '';
+  const err   =  document.getElementById('login-error');
+
+  // Mostra loading no botão
+  const btn = document.querySelector('#screen-login .btn-primary');
+  if (btn) { btn.textContent = 'Entrando...'; btn.disabled = true; }
+
+  try {
+    // Tenta via API primeiro
+    const user = await GarraDB.login(login, pass);
+    err.classList.add('hidden');
+    // Salva no cache local para uso offline
+    localStorage.setItem('garra_current_user', JSON.stringify(user));
+    currentUser = user;
+    if (user.role === 'manager') showManager();
+    else if (user.role === 'superior') showSuperior();
+    else showDriver();
+  } catch (e) {
+    if (e.message === 'OFFLINE' || e.message.includes('fetch')) {
+      // Fallback offline — tenta localStorage
+      const cached = DB.users().find(u => u.login === login && u.pass === pass);
+      if (cached) {
+        err.classList.add('hidden');
+        currentUser = cached;
+        if (cached.role === 'manager') showManager();
+        else if (cached.role === 'superior') showSuperior();
+        else showDriver();
+      } else {
+        err.textContent = 'Offline e usuário não encontrado no cache local.';
+        err.classList.remove('hidden');
+      }
+    } else {
+      err.textContent = 'Usuário ou senha incorretos.';
+      err.classList.remove('hidden');
+    }
+  } finally {
+    if (btn) { btn.textContent = 'Entrar'; btn.disabled = false; }
+  }
+};
+
+// ── CRIAR USUÁRIO VIA API ──────────────────────────
+window.saveNewUser = async function saveNewUser() {
+  const name    = document.getElementById('nu-name').value.trim();
+  const login   = document.getElementById('nu-user').value.trim().toLowerCase();
+  const pass    = document.getElementById('nu-pass').value;
+  const role    = document.getElementById('nu-role').value;
+  const funcao  = document.getElementById('nu-funcao')?.value  || '';
+  const veiculo = document.getElementById('nu-veiculo')?.value || '';
+
+  if (!name || !login || !pass) { alert('Preencha todos os campos.'); return; }
+
+  const btn = document.querySelector('#user-modal .btn-primary');
+  if (btn) { btn.textContent = 'Salvando...'; btn.disabled = true; }
+
+  try {
+    await GarraDB.criarUsuario({ login, nome: name, senha: pass, perfil: role });
+    // Salva também no localStorage para uso offline e campos extras (funcao, veiculo)
+    DB.saveUser({ name, login, pass, role, funcao, veiculo, pts:0, submissions:0 });
+    ['nu-name','nu-user','nu-pass'].forEach(id => document.getElementById(id).value = '');
+    closeModal('user-modal');
+    renderUsers();
+    populateSubmissionFilters();
+    alert('✅ Colaborador cadastrado com sucesso!');
+  } catch(e) {
+    if (e.message === 'OFFLINE') {
+      // Salva só local se offline
+      DB.saveUser({ name, login, pass, role, funcao, veiculo, pts:0, submissions:0 });
+      OfflineQueue.add({ path:'/usuarios', options:{ method:'POST', body: JSON.stringify({ login, nome:name, senha:pass, perfil:role }) }});
+      ['nu-name','nu-user','nu-pass'].forEach(id => document.getElementById(id).value = '');
+      closeModal('user-modal');
+      renderUsers();
+      alert('⚠️ Salvo localmente. Será sincronizado quando online.');
+    } else {
+      alert('Erro ao cadastrar: ' + e.message);
+    }
+  } finally {
+    if (btn) { btn.textContent = 'Salvar'; btn.disabled = false; }
+  }
+};
+
+// ── EDITAR USUÁRIO VIA API ─────────────────────────
+window.saveEditUser = async function saveEditUser() {
+  const name    = document.getElementById('eu-name').value.trim();
+  const role    = document.getElementById('eu-role').value;
+  const pass    = document.getElementById('eu-pass').value;
+  const funcao  = document.getElementById('eu-funcao')?.value  || '';
+  const veiculo = document.getElementById('eu-veiculo')?.value || '';
+  if (!name) { alert('Informe o nome.'); return; }
+
+  const btn = document.querySelector('#user-edit-modal .btn-primary');
+  if (btn) { btn.textContent = 'Salvando...'; btn.disabled = true; }
+
+  try {
+    // Atualiza no banco (a API aceita PATCH para atualização)
+    if (pass) {
+      await apiFetch(`/usuarios/${editingUserLogin}/senha`, {
+        method: 'PATCH',
+        body: JSON.stringify({ senha: pass })
+      }).catch(() => {}); // ignora se endpoint não existir ainda
+    }
+    // Atualiza local sempre
+    const users = DB.users();
+    const idx   = users.findIndex(u => u.login === editingUserLogin);
+    if (idx >= 0) {
+      users[idx].name    = name;
+      users[idx].role    = role;
+      users[idx].funcao  = funcao;
+      users[idx].veiculo = veiculo;
+      if (pass) users[idx].pass = pass;
+      DB.set('garra_users', users);
+    }
+    if (editingUserLogin === currentUser.login) {
+      currentUser.name = name; currentUser.role = role;
+    }
+    editingUserLogin = null;
+    closeModal('user-edit-modal');
+    renderUsers();
+    populateSubmissionFilters();
+  } catch(e) {
+    alert('Erro ao salvar: ' + e.message);
+  } finally {
+    if (btn) { btn.textContent = 'Salvar Alterações'; btn.disabled = false; }
+  }
+};
+
+// ── REMOVER USUÁRIO VIA API ────────────────────────
+window.confirmRemoveUser = async function confirmRemoveUser() {
+  if (!pendingRemoveUserLogin) return;
+  try {
+    await GarraDB.removerUsuario(pendingRemoveUserLogin);
+  } catch(e) {
+    console.warn('API remove falhou, removendo local:', e.message);
+  }
+  DB.removeUser(pendingRemoveUserLogin);
+  pendingRemoveUserLogin = null;
+  closeModal('user-remove-modal');
+  renderUsers();
+  populateSubmissionFilters();
+};
+
+// ── SALVAR ENVIO VIA API ───────────────────────────
+const _submitOriginal = submitChecklist;
+window.submitChecklist = async function submitChecklist() {
+  const cl = getCL();
+  const id = 'sub_' + Date.now() + '_' + Math.random().toString(36).slice(2,7);
+  const submission = {
+    id, user: currentUser.login, userName: currentUser.name,
+    type: currentCLId, clLabel: cl.label,
+    date: new Date().toISOString(),
+    meta: { ...formMeta }, answers: { ...formAnswers },
+    synced: false, archived: false,
+  };
+  submission.pts = calculatePoints(submission, cl);
+
+  // Salva localmente primeiro (garante offline)
+  DB.saveSubmission({ ...submission, synced: false });
+
+  // Tenta enviar para API
+  try {
+    await GarraDB.salvarEnvio({
+      envio_id:      submission.id,
+      usuario_login: submission.user,
+      usuario_nome:  submission.userName,
+      cl_id:         submission.type,
+      cl_label:      submission.clLabel,
+      meta:          submission.meta,
+      respostas:     submission.answers,
+      pts:           submission.pts,
+      tem_nc:        countNC(submission) > 0,
+      total_nc:      countNC(submission),
+      enviado_em:    submission.date,
+    });
+    submission.synced = true;
+    DB.saveSubmission(submission);
+  } catch(e) {
+    // Offline — fica na fila
+    DB.addPending(submission);
+  }
+
+  // Atualiza pts do usuário
+  const users = DB.users();
+  const idx   = users.findIndex(u => u.login === currentUser.login);
+  if (idx >= 0) {
+    users[idx].pts         = (users[idx].pts        || 0) + submission.pts;
+    users[idx].submissions = (users[idx].submissions || 0) + 1;
+    DB.set('garra_users', users);
+    currentUser = users[idx];
+    // Atualiza pts na API
+    GarraDB.salvarEnvio && apiFetch(`/usuarios/${currentUser.login}/pts?pts=${submission.pts}`, { method:'PATCH' }).catch(()=>{});
+  }
+
+  showScreen('screen-success');
+  document.getElementById('success-title').textContent = 'Check List Enviado! 🎉';
+  document.getElementById('success-msg').textContent   = submission.synced
+    ? 'Salvo e sincronizado com sucesso.'
+    : 'Salvo localmente. Será sincronizado quando online.';
+  document.getElementById('pts-earned').textContent = `+${submission.pts} pts`;
+};
+
+// ── CARREGAR USUÁRIOS DA API NO STARTUP ────────────
+async function syncUsersFromAPI() {
+  try {
+    const apiUsers = await GarraDB.getUsuarios();
+    if (!apiUsers?.length) return;
+    // Mescla com localStorage preservando campos locais (funcao, veiculo, pass)
+    const local = DB.users();
+    const merged = apiUsers.map(au => {
+      const loc = local.find(l => l.login === au.login) || {};
+      return {
+        login:       au.login,
+        name:        au.nome || loc.name || au.login,
+        pass:        loc.pass || '***',
+        role:        au.perfil || loc.role || 'driver',
+        funcao:      loc.funcao  || '',
+        veiculo:     loc.veiculo || '',
+        pts:         au.pts         ?? loc.pts         ?? 0,
+        submissions: au.total_envios ?? loc.submissions ?? 0,
+      };
+    });
+    DB.set('garra_users', merged);
+    console.log('✅ Usuários sincronizados da API:', merged.length);
+  } catch(e) {
+    console.warn('⚠️ Sincronização de usuários falhou (offline?):', e.message);
+  }
+}
+
+// Executa ao iniciar
+syncUsersFromAPI();
