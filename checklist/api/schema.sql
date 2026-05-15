@@ -12,7 +12,7 @@ CREATE TABLE IF NOT EXISTS usuarios (
   login       VARCHAR(50) UNIQUE NOT NULL,
   nome        VARCHAR(150) NOT NULL,
   senha_hash  VARCHAR(255) NOT NULL,
-  perfil      VARCHAR(20) NOT NULL CHECK (perfil IN ('manager','superior','driver')),
+  perfil      VARCHAR(20) NOT NULL CHECK (perfil IN ('manager','superior','driver','diarista')),
   ativo       BOOLEAN DEFAULT TRUE,
   pts         INTEGER DEFAULT 0,
   total_envios INTEGER DEFAULT 0,

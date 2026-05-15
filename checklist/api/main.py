@@ -73,6 +73,15 @@ async def startup():
                     "INSERT INTO usuarios (login, nome, senha_hash, perfil) VALUES ($1,$2,$3,$4)",
                     login, nome, hash_senha, perfil
                 )
+        # Atualiza constraint de perfil para incluir diarista
+        try:
+            await conn.execute("""
+                ALTER TABLE usuarios DROP CONSTRAINT IF EXISTS usuarios_perfil_check;
+                ALTER TABLE usuarios ADD CONSTRAINT usuarios_perfil_check
+                CHECK (perfil IN ('manager','superior','driver','diarista'));
+            """)
+        except Exception as ce:
+            print(f"⚠️ Constraint update: {ce}")
         print("✅ Banco inicializado com sucesso")
     except Exception as e:
         print(f"⚠️ Erro no startup: {e}")
