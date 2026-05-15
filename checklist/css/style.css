@@ -45,8 +45,8 @@ html,body { height:100%; overflow:hidden; font-family:var(--fb); background:var(
 .orb2 { width:300px;height:300px;bottom:-60px;left:-60px; background:radial-gradient(circle,rgba(255,255,255,.06) 0%,transparent 70%); }
 .orb3 { width:200px;height:200px;top:40%;left:50%;transform:translate(-50%,-50%); background:radial-gradient(circle,rgba(240,124,30,.08) 0%,transparent 70%); }
 .login-card {
-  position:relative; background:rgba(255,255,255,.06); backdrop-filter:blur(20px);
-  border:1px solid rgba(255,255,255,.12); border-radius:24px; padding:36px 28px;
+  position:relative; background:rgba(255,255,255,.97); backdrop-filter:blur(20px);
+  border:1px solid rgba(255,255,255,.9); border-radius:24px; padding:36px 28px;
   width:100%; max-width:380px; box-shadow:0 24px 64px rgba(0,0,0,.4);
 }
 .logo-wrap { display:flex; align-items:center; gap:14px; margin-bottom:28px; }
@@ -61,9 +61,9 @@ html,body { height:100%; overflow:hidden; font-family:var(--fb); background:var(
 .logo-text{display:flex;flex-direction:column;}
 .lt-garra{font-family:var(--fd);font-size:28px;font-weight:800;color:var(--white);letter-spacing:-.5px;line-height:1;}
 .lt-sub{font-size:10px;color:var(--orange-lt);font-weight:600;letter-spacing:.5px;text-transform:uppercase;}
-.login-title{font-family:var(--fd);font-size:22px;font-weight:700;color:var(--white);margin-bottom:4px;}
-.login-sub{font-size:13px;color:rgba(255,255,255,.5);margin-bottom:24px;}
-.login-error{background:rgba(232,57,77,.15);border:1px solid rgba(232,57,77,.3);border-radius:var(--radius-sm);padding:10px 14px;color:#ff8a94;font-size:13px;margin-bottom:16px;}
+.login-title{font-family:var(--fd);font-size:22px;font-weight:700;color:var(--navy);margin-bottom:4px;}
+.login-sub{font-size:13px;color:var(--text-light);margin-bottom:24px;}
+.login-error{background:rgba(232,57,77,.1);border:1px solid rgba(232,57,77,.3);border-radius:var(--radius-sm);padding:10px 14px;color:var(--danger);font-size:13px;margin-bottom:16px;}
 
 /* ── FIELDS ── */
 .field-group { margin-bottom:14px; }
@@ -985,3 +985,10 @@ html,body { height:100%; overflow:hidden; font-family:var(--fb); background:var(
 }
 .lc-extra-row .lc-field-label:focus,
 .lc-extra-row .lc-field-type:focus { border-color: var(--orange); }
+
+/* Login card — campos claros sobre fundo branco */
+#screen-login .field-group label { color:var(--text-light); }
+#screen-login .field-group input { background:var(--off-white);border-color:var(--gray-light);color:var(--text); }
+#screen-login .field-group input::placeholder { color:var(--gray); }
+#screen-login .field-group input:focus { border-color:var(--orange);background:var(--white); }
+#screen-login .offline-badge { color:var(--text-light); }
