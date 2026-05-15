@@ -108,14 +108,14 @@ function seedUsers() {
     { login:'gestor',    name:'Gestor de Frota',     pass:'garra2024', role:'manager',  funcao:'', veiculo:'', pts:0,   submissions:0 },
     { login:'gilson',    name:'Gilson',              pass:'garra2024', role:'superior', funcao:'', veiculo:'', pts:0,   submissions:0 },
     { login:'marco',     name:'Marco Aurélio',       pass:'garra2024', role:'superior', funcao:'', veiculo:'', pts:0,   submissions:0 },
-    { login:'andre',     name:'André',               pass:'123456',    role:'driver',   funcao:'fc_operador', veiculo:'EH-03', pts:580, submissions:18 },
-    { login:'emerson',   name:'Emerson',             pass:'123456',    role:'driver',   funcao:'fc_motorista', veiculo:'CA-12', pts:420, submissions:14 },
-    { login:'samuel',    name:'Samuel',              pass:'123456',    role:'driver',   funcao:'fc_motorista', veiculo:'CB-06', pts:390, submissions:13 },
+    { login:'andre',     name:'André',               pass:'123456',    role:'driver',   funcao:'fc_operador',  veiculo:'EH-03',  pts:580, submissions:18 },
+    { login:'emerson',   name:'Emerson',             pass:'123456',    role:'driver',   funcao:'fc_motorista', veiculo:'CA-12',  pts:420, submissions:14 },
+    { login:'samuel',    name:'Samuel',              pass:'123456',    role:'driver',   funcao:'fc_motorista', veiculo:'CB-06',  pts:390, submissions:13 },
     { login:'franciele', name:'Franciele',           pass:'123456',    role:'driver',   funcao:'fc_motorista', veiculo:'CB-037', pts:350, submissions:12 },
-    { login:'gilberto',  name:'Gilberto',            pass:'123456',    role:'driver',   funcao:'fc_motorista', veiculo:'', pts:310, submissions:10 },
-    { login:'geraldo',   name:'Geraldo',             pass:'123456',    role:'driver',   funcao:'fc_motorista', veiculo:'', pts:280, submissions:9  },
-    { login:'joao',      name:'João Pedro',          pass:'123456',    role:'driver',   funcao:'fc_motorista', veiculo:'', pts:260, submissions:8  },
-    { login:'marcio',    name:'Márcio',              pass:'123456',    role:'driver',   funcao:'fc_motorista', veiculo:'', pts:240, submissions:8  },
+    { login:'gilberto',  name:'Gilberto',            pass:'123456',    role:'driver',   funcao:'fc_motorista', veiculo:'',       pts:310, submissions:10 },
+    { login:'geraldo',   name:'Geraldo',             pass:'123456',    role:'driver',   funcao:'fc_motorista', veiculo:'',       pts:280, submissions:9  },
+    { login:'joao',      name:'João Pedro',          pass:'123456',    role:'driver',   funcao:'fc_motorista', veiculo:'',       pts:260, submissions:8  },
+    { login:'marcio',    name:'Márcio',              pass:'123456',    role:'driver',   funcao:'fc_motorista', veiculo:'',       pts:240, submissions:8  },
     { login:'motorista', name:'Motorista Demo',      pass:'123456',    role:'driver',   funcao:'', veiculo:'', pts:0,   submissions:0  },
   ];
   DB.set('garra_users', users);
@@ -524,15 +524,21 @@ function renderOverview() {
   subs.forEach(s=>{if(counts[s.type]!==undefined)counts[s.type]++;});
   const maxC=Math.max(...Object.values(counts),1);
   document.getElementById('chart-types').innerHTML=Object.entries(counts).map(([k,v])=>{const cl=allCLs[k];return `<div class="bc-row"><div class="bc-label">${cl?.icon||'📋'} ${cl?.label||k}</div><div class="bc-bar-wrap"><div class="bc-bar-fill" style="width:${Math.round((v/maxC)*100)}%"></div></div><div class="bc-count">${v}</div></div>`;}).join('');
-  const drivers=DB.users().filter(u=>u.role==='driver').sort((a,b)=>(b.pts||0)-(a.pts||0));
-  document.getElementById('compliance-list').innerHTML=drivers.map(d=>{
-    const ds=subs.filter(s=>s.user===d.login),total=ds.length,conf=ds.filter(s=>countNC(s)===0).length;
-    const pct=total>0?Math.round((conf/total)*100):100;
+  // Conformidade — só mostra quem tem envios, ordena por % desc
+  const drivers=DB.users().filter(u=>u.role==='driver');
+  const driversComEnvios = drivers.map(d => {
+    const ds=subs.filter(s=>s.user===d.login);
+    const total=ds.length, conf=ds.filter(s=>countNC(s)===0&&!s.archived).length;
+    const pct=total>0?Math.round((conf/total)*100):null;
+    return {d, total, conf, pct};
+  }).filter(x=>x.total>0).sort((a,b)=>(b.pct||0)-(a.pct||0));
+
+  document.getElementById('compliance-list').innerHTML = driversComEnvios.map(({d,total,conf,pct})=>{
     const color=pct>=80?'var(--success)':pct>=60?'var(--warn)':'var(--danger)';
     const funcao=d.funcao?FuncaoDB.byId(d.funcao):null;
     const tagHtml=funcao?`<span class="funcao-tag ${funcao.cor}" style="margin-left:6px">${funcao.nome}</span>`:'';
     return `<div class="compliance-item"><div class="ci-avatar">${d.name.charAt(0)}</div><div class="ci-info"><div class="ci-name">${d.name}${tagHtml}</div><div class="ci-pct">${total} envios • ${conf} conformes</div></div><div class="ci-pct-val" style="color:${color}">${pct}%</div></div>`;
-  }).join('')||'<div class="empty-state">Nenhum motorista cadastrado</div>';
+  }).join('')||'<div class="empty-state" style="font-size:13px;color:var(--text-light);padding:12px">Nenhum envio registrado ainda.</div>';
 }
 
 // ── RANKING ──
@@ -989,7 +995,14 @@ async function syncUsersFromAPI() {
     const local=DB.users();
     const merged=apiUsers.map(au=>{
       const loc=local.find(l=>l.login===au.login)||{};
-      return{login:au.login,name:au.nome||loc.name||au.login,pass:loc.pass||'***',role:au.perfil||loc.role||'driver',funcao:loc.funcao||'',veiculo:loc.veiculo||'',pts:au.pts??loc.pts??0,submissions:au.total_envios??loc.submissions??0};
+      // Preserve local pts if API returns 0 (API may not have pts yet)
+      const apiPts = au.pts || 0;
+      const locPts = loc.pts || 0;
+      const finalPts = apiPts > 0 ? apiPts : locPts;
+      const apiSubs = au.total_envios || 0;
+      const locSubs = loc.submissions || 0;
+      const finalSubs = apiSubs > 0 ? apiSubs : locSubs;
+      return{login:au.login,name:au.nome||loc.name||au.login,pass:loc.pass||'***',role:au.perfil||loc.role||'driver',funcao:loc.funcao||'',veiculo:loc.veiculo||'',pts:finalPts,submissions:finalSubs};
     });
     DB.set('garra_users',merged);
     console.log('✅ Usuários sincronizados:',merged.length);
