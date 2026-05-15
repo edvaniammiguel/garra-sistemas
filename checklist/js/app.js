@@ -225,7 +225,7 @@ async function doLogin() {
 function _navigate() {
   if (currentUser.role === 'manager') showManager();
   else if (currentUser.role === 'superior') showSuperior();
-  else showDriver();
+  else showDriver(); // driver e diarista vão para o mesmo painel
 }
 
 document.addEventListener('keydown', e => {
@@ -305,7 +305,7 @@ function renderDriverDashboard() {
   document.getElementById('driver-pts').textContent    = u.pts || 0;
   document.getElementById('driver-streak').textContent = `🔥 ${u.submissions || 0} envios`;
 
-  const drivers = DB.users().filter(u => u.role === 'driver').sort((a,b) => (b.pts||0)-(a.pts||0));
+  const drivers = DB.users().filter(u => u.role === 'driver' || u.role === 'diarista').sort((a,b) => (b.pts||0)-(a.pts||0));
   const rank    = drivers.findIndex(d => d.login === u.login) + 1;
   document.getElementById('driver-rank').textContent = '#' + rank;
   const maxPts = Math.max(...drivers.map(d => d.pts||0), 1);
@@ -387,21 +387,59 @@ function renderFormStep() {
 }
 
 function renderMetaField(f, vehicles) {
-  if (f.type==='select') {
-    const opts = f.options==='vehicles' ? vehicles : (f.options||[]);
-    // Pré-seleciona veículo fixo do colaborador (pode trocar)
-    const fixedV = (f.id==='veiculo' && currentUser?.veiculo) ? currentUser.veiculo : '';
-    const hint   = fixedV ? `<div style="font-size:11px;color:var(--orange);margin-top:3px">🚗 Veículo fixo pré-selecionado — você pode trocar se necessário</div>` : '';
+  if (f.type === 'select') {
+    let opts = f.options === 'vehicles' ? vehicles : (f.options || []);
+
+    // Para campo de veículo: sempre mostra TODA a frota ativa organizada
+    if (f.id === 'veiculo' || f.id === 'equipamento') {
+      const fleet = DB.fleet();
+      const todaFrota = [
+        ...((fleet.maquinas  ||[]).filter(v=>v.active).map(v=>({id:v.id, label:`🚜 ${v.id}${v.desc?' — '+v.desc:''}`, cat:'Máquinas'}))),
+        ...((fleet.carro     ||[]).filter(v=>v.active).map(v=>({id:v.id, label:`🚗 ${v.id}${v.desc?' — '+v.desc:''}`, cat:'Carros de Apoio'}))),
+        ...((fleet.caminhao  ||[]).filter(v=>v.active).map(v=>({id:v.id, label:`🚛 ${v.id}${v.desc?' — '+v.desc:''}`, cat:'Caminhões'}))),
+      ];
+
+      const fixedV = currentUser?.veiculo || '';
+      const hint   = fixedV
+        ? `<div style="font-size:11px;color:var(--orange);margin-top:4px">
+             🔗 Equipamento fixo: <strong>${fixedV}</strong> — pré-selecionado. Troque se necessário.
+           </div>`
+        : '';
+
+      // Agrupa por categoria com optgroup
+      const cats = ['Máquinas','Carros de Apoio','Caminhões'];
+      const optsHtml = cats.map(cat => {
+        const itens = todaFrota.filter(v => v.cat === cat);
+        if (!itens.length) return '';
+        return `<optgroup label="${cat}">
+          ${itens.map(v => `<option value="${v.id}" ${v.id===fixedV?'selected':''}>${v.label}</option>`).join('')}
+        </optgroup>`;
+      }).join('');
+
+      return `<div class="form-meta-field">
+        <label>${f.label}</label>
+        <select id="meta-${f.id}" style="font-size:13px">
+          <option value="">Selecione o equipamento...</option>
+          ${optsHtml}
+        </select>
+        ${hint}
+      </div>`;
+    }
+
+    // Outros selects normais
+    const opts2 = opts;
     return `<div class="form-meta-field"><label>${f.label}</label>
       <select id="meta-${f.id}">
         <option value="">Selecione...</option>
-        ${opts.map(o=>`<option value="${o}" ${o===fixedV?'selected':''}>${o}</option>`).join('')}
-      </select>${hint}
+        ${opts2.map(o=>`<option value="${o}">${o}</option>`).join('')}
+      </select>
     </div>`;
   }
-  // Pré-preenche operador com nome do colaborador logado
-  const defaultVal = (f.id==='operador' && currentUser?.name) ? currentUser.name : '';
-  return `<div class="form-meta-field"><label>${f.label}</label>
+
+  // Campo de texto — pré-preenche operador com nome do colaborador
+  const defaultVal = (f.id === 'operador' && currentUser?.name) ? currentUser.name : '';
+  return `<div class="form-meta-field">
+    <label>${f.label}</label>
     <input type="${f.type}" id="meta-${f.id}" placeholder="${f.placeholder||''}" value="${defaultVal}" />
   </div>`;
 }
@@ -544,7 +582,7 @@ function renderOverview() {
   const maxC=Math.max(...Object.values(counts),1);
   document.getElementById('chart-types').innerHTML=Object.entries(counts).map(([k,v])=>{const cl=allCLs[k];return `<div class="bc-row"><div class="bc-label">${cl?.icon||'📋'} ${cl?.label||k}</div><div class="bc-bar-wrap"><div class="bc-bar-fill" style="width:${Math.round((v/maxC)*100)}%"></div></div><div class="bc-count">${v}</div></div>`;}).join('');
   // Conformidade — só mostra quem tem envios, ordena por % desc
-  const drivers=DB.users().filter(u=>u.role==='driver');
+  const drivers=DB.users().filter(u=>u.role==='driver'||u.role==='diarista');
   const driversComEnvios = drivers.map(d => {
     const ds=subs.filter(s=>s.user===d.login);
     const total=ds.length, conf=ds.filter(s=>countNC(s)===0&&!s.archived).length;
@@ -562,7 +600,7 @@ function renderOverview() {
 
 // ── RANKING ──
 function renderRanking() {
-  const drivers=DB.users().filter(u=>u.role==='driver').sort((a,b)=>(b.pts||0)-(a.pts||0));
+  const drivers=DB.users().filter(u=>u.role==='driver'||u.role==='diarista').sort((a,b)=>(b.pts||0)-(a.pts||0));
   const top3=drivers.slice(0,3),rest=drivers.slice(3);
   const medals=['🥇','🥈','🥉'],cls=['p1','p2','p3'];
   document.getElementById('podium').innerHTML=top3.length?top3.map((u,i)=>`<div class="podium-place ${cls[i]}"><div class="pp-medal">${medals[i]}</div><div class="pp-avatar">${u.name.charAt(0)}</div><div class="pp-name">${u.name.split(' ')[0]}</div><div class="pp-pts">${u.pts||0}</div></div>`).join(''):'<div class="empty-state">Sem dados de ranking ainda</div>';
@@ -582,7 +620,18 @@ function renderSubmissions() {
   if(!subs.length){el.innerHTML='<div class="empty-state"><div class="es-icon">📭</div>Nenhum envio encontrado.</div>';return;}
   const allCLs=DB.allCLs();
   el.innerHTML=subs.map(s=>{const cl=allCLs[s.type]||{},nc=countNC(s),st=s.archived?'archived':s.synced===false?'pending':nc>0?'nc':'ok',veh=s.meta?.veiculo||s.meta?.equipamento||'';
-    return `<div class="sub-card ${st}" onclick="showSubmissionDetail('${s.id}')"><div class="sub-top"><div><div class="sub-title">${cl.icon||'📋'} ${cl.label||s.type}${veh?' – '+veh:''}</div><div class="sub-meta">${s.userName} • ${formatDate(s.date)}${s.meta?.local?' • '+s.meta.local:''}</div></div><div class="badge ${st}">${nc>0?nc+' NC':st==='pending'?'⏳':st==='archived'?'📦':'✓'}</div></div>${s.archived?'<div class="archived-tag">📦 Equipamento removido da frota</div>':''}${nc>0&&s.meta?.observacoes?`<div class="sub-issues">⚠ ${s.meta.observacoes.slice(0,80)}${s.meta.observacoes.length>80?'...':''}</div>`:''}</div>`;
+    return `<div class="sub-card ${st}" onclick="showSubmissionDetail('${s.id}')">
+      <div class="sub-top">
+        <div>
+          <div class="sub-title">${cl.icon||'📋'} ${cl.label||s.type}</div>
+          <div class="sub-meta">${s.userName} • ${formatDate(s.date)}</div>
+          ${veh ? `<div class="sub-equip">🚜 ${veh}${s.meta?.local?' • 📍 '+s.meta.local:''}</div>` : (s.meta?.local?`<div class="sub-equip">📍 ${s.meta.local}</div>`:'')}
+        </div>
+        <div class="badge ${st}">${nc>0?nc+' NC':st==='pending'?'⏳':st==='archived'?'📦':'✓'}</div>
+      </div>
+      ${s.archived?'<div class="archived-tag">📦 Equipamento removido da frota</div>':''}
+      ${nc>0&&s.meta?.observacoes?`<div class="sub-issues">⚠ ${s.meta.observacoes.slice(0,80)}${s.meta.observacoes.length>80?'...':''}</div>`:''}
+    </div>`;
   }).join('');
 }
 
@@ -666,8 +715,8 @@ function renderUsers() {
   const el=document.getElementById('users-list'); if(!el)return;
   const allCLs=DB.allCLs();
   el.innerHTML=users.map(u=>{
-    const perfil=u.role==='manager'?'Gestor':u.role==='superior'?'Superior':'Operador';
-    const perfilColor=u.role==='manager'?'var(--orange)':u.role==='superior'?'var(--navy-light)':'var(--navy)';
+    const perfil=u.role==='manager'?'Gestor':u.role==='superior'?'Superior':u.role==='diarista'?'Diarista':'Operacional';
+    const perfilColor=u.role==='manager'?'var(--orange)':u.role==='superior'?'var(--navy-light)':u.role==='diarista'?'var(--teal, #00897b)':'var(--navy)';
     const funcao=u.funcao?FuncaoDB.byId(u.funcao):null;
     const cor=funcao?(COR_MAP[funcao.cor]||COR_MAP.navy):'var(--navy)';
     const clsVisiveis=funcao?.cls?.length?funcao.cls.map(id=>allCLs[id]?.label).filter(Boolean).join(', '):'';
@@ -1076,7 +1125,18 @@ function buildCLObject(id) {
 function showSubmissionDetail(id) {
   const sub=DB.submissions().find(s=>s.id===id); if(!sub)return;
   const cl=DB.allCLs()[sub.type]||{},nc=countNC(sub),st=sub.archived?'archived':sub.synced===false?'pending':nc>0?'nc':'ok';
-  let html=`<div class="detail-section"><h4>Informações Gerais</h4><div class="detail-row"><span class="dr-label">Check List</span><span class="dr-val">${cl.label||sub.type}</span></div><div class="detail-row"><span class="dr-label">Colaborador</span><span class="dr-val">${sub.userName}</span></div><div class="detail-row"><span class="dr-label">Data/Hora</span><span class="dr-val">${formatDateTime(sub.date)}</span></div><div class="detail-row"><span class="dr-label">Status</span><span class="dr-val ${st}">${st==='ok'?'✓ Conforme':st==='pending'?'⏳ Sync':st==='archived'?'📦 Removido':'⚠ '+nc+' NC'}</span></div><div class="detail-row"><span class="dr-label">Pontuação</span><span class="dr-val" style="color:var(--orange)">+${sub.pts||0} pts</span></div></div>`;
+  const veiculo = sub.meta?.veiculo || sub.meta?.equipamento || '';
+  const local   = sub.meta?.local   || '';
+  let html=`<div class="detail-section">
+    <h4>Informações Gerais</h4>
+    <div class="detail-row"><span class="dr-label">Check List</span><span class="dr-val">${cl.label||sub.type}</span></div>
+    <div class="detail-row"><span class="dr-label">Colaborador</span><span class="dr-val">${sub.userName}</span></div>
+    ${veiculo ? `<div class="detail-row"><span class="dr-label">Equipamento</span><span class="dr-val" style="font-weight:700;color:var(--navy)">🚜 ${veiculo}</span></div>` : ''}
+    ${local   ? `<div class="detail-row"><span class="dr-label">Local</span><span class="dr-val">📍 ${local}</span></div>` : ''}
+    <div class="detail-row"><span class="dr-label">Data/Hora</span><span class="dr-val">${formatDateTime(sub.date)}</span></div>
+    <div class="detail-row"><span class="dr-label">Status</span><span class="dr-val ${st}">${st==='ok'?'✓ Conforme':st==='pending'?'⏳ Sync':st==='archived'?'📦 Removido':'⚠ '+nc+' NC'}</span></div>
+    <div class="detail-row"><span class="dr-label">Pontuação</span><span class="dr-val" style="color:var(--orange)">+${sub.pts||0} pts</span></div>
+  </div>`;
   if(sub.archived)html+=`<div class="detail-section" style="border-left:4px solid var(--gray)"><h4 style="color:var(--gray)">📦 Equipamento Removido</h4><p style="font-size:13px;color:var(--text-light)">Histórico mantido para auditoria.</p></div>`;
   const metaLabels={operador:'Operador',local:'Local',data:'Data',equipamento:'Equipamento',veiculo:'Veículo',km:'KM',horimetro:'Horímetro',tipo:'Tipo',situacao:'Situação'};
   const metaEntries=Object.entries(sub.meta||{}).filter(([k,v])=>k!=='observacoes'&&k!=='ot'&&v);
@@ -1283,7 +1343,7 @@ function openFecharCiclo() {
   if (!ciclo) return;
   document.getElementById('ciclo-fechar-nome').textContent = ciclo.nome;
   document.getElementById('ciclo-fechar-periodo').textContent = `${formatDate(ciclo.inicio)} → ${formatDate(ciclo.fim)}`;
-  const drivers = DB.users().filter(u => u.role === 'driver').sort((a,b)=>(b.pts||0)-(a.pts||0));
+  const drivers = DB.users().filter(u => u.role === 'driver' || u.role === 'diarista').sort((a,b)=>(b.pts||0)-(a.pts||0));
   document.getElementById('ciclo-fechar-preview').innerHTML = drivers.slice(0,5).map((u,i) => {
     const snap = ciclo.snapshot?.find(s => s.login === u.login);
     const pts = Math.max(0, (u.pts||0) - (snap?.pts_inicio||0));
@@ -1355,7 +1415,7 @@ function renderRankingTab() {
   }
 
   // Ranking atual (pontos desde início do ciclo ou total)
-  const drivers = DB.users().filter(u => u.role === 'driver').sort((a,b)=>(b.pts||0)-(a.pts||0));
+  const drivers = DB.users().filter(u => u.role === 'driver' || u.role === 'diarista').sort((a,b)=>(b.pts||0)-(a.pts||0));
   const top3 = drivers.slice(0,3), rest = drivers.slice(3);
   const medals = ['🥇','🥈','🥉'], cls = ['p1','p2','p3'];
 
