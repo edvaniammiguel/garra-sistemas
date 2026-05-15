@@ -675,17 +675,27 @@ function renderUsers() {
 }
 
 function openUserEdit(login) {
+  const u = DB.users().find(u => u.login === login);
+  if (!u) return;
+  editingUserLogin = login;
+
+  // Popula funções e veículos PRIMEIRO
   populateUserModalFuncoes();
-  const u=DB.users().find(u=>u.login===login); if(!u)return;
-  editingUserLogin=login;
-  document.getElementById('eu-name').value=u.name;
-  document.getElementById('eu-login').textContent=u.login;
-  document.getElementById('eu-role').value=u.role;
-  document.getElementById('eu-pass').value='';
-  setTimeout(()=>{
-    const ef=document.getElementById('eu-funcao');  if(ef)ef.value=u.funcao||'';
-    const ev=document.getElementById('eu-veiculo'); if(ev)ev.value=u.veiculo||'';
-  },50);
+
+  // Preenche campos básicos
+  document.getElementById('eu-name').value = u.name;
+  document.getElementById('eu-login').textContent = u.login;
+  document.getElementById('eu-role').value = u.role;
+  document.getElementById('eu-pass').value = '';
+
+  // Preenche função e veículo após render dos selects
+  setTimeout(() => {
+    const ef = document.getElementById('eu-funcao');
+    const ev = document.getElementById('eu-veiculo');
+    if (ef && u.funcao) ef.value = u.funcao;
+    if (ev && u.veiculo) ev.value = u.veiculo;
+  }, 100);
+
   openModal('user-edit-modal');
 }
 
