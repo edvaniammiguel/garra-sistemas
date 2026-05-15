@@ -117,8 +117,17 @@
 
     <!-- RANKING -->
     <div id="tab-ranking" class="tab-panel">
+      <!-- Banner do ciclo ativo -->
+      <div id="ciclo-banner"></div>
+
+      <!-- Pódio atual -->
+      <h3 class="section-title" style="margin-top:14px">🏆 Ranking do Ciclo Atual</h3>
       <div class="podium-wrap" id="podium"></div>
       <div id="full-ranking" class="ranking-list"></div>
+
+      <!-- Histórico de ciclos fechados -->
+      <h3 class="section-title" style="margin-top:20px">📅 Histórico de Ciclos</h3>
+      <div id="ciclos-historico"></div>
     </div>
 
     <!-- ENVIOS -->
@@ -682,6 +691,67 @@
     </div>
   </div>
 </div>
+
+<!-- ════ MODAL: NOVO CICLO ════ -->
+<div id="ciclo-modal" class="modal hidden">
+  <div class="modal-card">
+    <h3>🏆 Novo Ciclo de Pontuação</h3>
+    <p style="font-size:13px;color:var(--text-light);margin-bottom:16px">Defina o período. Os pontos são zerados ao fechar o ciclo, mas o histórico é preservado.</p>
+    <div class="field-group"><label>Nome do ciclo</label><input type="text" id="ciclo-nome" placeholder="Ex.: Ciclo Maio 2026, 1ª Quinzena..." /></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+      <div class="field-group"><label>Data de início</label><input type="date" id="ciclo-inicio" /></div>
+      <div class="field-group"><label>Data de término</label><input type="date" id="ciclo-fim" /></div>
+    </div>
+    <div class="field-group"><label>Descrição / Premiação (opcional)</label><input type="text" id="ciclo-descricao" placeholder="Ex.: Prêmio: folga extra + vale presente R$200" /></div>
+    <div style="background:var(--off-white);border-radius:var(--radius-sm);padding:12px;margin-bottom:14px;font-size:12px;color:var(--text-light)">
+      💡 <strong>Sugestões rápidas:</strong>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">
+        <button class="btn-secondary" style="font-size:11px;padding:4px 10px" onclick="preencherPeriodo(15)">Quinzenal</button>
+        <button class="btn-secondary" style="font-size:11px;padding:4px 10px" onclick="preencherPeriodo(30)">Mensal</button>
+        <button class="btn-secondary" style="font-size:11px;padding:4px 10px" onclick="preencherPeriodo(60)">Bimestral</button>
+        <button class="btn-secondary" style="font-size:11px;padding:4px 10px" onclick="preencherPeriodo(365)">Anual</button>
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-secondary" onclick="closeModal('ciclo-modal')">Cancelar</button>
+      <button class="btn-primary" onclick="salvarNovoCiclo()">Iniciar Ciclo</button>
+    </div>
+  </div>
+</div>
+
+<!-- ════ MODAL: FECHAR CICLO ════ -->
+<div id="ciclo-fechar-modal" class="modal hidden">
+  <div class="modal-card">
+    <h3>⚠ Fechar Ciclo</h3>
+    <div style="background:rgba(232,57,77,.06);border:1px solid rgba(232,57,77,.2);border-radius:var(--radius-sm);padding:12px;margin-bottom:14px">
+      <div style="font-size:14px;font-weight:700;color:var(--navy)" id="ciclo-fechar-nome"></div>
+      <div style="font-size:12px;color:var(--text-light)" id="ciclo-fechar-periodo"></div>
+    </div>
+    <p style="font-size:13px;color:var(--text-light);margin-bottom:12px">Prévia do ranking final:</p>
+    <div id="ciclo-fechar-preview" style="margin-bottom:16px"></div>
+    <div style="background:rgba(240,124,30,.08);border:1px solid rgba(240,124,30,.2);border-radius:var(--radius-sm);padding:10px;font-size:12px;color:var(--orange-dk);margin-bottom:14px">
+      ⚠ <strong>Atenção:</strong> Os pontos de todos os colaboradores serão zerados e o ranking salvo permanentemente.
+    </div>
+    <div class="modal-actions">
+      <button class="btn-secondary" onclick="closeModal('ciclo-fechar-modal')">Cancelar</button>
+      <button class="btn-danger" onclick="fecharCiclo()">Fechar Ciclo e Zerar Pontos</button>
+    </div>
+  </div>
+</div>
+
+<!-- ════ MODAL: CICLO ENCERRADO ════ -->
+<div id="ciclo-encerrado-modal" class="modal hidden">
+  <div class="modal-card" style="text-align:center">
+    <div style="font-size:48px;margin-bottom:8px">🏆</div>
+    <h3 style="color:var(--navy)">Ciclo Encerrado!</h3>
+    <div style="font-size:14px;font-weight:700;color:var(--orange);margin:4px 0" id="ciclo-enc-nome"></div>
+    <div style="font-size:12px;color:var(--text-light);margin-bottom:20px" id="ciclo-enc-periodo"></div>
+    <div class="podium-wrap" id="ciclo-enc-podio" style="justify-content:center;margin-bottom:20px"></div>
+    <p style="font-size:13px;color:var(--text-light);margin-bottom:16px">Pontos zerados. Um novo ciclo pode ser iniciado a qualquer momento.</p>
+    <button class="btn-primary" style="max-width:220px;margin:0 auto" onclick="closeModal('ciclo-encerrado-modal');renderRankingTab()">Concluir</button>
+  </div>
+</div>
+
 <script src="js/db.js"></script>
 <script src="js/data.js"></script>
 <script src="js/app.js"></script>
