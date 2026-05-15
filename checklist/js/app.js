@@ -1815,50 +1815,7 @@ window.openUserEdit = function openUserEdit(login) {
   openModal('user-edit-modal');
 };
 
-// Override saveEditUser para salvar função e veículo
-const _saveEditUserOriginal = saveEditUser;
-window.saveEditUser = function saveEditUser() {
-  const name    = document.getElementById('eu-name').value.trim();
-  const role    = document.getElementById('eu-role').value;
-  const pass    = document.getElementById('eu-pass').value;
-  const funcao  = document.getElementById('eu-funcao')?.value  || '';
-  const veiculo = document.getElementById('eu-veiculo')?.value || '';
-  if (!name) { alert('Informe o nome.'); return; }
-  const users = DB.users();
-  const idx   = users.findIndex(u => u.login === editingUserLogin);
-  if (idx < 0) return;
-  users[idx].name    = name;
-  users[idx].role    = role;
-  users[idx].funcao  = funcao;
-  users[idx].veiculo = veiculo;
-  if (pass) users[idx].pass = pass;
-  DB.set('garra_users', users);
-  if (editingUserLogin === currentUser.login) {
-    currentUser.name = name; currentUser.role = role;
-  }
-  editingUserLogin = null;
-  closeModal('user-edit-modal');
-  renderUsers();
-  populateSubmissionFilters();
-};
 
-// Override saveNewUser para salvar função e veículo
-const _saveNewUserOriginal = saveNewUser;
-window.saveNewUser = function saveNewUser() {
-  const name    = document.getElementById('nu-name').value.trim();
-  const login   = document.getElementById('nu-user').value.trim().toLowerCase();
-  const pass    = document.getElementById('nu-pass').value;
-  const role    = document.getElementById('nu-role').value;
-  const funcao  = document.getElementById('nu-funcao')?.value  || '';
-  const veiculo = document.getElementById('nu-veiculo')?.value || '';
-  if (!name || !login || !pass) { alert('Preencha todos os campos.'); return; }
-  if (DB.users().find(u => u.login === login)) { alert('Login já existe.'); return; }
-  DB.saveUser({ name, login, pass, role, funcao, veiculo, pts:0, submissions:0 });
-  ['nu-name','nu-user','nu-pass'].forEach(id => document.getElementById(id).value = '');
-  closeModal('user-modal');
-  renderUsers();
-  populateSubmissionFilters();
-};
 
 // Override renderDriverDashboard para filtrar CLs pela função
 const _renderDriverOriginal = renderDriverDashboard;
