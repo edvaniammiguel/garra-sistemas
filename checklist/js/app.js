@@ -1539,3 +1539,398 @@ updateSyncUI();
   ];
   demos.forEach(s => { s.id = 'sub_demo_' + Math.random().toString(36).slice(2,9); DB.saveSubmission(s); });
 })();
+
+// ═══════════════════════════════════════════════════
+// MÓDULO: FUNÇÕES / CARGOS
+// ═══════════════════════════════════════════════════
+
+// ── STORAGE ──
+const FuncaoDB = {
+  get()      { return DB.get('garra_funcoes') || seedFuncoes(); },
+  save(list) { DB.set('garra_funcoes', list); },
+  add(f) {
+    const list = this.get();
+    const idx = list.findIndex(x => x.id === f.id);
+    if (idx >= 0) list[idx] = f; else list.push(f);
+    this.save(list);
+  },
+  remove(id) { this.save(this.get().filter(f => f.id !== id)); },
+  byId(id)   { return this.get().find(f => f.id === id); },
+};
+
+function fidgen() { return 'fc_' + Date.now() + '_' + Math.random().toString(36).slice(2,5); }
+
+function seedFuncoes() {
+  const funcoes = [
+    { id:'fc_motorista',  nome:'Motorista',           desc:'Condução de caminhões e veículos de apoio', cor:'navy',   cls:['caminhao','carro'] },
+    { id:'fc_operador',   nome:'Operador de Máquina',  desc:'Operação de escavadeiras, patrol e retroescavadeiras', cor:'orange', cls:['maquinas'] },
+    { id:'fc_mecanico',   nome:'Mecânico',             desc:'Manutenção e reparos da frota', cor:'teal',   cls:[] },
+    { id:'fc_encarregado',nome:'Encarregado de Obra',  desc:'Supervisão e controle das frentes de serviço', cor:'purple', cls:[] },
+    { id:'fc_aux',        nome:'Auxiliar / Ajudante',  desc:'Apoio geral nas operações', cor:'gray',   cls:[] },
+  ];
+  DB.set('garra_funcoes', funcoes);
+  return funcoes;
+}
+
+// ── COR → CSS ──
+const COR_MAP = {
+  navy:'#1a2158', orange:'#f07c1e', green:'#22c97c',
+  purple:'#7c4dff', red:'#e8394d', teal:'#00897b',
+  brown:'#795548', gray:'#8b95b8',
+};
+
+// ── SUB-TABS USUÁRIOS ──
+function usersSubTab(tab, btn) {
+  document.querySelectorAll('#tab-users .log-subtab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('#tab-users .log-subpanel').forEach(p => p.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById('users-sub-'+tab).classList.add('active');
+  if (tab === 'funcoes') renderFuncoes();
+  if (tab === 'colaboradores') { populateFuncaoFilters(); renderUsers(); }
+}
+
+// ── ESTADO MODAL FUNÇÃO ──
+let funcaoEditId    = null;
+let funcaoCorSel    = 'navy';
+let funcaoClsSel    = [];
+
+function openFuncaoModal(id) {
+  funcaoEditId = id;
+  funcaoCorSel = 'navy';
+  funcaoClsSel = [];
+
+  const f = id ? FuncaoDB.byId(id) : null;
+  document.getElementById('funcao-modal-title').textContent = id ? 'Editar Função' : 'Nova Função';
+  document.getElementById('funcao-edit-id').value = id || '';
+  document.getElementById('fc-nome').value = f?.nome || '';
+  document.getElementById('fc-desc').value = f?.desc || '';
+
+  if (f) {
+    funcaoCorSel = f.cor || 'navy';
+    funcaoClsSel = [...(f.cls || [])];
+  }
+
+  // Reset color picker
+  document.querySelectorAll('.color-opt').forEach(b => {
+    b.classList.toggle('active', b.dataset.color === funcaoCorSel);
+  });
+
+  // Build CL checkboxes
+  const allCLs = DB.allCLs();
+  const clsEl  = document.getElementById('fc-cls-list');
+  clsEl.innerHTML = Object.values(allCLs).map(cl => `
+    <label class="funcao-cl-item">
+      <input type="checkbox" value="${cl.id}"
+        ${funcaoClsSel.includes(cl.id) ? 'checked' : ''}
+        onchange="toggleFuncaoCL('${cl.id}',this.checked)" />
+      <div class="funcao-cl-icon">${cl.icon}</div>
+      <div>
+        <div class="funcao-cl-name">${cl.label}</div>
+        <div class="funcao-cl-desc">${cl.desc || ''}</div>
+      </div>
+    </label>`).join('');
+
+  openModal('funcao-modal');
+}
+
+function selectFuncaoColor(cor, btn) {
+  funcaoCorSel = cor;
+  document.querySelectorAll('.color-opt').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+}
+
+function toggleFuncaoCL(clId, checked) {
+  if (checked) { if (!funcaoClsSel.includes(clId)) funcaoClsSel.push(clId); }
+  else funcaoClsSel = funcaoClsSel.filter(id => id !== clId);
+}
+
+function saveFuncao() {
+  const nome = document.getElementById('fc-nome').value.trim();
+  if (!nome) { alert('Informe o nome da função.'); return; }
+
+  const f = {
+    id:   funcaoEditId || fidgen(),
+    nome,
+    desc: document.getElementById('fc-desc').value.trim(),
+    cor:  funcaoCorSel,
+    cls:  funcaoClsSel,
+  };
+  FuncaoDB.add(f);
+  funcaoEditId = null;
+  closeModal('funcao-modal');
+  renderFuncoes();
+  populateFuncaoFilters();
+  populateUserModalFuncoes();
+}
+
+function renderFuncoes() {
+  const el = document.getElementById('funcoes-list');
+  if (!el) return;
+  const funcoes  = FuncaoDB.get();
+  const allCLs   = DB.allCLs();
+  const usuarios = DB.users();
+
+  if (!funcoes.length) {
+    el.innerHTML = '<div class="empty-state"><div class="es-icon">🏷</div>Nenhuma função cadastrada.</div>';
+    return;
+  }
+
+  el.innerHTML = funcoes.map(f => {
+    const cor     = COR_MAP[f.cor] || COR_MAP.navy;
+    const count   = usuarios.filter(u => u.funcao === f.id).length;
+    const clNames = (f.cls || []).map(id => allCLs[id]?.label).filter(Boolean);
+    const clText  = clNames.length
+      ? `✅ ${clNames.join(', ')}`
+      : '✅ Todos os check lists';
+
+    return `<div class="funcao-card">
+      <div class="funcao-card-dot" style="background:${cor}"></div>
+      <div class="funcao-card-body">
+        <div class="funcao-card-name">${f.nome}</div>
+        <div class="funcao-card-meta">${f.desc || ''}${count > 0 ? ' • '+count+' colaborador(es)' : ''}</div>
+        <div class="funcao-card-cls">${clText}</div>
+      </div>
+      <div class="ui-actions">
+        <button class="fleet-btn edit" onclick="openFuncaoModal('${f.id}')">✎</button>
+        <button class="fleet-btn remove" onclick="removeFuncao('${f.id}')">✕</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function removeFuncao(id) {
+  const f = FuncaoDB.byId(id);
+  const count = DB.users().filter(u => u.funcao === id).length;
+  const msg = count > 0
+    ? `Remover a função "${f?.nome}"? ${count} colaborador(es) ficarão sem função vinculada.`
+    : `Remover a função "${f?.nome}"?`;
+  if (!confirm(msg)) return;
+  FuncaoDB.remove(id);
+  renderFuncoes();
+  populateFuncaoFilters();
+  renderUsers();
+}
+
+// ── POPULAR SELECTS DE FUNÇÃO ──
+function populateFuncaoFilters() {
+  const funcoes = FuncaoDB.get();
+  // Filter na aba colaboradores
+  const ff = document.getElementById('filter-funcao');
+  if (ff) ff.innerHTML = '<option value="">Todas as funções</option>' +
+    funcoes.map(f => `<option value="${f.id}">${f.nome}</option>`).join('');
+}
+
+function populateUserModalFuncoes() {
+  const funcoes = FuncaoDB.get();
+  const opts = '<option value="">Selecione a função...</option>' +
+    funcoes.map(f => `<option value="${f.id}">${f.nome}</option>`).join('');
+  ['nu-funcao','eu-funcao'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.innerHTML = opts;
+  });
+
+  // Popular veículos (todos da frota)
+  const fleet = DB.fleet();
+  const veiculos = [
+    ...((fleet.maquinas||[]).filter(v=>v.active).map(v=>`<option value="${v.id}">🚜 ${v.id}${v.desc?' – '+v.desc:''}</option>`)),
+    ...((fleet.carro||[]).filter(v=>v.active).map(v=>`<option value="${v.id}">🚗 ${v.id}${v.desc?' – '+v.desc:''}</option>`)),
+    ...((fleet.caminhao||[]).filter(v=>v.active).map(v=>`<option value="${v.id}">🚛 ${v.id}${v.desc?' – '+v.desc:''}</option>`)),
+  ].join('');
+  const veiculoOpts = '<option value="">Sem vínculo fixo</option>' + veiculos;
+  ['nu-veiculo','eu-veiculo'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.innerHTML = veiculoOpts;
+  });
+}
+
+// ═══════════════════════════════════════════════════
+// RENDERIZAR USUÁRIOS — versão atualizada com função/veículo
+// ═══════════════════════════════════════════════════
+
+// Override da função renderUsers com versão completa
+const _renderUsersOriginal = renderUsers;
+window.renderUsers = function renderUsers() {
+  // Popula selects de função sempre que renderiza
+  populateUserModalFuncoes();
+  populateFuncaoFilters();
+
+  const filterFuncao = document.getElementById('filter-funcao')?.value || '';
+  const filterRole   = document.getElementById('filter-role')?.value   || '';
+
+  let users = DB.users();
+  if (filterFuncao) users = users.filter(u => u.funcao === filterFuncao);
+  if (filterRole)   users = users.filter(u => u.role   === filterRole);
+
+  const el = document.getElementById('users-list');
+  if (!el) return;
+
+  const allCLs = DB.allCLs();
+
+  el.innerHTML = users.map(u => {
+    const perfil      = u.role==='manager'?'Gestor':u.role==='superior'?'Superior':'Operador';
+    const perfilColor = u.role==='manager'?'var(--orange)':u.role==='superior'?'var(--navy-light)':'var(--navy)';
+    const funcao      = u.funcao ? FuncaoDB.byId(u.funcao) : null;
+    const cor         = funcao ? (COR_MAP[funcao.cor] || COR_MAP.navy) : 'var(--navy)';
+
+    // Check lists visíveis da função
+    const clsVisiveis = funcao?.cls?.length
+      ? funcao.cls.map(id => allCLs[id]?.label).filter(Boolean).join(', ')
+      : '';
+
+    return `<div class="user-item">
+      <div class="user-item-top">
+        <div class="ui-avatar" style="background:${perfilColor}">${u.name.charAt(0)}</div>
+        <div class="ui-info" style="flex:1">
+          <div class="ui-name">${u.name}</div>
+          <div class="ui-role">${u.login} • ${u.submissions||0} envios • ${u.pts||0} pts</div>
+          ${clsVisiveis ? `<div style="font-size:10px;color:var(--orange);margin-top:2px">📋 ${clsVisiveis}</div>` : ''}
+        </div>
+        <div class="ui-actions">
+          <button class="fleet-btn edit" onclick="openUserEdit('${u.login}')">✎</button>
+          ${u.login !== currentUser.login ? `<button class="fleet-btn remove" onclick="openUserRemove('${u.login}')">✕</button>` : ''}
+        </div>
+      </div>
+      <div class="user-item-tags">
+        <span class="role-badge ${u.role}">${perfil}</span>
+        ${funcao ? `<span class="funcao-tag ${funcao.cor}" style="border:1px solid ${cor}22">${funcao.nome}</span>` : ''}
+        ${u.veiculo ? `<span class="veiculo-tag">🚗 ${u.veiculo}</span>` : ''}
+      </div>
+    </div>`;
+  }).join('') || '<div class="empty-state"><div class="es-icon">👤</div>Nenhum colaborador encontrado.</div>';
+};
+
+// Override openUserEdit para incluir função e veículo
+const _openUserEditOriginal = openUserEdit;
+window.openUserEdit = function openUserEdit(login) {
+  populateUserModalFuncoes();
+  const u = DB.users().find(u => u.login === login);
+  if (!u) return;
+  editingUserLogin = login;
+  document.getElementById('eu-name').value   = u.name;
+  document.getElementById('eu-login').textContent = u.login;
+  document.getElementById('eu-role').value   = u.role;
+  document.getElementById('eu-pass').value   = '';
+  if (document.getElementById('eu-funcao'))  document.getElementById('eu-funcao').value  = u.funcao  || '';
+  if (document.getElementById('eu-veiculo')) document.getElementById('eu-veiculo').value = u.veiculo || '';
+  openModal('user-edit-modal');
+};
+
+// Override saveEditUser para salvar função e veículo
+const _saveEditUserOriginal = saveEditUser;
+window.saveEditUser = function saveEditUser() {
+  const name    = document.getElementById('eu-name').value.trim();
+  const role    = document.getElementById('eu-role').value;
+  const pass    = document.getElementById('eu-pass').value;
+  const funcao  = document.getElementById('eu-funcao')?.value  || '';
+  const veiculo = document.getElementById('eu-veiculo')?.value || '';
+  if (!name) { alert('Informe o nome.'); return; }
+  const users = DB.users();
+  const idx   = users.findIndex(u => u.login === editingUserLogin);
+  if (idx < 0) return;
+  users[idx].name    = name;
+  users[idx].role    = role;
+  users[idx].funcao  = funcao;
+  users[idx].veiculo = veiculo;
+  if (pass) users[idx].pass = pass;
+  DB.set('garra_users', users);
+  if (editingUserLogin === currentUser.login) {
+    currentUser.name = name; currentUser.role = role;
+  }
+  editingUserLogin = null;
+  closeModal('user-edit-modal');
+  renderUsers();
+  populateSubmissionFilters();
+};
+
+// Override saveNewUser para salvar função e veículo
+const _saveNewUserOriginal = saveNewUser;
+window.saveNewUser = function saveNewUser() {
+  const name    = document.getElementById('nu-name').value.trim();
+  const login   = document.getElementById('nu-user').value.trim().toLowerCase();
+  const pass    = document.getElementById('nu-pass').value;
+  const role    = document.getElementById('nu-role').value;
+  const funcao  = document.getElementById('nu-funcao')?.value  || '';
+  const veiculo = document.getElementById('nu-veiculo')?.value || '';
+  if (!name || !login || !pass) { alert('Preencha todos os campos.'); return; }
+  if (DB.users().find(u => u.login === login)) { alert('Login já existe.'); return; }
+  DB.saveUser({ name, login, pass, role, funcao, veiculo, pts:0, submissions:0 });
+  ['nu-name','nu-user','nu-pass'].forEach(id => document.getElementById(id).value = '');
+  closeModal('user-modal');
+  renderUsers();
+  populateSubmissionFilters();
+};
+
+// Override renderDriverDashboard para filtrar CLs pela função
+const _renderDriverOriginal = renderDriverDashboard;
+window.renderDriverDashboard = function renderDriverDashboard() {
+  const u = DB.users().find(u => u.login === currentUser.login);
+  if (!u) return;
+  currentUser = u;
+
+  document.getElementById('driver-pts').textContent    = u.pts || 0;
+  document.getElementById('driver-streak').textContent = `🔥 ${u.submissions || 0} envios`;
+
+  const drivers = DB.users().filter(u => u.role === 'driver').sort((a,b) => (b.pts||0)-(a.pts||0));
+  const rank    = drivers.findIndex(d => d.login === u.login) + 1;
+  document.getElementById('driver-rank').textContent = '#' + rank;
+
+  const maxPts = Math.max(...drivers.map(d => d.pts||0), 1);
+  document.getElementById('driver-bar').style.width = Math.round(((u.pts||0)/maxPts)*100) + '%';
+
+  // Filtra CLs pela função do colaborador
+  const allCLs  = DB.allCLs();
+  const funcao  = u.funcao ? FuncaoDB.byId(u.funcao) : null;
+  const visivel = funcao?.cls?.length
+    ? Object.fromEntries(Object.entries(allCLs).filter(([id]) => funcao.cls.includes(id)))
+    : allCLs;
+
+  const cardsEl = document.getElementById('driver-cl-cards');
+  cardsEl.innerHTML = Object.values(visivel).map(cl => `
+    <div class="cl-card" onclick="startChecklist('${cl.id}')">
+      <div class="clc-icon">${cl.icon}</div>
+      <div class="clc-body">
+        <div class="clc-name">${cl.label}</div>
+        <div class="clc-desc">${cl.desc || ''}</div>
+      </div>
+      <div class="clc-arrow">›</div>
+    </div>`).join('');
+
+  // Mostra veículo fixo se houver
+  if (u.veiculo) {
+    cardsEl.insertAdjacentHTML('beforebegin', `
+      <div style="background:rgba(240,124,30,.08);border:1px solid rgba(240,124,30,.2);border-radius:var(--radius-sm);padding:10px 14px;margin-bottom:12px;font-size:12px;color:var(--orange-dk)">
+        🚗 Veículo fixo vinculado: <strong>${u.veiculo}</strong>
+      </div>`);
+  }
+
+  // Histórico
+  const subs   = DB.submissions().filter(s => s.user === u.login);
+  const histEl = document.getElementById('driver-history');
+  if (!subs.length) {
+    histEl.innerHTML = '<div class="empty-state"><div class="es-icon">📋</div>Nenhum check list enviado ainda!</div>';
+    return;
+  }
+  histEl.innerHTML = subs.slice(0,15).map(s => {
+    const cl  = allCLs[s.type] || {};
+    const nc  = countNC(s);
+    const st  = s.archived ? 'archived' : (s.synced === false ? 'pending' : (nc > 0 ? 'nc' : 'ok'));
+    const lbl = s.archived ? '📦 Equip. Removido' : st==='pending' ? '⏳ Sync pendente' : nc>0 ? `⚠ ${nc} NC` : '✓ Conforme';
+    const veh = s.meta?.veiculo || s.meta?.equipamento || '';
+    return `<div class="history-item" onclick="showSubmissionDetail('${s.id}')">
+      <div class="hi-icon">${cl.icon||'📋'}</div>
+      <div class="hi-body">
+        <div class="hi-title">${cl.label||s.type}${veh?' – '+veh:''}</div>
+        <div class="hi-meta">${formatDate(s.date)}${s.meta?.local?' • '+s.meta.local:''}</div>
+      </div>
+      <div class="badge ${st}">${lbl}</div>
+    </div>`;
+  }).join('');
+};
+
+// Inicializa funções ao carregar gestor
+const _renderManagerOriginal = renderManagerDashboard;
+window.renderManagerDashboard = function renderManagerDashboard() {
+  _renderManagerOriginal();
+  populateFuncaoFilters();
+  populateUserModalFuncoes();
+};
