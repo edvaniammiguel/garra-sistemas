@@ -893,10 +893,48 @@ function renderUsers() {
       </div>
       <div class="ui-actions">
         <span class="role-badge ${u.role}">${roleLabel}</span>
+        <button class="fleet-btn edit" onclick="openUserEdit('${u.login}')">✎</button>
         ${u.login !== currentUser.login ? `<button class="fleet-btn remove" onclick="openUserRemove('${u.login}')">✕</button>` : ''}
       </div>
     </div>`}).join('');
 }
+
+let editingUserLogin = null;
+
+function openUserEdit(login) {
+  const u = DB.users().find(u => u.login === login);
+  if (!u) return;
+  editingUserLogin = login;
+  document.getElementById('eu-name').value  = u.name;
+  document.getElementById('eu-login').textContent = u.login;
+  document.getElementById('eu-role').value  = u.role;
+  document.getElementById('eu-pass').value  = '';
+  openModal('user-edit-modal');
+}
+
+function saveEditUser() {
+  const name = document.getElementById('eu-name').value.trim();
+  const role = document.getElementById('eu-role').value;
+  const pass = document.getElementById('eu-pass').value;
+  if (!name) { alert('Informe o nome.'); return; }
+  const users = DB.users();
+  const idx = users.findIndex(u => u.login === editingUserLogin);
+  if (idx < 0) return;
+  users[idx].name = name;
+  users[idx].role = role;
+  if (pass) users[idx].pass = pass;
+  DB.set('garra_users', users);
+  // Update currentUser if editing self
+  if (editingUserLogin === currentUser.login) {
+    currentUser.name = name;
+    currentUser.role = role;
+  }
+  editingUserLogin = null;
+  closeModal('user-edit-modal');
+  renderUsers();
+  populateSubmissionFilters();
+}
+
 function saveNewUser() {
   const name  = document.getElementById('nu-name').value.trim();
   const login = document.getElementById('nu-user').value.trim().toLowerCase();
