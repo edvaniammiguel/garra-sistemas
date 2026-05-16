@@ -180,46 +180,74 @@ async function doLogin() {
   const btn   =  document.querySelector('#screen-login .btn-primary');
   if (btn) { btn.textContent = 'Entrando...'; btn.disabled = true; }
   err.classList.add('hidden');
+
+  // ── ESTRATÉGIA: tenta API com timeout curto, fallback offline ──
+  let apiOk = false;
+
   try {
-    // LOGIN VIA BANCO — fonte da verdade
-    const apiUser = await GarraDB.login(login, pass);
+    // Tenta API com timeout de 5s
+    const apiUser = await Promise.race([
+      GarraDB.login(login, pass),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('TIMEOUT')), 5000))
+    ]);
 
-    // Busca extras locais (funcao, veiculo) que só existem no localStorage
+    // Sucesso na API — atualiza cache local
     const loc = DB.users().find(u => u.login === apiUser.login) || {};
-
-    // Monta usuário com perfil do banco + extras locais
     currentUser = {
       login:       apiUser.login,
       name:        apiUser.name,
-      role:        apiUser.role,        // ← SEMPRE do banco
+      role:        apiUser.role,
       pts:         apiUser.pts || loc.pts || 0,
       submissions: apiUser.submissions || loc.submissions || 0,
-      funcao:      loc.funcao  || '',   // só local por enquanto
-      veiculo:     loc.veiculo || '',   // só local por enquanto
-      pass:        pass,                // salva para fallback offline
+      funcao:      loc.funcao  || '',
+      veiculo:     loc.veiculo || '',
+      pass:        pass, // salva para login offline futuro
     };
-
-    // Atualiza localStorage com dados frescos
     DB.saveUser(currentUser);
     localStorage.setItem('garra_current_user', JSON.stringify(currentUser));
-
+    apiOk = true;
     _navigate();
-  } catch(e) {
-    if (e.message === 'OFFLINE' || e.message === 'TIMEOUT' || e.message.includes('fetch')) {
-      // FALLBACK OFFLINE — usa cache local
-      const cached = DB.users().find(u => u.login === login && u.pass === pass);
-      if (cached) {
-        err.classList.add('hidden');
-        currentUser = cached;
-        _navigate();
-        return;
+
+  } catch(apiErr) {
+    console.warn('[Login] API falhou:', apiErr.message);
+
+    // ── FALLBACK OFFLINE ──────────────────────────
+    const cached = DB.users().find(u => u.login === login && u.pass === pass);
+
+    if (cached) {
+      // Usuário encontrado no cache local — entra offline
+      currentUser = cached;
+      localStorage.setItem('garra_current_user', JSON.stringify(cached));
+
+      // Avisa que está offline mas permite entrar
+      if (!isOnline || apiErr.message === 'TIMEOUT') {
+        showOfflineBanner();
       }
+      _navigate();
+      return;
     }
-    err.textContent = 'Usuário ou senha incorretos.';
+
+    // Não encontrou em lugar nenhum
+    if (!isOnline || apiErr.message === 'TIMEOUT') {
+      err.textContent = '📶 Sem conexão. Este usuário não tem cache local neste dispositivo. Conecte à internet para o primeiro acesso.';
+    } else {
+      err.textContent = 'Usuário ou senha incorretos.';
+    }
     err.classList.remove('hidden');
+
   } finally {
     if (btn) { btn.textContent = 'Entrar'; btn.disabled = false; }
   }
+}
+
+function showOfflineBanner() {
+  const existing = document.getElementById('offline-mode-banner');
+  if (existing) return;
+  const b = document.createElement('div');
+  b.id = 'offline-mode-banner';
+  b.style.cssText = 'position:fixed;top:0;left:0;right:0;background:var(--warn,#f5a623);color:#333;padding:8px 16px;font-size:12px;font-weight:600;text-align:center;z-index:9999;';
+  b.innerHTML = '📶 Modo Offline — Check lists serão sincronizados quando conectar <button onclick="this.parentElement.remove()" style="margin-left:12px;background:none;border:none;cursor:pointer;font-size:14px">✕</button>';
+  document.body.prepend(b);
 }
 
 function _navigate() {
@@ -525,6 +553,13 @@ function formNext() {
   const step = cl.steps[currentStep];
 
   // ── VALIDAÇÃO ──────────────────────────────────
+  // Obs é sempre opcional — não valida
+  if (step.type === 'obs') {
+    if (currentStep < cl.steps.length - 1) { currentStep++; renderFormStep(); }
+    else submitChecklist();
+    return;
+  }
+
   const erros = [];
 
   // Meta: campos obrigatórios (equipamento, operador)
@@ -607,21 +642,79 @@ function calculatePoints(s, cl) {
 
 // ─── SUBMIT ────────────────────────────────────────
 async function submitChecklist() {
-  const cl=getCL();
-  const id='sub_'+Date.now()+'_'+Math.random().toString(36).slice(2,7);
-  const submission={id,user:currentUser.login,userName:currentUser.name,type:currentCLId,clLabel:cl.label,date:new Date().toISOString(),meta:{...formMeta},answers:{...formAnswers},synced:false,archived:false};
-  submission.pts=calculatePoints(submission,cl);
-  DB.saveSubmission({...submission,synced:false});
+  // Mostra loading no botão Enviar
+  const btnNext = document.getElementById('btn-next');
+  if (btnNext) { btnNext.textContent = 'Enviando...'; btnNext.disabled = true; }
+
   try {
-    await GarraDB.salvarEnvio({envio_id:submission.id,usuario_login:submission.user,usuario_nome:submission.userName,cl_id:submission.type,cl_label:submission.clLabel,meta:submission.meta,respostas:submission.answers,pts:submission.pts,tem_nc:countNC(submission)>0,total_nc:countNC(submission),enviado_em:submission.date});
-    submission.synced=true; DB.saveSubmission(submission);
-  } catch(e) { DB.addPending(submission); }
-  const users=DB.users(); const idx=users.findIndex(u=>u.login===currentUser.login);
-  if(idx>=0){users[idx].pts=(users[idx].pts||0)+submission.pts;users[idx].submissions=(users[idx].submissions||0)+1;DB.set('garra_users',users);currentUser={...currentUser,...users[idx]};}
-  showScreen('screen-success');
-  document.getElementById('success-title').textContent='Check List Enviado! 🎉';
-  document.getElementById('success-msg').textContent=submission.synced?'Salvo e sincronizado com sucesso.':'Salvo localmente. Será sincronizado quando online.';
-  document.getElementById('pts-earned').textContent=`+${submission.pts} pts`;
+    const cl  = getCL();
+    const id  = 'sub_' + Date.now() + '_' + Math.random().toString(36).slice(2,7);
+    const submission = {
+      id,
+      user:       currentUser.login,
+      userName:   currentUser.name,
+      type:       currentCLId,
+      clLabel:    cl.label,
+      date:       new Date().toISOString(),
+      meta:       { ...formMeta },
+      answers:    { ...formAnswers },
+      synced:     false,
+      archived:   false,
+    };
+    submission.pts = calculatePoints(submission, cl);
+
+    // 1. Salva localmente PRIMEIRO — garante que não perde mesmo se API falhar
+    DB.saveSubmission({ ...submission, synced: false });
+
+    // 2. Tenta enviar para o banco
+    let sincronizado = false;
+    try {
+      await GarraDB.salvarEnvio({
+        envio_id:      submission.id,
+        usuario_login: submission.user,
+        usuario_nome:  submission.userName,
+        cl_id:         submission.type,
+        cl_label:      submission.clLabel,
+        meta:          submission.meta,
+        respostas:     submission.answers,
+        pts:           submission.pts,
+        tem_nc:        countNC(submission) > 0,
+        total_nc:      countNC(submission),
+        enviado_em:    submission.date,
+      });
+      sincronizado = true;
+      submission.synced = true;
+      DB.saveSubmission(submission);
+    } catch(apiErr) {
+      // Offline ou erro na API — adiciona à fila para sync posterior
+      console.warn('[Submit] API falhou, salvando offline:', apiErr.message);
+      DB.addPending(submission);
+    }
+
+    // 3. Atualiza pontos do colaborador localmente
+    const users = DB.users();
+    const idx   = users.findIndex(u => u.login === currentUser.login);
+    if (idx >= 0) {
+      users[idx].pts         = (users[idx].pts         || 0) + submission.pts;
+      users[idx].submissions = (users[idx].submissions  || 0) + 1;
+      DB.set('garra_users', users);
+      currentUser = { ...currentUser, ...users[idx] };
+    }
+
+    // 4. Mostra tela de sucesso SEMPRE — independente da API
+    showScreen('screen-success');
+    document.getElementById('success-title').textContent = 'Check List Enviado! 🎉';
+    document.getElementById('success-msg').textContent   = sincronizado
+      ? '✅ Salvo e sincronizado com sucesso.'
+      : '📦 Salvo localmente. Será sincronizado quando online.';
+    document.getElementById('pts-earned').textContent = `+${submission.pts} pts`;
+
+  } catch(fatalErr) {
+    // Erro fatal inesperado
+    console.error('[Submit] Erro fatal:', fatalErr);
+    alert('Erro ao enviar. Tente novamente.');
+    if (btnNext) { btnNext.textContent = 'Enviar ✓'; btnNext.disabled = false; }
+  }
 }
 
 // ─── MANAGER DASHBOARD ─────────────────────────────
@@ -1225,8 +1318,13 @@ function formatDateTime(iso) { if(!iso)return'–';return new Date(iso).toLocale
 
 // ─── SERVICE WORKER ────────────────────────────────
 if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('sw.js').then(reg => {
-    setInterval(() => reg.update(), 60000);
+  navigator.serviceWorker.register('./sw.js', {scope: './'}).then(reg => {
+    console.log('[App] Service Worker registrado ✅');
+
+    // Verifica atualização a cada 5 minutos
+    setInterval(() => reg.update(), 5 * 60 * 1000);
+
+    // Nova versão disponível
     reg.addEventListener('updatefound', () => {
       const newSW = reg.installing;
       newSW.addEventListener('statechange', () => {
@@ -1235,8 +1333,15 @@ if ('serviceWorker' in navigator) {
         }
       });
     });
-  }).catch(() => {});
-  navigator.serviceWorker.addEventListener('controllerchange', () => window.location.reload());
+
+    // Quando SW ativa novo, recarrega
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      window.location.reload();
+    });
+
+  }).catch(err => console.warn('[App] SW não registrado:', err));
+} else {
+  console.warn('[App] Service Worker não suportado neste navegador');
 }
 
 function showUpdateBanner() {
