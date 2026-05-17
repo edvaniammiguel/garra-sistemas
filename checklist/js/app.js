@@ -881,11 +881,20 @@ function openFleetEdit(cat,id) {
   document.getElementById('fleet-edit-key').value=cat+'|'+id;document.getElementById('fleet-category').value=cat;document.getElementById('fleet-id-input').value=item.id;document.getElementById('fleet-desc-input').value=item.desc||'';
   openModal('fleet-modal');
 }
-function saveFleetItem() {
+async function saveFleetItem() {
   const editKey=document.getElementById('fleet-edit-key').value,cat=document.getElementById('fleet-category').value,id=document.getElementById('fleet-id-input').value.trim().toUpperCase(),desc=document.getElementById('fleet-desc-input').value.trim();
   if(!id){alert('Informe a identificação.');return;}
   if(editKey){const[oldCat,oldId]=editKey.split('|');if(oldCat!==cat||oldId!==id){const f=DB.fleet();f[oldCat]=(f[oldCat]||[]).filter(v=>v.id!==oldId);DB.set('garra_fleet',f);}}
-  DB.saveFleetItem(cat,{id,desc,active:true});closeModal('fleet-modal');renderFleet();populateUserModalFuncoes();
+  const frotaItem = {id, desc, active:true};
+  DB.saveFleetItem(cat, frotaItem);
+  // Salva no banco
+  try {
+    await GarraDB.salvarFrotaItem({ categoria: cat, identificacao: id, descricao: desc });
+    console.log('✅ Frota salva no banco:', id);
+  } catch(e) {
+    console.warn('⚠️ Frota salva localmente:', e.message);
+  }
+  closeModal('fleet-modal');renderFleet();populateUserModalFuncoes();
 }
 function openFleetRemove(cat,id) {
   pendingRemoveFleetKey=cat+'|'+id;document.getElementById('fleet-remove-info').textContent=`Equipamento: ${id}`;openModal('fleet-remove-modal');
@@ -1119,7 +1128,7 @@ async function confirmRemoveUser() {
   closeModal('user-remove-modal');
   
   // Re-sync e re-render
-  await syncUsersFromAPI();
+  await syncAllFromAPI();
   renderUsers();
   populateSubmissionFilters();
 }
@@ -1474,6 +1483,26 @@ async function syncCustomCLsFromAPI() {
   }
 }
 
+async function syncAllFromAPI() {
+  await syncUsersFromAPI();
+  await syncFrotaFromAPI();
+  await syncCustomCLsFromAPI();
+}
+
+async function syncFrotaFromAPI() {
+  try {
+    const data = await GarraDB.getFrota();
+    if (!data?.length) return;
+    const fleet = { maquinas: [], carro: [], caminhao: [] };
+    data.forEach(item => {
+      if (!fleet[item.categoria]) return;
+      fleet[item.categoria].push({ id: item.identificacao, desc: item.descricao || '', active: item.ativo !== false });
+    });
+    DB.set('garra_fleet', fleet);
+    console.log('✅ Frota sincronizada:', data.length, 'itens');
+  } catch(e) { console.warn('⚠️ Sync frota falhou:', e.message); }
+}
+
 async function syncUsersFromAPI() {
   try {
     Cache.del('usuarios'); // Sempre busca dados frescos
@@ -1514,37 +1543,7 @@ async function syncUsersFromAPI() {
 }
 
 // ─── SYNC CHECK LISTS PERSONALIZADOS DO BANCO ─────
-async function syncCustomCLsFromAPI() {
-  try {
-    const modelos = await GarraDB.getModelos();
-    if (!modelos?.length) return;
 
-    // Converte formato da API para formato local
-    const cls = modelos.map(m => ({
-      id:         m.cl_id,
-      label:      m.label,
-      icon:       m.icon || '📋',
-      desc:       m.descricao || '',
-      vehicleCat: m.vehicle_cat || 'maquinas',
-      isDefault:  false,
-      scoreRules: {
-        full:    m.score_full   || 100,
-        nc:      m.score_nc     || 60,
-        obs:     m.score_obs    || 20,
-        ontime:  m.score_ontime || 10,
-      },
-      questions: m.questions || [],
-      steps:     m.steps     || [],
-    }));
-
-    DB.set('garra_custom_cls', cls);
-    console.log('✅ Check lists sincronizados:', cls.length);
-  } catch(e) {
-    console.warn('⚠️ Sync CLs falhou:', e.message);
-  }
-}
-
-// Salva CL no banco ao criar/editar
 async function saveCustomCLToAPI(cl) {
   try {
     await GarraDB.salvarModelo(cl);
@@ -1556,7 +1555,7 @@ async function saveCustomCLToAPI(cl) {
 
 // ─── INIT ──────────────────────────────────────────
 updateSyncUI();
-syncUsersFromAPI();
+syncAllFromAPI();
 syncCustomCLsFromAPI();
 syncCustomCLsFromAPI();
 
