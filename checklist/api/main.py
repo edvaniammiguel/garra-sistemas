@@ -4,7 +4,7 @@
 # Deploy: Render Web Service (Python 3)
 # ═══════════════════════════════════════════════════════════
 
-from fastapi import FastAPI, HTTPException, Depends, Header
+from fastapi import FastAPI, HTTPException, Depends, Header, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional, List, Any
@@ -12,17 +12,39 @@ import asyncpg
 import bcrypt
 import os
 import json
+import time
 from datetime import datetime
+from collections import defaultdict
 
 app = FastAPI(title="Garra Check List API", version="1.0.0")
 
+# ── RATE LIMITER SIMPLES (brute force protection) ───────────
+_login_attempts: dict = defaultdict(list)
+MAX_ATTEMPTS  = 10   # máximo de tentativas
+WINDOW_SECS   = 300  # janela de 5 minutos
+
+def check_rate_limit(ip: str):
+    now  = time.time()
+    reqs = [t for t in _login_attempts[ip] if now - t < WINDOW_SECS]
+    _login_attempts[ip] = reqs
+    if len(reqs) >= MAX_ATTEMPTS:
+        raise HTTPException(status_code=429, detail=f"Muitas tentativas. Aguarde {WINDOW_SECS//60} minutos.")
+    _login_attempts[ip].append(now)
+
 # ── CORS — permite o front-end acessar a API ────────────────
+ALLOWED_ORIGINS = [
+    "https://garra-checklist-app.onrender.com",
+    "https://garra-sistemas.onrender.com",
+    "http://localhost:3000",   # desenvolvimento local
+    "http://127.0.0.1:5500",  # Live Server local
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Em produção, trocar pelo domínio do Render
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "DELETE", "PATCH", "PUT"],
+    allow_headers=["Content-Type", "Authorization"],
 )
 
 # ── BANCO DE DADOS ──────────────────────────────────────────
@@ -36,6 +58,16 @@ async def get_db():
         await conn.close()
 
 # ── STARTUP: criar tabelas e usuários padrão ────────────────
+@app.middleware("http")
+async def security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"]    = "nosniff"
+    response.headers["X-Frame-Options"]           = "DENY"
+    response.headers["X-XSS-Protection"]          = "1; mode=block"
+    response.headers["Referrer-Policy"]           = "strict-origin-when-cross-origin"
+    response.headers["Permissions-Policy"]        = "geolocation=(), microphone=()"
+    return response
+
 @app.on_event("startup")
 async def startup():
     conn = await asyncpg.connect(DATABASE_URL)
@@ -165,7 +197,8 @@ class ChecklistModeloCreate(BaseModel):
 # ═══════════════════════════════════════════════════════════
 
 @app.post("/auth/login")
-async def login(req: LoginRequest, db=Depends(get_db)):
+async def login(req: LoginRequest, request: Request, db=Depends(get_db)):
+    check_rate_limit(request.client.host)
     user = await db.fetchrow(
         "SELECT * FROM usuarios WHERE login=$1 AND ativo=TRUE", req.login
     )
@@ -195,6 +228,21 @@ async def listar_usuarios(db=Depends(get_db)):
 
 @app.post("/usuarios")
 async def criar_usuario(u: UsuarioCreate, db=Depends(get_db)):
+    # Valida campos
+    if not u.login or len(u.login) < 3:
+        raise HTTPException(status_code=400, detail="Login deve ter pelo menos 3 caracteres")
+    if len(u.login) > 50:
+        raise HTTPException(status_code=400, detail="Login muito longo")
+    if not u.nome or len(u.nome.strip()) < 2:
+        raise HTTPException(status_code=400, detail="Nome inválido")
+    if not u.senha or len(u.senha) < 4:
+        raise HTTPException(status_code=400, detail="Senha deve ter pelo menos 4 caracteres")
+    if u.perfil not in ('manager', 'superior', 'driver', 'diarista'):
+        raise HTTPException(status_code=400, detail="Perfil inválido")
+    # Sanitiza login — apenas letras, números, ponto e hífen
+    import re
+    if not re.match(r'^[a-z0-9._-]+$', u.login):
+        raise HTTPException(status_code=400, detail="Login deve conter apenas letras minúsculas, números, ponto ou hífen")
     existe = await db.fetchval("SELECT id FROM usuarios WHERE login=$1", u.login)
     if existe:
         raise HTTPException(status_code=400, detail="Login já existe")
