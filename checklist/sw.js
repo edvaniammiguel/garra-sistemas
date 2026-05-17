@@ -1,14 +1,14 @@
 /* ═══════════════════════════════════════════════════
-   sw.js — Service Worker Garra Check List
-   Estratégia: Network First com fallback para cache
-   Atualiza automaticamente quando há nova versão
+   sw.js — Service Worker Garra Check List v4
+   Estratégia: Cache First para arquivos do app
+   Network First para API
+   Garante funcionamento 100% offline
 ═══════════════════════════════════════════════════ */
 
-const CACHE_VERSION = 'garra-v3-' + '2026051501';
-const CACHE_STATIC  = CACHE_VERSION + '-static';
+const CACHE_NAME = 'garra-app-v4';
 
-// Arquivos essenciais para funcionar offline
-const CORE_FILES = [
+// Todos os arquivos necessários para funcionar offline
+const ARQUIVOS_CORE = [
   './',
   './index.html',
   './css/style.css',
@@ -16,101 +16,104 @@ const CORE_FILES = [
   './js/data.js',
   './js/app.js',
   './js/logistics.js',
-  './icons/logo.jpg',
+  './icons/logo.png',
   './manifest.json',
+  './sw.js',
 ];
 
-// ── INSTALL: cacheia arquivos core ─────────────────
+// ── INSTALL: pré-cacheia TUDO imediatamente ─────────
 self.addEventListener('install', event => {
+  console.log('[SW] Instalando e cacheando arquivos...');
   event.waitUntil(
-    caches.open(CACHE_STATIC).then(cache => {
-      return cache.addAll(CORE_FILES);
-    }).then(() => {
-      // Força ativação imediata sem esperar fechar outras abas
-      return self.skipWaiting();
-    })
+    caches.open(CACHE_NAME)
+      .then(cache => {
+        console.log('[SW] Cacheando', ARQUIVOS_CORE.length, 'arquivos');
+        return cache.addAll(ARQUIVOS_CORE);
+      })
+      .then(() => {
+        console.log('[SW] Cache completo ✅');
+        return self.skipWaiting(); // Ativa imediatamente
+      })
+      .catch(err => console.error('[SW] Erro no cache:', err))
   );
 });
 
 // ── ACTIVATE: limpa caches antigos ─────────────────
 self.addEventListener('activate', event => {
   event.waitUntil(
-    caches.keys().then(keys => {
-      return Promise.all(
-        keys
-          .filter(key => key !== CACHE_STATIC)
-          .map(key => {
-            console.log('[SW] Removendo cache antigo:', key);
-            return caches.delete(key);
-          })
-      );
-    }).then(() => {
-      // Assume controle imediato de todas as abas abertas
-      return self.clients.claim();
-    })
+    caches.keys().then(keys =>
+      Promise.all(
+        keys.filter(k => k !== CACHE_NAME).map(k => {
+          console.log('[SW] Removendo cache antigo:', k);
+          return caches.delete(k);
+        })
+      )
+    ).then(() => self.clients.claim()) // Assume controle imediato
   );
 });
 
-// ── FETCH: Network First para JS/CSS, Cache First para imagens ──
+// ── FETCH: estratégia inteligente por tipo ──────────
 self.addEventListener('fetch', event => {
   const url = new URL(event.request.url);
 
-  // Ignora requisições para a API (sempre vai para a rede)
-  if (url.hostname.includes('onrender.com') && !url.pathname.includes('garra-checklist-app')) {
+  // 1. Requisições à API — Network Only (nunca cacheia)
+  if (url.hostname.includes('onrender.com') &&
+      !url.pathname.endsWith('.html') &&
+      !url.pathname.endsWith('.js') &&
+      !url.pathname.endsWith('.css') &&
+      !url.pathname.endsWith('.jpg') &&
+      !url.pathname.endsWith('.png')) {
+    event.respondWith(
+      fetch(event.request).catch(() =>
+        new Response(JSON.stringify({error:'offline'}), {
+          status: 503,
+          headers: {'Content-Type':'application/json'}
+        })
+      )
+    );
     return;
   }
 
-  // Ignora requisições não-GET
+  // 2. Apenas GET
   if (event.request.method !== 'GET') return;
 
-  // Arquivos JS e CSS: Network First (sempre tenta pegar versão mais nova)
-  if (url.pathname.endsWith('.js') || url.pathname.endsWith('.css')) {
+  // 3. Fontes externas (Google Fonts) — Network com fallback
+  if (url.hostname.includes('fonts.google') || url.hostname.includes('fonts.gstatic')) {
     event.respondWith(
-      fetch(event.request)
-        .then(response => {
-          // Atualiza cache com versão nova
-          const responseClone = response.clone();
-          caches.open(CACHE_STATIC).then(cache => cache.put(event.request, responseClone));
-          return response;
-        })
-        .catch(() => {
-          // Sem rede: usa cache
-          return caches.match(event.request);
-        })
+      caches.match(event.request).then(cached => {
+        if (cached) return cached;
+        return fetch(event.request).then(res => {
+          const clone = res.clone();
+          caches.open(CACHE_NAME).then(c => c.put(event.request, clone));
+          return res;
+        }).catch(() => new Response('', {status: 200}));
+      })
     );
     return;
   }
 
-  // HTML: Network First (garante sempre versão mais recente)
-  if (url.pathname.endsWith('.html') || url.pathname === '/' || url.pathname.endsWith('/')) {
-    event.respondWith(
-      fetch(event.request)
-        .then(response => {
-          const responseClone = response.clone();
-          caches.open(CACHE_STATIC).then(cache => cache.put(event.request, responseClone));
-          return response;
-        })
-        .catch(() => caches.match('./index.html'))
-    );
-    return;
-  }
-
-  // Imagens e outros: Cache First (economiza banda)
+  // 4. Arquivos do app — Cache First, atualiza em background
   event.respondWith(
-    caches.match(event.request).then(cached => {
-      if (cached) return cached;
-      return fetch(event.request).then(response => {
-        const responseClone = response.clone();
-        caches.open(CACHE_STATIC).then(cache => cache.put(event.request, responseClone));
-        return response;
-      });
-    })
+    caches.open(CACHE_NAME).then(cache =>
+      cache.match(event.request).then(cached => {
+        // Busca versão nova em background (stale-while-revalidate)
+        const fetchPromise = fetch(event.request)
+          .then(networkRes => {
+            if (networkRes && networkRes.status === 200) {
+              cache.put(event.request, networkRes.clone());
+            }
+            return networkRes;
+          })
+          .catch(() => null);
+
+        // Retorna cache imediatamente se disponível
+        return cached || fetchPromise || caches.match('./index.html');
+      })
+    )
   );
 });
 
-// ── MENSAGEM: força atualização quando solicitado ──
+// ── MENSAGEM: força atualização ─────────────────────
 self.addEventListener('message', event => {
-  if (event.data === 'SKIP_WAITING') {
-    self.skipWaiting();
-  }
+  if (event.data === 'SKIP_WAITING') self.skipWaiting();
 });
