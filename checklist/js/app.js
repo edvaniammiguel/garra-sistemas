@@ -357,9 +357,18 @@ function renderDriverDashboard() {
   // Filtra CLs pela função
   const allCLs = DB.allCLs();
   const funcao  = u.funcao ? FuncaoDB.byId(u.funcao) : null;
-  const visivel = funcao?.cls?.length
-    ? Object.fromEntries(Object.entries(allCLs).filter(([id]) => funcao.cls.includes(id)))
-    : allCLs;
+  
+  // Se função tem CLs específicos, filtra — mas sempre inclui customizados criados para esta função
+  let visivel;
+  if (funcao?.cls?.length) {
+    visivel = Object.fromEntries(
+      Object.entries(allCLs).filter(([id]) => funcao.cls.includes(id))
+    );
+    // Se ficou vazio (função não tem CL vinculado ainda), mostra todos
+    if (!Object.keys(visivel).length) visivel = allCLs;
+  } else {
+    visivel = allCLs;
+  }
 
   const cardsEl = document.getElementById('driver-cl-cards');
   // Veículo fixo
@@ -900,8 +909,12 @@ function openCLRemove(id) {
   const cl=DB.customCLs().find(c=>c.id===id); if(!cl)return;
   pendingRemoveCLId=id;document.getElementById('cl-remove-info').textContent=`Check List: "${cl.label}"`;openModal('cl-remove-modal');
 }
-function confirmRemoveCL() {
-  if(!pendingRemoveCLId)return;DB.removeCustomCL(pendingRemoveCLId);pendingRemoveCLId=null;closeModal('cl-remove-modal');renderChecklistsTab();
+async function confirmRemoveCL() {
+  if(!pendingRemoveCLId)return;
+  try { await apiFetch('/checklist/modelos/'+pendingRemoveCLId, {method:'DELETE'}); }
+  catch(e){ console.warn('Remove CL API falhou:', e.message); }
+  DB.removeCustomCL(pendingRemoveCLId);
+  pendingRemoveCLId=null;closeModal('cl-remove-modal');renderChecklistsTab();
 }
 
 // ── USUÁRIOS ──────────────────────────────────────
@@ -1309,11 +1322,40 @@ function previewChecklist() {
   DB.saveCustomCL(buildCLObject('__preview__'));startChecklist('__preview__');
 }
 
-function saveChecklist() {
+async function saveChecklist() {
   const name=document.getElementById('bl-name').value.trim(); if(!name){alert('Informe o título.');return;}
   if(!builderQuestions.filter(q=>q.type!=='section').length){alert('Adicione pelo menos uma pergunta.');return;}
   const id=builderEditId&&builderEditId!=='__preview__'?builderEditId:('cl_'+Date.now()+'_'+Math.random().toString(36).slice(2,5));
-  DB.saveCustomCL(buildCLObject(id));DB.removeCustomCL('__preview__');
+  const clObj = buildCLObject(id);
+
+  // Salva local
+  DB.saveCustomCL(clObj);
+  DB.removeCustomCL('__preview__');
+
+  // Salva no banco
+  try {
+    await apiFetch('/checklist/modelos', {
+      method: 'POST',
+      body: JSON.stringify({
+        cl_id:       clObj.id,
+        label:       clObj.label,
+        icon:        clObj.icon        || '📋',
+        descricao:   clObj.desc        || '',
+        vehicle_cat: clObj.vehicleCat  || 'none',
+        is_default:  false,
+        score_full:  clObj.scoreRules?.full   || 100,
+        score_nc:    clObj.scoreRules?.nc     || 60,
+        score_obs:   clObj.scoreRules?.obs    || 20,
+        score_ontime:clObj.scoreRules?.ontime || 10,
+        questions:   clObj.questions   || [],
+        steps:       clObj.steps       || [],
+      })
+    });
+    console.log('✅ Check list salvo no banco:', clObj.label);
+  } catch(e) {
+    console.warn('⚠️ Check list salvo local, banco falhou:', e.message);
+  }
+
   if(currentUser?.role==='superior'){showSuperior();}
   else{showManager();document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));document.querySelectorAll('.tab-panel').forEach(p=>p.classList.remove('active'));const tabBtn=document.querySelector('[onclick*="checklists"]');if(tabBtn)tabBtn.classList.add('active');document.getElementById('tab-checklists').classList.add('active');renderChecklistsTab();}
 }
@@ -1405,15 +1447,42 @@ function atualizarApp() {
 }
 
 // ─── SINCRONIZA USUÁRIOS DA API ────────────────────
+async function syncCustomCLsFromAPI() {
+  try {
+    const modelos = await apiFetch('/checklist/modelos');
+    if (!modelos?.length) return;
+    // Filtra só os personalizados (não padrão)
+    const customs = modelos.filter(m => !m.is_default);
+    if (!customs.length) return;
+    // Converte formato da API para formato local
+    const cls = customs.map(m => ({
+      id:          m.cl_id,
+      label:       m.label,
+      icon:        m.icon        || '📋',
+      desc:        m.descricao   || '',
+      vehicleCat:  m.vehicle_cat || 'none',
+      isDefault:   false,
+      scoreRules:  { full: m.score_full, nc: m.score_nc, obs: m.score_obs, ontime: m.score_ontime },
+      questions:   m.questions   || [],
+      steps:       m.steps       || [],
+    }));
+    // Salva no localStorage
+    DB.set('garra_custom_cls', cls);
+    console.log('✅ Check lists personalizados sincronizados:', cls.length);
+  } catch(e) {
+    console.warn('⚠️ Sync CLs falhou:', e.message);
+  }
+}
+
 async function syncUsersFromAPI() {
   try {
+    Cache.del('usuarios'); // Sempre busca dados frescos
     const apiUsers = await GarraDB.getUsuarios();
     if (!apiUsers?.length) return;
 
     const local   = DB.users();
     const deleted = DB.get('garra_deleted_users') || [];
 
-    // Para cada usuário do banco, mescla com dados locais extras
     const merged = apiUsers
       .filter(au => !deleted.includes(au.login))
       .map(au => {
@@ -1423,14 +1492,14 @@ async function syncUsersFromAPI() {
           name:        au.nome   || loc.name || au.login,
           role:        au.perfil || loc.role || 'driver',  // banco tem prioridade
           pass:        loc.pass  || '***',
-          funcao:      loc.funcao  || '',   // só local por enquanto
-          veiculo:     loc.veiculo || '',   // só local por enquanto
-          pts:         Math.max(au.pts || 0, loc.pts || 0),
+          funcao:      loc.funcao  || '',
+          veiculo:     loc.veiculo || '',
+          // Preserva pts local se banco tiver 0
+          pts:         (au.pts || 0) > 0 ? (au.pts || 0) : (loc.pts || 0),
           submissions: Math.max(au.total_envios || 0, loc.submissions || 0),
         };
       });
 
-    // Mantém usuários criados offline que ainda não foram para o banco
     local.forEach(lu => {
       if (!merged.find(m => m.login === lu.login) && !deleted.includes(lu.login)) {
         merged.push(lu);
@@ -1444,9 +1513,52 @@ async function syncUsersFromAPI() {
   }
 }
 
+// ─── SYNC CHECK LISTS PERSONALIZADOS DO BANCO ─────
+async function syncCustomCLsFromAPI() {
+  try {
+    const modelos = await GarraDB.getModelos();
+    if (!modelos?.length) return;
+
+    // Converte formato da API para formato local
+    const cls = modelos.map(m => ({
+      id:         m.cl_id,
+      label:      m.label,
+      icon:       m.icon || '📋',
+      desc:       m.descricao || '',
+      vehicleCat: m.vehicle_cat || 'maquinas',
+      isDefault:  false,
+      scoreRules: {
+        full:    m.score_full   || 100,
+        nc:      m.score_nc     || 60,
+        obs:     m.score_obs    || 20,
+        ontime:  m.score_ontime || 10,
+      },
+      questions: m.questions || [],
+      steps:     m.steps     || [],
+    }));
+
+    DB.set('garra_custom_cls', cls);
+    console.log('✅ Check lists sincronizados:', cls.length);
+  } catch(e) {
+    console.warn('⚠️ Sync CLs falhou:', e.message);
+  }
+}
+
+// Salva CL no banco ao criar/editar
+async function saveCustomCLToAPI(cl) {
+  try {
+    await GarraDB.salvarModelo(cl);
+    console.log('✅ CL salvo no banco:', cl.label);
+  } catch(e) {
+    console.warn('⚠️ CL salvo só local:', e.message);
+  }
+}
+
 // ─── INIT ──────────────────────────────────────────
 updateSyncUI();
 syncUsersFromAPI();
+syncCustomCLsFromAPI();
+syncCustomCLsFromAPI();
 
 // Seed demo submissions
 (function seedDemo(){
