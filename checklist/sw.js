@@ -5,7 +5,7 @@
    Garante funcionamento 100% offline
 ═══════════════════════════════════════════════════ */
 
-const CACHE_NAME = 'garra-app-v4';
+const CACHE_NAME = 'garra-app-v5-202605171315';
 
 // Todos os arquivos necessários para funcionar offline
 const ARQUIVOS_CORE = [
