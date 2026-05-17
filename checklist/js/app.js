@@ -1604,8 +1604,9 @@ function renderRankingTab() {
         <div class="ciclo-banner inativo">
           <div class="ciclo-banner-info">
             <div class="ciclo-banner-nome">⏸ Nenhum ciclo ativo</div>
-            <div class="ciclo-banner-periodo">Use o botão acima para iniciar um novo ciclo de pontuação</div>
+            <div class="ciclo-banner-periodo">Inicie um ciclo para acompanhar a pontuação por período</div>
           </div>
+          <button class="btn-primary" onclick="openNovoCiclo()" style="white-space:nowrap;flex-shrink:0">🏆 + Novo Ciclo</button>
         </div>`;
     }
   }
