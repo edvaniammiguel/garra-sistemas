@@ -129,6 +129,11 @@ const GarraDB = {
     }
   },
 
+  // ── CHECKLIST MODELOS ───────────────────────────────────
+  async getModelos() {
+    return await apiFetch('/checklist/modelos');
+  },
+
   // ── CHECKLIST ENVIOS ────────────────────────────────────
   async getEnvios(filtros = {}) {
     const params = new URLSearchParams();
@@ -178,6 +183,38 @@ const GarraDB = {
     const res = await apiFetch(`/frota/${categoria}/${identificacao}`, { method: 'DELETE' });
     Cache.del('frota');
     return res;
+  },
+
+  // ── CHECK LISTS PERSONALIZADOS ─────────────────────────
+  async getModelos() {
+    try {
+      const data = await apiFetch('/checklist/modelos');
+      return (data || []).filter(m => !m.is_default); // só personalizados
+    } catch { return []; }
+  },
+
+  async salvarModelo(cl) {
+    return await apiFetch('/checklist/modelos', {
+      method: 'POST',
+      body: JSON.stringify({
+        cl_id:       cl.id,
+        label:       cl.label,
+        icon:        cl.icon || '📋',
+        descricao:   cl.desc || '',
+        vehicle_cat: cl.vehicleCat || 'maquinas',
+        is_default:  false,
+        score_full:  cl.scoreRules?.full   || 100,
+        score_nc:    cl.scoreRules?.nc     || 60,
+        score_obs:   cl.scoreRules?.obs    || 20,
+        score_ontime:cl.scoreRules?.ontime || 10,
+        questions:   cl.questions || [],
+        steps:       cl.steps     || [],
+      })
+    });
+  },
+
+  async removerModelo(cl_id) {
+    return await apiFetch('/checklist/modelos/' + cl_id, { method: 'DELETE' });
   },
 
   // ── LOGÍSTICA: MOTORISTAS ───────────────────────────────
