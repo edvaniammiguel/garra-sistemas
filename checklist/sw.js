@@ -87,24 +87,29 @@ self.addEventListener('fetch', e => {
     caches.open(CACHE).then(async cache => {
       const cached = await cache.match(e.request);
 
-      // Atualiza cache em background sem bloquear resposta
-      fetch(e.request).then(res => {
-        if (res && res.status === 200) cache.put(e.request, res.clone());
-      }).catch(() => {});
+      if (cached) {
+        // Tem cache — retorna imediatamente e atualiza em background
+        fetch(e.request).then(res => {
+          if (res && res.ok) cache.put(e.request, res);
+        }).catch(() => {});
+        return cached;
+      }
 
-      if (cached) return cached;
-
-      // Sem cache — tenta rede
+      // Sem cache — busca da rede e cacheia
       try {
         const res = await fetch(e.request);
-        if (res && res.status === 200) cache.put(e.request, res.clone());
+        if (res && res.ok) {
+          cache.put(e.request, res.clone()); // clone antes de usar
+        }
         return res;
       } catch {
         // Sem rede e sem cache — serve index.html como fallback
         const fallback = await cache.match('/index.html');
         if (fallback) return fallback;
-        return new Response('<h1>Offline</h1><p>Abra o sistema com internet primeiro.</p>',
-          { headers: { 'Content-Type': 'text/html' } });
+        return new Response(
+          '<html><body style="font-family:sans-serif;text-align:center;padding:40px"><h2>📶 Offline</h2><p>Abra com internet primeiro para ativar o modo offline.</p></body></html>',
+          { headers: { 'Content-Type': 'text/html' } }
+        );
       }
     })
   );
