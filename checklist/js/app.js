@@ -123,14 +123,14 @@ function seedUsers() {
     { login:'gestor',    name:'Gestor de Frota',     pass:'garra2024', role:'manager',  funcao:'', veiculo:'', pts:0,   submissions:0 },
     { login:'gilson',    name:'Gilson',              pass:'garra2024', role:'superior', funcao:'', veiculo:'', pts:0,   submissions:0 },
     { login:'marco',     name:'Marco Aurélio',       pass:'garra2024', role:'superior', funcao:'', veiculo:'', pts:0,   submissions:0 },
-    { login:'andre',     name:'André',               pass:'123456',    role:'driver',   funcao:'fc_operador',  veiculo:'EH-03',  pts:580, submissions:18 },
-    { login:'emerson',   name:'Emerson',             pass:'123456',    role:'driver',   funcao:'fc_motorista', veiculo:'CA-12',  pts:420, submissions:14 },
-    { login:'samuel',    name:'Samuel',              pass:'123456',    role:'driver',   funcao:'fc_motorista', veiculo:'CB-06',  pts:390, submissions:13 },
-    { login:'franciele', name:'Franciele',           pass:'123456',    role:'driver',   funcao:'fc_motorista', veiculo:'CB-037', pts:350, submissions:12 },
-    { login:'gilberto',  name:'Gilberto',            pass:'123456',    role:'driver',   funcao:'fc_motorista', veiculo:'',       pts:310, submissions:10 },
-    { login:'geraldo',   name:'Geraldo',             pass:'123456',    role:'driver',   funcao:'fc_motorista', veiculo:'',       pts:280, submissions:9  },
-    { login:'joao',      name:'João Pedro',          pass:'123456',    role:'driver',   funcao:'fc_motorista', veiculo:'',       pts:260, submissions:8  },
-    { login:'marcio',    name:'Márcio',              pass:'123456',    role:'driver',   funcao:'fc_motorista', veiculo:'',       pts:240, submissions:8  },
+    { login:'andre',     name:'André',               pass:'123456',    role:'driver',   funcao:'fc_operador',  veiculo:'EH-03',  pts:0, submissions:0 },
+    { login:'emerson',   name:'Emerson',             pass:'123456',    role:'driver',   funcao:'fc_motorista', veiculo:'CA-12',  pts:0, submissions:0 },
+    { login:'samuel',    name:'Samuel',              pass:'123456',    role:'driver',   funcao:'fc_motorista', veiculo:'CB-06',  pts:0, submissions:0 },
+    { login:'franciele', name:'Franciele',           pass:'123456',    role:'driver',   funcao:'fc_motorista', veiculo:'CB-037', pts:0, submissions:0 },
+    { login:'gilberto',  name:'Gilberto',            pass:'123456',    role:'driver',   funcao:'fc_motorista', veiculo:'',       pts:0, submissions:0 },
+    { login:'geraldo',   name:'Geraldo',             pass:'123456',    role:'driver',   funcao:'fc_motorista', veiculo:'',       pts:0, submissions:0 },
+    { login:'joao',      name:'João Pedro',          pass:'123456',    role:'driver',   funcao:'fc_motorista', veiculo:'',       pts:0, submissions:0 },
+    { login:'marcio',    name:'Márcio',              pass:'123456',    role:'driver',   funcao:'fc_motorista', veiculo:'',       pts:0, submissions:0 },
     { login:'motorista', name:'Motorista Demo',      pass:'123456',    role:'driver',   funcao:'', veiculo:'', pts:0,   submissions:0  },
   ];
   DB.set('garra_users', users);
@@ -1523,9 +1523,9 @@ async function syncUsersFromAPI() {
           pass:        loc.pass  || '***',
           funcao:      loc.funcao  || '',
           veiculo:     loc.veiculo || '',
-          // Preserva pts local se banco tiver 0
-          pts:         (au.pts || 0) > 0 ? (au.pts || 0) : (loc.pts || 0),
-          submissions: Math.max(au.total_envios || 0, loc.submissions || 0),
+          // Banco é sempre a fonte da verdade para pts
+          pts:         au.pts         || 0,
+          submissions: au.total_envios || 0,
         };
       });
 
@@ -1559,17 +1559,7 @@ syncAllFromAPI();
 syncCustomCLsFromAPI();
 syncCustomCLsFromAPI();
 
-// Seed demo submissions
-(function seedDemo(){
-  if(DB.submissions().length>0)return;
-  const demos=[
-    {user:'andre',    userName:'André',    type:'maquinas',meta:{operador:'André',local:'Florestal',data:'2026-05-10',equipamento:'EH-03',horimetro:'12208.9',tipo:'Preventivo'},answers:{lubrificacao:{val:'C'},abastecimento:{val:'NC',obs:'Bomba com defeito'},limpeza:{val:'C'},filtro_ar:{val:'C'},filtro_oleo:{val:'C'},nivel_oleo:{val:'C'},radiador:{val:'C'},pneu_rodas:{val:'C'},suspensao:{val:'NC',obs:'Pistons merejando'},farois:{val:'NC',obs:'Faróis quebrados'},buzina:{val:'C'},vidros:{val:'NC',obs:'Vidro dianteiro trincado'},eletrico:{val:'NC',obs:'Selenoide com defeito'},implementos:{val:'C'},estado_geral:{val:'NC',obs:'Lataria amassada'}},pts:80,synced:true,archived:false,date:'2026-05-10T08:00:00Z'},
-    {user:'samuel',   userName:'Samuel',   type:'caminhao',meta:{operador:'Samuel',local:'Obra Lev',data:'2026-05-08',veiculo:'CB-06',km:'441489'},answers:{lubrificacao:{val:'C'},abastecimento:{val:'C'},pneus:{val:'C'},suspensao:{val:'C'},luzes:{val:'C'},alarmes:{val:'C'},freios:{val:'C'},painel:{val:'C'}},pts:110,synced:true,archived:false,date:'2026-05-08T09:00:00Z'},
-    {user:'franciele',userName:'Franciele',type:'caminhao',meta:{operador:'Franciele',local:'Pedro Leopoldo',data:'2026-05-07',veiculo:'CB-037',km:'1384219'},answers:{lubrificacao:{val:'C'},pneus:{val:'NC',obs:'Pneu lado direito liso'},suspensao:{val:'C'},luzes:{val:'NC',obs:'Farolete traseiro'},alarmes:{val:'C'},freios:{val:'C'},painel:{val:'C'}},pts:80,synced:true,archived:false,date:'2026-05-07T07:00:00Z'},
-    {user:'emerson',  userName:'Emerson',  type:'carro',   meta:{operador:'Emerson',local:'Sete Lagoas',data:'2026-04-28',veiculo:'CA-12',km:'179498'},answers:{crv:{val:'C'},triangulo:{val:'C'},extintor:{val:'C'},lataria:{val:'C'},pneus:{val:'C'},limpeza:{val:'C'},luzes:{val:'NC',obs:'Farolete queimado'},freios:{val:'C'}},pts:80,synced:true,archived:false,date:'2026-04-28T08:00:00Z'},
-  ];
-  demos.forEach(s=>{s.id='sub_demo_'+Math.random().toString(36).slice(2,9);DB.saveSubmission(s);});
-})();
+
 
 // ═══════════════════════════════════════════════════
 // MÓDULO: CICLOS DE PONTUAÇÃO
