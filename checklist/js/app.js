@@ -99,6 +99,21 @@ const COR_MAP = {
 function fidgen() { return 'fc_' + Date.now() + '_' + Math.random().toString(36).slice(2,5); }
 function qid()    { return 'q_'  + Date.now() + '_' + Math.random().toString(36).slice(2,5); }
 function oid()    { return 'o_'  + Date.now() + '_' + Math.random().toString(36).slice(2,5); }
+// Sanitiza texto para uso em innerHTML — previne XSS
+// Hash simples para armazenamento offline (não criptográfico — apenas ofusca)
+// Senhas reais são validadas pelo banco via bcrypt
+async function hashPass(pass) {
+  try {
+    const buf  = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(pass + 'garra_salt_2026'));
+    return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join('').slice(0,16);
+  } catch { return btoa(pass).slice(0,16); }
+}
+
+function sanitize(s) {
+  const d = document.createElement('div');
+  d.textContent = String(s || '');
+  return d.innerHTML;
+}
 function esc(s)   { return String(s||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;'); }
 
 // ─── SEEDS ─────────────────────────────────────────
@@ -307,7 +322,7 @@ function renderSupChecklistCards() {
   el.innerHTML = Object.values(DB.allCLs()).map(cl => `
     <div class="cl-card" onclick="startChecklist('${cl.id}')">
       <div class="clc-icon">${cl.icon}</div>
-      <div class="clc-body"><div class="clc-name">${cl.label}</div><div class="clc-desc">${cl.desc||''}</div></div>
+      <div class="clc-body"><div class="clc-name">${sanitize(cl.label)}</div><div class="clc-desc">${cl.desc||''}</div></div>
       <div class="clc-arrow">›</div>
     </div>`).join('');
 }
@@ -354,7 +369,7 @@ function renderDriverDashboard() {
   cardsEl.innerHTML = veiculoBanner + Object.values(visivel).map(cl => `
     <div class="cl-card" onclick="startChecklist('${cl.id}')">
       <div class="clc-icon">${cl.icon}</div>
-      <div class="clc-body"><div class="clc-name">${cl.label}</div><div class="clc-desc">${cl.desc||''}</div></div>
+      <div class="clc-body"><div class="clc-name">${sanitize(cl.label)}</div><div class="clc-desc">${cl.desc||''}</div></div>
       <div class="clc-arrow">›</div>
     </div>`).join('');
 
@@ -772,8 +787,8 @@ function renderRanking() {
   const drivers=DB.users().filter(u=>u.role==='driver'||u.role==='diarista').sort((a,b)=>(b.pts||0)-(a.pts||0));
   const top3=drivers.slice(0,3),rest=drivers.slice(3);
   const medals=['🥇','🥈','🥉'],cls=['p1','p2','p3'];
-  document.getElementById('podium').innerHTML=top3.length?top3.map((u,i)=>`<div class="podium-place ${cls[i]}"><div class="pp-medal">${medals[i]}</div><div class="pp-avatar">${u.name.charAt(0)}</div><div class="pp-name">${u.name.split(' ')[0]}</div><div class="pp-pts">${u.pts||0}</div></div>`).join(''):'<div class="empty-state">Sem dados de ranking ainda</div>';
-  document.getElementById('full-ranking').innerHTML=rest.map((u,i)=>`<div class="rank-item"><div class="rank-pos">${i+4}</div><div class="rank-avatar">${u.name.charAt(0)}</div><div class="rank-info"><div class="rank-name">${u.name}</div><div class="rank-sub">${u.submissions||0} envios</div></div><div class="rank-pts">${u.pts||0} pts</div></div>`).join('')||'<div class="empty-state" style="padding:16px 0;font-size:13px">Apenas os 3 primeiros no pódio!</div>';
+  document.getElementById('podium').innerHTML=top3.length?top3.map((u,i)=>`<div class="podium-place ${cls[i]}"><div class="pp-medal">${medals[i]}</div><div class="pp-avatar">${sanitize(u.name).charAt(0)}</div><div class="pp-name">${sanitize(u.name.split(' ')[0])}</div><div class="pp-pts">${u.pts||0}</div></div>`).join(''):'<div class="empty-state">Sem dados de ranking ainda</div>';
+  document.getElementById('full-ranking').innerHTML=rest.map((u,i)=>`<div class="rank-item"><div class="rank-pos">${i+4}</div><div class="rank-avatar">${sanitize(u.name).charAt(0)}</div><div class="rank-info"><div class="rank-name">${sanitize(u.name)}</div><div class="rank-sub">${u.submissions||0} envios</div></div><div class="rank-pts">${u.pts||0} pts</div></div>`).join('')||'<div class="empty-state" style="padding:16px 0;font-size:13px">Apenas os 3 primeiros no pódio!</div>';
 }
 
 // ── SUBMISSIONS ──
@@ -809,7 +824,7 @@ function populateSubmissionFilters() {
   const ft=document.getElementById('filter-type');
   if(ft)ft.innerHTML='<option value="">Todos os tipos</option>'+Object.values(allCLs).map(cl=>`<option value="${cl.id}">${cl.icon} ${cl.label}</option>`).join('');
   const fu=document.getElementById('filter-user');
-  if(fu)fu.innerHTML='<option value="">Todos</option>'+DB.users().filter(u=>u.role==='driver').map(u=>`<option value="${u.login}">${u.name}</option>`).join('');
+  if(fu)fu.innerHTML='<option value="">Todos</option>'+DB.users().filter(u=>u.role==='driver').map(u=>`<option value="${u.login}">${sanitize(u.name)}</option>`).join('');
 }
 
 // ── FLEET ──
@@ -847,12 +862,12 @@ function confirmRemoveFleet() {
 
 // ── CHECK LISTS TAB ──
 function renderChecklistsTab() {
-  document.getElementById('default-cl-list').innerHTML=Object.values(DEFAULT_CHECKLISTS).map(cl=>`<div class="ccl-item"><div class="ccl-icon">${cl.icon}</div><div class="ccl-body"><div class="ccl-name">${cl.label}</div><div class="ccl-meta">${cl.desc||''}</div><div class="ccl-pts">⭐ ${cl.scoreRules?.full||100} pts conforme / ${cl.scoreRules?.nc||60} pts com NC</div></div><div class="ccl-actions"><span class="role-badge driver">Padrão</span></div></div>`).join('');
+  document.getElementById('default-cl-list').innerHTML=Object.values(DEFAULT_CHECKLISTS).map(cl=>`<div class="ccl-item"><div class="ccl-icon">${cl.icon}</div><div class="ccl-body"><div class="ccl-name">${sanitize(cl.label)}</div><div class="ccl-meta">${cl.desc||''}</div><div class="ccl-pts">⭐ ${cl.scoreRules?.full||100} pts conforme / ${cl.scoreRules?.nc||60} pts com NC</div></div><div class="ccl-actions"><span class="role-badge driver">Padrão</span></div></div>`).join('');
   const customs=DB.customCLs(),customEl=document.getElementById('custom-cl-list');
   if(!customs.length){customEl.innerHTML='<div class="empty-state"><div class="es-icon">📝</div>Nenhum check list personalizado criado ainda.</div>';return;}
   customEl.innerHTML=customs.map(cl=>{
     const totalItems=(cl.questions||[]).filter(q=>q.type!=='section').length;
-    return `<div class="ccl-item"><div class="ccl-icon">${cl.icon||'📋'}</div><div class="ccl-body"><div class="ccl-name">${cl.label}</div><div class="ccl-meta">${cl.desc||''} • ${totalItems} perguntas</div><div class="ccl-pts">⭐ Conforme: ${cl.scoreRules?.full||100}pts | NC: ${cl.scoreRules?.nc||60}pts</div></div><div class="ccl-actions"><button class="fleet-btn edit" onclick="openBuilder('${cl.id}')">✎ Editar</button><button class="fleet-btn remove" onclick="openCLRemove('${cl.id}')">✕ Excluir</button></div></div>`;
+    return `<div class="ccl-item"><div class="ccl-icon">${cl.icon||'📋'}</div><div class="ccl-body"><div class="ccl-name">${sanitize(cl.label)}</div><div class="ccl-meta">${cl.desc||''} • ${totalItems} perguntas</div><div class="ccl-pts">⭐ Conforme: ${cl.scoreRules?.full||100}pts | NC: ${cl.scoreRules?.nc||60}pts</div></div><div class="ccl-actions"><button class="fleet-btn edit" onclick="openBuilder('${cl.id}')">✎ Editar</button><button class="fleet-btn remove" onclick="openCLRemove('${cl.id}')">✕ Excluir</button></div></div>`;
   }).join('');
 }
 function openCLRemove(id) {
@@ -891,9 +906,9 @@ function renderUsers() {
     const clsVisiveis=funcao?.cls?.length?funcao.cls.map(id=>allCLs[id]?.label).filter(Boolean).join(', '):'';
     return `<div class="user-item">
       <div class="user-item-top">
-        <div class="ui-avatar" style="background:${perfilColor}">${u.name.charAt(0)}</div>
+        <div class="ui-avatar" style="background:${perfilColor}">${sanitize(u.name).charAt(0)}</div>
         <div class="ui-info" style="flex:1">
-          <div class="ui-name">${u.name}</div>
+          <div class="ui-name">${sanitize(u.name)}</div>
           <div class="ui-role">${u.login} • ${u.submissions||0} envios • ${u.pts||0} pts</div>
           ${clsVisiveis?`<div style="font-size:10px;color:var(--orange);margin-top:2px">📋 ${clsVisiveis}</div>`:''}
         </div>
@@ -1085,7 +1100,7 @@ function openFuncaoModal(id) {
     <label class="funcao-cl-item">
       <input type="checkbox" value="${cl.id}" ${funcaoClsSel.includes(cl.id)?'checked':''} onchange="toggleFuncaoCL('${cl.id}',this.checked)" />
       <div class="funcao-cl-icon">${cl.icon}</div>
-      <div><div class="funcao-cl-name">${cl.label}</div><div class="funcao-cl-desc">${cl.desc||''}</div></div>
+      <div><div class="funcao-cl-name">${sanitize(cl.label)}</div><div class="funcao-cl-desc">${cl.desc||''}</div></div>
     </label>`).join('');
   openModal('funcao-modal');
 }
@@ -1108,7 +1123,7 @@ function renderFuncoes() {
     const cor=COR_MAP[f.cor]||COR_MAP.navy,count=usuarios.filter(u=>u.funcao===f.id).length;
     const clNames=(f.cls||[]).map(id=>allCLs[id]?.label).filter(Boolean);
     const clText=clNames.length?`✅ ${clNames.join(', ')}`:'✅ Todos os check lists';
-    return `<div class="funcao-card"><div class="funcao-card-dot" style="background:${cor}"></div><div class="funcao-card-body"><div class="funcao-card-name">${f.nome}</div><div class="funcao-card-meta">${f.desc||''}${count>0?' • '+count+' colaborador(es)':''}</div><div class="funcao-card-cls">${clText}</div></div><div class="ui-actions"><button class="fleet-btn edit" onclick="openFuncaoModal('${f.id}')">✎</button><button class="fleet-btn remove" onclick="removeFuncao('${f.id}')">✕</button></div></div>`;
+    return `<div class="funcao-card"><div class="funcao-card-dot" style="background:${cor}"></div><div class="funcao-card-body"><div class="funcao-card-name">${sanitize(f.nome)}</div><div class="funcao-card-meta">${f.desc||''}${count>0?' • '+count+' colaborador(es)':''}</div><div class="funcao-card-cls">${clText}</div></div><div class="ui-actions"><button class="fleet-btn edit" onclick="openFuncaoModal('${f.id}')">✎</button><button class="fleet-btn remove" onclick="removeFuncao('${f.id}')">✕</button></div></div>`;
   }).join('');
 }
 function removeFuncao(id) {
@@ -1119,11 +1134,11 @@ function removeFuncao(id) {
 function populateFuncaoFilters() {
   const funcoes=FuncaoDB.get();
   const ff=document.getElementById('filter-funcao');
-  if(ff)ff.innerHTML='<option value="">Todas as funções</option>'+funcoes.map(f=>`<option value="${f.id}">${f.nome}</option>`).join('');
+  if(ff)ff.innerHTML='<option value="">Todas as funções</option>'+funcoes.map(f=>`<option value="${f.id}">${sanitize(f.nome)}</option>`).join('');
 }
 function populateUserModalFuncoes() {
   const funcoes=FuncaoDB.get();
-  const opts='<option value="">Selecione a função...</option>'+funcoes.map(f=>`<option value="${f.id}">${f.nome}</option>`).join('');
+  const opts='<option value="">Selecione a função...</option>'+funcoes.map(f=>`<option value="${f.id}">${sanitize(f.nome)}</option>`).join('');
   ['nu-funcao','eu-funcao'].forEach(id=>{const el=document.getElementById(id);if(el)el.innerHTML=opts;});
   const fleet=DB.fleet();
   const veiculos=[
@@ -1299,7 +1314,7 @@ function showSubmissionDetail(id) {
   let html=`<div class="detail-section">
     <h4>Informações Gerais</h4>
     <div class="detail-row"><span class="dr-label">Check List</span><span class="dr-val">${cl.label||sub.type}</span></div>
-    <div class="detail-row"><span class="dr-label">Colaborador</span><span class="dr-val">${sub.userName}</span></div>
+    <div class="detail-row"><span class="dr-label">Colaborador</span><span class="dr-val">${sanitize(sub.userName)}</span></div>
     ${veiculo ? `<div class="detail-row"><span class="dr-label">Equipamento</span><span class="dr-val" style="font-weight:700;color:var(--navy)">🚜 ${veiculo}</span></div>` : ''}
     ${local   ? `<div class="detail-row"><span class="dr-label">Local</span><span class="dr-val">📍 ${local}</span></div>` : ''}
     <div class="detail-row"><span class="dr-label">Data/Hora</span><span class="dr-val">${formatDateTime(sub.date)}</span></div>
@@ -1531,7 +1546,7 @@ function openFecharCiclo() {
     const medal = i===0?'🥇':i===1?'🥈':i===2?'🥉':'';
     return `<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--gray-light)">
       <span style="font-size:16px;min-width:22px">${medal||'#'+(i+1)}</span>
-      <span style="flex:1;font-size:13px;font-weight:600">${u.name}</span>
+      <span style="flex:1;font-size:13px;font-weight:600">${sanitize(u.name)}</span>
       <span style="font-size:13px;color:var(--orange);font-weight:700">${pts} pts</span>
     </div>`;
   }).join('') || '<div style="font-size:13px;color:var(--text-light)">Nenhum colaborador com envios neste ciclo.</div>';
@@ -1547,8 +1562,8 @@ function showCicloEncerrado(ciclo) {
   document.getElementById('ciclo-enc-podio').innerHTML = podio.map((u,i) => `
     <div class="podium-place ${['p1','p2','p3'][i]}">
       <div class="pp-medal">${medals[i]}</div>
-      <div class="pp-avatar">${u.name.charAt(0)}</div>
-      <div class="pp-name">${u.name.split(' ')[0]}</div>
+      <div class="pp-avatar">${sanitize(u.name).charAt(0)}</div>
+      <div class="pp-name">${sanitize(u.name.split(' ')[0])}</div>
       <div class="pp-pts">${u.pts} pts</div>
     </div>`).join('') || '<div style="color:var(--text-light);font-size:13px">Sem pontuações registradas.</div>';
   openModal('ciclo-encerrado-modal');
@@ -1607,8 +1622,8 @@ function renderRankingTab() {
           const pts = cicloAtual ? Math.max(0,(u.pts||0)-(cicloAtual.snapshot?.find(s=>s.login===u.login)?.pts_inicio||0)) : (u.pts||0);
           return `<div class="podium-place ${cls[i]}">
             <div class="pp-medal">${medals[i]}</div>
-            <div class="pp-avatar">${u.name.charAt(0)}</div>
-            <div class="pp-name">${u.name.split(' ')[0]}</div>
+            <div class="pp-avatar">${sanitize(u.name).charAt(0)}</div>
+            <div class="pp-name">${sanitize(u.name.split(' ')[0])}</div>
             <div class="pp-pts">${pts} pts</div>
           </div>`;
         }).join('')
@@ -1622,9 +1637,9 @@ function renderRankingTab() {
       const funcao = u.funcao ? FuncaoDB.byId(u.funcao) : null;
       return `<div class="rank-item">
         <div class="rank-pos">${i+4}</div>
-        <div class="rank-avatar">${u.name.charAt(0)}</div>
+        <div class="rank-avatar">${sanitize(u.name).charAt(0)}</div>
         <div class="rank-info">
-          <div class="rank-name">${u.name}</div>
+          <div class="rank-name">${sanitize(u.name)}</div>
           <div class="rank-sub">${u.submissions||0} envios${funcao?' • '+funcao.nome:''}</div>
         </div>
         <div class="rank-pts">${pts} pts</div>
@@ -1662,14 +1677,14 @@ function renderHistoricoCiclos() {
         </div>
         <div class="ciclo-card-detalhes hidden" id="detalhes-${c.id}">
           <div class="ciclo-podio-mini">
-            ${podio.map((u,i) => `<div class="ciclo-podio-item"><span>${medals[i]}</span><span>${u.name}</span><span style="color:var(--orange);font-weight:700">${u.pts} pts</span></div>`).join('')}
+            ${podio.map((u,i) => `<div class="ciclo-podio-item"><span>${medals[i]}</span><span>${sanitize(u.name)}</span><span style="color:var(--orange);font-weight:700">${u.pts} pts</span></div>`).join('')}
           </div>
           <div class="ciclo-ranking-completo">
             <div style="font-size:11px;font-weight:700;color:var(--text-light);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">Ranking Completo</div>
             ${(c.ranking||[]).map((u,i) => `
               <div class="ciclo-rank-row">
                 <span class="ciclo-rank-pos">${i+1}º</span>
-                <span class="ciclo-rank-name">${u.name}</span>
+                <span class="ciclo-rank-name">${sanitize(u.name)}</span>
                 <span class="ciclo-rank-sub">${u.submissions} envios</span>
                 <span class="ciclo-rank-pts">${u.pts} pts</span>
               </div>`).join('')}
