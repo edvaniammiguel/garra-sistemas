@@ -552,76 +552,81 @@ function formNext() {
   const cl   = getCL();
   const step = cl.steps[currentStep];
 
-  // ── VALIDAÇÃO ──────────────────────────────────
-  // Obs é sempre opcional — não valida
-  if (step.type === 'obs') {
+  // Obs e seções customizadas sem itens — avança sempre
+  if (step.type === 'obs' || step.type === 'section') {
     if (currentStep < cl.steps.length - 1) { currentStep++; renderFormStep(); }
     else submitChecklist();
     return;
   }
 
-  const erros = [];
-
-  // Meta: campos obrigatórios (equipamento, operador)
+  // ── VALIDAÇÃO META ──────────────────────────────
   if (step.type === 'meta') {
+    const faltando = [];
     step.fields.forEach(f => {
       const el  = document.getElementById('meta-'+f.id);
       const val = el?.value?.trim() || '';
-      if (!val && (f.id === 'equipamento' || f.id === 'veiculo' || f.id === 'operador')) {
-        erros.push(`"${f.label}" é obrigatório`);
-        if (el) el.style.borderColor = 'var(--danger)';
-      } else if (el) {
-        el.style.borderColor = '';
+      if (!val && (f.id === 'veiculo' || f.id === 'equipamento' || f.id === 'operador')) {
+        faltando.push(f.label);
       }
     });
-  }
-
-  // Checklist: itens do tipo checklist PRECISAM ser respondidos
-  if (step.type === 'checklist' || step.type === 'custom') {
-    step.items.forEach(item => {
-      // Pula itens condicionais não visíveis
-      if (item.conditionalOn) {
-        const depAns = formAnswers[item.conditionalOn];
-        const depVal = depAns?.val ?? depAns?.text ?? depAns?.selected ?? '';
-        if (depVal !== item.conditionalValue) return;
-      }
-      const ans = formAnswers[item.id];
-      // Items do tipo checklist (C/NC/NA) são sempre obrigatórios
-      if (item.type === 'checklist' || !item.type) {
-        if (!ans || !ans.val) {
-          erros.push(`"${item.label}"`);
-          const el = document.getElementById('ci-'+item.id);
-          if (el) el.style.outline = '2px solid var(--danger)';
-        } else {
-          const el = document.getElementById('ci-'+item.id);
-          if (el) el.style.outline = '';
-        }
-      }
-      // Itens marcados como required
-      if (item.required && item.type !== 'checklist') {
-        const val = ans?.text || ans?.selected || ans?.photo || '';
-        if (!val) {
-          erros.push(`"${item.label}" é obrigatório`);
-          const el = document.getElementById('ans-'+item.id);
-          if (el) el.style.borderColor = 'var(--danger)';
-        }
-      }
-    });
-  }
-
-  if (erros.length) {
-    // Mostra alerta e rola até o primeiro erro
-    const msg = erros.length === 1
-      ? `⚠️ Campo obrigatório não preenchido:\n${erros[0]}`
-      : `⚠️ ${erros.length} campos obrigatórios não preenchidos:\n${erros.slice(0,3).join('\n')}${erros.length>3?'\n...e mais '+( erros.length-3):''}`;
-    alert(msg);
-    // Rola até o primeiro item sem resposta
-    const firstErr = document.querySelector('[style*="outline: 2px solid"], [style*="border-color: var(--danger)"]');
-    if (firstErr) firstErr.scrollIntoView({behavior:'smooth', block:'center'});
+    if (faltando.length) {
+      alert('⚠️ Preencha os campos obrigatórios:\n• ' + faltando.join('\n• '));
+      return;
+    }
+    if (currentStep < cl.steps.length - 1) { currentStep++; renderFormStep(); }
+    else submitChecklist();
     return;
   }
 
-  // Avança normalmente
+  // ── VALIDAÇÃO CHECKLIST ─────────────────────────
+  if (step.type === 'checklist' || step.type === 'custom') {
+    const naoRespondidos = [];
+    step.items.forEach(item => {
+      // Pula condicionais ocultos
+      if (item.conditionalOn) {
+        const dep = formAnswers[item.conditionalOn];
+        const depVal = dep?.val ?? dep?.text ?? dep?.selected ?? '';
+        if (depVal !== item.conditionalValue) return;
+      }
+      const tipo = item.type || 'checklist';
+      const ans  = formAnswers[item.id];
+      if (tipo === 'checklist') {
+        if (!ans?.val) naoRespondidos.push(item.label);
+      }
+    });
+
+    if (naoRespondidos.length) {
+      const lista = naoRespondidos.slice(0, 5).join('\n• ');
+      const extra = naoRespondidos.length > 5 ? ('\n...e mais ' + (naoRespondidos.length - 5) + ' itens') : '';
+      alert('⚠️ Responda todos os itens antes de avançar:\n• ' + lista + extra);
+      // Destaca itens não respondidos visualmente
+      step.items.forEach(item => {
+        const el = document.getElementById('ci-' + item.id);
+        if (!el) return;
+        const ans = formAnswers[item.id];
+        const tipo = item.type || 'checklist';
+        if (tipo === 'checklist' && !ans?.val) {
+          el.style.borderLeft = '4px solid var(--danger)';
+          el.style.background = 'rgba(232,57,77,.04)';
+        } else {
+          el.style.borderLeft = '';
+          el.style.background = '';
+        }
+      });
+      // Rola até o primeiro não respondido
+      const primeiro = step.items.find(item => {
+        const tipo = item.type || 'checklist';
+        return tipo === 'checklist' && !formAnswers[item.id]?.val;
+      });
+      if (primeiro) {
+        const el = document.getElementById('ci-' + primeiro.id);
+        if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+      return;
+    }
+  }
+
+  // Avança
   if (currentStep < cl.steps.length - 1) { currentStep++; renderFormStep(); }
   else submitChecklist();
 }
