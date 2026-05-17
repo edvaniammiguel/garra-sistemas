@@ -495,7 +495,7 @@ function renderCheckItem(item) {
     if (depVal !== item.conditionalValue) return '';
   }
   const required = item.required ? '<span style="color:var(--danger);margin-left:3px">*</span>' : '';
-  const pts  = item.pts>1 ? `<div class="ci-sub-label">⭐ Peso: ${item.pts} pts</div>` : '';
+  const pts  = ''; // Pontuação não exibida para o colaborador
   const hint = item.hint ? `<div style="font-size:11px;color:var(--text-light);margin-bottom:6px">${item.hint}</div>` : '';
   let body = '';
   switch(item.type||'checklist') {
@@ -667,7 +667,12 @@ async function submitChecklist() {
   if (btnNext) { btnNext.textContent = 'Enviando...'; btnNext.disabled = true; }
 
   try {
+    // Garante que usuário está logado
+    if (!currentUser?.login) throw new Error('Usuário não autenticado');
+
     const cl  = getCL();
+    if (!cl) throw new Error('Check list não encontrado: ' + currentCLId);
+
     const id  = 'sub_' + Date.now() + '_' + Math.random().toString(36).slice(2,7);
     const submission = {
       id,
@@ -730,10 +735,31 @@ async function submitChecklist() {
     document.getElementById('pts-earned').textContent = `+${submission.pts} pts`;
 
   } catch(fatalErr) {
-    // Erro fatal inesperado
-    console.error('[Submit] Erro fatal:', fatalErr);
-    alert('Erro ao enviar. Tente novamente.');
-    if (btnNext) { btnNext.textContent = 'Enviar ✓'; btnNext.disabled = false; }
+    // Erro fatal — loga detalhes e salva mesmo assim
+    console.error('[Submit] Erro fatal:', fatalErr.message, fatalErr.stack);
+
+    // Tenta salvar localmente mesmo com erro
+    try {
+      const cl  = getCL();
+      const id  = 'sub_emergency_' + Date.now();
+      const sub = {
+        id, user: currentUser?.login || 'unknown',
+        userName: currentUser?.name  || 'unknown',
+        type: currentCLId, clLabel: cl?.label || '',
+        date: new Date().toISOString(),
+        meta: { ...formMeta }, answers: { ...formAnswers },
+        synced: false, archived: false, pts: 0,
+      };
+      DB.saveSubmission(sub);
+      showScreen('screen-success');
+      document.getElementById('success-title').textContent = 'Check List Salvo!';
+      document.getElementById('success-msg').textContent   = '⚠️ Salvo localmente com erro técnico. Informe o gestor.';
+      document.getElementById('pts-earned').textContent    = '+0 pts';
+      console.log('[Submit] Salvo em modo emergência:', id);
+    } catch(e2) {
+      alert('Erro crítico ao salvar. Erro: ' + fatalErr.message);
+      if (btnNext) { btnNext.textContent = 'Enviar ✓'; btnNext.disabled = false; }
+    }
   }
 }
 
