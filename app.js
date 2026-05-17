@@ -123,14 +123,14 @@ function seedUsers() {
     { login:'gestor',    name:'Gestor de Frota',     pass:'garra2024', role:'manager',  funcao:'', veiculo:'', pts:0,   submissions:0 },
     { login:'gilson',    name:'Gilson',              pass:'garra2024', role:'superior', funcao:'', veiculo:'', pts:0,   submissions:0 },
     { login:'marco',     name:'Marco Aurélio',       pass:'garra2024', role:'superior', funcao:'', veiculo:'', pts:0,   submissions:0 },
-    { login:'andre',     name:'André',               pass:'123456',    role:'driver',   funcao:'fc_operador',  veiculo:'EH-03',  pts:580, submissions:18 },
-    { login:'emerson',   name:'Emerson',             pass:'123456',    role:'driver',   funcao:'fc_motorista', veiculo:'CA-12',  pts:420, submissions:14 },
-    { login:'samuel',    name:'Samuel',              pass:'123456',    role:'driver',   funcao:'fc_motorista', veiculo:'CB-06',  pts:390, submissions:13 },
-    { login:'franciele', name:'Franciele',           pass:'123456',    role:'driver',   funcao:'fc_motorista', veiculo:'CB-037', pts:350, submissions:12 },
-    { login:'gilberto',  name:'Gilberto',            pass:'123456',    role:'driver',   funcao:'fc_motorista', veiculo:'',       pts:310, submissions:10 },
-    { login:'geraldo',   name:'Geraldo',             pass:'123456',    role:'driver',   funcao:'fc_motorista', veiculo:'',       pts:280, submissions:9  },
-    { login:'joao',      name:'João Pedro',          pass:'123456',    role:'driver',   funcao:'fc_motorista', veiculo:'',       pts:260, submissions:8  },
-    { login:'marcio',    name:'Márcio',              pass:'123456',    role:'driver',   funcao:'fc_motorista', veiculo:'',       pts:240, submissions:8  },
+    { login:'andre',     name:'André',               pass:'123456',    role:'driver',   funcao:'fc_operador',  veiculo:'EH-03',  pts:0, submissions:0 },
+    { login:'emerson',   name:'Emerson',             pass:'123456',    role:'driver',   funcao:'fc_motorista', veiculo:'CA-12',  pts:0, submissions:0 },
+    { login:'samuel',    name:'Samuel',              pass:'123456',    role:'driver',   funcao:'fc_motorista', veiculo:'CB-06',  pts:0, submissions:0 },
+    { login:'franciele', name:'Franciele',           pass:'123456',    role:'driver',   funcao:'fc_motorista', veiculo:'CB-037', pts:0, submissions:0 },
+    { login:'gilberto',  name:'Gilberto',            pass:'123456',    role:'driver',   funcao:'fc_motorista', veiculo:'',       pts:0, submissions:0 },
+    { login:'geraldo',   name:'Geraldo',             pass:'123456',    role:'driver',   funcao:'fc_motorista', veiculo:'',       pts:0, submissions:0 },
+    { login:'joao',      name:'João Pedro',          pass:'123456',    role:'driver',   funcao:'fc_motorista', veiculo:'',       pts:0, submissions:0 },
+    { login:'marcio',    name:'Márcio',              pass:'123456',    role:'driver',   funcao:'fc_motorista', veiculo:'',       pts:0, submissions:0 },
     { login:'motorista', name:'Motorista Demo',      pass:'123456',    role:'driver',   funcao:'', veiculo:'', pts:0,   submissions:0  },
   ];
   DB.set('garra_users', users);
@@ -357,9 +357,18 @@ function renderDriverDashboard() {
   // Filtra CLs pela função
   const allCLs = DB.allCLs();
   const funcao  = u.funcao ? FuncaoDB.byId(u.funcao) : null;
-  const visivel = funcao?.cls?.length
-    ? Object.fromEntries(Object.entries(allCLs).filter(([id]) => funcao.cls.includes(id)))
-    : allCLs;
+  
+  // Se função tem CLs específicos, filtra — mas sempre inclui customizados criados para esta função
+  let visivel;
+  if (funcao?.cls?.length) {
+    visivel = Object.fromEntries(
+      Object.entries(allCLs).filter(([id]) => funcao.cls.includes(id))
+    );
+    // Se ficou vazio (função não tem CL vinculado ainda), mostra todos
+    if (!Object.keys(visivel).length) visivel = allCLs;
+  } else {
+    visivel = allCLs;
+  }
 
   const cardsEl = document.getElementById('driver-cl-cards');
   // Veículo fixo
@@ -872,11 +881,20 @@ function openFleetEdit(cat,id) {
   document.getElementById('fleet-edit-key').value=cat+'|'+id;document.getElementById('fleet-category').value=cat;document.getElementById('fleet-id-input').value=item.id;document.getElementById('fleet-desc-input').value=item.desc||'';
   openModal('fleet-modal');
 }
-function saveFleetItem() {
+async function saveFleetItem() {
   const editKey=document.getElementById('fleet-edit-key').value,cat=document.getElementById('fleet-category').value,id=document.getElementById('fleet-id-input').value.trim().toUpperCase(),desc=document.getElementById('fleet-desc-input').value.trim();
   if(!id){alert('Informe a identificação.');return;}
   if(editKey){const[oldCat,oldId]=editKey.split('|');if(oldCat!==cat||oldId!==id){const f=DB.fleet();f[oldCat]=(f[oldCat]||[]).filter(v=>v.id!==oldId);DB.set('garra_fleet',f);}}
-  DB.saveFleetItem(cat,{id,desc,active:true});closeModal('fleet-modal');renderFleet();populateUserModalFuncoes();
+  const frotaItem = {id, desc, active:true};
+  DB.saveFleetItem(cat, frotaItem);
+  // Salva no banco
+  try {
+    await GarraDB.salvarFrotaItem({ categoria: cat, identificacao: id, descricao: desc });
+    console.log('✅ Frota salva no banco:', id);
+  } catch(e) {
+    console.warn('⚠️ Frota salva localmente:', e.message);
+  }
+  closeModal('fleet-modal');renderFleet();populateUserModalFuncoes();
 }
 function openFleetRemove(cat,id) {
   pendingRemoveFleetKey=cat+'|'+id;document.getElementById('fleet-remove-info').textContent=`Equipamento: ${id}`;openModal('fleet-remove-modal');
@@ -900,8 +918,12 @@ function openCLRemove(id) {
   const cl=DB.customCLs().find(c=>c.id===id); if(!cl)return;
   pendingRemoveCLId=id;document.getElementById('cl-remove-info').textContent=`Check List: "${cl.label}"`;openModal('cl-remove-modal');
 }
-function confirmRemoveCL() {
-  if(!pendingRemoveCLId)return;DB.removeCustomCL(pendingRemoveCLId);pendingRemoveCLId=null;closeModal('cl-remove-modal');renderChecklistsTab();
+async function confirmRemoveCL() {
+  if(!pendingRemoveCLId)return;
+  try { await apiFetch('/checklist/modelos/'+pendingRemoveCLId, {method:'DELETE'}); }
+  catch(e){ console.warn('Remove CL API falhou:', e.message); }
+  DB.removeCustomCL(pendingRemoveCLId);
+  pendingRemoveCLId=null;closeModal('cl-remove-modal');renderChecklistsTab();
 }
 
 // ── USUÁRIOS ──────────────────────────────────────
@@ -1106,7 +1128,7 @@ async function confirmRemoveUser() {
   closeModal('user-remove-modal');
   
   // Re-sync e re-render
-  await syncUsersFromAPI();
+  await syncAllFromAPI();
   renderUsers();
   populateSubmissionFilters();
 }
@@ -1309,11 +1331,40 @@ function previewChecklist() {
   DB.saveCustomCL(buildCLObject('__preview__'));startChecklist('__preview__');
 }
 
-function saveChecklist() {
+async function saveChecklist() {
   const name=document.getElementById('bl-name').value.trim(); if(!name){alert('Informe o título.');return;}
   if(!builderQuestions.filter(q=>q.type!=='section').length){alert('Adicione pelo menos uma pergunta.');return;}
   const id=builderEditId&&builderEditId!=='__preview__'?builderEditId:('cl_'+Date.now()+'_'+Math.random().toString(36).slice(2,5));
-  DB.saveCustomCL(buildCLObject(id));DB.removeCustomCL('__preview__');
+  const clObj = buildCLObject(id);
+
+  // Salva local
+  DB.saveCustomCL(clObj);
+  DB.removeCustomCL('__preview__');
+
+  // Salva no banco
+  try {
+    await apiFetch('/checklist/modelos', {
+      method: 'POST',
+      body: JSON.stringify({
+        cl_id:       clObj.id,
+        label:       clObj.label,
+        icon:        clObj.icon        || '📋',
+        descricao:   clObj.desc        || '',
+        vehicle_cat: clObj.vehicleCat  || 'none',
+        is_default:  false,
+        score_full:  clObj.scoreRules?.full   || 100,
+        score_nc:    clObj.scoreRules?.nc     || 60,
+        score_obs:   clObj.scoreRules?.obs    || 20,
+        score_ontime:clObj.scoreRules?.ontime || 10,
+        questions:   clObj.questions   || [],
+        steps:       clObj.steps       || [],
+      })
+    });
+    console.log('✅ Check list salvo no banco:', clObj.label);
+  } catch(e) {
+    console.warn('⚠️ Check list salvo local, banco falhou:', e.message);
+  }
+
   if(currentUser?.role==='superior'){showSuperior();}
   else{showManager();document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));document.querySelectorAll('.tab-panel').forEach(p=>p.classList.remove('active'));const tabBtn=document.querySelector('[onclick*="checklists"]');if(tabBtn)tabBtn.classList.add('active');document.getElementById('tab-checklists').classList.add('active');renderChecklistsTab();}
 }
@@ -1405,15 +1456,62 @@ function atualizarApp() {
 }
 
 // ─── SINCRONIZA USUÁRIOS DA API ────────────────────
+async function syncCustomCLsFromAPI() {
+  try {
+    const modelos = await apiFetch('/checklist/modelos');
+    if (!modelos?.length) return;
+    // Filtra só os personalizados (não padrão)
+    const customs = modelos.filter(m => !m.is_default);
+    if (!customs.length) return;
+    // Converte formato da API para formato local
+    const cls = customs.map(m => ({
+      id:          m.cl_id,
+      label:       m.label,
+      icon:        m.icon        || '📋',
+      desc:        m.descricao   || '',
+      vehicleCat:  m.vehicle_cat || 'none',
+      isDefault:   false,
+      scoreRules:  { full: m.score_full, nc: m.score_nc, obs: m.score_obs, ontime: m.score_ontime },
+      questions:   m.questions   || [],
+      steps:       m.steps       || [],
+    }));
+    // Salva no localStorage
+    DB.set('garra_custom_cls', cls);
+    console.log('✅ Check lists personalizados sincronizados:', cls.length);
+  } catch(e) {
+    console.warn('⚠️ Sync CLs falhou:', e.message);
+  }
+}
+
+async function syncAllFromAPI() {
+  await syncUsersFromAPI();
+  await syncFrotaFromAPI();
+  await syncCustomCLsFromAPI();
+}
+
+async function syncFrotaFromAPI() {
+  try {
+    const data = await GarraDB.getFrota();
+    if (!data?.length) return;
+    const fleet = { maquinas: [], carro: [], caminhao: [] };
+    data.forEach(item => {
+      if (!fleet[item.categoria]) return;
+      fleet[item.categoria].push({ id: item.identificacao, desc: item.descricao || '', active: item.ativo !== false });
+    });
+    DB.set('garra_fleet', fleet);
+    console.log('✅ Frota sincronizada:', data.length, 'itens');
+  } catch(e) { console.warn('⚠️ Sync frota falhou:', e.message); }
+}
+
 async function syncUsersFromAPI() {
   try {
+    Cache.del('usuarios'); // Sempre busca dados frescos
     const apiUsers = await GarraDB.getUsuarios();
     if (!apiUsers?.length) return;
 
     const local   = DB.users();
     const deleted = DB.get('garra_deleted_users') || [];
 
-    // Para cada usuário do banco, mescla com dados locais extras
     const merged = apiUsers
       .filter(au => !deleted.includes(au.login))
       .map(au => {
@@ -1423,14 +1521,14 @@ async function syncUsersFromAPI() {
           name:        au.nome   || loc.name || au.login,
           role:        au.perfil || loc.role || 'driver',  // banco tem prioridade
           pass:        loc.pass  || '***',
-          funcao:      loc.funcao  || '',   // só local por enquanto
-          veiculo:     loc.veiculo || '',   // só local por enquanto
-          pts:         Math.max(au.pts || 0, loc.pts || 0),
+          funcao:      loc.funcao  || '',
+          veiculo:     loc.veiculo || '',
+          // Preserva pts local se banco tiver 0
+          pts:         (au.pts || 0) > 0 ? (au.pts || 0) : (loc.pts || 0),
           submissions: Math.max(au.total_envios || 0, loc.submissions || 0),
         };
       });
 
-    // Mantém usuários criados offline que ainda não foram para o banco
     local.forEach(lu => {
       if (!merged.find(m => m.login === lu.login) && !deleted.includes(lu.login)) {
         merged.push(lu);
@@ -1444,21 +1542,24 @@ async function syncUsersFromAPI() {
   }
 }
 
+// ─── SYNC CHECK LISTS PERSONALIZADOS DO BANCO ─────
+
+async function saveCustomCLToAPI(cl) {
+  try {
+    await GarraDB.salvarModelo(cl);
+    console.log('✅ CL salvo no banco:', cl.label);
+  } catch(e) {
+    console.warn('⚠️ CL salvo só local:', e.message);
+  }
+}
+
 // ─── INIT ──────────────────────────────────────────
 updateSyncUI();
-syncUsersFromAPI();
+syncAllFromAPI();
+syncCustomCLsFromAPI();
+syncCustomCLsFromAPI();
 
-// Seed demo submissions
-(function seedDemo(){
-  if(DB.submissions().length>0)return;
-  const demos=[
-    {user:'andre',    userName:'André',    type:'maquinas',meta:{operador:'André',local:'Florestal',data:'2026-05-10',equipamento:'EH-03',horimetro:'12208.9',tipo:'Preventivo'},answers:{lubrificacao:{val:'C'},abastecimento:{val:'NC',obs:'Bomba com defeito'},limpeza:{val:'C'},filtro_ar:{val:'C'},filtro_oleo:{val:'C'},nivel_oleo:{val:'C'},radiador:{val:'C'},pneu_rodas:{val:'C'},suspensao:{val:'NC',obs:'Pistons merejando'},farois:{val:'NC',obs:'Faróis quebrados'},buzina:{val:'C'},vidros:{val:'NC',obs:'Vidro dianteiro trincado'},eletrico:{val:'NC',obs:'Selenoide com defeito'},implementos:{val:'C'},estado_geral:{val:'NC',obs:'Lataria amassada'}},pts:80,synced:true,archived:false,date:'2026-05-10T08:00:00Z'},
-    {user:'samuel',   userName:'Samuel',   type:'caminhao',meta:{operador:'Samuel',local:'Obra Lev',data:'2026-05-08',veiculo:'CB-06',km:'441489'},answers:{lubrificacao:{val:'C'},abastecimento:{val:'C'},pneus:{val:'C'},suspensao:{val:'C'},luzes:{val:'C'},alarmes:{val:'C'},freios:{val:'C'},painel:{val:'C'}},pts:110,synced:true,archived:false,date:'2026-05-08T09:00:00Z'},
-    {user:'franciele',userName:'Franciele',type:'caminhao',meta:{operador:'Franciele',local:'Pedro Leopoldo',data:'2026-05-07',veiculo:'CB-037',km:'1384219'},answers:{lubrificacao:{val:'C'},pneus:{val:'NC',obs:'Pneu lado direito liso'},suspensao:{val:'C'},luzes:{val:'NC',obs:'Farolete traseiro'},alarmes:{val:'C'},freios:{val:'C'},painel:{val:'C'}},pts:80,synced:true,archived:false,date:'2026-05-07T07:00:00Z'},
-    {user:'emerson',  userName:'Emerson',  type:'carro',   meta:{operador:'Emerson',local:'Sete Lagoas',data:'2026-04-28',veiculo:'CA-12',km:'179498'},answers:{crv:{val:'C'},triangulo:{val:'C'},extintor:{val:'C'},lataria:{val:'C'},pneus:{val:'C'},limpeza:{val:'C'},luzes:{val:'NC',obs:'Farolete queimado'},freios:{val:'C'}},pts:80,synced:true,archived:false,date:'2026-04-28T08:00:00Z'},
-  ];
-  demos.forEach(s=>{s.id='sub_demo_'+Math.random().toString(36).slice(2,9);DB.saveSubmission(s);});
-})();
+
 
 // ═══════════════════════════════════════════════════
 // MÓDULO: CICLOS DE PONTUAÇÃO
