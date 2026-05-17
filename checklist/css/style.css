@@ -875,20 +875,20 @@ html,body { height:100%; overflow:hidden; font-family:var(--fb); background:var(
    LOGO REAL nos cabeçalhos
 ══════════════════════════════════════ */
 .login-logo-img {
-  width: 220px;
+  width: 240px;
   height: auto;
   display: block;
   margin: 0 auto 20px;
-  filter: drop-shadow(0 2px 8px rgba(0,0,0,.3));
+  filter: drop-shadow(0 2px 12px rgba(0,0,0,.25));
 }
 .tb-logo-img {
-  height: 36px;
+  height: 38px;
   width: auto;
-  max-width: 140px;
+  max-width: 160px;
   object-fit: contain;
-  filter: brightness(0) invert(1); /* logo branco no fundo azul escuro */
   flex-shrink: 0;
   display: block;
+  filter: brightness(0) invert(1); /* PNG transparente → branco no fundo escuro */
 }
 .tb-logo-label {
   font-family: var(--fd);
