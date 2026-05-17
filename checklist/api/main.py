@@ -271,6 +271,12 @@ async def editar_usuario(login: str, dados: dict, db=Depends(get_db)):
         )
     return {"ok": True}
 
+@app.post("/admin/zerar-pontos")
+async def zerar_pontos(db=Depends(get_db)):
+    """Zera os pontos de todos os colaboradores no banco"""
+    await db.execute("UPDATE usuarios SET pts=0, total_envios=0 WHERE ativo=TRUE")
+    return {"ok": True, "msg": "Pontos zerados com sucesso"}
+
 @app.delete("/usuarios/{login}")
 async def remover_usuario(login: str, db=Depends(get_db)):
     # Marca como inativo E atualiza timestamp
