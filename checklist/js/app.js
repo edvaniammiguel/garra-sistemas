@@ -1123,14 +1123,13 @@ async function confirmRemoveUser() {
     DB.set('garra_deleted_users', deleted);
   }
   
-  // 4. Força nova sync para garantir consistência
+  // 4. Fecha e sincroniza
   pendingRemoveUserLogin = null;
   closeModal('user-remove-modal');
-  
-  // Re-sync e re-render
   await syncAllFromAPI();
   renderUsers();
   populateSubmissionFilters();
+  console.log('✅ Usuário removido:', loginParaRemover);
 }
 
 // ── FUNÇÕES ──────────────────────────────────────
@@ -1529,8 +1528,13 @@ async function syncUsersFromAPI() {
         };
       });
 
+    // Só mantém usuários locais com senha real (criados offline)
+    // Não re-adiciona usuários do seed ou deletados
     local.forEach(lu => {
-      if (!merged.find(m => m.login === lu.login) && !deleted.includes(lu.login)) {
+      const isDeleted  = deleted.includes(lu.login);
+      const inMerged   = merged.find(m => m.login === lu.login);
+      const hasRealPass= lu.pass && lu.pass !== '***' && lu.pass.length >= 4;
+      if (!isDeleted && !inMerged && hasRealPass) {
         merged.push(lu);
       }
     });
