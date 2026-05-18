@@ -41,18 +41,18 @@ html,body { height:100%; overflow:hidden; font-family:var(--fb); background:var(
 
 /* ── LOGIN ── */
 #screen-login {
-  background:linear-gradient(145deg,var(--navy-dark) 0%,var(--navy) 55%,var(--navy-mid) 100%);
+  background: #ffffff;
   align-items:center; justify-content:center; padding:24px; overflow-y:auto;
 }
 .login-bg { position:absolute; inset:0; overflow:hidden; pointer-events:none; }
 .login-orb { position:absolute; border-radius:50%; }
-.orb1 { width:400px;height:400px;top:-100px;right:-80px; background:radial-gradient(circle,rgba(240,124,30,.18) 0%,transparent 70%); }
-.orb2 { width:300px;height:300px;bottom:-60px;left:-60px; background:radial-gradient(circle,rgba(255,255,255,.06) 0%,transparent 70%); }
-.orb3 { width:200px;height:200px;top:40%;left:50%;transform:translate(-50%,-50%); background:radial-gradient(circle,rgba(240,124,30,.08) 0%,transparent 70%); }
+.orb1 { width:500px;height:500px;top:-150px;right:-100px; background:radial-gradient(circle,rgba(26,33,88,.06) 0%,transparent 70%); }
+.orb2 { width:400px;height:400px;bottom:-100px;left:-100px; background:radial-gradient(circle,rgba(240,124,30,.05) 0%,transparent 70%); }
+.orb3 { width:300px;height:300px;top:40%;left:50%;transform:translate(-50%,-50%); background:radial-gradient(circle,rgba(26,33,88,.03) 0%,transparent 70%); }
 .login-card {
-  position:relative; background:rgba(255,255,255,.97); backdrop-filter:blur(20px);
-  border:1px solid rgba(255,255,255,.9); border-radius:24px; padding:36px 28px;
-  width:100%; max-width:380px; box-shadow:0 24px 64px rgba(0,0,0,.4);
+  position:relative; background:#ffffff;
+  border:1px solid rgba(26,33,88,.1); border-radius:24px; padding:36px 28px;
+  width:100%; max-width:380px; box-shadow:0 8px 40px rgba(26,33,88,.12);
 }
 .logo-wrap { display:flex; align-items:center; gap:14px; margin-bottom:28px; }
 .logo-symbol { position:relative; width:52px; height:52px; }
@@ -993,7 +993,7 @@ html,body { height:100%; overflow:hidden; font-family:var(--fb); background:var(
 .lc-extra-row .lc-field-type:focus { border-color: var(--orange); }
 
 /* Login card — campos claros sobre fundo branco */
-#screen-login .field-group label { color:var(--text-light); }
+#screen-login .field-group label { color:var(--navy); }
 #screen-login .field-group input { background:var(--off-white);border-color:var(--gray-light);color:var(--text); }
 #screen-login .field-group input::placeholder { color:var(--gray); }
 #screen-login .field-group input:focus { border-color:var(--orange);background:var(--white); }
