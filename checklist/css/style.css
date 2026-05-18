@@ -28,6 +28,11 @@
 }
 *,*::before,*::after { box-sizing:border-box; margin:0; padding:0; }
 html,body { height:100%; overflow:hidden; font-family:var(--fb); background:var(--off-white); color:var(--text); -webkit-tap-highlight-color:transparent; }
+/* Suporte a teclado virtual no mobile */
+@supports (height: 100dvh) {
+  html, body { height: 100dvh; }
+  .screen { height: 100dvh; }
+}
 
 /* ── SCREENS ── */
 .screen { position:fixed; inset:0; display:none; flex-direction:column; overflow:hidden; animation:fadeIn .22s ease; }
@@ -231,6 +236,7 @@ html,body { height:100%; overflow:hidden; font-family:var(--fb); background:var(
   display:flex;align-items:center;justify-content:space-between;padding:12px 14px;
   background:var(--white);border-top:1px solid var(--gray-light);
   box-shadow:0 -4px 16px rgba(26,33,88,.08);flex-shrink:0;
+  position:sticky;bottom:0;z-index:100;
 }
 #form-step-label{font-size:12px;color:var(--text-light);font-weight:600;}
 
