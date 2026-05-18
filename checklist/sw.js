@@ -1,9 +1,8 @@
 /* ═══════════════════════════════════════════════════
-   sw.js — Garra Check List v7
-   Offline-first robusto
+   sw.js — Garra Check List v9 — 20260518
 ═══════════════════════════════════════════════════ */
 
-const CACHE = 'garra-v7';
+const CACHE = 'garra-v9-20260518';
 
 const APP_SHELL = [
   '/index.html',
@@ -13,28 +12,35 @@ const APP_SHELL = [
   '/js/app.js',
   '/js/logistics.js',
   '/icons/logo.png',
+  '/icons/icon-192.png',
+  '/icons/icon-512.png',
+  '/icons/favicon.ico',
+  '/icons/favicon-32.png',
+  '/icons/favicon-16.png',
   '/manifest.json',
 ];
 
-// ── INSTALL ─────────────────────────────────────────
 self.addEventListener('install', e => {
   self.skipWaiting();
   e.waitUntil(
-    caches.open(CACHE).then(async cache => {
-      for (const url of APP_SHELL) {
-        try {
-          await cache.add(url);
-          console.log('[SW] Cacheado:', url);
-        } catch(err) {
-          console.warn('[SW] Falhou:', url, err.message);
+    caches.open(CACHE).then(cache => {
+      console.log('[SW] Cacheando app shell v9...');
+      return Promise.allSettled(
+        APP_SHELL.map(url => cache.add(url))
+      ).then(results => {
+        const ok  = results.filter(r => r.status==='fulfilled').length;
+        const err = results.filter(r => r.status==='rejected').length;
+        console.log(`[SW] Cache: ${ok} OK, ${err} falhas`);
+        if (err > 0) {
+          results.forEach((r,i) => {
+            if (r.status==='rejected') console.warn('[SW] Falhou:', APP_SHELL[i], r.reason?.message);
+          });
         }
-      }
-      console.log('[SW] ✅ Install completo');
+      });
     })
   );
 });
 
-// ── ACTIVATE ────────────────────────────────────────
 self.addEventListener('activate', e => {
   e.waitUntil(
     caches.keys()
@@ -49,68 +55,62 @@ self.addEventListener('activate', e => {
   );
 });
 
-// ── FETCH ───────────────────────────────────────────
 self.addEventListener('fetch', e => {
   const url = new URL(e.request.url);
-
-  // Só GET
   if (e.request.method !== 'GET') return;
 
-  // API garra-sistemas — network only, sem cache
+  // API — sempre rede
   if (url.hostname === 'garra-sistemas.onrender.com') {
     e.respondWith(
-      fetch(e.request, { signal: AbortSignal.timeout(8000) })
-        .catch(() => new Response(
-          JSON.stringify({ error: 'offline' }),
-          { status: 503, headers: { 'Content-Type': 'application/json' } }
-        ))
+      fetch(e.request).catch(() =>
+        new Response(JSON.stringify({error:'offline'}),
+          {status:503, headers:{'Content-Type':'application/json'}})
+      )
     );
     return;
   }
 
-  // Google Fonts — stale-while-revalidate
-  if (url.hostname.includes('fonts.googleapis') || url.hostname.includes('fonts.gstatic')) {
+  // Fontes Google — cache com fallback
+  if (url.hostname.includes('fonts.')) {
     e.respondWith(
       caches.match(e.request).then(cached => {
-        const fresh = fetch(e.request).then(res => {
-          caches.open(CACHE).then(c => c.put(e.request, res.clone()));
+        if (cached) return cached;
+        return fetch(e.request).then(res => {
+          const clone = res.clone();
+          caches.open(CACHE).then(c => c.put(e.request, clone));
           return res;
-        }).catch(() => cached);
-        return cached || fresh;
+        }).catch(() => new Response('', {status:200}));
       })
     );
     return;
   }
 
-  // App shell — Cache First, atualiza em background
+  // App shell — Cache First
   e.respondWith(
-    caches.open(CACHE).then(async cache => {
-      const cached = await cache.match(e.request);
-
+    caches.match(e.request).then(cached => {
       if (cached) {
-        // Tem cache — retorna imediatamente e atualiza em background
+        // Atualiza em background
         fetch(e.request).then(res => {
-          if (res && res.ok) cache.put(e.request, res);
+          if (res && res.ok) {
+            caches.open(CACHE).then(c => c.put(e.request, res));
+          }
         }).catch(() => {});
         return cached;
       }
-
-      // Sem cache — busca da rede e cacheia
-      try {
-        const res = await fetch(e.request);
+      // Sem cache — busca da rede
+      return fetch(e.request).then(res => {
         if (res && res.ok) {
-          cache.put(e.request, res.clone()); // clone antes de usar
+          const clone = res.clone();
+          caches.open(CACHE).then(c => c.put(e.request, clone));
         }
         return res;
-      } catch {
-        // Sem rede e sem cache — serve index.html como fallback
-        const fallback = await cache.match('/index.html');
-        if (fallback) return fallback;
-        return new Response(
-          '<html><body style="font-family:sans-serif;text-align:center;padding:40px"><h2>📶 Offline</h2><p>Abra com internet primeiro para ativar o modo offline.</p></body></html>',
-          { headers: { 'Content-Type': 'text/html' } }
+      }).catch(async () => {
+        const fallback = await caches.match('/index.html');
+        return fallback || new Response(
+          '<html><body style="font-family:sans-serif;text-align:center;padding:40px"><h2>📶 Offline</h2><p>Abra com internet primeiro.</p></body></html>',
+          {headers:{'Content-Type':'text/html'}}
         );
-      }
+      });
     })
   );
 });
