@@ -893,6 +893,7 @@ html,body { height:100%; overflow:hidden; font-family:var(--fb); background:var(
   object-fit: contain;
   flex-shrink: 0;
   display: block;
+  filter: brightness(0) invert(1); /* branco no cabeçalho navy */
 }
 .tb-logo-label {
   font-family: var(--fd);
