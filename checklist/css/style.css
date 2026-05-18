@@ -994,6 +994,14 @@ html,body { height:100%; overflow:hidden; font-family:var(--fb); background:var(
 
 /* Login card — campos claros sobre fundo branco */
 #screen-login .field-group label { color:var(--navy); }
+#screen-login .btn-primary {
+  background: linear-gradient(135deg, var(--navy), var(--navy-dark));
+  box-shadow: 0 4px 20px rgba(26,33,88,.3);
+}
+#screen-login .btn-primary:hover {
+  box-shadow: 0 6px 24px rgba(26,33,88,.45);
+  background: linear-gradient(135deg, #1e2a6e, var(--navy-dark));
+}
 #screen-login .field-group input { background:var(--off-white);border-color:var(--gray-light);color:var(--text); }
 #screen-login .field-group input::placeholder { color:var(--gray); }
 #screen-login .field-group input:focus { border-color:var(--orange);background:var(--white); }
