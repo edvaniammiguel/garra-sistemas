@@ -371,37 +371,28 @@ function renderDriverDashboard() {
   currentUser = { ...currentUser, ...u };
 
   // Pontos visíveis apenas se gestor ativou
+  // Pontos — exibe baseado na configuração do gestor
   const cfg         = PontosConfig.get();
   const ptsVisiveis = PontosConfig.visivel();
-  const ptsExibir   = ptsVisiveis ? PontosConfig.pontosNoPeriodo(u.login) : null;
+  const ptsExibir   = ptsVisiveis ? PontosConfig.pontosNoPeriodo(u.login) : '–';
+  const ptsMsg      = !ptsVisiveis ? (cfg.data_inicio ? 'Disponível em ' + formatDate(cfg.data_inicio) : 'Pontuação em breve') : '';
 
-  const ptsEl      = document.getElementById('driver-pts');
-  const ptsLabel   = document.querySelector('.sc-label');
-  const scBar      = document.getElementById('driver-bar');
-  const scRank     = document.getElementById('driver-rank');
+  document.getElementById('driver-pts').textContent    = ptsExibir;
+  document.getElementById('driver-streak').textContent = `🔥 ${u.submissions || 0} envios`;
 
-  if (ptsVisiveis) {
-    if (ptsEl) { ptsEl.textContent = ptsExibir; ptsEl.style.filter = ''; }
-    if (scBar) scBar.parentElement.style.display = '';
-    if (scRank) scRank.style.display = '';
-  } else {
-    // Esconde número mas mantém card — mostra mensagem sutil
-    if (ptsEl) { ptsEl.textContent = '–'; ptsEl.style.color = 'rgba(255,255,255,.3)'; }
-    if (scBar) scBar.parentElement.style.display = 'none';
-    if (scRank) scRank.parentElement.style.display = 'none';
-    // Adiciona mensagem discreta
-    const scLeft = document.querySelector('.sc-left');
-    if (scLeft && !document.getElementById('pts-soon-msg')) {
+  // Mostra mensagem sutil abaixo dos pontos se desativado
+  const existingMsg = document.getElementById('pts-soon-msg');
+  if (existingMsg) existingMsg.remove();
+  if (!ptsVisiveis && ptsMsg) {
+    const ptsEl = document.getElementById('driver-pts');
+    if (ptsEl) {
       const msg = document.createElement('div');
       msg.id = 'pts-soon-msg';
-      msg.style.cssText = 'font-size:11px;color:rgba(255,255,255,.5);margin-top:2px';
-      msg.textContent = cfg.data_inicio
-        ? 'Disponível em ' + formatDate(cfg.data_inicio)
-        : 'Pontuação em breve';
-      scLeft.appendChild(msg);
+      msg.style.cssText = 'font-size:10px;color:rgba(255,255,255,.5);margin-top:2px;text-align:center';
+      msg.textContent = ptsMsg;
+      ptsEl.parentNode.insertBefore(msg, ptsEl.nextSibling);
     }
   }
-  document.getElementById('driver-streak').textContent = `🔥 ${u.submissions || 0} envios`;
 
   const drivers = DB.users().filter(u => u.role === 'driver' || u.role === 'diarista').sort((a,b) => (b.pts||0)-(a.pts||0));
   const rank    = drivers.findIndex(d => d.login === u.login) + 1;
@@ -410,20 +401,25 @@ function renderDriverDashboard() {
   document.getElementById('driver-bar').style.width = Math.round(((u.pts||0)/maxPts)*100) + '%';
 
   // Filtra CLs pela função
+  // Sempre usa DEFAULT_CHECKLISTS + customizados do localStorage
   const allCLs = DB.allCLs();
   const funcao  = u.funcao ? FuncaoDB.byId(u.funcao) : null;
-  
-  // Se função tem CLs específicos, filtra — mas sempre inclui customizados criados para esta função
+
   let visivel;
   if (funcao?.cls?.length) {
     visivel = Object.fromEntries(
       Object.entries(allCLs).filter(([id]) => funcao.cls.includes(id))
     );
-    // Se ficou vazio (função não tem CL vinculado ainda), mostra todos
     if (!Object.keys(visivel).length) visivel = allCLs;
   } else {
     visivel = allCLs;
   }
+
+  // Garante que pelo menos os padrão aparecem
+  if (!Object.keys(visivel).length && typeof DEFAULT_CHECKLISTS !== 'undefined') {
+    visivel = DEFAULT_CHECKLISTS;
+  }
+  console.log('[Driver] CLs visíveis:', Object.keys(visivel).length);
 
   const cardsEl = document.getElementById('driver-cl-cards');
   // Veículo fixo
@@ -1556,14 +1552,29 @@ async function syncFrotaFromAPI() {
   try {
     const data = await GarraDB.getFrota();
     if (!data?.length) return;
-    const fleet = { maquinas: [], carro: [], caminhao: [] };
+    // Mescla com dados locais para não perder equipamentos
+    const localFleet = DB.fleet();
+    const apiFleet   = { maquinas: [], carro: [], caminhao: [] };
     data.forEach(item => {
-      if (!fleet[item.categoria]) return;
-      fleet[item.categoria].push({ id: item.identificacao, desc: item.descricao || '', active: item.ativo !== false });
+      if (!apiFleet[item.categoria]) return;
+      apiFleet[item.categoria].push({
+        id:     item.identificacao,
+        desc:   item.descricao || '',
+        active: item.ativo !== false,
+      });
     });
-    DB.set('garra_fleet', fleet);
-    console.log('✅ Frota sincronizada:', data.length, 'itens');
-  } catch(e) { console.warn('⚠️ Sync frota falhou:', e.message); }
+    // Merge: API tem prioridade, mantém itens locais que não estão na API
+    const merged = { maquinas: [], carro: [], caminhao: [] };
+    ['maquinas','carro','caminhao'].forEach(cat => {
+      const apiIds = apiFleet[cat].map(v => v.id);
+      merged[cat] = [
+        ...apiFleet[cat],
+        ...(localFleet[cat]||[]).filter(v => !apiIds.includes(v.id)),
+      ];
+    });
+    DB.set('garra_fleet', merged);
+    console.log('✅ Frota sincronizada:', data.length, 'itens do banco');
+  } catch(e) { console.warn('⚠️ Sync frota falhou (offline?):', e.message); }
 }
 
 async function syncUsersFromAPI() {
@@ -1957,16 +1968,16 @@ function renderPontosConfigPanel() {
       <div class="pontos-config-body ${ativo ? '' : 'disabled'}">
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px">
           <div class="field-group" style="margin:0">
-            <label>📅 Contar pontos a partir de</label>
+            <label style="font-size:11px;font-weight:700;color:var(--text-light);display:block;margin-bottom:4px">📅 Contar a partir de</label>
             <input type="date" id="pontos-inicio" value="${inicio}"
               onchange="salvarPontosConfig()"
-              style="padding:8px 10px;border:1.5px solid var(--gray-light);border-radius:var(--radius-sm);font-size:12px;width:100%" />
+              style="padding:8px 10px;border:1.5px solid var(--gray-light);border-radius:var(--radius-sm);font-size:13px;width:100%;background:var(--white)" />
           </div>
           <div class="field-group" style="margin:0">
-            <label>📅 Até (opcional)</label>
+            <label style="font-size:11px;font-weight:700;color:var(--text-light);display:block;margin-bottom:4px">📅 Até (opcional)</label>
             <input type="date" id="pontos-fim" value="${fim}"
               onchange="salvarPontosConfig()"
-              style="padding:8px 10px;border:1.5px solid var(--gray-light);border-radius:var(--radius-sm);font-size:12px;width:100%" />
+              style="padding:8px 10px;border:1.5px solid var(--gray-light);border-radius:var(--radius-sm);font-size:13px;width:100%;background:var(--white)" />
           </div>
         </div>
         <div class="pontos-config-preview">
