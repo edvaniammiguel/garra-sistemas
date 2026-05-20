@@ -1200,3 +1200,73 @@ html,body { height:100%; overflow:hidden; font-family:var(--fb); background:var(
   border-radius: 6px;
   border-left: 3px solid var(--orange);
 }
+
+/* ══════════════════════════════════════
+   CONFIGURAÇÃO DE PONTOS
+══════════════════════════════════════ */
+.pontos-config-card {
+  background: var(--white);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-sm);
+  padding: 14px 16px;
+  margin-bottom: 12px;
+  border-left: 4px solid var(--orange);
+}
+.pontos-config-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.pontos-config-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--navy);
+}
+.pontos-config-sub {
+  font-size: 11px;
+  color: var(--text-light);
+  margin-top: 2px;
+}
+.pontos-config-body.disabled {
+  opacity: .5;
+  pointer-events: none;
+}
+.pontos-config-preview {
+  font-size: 12px;
+  color: var(--text-light);
+  margin-top: 10px;
+  padding: 8px 10px;
+  background: var(--off-white);
+  border-radius: var(--radius-sm);
+}
+
+/* Toggle Switch */
+.toggle-switch {
+  position: relative;
+  display: inline-block;
+  width: 48px;
+  height: 26px;
+  flex-shrink: 0;
+}
+.toggle-switch input { opacity:0; width:0; height:0; }
+.toggle-slider {
+  position: absolute;
+  cursor: pointer;
+  inset: 0;
+  background: var(--gray-light);
+  border-radius: 26px;
+  transition: .3s;
+}
+.toggle-slider:before {
+  content: '';
+  position: absolute;
+  width: 20px; height: 20px;
+  left: 3px; bottom: 3px;
+  background: white;
+  border-radius: 50%;
+  transition: .3s;
+  box-shadow: 0 1px 4px rgba(0,0,0,.2);
+}
+.toggle-switch input:checked + .toggle-slider { background: var(--orange); }
+.toggle-switch input:checked + .toggle-slider:before { transform: translateX(22px); }
