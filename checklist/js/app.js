@@ -371,24 +371,34 @@ function renderDriverDashboard() {
   currentUser = { ...currentUser, ...u };
 
   // Pontos visíveis apenas se gestor ativou
-  const cfg        = PontosConfig.get();
-  const ptsVisiveis= PontosConfig.visivel();
-  const ptsExibir  = ptsVisiveis ? PontosConfig.pontosNoPeriodo(u.login) : null;
+  const cfg         = PontosConfig.get();
+  const ptsVisiveis = PontosConfig.visivel();
+  const ptsExibir   = ptsVisiveis ? PontosConfig.pontosNoPeriodo(u.login) : null;
 
-  const ptsEl = document.getElementById('driver-pts');
-  const scCard = document.querySelector('.score-card');
+  const ptsEl      = document.getElementById('driver-pts');
+  const ptsLabel   = document.querySelector('.sc-label');
+  const scBar      = document.getElementById('driver-bar');
+  const scRank     = document.getElementById('driver-rank');
+
   if (ptsVisiveis) {
-    if (ptsEl) ptsEl.textContent = ptsExibir;
-    if (scCard) scCard.style.display = '';
+    if (ptsEl) { ptsEl.textContent = ptsExibir; ptsEl.style.filter = ''; }
+    if (scBar) scBar.parentElement.style.display = '';
+    if (scRank) scRank.style.display = '';
   } else {
-    if (scCard) {
-      scCard.innerHTML = `<div style="padding:16px;text-align:center;width:100%">
-        <div style="font-size:28px;margin-bottom:6px">🏆</div>
-        <div style="font-size:14px;font-weight:700;color:var(--navy)">Pontuação em breve</div>
-        <div style="font-size:12px;color:var(--text-light);margin-top:4px">
-          ${cfg.data_inicio ? 'Disponível a partir de ' + formatDate(cfg.data_inicio) : 'Aguarde a liberação pelo gestor'}
-        </div>
-      </div>`;
+    // Esconde número mas mantém card — mostra mensagem sutil
+    if (ptsEl) { ptsEl.textContent = '–'; ptsEl.style.color = 'rgba(255,255,255,.3)'; }
+    if (scBar) scBar.parentElement.style.display = 'none';
+    if (scRank) scRank.parentElement.style.display = 'none';
+    // Adiciona mensagem discreta
+    const scLeft = document.querySelector('.sc-left');
+    if (scLeft && !document.getElementById('pts-soon-msg')) {
+      const msg = document.createElement('div');
+      msg.id = 'pts-soon-msg';
+      msg.style.cssText = 'font-size:11px;color:rgba(255,255,255,.5);margin-top:2px';
+      msg.textContent = cfg.data_inicio
+        ? 'Disponível em ' + formatDate(cfg.data_inicio)
+        : 'Pontuação em breve';
+      scLeft.appendChild(msg);
     }
   }
   document.getElementById('driver-streak').textContent = `🔥 ${u.submissions || 0} envios`;
@@ -515,7 +525,7 @@ function renderMetaField(f, vehicles) {
 
       return `<div class="form-meta-field">
         <label>${f.label}</label>
-        <select id="meta-${f.id}" style="font-size:13px">
+        <select id="meta-${f.id}" style="font-size:16px;padding:12px 14px;width:100%;border:1.5px solid var(--gray-light);border-radius:var(--radius-sm);-webkit-appearance:none;appearance:none">
           <option value="">Selecione o equipamento...</option>
           ${optsHtml}
         </select>
@@ -526,7 +536,7 @@ function renderMetaField(f, vehicles) {
     // Outros selects normais
     const opts2 = opts;
     return `<div class="form-meta-field"><label>${f.label}</label>
-      <select id="meta-${f.id}">
+      <select id="meta-${f.id}" style="font-size:16px;padding:12px 14px;width:100%;border:1.5px solid var(--gray-light);border-radius:var(--radius-sm);background:var(--white);color:var(--text);appearance:none;-webkit-appearance:none;background-image:url('data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22 fill=%22none%22 stroke=%22%231a2158%22 stroke-width=%222%22><polyline points=%226 9 12 15 18 9%22/></svg>');background-repeat:no-repeat;background-position:right 12px center;background-size:18px;padding-right:38px">
         <option value="">Selecione...</option>
         ${opts2.map(o=>`<option value="${o}">${o}</option>`).join('')}
       </select>
@@ -537,7 +547,8 @@ function renderMetaField(f, vehicles) {
   const defaultVal = (f.id === 'operador' && currentUser?.name) ? currentUser.name : '';
   return `<div class="form-meta-field">
     <label>${f.label}</label>
-    <input type="${f.type}" id="meta-${f.id}" placeholder="${f.placeholder||''}" value="${defaultVal}" />
+    <input type="${f.type}" id="meta-${f.id}" placeholder="${f.placeholder||''}" value="${defaultVal}"
+      style="font-size:16px" />
   </div>`;
 }
 
