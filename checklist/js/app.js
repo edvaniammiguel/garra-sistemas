@@ -76,6 +76,31 @@ const DB = {
   },
 };
 
+// ─── CONFIGURAÇÃO DE PONTOS ────────────────────────────────
+const PontosConfig = {
+  get() {
+    return DB.get('garra_pontos_config') || { ativo:false, data_inicio:null, data_fim:null };
+  },
+  save(cfg) { DB.set('garra_pontos_config', cfg); },
+  visivel() {
+    const cfg = this.get();
+    if (!cfg.ativo) return false;
+    const hoje = new Date().toISOString().slice(0,10);
+    if (cfg.data_inicio && hoje < cfg.data_inicio) return false;
+    return true;
+  },
+  pontosNoPeriodo(userLogin) {
+    const cfg  = this.get();
+    const subs = DB.submissions().filter(s => s.user === userLogin);
+    return subs.filter(s => {
+      const data = (s.date||'').slice(0,10);
+      if (cfg.data_inicio && data < cfg.data_inicio) return false;
+      if (cfg.data_fim    && data > cfg.data_fim)    return false;
+      return true;
+    }).reduce((acc,s) => acc+(s.pts||0), 0);
+  },
+};
+
 // ─── FUNÇÕES DB ────────────────────────────────────
 const FuncaoDB = {
   get()      { return DB.get('garra_funcoes') || seedFuncoes(); },
@@ -345,7 +370,27 @@ function renderDriverDashboard() {
   if (!u) return;
   currentUser = { ...currentUser, ...u };
 
-  document.getElementById('driver-pts').textContent    = u.pts || 0;
+  // Pontos visíveis apenas se gestor ativou
+  const cfg        = PontosConfig.get();
+  const ptsVisiveis= PontosConfig.visivel();
+  const ptsExibir  = ptsVisiveis ? PontosConfig.pontosNoPeriodo(u.login) : null;
+
+  const ptsEl = document.getElementById('driver-pts');
+  const scCard = document.querySelector('.score-card');
+  if (ptsVisiveis) {
+    if (ptsEl) ptsEl.textContent = ptsExibir;
+    if (scCard) scCard.style.display = '';
+  } else {
+    if (scCard) {
+      scCard.innerHTML = `<div style="padding:16px;text-align:center;width:100%">
+        <div style="font-size:28px;margin-bottom:6px">🏆</div>
+        <div style="font-size:14px;font-weight:700;color:var(--navy)">Pontuação em breve</div>
+        <div style="font-size:12px;color:var(--text-light);margin-top:4px">
+          ${cfg.data_inicio ? 'Disponível a partir de ' + formatDate(cfg.data_inicio) : 'Aguarde a liberação pelo gestor'}
+        </div>
+      </div>`;
+    }
+  }
   document.getElementById('driver-streak').textContent = `🔥 ${u.submissions || 0} envios`;
 
   const drivers = DB.users().filter(u => u.role === 'driver' || u.role === 'diarista').sort((a,b) => (b.pts||0)-(a.pts||0));
@@ -741,7 +786,15 @@ async function submitChecklist() {
     document.getElementById('success-msg').textContent   = sincronizado
       ? '✅ Salvo e sincronizado com sucesso.'
       : '📦 Salvo localmente. Será sincronizado quando online.';
-    document.getElementById('pts-earned').textContent = `+${submission.pts} pts`;
+    const ptsEl2 = document.getElementById('pts-earned');
+  if (ptsEl2) {
+    if (PontosConfig.visivel()) {
+      ptsEl2.textContent = `+${submission.pts} pts`;
+      ptsEl2.style.display = '';
+    } else {
+      ptsEl2.style.display = 'none';
+    }
+  }
 
   } catch(fatalErr) {
     // Erro fatal — loga detalhes e salva mesmo assim
@@ -1862,3 +1915,71 @@ function toggleSenha(inputId, btn) {
     btn.title = 'Mostrar senha';
   }
 }
+
+// ═══════════════════════════════════════════════════
+// MÓDULO: CONFIGURAÇÃO DE VISIBILIDADE DE PONTOS
+// ═══════════════════════════════════════════════════
+
+function renderPontosConfigPanel() {
+  const el = document.getElementById('pontos-config-panel');
+  if (!el || currentUser?.role !== 'manager') return;
+
+  const cfg    = PontosConfig.get();
+  const ativo  = cfg.ativo;
+  const inicio = cfg.data_inicio || '';
+  const fim    = cfg.data_fim    || '';
+
+  el.innerHTML = `
+    <div class="pontos-config-card">
+      <div class="pontos-config-header">
+        <div>
+          <div class="pontos-config-title">🏅 Visibilidade de Pontos</div>
+          <div class="pontos-config-sub">Controle o que os colaboradores veem</div>
+        </div>
+        <label class="toggle-switch">
+          <input type="checkbox" id="pontos-ativo" ${ativo ? 'checked' : ''}
+            onchange="salvarPontosConfig()" />
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+
+      <div class="pontos-config-body ${ativo ? '' : 'disabled'}">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px">
+          <div class="field-group" style="margin:0">
+            <label>📅 Contar pontos a partir de</label>
+            <input type="date" id="pontos-inicio" value="${inicio}"
+              onchange="salvarPontosConfig()"
+              style="padding:8px 10px;border:1.5px solid var(--gray-light);border-radius:var(--radius-sm);font-size:12px;width:100%" />
+          </div>
+          <div class="field-group" style="margin:0">
+            <label>📅 Até (opcional)</label>
+            <input type="date" id="pontos-fim" value="${fim}"
+              onchange="salvarPontosConfig()"
+              style="padding:8px 10px;border:1.5px solid var(--gray-light);border-radius:var(--radius-sm);font-size:12px;width:100%" />
+          </div>
+        </div>
+        <div class="pontos-config-preview">
+          ${ativo
+            ? `✅ Colaboradores <strong>veem</strong> seus pontos${inicio ? ' a partir de <strong>' + formatDate(inicio) + '</strong>' : ''}${fim ? ' até <strong>' + formatDate(fim) + '</strong>' : ''}`
+            : `⏸ Colaboradores <strong>não veem</strong> pontos — exibe "Pontuação em breve"`
+          }
+        </div>
+      </div>
+    </div>`;
+}
+
+function salvarPontosConfig() {
+  const ativo  = document.getElementById('pontos-ativo')?.checked || false;
+  const inicio = document.getElementById('pontos-inicio')?.value  || null;
+  const fim    = document.getElementById('pontos-fim')?.value     || null;
+  PontosConfig.save({ ativo, data_inicio: inicio, data_fim: fim });
+  renderPontosConfigPanel();
+  renderRankingTab();
+}
+
+// Hook no renderRankingTab para incluir painel de config
+const _renderRankingTabOrig = renderRankingTab;
+window.renderRankingTab = function() {
+  _renderRankingTabOrig();
+  renderPontosConfigPanel();
+};
