@@ -218,7 +218,7 @@ def login():
     email = (d.get("email") or "").strip().lower()
     senha = (d.get("senha") or "").encode()
 
-    res = sb.table("usuarios").select("*").eq("email", email).eq("ativo", True).limit(1).execute()
+    res = sb.schema("public").table("usuarios").select("*").eq("email", email).eq("ativo", True).limit(1).execute()
     if not res.data:
         return jsonify({"erro": "Credenciais inválidas"}), 401
 
@@ -676,7 +676,7 @@ def get_config():
 @app.route("/api/clientes")
 @verificar_token
 def list_clientes():
-    res = sb.table("clientes").select("id, nome").eq("ativo", True).execute()
+    res = sb.schema("public").table("clientes").select("id, nome").eq("ativo", True).execute()
     return jsonify(res.data)
 
 
