@@ -202,7 +202,7 @@ def login():
 
     try:
         usuario = query(
-            "SELECT * FROM public.usuarios WHERE email=%s AND ativo=true LIMIT 1",
+            "SELECT * FROM public.usuarios_garra WHERE email=%s AND ativo=true LIMIT 1",
             (email,), fetch="one"
         )
     except Exception as e:
@@ -497,7 +497,7 @@ def get_config():
 @app.route("/api/clientes")
 @verificar_token
 def list_clientes():
-    rows = query("SELECT id, nome FROM public.clientes WHERE ativo=true")
+    rows = query("SELECT id, nome FROM public.clientes_garra WHERE ativo=true")
     return jsonify([dict(r) for r in rows])
 
 # ── INIT ──────────────────────────────────────────────────────
