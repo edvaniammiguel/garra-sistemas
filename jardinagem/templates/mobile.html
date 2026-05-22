@@ -5,14 +5,13 @@
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="theme-color" content="#1A2A5E">
-<title>Garra — Fotos</title>
+<title>Garra — Jardinagem</title>
 <link rel="manifest" href="/manifest.json">
 <style>
 :root{
   --bl:#1A2A5E;--bl2:#1E3A8A;--or:#E8820C;--or2:#D4700A;
-  --grn:#16A34A;--glt:#DCFCE7;--red:#DC2626;--rlt:#FEE2E2;
+  --grn:#16A34A;--glt:#DCFCE7;--red:#DC2626;
   --bg:#F0F4FF;--card:#fff;--brd:#CBD5E1;--txt:#1E293B;--mut:#64748B;
   --r:14px;--r2:10px;
 }
@@ -21,120 +20,132 @@ html,body{height:100%;background:var(--bg);font-family:system-ui,-apple-system,s
 body{display:flex;flex-direction:column;max-width:480px;margin:0 auto;}
 
 /* HEADER */
-.hdr{background:var(--bl);padding:env(safe-area-inset-top,12px) 1rem 12px;
+.hdr{background:var(--bl);padding:env(safe-area-inset-top,10px) 1rem 10px;
   display:flex;align-items:center;justify-content:space-between;flex-shrink:0;
   border-bottom:3px solid var(--or);}
 .hdr-logo{height:36px;object-fit:contain;}
 .hdr-info{text-align:right;}
 .hdr-nome{font-size:12px;font-weight:700;color:#fff;}
-.hdr-perfil{font-size:10px;color:#93C5FD;}
-.hdr-status{display:flex;align-items:center;gap:6px;margin-top:3px;justify-content:flex-end;}
-.status-dot{width:8px;height:8px;border-radius:50%;background:var(--grn);}
-.status-dot.off{background:var(--or);}
-.status-txt{font-size:10px;color:#93C5FD;}
+.hdr-status{display:flex;align-items:center;gap:5px;margin-top:2px;justify-content:flex-end;}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--grn);}
+.dot.off{background:var(--or);}
+.dot-txt{font-size:10px;color:#93C5FD;}
 
-/* MAIN SCROLL */
-.main{flex:1;overflow-y:auto;padding:1rem;padding-bottom:6rem;}
+/* MAIN */
+.main{flex:1;overflow-y:auto;padding:1rem;padding-bottom:5.5rem;}
 
-/* SEMANA CARD */
-.semana-card{background:var(--card);border-radius:var(--r);border:1.5px solid var(--brd);
-  padding:1rem;margin-bottom:1rem;box-shadow:0 2px 8px rgba(26,42,94,.06);}
-.semana-label{font-size:11px;font-weight:700;color:var(--mut);text-transform:uppercase;
-  letter-spacing:.06em;margin-bottom:4px;}
-.semana-nome{font-size:16px;font-weight:800;color:var(--bl);}
-.semana-datas{font-size:11px;color:var(--mut);margin-top:2px;}
-.semana-badge{display:inline-flex;align-items:center;gap:4px;margin-top:6px;
-  background:var(--glt);color:var(--grn);font-size:10px;font-weight:700;
-  padding:3px 10px;border-radius:99px;}
-.semana-badge.pend{background:#ffedd5;color:var(--or2);}
+/* CARDS */
+.card{background:var(--card);border:1.5px solid var(--brd);border-radius:var(--r);
+  padding:1rem;margin-bottom:.75rem;box-shadow:0 2px 8px rgba(26,42,94,.06);}
+.card-label{font-size:10px;font-weight:700;color:var(--mut);text-transform:uppercase;
+  letter-spacing:.06em;margin-bottom:3px;}
+.card-val{font-size:15px;font-weight:800;color:var(--bl);}
+.card-sub{font-size:11px;color:var(--mut);margin-top:2px;}
+.badge{font-size:10px;font-weight:700;padding:2px 10px;border-radius:99px;
+  display:inline-block;margin-top:5px;}
+.badge-ok{background:var(--glt);color:var(--grn);}
+.badge-pend{background:#ffedd5;color:var(--or2);}
 
-/* AÇÃO PRINCIPAL */
-.acao-titulo{font-size:13px;font-weight:700;color:var(--bl);margin-bottom:.75rem;}
+/* FILA */
+.fila-card{background:#fffbeb;border:1.5px solid #fcd34d;border-radius:var(--r);
+  padding:.875rem 1rem;margin-bottom:.75rem;}
+.fila-titulo{font-size:12px;font-weight:700;color:#92400e;margin-bottom:4px;}
+.fila-info{font-size:11px;color:#78350f;line-height:1.5;}
 
-/* BOTÕES DE TIPO */
-.tipo-btns{display:grid;grid-template-columns:1fr 1fr;gap:.75rem;margin-bottom:1rem;}
+/* TABS */
+.tabs{display:flex;gap:.5rem;margin-bottom:.75rem;}
+.tab{flex:1;padding:9px;border:1.5px solid var(--brd);border-radius:var(--r2);
+  font-size:12px;font-weight:700;text-align:center;cursor:pointer;
+  color:var(--mut);background:var(--card);}
+.tab.ativo{background:var(--bl);color:#fff;border-color:var(--bl);}
+
+/* INPUTS */
+.inp-label{font-size:10px;font-weight:700;color:var(--mut);text-transform:uppercase;
+  letter-spacing:.06em;margin-bottom:4px;display:block;}
+.inp{width:100%;border:1.5px solid var(--brd);border-radius:var(--r2);
+  padding:12px 14px;font-size:14px;color:var(--txt);background:#F8FAFC;
+  -webkit-appearance:none;margin-bottom:.75rem;}
+.inp:focus{outline:none;border-color:var(--bl);}
+textarea.inp{resize:vertical;min-height:72px;}
+.inp-row{display:grid;grid-template-columns:1fr 1fr;gap:.75rem;}
+.inp-row>div{display:flex;flex-direction:column;}
+
+/* KM SUGERIDO */
+.km-sugerido{background:#EFF6FF;border:1.5px solid #BFDBFE;border-radius:var(--r2);
+  padding:8px 12px;margin-bottom:.75rem;font-size:11px;color:#1E3A8A;
+  display:flex;align-items:center;gap:6px;}
+.km-total-calc{background:var(--glt);border:1.5px solid #BBF7D0;border-radius:var(--r2);
+  padding:8px 12px;margin-bottom:.75rem;font-size:13px;font-weight:700;
+  color:var(--grn);text-align:center;}
+
+/* TIPO FOTO */
+.tipo-btns{display:grid;grid-template-columns:1fr 1fr;gap:.75rem;margin-bottom:.75rem;}
 .tipo-btn{background:var(--card);border:2px solid var(--brd);border-radius:var(--r);
-  padding:1.25rem .75rem;text-align:center;cursor:pointer;transition:.15s;
-  display:flex;flex-direction:column;align-items:center;gap:6px;position:relative;}
+  padding:1rem .75rem;text-align:center;cursor:pointer;
+  display:flex;flex-direction:column;align-items:center;gap:5px;}
 .tipo-btn.sel-antes{border-color:var(--bl2);background:#EFF6FF;}
 .tipo-btn.sel-depois{border-color:var(--or);background:#FFF7ED;}
-.tipo-ico{font-size:28px;}
-.tipo-nome{font-size:13px;font-weight:700;}
-.tipo-desc{font-size:10px;color:var(--mut);line-height:1.3;}
+.tipo-ico{font-size:24px;}
+.tipo-nome{font-size:12px;font-weight:700;}
+.tipo-desc{font-size:10px;color:var(--mut);}
 
-/* LOCAL */
-.local-wrap{margin-bottom:1rem;}
-.local-label{font-size:11px;font-weight:700;color:var(--mut);text-transform:uppercase;
-  letter-spacing:.06em;margin-bottom:6px;display:block;}
-.local-input{width:100%;border:1.5px solid var(--brd);border-radius:var(--r2);
-  padding:12px 14px;font-size:14px;color:var(--txt);background:#F8FAFC;
-  -webkit-appearance:none;}
-.local-input:focus{outline:none;border-color:var(--bl2);}
-.locais-recentes{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px;}
-.local-chip{background:#EFF6FF;color:var(--bl2);border:none;border-radius:99px;
-  padding:4px 12px;font-size:11px;font-weight:600;cursor:pointer;}
+/* CÂMERA/GALERIA */
+.midia-btns{display:grid;grid-template-columns:1fr 1fr;gap:.75rem;margin-bottom:.75rem;}
+.midia-btn{padding:14px;border:1.5px solid var(--brd);border-radius:var(--r);
+  background:var(--card);font-size:13px;font-weight:700;cursor:pointer;
+  color:var(--bl);text-align:center;display:flex;align-items:center;
+  justify-content:center;gap:6px;}
+.midia-btn:active{background:var(--bg);}
 
 /* PREVIEW */
-.preview-wrap{margin-bottom:1rem;position:relative;}
+.preview-wrap{position:relative;margin-bottom:.75rem;}
 .preview-img{width:100%;aspect-ratio:4/3;object-fit:cover;border-radius:var(--r);
   border:2px solid var(--brd);display:block;}
 .preview-empty{width:100%;aspect-ratio:4/3;border:2.5px dashed var(--brd);
   border-radius:var(--r);display:flex;flex-direction:column;align-items:center;
-  justify-content:center;gap:8px;background:#F8FAFC;cursor:pointer;}
-.preview-ico{font-size:40px;color:#CBD5E1;}
+  justify-content:center;gap:8px;background:#F8FAFC;}
+.preview-ico{font-size:36px;color:#CBD5E1;}
 .preview-txt{font-size:12px;color:var(--mut);font-weight:600;}
 .preview-rm{position:absolute;top:8px;right:8px;background:rgba(220,38,38,.9);
-  color:#fff;border:none;border-radius:50%;width:32px;height:32px;
-  font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;}
-.foto-input{display:none;}
+  color:#fff;border:none;border-radius:50%;width:30px;height:30px;
+  font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:center;}
+input[type=file]{display:none;}
 
-/* BTN ENVIAR */
-.btn-enviar{width:100%;padding:16px;background:var(--or);color:#fff;border:none;
-  border-radius:var(--r);font-size:16px;font-weight:800;cursor:pointer;
-  display:flex;align-items:center;justify-content:center;gap:8px;
-  transition:.15s;box-shadow:0 4px 14px rgba(249,115,22,.35);}
-.btn-enviar:active{background:var(--or2);transform:scale(.98);}
-.btn-enviar:disabled{background:#CBD5E1;box-shadow:none;cursor:not-allowed;}
-.btn-enviar .spin{animation:spin 1s linear infinite;display:inline-block;}
+/* BOTÕES */
+.btn{width:100%;padding:14px;border:none;border-radius:var(--r);
+  font-size:15px;font-weight:800;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;gap:8px;margin-bottom:.5rem;}
+.btn-blue{background:var(--bl);color:#fff;box-shadow:0 4px 14px rgba(26,42,94,.25);}
+.btn-blue:active{background:var(--bl2);transform:scale(.98);}
+.btn-or{background:var(--or);color:#fff;box-shadow:0 4px 14px rgba(232,130,12,.25);}
+.btn-or:active{background:var(--or2);transform:scale(.98);}
+.btn:disabled{background:#CBD5E1;box-shadow:none;cursor:not-allowed;}
+.spin{animation:spin 1s linear infinite;}
 @keyframes spin{to{transform:rotate(360deg);}}
 
-/* FILA OFFLINE */
-.fila-card{background:#fffbeb;border:1.5px solid #fcd34d;border-radius:var(--r);
-  padding:.875rem 1rem;margin-bottom:1rem;}
-.fila-titulo{font-size:12px;font-weight:700;color:#92400e;margin-bottom:4px;}
-.fila-info{font-size:11px;color:#78350f;line-height:1.5;}
-.btn-sincronizar{background:#fff;border:1.5px solid #fcd34d;border-radius:8px;
-  padding:8px 16px;font-size:12px;font-weight:700;color:#92400e;cursor:pointer;
-  margin-top:8px;width:100%;}
-
-/* HISTORICO */
-.hist-titulo{font-size:12px;font-weight:700;color:var(--mut);
-  text-transform:uppercase;letter-spacing:.06em;margin-bottom:.5rem;margin-top:1rem;}
+/* HISTÓRICO */
 .hist-item{background:var(--card);border:1.5px solid var(--brd);border-radius:var(--r2);
-  padding:.75rem 1rem;margin-bottom:.5rem;display:flex;align-items:center;gap:.75rem;}
-.hist-thumb{width:52px;height:40px;object-fit:cover;border-radius:6px;flex-shrink:0;}
-.hist-info{flex:1;min-width:0;}
-.hist-local{font-size:12px;font-weight:700;color:var(--bl);
-  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-.hist-meta{font-size:10px;color:var(--mut);margin-top:2px;}
-.hist-badge{font-size:9px;font-weight:700;padding:2px 7px;border-radius:99px;flex-shrink:0;}
-.hb-antes{background:#DBEAFE;color:var(--bl2);}
-.hb-depois{background:#FFEDD5;color:var(--or2);}
+  padding:.75rem;margin-bottom:.5rem;}
+.hist-local{font-size:13px;font-weight:700;color:var(--bl);}
+.hist-meta{font-size:11px;color:var(--mut);margin-top:2px;}
+.hist-badges{display:flex;gap:4px;margin-top:4px;flex-wrap:wrap;}
+.hb{font-size:9px;font-weight:700;padding:2px 8px;border-radius:99px;}
+.hb-antes{background:#DBEAFE;color:#1E3A8A;}
+.hb-depois{background:#FFEDD5;color:#EA580C;}
+.hb-km{background:#DCFCE7;color:#16A34A;}
 .hb-ok{background:var(--glt);color:var(--grn);}
+
+/* SEÇÃO */
+.sec-title{font-size:13px;font-weight:800;color:var(--bl);margin-bottom:.75rem;}
+.sec-divider{height:1px;background:var(--brd);margin:.75rem 0;}
 
 /* LOGIN */
 .login-wrap{flex:1;display:flex;flex-direction:column;align-items:center;
   justify-content:center;padding:2rem;background:#F0F4FF;}
 .login-card{background:#fff;border-radius:16px;padding:2.5rem 2rem;
-  width:100%;max-width:380px;
-  box-shadow:0 4px 24px rgba(26,42,94,.12);
-  border:1.5px solid #CBD5E1;
-  display:flex;flex-direction:column;align-items:center;}
-@media(min-width:600px){
-  .login-card{padding:3rem 2.5rem;}
-  body{background:#F0F4FF;}
-}
-.login-logo-img{width:180px;margin-bottom:.75rem;}
+  width:100%;max-width:380px;box-shadow:0 4px 24px rgba(26,42,94,.12);
+  border:1.5px solid #CBD5E1;display:flex;flex-direction:column;align-items:center;}
+.login-logo{height:60px;object-fit:contain;margin-bottom:.75rem;}
 .login-titulo{font-size:15px;font-weight:800;color:var(--bl);margin-bottom:2px;}
 .login-sub{font-size:11px;color:var(--mut);margin-bottom:1.25rem;text-align:center;}
 .login-form{width:100%;display:flex;flex-direction:column;gap:.75rem;}
@@ -144,11 +155,13 @@ body{display:flex;flex-direction:column;max-width:480px;margin:0 auto;}
   padding:13px 14px;font-size:14px;color:var(--txt);background:#F8FAFC;
   -webkit-appearance:none;}
 .login-inp:focus{outline:none;border-color:var(--bl);}
+.senha-wrap{position:relative;}
+.senha-wrap .login-inp{padding-right:44px;}
+.olho-btn{position:absolute;right:12px;top:50%;transform:translateY(-50%);
+  background:none;border:none;cursor:pointer;font-size:18px;color:var(--mut);}
 .login-btn{padding:14px;background:var(--bl);color:#fff;border:none;
   border-radius:var(--r2);font-size:15px;font-weight:800;cursor:pointer;
-  width:100%;margin-top:.25rem;transition:.15s;
-  box-shadow:0 4px 14px rgba(26,42,94,.3);}
-.login-btn:active{background:var(--bl2);transform:scale(.98);}
+  width:100%;margin-top:.25rem;}
 .login-erro{font-size:12px;color:var(--red);text-align:center;min-height:16px;}
 
 /* TOAST */
@@ -158,7 +171,7 @@ body{display:flex;flex-direction:column;max-width:480px;margin:0 auto;}
   opacity:0;transition:.25s;z-index:999;white-space:nowrap;pointer-events:none;}
 .toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
 
-/* NAV BOTTOM */
+/* NAV */
 .nav{position:fixed;bottom:0;left:50%;transform:translateX(-50%);
   width:100%;max-width:480px;background:var(--card);
   border-top:1px solid var(--brd);display:flex;
@@ -168,35 +181,38 @@ body{display:flex;flex-direction:column;max-width:480px;margin:0 auto;}
 .nav-btn.ativo{color:var(--or);}
 .nav-ico{font-size:20px;}
 .nav-lbl{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;}
+
+/* CHIPS LOCAIS */
+.chip{background:#EFF6FF;color:var(--bl2);border:none;border-radius:99px;
+  padding:4px 12px;font-size:11px;font-weight:600;cursor:pointer;margin:2px;}
+
+@media(min-width:600px){
+  .login-card{padding:3rem 2.5rem;}
+}
 </style>
 </head>
 <body>
 
-<!-- ── LOGIN ───────────────────────────────────────────────── -->
+<!-- ── LOGIN ─────────────────────────────────────────────── -->
 <div id="telaLogin" style="display:flex;flex-direction:column;flex:1;">
   <div class="login-wrap">
     <div class="login-card">
-      <img class="login-logo-img"
-           src="/static/logo-garra.jpg"
-           alt="Garra Terraplenagem"
-           style="width:180px;margin-bottom:.75rem;">
-      <div class="login-titulo">Sistema de Fotos</div>
-      <div class="login-sub">Jardinagem — Águas de Pará de Minas</div>
+      <img class="login-logo" src="/static/icons/logo-garra.jpg" alt="Garra Terraplenagem">
+      <div class="login-titulo">Jardinagem</div>
+      <div class="login-sub">Águas de Pará de Minas</div>
       <div class="login-form">
         <div>
           <label class="login-label">Usuário</label>
-          <input class="login-inp" id="loginEmail" type="email" placeholder="seu.email@garra.local"
-                 autocomplete="email" inputmode="email">
+          <input class="login-inp" id="loginEmail" type="email"
+                 placeholder="seu@email.com" autocomplete="email" inputmode="email">
         </div>
         <div>
           <label class="login-label">Senha</label>
-          <div style="position:relative;">
-            <input class="login-inp" id="loginSenha" type="password" placeholder="••••••••"
-                   autocomplete="current-password" style="padding-right:44px;">
-            <button type="button" onclick="toggleSenha()" style="
-              position:absolute;right:12px;top:50%;transform:translateY(-50%);
-              background:none;border:none;cursor:pointer;padding:4px;
-              color:#64748B;font-size:18px;line-height:1;" id="btnOlho">👁</button>
+          <div class="senha-wrap">
+            <input class="login-inp" id="loginSenha" type="password"
+                   placeholder="••••••••" autocomplete="current-password">
+            <button class="olho-btn" type="button" id="btnOlho"
+                    onclick="toggleSenha()">👁</button>
           </div>
         </div>
         <div class="login-erro" id="loginErro"></div>
@@ -206,568 +222,721 @@ body{display:flex;flex-direction:column;max-width:480px;margin:0 auto;}
   </div>
 </div>
 
-<!-- ── APP ────────────────────────────────────────────────── -->
+<!-- ── APP ───────────────────────────────────────────────── -->
 <div id="telaApp" style="display:none;flex-direction:column;flex:1;">
 
   <header class="hdr">
-    <img src="/static/logo-garra.jpg" alt="Garra Terraplenagem"
-         style="height:38px;object-fit:contain;">
+    <img class="hdr-logo" src="/static/icons/logo-garra.jpg" alt="Garra" style="filter:brightness(0) invert(1);">
     <div class="hdr-info">
       <div class="hdr-nome" id="hdrNome">—</div>
       <div class="hdr-status">
-        <div class="status-dot" id="statusDot"></div>
-        <div class="status-txt" id="statusTxt">verificando...</div>
+        <div class="dot" id="statusDot"></div>
+        <div class="dot-txt" id="statusTxt">...</div>
       </div>
     </div>
   </header>
 
-  <div class="main" id="mainFoto" style="display:block;">
+  <!-- TELA: FOTO + KM -->
+  <div class="main" id="mainFoto">
 
     <!-- Semana ativa -->
-    <div id="semanaCard" class="semana-card">
-      <div class="semana-label">Semana atual</div>
-      <div class="semana-nome" id="semanaNome">Carregando...</div>
-      <div class="semana-datas" id="semanaDatas"></div>
-      <div class="semana-badge" id="semanaBadge">—</div>
+    <div class="card" id="semanaCard">
+      <div class="card-label">Semana atual</div>
+      <div class="card-val" id="semanaNome">Carregando...</div>
+      <div class="card-sub" id="semanaDatas"></div>
+      <span class="badge badge-ok" id="semanaBadge">—</span>
     </div>
 
     <!-- Fila offline -->
     <div class="fila-card" id="filaCard" style="display:none;">
-      <div class="fila-titulo">📤 Fotos aguardando envio</div>
-      <div class="fila-info" id="filaInfo">—</div>
-      <button class="btn-sincronizar" onclick="sincronizarAgora()">⟳ Sincronizar agora</button>
+      <div class="fila-titulo">📤 Pendente de envio</div>
+      <div class="fila-info" id="filaInfo"></div>
+      <button onclick="sincronizarAgora()"
+              style="margin-top:8px;width:100%;padding:8px;background:#fff;
+                     border:1.5px solid #fcd34d;border-radius:8px;
+                     font-size:12px;font-weight:700;color:#92400e;cursor:pointer;">
+        ⟳ Sincronizar agora
+      </button>
     </div>
 
-    <!-- Tipo -->
-    <div class="acao-titulo">Tipo de foto</div>
-    <div class="tipo-btns">
-      <div class="tipo-btn" id="btnAntes" onclick="selecionarTipo('antes')">
-        <div class="tipo-ico">🔵</div>
-        <div class="tipo-nome">ANTES</div>
-        <div class="tipo-desc">Estado atual do local</div>
-      </div>
-      <div class="tipo-btn" id="btnDepois" onclick="selecionarTipo('depois')">
-        <div class="tipo-ico">🟠</div>
-        <div class="tipo-nome">DEPOIS</div>
-        <div class="tipo-desc">Após o serviço</div>
-      </div>
+    <!-- Tabs -->
+    <div class="tabs">
+      <div class="tab ativo" id="tabFoto" onclick="mudarTab('foto')">📷 Foto</div>
+      <div class="tab" id="tabKm"   onclick="mudarTab('km')">📋 KM / Serviço</div>
     </div>
 
-    <!-- Local -->
-    <div class="local-wrap">
-      <label class="local-label">📍 Nome do local</label>
-      <input class="local-input" id="localInput" type="text"
+    <!-- ══ PAINEL FOTO ══ -->
+    <div id="painelFoto">
+      <div class="sec-title">Tipo de foto</div>
+      <div class="tipo-btns">
+        <div class="tipo-btn" id="btnAntes" onclick="selecionarTipo('antes')">
+          <div class="tipo-ico">🔵</div>
+          <div class="tipo-nome">ANTES</div>
+          <div class="tipo-desc">Estado atual</div>
+        </div>
+        <div class="tipo-btn" id="btnDepois" onclick="selecionarTipo('depois')">
+          <div class="tipo-ico">🟠</div>
+          <div class="tipo-nome">DEPOIS</div>
+          <div class="tipo-desc">Após o serviço</div>
+        </div>
+      </div>
+
+      <label class="inp-label">📍 Nome do local</label>
+      <input class="inp" id="fotoLocal" type="text"
              placeholder="Ex: Canteiro Rua 7, Praça Central..."
-             oninput="filtrarLocais(this.value)">
-      <div class="locais-recentes" id="locaisRecentes"></div>
-    </div>
+             oninput="filtrarLocais(this.value,'locaisF')">
+      <div id="locaisF" style="display:flex;flex-wrap:wrap;gap:4px;margin-top:-8px;margin-bottom:12px;"></div>
 
-    <!-- Preview / câmera -->
-    <div class="preview-wrap" id="previewWrap">
-      <div class="preview-empty" id="previewEmpty" onclick="abrirCamera()">
-        <div class="preview-ico">📷</div>
-        <div class="preview-txt">Toque para tirar a foto</div>
+      <!-- Preview -->
+      <div class="preview-wrap">
+        <div class="preview-empty" id="previewEmpty">
+          <div class="preview-ico">📷</div>
+          <div class="preview-txt">Use os botões abaixo</div>
+        </div>
+        <img class="preview-img" id="previewImg" style="display:none;" alt="">
+        <button class="preview-rm" id="previewRm" style="display:none;"
+                onclick="removerFoto()">✕</button>
       </div>
-      <img class="preview-img" id="previewImg" style="display:none;" alt="">
-      <button class="preview-rm" id="previewRm" style="display:none;" onclick="removerFoto()">✕</button>
-    </div>
-    <input type="file" id="fotoInput" accept="image/*" capture="environment"
-           class="foto-input" onchange="fotoSelecionada(this)">
 
-    <!-- Enviar -->
-    <button class="btn-enviar" id="btnEnviar" onclick="enviarFoto()" disabled>
-      📷 Registrar Foto
-    </button>
+      <!-- Câmera ou Galeria -->
+      <div class="midia-btns">
+        <button class="midia-btn" onclick="document.getElementById('fotoCamera').click()">
+          📷 Câmera
+        </button>
+        <button class="midia-btn" onclick="document.getElementById('fotoGaleria').click()">
+          🖼️ Galeria
+        </button>
+      </div>
+      <input type="file" id="fotoCamera"  accept="image/*" capture="environment"
+             onchange="fotoSelecionada(this)">
+      <input type="file" id="fotoGaleria" accept="image/*"
+             onchange="fotoSelecionada(this)">
+
+      <button class="btn btn-blue" id="btnEnviarFoto" onclick="enviarFoto()" disabled>
+        📷 Registrar Foto
+      </button>
+    </div>
+
+    <!-- ══ PAINEL KM / SERVIÇO ══ -->
+    <div id="painelKm" style="display:none;">
+      <div class="sec-title">Registrar serviço</div>
+
+      <label class="inp-label">📅 Data</label>
+      <input class="inp" id="kmData" type="date">
+
+      <label class="inp-label">📍 Local do serviço</label>
+      <input class="inp" id="kmLocal" type="text"
+             placeholder="Ex: ETE União, Reservatório São Cristóvão..."
+             oninput="filtrarLocais(this.value,'locaisKm')">
+      <div id="locaisKm" style="display:flex;flex-wrap:wrap;gap:4px;margin-top:-8px;margin-bottom:12px;"></div>
+
+      <!-- KM sugerido -->
+      <div class="km-sugerido" id="kmSugerido" style="display:none;">
+        💡 KM inicial sugerido: <strong id="kmSugeridoVal">—</strong>
+        (último KM final registrado)
+      </div>
+
+      <div class="inp-row">
+        <div>
+          <label class="inp-label">KM Inicial</label>
+          <input class="inp" id="kmIni" type="number" inputmode="decimal"
+                 placeholder="22130" oninput="calcKmTotal()">
+        </div>
+        <div>
+          <label class="inp-label">KM Final</label>
+          <input class="inp" id="kmFin" type="number" inputmode="decimal"
+                 placeholder="22159" oninput="calcKmTotal()">
+        </div>
+      </div>
+
+      <!-- KM Total calculado -->
+      <div class="km-total-calc" id="kmTotalDiv" style="display:none;">
+        KM percorrido: <span id="kmTotalVal">0</span> km
+      </div>
+
+      <div class="inp-row">
+        <div>
+          <label class="inp-label">Hora início</label>
+          <input class="inp" id="kmHrIni" type="time">
+        </div>
+        <div>
+          <label class="inp-label">Hora fim</label>
+          <input class="inp" id="kmHrFim" type="time">
+        </div>
+      </div>
+
+      <label class="inp-label">📝 Observação</label>
+      <textarea class="inp" id="kmObs"
+                placeholder="Descreva o serviço: capina, roçagem, limpeza, aplicação de herbicida..."></textarea>
+
+      <!-- Responsável automático -->
+      <div style="background:#F0F4FF;border-radius:var(--r2);padding:10px 14px;
+                  margin-bottom:.75rem;font-size:12px;color:var(--mut);">
+        👤 Responsável: <strong id="kmResponsavel" style="color:var(--bl);">—</strong>
+        <span style="font-size:10px;">(pelo login)</span>
+      </div>
+
+      <button class="btn btn-blue" id="btnEnviarKm" onclick="enviarKm()">
+        ✅ Salvar Serviço
+      </button>
+    </div>
 
   </div><!-- /mainFoto -->
 
-  <!-- ── HISTÓRICO ────────────────────────────────────────── -->
+  <!-- TELA: HISTÓRICO -->
   <div class="main" id="mainHist" style="display:none;">
-    <div class="hist-titulo">Minhas fotos hoje</div>
-    <div id="listaHist"><div style="color:var(--mut);font-size:13px;">Carregando...</div></div>
+    <div class="sec-title">Meu histórico hoje</div>
+
+    <!-- Resumo do dia -->
+    <div class="card" id="resumoDia" style="display:none;">
+      <div style="display:flex;justify-content:space-between;align-items:center;">
+        <div>
+          <div class="card-label">Total km hoje</div>
+          <div class="card-val" id="resumoKm">0 km</div>
+        </div>
+        <div style="text-align:right;">
+          <div class="card-label">Registros</div>
+          <div class="card-val" id="resumoRegistros">0</div>
+        </div>
+      </div>
+    </div>
+
+    <div id="listaHist">
+      <div style="color:var(--mut);font-size:13px;text-align:center;padding:2rem;">
+        Carregando...
+      </div>
+    </div>
   </div>
 
-  <!-- NAV BOTTOM -->
+  <!-- NAV -->
   <nav class="nav">
     <button class="nav-btn ativo" id="navFoto" onclick="navPara('foto')">
-      <div class="nav-ico">📷</div>
-      <div class="nav-lbl">Foto</div>
+      <div class="nav-ico">📷</div><div class="nav-lbl">Registrar</div>
     </button>
     <button class="nav-btn" id="navHist" onclick="navPara('hist')">
-      <div class="nav-ico">🗂</div>
-      <div class="nav-lbl">Histórico</div>
+      <div class="nav-ico">🗂</div><div class="nav-lbl">Histórico</div>
     </button>
     <button class="nav-btn" onclick="sair()">
-      <div class="nav-ico">↩</div>
-      <div class="nav-lbl">Sair</div>
+      <div class="nav-ico">↩</div><div class="nav-lbl">Sair</div>
     </button>
   </nav>
 
 </div><!-- /telaApp -->
-
 <div class="toast" id="toast"></div>
 
 <script>
-/* ════════════════════════════════════════════════════════
-   ESTADO GLOBAL
-   ════════════════════════════════════════════════════════ */
-var TOKEN       = localStorage.getItem("garra_token") || "";
-var USUARIO     = JSON.parse(localStorage.getItem("garra_usuario") || "null");
-var SEMANA_ATIVA= null;
-var TIPO_SEL    = "antes";
-var FOTO_DADOS  = null;   // {blob, dataUrl, filename}
-var LOCAIS_HIST = JSON.parse(localStorage.getItem("locais_recentes") || "[]");
-var DB          = null;
-var DB_NAME     = "garra-offline-db";
-var STORE       = "fila_fotos";
-var ONLINE      = navigator.onLine;
+// ── ESTADO ───────────────────────────────────────────────────
+var TOKEN    = localStorage.getItem("garra_token") || "";
+var USUARIO  = JSON.parse(localStorage.getItem("garra_usuario") || "null");
+var SEMANA   = null;
+var TIPO     = "antes";
+var FOTO     = null;
+var LOCAIS   = JSON.parse(localStorage.getItem("locais_garra") || "[]");
+var ONLINE   = navigator.onLine;
+var TAB      = "foto";
+var ULTIMO_KM = parseFloat(localStorage.getItem("ultimo_km") || "0");
 
-/* ════════════════════════════════════════════════════════
-   PWA — SERVICE WORKER
-   ════════════════════════════════════════════════════════ */
+// ── PWA ──────────────────────────────────────────────────────
 if ("serviceWorker" in navigator) {
-  navigator.serviceWorker.register("/sw.js").then(reg => {
-    console.log("[PWA] SW registrado");
-    navigator.serviceWorker.addEventListener("message", e => {
-      if (e.data?.tipo === "SYNC_CONCLUIDO") {
-        toast("✅ Fotos sincronizadas!");
-        atualizarFilaUI();
-      }
-    });
-  });
+  navigator.serviceWorker.register("/sw.js").catch(()=>{});
 }
+window.addEventListener("online",  ()=>{ ONLINE=true;  atualizarStatus(); sincronizarAgora(); });
+window.addEventListener("offline", ()=>{ ONLINE=false; atualizarStatus(); });
 
-window.addEventListener("online",  () => { ONLINE = true;  atualizarStatus(); sincronizarAgora(); });
-window.addEventListener("offline", () => { ONLINE = false; atualizarStatus(); });
-
-/* ════════════════════════════════════════════════════════
-   IndexedDB
-   ════════════════════════════════════════════════════════ */
-function abrirDB() {
-  return new Promise((res, rej) => {
-    const req = indexedDB.open(DB_NAME, 1);
-    req.onupgradeneeded = e => {
-      const db    = e.target.result;
-      if (!db.objectStoreNames.contains(STORE)) {
-        const store = db.createObjectStore(STORE, { keyPath: "offline_id" });
-        store.createIndex("enviado", "enviado", { unique: false });
-      }
-    };
-    req.onsuccess = e => res(e.target.result);
-    req.onerror   = e => rej(e.target.error);
-  });
-}
-
-function salvarFotoLocal(item) {
-  return abrirDB().then(db => new Promise((res, rej) => {
-    const tx  = db.transaction(STORE, "readwrite");
-    tx.objectStore(STORE).put(item);
-    tx.oncomplete = res;
-    tx.onerror    = rej;
-  }));
-}
-
-function contarPendentes() {
-  return abrirDB().then(db => new Promise((res) => {
-    const tx  = db.transaction(STORE, "readonly");
-    const idx = tx.objectStore(STORE).index("enviado");
-    idx.count(false).onsuccess = e => res(e.target.result);
-  }));
-}
-
-function lerPendentes() {
-  return abrirDB().then(db => new Promise((res) => {
-    const tx  = db.transaction(STORE, "readonly");
-    const idx = tx.objectStore(STORE).index("enviado");
-    idx.getAll(false).onsuccess = e => res(e.target.result);
-  }));
-}
-
-function marcarEnviado(offline_id) {
-  return abrirDB().then(db => new Promise((res) => {
-    const tx    = db.transaction(STORE, "readwrite");
-    const store = tx.objectStore(STORE);
-    const req   = store.get(offline_id);
-    req.onsuccess = e => {
-      const item = e.target.result;
-      if (item) { item.enviado = true; store.put(item); }
-      res();
-    };
-  }));
-}
-
-/* ════════════════════════════════════════════════════════
-   STATUS ONLINE
-   ════════════════════════════════════════════════════════ */
-function atualizarStatus() {
-  const dot = document.getElementById("statusDot");
-  const txt = document.getElementById("statusTxt");
-  if (ONLINE) {
-    dot.className = "status-dot";
-    txt.textContent = "Online";
-  } else {
-    dot.className = "status-dot off";
-    txt.textContent = "Offline — salvando local";
-  }
-  atualizarFilaUI();
-}
-
-function atualizarFilaUI() {
-  contarPendentes().then(n => {
-    const card = document.getElementById("filaCard");
-    const info = document.getElementById("filaInfo");
-    if (n > 0) {
-      card.style.display = "block";
-      info.textContent   = n + " foto(s) salva(s) no celular aguardando Wi-Fi.";
-    } else {
-      card.style.display = "none";
-    }
-  });
-}
-
-/* ════════════════════════════════════════════════════════
-   AUTH
-   ════════════════════════════════════════════════════════ */
-window.addEventListener("load", () => {
-  if (TOKEN && USUARIO) {
-    mostrarApp();
-  } else {
-    document.getElementById("telaLogin").style.display = "flex";
-  }
+// ── AUTH ─────────────────────────────────────────────────────
+window.addEventListener("load", ()=>{
+  if (TOKEN && USUARIO) mostrarApp();
+  else document.getElementById("telaLogin").style.display="flex";
   atualizarStatus();
+  document.getElementById("kmData").value = new Date().toISOString().split("T")[0];
 });
 
-function toggleSenha() {
-  const inp = document.getElementById('loginSenha');
-  const btn = document.getElementById('btnOlho');
-  if (inp.type === 'password') {
-    inp.type = 'text';
-    btn.textContent = '🙈';
-  } else {
-    inp.type = 'password';
-    btn.textContent = '👁';
-  }
+function toggleSenha(){
+  var i=document.getElementById("loginSenha");
+  var b=document.getElementById("btnOlho");
+  i.type=i.type==="password"?"text":"password";
+  b.textContent=i.type==="password"?"👁":"🙈";
 }
 
-function fazerLogin() {
-  const email = document.getElementById("loginEmail").value.trim();
-  const senha = document.getElementById("loginSenha").value;
-  document.getElementById("loginErro").textContent = "";
-
-  fetch("/api/login", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ email, senha })
-  })
-  .then(r => r.json())
-  .then(d => {
-    if (d.erro) { document.getElementById("loginErro").textContent = d.erro; return; }
-    TOKEN   = d.token;
-    USUARIO = { nome: d.nome, perfil: d.perfil };
-    localStorage.setItem("garra_token",  TOKEN);
-    localStorage.setItem("garra_usuario", JSON.stringify(USUARIO));
+function fazerLogin(){
+  var email=document.getElementById("loginEmail").value.trim();
+  var senha=document.getElementById("loginSenha").value;
+  var erro=document.getElementById("loginErro");
+  erro.textContent="";
+  fetch("/api/login",{method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({email,senha})})
+  .then(r=>r.json())
+  .then(d=>{
+    if(d.erro){erro.textContent=d.erro;return;}
+    TOKEN=d.token; USUARIO={nome:d.nome,perfil:d.perfil};
+    localStorage.setItem("garra_token",TOKEN);
+    localStorage.setItem("garra_usuario",JSON.stringify(USUARIO));
     mostrarApp();
-  })
-  .catch(() => { document.getElementById("loginErro").textContent = "Erro de conexão."; });
+  }).catch(()=>{erro.textContent="Erro de conexão.";});
 }
 
-function mostrarApp() {
-  document.getElementById("telaLogin").style.display = "none";
-  document.getElementById("telaApp").style.display   = "flex";
-  document.getElementById("hdrNome").textContent     = USUARIO?.nome || "—";
+function mostrarApp(){
+  document.getElementById("telaLogin").style.display="none";
+  document.getElementById("telaApp").style.display="flex";
+  document.getElementById("hdrNome").textContent=USUARIO?.nome||"—";
+  document.getElementById("kmResponsavel").textContent=USUARIO?.nome||"—";
   carregarSemanaAtiva();
-  atualizarFilaUI();
+  atualizarStatus();
+  preencherKmSugerido();
+  filtrarLocais("","locaisF");
+  filtrarLocais("","locaisKm");
+  selecionarTipo("antes");
 }
 
-function sair() {
-  fetch("/api/logout", { method: "POST" });
-  TOKEN   = "";
-  USUARIO = null;
+function sair(){
+  fetch("/api/logout",{method:"POST"}).catch(()=>{});
+  TOKEN=""; USUARIO=null;
   localStorage.removeItem("garra_token");
   localStorage.removeItem("garra_usuario");
   location.reload();
 }
 
-/* ════════════════════════════════════════════════════════
-   SEMANA ATIVA
-   ════════════════════════════════════════════════════════ */
-function carregarSemanaAtiva() {
-  fetch("/api/semanas/ativa", { headers: { "Authorization": "Bearer " + TOKEN } })
-  .then(r => r.json())
-  .then(d => {
-    if (d.erro) {
-      document.getElementById("semanaNome").textContent  = "Sem semana ativa";
-      document.getElementById("semanaDatas").textContent = "Contate a Luana.";
+// ── STATUS ────────────────────────────────────────────────────
+function atualizarStatus(){
+  var d=document.getElementById("statusDot");
+  var t=document.getElementById("statusTxt");
+  if(ONLINE){d.className="dot";t.textContent="Online";}
+  else{d.className="dot off";t.textContent="Offline";}
+}
+
+// ── SEMANA ────────────────────────────────────────────────────
+function carregarSemanaAtiva(){
+  fetch("/api/semanas/ativa",{headers:{"Authorization":"Bearer "+TOKEN}})
+  .then(r=>r.json())
+  .then(d=>{
+    if(d.erro){
+      document.getElementById("semanaNome").textContent="Sem semana ativa";
+      document.getElementById("semanaBadge").textContent="Contate o admin";
+      document.getElementById("semanaBadge").className="badge badge-pend";
       return;
     }
-    SEMANA_ATIVA = d;
-    document.getElementById("semanaNome").textContent  = d.label;
-    document.getElementById("semanaBadge").textContent = "✅ Semana aberta";
-    if (d.data_ini && d.data_fim) {
-      const fmt = s => s.split("-").reverse().join("/");
-      document.getElementById("semanaDatas").textContent =
-        fmt(d.data_ini) + " até " + fmt(d.data_fim);
+    SEMANA=d;
+    document.getElementById("semanaNome").textContent=d.label;
+    document.getElementById("semanaBadge").textContent="✅ Aberta";
+    if(d.data_ini&&d.data_fim){
+      var fmt=s=>{var p=new Date(s+"T00:00:00");return p.toLocaleDateString("pt-BR");};
+      document.getElementById("semanaDatas").textContent=fmt(d.data_ini)+" a "+fmt(d.data_fim);
     }
-  })
-  .catch(() => {
-    document.getElementById("semanaNome").textContent = "Sem conexão";
-    document.getElementById("semanaBadge").className  = "semana-badge pend";
-    document.getElementById("semanaBadge").textContent= "Modo offline";
+  }).catch(()=>{
+    document.getElementById("semanaNome").textContent="Offline";
+    document.getElementById("semanaBadge").className="badge badge-pend";
+    document.getElementById("semanaBadge").textContent="Modo offline";
   });
 }
 
-/* ════════════════════════════════════════════════════════
-   TIPO / LOCAL
-   ════════════════════════════════════════════════════════ */
-function selecionarTipo(tipo) {
-  TIPO_SEL = tipo;
-  document.getElementById("btnAntes").className  = "tipo-btn" + (tipo === "antes"  ? " sel-antes"  : "");
-  document.getElementById("btnDepois").className = "tipo-btn" + (tipo === "depois" ? " sel-depois" : "");
-  validarForm();
+// ── TABS ──────────────────────────────────────────────────────
+function mudarTab(tab){
+  TAB=tab;
+  document.getElementById("painelFoto").style.display=tab==="foto"?"block":"none";
+  document.getElementById("painelKm").style.display=tab==="km"?"block":"none";
+  document.getElementById("tabFoto").className="tab"+(tab==="foto"?" ativo":"");
+  document.getElementById("tabKm").className="tab"+(tab==="km"?" ativo":"");
+  if(tab==="km") preencherKmSugerido();
 }
 
-function filtrarLocais(q) {
-  const wrap = document.getElementById("locaisRecentes");
-  const lista = q
-    ? LOCAIS_HIST.filter(l => l.toLowerCase().includes(q.toLowerCase()))
-    : LOCAIS_HIST.slice(0, 5);
-  wrap.innerHTML = lista.map(l =>
-    `<button class="local-chip" onclick="selecionarLocal('${l.replace(/'/g,"\\'")}')">📍 ${l}</button>`
+// ── LOCAIS ────────────────────────────────────────────────────
+function filtrarLocais(q,containerId){
+  var wrap=document.getElementById(containerId);
+  if(!wrap) return;
+  var lista=q?LOCAIS.filter(l=>l.toLowerCase().includes(q.toLowerCase())):LOCAIS.slice(0,6);
+  wrap.innerHTML=lista.map(l=>
+    '<button class="chip" onclick="selecionarLocal(\''+l.replace(/'/g,"\\'")
+    +'\',\''+containerId+'\')">📍 '+l+'</button>'
   ).join("");
 }
 
-function selecionarLocal(nome) {
-  document.getElementById("localInput").value = nome;
-  document.getElementById("locaisRecentes").innerHTML = "";
-  validarForm();
+function selecionarLocal(nome,containerId){
+  var campo=containerId==="locaisF"?"fotoLocal":"kmLocal";
+  document.getElementById(campo).value=nome;
+  document.getElementById(containerId).innerHTML="";
 }
 
-function salvarLocalHistorico(nome) {
-  if (!nome || LOCAIS_HIST.includes(nome)) return;
-  LOCAIS_HIST.unshift(nome);
-  if (LOCAIS_HIST.length > 20) LOCAIS_HIST.pop();
-  localStorage.setItem("locais_recentes", JSON.stringify(LOCAIS_HIST));
+function salvarLocal(nome){
+  if(!nome||LOCAIS.includes(nome)) return;
+  LOCAIS.unshift(nome);
+  if(LOCAIS.length>30) LOCAIS.pop();
+  localStorage.setItem("locais_garra",JSON.stringify(LOCAIS));
 }
 
-/* ════════════════════════════════════════════════════════
-   CÂMERA / FOTO
-   ════════════════════════════════════════════════════════ */
-function abrirCamera() {
-  document.getElementById("fotoInput").click();
+// ── KM SUGERIDO ────────────────────────────────────────────────
+function preencherKmSugerido(){
+  if(ULTIMO_KM>0){
+    document.getElementById("kmSugerido").style.display="flex";
+    document.getElementById("kmSugeridoVal").textContent=ULTIMO_KM;
+    if(!document.getElementById("kmIni").value)
+      document.getElementById("kmIni").value=ULTIMO_KM;
+    calcKmTotal();
+  }
 }
 
-function fotoSelecionada(input) {
-  const file = input.files[0];
-  if (!file) return;
-  const reader = new FileReader();
-  reader.onload = e => {
-    FOTO_DADOS = { blob: file, dataUrl: e.target.result, filename: file.name };
-    document.getElementById("previewImg").src    = e.target.result;
-    document.getElementById("previewImg").style.display  = "block";
-    document.getElementById("previewEmpty").style.display= "none";
-    document.getElementById("previewRm").style.display   = "flex";
-    validarForm();
+function calcKmTotal(){
+  var ini=parseFloat(document.getElementById("kmIni").value)||0;
+  var fin=parseFloat(document.getElementById("kmFin").value)||0;
+  var div=document.getElementById("kmTotalDiv");
+  if(ini>0&&fin>ini){
+    div.style.display="block";
+    document.getElementById("kmTotalVal").textContent=(fin-ini).toFixed(1);
+  } else {
+    div.style.display="none";
+  }
+}
+
+// ── FOTO ──────────────────────────────────────────────────────
+function selecionarTipo(tipo){
+  TIPO=tipo;
+  document.getElementById("btnAntes").className="tipo-btn"+(tipo==="antes"?" sel-antes":"");
+  document.getElementById("btnDepois").className="tipo-btn"+(tipo==="depois"?" sel-depois":"");
+  validarFoto();
+}
+
+function fotoSelecionada(input){
+  var file=input.files[0]; if(!file) return;
+  var reader=new FileReader();
+  reader.onload=function(e){
+    FOTO={blob:file,dataUrl:e.target.result,filename:file.name};
+    document.getElementById("previewImg").src=e.target.result;
+    document.getElementById("previewImg").style.display="block";
+    document.getElementById("previewEmpty").style.display="none";
+    document.getElementById("previewRm").style.display="flex";
+    validarFoto();
   };
   reader.readAsDataURL(file);
-  input.value = "";
+  input.value="";
 }
 
-function removerFoto() {
-  FOTO_DADOS = null;
-  document.getElementById("previewImg").style.display  = "none";
-  document.getElementById("previewEmpty").style.display= "flex";
-  document.getElementById("previewRm").style.display   = "none";
-  validarForm();
+function removerFoto(){
+  FOTO=null;
+  document.getElementById("previewImg").style.display="none";
+  document.getElementById("previewEmpty").style.display="flex";
+  document.getElementById("previewRm").style.display="none";
+  validarFoto();
 }
 
-function validarForm() {
-  const ok = TIPO_SEL && FOTO_DADOS;
-  document.getElementById("btnEnviar").disabled = !ok;
+function validarFoto(){
+  document.getElementById("btnEnviarFoto").disabled=!(TIPO&&FOTO);
 }
 
-/* ════════════════════════════════════════════════════════
-   ENVIO
-   ════════════════════════════════════════════════════════ */
-async function enviarFoto() {
-  if (!FOTO_DADOS) return;
-  const btn       = document.getElementById("btnEnviar");
-  const localNome = document.getElementById("localInput").value.trim();
-  btn.disabled = true;
-  btn.innerHTML = '<span class="spin">⟳</span> Enviando...';
+async function enviarFoto(){
+  if(!FOTO) return;
+  var btn=document.getElementById("btnEnviarFoto");
+  var local=document.getElementById("fotoLocal").value.trim();
+  btn.disabled=true;
+  btn.innerHTML='<span class="spin">⟳</span> Enviando...';
 
-  if (ONLINE) {
-    // Envia direto para o servidor
-    try {
-      const form = new FormData();
-      form.append("foto",       FOTO_DADOS.blob, FOTO_DADOS.filename);
-      form.append("tipo",       TIPO_SEL);
-      form.append("local_nome", localNome);
-      form.append("semana_id",  SEMANA_ATIVA?.id || "ativa");
-      form.append("offline_id", crypto.randomUUID());
-
-      const resp = await fetch("/api/fotos/mobile", {
-        method:  "POST",
-        body:    form,
-        headers: { "Authorization": "Bearer " + TOKEN }
+  if(ONLINE){
+    try{
+      var form=new FormData();
+      form.append("foto",FOTO.blob,FOTO.filename);
+      form.append("tipo",TIPO);
+      form.append("local_nome",local);
+      form.append("semana_id",SEMANA?.id||"ativa");
+      form.append("offline_id",crypto.randomUUID());
+      var resp=await fetch("/api/fotos/mobile",{
+        method:"POST",body:form,headers:{"Authorization":"Bearer "+TOKEN}
       });
-
-      if (resp.ok) {
-        salvarLocalHistorico(localNome);
-        toast("✅ Foto registrada!");
-        resetForm();
-      } else {
-        const err = await resp.json();
-        toast("Erro: " + (err.erro || "tente novamente"));
-      }
-    } catch (e) {
-      await salvarOffline(localNome);
-    }
+      if(resp.ok){salvarLocal(local);toast("✅ Foto registrada!");resetFoto();}
+      else{var e=await resp.json();toast("Erro: "+(e.erro||"tente novamente"));}
+    }catch(e){await salvarFotoOffline(local);}
   } else {
-    // Sem internet — salva local
-    await salvarOffline(localNome);
+    await salvarFotoOffline(local);
   }
-
-  btn.disabled = false;
-  btn.innerHTML = "📷 Registrar Foto";
-  validarForm();
+  btn.disabled=false;
+  btn.innerHTML="📷 Registrar Foto";
+  validarFoto();
 }
 
-async function salvarOffline(localNome) {
-  // Comprime e converte para base64
-  const canvas = document.createElement("canvas");
-  const img    = new Image();
-  await new Promise(r => { img.onload = r; img.src = FOTO_DADOS.dataUrl; });
-  const MAX = 1200;
-  let w = img.width, h = img.height;
-  if (w > MAX || h > MAX) {
-    if (w > h) { h = Math.round(h * MAX / w); w = MAX; }
-    else       { w = Math.round(w * MAX / h); h = MAX; }
-  }
-  canvas.width = w; canvas.height = h;
-  canvas.getContext("2d").drawImage(img, 0, 0, w, h);
-  const b64 = canvas.toDataURL("image/jpeg", 0.8).split(",")[1];
+async function salvarFotoOffline(local){
+  var canvas=document.createElement("canvas");
+  var img=new Image();
+  await new Promise(r=>{img.onload=r;img.src=FOTO.dataUrl;});
+  var MAX=1200,w=img.width,h=img.height;
+  if(w>MAX||h>MAX){if(w>h){h=Math.round(h*MAX/w);w=MAX;}else{w=Math.round(w*MAX/h);h=MAX;}}
+  canvas.width=w;canvas.height=h;
+  canvas.getContext("2d").drawImage(img,0,0,w,h);
+  var b64=canvas.toDataURL("image/jpeg",0.8).split(",")[1];
+  await dbPut("fila_fotos",{
+    offline_id:crypto.randomUUID(),dados_b64:b64,
+    filename:FOTO.filename||"foto.jpg",tipo:TIPO,
+    local_nome:local,semana_id:SEMANA?.id||"",
+    token:TOKEN,enviado:false,criado_em:new Date().toISOString()
+  });
+  salvarLocal(local);
+  toast("📱 Foto salva! Enviará com Wi-Fi.");
+  resetFoto();
+}
 
-  const item = {
-    offline_id: crypto.randomUUID(),
-    dados_b64:  b64,
-    filename:   FOTO_DADOS.filename || "foto.jpg",
-    tipo:       TIPO_SEL,
-    local_nome: localNome,
-    semana_id:  SEMANA_ATIVA?.id || "",
-    token:      TOKEN,
-    enviado:    false,
-    criado_em:  new Date().toISOString()
+function resetFoto(){
+  removerFoto();
+  document.getElementById("fotoLocal").value="";
+  document.getElementById("locaisF").innerHTML="";
+}
+
+// ── KM ────────────────────────────────────────────────────────
+async function enviarKm(){
+  var data   = document.getElementById("kmData").value;
+  var local  = document.getElementById("kmLocal").value.trim();
+  var kmIni  = parseFloat(document.getElementById("kmIni").value);
+  var kmFin  = parseFloat(document.getElementById("kmFin").value);
+  var hrIni  = document.getElementById("kmHrIni").value;
+  var hrFim  = document.getElementById("kmHrFim").value;
+  var obs    = document.getElementById("kmObs").value.trim();
+
+  if(!local){ toast("Informe o nome do local."); return; }
+  if(!kmIni){ toast("Informe o KM inicial."); return; }
+  if(!kmFin||kmFin<=kmIni){ toast("KM final deve ser maior que o inicial."); return; }
+
+  var btn=document.getElementById("btnEnviarKm");
+  btn.disabled=true;
+  btn.innerHTML='<span class="spin">⟳</span> Salvando...';
+
+  var payload={
+    semana_id: SEMANA?.id||null,
+    data, local_nome:local,
+    km_inicial:kmIni, km_final:kmFin,
+    hora_inicio:hrIni||null, hora_fim:hrFim||null,
+    observacao:obs
   };
 
-  await salvarFotoLocal(item);
-  salvarLocalHistorico(localNome);
-  toast("📱 Foto salva! Será enviada quando houver Wi-Fi.");
-  atualizarFilaUI();
-  resetForm();
-}
-
-async function sincronizarAgora() {
-  if (!ONLINE) { toast("Sem conexão. Aguarde o Wi-Fi."); return; }
-
-  const pendentes = await lerPendentes();
-  if (!pendentes.length) { toast("Nada para sincronizar."); return; }
-
-  toast("Sincronizando " + pendentes.length + " foto(s)...");
-  let ok = 0;
-
-  for (const item of pendentes) {
-    try {
-      const bytes = Uint8Array.from(atob(item.dados_b64), c => c.charCodeAt(0));
-      const blob  = new Blob([bytes], { type: "image/jpeg" });
-      const form  = new FormData();
-      form.append("foto",       blob, item.filename);
-      form.append("tipo",       item.tipo);
-      form.append("local_nome", item.local_nome || "");
-      form.append("semana_id",  item.semana_id || "ativa");
-      form.append("offline_id", item.offline_id);
-
-      const resp = await fetch("/api/fotos/mobile", {
-        method:  "POST",
-        body:    form,
-        headers: { "Authorization": "Bearer " + TOKEN }
+  var ok=false;
+  if(ONLINE){
+    try{
+      var resp=await fetch("/api/relatorios/km",{
+        method:"POST",
+        headers:{"Content-Type":"application/json","Authorization":"Bearer "+TOKEN},
+        body:JSON.stringify(payload)
       });
-      if (resp.ok) { await marcarEnviado(item.offline_id); ok++; }
-    } catch (e) {
-      console.warn("Falha:", e);
-    }
+      if(resp.ok){ok=true;}
+      else{var e=await resp.json();toast("Erro: "+(e.erro||"tente novamente"));}
+    }catch(e){ok=false;}
   }
 
-  toast("✅ " + ok + " de " + pendentes.length + " foto(s) enviadas.");
+  if(!ok){
+    // Salva offline
+    await dbPut("fila_km",Object.assign({},payload,{
+      offline_id:crypto.randomUUID(),token:TOKEN,
+      enviado:false,criado_em:new Date().toISOString()
+    }));
+    toast("📱 Registro salvo! Enviará com Wi-Fi.");
+  } else {
+    toast("✅ Serviço registrado!");
+    salvarLocal(local);
+  }
+
+  // Atualiza último KM
+  ULTIMO_KM=kmFin;
+  localStorage.setItem("ultimo_km",kmFin);
+
+  // Limpa formulário mas mantém data e km inicial como sugestão
+  document.getElementById("kmLocal").value="";
+  document.getElementById("kmIni").value=kmFin;
+  document.getElementById("kmFin").value="";
+  document.getElementById("kmHrIni").value="";
+  document.getElementById("kmHrFim").value="";
+  document.getElementById("kmObs").value="";
+  document.getElementById("locaisKm").innerHTML="";
+  calcKmTotal();
+  preencherKmSugerido();
+
+  btn.disabled=false;
+  btn.innerHTML="✅ Salvar Serviço";
+}
+
+// ── SINCRONIZAR ────────────────────────────────────────────────
+async function sincronizarAgora(){
+  if(!ONLINE){toast("Sem conexão.");return;}
+  var pendFotos=await dbGetPendentes("fila_fotos");
+  var pendKm=await dbGetPendentes("fila_km");
+  var total=pendFotos.length+pendKm.length;
+  if(!total){toast("Nada para sincronizar.");return;}
+
+  toast("Sincronizando "+total+" item(s)...");
+  var ok=0;
+
+  for(var item of pendFotos){
+    try{
+      var bytes=Uint8Array.from(atob(item.dados_b64),c=>c.charCodeAt(0));
+      var blob=new Blob([bytes],{type:"image/jpeg"});
+      var form=new FormData();
+      form.append("foto",blob,item.filename);
+      form.append("tipo",item.tipo);
+      form.append("local_nome",item.local_nome||"");
+      form.append("semana_id",item.semana_id||"ativa");
+      form.append("offline_id",item.offline_id);
+      var resp=await fetch("/api/fotos/mobile",{
+        method:"POST",body:form,headers:{"Authorization":"Bearer "+TOKEN}
+      });
+      if(resp.ok){await dbMarcarEnviado("fila_fotos",item.offline_id);ok++;}
+    }catch(e){}
+  }
+
+  for(var item of pendKm){
+    try{
+      var resp=await fetch("/api/relatorios/km",{
+        method:"POST",
+        headers:{"Content-Type":"application/json","Authorization":"Bearer "+TOKEN},
+        body:JSON.stringify(item)
+      });
+      if(resp.ok){await dbMarcarEnviado("fila_km",item.offline_id);ok++;}
+    }catch(e){}
+  }
+
+  toast("✅ "+ok+"/"+total+" enviados.");
   atualizarFilaUI();
 }
 
-function resetForm() {
-  removerFoto();
-  document.getElementById("localInput").value = "";
-  document.getElementById("locaisRecentes").innerHTML = "";
+async function atualizarFilaUI(){
+  try{
+    var f=await dbGetPendentes("fila_fotos");
+    var k=await dbGetPendentes("fila_km");
+    var n=f.length+k.length;
+    var card=document.getElementById("filaCard");
+    var info=document.getElementById("filaInfo");
+    if(n>0){
+      card.style.display="block";
+      info.textContent=n+" item(s) aguardando Wi-Fi.";
+    } else card.style.display="none";
+  }catch(e){}
 }
 
-/* ════════════════════════════════════════════════════════
-   HISTÓRICO
-   ════════════════════════════════════════════════════════ */
-function carregarHistorico() {
-  if (!TOKEN) return;
-  const lista = document.getElementById("listaHist");
-  lista.innerHTML = '<div style="color:var(--mut);font-size:13px;">Carregando...</div>';
+// ── HISTÓRICO ─────────────────────────────────────────────────
+function carregarHistorico(){
+  if(!TOKEN||!SEMANA) return;
+  var lista=document.getElementById("listaHist");
+  lista.innerHTML='<div style="color:var(--mut);font-size:13px;text-align:center;padding:1rem;">Carregando...</div>';
 
-  // Busca fotos de hoje na semana ativa
-  if (!SEMANA_ATIVA) { lista.innerHTML = '<div style="color:var(--mut);font-size:13px;">Sem semana ativa.</div>'; return; }
-
-  // Aqui seria uma rota /api/semanas/:id/fotos-hoje — simplificado
-  fetch("/api/meses/" + SEMANA_ATIVA.mes_id, { headers: { "Authorization": "Bearer " + TOKEN } })
-  .then(r => r.json())
-  .then(mes => {
-    const sem = mes.semanas?.find(s => s.id === SEMANA_ATIVA.id);
-    if (!sem?.pares?.length) {
-      lista.innerHTML = '<div style="color:var(--mut);font-size:13px;">Nenhuma foto registrada ainda.</div>';
+  fetch("/api/historico/hoje?semana_id="+SEMANA.id,{
+    headers:{"Authorization":"Bearer "+TOKEN}
+  })
+  .then(r=>r.json())
+  .then(d=>{
+    if(!d||(!d.fotos?.length&&!d.km?.length)){
+      lista.innerHTML='<div style="color:var(--mut);font-size:13px;text-align:center;padding:2rem;">Nenhum registro hoje.</div>';
       return;
     }
-    const hoje = new Date().toLocaleDateString("pt-BR");
-    lista.innerHTML = sem.pares.flatMap(p => p.fotos.map(f => {
-      const hora = new Date(f.criado_em).toLocaleTimeString("pt-BR", {hour:"2-digit",minute:"2-digit"});
-      return `<div class="hist-item">
-        <img class="hist-thumb" src="${f.url || ''}" alt="">
-        <div class="hist-info">
-          <div class="hist-local">${p.local_nome || "Sem nome"}</div>
-          <div class="hist-meta">${hora} · ${f.origem === "mobile" ? "📱 celular" : "💻 desktop"}</div>
-        </div>
-        <span class="hist-badge ${f.tipo === "antes" ? "hb-antes" : "hb-depois"}">${f.tipo.toUpperCase()}</span>
-      </div>`;
-    })).join("") || '<div style="color:var(--mut);font-size:13px;">Nenhuma foto ainda.</div>';
+
+    var kmTotal=0;
+    var html="";
+
+    if(d.fotos?.length){
+      html+='<div class="sec-title" style="font-size:12px;">📷 Fotos ('+d.fotos.length+')</div>';
+      d.fotos.forEach(function(f){
+        html+='<div class="hist-item">';
+        html+='<div class="hist-local">'+(f.local_nome||"Sem nome")+'</div>';
+        html+='<div class="hist-meta">'+new Date(f.criado_em).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"})+'</div>';
+        html+='<div class="hist-badges"><span class="hb '+(f.tipo==="antes"?"hb-antes":"hb-depois")+'">'+f.tipo.toUpperCase()+'</span><span class="hb hb-ok">✓</span></div>';
+        html+='</div>';
+      });
+    }
+
+    if(d.km?.length){
+      html+='<div class="sec-title" style="font-size:12px;margin-top:.75rem;">📋 Serviços ('+d.km.length+')</div>';
+      d.km.forEach(function(r){
+        var km=(r.km_final||0)-(r.km_inicial||0);
+        kmTotal+=km;
+        html+='<div class="hist-item">';
+        html+='<div class="hist-local">'+(r.local_nome||"Sem nome")+'</div>';
+        html+='<div class="hist-meta">'+(r.hora_inicio||"")+(r.hora_fim?" → "+r.hora_fim:"")+'</div>';
+        html+='<div class="hist-badges">';
+        html+='<span class="hb hb-km">+'+km.toFixed(0)+' km</span>';
+        if(r.observacao) html+='<span class="hb" style="background:#F0F4FF;color:var(--bl);">📝</span>';
+        html+='</div></div>';
+      });
+
+      var resumo=document.getElementById("resumoDia");
+      resumo.style.display="block";
+      document.getElementById("resumoKm").textContent=kmTotal.toFixed(0)+" km";
+      document.getElementById("resumoRegistros").textContent=d.km.length;
+    }
+
+    lista.innerHTML=html;
   })
-  .catch(() => { lista.innerHTML = '<div style="color:var(--mut);">Erro ao carregar.</div>'; });
+  .catch(function(){
+    lista.innerHTML='<div style="color:var(--mut);font-size:13px;text-align:center;padding:1rem;">Erro ao carregar.</div>';
+  });
 }
 
-/* ════════════════════════════════════════════════════════
-   NAVEGAÇÃO
-   ════════════════════════════════════════════════════════ */
-function navPara(tela) {
-  document.getElementById("mainFoto").style.display = tela === "foto" ? "block" : "none";
-  document.getElementById("mainHist").style.display = tela === "hist" ? "block" : "none";
-  document.getElementById("navFoto").className = "nav-btn" + (tela === "foto" ? " ativo" : "");
-  document.getElementById("navHist").className = "nav-btn" + (tela === "hist" ? " ativo" : "");
-  if (tela === "hist") carregarHistorico();
+// ── NAVEGAÇÃO ─────────────────────────────────────────────────
+function navPara(tela){
+  document.getElementById("mainFoto").style.display=tela==="foto"?"block":"none";
+  document.getElementById("mainHist").style.display=tela==="hist"?"block":"none";
+  document.getElementById("navFoto").className="nav-btn"+(tela==="foto"?" ativo":"");
+  document.getElementById("navHist").className="nav-btn"+(tela==="hist"?" ativo":"");
+  if(tela==="hist") carregarHistorico();
 }
 
-/* ════════════════════════════════════════════════════════
-   TOAST
-   ════════════════════════════════════════════════════════ */
-function toast(msg) {
-  const el = document.getElementById("toast");
-  el.textContent = msg;
+// ── TOAST ─────────────────────────────────────────────────────
+function toast(msg){
+  var el=document.getElementById("toast");
+  el.textContent=msg;
   el.classList.add("show");
   clearTimeout(el._t);
-  el._t = setTimeout(() => el.classList.remove("show"), 3500);
+  el._t=setTimeout(function(){el.classList.remove("show");},3500);
 }
 
-// Init locais
-filtrarLocais("");
-selecionarTipo("antes");
+// ── INDEXEDDB ─────────────────────────────────────────────────
+var DB_NAME="garra-offline-v2";
+
+function abrirDB(){
+  return new Promise(function(res,rej){
+    var req=indexedDB.open(DB_NAME,1);
+    req.onupgradeneeded=function(e){
+      var db=e.target.result;
+      ["fila_fotos","fila_km"].forEach(function(store){
+        if(!db.objectStoreNames.contains(store)){
+          var s=db.createObjectStore(store,{keyPath:"offline_id"});
+          s.createIndex("enviado","enviado",{unique:false});
+        }
+      });
+    };
+    req.onsuccess=function(e){res(e.target.result);};
+    req.onerror=function(e){rej(e.target.error);};
+  });
+}
+
+function dbPut(store,item){
+  return abrirDB().then(function(db){
+    return new Promise(function(res,rej){
+      var tx=db.transaction(store,"readwrite");
+      tx.objectStore(store).put(item);
+      tx.oncomplete=res; tx.onerror=rej;
+    });
+  });
+}
+
+function dbGetPendentes(store){
+  return abrirDB().then(function(db){
+    return new Promise(function(res){
+      var tx=db.transaction(store,"readonly");
+      tx.objectStore(store).index("enviado").getAll(false).onsuccess=function(e){
+        res(e.target.result);
+      };
+    });
+  }).catch(function(){return [];});
+}
+
+function dbMarcarEnviado(store,id){
+  return abrirDB().then(function(db){
+    return new Promise(function(res){
+      var tx=db.transaction(store,"readwrite");
+      var s=tx.objectStore(store);
+      s.get(id).onsuccess=function(e){
+        var it=e.target.result;
+        if(it){it.enviado=true;s.put(it);}
+        res();
+      };
+    });
+  });
+}
+
+// Init
+filtrarLocais("","locaisF");
+filtrarLocais("","locaisKm");
+atualizarFilaUI();
 </script>
 </body>
 </html>
