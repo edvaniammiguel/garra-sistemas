@@ -11,6 +11,7 @@ import bcrypt
 import jwt
 import psycopg2
 import psycopg2.extras
+import psycopg2.extensions
 from flask import Flask, request, jsonify, send_from_directory, g
 from PIL import Image
 from dotenv import load_dotenv
@@ -63,7 +64,16 @@ def storage_delete(paths: list):
 # ── DATABASE ──────────────────────────────────────────────────
 def get_db():
     if "db" not in g:
-        g.db = psycopg2.connect(DB_URL, cursor_factory=psycopg2.extras.RealDictCursor)
+        try:
+            g.db = psycopg2.connect(
+                DB_URL,
+                cursor_factory=psycopg2.extras.RealDictCursor,
+                sslmode="require",
+                connect_timeout=10
+            )
+        except Exception as e:
+            log.error(f"DB connection error: {e}")
+            raise
     return g.db
 
 @app.teardown_appcontext
