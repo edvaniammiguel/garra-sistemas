@@ -1,41 +1,97 @@
 """
-Garra Terraplenagem — Sistema de Fotos Jardinagem
-Backend Flask + Supabase
+Garra Terraplenagem — Sistema de Fotos Jardinagem v2
+Backend Flask + PostgreSQL direto (psycopg2) + Supabase Storage
 """
 
-import os, io, uuid, json, calendar, base64
+import os, io, uuid, json, calendar, base64, logging
 from datetime import datetime, timedelta, date
 from functools import wraps
 
 import bcrypt
 import jwt
+import psycopg2
+import psycopg2.extras
 from flask import Flask, request, jsonify, send_from_directory, g
 from PIL import Image
 from dotenv import load_dotenv
-from supabase import create_client, Client
-from apscheduler.schedulers.background import BackgroundScheduler
 
 load_dotenv()
+logging.basicConfig(level=logging.INFO)
+log = logging.getLogger(__name__)
 
 # ── CONFIG ────────────────────────────────────────────────────
+DB_URL              = os.getenv("DATABASE_URL")           # connection string direta
 SUPABASE_URL        = os.getenv("SUPABASE_URL")
 SUPABASE_SERVICE_KEY= os.getenv("SUPABASE_SERVICE_KEY")
-JWT_SECRET          = os.getenv("JWT_SECRET", "dev-secret-troque")
+JWT_SECRET          = os.getenv("JWT_SECRET", "dev-secret")
 JWT_EXPIRY_HOURS    = int(os.getenv("JWT_EXPIRY_HOURS", 8))
 ANTHROPIC_API_KEY   = os.getenv("ANTHROPIC_API_KEY", "")
 BUCKET_NAME         = "jardinagem-fotos"
 
 app = Flask(__name__, static_folder="static", template_folder="templates")
-app.config["MAX_CONTENT_LENGTH"] = 50 * 1024 * 1024  # 50MB por request
+app.config["MAX_CONTENT_LENGTH"] = 50 * 1024 * 1024
 
-# ── SUPABASE CLIENT ───────────────────────────────────────────
-sb: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
+# ── STORAGE (Supabase Storage via requests direto) ────────────
+import requests as req_lib
 
+def storage_upload(dados: bytes, path: str) -> str:
+    url = f"{SUPABASE_URL}/storage/v1/object/{BUCKET_NAME}/{path}"
+    headers = {
+        "Authorization": f"Bearer {SUPABASE_SERVICE_KEY}",
+        "Content-Type": "image/jpeg",
+        "x-upsert": "true"
+    }
+    r = req_lib.post(url, headers=headers, data=dados)
+    if r.status_code not in (200, 201):
+        raise Exception(f"Storage upload falhou: {r.text}")
+    return path
 
-# ══════════════════════════════════════════════════════════════
-# AUTH — JWT
-# ══════════════════════════════════════════════════════════════
+def storage_url(path: str, segundos: int = 3600) -> str:
+    url = f"{SUPABASE_URL}/storage/v1/object/sign/{BUCKET_NAME}/{path}"
+    headers = {"Authorization": f"Bearer {SUPABASE_SERVICE_KEY}"}
+    r = req_lib.post(url, headers=headers, json={"expiresIn": segundos})
+    if r.status_code == 200:
+        data = r.json()
+        return f"{SUPABASE_URL}/storage/v1{data.get('signedURL', '')}"
+    return ""
 
+def storage_delete(paths: list):
+    url = f"{SUPABASE_URL}/storage/v1/object/{BUCKET_NAME}"
+    headers = {"Authorization": f"Bearer {SUPABASE_SERVICE_KEY}"}
+    req_lib.delete(url, headers=headers, json={"prefixes": paths})
+
+# ── DATABASE ──────────────────────────────────────────────────
+def get_db():
+    if "db" not in g:
+        g.db = psycopg2.connect(DB_URL, cursor_factory=psycopg2.extras.RealDictCursor)
+    return g.db
+
+@app.teardown_appcontext
+def close_db(e=None):
+    db = g.pop("db", None)
+    if db:
+        db.close()
+
+def query(sql, params=None, fetch="all"):
+    db = get_db()
+    with db.cursor() as cur:
+        cur.execute(sql, params or ())
+        db.commit()
+        if fetch == "one":
+            return cur.fetchone()
+        if fetch == "all":
+            return cur.fetchall()
+        if fetch == "none":
+            return None
+
+def query_id(sql, params=None):
+    db = get_db()
+    with db.cursor() as cur:
+        cur.execute(sql + " RETURNING *", params or ())
+        db.commit()
+        return cur.fetchone()
+
+# ── AUTH ──────────────────────────────────────────────────────
 def gerar_token(usuario: dict) -> str:
     payload = {
         "sub":    str(usuario["id"]),
@@ -45,9 +101,7 @@ def gerar_token(usuario: dict) -> str:
     }
     return jwt.encode(payload, JWT_SECRET, algorithm="HS256")
 
-
 def verificar_token(f):
-    """Decorator — protege rotas. Injeta g.usuario."""
     @wraps(f)
     def decorated(*args, **kwargs):
         token = None
@@ -68,9 +122,7 @@ def verificar_token(f):
         return f(*args, **kwargs)
     return decorated
 
-
 def requer_perfil(*perfis):
-    """Decorator — restringe acesso por perfil."""
     def decorator(f):
         @wraps(f)
         @verificar_token
@@ -81,21 +133,15 @@ def requer_perfil(*perfis):
         return decorated
     return decorator
 
-
-# ══════════════════════════════════════════════════════════════
-# HELPERS
-# ══════════════════════════════════════════════════════════════
-
+# ── HELPERS ───────────────────────────────────────────────────
 def next_code(n: int = 2) -> int:
-    """Retorna o próximo código sequencial e avança n posições."""
-    row = sb.schema("jardinagem").table("config").select("valor").eq("chave", "next_code").single().execute()
-    atual = int(row.data["valor"])
-    sb.schema("jardinagem").table("config").update({"valor": str(atual + n)}).eq("chave", "next_code").execute()
+    row = query("SELECT valor FROM jardinagem.config WHERE chave='next_code'", fetch="one")
+    atual = int(row["valor"])
+    query("UPDATE jardinagem.config SET valor=%s WHERE chave='next_code'",
+          (str(atual + n),), fetch="none")
     return atual
 
-
 def comprimir_imagem(dados: bytes, max_px: int = 1400, qualidade: int = 82) -> bytes:
-    """Redimensiona e comprime imagem mantendo proporção."""
     img = Image.open(io.BytesIO(dados))
     if img.mode not in ("RGB", "L"):
         img = img.convert("RGB")
@@ -104,86 +150,20 @@ def comprimir_imagem(dados: bytes, max_px: int = 1400, qualidade: int = 82) -> b
     img.save(buf, format="JPEG", quality=qualidade, optimize=True)
     return buf.getvalue()
 
-
-def upload_supabase(dados: bytes, filename: str) -> str:
-    """Faz upload no Supabase Storage e retorna o path."""
-    path = f"{datetime.now().strftime('%Y/%m')}/{filename}"
-    sb.storage.from_(BUCKET_NAME).upload(
-        path,
-        dados,
-        {"content-type": "image/jpeg", "upsert": "true"}
-    )
-    return path
-
-
-def url_assinada(path: str, segundos: int = 3600) -> str:
-    """Gera URL assinada para acesso à foto."""
-    res = sb.storage.from_(BUCKET_NAME).create_signed_url(path, segundos)
-    return res.get("signedURL", "")
-
-
 def semanas_do_mes(ano: int, mes: int, mes_id: int):
-    """Cria as 4 semanas automáticas de um mês."""
     _, ultimo_dia = calendar.monthrange(ano, mes)
     intervalos = [(1, 7), (8, 14), (15, 21), (22, ultimo_dia)]
     for i, (ini, fim) in enumerate(intervalos):
         label = f"Semana {i+1} — {ini:02d}/{mes:02d} a {fim:02d}/{mes:02d}/{ano}"
-        sb.schema("jardinagem").table("semanas").insert({
-            "mes_id":   mes_id,
-            "label":    label,
-            "data_ini": f"{ano}-{mes:02d}-{ini:02d}",
-            "data_fim": f"{ano}-{mes:02d}-{fim:02d}",
-            "ordem":    i,
-            "status":   "aberta"
-        }).execute()
+        query("""INSERT INTO jardinagem.semanas
+                 (mes_id, label, data_ini, data_fim, ordem, status)
+                 VALUES (%s,%s,%s,%s,%s,'aberta')""",
+              (mes_id, label,
+               f"{ano}-{mes:02d}-{ini:02d}",
+               f"{ano}-{mes:02d}-{fim:02d}", i),
+              fetch="none")
 
-
-def semana_ativa(mes_id: int) -> dict | None:
-    """Retorna a semana cujo intervalo cobre a data de hoje."""
-    hoje = date.today().isoformat()
-    res = sb.schema("jardinagem").table("semanas")\
-        .select("*")\
-        .eq("mes_id", mes_id)\
-        .lte("data_ini", hoje)\
-        .gte("data_fim", hoje)\
-        .limit(1).execute()
-    return res.data[0] if res.data else None
-
-
-# ══════════════════════════════════════════════════════════════
-# AGENDADOR — cria mês seguinte no dia 25
-# ══════════════════════════════════════════════════════════════
-
-def criar_proximo_mes():
-    hoje = date.today()
-    if hoje.day != 25:
-        return
-    proximo = (hoje.replace(day=1) + timedelta(days=32)).replace(day=1)
-    ano, mes = proximo.year, proximo.month
-    nomes = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho",
-             "Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"]
-    label = f"{nomes[mes-1]}/{ano}"
-    try:
-        res = sb.schema("jardinagem").table("meses").insert({
-            "ano": ano, "mes": mes, "label": label
-        }).execute()
-        if res.data:
-            mes_id = res.data[0]["id"]
-            semanas_do_mes(ano, mes, mes_id)
-            print(f"[Agendador] {label} criado com 4 semanas.")
-    except Exception as e:
-        print(f"[Agendador] Erro ao criar mês: {e}")
-
-
-scheduler = BackgroundScheduler()
-scheduler.add_job(criar_proximo_mes, "cron", hour=8, minute=0)
-scheduler.start()
-
-
-# ══════════════════════════════════════════════════════════════
-# ROTAS — STATIC / FRONTEND
-# ══════════════════════════════════════════════════════════════
-
+# ── STATIC ────────────────────────────────────────────────────
 @app.route("/")
 def index():
     return send_from_directory("templates", "index.html")
@@ -203,30 +183,33 @@ def service_worker():
     resp.headers["Cache-Control"] = "no-cache"
     return resp
 
-@app.route("/static/<path:fn>")
-def static_files(fn):
-    return send_from_directory("static", fn)
-
-
-# ══════════════════════════════════════════════════════════════
-# ROTAS — AUTH
-# ══════════════════════════════════════════════════════════════
-
+# ── AUTH ROUTES ───────────────────────────────────────────────
 @app.route("/api/login", methods=["POST"])
 def login():
     d = request.json or {}
     email = (d.get("email") or "").strip().lower()
     senha = (d.get("senha") or "").encode()
 
-    res = sb.schema("public").table("usuarios").select("*").eq("email", email).eq("ativo", True).limit(1).execute()
-    if not res.data:
+    try:
+        usuario = query(
+            "SELECT * FROM public.usuarios WHERE email=%s AND ativo=true LIMIT 1",
+            (email,), fetch="one"
+        )
+    except Exception as e:
+        log.error(f"DB error no login: {e}")
+        return jsonify({"erro": "Erro interno"}), 500
+
+    if not usuario:
         return jsonify({"erro": "Credenciais inválidas"}), 401
 
-    usuario = res.data[0]
-    if not bcrypt.checkpw(senha, usuario["senha_hash"].encode()):
-        return jsonify({"erro": "Credenciais inválidas"}), 401
+    try:
+        if not bcrypt.checkpw(senha, usuario["senha_hash"].encode()):
+            return jsonify({"erro": "Credenciais inválidas"}), 401
+    except Exception as e:
+        log.error(f"Bcrypt error: {e}")
+        return jsonify({"erro": "Erro interno"}), 500
 
-    token = gerar_token(usuario)
+    token = gerar_token(dict(usuario))
     resp = jsonify({
         "token":  token,
         "nome":   usuario["nome"],
@@ -236,12 +219,10 @@ def login():
                     max_age=JWT_EXPIRY_HOURS * 3600)
     return resp
 
-
 @app.route("/api/me")
 @verificar_token
 def me():
     return jsonify(g.usuario)
-
 
 @app.route("/api/logout", methods=["POST"])
 def logout():
@@ -249,22 +230,17 @@ def logout():
     resp.delete_cookie("garra_token")
     return resp
 
-
-# ══════════════════════════════════════════════════════════════
-# ROTAS — MESES
-# ══════════════════════════════════════════════════════════════
-
-@app.route("/api/meses", methods=["GET"])
+# ── MESES ─────────────────────────────────────────────────────
+@app.route("/api/meses")
 @verificar_token
 def list_meses():
-    res = sb.schema("jardinagem").table("meses").select("*").order("ano", desc=True).order("mes", desc=True).execute()
-    meses = res.data
-    # Conta semanas e fotos para cada mês
-    for m in meses:
-        sems = sb.schema("jardinagem").table("semanas").select("id").eq("mes_id", m["id"]).execute()
-        m["total_semanas"] = len(sems.data)
-    return jsonify(meses)
-
+    meses = query("""
+        SELECT m.*, COUNT(DISTINCT s.id) as total_semanas
+        FROM jardinagem.meses m
+        LEFT JOIN jardinagem.semanas s ON s.mes_id = m.id
+        GROUP BY m.id ORDER BY m.ano DESC, m.mes DESC
+    """)
+    return jsonify([dict(r) for r in meses])
 
 @app.route("/api/meses", methods=["POST"])
 @requer_perfil("admin", "luana")
@@ -275,417 +251,248 @@ def criar_mes():
              "Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"]
     label = d.get("label") or f"{nomes[mes]}/{ano}"
 
-    try:
-        res = sb.schema("jardinagem").table("meses").insert(
-            {"ano": ano, "mes": mes, "label": label,
-             "cliente_id": d.get("cliente_id")}
-        ).execute()
-        mes_id = res.data[0]["id"]
-    except Exception:
-        # mês já existe
-        res = sb.schema("jardinagem").table("meses").select("*").eq("ano", ano).eq("mes", mes).single().execute()
-        mes_id = res.data["id"]
+    exist = query("SELECT id FROM jardinagem.meses WHERE ano=%s AND mes=%s",
+                  (ano, mes), fetch="one")
+    if exist:
+        mes_id = exist["id"]
+    else:
+        row = query_id("INSERT INTO jardinagem.meses(ano,mes,label) VALUES(%s,%s,%s)",
+                       (ano, mes, label))
+        mes_id = row["id"]
 
-    # Cria as 4 semanas automaticamente
-    sem_exist = sb.schema("jardinagem").table("semanas").select("id").eq("mes_id", mes_id).execute()
-    if not sem_exist.data:
+    sem_exist = query("SELECT id FROM jardinagem.semanas WHERE mes_id=%s LIMIT 1",
+                      (mes_id,), fetch="one")
+    if not sem_exist:
         semanas_do_mes(ano, mes, mes_id)
 
-    mes_data = sb.schema("jardinagem").table("meses").select("*").eq("id", mes_id).single().execute()
-    return jsonify(mes_data.data), 201
-
+    mes_data = query("SELECT * FROM jardinagem.meses WHERE id=%s", (mes_id,), fetch="one")
+    return jsonify(dict(mes_data)), 201
 
 @app.route("/api/meses/<int:mid>")
 @verificar_token
 def get_mes(mid):
-    m = sb.schema("jardinagem").table("meses").select("*").eq("id", mid).single().execute()
-    if not m.data:
+    m = query("SELECT * FROM jardinagem.meses WHERE id=%s", (mid,), fetch="one")
+    if not m:
         return jsonify({"erro": "Não encontrado"}), 404
 
-    sems = sb.schema("jardinagem").table("semanas").select("*")\
-        .eq("mes_id", mid).order("ordem").execute()
-
-    result = m.data
+    result = dict(m)
     result["semanas"] = []
 
-    for s in sems.data:
+    sems = query("SELECT * FROM jardinagem.semanas WHERE mes_id=%s ORDER BY ordem",
+                 (mid,))
+    for s in sems:
         sd = dict(s)
-        pares_res = sb.schema("jardinagem").table("pares").select("*")\
-            .eq("semana_id", s["id"]).order("ordem").execute()
         sd["pares"] = []
-
-        for p in pares_res.data:
+        pares = query("SELECT * FROM jardinagem.pares WHERE semana_id=%s ORDER BY ordem",
+                      (s["id"],))
+        for p in pares:
             pd = dict(p)
-            fotos_res = sb.schema("jardinagem").table("fotos").select("*")\
-                .eq("par_id", p["id"]).execute()
-
+            fotos = query("SELECT * FROM jardinagem.fotos WHERE par_id=%s", (p["id"],))
             pd["fotos"] = []
-            for f in fotos_res.data:
+            for f in fotos:
                 fd = dict(f)
-                fd["url"] = url_assinada(f["storage_path"])
+                fd["url"] = storage_url(f["storage_path"]) if f["storage_path"] else ""
                 pd["fotos"].append(fd)
-
             sd["pares"].append(pd)
         result["semanas"].append(sd)
 
     return jsonify(result)
 
-
-# ══════════════════════════════════════════════════════════════
-# ROTAS — SEMANAS
-# ══════════════════════════════════════════════════════════════
-
+# ── SEMANAS ───────────────────────────────────────────────────
 @app.route("/api/semanas/ativa")
 @verificar_token
-def semana_ativa_route():
-    """Retorna a semana que corresponde à data de hoje."""
+def semana_ativa():
     hoje = date.today().isoformat()
-    res = sb.schema("jardinagem").table("semanas")\
-        .select("*, meses(id, ano, mes, label)")\
-        .lte("data_ini", hoje)\
-        .gte("data_fim", hoje)\
-        .limit(1).execute()
-    if not res.data:
+    row = query("""SELECT s.*, m.id as mes_id, m.ano, m.mes, m.label as mes_label
+                   FROM jardinagem.semanas s
+                   JOIN jardinagem.meses m ON m.id = s.mes_id
+                   WHERE s.data_ini <= %s AND s.data_fim >= %s
+                   LIMIT 1""", (hoje, hoje), fetch="one")
+    if not row:
         return jsonify({"erro": "Sem semana ativa"}), 404
-    return jsonify(res.data[0])
-
+    return jsonify(dict(row))
 
 @app.route("/api/semanas/<int:sid>", methods=["PATCH"])
 @requer_perfil("admin", "luana")
 def patch_semana(sid):
     d = request.json or {}
-    campos = {k: v for k, v in d.items() if k in ("label", "status", "enviado_em")}
-    if campos:
-        sb.schema("jardinagem").table("semanas").update(campos).eq("id", sid).execute()
+    for col in ["label", "status", "enviado_em"]:
+        if col in d:
+            query(f"UPDATE jardinagem.semanas SET {col}=%s WHERE id=%s",
+                  (d[col], sid), fetch="none")
     return jsonify({"ok": True})
-
 
 @app.route("/api/semanas/<int:sid>", methods=["DELETE"])
 @requer_perfil("admin", "luana")
 def del_semana(sid):
-    # Apaga fotos do storage antes
-    pares = sb.schema("jardinagem").table("pares").select("id").eq("semana_id", sid).execute()
-    for p in pares.data:
-        fotos = sb.schema("jardinagem").table("fotos").select("storage_path").eq("par_id", p["id"]).execute()
-        for f in fotos.data:
-            try:
-                sb.storage.from_(BUCKET_NAME).remove([f["storage_path"]])
-            except Exception:
-                pass
-    sb.schema("jardinagem").table("semanas").delete().eq("id", sid).execute()
+    pares = query("SELECT id FROM jardinagem.pares WHERE semana_id=%s", (sid,))
+    for p in pares:
+        fotos = query("SELECT storage_path FROM jardinagem.fotos WHERE par_id=%s", (p["id"],))
+        paths = [f["storage_path"] for f in fotos if f["storage_path"]]
+        if paths:
+            storage_delete(paths)
+    query("DELETE FROM jardinagem.semanas WHERE id=%s", (sid,), fetch="none")
     return jsonify({"ok": True})
 
-
-# ══════════════════════════════════════════════════════════════
-# ROTAS — PARES
-# ══════════════════════════════════════════════════════════════
-
+# ── PARES ─────────────────────────────────────────────────────
 @app.route("/api/pares", methods=["POST"])
 @verificar_token
 def criar_par():
     d = request.json or {}
     cod = next_code(2)
-    res = sb.schema("jardinagem").table("pares").insert({
-        "semana_id":  d["semana_id"],
-        "codigo_a":   cod,
-        "codigo_d":   cod + 1,
-        "local_nome": d.get("local_nome", ""),
-        "data_label": d.get("data_label", ""),
-        "ordem":      d.get("ordem", 0)
-    }).execute()
-    return jsonify(res.data[0]), 201
-
+    row = query_id("""INSERT INTO jardinagem.pares
+                      (semana_id, codigo_a, codigo_d, local_nome, data_label, ordem)
+                      VALUES (%s,%s,%s,%s,%s,%s)""",
+                   (d["semana_id"], cod, cod+1,
+                    d.get("local_nome",""), d.get("data_label",""), d.get("ordem",0)))
+    return jsonify(dict(row)), 201
 
 @app.route("/api/pares/<int:pid>", methods=["PATCH"])
 @verificar_token
 def patch_par(pid):
     d = request.json or {}
-    campos = {k: v for k, v in d.items() if k in ("local_nome", "ordem", "semana_id", "data_label")}
-    if campos:
-        sb.schema("jardinagem").table("pares").update(campos).eq("id", pid).execute()
+    for col in ["local_nome", "ordem", "semana_id", "data_label"]:
+        if col in d:
+            query(f"UPDATE jardinagem.pares SET {col}=%s WHERE id=%s",
+                  (d[col], pid), fetch="none")
     return jsonify({"ok": True})
-
 
 @app.route("/api/pares/<int:pid>", methods=["DELETE"])
 @verificar_token
 def del_par(pid):
-    fotos = sb.schema("jardinagem").table("fotos").select("storage_path").eq("par_id", pid).execute()
-    for f in fotos.data:
-        try:
-            sb.storage.from_(BUCKET_NAME).remove([f["storage_path"]])
-        except Exception:
-            pass
-    sb.schema("jardinagem").table("pares").delete().eq("id", pid).execute()
+    fotos = query("SELECT storage_path FROM jardinagem.fotos WHERE par_id=%s", (pid,))
+    paths = [f["storage_path"] for f in fotos if f["storage_path"]]
+    if paths:
+        storage_delete(paths)
+    query("DELETE FROM jardinagem.pares WHERE id=%s", (pid,), fetch="none")
     return jsonify({"ok": True})
 
-
-# ══════════════════════════════════════════════════════════════
-# ROTAS — FOTOS (desktop — Luana)
-# ══════════════════════════════════════════════════════════════
-
+# ── FOTOS DESKTOP (Luana) ─────────────────────────────────────
 @app.route("/api/fotos/avulsa", methods=["POST"])
 @requer_perfil("admin", "luana")
 def foto_avulsa():
-    """Upload de foto pelo desktop (Luana). Substitui se já existir."""
     par_id = int(request.form["par_id"])
     tipo   = request.form["tipo"]
     file   = request.files["foto"]
 
     dados = comprimir_imagem(file.read())
-    fn    = f"{uuid.uuid4().hex}.jpg"
-    path  = upload_supabase(dados, fn)
+    path  = storage_upload(dados, f"{datetime.now().strftime('%Y/%m')}/{uuid.uuid4().hex}.jpg")
 
-    # Remove foto anterior do mesmo slot
-    antiga = sb.schema("jardinagem").table("fotos")\
-        .select("id, storage_path").eq("par_id", par_id).eq("tipo", tipo).execute()
-    if antiga.data:
-        try:
-            sb.storage.from_(BUCKET_NAME).remove([antiga.data[0]["storage_path"]])
-        except Exception:
-            pass
-        sb.schema("jardinagem").table("fotos").delete().eq("id", antiga.data[0]["id"]).execute()
+    antiga = query("SELECT id, storage_path FROM jardinagem.fotos WHERE par_id=%s AND tipo=%s",
+                   (par_id, tipo), fetch="one")
+    if antiga:
+        storage_delete([antiga["storage_path"]])
+        query("DELETE FROM jardinagem.fotos WHERE id=%s", (antiga["id"],), fetch="none")
 
-    res = sb.schema("jardinagem").table("fotos").insert({
-        "par_id":       par_id,
-        "tipo":         tipo,
-        "origem":       "desktop",
-        "enviado_por":  g.usuario["sub"],
-        "storage_path": path,
-        "filename_orig": file.filename,
-        "sincronizado": True
-    }).execute()
-
-    foto = res.data[0]
-    foto["url"] = url_assinada(path)
+    row = query_id("""INSERT INTO jardinagem.fotos
+                      (par_id, tipo, origem, enviado_por, storage_path, filename_orig, sincronizado)
+                      VALUES (%s,%s,'desktop',%s,%s,%s,true)""",
+                   (par_id, tipo, g.usuario["sub"], path, file.filename))
+    foto = dict(row)
+    foto["url"] = storage_url(path)
     return jsonify(foto), 201
 
-
-# ══════════════════════════════════════════════════════════════
-# ROTAS — FOTOS MOBILE (Arthur / Breno)
-# ══════════════════════════════════════════════════════════════
-
+# ── FOTOS MOBILE (Arthur / Breno) ────────────────────────────
 @app.route("/api/fotos/mobile", methods=["POST"])
-@requer_perfil("admin", "campo", "luana")
+@verificar_token
 def foto_mobile():
-    """
-    Upload de foto pelo celular.
-    Aceita multipart/form-data com:
-      - foto: arquivo da imagem
-      - semana_id: id da semana (ou 'ativa' para calcular)
-      - local_nome: nome do local (opcional)
-      - tipo: 'antes' | 'depois'
-      - offline_id: UUID gerado no celular (idempotência)
-    """
     semana_id_raw = request.form.get("semana_id", "ativa")
-    tipo       = request.form.get("tipo", "antes")
-    local_nome = request.form.get("local_nome", "")
-    offline_id = request.form.get("offline_id", "")
-    file       = request.files.get("foto")
+    tipo          = request.form.get("tipo", "antes")
+    local_nome    = request.form.get("local_nome", "")
+    offline_id    = request.form.get("offline_id", "")
+    file          = request.files.get("foto")
 
     if not file:
         return jsonify({"erro": "Foto não enviada"}), 400
 
-    # Resolve semana ativa se não informada
     if semana_id_raw == "ativa" or not semana_id_raw:
         hoje = date.today().isoformat()
-        res = sb.schema("jardinagem").table("semanas")\
-            .select("id").lte("data_ini", hoje).gte("data_fim", hoje).limit(1).execute()
-        if not res.data:
-            return jsonify({"erro": "Nenhuma semana ativa no momento"}), 404
-        semana_id = res.data[0]["id"]
+        row = query("SELECT id FROM jardinagem.semanas WHERE data_ini<=%s AND data_fim>=%s LIMIT 1",
+                    (hoje, hoje), fetch="one")
+        if not row:
+            return jsonify({"erro": "Nenhuma semana ativa"}), 404
+        semana_id = row["id"]
     else:
         semana_id = int(semana_id_raw)
 
-    # Idempotência — se offline_id já foi processado, retorna ok
     if offline_id:
-        exist = sb.schema("jardinagem").table("fila_sync")\
-            .select("id").eq("id", offline_id).eq("processado", True).execute()
-        if exist.data:
+        exist = query("SELECT id FROM jardinagem.fila_sync WHERE id=%s AND processado=true",
+                      (offline_id,), fetch="one")
+        if exist:
             return jsonify({"ok": True, "duplicado": True}), 200
 
-    # Comprime e faz upload
     dados = comprimir_imagem(file.read(), max_px=1400, qualidade=80)
-    fn    = f"{uuid.uuid4().hex}.jpg"
-    path  = upload_supabase(dados, fn)
+    path  = storage_upload(dados, f"{datetime.now().strftime('%Y/%m')}/{uuid.uuid4().hex}.jpg")
 
-    # Cria par novo se local_nome informado, senão adiciona ao último par sem depois
-    par_id = None
     if local_nome:
         cod = next_code(2)
-        res_par = sb.schema("jardinagem").table("pares").insert({
-            "semana_id":  semana_id,
-            "codigo_a":   cod,
-            "codigo_d":   cod + 1,
-            "local_nome": local_nome,
-            "ordem":      99
-        }).execute()
-        par_id = res_par.data[0]["id"]
+        par = query_id("INSERT INTO jardinagem.pares(semana_id,codigo_a,codigo_d,local_nome,ordem) VALUES(%s,%s,%s,%s,99)",
+                       (semana_id, cod, cod+1, local_nome))
+        par_id = par["id"]
     else:
-        # Busca par aberto (sem foto do tipo solicitado)
-        pares = sb.schema("jardinagem").table("pares")\
-            .select("id").eq("semana_id", semana_id).order("criado_em", desc=True).limit(10).execute()
-        for p in pares.data:
-            fotos = sb.schema("jardinagem").table("fotos")\
-                .select("id").eq("par_id", p["id"]).eq("tipo", tipo).execute()
-            if not fotos.data:
+        pares = query("SELECT id FROM jardinagem.pares WHERE semana_id=%s ORDER BY criado_em DESC LIMIT 10",
+                      (semana_id,))
+        par_id = None
+        for p in pares:
+            f = query("SELECT id FROM jardinagem.fotos WHERE par_id=%s AND tipo=%s",
+                      (p["id"], tipo), fetch="one")
+            if not f:
                 par_id = p["id"]
                 break
-
         if not par_id:
             cod = next_code(2)
-            res_par = sb.schema("jardinagem").table("pares").insert({
-                "semana_id": semana_id,
-                "codigo_a":  cod,
-                "codigo_d":  cod + 1,
-                "ordem":     99
-            }).execute()
-            par_id = res_par.data[0]["id"]
+            par = query_id("INSERT INTO jardinagem.pares(semana_id,codigo_a,codigo_d,ordem) VALUES(%s,%s,%s,99)",
+                           (semana_id, cod, cod+1))
+            par_id = par["id"]
 
-    # Salva foto
-    res_foto = sb.schema("jardinagem").table("fotos").insert({
-        "par_id":       par_id,
-        "tipo":         tipo,
-        "origem":       "mobile",
-        "enviado_por":  g.usuario["sub"],
-        "storage_path": path,
-        "filename_orig": file.filename,
-        "sincronizado": True
-    }).execute()
+    row = query_id("""INSERT INTO jardinagem.fotos
+                      (par_id,tipo,origem,enviado_por,storage_path,filename_orig,sincronizado)
+                      VALUES(%s,%s,'mobile',%s,%s,%s,true)""",
+                   (par_id, tipo, g.usuario["sub"], path, file.filename))
 
-    # Marca fila como processado
     if offline_id:
-        sb.schema("jardinagem").table("fila_sync").upsert({
-            "id":          offline_id,
-            "usuario_id":  g.usuario["sub"],
-            "semana_id":   semana_id,
-            "local_nome":  local_nome,
-            "tipo":        tipo,
-            "storage_path": path,
-            "processado":  True
-        }).execute()
+        query("""INSERT INTO jardinagem.fila_sync(id,usuario_id,semana_id,local_nome,tipo,storage_path,processado)
+                 VALUES(%s,%s,%s,%s,%s,%s,true)
+                 ON CONFLICT(id) DO UPDATE SET processado=true""",
+              (offline_id, g.usuario["sub"], semana_id, local_nome, tipo, path), fetch="none")
 
-    foto = res_foto.data[0]
-    foto["url"] = url_assinada(path)
+    foto = dict(row)
+    foto["url"] = storage_url(path)
     return jsonify(foto), 201
-
 
 @app.route("/api/fotos/<int:fid>", methods=["DELETE"])
 @verificar_token
 def del_foto(fid):
-    f = sb.schema("jardinagem").table("fotos").select("storage_path").eq("id", fid).single().execute()
-    if f.data:
-        try:
-            sb.storage.from_(BUCKET_NAME).remove([f.data["storage_path"]])
-        except Exception:
-            pass
-        sb.schema("jardinagem").table("fotos").delete().eq("id", fid).execute()
+    f = query("SELECT storage_path FROM jardinagem.fotos WHERE id=%s", (fid,), fetch="one")
+    if f:
+        storage_delete([f["storage_path"]])
+        query("DELETE FROM jardinagem.fotos WHERE id=%s", (fid,), fetch="none")
     return jsonify({"ok": True})
-
 
 @app.route("/api/fotos/<int:fid>/url")
 @verificar_token
 def url_foto(fid):
-    """Gera URL assinada fresca para uma foto."""
-    f = sb.schema("jardinagem").table("fotos").select("storage_path").eq("id", fid).single().execute()
-    if not f.data:
+    f = query("SELECT storage_path FROM jardinagem.fotos WHERE id=%s", (fid,), fetch="one")
+    if not f:
         return jsonify({"erro": "Não encontrado"}), 404
-    return jsonify({"url": url_assinada(f.data["storage_path"])})
+    return jsonify({"url": storage_url(f["storage_path"])})
 
-
-# ══════════════════════════════════════════════════════════════
-# ROTAS — ANÁLISE IA
-# ══════════════════════════════════════════════════════════════
-
-@app.route("/api/ia/analisar", methods=["POST"])
-@requer_perfil("admin", "luana")
-def ia_analisar():
-    """Analisa uma foto com Claude Vision e retorna metadados."""
-    if not ANTHROPIC_API_KEY:
-        return jsonify({"erro": "ANTHROPIC_API_KEY não configurada"}), 400
-
-    import anthropic as ant
-
-    foto_id  = request.json.get("foto_id")
-    fila     = request.json.get("storage_path")
-
-    path = fila
-    if foto_id:
-        f = sb.schema("jardinagem").table("fotos").select("storage_path").eq("id", foto_id).single().execute()
-        path = f.data["storage_path"]
-
-    # Baixa imagem do storage
-    img_bytes = sb.storage.from_(BUCKET_NAME).download(path)
-    img_b64   = base64.standard_b64encode(img_bytes).decode()
-
-    client = ant.Anthropic(api_key=ANTHROPIC_API_KEY)
-    msg = client.messages.create(
-        model="claude-opus-4-5",
-        max_tokens=300,
-        messages=[{
-            "role": "user",
-            "content": [
-                {
-                    "type": "image",
-                    "source": {"type": "base64", "media_type": "image/jpeg", "data": img_b64}
-                },
-                {
-                    "type": "text",
-                    "text": (
-                        "Analise esta foto de jardinagem/área verde urbana. "
-                        "Responda APENAS em JSON com as chaves: "
-                        "local (nome descritivo do local, ex: 'Canteiro Rua Principal'), "
-                        "estado ('antes' ou 'depois' baseado na aparência), "
-                        "id_visual (string curta identificando este local para agrupar com outras fotos do mesmo lugar, "
-                        "use cor de muro, tipo de vegetação, estruturas fixas — ex: 'muro-amarelo-arvore-grande'), "
-                        "descricao (1 frase descrevendo o estado). "
-                        "Sem markdown, apenas JSON puro."
-                    )
-                }
-            ]
-        }]
-    )
-
-    try:
-        dados = json.loads(msg.content[0].text)
-    except Exception:
-        dados = {"local": "", "estado": "", "id_visual": "", "descricao": msg.content[0].text}
-
-    # Atualiza no banco se foto_id informado
-    if foto_id:
-        sb.schema("jardinagem").table("fotos").update({
-            "ia_descricao": dados.get("descricao", ""),
-            "ia_local":     dados.get("local", ""),
-            "ia_estado":    dados.get("estado", ""),
-            "ia_id_visual": dados.get("id_visual", "")
-        }).eq("id", foto_id).execute()
-
-    return jsonify(dados)
-
-
-# ══════════════════════════════════════════════════════════════
-# ROTAS — CONFIG
-# ══════════════════════════════════════════════════════════════
-
+# ── CONFIG ────────────────────────────────────────────────────
 @app.route("/api/config")
 @requer_perfil("admin", "luana")
 def get_config():
-    res = sb.schema("jardinagem").table("config").select("*").execute()
-    return jsonify({r["chave"]: r["valor"] for r in res.data})
-
+    rows = query("SELECT * FROM jardinagem.config")
+    return jsonify({r["chave"]: r["valor"] for r in rows})
 
 @app.route("/api/clientes")
 @verificar_token
 def list_clientes():
-    res = sb.schema("public").table("clientes").select("id, nome").eq("ativo", True).execute()
-    return jsonify(res.data)
+    rows = query("SELECT id, nome FROM public.clientes WHERE ativo=true")
+    return jsonify([dict(r) for r in rows])
 
-
-# ══════════════════════════════════════════════════════════════
-# INIT
-# ══════════════════════════════════════════════════════════════
-
+# ── INIT ──────────────────────────────────────────────────────
 if __name__ == "__main__":
     print("\n🌿 Garra — Sistema de Fotos Jardinagem")
-    print("   Backend: Flask + Supabase")
+    print("   Backend: Flask + PostgreSQL direto")
     print("   Acesse:  http://localhost:5000\n")
     app.run(host="0.0.0.0", port=5000, debug=False)
