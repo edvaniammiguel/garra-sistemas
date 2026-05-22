@@ -25,7 +25,7 @@ def aln(h="center",v="center",wrap=False):
     return Alignment(horizontal=h,vertical=v,wrap_text=wrap)
 
 # ── Logo ──────────────────────────────────────────────────────
-LOGO_PATH = os.path.join(os.path.dirname(__file__), "static", "logo-garra.jpg")
+LOGO_PATH = os.path.join(os.path.dirname(__file__), "static", "icons", "logo-garra.jpg")
 
 def make_logo(w=160):
     img = PILImage.open(LOGO_PATH)
