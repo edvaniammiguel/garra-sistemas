@@ -190,8 +190,14 @@ body{display:flex;flex-direction:column;max-width:480px;margin:0 auto;}
         </div>
         <div>
           <label class="login-label">Senha</label>
-          <input class="login-inp" id="loginSenha" type="password" placeholder="••••••••"
-                 autocomplete="current-password">
+          <div style="position:relative;">
+            <input class="login-inp" id="loginSenha" type="password" placeholder="••••••••"
+                   autocomplete="current-password" style="padding-right:44px;">
+            <button type="button" onclick="toggleSenha()" style="
+              position:absolute;right:12px;top:50%;transform:translateY(-50%);
+              background:none;border:none;cursor:pointer;padding:4px;
+              color:#64748B;font-size:18px;line-height:1;" id="btnOlho">👁</button>
+          </div>
         </div>
         <div class="login-erro" id="loginErro"></div>
         <button class="login-btn" onclick="fazerLogin()">Entrar</button>
@@ -437,6 +443,18 @@ window.addEventListener("load", () => {
   }
   atualizarStatus();
 });
+
+function toggleSenha() {
+  const inp = document.getElementById('loginSenha');
+  const btn = document.getElementById('btnOlho');
+  if (inp.type === 'password') {
+    inp.type = 'text';
+    btn.textContent = '🙈';
+  } else {
+    inp.type = 'password';
+    btn.textContent = '👁';
+  }
+}
 
 function fazerLogin() {
   const email = document.getElementById("loginEmail").value.trim();
