@@ -1,0 +1,10 @@
+flask>=3.0.0
+pillow>=10.0.0
+anthropic>=0.25.0
+supabase>=2.4.0
+python-dotenv>=1.0.0
+bcrypt>=4.1.0
+pyjwt>=2.8.0
+apscheduler>=3.10.0
+flask-mail>=0.10.0
+python-dateutil>=2.9.0
