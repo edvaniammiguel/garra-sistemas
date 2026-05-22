@@ -24,7 +24,7 @@ body{display:flex;flex-direction:column;max-width:480px;margin:0 auto;}
 .hdr{background:var(--bl);padding:env(safe-area-inset-top,12px) 1rem 12px;
   display:flex;align-items:center;justify-content:space-between;flex-shrink:0;
   border-bottom:3px solid var(--or);}
-.hdr-logo{font-size:20px;font-weight:900;color:var(--or);}
+.hdr-logo{height:36px;object-fit:contain;}
 .hdr-info{text-align:right;}
 .hdr-nome{font-size:12px;font-weight:700;color:#fff;}
 .hdr-perfil{font-size:10px;color:#93C5FD;}
@@ -124,12 +124,16 @@ body{display:flex;flex-direction:column;max-width:480px;margin:0 auto;}
 
 /* LOGIN */
 .login-wrap{flex:1;display:flex;flex-direction:column;align-items:center;
-  justify-content:center;padding:2rem;
-  background:#FFFFFF;}
-.login-card{background:#fff;border-radius:18px;padding:2rem 1.5rem;
-  width:100%;max-width:340px;
-  box-shadow:0 8px 32px rgba(26,42,94,.25);
+  justify-content:center;padding:2rem;background:#F0F4FF;}
+.login-card{background:#fff;border-radius:16px;padding:2.5rem 2rem;
+  width:100%;max-width:380px;
+  box-shadow:0 4px 24px rgba(26,42,94,.12);
+  border:1.5px solid #CBD5E1;
   display:flex;flex-direction:column;align-items:center;}
+@media(min-width:600px){
+  .login-card{padding:3rem 2.5rem;}
+  body{background:#F0F4FF;}
+}
 .login-logo-img{width:180px;margin-bottom:.75rem;}
 .login-titulo{font-size:15px;font-weight:800;color:var(--bl);margin-bottom:2px;}
 .login-sub{font-size:11px;color:var(--mut);margin-bottom:1.25rem;text-align:center;}
@@ -173,13 +177,9 @@ body{display:flex;flex-direction:column;max-width:480px;margin:0 auto;}
   <div class="login-wrap">
     <div class="login-card">
       <img class="login-logo-img"
-           src="https://raw.githubusercontent.com/edvaniammiguel/garra-sistemas/main/jardinagem/static/logo-garra.jpg"
-           onerror="this.style.display='none';document.getElementById('logoFallback').style.display='block'"
-           alt="Garra Terraplenagem">
-      <div id="logoFallback" style="display:none;text-align:center;margin-bottom:.75rem;">
-        <div style="font-size:36px;font-weight:900;color:#1A2A5E;">GARRA</div>
-        <div style="font-size:11px;color:#64748B;letter-spacing:.05em;">TERRAPLENAGEM E CAÇAMBAS</div>
-      </div>
+           src="/static/logo-garra.jpg"
+           alt="Garra Terraplenagem"
+           style="width:180px;margin-bottom:.75rem;">
       <div class="login-titulo">Sistema de Fotos</div>
       <div class="login-sub">Jardinagem — Águas de Pará de Minas</div>
       <div class="login-form">
@@ -210,15 +210,8 @@ body{display:flex;flex-direction:column;max-width:480px;margin:0 auto;}
 <div id="telaApp" style="display:none;flex-direction:column;flex:1;">
 
   <header class="hdr">
-    <div style="display:flex;align-items:center;gap:8px;">
-      <div style="width:32px;height:32px;border-radius:50%;background:#E8820C;
-        display:flex;align-items:center;justify-content:center;
-        font-size:16px;font-weight:900;color:#1A2A5E;">G</div>
-      <div>
-        <div style="font-size:14px;font-weight:900;color:#E8820C;line-height:1;">GARRA</div>
-        <div style="font-size:8px;color:#93C5FD;letter-spacing:.05em;">TERRAPLENAGEM</div>
-      </div>
-    </div>
+    <img src="/static/logo-garra.jpg" alt="Garra Terraplenagem"
+         style="height:38px;object-fit:contain;filter:brightness(0) invert(1);">
     <div class="hdr-info">
       <div class="hdr-nome" id="hdrNome">—</div>
       <div class="hdr-status">
