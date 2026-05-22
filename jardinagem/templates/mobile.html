@@ -124,17 +124,28 @@ body{display:flex;flex-direction:column;max-width:480px;margin:0 auto;}
 
 /* LOGIN */
 .login-wrap{flex:1;display:flex;flex-direction:column;align-items:center;
-  justify-content:center;padding:2rem;}
-.login-logo{font-size:56px;margin-bottom:.5rem;}
-.login-titulo{font-size:22px;font-weight:800;color:var(--bl);margin-bottom:.25rem;}
-.login-sub{font-size:12px;color:var(--mut);margin-bottom:2rem;}
-.login-form{width:100%;max-width:320px;display:flex;flex-direction:column;gap:.75rem;}
-.login-inp{border:1.5px solid var(--brd);border-radius:var(--r2);padding:14px;
-  font-size:15px;-webkit-appearance:none;}
-.login-inp:focus{outline:none;border-color:var(--bl2);}
-.login-btn{padding:14px;background:var(--or);color:#fff;border:none;
-  border-radius:var(--r);font-size:15px;font-weight:800;cursor:pointer;}
-.login-erro{font-size:12px;color:var(--red);text-align:center;}
+  justify-content:center;padding:2rem;
+  background:linear-gradient(145deg,#E8820C 0%,#1A2A5E 65%);}
+.login-card{background:#fff;border-radius:18px;padding:2rem 1.5rem;
+  width:100%;max-width:340px;
+  box-shadow:0 8px 32px rgba(26,42,94,.25);
+  display:flex;flex-direction:column;align-items:center;}
+.login-logo-img{width:180px;margin-bottom:.75rem;}
+.login-titulo{font-size:15px;font-weight:800;color:var(--bl);margin-bottom:2px;}
+.login-sub{font-size:11px;color:var(--mut);margin-bottom:1.25rem;text-align:center;}
+.login-form{width:100%;display:flex;flex-direction:column;gap:.75rem;}
+.login-label{font-size:10px;font-weight:700;color:var(--mut);
+  text-transform:uppercase;letter-spacing:.06em;margin-bottom:2px;display:block;}
+.login-inp{width:100%;border:1.5px solid var(--brd);border-radius:var(--r2);
+  padding:13px 14px;font-size:14px;color:var(--txt);background:#F8FAFC;
+  -webkit-appearance:none;}
+.login-inp:focus{outline:none;border-color:var(--bl);}
+.login-btn{padding:14px;background:var(--bl);color:#fff;border:none;
+  border-radius:var(--r2);font-size:15px;font-weight:800;cursor:pointer;
+  width:100%;margin-top:.25rem;transition:.15s;
+  box-shadow:0 4px 14px rgba(26,42,94,.3);}
+.login-btn:active{background:var(--bl2);transform:scale(.98);}
+.login-erro{font-size:12px;color:var(--red);text-align:center;min-height:16px;}
 
 /* TOAST */
 .toast{position:fixed;bottom:80px;left:50%;transform:translateX(-50%) translateY(20px);
@@ -160,16 +171,31 @@ body{display:flex;flex-direction:column;max-width:480px;margin:0 auto;}
 <!-- ── LOGIN ───────────────────────────────────────────────── -->
 <div id="telaLogin" style="display:flex;flex-direction:column;flex:1;">
   <div class="login-wrap">
-    <div class="login-logo">🌿</div>
-    <div class="login-titulo">Garra Fotos</div>
-    <div class="login-sub">Jardinagem — Águas de Pará de Minas</div>
-    <div class="login-form">
-      <input class="login-inp" id="loginEmail" type="email" placeholder="Email"
-             autocomplete="email" inputmode="email">
-      <input class="login-inp" id="loginSenha" type="password" placeholder="Senha"
-             autocomplete="current-password">
-      <div class="login-erro" id="loginErro"></div>
-      <button class="login-btn" onclick="fazerLogin()">Entrar</button>
+    <div class="login-card">
+      <img class="login-logo-img"
+           src="https://raw.githubusercontent.com/edvaniammiguel/garra-sistemas/main/jardinagem/static/logo-garra.jpg"
+           onerror="this.style.display='none';document.getElementById('logoFallback').style.display='block'"
+           alt="Garra Terraplenagem">
+      <div id="logoFallback" style="display:none;text-align:center;margin-bottom:.75rem;">
+        <div style="font-size:36px;font-weight:900;color:#1A2A5E;">GARRA</div>
+        <div style="font-size:11px;color:#64748B;letter-spacing:.05em;">TERRAPLENAGEM E CAÇAMBAS</div>
+      </div>
+      <div class="login-titulo">Sistema de Fotos</div>
+      <div class="login-sub">Jardinagem — Águas de Pará de Minas</div>
+      <div class="login-form">
+        <div>
+          <label class="login-label">Usuário</label>
+          <input class="login-inp" id="loginEmail" type="email" placeholder="seu.email@garra.local"
+                 autocomplete="email" inputmode="email">
+        </div>
+        <div>
+          <label class="login-label">Senha</label>
+          <input class="login-inp" id="loginSenha" type="password" placeholder="••••••••"
+                 autocomplete="current-password">
+        </div>
+        <div class="login-erro" id="loginErro"></div>
+        <button class="login-btn" onclick="fazerLogin()">Entrar</button>
+      </div>
     </div>
   </div>
 </div>
@@ -178,7 +204,15 @@ body{display:flex;flex-direction:column;max-width:480px;margin:0 auto;}
 <div id="telaApp" style="display:none;flex-direction:column;flex:1;">
 
   <header class="hdr">
-    <div class="hdr-logo">G</div>
+    <div style="display:flex;align-items:center;gap:8px;">
+      <div style="width:32px;height:32px;border-radius:50%;background:#E8820C;
+        display:flex;align-items:center;justify-content:center;
+        font-size:16px;font-weight:900;color:#1A2A5E;">G</div>
+      <div>
+        <div style="font-size:14px;font-weight:900;color:#E8820C;line-height:1;">GARRA</div>
+        <div style="font-size:8px;color:#93C5FD;letter-spacing:.05em;">TERRAPLENAGEM</div>
+      </div>
+    </div>
     <div class="hdr-info">
       <div class="hdr-nome" id="hdrNome">—</div>
       <div class="hdr-status">
