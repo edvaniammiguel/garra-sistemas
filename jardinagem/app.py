@@ -501,6 +501,192 @@ def list_clientes():
     return jsonify([dict(r) for r in rows])
 
 # ── INIT ──────────────────────────────────────────────────────
+# ══════════════════════════════════════════════════════════════
+# ROTAS — RELATÓRIOS
+# ══════════════════════════════════════════════════════════════
+
+def _montar_dados_semana(semana_id: int):
+    """Monta estrutura completa de dados de uma semana."""
+    sem = query("SELECT * FROM jardinagem.semanas WHERE id=%s", (semana_id,), fetch="one")
+    if not sem:
+        return None, None, None
+
+    mes = query("SELECT * FROM jardinagem.meses WHERE id=%s", (sem["mes_id"],), fetch="one")
+
+    data_ini = sem["data_ini"].strftime("%d/%m/%Y") if sem["data_ini"] else ""
+    data_fim = sem["data_fim"].strftime("%d/%m/%Y") if sem["data_fim"] else ""
+
+    semana_dict = {
+        "label":    sem["label"],
+        "data_ini": data_ini,
+        "data_fim": data_fim,
+    }
+
+    # Pares com fotos
+    pares_raw = query(
+        "SELECT * FROM jardinagem.pares WHERE semana_id=%s ORDER BY ordem, id",
+        (semana_id,)
+    )
+    pares = []
+    for p in pares_raw:
+        fotos = query("SELECT * FROM jardinagem.fotos WHERE par_id=%s", (p["id"],))
+        foto_antes  = next((dict(f) for f in fotos if f["tipo"]=="antes"),  None)
+        foto_depois = next((dict(f) for f in fotos if f["tipo"]=="depois"), None)
+        pares.append({
+            "codigo_a":   p["codigo_a"],
+            "codigo_d":   p["codigo_d"],
+            "local_nome": p["local_nome"] or "",
+            "foto_antes":  foto_antes,
+            "foto_depois": foto_depois,
+        })
+
+    # Relatórios diários
+    relatorios_raw = query(
+        """SELECT r.*, u.nome as responsavel_nome
+           FROM jardinagem.relatorios_diarios r
+           JOIN public.usuarios_garra u ON u.id = r.usuario_id
+           WHERE r.semana_id=%s ORDER BY r.data, r.criado_em""",
+        (semana_id,)
+    )
+    relatorios = []
+    for r in relatorios_raw:
+        relatorios.append({
+            "data":        r["data"].strftime("%d/%m/%Y") if r["data"] else "",
+            "local":       r["local_nome"] or "",
+            "km_ini":      float(r["km_inicial"] or 0),
+            "km_fin":      float(r["km_final"]   or 0),
+            "hr_ini":      str(r["hora_inicio"] or ""),
+            "hr_fim":      str(r["hora_fim"]    or ""),
+            "obs":         r["observacao"] or "",
+            "responsavel": r["responsavel_nome"] or "",
+        })
+
+    return semana_dict, pares, relatorios
+
+
+@app.route("/api/relatorios/<int:semana_id>/fotos")
+@requer_perfil("admin", "luana")
+def baixar_relatorio_fotos(semana_id):
+    """Gera e retorna o Excel de fotos da semana."""
+    import sys
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    from gerar_relatorio import gerar_relatorio_fotos
+
+    semana, pares, _ = _montar_dados_semana(semana_id)
+    if not semana:
+        return jsonify({"erro": "Semana não encontrada"}), 404
+
+    buf = gerar_relatorio_fotos(semana, pares, SUPABASE_URL, SUPABASE_SERVICE_KEY)
+    nome = f"Relatorio-Fotos-{semana_id}.xlsx"
+
+    from flask import send_file
+    return send_file(buf, as_attachment=True, download_name=nome,
+                     mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+
+@app.route("/api/relatorios/<int:semana_id>/km")
+@requer_perfil("admin", "luana")
+def baixar_relatorio_km(semana_id):
+    """Gera e retorna o Excel de KM da semana."""
+    import sys
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    from gerar_relatorio import gerar_relatorio_km
+
+    semana, _, relatorios = _montar_dados_semana(semana_id)
+    if not semana:
+        return jsonify({"erro": "Semana não encontrada"}), 404
+
+    buf = gerar_relatorio_km(semana, relatorios)
+    nome = f"Relatorio-KM-{semana_id}.xlsx"
+
+    from flask import send_file
+    return send_file(buf, as_attachment=True, download_name=nome,
+                     mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+
+@app.route("/api/relatorios/<int:semana_id>/enviar", methods=["POST"])
+@requer_perfil("admin", "luana")
+def enviar_relatorio_email(semana_id):
+    """Gera e envia os dois relatórios por email ao cliente."""
+    import sys
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    from gerar_relatorio import gerar_relatorio_fotos, gerar_relatorio_km, enviar_relatorios_email
+
+    mail_user    = os.getenv("MAIL_USERNAME", "")
+    mail_pass    = os.getenv("MAIL_PASSWORD", "")
+    mail_destino = os.getenv("MAIL_DESTINO",  "")
+    mail_cc      = os.getenv("MAIL_CC",       "")
+
+    if not all([mail_user, mail_pass, mail_destino]):
+        return jsonify({"erro": "Email não configurado. Verifique as variáveis MAIL_* no Render."}), 400
+
+    semana, pares, relatorios = _montar_dados_semana(semana_id)
+    if not semana:
+        return jsonify({"erro": "Semana não encontrada"}), 404
+
+    try:
+        buf_fotos = gerar_relatorio_fotos(semana, pares, SUPABASE_URL, SUPABASE_SERVICE_KEY)
+        buf_km    = gerar_relatorio_km(semana, relatorios)
+        enviar_relatorios_email(semana, buf_fotos, buf_km,
+                                 mail_user, mail_pass, mail_destino, mail_cc)
+
+        # Registra envio no banco
+        query("""INSERT INTO jardinagem.emails_enviados
+                 (semana_id, destinatario, assunto, status)
+                 VALUES (%s,%s,%s,'enviado')""",
+              (semana_id, mail_destino,
+               f"Relatório {semana['label']}"), fetch="none")
+
+        # Atualiza status da semana
+        query("UPDATE jardinagem.semanas SET status='enviada', enviado_em=NOW() WHERE id=%s",
+              (semana_id,), fetch="none")
+
+        return jsonify({"ok": True, "mensagem": f"Relatórios enviados para {mail_destino}"})
+
+    except Exception as e:
+        log.error(f"Erro ao enviar relatório: {e}")
+        query("""INSERT INTO jardinagem.emails_enviados
+                 (semana_id, destinatario, assunto, status, erro_msg)
+                 VALUES (%s,%s,%s,'erro',%s)""",
+              (semana_id, mail_destino,
+               f"Relatório {semana['label']}", str(e)), fetch="none")
+        return jsonify({"erro": f"Falha no envio: {str(e)}"}), 500
+
+
+@app.route("/api/semanas/<int:sid>/status")
+@verificar_token
+def status_semana(sid):
+    """Retorna status da semana e histórico de envios."""
+    sem = query("SELECT * FROM jardinagem.semanas WHERE id=%s", (sid,), fetch="one")
+    if not sem:
+        return jsonify({"erro": "Não encontrada"}), 404
+
+    emails = query(
+        "SELECT * FROM jardinagem.emails_enviados WHERE semana_id=%s ORDER BY enviado_em DESC",
+        (sid,)
+    )
+    total_pares = query(
+        "SELECT COUNT(*) as n FROM jardinagem.pares WHERE semana_id=%s", (sid,), fetch="one"
+    )
+    total_fotos = query(
+        """SELECT COUNT(*) as n FROM jardinagem.fotos f
+           JOIN jardinagem.pares p ON p.id=f.par_id WHERE p.semana_id=%s""",
+        (sid,), fetch="one"
+    )
+    total_relats = query(
+        "SELECT COUNT(*) as n FROM jardinagem.relatorios_diarios WHERE semana_id=%s",
+        (sid,), fetch="one"
+    )
+
+    return jsonify({
+        "semana":        dict(sem),
+        "total_pares":   total_pares["n"],
+        "total_fotos":   total_fotos["n"],
+        "total_relatorios": total_relats["n"],
+        "emails":        [dict(e) for e in emails],
+    })
+
+
 if __name__ == "__main__":
     print("\n🌿 Garra — Sistema de Fotos Jardinagem")
     print("   Backend: Flask + PostgreSQL direto")
