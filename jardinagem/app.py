@@ -21,45 +21,94 @@ logging.basicConfig(level=logging.INFO)
 log = logging.getLogger(__name__)
 
 # ── CONFIG ────────────────────────────────────────────────────
-DB_URL              = os.getenv("DATABASE_URL")           # connection string direta
-SUPABASE_URL        = os.getenv("SUPABASE_URL")
-SUPABASE_SERVICE_KEY= os.getenv("SUPABASE_SERVICE_KEY")
-JWT_SECRET          = os.getenv("JWT_SECRET", "dev-secret")
-JWT_EXPIRY_HOURS    = int(os.getenv("JWT_EXPIRY_HOURS", 8))
-ANTHROPIC_API_KEY   = os.getenv("ANTHROPIC_API_KEY", "")
-BUCKET_NAME         = "jardinagem-fotos"
+DB_URL               = os.getenv("DATABASE_URL")
+SUPABASE_URL         = os.getenv("SUPABASE_URL")
+SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY")
+JWT_SECRET           = os.getenv("JWT_SECRET", "dev-secret")
+JWT_EXPIRY_HOURS     = int(os.getenv("JWT_EXPIRY_HOURS", 8))
+ANTHROPIC_API_KEY    = os.getenv("ANTHROPIC_API_KEY", "")
+BUCKET_NAME          = "jardinagem-fotos"
 
 app = Flask(__name__, static_folder="static", template_folder="templates")
 app.config["MAX_CONTENT_LENGTH"] = 50 * 1024 * 1024
 
-# ── STORAGE (Supabase Storage via requests direto) ────────────
+# ── ERROR HANDLERS GLOBAIS (sempre JSON, nunca HTML) ──────────
+@app.errorhandler(400)
+def err_400(e):
+    return jsonify({"erro": "Requisição inválida", "detalhe": str(e)}), 400
+
+@app.errorhandler(401)
+def err_401(e):
+    return jsonify({"erro": "Não autenticado"}), 401
+
+@app.errorhandler(403)
+def err_403(e):
+    return jsonify({"erro": "Sem permissão"}), 403
+
+@app.errorhandler(404)
+def err_404(e):
+    return jsonify({"erro": f"Rota não encontrada: {request.path}"}), 404
+
+@app.errorhandler(500)
+def err_500(e):
+    log.error(f"Erro 500: {e}")
+    return jsonify({"erro": "Erro interno do servidor", "detalhe": str(e)}), 500
+
+# ── STORAGE (Supabase Storage via requests) ───────────────────
 import requests as req_lib
 
+def _checar_supabase():
+    """Valida variáveis de ambiente antes de qualquer operação de storage."""
+    if not SUPABASE_URL or not SUPABASE_SERVICE_KEY:
+        raise ValueError(
+            "Variáveis SUPABASE_URL e SUPABASE_SERVICE_KEY não configuradas. "
+            "Verifique o Environment no Render."
+        )
+
 def storage_upload(dados: bytes, path: str) -> str:
+    _checar_supabase()
     url = f"{SUPABASE_URL}/storage/v1/object/{BUCKET_NAME}/{path}"
     headers = {
         "Authorization": f"Bearer {SUPABASE_SERVICE_KEY}",
-        "Content-Type": "image/jpeg",
-        "x-upsert": "true"
+        "Content-Type":  "image/jpeg",
+        "x-upsert":      "true"
     }
-    r = req_lib.post(url, headers=headers, data=dados)
+    try:
+        r = req_lib.post(url, headers=headers, data=dados, timeout=30)
+    except req_lib.exceptions.Timeout:
+        raise RuntimeError("Storage: timeout ao tentar enviar foto")
+    except req_lib.exceptions.ConnectionError as e:
+        raise RuntimeError(f"Storage: falha de conexão com Supabase — {e}")
+
     if r.status_code not in (200, 201):
-        raise Exception(f"Storage upload falhou: {r.text}")
+        raise RuntimeError(
+            f"Storage upload falhou [{r.status_code}]: {r.text}"
+        )
     return path
 
 def storage_url(path: str, segundos: int = 3600) -> str:
-    url = f"{SUPABASE_URL}/storage/v1/object/sign/{BUCKET_NAME}/{path}"
-    headers = {"Authorization": f"Bearer {SUPABASE_SERVICE_KEY}"}
-    r = req_lib.post(url, headers=headers, json={"expiresIn": segundos})
-    if r.status_code == 200:
-        data = r.json()
-        return f"{SUPABASE_URL}/storage/v1{data.get('signedURL', '')}"
+    if not SUPABASE_URL or not SUPABASE_SERVICE_KEY or not path:
+        return ""
+    try:
+        url = f"{SUPABASE_URL}/storage/v1/object/sign/{BUCKET_NAME}/{path}"
+        headers = {"Authorization": f"Bearer {SUPABASE_SERVICE_KEY}"}
+        r = req_lib.post(url, headers=headers, json={"expiresIn": segundos}, timeout=10)
+        if r.status_code == 200:
+            data = r.json()
+            return f"{SUPABASE_URL}/storage/v1{data.get('signedURL', '')}"
+    except Exception as e:
+        log.warning(f"storage_url falhou para {path}: {e}")
     return ""
 
 def storage_delete(paths: list):
-    url = f"{SUPABASE_URL}/storage/v1/object/{BUCKET_NAME}"
-    headers = {"Authorization": f"Bearer {SUPABASE_SERVICE_KEY}"}
-    req_lib.delete(url, headers=headers, json={"prefixes": paths})
+    if not SUPABASE_URL or not SUPABASE_SERVICE_KEY or not paths:
+        return
+    try:
+        url = f"{SUPABASE_URL}/storage/v1/object/{BUCKET_NAME}"
+        headers = {"Authorization": f"Bearer {SUPABASE_SERVICE_KEY}"}
+        req_lib.delete(url, headers=headers, json={"prefixes": paths}, timeout=10)
+    except Exception as e:
+        log.warning(f"storage_delete falhou: {e}")
 
 # ── DATABASE ──────────────────────────────────────────────────
 def get_db():
@@ -288,8 +337,7 @@ def get_mes(mid):
     result = dict(m)
     result["semanas"] = []
 
-    sems = query("SELECT * FROM jardinagem.semanas WHERE mes_id=%s ORDER BY ordem",
-                 (mid,))
+    sems = query("SELECT * FROM jardinagem.semanas WHERE mes_id=%s ORDER BY ordem", (mid,))
     for s in sems:
         sd = dict(s)
         sd["pares"] = []
@@ -381,94 +429,112 @@ def del_par(pid):
 @app.route("/api/fotos/avulsa", methods=["POST"])
 @requer_perfil("admin", "luana")
 def foto_avulsa():
-    par_id = int(request.form["par_id"])
-    tipo   = request.form["tipo"]
-    file   = request.files["foto"]
+    try:
+        par_id = int(request.form["par_id"])
+        tipo   = request.form["tipo"]
+        file   = request.files["foto"]
 
-    dados = comprimir_imagem(file.read())
-    path  = storage_upload(dados, f"{datetime.now().strftime('%Y/%m')}/{uuid.uuid4().hex}.jpg")
+        dados = comprimir_imagem(file.read())
+        path  = storage_upload(dados, f"{datetime.now().strftime('%Y/%m')}/{uuid.uuid4().hex}.jpg")
 
-    antiga = query("SELECT id, storage_path FROM jardinagem.fotos WHERE par_id=%s AND tipo=%s",
-                   (par_id, tipo), fetch="one")
-    if antiga:
-        storage_delete([antiga["storage_path"]])
-        query("DELETE FROM jardinagem.fotos WHERE id=%s", (antiga["id"],), fetch="none")
+        antiga = query("SELECT id, storage_path FROM jardinagem.fotos WHERE par_id=%s AND tipo=%s",
+                       (par_id, tipo), fetch="one")
+        if antiga:
+            storage_delete([antiga["storage_path"]])
+            query("DELETE FROM jardinagem.fotos WHERE id=%s", (antiga["id"],), fetch="none")
 
-    row = query_id("""INSERT INTO jardinagem.fotos
-                      (par_id, tipo, origem, enviado_por, storage_path, filename_orig, sincronizado)
-                      VALUES (%s,%s,'desktop',%s,%s,%s,true)""",
-                   (par_id, tipo, g.usuario["sub"], path, file.filename))
-    foto = dict(row)
-    foto["url"] = storage_url(path)
-    return jsonify(foto), 201
+        row = query_id("""INSERT INTO jardinagem.fotos
+                          (par_id, tipo, origem, enviado_por, storage_path, filename_orig, sincronizado)
+                          VALUES (%s,%s,'desktop',%s,%s,%s,true)""",
+                       (par_id, tipo, g.usuario["sub"], path, file.filename))
+        foto = dict(row)
+        foto["url"] = storage_url(path)
+        return jsonify(foto), 201
+
+    except KeyError as e:
+        return jsonify({"erro": f"Campo obrigatório ausente: {e}"}), 400
+    except (ValueError, RuntimeError) as e:
+        log.error(f"foto_avulsa storage error: {e}")
+        return jsonify({"erro": str(e)}), 500
+    except Exception as e:
+        log.error(f"foto_avulsa erro inesperado: {e}")
+        return jsonify({"erro": "Erro interno ao salvar foto"}), 500
 
 # ── FOTOS MOBILE (Arthur / Breno) ────────────────────────────
 @app.route("/api/fotos/mobile", methods=["POST"])
 @verificar_token
 def foto_mobile():
-    semana_id_raw = request.form.get("semana_id", "ativa")
-    tipo          = request.form.get("tipo", "antes")
-    local_nome    = request.form.get("local_nome", "")
-    offline_id    = request.form.get("offline_id", "")
-    file          = request.files.get("foto")
+    try:
+        semana_id_raw = request.form.get("semana_id", "ativa")
+        tipo          = request.form.get("tipo", "antes")
+        local_nome    = request.form.get("local_nome", "")
+        offline_id    = request.form.get("offline_id", "")
+        file          = request.files.get("foto")
 
-    if not file:
-        return jsonify({"erro": "Foto não enviada"}), 400
+        if not file:
+            return jsonify({"erro": "Foto não enviada"}), 400
 
-    if semana_id_raw == "ativa" or not semana_id_raw:
-        hoje = date.today().isoformat()
-        row = query("SELECT id FROM jardinagem.semanas WHERE data_ini<=%s AND data_fim>=%s LIMIT 1",
-                    (hoje, hoje), fetch="one")
-        if not row:
-            return jsonify({"erro": "Nenhuma semana ativa"}), 404
-        semana_id = row["id"]
-    else:
-        semana_id = int(semana_id_raw)
+        if semana_id_raw == "ativa" or not semana_id_raw:
+            hoje = date.today().isoformat()
+            row = query("SELECT id FROM jardinagem.semanas WHERE data_ini<=%s AND data_fim>=%s LIMIT 1",
+                        (hoje, hoje), fetch="one")
+            if not row:
+                return jsonify({"erro": "Nenhuma semana ativa"}), 404
+            semana_id = row["id"]
+        else:
+            semana_id = int(semana_id_raw)
 
-    if offline_id:
-        exist = query("SELECT id FROM jardinagem.fila_sync WHERE id=%s AND processado=true",
-                      (offline_id,), fetch="one")
-        if exist:
-            return jsonify({"ok": True, "duplicado": True}), 200
+        if offline_id:
+            exist = query("SELECT id FROM jardinagem.fila_sync WHERE id=%s AND processado=true",
+                          (offline_id,), fetch="one")
+            if exist:
+                return jsonify({"ok": True, "duplicado": True}), 200
 
-    dados = comprimir_imagem(file.read(), max_px=1400, qualidade=80)
-    path  = storage_upload(dados, f"{datetime.now().strftime('%Y/%m')}/{uuid.uuid4().hex}.jpg")
+        dados = comprimir_imagem(file.read(), max_px=1400, qualidade=80)
+        path  = storage_upload(dados, f"{datetime.now().strftime('%Y/%m')}/{uuid.uuid4().hex}.jpg")
 
-    if local_nome:
-        cod = next_code(2)
-        par = query_id("INSERT INTO jardinagem.pares(semana_id,codigo_a,codigo_d,local_nome,ordem) VALUES(%s,%s,%s,%s,99)",
-                       (semana_id, cod, cod+1, local_nome))
-        par_id = par["id"]
-    else:
-        pares = query("SELECT id FROM jardinagem.pares WHERE semana_id=%s ORDER BY criado_em DESC LIMIT 10",
-                      (semana_id,))
-        par_id = None
-        for p in pares:
-            f = query("SELECT id FROM jardinagem.fotos WHERE par_id=%s AND tipo=%s",
-                      (p["id"], tipo), fetch="one")
-            if not f:
-                par_id = p["id"]
-                break
-        if not par_id:
+        if local_nome:
             cod = next_code(2)
-            par = query_id("INSERT INTO jardinagem.pares(semana_id,codigo_a,codigo_d,ordem) VALUES(%s,%s,%s,99)",
-                           (semana_id, cod, cod+1))
+            par = query_id("INSERT INTO jardinagem.pares(semana_id,codigo_a,codigo_d,local_nome,ordem) VALUES(%s,%s,%s,%s,99)",
+                           (semana_id, cod, cod+1, local_nome))
             par_id = par["id"]
+        else:
+            pares = query("SELECT id FROM jardinagem.pares WHERE semana_id=%s ORDER BY criado_em DESC LIMIT 10",
+                          (semana_id,))
+            par_id = None
+            for p in pares:
+                f = query("SELECT id FROM jardinagem.fotos WHERE par_id=%s AND tipo=%s",
+                          (p["id"], tipo), fetch="one")
+                if not f:
+                    par_id = p["id"]
+                    break
+            if not par_id:
+                cod = next_code(2)
+                par = query_id("INSERT INTO jardinagem.pares(semana_id,codigo_a,codigo_d,ordem) VALUES(%s,%s,%s,99)",
+                               (semana_id, cod, cod+1))
+                par_id = par["id"]
 
-    row = query_id("""INSERT INTO jardinagem.fotos
-                      (par_id,tipo,origem,enviado_por,storage_path,filename_orig,sincronizado)
-                      VALUES(%s,%s,'mobile',%s,%s,%s,true)""",
-                   (par_id, tipo, g.usuario["sub"], path, file.filename))
+        row = query_id("""INSERT INTO jardinagem.fotos
+                          (par_id,tipo,origem,enviado_por,storage_path,filename_orig,sincronizado)
+                          VALUES(%s,%s,'mobile',%s,%s,%s,true)""",
+                       (par_id, tipo, g.usuario["sub"], path, file.filename))
 
-    if offline_id:
-        query("""INSERT INTO jardinagem.fila_sync(id,usuario_id,semana_id,local_nome,tipo,storage_path,processado)
-                 VALUES(%s,%s,%s,%s,%s,%s,true)
-                 ON CONFLICT(id) DO UPDATE SET processado=true""",
-              (offline_id, g.usuario["sub"], semana_id, local_nome, tipo, path), fetch="none")
+        if offline_id:
+            query("""INSERT INTO jardinagem.fila_sync(id,usuario_id,semana_id,local_nome,tipo,storage_path,processado)
+                     VALUES(%s,%s,%s,%s,%s,%s,true)
+                     ON CONFLICT(id) DO UPDATE SET processado=true""",
+                  (offline_id, g.usuario["sub"], semana_id, local_nome, tipo, path), fetch="none")
 
-    foto = dict(row)
-    foto["url"] = storage_url(path)
-    return jsonify(foto), 201
+        foto = dict(row)
+        foto["url"] = storage_url(path)
+        return jsonify(foto), 201
+
+    except (ValueError, RuntimeError) as e:
+        log.error(f"foto_mobile storage error: {e}")
+        return jsonify({"erro": str(e)}), 500
+    except Exception as e:
+        log.error(f"foto_mobile erro inesperado: {e}")
+        return jsonify({"erro": "Erro interno ao salvar foto"}), 500
 
 @app.route("/api/fotos/<int:fid>", methods=["DELETE"])
 @verificar_token
@@ -500,11 +566,7 @@ def list_clientes():
     rows = query("SELECT id, nome FROM public.clientes_garra WHERE ativo=true")
     return jsonify([dict(r) for r in rows])
 
-# ── INIT ──────────────────────────────────────────────────────
-# ══════════════════════════════════════════════════════════════
-# ROTAS — RELATÓRIOS
-# ══════════════════════════════════════════════════════════════
-
+# ── RELATÓRIOS ────────────────────────────────────────────────
 def _montar_dados_semana(semana_id: int):
     """Monta estrutura completa de dados de uma semana."""
     sem = query("SELECT * FROM jardinagem.semanas WHERE id=%s", (semana_id,), fetch="one")
@@ -522,7 +584,6 @@ def _montar_dados_semana(semana_id: int):
         "data_fim": data_fim,
     }
 
-    # Pares com fotos
     pares_raw = query(
         "SELECT * FROM jardinagem.pares WHERE semana_id=%s ORDER BY ordem, id",
         (semana_id,)
@@ -540,7 +601,6 @@ def _montar_dados_semana(semana_id: int):
             "foto_depois": foto_depois,
         })
 
-    # Relatórios diários
     relatorios_raw = query(
         """SELECT r.*, u.nome as responsavel_nome
            FROM jardinagem.relatorios_diarios r
@@ -567,7 +627,6 @@ def _montar_dados_semana(semana_id: int):
 @app.route("/api/relatorios/<int:semana_id>/fotos")
 @requer_perfil("admin", "luana")
 def baixar_relatorio_fotos(semana_id):
-    """Gera e retorna o Excel de fotos da semana."""
     import sys
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
     from gerar_relatorio import gerar_relatorio_fotos
@@ -576,18 +635,20 @@ def baixar_relatorio_fotos(semana_id):
     if not semana:
         return jsonify({"erro": "Semana não encontrada"}), 404
 
-    buf = gerar_relatorio_fotos(semana, pares, SUPABASE_URL, SUPABASE_SERVICE_KEY)
-    nome = f"Relatorio-Fotos-{semana_id}.xlsx"
-
-    from flask import send_file
-    return send_file(buf, as_attachment=True, download_name=nome,
-                     mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    try:
+        buf = gerar_relatorio_fotos(semana, pares, SUPABASE_URL, SUPABASE_SERVICE_KEY)
+        nome = f"Relatorio-Fotos-{semana_id}.xlsx"
+        from flask import send_file
+        return send_file(buf, as_attachment=True, download_name=nome,
+                         mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    except Exception as e:
+        log.error(f"Erro ao gerar relatório de fotos: {e}")
+        return jsonify({"erro": f"Erro ao gerar relatório: {str(e)}"}), 500
 
 
 @app.route("/api/relatorios/<int:semana_id>/km")
 @requer_perfil("admin", "luana")
 def baixar_relatorio_km(semana_id):
-    """Gera e retorna o Excel de KM da semana."""
     import sys
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
     from gerar_relatorio import gerar_relatorio_km
@@ -596,18 +657,20 @@ def baixar_relatorio_km(semana_id):
     if not semana:
         return jsonify({"erro": "Semana não encontrada"}), 404
 
-    buf = gerar_relatorio_km(semana, relatorios)
-    nome = f"Relatorio-KM-{semana_id}.xlsx"
-
-    from flask import send_file
-    return send_file(buf, as_attachment=True, download_name=nome,
-                     mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    try:
+        buf = gerar_relatorio_km(semana, relatorios)
+        nome = f"Relatorio-KM-{semana_id}.xlsx"
+        from flask import send_file
+        return send_file(buf, as_attachment=True, download_name=nome,
+                         mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    except Exception as e:
+        log.error(f"Erro ao gerar relatório de KM: {e}")
+        return jsonify({"erro": f"Erro ao gerar relatório: {str(e)}"}), 500
 
 
 @app.route("/api/relatorios/<int:semana_id>/enviar", methods=["POST"])
 @requer_perfil("admin", "luana")
 def enviar_relatorio_email(semana_id):
-    """Gera e envia os dois relatórios por email ao cliente."""
     import sys
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
     from gerar_relatorio import gerar_relatorio_fotos, gerar_relatorio_km, enviar_relatorios_email
@@ -628,16 +691,14 @@ def enviar_relatorio_email(semana_id):
         buf_fotos = gerar_relatorio_fotos(semana, pares, SUPABASE_URL, SUPABASE_SERVICE_KEY)
         buf_km    = gerar_relatorio_km(semana, relatorios)
         enviar_relatorios_email(semana, buf_fotos, buf_km,
-                                 mail_user, mail_pass, mail_destino, mail_cc)
+                                mail_user, mail_pass, mail_destino, mail_cc)
 
-        # Registra envio no banco
         query("""INSERT INTO jardinagem.emails_enviados
                  (semana_id, destinatario, assunto, status)
                  VALUES (%s,%s,%s,'enviado')""",
               (semana_id, mail_destino,
                f"Relatório {semana['label']}"), fetch="none")
 
-        # Atualiza status da semana
         query("UPDATE jardinagem.semanas SET status='enviada', enviado_em=NOW() WHERE id=%s",
               (semana_id,), fetch="none")
 
@@ -656,7 +717,6 @@ def enviar_relatorio_email(semana_id):
 @app.route("/api/semanas/<int:sid>/status")
 @verificar_token
 def status_semana(sid):
-    """Retorna status da semana e histórico de envios."""
     sem = query("SELECT * FROM jardinagem.semanas WHERE id=%s", (sid,), fetch="one")
     if not sem:
         return jsonify({"erro": "Não encontrada"}), 404
@@ -679,14 +739,15 @@ def status_semana(sid):
     )
 
     return jsonify({
-        "semana":        dict(sem),
-        "total_pares":   total_pares["n"],
-        "total_fotos":   total_fotos["n"],
+        "semana":           dict(sem),
+        "total_pares":      total_pares["n"],
+        "total_fotos":      total_fotos["n"],
         "total_relatorios": total_relats["n"],
-        "emails":        [dict(e) for e in emails],
+        "emails":           [dict(e) for e in emails],
     })
 
 
+# ── INIT ──────────────────────────────────────────────────────
 if __name__ == "__main__":
     print("\n🌿 Garra — Sistema de Fotos Jardinagem")
     print("   Backend: Flask + PostgreSQL direto")
