@@ -629,8 +629,8 @@ function abrirMes(id){
         var fA=par.fotos.find(f=>f.tipo==='antes'),fD=par.fotos.find(f=>f.tipo==='depois');
         return{tid:tid(),dbId:par.id,codA:par.codigo_a,codD:par.codigo_d,
           nome:par.local_nome,dataLabel:par.data_label,
-          antes:fA?{src:'/thumbs/'+fA.filename,nome:fA.original,iaL:fA.ia_local||'',iaD:fA.ia_descricao||'',sid:fA.id}:null,
-          depois:fD?{src:'/thumbs/'+fD.filename,nome:fD.original,iaL:fD.ia_local||'',iaD:fD.ia_descricao||'',sid:fD.id}:null,
+          antes:fA?{src:fA.url,nome:fA.original,iaL:fA.ia_local||'',iaD:fA.ia_descricao||'',sid:fA.id}:null,
+          depois:fD?{src:fD.url,nome:fD.original,iaL:fD.ia_local||'',iaD:fD.ia_descricao||'',sid:fD.id}:null,
           salvo:true};
       })};
     });
