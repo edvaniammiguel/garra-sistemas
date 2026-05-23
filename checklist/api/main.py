@@ -83,13 +83,17 @@ async def startup():
         await conn.close()
 
 # ── EMAIL ─────────────────────────────────────────────────────
+MAIL_HOST = os.environ.get("MAIL_HOST", "smtp.hostinger.com")
+MAIL_PORT = int(os.environ.get("MAIL_PORT", "587"))
+
 def enviar_email(destino: str, assunto: str, corpo_html: str):
     msg = MIMEMultipart("alternative")
     msg["Subject"] = assunto
-    msg["From"]    = MAIL_USERNAME
+    msg["From"]    = f"Garra Terraplenagem <{MAIL_USERNAME}>"
     msg["To"]      = destino
     msg.attach(MIMEText(corpo_html, "html", "utf-8"))
-    with smtplib.SMTP("smtp.gmail.com", 587) as s:
+    with smtplib.SMTP(MAIL_HOST, MAIL_PORT) as s:
+        s.ehlo()
         s.starttls()
         s.login(MAIL_USERNAME, MAIL_PASSWORD)
         s.sendmail(MAIL_USERNAME, destino, msg.as_string())
