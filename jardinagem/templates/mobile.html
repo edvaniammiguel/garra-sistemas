@@ -449,8 +449,16 @@ window.addEventListener("offline", ()=>{ ONLINE=false; atualizarStatus(); });
 
 // ── AUTH ─────────────────────────────────────────────────────
 window.addEventListener("load", ()=>{
-  if (TOKEN && USUARIO) mostrarApp();
-  else document.getElementById("telaLogin").style.display="flex";
+  if (TOKEN && USUARIO) {
+    var p = USUARIO.perfil || "";
+    if(p==="admin"||p==="luana"){
+      window.location.href="/";
+    } else {
+      mostrarApp();
+    }
+  } else {
+    document.getElementById("telaLogin").style.display="flex";
+  }
   atualizarStatus();
   document.getElementById("kmData").value = new Date().toISOString().split("T")[0];
 });
@@ -475,7 +483,13 @@ function fazerLogin(){
     TOKEN=d.token; USUARIO={nome:d.nome,perfil:d.perfil};
     localStorage.setItem("garra_token",TOKEN);
     localStorage.setItem("garra_usuario",JSON.stringify(USUARIO));
-    mostrarApp();
+    // Admin e Luana vão para o painel desktop
+    var perfil = d.perfil || "";
+    if(perfil==="admin"||perfil==="luana"){
+      window.location.href="/";
+    } else {
+      mostrarApp();
+    }
   }).catch(()=>{erro.textContent="Erro de conexão.";});
 }
 
@@ -523,7 +537,14 @@ function carregarSemanaAtiva(){
     document.getElementById("semanaNome").textContent=d.label;
     document.getElementById("semanaBadge").textContent="✅ Aberta";
     if(d.data_ini&&d.data_fim){
-      var fmt=s=>{var p=new Date(s+"T00:00:00");return p.toLocaleDateString("pt-BR");};
+      var fmt=function(s){
+        if(!s) return "";
+        // Suporta "2026-05-22", "2026-05-22T00:00:00", objetos Date
+        var str = typeof s === "string" ? s.substring(0,10) : s;
+        var parts = str.split("-");
+        if(parts.length===3) return parts[2]+"/"+parts[1]+"/"+parts[0];
+        return s;
+      };
       document.getElementById("semanaDatas").textContent=fmt(d.data_ini)+" a "+fmt(d.data_fim);
     }
   }).catch(()=>{
