@@ -45,7 +45,8 @@ body{display:flex;flex-direction:column;max-width:480px;margin:0 auto;}
   letter-spacing:.06em;margin-bottom:3px;}
 .card-val{font-size:15px;font-weight:800;color:var(--bl);}
 .card-sub{font-size:11px;color:var(--mut);margin-top:2px;}
-.badge{font-size:10px;font-weight:700;padding:2px 10px;border-radius:99px;display:inline-block;margin-top:5px;}
+.badge{font-size:10px;font-weight:700;padding:2px 10px;border-radius:99px;
+  display:inline-block;margin-top:5px;}
 .badge-ok{background:var(--glt);color:var(--grn);}
 .badge-pend{background:#ffedd5;color:var(--or2);}
 
@@ -73,13 +74,46 @@ textarea.inp{resize:vertical;min-height:72px;}
 .inp-row{display:grid;grid-template-columns:1fr 1fr;gap:.75rem;}
 .inp-row>div{display:flex;flex-direction:column;}
 
-/* KM */
+/* KM SUGERIDO */
 .km-sugerido{background:#EFF6FF;border:1.5px solid #BFDBFE;border-radius:var(--r2);
   padding:8px 12px;margin-bottom:.75rem;font-size:11px;color:#1E3A8A;
   display:flex;align-items:center;gap:6px;}
 .km-total-calc{background:var(--glt);border:1.5px solid #BBF7D0;border-radius:var(--r2);
   padding:8px 12px;margin-bottom:.75rem;font-size:13px;font-weight:700;
   color:var(--grn);text-align:center;}
+
+/* TIPO FOTO */
+.tipo-btns{display:grid;grid-template-columns:1fr 1fr;gap:.75rem;margin-bottom:.75rem;}
+.tipo-btn{background:var(--card);border:2px solid var(--brd);border-radius:var(--r);
+  padding:1rem .75rem;text-align:center;cursor:pointer;
+  display:flex;flex-direction:column;align-items:center;gap:5px;}
+.tipo-btn.sel-antes{border-color:var(--bl2);background:#EFF6FF;}
+.tipo-btn.sel-depois{border-color:var(--or);background:#FFF7ED;}
+.tipo-ico{font-size:24px;}
+.tipo-nome{font-size:12px;font-weight:700;}
+.tipo-desc{font-size:10px;color:var(--mut);}
+
+/* CÂMERA/GALERIA */
+.midia-btns{display:grid;grid-template-columns:1fr 1fr;gap:.75rem;margin-bottom:.75rem;}
+.midia-btn{padding:14px;border:1.5px solid var(--brd);border-radius:var(--r);
+  background:var(--card);font-size:13px;font-weight:700;cursor:pointer;
+  color:var(--bl);text-align:center;display:flex;align-items:center;
+  justify-content:center;gap:6px;}
+.midia-btn:active{background:var(--bg);}
+
+/* PREVIEW */
+.preview-wrap{position:relative;margin-bottom:.75rem;}
+.preview-img{width:100%;aspect-ratio:4/3;object-fit:cover;border-radius:var(--r);
+  border:2px solid var(--brd);display:block;}
+.preview-empty{width:100%;aspect-ratio:4/3;border:2.5px dashed var(--brd);
+  border-radius:var(--r);display:flex;flex-direction:column;align-items:center;
+  justify-content:center;gap:8px;background:#F8FAFC;}
+.preview-ico{font-size:36px;color:#CBD5E1;}
+.preview-txt{font-size:12px;color:var(--mut);font-weight:600;}
+.preview-rm{position:absolute;top:8px;right:8px;background:rgba(220,38,38,.9);
+  color:#fff;border:none;border-radius:50%;width:30px;height:30px;
+  font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:center;}
+input[type=file]{display:none;}
 
 /* BOTÕES */
 .btn{width:100%;padding:14px;border:none;border-radius:var(--r);
@@ -89,57 +123,9 @@ textarea.inp{resize:vertical;min-height:72px;}
 .btn-blue:active{background:var(--bl2);transform:scale(.98);}
 .btn-or{background:var(--or);color:#fff;box-shadow:0 4px 14px rgba(232,130,12,.25);}
 .btn-or:active{background:var(--or2);transform:scale(.98);}
-.btn-grn{background:var(--grn);color:#fff;}
 .btn:disabled{background:#CBD5E1;box-shadow:none;cursor:not-allowed;}
-.btn-sm-inline{padding:6px 14px;border:none;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;}
 .spin{animation:spin 1s linear infinite;}
 @keyframes spin{to{transform:rotate(360deg);}}
-
-/* BANCADA MOBILE */
-.bancada-hdr{background:linear-gradient(90deg,#78350F,#92400E);border-radius:var(--r) var(--r) 0 0;
-  padding:10px 14px;display:flex;align-items:center;justify-content:space-between;}
-.bancada-ttl{font-size:13px;font-weight:700;color:#fff;}
-.bancada-sub{font-size:11px;color:#FDE68A;}
-.bancada-body{background:#FFFBEB;border:1.5px solid #FCD34D;border-top:none;
-  border-radius:0 0 var(--r) var(--r);padding:10px;margin-bottom:.75rem;}
-.bancada-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;}
-.bth{position:relative;border:2px solid #FCD34D;border-radius:8px;overflow:hidden;
-  background:#000;aspect-ratio:1;}
-.bth.selecionado{border-color:var(--or);border-width:3px;}
-.bth img{width:100%;height:100%;object-fit:cover;display:block;}
-.bth-tipo{position:absolute;top:3px;left:3px;font-size:9px;font-weight:700;
-  padding:2px 6px;border-radius:6px;}
-.bth-tipo.antes{background:#1E3A8A;color:#fff;}
-.bth-tipo.depois{background:var(--or);color:#fff;}
-.bth-nome{position:absolute;bottom:0;left:0;right:0;background:rgba(120,53,15,.85);
-  color:#FEF3C7;font-size:9px;padding:2px 5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-.bth-rm{position:absolute;top:2px;right:2px;background:rgba(220,38,38,.9);color:#fff;
-  border:none;border-radius:50%;width:18px;height:18px;font-size:10px;font-weight:900;
-  cursor:pointer;display:flex;align-items:center;justify-content:center;}
-
-/* SLOTS DO PAR */
-.par-card{background:var(--card);border:1.5px solid var(--brd);border-radius:var(--r);
-  margin-bottom:.75rem;overflow:hidden;}
-.par-hdr{background:var(--bl);padding:8px 12px;display:flex;align-items:center;justify-content:space-between;}
-.par-cod{font-size:11px;font-weight:700;color:var(--or);background:rgba(0,0,0,.25);
-  padding:2px 8px;border-radius:6px;}
-.par-local{font-size:12px;color:#fff;font-weight:600;}
-.par-body{padding:10px;}
-.par-slots{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;}
-.slot{border-radius:8px;overflow:hidden;border:2px dashed var(--brd);
-  aspect-ratio:1;display:flex;flex-direction:column;align-items:center;
-  justify-content:center;cursor:pointer;background:#F8FAFC;position:relative;}
-.slot.tem-foto{border-style:solid;border-color:var(--grn);}
-.slot.antes-vazio{border-color:#BFDBFE;}
-.slot.depois-vazio{border-color:#FED7AA;}
-.slot img{width:100%;height:100%;object-fit:cover;display:block;}
-.slot-lbl{font-size:10px;font-weight:700;color:var(--mut);text-transform:uppercase;}
-.slot-ico{font-size:24px;margin-bottom:4px;}
-.slot-rm{position:absolute;top:4px;right:4px;background:rgba(220,38,38,.9);color:#fff;
-  border:none;border-radius:50%;width:20px;height:20px;font-size:11px;font-weight:900;
-  cursor:pointer;display:flex;align-items:center;justify-content:center;z-index:5;}
-.par-local-input{width:100%;border:1.5px solid var(--brd);border-radius:8px;
-  padding:8px 10px;font-size:13px;background:#F8FAFC;}
 
 /* HISTÓRICO */
 .hist-item{background:var(--card);border:1.5px solid var(--brd);border-radius:var(--r2);
@@ -151,9 +137,11 @@ textarea.inp{resize:vertical;min-height:72px;}
 .hb-antes{background:#DBEAFE;color:#1E3A8A;}
 .hb-depois{background:#FFEDD5;color:#EA580C;}
 .hb-km{background:#DCFCE7;color:#16A34A;}
+.hb-ok{background:var(--glt);color:var(--grn);}
 
 /* SEÇÃO */
 .sec-title{font-size:13px;font-weight:800;color:var(--bl);margin-bottom:.75rem;}
+.sec-divider{height:1px;background:var(--brd);margin:.75rem 0;}
 
 /* LOGIN */
 .login-wrap{flex:1;display:flex;flex-direction:column;align-items:center;
@@ -198,15 +186,18 @@ textarea.inp{resize:vertical;min-height:72px;}
 .nav-ico{font-size:20px;}
 .nav-lbl{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;}
 
-/* CHIPS */
+/* CHIPS LOCAIS */
 .chip{background:#EFF6FF;color:var(--bl2);border:none;border-radius:99px;
   padding:4px 12px;font-size:11px;font-weight:600;cursor:pointer;margin:2px;}
-input[type=file]{display:none;}
+
+@media(min-width:600px){
+  .login-card{padding:3rem 2.5rem;}
+}
 </style>
 </head>
 <body>
 
-<!-- LOGIN -->
+<!-- ── LOGIN ─────────────────────────────────────────────── -->
 <div id="telaLogin" style="display:flex;flex-direction:column;flex:1;">
   <div class="login-wrap">
     <div class="login-card">
@@ -224,7 +215,8 @@ input[type=file]{display:none;}
           <div class="senha-wrap">
             <input class="login-inp" id="loginSenha" type="password"
                    placeholder="••••••••" autocomplete="current-password">
-            <button class="olho-btn" type="button" id="btnOlho" onclick="toggleSenha()">👁</button>
+            <button class="olho-btn" type="button" id="btnOlho"
+                    onclick="toggleSenha()">👁</button>
           </div>
         </div>
         <div class="login-erro" id="loginErro"></div>
@@ -234,21 +226,18 @@ input[type=file]{display:none;}
   </div>
 </div>
 
-<!-- APP -->
+<!-- ── APP ───────────────────────────────────────────────── -->
 <div id="telaApp" style="display:none;flex-direction:column;flex:1;">
 
   <header class="hdr">
     <div style="display:flex;align-items:center;gap:8px">
       <img class="hdr-logo" src="/static/icons/logo-garra.jpg" alt="Garra" style="filter:brightness(0) invert(1);">
-      <a id="linkDesktop" href="/" style="display:none;font-size:10px;font-weight:700;
-        color:#E8820C;text-decoration:none;border:1px solid #E8820C;
-        padding:3px 8px;border-radius:6px;white-space:nowrap;">🖥 Desktop</a>
+      <a id="linkDesktop" href="/" style="display:none;font-size:10px;font-weight:700;color:#E8820C;text-decoration:none;border:1px solid #E8820C;padding:3px 8px;border-radius:6px;white-space:nowrap;">Desktop</a>
     </div>
     <div class="hdr-info">
       <div style="display:flex;align-items:center;gap:6px;justify-content:flex-end;">
         <div class="hdr-nome" id="hdrNome">—</div>
-        <span id="hdrBadgeAdmin" style="display:none;font-size:9px;font-weight:700;
-          background:#E8820C;color:#fff;padding:2px 6px;border-radius:99px;">ADMIN</span>
+        <span id="hdrBadgeAdmin" style="display:none;font-size:9px;font-weight:700;background:#E8820C;color:#fff;padding:2px 6px;border-radius:99px;">ADMIN</span>
       </div>
       <div class="hdr-status">
         <div class="dot" id="statusDot"></div>
@@ -257,22 +246,15 @@ input[type=file]{display:none;}
     </div>
   </header>
 
-  <!-- TELA PRINCIPAL: FOTO + KM -->
-  <div id="mainFoto" style="flex:1;display:flex;flex-direction:column;overflow:hidden;">
+  <!-- TELA: FOTO + KM -->
+  <div class="main" id="mainFoto">
 
-    <!-- Semana + Fila + Tabs — topo fixo -->
-    <div style="padding:1rem 1rem 0;flex-shrink:0;">
     <!-- Semana ativa -->
     <div class="card" id="semanaCard">
-      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;">
-        <div style="flex:1;">
-          <div class="card-label">Semana atual</div>
-          <div class="card-val" id="semanaNome">Carregando...</div>
-          <div class="card-sub" id="semanaDatas"></div>
-          <span class="badge badge-ok" id="semanaBadge">—</span>
-        </div>
-        <button onclick="abrirModalSemanas()" style="flex-shrink:0;background:var(--bl);color:#fff;border:none;border-radius:8px;padding:6px 10px;font-size:11px;font-weight:700;cursor:pointer;">⚙️ Semanas</button>
-      </div>
+      <div class="card-label">Semana atual</div>
+      <div class="card-val" id="semanaNome">Carregando...</div>
+      <div class="card-sub" id="semanaDatas"></div>
+      <span class="badge badge-ok" id="semanaBadge">—</span>
     </div>
 
     <!-- Fila offline -->
@@ -289,65 +271,48 @@ input[type=file]{display:none;}
 
     <!-- Tabs -->
     <div class="tabs">
-      <div class="tab ativo" id="tabFoto" onclick="navPara('foto')">📷 Bancada</div>
-      <div class="tab" id="tabKm"   onclick="navPara('km')">📋 KM</div>
+      <div class="tab ativo" id="tabFoto" onclick="navPara('foto')">Bancada</div>
+      <div class="tab" id="tabKm" onclick="navPara('km')">KM</div>
     </div>
-    </div><!-- /topo-fixo -->
 
-    <!-- ══ PAINEL BANCADA ══ -->
-    <div id="painelFoto" style="display:flex;flex-direction:column;flex:1;overflow:hidden;">
+    <!-- ══ PAINEL FOTO ══ -->
+    <!-- PAINEL BANCADA -->
+    <div id="painelFoto">
 
-      <!-- Bancada -->
-      <div id="bancadaWrap" style="flex-shrink:0;padding:1rem 1rem 0;">
-        <div class="bancada-hdr">
-          <div>
-            <div class="bancada-ttl">📋 Bancada</div>
-            <div class="bancada-sub" id="bancadaCount">0 foto(s) aguardando</div>
-          </div>
+      <!-- Bancada fixa -->
+      <div style="padding:.75rem .75rem 0;flex-shrink:0;">
+        <div style="background:linear-gradient(90deg,#78350F,#92400E);border-radius:10px 10px 0 0;padding:8px 12px;display:flex;align-items:center;justify-content:space-between;">
+          <div><div style="font-size:12px;font-weight:700;color:#fff;">Bancada</div><div style="font-size:10px;color:#FDE68A;" id="bancadaCount">0 foto(s)</div></div>
           <div style="display:flex;gap:6px;">
-            <button class="btn-sm-inline" style="background:#fff;color:#92400E;"
-                    onclick="document.getElementById('fotoCamera').click()">📷</button>
-            <button class="btn-sm-inline" style="background:#fff;color:#92400E;"
-                    onclick="document.getElementById('fotoGaleria').click()">🖼️ +Fotos</button>
+            <button style="padding:5px 9px;border:none;border-radius:7px;font-size:11px;font-weight:700;cursor:pointer;background:#fff;color:#92400E;" onclick="document.getElementById('fotoCamera').click()">Camara</button>
+            <button style="padding:5px 9px;border:none;border-radius:7px;font-size:11px;font-weight:700;cursor:pointer;background:#fff;color:#92400E;" onclick="document.getElementById('fotoGaleria').click()">+ Fotos</button>
           </div>
         </div>
-        <div class="bancada-body">
-          <div id="bancadaGrid" class="bancada-grid">
-            <div style="grid-column:1/-1;text-align:center;color:#92400E;font-size:12px;padding:.5rem;">
-              Adicione fotos usando os botões acima
-            </div>
+        <div style="background:#FFFBEB;border:1.5px solid #FCD34D;border-top:none;border-radius:0 0 10px 10px;padding:8px;">
+          <div id="bancadaGrid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;">
+            <div style="grid-column:1/-1;text-align:center;color:#92400E;font-size:11px;padding:.4rem;">Adicione fotos</div>
           </div>
         </div>
       </div>
 
-      <!-- Inputs escondidos -->
-      <input type="file" id="fotoCamera"  accept="image/*" capture="environment" multiple onchange="adicionarFotos(this)">
-      <input type="file" id="fotoGaleria" accept="image/*" multiple onchange="adicionarFotos(this)">
+      <input type="file" id="fotoCamera" accept="image/*" capture="environment" multiple onchange="adicionarFotos(this)" style="display:none">
+      <input type="file" id="fotoGaleria" accept="image/*" multiple onchange="adicionarFotos(this)" style="display:none">
 
-      <!-- Pares — área scrollável -->
-      <div style="flex:1;overflow-y:auto;padding:1rem;">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.75rem;">
-        <div class="sec-title" style="margin:0;">Pares</div>
-        <button class="btn-sm-inline" style="background:var(--bl);color:#fff;"
-                onclick="adicionarPar()">+ Novo par</button>
-      </div>
-
-      <div id="paresWrap">
-        <div style="text-align:center;color:var(--mut);font-size:13px;padding:2rem 0;">
-          Adicione fotos na bancada e crie pares para organizá-las.
+      <!-- Pares scrollaveis -->
+      <div style="flex:1;overflow-y:auto;padding:.75rem;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.75rem;">
+          <div style="font-size:13px;font-weight:800;color:var(--bl);">Pares</div>
+          <div style="display:flex;gap:6px;">
+            <button onclick="adicionarPar()" style="background:var(--bl);color:#fff;border:none;border-radius:8px;padding:6px 12px;font-size:12px;font-weight:700;cursor:pointer;">+ Novo par</button>
+            <button onclick="abrirModalSemanas()" style="background:transparent;color:var(--bl);border:1.5px solid var(--bl);border-radius:8px;padding:6px 9px;font-size:11px;font-weight:700;cursor:pointer;">Semanas</button>
+          </div>
         </div>
+        <div id="paresWrap"><div style="text-align:center;color:var(--mut);font-size:13px;padding:2rem 0;">Adicione fotos e crie pares.</div></div>
+        <button id="btnSalvarTodos" onclick="salvarTodos()" style="display:none;width:100%;padding:14px;background:var(--grn);color:#fff;border:none;border-radius:10px;font-size:15px;font-weight:800;cursor:pointer;margin-top:.5rem;">Salvar todos os pares</button>
       </div>
+    </div>
 
-      <!-- Botão salvar -->
-      <button class="btn btn-grn" id="btnSalvarTodos" onclick="salvarTodos()" style="display:none;">
-        💾 Salvar todos os pares
-      </button>
-
-      </div><!-- /scroll-pares -->
-    </div><!-- /painelFoto -->
-
-    <!-- ══ PAINEL KM ══ -->
-    <div id="painelKm" style="display:none;flex:1;overflow-y:auto;padding:1rem;padding-bottom:5.5rem;">
+    <div id="painelKm" style="display:none;">
       <div class="sec-title">Registrar serviço</div>
 
       <label class="inp-label">📅 Data</label>
@@ -359,8 +324,10 @@ input[type=file]{display:none;}
              oninput="filtrarLocais(this.value,'locaisKm')">
       <div id="locaisKm" style="display:flex;flex-wrap:wrap;gap:4px;margin-top:-8px;margin-bottom:12px;"></div>
 
+      <!-- KM sugerido -->
       <div class="km-sugerido" id="kmSugerido" style="display:none;">
         💡 KM inicial sugerido: <strong id="kmSugeridoVal">—</strong>
+        (último KM final registrado)
       </div>
 
       <div class="inp-row">
@@ -376,6 +343,7 @@ input[type=file]{display:none;}
         </div>
       </div>
 
+      <!-- KM Total calculado -->
       <div class="km-total-calc" id="kmTotalDiv" style="display:none;">
         KM percorrido: <span id="kmTotalVal">0</span> km
       </div>
@@ -393,23 +361,27 @@ input[type=file]{display:none;}
 
       <label class="inp-label">📝 Observação</label>
       <textarea class="inp" id="kmObs"
-                placeholder="Descreva o serviço: capina, roçagem, limpeza..."></textarea>
+                placeholder="Descreva o serviço: capina, roçagem, limpeza, aplicação de herbicida..."></textarea>
 
+      <!-- Responsável automático -->
       <div style="background:#F0F4FF;border-radius:var(--r2);padding:10px 14px;
                   margin-bottom:.75rem;font-size:12px;color:var(--mut);">
         👤 Responsável: <strong id="kmResponsavel" style="color:var(--bl);">—</strong>
+        <span style="font-size:10px;">(pelo login)</span>
       </div>
 
       <button class="btn btn-blue" id="btnEnviarKm" onclick="enviarKm()">
         ✅ Salvar Serviço
       </button>
-    </div><!-- /painelKm -->
+    </div>
 
   </div><!-- /mainFoto -->
 
-  <!-- TELA HISTÓRICO -->
-  <div id="mainHist" style="display:none;flex:1;overflow-y:auto;padding:1rem;padding-bottom:5.5rem;">
+  <!-- TELA: HISTÓRICO -->
+  <div class="main" id="mainHist" style="display:none;">
     <div class="sec-title">Meu histórico hoje</div>
+
+    <!-- Resumo do dia -->
     <div class="card" id="resumoDia" style="display:none;">
       <div style="display:flex;justify-content:space-between;align-items:center;">
         <div>
@@ -422,18 +394,21 @@ input[type=file]{display:none;}
         </div>
       </div>
     </div>
+
     <div id="listaHist">
-      <div style="color:var(--mut);font-size:13px;text-align:center;padding:2rem;">Carregando...</div>
+      <div style="color:var(--mut);font-size:13px;text-align:center;padding:2rem;">
+        Carregando...
+      </div>
     </div>
   </div>
 
   <!-- NAV -->
   <nav class="nav">
     <button class="nav-btn ativo" id="navFoto" onclick="navPara('foto')">
-      <div class="nav-ico">📷</div><div class="nav-lbl">Bancada</div>
+      <div class="nav-ico">Cam</div><div class="nav-lbl">Bancada</div>
     </button>
     <button class="nav-btn" id="navKm" onclick="navPara('km')">
-      <div class="nav-ico">📋</div><div class="nav-lbl">KM</div>
+      <div class="nav-ico">KM</div><div class="nav-lbl">KM</div>
     </button>
     <button class="nav-btn" id="navHist" onclick="navPara('hist')">
       <div class="nav-ico">🗂</div><div class="nav-lbl">Histórico</div>
@@ -451,26 +426,22 @@ input[type=file]{display:none;}
 var TOKEN    = localStorage.getItem("garra_token") || "";
 var USUARIO  = JSON.parse(localStorage.getItem("garra_usuario") || "null");
 var SEMANA   = null;
+var TIPO     = "antes";
+var FOTO     = null;
 var LOCAIS   = JSON.parse(localStorage.getItem("locais_garra") || "[]");
 var ONLINE   = navigator.onLine;
+var TAB      = "foto";
 var ULTIMO_KM = parseFloat(localStorage.getItem("ultimo_km") || "0");
-
-// ── BANCADA ──────────────────────────────────────────────────
-// Cada item: { id, src (dataURL), nome, tipo ('antes'|'depois'|null), parId (null) }
-var BANCADA = [];
-// Cada par: { id, codA, codD, local, antes(item|null), depois(item|null), dbId(null) }
-var PARES   = [];
-var PAR_SEQ = 0;
 
 // ── PWA ──────────────────────────────────────────────────────
 if ("serviceWorker" in navigator) {
-  navigator.serviceWorker.register("/sw.js").catch(function(){});
+  navigator.serviceWorker.register("/sw.js").catch(()=>{});
 }
-window.addEventListener("online",  function(){ ONLINE=true;  atualizarStatus(); sincronizarAgora(); });
-window.addEventListener("offline", function(){ ONLINE=false; atualizarStatus(); });
+window.addEventListener("online",  ()=>{ ONLINE=true;  atualizarStatus(); sincronizarAgora(); });
+window.addEventListener("offline", ()=>{ ONLINE=false; atualizarStatus(); });
 
 // ── AUTH ─────────────────────────────────────────────────────
-window.addEventListener("load", function(){
+window.addEventListener("load", ()=>{
   if (TOKEN && USUARIO) {
     mostrarApp();
   } else {
@@ -494,34 +465,42 @@ function fazerLogin(){
   erro.textContent="";
   fetch("/api/login",{method:"POST",headers:{"Content-Type":"application/json"},
     body:JSON.stringify({email,senha})})
-  .then(function(r){return r.json();})
-  .then(function(d){
+  .then(r=>r.json())
+  .then(d=>{
     if(d.erro){erro.textContent=d.erro;return;}
-    TOKEN=d.token;
-    USUARIO={nome:d.nome,perfil:d.perfil};
+    TOKEN=d.token; USUARIO={nome:d.nome,perfil:d.perfil};
     localStorage.setItem("garra_token",TOKEN);
     localStorage.setItem("garra_usuario",JSON.stringify(USUARIO));
-    mostrarApp();
-  }).catch(function(){erro.textContent="Erro de conexão.";});
+    // Admin e Luana vão para o painel desktop
+    var perfil = d.perfil || "";
+    if(perfil==="admin"||perfil==="luana"){
+      window.location.href="/";
+    } else {
+      mostrarApp();
+    }
+  }).catch(()=>{erro.textContent="Erro de conexão.";});
 }
 
 function mostrarApp(){
   document.getElementById("telaLogin").style.display="none";
   document.getElementById("telaApp").style.display="flex";
   document.getElementById("hdrNome").textContent=USUARIO?.nome||"—";
+  var _isAdm=(USUARIO?.perfil==="admin"||USUARIO?.perfil==="luana");
+  var _bEl=document.getElementById("hdrBadgeAdmin");
+  var _lEl=document.getElementById("linkDesktop");
+  if(_bEl) _bEl.style.display=_isAdm?"inline-block":"none";
+  if(_lEl) _lEl.style.display=_isAdm?"inline-block":"none";
   document.getElementById("kmResponsavel").textContent=USUARIO?.nome||"—";
-  var isAdmin=(USUARIO?.perfil==="admin"||USUARIO?.perfil==="luana");
-  document.getElementById("hdrBadgeAdmin").style.display=isAdmin?"inline-block":"none";
-  document.getElementById("linkDesktop").style.display=isAdmin?"inline-block":"none";
   carregarSemanaAtiva();
   atualizarStatus();
   preencherKmSugerido();
+  filtrarLocais("","locaisF");
   filtrarLocais("","locaisKm");
-  navPara("foto");
+  selecionarTipo("antes");
 }
 
 function sair(){
-  fetch("/api/logout",{method:"POST"}).catch(function(){});
+  fetch("/api/logout",{method:"POST"}).catch(()=>{});
   TOKEN=""; USUARIO=null;
   localStorage.removeItem("garra_token");
   localStorage.removeItem("garra_usuario");
@@ -539,12 +518,12 @@ function atualizarStatus(){
 // ── SEMANA ────────────────────────────────────────────────────
 function carregarSemanaAtiva(){
   fetch("/api/semanas/ativa",{headers:{"Authorization":"Bearer "+TOKEN}})
-  .then(function(r){return r.json();})
-  .then(function(d){
+  .then(r=>r.json())
+  .then(d=>{
     if(d.erro){
       document.getElementById("semanaNome").textContent="Sem semana ativa";
-      document.getElementById("semanaBadge").className="badge badge-pend";
       document.getElementById("semanaBadge").textContent="Contate o admin";
+      document.getElementById("semanaBadge").className="badge badge-pend";
       return;
     }
     SEMANA=d;
@@ -553,284 +532,45 @@ function carregarSemanaAtiva(){
     if(d.data_ini&&d.data_fim){
       var fmt=function(s){
         if(!s) return "";
-        var str=typeof s==="string"?s.substring(0,10):s;
-        var parts=str.split("-");
+        // Suporta "2026-05-22", "2026-05-22T00:00:00", objetos Date
+        var str = typeof s === "string" ? s.substring(0,10) : s;
+        var parts = str.split("-");
         if(parts.length===3) return parts[2]+"/"+parts[1]+"/"+parts[0];
         return s;
       };
       document.getElementById("semanaDatas").textContent=fmt(d.data_ini)+" a "+fmt(d.data_fim);
     }
-  }).catch(function(){
+  }).catch(()=>{
     document.getElementById("semanaNome").textContent="Offline";
     document.getElementById("semanaBadge").className="badge badge-pend";
     document.getElementById("semanaBadge").textContent="Modo offline";
   });
 }
 
-// ── NAVEGAÇÃO ─────────────────────────────────────────────────
-function navPara(tela){
-  document.getElementById("mainFoto").style.display=tela==="foto"||tela==="km"?"block":"none";
-  document.getElementById("mainHist").style.display=tela==="hist"?"block":"none";
-  document.getElementById("painelFoto").style.display=tela==="foto"?"block":"none";
-  document.getElementById("painelKm").style.display=tela==="km"?"block":"none";
-  // tabs
-  document.getElementById("tabFoto").className="tab"+(tela==="foto"?" ativo":"");
-  document.getElementById("tabKm").className="tab"+(tela==="km"?" ativo":"");
-  // nav btns
-  ["navFoto","navKm","navHist"].forEach(function(id){
-    document.getElementById(id).className="nav-btn";
-  });
-  if(tela==="foto") document.getElementById("navFoto").className="nav-btn ativo";
-  if(tela==="km")   document.getElementById("navKm").className="nav-btn ativo";
-  if(tela==="hist"){document.getElementById("navHist").className="nav-btn ativo";carregarHistorico();}
-  if(tela==="km") preencherKmSugerido();
-}
-
-// ── BANCADA MOBILE ────────────────────────────────────────────
-function adicionarFotos(input){
-  var files = Array.from(input.files);
-  if(!files.length) return;
-  var lidas=0;
-  files.forEach(function(file){
-    var r=new FileReader();
-    r.onload=function(e){
-      BANCADA.push({
-        id: "b"+Date.now()+Math.random(),
-        src: e.target.result,
-        nome: file.name,
-        tipo: null,
-        parId: null
-      });
-      lidas++;
-      if(lidas===files.length){
-        renderBancada();
-        toast("✅ "+files.length+" foto(s) adicionada(s) à bancada");
-      }
-    };
-    r.readAsDataURL(file);
-  });
-  input.value="";
-}
-
-function renderBancada(){
-  var grid=document.getElementById("bancadaGrid");
-  var count=document.getElementById("bancadaCount");
-  var livres=BANCADA.filter(function(f){return !f.parId;});
-  count.textContent=livres.length+" foto(s) aguardando";
-
-  if(!livres.length){
-    grid.innerHTML='<div style="grid-column:1/-1;text-align:center;color:#92400E;font-size:12px;padding:.5rem;">Bancada vazia</div>';
-  } else {
-    grid.innerHTML=livres.map(function(f){
-      return '<div class="bth" id="bth_'+f.id+'">'
-        +'<img src="'+f.src+'" alt="">'
-        +(f.tipo?'<span class="bth-tipo '+f.tipo+'">'+(f.tipo==="antes"?"ANT":"DEP")+'</span>':"")
-        +'<div class="bth-nome">'+esc(f.nome)+'</div>'
-        +'<button class="bth-rm" onclick="rmBancada(\''+f.id+'\')">✕</button>'
-        +'</div>';
-    }).join("");
-  }
-  renderBotaoSalvar();
-}
-
-function rmBancada(id){
-  BANCADA=BANCADA.filter(function(f){return f.id!==id;});
-  renderBancada();
-}
-
-// ── PARES ─────────────────────────────────────────────────────
-function adicionarPar(){
-  PAR_SEQ++;
-  PARES.push({id:"p"+PAR_SEQ,local:ULTIMO_LOCAL,antes:null,depois:null,dbId:null,salvo:false});
-  renderPares();
-}
-
-function renderPares(){
-  var wrap=document.getElementById("paresWrap");
-  if(!PARES.length){
-    wrap.innerHTML='<div style="text-align:center;color:var(--mut);font-size:13px;padding:2rem 0;">Adicione fotos na bancada e crie pares.</div>';
-    renderBotaoSalvar();
-    return;
-  }
-  wrap.innerHTML=PARES.map(function(par,pi){
-    var antesHtml=par.antes
-      ?'<div class="slot tem-foto" onclick="devolverSlot(\''+par.id+'\',\'antes\')">'
-        +'<img src="'+par.antes.src+'">'
-        +'<button class="slot-rm" onclick="event.stopPropagation();devolverSlot(\''+par.id+'\',\'antes\')">↩</button>'
-        +'</div>'
-      :'<div class="slot antes-vazio" onclick="encaixarDaBancada(\''+par.id+'\',\'antes\')">'
-        +'<div class="slot-ico">🔵</div><div class="slot-lbl">ANTES</div>'
-        +'</div>';
-    var depoisHtml=par.depois
-      ?'<div class="slot tem-foto" onclick="devolverSlot(\''+par.id+'\',\'depois\')">'
-        +'<img src="'+par.depois.src+'">'
-        +'<button class="slot-rm" onclick="event.stopPropagation();devolverSlot(\''+par.id+'\',\'depois\')">↩</button>'
-        +'</div>'
-      :'<div class="slot depois-vazio" onclick="encaixarDaBancada(\''+par.id+'\',\'depois\')">'
-        +'<div class="slot-ico">🟠</div><div class="slot-lbl">DEPOIS</div>'
-        +'</div>';
-    var salvoTag=par.salvo?'<span style="font-size:10px;background:var(--glt);color:var(--grn);padding:2px 8px;border-radius:99px;font-weight:700;">✅ salvo</span>':"";
-    return '<div class="par-card" id="par_'+par.id+'">'
-      +'<div class="par-hdr">'
-      +'<span class="par-cod">#'+pi+'</span>'
-      +salvoTag
-      +'<button onclick="deletarPar(\''+par.id+'\')" style="background:rgba(220,38,38,.2);color:#fff;border:none;border-radius:6px;padding:3px 8px;font-size:11px;cursor:pointer;">✕</button>'
-      +'</div>'
-      +'<div class="par-body">'
-      +'<div class="par-slots">'+antesHtml+depoisHtml+'</div>'
-      +'<input class="par-local-input" placeholder="📍 Nome do local..." value="'+esc(par.local)+'"'
-      +' oninput="atualizarLocalReplica(\''+par.id+'\',this.value)">'
-      +'</div>'
-      +'</div>';
-  }).join("");
-  renderBotaoSalvar();
-}
-
-function atualizarLocal(parId,val){
-  var par=PARES.find(function(p){return p.id===parId;});
-  if(par) par.local=val;
-}
-
-function encaixarDaBancada(parId,tipo){
-  // Pega primeira foto livre da bancada
-  var f=BANCADA.find(function(f){return !f.parId;});
-  if(!f){toast("Bancada vazia! Adicione fotos primeiro.");return;}
-  var par=PARES.find(function(p){return p.id===parId;});
-  if(!par) return;
-  if(par[tipo]){toast("Slot já ocupado. Remova a foto atual primeiro.");return;}
-  f.parId=parId;
-  f.tipo=tipo;
-  par[tipo]=f;
-  par.salvo=false;
-  renderBancada();
-  renderPares();
-}
-
-function devolverSlot(parId,tipo){
-  var par=PARES.find(function(p){return p.id===parId;});
-  if(!par||!par[tipo]) return;
-  var f=par[tipo];
-  f.parId=null;
-  f.tipo=null;
-  par[tipo]=null;
-  par.salvo=false;
-  BANCADA.push(f);
-  renderBancada();
-  renderPares();
-}
-
-function deletarPar(parId){
-  var par=PARES.find(function(p){return p.id===parId;});
-  if(!par) return;
-  // Devolve fotos à bancada
-  ["antes","depois"].forEach(function(tipo){
-    if(par[tipo]){par[tipo].parId=null;par[tipo].tipo=null;}
-  });
-  PARES=PARES.filter(function(p){return p.id!==parId;});
-  renderBancada();
-  renderPares();
-}
-
-function renderBotaoSalvar(){
-  var btn=document.getElementById("btnSalvarTodos");
-  var temPendente=PARES.some(function(p){return !p.salvo&&(p.antes||p.depois);});
-  btn.style.display=temPendente?"flex":"none";
-}
-
-// ── SALVAR TODOS ──────────────────────────────────────────────
-async function salvarTodos(){
-  if(!SEMANA){toast("Sem semana ativa!");return;}
-  var pendentes=PARES.filter(function(p){return !p.salvo&&(p.antes||p.depois);});
-  if(!pendentes.length){toast("Nada para salvar.");return;}
-  var btn=document.getElementById("btnSalvarTodos");
-  btn.disabled=true;
-  btn.innerHTML='<span class="spin">⟳</span> Salvando '+pendentes.length+' par(es)...';
-  var ok=0,erros=0;
-  for(var par of pendentes){
-    try{
-      await salvarPar(par);
-      ok++;
-    } catch(e){
-      erros++;
-      console.error("Erro par",par.id,e);
-    }
-  }
-  btn.disabled=false;
-  btn.innerHTML="💾 Salvar todos os pares";
-  if(erros===0){
-    toast("✅ "+ok+" par(es) salvo(s) com sucesso!");
-  } else {
-    toast("⚠️ "+ok+" salvos, "+erros+" com erro.");
-  }
-  renderPares();
-}
-
-async function salvarPar(par){
-  // 1. Criar par no banco se ainda não tem dbId
-  if(!par.dbId){
-    var resp=await fetch("/api/pares",{
-      method:"POST",
-      headers:{"Content-Type":"application/json","Authorization":"Bearer "+TOKEN},
-      body:JSON.stringify({
-        semana_id:SEMANA.id,
-        local_nome:par.local||"",
-        data_label:"",
-        ordem:99
-      })
-    });
-    if(!resp.ok) throw new Error("Erro ao criar par: "+resp.status);
-    var data=await resp.json();
-    par.dbId=data.id;
-  }
-  // 2. Enviar fotos
-  for(var tipo of ["antes","depois"]){
-    var f=par[tipo];
-    if(!f||f.sid) continue;
-    var blob=b64toBlob(f.src);
-    var fd=new FormData();
-    fd.append("par_id",par.dbId);
-    fd.append("tipo",tipo);
-    fd.append("foto",blob,f.nome||tipo+".jpg");
-    var resp2=await fetch("/api/fotos/avulsa",{
-      method:"POST",
-      headers:{"Authorization":"Bearer "+TOKEN},
-      body:fd
-    });
-    if(!resp2.ok) throw new Error("Erro ao enviar foto "+tipo);
-    var fdata=await resp2.json();
-    f.sid=fdata.id;
-  }
-  // 3. Atualizar local se informado
-  if(par.local&&par.dbId){
-    await fetch("/api/pares/"+par.dbId,{
-      method:"PATCH",
-      headers:{"Content-Type":"application/json","Authorization":"Bearer "+TOKEN},
-      body:JSON.stringify({local_nome:par.local})
-    });
-  }
-  par.salvo=true;
-}
-
-function b64toBlob(d){
-  var p=d.split(","),m=p[0].match(/:(.*?);/)[1],b=atob(p[1]),a=new Uint8Array(b.length);
-  for(var i=0;i<b.length;i++) a[i]=b.charCodeAt(i);
-  return new Blob([a],{type:m});
+// ── TABS ──────────────────────────────────────────────────────
+function mudarTab(tab){
+  TAB=tab;
+  document.getElementById("painelFoto").style.display=tab==="foto"?"block":"none";
+  document.getElementById("painelKm").style.display=tab==="km"?"block":"none";
+  document.getElementById("tabFoto").className="tab"+(tab==="foto"?" ativo":"");
+  document.getElementById("tabKm").className="tab"+(tab==="km"?" ativo":"");
+  if(tab==="km") preencherKmSugerido();
 }
 
 // ── LOCAIS ────────────────────────────────────────────────────
 function filtrarLocais(q,containerId){
   var wrap=document.getElementById(containerId);
   if(!wrap) return;
-  var lista=q?LOCAIS.filter(function(l){return l.toLowerCase().includes(q.toLowerCase());}):LOCAIS.slice(0,6);
-  wrap.innerHTML=lista.map(function(l){
-    return '<button class="chip" onclick="selecionarLocal(\''+l.replace(/'/g,"\\'")
-      +'\',\''+containerId+'\')">📍 '+l+'</button>';
-  }).join("");
+  var lista=q?LOCAIS.filter(l=>l.toLowerCase().includes(q.toLowerCase())):LOCAIS.slice(0,6);
+  wrap.innerHTML=lista.map(l=>
+    '<button class="chip" onclick="selecionarLocal(\''+l.replace(/'/g,"\\'")
+    +'\',\''+containerId+'\')">📍 '+l+'</button>'
+  ).join("");
 }
 
 function selecionarLocal(nome,containerId){
-  var campo=containerId==="locaisKm"?"kmLocal":null;
-  if(campo) document.getElementById(campo).value=nome;
+  var campo=containerId==="locaisF"?"fotoLocal":"kmLocal";
+  document.getElementById(campo).value=nome;
   document.getElementById(containerId).innerHTML="";
 }
 
@@ -841,7 +581,7 @@ function salvarLocal(nome){
   localStorage.setItem("locais_garra",JSON.stringify(LOCAIS));
 }
 
-// ── KM ────────────────────────────────────────────────────────
+// ── KM SUGERIDO ────────────────────────────────────────────────
 function preencherKmSugerido(){
   if(ULTIMO_KM>0){
     document.getElementById("kmSugerido").style.display="flex";
@@ -864,6 +604,97 @@ function calcKmTotal(){
   }
 }
 
+// ── FOTO ──────────────────────────────────────────────────────
+function selecionarTipo(tipo){
+  TIPO=tipo;
+  document.getElementById("btnAntes").className="tipo-btn"+(tipo==="antes"?" sel-antes":"");
+  document.getElementById("btnDepois").className="tipo-btn"+(tipo==="depois"?" sel-depois":"");
+  validarFoto();
+}
+
+function fotoSelecionada(input){
+  var file=input.files[0]; if(!file) return;
+  var reader=new FileReader();
+  reader.onload=function(e){
+    FOTO={blob:file,dataUrl:e.target.result,filename:file.name};
+    document.getElementById("previewImg").src=e.target.result;
+    document.getElementById("previewImg").style.display="block";
+    document.getElementById("previewEmpty").style.display="none";
+    document.getElementById("previewRm").style.display="flex";
+    validarFoto();
+  };
+  reader.readAsDataURL(file);
+  input.value="";
+}
+
+function removerFoto(){
+  FOTO=null;
+  document.getElementById("previewImg").style.display="none";
+  document.getElementById("previewEmpty").style.display="flex";
+  document.getElementById("previewRm").style.display="none";
+  validarFoto();
+}
+
+function validarFoto(){
+  document.getElementById("btnEnviarFoto").disabled=!(TIPO&&FOTO);
+}
+
+async function enviarFoto(){
+  if(!FOTO) return;
+  var btn=document.getElementById("btnEnviarFoto");
+  var local=document.getElementById("fotoLocal").value.trim();
+  btn.disabled=true;
+  btn.innerHTML='<span class="spin">⟳</span> Enviando...';
+
+  if(ONLINE){
+    try{
+      var form=new FormData();
+      form.append("foto",FOTO.blob,FOTO.filename);
+      form.append("tipo",TIPO);
+      form.append("local_nome",local);
+      form.append("semana_id",SEMANA?.id||"ativa");
+      form.append("offline_id",crypto.randomUUID());
+      var resp=await fetch("/api/fotos/mobile",{
+        method:"POST",body:form,headers:{"Authorization":"Bearer "+TOKEN}
+      });
+      if(resp.ok){salvarLocal(local);toast("✅ Foto registrada!");resetFoto();}
+      else{var e=await resp.json();toast("Erro: "+(e.erro||"tente novamente"));}
+    }catch(e){await salvarFotoOffline(local);}
+  } else {
+    await salvarFotoOffline(local);
+  }
+  btn.disabled=false;
+  btn.innerHTML="📷 Registrar Foto";
+  validarFoto();
+}
+
+async function salvarFotoOffline(local){
+  var canvas=document.createElement("canvas");
+  var img=new Image();
+  await new Promise(r=>{img.onload=r;img.src=FOTO.dataUrl;});
+  var MAX=1200,w=img.width,h=img.height;
+  if(w>MAX||h>MAX){if(w>h){h=Math.round(h*MAX/w);w=MAX;}else{w=Math.round(w*MAX/h);h=MAX;}}
+  canvas.width=w;canvas.height=h;
+  canvas.getContext("2d").drawImage(img,0,0,w,h);
+  var b64=canvas.toDataURL("image/jpeg",0.8).split(",")[1];
+  await dbPut("fila_fotos",{
+    offline_id:crypto.randomUUID(),dados_b64:b64,
+    filename:FOTO.filename||"foto.jpg",tipo:TIPO,
+    local_nome:local,semana_id:SEMANA?.id||"",
+    token:TOKEN,enviado:false,criado_em:new Date().toISOString()
+  });
+  salvarLocal(local);
+  toast("📱 Foto salva! Enviará com Wi-Fi.");
+  resetFoto();
+}
+
+function resetFoto(){
+  removerFoto();
+  document.getElementById("fotoLocal").value="";
+  document.getElementById("locaisF").innerHTML="";
+}
+
+// ── KM ────────────────────────────────────────────────────────
 async function enviarKm(){
   var data   = document.getElementById("kmData").value;
   var local  = document.getElementById("kmLocal").value.trim();
@@ -873,19 +704,19 @@ async function enviarKm(){
   var hrFim  = document.getElementById("kmHrFim").value;
   var obs    = document.getElementById("kmObs").value.trim();
 
-  if(!local){toast("Informe o nome do local.");return;}
-  if(!kmIni){toast("Informe o KM inicial.");return;}
-  if(!kmFin||kmFin<=kmIni){toast("KM final deve ser maior que o inicial.");return;}
+  if(!local){ toast("Informe o nome do local."); return; }
+  if(!kmIni){ toast("Informe o KM inicial."); return; }
+  if(!kmFin||kmFin<=kmIni){ toast("KM final deve ser maior que o inicial."); return; }
 
   var btn=document.getElementById("btnEnviarKm");
   btn.disabled=true;
   btn.innerHTML='<span class="spin">⟳</span> Salvando...';
 
   var payload={
-    semana_id:SEMANA?.id||null,
-    data,local_nome:local,
-    km_inicial:kmIni,km_final:kmFin,
-    hora_inicio:hrIni||null,hora_fim:hrFim||null,
+    semana_id: SEMANA?.id||null,
+    data, local_nome:local,
+    km_inicial:kmIni, km_final:kmFin,
+    hora_inicio:hrIni||null, hora_fim:hrFim||null,
     observacao:obs
   };
 
@@ -903,6 +734,7 @@ async function enviarKm(){
   }
 
   if(!ok){
+    // Salva offline
     await dbPut("fila_km",Object.assign({},payload,{
       offline_id:crypto.randomUUID(),token:TOKEN,
       enviado:false,criado_em:new Date().toISOString()
@@ -913,9 +745,11 @@ async function enviarKm(){
     salvarLocal(local);
   }
 
+  // Atualiza último KM
   ULTIMO_KM=kmFin;
   localStorage.setItem("ultimo_km",kmFin);
 
+  // Limpa formulário mas mantém data e km inicial como sugestão
   document.getElementById("kmLocal").value="";
   document.getElementById("kmIni").value=kmFin;
   document.getElementById("kmFin").value="";
@@ -933,10 +767,31 @@ async function enviarKm(){
 // ── SINCRONIZAR ────────────────────────────────────────────────
 async function sincronizarAgora(){
   if(!ONLINE){toast("Sem conexão.");return;}
+  var pendFotos=await dbGetPendentes("fila_fotos");
   var pendKm=await dbGetPendentes("fila_km");
-  if(!pendKm.length){toast("Nada para sincronizar.");return;}
-  toast("Sincronizando "+pendKm.length+" item(s)...");
+  var total=pendFotos.length+pendKm.length;
+  if(!total){toast("Nada para sincronizar.");return;}
+
+  toast("Sincronizando "+total+" item(s)...");
   var ok=0;
+
+  for(var item of pendFotos){
+    try{
+      var bytes=Uint8Array.from(atob(item.dados_b64),c=>c.charCodeAt(0));
+      var blob=new Blob([bytes],{type:"image/jpeg"});
+      var form=new FormData();
+      form.append("foto",blob,item.filename);
+      form.append("tipo",item.tipo);
+      form.append("local_nome",item.local_nome||"");
+      form.append("semana_id",item.semana_id||"ativa");
+      form.append("offline_id",item.offline_id);
+      var resp=await fetch("/api/fotos/mobile",{
+        method:"POST",body:form,headers:{"Authorization":"Bearer "+TOKEN}
+      });
+      if(resp.ok){await dbMarcarEnviado("fila_fotos",item.offline_id);ok++;}
+    }catch(e){}
+  }
+
   for(var item of pendKm){
     try{
       var resp=await fetch("/api/relatorios/km",{
@@ -947,18 +802,22 @@ async function sincronizarAgora(){
       if(resp.ok){await dbMarcarEnviado("fila_km",item.offline_id);ok++;}
     }catch(e){}
   }
-  toast("✅ "+ok+"/"+pendKm.length+" enviados.");
+
+  toast("✅ "+ok+"/"+total+" enviados.");
   atualizarFilaUI();
 }
 
 async function atualizarFilaUI(){
   try{
+    var f=await dbGetPendentes("fila_fotos");
     var k=await dbGetPendentes("fila_km");
-    var n=k.length;
+    var n=f.length+k.length;
     var card=document.getElementById("filaCard");
     var info=document.getElementById("filaInfo");
-    if(n>0){card.style.display="block";info.textContent=n+" KM(s) aguardando Wi-Fi.";}
-    else card.style.display="none";
+    if(n>0){
+      card.style.display="block";
+      info.textContent=n+" item(s) aguardando Wi-Fi.";
+    } else card.style.display="none";
   }catch(e){}
 }
 
@@ -971,60 +830,70 @@ function carregarHistorico(){
   fetch("/api/historico/hoje?semana_id="+SEMANA.id,{
     headers:{"Authorization":"Bearer "+TOKEN}
   })
-  .then(function(r){return r.json();})
-  .then(function(d){
+  .then(r=>r.json())
+  .then(d=>{
     if(!d||(!d.fotos?.length&&!d.km?.length)){
       lista.innerHTML='<div style="color:var(--mut);font-size:13px;text-align:center;padding:2rem;">Nenhum registro hoje.</div>';
       return;
     }
+
     var kmTotal=0;
     var html="";
 
     if(d.fotos?.length){
-      html+='<div class="sec-title">📷 Fotos ('+d.fotos.length+')</div>';
-      var grupos={};
+      html+='<div class="sec-title" style="font-size:12px;">📷 Fotos ('+d.fotos.length+')</div>';
       d.fotos.forEach(function(f){
-        var l=f.local_nome||"Sem local";
-        if(!grupos[l]) grupos[l]=[];
-        grupos[l].push(f);
-      });
-      Object.keys(grupos).forEach(function(local){
-        var fotos=grupos[local];
-        var antes=fotos.filter(function(f){return f.tipo==="antes";}).length;
-        var depois=fotos.filter(function(f){return f.tipo==="depois";}).length;
-        html+='<div class="hist-item">'
-          +'<div class="hist-local">📍 '+esc(local)+'</div>'
-          +'<div class="hist-badges">'
-          +(antes?'<span class="hb hb-antes">'+antes+' antes</span>':"")
-          +(depois?'<span class="hb hb-depois">'+depois+' depois</span>':"")
-          +'</div></div>';
+        html+='<div class="hist-item">';
+        html+='<div class="hist-local">'+(f.local_nome||"Sem nome")+'</div>';
+        html+='<div class="hist-meta">'+new Date(f.criado_em).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"})+'</div>';
+        html+='<div class="hist-badges"><span class="hb '+(f.tipo==="antes"?"hb-antes":"hb-depois")+'">'+f.tipo.toUpperCase()+'</span><span class="hb hb-ok">✓</span></div>';
+        html+='</div>';
       });
     }
 
     if(d.km?.length){
-      html+='<div class="sec-title" style="margin-top:1rem;">📋 KM ('+d.km.length+' registros)</div>';
+      html+='<div class="sec-title" style="font-size:12px;margin-top:.75rem;">📋 Serviços ('+d.km.length+')</div>';
       d.km.forEach(function(r){
-        kmTotal+=r.km_percorrido||0;
-        html+='<div class="hist-item">'
-          +'<div class="hist-local">📍 '+esc(r.local||"Sem local")+'</div>'
-          +'<div class="hist-meta">KM: '+r.km_inicial+' → '+r.km_final
-          +' | +'+(r.km_percorrido||0).toFixed(1)+' km</div>'
-          +(r.hora_inicio||r.hora_fim?'<div class="hist-meta">⏰ '+(r.hora_inicio||"?")+'–'+(r.hora_fim||"?")+'</div>':"")
-          +(r.obs?'<div class="hist-meta">'+esc(r.obs)+'</div>':"")
-          +'<span class="hb hb-km">KM</span>'
-          +'</div>';
+        var km=(r.km_final||0)-(r.km_inicial||0);
+        kmTotal+=km;
+        html+='<div class="hist-item">';
+        html+='<div class="hist-local">'+(r.local_nome||"Sem nome")+'</div>';
+        html+='<div class="hist-meta">'+(r.hora_inicio||"")+(r.hora_fim?" → "+r.hora_fim:"")+'</div>';
+        html+='<div class="hist-badges">';
+        html+='<span class="hb hb-km">+'+km.toFixed(0)+' km</span>';
+        if(r.observacao) html+='<span class="hb" style="background:#F0F4FF;color:var(--bl);">📝</span>';
+        html+='</div></div>';
       });
+
+      var resumo=document.getElementById("resumoDia");
+      resumo.style.display="block";
+      document.getElementById("resumoKm").textContent=kmTotal.toFixed(0)+" km";
+      document.getElementById("resumoRegistros").textContent=d.km.length;
     }
 
     lista.innerHTML=html;
-
-    var resumo=document.getElementById("resumoDia");
-    resumo.style.display="block";
-    document.getElementById("resumoKm").textContent=kmTotal.toFixed(1)+" km";
-    document.getElementById("resumoRegistros").textContent=(d.fotos?.length||0)+(d.km?.length||0);
-  }).catch(function(){
-    lista.innerHTML='<div style="color:var(--mut);font-size:13px;text-align:center;padding:2rem;">Erro ao carregar histórico.</div>';
+  })
+  .catch(function(){
+    lista.innerHTML='<div style="color:var(--mut);font-size:13px;text-align:center;padding:1rem;">Erro ao carregar.</div>';
   });
+}
+
+// ── NAVEGAÇÃO ─────────────────────────────────────────────────
+function navPara(tela){
+  document.getElementById("mainFoto").style.display=tela==="foto"?"block":"none";
+  document.getElementById("mainHist").style.display=tela==="hist"?"block":"none";
+  document.getElementById("navFoto").className="nav-btn"+(tela==="foto"?" ativo":"");
+  document.getElementById("navHist").className="nav-btn"+(tela==="hist"?" ativo":"");
+  if(tela==="hist") carregarHistorico();
+}
+
+// ── TOAST ─────────────────────────────────────────────────────
+function toast(msg){
+  var el=document.getElementById("toast");
+  el.textContent=msg;
+  el.classList.add("show");
+  clearTimeout(el._t);
+  el._t=setTimeout(function(){el.classList.remove("show");},3500);
 }
 
 // ── INDEXEDDB ─────────────────────────────────────────────────
@@ -1052,7 +921,7 @@ function dbPut(store,item){
     return new Promise(function(res,rej){
       var tx=db.transaction(store,"readwrite");
       tx.objectStore(store).put(item);
-      tx.oncomplete=res;tx.onerror=rej;
+      tx.oncomplete=res; tx.onerror=rej;
     });
   });
 }
@@ -1082,88 +951,111 @@ function dbMarcarEnviado(store,id){
   });
 }
 
-// ── UTILS ─────────────────────────────────────────────────────
-function toast(msg){
-  var el=document.getElementById("toast");
-  el.textContent=msg;
-  el.classList.add("show");
-  clearTimeout(el._t);
-  el._t=setTimeout(function(){el.classList.remove("show");},3500);
-}
-function esc(s){return(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");}
-
 // Init
+filtrarLocais("","locaisF");
+filtrarLocais("","locaisKm");
 atualizarFilaUI();
 
-var ULTIMO_LOCAL="";
-var TODAS_SEMANAS=[];
-function abrirModalSemanas(){document.getElementById("modalSemanas").style.display="flex";carregarTodasSemanas();}
-function fecharModalSemanas(){document.getElementById("modalSemanas").style.display="none";}
-function carregarTodasSemanas(){
-  if(!SEMANA||!SEMANA.mes_id) return;
-  fetch("/api/meses/"+SEMANA.mes_id,{headers:{"Authorization":"Bearer "+TOKEN}})
-  .then(function(r){return r.json();})
-  .then(function(d){
-    TODAS_SEMANAS=d.semanas||[];
-    document.getElementById("modalSemMesLabel").textContent=d.label||"";
-    renderSemanas();
-  }).catch(function(){toast("Erro ao carregar semanas.");});
+var BANCADA=[],PARES=[],PAR_SEQ=0,ULTIMO_LOCAL="",TODAS_SEMANAS=[];
+function adicionarFotos(inp){
+  var files=Array.from(inp.files);if(!files.length)return;
+  var n=0;
+  files.forEach(function(f){
+    var r=new FileReader();
+    r.onload=function(e){BANCADA.push({id:"b"+Date.now()+Math.random(),src:e.target.result,nome:f.name,parId:null,tipo:null});n++;if(n===files.length){renderBancada();toast("+"+files.length+" foto(s)");}}; 
+    r.readAsDataURL(f);
+  });
+  inp.value="";
 }
-function renderSemanas(){
-  var lista=document.getElementById("modalSemLista");
-  if(!TODAS_SEMANAS.length){lista.innerHTML='<div style="color:var(--mut);font-size:13px;text-align:center;padding:1rem;">Nenhuma semana.</div>';return;}
-  lista.innerHTML=TODAS_SEMANAS.map(function(s){
-    var ativa=SEMANA&&s.id===SEMANA.id;
-    return '<div style="background:#fff;border:1.5px solid '+(ativa?'var(--or)':'var(--brd)')+';border-radius:10px;padding:10px 12px;margin-bottom:.5rem;">'
-      +'<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">'
-      +'<div style="flex:1;"><div style="font-size:13px;font-weight:700;color:var(--bl);">'+esc(s.label)+'</div>'
-      +(ativa?'<span style="font-size:10px;background:var(--glt);color:var(--grn);padding:2px 8px;border-radius:99px;font-weight:700;">✅ Ativa</span>':"")
-      +'</div>'
-      +'<button onclick="deletarSemana('+s.id+')" style="background:#FEE2E2;color:#DC2626;border:none;border-radius:6px;padding:5px 10px;font-size:11px;font-weight:700;cursor:pointer;">✕</button>'
+function renderBancada(){
+  var g=document.getElementById("bancadaGrid"),c=document.getElementById("bancadaCount");
+  var livres=BANCADA.filter(function(f){return !f.parId;});
+  c.textContent=livres.length+" foto(s)";
+  if(!livres.length){g.innerHTML='<div style="grid-column:1/-1;text-align:center;color:#92400E;font-size:11px;padding:.4rem;">Bancada vazia</div>';return;}
+  g.innerHTML=livres.map(function(f){return '<div style="position:relative;border:2px solid #FCD34D;border-radius:8px;overflow:hidden;aspect-ratio:1;background:#000;"><img src="'+f.src+'" style="width:100%;height:100%;object-fit:cover;"><div style="position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,.6);color:#fff;font-size:9px;padding:2px 4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+esc(f.nome)+'</div><button onclick="rmB(\''+f.id+'\')" style="position:absolute;top:2px;right:2px;background:rgba(220,38,38,.9);color:#fff;border:none;border-radius:50%;width:16px;height:16px;font-size:9px;cursor:pointer;">x</button></div>';}).join("");
+  renderBotaoSalvar();
+}
+function rmB(id){BANCADA=BANCADA.filter(function(f){return f.id!==id;});renderBancada();}
+function adicionarPar(){PAR_SEQ++;PARES.push({id:"p"+PAR_SEQ,local:ULTIMO_LOCAL,antes:null,depois:null,dbId:null,salvo:false});renderPares();}
+function renderPares(){
+  var w=document.getElementById("paresWrap");
+  if(!PARES.length){w.innerHTML='<div style="text-align:center;color:var(--mut);font-size:13px;padding:2rem 0;">Adicione fotos e crie pares.</div>';renderBotaoSalvar();return;}
+  w.innerHTML=PARES.map(function(par,pi){
+    var aH=par.antes?'<div style="position:relative;border:2px solid var(--grn);border-radius:8px;overflow:hidden;aspect-ratio:1;cursor:pointer;" onclick="devolverSlot(\''+par.id+'\',\'antes\')"><img src="'+par.antes.src+'" style="width:100%;height:100%;object-fit:cover;"><button onclick="event.stopPropagation();devolverSlot(\''+par.id+'\',\'antes\')" style="position:absolute;top:3px;right:3px;background:rgba(220,38,38,.9);color:#fff;border:none;border-radius:50%;width:20px;height:20px;font-size:12px;cursor:pointer;display:flex;align-items:center;justify-content:center;">r</button></div>'
+      :'<div style="border:2px dashed #BFDBFE;border-radius:8px;aspect-ratio:1;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;background:#F8FAFC;" onclick="abrirSeletor(\''+par.id+'\',\'antes\')"><div style="font-size:22px;margin-bottom:3px;">ANTES</div></div>';
+    var dH=par.depois?'<div style="position:relative;border:2px solid var(--grn);border-radius:8px;overflow:hidden;aspect-ratio:1;cursor:pointer;" onclick="devolverSlot(\''+par.id+'\',\'depois\')"><img src="'+par.depois.src+'" style="width:100%;height:100%;object-fit:cover;"><button onclick="event.stopPropagation();devolverSlot(\''+par.id+'\',\'depois\')" style="position:absolute;top:3px;right:3px;background:rgba(220,38,38,.9);color:#fff;border:none;border-radius:50%;width:20px;height:20px;font-size:12px;cursor:pointer;display:flex;align-items:center;justify-content:center;">r</button></div>'
+      :'<div style="border:2px dashed #FED7AA;border-radius:8px;aspect-ratio:1;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;background:#F8FAFC;" onclick="abrirSeletor(\''+par.id+'\',\'depois\')"><div style="font-size:22px;margin-bottom:3px;">DEPOIS</div></div>';
+    return '<div id="par_'+par.id+'" style="background:#fff;border:1.5px solid var(--brd);border-radius:12px;margin-bottom:.75rem;overflow:hidden;">'
+      +'<div style="background:var(--bl);padding:7px 10px;display:flex;align-items:center;justify-content:space-between;">'
+      +'<span style="font-size:11px;font-weight:700;color:var(--or);background:rgba(0,0,0,.25);padding:2px 7px;border-radius:5px;">#'+pi+'</span>'
+      +(par.salvo?'<span style="font-size:10px;background:var(--glt);color:var(--grn);padding:2px 7px;border-radius:99px;font-weight:700;">salvo</span>':"")
+      +'<button onclick="deletarPar(\''+par.id+'\')" style="background:rgba(220,38,38,.2);color:#fff;border:none;border-radius:5px;padding:2px 7px;font-size:11px;cursor:pointer;">x</button>'
+      +'</div><div style="padding:8px;">'
+      +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-bottom:7px;">'+aH+dH+'</div>'
+      +'<input class="par-local-input" placeholder="Local do par..." value="'+esc(par.local)+'" oninput="atualizarLocalReplica(\''+par.id+'\',this.value)" style="width:100%;border:1.5px solid var(--brd);border-radius:7px;padding:7px 9px;font-size:13px;background:#F8FAFC;">'
       +'</div></div>';
   }).join("");
-}
-function criarSemana(){
-  if(!SEMANA||!SEMANA.mes_id){toast("Sem mês ativo.");return;}
-  var label=prompt("Período da semana (ex: Semana 5 — 01/06 a 07/06):");
-  if(!label) return;
-  fetch("/api/semanas",{method:"POST",headers:{"Content-Type":"application/json","Authorization":"Bearer "+TOKEN},
-    body:JSON.stringify({mes_id:SEMANA.mes_id,label:label,ordem:TODAS_SEMANAS.length})})
-  .then(function(r){return r.json();})
-  .then(function(d){if(d.erro){toast("Erro: "+d.erro);return;}toast("✅ Semana criada!");carregarTodasSemanas();carregarSemanaAtiva();})
-  .catch(function(){toast("Erro de conexão.");});
-}
-function deletarSemana(sid){
-  if(!confirm("Deletar esta semana e todos os pares?")) return;
-  fetch("/api/semanas/"+sid,{method:"DELETE",headers:{"Authorization":"Bearer "+TOKEN}})
-  .then(function(r){if(r.ok){toast("✅ Removida!");carregarTodasSemanas();carregarSemanaAtiva();}else toast("Erro ao deletar.");})
-  .catch(function(){toast("Erro de conexão.");});
+  renderBotaoSalvar();
 }
 function atualizarLocalReplica(parId,val){
-  var par=PARES.find(function(p){return p.id===parId;});
-  if(!par) return;
-  par.local=val;
-  ULTIMO_LOCAL=val;
+  var par=PARES.find(function(p){return p.id===parId;});if(!par)return;
+  par.local=val;ULTIMO_LOCAL=val;
   var idx=PARES.indexOf(par);
-  for(var i=idx+1;i<PARES.length;i++){
-    if(!PARES[i].salvo){
-      PARES[i].local=val;
-      var inp=document.querySelector("#par_"+PARES[i].id+" .par-local-input");
-      if(inp) inp.value=val;
-    }
-  }
+  for(var i=idx+1;i<PARES.length;i++){if(!PARES[i].salvo){PARES[i].local=val;var inp=document.querySelector("#par_"+PARES[i].id+" .par-local-input");if(inp)inp.value=val;}}
+}
+function devolverSlot(parId,tipo){var par=PARES.find(function(p){return p.id===parId;});if(!par||!par[tipo])return;var f=par[tipo];f.parId=null;f.tipo=null;par[tipo]=null;par.salvo=false;renderBancada();renderPares();}
+function deletarPar(parId){var par=PARES.find(function(p){return p.id===parId;});if(!par)return;["antes","depois"].forEach(function(t){if(par[t]){par[t].parId=null;par[t].tipo=null;}});PARES=PARES.filter(function(p){return p.id!==parId;});renderBancada();renderPares();}
+function renderBotaoSalvar(){var btn=document.getElementById("btnSalvarTodos");if(!btn)return;btn.style.display=PARES.some(function(p){return !p.salvo&&(p.antes||p.depois);})?"block":"none";}
+var _sP=null,_sT=null;
+function abrirSeletor(parId,tipo){_sP=parId;_sT=tipo;document.getElementById("seletorTitulo").textContent="Slot "+(tipo==="antes"?"ANTES":"DEPOIS");var livres=BANCADA.filter(function(f){return !f.parId;});var grid=document.getElementById("seletorGrid");var vazio=document.getElementById("seletorVazio");if(!livres.length){grid.innerHTML="";vazio.style.display="block";}else{vazio.style.display="none";grid.innerHTML=livres.map(function(f){return '<div onclick="encaixarDoSeletor(\''+f.id+'\')" style="position:relative;border:2px solid var(--brd);border-radius:10px;overflow:hidden;aspect-ratio:1;background:#000;cursor:pointer;"><img src="'+f.src+'" style="width:100%;height:100%;object-fit:cover;"><div style="position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,.6);color:#fff;font-size:9px;padding:3px 5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+esc(f.nome)+'</div></div>';}).join("");}document.getElementById("modalSeletor").style.display="flex";}
+function fecharSeletor(){document.getElementById("modalSeletor").style.display="none";_sP=null;_sT=null;}
+function encaixarDoSeletor(fotoId){var f=BANCADA.find(function(b){return b.id===fotoId;});var par=PARES.find(function(p){return p.id===_sP;});if(!f||!par){fecharSeletor();return;}if(par[_sT]){var ant=par[_sT];ant.parId=null;ant.tipo=null;}f.parId=_sP;f.tipo=_sT;par[_sT]=f;par.salvo=false;fecharSeletor();renderBancada();renderPares();}
+async function salvarTodos(){if(!SEMANA){toast("Sem semana ativa!");return;}var pend=PARES.filter(function(p){return !p.salvo&&(p.antes||p.depois);});if(!pend.length){toast("Nada para salvar.");return;}var btn=document.getElementById("btnSalvarTodos");btn.disabled=true;btn.textContent="Salvando...";var ok=0,erros=0;for(var par of pend){try{await salvarPar(par);ok++;}catch(e){erros++;}}btn.disabled=false;btn.textContent="Salvar todos os pares";toast(erros===0?"Salvo! "+ok+" par(es)":"Erro: "+ok+" salvos, "+erros+" com erro.");renderPares();}
+async function salvarPar(par){if(!par.dbId){var r=await fetch("/api/pares",{method:"POST",headers:{"Content-Type":"application/json","Authorization":"Bearer "+TOKEN},body:JSON.stringify({semana_id:SEMANA.id,local_nome:par.local||"",data_label:"",ordem:99})});if(!r.ok)throw new Error("erro par");var d=await r.json();par.dbId=d.id;}for(var tipo of["antes","depois"]){var f=par[tipo];if(!f||f.sid)continue;var blob=b64toBlob(f.src);var fd=new FormData();fd.append("par_id",par.dbId);fd.append("tipo",tipo);fd.append("foto",blob,f.nome||tipo+".jpg");var r2=await fetch("/api/fotos/avulsa",{method:"POST",headers:{"Authorization":"Bearer "+TOKEN},body:fd});if(!r2.ok)throw new Error("erro foto");var d2=await r2.json();f.sid=d2.id;}if(par.local&&par.dbId){await fetch("/api/pares/"+par.dbId,{method:"PATCH",headers:{"Content-Type":"application/json","Authorization":"Bearer "+TOKEN},body:JSON.stringify({local_nome:par.local})});}par.salvo=true;}
+function b64toBlob(d){var p=d.split(","),m=p[0].match(/:(.*?);/)[1],b=atob(p[1]),a=new Uint8Array(b.length);for(var i=0;i<b.length;i++)a[i]=b.charCodeAt(i);return new Blob([a],{type:m});}
+function abrirModalSemanas(){document.getElementById("modalSemanas").style.display="flex";carregarTodasSemanas();}
+function fecharModalSemanas(){document.getElementById("modalSemanas").style.display="none";}
+function carregarTodasSemanas(){if(!SEMANA||!SEMANA.mes_id)return;fetch("/api/meses/"+SEMANA.mes_id,{headers:{"Authorization":"Bearer "+TOKEN}}).then(function(r){return r.json();}).then(function(d){TODAS_SEMANAS=d.semanas||[];document.getElementById("modalSemMesLabel").textContent=d.label||"";renderSemanas();}).catch(function(){toast("Erro semanas.");});}
+function renderSemanas(){var lista=document.getElementById("modalSemLista");if(!TODAS_SEMANAS.length){lista.innerHTML='<div style="color:var(--mut);font-size:13px;text-align:center;padding:1rem;">Nenhuma semana.</div>';return;}lista.innerHTML=TODAS_SEMANAS.map(function(s){var ativa=SEMANA&&s.id===SEMANA.id;return '<div style="background:#fff;border:1.5px solid '+(ativa?'var(--or)':'var(--brd)')+';border-radius:10px;padding:10px 12px;margin-bottom:.5rem;"><div style="display:flex;align-items:center;justify-content:space-between;gap:8px;"><div style="flex:1;"><div style="font-size:13px;font-weight:700;color:var(--bl);">'+esc(s.label)+'</div>'+(ativa?'<span style="font-size:10px;background:var(--glt);color:var(--grn);padding:2px 8px;border-radius:99px;font-weight:700;">Ativa</span>':"")+'</div><button onclick="deletarSemana('+s.id+')" style="background:#FEE2E2;color:#DC2626;border:none;border-radius:6px;padding:5px 10px;font-size:11px;font-weight:700;cursor:pointer;">x</button></div></div>';}).join("");}
+function criarSemana(){if(!SEMANA||!SEMANA.mes_id){toast("Sem mes ativo.");return;}var label=prompt("Periodo da semana:");if(!label)return;fetch("/api/semanas",{method:"POST",headers:{"Content-Type":"application/json","Authorization":"Bearer "+TOKEN},body:JSON.stringify({mes_id:SEMANA.mes_id,label:label,ordem:TODAS_SEMANAS.length})}).then(function(r){return r.json();}).then(function(d){if(d.erro){toast("Erro: "+d.erro);return;}toast("Semana criada!");carregarTodasSemanas();carregarSemanaAtiva();}).catch(function(){toast("Erro conexao.");});}
+function deletarSemana(sid){if(!confirm("Deletar esta semana?"))return;fetch("/api/semanas/"+sid,{method:"DELETE",headers:{"Authorization":"Bearer "+TOKEN}}).then(function(r){if(r.ok){toast("Removida!");carregarTodasSemanas();carregarSemanaAtiva();}else toast("Erro.");}).catch(function(){toast("Erro conexao.");});}
+function navPara(tela){
+  var mf=document.getElementById("mainFoto"),mh=document.getElementById("mainHist");
+  var pf=document.getElementById("painelFoto"),pk=document.getElementById("painelKm");
+  if(mf) mf.style.display=(tela==="foto"||tela==="km")?"block":"none";
+  if(mh) mh.style.display=tela==="hist"?"block":"none";
+  if(pf) pf.style.display=tela==="foto"?"flex":"none";
+  if(pk) pk.style.display=tela==="km"?"block":"none";
+  ["tabFoto","tabKm"].forEach(function(id){var el=document.getElementById(id);if(el)el.className="tab";});
+  if(tela==="foto"&&document.getElementById("tabFoto"))document.getElementById("tabFoto").className="tab ativo";
+  if(tela==="km"&&document.getElementById("tabKm"))document.getElementById("tabKm").className="tab ativo";
+  ["navFoto","navKm","navHist"].forEach(function(id){var el=document.getElementById(id);if(el)el.className="nav-btn";});
+  if(tela==="foto"&&document.getElementById("navFoto"))document.getElementById("navFoto").className="nav-btn ativo";
+  if(tela==="km"){if(document.getElementById("navKm"))document.getElementById("navKm").className="nav-btn ativo";preencherKmSugerido();}
+  if(tela==="hist"){if(document.getElementById("navHist"))document.getElementById("navHist").className="nav-btn ativo";carregarHistorico();}
 }
 </script>
 
 <!-- MODAL SEMANAS -->
 <div id="modalSemanas" style="display:none;position:fixed;inset:0;background:rgba(5,10,35,.95);z-index:500;flex-direction:column;">
   <div style="background:var(--bl);border-bottom:3px solid var(--or);padding:12px 1rem;display:flex;align-items:center;justify-content:space-between;flex-shrink:0;">
-    <div><div style="font-size:14px;font-weight:800;color:#fff;">📅 Gerenciar Semanas</div><div style="font-size:11px;color:#93C5FD;" id="modalSemMesLabel">—</div></div>
-    <button onclick="fecharModalSemanas()" style="background:rgba(255,255,255,.15);color:#fff;border:none;border-radius:50%;width:32px;height:32px;font-size:16px;cursor:pointer;">✕</button>
+    <div><div style="font-size:14px;font-weight:800;color:#fff;">Gerenciar Semanas</div><div style="font-size:11px;color:#93C5FD;" id="modalSemMesLabel">-</div></div>
+    <button onclick="fecharModalSemanas()" style="background:rgba(255,255,255,.15);color:#fff;border:none;border-radius:50%;width:32px;height:32px;font-size:16px;cursor:pointer;">x</button>
   </div>
   <div style="flex:1;overflow-y:auto;padding:1rem;">
     <div id="modalSemLista"></div>
-    <button onclick="criarSemana()" class="btn btn-blue" style="margin-top:.5rem;">+ Nova Semana</button>
+    <button onclick="criarSemana()" style="width:100%;padding:14px;background:var(--bl);color:#fff;border:none;border-radius:10px;font-size:15px;font-weight:800;cursor:pointer;margin-top:.5rem;">+ Nova Semana</button>
+  </div>
+</div>
+<!-- MODAL SELETOR -->
+<div id="modalSeletor" style="display:none;position:fixed;inset:0;background:rgba(5,10,35,.95);z-index:600;flex-direction:column;">
+  <div style="background:var(--bl);border-bottom:3px solid var(--or);padding:12px 1rem;display:flex;align-items:center;justify-content:space-between;flex-shrink:0;">
+    <div><div style="font-size:14px;font-weight:800;color:#fff;" id="seletorTitulo">Escolher foto</div><div style="font-size:11px;color:#93C5FD;">Toque para encaixar no slot</div></div>
+    <button onclick="fecharSeletor()" style="background:rgba(255,255,255,.15);color:#fff;border:none;border-radius:50%;width:32px;height:32px;font-size:16px;cursor:pointer;">x</button>
+  </div>
+  <div style="flex:1;overflow-y:auto;padding:1rem;">
+    <div id="seletorGrid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;"></div>
+    <div id="seletorVazio" style="display:none;text-align:center;color:var(--mut);font-size:13px;padding:3rem 1rem;">Bancada vazia.</div>
   </div>
 </div>
 </body>
