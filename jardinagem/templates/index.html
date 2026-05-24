@@ -21,7 +21,7 @@
 *{box-sizing:border-box;margin:0;padding:0;}
 body{font-family:system-ui,-apple-system,Segoe UI,sans-serif;background:var(--bg);color:var(--txt);height:100vh;display:flex;flex-direction:column;overflow:hidden;}
 button,input,select{font-family:inherit;}
-.hdr{background:var(--bl);border-bottom:4px solid var(--or);height:58px;padding:0 1.25rem;display:flex;align-items:center;justify-content:space-between;flex-shrink:0;}
+.hdr{background:var(--bl);border-bottom:4px solid var(--or);height:64px;padding:0 1.25rem;display:flex;align-items:center;justify-content:space-between;flex-shrink:0;}
 .hdr-l{display:flex;align-items:center;gap:12px;}
 .hdr-logo{height:40px;object-fit:contain;}
 .hdr-title{font-weight:700;font-size:16px;color:#fff;}
@@ -225,17 +225,17 @@ button,input,select{font-family:inherit;}
 
 <header class="hdr">
   <div class="hdr-l">
-    <img class="hdr-logo" src="/static/icons/logo-garra.jpg" alt="Garra Terraplenagem" style="height:40px;object-fit:contain;filter:brightness(0) invert(1);">
+    <img class="hdr-logo" src="/static/icons/logo-garra.jpg" alt="Garra Terraplenagem" style="height:48px;object-fit:contain;" onerror="this.style.display='none';document.getElementById('hdrLogoFallback').style.display='flex';"><div id="hdrLogoFallback" style="display:none;align-items:center;gap:6px;"><div style="width:36px;height:36px;border-radius:50%;background:var(--or);display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:900;color:#fff;">G</div><div style="color:var(--or);font-size:16px;font-weight:900;">GARRA</div></div>
     <div>
       <div class="hdr-title">Sistema de Fotos — Jardinagem</div>
       <div class="hdr-sub">Águas de Pará de Minas · Garra Terraplenagem</div>
     </div>
   </div>
   <div class="hdr-r">
-    <button class="btn btn-out btn-sm" onclick="window.print()">🖨 Imprimir</button>
-    
-    <button class="btn btn-red btn-sm" onclick="if(confirm('Sair?')){localStorage.removeItem('garra_token');location.href='/mobile';}">Sair</button>
     <button class="btn btn-or btn-sm" onclick="abrirModalMes()">+ Novo Mês</button>
+    <button class="btn btn-out btn-sm" onclick="window.print()">🖨 Imprimir</button>
+    <div style="width:1px;height:24px;background:rgba(255,255,255,.2);margin:0 2px;"></div>
+    <button class="btn btn-red btn-sm" onclick="if(confirm('Sair?')){localStorage.removeItem('garra_token');location.href='/mobile';}">Sair</button>
   </div>
 </header>
 
@@ -1328,7 +1328,7 @@ function enviarEmailCliente(){
 <div class="org-bg" id="orgModal">
   <div class="org-hdr">
     <div class="org-hdr-l">
-      <img class="hdr-logo" src="/static/icons/logo-garra.jpg" alt="Garra Terraplenagem" style="height:40px;object-fit:contain;filter:brightness(0) invert(1);">
+      <img class="hdr-logo" src="/static/icons/logo-garra.jpg" alt="Garra Terraplenagem" style="height:40px;object-fit:contain;">
       <div>
         <div class="org-hdr-title">Organizar Pares — <span id="orgMesLabel">—</span></div>
         <div class="org-hdr-sub">Arraste as fotos da bancada para os slots Antes / Depois</div>
