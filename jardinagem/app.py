@@ -644,6 +644,70 @@ def _montar_dados_semana(semana_id: int):
     return semana_dict, pares, relatorios
 
 
+
+@app.route("/api/relatorios/<int:semana_id>/preview")
+@verificar_token
+def preview_relatorio(semana_id):
+    """Retorna dados estruturados da semana para preview no desktop."""
+    try:
+        sem = query("SELECT * FROM jardinagem.semanas WHERE id=%s", (semana_id,), fetch="one")
+        if not sem:
+            return jsonify({"erro": "Semana não encontrada"}), 404
+
+        # Pares com status de fotos
+        pares_raw = query(
+            "SELECT * FROM jardinagem.pares WHERE semana_id=%s ORDER BY ordem, id",
+            (semana_id,)
+        )
+        pares = []
+        for p in pares_raw:
+            fotos = query("SELECT * FROM jardinagem.fotos WHERE par_id=%s", (p["id"],))
+            fa = next((f for f in fotos if f["tipo"]=="antes"),  None)
+            fd = next((f for f in fotos if f["tipo"]=="depois"), None)
+            pares.append({
+                "id":         p["id"],
+                "codigo_a":   p["codigo_a"],
+                "codigo_d":   p["codigo_d"],
+                "local_nome": p["local_nome"] or "",
+                "foto_antes":  bool(fa),
+                "foto_depois": bool(fd),
+            })
+
+        # Relatórios de KM
+        kms_raw = query("""
+            SELECT r.*, u.nome as responsavel_nome
+            FROM jardinagem.relatorios_diarios r
+            JOIN public.usuarios_garra u ON u.id = r.usuario_id
+            WHERE r.semana_id=%s ORDER BY r.data, r.criado_em
+        """, (semana_id,))
+        kms = []
+        for r in kms_raw:
+            kms.append({
+                "id":          r["id"],
+                "data":        r["data"].strftime("%d/%m/%Y") if r["data"] else "",
+                "local_nome":  r["local_nome"] or "",
+                "km_inicial":  float(r["km_inicial"] or 0),
+                "km_final":    float(r["km_final"]   or 0),
+                "hora_inicio": str(r["hora_inicio"]) if r["hora_inicio"] else "",
+                "hora_fim":    str(r["hora_fim"])    if r["hora_fim"]    else "",
+                "observacao":  r["observacao"] or "",
+                "responsavel": r["responsavel_nome"] or "",
+            })
+
+        return jsonify({
+            "semana_id":  semana_id,
+            "label":      sem["label"],
+            "pares":      pares,
+            "relatorios": kms,
+            "total_pares":    len(pares),
+            "pares_completos": sum(1 for p in pares if p["foto_antes"] and p["foto_depois"]),
+            "total_km":   len(kms),
+        })
+
+    except Exception as e:
+        log.error(f"preview_relatorio erro: {e}")
+        return jsonify({"erro": str(e)}), 500
+
 @app.route("/api/relatorios/<int:semana_id>/fotos")
 @requer_perfil("admin", "luana")
 def baixar_relatorio_fotos(semana_id):
