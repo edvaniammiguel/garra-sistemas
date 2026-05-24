@@ -753,3 +753,155 @@ if __name__ == "__main__":
     print("   Backend: Flask + PostgreSQL direto")
     print("   Acesse:  http://localhost:5000\n")
     app.run(host="0.0.0.0", port=5000, debug=False)
+
+
+# ══════════════════════════════════════════════════════════════
+# ROTAS — RELATÓRIO DIÁRIO (KM/Serviço) — mobile Arthur/Breno
+# ══════════════════════════════════════════════════════════════
+
+@app.route("/api/relatorios/km", methods=["POST"])
+@verificar_token
+def criar_relatorio_km():
+    """Recebe registro de KM/serviço do mobile e salva no banco."""
+    try:
+        d = request.json or {}
+
+        semana_id = d.get("semana_id")
+        if not semana_id:
+            hoje = date.today().isoformat()
+            row = query(
+                "SELECT id FROM jardinagem.semanas WHERE data_ini<=%s AND data_fim>=%s LIMIT 1",
+                (hoje, hoje), fetch="one"
+            )
+            if not row:
+                return jsonify({"erro": "Nenhuma semana ativa"}), 404
+            semana_id = row["id"]
+
+        local_nome   = (d.get("local_nome") or "").strip()
+        km_inicial   = d.get("km_inicial")
+        km_final     = d.get("km_final")
+        hora_inicio  = d.get("hora_inicio") or None
+        hora_fim     = d.get("hora_fim")    or None
+        observacao   = (d.get("observacao") or "").strip()
+        data_ref     = d.get("data") or date.today().isoformat()
+        offline_id   = d.get("offline_id")  or None
+
+        if not local_nome:
+            return jsonify({"erro": "Campo local_nome obrigatório"}), 400
+        if km_inicial is None or km_final is None:
+            return jsonify({"erro": "Campos km_inicial e km_final obrigatórios"}), 400
+        if float(km_final) <= float(km_inicial):
+            return jsonify({"erro": "km_final deve ser maior que km_inicial"}), 400
+
+        # Deduplicação offline
+        if offline_id:
+            exist = query(
+                "SELECT id FROM jardinagem.relatorios_diarios WHERE offline_id=%s",
+                (offline_id,), fetch="one"
+            )
+            if exist:
+                return jsonify({"ok": True, "duplicado": True, "id": exist["id"]}), 200
+
+        row = query_id("""
+            INSERT INTO jardinagem.relatorios_diarios
+                (semana_id, usuario_id, data, local_nome,
+                 km_inicial, km_final, hora_inicio, hora_fim,
+                 observacao, offline_id)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        """, (
+            semana_id, g.usuario["sub"], data_ref, local_nome,
+            float(km_inicial), float(km_final), hora_inicio, hora_fim,
+            observacao, offline_id
+        ))
+
+        return jsonify({"ok": True, "id": row["id"]}), 201
+
+    except Exception as e:
+        log.error(f"criar_relatorio_km erro: {e}")
+        return jsonify({"erro": str(e)}), 500
+
+
+@app.route("/api/historico/hoje")
+@verificar_token
+def historico_hoje():
+    """Retorna fotos e KMs do dia atual para o usuário logado."""
+    try:
+        semana_id = request.args.get("semana_id")
+        hoje      = date.today().isoformat()
+
+        # Fotos do dia
+        if semana_id:
+            fotos_raw = query("""
+                SELECT f.id, f.tipo, f.storage_path, f.filename_orig,
+                       p.local_nome, f.criado_em
+                FROM jardinagem.fotos f
+                JOIN jardinagem.pares p ON p.id = f.par_id
+                WHERE p.semana_id = %s
+                  AND f.enviado_por = %s
+                  AND DATE(f.criado_em) = %s
+                ORDER BY f.criado_em DESC
+            """, (semana_id, g.usuario["sub"], hoje))
+        else:
+            fotos_raw = query("""
+                SELECT f.id, f.tipo, f.storage_path, f.filename_orig,
+                       p.local_nome, f.criado_em
+                FROM jardinagem.fotos f
+                JOIN jardinagem.pares p ON p.id = f.par_id
+                WHERE f.enviado_por = %s
+                  AND DATE(f.criado_em) = %s
+                ORDER BY f.criado_em DESC
+            """, (g.usuario["sub"], hoje))
+
+        fotos = []
+        for f in fotos_raw:
+            fd = dict(f)
+            fd["url"] = storage_url(f["storage_path"]) if f["storage_path"] else ""
+            fd["criado_em"] = f["criado_em"].isoformat() if f["criado_em"] else ""
+            fotos.append(fd)
+
+        # KMs do dia
+        if semana_id:
+            km_raw = query("""
+                SELECT id, data, local_nome, km_inicial, km_final,
+                       hora_inicio, hora_fim, observacao, criado_em
+                FROM jardinagem.relatorios_diarios
+                WHERE semana_id = %s
+                  AND usuario_id = %s
+                  AND data = %s
+                ORDER BY criado_em DESC
+            """, (semana_id, g.usuario["sub"], hoje))
+        else:
+            km_raw = query("""
+                SELECT id, data, local_nome, km_inicial, km_final,
+                       hora_inicio, hora_fim, observacao, criado_em
+                FROM jardinagem.relatorios_diarios
+                WHERE usuario_id = %s
+                  AND data = %s
+                ORDER BY criado_em DESC
+            """, (g.usuario["sub"], hoje))
+
+        km_list = []
+        km_total = 0.0
+        for r in km_raw:
+            rd = dict(r)
+            ini = float(r["km_inicial"] or 0)
+            fin = float(r["km_final"]   or 0)
+            rd["km_percorrido"] = round(fin - ini, 1)
+            rd["km_inicial"]    = ini
+            rd["km_final"]      = fin
+            rd["hora_inicio"]   = str(r["hora_inicio"]) if r["hora_inicio"] else ""
+            rd["hora_fim"]      = str(r["hora_fim"])    if r["hora_fim"]    else ""
+            rd["criado_em"]     = r["criado_em"].isoformat() if r["criado_em"] else ""
+            km_total           += rd["km_percorrido"]
+            km_list.append(rd)
+
+        return jsonify({
+            "data":     hoje,
+            "fotos":    fotos,
+            "km":       km_list,
+            "km_total": round(km_total, 1),
+        })
+
+    except Exception as e:
+        log.error(f"historico_hoje erro: {e}")
+        return jsonify({"erro": str(e)}), 500
