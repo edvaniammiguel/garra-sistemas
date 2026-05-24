@@ -230,9 +230,18 @@ input[type=file]{display:none;}
 <div id="telaApp" style="display:none;flex-direction:column;flex:1;">
 
   <header class="hdr">
-    <img class="hdr-logo" src="/static/icons/logo-garra.jpg" alt="Garra" style="filter:brightness(0) invert(1);">
+    <div style="display:flex;align-items:center;gap:8px;">
+      <img class="hdr-logo" src="/static/icons/logo-garra.jpg" alt="Garra" style="filter:brightness(0) invert(1);">
+      <a id="linkDesktop" href="/" style="display:none;font-size:10px;font-weight:700;
+        color:#E8820C;text-decoration:none;border:1px solid #E8820C;
+        padding:3px 8px;border-radius:6px;white-space:nowrap;">🖥 Desktop</a>
+    </div>
     <div class="hdr-info">
-      <div class="hdr-nome" id="hdrNome">—</div>
+      <div style="display:flex;align-items:center;gap:6px;">
+        <div class="hdr-nome" id="hdrNome">—</div>
+        <span id="hdrBadgeAdmin" style="display:none;font-size:9px;font-weight:700;
+          background:#E8820C;color:#fff;padding:2px 6px;border-radius:99px;">ADMIN</span>
+      </div>
       <div class="hdr-status">
         <div class="dot" id="statusDot"></div>
         <div class="dot-txt" id="statusTxt">...</div>
@@ -450,12 +459,7 @@ window.addEventListener("offline", ()=>{ ONLINE=false; atualizarStatus(); });
 // ── AUTH ─────────────────────────────────────────────────────
 window.addEventListener("load", ()=>{
   if (TOKEN && USUARIO) {
-    var p = USUARIO.perfil || "";
-    if(p==="admin"||p==="luana"){
-      window.location.href="/";
-    } else {
-      mostrarApp();
-    }
+    mostrarApp();
   } else {
     document.getElementById("telaLogin").style.display="flex";
   }
@@ -483,13 +487,7 @@ function fazerLogin(){
     TOKEN=d.token; USUARIO={nome:d.nome,perfil:d.perfil};
     localStorage.setItem("garra_token",TOKEN);
     localStorage.setItem("garra_usuario",JSON.stringify(USUARIO));
-    // Admin e Luana vão para o painel desktop
-    var perfil = d.perfil || "";
-    if(perfil==="admin"||perfil==="luana"){
-      window.location.href="/";
-    } else {
-      mostrarApp();
-    }
+    mostrarApp();
   }).catch(()=>{erro.textContent="Erro de conexão.";});
 }
 
@@ -497,6 +495,12 @@ function mostrarApp(){
   document.getElementById("telaLogin").style.display="none";
   document.getElementById("telaApp").style.display="flex";
   document.getElementById("hdrNome").textContent=USUARIO?.nome||"—";
+  // Badge e link desktop para admin/luana
+  var isAdmin = (USUARIO?.perfil==="admin"||USUARIO?.perfil==="luana");
+  var badgeEl = document.getElementById("hdrBadgeAdmin");
+  var linkDesk = document.getElementById("linkDesktop");
+  if(badgeEl) badgeEl.style.display = isAdmin ? "inline-block" : "none";
+  if(linkDesk) linkDesk.style.display = isAdmin ? "inline-block" : "none";
   document.getElementById("kmResponsavel").textContent=USUARIO?.nome||"—";
   carregarSemanaAtiva();
   atualizarStatus();
