@@ -258,14 +258,21 @@ input[type=file]{display:none;}
   </header>
 
   <!-- TELA PRINCIPAL: FOTO + KM -->
-  <div class="main" id="mainFoto">
+  <div id="mainFoto" style="flex:1;display:flex;flex-direction:column;overflow:hidden;">
 
+    <!-- Semana + Fila + Tabs — topo fixo -->
+    <div style="padding:1rem 1rem 0;flex-shrink:0;">
     <!-- Semana ativa -->
     <div class="card" id="semanaCard">
-      <div class="card-label">Semana atual</div>
-      <div class="card-val" id="semanaNome">Carregando...</div>
-      <div class="card-sub" id="semanaDatas"></div>
-      <span class="badge badge-ok" id="semanaBadge">—</span>
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;">
+        <div style="flex:1;">
+          <div class="card-label">Semana atual</div>
+          <div class="card-val" id="semanaNome">Carregando...</div>
+          <div class="card-sub" id="semanaDatas"></div>
+          <span class="badge badge-ok" id="semanaBadge">—</span>
+        </div>
+        <button onclick="abrirModalSemanas()" style="flex-shrink:0;background:var(--bl);color:#fff;border:none;border-radius:8px;padding:6px 10px;font-size:11px;font-weight:700;cursor:pointer;">⚙️ Semanas</button>
+      </div>
     </div>
 
     <!-- Fila offline -->
@@ -285,12 +292,13 @@ input[type=file]{display:none;}
       <div class="tab ativo" id="tabFoto" onclick="navPara('foto')">📷 Bancada</div>
       <div class="tab" id="tabKm"   onclick="navPara('km')">📋 KM</div>
     </div>
+    </div><!-- /topo-fixo -->
 
     <!-- ══ PAINEL BANCADA ══ -->
-    <div id="painelFoto">
+    <div id="painelFoto" style="display:flex;flex-direction:column;flex:1;overflow:hidden;">
 
       <!-- Bancada -->
-      <div id="bancadaWrap" style="margin-bottom:.75rem;">
+      <div id="bancadaWrap" style="flex-shrink:0;padding:1rem 1rem 0;">
         <div class="bancada-hdr">
           <div>
             <div class="bancada-ttl">📋 Bancada</div>
@@ -316,7 +324,8 @@ input[type=file]{display:none;}
       <input type="file" id="fotoCamera"  accept="image/*" capture="environment" multiple onchange="adicionarFotos(this)">
       <input type="file" id="fotoGaleria" accept="image/*" multiple onchange="adicionarFotos(this)">
 
-      <!-- Pares -->
+      <!-- Pares — área scrollável -->
+      <div style="flex:1;overflow-y:auto;padding:1rem;">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.75rem;">
         <div class="sec-title" style="margin:0;">Pares</div>
         <button class="btn-sm-inline" style="background:var(--bl);color:#fff;"
@@ -334,10 +343,11 @@ input[type=file]{display:none;}
         💾 Salvar todos os pares
       </button>
 
+      </div><!-- /scroll-pares -->
     </div><!-- /painelFoto -->
 
     <!-- ══ PAINEL KM ══ -->
-    <div id="painelKm" style="display:none;">
+    <div id="painelKm" style="display:none;flex:1;overflow-y:auto;padding:1rem;padding-bottom:5.5rem;">
       <div class="sec-title">Registrar serviço</div>
 
       <label class="inp-label">📅 Data</label>
@@ -398,7 +408,7 @@ input[type=file]{display:none;}
   </div><!-- /mainFoto -->
 
   <!-- TELA HISTÓRICO -->
-  <div class="main" id="mainHist" style="display:none;">
+  <div id="mainHist" style="display:none;flex:1;overflow-y:auto;padding:1rem;padding-bottom:5.5rem;">
     <div class="sec-title">Meu histórico hoje</div>
     <div class="card" id="resumoDia" style="display:none;">
       <div style="display:flex;justify-content:space-between;align-items:center;">
@@ -631,7 +641,7 @@ function rmBancada(id){
 // ── PARES ─────────────────────────────────────────────────────
 function adicionarPar(){
   PAR_SEQ++;
-  PARES.push({id:"p"+PAR_SEQ,local:"",antes:null,depois:null,dbId:null,salvo:false});
+  PARES.push({id:"p"+PAR_SEQ,local:ULTIMO_LOCAL,antes:null,depois:null,dbId:null,salvo:false});
   renderPares();
 }
 
@@ -669,7 +679,7 @@ function renderPares(){
       +'<div class="par-body">'
       +'<div class="par-slots">'+antesHtml+depoisHtml+'</div>'
       +'<input class="par-local-input" placeholder="📍 Nome do local..." value="'+esc(par.local)+'"'
-      +' oninput="atualizarLocal(\''+par.id+'\',this.value)">'
+      +' oninput="atualizarLocalReplica(\''+par.id+'\',this.value)">'
       +'</div>'
       +'</div>';
   }).join("");
@@ -1084,6 +1094,77 @@ function esc(s){return(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace
 
 // Init
 atualizarFilaUI();
+
+var ULTIMO_LOCAL="";
+var TODAS_SEMANAS=[];
+function abrirModalSemanas(){document.getElementById("modalSemanas").style.display="flex";carregarTodasSemanas();}
+function fecharModalSemanas(){document.getElementById("modalSemanas").style.display="none";}
+function carregarTodasSemanas(){
+  if(!SEMANA||!SEMANA.mes_id) return;
+  fetch("/api/meses/"+SEMANA.mes_id,{headers:{"Authorization":"Bearer "+TOKEN}})
+  .then(function(r){return r.json();})
+  .then(function(d){
+    TODAS_SEMANAS=d.semanas||[];
+    document.getElementById("modalSemMesLabel").textContent=d.label||"";
+    renderSemanas();
+  }).catch(function(){toast("Erro ao carregar semanas.");});
+}
+function renderSemanas(){
+  var lista=document.getElementById("modalSemLista");
+  if(!TODAS_SEMANAS.length){lista.innerHTML='<div style="color:var(--mut);font-size:13px;text-align:center;padding:1rem;">Nenhuma semana.</div>';return;}
+  lista.innerHTML=TODAS_SEMANAS.map(function(s){
+    var ativa=SEMANA&&s.id===SEMANA.id;
+    return '<div style="background:#fff;border:1.5px solid '+(ativa?'var(--or)':'var(--brd)')+';border-radius:10px;padding:10px 12px;margin-bottom:.5rem;">'
+      +'<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">'
+      +'<div style="flex:1;"><div style="font-size:13px;font-weight:700;color:var(--bl);">'+esc(s.label)+'</div>'
+      +(ativa?'<span style="font-size:10px;background:var(--glt);color:var(--grn);padding:2px 8px;border-radius:99px;font-weight:700;">✅ Ativa</span>':"")
+      +'</div>'
+      +'<button onclick="deletarSemana('+s.id+')" style="background:#FEE2E2;color:#DC2626;border:none;border-radius:6px;padding:5px 10px;font-size:11px;font-weight:700;cursor:pointer;">✕</button>'
+      +'</div></div>';
+  }).join("");
+}
+function criarSemana(){
+  if(!SEMANA||!SEMANA.mes_id){toast("Sem mês ativo.");return;}
+  var label=prompt("Período da semana (ex: Semana 5 — 01/06 a 07/06):");
+  if(!label) return;
+  fetch("/api/semanas",{method:"POST",headers:{"Content-Type":"application/json","Authorization":"Bearer "+TOKEN},
+    body:JSON.stringify({mes_id:SEMANA.mes_id,label:label,ordem:TODAS_SEMANAS.length})})
+  .then(function(r){return r.json();})
+  .then(function(d){if(d.erro){toast("Erro: "+d.erro);return;}toast("✅ Semana criada!");carregarTodasSemanas();carregarSemanaAtiva();})
+  .catch(function(){toast("Erro de conexão.");});
+}
+function deletarSemana(sid){
+  if(!confirm("Deletar esta semana e todos os pares?")) return;
+  fetch("/api/semanas/"+sid,{method:"DELETE",headers:{"Authorization":"Bearer "+TOKEN}})
+  .then(function(r){if(r.ok){toast("✅ Removida!");carregarTodasSemanas();carregarSemanaAtiva();}else toast("Erro ao deletar.");})
+  .catch(function(){toast("Erro de conexão.");});
+}
+function atualizarLocalReplica(parId,val){
+  var par=PARES.find(function(p){return p.id===parId;});
+  if(!par) return;
+  par.local=val;
+  ULTIMO_LOCAL=val;
+  var idx=PARES.indexOf(par);
+  for(var i=idx+1;i<PARES.length;i++){
+    if(!PARES[i].salvo){
+      PARES[i].local=val;
+      var inp=document.querySelector("#par_"+PARES[i].id+" .par-local-input");
+      if(inp) inp.value=val;
+    }
+  }
+}
 </script>
+
+<!-- MODAL SEMANAS -->
+<div id="modalSemanas" style="display:none;position:fixed;inset:0;background:rgba(5,10,35,.95);z-index:500;flex-direction:column;">
+  <div style="background:var(--bl);border-bottom:3px solid var(--or);padding:12px 1rem;display:flex;align-items:center;justify-content:space-between;flex-shrink:0;">
+    <div><div style="font-size:14px;font-weight:800;color:#fff;">📅 Gerenciar Semanas</div><div style="font-size:11px;color:#93C5FD;" id="modalSemMesLabel">—</div></div>
+    <button onclick="fecharModalSemanas()" style="background:rgba(255,255,255,.15);color:#fff;border:none;border-radius:50%;width:32px;height:32px;font-size:16px;cursor:pointer;">✕</button>
+  </div>
+  <div style="flex:1;overflow-y:auto;padding:1rem;">
+    <div id="modalSemLista"></div>
+    <button onclick="criarSemana()" class="btn btn-blue" style="margin-top:.5rem;">+ Nova Semana</button>
+  </div>
+</div>
 </body>
 </html>
