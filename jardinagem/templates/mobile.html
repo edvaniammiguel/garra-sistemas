@@ -230,17 +230,14 @@ input[type=file]{display:none;}
 <div id="telaApp" style="display:none;flex-direction:column;flex:1;">
 
   <header class="hdr">
-    <div style="display:flex;align-items:center;gap:8px;">
+    <div style="display:flex;align-items:center;gap:8px">
       <img class="hdr-logo" src="/static/icons/logo-garra.jpg" alt="Garra" style="filter:brightness(0) invert(1);">
-      <a id="linkDesktop" href="/" style="display:none;font-size:10px;font-weight:700;
-        color:#E8820C;text-decoration:none;border:1px solid #E8820C;
-        padding:3px 8px;border-radius:6px;white-space:nowrap;">🖥 Desktop</a>
+      <a id="linkDesktop" href="/" style="display:none;font-size:10px;font-weight:700;color:#E8820C;text-decoration:none;border:1px solid #E8820C;padding:3px 8px;border-radius:6px;white-space:nowrap;">🖥 Desktop</a>
     </div>
     <div class="hdr-info">
-      <div style="display:flex;align-items:center;gap:6px;">
+      <div style="display:flex;align-items:center;gap:6px;justify-content:flex-end">
         <div class="hdr-nome" id="hdrNome">—</div>
-        <span id="hdrBadgeAdmin" style="display:none;font-size:9px;font-weight:700;
-          background:#E8820C;color:#fff;padding:2px 6px;border-radius:99px;">ADMIN</span>
+        <span id="hdrBadgeAdmin" style="display:none;font-size:9px;font-weight:700;background:#E8820C;color:#fff;padding:2px 6px;border-radius:99px;">ADMIN</span>
       </div>
       <div class="hdr-status">
         <div class="dot" id="statusDot"></div>
@@ -495,12 +492,11 @@ function mostrarApp(){
   document.getElementById("telaLogin").style.display="none";
   document.getElementById("telaApp").style.display="flex";
   document.getElementById("hdrNome").textContent=USUARIO?.nome||"—";
-  // Badge e link desktop para admin/luana
-  var isAdmin = (USUARIO?.perfil==="admin"||USUARIO?.perfil==="luana");
-  var badgeEl = document.getElementById("hdrBadgeAdmin");
-  var linkDesk = document.getElementById("linkDesktop");
-  if(badgeEl) badgeEl.style.display = isAdmin ? "inline-block" : "none";
-  if(linkDesk) linkDesk.style.display = isAdmin ? "inline-block" : "none";
+  var isAdmin=(USUARIO?.perfil==="admin"||USUARIO?.perfil==="luana");
+  var badgeEl=document.getElementById("hdrBadgeAdmin");
+  var linkDesk=document.getElementById("linkDesktop");
+  if(badgeEl) badgeEl.style.display=isAdmin?"inline-block":"none";
+  if(linkDesk) linkDesk.style.display=isAdmin?"inline-block":"none";
   document.getElementById("kmResponsavel").textContent=USUARIO?.nome||"—";
   carregarSemanaAtiva();
   atualizarStatus();

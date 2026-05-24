@@ -265,6 +265,10 @@ button,input,select{font-family:inherit;}
           <button class="btn btn-or btn-sm" onclick="abrirOrg()">🗂 Organizar Pares</button>
           <button class="btn btn-out btn-sm" onclick="adicionarSemanaAtual()">+ Semana</button>
           <button class="btn btn-out btn-sm" onclick="adicionarParAtual()">+ Par vazio</button>
+          <div style="width:1px;height:24px;background:rgba(255,255,255,.2);margin:0 4px;"></div>
+          <button class="btn btn-sm" style="background:#16A34A;color:#fff" onclick="baixarRelatorio('fotos')">📥 Fotos</button>
+          <button class="btn btn-sm" style="background:#16A34A;color:#fff" onclick="baixarRelatorio('km')">📥 KM</button>
+          <button class="btn btn-sm" style="background:#1D4ED8;color:#fff" onclick="abrirModalEmail()">📧 Enviar</button>
         </div>
       </div>
 
@@ -629,8 +633,8 @@ function abrirMes(id){
         var fA=par.fotos.find(f=>f.tipo==='antes'),fD=par.fotos.find(f=>f.tipo==='depois');
         return{tid:tid(),dbId:par.id,codA:par.codigo_a,codD:par.codigo_d,
           nome:par.local_nome,dataLabel:par.data_label,
-          antes:fA?{src:fA.url,nome:fA.original,iaL:fA.ia_local||'',iaD:fA.ia_descricao||'',sid:fA.id}:null,
-          depois:fD?{src:fD.url,nome:fD.original,iaL:fD.ia_local||'',iaD:fD.ia_descricao||'',sid:fD.id}:null,
+          antes:fA?{src:fA.url||'/thumbs/'+(fA.filename_orig||''),nome:fA.original,iaL:fA.ia_local||'',iaD:fA.ia_descricao||'',sid:fA.id}:null,
+          depois:fD?{src:fD.url||'/thumbs/'+(fD.filename_orig||''),nome:fD.original,iaL:fD.ia_local||'',iaD:fD.ia_descricao||'',sid:fD.id}:null,
           salvo:true};
       })};
     });
@@ -1146,6 +1150,89 @@ function orgSalvar(){
     .catch(function(e){ toast('Erro: '+e.message); });
 }
 
+
+/* ─── RELATÓRIOS E EMAIL ──────────────────────────────── */
+function semanaAtivaSelecionada(){
+  // Tenta usar a semana ativa no quadrante — a última com dados
+  if(!mesAtual||!quadrante.length) return null;
+  // Prefere a última semana com pares
+  for(var i=quadrante.length-1;i>=0;i--){
+    if(quadrante[i].pares.length) return quadrante[i];
+  }
+  return quadrante[quadrante.length-1];
+}
+
+function baixarRelatorio(tipo){
+  if(!mesAtual){toast('Selecione um mês primeiro!');return;}
+  var sem = semanaAtivaSelecionada();
+  if(!sem){toast('Nenhuma semana disponível!');return;}
+  toast('Gerando relatório '+tipo.toUpperCase()+'...');
+  var url = '/api/relatorios/'+sem.semId+'/'+(tipo==='fotos'?'fotos':'km');
+  var a = document.createElement('a');
+  a.href = url;
+  a.download = '';
+  // Precisa do token no header — usar fetch+blob
+  fetchAuth(url).then(function(r){
+    if(!r.ok) throw new Error('Erro '+r.status);
+    return r.blob();
+  }).then(function(blob){
+    var u = URL.createObjectURL(blob);
+    var a2 = document.createElement('a');
+    a2.href = u;
+    a2.download = 'Relatorio-'+tipo+'-'+sem.semId+'.xlsx';
+    a2.click();
+    URL.revokeObjectURL(u);
+    toast('✅ Download iniciado!');
+  }).catch(function(e){toast('Erro ao gerar: '+e.message);});
+}
+
+function abrirModalEmail(){
+  if(!mesAtual){toast('Selecione um mês primeiro!');return;}
+  if(!quadrante.length){toast('Nenhuma semana disponível!');return;}
+  // Preenche select de semanas
+  var sel = document.getElementById('emailSemSel');
+  sel.innerHTML = quadrante.map(function(s,i){
+    return '<option value="'+s.semId+'">'+esc(s.label)+'</option>';
+  }).join('');
+  // Seleciona última semana por padrão
+  var ult = semanaAtivaSelecionada();
+  if(ult) sel.value = ult.semId;
+  document.getElementById('emailSemanaInfo').textContent = mesAtual.label;
+  document.getElementById('emailStatus').textContent = '';
+  abrirModal('modalEmail');
+}
+
+function enviarEmailCliente(){
+  var sid = document.getElementById('emailSemSel').value;
+  if(!sid){toast('Selecione uma semana!');return;}
+  var btn = document.querySelector('#modalEmail .btn-or');
+  var status = document.getElementById('emailStatus');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spin">⟳</span> Enviando...';
+  status.textContent = 'Gerando relatórios e enviando email...';
+  status.style.color = '#64748B';
+  fetchAuth('/api/relatorios/'+sid+'/enviar',{method:'POST'})
+    .then(function(r){return r.json();})
+    .then(function(d){
+      if(d.erro){
+        status.textContent = '❌ '+d.erro;
+        status.style.color = '#DC2626';
+      } else {
+        status.textContent = '✅ '+d.mensagem;
+        status.style.color = '#16A34A';
+        setTimeout(function(){fecharModal('modalEmail');},2500);
+      }
+    })
+    .catch(function(e){
+      status.textContent = '❌ Erro de conexão';
+      status.style.color = '#DC2626';
+    })
+    .finally(function(){
+      btn.disabled = false;
+      btn.innerHTML = '📧 Confirmar e Enviar';
+    });
+}
+
 </script>
 
 <!-- MODAL ORGANIZAÇÃO DE PARES -->
@@ -1198,5 +1285,32 @@ function orgSalvar(){
   </div>
 </div>
 
+
+<!-- MODAL EMAIL -->
+<div class="modal-bg" id="modalEmail">
+  <div class="modal" style="max-width:480px">
+    <div class="modal-hdr">
+      <span>📧 Enviar Relatórios ao Cliente</span>
+      <button class="modal-x" onclick="fecharModal('modalEmail')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div id="emailSemanaInfo" style="background:#EFF6FF;border:1.5px solid #BFDBFE;border-radius:8px;padding:10px 14px;margin-bottom:1rem;font-size:13px;color:#1D4ED8;font-weight:600;"></div>
+      <div style="font-size:12px;color:#64748B;margin-bottom:1rem;line-height:1.6;">
+        Serão gerados e enviados por email:<br>
+        📎 <strong>Relatório Fotográfico</strong> (Excel com fotos antes/depois)<br>
+        📎 <strong>Relatório de KM</strong> (Excel com registros de serviço)
+      </div>
+      <div style="margin-bottom:.75rem">
+        <label style="font-size:11px;font-weight:700;color:#64748B;text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:4px">Semana</label>
+        <select id="emailSemSel" style="width:100%;padding:10px;border:1.5px solid #CBD5E1;border-radius:8px;font-size:13px;background:#F8FAFC">
+        </select>
+      </div>
+      <button class="btn btn-or" style="width:100%;padding:12px;font-size:14px" onclick="enviarEmailCliente()">
+        📧 Confirmar e Enviar
+      </button>
+      <div id="emailStatus" style="margin-top:.75rem;font-size:12px;text-align:center;color:#64748B;min-height:20px;"></div>
+    </div>
+  </div>
+</div>
 </body>
 </html>
