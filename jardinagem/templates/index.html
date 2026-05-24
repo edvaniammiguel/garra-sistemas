@@ -584,7 +584,7 @@ function carregarMeses(){
         html2+='<div class="sb-item" id="sbm_'+m.id+'" onclick="abrirMes('+m.id+')">';
         html2+='<span class="sb-ico">📅</span>';
         html2+='<div><div class="sb-label">'+esc(m.label)+'</div>';
-        html2+='<div class="sb-sub">'+m.total_pares+' pares · '+m.total_fotos+' fotos</div>';
+        html2+='<div class="sb-sub">'+(m.total_semanas||0)+' semana(s)</div>';
         html2+='</div></div>';
       });
       html2+='</div>';
