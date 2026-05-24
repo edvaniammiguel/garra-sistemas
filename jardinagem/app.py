@@ -357,6 +357,26 @@ def get_mes(mid):
     return jsonify(result)
 
 # ── SEMANAS ───────────────────────────────────────────────────
+
+@app.route("/api/semanas", methods=["POST"])
+@verificar_token
+def criar_semana():
+    d = request.json or {}
+    mes_id = d.get("mes_id")
+    label  = (d.get("label") or "").strip()
+    ordem  = d.get("ordem", 0)
+    if not mes_id or not label:
+        return jsonify({"erro": "mes_id e label são obrigatórios"}), 400
+    try:
+        row = query_id(
+            "INSERT INTO jardinagem.semanas (mes_id, label, ordem, status) VALUES (%s,%s,%s,'aberta')",
+            (mes_id, label, ordem)
+        )
+        return jsonify(dict(row)), 201
+    except Exception as e:
+        log.error(f"criar_semana erro: {e}")
+        return jsonify({"erro": str(e)}), 500
+
 @app.route("/api/semanas/ativa")
 @verificar_token
 def semana_ativa():
@@ -427,7 +447,7 @@ def del_par(pid):
 
 # ── FOTOS DESKTOP (Luana) ─────────────────────────────────────
 @app.route("/api/fotos/avulsa", methods=["POST"])
-@requer_perfil("admin", "luana")
+@verificar_token
 def foto_avulsa():
     try:
         par_id = int(request.form["par_id"])
