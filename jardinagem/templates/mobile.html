@@ -250,7 +250,7 @@ input[type=file]{display:none;}
   <div class="main" id="mainFoto">
 
     <!-- Semana ativa -->
-    <div class="card" id="semanaCard">
+    <div class="card" id="semanaCard" style="margin-bottom:.5rem;">
       <div class="card-label">Semana atual</div>
       <div class="card-val" id="semanaNome">Carregando...</div>
       <div class="card-sub" id="semanaDatas"></div>
@@ -277,10 +277,10 @@ input[type=file]{display:none;}
 
     <!-- ══ PAINEL FOTO ══ -->
     <!-- PAINEL BANCADA -->
-    <div id="painelFoto">
+    <div id="painelFoto" style="display:flex;flex-direction:column;flex:1;overflow:hidden;min-height:0;">
 
       <!-- Bancada fixa -->
-      <div style="padding:.75rem .75rem 0;flex-shrink:0;">
+      <div style="padding:.75rem .75rem 0;flex-shrink:0;width:100%;">
         <div style="background:linear-gradient(90deg,#78350F,#92400E);border-radius:10px 10px 0 0;padding:8px 12px;display:flex;align-items:center;justify-content:space-between;">
           <div><div style="font-size:12px;font-weight:700;color:#fff;">Bancada</div><div style="font-size:10px;color:#FDE68A;" id="bancadaCount">0 foto(s)</div></div>
           <div style="display:flex;gap:6px;">
@@ -299,7 +299,7 @@ input[type=file]{display:none;}
       <input type="file" id="fotoGaleria" accept="image/*" multiple style="display:none">
 
       <!-- Pares scrollaveis -->
-      <div style="flex:1;overflow-y:auto;padding:.75rem;">
+      <div style="flex:1;overflow-y:auto;padding:.75rem;min-height:0;">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.75rem;">
           <div style="font-size:13px;font-weight:800;color:var(--bl);">Pares</div>
           <div style="display:flex;gap:6px;">
@@ -405,10 +405,10 @@ input[type=file]{display:none;}
   <!-- NAV -->
   <nav class="nav">
     <button class="nav-btn ativo" id="navFoto" onclick="navPara('foto')">
-      <div class="nav-ico">Cam</div><div class="nav-lbl">Bancada</div>
+      <div class="nav-ico">📷</div><div class="nav-lbl">Bancada</div>
     </button>
     <button class="nav-btn" id="navKm" onclick="navPara('km')">
-      <div class="nav-ico">KM</div><div class="nav-lbl">KM</div>
+      <div class="nav-ico">📋</div><div class="nav-lbl">KM</div>
     </button>
     <button class="nav-btn" id="navHist" onclick="navPara('hist')">
       <div class="nav-ico">🗂</div><div class="nav-lbl">Histórico</div>
@@ -1130,7 +1130,7 @@ function navPara(tela){
   var pf=document.getElementById("painelFoto"),pk=document.getElementById("painelKm");
   if(mf) mf.style.display=(tela==="foto"||tela==="km")?"block":"none";
   if(mh) mh.style.display=tela==="hist"?"block":"none";
-  if(pf) pf.style.display=tela==="foto"?"flex":"none"; /* bancada */
+  if(pf) pf.style.display=tela==="foto"?"flex":"none";
   if(pk) pk.style.display=tela==="km"?"block":"none";
   ["tabFoto","tabKm"].forEach(function(id){var el=document.getElementById(id);if(el)el.className="tab";});
   if(tela==="foto"&&document.getElementById("tabFoto"))document.getElementById("tabFoto").className="tab ativo";
