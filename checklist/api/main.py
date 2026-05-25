@@ -1005,9 +1005,13 @@ async def redirect_favicon():
     return RedirectResponse(url="/jardinagem/static/icons/favicon.ico")
 
 # ── HEALTH CHECK ──────────────────────────────────────────────
-@app.get("/")
+@app.get("/api/health")
 async def health():
     return {"status":"ok","sistema":"Garra Gestão API","versao":"6.0.0","modulos":["checklist","jardinagem"]}
+
+@app.get("/")
+async def root():
+    return RedirectResponse(url="/jardinagem")
 
 @app.get("/jardinagem/api/health")
 async def jard_health():
