@@ -250,11 +250,18 @@ input[type=file]{display:none;}
   <div class="main" id="mainFoto">
 
     <!-- Semana ativa -->
-    <div class="card" id="semanaCard" style="margin-bottom:.5rem;">
-      <div class="card-label">Semana atual</div>
-      <div class="card-val" id="semanaNome">Carregando...</div>
-      <div class="card-sub" id="semanaDatas"></div>
-      <span class="badge badge-ok" id="semanaBadge">—</span>
+    <div id="semanaCard" style="background:var(--bl);border-radius:12px;padding:10px 14px;
+      margin-bottom:.75rem;display:flex;align-items:center;justify-content:space-between;gap:8px;">
+      <div style="flex:1;min-width:0;">
+        <div style="font-size:9px;font-weight:700;color:#93C5FD;text-transform:uppercase;
+          letter-spacing:.07em;margin-bottom:2px;">Semana atual</div>
+        <div style="font-size:13px;font-weight:800;color:#fff;white-space:nowrap;
+          overflow:hidden;text-overflow:ellipsis;" id="semanaNome">Carregando...</div>
+        <div style="font-size:10px;color:#93C5FD;margin-top:1px;" id="semanaDatas"></div>
+      </div>
+      <span id="semanaBadge" style="font-size:10px;font-weight:700;padding:3px 10px;
+        border-radius:99px;background:rgba(22,163,74,.25);color:#86EFAC;
+        white-space:nowrap;flex-shrink:0;">—</span>
     </div>
 
     <!-- Fila offline -->
@@ -270,10 +277,7 @@ input[type=file]{display:none;}
     </div>
 
     <!-- Tabs -->
-    <div class="tabs">
-      <div class="tab ativo" id="tabFoto" onclick="navPara('foto')">📷 Bancada</div>
-      <div class="tab" id="tabKm" onclick="navPara('km')">📋 KM</div>
-    </div>
+
 
     <!-- ══ PAINEL FOTO ══ -->
     <!-- PAINEL BANCADA -->
@@ -407,11 +411,11 @@ input[type=file]{display:none;}
     <button class="nav-btn ativo" id="navFoto" onclick="navPara('foto')">
       <div class="nav-ico">📷</div><div class="nav-lbl">Fotos</div>
     </button>
-    <button class="nav-btn" id="navKm" onclick="navPara('km')">
-      <div class="nav-ico">📋</div><div class="nav-lbl">KM</div>
-    </button>
     <button class="nav-btn" id="navGaleria" onclick="navPara('galeria')">
       <div class="nav-ico">🖼️</div><div class="nav-lbl">Galeria</div>
+    </button>
+    <button class="nav-btn" id="navKm" onclick="navPara('km')">
+      <div class="nav-ico">📋</div><div class="nav-lbl">KM</div>
     </button>
     <button class="nav-btn" id="navMais" onclick="navPara('mais')">
       <div class="nav-ico">⚙️</div><div class="nav-lbl">Mais</div>
@@ -633,8 +637,7 @@ function mudarTab(tab){
   TAB=tab;
   document.getElementById("painelFoto").style.display=tab==="foto"?"block":"none";
   document.getElementById("painelKm").style.display=tab==="km"?"block":"none";
-  document.getElementById("tabFoto").className="tab"+(tab==="foto"?" ativo":"");
-  document.getElementById("tabKm").className="tab"+(tab==="km"?" ativo":"");
+
   if(tab==="km") preencherKmSugerido();
 }
 
@@ -1208,9 +1211,7 @@ function navPara(tela){
   if(mf) mf.style.display=(tela==="foto"||tela==="km")?"flex":"none";
 
   // Tabs bancada/km
-  ["tabFoto","tabKm"].forEach(function(id){var el=document.getElementById(id);if(el)el.className="tab";});
-  if(tela==="foto"&&document.getElementById("tabFoto"))document.getElementById("tabFoto").className="tab ativo";
-  if(tela==="km"&&document.getElementById("tabKm"))document.getElementById("tabKm").className="tab ativo";
+
 
   // Nav buttons
   ["navFoto","navKm","navGaleria","navMais"].forEach(function(id){
