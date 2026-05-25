@@ -8,991 +8,1137 @@
 <meta name="theme-color" content="#1A2A5E">
 <title>Garra — Jardinagem</title>
 <link rel="manifest" href="/jardinagem/manifest.json">
-<link rel="icon" type="image/x-icon" href="/jardinagem/static/icons/favicon.ico">
-<link rel="icon" type="image/png" sizes="32x32" href="/jardinagem/static/icons/favicon-32.png">
-<link rel="icon" type="image/png" sizes="16x16" href="/jardinagem/static/icons/favicon-16.png">
+<link rel="icon" href="/jardinagem/static/icons/favicon.ico">
 <link rel="apple-touch-icon" href="/jardinagem/static/icons/icon-192.png">
 <style>
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
 :root{
   --bl:#1A2A5E;--bl2:#1E3A8A;--or:#E8820C;--or2:#D4700A;
-  --grn:#16A34A;--glt:#DCFCE7;--red:#DC2626;
-  --bg:#F0F4FF;--card:#fff;--brd:#CBD5E1;--txt:#1E293B;--mut:#64748B;
-  --r:14px;--r2:10px;
+  --grn:#16A34A;--red:#DC2626;--bg:#F0F4FF;--card:#fff;
+  --brd:#CBD5E1;--txt:#1E293B;--mut:#64748B;--r:12px;
 }
-*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
 html,body{height:100%;background:var(--bg);font-family:system-ui,-apple-system,sans-serif;color:var(--txt);}
-body{display:flex;flex-direction:column;max-width:480px;margin:0 auto;}
+body{display:flex;flex-direction:column;max-width:480px;margin:0 auto;overflow:hidden;}
 
 /* HEADER */
-.hdr{background:var(--bl);padding:env(safe-area-inset-top,10px) 1rem 10px;
-  display:flex;align-items:center;justify-content:space-between;flex-shrink:0;
-  border-bottom:3px solid var(--or);}
-.hdr-logo{height:36px;object-fit:contain;}
-.hdr-info{text-align:right;}
-.hdr-nome{font-size:12px;font-weight:700;color:#fff;}
-.hdr-status{display:flex;align-items:center;gap:5px;margin-top:2px;justify-content:flex-end;}
-.dot{width:7px;height:7px;border-radius:50%;background:var(--grn);}
-.dot.off{background:var(--or);}
-.dot-txt{font-size:10px;color:#93C5FD;}
+.hdr{background:var(--bl);border-bottom:3px solid var(--or);
+  padding:10px 1rem;display:flex;align-items:center;
+  justify-content:space-between;flex-shrink:0;}
+.hdr-logo{height:40px;object-fit:contain;}
+.hdr-r{display:flex;align-items:center;gap:10px;}
+.hdr-status{display:flex;align-items:center;gap:5px;}
+.hdr-dot{width:8px;height:8px;border-radius:50%;background:#16A34A;}
+.hdr-dot.off{background:var(--or);}
+.hdr-stxt{font-size:11px;color:#93C5FD;}
+.hdr-avatar{width:34px;height:34px;border-radius:50%;
+  background:rgba(255,255,255,.15);display:flex;align-items:center;
+  justify-content:center;font-size:14px;font-weight:800;color:#fff;}
+.hdr-badge{font-size:9px;font-weight:700;background:var(--or);
+  color:#fff;padding:2px 7px;border-radius:99px;}
 
-/* MAIN */
-.main{flex:1;overflow-y:auto;padding:1rem;padding-bottom:5.5rem;}
+/* TELAS */
+.tela{flex:1;display:none;flex-direction:column;overflow:hidden;min-height:0;width:100%;}
+.tela.ativa{display:flex;}
+.tela-scroll{flex:1;overflow-y:auto;padding:1rem;padding-bottom:5.5rem;}
+
+/* NAV */
+nav{position:fixed;bottom:0;left:50%;transform:translateX(-50%);
+  width:100%;max-width:480px;background:#fff;
+  border-top:1px solid var(--brd);display:flex;z-index:100;
+  padding-bottom:env(safe-area-inset-bottom,0);}
+.nb{flex:1;display:flex;flex-direction:column;align-items:center;
+  gap:2px;padding:8px 4px;background:none;border:none;cursor:pointer;color:var(--mut);}
+.nb.on{color:var(--or);}
+.nb-ico{font-size:20px;}
+.nb-lbl{font-size:9px;font-weight:700;text-transform:uppercase;}
 
 /* CARDS */
-.card{background:var(--card);border:1.5px solid var(--brd);border-radius:var(--r);
-  padding:1rem;margin-bottom:.75rem;box-shadow:0 2px 8px rgba(26,42,94,.06);}
-.card-label{font-size:10px;font-weight:700;color:var(--mut);text-transform:uppercase;
-  letter-spacing:.06em;margin-bottom:3px;}
-.card-val{font-size:15px;font-weight:800;color:var(--bl);}
-.card-sub{font-size:11px;color:var(--mut);margin-top:2px;}
-.badge{font-size:10px;font-weight:700;padding:2px 10px;border-radius:99px;
-  display:inline-block;margin-top:5px;}
-.badge-ok{background:var(--glt);color:var(--grn);}
-.badge-pend{background:#ffedd5;color:var(--or2);}
+.card{background:#fff;border:1.5px solid var(--brd);border-radius:var(--r);
+  padding:1rem;margin-bottom:.75rem;}
+.lbl{font-size:10px;font-weight:700;color:var(--mut);text-transform:uppercase;
+  letter-spacing:.06em;margin-bottom:3px;display:block;}
+.val{font-size:15px;font-weight:800;color:var(--bl);}
 
-/* FILA */
-.fila-card{background:#fffbeb;border:1.5px solid #fcd34d;border-radius:var(--r);
-  padding:.875rem 1rem;margin-bottom:.75rem;}
-.fila-titulo{font-size:12px;font-weight:700;color:#92400e;margin-bottom:4px;}
-.fila-info{font-size:11px;color:#78350f;line-height:1.5;}
+/* SEMANA CARD */
+.sem-card{background:var(--bl);border-radius:10px;padding:10px 14px;
+  margin-bottom:.75rem;flex-shrink:0;
+  display:flex;align-items:center;justify-content:space-between;gap:8px;}
+.sem-nome{font-size:12px;font-weight:800;color:#fff;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.sem-datas{font-size:10px;color:#93C5FD;margin-top:1px;}
+.sem-badge{font-size:9px;font-weight:700;padding:3px 9px;border-radius:99px;
+  background:rgba(22,163,74,.3);color:#86EFAC;white-space:nowrap;flex-shrink:0;}
 
-/* TABS */
-.tabs{display:flex;gap:.5rem;margin-bottom:.75rem;}
-.tab{flex:1;padding:9px;border:1.5px solid var(--brd);border-radius:var(--r2);
-  font-size:12px;font-weight:700;text-align:center;cursor:pointer;
-  color:var(--mut);background:var(--card);}
-.tab.ativo{background:var(--bl);color:#fff;border-color:var(--bl);}
+/* BANCADA */
+.banc-hdr{background:linear-gradient(90deg,#78350F,#92400E);border-radius:10px 10px 0 0;
+  padding:8px 12px;display:flex;align-items:center;justify-content:space-between;}
+.banc-body{background:#FFFBEB;border:1.5px solid #FCD34D;border-top:none;
+  border-radius:0 0 10px 10px;padding:8px;margin-bottom:.75rem;}
+.banc-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;}
+.banc-item{position:relative;border:2px solid #FCD34D;border-radius:8px;
+  overflow:hidden;aspect-ratio:1;background:#000;}
+.banc-item img{width:100%;height:100%;object-fit:cover;}
+.banc-nome{position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,.6);
+  color:#fff;font-size:9px;padding:2px 4px;overflow:hidden;
+  text-overflow:ellipsis;white-space:nowrap;}
+.banc-rm{position:absolute;top:2px;right:2px;background:rgba(220,38,38,.9);
+  color:#fff;border:none;border-radius:50%;width:18px;height:18px;
+  font-size:10px;cursor:pointer;display:flex;align-items:center;justify-content:center;}
+.btn-banc{padding:6px 10px;border:none;border-radius:7px;
+  font-size:11px;font-weight:700;cursor:pointer;background:#fff;color:#92400E;}
+
+/* PARES */
+.par-card{background:#fff;border:1.5px solid var(--brd);
+  border-radius:12px;margin-bottom:.75rem;overflow:hidden;}
+.par-hdr{background:var(--bl);padding:8px 12px;
+  display:flex;align-items:center;justify-content:space-between;}
+.par-cod{font-size:10px;font-weight:700;color:var(--or);
+  background:rgba(0,0,0,.25);padding:2px 8px;border-radius:5px;}
+.par-slots{display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:8px;}
+.slot{border:2px dashed var(--brd);border-radius:8px;aspect-ratio:1;
+  display:flex;flex-direction:column;align-items:center;
+  justify-content:center;cursor:pointer;background:#F8FAFC;
+  position:relative;overflow:hidden;}
+.slot.ok{border-style:solid;border-color:var(--grn);}
+.slot img{width:100%;height:100%;object-fit:cover;}
+.slot-lbl{font-size:10px;font-weight:700;color:var(--mut);
+  text-transform:uppercase;margin-top:4px;}
+.slot-ico{font-size:22px;}
+.slot-rm{position:absolute;top:4px;right:4px;background:rgba(220,38,38,.9);
+  color:#fff;border:none;border-radius:50%;width:22px;height:22px;
+  font-size:12px;cursor:pointer;z-index:5;
+  display:flex;align-items:center;justify-content:center;}
+.par-local{width:100%;border:1.5px solid var(--brd);border-radius:8px;
+  padding:8px 10px;font-size:13px;background:#F8FAFC;margin:0 8px 8px;
+  width:calc(100% - 16px);}
+
+/* SELETOR MODAL */
+.modal-full{position:fixed;inset:0;background:rgba(5,10,35,.96);
+  z-index:600;display:none;flex-direction:column;}
+.modal-full.aberto{display:flex;}
+.modal-hdr{background:var(--bl);border-bottom:3px solid var(--or);
+  padding:12px 1rem;display:flex;align-items:center;
+  justify-content:space-between;flex-shrink:0;}
+.modal-ttl{font-size:14px;font-weight:800;color:#fff;}
+.modal-sub{font-size:11px;color:#93C5FD;}
+.modal-close{background:rgba(255,255,255,.15);color:#fff;border:none;
+  border-radius:50%;width:32px;height:32px;font-size:16px;cursor:pointer;}
+.modal-body{flex:1;overflow-y:auto;padding:1rem;}
+.sel-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;}
+.sel-item{position:relative;border:2px solid var(--brd);border-radius:10px;
+  overflow:hidden;aspect-ratio:1;background:#000;cursor:pointer;}
+.sel-item img{width:100%;height:100%;object-fit:cover;}
+.sel-nome{position:absolute;bottom:0;left:0;right:0;
+  background:rgba(0,0,0,.65);color:#fff;font-size:9px;padding:3px 5px;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 
 /* INPUTS */
-.inp-label{font-size:10px;font-weight:700;color:var(--mut);text-transform:uppercase;
-  letter-spacing:.06em;margin-bottom:4px;display:block;}
-.inp{width:100%;border:1.5px solid var(--brd);border-radius:var(--r2);
+.inp{width:100%;border:1.5px solid var(--brd);border-radius:10px;
   padding:12px 14px;font-size:14px;color:var(--txt);background:#F8FAFC;
-  -webkit-appearance:none;margin-bottom:.75rem;}
+  margin-bottom:.75rem;-webkit-appearance:none;}
 .inp:focus{outline:none;border-color:var(--bl);}
 textarea.inp{resize:vertical;min-height:72px;}
 .inp-row{display:grid;grid-template-columns:1fr 1fr;gap:.75rem;}
 .inp-row>div{display:flex;flex-direction:column;}
 
-/* KM SUGERIDO */
-.km-sugerido{background:#EFF6FF;border:1.5px solid #BFDBFE;border-radius:var(--r2);
-  padding:8px 12px;margin-bottom:.75rem;font-size:11px;color:#1E3A8A;
-  display:flex;align-items:center;gap:6px;}
-.km-total-calc{background:var(--glt);border:1.5px solid #BBF7D0;border-radius:var(--r2);
-  padding:8px 12px;margin-bottom:.75rem;font-size:13px;font-weight:700;
-  color:var(--grn);text-align:center;}
-
-/* TIPO FOTO */
-.tipo-btns{display:grid;grid-template-columns:1fr 1fr;gap:.75rem;margin-bottom:.75rem;}
-.tipo-btn{background:var(--card);border:2px solid var(--brd);border-radius:var(--r);
-  padding:1rem .75rem;text-align:center;cursor:pointer;
-  display:flex;flex-direction:column;align-items:center;gap:5px;}
-.tipo-btn.sel-antes{border-color:var(--bl2);background:#EFF6FF;}
-.tipo-btn.sel-depois{border-color:var(--or);background:#FFF7ED;}
-.tipo-ico{font-size:24px;}
-.tipo-nome{font-size:12px;font-weight:700;}
-.tipo-desc{font-size:10px;color:var(--mut);}
-
-/* CÂMERA/GALERIA */
-.midia-btns{display:grid;grid-template-columns:1fr 1fr;gap:.75rem;margin-bottom:.75rem;}
-.midia-btn{padding:14px;border:1.5px solid var(--brd);border-radius:var(--r);
-  background:var(--card);font-size:13px;font-weight:700;cursor:pointer;
-  color:var(--bl);text-align:center;display:flex;align-items:center;
-  justify-content:center;gap:6px;}
-.midia-btn:active{background:var(--bg);}
-
-/* PREVIEW */
-.preview-wrap{position:relative;margin-bottom:.75rem;}
-.preview-img{width:100%;aspect-ratio:4/3;object-fit:cover;border-radius:var(--r);
-  border:2px solid var(--brd);display:block;}
-.preview-empty{width:100%;aspect-ratio:4/3;border:2.5px dashed var(--brd);
-  border-radius:var(--r);display:flex;flex-direction:column;align-items:center;
-  justify-content:center;gap:8px;background:#F8FAFC;}
-.preview-ico{font-size:36px;color:#CBD5E1;}
-.preview-txt{font-size:12px;color:var(--mut);font-weight:600;}
-.preview-rm{position:absolute;top:8px;right:8px;background:rgba(220,38,38,.9);
-  color:#fff;border:none;border-radius:50%;width:30px;height:30px;
-  font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:center;}
-input[type=file]{display:none;}
-
 /* BOTÕES */
 .btn{width:100%;padding:14px;border:none;border-radius:var(--r);
-  font-size:15px;font-weight:800;cursor:pointer;
-  display:flex;align-items:center;justify-content:center;gap:8px;margin-bottom:.5rem;}
-.btn-blue{background:var(--bl);color:#fff;box-shadow:0 4px 14px rgba(26,42,94,.25);}
-.btn-blue:active{background:var(--bl2);transform:scale(.98);}
-.btn-or{background:var(--or);color:#fff;box-shadow:0 4px 14px rgba(232,130,12,.25);}
-.btn-or:active{background:var(--or2);transform:scale(.98);}
-.btn:disabled{background:#CBD5E1;box-shadow:none;cursor:not-allowed;}
-.spin{animation:spin 1s linear infinite;}
-@keyframes spin{to{transform:rotate(360deg);}}
+  font-size:15px;font-weight:800;cursor:pointer;margin-bottom:.5rem;
+  display:flex;align-items:center;justify-content:center;gap:8px;}
+.btn-bl{background:var(--bl);color:#fff;}
+.btn-or{background:var(--or);color:#fff;}
+.btn-grn{background:var(--grn);color:#fff;}
+.btn-red{background:#FEE2E2;color:var(--red);border:1.5px solid #FCA5A5;}
+.btn-out{background:transparent;color:var(--bl);border:1.5px solid var(--bl);}
+.btn:disabled{background:#CBD5E1;color:#94A3B8;cursor:not-allowed;}
+.btn-sm{padding:7px 14px;font-size:12px;font-weight:700;border:none;
+  border-radius:8px;cursor:pointer;}
 
-/* HISTÓRICO */
-.hist-item{background:var(--card);border:1.5px solid var(--brd);border-radius:var(--r2);
-  padding:.75rem;margin-bottom:.5rem;}
-.hist-local{font-size:13px;font-weight:700;color:var(--bl);}
-.hist-meta{font-size:11px;color:var(--mut);margin-top:2px;}
-.hist-badges{display:flex;gap:4px;margin-top:4px;flex-wrap:wrap;}
-.hb{font-size:9px;font-weight:700;padding:2px 8px;border-radius:99px;}
-.hb-antes{background:#DBEAFE;color:#1E3A8A;}
-.hb-depois{background:#FFEDD5;color:#EA580C;}
-.hb-km{background:#DCFCE7;color:#16A34A;}
-.hb-ok{background:var(--glt);color:var(--grn);}
+/* KM */
+.km-calc{background:#DCFCE7;border:1.5px solid #BBF7D0;border-radius:10px;
+  padding:10px 14px;margin-bottom:.75rem;font-size:14px;font-weight:700;
+  color:var(--grn);text-align:center;}
+.km-sug{background:#EFF6FF;border:1.5px solid #BFDBFE;border-radius:10px;
+  padding:8px 12px;margin-bottom:.75rem;font-size:12px;color:#1E3A8A;}
 
-/* SEÇÃO */
-.sec-title{font-size:13px;font-weight:800;color:var(--bl);margin-bottom:.75rem;}
-.sec-divider{height:1px;background:var(--brd);margin:.75rem 0;}
+/* KM LISTA */
+.km-item{background:#fff;border:1.5px solid var(--brd);border-radius:10px;
+  padding:10px 12px;margin-bottom:.5rem;}
+.km-local{font-size:13px;font-weight:700;color:var(--bl);}
+.km-meta{font-size:11px;color:var(--mut);margin-top:2px;}
+.km-total{font-size:12px;font-weight:700;color:var(--grn);}
 
-/* LOGIN */
-.login-wrap{flex:1;display:flex;flex-direction:column;align-items:center;
-  justify-content:center;padding:2rem;background:#F0F4FF;}
-.login-card{background:#fff;border-radius:16px;padding:2.5rem 2rem;
-  width:100%;max-width:380px;box-shadow:0 4px 24px rgba(26,42,94,.12);
-  border:1.5px solid #CBD5E1;display:flex;flex-direction:column;align-items:center;}
-.login-logo{height:60px;object-fit:contain;margin-bottom:.75rem;}
-.login-titulo{font-size:15px;font-weight:800;color:var(--bl);margin-bottom:2px;}
-.login-sub{font-size:11px;color:var(--mut);margin-bottom:1.25rem;text-align:center;}
-.login-form{width:100%;display:flex;flex-direction:column;gap:.75rem;}
-.login-label{font-size:10px;font-weight:700;color:var(--mut);
-  text-transform:uppercase;letter-spacing:.06em;margin-bottom:2px;display:block;}
-.login-inp{width:100%;border:1.5px solid var(--brd);border-radius:var(--r2);
-  padding:13px 14px;font-size:14px;color:var(--txt);background:#F8FAFC;
-  -webkit-appearance:none;}
-.login-inp:focus{outline:none;border-color:var(--bl);}
-.senha-wrap{position:relative;}
-.senha-wrap .login-inp{padding-right:44px;}
-.olho-btn{position:absolute;right:12px;top:50%;transform:translateY(-50%);
-  background:none;border:none;cursor:pointer;font-size:18px;color:var(--mut);}
-.login-btn{padding:14px;background:var(--bl);color:#fff;border:none;
-  border-radius:var(--r2);font-size:15px;font-weight:800;cursor:pointer;
-  width:100%;margin-top:.25rem;}
-.login-erro{font-size:12px;color:var(--red);text-align:center;min-height:16px;}
+/* GALERIA */
+.gal-par{background:#fff;border:1.5px solid var(--brd);
+  border-radius:12px;margin-bottom:.75rem;overflow:hidden;}
+.gal-hdr{background:var(--bl);padding:8px 12px;display:flex;align-items:center;gap:8px;}
+.gal-cod{font-size:10px;font-weight:700;color:var(--or);
+  background:rgba(0,0,0,.25);padding:2px 8px;border-radius:5px;}
+.gal-loc{font-size:12px;color:#fff;font-weight:600;flex:1;}
+.gal-fotos{display:grid;grid-template-columns:1fr 1fr;}
+.gal-slot{position:relative;}
+.gal-lbl{font-size:9px;font-weight:700;padding:3px 8px;text-align:center;}
+.gal-lbl.a{background:#EFF6FF;color:#1D4ED8;}
+.gal-lbl.d{background:#FFF7ED;color:#EA580C;}
+.gal-img{aspect-ratio:4/3;overflow:hidden;background:#F1F5F9;}
+.gal-img img{width:100%;height:100%;object-fit:cover;}
+.sem-vazio{background:#F1F5F9;width:100%;height:100%;
+  display:flex;align-items:center;justify-content:center;
+  font-size:11px;color:var(--mut);}
 
 /* TOAST */
-.toast{position:fixed;bottom:80px;left:50%;transform:translateX(-50%) translateY(20px);
+.toast{position:fixed;bottom:72px;left:50%;transform:translateX(-50%) translateY(20px);
   background:var(--bl);color:#fff;padding:10px 20px;border-radius:99px;
   font-size:13px;font-weight:700;border-left:4px solid var(--or);
   opacity:0;transition:.25s;z-index:999;white-space:nowrap;pointer-events:none;}
-.toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
+.toast.on{opacity:1;transform:translateX(-50%) translateY(0);}
 
-/* NAV */
-.nav{position:fixed;bottom:0;left:50%;transform:translateX(-50%);
-  width:100%;max-width:480px;background:var(--card);
-  border-top:1px solid var(--brd);display:flex;
-  padding-bottom:env(safe-area-inset-bottom,0);z-index:100;}
-.nav-btn{flex:1;display:flex;flex-direction:column;align-items:center;
-  padding:10px 4px;gap:3px;background:none;border:none;cursor:pointer;color:var(--mut);}
-.nav-btn.ativo{color:var(--or);}
-.nav-ico{font-size:20px;}
-.nav-lbl{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;}
+/* FILA OFFLINE */
+.fila-card{background:#FFFBEB;border:1.5px solid #FCD34D;border-radius:10px;
+  padding:.75rem 1rem;margin-bottom:.75rem;}
 
-/* CHIPS LOCAIS */
-.chip{background:#EFF6FF;color:var(--bl2);border:none;border-radius:99px;
-  padding:4px 12px;font-size:11px;font-weight:600;cursor:pointer;margin:2px;}
-
-@media(min-width:600px){
-  .login-card{padding:3rem 2.5rem;}
-}
+/* LOGIN */
+.login-wrap{flex:1;display:flex;align-items:center;justify-content:center;
+  padding:2rem;background:var(--bg);}
+.login-card{background:#fff;border-radius:16px;padding:2.5rem 2rem;
+  width:100%;max-width:380px;box-shadow:0 4px 24px rgba(26,42,94,.12);
+  border:1.5px solid var(--brd);display:flex;flex-direction:column;align-items:center;}
+.spin{animation:spin .8s linear infinite;}
+@keyframes spin{to{transform:rotate(360deg);}}
+input[type=file]{display:none;}
 </style>
 </head>
 <body>
 
-<!-- ── LOGIN ─────────────────────────────────────────────── -->
+<!-- ══ LOGIN ══════════════════════════════════════════════ -->
 <div id="telaLogin" style="display:flex;flex-direction:column;flex:1;">
   <div class="login-wrap">
     <div class="login-card">
-      <img class="login-logo" src="/jardinagem/static/icons/logo-Garra-e-ca%C3%A7ambas.png" alt="Garra Terraplenagem">
-      <div class="login-titulo">Jardinagem</div>
-      <div class="login-sub">Águas de Pará de Minas</div>
-      <div class="login-form">
+      <img src="/jardinagem/static/icons/logo-Garra-e-ca%C3%A7ambas.png"
+           style="height:64px;object-fit:contain;margin-bottom:.75rem;">
+      <div style="font-size:15px;font-weight:800;color:var(--bl);margin-bottom:3px;">Jardinagem</div>
+      <div style="font-size:11px;color:var(--mut);margin-bottom:1.5rem;text-align:center;">Águas de Pará de Minas</div>
+      <div style="width:100%;display:flex;flex-direction:column;gap:.75rem;">
         <div>
-          <label class="login-label">Usuário</label>
-          <input class="login-inp" id="loginEmail" type="email"
-                 placeholder="seu@email.com" autocomplete="email" inputmode="email">
+          <label class="lbl">Email</label>
+          <input class="inp" id="lgEmail" type="email" placeholder="seu@email.com"
+                 style="margin:0;" onkeydown="if(event.key==='Enter')login()">
         </div>
         <div>
-          <label class="login-label">Senha</label>
-          <div class="senha-wrap">
-            <input class="login-inp" id="loginSenha" type="password"
-                   placeholder="••••••••" autocomplete="current-password">
-            <button class="olho-btn" type="button" id="btnOlho"
-                    onclick="toggleSenha()">👁</button>
+          <label class="lbl">Senha</label>
+          <div style="position:relative;">
+            <input class="inp" id="lgSenha" type="password" placeholder="••••••••"
+                   style="margin:0;padding-right:44px;" onkeydown="if(event.key==='Enter')login()">
+            <button onclick="toggleSenha()" style="position:absolute;right:12px;top:50%;
+              transform:translateY(-50%);background:none;border:none;cursor:pointer;
+              font-size:18px;color:var(--mut);" id="btnOlho">👁</button>
           </div>
         </div>
-        <div class="login-erro" id="loginErro"></div>
-        <button class="login-btn" onclick="fazerLogin()">Entrar</button>
+        <div id="lgErro" style="font-size:12px;color:var(--red);text-align:center;min-height:16px;"></div>
+        <button class="btn btn-bl" onclick="login()" style="margin:0;">Entrar</button>
       </div>
     </div>
   </div>
 </div>
 
-<!-- ── APP ───────────────────────────────────────────────── -->
-<div id="telaApp" style="display:none;flex-direction:column;flex:1;">
+<!-- ══ APP ════════════════════════════════════════════════ -->
+<div id="telaApp" style="display:none;flex-direction:column;flex:1;overflow:hidden;">
 
-  <header class="hdr" style="background:#1A2A5E;border-bottom:3px solid #E8820C;padding:10px 1rem;display:flex;align-items:center;justify-content:space-between;flex-shrink:0;">
-    <!-- Logo colorida -->
-    <img src="/jardinagem/static/icons/logo-Garra-e-ca%C3%A7ambas.png" alt="Garra" style="height:44px;object-fit:contain;filter:brightness(0) invert(1);">
-    <!-- Direita: status + nome + badge + link desktop -->
-    <div style="display:flex;align-items:center;gap:10px;">
-      <div style="display:flex;align-items:center;gap:5px;">
-        <div class="dot" id="statusDot" style="width:8px;height:8px;border-radius:50%;background:#16A34A;"></div>
-        <div style="font-size:11px;color:#93C5FD;" id="statusTxt">Online</div>
+  <!-- HEADER -->
+  <header class="hdr">
+    <img src="/jardinagem/static/icons/logo-Garra-e-ca%C3%A7ambas.png"
+         class="hdr-logo" style="filter:brightness(0) invert(1);">
+    <div class="hdr-r">
+      <div class="hdr-status">
+        <div class="hdr-dot" id="hdrDot"></div>
+        <span class="hdr-stxt" id="hdrStxt">...</span>
       </div>
-      <div style="background:rgba(255,255,255,.15);border-radius:50%;width:34px;height:34px;display:flex;align-items:center;justify-content:center;">
-        <span style="font-size:14px;font-weight:800;color:#fff;" id="hdrNomeIni">—</span>
-      </div>
-      <span id="hdrBadgeAdmin" style="display:none;font-size:9px;font-weight:700;background:#E8820C;color:#fff;padding:2px 7px;border-radius:99px;">ADMIN</span>
-      <a id="linkDesktop" href="/" style="display:none;font-size:10px;font-weight:700;color:#E8820C;text-decoration:none;border:1px solid #E8820C;padding:4px 9px;border-radius:6px;white-space:nowrap;">Desktop</a>
+      <div class="hdr-avatar" id="hdrAv">—</div>
+      <span id="hdrAdmin" style="display:none;" class="hdr-badge">ADMIN</span>
+      <a id="hdrDesk" href="/jardinagem" style="display:none;font-size:10px;
+        font-weight:700;color:var(--or);text-decoration:none;
+        border:1px solid var(--or);padding:3px 8px;border-radius:6px;">Desktop</a>
     </div>
   </header>
 
-  <!-- TELA: FOTO + KM -->
-  <div id="mainFoto" style="flex:1;display:flex;flex-direction:column;overflow:hidden;min-height:0;padding:.75rem .75rem 0;">
-
-    <!-- Semana ativa -->
-    <div id="semanaCard" style="background:var(--bl);border-radius:10px;padding:8px 12px;
-      margin-bottom:.5rem;display:flex;align-items:center;justify-content:space-between;gap:6px;flex-shrink:0;">
-      <div style="flex:1;min-width:0;">
-        <div style="font-size:9px;font-weight:700;color:#93C5FD;text-transform:uppercase;letter-spacing:.06em;">Semana atual</div>
-        <div style="font-size:12px;font-weight:800;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" id="semanaNome">Carregando...</div>
-        <div style="font-size:10px;color:#93C5FD;" id="semanaDatas"></div>
-      </div>
-      <span id="semanaBadge" style="font-size:9px;font-weight:700;padding:2px 8px;border-radius:99px;background:rgba(22,163,74,.25);color:#86EFAC;white-space:nowrap;flex-shrink:0;">—</span>
-    </div>
-
-    <!-- Fila offline -->
-    <div class="fila-card" id="filaCard" style="display:none;">
-      <div class="fila-titulo">📤 Pendente de envio</div>
-      <div class="fila-info" id="filaInfo"></div>
-      <button onclick="sincronizarAgora()"
-              style="margin-top:8px;width:100%;padding:8px;background:#fff;
-                     border:1.5px solid #fcd34d;border-radius:8px;
-                     font-size:12px;font-weight:700;color:#92400e;cursor:pointer;">
-        ⟳ Sincronizar agora
-      </button>
-    </div>
-
-    <!-- Tabs -->
-
-
-    <!-- ══ PAINEL FOTO ══ -->
-    <!-- PAINEL BANCADA -->
-    <div id="painelFoto" style="display:flex;flex-direction:column;flex:1;overflow:hidden;min-height:0;">
-
-      <!-- Bancada fixa -->
-      <div style="flex-shrink:0;width:100%;">
-        <div style="background:linear-gradient(90deg,#78350F,#92400E);border-radius:10px 10px 0 0;padding:8px 12px;display:flex;align-items:center;justify-content:space-between;">
-          <div><div style="font-size:12px;font-weight:700;color:#fff;">Bancada</div><div style="font-size:10px;color:#FDE68A;" id="bancadaCount">0 foto(s)</div></div>
-          <div style="display:flex;gap:6px;">
-            <button style="padding:5px 9px;border:none;border-radius:7px;font-size:11px;font-weight:700;cursor:pointer;background:#fff;color:#92400E;" onclick="document.getElementById('fotoCamera').click()">Camara</button>
-            <button style="padding:5px 9px;border:none;border-radius:7px;font-size:11px;font-weight:700;cursor:pointer;background:#fff;color:#92400E;" onclick="document.getElementById('fotoGaleria').click()">+ Fotos</button>
-          </div>
+  <!-- TELA FOTOS -->
+  <div class="tela ativa" id="tFotos">
+    <!-- Semana card (topo fixo) -->
+    <div style="padding:.75rem .75rem 0;flex-shrink:0;">
+      <div class="sem-card">
+        <div style="flex:1;min-width:0;">
+          <div style="font-size:9px;font-weight:700;color:#93C5FD;
+            text-transform:uppercase;letter-spacing:.06em;">Semana atual</div>
+          <div class="sem-nome" id="semNome">Carregando...</div>
+          <div class="sem-datas" id="semDatas"></div>
         </div>
-        <div style="background:#FFFBEB;border:1.5px solid #FCD34D;border-top:none;border-radius:0 0 10px 10px;padding:8px;">
-          <div id="bancadaGrid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;">
-            <div style="grid-column:1/-1;text-align:center;color:#92400E;font-size:11px;padding:.4rem;">Adicione fotos</div>
+        <span class="sem-badge" id="semBadge">—</span>
+      </div>
+      <!-- Fila offline -->
+      <div id="filaCard" style="display:none;" class="fila-card">
+        <div style="font-size:12px;font-weight:700;color:#92400E;">📤 Pendente</div>
+        <div id="filaInfo" style="font-size:11px;color:#78350F;margin-top:3px;"></div>
+        <button onclick="sincronizar()" style="margin-top:8px;width:100%;
+          padding:7px;background:#fff;border:1.5px solid #FCD34D;border-radius:8px;
+          font-size:12px;font-weight:700;color:#92400E;cursor:pointer;">⟳ Sincronizar</button>
+      </div>
+      <!-- Bancada -->
+      <div class="banc-hdr">
+        <div>
+          <div style="font-size:12px;font-weight:700;color:#fff;">Bancada</div>
+          <div style="font-size:10px;color:#FDE68A;" id="bancCount">0 foto(s)</div>
+        </div>
+        <div style="display:flex;gap:6px;">
+          <button class="btn-banc" onclick="document.getElementById('inpCam').click()">📷 Câmera</button>
+          <button class="btn-banc" onclick="document.getElementById('inpGal').click()">🖼️ Galeria</button>
+        </div>
+      </div>
+      <div class="banc-body">
+        <div class="banc-grid" id="bancGrid">
+          <div style="grid-column:1/-1;text-align:center;color:#92400E;font-size:11px;padding:.4rem;">
+            Adicione fotos acima
           </div>
         </div>
       </div>
-
-      <input type="file" id="fotoCamera" accept="image/*" capture="environment" multiple style="display:none">
-      <input type="file" id="fotoGaleria" accept="image/*" multiple style="display:none">
-
-      <!-- Pares scrollaveis -->
-      <div style="flex:1;overflow-y:auto;padding:.5rem 0;min-height:0;">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.75rem;">
-          <div style="font-size:13px;font-weight:800;color:var(--bl);">Pares</div>
-          <div style="display:flex;gap:6px;">
-            <button onclick="adicionarPar()" style="background:var(--bl);color:#fff;border:none;border-radius:8px;padding:6px 12px;font-size:12px;font-weight:700;cursor:pointer;">+ Novo par</button>
-            <button onclick="abrirModalSemanas()" style="background:transparent;color:var(--bl);border:1.5px solid var(--bl);border-radius:8px;padding:6px 9px;font-size:11px;font-weight:700;cursor:pointer;">Semanas</button>
-          </div>
-        </div>
-        <div id="paresWrap"><div style="text-align:center;color:var(--mut);font-size:13px;padding:2rem 0;">Adicione fotos e crie pares.</div></div>
-        <button id="btnSalvarTodos" onclick="salvarTodos()" style="display:none;width:100%;padding:14px;background:var(--grn);color:#fff;border:none;border-radius:10px;font-size:15px;font-weight:800;cursor:pointer;margin-top:.5rem;">Salvar todos os pares</button>
-      </div>
     </div>
 
-    <div id="painelKm" style="display:none;flex:1;overflow-y:auto;padding:.75rem;padding-bottom:5.5rem;">
-      <div class="sec-title">Registrar serviço</div>
+    <!-- Inputs ocultos -->
+    <input type="file" id="inpCam" accept="image/*" capture="environment" multiple>
+    <input type="file" id="inpGal" accept="image/*" multiple>
 
-      <label class="inp-label">📅 Data</label>
-      <input class="inp" id="kmData" type="date">
-
-      <label class="inp-label">📍 Local do serviço</label>
-      <input class="inp" id="kmLocal" type="text"
-             placeholder="Ex: ETE União, Reservatório São Cristóvão..."
-             oninput="filtrarLocais(this.value,'locaisKm')">
-      <div id="locaisKm" style="display:flex;flex-wrap:wrap;gap:4px;margin-top:-8px;margin-bottom:12px;"></div>
-
-      <!-- KM sugerido -->
-      <div class="km-sugerido" id="kmSugerido" style="display:none;">
-        💡 KM inicial sugerido: <strong id="kmSugeridoVal">—</strong>
-        (último KM final registrado)
-      </div>
-
-      <div class="inp-row">
-        <div>
-          <label class="inp-label">KM Inicial</label>
-          <input class="inp" id="kmIni" type="number" inputmode="decimal"
-                 placeholder="22130" oninput="calcKmTotal()">
-        </div>
-        <div>
-          <label class="inp-label">KM Final</label>
-          <input class="inp" id="kmFin" type="number" inputmode="decimal"
-                 placeholder="22159" oninput="calcKmTotal()">
+    <!-- Pares (scroll) -->
+    <div style="flex:1;overflow-y:auto;padding:.75rem;min-height:0;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.75rem;">
+        <div style="font-size:13px;font-weight:800;color:var(--bl);">Pares</div>
+        <div style="display:flex;gap:6px;">
+          <button class="btn-sm btn-bl" onclick="novoPar()">+ Novo par</button>
+          <button class="btn-sm btn-out" onclick="abrirSemanas()">Semanas</button>
         </div>
       </div>
-
-      <!-- KM Total calculado -->
-      <div class="km-total-calc" id="kmTotalDiv" style="display:none;">
-        KM percorrido: <span id="kmTotalVal">0</span> km
-      </div>
-
-      <div class="inp-row">
-        <div>
-          <label class="inp-label">Hora início</label>
-          <input class="inp" id="kmHrIni" type="time">
-        </div>
-        <div>
-          <label class="inp-label">Hora fim</label>
-          <input class="inp" id="kmHrFim" type="time">
+      <div id="paresWrap">
+        <div style="text-align:center;color:var(--mut);font-size:13px;padding:2rem 0;">
+          Adicione fotos na bancada e crie pares.
         </div>
       </div>
-
-      <label class="inp-label">📝 Observação</label>
-      <textarea class="inp" id="kmObs"
-                placeholder="Descreva o serviço: capina, roçagem, limpeza, aplicação de herbicida..."></textarea>
-
-      <!-- Responsável automático -->
-      <div style="background:#F0F4FF;border-radius:var(--r2);padding:10px 14px;
-                  margin-bottom:.75rem;font-size:12px;color:var(--mut);">
-        👤 Responsável: <strong id="kmResponsavel" style="color:var(--bl);">—</strong>
-        <span style="font-size:10px;">(pelo login)</span>
-      </div>
-
-      <button class="btn btn-blue" id="btnEnviarKm" onclick="enviarKm()">
-        ✅ Salvar Serviço
-      </button>
+      <button id="btnSalvar" class="btn btn-grn" onclick="salvarTodos()"
+              style="display:none;">💾 Salvar todos os pares</button>
     </div>
+  </div>
 
-  </div><!-- /mainFoto -->
-
-  <!-- TELA: HISTÓRICO -->
-  <div class="main" id="mainHist" style="display:none;">
-    <div class="sec-title">Meu histórico hoje</div>
-
-    <!-- Resumo do dia -->
-    <div class="card" id="resumoDia" style="display:none;">
-      <div style="display:flex;justify-content:space-between;align-items:center;">
-        <div>
-          <div class="card-label">Total km hoje</div>
-          <div class="card-val" id="resumoKm">0 km</div>
-        </div>
-        <div style="text-align:right;">
-          <div class="card-label">Registros</div>
-          <div class="card-val" id="resumoRegistros">0</div>
-        </div>
+  <!-- TELA GALERIA -->
+  <div class="tela" id="tGaleria">
+    <div style="padding:.75rem .75rem 0;flex-shrink:0;">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:.75rem;">
+        <div style="font-size:14px;font-weight:800;color:var(--bl);flex:1;">📸 Galeria</div>
+        <select id="galSel" onchange="carregarGaleria()"
+          style="padding:7px 10px;border:1.5px solid var(--brd);border-radius:8px;
+          font-size:12px;background:#fff;flex:1;">
+          <option value="">Selecione a semana...</option>
+        </select>
       </div>
     </div>
-
-    <div id="listaHist">
-      <div style="color:var(--mut);font-size:13px;text-align:center;padding:2rem;">
-        Carregando...
+    <div class="tela-scroll" style="padding-top:0;" id="galConteudo">
+      <div style="text-align:center;color:var(--mut);font-size:13px;padding:3rem;">
+        Selecione uma semana para ver as fotos.
       </div>
     </div>
   </div>
 
-  <!-- NAV -->
-  <nav class="nav">
-    <button class="nav-btn ativo" id="navFoto" onclick="navPara('foto')">
-      <div class="nav-ico">📷</div><div class="nav-lbl">Fotos</div>
-    </button>
-    <button class="nav-btn" id="navGaleria" onclick="navPara('galeria')">
-      <div class="nav-ico">🖼️</div><div class="nav-lbl">Galeria</div>
-    </button>
-    <button class="nav-btn" id="navKm" onclick="navPara('km')">
-      <div class="nav-ico">📋</div><div class="nav-lbl">KM</div>
-    </button>
-    <button class="nav-btn" id="navMais" onclick="navPara('mais')">
-      <div class="nav-ico">⚙️</div><div class="nav-lbl">Mais</div>
-    </button>
-  </nav>
+  <!-- TELA KM -->
+  <div class="tela" id="tKm">
+    <div class="tela-scroll">
+      <div style="font-size:14px;font-weight:800;color:var(--bl);margin-bottom:1rem;">📋 Registrar KM</div>
 
+      <label class="lbl">Data</label>
+      <input class="inp" id="kmData" type="date">
 
-  <!-- TELA GALERIA -->
-  <div id="mainGaleria" style="display:none;flex:1;overflow-y:auto;padding:1rem;padding-bottom:5.5rem;">
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.75rem;">
-      <div style="font-size:14px;font-weight:800;color:var(--bl);">📸 Galeria</div>
-      <select id="galSemSel" onchange="carregarGaleria()"
-        style="padding:6px 10px;border:1.5px solid var(--brd);border-radius:8px;font-size:12px;background:#fff;">
-        <option value="">Selecione a semana...</option>
-      </select>
-    </div>
-    <div id="galConteudo">
-      <div style="text-align:center;color:var(--mut);font-size:13px;padding:3rem;">
-        Selecione uma semana para ver as fotos salvas.
+      <label class="lbl">Local do serviço</label>
+      <input class="inp" id="kmLocal" type="text"
+             placeholder="Ex: ETE União, Reservatório...">
+      <div id="kmChips" style="display:flex;flex-wrap:wrap;gap:4px;margin-top:-8px;margin-bottom:12px;"></div>
+
+      <div id="kmSug" style="display:none;" class="km-sug">
+        💡 KM inicial sugerido: <strong id="kmSugVal">—</strong>
+      </div>
+
+      <div class="inp-row" style="margin-bottom:.75rem;">
+        <div>
+          <label class="lbl">KM Inicial</label>
+          <input class="inp" id="kmIni" type="number" inputmode="decimal"
+                 placeholder="22130" oninput="calcKm()" style="margin:0;">
+        </div>
+        <div>
+          <label class="lbl">KM Final</label>
+          <input class="inp" id="kmFim" type="number" inputmode="decimal"
+                 placeholder="22180" oninput="calcKm()" style="margin:0;">
+        </div>
+      </div>
+
+      <div id="kmCalc" style="display:none;" class="km-calc"></div>
+
+      <div class="inp-row" style="margin-bottom:.75rem;">
+        <div>
+          <label class="lbl">Hora início</label>
+          <input class="inp" id="kmHrIni" type="time" style="margin:0;">
+        </div>
+        <div>
+          <label class="lbl">Hora fim</label>
+          <input class="inp" id="kmHrFim" type="time" style="margin:0;">
+        </div>
+      </div>
+
+      <label class="lbl">Observação</label>
+      <textarea class="inp" id="kmObs" placeholder="Descreva o serviço..."></textarea>
+
+      <div style="background:#F0F4FF;border-radius:10px;padding:10px 14px;
+           margin-bottom:.75rem;font-size:12px;color:var(--mut);">
+        👤 Responsável: <strong id="kmResp" style="color:var(--bl);">—</strong>
+      </div>
+
+      <button class="btn btn-bl" id="btnKm" onclick="enviarKm()">✅ Salvar Serviço</button>
+
+      <!-- Registros do dia -->
+      <div style="margin-top:1rem;">
+        <div style="font-size:13px;font-weight:800;color:var(--bl);margin-bottom:.75rem;">
+          Registros de hoje
+        </div>
+        <div id="kmLista">
+          <div style="text-align:center;color:var(--mut);font-size:12px;padding:1rem;">
+            Nenhum registro hoje.
+          </div>
+        </div>
       </div>
     </div>
   </div>
 
   <!-- TELA MAIS -->
-  <div id="mainMais" style="display:none;flex:1;overflow-y:auto;padding:1rem;padding-bottom:5.5rem;">
-    <div style="font-size:14px;font-weight:800;color:var(--bl);margin-bottom:1rem;">⚙️ Menu</div>
+  <div class="tela" id="tMais" style="flex-direction:column;">
+    <div class="tela-scroll" style="width:100%;">
+      <div style="font-size:14px;font-weight:800;color:var(--bl);margin-bottom:1rem;">⚙️ Menu</div>
 
-    <!-- Semana atual info -->
-    <div class="card" style="margin-bottom:.75rem;">
-      <div class="card-label">Semana atual</div>
-      <div style="font-size:13px;font-weight:700;color:var(--bl);" id="maisSemanaNome">—</div>
-      <div style="display:flex;gap:8px;margin-top:.75rem;flex-wrap:wrap;">
-        <button onclick="abrirModalSemanas()"
-          style="padding:8px 14px;background:var(--bl);color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;">
-          📅 Gerenciar Semanas
-        </button>
-        <button onclick="sincronizarAgora()"
-          style="padding:8px 14px;background:#FFF7ED;color:var(--or2);border:1.5px solid var(--or);border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;">
-          ⟳ Sincronizar
+      <!-- Semana info -->
+      <div class="card">
+        <span class="lbl">Semana atual</span>
+        <div class="val" id="maisSem" style="font-size:13px;">—</div>
+        <div style="display:flex;gap:8px;margin-top:.75rem;flex-wrap:wrap;">
+          <button class="btn-sm btn-bl" onclick="abrirSemanas()">📅 Gerenciar Semanas</button>
+          <button class="btn-sm btn-or" onclick="criarMesModal()">+ Novo Mês</button>
+        </div>
+      </div>
+
+      <!-- Sincronizar -->
+      <div class="card">
+        <span class="lbl">Sincronização offline</span>
+        <div id="maisFila" style="font-size:12px;color:var(--mut);margin-bottom:.75rem;">Verificando...</div>
+        <button class="btn-sm btn-out" onclick="sincronizar()" style="width:100%;padding:10px;">
+          ⟳ Sincronizar agora
         </button>
       </div>
-    </div>
 
-    <!-- Admin: enviar email -->
-    <div id="maisAdminBloco" style="display:none;">
-      <div class="card" style="margin-bottom:.75rem;">
-        <div class="card-label">Relatórios</div>
-        <div style="font-size:12px;color:var(--mut);margin-bottom:.75rem;line-height:1.6;">
-          Gera e envia o relatório fotográfico e de KM por email ao cliente.
-        </div>
-        <div style="display:flex;gap:8px;flex-wrap:wrap;">
-          <button onclick="abrirEnvioEmailMobile()"
-            style="padding:10px 16px;background:#1D4ED8;color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;flex:1;">
-            📧 Enviar Relatório
+      <!-- Admin: enviar email -->
+      <div id="blocoAdmin" style="display:none;">
+        <div class="card">
+          <span class="lbl">Relatórios</span>
+          <div style="font-size:12px;color:var(--mut);margin-bottom:.75rem;line-height:1.6;">
+            Gera e envia o relatório fotográfico e de KM por email ao cliente.
+          </div>
+          <button class="btn btn-bl" onclick="enviarEmailAdmin()" id="btnEmail">
+            📧 Enviar Relatório por Email
           </button>
+          <div id="emailSt" style="font-size:12px;text-align:center;color:var(--mut);min-height:16px;"></div>
         </div>
-        <div id="maisEmailStatus" style="margin-top:.5rem;font-size:11px;color:var(--mut);min-height:16px;"></div>
       </div>
-    </div>
 
-    <!-- Sair -->
-    <button onclick="sair()"
-      style="width:100%;padding:12px;background:#FEE2E2;color:var(--red);border:1.5px solid #FCA5A5;
-             border-radius:10px;font-size:14px;font-weight:700;cursor:pointer;margin-top:.5rem;">
-      ↩ Sair
+      <!-- Sair -->
+      <button class="btn btn-red" onclick="sair()" style="margin-top:.5rem;">↩ Sair</button>
+    </div>
+  </div>
+
+  <!-- NAV -->
+  <nav>
+    <button class="nb on" id="nbFotos" onclick="ir('Fotos')">
+      <div class="nb-ico">📷</div><div class="nb-lbl">Fotos</div>
+    </button>
+    <button class="nb" id="nbGaleria" onclick="ir('Galeria')">
+      <div class="nb-ico">🖼️</div><div class="nb-lbl">Galeria</div>
+    </button>
+    <button class="nb" id="nbKm" onclick="ir('Km')">
+      <div class="nb-ico">📋</div><div class="nb-lbl">KM</div>
+    </button>
+    <button class="nb" id="nbMais" onclick="ir('Mais')">
+      <div class="nb-ico">⚙️</div><div class="nb-lbl">Mais</div>
+    </button>
+  </nav>
+</div>
+
+<!-- ══ MODAIS ════════════════════════════════════════════ -->
+
+<!-- Seletor de foto da bancada -->
+<div class="modal-full" id="mSeletor">
+  <div class="modal-hdr">
+    <div>
+      <div class="modal-ttl" id="mSelTtl">Escolher foto</div>
+      <div class="modal-sub">Toque para encaixar no slot</div>
+    </div>
+    <button class="modal-close" onclick="fecharSeletor()">✕</button>
+  </div>
+  <div class="modal-body">
+    <div class="sel-grid" id="mSelGrid"></div>
+    <div id="mSelVazio" style="display:none;text-align:center;
+      color:var(--mut);font-size:13px;padding:3rem;">
+      Bancada vazia — adicione fotos primeiro.
+    </div>
+  </div>
+</div>
+
+<!-- Gerenciar semanas -->
+<div class="modal-full" id="mSemanas">
+  <div class="modal-hdr">
+    <div>
+      <div class="modal-ttl">📅 Semanas</div>
+      <div class="modal-sub" id="mSemMes">—</div>
+    </div>
+    <button class="modal-close" onclick="fecharSemanas()">✕</button>
+  </div>
+  <div class="modal-body">
+    <div id="mSemLista"></div>
+    <button class="btn btn-bl" onclick="novaSemana()" style="margin-top:.5rem;">
+      + Nova Semana
     </button>
   </div>
-</div><!-- /telaApp -->
+</div>
+
+<!-- Novo mês -->
+<div class="modal-full" id="mMes">
+  <div class="modal-hdr">
+    <div class="modal-ttl">+ Novo Mês</div>
+    <button class="modal-close" onclick="document.getElementById('mMes').classList.remove('aberto')">✕</button>
+  </div>
+  <div class="modal-body">
+    <label class="lbl">Mês</label>
+    <select class="inp" id="mesInputMes">
+      <option value="1">Janeiro</option><option value="2">Fevereiro</option>
+      <option value="3">Março</option><option value="4">Abril</option>
+      <option value="5">Maio</option><option value="6">Junho</option>
+      <option value="7">Julho</option><option value="8">Agosto</option>
+      <option value="9">Setembro</option><option value="10">Outubro</option>
+      <option value="11">Novembro</option><option value="12">Dezembro</option>
+    </select>
+    <label class="lbl">Ano</label>
+    <input class="inp" id="mesInputAno" type="number" value="2026">
+    <button class="btn btn-bl" onclick="criarMes()">Criar Mês</button>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script>
-// ── ESTADO ───────────────────────────────────────────────────
+// ══ ESTADO ══════════════════════════════════════════════
 var TOKEN    = localStorage.getItem("garra_token") || "";
 var USUARIO  = JSON.parse(localStorage.getItem("garra_usuario") || "null");
 var SEMANA   = null;
-var TIPO     = "antes";
-var FOTO     = null;
+var BANCADA  = [];
+var PARES    = [];
+var PAR_SEQ  = 0;
+var ULT_LOCAL = "";
+var ULT_KM   = parseFloat(localStorage.getItem("ult_km") || "0");
 var LOCAIS   = JSON.parse(localStorage.getItem("locais_garra") || "[]");
 var ONLINE   = navigator.onLine;
-var TAB      = "foto";
-var ULTIMO_KM = parseFloat(localStorage.getItem("ultimo_km") || "0");
+var _selPar  = null, _selTipo = null;
+var TODAS_SEMANAS = [];
 
-// ── PWA ──────────────────────────────────────────────────────
-if ("serviceWorker" in navigator) {
-  var _swReg = null;
+// ══ PWA ═════════════════════════════════════════════════
+if("serviceWorker" in navigator){
   navigator.serviceWorker.register("/jardinagem/sw.js")
     .then(function(reg){
-      _swReg = reg;
       navigator.serviceWorker.addEventListener("message", function(e){
-        if(!e.data || e.data.tipo !== "SYNC_CONCLUIDO") return;
-        var f=e.data.fotos||0, k=e.data.km||0, er=e.data.erros||0;
-        var msg = "";
-        if(f||k) msg = "Sincronizado:"+(f?" "+f+" foto(s)":"")+(k?" "+k+" KM":"");
-        if(er)   msg += (msg?" | ":"")+"Erros: "+er;
-        if(msg)  toast(msg);
-        atualizarFilaUI();
+        if(e.data && e.data.tipo === "SYNC_CONCLUIDO"){
+          var f=e.data.fotos||0, k=e.data.km||0;
+          if(f||k) toast("✅ Sincronizado: "+(f?" "+f+" foto(s)":"")+(k?" "+k+" KM":""));
+          atualizarFila();
+        }
       });
     }).catch(function(){});
-  window.addEventListener("online", function(){
-    ONLINE=true; atualizarStatus(); dispararSync();
-  });
 }
-window.addEventListener("online",  ()=>{ ONLINE=true;  atualizarStatus(); sincronizarAgora(); });
-window.addEventListener("offline", ()=>{ ONLINE=false; atualizarStatus(); });
+window.addEventListener("online", function(){
+  ONLINE=true; atualizarStatus();
+  if(navigator.serviceWorker && navigator.serviceWorker.controller)
+    navigator.serviceWorker.controller.postMessage({tipo:"SYNC_AGORA"});
+});
+window.addEventListener("offline", function(){ ONLINE=false; atualizarStatus(); });
 
-// ── AUTH ─────────────────────────────────────────────────────
-window.addEventListener("load", ()=>{
-  if (TOKEN && USUARIO) {
-    mostrarApp();
-  } else {
-    document.getElementById("telaLogin").style.display="flex";
-  }
-  atualizarStatus();
+// ══ INIT ════════════════════════════════════════════════
+window.addEventListener("load", function(){
+  if(TOKEN && USUARIO){ abrirApp(); }
+  else { document.getElementById("telaLogin").style.display="flex"; }
   document.getElementById("kmData").value = new Date().toISOString().split("T")[0];
+  // Inicializar inputs de arquivo com addEventListener
+  document.getElementById("inpCam").addEventListener("change", function(){ processarFotos(this); });
+  document.getElementById("inpGal").addEventListener("change", function(){ processarFotos(this); });
+  atualizarStatus();
 });
 
 function toggleSenha(){
-  var i=document.getElementById("loginSenha");
-  var b=document.getElementById("btnOlho");
+  var i=document.getElementById("lgSenha");
   i.type=i.type==="password"?"text":"password";
-  b.textContent=i.type==="password"?"👁":"🙈";
+  document.getElementById("btnOlho").textContent=i.type==="password"?"👁":"🙈";
 }
 
-function fazerLogin(){
-  var email=document.getElementById("loginEmail").value.trim();
-  var senha=document.getElementById("loginSenha").value;
-  var erro=document.getElementById("loginErro");
-  erro.textContent="";
-  fetch("/jardinagem/api/login",{method:"POST",headers:{"Content-Type":"application/json"},
-    body:JSON.stringify({email,senha})})
-  .then(r=>r.json())
-  .then(d=>{
-    if(d.erro){erro.textContent=d.erro;return;}
-    TOKEN=d.token; USUARIO={nome:d.nome,perfil:d.perfil};
-    localStorage.setItem("garra_token",TOKEN);
-    localStorage.setItem("garra_usuario",JSON.stringify(USUARIO));
-    // Admin e Luana vão para o painel desktop
-    var perfil = d.perfil || "";
-    if(perfil==="admin"||perfil==="luana"){
-      window.location.href="/";
-    } else {
-      mostrarApp();
-    }
-  }).catch(()=>{erro.textContent="Erro de conexão.";});
+async function login(){
+  var email = document.getElementById("lgEmail").value.trim();
+  var senha = document.getElementById("lgSenha").value;
+  var erro  = document.getElementById("lgErro");
+  erro.textContent = "";
+  if(!email || !senha){ erro.textContent = "Preencha email e senha."; return; }
+  try{
+    var r = await fetch("/jardinagem/api/login",{
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({email, senha})
+    });
+    var d = await r.json();
+    if(d.erro){ erro.textContent = d.erro; return; }
+    TOKEN = d.token;
+    USUARIO = {nome: d.nome, perfil: d.perfil};
+    localStorage.setItem("garra_token", TOKEN);
+    localStorage.setItem("garra_usuario", JSON.stringify(USUARIO));
+    abrirApp();
+  } catch(e){ erro.textContent = "Erro de conexão."; }
 }
 
-function mostrarApp(){
-  document.getElementById("telaLogin").style.display="none";
-  document.getElementById("telaApp").style.display="flex";
-  var _nm = USUARIO?.nome||"—";
-  var _el = document.getElementById("hdrNome"); if(_el) _el.textContent=_nm;
-  var _ini = document.getElementById("hdrNomeIni"); if(_ini) _ini.textContent=_nm.charAt(0).toUpperCase();
-  var _isAdm=(USUARIO?.perfil==="admin"||USUARIO?.perfil==="luana");
-  var _bEl=document.getElementById("hdrBadgeAdmin");
-  var _lEl=document.getElementById("linkDesktop");
-  if(_bEl) _bEl.style.display=_isAdm?"inline-block":"none";
-  if(_lEl) _lEl.style.display=_isAdm?"inline-block":"none";
-  document.getElementById("kmResponsavel").textContent=USUARIO?.nome||"—";
-  carregarSemanaAtiva();
-  navPara('foto');
-  setTimeout(inicializarInputsFoto, 300);
-  atualizarStatus();
-  preencherKmSugerido();
-  filtrarLocais("","locaisF");
-  filtrarLocais("","locaisKm");
-  selecionarTipo("antes");
+function abrirApp(){
+  document.getElementById("telaLogin").style.display = "none";
+  document.getElementById("telaApp").style.display   = "flex";
+  document.getElementById("hdrAv").textContent = (USUARIO?.nome||"?").charAt(0).toUpperCase();
+  document.getElementById("kmResp").textContent = USUARIO?.nome || "—";
+  var isAdm = USUARIO?.perfil==="admin" || USUARIO?.perfil==="luana";
+  document.getElementById("hdrAdmin").style.display = isAdm ? "inline-block" : "none";
+  document.getElementById("hdrDesk").style.display  = isAdm ? "inline-block" : "none";
+  document.getElementById("blocoAdmin").style.display = isAdm ? "block" : "none";
+  carregarSemana();
+  atualizarFila();
+  preencherKmSug();
+  carregarKmHoje();
 }
 
 function sair(){
-  fetch("/jardinagem/api/logout",{method:"POST"}).catch(()=>{});
+  fetch("/jardinagem/api/logout",{method:"POST"}).catch(function(){});
   TOKEN=""; USUARIO=null;
   localStorage.removeItem("garra_token");
   localStorage.removeItem("garra_usuario");
   location.reload();
 }
 
-// ── STATUS ────────────────────────────────────────────────────
+// ══ STATUS ═══════════════════════════════════════════════
 function atualizarStatus(){
-  var d=document.getElementById("statusDot");
-  var t=document.getElementById("statusTxt");
-  if(ONLINE){d.className="dot";t.textContent="Online";}
-  else{d.className="dot off";t.textContent="Offline";}
+  var d = document.getElementById("hdrDot");
+  var t = document.getElementById("hdrStxt");
+  if(ONLINE){ d.className="hdr-dot"; t.textContent="Online"; }
+  else       { d.className="hdr-dot off"; t.textContent="Offline"; }
 }
 
-// ── SEMANA ────────────────────────────────────────────────────
-function carregarSemanaAtiva(){
-  fetch("/jardinagem/api/semanas/ativa",{headers:{"Authorization":"Bearer "+TOKEN}})
-  .then(r=>r.json())
-  .then(d=>{
-    if(d.erro){
-      document.getElementById("semanaNome").textContent="Sem semana ativa";
-      document.getElementById("semanaBadge").textContent="Contate o admin";
-      document.getElementById("semanaBadge").className="badge badge-pend";
-      return;
+// ══ SEMANA ════════════════════════════════════════════════
+function carregarSemana(){
+  fetch("/jardinagem/api/semanas/ativa",{headers:{Authorization:"Bearer "+TOKEN}})
+  .then(function(r){return r.json();})
+  .then(function(d){
+    if(d.erro){ document.getElementById("semNome").textContent="Sem semana ativa"; return; }
+    SEMANA = d;
+    document.getElementById("semNome").textContent = d.label || "—";
+    document.getElementById("maisSem").textContent = d.label || "—";
+    if(d.data_ini && d.data_fim){
+      var f=function(s){var m=s.match(/(\d{4})-(\d{2})-(\d{2})/);return m?m[3]+"/"+m[2]+"/"+m[1]:s;};
+      document.getElementById("semDatas").textContent = f(d.data_ini)+" a "+f(d.data_fim);
     }
-    SEMANA=d;
-    document.getElementById("semanaNome").textContent=d.label;
-    document.getElementById("semanaBadge").textContent="✅ Aberta";
-    if(d.data_ini&&d.data_fim){
-      var fmt=function(s){
-        if(!s) return "";
-        // Suporta "2026-05-22", "2026-05-22T00:00:00", objetos Date
-        var str = typeof s === "string" ? s.substring(0,10) : s;
-        var parts = str.split("-");
-        if(parts.length===3) return parts[2]+"/"+parts[1]+"/"+parts[0];
-        return s;
-      };
-      document.getElementById("semanaDatas").textContent=fmt(d.data_ini)+" a "+fmt(d.data_fim);
-    }
-  }).catch(()=>{
-    document.getElementById("semanaNome").textContent="Offline";
-    document.getElementById("semanaBadge").className="badge badge-pend";
-    document.getElementById("semanaBadge").textContent="Modo offline";
+    document.getElementById("semBadge").textContent = d.status==="aberta" ? "✅ Aberta" : d.status||"—";
+  }).catch(function(){ document.getElementById("semNome").textContent="Offline"; });
+}
+
+// ══ NAVEGAÇÃO ═════════════════════════════════════════════
+var _telasMap = {Fotos:"tFotos",Galeria:"tGaleria",Km:"tKm",Mais:"tMais"};
+var _nbMap    = {Fotos:"nbFotos",Galeria:"nbGaleria",Km:"nbKm",Mais:"nbMais"};
+
+function ir(nome){
+  Object.values(_telasMap).forEach(function(id){
+    var el=document.getElementById(id);
+    if(el){ el.className=el.className.replace(" ativa",""); }
   });
-}
-
-// ── TABS ──────────────────────────────────────────────────────
-function mudarTab(tab){
-  TAB=tab;
-  document.getElementById("painelFoto").style.display=tab==="foto"?"flex":"none";
-  document.getElementById("painelKm").style.display=tab==="km"?"block":"none";
-
-  if(tab==="km") preencherKmSugerido();
-}
-
-// ── LOCAIS ────────────────────────────────────────────────────
-function filtrarLocais(q,containerId){
-  var wrap=document.getElementById(containerId);
-  if(!wrap) return;
-  var lista=q?LOCAIS.filter(l=>l.toLowerCase().includes(q.toLowerCase())):LOCAIS.slice(0,6);
-  wrap.innerHTML=lista.map(l=>
-    '<button class="chip" onclick="selecionarLocal(\''+l.replace(/'/g,"\\'")
-    +'\',\''+containerId+'\')">📍 '+l+'</button>'
-  ).join("");
-}
-
-function selecionarLocal(nome,containerId){
-  var campo=containerId==="locaisF"?"fotoLocal":"kmLocal";
-  document.getElementById(campo).value=nome;
-  document.getElementById(containerId).innerHTML="";
-}
-
-function salvarLocal(nome){
-  if(!nome||LOCAIS.includes(nome)) return;
-  LOCAIS.unshift(nome);
-  if(LOCAIS.length>30) LOCAIS.pop();
-  localStorage.setItem("locais_garra",JSON.stringify(LOCAIS));
-}
-
-// ── KM SUGERIDO ────────────────────────────────────────────────
-function preencherKmSugerido(){
-  if(ULTIMO_KM>0){
-    document.getElementById("kmSugerido").style.display="flex";
-    document.getElementById("kmSugeridoVal").textContent=ULTIMO_KM;
-    if(!document.getElementById("kmIni").value)
-      document.getElementById("kmIni").value=ULTIMO_KM;
-    calcKmTotal();
+  Object.values(_nbMap).forEach(function(id){
+    var el=document.getElementById(id);
+    if(el) el.className="nb";
+  });
+  var tela=document.getElementById(_telasMap[nome]);
+  if(tela) tela.className+=" ativa";
+  var nb=document.getElementById(_nbMap[nome]);
+  if(nb) nb.className="nb on";
+  if(nome==="Galeria") carregarGaleriaSems();
+  if(nome==="Km"){ preencherKmSug(); carregarKmHoje(); }
+  if(nome==="Mais"){
+    var s=document.getElementById("maisSem");
+    if(s&&SEMANA) s.textContent=SEMANA.label||"—";
+    atualizarFila();
   }
 }
 
-function calcKmTotal(){
+// ══ BANCADA ══════════════════════════════════════════════
+function processarFotos(inp){
+  var files = Array.from(inp.files||[]);
+  if(!files.length){ toast("Nenhuma foto selecionada."); return; }
+  toast("Carregando "+files.length+" foto(s)...");
+  var lidas=0;
+  files.forEach(function(file){
+    if(!file.type.startsWith("image/")){ lidas++; verificarFim(); return; }
+    var rd = new FileReader();
+    rd.onload = function(e){
+      BANCADA.push({id:"b"+Date.now()+Math.random(), src:e.target.result,
+                    nome:file.name, parId:null, tipo:null});
+      lidas++;
+      verificarFim();
+    };
+    rd.onerror = function(){ lidas++; verificarFim(); };
+    rd.readAsDataURL(file);
+  });
+  function verificarFim(){
+    if(lidas===files.length){
+      renderBancada();
+      toast(BANCADA.filter(function(f){return !f.parId;}).length+" foto(s) na bancada");
+    }
+  }
+  inp.value="";
+}
+
+function renderBancada(){
+  var g=document.getElementById("bancGrid");
+  var c=document.getElementById("bancCount");
+  var livres=BANCADA.filter(function(f){return !f.parId;});
+  c.textContent=livres.length+" foto(s)";
+  if(!livres.length){
+    g.innerHTML='<div style="grid-column:1/-1;text-align:center;color:#92400E;font-size:11px;padding:.4rem;">Bancada vazia</div>';
+  } else {
+    g.innerHTML=livres.map(function(f){
+      return '<div class="banc-item"><img src="'+f.src+'">'
+        +'<div class="banc-nome">'+esc(f.nome)+'</div>'
+        +'<button class="banc-rm" onclick="rmBancada(\''+f.id+'\')">×</button>'
+        +'</div>';
+    }).join("");
+  }
+  renderBotaoSalvar();
+}
+
+function rmBancada(id){
+  BANCADA=BANCADA.filter(function(f){return f.id!==id;});
+  renderBancada();
+}
+
+// ══ PARES ════════════════════════════════════════════════
+function novoPar(){
+  PAR_SEQ++;
+  PARES.push({id:"p"+PAR_SEQ,local:ULT_LOCAL,antes:null,depois:null,dbId:null,salvo:false});
+  renderPares();
+}
+
+function renderPares(){
+  var w=document.getElementById("paresWrap");
+  if(!PARES.length){
+    w.innerHTML='<div style="text-align:center;color:var(--mut);font-size:13px;padding:2rem 0;">Adicione fotos e crie pares.</div>';
+    renderBotaoSalvar(); return;
+  }
+  w.innerHTML=PARES.map(function(par,i){
+    var sA=par.antes
+      ?'<div class="slot ok" onclick="devolverSlot(\''+par.id+'\',\'antes\')">'
+        +'<img src="'+par.antes.src+'">'
+        +'<button class="slot-rm" onclick="event.stopPropagation();devolverSlot(\''+par.id+'\',\'antes\')">↩</button>'
+        +'</div>'
+      :'<div class="slot" onclick="abrirSeletor(\''+par.id+'\',\'antes\')">'
+        +'<div class="slot-ico">🔵</div>'
+        +'<div class="slot-lbl">ANTES</div>'
+        +'</div>';
+    var sD=par.depois
+      ?'<div class="slot ok" onclick="devolverSlot(\''+par.id+'\',\'depois\')">'
+        +'<img src="'+par.depois.src+'">'
+        +'<button class="slot-rm" onclick="event.stopPropagation();devolverSlot(\''+par.id+'\',\'depois\')">↩</button>'
+        +'</div>'
+      :'<div class="slot" onclick="abrirSeletor(\''+par.id+'\',\'depois\')">'
+        +'<div class="slot-ico">🟠</div>'
+        +'<div class="slot-lbl">DEPOIS</div>'
+        +'</div>';
+    return '<div class="par-card" id="par_'+par.id+'">'
+      +'<div class="par-hdr">'
+        +'<span class="par-cod">#'+i+'</span>'
+        +(par.salvo?'<span style="font-size:10px;background:#DCFCE7;color:var(--grn);padding:2px 8px;border-radius:99px;font-weight:700;">✅ salvo</span>':"")
+        +'<button onclick="deletarPar(\''+par.id+\')" style="background:rgba(220,38,38,.2);color:#fff;border:none;border-radius:5px;padding:2px 8px;font-size:11px;cursor:pointer;">✕</button>'
+      +'</div>'
+      +'<div class="par-slots">'+sA+sD+'</div>'
+      +'<input class="par-local" placeholder="📍 Nome do local..." value="'+esc(par.local)+'"'
+        +' oninput="atualizarLocal(\''+par.id+'\',this.value)">'
+      +'</div>';
+  }).join("");
+  renderBotaoSalvar();
+}
+
+function atualizarLocal(parId,val){
+  var par=PARES.find(function(p){return p.id===parId;});
+  if(!par)return;
+  par.local=val; ULT_LOCAL=val;
+  var idx=PARES.indexOf(par);
+  for(var i=idx+1;i<PARES.length;i++){
+    if(!PARES[i].salvo){
+      PARES[i].local=val;
+      var inp=document.querySelector("#par_"+PARES[i].id+" .par-local");
+      if(inp) inp.value=val;
+    }
+  }
+}
+
+function devolverSlot(parId,tipo){
+  var par=PARES.find(function(p){return p.id===parId;});
+  if(!par||!par[tipo])return;
+  var f=par[tipo]; f.parId=null; f.tipo=null;
+  par[tipo]=null; par.salvo=false;
+  renderBancada(); renderPares();
+}
+
+function deletarPar(parId){
+  var par=PARES.find(function(p){return p.id===parId;});
+  if(!par)return;
+  ["antes","depois"].forEach(function(t){if(par[t]){par[t].parId=null;par[t].tipo=null;}});
+  PARES=PARES.filter(function(p){return p.id!==parId;});
+  renderBancada(); renderPares();
+}
+
+function renderBotaoSalvar(){
+  var btn=document.getElementById("btnSalvar");
+  if(btn) btn.style.display=PARES.some(function(p){return !p.salvo&&(p.antes||p.depois);})?"flex":"none";
+}
+
+// ══ SELETOR VISUAL ════════════════════════════════════════
+function abrirSeletor(parId,tipo){
+  _selPar=parId; _selTipo=tipo;
+  document.getElementById("mSelTtl").textContent="Slot "+(tipo==="antes"?"ANTES":"DEPOIS");
+  var livres=BANCADA.filter(function(f){return !f.parId;});
+  var grid=document.getElementById("mSelGrid");
+  var vazio=document.getElementById("mSelVazio");
+  if(!livres.length){ grid.innerHTML=""; vazio.style.display="block"; }
+  else{
+    vazio.style.display="none";
+    grid.innerHTML=livres.map(function(f){
+      return '<div class="sel-item" onclick="encaixar(\''+f.id+'\' )">'
+        +'<img src="'+f.src+'">'
+        +'<div class="sel-nome">'+esc(f.nome)+'</div>'
+        +'</div>';
+    }).join("");
+  }
+  document.getElementById("mSeletor").classList.add("aberto");
+}
+
+function fecharSeletor(){ document.getElementById("mSeletor").classList.remove("aberto"); _selPar=null; _selTipo=null; }
+
+function encaixar(fotoId){
+  var f=BANCADA.find(function(b){return b.id===fotoId;});
+  var par=PARES.find(function(p){return p.id===_selPar;});
+  if(!f||!par){fecharSeletor();return;}
+  if(par[_selTipo]){var ant=par[_selTipo];ant.parId=null;ant.tipo=null;}
+  f.parId=_selPar; f.tipo=_selTipo; par[_selTipo]=f; par.salvo=false;
+  fecharSeletor(); renderBancada(); renderPares();
+}
+
+// ══ SALVAR ════════════════════════════════════════════════
+async function salvarTodos(){
+  if(!SEMANA){ toast("Sem semana ativa!"); return; }
+  var pend=PARES.filter(function(p){return !p.salvo&&(p.antes||p.depois);});
+  if(!pend.length){ toast("Nada para salvar."); return; }
+  var btn=document.getElementById("btnSalvar");
+  btn.disabled=true; btn.innerHTML='<span class="spin">⟳</span> Salvando...';
+  var ok=0,erros=0;
+  for(var par of pend){ try{ await salvarPar(par); ok++; }catch(e){ erros++; } }
+  btn.disabled=false; btn.innerHTML="💾 Salvar todos os pares";
+  toast(erros===0?"✅ "+ok+" par(es) salvo(s)!":"⚠️ "+ok+" salvos, "+erros+" erro(s)");
+  renderPares();
+}
+
+async function salvarPar(par){
+  if(!par.dbId){
+    var r=await fetch("/jardinagem/api/pares",{method:"POST",
+      headers:{"Content-Type":"application/json","Authorization":"Bearer "+TOKEN},
+      body:JSON.stringify({semana_id:SEMANA.id,local_nome:par.local||"",data_label:"",ordem:99})});
+    if(!r.ok) throw new Error("erro par");
+    var d=await r.json(); par.dbId=d.id;
+  }
+  for(var tipo of["antes","depois"]){
+    var f=par[tipo]; if(!f||f.sid) continue;
+    var blob=b64Blob(f.src);
+    var fd=new FormData();
+    fd.append("par_id",par.dbId); fd.append("tipo",tipo); fd.append("foto",blob,f.nome||tipo+".jpg");
+    var r2=await fetch("/jardinagem/api/fotos/avulsa",{method:"POST",
+      headers:{"Authorization":"Bearer "+TOKEN},body:fd});
+    if(!r2.ok){ var e=await r2.json(); throw new Error(e.detail||"erro foto"); }
+    var d2=await r2.json(); f.sid=d2.id;
+  }
+  if(par.local&&par.dbId)
+    await fetch("/jardinagem/api/pares/"+par.dbId,{method:"PATCH",
+      headers:{"Content-Type":"application/json","Authorization":"Bearer "+TOKEN},
+      body:JSON.stringify({local_nome:par.local})});
+  par.salvo=true;
+}
+
+function b64Blob(d){
+  var p=d.split(","),m=p[0].match(/:(.*?);/)[1],b=atob(p[1]),a=new Uint8Array(b.length);
+  for(var i=0;i<b.length;i++) a[i]=b.charCodeAt(i);
+  return new Blob([a],{type:m});
+}
+
+// ══ KM ════════════════════════════════════════════════════
+function calcKm(){
   var ini=parseFloat(document.getElementById("kmIni").value)||0;
-  var fin=parseFloat(document.getElementById("kmFin").value)||0;
-  var div=document.getElementById("kmTotalDiv");
-  if(ini>0&&fin>ini){
-    div.style.display="block";
-    document.getElementById("kmTotalVal").textContent=(fin-ini).toFixed(1);
-  } else {
-    div.style.display="none";
+  var fim=parseFloat(document.getElementById("kmFim").value)||0;
+  var div=document.getElementById("kmCalc");
+  if(ini>0&&fim>ini){ div.style.display="block"; div.textContent="KM percorrido: "+(fim-ini).toFixed(1)+" km"; }
+  else div.style.display="none";
+}
+
+function preencherKmSug(){
+  if(ULT_KM>0){
+    document.getElementById("kmSug").style.display="block";
+    document.getElementById("kmSugVal").textContent=ULT_KM;
+    if(!document.getElementById("kmIni").value) document.getElementById("kmIni").value=ULT_KM;
+    calcKm();
   }
 }
 
-// ── FOTO ──────────────────────────────────────────────────────
-function selecionarTipo(tipo){
-  TIPO=tipo;
-  document.getElementById("btnAntes").className="tipo-btn"+(tipo==="antes"?" sel-antes":"");
-  document.getElementById("btnDepois").className="tipo-btn"+(tipo==="depois"?" sel-depois":"");
-  validarFoto();
-}
-
-function fotoSelecionada(input){
-  var file=input.files[0]; if(!file) return;
-  var reader=new FileReader();
-  reader.onload=function(e){
-    FOTO={blob:file,dataUrl:e.target.result,filename:file.name};
-    document.getElementById("previewImg").src=e.target.result;
-    document.getElementById("previewImg").style.display="block";
-    document.getElementById("previewEmpty").style.display="none";
-    document.getElementById("previewRm").style.display="flex";
-    validarFoto();
-  };
-  reader.readAsDataURL(file);
-  input.value="";
-}
-
-function removerFoto(){
-  FOTO=null;
-  document.getElementById("previewImg").style.display="none";
-  document.getElementById("previewEmpty").style.display="flex";
-  document.getElementById("previewRm").style.display="none";
-  validarFoto();
-}
-
-function validarFoto(){
-  document.getElementById("btnEnviarFoto").disabled=!(TIPO&&FOTO);
-}
-
-async function enviarFoto(){
-  if(!FOTO) return;
-  var btn=document.getElementById("btnEnviarFoto");
-  var local=document.getElementById("fotoLocal").value.trim();
-  btn.disabled=true;
-  btn.innerHTML='<span class="spin">⟳</span> Enviando...';
-
-  if(ONLINE){
-    try{
-      var form=new FormData();
-      form.append("foto",FOTO.blob,FOTO.filename);
-      form.append("tipo",TIPO);
-      form.append("local_nome",local);
-      form.append("semana_id",SEMANA?.id||"ativa");
-      form.append("offline_id",crypto.randomUUID());
-      var resp=await fetch("/jardinagem/api/fotos/mobile",{
-        method:"POST",body:form,headers:{"Authorization":"Bearer "+TOKEN}
-      });
-      if(resp.ok){salvarLocal(local);toast("✅ Foto registrada!");resetFoto();}
-      else{var e=await resp.json();toast("Erro: "+(e.erro||"tente novamente"));}
-    }catch(e){await salvarFotoOffline(local);}
-  } else {
-    await salvarFotoOffline(local);
-  }
-  btn.disabled=false;
-  btn.innerHTML="📷 Registrar Foto";
-  validarFoto();
-}
-
-async function salvarFotoOffline(local){
-  var canvas=document.createElement("canvas");
-  var img=new Image();
-  await new Promise(r=>{img.onload=r;img.src=FOTO.dataUrl;});
-  var MAX=1200,w=img.width,h=img.height;
-  if(w>MAX||h>MAX){if(w>h){h=Math.round(h*MAX/w);w=MAX;}else{w=Math.round(w*MAX/h);h=MAX;}}
-  canvas.width=w;canvas.height=h;
-  canvas.getContext("2d").drawImage(img,0,0,w,h);
-  var b64=canvas.toDataURL("image/jpeg",0.8).split(",")[1];
-  await dbPut("fila_fotos",{
-    offline_id:crypto.randomUUID(),dados_b64:b64,
-    filename:FOTO.filename||"foto.jpg",tipo:TIPO,
-    local_nome:local,semana_id:SEMANA?.id||"",
-    token:TOKEN,enviado:false,criado_em:new Date().toISOString()
-  });
-  salvarLocal(local);
-  toast("📱 Foto salva! Enviará com Wi-Fi.");
-  resetFoto();
-}
-
-function resetFoto(){
-  removerFoto();
-  document.getElementById("fotoLocal").value="";
-  document.getElementById("locaisF").innerHTML="";
-}
-
-// ── KM ────────────────────────────────────────────────────────
 async function enviarKm(){
-  var data   = document.getElementById("kmData").value;
-  var local  = document.getElementById("kmLocal").value.trim();
-  var kmIni  = parseFloat(document.getElementById("kmIni").value);
-  var kmFin  = parseFloat(document.getElementById("kmFin").value);
-  var hrIni  = document.getElementById("kmHrIni").value;
-  var hrFim  = document.getElementById("kmHrFim").value;
-  var obs    = document.getElementById("kmObs").value.trim();
-
-  if(!local){ toast("Informe o nome do local."); return; }
-  if(!kmIni){ toast("Informe o KM inicial."); return; }
-  if(!kmFin||kmFin<=kmIni){ toast("KM final deve ser maior que o inicial."); return; }
-
-  var btn=document.getElementById("btnEnviarKm");
-  btn.disabled=true;
-  btn.innerHTML='<span class="spin">⟳</span> Salvando...';
-
-  var payload={
-    semana_id: SEMANA?.id||null,
-    data, local_nome:local,
-    km_inicial:kmIni, km_final:kmFin,
-    hora_inicio:hrIni||null, hora_fim:hrFim||null,
-    observacao:obs
-  };
-
+  var data=document.getElementById("kmData").value;
+  var local=document.getElementById("kmLocal").value.trim();
+  var ini=parseFloat(document.getElementById("kmIni").value);
+  var fim=parseFloat(document.getElementById("kmFim").value);
+  var hrIni=document.getElementById("kmHrIni").value;
+  var hrFim=document.getElementById("kmHrFim").value;
+  var obs=document.getElementById("kmObs").value.trim();
+  if(!local){ toast("Informe o local."); return; }
+  if(!ini){ toast("Informe o KM inicial."); return; }
+  if(!fim||fim<=ini){ toast("KM final deve ser maior que inicial."); return; }
+  var btn=document.getElementById("btnKm");
+  btn.disabled=true; btn.innerHTML='<span class="spin">⟳</span> Salvando...';
+  var payload={semana_id:SEMANA?.id||null,data,local_nome:local,
+    km_inicial:ini,km_final:fim,hora_inicio:hrIni||null,hora_fim:hrFim||null,observacao:obs};
   var ok=false;
   if(ONLINE){
     try{
-      var resp=await fetch("/jardinagem/api/relatorios/km",{
-        method:"POST",
+      var r=await fetch("/jardinagem/api/relatorios/km",{method:"POST",
         headers:{"Content-Type":"application/json","Authorization":"Bearer "+TOKEN},
-        body:JSON.stringify(payload)
-      });
-      if(resp.ok){ok=true;}
-      else{var e=await resp.json();toast("Erro: "+(e.erro||"tente novamente"));}
-    }catch(e){ok=false;}
+        body:JSON.stringify(payload)});
+      if(r.ok) ok=true;
+    }catch(e){}
   }
-
   if(!ok){
-    // Salva offline
-    await dbPut("fila_km",Object.assign({},payload,{
-      offline_id:crypto.randomUUID(),token:TOKEN,
-      enviado:false,criado_em:new Date().toISOString()
-    }));
-    toast("📱 Registro salvo! Enviará com Wi-Fi.");
+    await dbPut("fila_km",Object.assign({},payload,{offline_id:crypto.randomUUID(),
+      token:TOKEN,enviado:false,criado_em:new Date().toISOString()}));
+    toast("📱 Salvo offline — enviará com Wi-Fi.");
   } else {
     toast("✅ Serviço registrado!");
     salvarLocal(local);
   }
-
-  // Atualiza último KM
-  ULTIMO_KM=kmFin;
-  localStorage.setItem("ultimo_km",kmFin);
-
-  // Limpa formulário mas mantém data e km inicial como sugestão
+  ULT_KM=fim; localStorage.setItem("ult_km",fim);
   document.getElementById("kmLocal").value="";
-  document.getElementById("kmIni").value=kmFin;
-  document.getElementById("kmFin").value="";
+  document.getElementById("kmIni").value=fim;
+  document.getElementById("kmFim").value="";
   document.getElementById("kmHrIni").value="";
   document.getElementById("kmHrFim").value="";
   document.getElementById("kmObs").value="";
-  document.getElementById("locaisKm").innerHTML="";
-  calcKmTotal();
-  preencherKmSugerido();
-
-  btn.disabled=false;
-  btn.innerHTML="✅ Salvar Serviço";
+  calcKm(); preencherKmSug();
+  btn.disabled=false; btn.innerHTML="✅ Salvar Serviço";
+  carregarKmHoje();
 }
 
-// ── SINCRONIZAR ────────────────────────────────────────────────
-async function sincronizarAgora(){
-  if(!ONLINE){toast("Sem conexão.");return;}
-  var pendFotos=await dbGetPendentes("fila_fotos");
-  var pendKm=await dbGetPendentes("fila_km");
-  var total=pendFotos.length+pendKm.length;
-  if(!total){toast("Nada para sincronizar.");return;}
-
-  toast("Sincronizando "+total+" item(s)...");
-  var ok=0;
-
-  for(var item of pendFotos){
-    try{
-      var bytes=Uint8Array.from(atob(item.dados_b64),c=>c.charCodeAt(0));
-      var blob=new Blob([bytes],{type:"image/jpeg"});
-      var form=new FormData();
-      form.append("foto",blob,item.filename);
-      form.append("tipo",item.tipo);
-      form.append("local_nome",item.local_nome||"");
-      form.append("semana_id",item.semana_id||"ativa");
-      form.append("offline_id",item.offline_id);
-      var resp=await fetch("/jardinagem/api/fotos/mobile",{
-        method:"POST",body:form,headers:{"Authorization":"Bearer "+TOKEN}
-      });
-      if(resp.ok){await dbMarcarEnviado("fila_fotos",item.offline_id);ok++;}
-    }catch(e){}
-  }
-
-  for(var item of pendKm){
-    try{
-      var resp=await fetch("/jardinagem/api/relatorios/km",{
-        method:"POST",
-        headers:{"Content-Type":"application/json","Authorization":"Bearer "+TOKEN},
-        body:JSON.stringify(item)
-      });
-      if(resp.ok){await dbMarcarEnviado("fila_km",item.offline_id);ok++;}
-    }catch(e){}
-  }
-
-  toast("✅ "+ok+"/"+total+" enviados.");
-  atualizarFilaUI();
-}
-
-async function atualizarFilaUI(){
+async function carregarKmHoje(){
+  if(!SEMANA) return;
   try{
-    var fk=await dbGetPendentes("fila_km");
-    var ff=await dbGetPendentes("fila_fotos");
-    var fp=await dbGetPendentes("fila_pares");
-    var total=fk.length+ff.length+fp.length;
-    var card=document.getElementById("filaCard");
-    var info=document.getElementById("filaInfo");
-    if(total>0){
-      card.style.display="block";
-      var partes=[];
-      if(ff.length||fp.length) partes.push((ff.length||fp.length)+" foto(s)/par(es)");
-      if(fk.length) partes.push(fk.length+" KM(s)");
-      info.textContent=partes.join(", ")+" aguardando Wi-Fi.";
-    } else { card.style.display="none"; }
+    var r=await fetch("/jardinagem/api/historico/hoje?semana_id="+SEMANA.id,
+      {headers:{Authorization:"Bearer "+TOKEN}});
+    var d=await r.json();
+    var lista=document.getElementById("kmLista");
+    if(!d.km||!d.km.length){
+      lista.innerHTML='<div style="text-align:center;color:var(--mut);font-size:12px;padding:1rem;">Nenhum registro hoje.</div>';
+      return;
+    }
+    lista.innerHTML=d.km.map(function(r){
+      var km=(parseFloat(r.km_final||0)-parseFloat(r.km_inicial||0)).toFixed(1);
+      return '<div class="km-item">'
+        +'<div class="km-local">📍 '+esc(r.local_nome||"—")+'</div>'
+        +'<div class="km-meta">'+esc(String(r.km_inicial||"?"))+" → "+esc(String(r.km_final||"?"))+'</div>'
+        +(r.hora_inicio||r.hora_fim?'<div class="km-meta">⏰ '+(r.hora_inicio||"?")+" – "+(r.hora_fim||"?")+'</div>':"")
+        +(r.observacao?'<div class="km-meta">'+esc(r.observacao)+'</div>':"")
+        +'<div class="km-total">+'+km+' km</div>'
+        +'</div>';
+    }).join("");
   }catch(e){}
 }
 
-// ── HISTÓRICO ─────────────────────────────────────────────────
-function carregarHistorico(){
-  if(!TOKEN||!SEMANA) return;
-  var lista=document.getElementById("listaHist");
-  lista.innerHTML='<div style="color:var(--mut);font-size:13px;text-align:center;padding:1rem;">Carregando...</div>';
+// ══ GALERIA ═══════════════════════════════════════════════
+function carregarGaleriaSems(){
+  if(!SEMANA) return;
+  fetch("/jardinagem/api/meses/"+SEMANA.mes_id,{headers:{Authorization:"Bearer "+TOKEN}})
+  .then(function(r){return r.json();})
+  .then(function(d){
+    var sel=document.getElementById("galSel");
+    sel.innerHTML='<option value="">Selecione a semana...</option>';
+    (d.semanas||[]).forEach(function(s){
+      var o=document.createElement("option");
+      o.value=s.id; o.textContent=s.label;
+      if(SEMANA&&s.id===SEMANA.id) o.selected=true;
+      sel.appendChild(o);
+    });
+    if(SEMANA) carregarGaleria();
+  }).catch(function(){});
+}
 
-  fetch("/jardinagem/api/historico/hoje?semana_id="+SEMANA.id,{
-    headers:{"Authorization":"Bearer "+TOKEN}
-  })
-  .then(r=>r.json())
-  .then(d=>{
-    if(!d||(!d.fotos?.length&&!d.km?.length)){
-      lista.innerHTML='<div style="color:var(--mut);font-size:13px;text-align:center;padding:2rem;">Nenhum registro hoje.</div>';
+function carregarGaleria(){
+  var sid=document.getElementById("galSel").value;
+  var c=document.getElementById("galConteudo");
+  if(!sid){ c.innerHTML='<div style="text-align:center;color:var(--mut);font-size:13px;padding:3rem;">Selecione uma semana.</div>'; return; }
+  c.innerHTML='<div style="text-align:center;color:var(--mut);font-size:13px;padding:2rem;"><span class="spin">⟳</span> Carregando...</div>';
+  fetch("/jardinagem/api/meses/"+(SEMANA?.mes_id||0),{headers:{Authorization:"Bearer "+TOKEN}})
+  .then(function(r){return r.json();})
+  .then(function(d){
+    var sem=(d.semanas||[]).find(function(s){return String(s.id)===String(sid);});
+    if(!sem||!sem.pares||!sem.pares.length){
+      c.innerHTML='<div style="text-align:center;color:var(--mut);font-size:13px;padding:3rem;">Nenhum par nesta semana.</div>';
       return;
     }
-
-    var kmTotal=0;
-    var html="";
-
-    if(d.fotos?.length){
-      html+='<div class="sec-title" style="font-size:12px;">📷 Fotos ('+d.fotos.length+')</div>';
-      d.fotos.forEach(function(f){
-        html+='<div class="hist-item">';
-        html+='<div class="hist-local">'+(f.local_nome||"Sem nome")+'</div>';
-        html+='<div class="hist-meta">'+new Date(f.criado_em).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"})+'</div>';
-        html+='<div class="hist-badges"><span class="hb '+(f.tipo==="antes"?"hb-antes":"hb-depois")+'">'+f.tipo.toUpperCase()+'</span><span class="hb hb-ok">✓</span></div>';
-        html+='</div>';
-      });
-    }
-
-    if(d.km?.length){
-      html+='<div class="sec-title" style="font-size:12px;margin-top:.75rem;">📋 Serviços ('+d.km.length+')</div>';
-      d.km.forEach(function(r){
-        var km=(r.km_final||0)-(r.km_inicial||0);
-        kmTotal+=km;
-        html+='<div class="hist-item">';
-        html+='<div class="hist-local">'+(r.local_nome||"Sem nome")+'</div>';
-        html+='<div class="hist-meta">'+(r.hora_inicio||"")+(r.hora_fim?" → "+r.hora_fim:"")+'</div>';
-        html+='<div class="hist-badges">';
-        html+='<span class="hb hb-km">+'+km.toFixed(0)+' km</span>';
-        if(r.observacao) html+='<span class="hb" style="background:#F0F4FF;color:var(--bl);">📝</span>';
-        html+='</div></div>';
-      });
-
-      var resumo=document.getElementById("resumoDia");
-      resumo.style.display="block";
-      document.getElementById("resumoKm").textContent=kmTotal.toFixed(0)+" km";
-      document.getElementById("resumoRegistros").textContent=d.km.length;
-    }
-
-    lista.innerHTML=html;
-  })
-  .catch(function(){
-    lista.innerHTML='<div style="color:var(--mut);font-size:13px;text-align:center;padding:1rem;">Erro ao carregar.</div>';
-  });
+    c.innerHTML=sem.pares.map(function(p){
+      var fa=p.fotos&&p.fotos.find(function(f){return f.tipo==="antes";});
+      var fd=p.fotos&&p.fotos.find(function(f){return f.tipo==="depois";});
+      return '<div class="gal-par">'
+        +'<div class="gal-hdr">'
+          +'<span class="gal-cod">'+esc(String(p.codigo_a||"?"))+'ª–'+esc(String(p.codigo_d||"?"))+'ª</span>'
+          +'<span class="gal-loc">'+esc(p.local_nome||"Sem local")+'</span>'
+        +'</div>'
+        +'<div class="gal-fotos">'
+          +'<div><div class="gal-lbl a">ANTES</div>'
+            +'<div class="gal-img">'+(fa&&fa.url?'<img src="'+fa.url+'">':'<div class="sem-vazio">Sem foto</div>')+'</div></div>'
+          +'<div><div class="gal-lbl d">DEPOIS</div>'
+            +'<div class="gal-img">'+(fd&&fd.url?'<img src="'+fd.url+'">':'<div class="sem-vazio">Sem foto</div>')+'</div></div>'
+        +'</div></div>';
+    }).join("");
+  }).catch(function(){ c.innerHTML='<div style="color:var(--red);font-size:13px;text-align:center;padding:2rem;">Erro ao carregar.</div>'; });
 }
 
-// ── NAVEGAÇÃO ─────────────────────────────────────────────────
-function navPara(tela){
-  document.getElementById("mainFoto").style.display=tela==="foto"?"block":"none";
-  document.getElementById("mainHist").style.display=tela==="hist"?"block":"none";
-  document.getElementById("navFoto").className="nav-btn"+(tela==="foto"?" ativo":"");
-  document.getElementById("navHist").className="nav-btn"+(tela==="hist"?" ativo":"");
-  if(tela==="hist") carregarHistorico();
+// ══ SEMANAS ════════════════════════════════════════════════
+function abrirSemanas(){
+  if(!SEMANA){ toast("Sem semana ativa."); return; }
+  fetch("/jardinagem/api/meses/"+SEMANA.mes_id,{headers:{Authorization:"Bearer "+TOKEN}})
+  .then(function(r){return r.json();})
+  .then(function(d){
+    TODAS_SEMANAS=d.semanas||[];
+    document.getElementById("mSemMes").textContent=d.label||"—";
+    renderSemanas();
+    document.getElementById("mSemanas").classList.add("aberto");
+  }).catch(function(){ toast("Erro ao carregar semanas."); });
+}
+function fecharSemanas(){ document.getElementById("mSemanas").classList.remove("aberto"); }
+
+function renderSemanas(){
+  var l=document.getElementById("mSemLista");
+  if(!TODAS_SEMANAS.length){ l.innerHTML='<div style="text-align:center;color:var(--mut);font-size:13px;padding:1rem;">Nenhuma semana.</div>'; return; }
+  l.innerHTML=TODAS_SEMANAS.map(function(s){
+    var ativa=SEMANA&&s.id===SEMANA.id;
+    return '<div style="background:#fff;border:1.5px solid '+(ativa?"var(--or)":"var(--brd)")+';border-radius:10px;padding:10px 12px;margin-bottom:.5rem;">'
+      +'<div style="display:flex;align-items:center;gap:8px;">'
+        +'<div style="flex:1;">'
+          +'<div style="font-size:13px;font-weight:700;color:var(--bl);">'+esc(s.label)+'</div>'
+          +(ativa?'<span style="font-size:10px;background:#DCFCE7;color:var(--grn);padding:2px 8px;border-radius:99px;font-weight:700;">✅ Ativa</span>':"")
+        +'</div>'
+        +'<button onclick="deletarSemana('+s.id+')" style="background:#FEE2E2;color:var(--red);border:none;border-radius:6px;padding:5px 10px;font-size:11px;font-weight:700;cursor:pointer;">✕</button>'
+      +'</div></div>';
+  }).join("");
 }
 
-// ── TOAST ─────────────────────────────────────────────────────
-function toast(msg){
-  var el=document.getElementById("toast");
-  el.textContent=msg;
-  el.classList.add("show");
-  clearTimeout(el._t);
-  el._t=setTimeout(function(){el.classList.remove("show");},3500);
+function novaSemana(){
+  if(!SEMANA){ toast("Sem mês ativo."); return; }
+  var hoje=new Date(),dd=String(hoje.getDate()).padStart(2,"0"),mm=String(hoje.getMonth()+1).padStart(2,"0"),yyyy=hoje.getFullYear();
+  var n=(TODAS_SEMANAS.length||0)+1;
+  var label=prompt("Período da semana:","Semana "+n+" — "+dd+"/"+mm+" a __/__/"+yyyy);
+  if(!label)return;
+  fetch("/jardinagem/api/semanas",{method:"POST",
+    headers:{"Content-Type":"application/json","Authorization":"Bearer "+TOKEN},
+    body:JSON.stringify({mes_id:SEMANA.mes_id,label:label,ordem:TODAS_SEMANAS.length})})
+  .then(function(r){return r.json();})
+  .then(function(d){ if(d.erro){toast("Erro: "+d.erro);return;} toast("✅ Semana criada!"); abrirSemanas(); carregarSemana(); })
+  .catch(function(){ toast("Erro de conexão."); });
 }
 
-// ── INDEXEDDB ─────────────────────────────────────────────────
-var DB_NAME="garra-offline-v2";
+function deletarSemana(sid){
+  if(!confirm("Deletar esta semana e todos os pares?")) return;
+  fetch("/jardinagem/api/semanas/"+sid,{method:"DELETE",headers:{Authorization:"Bearer "+TOKEN}})
+  .then(function(r){ if(r.ok){ toast("✅ Removida!"); abrirSemanas(); carregarSemana(); } else toast("Erro."); })
+  .catch(function(){ toast("Erro de conexão."); });
+}
 
+// ══ MÊS ════════════════════════════════════════════════════
+function criarMesModal(){
+  var d=new Date();
+  document.getElementById("mesInputMes").value=d.getMonth()+1;
+  document.getElementById("mesInputAno").value=d.getFullYear();
+  document.getElementById("mMes").classList.add("aberto");
+}
+
+function criarMes(){
+  var mes=parseInt(document.getElementById("mesInputMes").value);
+  var ano=parseInt(document.getElementById("mesInputAno").value);
+  var nomes=["","Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
+  fetch("/jardinagem/api/meses",{method:"POST",
+    headers:{"Content-Type":"application/json","Authorization":"Bearer "+TOKEN},
+    body:JSON.stringify({mes,ano,label:nomes[mes]+"/"+ano})})
+  .then(function(r){return r.json();})
+  .then(function(d){
+    if(d.erro){toast("Erro: "+d.erro);return;}
+    document.getElementById("mMes").classList.remove("aberto");
+    toast("✅ Mês criado com 4 semanas!");
+    carregarSemana();
+  }).catch(function(){toast("Erro de conexão.");});
+}
+
+// ══ ADMIN EMAIL ════════════════════════════════════════════
+function enviarEmailAdmin(){
+  if(!SEMANA){toast("Sem semana ativa!");return;}
+  var btn=document.getElementById("btnEmail");
+  var st=document.getElementById("emailSt");
+  btn.disabled=true; btn.innerHTML='<span class="spin">⟳</span> Enviando...';
+  st.textContent="Gerando e enviando..."; st.style.color="var(--mut)";
+  fetch("/jardinagem/api/relatorios/"+SEMANA.id+"/enviar",{method:"POST",
+    headers:{Authorization:"Bearer "+TOKEN}})
+  .then(function(r){return r.json();})
+  .then(function(d){
+    if(d.erro){st.textContent="❌ "+d.erro;st.style.color="var(--red)";}
+    else{st.textContent="✅ "+d.mensagem;st.style.color="var(--grn)";}
+  }).catch(function(){st.textContent="❌ Erro";st.style.color="var(--red)";})
+  .finally(function(){btn.disabled=false;btn.innerHTML="📧 Enviar Relatório por Email";});
+}
+
+// ══ LOCAIS (chips) ═════════════════════════════════════════
+document.addEventListener("input", function(e){
+  if(e.target.id==="kmLocal") filtrarLocais(e.target.value);
+});
+function filtrarLocais(q){
+  var c=document.getElementById("kmChips");
+  if(!c)return;
+  var lista=q?LOCAIS.filter(function(l){return l.toLowerCase().includes(q.toLowerCase());}):LOCAIS.slice(0,6);
+  c.innerHTML=lista.map(function(l){
+    return '<button onclick="selectLocal(\''+esc(l)+'\')" style="background:#EFF6FF;color:#1E3A8A;border:none;border-radius:99px;padding:4px 12px;font-size:11px;font-weight:600;cursor:pointer;margin:2px;">📍 '+esc(l)+'</button>';
+  }).join("");
+}
+function selectLocal(l){ document.getElementById("kmLocal").value=l; document.getElementById("kmChips").innerHTML=""; }
+function salvarLocal(l){ if(!l||LOCAIS.includes(l))return; LOCAIS.unshift(l); if(LOCAIS.length>30)LOCAIS.pop(); localStorage.setItem("locais_garra",JSON.stringify(LOCAIS)); }
+
+// ══ OFFLINE DB ═════════════════════════════════════════════
 function abrirDB(){
   return new Promise(function(res,rej){
     var req=indexedDB.open("garra-offline-v2",2);
     req.onupgradeneeded=function(e){
       var db=e.target.result;
-      ["fila_fotos","fila_km","fila_pares"].forEach(function(store){
-        if(!db.objectStoreNames.contains(store)){
-          var s=db.createObjectStore(store,{keyPath:"offline_id"});
-          s.createIndex("enviado","enviado",{unique:false});
-          if(store==="fila_fotos") s.createIndex("par_ref","par_ref",{unique:false});
+      ["fila_fotos","fila_km","fila_pares"].forEach(function(s){
+        if(!db.objectStoreNames.contains(s)){
+          var st=db.createObjectStore(s,{keyPath:"offline_id"});
+          st.createIndex("enviado","enviado",{unique:false});
         }
       });
     };
@@ -1000,421 +1146,66 @@ function abrirDB(){
     req.onerror=function(e){rej(e.target.error);};
   });
 }
+function dbPut(store,item){ return abrirDB().then(function(db){ return new Promise(function(res,rej){ var tx=db.transaction(store,"readwrite"); tx.objectStore(store).put(item); tx.oncomplete=res; tx.onerror=rej; }); }); }
+function dbGetPendentes(store){ return abrirDB().then(function(db){ return new Promise(function(res){ try{ var tx=db.transaction(store,"readonly"); tx.objectStore(store).index("enviado").getAll(false).onsuccess=function(e){res(e.target.result||[]);}; }catch(e){res([]);} }); }).catch(function(){return [];}); }
+function dbMarcar(store,id){ return abrirDB().then(function(db){ return new Promise(function(res){ var tx=db.transaction(store,"readwrite"); var s=tx.objectStore(store); var r=s.get(id); r.onsuccess=function(e){ var it=e.target.result; if(it){it.enviado=true;s.put(it);} res(); }; }); }); }
 
-function dbPut(store,item){
-  return abrirDB().then(function(db){
-    return new Promise(function(res,rej){
-      var tx=db.transaction(store,"readwrite");
-      tx.objectStore(store).put(item);
-      tx.oncomplete=res; tx.onerror=rej;
-    });
-  });
-}
-
-function dbGetPendentes(store){
-  return abrirDB().then(function(db){
-    return new Promise(function(res,rej){
-      try{
-        var tx=db.transaction(store,"readonly");
-        var s=tx.objectStore(store);
-        var idx=s.index("enviado");
-        var req=idx.getAll(false);
-        req.onsuccess=function(e){res(e.target.result||[]);};
-        req.onerror=function(){res([]);};
-      }catch(e){res([]);}
-    });
-  }).catch(function(){return [];});
-}
-
-function dbMarcarEnviado(store,id){
-  return abrirDB().then(function(db){
-    return new Promise(function(res){
-      var tx=db.transaction(store,"readwrite");
-      var s=tx.objectStore(store);
-      s.get(id).onsuccess=function(e){
-        var it=e.target.result;
-        if(it){it.enviado=true;s.put(it);}
-        res();
-      };
-    });
-  });
-}
-
-// Init
-filtrarLocais("","locaisF");
-filtrarLocais("","locaisKm");
-atualizarFilaUI();
-
-var BANCADA=[],PARES=[],PAR_SEQ=0,ULTIMO_LOCAL="",TODAS_SEMANAS=[];
-function adicionarFotos(inp){
-  var files = inp.files ? Array.from(inp.files) : [];
-  if(!files.length){ toast("Nenhuma foto selecionada."); return; }
-  toast("Carregando "+files.length+" foto(s)...");
-  var total = files.length;
-  var lidas = 0;
-  files.forEach(function(file){
-    // Validar tipo
-    if(!file.type.startsWith("image/")){
-      lidas++; total--;
-      if(lidas===files.length) finalizarCarga();
-      return;
-    }
-    var reader = new FileReader();
-    reader.onload = function(e){
-      if(e.target.result){
-        BANCADA.push({
-          id: "b"+Date.now()+Math.random(),
-          src: e.target.result,
-          nome: file.name,
-          parId: null,
-          tipo: null
-        });
-      }
-      lidas++;
-      if(lidas===files.length) finalizarCarga();
-    };
-    reader.onerror = function(){
-      lidas++;
-      if(lidas===files.length) finalizarCarga();
-    };
-    reader.readAsDataURL(file);
-  });
-  // Limpar input para permitir selecionar as mesmas fotos novamente
-  setTimeout(function(){ inp.value = ""; }, 500);
-}
-
-function finalizarCarga(){
-  renderBancada();
-  var livres = BANCADA.filter(function(f){return !f.parId;}).length;
-  toast(livres+" foto(s) na bancada");
-}
-
-function inicializarInputsFoto(){
-  var cam = document.getElementById("fotoCamera");
-  var gal = document.getElementById("fotoGaleria");
-  if(cam){
-    cam.removeEventListener("change", _onCamChange);
-    cam.addEventListener("change", _onCamChange);
-  }
-  if(gal){
-    gal.removeEventListener("change", _onGalChange);
-    gal.addEventListener("change", _onGalChange);
-  }
-}
-function _onCamChange(){ adicionarFotos(this); }
-function _onGalChange(){ adicionarFotos(this); }
-function renderBancada(){
-  var g=document.getElementById("bancadaGrid"),c=document.getElementById("bancadaCount");
-  var livres=BANCADA.filter(function(f){return !f.parId;});
-  c.textContent=livres.length+" foto(s)";
-  if(!livres.length){g.innerHTML='<div style="grid-column:1/-1;text-align:center;color:#92400E;font-size:11px;padding:.4rem;">Bancada vazia</div>';return;}
-  g.innerHTML=livres.map(function(f){return '<div style="position:relative;border:2px solid #FCD34D;border-radius:8px;overflow:hidden;aspect-ratio:1;background:#000;"><img src="'+f.src+'" style="width:100%;height:100%;object-fit:cover;"><div style="position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,.6);color:#fff;font-size:9px;padding:2px 4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+esc(f.nome)+'</div><button onclick="rmB(\''+f.id+'\')" style="position:absolute;top:2px;right:2px;background:rgba(220,38,38,.9);color:#fff;border:none;border-radius:50%;width:16px;height:16px;font-size:9px;cursor:pointer;">x</button></div>';}).join("");
-  renderBotaoSalvar();
-}
-function rmB(id){BANCADA=BANCADA.filter(function(f){return f.id!==id;});renderBancada();}
-function adicionarPar(){PAR_SEQ++;PARES.push({id:"p"+PAR_SEQ,local:ULTIMO_LOCAL,antes:null,depois:null,dbId:null,salvo:false});renderPares();}
-function renderPares(){
-  var w=document.getElementById("paresWrap");
-  if(!PARES.length){w.innerHTML='<div style="text-align:center;color:var(--mut);font-size:13px;padding:2rem 0;">Adicione fotos e crie pares.</div>';renderBotaoSalvar();return;}
-  w.innerHTML=PARES.map(function(par,pi){
-    var aH=par.antes?'<div style="position:relative;border:2px solid var(--grn);border-radius:8px;overflow:hidden;aspect-ratio:1;cursor:pointer;" onclick="devolverSlot(\''+par.id+'\',\'antes\')"><img src="'+par.antes.src+'" style="width:100%;height:100%;object-fit:cover;"><button onclick="event.stopPropagation();devolverSlot(\''+par.id+'\',\'antes\')" style="position:absolute;top:3px;right:3px;background:rgba(220,38,38,.9);color:#fff;border:none;border-radius:50%;width:20px;height:20px;font-size:12px;cursor:pointer;display:flex;align-items:center;justify-content:center;">r</button></div>'
-      :'<div style="border:2px dashed #BFDBFE;border-radius:8px;aspect-ratio:1;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;background:#F8FAFC;" onclick="abrirSeletor(\''+par.id+'\',\'antes\')"><div style="font-size:22px;margin-bottom:3px;">ANTES</div></div>';
-    var dH=par.depois?'<div style="position:relative;border:2px solid var(--grn);border-radius:8px;overflow:hidden;aspect-ratio:1;cursor:pointer;" onclick="devolverSlot(\''+par.id+'\',\'depois\')"><img src="'+par.depois.src+'" style="width:100%;height:100%;object-fit:cover;"><button onclick="event.stopPropagation();devolverSlot(\''+par.id+'\',\'depois\')" style="position:absolute;top:3px;right:3px;background:rgba(220,38,38,.9);color:#fff;border:none;border-radius:50%;width:20px;height:20px;font-size:12px;cursor:pointer;display:flex;align-items:center;justify-content:center;">r</button></div>'
-      :'<div style="border:2px dashed #FED7AA;border-radius:8px;aspect-ratio:1;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;background:#F8FAFC;" onclick="abrirSeletor(\''+par.id+'\',\'depois\')"><div style="font-size:22px;margin-bottom:3px;">DEPOIS</div></div>';
-    return '<div id="par_'+par.id+'" style="background:#fff;border:1.5px solid var(--brd);border-radius:12px;margin-bottom:.75rem;overflow:hidden;">'
-      +'<div style="background:var(--bl);padding:7px 10px;display:flex;align-items:center;justify-content:space-between;">'
-      +'<span style="font-size:11px;font-weight:700;color:var(--or);background:rgba(0,0,0,.25);padding:2px 7px;border-radius:5px;">#'+pi+'</span>'
-      +(par.salvo?'<span style="font-size:10px;background:var(--glt);color:var(--grn);padding:2px 7px;border-radius:99px;font-weight:700;">salvo</span>':"")
-      +'<button onclick="deletarPar(\''+par.id+'\')" style="background:rgba(220,38,38,.2);color:#fff;border:none;border-radius:5px;padding:2px 7px;font-size:11px;cursor:pointer;">x</button>'
-      +'</div><div style="padding:8px;">'
-      +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-bottom:7px;">'+aH+dH+'</div>'
-      +'<input class="par-local-input" placeholder="Local do par..." value="'+esc(par.local)+'" oninput="atualizarLocalReplica(\''+par.id+'\',this.value)" style="width:100%;border:1.5px solid var(--brd);border-radius:7px;padding:7px 9px;font-size:13px;background:#F8FAFC;">'
-      +'</div></div>';
-  }).join("");
-  renderBotaoSalvar();
-}
-function atualizarLocalReplica(parId,val){
-  var par=PARES.find(function(p){return p.id===parId;});if(!par)return;
-  par.local=val;ULTIMO_LOCAL=val;
-  var idx=PARES.indexOf(par);
-  for(var i=idx+1;i<PARES.length;i++){if(!PARES[i].salvo){PARES[i].local=val;var inp=document.querySelector("#par_"+PARES[i].id+" .par-local-input");if(inp)inp.value=val;}}
-}
-function devolverSlot(parId,tipo){var par=PARES.find(function(p){return p.id===parId;});if(!par||!par[tipo])return;var f=par[tipo];f.parId=null;f.tipo=null;par[tipo]=null;par.salvo=false;renderBancada();renderPares();}
-function deletarPar(parId){var par=PARES.find(function(p){return p.id===parId;});if(!par)return;["antes","depois"].forEach(function(t){if(par[t]){par[t].parId=null;par[t].tipo=null;}});PARES=PARES.filter(function(p){return p.id!==parId;});renderBancada();renderPares();}
-function renderBotaoSalvar(){var btn=document.getElementById("btnSalvarTodos");if(!btn)return;btn.style.display=PARES.some(function(p){return !p.salvo&&(p.antes||p.depois);})?"block":"none";}
-var _sP=null,_sT=null;
-function abrirSeletor(parId,tipo){_sP=parId;_sT=tipo;document.getElementById("seletorTitulo").textContent="Slot "+(tipo==="antes"?"ANTES":"DEPOIS");var livres=BANCADA.filter(function(f){return !f.parId;});var grid=document.getElementById("seletorGrid");var vazio=document.getElementById("seletorVazio");if(!livres.length){grid.innerHTML="";vazio.style.display="block";}else{vazio.style.display="none";grid.innerHTML=livres.map(function(f){return '<div onclick="encaixarDoSeletor(\''+f.id+'\')" style="position:relative;border:2px solid var(--brd);border-radius:10px;overflow:hidden;aspect-ratio:1;background:#000;cursor:pointer;"><img src="'+f.src+'" style="width:100%;height:100%;object-fit:cover;"><div style="position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,.6);color:#fff;font-size:9px;padding:3px 5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+esc(f.nome)+'</div></div>';}).join("");}document.getElementById("modalSeletor").style.display="flex";}
-function fecharSeletor(){document.getElementById("modalSeletor").style.display="none";_sP=null;_sT=null;}
-function encaixarDoSeletor(fotoId){var f=BANCADA.find(function(b){return b.id===fotoId;});var par=PARES.find(function(p){return p.id===_sP;});if(!f||!par){fecharSeletor();return;}if(par[_sT]){var ant=par[_sT];ant.parId=null;ant.tipo=null;}f.parId=_sP;f.tipo=_sT;par[_sT]=f;par.salvo=false;fecharSeletor();renderBancada();renderPares();}
-async function salvarTodos(){
-  if(!SEMANA){toast("Sem semana ativa!");return;}
-  var pend=PARES.filter(function(p){return !p.salvo&&(p.antes||p.depois);});
-  if(!pend.length){toast("Nada para salvar.");return;}
-  var btn=document.getElementById("btnSalvarTodos");
-  btn.disabled=true;btn.textContent="Salvando...";
-  var ok=0,offline=0,erros=0;
-  for(var par of pend){
-    if(ONLINE){
-      try{await salvarPar(par);ok++;}
-      catch(e){
-        // Falhou online — tenta salvar offline
-        try{await salvarParOffline(par);offline++;}
-        catch(e2){erros++;}
-      }
-    } else {
-      // Sem internet — salva direto na fila
-      try{await salvarParOffline(par);offline++;}
-      catch(e){erros++;}
-    }
-  }
-  btn.disabled=false;btn.textContent="Salvar todos os pares";
-  var msg = "";
-  if(ok)      msg += ok+" par(es) enviado(s) ";
-  if(offline) msg += offline+" salvo(s) offline ";
-  if(erros)   msg += erros+" erro(s)";
-  toast(msg || "Concluído");
-  if(offline) toast("📱 "+offline+" par(es) na fila — enviará com Wi-Fi");
-  renderPares();
-  atualizarFilaUI();
-}
-async function salvarPar(par){if(!par.dbId){var r=await fetch("/jardinagem/api/pares",{method:"POST",headers:{"Content-Type":"application/json","Authorization":"Bearer "+TOKEN},body:JSON.stringify({semana_id:SEMANA.id,local_nome:par.local||"",data_label:"",ordem:99})});if(!r.ok)throw new Error("erro par");var d=await r.json();par.dbId=d.id;}for(var tipo of["antes","depois"]){var f=par[tipo];if(!f||f.sid)continue;var blob=b64toBlob(f.src);var fd=new FormData();fd.append("par_id",par.dbId);fd.append("tipo",tipo);fd.append("foto",blob,f.nome||tipo+".jpg");var r2=await fetch("/jardinagem/api/fotos/avulsa",{method:"POST",headers:{"Authorization":"Bearer "+TOKEN},body:fd});if(!r2.ok)throw new Error("erro foto");var d2=await r2.json();f.sid=d2.id;}if(par.local&&par.dbId){await fetch("/jardinagem/api/pares/"+par.dbId,{method:"PATCH",headers:{"Content-Type":"application/json","Authorization":"Bearer "+TOKEN},body:JSON.stringify({local_nome:par.local})});}par.salvo=true;}
-function b64toBlob(d){var p=d.split(","),m=p[0].match(/:(.*?);/)[1],b=atob(p[1]),a=new Uint8Array(b.length);for(var i=0;i<b.length;i++)a[i]=b.charCodeAt(i);return new Blob([a],{type:m});}
-function abrirModalSemanas(){document.getElementById("modalSemanas").style.display="flex";carregarTodasSemanas();}
-function fecharModalSemanas(){document.getElementById("modalSemanas").style.display="none";}
-function carregarTodasSemanas(){if(!SEMANA||!SEMANA.mes_id)return;fetch("/jardinagem/api/meses/"+SEMANA.mes_id,{headers:{"Authorization":"Bearer "+TOKEN}}).then(function(r){return r.json();}).then(function(d){TODAS_SEMANAS=d.semanas||[];document.getElementById("modalSemMesLabel").textContent=d.label||"";renderSemanas();}).catch(function(){toast("Erro semanas.");});}
-function renderSemanas(){var lista=document.getElementById("modalSemLista");if(!TODAS_SEMANAS.length){lista.innerHTML='<div style="color:var(--mut);font-size:13px;text-align:center;padding:1rem;">Nenhuma semana.</div>';return;}lista.innerHTML=TODAS_SEMANAS.map(function(s){var ativa=SEMANA&&s.id===SEMANA.id;return '<div style="background:#fff;border:1.5px solid '+(ativa?'var(--or)':'var(--brd)')+';border-radius:10px;padding:10px 12px;margin-bottom:.5rem;"><div style="display:flex;align-items:center;justify-content:space-between;gap:8px;"><div style="flex:1;"><div style="font-size:13px;font-weight:700;color:var(--bl);">'+esc(s.label)+'</div>'+(ativa?'<span style="font-size:10px;background:var(--glt);color:var(--grn);padding:2px 8px;border-radius:99px;font-weight:700;">Ativa</span>':"")+'</div><button onclick="deletarSemana('+s.id+')" style="background:#FEE2E2;color:#DC2626;border:none;border-radius:6px;padding:5px 10px;font-size:11px;font-weight:700;cursor:pointer;">x</button></div></div>';}).join("");}
-function criarSemana(){
-  if(!SEMANA||!SEMANA.mes_id){toast("Sem mes ativo.");return;}
-  var hoje=new Date(),dd=String(hoje.getDate()).padStart(2,"0"),mm=String(hoje.getMonth()+1).padStart(2,"0"),yyyy=hoje.getFullYear();
-  var n=(TODAS_SEMANAS.length||0)+1;
-  var sug="Semana "+n+" — "+dd+"/"+mm+" a __/__/"+yyyy;
-  var label=prompt("Periodo da semana:",sug);
-  if(!label)return;
-  fetch("/jardinagem/api/semanas",{method:"POST",headers:{"Content-Type":"application/json","Authorization":"Bearer "+TOKEN},
-    body:JSON.stringify({mes_id:SEMANA.mes_id,label:label,ordem:TODAS_SEMANAS.length})})
-  .then(function(r){return r.json();})
-  .then(function(d){if(d.erro){toast("Erro: "+d.erro);return;}toast("Semana criada!");carregarTodasSemanas();carregarSemanaAtiva();})
-  .catch(function(){toast("Erro conexao.");});
-}
-function deletarSemana(sid){if(!confirm("Deletar esta semana?"))return;fetch("/jardinagem/api/semanas/"+sid,{method:"DELETE",headers:{"Authorization":"Bearer "+TOKEN}}).then(function(r){if(r.ok){toast("Removida!");carregarTodasSemanas();carregarSemanaAtiva();}else toast("Erro.");}).catch(function(){toast("Erro conexao.");});}
-function navPara(tela){
-  // Paineis
-  var ids = {
-    "mainFoto":    false,
-    "mainHist":    false,
-    "mainGaleria": tela==="galeria",
-    "mainMais":    tela==="mais",
-  };
-  Object.keys(ids).forEach(function(id){
-    var el=document.getElementById(id);
-    if(el) el.style.display=ids[id]?"flex":"none";
-  });
-  // Sub-paineis bancada/km
-  var pf=document.getElementById("painelFoto");
-  var pk=document.getElementById("painelKm");
-  if(pf) pf.style.display=tela==="foto"?"flex":"none";
-  if(pk) pk.style.display=tela==="km"?"block":"none";
-  // mainFoto precisa de display block quando ativo
-  var mf=document.getElementById("mainFoto"); if(mf) mf.style.display=(tela==="foto"||tela==="km")?"flex":"none";
-
-  // Tabs bancada/km
-
-
-  // Nav buttons
-  ["navFoto","navKm","navGaleria","navMais"].forEach(function(id){
-    var el=document.getElementById(id);if(el)el.className="nav-btn";
-  });
-  var navMap={"foto":"navFoto","km":"navKm","galeria":"navGaleria","mais":"navMais"};
-  if(navMap[tela]&&document.getElementById(navMap[tela]))
-    document.getElementById(navMap[tela]).className="nav-btn ativo";
-
-  // Ações por tela
-  if(tela==="foto") setTimeout(inicializarInputsFoto,100);
-  if(tela==="km") preencherKmSugerido();
-  if(tela==="galeria") carregarGaleriaSemanas();
-  if(tela==="mais"){
-    var mn=document.getElementById("maisSemanaNome");
-    if(mn&&SEMANA) mn.textContent=SEMANA.label||"—";
-    var isAdm=USUARIO?.perfil==="admin"||USUARIO?.perfil==="luana";
-    var bloco=document.getElementById("maisAdminBloco");
-    if(bloco) bloco.style.display=isAdm?"block":"none";
-  }
-}
-
-// ── SYNC AUTOMÁTICO ───────────────────────────────────────────
-function dispararSync(){
-  if(!ONLINE) return;
-  // Tenta Background Sync (Chrome Android)
-  if(_swReg && "sync" in _swReg){
-    _swReg.sync.register("sync-garra").catch(function(){
-      // Fallback: sync manual via mensagem
-      syncViaMessage();
-    });
-  } else {
-    syncViaMessage();
-  }
-}
-
-function syncViaMessage(){
-  if(navigator.serviceWorker.controller){
+async function sincronizar(){
+  if(!ONLINE){toast("Sem conexão.");return;}
+  if(navigator.serviceWorker&&navigator.serviceWorker.controller){
+    toast("Sincronizando...");
     navigator.serviceWorker.controller.postMessage({tipo:"SYNC_AGORA"});
-  } else {
-    // SW não está controlando ainda — sync direto
-    sincronizarAgora();
-  }
-}
-
-// ── SALVAR PAR OFFLINE ────────────────────────────────────────
-async function salvarParOffline(par){
-  var offlineId = "par-"+Date.now()+"-"+Math.random().toString(36).slice(2);
-  // Salva par na fila
-  await dbPutStore("fila_pares", {
-    offline_id: offlineId,
-    semana_id:  SEMANA?.id || null,
-    local_nome: par.local || "",
-    token:      TOKEN,
-    enviado:    false,
-    criado_em:  new Date().toISOString(),
-  });
-  // Salva fotos vinculadas ao par
-  for(var tipo of ["antes","depois"]){
-    var f = par[tipo];
-    if(!f) continue;
-    var b64 = f.src.split(",")[1];
-    var fotoId = "foto-"+Date.now()+"-"+Math.random().toString(36).slice(2);
-    await dbPutStore("fila_fotos", {
-      offline_id: fotoId,
-      par_ref:    offlineId,
-      par_db_id:  null,
-      semana_id:  SEMANA?.id || null,
-      local_nome: par.local || "",
-      tipo:       tipo,
-      dados_b64:  b64,
-      filename:   f.nome || tipo+".jpg",
-      token:      TOKEN,
-      enviado:    false,
-      criado_em:  new Date().toISOString(),
-    });
-  }
-  par.salvo = true;
-  par.offline = true;
-}
-
-function dbPutStore(store, item){
-  return abrirDB().then(function(db){
-    return new Promise(function(res,rej){
-      var tx = db.transaction(store,"readwrite");
-      tx.objectStore(store).put(item);
-      tx.oncomplete = res;
-      tx.onerror = rej;
-    });
-  });
-}
-
-// ── GALERIA ───────────────────────────────────────────────────
-function carregarGaleriaSemanas(){
-  if(!SEMANA) return;
-  // Carrega lista de semanas do mês atual
-  fetch("/jardinagem/api/meses/"+SEMANA.mes_id,{
-    headers:{"Authorization":"Bearer "+TOKEN}
-  }).then(function(r){return r.json();})
-  .then(function(d){
-    var sel=document.getElementById("galSemSel");
-    sel.innerHTML='<option value="">Selecione a semana...</option>';
-    (d.semanas||[]).forEach(function(s){
-      var opt=document.createElement("option");
-      opt.value=s.id; opt.textContent=s.label;
-      if(s.id===SEMANA.id) opt.selected=true;
-      sel.appendChild(opt);
-    });
-    if(SEMANA.id) carregarGaleria();
-  }).catch(function(){toast("Erro ao carregar semanas.");});
-}
-
-function carregarGaleria(){
-  var sid=document.getElementById("galSemSel").value;
-  var conteudo=document.getElementById("galConteudo");
-  if(!sid){
-    conteudo.innerHTML='<div style="text-align:center;color:var(--mut);font-size:13px;padding:3rem;">Selecione uma semana.</div>';
     return;
   }
-  conteudo.innerHTML='<div style="text-align:center;color:var(--mut);font-size:13px;padding:2rem;"><span class="spin">⟳</span> Carregando...</div>';
-  fetch("/jardinagem/api/meses/"+SEMANA.mes_id,{headers:{"Authorization":"Bearer "+TOKEN}})
-  .then(function(r){return r.json();})
-  .then(function(d){
-    var sem=(d.semanas||[]).find(function(s){return String(s.id)===String(sid);});
-    if(!sem||!sem.pares||!sem.pares.length){
-      conteudo.innerHTML='<div style="text-align:center;color:var(--mut);font-size:13px;padding:3rem;">Nenhum par nesta semana.</div>';
-      return;
+  var km=await dbGetPendentes("fila_km");
+  if(!km.length){toast("Nada para sincronizar.");return;}
+  var ok=0;
+  for(var item of km){
+    try{
+      var r=await fetch("/jardinagem/api/relatorios/km",{method:"POST",
+        headers:{"Content-Type":"application/json","Authorization":"Bearer "+TOKEN},
+        body:JSON.stringify(item.payload||item)});
+      if(r.ok){await dbMarcar("fila_km",item.offline_id);ok++;}
+    }catch(e){}
+  }
+  toast("✅ "+ok+"/"+km.length+" enviados.");
+  atualizarFila();
+}
+
+async function atualizarFila(){
+  try{
+    var fk=await dbGetPendentes("fila_km");
+    var ff=await dbGetPendentes("fila_fotos");
+    var n=fk.length+ff.length;
+    var card=document.getElementById("filaCard");
+    var info=document.getElementById("filaInfo");
+    var mf=document.getElementById("maisFila");
+    if(n>0){
+      if(card) card.style.display="block";
+      var txt=[];
+      if(ff.length) txt.push(ff.length+" foto(s)");
+      if(fk.length) txt.push(fk.length+" KM(s)");
+      var msg=txt.join(", ")+" aguardando Wi-Fi.";
+      if(info) info.textContent=msg;
+      if(mf)   mf.textContent=msg;
+    } else {
+      if(card) card.style.display="none";
+      if(mf)   mf.textContent="Tudo sincronizado ✅";
     }
-    var html='<div style="font-size:11px;color:var(--mut);margin-bottom:.75rem;">'+sem.pares.length+' par(es) salvos</div>';
-    html+=sem.pares.map(function(par){
-      var fa=par.fotos&&par.fotos.find(function(f){return f.tipo==="antes";});
-      var fd=par.fotos&&par.fotos.find(function(f){return f.tipo==="depois";});
-      var imgA=fa&&fa.url?'<img src="'+fa.url+'" style="width:100%;height:100%;object-fit:cover;">'
-        :'<div style="width:100%;height:100%;background:#F1F5F9;display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--mut);">Sem foto</div>';
-      var imgD=fd&&fd.url?'<img src="'+fd.url+'" style="width:100%;height:100%;object-fit:cover;">'
-        :'<div style="width:100%;height:100%;background:#F1F5F9;display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--mut);">Sem foto</div>';
-      return '<div style="background:#fff;border:1.5px solid var(--brd);border-radius:12px;margin-bottom:.75rem;overflow:hidden;">'
-        +'<div style="background:var(--bl);padding:7px 12px;display:flex;align-items:center;gap:8px;">'
-        +'<span style="font-size:11px;font-weight:700;color:var(--or);background:rgba(0,0,0,.25);padding:2px 8px;border-radius:6px;">'+esc(String(par.codigo_a||"?"))+'ª–'+esc(String(par.codigo_d||"?"))+'ª</span>'
-        +'<span style="font-size:12px;color:#fff;font-weight:600;flex:1;">'+esc(par.local_nome||"Sem local")+'</span>'
-        +'</div>'
-        +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:0;">'
-        +'<div><div style="font-size:9px;font-weight:700;color:#1D4ED8;padding:4px 8px;background:#EFF6FF;">ANTES</div>'
-        +'<div style="aspect-ratio:4/3;overflow:hidden;">'+imgA+'</div></div>'
-        +'<div><div style="font-size:9px;font-weight:700;color:#EA580C;padding:4px 8px;background:#FFF7ED;">DEPOIS</div>'
-        +'<div style="aspect-ratio:4/3;overflow:hidden;">'+imgD+'</div></div>'
-        +'</div></div>';
-    }).join("");
-    conteudo.innerHTML=html;
-  }).catch(function(){
-    conteudo.innerHTML='<div style="text-align:center;color:var(--red);font-size:13px;padding:2rem;">Erro ao carregar galeria.</div>';
-  });
+  }catch(e){}
 }
 
-// ── ENVIO EMAIL MOBILE (admin/luana) ──────────────────────────
-function abrirEnvioEmailMobile(){
-  var sid=SEMANA?.id;
-  if(!sid){toast("Sem semana ativa!");return;}
-  var status=document.getElementById("maisEmailStatus");
-  var btn=document.querySelector("#maisAdminBloco button");
-  btn.disabled=true;
-  btn.innerHTML='<span class="spin">⟳</span> Enviando...';
-  status.textContent="Gerando e enviando relatórios...";
-  status.style.color="var(--mut)";
-  fetch("/jardinagem/api/relatorios/"+sid+"/enviar",{
-    method:"POST",headers:{"Authorization":"Bearer "+TOKEN}
-  }).then(function(r){return r.json();})
-  .then(function(d){
-    if(d.erro){status.textContent="❌ "+d.erro;status.style.color="var(--red)";}
-    else{status.textContent="✅ "+d.mensagem;status.style.color="var(--grn)";}
-  }).catch(function(){status.textContent="❌ Erro de conexão";status.style.color="var(--red)";})
-  .finally(function(){btn.disabled=false;btn.innerHTML="📧 Enviar Relatório";});
+// ══ UTILS ══════════════════════════════════════════════════
+function toast(msg){
+  var el=document.getElementById("toast");
+  el.textContent=msg; el.className="toast on";
+  clearTimeout(el._t);
+  el._t=setTimeout(function(){el.className="toast";},3500);
 }
+function esc(s){return(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");}
+
+// Init fila
+atualizarFila();
 </script>
-
-<!-- MODAL SEMANAS -->
-<div id="modalSemanas" style="display:none;position:fixed;inset:0;background:rgba(5,10,35,.95);z-index:500;flex-direction:column;">
-  <div style="background:var(--bl);border-bottom:3px solid var(--or);padding:12px 1rem;display:flex;align-items:center;justify-content:space-between;flex-shrink:0;">
-    <div><div style="font-size:14px;font-weight:800;color:#fff;">Gerenciar Semanas</div><div style="font-size:11px;color:#93C5FD;" id="modalSemMesLabel">-</div></div>
-    <button onclick="fecharModalSemanas()" style="background:rgba(255,255,255,.15);color:#fff;border:none;border-radius:50%;width:32px;height:32px;font-size:16px;cursor:pointer;">x</button>
-  </div>
-  <div style="flex:1;overflow-y:auto;padding:1rem;">
-    <div id="modalSemLista"></div>
-    <button onclick="criarSemana()" style="width:100%;padding:14px;background:var(--bl);color:#fff;border:none;border-radius:10px;font-size:15px;font-weight:800;cursor:pointer;margin-top:.5rem;">+ Nova Semana</button>
-  </div>
-</div>
-<!-- MODAL SELETOR -->
-<div id="modalSeletor" style="display:none;position:fixed;inset:0;background:rgba(5,10,35,.95);z-index:600;flex-direction:column;">
-  <div style="background:var(--bl);border-bottom:3px solid var(--or);padding:12px 1rem;display:flex;align-items:center;justify-content:space-between;flex-shrink:0;">
-    <div><div style="font-size:14px;font-weight:800;color:#fff;" id="seletorTitulo">Escolher foto</div><div style="font-size:11px;color:#93C5FD;">Toque para encaixar no slot</div></div>
-    <button onclick="fecharSeletor()" style="background:rgba(255,255,255,.15);color:#fff;border:none;border-radius:50%;width:32px;height:32px;font-size:16px;cursor:pointer;">x</button>
-  </div>
-  <div style="flex:1;overflow-y:auto;padding:1rem;">
-    <div id="seletorGrid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;"></div>
-    <div id="seletorVazio" style="display:none;text-align:center;color:var(--mut);font-size:13px;padding:3rem 1rem;">Bancada vazia.</div>
-  </div>
-</div>
 </body>
 </html>
