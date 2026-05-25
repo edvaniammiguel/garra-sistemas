@@ -1183,7 +1183,19 @@ function abrirModalSemanas(){document.getElementById("modalSemanas").style.displ
 function fecharModalSemanas(){document.getElementById("modalSemanas").style.display="none";}
 function carregarTodasSemanas(){if(!SEMANA||!SEMANA.mes_id)return;fetch("/jardinagem/api/meses/"+SEMANA.mes_id,{headers:{"Authorization":"Bearer "+TOKEN}}).then(function(r){return r.json();}).then(function(d){TODAS_SEMANAS=d.semanas||[];document.getElementById("modalSemMesLabel").textContent=d.label||"";renderSemanas();}).catch(function(){toast("Erro semanas.");});}
 function renderSemanas(){var lista=document.getElementById("modalSemLista");if(!TODAS_SEMANAS.length){lista.innerHTML='<div style="color:var(--mut);font-size:13px;text-align:center;padding:1rem;">Nenhuma semana.</div>';return;}lista.innerHTML=TODAS_SEMANAS.map(function(s){var ativa=SEMANA&&s.id===SEMANA.id;return '<div style="background:#fff;border:1.5px solid '+(ativa?'var(--or)':'var(--brd)')+';border-radius:10px;padding:10px 12px;margin-bottom:.5rem;"><div style="display:flex;align-items:center;justify-content:space-between;gap:8px;"><div style="flex:1;"><div style="font-size:13px;font-weight:700;color:var(--bl);">'+esc(s.label)+'</div>'+(ativa?'<span style="font-size:10px;background:var(--glt);color:var(--grn);padding:2px 8px;border-radius:99px;font-weight:700;">Ativa</span>':"")+'</div><button onclick="deletarSemana('+s.id+')" style="background:#FEE2E2;color:#DC2626;border:none;border-radius:6px;padding:5px 10px;font-size:11px;font-weight:700;cursor:pointer;">x</button></div></div>';}).join("");}
-function criarSemana(){if(!SEMANA||!SEMANA.mes_id){toast("Sem mes ativo.");return;}var label=prompt("Periodo da semana:");if(!label)return;fetch("/jardinagem/api/semanas",{method:"POST",headers:{"Content-Type":"application/json","Authorization":"Bearer "+TOKEN},body:JSON.stringify({mes_id:SEMANA.mes_id,label:label,ordem:TODAS_SEMANAS.length})}).then(function(r){return r.json();}).then(function(d){if(d.erro){toast("Erro: "+d.erro);return;}toast("Semana criada!");carregarTodasSemanas();carregarSemanaAtiva();}).catch(function(){toast("Erro conexao.");});}
+function criarSemana(){
+  if(!SEMANA||!SEMANA.mes_id){toast("Sem mes ativo.");return;}
+  var hoje=new Date(),dd=String(hoje.getDate()).padStart(2,"0"),mm=String(hoje.getMonth()+1).padStart(2,"0"),yyyy=hoje.getFullYear();
+  var n=(TODAS_SEMANAS.length||0)+1;
+  var sug="Semana "+n+" — "+dd+"/"+mm+" a __/__/"+yyyy;
+  var label=prompt("Periodo da semana:",sug);
+  if(!label)return;
+  fetch("/jardinagem/api/semanas",{method:"POST",headers:{"Content-Type":"application/json","Authorization":"Bearer "+TOKEN},
+    body:JSON.stringify({mes_id:SEMANA.mes_id,label:label,ordem:TODAS_SEMANAS.length})})
+  .then(function(r){return r.json();})
+  .then(function(d){if(d.erro){toast("Erro: "+d.erro);return;}toast("Semana criada!");carregarTodasSemanas();carregarSemanaAtiva();})
+  .catch(function(){toast("Erro conexao.");});
+}
 function deletarSemana(sid){if(!confirm("Deletar esta semana?"))return;fetch("/jardinagem/api/semanas/"+sid,{method:"DELETE",headers:{"Authorization":"Bearer "+TOKEN}}).then(function(r){if(r.ok){toast("Removida!");carregarTodasSemanas();carregarSemanaAtiva();}else toast("Erro.");}).catch(function(){toast("Erro conexao.");});}
 function navPara(tela){
   // Paineis
