@@ -1258,12 +1258,9 @@ function renderPreviewFotos(d){
     var cor = (!p.foto_antes||!p.foto_depois) ? '#F97316' : '#16A34A';
     var urlA = p.url_antes  || '';
     var urlD = p.url_depois || '';
-    var slotA = urlA
-      ? '<img src="'+urlA+'" style="width:100%;height:100%;object-fit:cover;display:block;" onerror="this.parentElement.innerHTML='<div style=\'width:100%;height:100%;background:#F1F5F9;display:flex;align-items:center;justify-content:center;font-size:11px;color:#94A3B8;\'>Sem foto</div>'">'
-      : '<div style="width:100%;height:100%;background:#F1F5F9;display:flex;align-items:center;justify-content:center;font-size:11px;color:#94A3B8;">Sem foto</div>';
-    var slotD = urlD
-      ? '<img src="'+urlD+'" style="width:100%;height:100%;object-fit:cover;display:block;" onerror="this.parentElement.innerHTML='<div style=\'width:100%;height:100%;background:#F1F5F9;display:flex;align-items:center;justify-content:center;font-size:11px;color:#94A3B8;\'>Sem foto</div>'">'
-      : '<div style="width:100%;height:100%;background:#F1F5F9;display:flex;align-items:center;justify-content:center;font-size:11px;color:#94A3B8;">Sem foto</div>';
+    var semFoto = '<div style="width:100%;height:100%;background:#F1F5F9;display:flex;align-items:center;justify-content:center;font-size:11px;color:#94A3B8;">Sem foto</div>';
+    var slotA = urlA ? '<img src="'+urlA+'" style="width:100%;height:100%;object-fit:cover;display:block;">' : semFoto;
+    var slotD = urlD ? '<img src="'+urlD+'" style="width:100%;height:100%;object-fit:cover;display:block;">' : semFoto;
 
     return '<div style="background:#fff;border:1.5px solid var(--brd);border-left:4px solid '+cor+';border-radius:10px;padding:10px;margin-bottom:10px;">'
       // Cabeçalho do par
