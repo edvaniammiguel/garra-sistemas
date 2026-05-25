@@ -921,8 +921,9 @@ function criarMes(){
   var label=document.getElementById('inputMesLabel').value.trim()||('Mês '+mes+'/'+ano);
   fetchAuth('/jardinagem/api/meses',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mes,ano,label})})
     .then(r=>r.json()).then(function(d){
-      fecharModal('modalMes');carregarMeses();
-      return fetchAuth('/jardinagem/api/semanas',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mes_id:d.id,label:'Semana 1 — '+label,ordem:0})}).then(()=>abrirMes(d.id));
+      fecharModal('modalMes');
+      carregarMeses();
+      abrirMes(d.id);
     }).catch(()=>toast('Erro'));
 }
 function addSem(){
