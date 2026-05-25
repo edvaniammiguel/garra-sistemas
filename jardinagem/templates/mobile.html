@@ -7,11 +7,11 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#1A2A5E">
 <title>Garra — Jardinagem</title>
-<link rel="manifest" href="/manifest.json">
-<link rel="icon" type="image/x-icon" href="/static/icons/favicon.ico">
-<link rel="icon" type="image/png" sizes="32x32" href="/static/icons/favicon-32.png">
-<link rel="icon" type="image/png" sizes="16x16" href="/static/icons/favicon-16.png">
-<link rel="apple-touch-icon" href="/static/icons/icon-192.png">
+<link rel="manifest" href="/jardinagem/manifest.json">
+<link rel="icon" type="image/x-icon" href="/jardinagem/static/icons/favicon.ico">
+<link rel="icon" type="image/png" sizes="32x32" href="/jardinagem/static/icons/favicon-32.png">
+<link rel="icon" type="image/png" sizes="16x16" href="/jardinagem/static/icons/favicon-16.png">
+<link rel="apple-touch-icon" href="/jardinagem/static/icons/icon-192.png">
 <style>
 :root{
   --bl:#1A2A5E;--bl2:#1E3A8A;--or:#E8820C;--or2:#D4700A;
@@ -201,7 +201,7 @@ input[type=file]{display:none;}
 <div id="telaLogin" style="display:flex;flex-direction:column;flex:1;">
   <div class="login-wrap">
     <div class="login-card">
-      <img class="login-logo" src="/static/icons/logo-garra.jpg" alt="Garra Terraplenagem">
+      <img class="login-logo" src="/jardinagem/static/icons/logo-garra.jpg" alt="Garra Terraplenagem">
       <div class="login-titulo">Jardinagem</div>
       <div class="login-sub">Águas de Pará de Minas</div>
       <div class="login-form">
@@ -231,7 +231,7 @@ input[type=file]{display:none;}
 
   <header class="hdr" style="background:#1A2A5E;border-bottom:3px solid #E8820C;padding:10px 1rem;display:flex;align-items:center;justify-content:space-between;flex-shrink:0;">
     <!-- Logo colorida -->
-    <img src="/static/icons/logo-garra.jpg" alt="Garra" style="height:44px;object-fit:contain;filter:brightness(0) invert(1);">
+    <img src="/jardinagem/static/icons/logo-garra.jpg" alt="Garra" style="height:44px;object-fit:contain;filter:brightness(0) invert(1);">
     <!-- Direita: status + nome + badge + link desktop -->
     <div style="display:flex;align-items:center;gap:10px;">
       <div style="display:flex;align-items:center;gap:5px;">
@@ -436,7 +436,7 @@ var ULTIMO_KM = parseFloat(localStorage.getItem("ultimo_km") || "0");
 // ── PWA ──────────────────────────────────────────────────────
 if ("serviceWorker" in navigator) {
   var _swReg = null;
-  navigator.serviceWorker.register("/sw.js")
+  navigator.serviceWorker.register("/jardinagem/sw.js")
     .then(function(reg){
       _swReg = reg;
       navigator.serviceWorker.addEventListener("message", function(e){
