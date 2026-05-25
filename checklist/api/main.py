@@ -157,11 +157,14 @@ def storage_upload(dados: bytes, path: str) -> str:
     if not SUPABASE_URL or not SUPABASE_SERVICE_KEY:
         raise ValueError("Supabase não configurado")
     url = f"{SUPABASE_URL}/storage/v1/object/{BUCKET_NAME}/{path}"
-    r = req_lib.post(url, headers={
+    # Supabase aceita tanto Bearer JWT quanto apikey para service role
+    headers = {
         "Authorization": f"Bearer {SUPABASE_SERVICE_KEY}",
+        "apikey": SUPABASE_SERVICE_KEY,
         "Content-Type": "image/jpeg",
         "x-upsert": "true"
-    }, data=dados, timeout=30)
+    }
+    r = req_lib.post(url, headers=headers, data=dados, timeout=30)
     if r.status_code not in (200, 201):
         raise RuntimeError(f"Storage upload falhou [{r.status_code}]: {r.text}")
     return path
@@ -172,7 +175,10 @@ def storage_url(path: str, segundos: int = 3600) -> str:
     try:
         r = req_lib.post(
             f"{SUPABASE_URL}/storage/v1/object/sign/{BUCKET_NAME}/{path}",
-            headers={"Authorization": f"Bearer {SUPABASE_SERVICE_KEY}"},
+            headers={
+                "Authorization": f"Bearer {SUPABASE_SERVICE_KEY}",
+                "apikey": SUPABASE_SERVICE_KEY
+            },
             json={"expiresIn": segundos}, timeout=10
         )
         if r.status_code == 200:
@@ -185,7 +191,10 @@ def storage_delete(paths: list):
     try:
         req_lib.delete(
             f"{SUPABASE_URL}/storage/v1/object/{BUCKET_NAME}",
-            headers={"Authorization": f"Bearer {SUPABASE_SERVICE_KEY}"},
+            headers={
+                "Authorization": f"Bearer {SUPABASE_SERVICE_KEY}",
+                "apikey": SUPABASE_SERVICE_KEY
+            },
             json={"prefixes": paths}, timeout=10
         )
     except: pass
