@@ -133,12 +133,12 @@ async def startup():
     conn = await asyncpg.connect(DATABASE_URL)
     try:
         await conn.execute("SET search_path TO public, checklist, jardinagem")
-        print("✅ Garra Gestão v6 — banco unificado conectado")
-    print(f"📁 JARD_DIR: {JARD_DIR}")
-    print(f"📁 TEMPLATES: {TEMPLATES_DIR} — exists:{os.path.exists(TEMPLATES_DIR)}")
-    print(f"📁 STATIC: {STATIC_DIR} — exists:{os.path.exists(STATIC_DIR)}")
+        print("Garra Gestao v6 - banco unificado conectado")
+        print("JARD_DIR:", JARD_DIR)
+        print("TEMPLATES exists:", os.path.exists(TEMPLATES_DIR))
+        print("STATIC exists:", os.path.exists(STATIC_DIR))
     except Exception as e:
-        print(f"⚠️ Erro no startup: {e}")
+        print("Erro no startup:", e)
     finally:
         await conn.close()
 
