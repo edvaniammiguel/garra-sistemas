@@ -435,7 +435,23 @@ var ULTIMO_KM = parseFloat(localStorage.getItem("ultimo_km") || "0");
 
 // ── PWA ──────────────────────────────────────────────────────
 if ("serviceWorker" in navigator) {
-  navigator.serviceWorker.register("/sw.js").catch(()=>{});
+  var _swReg = null;
+  navigator.serviceWorker.register("/sw.js")
+    .then(function(reg){
+      _swReg = reg;
+      navigator.serviceWorker.addEventListener("message", function(e){
+        if(!e.data || e.data.tipo !== "SYNC_CONCLUIDO") return;
+        var f=e.data.fotos||0, k=e.data.km||0, er=e.data.erros||0;
+        var msg = "";
+        if(f||k) msg = "Sincronizado:"+(f?" "+f+" foto(s)":"")+(k?" "+k+" KM":"");
+        if(er)   msg += (msg?" | ":"")+"Erros: "+er;
+        if(msg)  toast(msg);
+        atualizarFilaUI();
+      });
+    }).catch(function(){});
+  window.addEventListener("online", function(){
+    ONLINE=true; atualizarStatus(); dispararSync();
+  });
 }
 window.addEventListener("online",  ()=>{ ONLINE=true;  atualizarStatus(); sincronizarAgora(); });
 window.addEventListener("offline", ()=>{ ONLINE=false; atualizarStatus(); });
@@ -813,15 +829,19 @@ async function sincronizarAgora(){
 
 async function atualizarFilaUI(){
   try{
-    var f=await dbGetPendentes("fila_fotos");
-    var k=await dbGetPendentes("fila_km");
-    var n=f.length+k.length;
+    var fk=await dbGetPendentes("fila_km");
+    var ff=await dbGetPendentes("fila_fotos");
+    var fp=await dbGetPendentes("fila_pares");
+    var total=fk.length+ff.length+fp.length;
     var card=document.getElementById("filaCard");
     var info=document.getElementById("filaInfo");
-    if(n>0){
+    if(total>0){
       card.style.display="block";
-      info.textContent=n+" item(s) aguardando Wi-Fi.";
-    } else card.style.display="none";
+      var partes=[];
+      if(ff.length||fp.length) partes.push((ff.length||fp.length)+" foto(s)/par(es)");
+      if(fk.length) partes.push(fk.length+" KM(s)");
+      info.textContent=partes.join(", ")+" aguardando Wi-Fi.";
+    } else { card.style.display="none"; }
   }catch(e){}
 }
 
@@ -905,13 +925,14 @@ var DB_NAME="garra-offline-v2";
 
 function abrirDB(){
   return new Promise(function(res,rej){
-    var req=indexedDB.open(DB_NAME,1);
+    var req=indexedDB.open("garra-offline-v2",2);
     req.onupgradeneeded=function(e){
       var db=e.target.result;
-      ["fila_fotos","fila_km"].forEach(function(store){
+      ["fila_fotos","fila_km","fila_pares"].forEach(function(store){
         if(!db.objectStoreNames.contains(store)){
           var s=db.createObjectStore(store,{keyPath:"offline_id"});
           s.createIndex("enviado","enviado",{unique:false});
+          if(store==="fila_fotos") s.createIndex("par_ref","par_ref",{unique:false});
         }
       });
     };
@@ -932,11 +953,15 @@ function dbPut(store,item){
 
 function dbGetPendentes(store){
   return abrirDB().then(function(db){
-    return new Promise(function(res){
-      var tx=db.transaction(store,"readonly");
-      tx.objectStore(store).index("enviado").getAll(false).onsuccess=function(e){
-        res(e.target.result);
-      };
+    return new Promise(function(res,rej){
+      try{
+        var tx=db.transaction(store,"readonly");
+        var s=tx.objectStore(store);
+        var idx=s.index("enviado");
+        var req=idx.getAll(false);
+        req.onsuccess=function(e){res(e.target.result||[]);};
+        req.onerror=function(){res([]);};
+      }catch(e){res([]);}
     });
   }).catch(function(){return [];});
 }
@@ -1061,7 +1086,37 @@ var _sP=null,_sT=null;
 function abrirSeletor(parId,tipo){_sP=parId;_sT=tipo;document.getElementById("seletorTitulo").textContent="Slot "+(tipo==="antes"?"ANTES":"DEPOIS");var livres=BANCADA.filter(function(f){return !f.parId;});var grid=document.getElementById("seletorGrid");var vazio=document.getElementById("seletorVazio");if(!livres.length){grid.innerHTML="";vazio.style.display="block";}else{vazio.style.display="none";grid.innerHTML=livres.map(function(f){return '<div onclick="encaixarDoSeletor(\''+f.id+'\')" style="position:relative;border:2px solid var(--brd);border-radius:10px;overflow:hidden;aspect-ratio:1;background:#000;cursor:pointer;"><img src="'+f.src+'" style="width:100%;height:100%;object-fit:cover;"><div style="position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,.6);color:#fff;font-size:9px;padding:3px 5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+esc(f.nome)+'</div></div>';}).join("");}document.getElementById("modalSeletor").style.display="flex";}
 function fecharSeletor(){document.getElementById("modalSeletor").style.display="none";_sP=null;_sT=null;}
 function encaixarDoSeletor(fotoId){var f=BANCADA.find(function(b){return b.id===fotoId;});var par=PARES.find(function(p){return p.id===_sP;});if(!f||!par){fecharSeletor();return;}if(par[_sT]){var ant=par[_sT];ant.parId=null;ant.tipo=null;}f.parId=_sP;f.tipo=_sT;par[_sT]=f;par.salvo=false;fecharSeletor();renderBancada();renderPares();}
-async function salvarTodos(){if(!SEMANA){toast("Sem semana ativa!");return;}var pend=PARES.filter(function(p){return !p.salvo&&(p.antes||p.depois);});if(!pend.length){toast("Nada para salvar.");return;}var btn=document.getElementById("btnSalvarTodos");btn.disabled=true;btn.textContent="Salvando...";var ok=0,erros=0;for(var par of pend){try{await salvarPar(par);ok++;}catch(e){erros++;}}btn.disabled=false;btn.textContent="Salvar todos os pares";toast(erros===0?"Salvo! "+ok+" par(es)":"Erro: "+ok+" salvos, "+erros+" com erro.");renderPares();}
+async function salvarTodos(){
+  if(!SEMANA){toast("Sem semana ativa!");return;}
+  var pend=PARES.filter(function(p){return !p.salvo&&(p.antes||p.depois);});
+  if(!pend.length){toast("Nada para salvar.");return;}
+  var btn=document.getElementById("btnSalvarTodos");
+  btn.disabled=true;btn.textContent="Salvando...";
+  var ok=0,offline=0,erros=0;
+  for(var par of pend){
+    if(ONLINE){
+      try{await salvarPar(par);ok++;}
+      catch(e){
+        // Falhou online — tenta salvar offline
+        try{await salvarParOffline(par);offline++;}
+        catch(e2){erros++;}
+      }
+    } else {
+      // Sem internet — salva direto na fila
+      try{await salvarParOffline(par);offline++;}
+      catch(e){erros++;}
+    }
+  }
+  btn.disabled=false;btn.textContent="Salvar todos os pares";
+  var msg = "";
+  if(ok)      msg += ok+" par(es) enviado(s) ";
+  if(offline) msg += offline+" salvo(s) offline ";
+  if(erros)   msg += erros+" erro(s)";
+  toast(msg || "Concluído");
+  if(offline) toast("📱 "+offline+" par(es) na fila — enviará com Wi-Fi");
+  renderPares();
+  atualizarFilaUI();
+}
 async function salvarPar(par){if(!par.dbId){var r=await fetch("/api/pares",{method:"POST",headers:{"Content-Type":"application/json","Authorization":"Bearer "+TOKEN},body:JSON.stringify({semana_id:SEMANA.id,local_nome:par.local||"",data_label:"",ordem:99})});if(!r.ok)throw new Error("erro par");var d=await r.json();par.dbId=d.id;}for(var tipo of["antes","depois"]){var f=par[tipo];if(!f||f.sid)continue;var blob=b64toBlob(f.src);var fd=new FormData();fd.append("par_id",par.dbId);fd.append("tipo",tipo);fd.append("foto",blob,f.nome||tipo+".jpg");var r2=await fetch("/api/fotos/avulsa",{method:"POST",headers:{"Authorization":"Bearer "+TOKEN},body:fd});if(!r2.ok)throw new Error("erro foto");var d2=await r2.json();f.sid=d2.id;}if(par.local&&par.dbId){await fetch("/api/pares/"+par.dbId,{method:"PATCH",headers:{"Content-Type":"application/json","Authorization":"Bearer "+TOKEN},body:JSON.stringify({local_nome:par.local})});}par.salvo=true;}
 function b64toBlob(d){var p=d.split(","),m=p[0].match(/:(.*?);/)[1],b=atob(p[1]),a=new Uint8Array(b.length);for(var i=0;i<b.length;i++)a[i]=b.charCodeAt(i);return new Blob([a],{type:m});}
 function abrirModalSemanas(){document.getElementById("modalSemanas").style.display="flex";carregarTodasSemanas();}
@@ -1084,6 +1139,76 @@ function navPara(tela){
   if(tela==="foto"){if(document.getElementById("navFoto"))document.getElementById("navFoto").className="nav-btn ativo";setTimeout(inicializarInputsFoto,100);}
   if(tela==="km"){if(document.getElementById("navKm"))document.getElementById("navKm").className="nav-btn ativo";preencherKmSugerido();}
   if(tela==="hist"){if(document.getElementById("navHist"))document.getElementById("navHist").className="nav-btn ativo";carregarHistorico();}
+}
+
+// ── SYNC AUTOMÁTICO ───────────────────────────────────────────
+function dispararSync(){
+  if(!ONLINE) return;
+  // Tenta Background Sync (Chrome Android)
+  if(_swReg && "sync" in _swReg){
+    _swReg.sync.register("sync-garra").catch(function(){
+      // Fallback: sync manual via mensagem
+      syncViaMessage();
+    });
+  } else {
+    syncViaMessage();
+  }
+}
+
+function syncViaMessage(){
+  if(navigator.serviceWorker.controller){
+    navigator.serviceWorker.controller.postMessage({tipo:"SYNC_AGORA"});
+  } else {
+    // SW não está controlando ainda — sync direto
+    sincronizarAgora();
+  }
+}
+
+// ── SALVAR PAR OFFLINE ────────────────────────────────────────
+async function salvarParOffline(par){
+  var offlineId = "par-"+Date.now()+"-"+Math.random().toString(36).slice(2);
+  // Salva par na fila
+  await dbPutStore("fila_pares", {
+    offline_id: offlineId,
+    semana_id:  SEMANA?.id || null,
+    local_nome: par.local || "",
+    token:      TOKEN,
+    enviado:    false,
+    criado_em:  new Date().toISOString(),
+  });
+  // Salva fotos vinculadas ao par
+  for(var tipo of ["antes","depois"]){
+    var f = par[tipo];
+    if(!f) continue;
+    var b64 = f.src.split(",")[1];
+    var fotoId = "foto-"+Date.now()+"-"+Math.random().toString(36).slice(2);
+    await dbPutStore("fila_fotos", {
+      offline_id: fotoId,
+      par_ref:    offlineId,
+      par_db_id:  null,
+      semana_id:  SEMANA?.id || null,
+      local_nome: par.local || "",
+      tipo:       tipo,
+      dados_b64:  b64,
+      filename:   f.nome || tipo+".jpg",
+      token:      TOKEN,
+      enviado:    false,
+      criado_em:  new Date().toISOString(),
+    });
+  }
+  par.salvo = true;
+  par.offline = true;
+}
+
+function dbPutStore(store, item){
+  return abrirDB().then(function(db){
+    return new Promise(function(res,rej){
+      var tx = db.transaction(store,"readwrite");
+      tx.objectStore(store).put(item);
+      tx.oncomplete = res;
+      tx.onerror = rej;
+    });
+  });
 }
 </script>
 
