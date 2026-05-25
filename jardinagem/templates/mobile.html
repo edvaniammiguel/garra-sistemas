@@ -549,8 +549,19 @@ var TODAS_SEMANAS = [];
 
 // ══ PWA ═════════════════════════════════════════════════
 if("serviceWorker" in navigator){
-  navigator.serviceWorker.register("/jardinagem/sw.js")
+  // Desregistrar SWs antigos primeiro
+  navigator.serviceWorker.getRegistrations().then(function(regs){
+    regs.forEach(function(reg){
+      var swUrl = reg.active && reg.active.scriptURL || "";
+      if(swUrl && !swUrl.includes("/jardinagem/sw.js")){
+        reg.unregister();
+      }
+    });
+  });
+  navigator.serviceWorker.register("/jardinagem/sw.js",{updateViaCache:"none"})
     .then(function(reg){
+      // Força atualização imediata
+      reg.update();
       navigator.serviceWorker.addEventListener("message", function(e){
         if(e.data && e.data.tipo === "SYNC_CONCLUIDO"){
           var f=e.data.fotos||0, k=e.data.km||0;
