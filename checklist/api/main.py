@@ -134,13 +134,18 @@ async def startup():
     try:
         await conn.execute("SET search_path TO public, checklist, jardinagem")
         print("✅ Garra Gestão v6 — banco unificado conectado")
+    print(f"📁 JARD_DIR: {JARD_DIR}")
+    print(f"📁 TEMPLATES: {TEMPLATES_DIR} — exists:{os.path.exists(TEMPLATES_DIR)}")
+    print(f"📁 STATIC: {STATIC_DIR} — exists:{os.path.exists(STATIC_DIR)}")
     except Exception as e:
         print(f"⚠️ Erro no startup: {e}")
     finally:
         await conn.close()
 
 # ── STATIC FILES — JARDINAGEM ─────────────────────────────────
-JARD_DIR = os.path.join(os.path.dirname(__file__), "..", "jardinagem")
+# checklist/api/main.py → checklist/ → raiz → jardinagem/
+JARD_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "jardinagem")
+JARD_DIR = os.path.abspath(JARD_DIR)
 STATIC_DIR    = os.path.join(JARD_DIR, "static")
 TEMPLATES_DIR = os.path.join(JARD_DIR, "templates")
 
