@@ -479,7 +479,7 @@ function fazerLogin(){
   var senha=document.getElementById("loginSenha").value;
   var erro=document.getElementById("loginErro");
   erro.textContent="";
-  fetch("/api/login",{method:"POST",headers:{"Content-Type":"application/json"},
+  fetch("/jardinagem/api/login",{method:"POST",headers:{"Content-Type":"application/json"},
     body:JSON.stringify({email,senha})})
   .then(r=>r.json())
   .then(d=>{
@@ -520,7 +520,7 @@ function mostrarApp(){
 }
 
 function sair(){
-  fetch("/api/logout",{method:"POST"}).catch(()=>{});
+  fetch("/jardinagem/api/logout",{method:"POST"}).catch(()=>{});
   TOKEN=""; USUARIO=null;
   localStorage.removeItem("garra_token");
   localStorage.removeItem("garra_usuario");
@@ -537,7 +537,7 @@ function atualizarStatus(){
 
 // ── SEMANA ────────────────────────────────────────────────────
 function carregarSemanaAtiva(){
-  fetch("/api/semanas/ativa",{headers:{"Authorization":"Bearer "+TOKEN}})
+  fetch("/jardinagem/api/semanas/ativa",{headers:{"Authorization":"Bearer "+TOKEN}})
   .then(r=>r.json())
   .then(d=>{
     if(d.erro){
@@ -674,7 +674,7 @@ async function enviarFoto(){
       form.append("local_nome",local);
       form.append("semana_id",SEMANA?.id||"ativa");
       form.append("offline_id",crypto.randomUUID());
-      var resp=await fetch("/api/fotos/mobile",{
+      var resp=await fetch("/jardinagem/api/fotos/mobile",{
         method:"POST",body:form,headers:{"Authorization":"Bearer "+TOKEN}
       });
       if(resp.ok){salvarLocal(local);toast("✅ Foto registrada!");resetFoto();}
@@ -743,7 +743,7 @@ async function enviarKm(){
   var ok=false;
   if(ONLINE){
     try{
-      var resp=await fetch("/api/relatorios/km",{
+      var resp=await fetch("/jardinagem/api/relatorios/km",{
         method:"POST",
         headers:{"Content-Type":"application/json","Authorization":"Bearer "+TOKEN},
         body:JSON.stringify(payload)
@@ -805,7 +805,7 @@ async function sincronizarAgora(){
       form.append("local_nome",item.local_nome||"");
       form.append("semana_id",item.semana_id||"ativa");
       form.append("offline_id",item.offline_id);
-      var resp=await fetch("/api/fotos/mobile",{
+      var resp=await fetch("/jardinagem/api/fotos/mobile",{
         method:"POST",body:form,headers:{"Authorization":"Bearer "+TOKEN}
       });
       if(resp.ok){await dbMarcarEnviado("fila_fotos",item.offline_id);ok++;}
@@ -814,7 +814,7 @@ async function sincronizarAgora(){
 
   for(var item of pendKm){
     try{
-      var resp=await fetch("/api/relatorios/km",{
+      var resp=await fetch("/jardinagem/api/relatorios/km",{
         method:"POST",
         headers:{"Content-Type":"application/json","Authorization":"Bearer "+TOKEN},
         body:JSON.stringify(item)
@@ -851,7 +851,7 @@ function carregarHistorico(){
   var lista=document.getElementById("listaHist");
   lista.innerHTML='<div style="color:var(--mut);font-size:13px;text-align:center;padding:1rem;">Carregando...</div>';
 
-  fetch("/api/historico/hoje?semana_id="+SEMANA.id,{
+  fetch("/jardinagem/api/historico/hoje?semana_id="+SEMANA.id,{
     headers:{"Authorization":"Bearer "+TOKEN}
   })
   .then(r=>r.json())
@@ -1117,14 +1117,14 @@ async function salvarTodos(){
   renderPares();
   atualizarFilaUI();
 }
-async function salvarPar(par){if(!par.dbId){var r=await fetch("/api/pares",{method:"POST",headers:{"Content-Type":"application/json","Authorization":"Bearer "+TOKEN},body:JSON.stringify({semana_id:SEMANA.id,local_nome:par.local||"",data_label:"",ordem:99})});if(!r.ok)throw new Error("erro par");var d=await r.json();par.dbId=d.id;}for(var tipo of["antes","depois"]){var f=par[tipo];if(!f||f.sid)continue;var blob=b64toBlob(f.src);var fd=new FormData();fd.append("par_id",par.dbId);fd.append("tipo",tipo);fd.append("foto",blob,f.nome||tipo+".jpg");var r2=await fetch("/api/fotos/avulsa",{method:"POST",headers:{"Authorization":"Bearer "+TOKEN},body:fd});if(!r2.ok)throw new Error("erro foto");var d2=await r2.json();f.sid=d2.id;}if(par.local&&par.dbId){await fetch("/api/pares/"+par.dbId,{method:"PATCH",headers:{"Content-Type":"application/json","Authorization":"Bearer "+TOKEN},body:JSON.stringify({local_nome:par.local})});}par.salvo=true;}
+async function salvarPar(par){if(!par.dbId){var r=await fetch("/jardinagem/api/pares",{method:"POST",headers:{"Content-Type":"application/json","Authorization":"Bearer "+TOKEN},body:JSON.stringify({semana_id:SEMANA.id,local_nome:par.local||"",data_label:"",ordem:99})});if(!r.ok)throw new Error("erro par");var d=await r.json();par.dbId=d.id;}for(var tipo of["antes","depois"]){var f=par[tipo];if(!f||f.sid)continue;var blob=b64toBlob(f.src);var fd=new FormData();fd.append("par_id",par.dbId);fd.append("tipo",tipo);fd.append("foto",blob,f.nome||tipo+".jpg");var r2=await fetch("/jardinagem/api/fotos/avulsa",{method:"POST",headers:{"Authorization":"Bearer "+TOKEN},body:fd});if(!r2.ok)throw new Error("erro foto");var d2=await r2.json();f.sid=d2.id;}if(par.local&&par.dbId){await fetch("/jardinagem/api/pares/"+par.dbId,{method:"PATCH",headers:{"Content-Type":"application/json","Authorization":"Bearer "+TOKEN},body:JSON.stringify({local_nome:par.local})});}par.salvo=true;}
 function b64toBlob(d){var p=d.split(","),m=p[0].match(/:(.*?);/)[1],b=atob(p[1]),a=new Uint8Array(b.length);for(var i=0;i<b.length;i++)a[i]=b.charCodeAt(i);return new Blob([a],{type:m});}
 function abrirModalSemanas(){document.getElementById("modalSemanas").style.display="flex";carregarTodasSemanas();}
 function fecharModalSemanas(){document.getElementById("modalSemanas").style.display="none";}
-function carregarTodasSemanas(){if(!SEMANA||!SEMANA.mes_id)return;fetch("/api/meses/"+SEMANA.mes_id,{headers:{"Authorization":"Bearer "+TOKEN}}).then(function(r){return r.json();}).then(function(d){TODAS_SEMANAS=d.semanas||[];document.getElementById("modalSemMesLabel").textContent=d.label||"";renderSemanas();}).catch(function(){toast("Erro semanas.");});}
+function carregarTodasSemanas(){if(!SEMANA||!SEMANA.mes_id)return;fetch("/jardinagem/api/meses/"+SEMANA.mes_id,{headers:{"Authorization":"Bearer "+TOKEN}}).then(function(r){return r.json();}).then(function(d){TODAS_SEMANAS=d.semanas||[];document.getElementById("modalSemMesLabel").textContent=d.label||"";renderSemanas();}).catch(function(){toast("Erro semanas.");});}
 function renderSemanas(){var lista=document.getElementById("modalSemLista");if(!TODAS_SEMANAS.length){lista.innerHTML='<div style="color:var(--mut);font-size:13px;text-align:center;padding:1rem;">Nenhuma semana.</div>';return;}lista.innerHTML=TODAS_SEMANAS.map(function(s){var ativa=SEMANA&&s.id===SEMANA.id;return '<div style="background:#fff;border:1.5px solid '+(ativa?'var(--or)':'var(--brd)')+';border-radius:10px;padding:10px 12px;margin-bottom:.5rem;"><div style="display:flex;align-items:center;justify-content:space-between;gap:8px;"><div style="flex:1;"><div style="font-size:13px;font-weight:700;color:var(--bl);">'+esc(s.label)+'</div>'+(ativa?'<span style="font-size:10px;background:var(--glt);color:var(--grn);padding:2px 8px;border-radius:99px;font-weight:700;">Ativa</span>':"")+'</div><button onclick="deletarSemana('+s.id+')" style="background:#FEE2E2;color:#DC2626;border:none;border-radius:6px;padding:5px 10px;font-size:11px;font-weight:700;cursor:pointer;">x</button></div></div>';}).join("");}
-function criarSemana(){if(!SEMANA||!SEMANA.mes_id){toast("Sem mes ativo.");return;}var label=prompt("Periodo da semana:");if(!label)return;fetch("/api/semanas",{method:"POST",headers:{"Content-Type":"application/json","Authorization":"Bearer "+TOKEN},body:JSON.stringify({mes_id:SEMANA.mes_id,label:label,ordem:TODAS_SEMANAS.length})}).then(function(r){return r.json();}).then(function(d){if(d.erro){toast("Erro: "+d.erro);return;}toast("Semana criada!");carregarTodasSemanas();carregarSemanaAtiva();}).catch(function(){toast("Erro conexao.");});}
-function deletarSemana(sid){if(!confirm("Deletar esta semana?"))return;fetch("/api/semanas/"+sid,{method:"DELETE",headers:{"Authorization":"Bearer "+TOKEN}}).then(function(r){if(r.ok){toast("Removida!");carregarTodasSemanas();carregarSemanaAtiva();}else toast("Erro.");}).catch(function(){toast("Erro conexao.");});}
+function criarSemana(){if(!SEMANA||!SEMANA.mes_id){toast("Sem mes ativo.");return;}var label=prompt("Periodo da semana:");if(!label)return;fetch("/jardinagem/api/semanas",{method:"POST",headers:{"Content-Type":"application/json","Authorization":"Bearer "+TOKEN},body:JSON.stringify({mes_id:SEMANA.mes_id,label:label,ordem:TODAS_SEMANAS.length})}).then(function(r){return r.json();}).then(function(d){if(d.erro){toast("Erro: "+d.erro);return;}toast("Semana criada!");carregarTodasSemanas();carregarSemanaAtiva();}).catch(function(){toast("Erro conexao.");});}
+function deletarSemana(sid){if(!confirm("Deletar esta semana?"))return;fetch("/jardinagem/api/semanas/"+sid,{method:"DELETE",headers:{"Authorization":"Bearer "+TOKEN}}).then(function(r){if(r.ok){toast("Removida!");carregarTodasSemanas();carregarSemanaAtiva();}else toast("Erro.");}).catch(function(){toast("Erro conexao.");});}
 function navPara(tela){
   var mf=document.getElementById("mainFoto"),mh=document.getElementById("mainHist");
   var pf=document.getElementById("painelFoto"),pk=document.getElementById("painelKm");

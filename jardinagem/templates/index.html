@@ -541,7 +541,7 @@ function salvarNomePar(tid, nome){
   par.nome = nome;
   // Se já tem dbId, persiste no banco imediatamente
   if(par.dbId){
-    fetchAuth('/api/pares/'+par.dbId, {
+    fetchAuth('/jardinagem/api/pares/'+par.dbId, {
       method:'PATCH',
       headers:{'Content-Type':'application/json'},
       body: JSON.stringify({local_nome: nome})
@@ -555,7 +555,7 @@ function reRender(){
   else renderAll();
 }
 function carregarMeses(){
-  fetchAuth('/api/meses').then(r=>r.json()).then(function(list){
+  fetchAuth('/jardinagem/api/meses').then(r=>r.json()).then(function(list){
     var el=document.getElementById('listaMeses');
     if(!list.length){el.innerHTML='<div class="sb-empty">Nenhum mês cadastrado</div>';return;}
 
@@ -626,7 +626,7 @@ function abrirMes(id){
   document.getElementById('welcome').style.display='none';
   document.getElementById('mesContent').style.display='flex';
   document.getElementById('mesTitulo').textContent='Carregando...';
-  fetchAuth('/api/meses/'+id).then(r=>r.json()).then(function(data){
+  fetchAuth('/jardinagem/api/meses/'+id).then(r=>r.json()).then(function(data){
     mesAtual=data;bancada=[];
     quadrante=data.semanas.map(function(sem){
       return{semId:sem.id,label:sem.label,pares:sem.pares.map(function(par){
@@ -653,7 +653,7 @@ function renderAll(){
   document.getElementById('kB').textContent=bancada.length;
   document.getElementById('kP').textContent=salvos;
   document.getElementById('kC').textContent=comp;
-  fetchAuth('/api/config').then(r=>r.json()).then(function(c){document.getElementById('kCod').textContent=c.next_code||'—';}).catch(function(){});
+  fetchAuth('/jardinagem/api/config').then(r=>r.json()).then(function(c){document.getElementById('kCod').textContent=c.next_code||'—';}).catch(function(){});
   rBancada();rSemanas();rSalvar();
 }
 
@@ -806,7 +806,7 @@ function fileSlot(input,pId,tipo){
 }
 function delFS(e,fid,pId,tipo){
   ev(e);if(!confirm('Remover foto salva do banco?'))return;
-  fetchAuth('/api/fotos/'+fid,{method:'DELETE'}).then(()=>{abrirMes(mesAtual.id);toast('Foto removida.');}).catch(()=>toast('Erro.'));
+  fetchAuth('/jardinagem/api/fotos/'+fid,{method:'DELETE'}).then(()=>{abrirMes(mesAtual.id);toast('Foto removida.');}).catch(()=>toast('Erro.'));
 }
 
 /* ─── SALVAR NO BANCO ─────────────────────────────────── */
@@ -821,7 +821,7 @@ function salvarTodos(){
 }
 function salvarPar(sem,par){
   var criar=par.dbId?Promise.resolve({id:par.dbId})
-    :fetchAuth('/api/pares',{method:'POST',headers:{'Content-Type':'application/json'},
+    :fetchAuth('/jardinagem/api/pares',{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({semana_id:sem.semId,local_nome:par.nome||'',data_label:par.dataLabel||''})
     }).then(r=>r.json());
   return criar.then(function(resp){
@@ -831,9 +831,9 @@ function salvarPar(sem,par){
       var f=par[tipo];if(!f||f.sid)return;
       var blob=b64toBlob(f.src);
       var fd=new FormData();fd.append('par_id',par.dbId);fd.append('tipo',tipo);fd.append('foto',blob,f.nome||tipo+'.jpg');
-      ups.push(fetchAuth('/api/fotos/avulsa',{method:'POST',body:fd}).then(r=>r.json()).then(r=>{f.sid=r.id;}));
+      ups.push(fetchAuth('/jardinagem/api/fotos/avulsa',{method:'POST',body:fd}).then(r=>r.json()).then(r=>{f.sid=r.id;}));
     });
-    if(par.nome)ups.push(fetchAuth('/api/pares/'+par.dbId,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({local_nome:par.nome})}));
+    if(par.nome)ups.push(fetchAuth('/jardinagem/api/pares/'+par.dbId,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({local_nome:par.nome})}));
     return Promise.all(ups).then(()=>{par.salvo=true;});
   });
 }
@@ -899,7 +899,7 @@ function analisarIA(lidas,apiKey){
   var done=0;
   Promise.all(lidas.map(function(f){
     var body={src:f.src,nome:f.nome};if(apiKey)body.api_key=apiKey;
-    return fetchAuth('/api/fotos/analisar-ia',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})
+    return fetchAuth('/jardinagem/api/fotos/analisar-ia',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})
       .then(r=>r.json()).then(function(resp){f.iaL=resp.local||'';f.iaE=resp.estado||'';f.iaD=resp.descricao||'';f.idV=resp.id_visual||'';})
       .catch(()=>{}).finally(()=>{done++;document.getElementById('progFill').style.width=Math.round(50+done/lidas.length*50)+'%';document.getElementById('progLbl').textContent='IA: '+done+'/'+lidas.length;});
   })).then(()=>{
@@ -913,22 +913,22 @@ function novoPar(){return{tid:tid(),dbId:null,codA:null,codD:null,nome:'',dataLa
 function criarMes(){
   var mes=+document.getElementById('inputMes').value,ano=+document.getElementById('inputAno').value;
   var label=document.getElementById('inputMesLabel').value.trim()||('Mês '+mes+'/'+ano);
-  fetchAuth('/api/meses',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mes,ano,label})})
+  fetchAuth('/jardinagem/api/meses',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mes,ano,label})})
     .then(r=>r.json()).then(function(d){
       fecharModal('modalMes');carregarMeses();
-      return fetchAuth('/api/semanas',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mes_id:d.id,label:'Semana 1 — '+label,ordem:0})}).then(()=>abrirMes(d.id));
+      return fetchAuth('/jardinagem/api/semanas',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mes_id:d.id,label:'Semana 1 — '+label,ordem:0})}).then(()=>abrirMes(d.id));
     }).catch(()=>toast('Erro'));
 }
 function addSem(){
   if(!mesAtual)return;var l=prompt('Período da semana:','');if(!l)return;
-  fetchAuth('/api/semanas',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mes_id:mesAtual.id,label:l,ordem:quadrante.length})})
+  fetchAuth('/jardinagem/api/semanas',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mes_id:mesAtual.id,label:l,ordem:quadrante.length})})
     .then(r=>r.json()).then(function(s){quadrante.push({semId:s.id,label:s.label,pares:[]});renderAll();}).catch(()=>toast('Erro'));
 }
 function renSem(si){var l=prompt('Novo nome:',quadrante[si].label);if(!l)return;
-  fetchAuth('/api/semanas/'+quadrante[si].semId,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({label:l})})
+  fetchAuth('/jardinagem/api/semanas/'+quadrante[si].semId,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({label:l})})
     .then(()=>{quadrante[si].label=l;rSemanas();}).catch(()=>toast('Erro'));}
 function delSem(si){if(!confirm('Deletar semana e todos os pares?'))return;
-  fetchAuth('/api/semanas/'+quadrante[si].semId,{method:'DELETE'}).then(()=>{quadrante.splice(si,1);renderAll();carregarMeses();}).catch(()=>toast('Erro'));}
+  fetchAuth('/jardinagem/api/semanas/'+quadrante[si].semId,{method:'DELETE'}).then(()=>{quadrante.splice(si,1);renderAll();carregarMeses();}).catch(()=>toast('Erro'));}
 function addPar(si){quadrante[si].pares.push(novoPar());renderAll();}
 function adicionarParAtual(){if(quadrante.length)addPar(quadrante.length-1);else toast('Crie uma semana primeiro!');}
 function adicionarSemanaAtual(){addSem();}
@@ -936,7 +936,7 @@ function addParDepois(si,pi){quadrante[si].pares.splice(pi+1,0,novoPar());render
 function delPar(si,pi){
   var par=quadrante[si].pares[pi];
   if(par.dbId){if(!confirm('Remover par salvo?'))return;
-    fetchAuth('/api/pares/'+par.dbId,{method:'DELETE'}).then(()=>{quadrante[si].pares.splice(pi,1);renderAll();carregarMeses();}).catch(()=>toast('Erro'));}
+    fetchAuth('/jardinagem/api/pares/'+par.dbId,{method:'DELETE'}).then(()=>{quadrante[si].pares.splice(pi,1);renderAll();carregarMeses();}).catch(()=>toast('Erro'));}
   else{if(par.antes)bancada.push(par.antes);if(par.depois)bancada.push(par.depois);quadrante[si].pares.splice(pi,1);renderAll();if(par.antes||par.depois)toast('Fotos devolvidas à bancada.');}
 }
 
@@ -1094,7 +1094,7 @@ function orgAddParDepois(pi){
 function orgDelPar(pi){
   var par = quadrante[orgSemIdx].pares[pi];
   if(par.dbId){ if(!confirm('Remover par salvo?')) return;
-    fetchAuth('/api/pares/'+par.dbId,{method:'DELETE'}).then(function(){
+    fetchAuth('/jardinagem/api/pares/'+par.dbId,{method:'DELETE'}).then(function(){
       quadrante[orgSemIdx].pares.splice(pi,1); orgRenderTudo(); carregarMeses();
     }).catch(function(){ toast('Erro'); });
   } else {
@@ -1167,7 +1167,7 @@ function baixarRelatorio(tipo){
   var sem = semanaAtivaSelecionada();
   if(!sem){toast('Nenhuma semana disponível!');return;}
   toast('Gerando relatório '+tipo.toUpperCase()+'...');
-  var url = '/api/relatorios/'+sem.semId+'/'+(tipo==='fotos'?'fotos':'km');
+  var url = '/jardinagem/api/relatorios/'+sem.semId+'/'+(tipo==='fotos'?'fotos':'km');
   var a = document.createElement('a');
   a.href = url;
   a.download = '';
@@ -1224,7 +1224,7 @@ function carregarPreview(){
   document.getElementById('prevKmConteudo').innerHTML =
     '<div style="text-align:center;color:var(--mut);padding:2rem;font-size:13px;"><span class="spin">⟳</span> Carregando...</div>';
 
-  fetchAuth('/api/relatorios/'+sid+'/preview')
+  fetchAuth('/jardinagem/api/relatorios/'+sid+'/preview')
     .then(function(r){return r.json();})
     .then(function(d){
       if(d.erro){ renderPreviewErro(d.erro); return; }
@@ -1336,7 +1336,7 @@ function enviarEmailCliente(){
   btn.innerHTML = '<span class="spin">⟳</span> Enviando...';
   status.textContent = 'Gerando e enviando...';
   status.style.color = 'var(--mut)';
-  fetchAuth('/api/relatorios/'+sid+'/enviar',{method:'POST'})
+  fetchAuth('/jardinagem/api/relatorios/'+sid+'/enviar',{method:'POST'})
     .then(function(r){return r.json();})
     .then(function(d){
       if(d.erro){status.textContent='❌ '+d.erro;status.style.color='#DC2626';}
