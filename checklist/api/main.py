@@ -695,11 +695,20 @@ async def jard_criar_mes(request: Request, payload=Depends(verificar_token_jard)
     else:
         row = jard_query_id("INSERT INTO jardinagem.meses(ano,mes,label) VALUES(%s,%s,%s)", (ano,mes,label))
         mes_id = row["id"]
+    # Cria 4 semanas automaticamente apenas se o mês for novo
     sem_exist = jard_query("SELECT id FROM jardinagem.semanas WHERE mes_id=%s LIMIT 1", (mes_id,), fetch="one")
     if not sem_exist:
         semanas_do_mes(ano, mes, mes_id)
     mes_data = jard_query("SELECT * FROM jardinagem.meses WHERE id=%s", (mes_id,), fetch="one")
     return dict(mes_data)
+
+
+@app.patch("/jardinagem/api/meses/{mid}")
+async def jard_patch_mes(mid: int, request: Request, payload=Depends(verificar_token_jard)):
+    d = await request.json()
+    if "label" in d:
+        jard_query("UPDATE jardinagem.meses SET label=%s WHERE id=%s", (d["label"], mid), fetch="none")
+    return {"ok": True}
 
 @app.get("/jardinagem/api/meses/{mid}")
 async def jard_get_mes(mid: int, payload=Depends(verificar_token_jard)):
@@ -807,21 +816,30 @@ async def jard_foto_avulsa(
     par_id: int = Form(...), tipo: str = Form(...),
     foto: UploadFile = File(...), payload=Depends(verificar_token_jard)
 ):
+    import logging
+    log = logging.getLogger(__name__)
     try:
-        dados = comprimir_imagem(await foto.read())
+        conteudo = await foto.read()
+        if not conteudo:
+            raise HTTPException(status_code=400, detail="Arquivo vazio")
+        dados = comprimir_imagem(conteudo)
         path  = storage_upload(dados, f"{datetime.now().strftime('%Y/%m')}/{uuid.uuid4().hex}.jpg")
         antiga = jard_query("SELECT id,storage_path FROM jardinagem.fotos WHERE par_id=%s AND tipo=%s", (par_id,tipo), fetch="one")
         if antiga:
-            storage_delete([antiga["storage_path"]])
+            if antiga.get("storage_path"):
+                storage_delete([antiga["storage_path"]])
             jard_query("DELETE FROM jardinagem.fotos WHERE id=%s", (antiga["id"],), fetch="none")
         row = jard_query_id(
             "INSERT INTO jardinagem.fotos (par_id,tipo,origem,enviado_por,storage_path,filename_orig,sincronizado) VALUES (%s,%s,'desktop',%s,%s,%s,true)",
-            (par_id,tipo,payload["sub"],path,foto.filename)
+            (par_id,tipo,str(payload["sub"]),path,foto.filename or "foto.jpg")
         )
         fd = dict(row); fd["url"] = storage_url(path)
         return fd
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        log.error(f"fotos/avulsa erro: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Erro ao salvar foto: {str(e)}")
 
 @app.delete("/jardinagem/api/fotos/{fid}")
 async def jard_del_foto(fid: int, payload=Depends(verificar_token_jard)):
