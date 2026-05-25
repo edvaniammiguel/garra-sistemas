@@ -63,7 +63,7 @@ app.add_middleware(
         "http://127.0.0.1:5500",
     ],
     allow_credentials=True,
-    allow_methods=["GET","POST","DELETE","PATCH","PUT"],
+    allow_methods=["*"],
     allow_headers=["Content-Type","Authorization"],
 )
 
@@ -660,6 +660,29 @@ async def jard_list_meses(payload=Depends(verificar_token_jard)):
     """)
     return [dict(r) for r in meses]
 
+
+@app.delete("/jardinagem/api/meses/{mid}")
+async def jard_del_mes(mid: int, payload=Depends(verificar_token_jard)):
+    """Deleta mês e tudo dentro: semanas, pares, fotos no Supabase."""
+    mes = jard_query("SELECT id FROM jardinagem.meses WHERE id=%s", (mid,), fetch="one")
+    if not mes:
+        raise HTTPException(status_code=404, detail="Mês não encontrado")
+    semanas = jard_query("SELECT id FROM jardinagem.semanas WHERE mes_id=%s", (mid,))
+    for s in semanas:
+        pares = jard_query("SELECT id FROM jardinagem.pares WHERE semana_id=%s", (s["id"],))
+        for p in pares:
+            fotos = jard_query("SELECT storage_path FROM jardinagem.fotos WHERE par_id=%s", (p["id"],))
+            paths = [f["storage_path"] for f in fotos if f["storage_path"]]
+            if paths: storage_delete(paths)
+            jard_query("DELETE FROM jardinagem.fotos WHERE par_id=%s", (p["id"],), fetch="none")
+        jard_query("DELETE FROM jardinagem.pares WHERE semana_id=%s", (s["id"],), fetch="none")
+        jard_query("DELETE FROM jardinagem.fila_sync WHERE semana_id=%s", (s["id"],), fetch="none")
+        jard_query("DELETE FROM jardinagem.emails_enviados WHERE semana_id=%s", (s["id"],), fetch="none")
+        jard_query("DELETE FROM jardinagem.relatorios_diarios WHERE semana_id=%s", (s["id"],), fetch="none")
+    jard_query("DELETE FROM jardinagem.semanas WHERE mes_id=%s", (mid,), fetch="none")
+    jard_query("DELETE FROM jardinagem.meses WHERE id=%s", (mid,), fetch="none")
+    return {"ok": True}
+
 @app.post("/jardinagem/api/meses")
 async def jard_criar_mes(request: Request, payload=Depends(verificar_token_jard)):
     d = await request.json()
@@ -734,6 +757,12 @@ async def jard_del_semana(sid: int, payload=Depends(verificar_token_jard)):
         fotos = jard_query("SELECT storage_path FROM jardinagem.fotos WHERE par_id=%s", (p["id"],))
         paths = [f["storage_path"] for f in fotos if f["storage_path"]]
         if paths: storage_delete(paths)
+        jard_query("DELETE FROM jardinagem.fotos WHERE par_id=%s", (p["id"],), fetch="none")
+    jard_query("DELETE FROM jardinagem.pares WHERE semana_id=%s", (sid,), fetch="none")
+    # Remove referências em fila_sync antes de deletar semana
+    jard_query("DELETE FROM jardinagem.fila_sync WHERE semana_id=%s", (sid,), fetch="none")
+    jard_query("DELETE FROM jardinagem.emails_enviados WHERE semana_id=%s", (sid,), fetch="none")
+    jard_query("DELETE FROM jardinagem.relatorios_diarios WHERE semana_id=%s", (sid,), fetch="none")
     jard_query("DELETE FROM jardinagem.semanas WHERE id=%s", (sid,), fetch="none")
     return {"ok": True}
 
