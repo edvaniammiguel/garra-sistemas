@@ -271,8 +271,8 @@ input[type=file]{display:none;}
 
     <!-- Tabs -->
     <div class="tabs">
-      <div class="tab ativo" id="tabFoto" onclick="navPara('foto')">Bancada</div>
-      <div class="tab" id="tabKm" onclick="navPara('km')">KM</div>
+      <div class="tab ativo" id="tabFoto" onclick="navPara('foto')">📷 Bancada</div>
+      <div class="tab" id="tabKm" onclick="navPara('km')">📋 KM</div>
     </div>
 
     <!-- ══ PAINEL FOTO ══ -->
@@ -405,19 +405,80 @@ input[type=file]{display:none;}
   <!-- NAV -->
   <nav class="nav">
     <button class="nav-btn ativo" id="navFoto" onclick="navPara('foto')">
-      <div class="nav-ico">📷</div><div class="nav-lbl">Bancada</div>
+      <div class="nav-ico">📷</div><div class="nav-lbl">Fotos</div>
     </button>
     <button class="nav-btn" id="navKm" onclick="navPara('km')">
       <div class="nav-ico">📋</div><div class="nav-lbl">KM</div>
     </button>
-    <button class="nav-btn" id="navHist" onclick="navPara('hist')">
-      <div class="nav-ico">🗂</div><div class="nav-lbl">Histórico</div>
+    <button class="nav-btn" id="navGaleria" onclick="navPara('galeria')">
+      <div class="nav-ico">🖼️</div><div class="nav-lbl">Galeria</div>
     </button>
-    <button class="nav-btn" onclick="sair()">
-      <div class="nav-ico">↩</div><div class="nav-lbl">Sair</div>
+    <button class="nav-btn" id="navMais" onclick="navPara('mais')">
+      <div class="nav-ico">⚙️</div><div class="nav-lbl">Mais</div>
     </button>
   </nav>
 
+
+  <!-- TELA GALERIA -->
+  <div id="mainGaleria" style="display:none;flex:1;overflow-y:auto;padding:1rem;padding-bottom:5.5rem;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.75rem;">
+      <div style="font-size:14px;font-weight:800;color:var(--bl);">📸 Galeria</div>
+      <select id="galSemSel" onchange="carregarGaleria()"
+        style="padding:6px 10px;border:1.5px solid var(--brd);border-radius:8px;font-size:12px;background:#fff;">
+        <option value="">Selecione a semana...</option>
+      </select>
+    </div>
+    <div id="galConteudo">
+      <div style="text-align:center;color:var(--mut);font-size:13px;padding:3rem;">
+        Selecione uma semana para ver as fotos salvas.
+      </div>
+    </div>
+  </div>
+
+  <!-- TELA MAIS -->
+  <div id="mainMais" style="display:none;flex:1;overflow-y:auto;padding:1rem;padding-bottom:5.5rem;">
+    <div style="font-size:14px;font-weight:800;color:var(--bl);margin-bottom:1rem;">⚙️ Menu</div>
+
+    <!-- Semana atual info -->
+    <div class="card" style="margin-bottom:.75rem;">
+      <div class="card-label">Semana atual</div>
+      <div style="font-size:13px;font-weight:700;color:var(--bl);" id="maisSemanaNome">—</div>
+      <div style="display:flex;gap:8px;margin-top:.75rem;flex-wrap:wrap;">
+        <button onclick="abrirModalSemanas()"
+          style="padding:8px 14px;background:var(--bl);color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;">
+          📅 Gerenciar Semanas
+        </button>
+        <button onclick="sincronizarAgora()"
+          style="padding:8px 14px;background:#FFF7ED;color:var(--or2);border:1.5px solid var(--or);border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;">
+          ⟳ Sincronizar
+        </button>
+      </div>
+    </div>
+
+    <!-- Admin: enviar email -->
+    <div id="maisAdminBloco" style="display:none;">
+      <div class="card" style="margin-bottom:.75rem;">
+        <div class="card-label">Relatórios</div>
+        <div style="font-size:12px;color:var(--mut);margin-bottom:.75rem;line-height:1.6;">
+          Gera e envia o relatório fotográfico e de KM por email ao cliente.
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <button onclick="abrirEnvioEmailMobile()"
+            style="padding:10px 16px;background:#1D4ED8;color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;flex:1;">
+            📧 Enviar Relatório
+          </button>
+        </div>
+        <div id="maisEmailStatus" style="margin-top:.5rem;font-size:11px;color:var(--mut);min-height:16px;"></div>
+      </div>
+    </div>
+
+    <!-- Sair -->
+    <button onclick="sair()"
+      style="width:100%;padding:12px;background:#FEE2E2;color:var(--red);border:1.5px solid #FCA5A5;
+             border-radius:10px;font-size:14px;font-weight:700;cursor:pointer;margin-top:.5rem;">
+      ↩ Sair
+    </button>
+  </div>
 </div><!-- /telaApp -->
 <div class="toast" id="toast"></div>
 
@@ -1126,19 +1187,50 @@ function renderSemanas(){var lista=document.getElementById("modalSemLista");if(!
 function criarSemana(){if(!SEMANA||!SEMANA.mes_id){toast("Sem mes ativo.");return;}var label=prompt("Periodo da semana:");if(!label)return;fetch("/jardinagem/api/semanas",{method:"POST",headers:{"Content-Type":"application/json","Authorization":"Bearer "+TOKEN},body:JSON.stringify({mes_id:SEMANA.mes_id,label:label,ordem:TODAS_SEMANAS.length})}).then(function(r){return r.json();}).then(function(d){if(d.erro){toast("Erro: "+d.erro);return;}toast("Semana criada!");carregarTodasSemanas();carregarSemanaAtiva();}).catch(function(){toast("Erro conexao.");});}
 function deletarSemana(sid){if(!confirm("Deletar esta semana?"))return;fetch("/jardinagem/api/semanas/"+sid,{method:"DELETE",headers:{"Authorization":"Bearer "+TOKEN}}).then(function(r){if(r.ok){toast("Removida!");carregarTodasSemanas();carregarSemanaAtiva();}else toast("Erro.");}).catch(function(){toast("Erro conexao.");});}
 function navPara(tela){
-  var mf=document.getElementById("mainFoto"),mh=document.getElementById("mainHist");
-  var pf=document.getElementById("painelFoto"),pk=document.getElementById("painelKm");
-  if(mf) mf.style.display=(tela==="foto"||tela==="km")?"block":"none";
-  if(mh) mh.style.display=tela==="hist"?"block":"none";
+  // Paineis
+  var ids = {
+    "mainFoto":    tela==="foto"||tela==="km",
+    "mainHist":    false,
+    "mainGaleria": tela==="galeria",
+    "mainMais":    tela==="mais",
+  };
+  Object.keys(ids).forEach(function(id){
+    var el=document.getElementById(id);
+    if(el) el.style.display=ids[id]?"flex":"none";
+  });
+  // Sub-paineis bancada/km
+  var pf=document.getElementById("painelFoto");
+  var pk=document.getElementById("painelKm");
   if(pf) pf.style.display=tela==="foto"?"flex":"none";
   if(pk) pk.style.display=tela==="km"?"block":"none";
+  // mainFoto precisa de display block quando ativo
+  var mf=document.getElementById("mainFoto");
+  if(mf) mf.style.display=(tela==="foto"||tela==="km")?"flex":"none";
+
+  // Tabs bancada/km
   ["tabFoto","tabKm"].forEach(function(id){var el=document.getElementById(id);if(el)el.className="tab";});
   if(tela==="foto"&&document.getElementById("tabFoto"))document.getElementById("tabFoto").className="tab ativo";
   if(tela==="km"&&document.getElementById("tabKm"))document.getElementById("tabKm").className="tab ativo";
-  ["navFoto","navKm","navHist"].forEach(function(id){var el=document.getElementById(id);if(el)el.className="nav-btn";});
-  if(tela==="foto"){if(document.getElementById("navFoto"))document.getElementById("navFoto").className="nav-btn ativo";setTimeout(inicializarInputsFoto,100);}
-  if(tela==="km"){if(document.getElementById("navKm"))document.getElementById("navKm").className="nav-btn ativo";preencherKmSugerido();}
-  if(tela==="hist"){if(document.getElementById("navHist"))document.getElementById("navHist").className="nav-btn ativo";carregarHistorico();}
+
+  // Nav buttons
+  ["navFoto","navKm","navGaleria","navMais"].forEach(function(id){
+    var el=document.getElementById(id);if(el)el.className="nav-btn";
+  });
+  var navMap={"foto":"navFoto","km":"navKm","galeria":"navGaleria","mais":"navMais"};
+  if(navMap[tela]&&document.getElementById(navMap[tela]))
+    document.getElementById(navMap[tela]).className="nav-btn ativo";
+
+  // Ações por tela
+  if(tela==="foto") setTimeout(inicializarInputsFoto,100);
+  if(tela==="km") preencherKmSugerido();
+  if(tela==="galeria") carregarGaleriaSemanas();
+  if(tela==="mais"){
+    var mn=document.getElementById("maisSemanaNome");
+    if(mn&&SEMANA) mn.textContent=SEMANA.label||"—";
+    var isAdm=USUARIO?.perfil==="admin"||USUARIO?.perfil==="luana";
+    var bloco=document.getElementById("maisAdminBloco");
+    if(bloco) bloco.style.display=isAdm?"block":"none";
+  }
 }
 
 // ── SYNC AUTOMÁTICO ───────────────────────────────────────────
@@ -1209,6 +1301,88 @@ function dbPutStore(store, item){
       tx.onerror = rej;
     });
   });
+}
+
+// ── GALERIA ───────────────────────────────────────────────────
+function carregarGaleriaSemanas(){
+  if(!SEMANA) return;
+  // Carrega lista de semanas do mês atual
+  fetch("/jardinagem/api/meses/"+SEMANA.mes_id,{
+    headers:{"Authorization":"Bearer "+TOKEN}
+  }).then(function(r){return r.json();})
+  .then(function(d){
+    var sel=document.getElementById("galSemSel");
+    sel.innerHTML='<option value="">Selecione a semana...</option>';
+    (d.semanas||[]).forEach(function(s){
+      var opt=document.createElement("option");
+      opt.value=s.id; opt.textContent=s.label;
+      if(s.id===SEMANA.id) opt.selected=true;
+      sel.appendChild(opt);
+    });
+    if(SEMANA.id) carregarGaleria();
+  }).catch(function(){toast("Erro ao carregar semanas.");});
+}
+
+function carregarGaleria(){
+  var sid=document.getElementById("galSemSel").value;
+  var conteudo=document.getElementById("galConteudo");
+  if(!sid){
+    conteudo.innerHTML='<div style="text-align:center;color:var(--mut);font-size:13px;padding:3rem;">Selecione uma semana.</div>';
+    return;
+  }
+  conteudo.innerHTML='<div style="text-align:center;color:var(--mut);font-size:13px;padding:2rem;"><span class="spin">⟳</span> Carregando...</div>';
+  fetch("/jardinagem/api/meses/"+SEMANA.mes_id,{headers:{"Authorization":"Bearer "+TOKEN}})
+  .then(function(r){return r.json();})
+  .then(function(d){
+    var sem=(d.semanas||[]).find(function(s){return String(s.id)===String(sid);});
+    if(!sem||!sem.pares||!sem.pares.length){
+      conteudo.innerHTML='<div style="text-align:center;color:var(--mut);font-size:13px;padding:3rem;">Nenhum par nesta semana.</div>';
+      return;
+    }
+    var html='<div style="font-size:11px;color:var(--mut);margin-bottom:.75rem;">'+sem.pares.length+' par(es) salvos</div>';
+    html+=sem.pares.map(function(par){
+      var fa=par.fotos&&par.fotos.find(function(f){return f.tipo==="antes";});
+      var fd=par.fotos&&par.fotos.find(function(f){return f.tipo==="depois";});
+      var imgA=fa&&fa.url?'<img src="'+fa.url+'" style="width:100%;height:100%;object-fit:cover;">'
+        :'<div style="width:100%;height:100%;background:#F1F5F9;display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--mut);">Sem foto</div>';
+      var imgD=fd&&fd.url?'<img src="'+fd.url+'" style="width:100%;height:100%;object-fit:cover;">'
+        :'<div style="width:100%;height:100%;background:#F1F5F9;display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--mut);">Sem foto</div>';
+      return '<div style="background:#fff;border:1.5px solid var(--brd);border-radius:12px;margin-bottom:.75rem;overflow:hidden;">'
+        +'<div style="background:var(--bl);padding:7px 12px;display:flex;align-items:center;gap:8px;">'
+        +'<span style="font-size:11px;font-weight:700;color:var(--or);background:rgba(0,0,0,.25);padding:2px 8px;border-radius:6px;">'+esc(String(par.codigo_a||"?"))+'ª–'+esc(String(par.codigo_d||"?"))+'ª</span>'
+        +'<span style="font-size:12px;color:#fff;font-weight:600;flex:1;">'+esc(par.local_nome||"Sem local")+'</span>'
+        +'</div>'
+        +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:0;">'
+        +'<div><div style="font-size:9px;font-weight:700;color:#1D4ED8;padding:4px 8px;background:#EFF6FF;">ANTES</div>'
+        +'<div style="aspect-ratio:4/3;overflow:hidden;">'+imgA+'</div></div>'
+        +'<div><div style="font-size:9px;font-weight:700;color:#EA580C;padding:4px 8px;background:#FFF7ED;">DEPOIS</div>'
+        +'<div style="aspect-ratio:4/3;overflow:hidden;">'+imgD+'</div></div>'
+        +'</div></div>';
+    }).join("");
+    conteudo.innerHTML=html;
+  }).catch(function(){
+    conteudo.innerHTML='<div style="text-align:center;color:var(--red);font-size:13px;padding:2rem;">Erro ao carregar galeria.</div>';
+  });
+}
+
+// ── ENVIO EMAIL MOBILE (admin/luana) ──────────────────────────
+function abrirEnvioEmailMobile(){
+  var sid=SEMANA?.id;
+  if(!sid){toast("Sem semana ativa!");return;}
+  var status=document.getElementById("maisEmailStatus");
+  var btn=document.querySelector("#maisAdminBloco button");
+  btn.disabled=true;
+  btn.innerHTML='<span class="spin">⟳</span> Enviando...';
+  status.textContent="Gerando e enviando relatórios...";
+  status.style.color="var(--mut)";
+  fetch("/jardinagem/api/relatorios/"+sid+"/enviar",{
+    method:"POST",headers:{"Authorization":"Bearer "+TOKEN}
+  }).then(function(r){return r.json();})
+  .then(function(d){
+    if(d.erro){status.textContent="❌ "+d.erro;status.style.color="var(--red)";}
+    else{status.textContent="✅ "+d.mensagem;status.style.color="var(--grn)";}
+  }).catch(function(){status.textContent="❌ Erro de conexão";status.style.color="var(--red)";})
+  .finally(function(){btn.disabled=false;btn.innerHTML="📧 Enviar Relatório";});
 }
 </script>
 
