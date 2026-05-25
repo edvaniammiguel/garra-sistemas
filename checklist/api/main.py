@@ -979,6 +979,31 @@ async def jard_enviar_email(semana_id: int, payload=Depends(verificar_token_jard
                    (semana_id,MAIL_DESTINO,f"Relatório {semana_dict['label']}",str(e)), fetch="none")
         raise HTTPException(status_code=500, detail=f"Falha no envio: {str(e)}")
 
+
+# ── FALLBACK — assets sem prefixo /jardinagem ────────────────
+# Compatibilidade com browsers que cachearam URLs antigas
+from fastapi.responses import RedirectResponse
+
+@app.get("/manifest.json")
+async def redirect_manifest():
+    return RedirectResponse(url="/jardinagem/manifest.json")
+
+@app.get("/sw.js")
+async def redirect_sw():
+    return RedirectResponse(url="/jardinagem/sw.js")
+
+@app.get("/mobile")
+async def redirect_mobile():
+    return RedirectResponse(url="/jardinagem/mobile")
+
+@app.get("/static/icons/{filename}")
+async def redirect_static_icons(filename: str):
+    return RedirectResponse(url=f"/jardinagem/static/icons/{filename}")
+
+@app.get("/favicon.ico")
+async def redirect_favicon():
+    return RedirectResponse(url="/jardinagem/static/icons/favicon.ico")
+
 # ── HEALTH CHECK ──────────────────────────────────────────────
 @app.get("/")
 async def health():
