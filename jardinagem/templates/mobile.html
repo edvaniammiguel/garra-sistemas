@@ -229,20 +229,20 @@ input[type=file]{display:none;}
 <!-- ── APP ───────────────────────────────────────────────── -->
 <div id="telaApp" style="display:none;flex-direction:column;flex:1;">
 
-  <header class="hdr">
-    <div style="display:flex;align-items:center;gap:8px">
-      <img class="hdr-logo" src="/static/icons/logo-garra.jpg" alt="Garra" style="filter:brightness(0) invert(1);">
-      <a id="linkDesktop" href="/" style="display:none;font-size:10px;font-weight:700;color:#E8820C;text-decoration:none;border:1px solid #E8820C;padding:3px 8px;border-radius:6px;white-space:nowrap;">Desktop</a>
-    </div>
-    <div class="hdr-info">
-      <div style="display:flex;align-items:center;gap:6px;justify-content:flex-end;">
-        <div class="hdr-nome" id="hdrNome">—</div>
-        <span id="hdrBadgeAdmin" style="display:none;font-size:9px;font-weight:700;background:#E8820C;color:#fff;padding:2px 6px;border-radius:99px;">ADMIN</span>
+  <header class="hdr" style="background:#1A2A5E;border-bottom:3px solid #E8820C;padding:10px 1rem;display:flex;align-items:center;justify-content:space-between;flex-shrink:0;">
+    <!-- Logo colorida -->
+    <img src="/static/icons/logo-garra.jpg" alt="Garra" style="height:44px;object-fit:contain;filter:brightness(0) invert(1);">
+    <!-- Direita: status + nome + badge + link desktop -->
+    <div style="display:flex;align-items:center;gap:10px;">
+      <div style="display:flex;align-items:center;gap:5px;">
+        <div class="dot" id="statusDot" style="width:8px;height:8px;border-radius:50%;background:#16A34A;"></div>
+        <div style="font-size:11px;color:#93C5FD;" id="statusTxt">Online</div>
       </div>
-      <div class="hdr-status">
-        <div class="dot" id="statusDot"></div>
-        <div class="dot-txt" id="statusTxt">...</div>
+      <div style="background:rgba(255,255,255,.15);border-radius:50%;width:34px;height:34px;display:flex;align-items:center;justify-content:center;">
+        <span style="font-size:14px;font-weight:800;color:#fff;" id="hdrNomeIni">—</span>
       </div>
+      <span id="hdrBadgeAdmin" style="display:none;font-size:9px;font-weight:700;background:#E8820C;color:#fff;padding:2px 7px;border-radius:99px;">ADMIN</span>
+      <a id="linkDesktop" href="/" style="display:none;font-size:10px;font-weight:700;color:#E8820C;text-decoration:none;border:1px solid #E8820C;padding:4px 9px;border-radius:6px;white-space:nowrap;">Desktop</a>
     </div>
   </header>
 
@@ -295,8 +295,8 @@ input[type=file]{display:none;}
         </div>
       </div>
 
-      <input type="file" id="fotoCamera" accept="image/*" capture="environment" multiple onchange="adicionarFotos(this)" style="display:none">
-      <input type="file" id="fotoGaleria" accept="image/*" multiple onchange="adicionarFotos(this)" style="display:none">
+      <input type="file" id="fotoCamera" accept="image/*" capture="environment" multiple style="display:none">
+      <input type="file" id="fotoGaleria" accept="image/*" multiple style="display:none">
 
       <!-- Pares scrollaveis -->
       <div style="flex:1;overflow-y:auto;padding:.75rem;">
@@ -484,7 +484,9 @@ function fazerLogin(){
 function mostrarApp(){
   document.getElementById("telaLogin").style.display="none";
   document.getElementById("telaApp").style.display="flex";
-  document.getElementById("hdrNome").textContent=USUARIO?.nome||"—";
+  var _nm = USUARIO?.nome||"—";
+  var _el = document.getElementById("hdrNome"); if(_el) _el.textContent=_nm;
+  var _ini = document.getElementById("hdrNomeIni"); if(_ini) _ini.textContent=_nm.charAt(0).toUpperCase();
   var _isAdm=(USUARIO?.perfil==="admin"||USUARIO?.perfil==="luana");
   var _bEl=document.getElementById("hdrBadgeAdmin");
   var _lEl=document.getElementById("linkDesktop");
@@ -492,6 +494,8 @@ function mostrarApp(){
   if(_lEl) _lEl.style.display=_isAdm?"inline-block":"none";
   document.getElementById("kmResponsavel").textContent=USUARIO?.nome||"—";
   carregarSemanaAtiva();
+  navPara('foto');
+  setTimeout(inicializarInputsFoto, 300);
   atualizarStatus();
   preencherKmSugerido();
   filtrarLocais("","locaisF");
@@ -958,15 +962,62 @@ atualizarFilaUI();
 
 var BANCADA=[],PARES=[],PAR_SEQ=0,ULTIMO_LOCAL="",TODAS_SEMANAS=[];
 function adicionarFotos(inp){
-  var files=Array.from(inp.files);if(!files.length)return;
-  var n=0;
-  files.forEach(function(f){
-    var r=new FileReader();
-    r.onload=function(e){BANCADA.push({id:"b"+Date.now()+Math.random(),src:e.target.result,nome:f.name,parId:null,tipo:null});n++;if(n===files.length){renderBancada();toast("+"+files.length+" foto(s)");}}; 
-    r.readAsDataURL(f);
+  var files = inp.files ? Array.from(inp.files) : [];
+  if(!files.length){ toast("Nenhuma foto selecionada."); return; }
+  toast("Carregando "+files.length+" foto(s)...");
+  var total = files.length;
+  var lidas = 0;
+  files.forEach(function(file){
+    // Validar tipo
+    if(!file.type.startsWith("image/")){
+      lidas++; total--;
+      if(lidas===files.length) finalizarCarga();
+      return;
+    }
+    var reader = new FileReader();
+    reader.onload = function(e){
+      if(e.target.result){
+        BANCADA.push({
+          id: "b"+Date.now()+Math.random(),
+          src: e.target.result,
+          nome: file.name,
+          parId: null,
+          tipo: null
+        });
+      }
+      lidas++;
+      if(lidas===files.length) finalizarCarga();
+    };
+    reader.onerror = function(){
+      lidas++;
+      if(lidas===files.length) finalizarCarga();
+    };
+    reader.readAsDataURL(file);
   });
-  inp.value="";
+  // Limpar input para permitir selecionar as mesmas fotos novamente
+  setTimeout(function(){ inp.value = ""; }, 500);
 }
+
+function finalizarCarga(){
+  renderBancada();
+  var livres = BANCADA.filter(function(f){return !f.parId;}).length;
+  toast(livres+" foto(s) na bancada");
+}
+
+function inicializarInputsFoto(){
+  var cam = document.getElementById("fotoCamera");
+  var gal = document.getElementById("fotoGaleria");
+  if(cam){
+    cam.removeEventListener("change", _onCamChange);
+    cam.addEventListener("change", _onCamChange);
+  }
+  if(gal){
+    gal.removeEventListener("change", _onGalChange);
+    gal.addEventListener("change", _onGalChange);
+  }
+}
+function _onCamChange(){ adicionarFotos(this); }
+function _onGalChange(){ adicionarFotos(this); }
 function renderBancada(){
   var g=document.getElementById("bancadaGrid"),c=document.getElementById("bancadaCount");
   var livres=BANCADA.filter(function(f){return !f.parId;});
@@ -1024,13 +1075,13 @@ function navPara(tela){
   var pf=document.getElementById("painelFoto"),pk=document.getElementById("painelKm");
   if(mf) mf.style.display=(tela==="foto"||tela==="km")?"block":"none";
   if(mh) mh.style.display=tela==="hist"?"block":"none";
-  if(pf) pf.style.display=tela==="foto"?"flex":"none";
+  if(pf) pf.style.display=tela==="foto"?"flex":"none"; /* bancada */
   if(pk) pk.style.display=tela==="km"?"block":"none";
   ["tabFoto","tabKm"].forEach(function(id){var el=document.getElementById(id);if(el)el.className="tab";});
   if(tela==="foto"&&document.getElementById("tabFoto"))document.getElementById("tabFoto").className="tab ativo";
   if(tela==="km"&&document.getElementById("tabKm"))document.getElementById("tabKm").className="tab ativo";
   ["navFoto","navKm","navHist"].forEach(function(id){var el=document.getElementById(id);if(el)el.className="nav-btn";});
-  if(tela==="foto"&&document.getElementById("navFoto"))document.getElementById("navFoto").className="nav-btn ativo";
+  if(tela==="foto"){if(document.getElementById("navFoto"))document.getElementById("navFoto").className="nav-btn ativo";setTimeout(inicializarInputsFoto,100);}
   if(tela==="km"){if(document.getElementById("navKm"))document.getElementById("navKm").className="nav-btn ativo";preencherKmSugerido();}
   if(tela==="hist"){if(document.getElementById("navHist"))document.getElementById("navHist").className="nav-btn ativo";carregarHistorico();}
 }
