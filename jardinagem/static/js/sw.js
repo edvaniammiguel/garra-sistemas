@@ -4,7 +4,7 @@
    Sync automático com notificação ao reconectar
    ============================================================ */
 
-const CACHE_NAME   = "garra-jardinagem-v2";
+const CACHE_NAME   = "garra-jardinagem-v3";
 const DB_NAME      = "garra-offline-v2";
 const STORE_FOTOS  = "fila_fotos";
 const STORE_KM     = "fila_km";
