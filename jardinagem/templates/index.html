@@ -240,9 +240,12 @@ button,input,select{font-family:inherit;}
 </header>
 
 <div class="layout">
-  <aside class="sidebar">
-    <div class="sb-ttl">Histórico Mensal</div>
-    <div id="listaMeses"><div class="sb-empty">Carregando...</div></div>
+  <aside class="sidebar" id="sidebar" style="transition:width .2s;">
+    <div class="sb-ttl" style="display:flex;align-items:center;justify-content:space-between;cursor:pointer;" onclick="toggleSidebar()">
+      <span id="sbHdrTxt">Histórico Mensal</span>
+      <span id="sbToggleIco" style="font-size:12px;color:#93C5FD;flex-shrink:0;">◀</span>
+    </div>
+    <div id="listaMeses" id2="sbConteudo"><div class="sb-empty">Carregando...</div></div>
   </aside>
   <main class="main">
 
@@ -584,7 +587,7 @@ function carregarMeses(){
         html2+='<div class="sb-item" id="sbm_'+m.id+'" style="justify-content:space-between;">';
         html2+='<div style="display:flex;align-items:center;gap:8px;flex:1;min-width:0;" onclick="abrirMes('+m.id+')">';
         html2+='<span class="sb-ico">📅</span>';
-        html2+='<div style="min-width:0;"><div class="sb-label">'+esc(m.label)+'</div>';
+        html2+='<div style="min-width:0;"><div class="sb-label" ondblclick="editarMes('+m.id+',event)" title="Duplo clique para editar">'+esc(m.label)+'</div>';
         html2+='<div class="sb-sub">'+(m.total_semanas||0)+' semana(s)</div>';
         html2+='</div></div>';
         html2+='<button onclick="event.stopPropagation();deletarMes('+m.id+',\''+esc(m.label)+'\')" style="background:rgba(220,38,38,.2);color:#fca5a5;border:none;border-radius:5px;padding:2px 7px;font-size:11px;font-weight:700;cursor:pointer;flex-shrink:0;">✕</button>';
@@ -1398,6 +1401,49 @@ function deletarMes(mid, label){
       carregarMeses();
     })
     .catch(function(){ toast('Erro de conexão'); });
+}
+
+// ── SIDEBAR TOGGLE ────────────────────────────────────────────
+var _sbAberta = true;
+function toggleSidebar(){
+  var sb = document.getElementById("sidebar");
+  var ico = document.getElementById("sbToggleIco");
+  var txt = document.getElementById("sbHdrTxt");
+  _sbAberta = !_sbAberta;
+  if(_sbAberta){
+    sb.style.width = "210px";
+    sb.style.minWidth = "210px";
+    ico.textContent = "◀";
+    if(txt) txt.style.display = "block";
+  } else {
+    sb.style.width = "32px";
+    sb.style.minWidth = "32px";
+    ico.textContent = "▶";
+    if(txt) txt.style.display = "none";
+    // Esconder conteúdo interno
+    document.querySelectorAll(".sb-ano,.sb-item").forEach(function(el){el.style.visibility=_sbAberta?"visible":"hidden";});
+  }
+  document.querySelectorAll(".sb-ano,.sb-item,.sb-anos-wrap").forEach(function(el){
+    el.style.display = _sbAberta ? "" : "none";
+  });
+}
+
+// ── EDITAR LABEL DO MÊS ───────────────────────────────────────
+function editarMes(mid, event){
+  event.stopPropagation();
+  var labelEl = event.target;
+  var labelAtual = labelEl.textContent;
+  var novoLabel = prompt("Editar nome do mês:", labelAtual);
+  if(!novoLabel || novoLabel === labelAtual) return;
+  fetchAuth('/jardinagem/api/meses/'+mid, {
+    method: 'PATCH',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({label: novoLabel})
+  }).then(function(r){return r.json();})
+  .then(function(d){
+    if(d.ok){ toast('Nome atualizado!'); carregarMeses(); }
+    else toast('Erro: '+d.erro);
+  }).catch(function(){ toast('Erro de conexão'); });
 }
 </script>
 
