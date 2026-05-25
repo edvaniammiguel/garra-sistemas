@@ -996,9 +996,7 @@ async def redirect_sw():
 async def redirect_mobile():
     return RedirectResponse(url="/jardinagem/mobile")
 
-@app.get("/static/icons/{filename}")
-async def redirect_static_icons(filename: str):
-    return RedirectResponse(url=f"/jardinagem/static/icons/{filename}")
+# /static/icons/ redirect removido — manifest.json atualizado com caminhos corretos
 
 @app.get("/favicon.ico")
 async def redirect_favicon():
