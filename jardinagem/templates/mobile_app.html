@@ -298,9 +298,10 @@ input:focus,textarea:focus,select:focus{border-color:var(--bl);}
       <div class="card-lbl">Semana atual</div>
       <div style="font-size:13px;font-weight:700;color:var(--bl);" id="maisSem">—</div>
       <div style="display:flex;gap:8px;margin-top:.75rem;flex-wrap:wrap;">
-        <button class="btn btn-sm btn-bl" onclick="abrirSemanas()">📅 Gerenciar Semanas</button>
+        <button class="btn btn-sm btn-bl" onclick="abrirSemanas()">📅 Semanas</button>
+        <button class="btn btn-sm btn-or" onclick="document.getElementById('modalMes').style.display='flex'">+ Novo Mês</button>
         <button class="btn btn-sm" style="background:#FFF7ED;color:var(--or);border:1.5px solid var(--or);"
-          onclick="sincronizar()">⟳ Sincronizar</button>
+          onclick="sincronizar()">⟳ Sync</button>
       </div>
     </div>
     <div id="adminBloco" style="display:none;" class="mais-item">
@@ -311,8 +312,12 @@ input:focus,textarea:focus,select:focus{border-color:var(--bl);}
       <button class="btn btn-bl btn-w" onclick="enviarEmail()" id="btnEmail">📧 Enviar Relatório</button>
       <div id="emailMsg" style="font-size:11px;text-align:center;color:var(--mut);margin-top:.5rem;min-height:14px;"></div>
     </div>
-    <button class="btn btn-w" style="background:#FEE2E2;color:var(--red);border:1.5px solid #FCA5A5;"
+    <button class="btn btn-w" style="background:#FEE2E2;color:var(--red);border:1.5px solid #FCA5A5;margin-bottom:.5rem;"
       onclick="sair()">↩ Sair</button>
+    <button class="btn btn-w" style="background:none;border:none;color:#94A3B8;font-size:11px;"
+      onclick="if(confirm('Limpar cache do app? Isso remove dados offline salvos localmente.'))limparCache()">
+      🗑 Limpar cache do app
+    </button>
   </div>
 
 </div>
@@ -334,8 +339,8 @@ input:focus,textarea:focus,select:focus{border-color:var(--bl);}
 </nav>
 
 <!-- INPUTS ARQUIVO -->
-<input type="file" id="inpCam" accept="image/*" capture="environment" multiple>
-<input type="file" id="inpGal" accept="image/*" multiple>
+<input type="file" id="inpCam" accept="image/*" capture="environment" multiple style="display:none;">
+<input type="file" id="inpGal" accept="image/*" multiple style="display:none;">
 
 <!-- MODAL SEMANAS -->
 <div class="modal-bg" id="modalSem" style="display:none;">
@@ -843,6 +848,21 @@ function sair(){
   localStorage.removeItem("garra_token");
   localStorage.removeItem("garra_usuario");
   window.location.href = "/jardinagem/mobile";
+}
+
+function limparCache(){
+  localStorage.clear();
+  if("serviceWorker" in navigator){
+    navigator.serviceWorker.getRegistrations().then(function(r){
+      r.forEach(function(s){s.unregister();});
+      caches.keys().then(function(k){
+        k.forEach(function(n){caches.delete(n);});
+        window.location.href="/jardinagem/mobile";
+      });
+    });
+  } else {
+    window.location.href="/jardinagem/mobile";
+  }
 }
 </script>
 </body>
