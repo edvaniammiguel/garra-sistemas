@@ -218,6 +218,7 @@ input[type=file]{display:none;}
            style="height:64px;object-fit:contain;margin-bottom:.75rem;">
       <div style="font-size:15px;font-weight:800;color:var(--bl);margin-bottom:3px;">Jardinagem</div>
       <div style="font-size:11px;color:var(--mut);margin-bottom:1.5rem;text-align:center;">Águas de Pará de Minas</div>
+      <div style="font-size:9px;color:#94A3B8;margin-bottom:.5rem;">v26.05.21h</div>
       <div style="width:100%;display:flex;flex-direction:column;gap:.75rem;">
         <div>
           <label class="lbl">Email</label>
@@ -235,7 +236,7 @@ input[type=file]{display:none;}
           </div>
         </div>
         <div id="lgErro" style="font-size:12px;color:var(--red);text-align:center;min-height:16px;"></div>
-        <button class="btn btn-bl" onclick="login()" style="margin:0;">Entrar</button>
+        <button class="btn btn-bl" id="btnEntrar" onclick="login()" style="margin:0;">Entrar</button>
       </div>
     </div>
   </div>
@@ -596,37 +597,39 @@ function toggleSenha(){
 }
 
 async function login(){
-  var email = document.getElementById("lgEmail").value.trim();
-  var senha = document.getElementById("lgSenha").value;
+  var email = (document.getElementById("lgEmail").value||"").trim();
+  var senha = document.getElementById("lgSenha").value||"";
   var erro  = document.getElementById("lgErro");
-  var btn   = document.querySelector("#telaLogin .btn");
-  erro.textContent = "";
-  if(!email || !senha){ erro.textContent = "Preencha email e senha."; return; }
-  btn.disabled = true;
-  btn.textContent = "Entrando...";
-  erro.textContent = "Conectando...";
+  var btn   = document.getElementById("btnEntrar");
   erro.style.color = "var(--mut)";
+  erro.textContent = "";
+  if(!email||!senha){erro.textContent="Preencha email e senha.";erro.style.color="var(--red)";return;}
+  btn.disabled=true; btn.textContent="Entrando...";
+  erro.textContent="Aguarde...";
   try{
-    var r = await fetch("/jardinagem/api/login",{
+    var r=await fetch("/jardinagem/api/login",{
       method:"POST",
       headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({email:email, senha:senha})
+      body:JSON.stringify({email:email,senha:senha})
     });
-    erro.textContent = "Resposta: " + r.status;
-    var txt = await r.text();
+    var txt=await r.text();
+    erro.textContent="Status:"+r.status+" "+txt.substring(0,80);
     var d;
-    try{ d = JSON.parse(txt); }
-    catch(pe){ erro.textContent = "Erro parse: "+txt.substring(0,50); erro.style.color="var(--red)"; btn.disabled=false; btn.textContent="Entrar"; return; }
-    if(!d.token){ erro.textContent = d.erro || d.detail || "Sem token: "+JSON.stringify(d).substring(0,60); erro.style.color="var(--red)"; btn.disabled=false; btn.textContent="Entrar"; return; }
-    TOKEN = d.token;
-    USUARIO = {nome: d.nome, perfil: d.perfil};
-    localStorage.setItem("garra_token", TOKEN);
-    localStorage.setItem("garra_usuario", JSON.stringify(USUARIO));
+    try{d=JSON.parse(txt);}catch(e){btn.disabled=false;btn.textContent="Entrar";return;}
+    if(!d.token){
+      erro.textContent=d.erro||d.detail||"Login falhou";
+      erro.style.color="var(--red)";
+      btn.disabled=false;btn.textContent="Entrar";return;
+    }
+    TOKEN=d.token;
+    USUARIO={nome:d.nome,perfil:d.perfil};
+    localStorage.setItem("garra_token",TOKEN);
+    localStorage.setItem("garra_usuario",JSON.stringify(USUARIO));
     abrirApp();
-  } catch(e){
-    erro.textContent = "Erro: " + e.message;
-    erro.style.color = "var(--red)";
-    btn.disabled=false; btn.textContent="Entrar";
+  }catch(e){
+    erro.textContent="Erro:"+e.message;
+    erro.style.color="var(--red)";
+    btn.disabled=false;btn.textContent="Entrar";
   }
 }
 
