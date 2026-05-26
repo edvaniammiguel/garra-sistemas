@@ -187,7 +187,9 @@ input:focus,textarea:focus,select:focus{border-color:var(--bl);}
         <div class="sem-nome" id="semNome">Carregando...</div>
         <div class="sem-data" id="semData"></div>
       </div>
-      <span class="badge badge-ok" id="semBadge">—</span>
+      <span class="badge badge-ok" id="semBadge" style="display:none;">—</span>
+      <button class="btn btn-sm" style="background:var(--or);color:#fff;flex-shrink:0;"
+        onclick="abrirSemanas()">📅</button>
     </div>
 
     <div class="bancada" id="bancadaCard">
