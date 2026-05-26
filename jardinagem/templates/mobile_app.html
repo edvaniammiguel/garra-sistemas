@@ -141,6 +141,31 @@ input:focus,textarea:focus,select:focus{border-color:var(--bl);}
   padding:.625rem .875rem;display:flex;align-items:center;gap:8px;}
 .fila-txt{font-size:11px;color:#92400E;flex:1;}
 
+/* DRAWER LATERAL */
+.drawer-bg{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:200;display:none;}
+.drawer-bg.open{display:block;}
+.drawer{position:fixed;top:0;left:-260px;bottom:0;width:260px;background:#1A2A5E;
+  z-index:201;transition:left .25s ease;display:flex;flex-direction:column;overflow:hidden;}
+.drawer.open{left:0;}
+.drawer-hdr{background:#111D40;padding:12px 14px;display:flex;align-items:center;
+  justify-content:space-between;border-bottom:2px solid var(--or);flex-shrink:0;}
+.drawer-ttl{font-size:13px;font-weight:800;color:#fff;letter-spacing:.02em;}
+.drawer-close{background:none;border:none;color:#93C5FD;font-size:20px;cursor:pointer;
+  padding:2px 6px;line-height:1;}
+.drawer-body{flex:1;overflow-y:auto;padding:.5rem 0;}
+.drawer-ano{padding:6px 14px 4px;font-size:9px;font-weight:700;color:#93C5FD;
+  text-transform:uppercase;letter-spacing:.08em;}
+.drawer-mes{padding:10px 14px;display:flex;align-items:center;gap:10px;cursor:pointer;
+  border-left:3px solid transparent;transition:.15s;}
+.drawer-mes:hover{background:rgba(255,255,255,.06);}
+.drawer-mes.ativo{background:rgba(249,115,22,.12);border-left-color:var(--or);}
+.drawer-mes-ico{font-size:16px;}
+.drawer-mes-info{flex:1;min-width:0;}
+.drawer-mes-label{font-size:12px;font-weight:600;color:#fff;white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis;}
+.drawer-mes-sub{font-size:10px;color:#93C5FD;}
+.drawer-footer{padding:.75rem 14px;border-top:1px solid rgba(255,255,255,.1);flex-shrink:0;}
+
 /* NAV */
 .nav{background:#fff;border-top:1px solid var(--brd);display:flex;flex-shrink:0;}
 .nb{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;
@@ -169,6 +194,10 @@ input:focus,textarea:focus,select:focus{border-color:var(--bl);}
 <header class="hdr">
   <img src="/jardinagem/static/icons/logo-Garra-e-ca%C3%A7ambas.png"
        class="hdr-logo" onerror="this.style.display='none'">
+  <div style="display:flex;align-items:center;gap:6px;">
+    <button onclick="abrirDrawer()" style="background:none;border:none;color:#fff;
+      font-size:20px;cursor:pointer;padding:2px 6px;line-height:1;">☰</button>
+  </div>
   <div class="hdr-r">
     <div class="hdr-dot" id="dot"></div>
     <span class="hdr-status" id="status">Online</span>
@@ -322,6 +351,21 @@ input:focus,textarea:focus,select:focus{border-color:var(--bl);}
     </button>
   </div>
 
+</div>
+
+<!-- DRAWER LATERAL -->
+<div class="drawer-bg" id="drawerBg" onclick="fecharDrawer()"></div>
+<div class="drawer" id="drawer">
+  <div class="drawer-hdr">
+    <span class="drawer-ttl">Histórico Mensal</span>
+    <button class="drawer-close" onclick="fecharDrawer()">✕</button>
+  </div>
+  <div class="drawer-body" id="drawerBody">
+    <div style="padding:1rem;text-align:center;color:#93C5FD;font-size:12px;">Carregando...</div>
+  </div>
+  <div class="drawer-footer">
+    <button class="btn btn-or btn-w" onclick="fecharDrawer();abrirCriarMes()">+ Novo Mês</button>
+  </div>
 </div>
 
 <!-- NAV -->
@@ -625,23 +669,58 @@ function novoPar(){
 }
 
 
-function abrirMenuMeses(){
+function abrirMenuMeses(){ abrirDrawer(); }
+
+function abrirDrawer(){
+  carregarDrawer();
+  document.getElementById("drawer").classList.add("open");
+  document.getElementById("drawerBg").classList.add("open");
+}
+
+function fecharDrawer(){
+  document.getElementById("drawer").classList.remove("open");
+  document.getElementById("drawerBg").classList.remove("open");
+}
+
+function carregarDrawer(){
+  var body = document.getElementById("drawerBody");
+  body.innerHTML = '<div style="padding:1rem;text-align:center;color:#93C5FD;font-size:12px;">Carregando...</div>';
   api("/api/meses").then(function(r){return r.json();}).then(function(d){
-    var meses=Array.isArray(d)?d:[];
-    var lista=document.getElementById("mesesLista");
-    lista.innerHTML=meses.length?meses.map(function(m){
-      var ativo=SEMANA&&SEMANA.mes_id===m.id;
-      return '<div style="background:'+(ativo?"#EFF6FF":"#fff")+';border:1.5px solid '+(ativo?"var(--bl)":"var(--brd)")+';border-radius:8px;padding:10px 14px;display:flex;align-items:center;gap:8px;cursor:pointer;" onclick="selecionarMes('+m.id+')">'
-        +'<div style="flex:1;"><div style="font-size:13px;font-weight:700;color:var(--bl);">'+m.label+'</div>'
-        +'<div style="font-size:10px;color:var(--mut);">'+(m.total_semanas||0)+' semana(s)</div></div>'
-        +(ativo?'<span class="badge badge-ok">Atual</span>':'')+'</div>';
-    }).join(""):'<div style="text-align:center;color:var(--mut);font-size:12px;padding:1rem;">Nenhum mês criado.</div>';
-    document.getElementById("modalMeses").style.display="flex";
-  }).catch(function(){toast("Erro ao carregar meses");});
+    var meses = Array.isArray(d) ? d : [];
+    if(!meses.length){
+      body.innerHTML = '<div style="padding:1rem;text-align:center;color:#93C5FD;font-size:12px;">Nenhum mês criado.</div>';
+      return;
+    }
+    // Agrupar por ano
+    var anos = {};
+    meses.forEach(function(m){
+      var ano = m.ano || new Date().getFullYear();
+      if(!anos[ano]) anos[ano] = [];
+      anos[ano].push(m);
+    });
+    var html = "";
+    Object.keys(anos).sort(function(a,b){return b-a;}).forEach(function(ano){
+      html += '<div class="drawer-ano">'+ano+'</div>';
+      anos[ano].forEach(function(m){
+        var ativo = SEMANA && SEMANA.mes_id === m.id;
+        html += '<div class="drawer-mes'+(ativo?" ativo":"")+'" onclick="selecionarMes('+m.id+')">'
+          +'<span class="drawer-mes-ico">📅</span>'
+          +'<div class="drawer-mes-info">'
+          +'<div class="drawer-mes-label">'+m.label+'</div>'
+          +'<div class="drawer-mes-sub">'+(m.total_semanas||0)+' semana(s)</div>'
+          +'</div>'
+          +(ativo?'<span style="font-size:16px;">◀</span>':'')
+          +'</div>';
+      });
+    });
+    body.innerHTML = html;
+  }).catch(function(){
+    body.innerHTML = '<div style="padding:1rem;text-align:center;color:#93C5FD;font-size:12px;">Erro ao carregar.</div>';
+  });
 }
 
 function selecionarMes(mesId){
-  fecharModal("modalMeses");
+  fecharDrawer();
   api("/api/meses/"+mesId).then(function(r){return r.json();}).then(function(d){
     var sems=d.semanas||[];
     var ativa=sems.find(function(s){return s.status==="aberta";})||sems[sems.length-1];
