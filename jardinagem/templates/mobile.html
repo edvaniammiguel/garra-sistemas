@@ -47,7 +47,7 @@ h1{font-size:15px;font-weight:800;color:#1A2A5E;text-align:center;margin-bottom:
        onerror="this.style.display='none'">
   <h1>Jardinagem</h1>
   <p class="sub">Águas de Pará de Minas</p>
-  <p class="ver">v26.05.25h</p>
+  <p class="ver">v26.05.26h</p>
 
   <label class="lbl" for="em">Email</label>
   <input class="inp" type="email" id="em" placeholder="seu@email.com" autocomplete="email">
@@ -60,7 +60,6 @@ h1{font-size:15px;font-weight:800;color:#1A2A5E;text-align:center;margin-bottom:
 
   <div class="msg" id="msg"></div>
   <button class="btn" type="button" id="btn" onclick="entrar()">Entrar</button>
-  <button class="lnk" type="button" onclick="limpar()">Problemas? Limpar cache</button>
 </div>
 
 <script>
@@ -109,8 +108,8 @@ function entrar(){
     }
     localStorage.setItem("garra_token",d.token);
     localStorage.setItem("garra_usuario",JSON.stringify({nome:d.nome,perfil:d.perfil}));
-    msg("Entrando...","#16A34A");
-    window.location.href="/jardinagem/mobile-app";
+    msg("Bem-vindo(a), "+d.nome+"! Entrando...","#16A34A");
+    setTimeout(function(){ window.location.href="/jardinagem/mobile-app"; }, 800);
   }).catch(function(e){
     msg("Erro de conexão: "+e.message,"#DC2626");
     $("btn").disabled=false;
