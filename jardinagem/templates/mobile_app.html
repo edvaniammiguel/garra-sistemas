@@ -245,7 +245,6 @@ input:focus,textarea:focus,select:focus{border-color:var(--bl);}
         <span class="pares-ttl">Pares</span>
         <div style="display:flex;gap:6px;">
           <button class="btn btn-sm btn-bl" onclick="novoPar()">+ Novo par</button>
-          <button class="btn btn-sm btn-out" onclick="abrirSemanas()">📅 Semanas</button>
         </div>
       </div>
       <div id="paresWrap" style="display:flex;flex-direction:column;gap:.75rem;">
@@ -325,30 +324,25 @@ input:focus,textarea:focus,select:focus{border-color:var(--bl);}
 
   <!-- MAIS -->
   <div class="tela" id="tMais">
-    <div class="mais-item">
+    <!-- Info semana -->
+    <div class="card" style="margin-bottom:.25rem;">
       <div class="card-lbl">Semana atual</div>
-      <div style="font-size:13px;font-weight:700;color:var(--bl);" id="maisSem">—</div>
-      <div style="display:flex;gap:8px;margin-top:.75rem;flex-wrap:wrap;">
-        <button class="btn btn-sm btn-bl" onclick="abrirSemanas()">📅 Semanas</button>
-        <button class="btn btn-sm btn-or" onclick="document.getElementById('modalMes').style.display='flex'">+ Novo Mês</button>
-        <button class="btn btn-sm" style="background:#FFF7ED;color:var(--or);border:1.5px solid var(--or);"
-          onclick="sincronizar()">⟳ Sync</button>
-      </div>
+      <div style="font-size:13px;font-weight:700;color:var(--bl);margin-bottom:.25rem;" id="maisSem">—</div>
     </div>
-    <div id="adminBloco" style="display:none;" class="mais-item">
-      <div class="card-lbl">Relatórios</div>
-      <div style="font-size:12px;color:var(--mut);margin-bottom:.75rem;">
-        Envia relatório fotográfico e de KM por email ao cliente.
-      </div>
+
+    <!-- Admin: enviar relatório -->
+    <div id="adminBloco" style="display:none;">
       <button class="btn btn-bl btn-w" onclick="enviarEmail()" id="btnEmail">📧 Enviar Relatório</button>
       <div id="emailMsg" style="font-size:11px;text-align:center;color:var(--mut);margin-top:.5rem;min-height:14px;"></div>
     </div>
-    <button class="btn btn-w" style="background:#FEE2E2;color:var(--red);border:1.5px solid #FCA5A5;margin-bottom:.5rem;"
+
+    <!-- Sync -->
+    <button class="btn btn-w" style="background:#FFF7ED;color:var(--or);border:1.5px solid var(--or);margin-top:.5rem;"
+      onclick="sincronizar()">⟳ Sincronizar dados offline</button>
+
+    <!-- Sair -->
+    <button class="btn btn-w" style="background:#FEE2E2;color:var(--red);border:1.5px solid #FCA5A5;margin-top:.5rem;"
       onclick="sair()">↩ Sair</button>
-    <button class="btn btn-w" style="background:none;border:none;color:#94A3B8;font-size:11px;"
-      onclick="if(confirm('Limpar cache do app? Isso remove dados offline salvos localmente.'))limparCache()">
-      🗑 Limpar cache do app
-    </button>
   </div>
 
 </div>
@@ -721,17 +715,36 @@ function carregarDrawer(){
 
 function selecionarMes(mesId){
   fecharDrawer();
-  api("/api/meses/"+mesId).then(function(r){return r.json();}).then(function(d){
-    var sems=d.semanas||[];
-    var ativa=sems.find(function(s){return s.status==="aberta";})||sems[sems.length-1];
+  toast("Carregando mês...");
+  api("/api/meses/"+mesId).then(function(r){
+    if(!r.ok) throw new Error("HTTP "+r.status);
+    return r.json();
+  }).then(function(d){
+    var sems = d.semanas || [];
+    // Pegar semana aberta ou a mais recente
+    var ativa = sems.find(function(s){return s.status==="aberta";});
+    if(!ativa && sems.length) ativa = sems[sems.length-1];
     if(ativa){
-      SEMANA=Object.assign({},ativa,{mes_id:mesId});
-      atualizarCardSemana();carregarPares();carregarGaleriaSems();carregarKmHoje();
-      document.getElementById("telaBemVindo").style.display="none";
-      document.getElementById("semCard").style.display="flex";
+      // Garantir mes_id no objeto semana
+      SEMANA = {
+        id: ativa.id,
+        label: ativa.label,
+        status: ativa.status,
+        data_ini: ativa.data_ini,
+        data_fim: ativa.data_fim,
+        mes_id: mesId
+      };
+      atualizarCardSemana();
+      carregarPares();
+      carregarGaleriaSems();
+      carregarKmHoje();
       ir("Fotos");
-    }else{toast("Nenhuma semana neste mês.");}
-  }).catch(function(){toast("Erro ao carregar mês");});
+    } else {
+      toast("Nenhuma semana neste mês. Crie uma semana primeiro.");
+    }
+  }).catch(function(e){
+    toast("Erro ao carregar mês: "+e.message);
+  });
 }
 
 function atualizarCardSemana(){
@@ -755,7 +768,12 @@ function carregarSemana(){
     .then(function(r){return r.json();})
     .then(function(d){
       if(d.erro||d.detail){SEMANA=null;atualizarCardSemana();return;}
-      SEMANA=d;atualizarCardSemana();carregarPares();carregarGaleriaSems();
+      SEMANA = {
+        id: d.id, label: d.label, status: d.status,
+        data_ini: d.data_ini, data_fim: d.data_fim,
+        mes_id: d.mes_id || d.id
+      };
+      atualizarCardSemana();carregarPares();carregarGaleriaSems();
     }).catch(function(){SEMANA=null;atualizarCardSemana();});
 }
 function salvarLocal(parId, local, idx){
