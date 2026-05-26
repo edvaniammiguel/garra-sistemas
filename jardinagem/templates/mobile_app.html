@@ -610,7 +610,7 @@ function removerBancada(id){
 
 // ── PARES ─────────────────────────────────────────────────────
 function carregarPares(){
-  if(!SEMANA) return;
+  if(!SEMANA||!SEMANA.id) return;
   api("/api/pares?semana_id="+SEMANA.id)
     .then(function(r){ return r.json(); })
     .then(function(d){
@@ -755,10 +755,12 @@ function atualizarCardSemana(){
   }
   document.getElementById("semCard").style.display="flex";
   document.getElementById("telaBemVindo").style.display="none";
-  var fmt=function(s){if(!s)return"";var m=s.match(/(\d{4})-(\d{2})-(\d{2})/);return m?m[3]+"/"+m[2]+"/"+m[1]:s;};
-  document.getElementById("semNome").textContent=SEMANA.label||"Semana";
-  document.getElementById("semData").textContent=SEMANA.data_ini?fmt(SEMANA.data_ini)+" a "+fmt(SEMANA.data_fim):"";
-  document.getElementById("semBadge").textContent=SEMANA.status==="aberta"?"✅ Aberta":"📤 Enviada";
+  try{
+    var fmt=function(s){if(!s)return"";var m=(s||"").match(/(\d{4})-(\d{2})-(\d{2})/);return m?m[3]+"/"+m[2]+"/"+m[1]:s;};
+    document.getElementById("semNome").textContent=SEMANA.label||"Semana";
+    document.getElementById("semData").textContent=SEMANA.data_ini?fmt(SEMANA.data_ini)+" a "+fmt(SEMANA.data_fim):"";
+    document.getElementById("semBadge").textContent=SEMANA.status==="aberta"?"✅ Aberta":"📤 Enviada";
+  }catch(e){}
   var maisSem=document.getElementById("maisSem");
   if(maisSem)maisSem.textContent=SEMANA.label||"—";
 }
@@ -767,13 +769,23 @@ function carregarSemana(){
   api("/api/semanas/ativa")
     .then(function(r){return r.json();})
     .then(function(d){
-      if(d.erro||d.detail){SEMANA=null;atualizarCardSemana();return;}
+      if(!d||d.erro||d.detail||!d.id){
+        SEMANA=null;
+        atualizarCardSemana();
+        return;
+      }
       SEMANA = {
-        id: d.id, label: d.label, status: d.status,
-        data_ini: d.data_ini, data_fim: d.data_fim,
-        mes_id: d.mes_id || d.id
+        id: d.id,
+        label: d.label||"Semana",
+        status: d.status||"aberta",
+        data_ini: d.data_ini||"",
+        data_fim: d.data_fim||"",
+        mes_id: d.mes_id||null
       };
-      atualizarCardSemana();carregarPares();carregarGaleriaSems();
+      atualizarCardSemana();
+      carregarPares();
+      // carregarGaleriaSems só se tiver mes_id
+      if(SEMANA.mes_id) carregarGaleriaSems();
     }).catch(function(){SEMANA=null;atualizarCardSemana();});
 }
 function salvarLocal(parId, local, idx){
@@ -885,7 +897,7 @@ function salvarKm(){
 }
 
 function carregarKmHoje(){
-  if(!SEMANA) return;
+  if(!SEMANA||!SEMANA.id) return;
   api("/api/historico/hoje?semana_id="+SEMANA.id)
     .then(function(r){ return r.json(); })
     .then(function(d){
@@ -905,7 +917,7 @@ function carregarKmHoje(){
 
 // ── GALERIA ───────────────────────────────────────────────────
 function carregarGaleriaSems(){
-  if(!SEMANA) return;
+  if(!SEMANA||!SEMANA.mes_id) return;
   api("/api/meses/"+SEMANA.mes_id)
     .then(function(r){ return r.json(); })
     .then(function(d){
