@@ -599,22 +599,35 @@ async function login(){
   var email = document.getElementById("lgEmail").value.trim();
   var senha = document.getElementById("lgSenha").value;
   var erro  = document.getElementById("lgErro");
+  var btn   = document.querySelector("#telaLogin .btn");
   erro.textContent = "";
   if(!email || !senha){ erro.textContent = "Preencha email e senha."; return; }
+  btn.disabled = true;
+  btn.textContent = "Entrando...";
+  erro.textContent = "Conectando...";
+  erro.style.color = "var(--mut)";
   try{
     var r = await fetch("/jardinagem/api/login",{
       method:"POST",
       headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({email, senha})
+      body:JSON.stringify({email:email, senha:senha})
     });
-    var d = await r.json();
-    if(d.erro){ erro.textContent = d.erro; return; }
+    erro.textContent = "Resposta: " + r.status;
+    var txt = await r.text();
+    var d;
+    try{ d = JSON.parse(txt); }
+    catch(pe){ erro.textContent = "Erro parse: "+txt.substring(0,50); erro.style.color="var(--red)"; btn.disabled=false; btn.textContent="Entrar"; return; }
+    if(!d.token){ erro.textContent = d.erro || d.detail || "Sem token: "+JSON.stringify(d).substring(0,60); erro.style.color="var(--red)"; btn.disabled=false; btn.textContent="Entrar"; return; }
     TOKEN = d.token;
     USUARIO = {nome: d.nome, perfil: d.perfil};
     localStorage.setItem("garra_token", TOKEN);
     localStorage.setItem("garra_usuario", JSON.stringify(USUARIO));
     abrirApp();
-  } catch(e){ erro.textContent = "Erro de conexão."; }
+  } catch(e){
+    erro.textContent = "Erro: " + e.message;
+    erro.style.color = "var(--red)";
+    btn.disabled=false; btn.textContent="Entrar";
+  }
 }
 
 function abrirApp(){
