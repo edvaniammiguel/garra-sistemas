@@ -581,12 +581,31 @@ window.addEventListener("offline", function(){ ONLINE=false; atualizarStatus(); 
 
 // ══ INIT ════════════════════════════════════════════════
 window.addEventListener("load", function(){
-  if(TOKEN && USUARIO){ abrirApp(); }
-  else { document.getElementById("telaLogin").style.display="flex"; }
-  document.getElementById("kmData").value = new Date().toISOString().split("T")[0];
-  // Inicializar inputs de arquivo com addEventListener
-  document.getElementById("inpCam").addEventListener("change", function(){ processarFotos(this); });
-  document.getElementById("inpGal").addEventListener("change", function(){ processarFotos(this); });
+  // Sempre mostrar login primeiro — verifica token depois
+  document.getElementById("telaLogin").style.display = "flex";
+  document.getElementById("telaApp").style.display   = "none";
+  
+  // Tenta restaurar sessão se tiver token válido
+  if(TOKEN && USUARIO && USUARIO.nome){
+    // Verifica se token ainda é válido
+    fetch("/jardinagem/api/me", {headers:{Authorization:"Bearer "+TOKEN}})
+      .then(function(r){
+        if(r.ok){ abrirApp(); }
+        else {
+          localStorage.removeItem("garra_token");
+          localStorage.removeItem("garra_usuario");
+          TOKEN=""; USUARIO=null;
+        }
+      }).catch(function(){ /* offline — mantém tela de login */ });
+  }
+  
+  var kmEl = document.getElementById("kmData");
+  if(kmEl) kmEl.value = new Date().toISOString().split("T")[0];
+  
+  var inpCam = document.getElementById("inpCam");
+  var inpGal = document.getElementById("inpGal");
+  if(inpCam) inpCam.addEventListener("change", function(){ processarFotos(this); });
+  if(inpGal) inpGal.addEventListener("change", function(){ processarFotos(this); });
   atualizarStatus();
 });
 
