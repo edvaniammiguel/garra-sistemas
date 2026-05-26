@@ -344,6 +344,16 @@ input:focus,textarea:focus,select:focus{border-color:var(--bl);}
 <input type="file" id="inpCam" accept="image/*" capture="environment" multiple style="display:none;">
 <input type="file" id="inpGal" accept="image/*" multiple style="display:none;">
 
+<!-- MODAL MESES -->
+<div class="modal-bg" id="modalMeses" style="display:none;">
+  <div class="modal">
+    <button class="modal-close" onclick="fecharModal('modalMeses')">✕</button>
+    <div class="modal-ttl">📆 Meses</div>
+    <div id="mesesLista" style="display:flex;flex-direction:column;gap:.5rem;margin-bottom:1rem;"></div>
+    <button class="btn btn-or btn-w" onclick="fecharModal('modalMeses');abrirCriarMes()">+ Novo Mês</button>
+  </div>
+</div>
+
 <!-- MODAL SEMANAS -->
 <div class="modal-bg" id="modalSem" style="display:none;">
   <div class="modal">
@@ -428,6 +438,7 @@ window.addEventListener("load", function(){
   document.getElementById("kmIni").addEventListener("input", calcKm);
   document.getElementById("kmFin").addEventListener("input", calcKm);
   atualizarStatus();
+  atualizarCardSemana();
   carregarSemana();
   carregarKmHoje();
   verificarFila();
@@ -591,7 +602,7 @@ function renderPares(){
       +'<div class="par-top" style="border-left:4px solid '+cor+';">'
       +'<span class="par-cod">'+p.codigo_a+'ª–'+p.codigo_d+'ª</span>'
       +'<input class="par-local" value="'+(p.local_nome||'')+'" placeholder="Nome do local..." '
-      +'onblur="salvarLocal('+p.id+', this.value)">'
+      +'onblur="salvarLocal('+p.id+', this.value, '+idx+')">'
       +'</div>'
       +'<div class="par-fotos">'
       +'<div class="slot" onclick="abrirSeletor('+idx+',\'antes\')">'+(fa&&fa.url?'<img src="'+fa.url+'"><span class="slot-lbl antes">ANTES</span>':'<span class="slot-lbl antes">ANTES</span><span class="slot-ico">📷</span><span class="slot-txt">Toque para encaixar</span>')+'</div>'
@@ -613,8 +624,73 @@ function novoPar(){
     .catch(function(){ toast("Erro de conexão"); });
 }
 
-function salvarLocal(parId, local){
+
+function abrirMenuMeses(){
+  api("/api/meses").then(function(r){return r.json();}).then(function(d){
+    var meses=Array.isArray(d)?d:[];
+    var lista=document.getElementById("mesesLista");
+    lista.innerHTML=meses.length?meses.map(function(m){
+      var ativo=SEMANA&&SEMANA.mes_id===m.id;
+      return '<div style="background:'+(ativo?"#EFF6FF":"#fff")+';border:1.5px solid '+(ativo?"var(--bl)":"var(--brd)")+';border-radius:8px;padding:10px 14px;display:flex;align-items:center;gap:8px;cursor:pointer;" onclick="selecionarMes('+m.id+')">'
+        +'<div style="flex:1;"><div style="font-size:13px;font-weight:700;color:var(--bl);">'+m.label+'</div>'
+        +'<div style="font-size:10px;color:var(--mut);">'+(m.total_semanas||0)+' semana(s)</div></div>'
+        +(ativo?'<span class="badge badge-ok">Atual</span>':'')+'</div>';
+    }).join(""):'<div style="text-align:center;color:var(--mut);font-size:12px;padding:1rem;">Nenhum mês criado.</div>';
+    document.getElementById("modalMeses").style.display="flex";
+  }).catch(function(){toast("Erro ao carregar meses");});
+}
+
+function selecionarMes(mesId){
+  fecharModal("modalMeses");
+  api("/api/meses/"+mesId).then(function(r){return r.json();}).then(function(d){
+    var sems=d.semanas||[];
+    var ativa=sems.find(function(s){return s.status==="aberta";})||sems[sems.length-1];
+    if(ativa){
+      SEMANA=Object.assign({},ativa,{mes_id:mesId});
+      atualizarCardSemana();carregarPares();carregarGaleriaSems();carregarKmHoje();
+      document.getElementById("telaBemVindo").style.display="none";
+      document.getElementById("semCard").style.display="flex";
+      ir("Fotos");
+    }else{toast("Nenhuma semana neste mês.");}
+  }).catch(function(){toast("Erro ao carregar mês");});
+}
+
+function atualizarCardSemana(){
+  if(!SEMANA){
+    document.getElementById("semCard").style.display="none";
+    document.getElementById("telaBemVindo").style.display="flex";
+    return;
+  }
+  document.getElementById("semCard").style.display="flex";
+  document.getElementById("telaBemVindo").style.display="none";
+  var fmt=function(s){if(!s)return"";var m=s.match(/(\d{4})-(\d{2})-(\d{2})/);return m?m[3]+"/"+m[2]+"/"+m[1]:s;};
+  document.getElementById("semNome").textContent=SEMANA.label||"Semana";
+  document.getElementById("semData").textContent=SEMANA.data_ini?fmt(SEMANA.data_ini)+" a "+fmt(SEMANA.data_fim):"";
+  document.getElementById("semBadge").textContent=SEMANA.status==="aberta"?"✅ Aberta":"📤 Enviada";
+  var maisSem=document.getElementById("maisSem");
+  if(maisSem)maisSem.textContent=SEMANA.label||"—";
+}
+
+function carregarSemana(){
+  api("/api/semanas/ativa")
+    .then(function(r){return r.json();})
+    .then(function(d){
+      if(d.erro||d.detail){SEMANA=null;atualizarCardSemana();return;}
+      SEMANA=d;atualizarCardSemana();carregarPares();carregarGaleriaSems();
+    }).catch(function(){SEMANA=null;atualizarCardSemana();});
+}
+function salvarLocal(parId, local, idx){
   api("/api/pares/"+parId,{method:"PATCH",body:JSON.stringify({local_nome:local})}).catch(function(){});
+  // Replicar para pares seguintes sem local
+  if(typeof idx==="number"){
+    for(var i=idx+1;i<PARES.length;i++){
+      if(!PARES[i].local_nome||PARES[i].local_nome===""){
+        PARES[i].local_nome=local;
+        api("/api/pares/"+PARES[i].id,{method:"PATCH",body:JSON.stringify({local_nome:local})}).catch(function(){});
+      }
+    }
+    renderPares();
+  }
 }
 
 function deletarPar(parId){
@@ -689,7 +765,8 @@ function salvarKm(){
     hora_inicio: document.getElementById("kmHIni").value||null,
     hora_fim: document.getElementById("kmHFim").value||null,
     observacao: document.getElementById("kmObs").value||"",
-    offline_id: "km-"+Date.now()
+    offline_id: "km-"+Date.now(),
+    responsavel: USUARIO ? USUARIO.nome : ""
   };
   api("/api/relatorios/km",{method:"POST",body:JSON.stringify(payload)})
     .then(function(r){ return r.json(); })
