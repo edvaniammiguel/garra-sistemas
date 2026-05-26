@@ -626,6 +626,23 @@ async def jard_mobile():
     path = os.path.join(TEMPLATES_DIR, "mobile.html")
     return open(path, encoding="utf-8").read()
 
+@app.get("/jardinagem/mobile-app", response_class=HTMLResponse)
+async def jard_mobile_app():
+    path = os.path.join(TEMPLATES_DIR, "mobile_app.html")
+    if not os.path.exists(path):
+        # Fallback para mobile.html se mobile_app.html não existir
+        path = os.path.join(TEMPLATES_DIR, "mobile.html")
+    return open(path, encoding="utf-8").read()
+
+@app.get("/jardinagem/mobile-app", response_class=HTMLResponse)
+async def jard_mobile_app():
+    path = os.path.join(TEMPLATES_DIR, "mobile_app.html")
+    if os.path.exists(path):
+        return open(path, encoding="utf-8").read()
+    # Fallback para mobile.html se mobile_app.html não existir
+    path = os.path.join(TEMPLATES_DIR, "mobile.html")
+    return open(path, encoding="utf-8").read()
+
 @app.get("/jardinagem/manifest.json")
 async def jard_manifest():
     return FileResponse(os.path.join(STATIC_DIR, "manifest.json"))
