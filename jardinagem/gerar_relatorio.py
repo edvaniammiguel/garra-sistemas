@@ -25,7 +25,14 @@ def aln(h="center",v="center",wrap=False):
     return Alignment(horizontal=h,vertical=v,wrap_text=wrap)
 
 # ── Logo ──────────────────────────────────────────────────────
-LOGO_PATH = os.path.join(os.path.dirname(__file__), "static", "icons", "logo-garra.jpg")
+LOGO_PATH = None
+for _nome in ["logo-Garra-e-caçambas.png", "logo-garra.jpg"]:
+    _p = os.path.join(os.path.dirname(__file__), "static", "icons", _nome)
+    if os.path.exists(_p):
+        LOGO_PATH = _p
+        break
+if not LOGO_PATH:
+    LOGO_PATH = os.path.join(os.path.dirname(__file__), "static", "icons", "logo-garra.jpg")
 
 def make_logo(w=160):
     img = PILImage.open(LOGO_PATH)
@@ -39,20 +46,45 @@ def make_logo(w=160):
 # ── Download foto do Supabase Storage ────────────────────────
 def baixar_foto(storage_path, supabase_url, service_key,
                 max_px=800, qualidade=80):
-    """Baixa foto e retorna BytesIO redimensionada para o Excel."""
-    url = f"{supabase_url}/storage/v1/object/{storage_path}"
-    headers = {"Authorization": f"Bearer {service_key}"}
-    r = requests.get(url, headers=headers, timeout=30)
-    if r.status_code != 200:
+    """Baixa foto via signed URL do Supabase Storage."""
+    try:
+        # Gerar URL assinada (1 hora)
+        sign_url = f"{supabase_url}/storage/v1/object/sign/jardinagem-fotos/{storage_path}"
+        headers = {
+            "Authorization": f"Bearer {service_key}",
+            "apikey": service_key
+        }
+        rs = requests.post(sign_url, json={"expiresIn": 3600},
+                           headers=headers, timeout=10)
+        if rs.status_code == 200:
+            signed = rs.json().get("signedURL", "")
+            if signed:
+                url = f"{supabase_url}/storage/v1{signed}"
+                r = requests.get(url, timeout=30)
+                if r.status_code == 200:
+                    img = PILImage.open(io.BytesIO(r.content))
+                    if img.mode not in ("RGB","L"):
+                        img = img.convert("RGB")
+                    img.thumbnail((max_px, max_px), PILImage.LANCZOS)
+                    buf = io.BytesIO()
+                    img.save(buf, format="JPEG", quality=qualidade)
+                    buf.seek(0)
+                    return buf
+        # Fallback: acesso direto com apikey
+        url = f"{supabase_url}/storage/v1/object/jardinagem-fotos/{storage_path}"
+        r = requests.get(url, headers=headers, timeout=30)
+        if r.status_code != 200:
+            return None
+        img = PILImage.open(io.BytesIO(r.content))
+        if img.mode not in ("RGB","L"):
+            img = img.convert("RGB")
+        img.thumbnail((max_px, max_px), PILImage.LANCZOS)
+        buf = io.BytesIO()
+        img.save(buf, format="JPEG", quality=qualidade)
+        buf.seek(0)
+        return buf
+    except Exception:
         return None
-    img = PILImage.open(io.BytesIO(r.content))
-    if img.mode not in ("RGB","L"):
-        img = img.convert("RGB")
-    img.thumbnail((max_px, max_px), PILImage.LANCZOS)
-    buf = io.BytesIO()
-    img.save(buf, format="JPEG", quality=qualidade)
-    buf.seek(0)
-    return buf
 
 # ══════════════════════════════════════════════════════════════
 def gerar_relatorio_fotos(semana: dict, pares: list,
@@ -344,7 +376,10 @@ Garra Terraplenagem e Caçambas
     if mail_cc:
         destinatarios += [e.strip() for e in mail_cc.split(",") if e.strip()]
 
-    with smtplib.SMTP("smtp.gmail.com", 587) as s:
+    SMTP_HOST = os.environ.get("MAIL_HOST", "smtp.hostinger.com")
+    SMTP_PORT = int(os.environ.get("MAIL_PORT", "587"))
+    with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as s:
+        s.ehlo()
         s.starttls()
         s.login(mail_user, mail_pass)
         s.sendmail(mail_user, destinatarios, msg.as_string())
