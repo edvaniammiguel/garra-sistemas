@@ -207,6 +207,17 @@ textarea.inp{resize:vertical;min-height:72px;}
 @keyframes spin{to{transform:rotate(360deg);}}
 input[type=file]{display:none;}
 </style>
+<script>
+// Executado ANTES de qualquer SW — desregistra tudo
+if("serviceWorker" in navigator){
+  navigator.serviceWorker.getRegistrations().then(function(regs){
+    regs.forEach(function(reg){ reg.unregister(); });
+  });
+  caches.keys().then(function(names){
+    names.forEach(function(n){ caches.delete(n); });
+  });
+}
+</script>
 </head>
 <body>
 
@@ -218,7 +229,7 @@ input[type=file]{display:none;}
            style="height:64px;object-fit:contain;margin-bottom:.75rem;">
       <div style="font-size:15px;font-weight:800;color:var(--bl);margin-bottom:3px;">Jardinagem</div>
       <div style="font-size:11px;color:var(--mut);margin-bottom:1.5rem;text-align:center;">Águas de Pará de Minas</div>
-      <div style="font-size:9px;color:#94A3B8;margin-bottom:.5rem;">v26.05.23h</div>
+      <div style="font-size:9px;color:#94A3B8;margin-bottom:.5rem;">v26.05.24h</div>
       <div style="width:100%;display:flex;flex-direction:column;gap:.75rem;">
         <div>
           <label class="lbl">Email</label>
