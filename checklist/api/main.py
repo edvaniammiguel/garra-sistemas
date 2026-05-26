@@ -760,6 +760,33 @@ async def jard_get_mes(mid: int, payload=Depends(verificar_token_jard)):
     return result
 
 # ── SEMANAS ───────────────────────────────────────────────────
+
+@app.get("/jardinagem/api/semanas")
+async def jard_listar_semanas(mes_id: int = None, payload=Depends(verificar_token_jard)):
+    """Lista semanas — se mes_id não informado, usa o mês da semana ativa."""
+    if not mes_id:
+        hoje = date.today().isoformat()
+        row = jard_query("""SELECT m.id FROM jardinagem.meses m
+                           JOIN jardinagem.semanas s ON s.mes_id=m.id
+                           WHERE s.data_ini<=%s AND s.data_fim>=%s LIMIT 1""", (hoje,hoje), fetch="one")
+        if not row:
+            # Pega o mês mais recente
+            row = jard_query("SELECT id FROM jardinagem.meses ORDER BY ano DESC, mes DESC LIMIT 1", fetch="one")
+        mes_id = row["id"] if row else None
+    if not mes_id:
+        return {"ok": True, "semanas": []}
+    rows = jard_query(
+        "SELECT * FROM jardinagem.semanas WHERE mes_id=%s ORDER BY ordem,id",
+        (mes_id,)
+    )
+    semanas = []
+    for r in rows:
+        s = dict(r)
+        s["data_inicio"] = r["data_ini"].isoformat() if r["data_ini"] else ""
+        s["data_fim"]    = r["data_fim"].isoformat() if r["data_fim"] else ""
+        semanas.append(s)
+    return {"ok": True, "semanas": semanas}
+
 @app.get("/jardinagem/api/semanas/ativa")
 async def jard_semana_ativa(payload=Depends(verificar_token_jard)):
     hoje = date.today().isoformat()
@@ -812,6 +839,28 @@ async def jard_status_semana(sid: int, payload=Depends(verificar_token_jard)):
     return {"semana":dict(sem),"total_pares":tp["n"],"total_fotos":tf["n"],"total_relatorios":tr["n"],"emails":[dict(e) for e in emails]}
 
 # ── PARES ─────────────────────────────────────────────────────
+
+@app.get("/jardinagem/api/pares")
+async def jard_listar_pares(semana_id: int = None, payload=Depends(verificar_token_jard)):
+    """Lista pares de uma semana com suas fotos."""
+    if not semana_id:
+        return {"ok": False, "error": "semana_id obrigatório"}
+    pares_raw = jard_query(
+        "SELECT * FROM jardinagem.pares WHERE semana_id=%s ORDER BY ordem,id",
+        (semana_id,)
+    )
+    pares = []
+    for p in pares_raw:
+        pd = dict(p)
+        fotos = jard_query("SELECT * FROM jardinagem.fotos WHERE par_id=%s", (p["id"],))
+        pd["fotos"] = []
+        for f in fotos:
+            fd = dict(f)
+            fd["url"] = storage_url(f["storage_path"]) if f["storage_path"] else ""
+            pd["fotos"].append(fd)
+        pares.append(pd)
+    return {"ok": True, "pares": pares}
+
 @app.post("/jardinagem/api/pares")
 async def jard_criar_par(request: Request, payload=Depends(verificar_token_jard)):
     d = await request.json()
@@ -866,6 +915,58 @@ async def jard_foto_avulsa(
     except Exception as e:
         log.error(f"fotos/avulsa erro: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Erro ao salvar foto: {str(e)}")
+
+
+@app.post("/jardinagem/api/fotos/mobile")
+async def jard_foto_mobile(
+    semana_id: int = Form(...),
+    tipo: str = Form(...),
+    local_nome: str = Form(""),
+    par_id: int = Form(None),
+    offline_id: str = Form(None),
+    foto: UploadFile = File(...),
+    payload=Depends(verificar_token_jard)
+):
+    """Upload de foto pelo mobile — cria par automaticamente se par_id não informado."""
+    import logging
+    log = logging.getLogger(__name__)
+    try:
+        # Verificar semana
+        sem = jard_query("SELECT id FROM jardinagem.semanas WHERE id=%s", (semana_id,), fetch="one")
+        if not sem:
+            return {"ok": False, "error": "Semana não encontrada"}
+
+        # Criar par se não informado
+        if not par_id:
+            cod = next_code(2)
+            row = jard_query_id(
+                "INSERT INTO jardinagem.pares (semana_id,codigo_a,codigo_d,local_nome,data_label,ordem) VALUES (%s,%s,%s,%s,'',99)",
+                (semana_id, cod, cod+1, local_nome or "")
+            )
+            par_id = row["id"]
+
+        # Upload foto
+        conteudo = await foto.read()
+        if not conteudo:
+            return {"ok": False, "error": "Arquivo vazio"}
+        dados = comprimir_imagem(conteudo)
+        path  = storage_upload(dados, f"{date.today().strftime('%Y/%m')}/{uuid.uuid4().hex}.jpg")
+
+        # Remover foto antiga do mesmo tipo no par
+        antiga = jard_query("SELECT id,storage_path FROM jardinagem.fotos WHERE par_id=%s AND tipo=%s", (par_id,tipo), fetch="one")
+        if antiga:
+            if antiga.get("storage_path"): storage_delete([antiga["storage_path"]])
+            jard_query("DELETE FROM jardinagem.fotos WHERE id=%s", (antiga["id"],), fetch="none")
+
+        # Salvar foto
+        row = jard_query_id(
+            "INSERT INTO jardinagem.fotos (par_id,tipo,origem,enviado_por,storage_path,filename_orig,sincronizado) VALUES (%s,%s,'mobile',%s,%s,%s,true)",
+            (par_id, tipo, str(payload["sub"]), path, foto.filename or "foto.jpg")
+        )
+        return {"ok": True, "foto_id": row["id"], "par_id": par_id, "storage_path": path, "url": storage_url(path)}
+    except Exception as e:
+        log.error(f"fotos/mobile erro: {e}", exc_info=True)
+        return {"ok": False, "error": str(e)}
 
 @app.delete("/jardinagem/api/fotos/{fid}")
 async def jard_del_foto(fid: int, payload=Depends(verificar_token_jard)):
