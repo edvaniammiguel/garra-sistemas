@@ -473,18 +473,48 @@ function ir(nome){
 
 // ── SEMANA ────────────────────────────────────────────────────
 function carregarSemana(){
+  // Tenta restaurar semana salva no localStorage
+  var semSalva = localStorage.getItem("garra_semana_id");
+  var url = semSalva ? "/api/semanas?mes_id=" : "/api/semanas/ativa";
+
+  if(semSalva){
+    // Busca todas as semanas e usa a salva
+    api("/api/semanas")
+      .then(function(r){ return r.json(); })
+      .then(function(d){
+        var sems = d.semanas || [];
+        var sem = sems.find(function(s){ return String(s.id)===String(semSalva); });
+        if(!sem && sems.length) sem = sems[0];
+        if(sem){ setSemana(sem); carregarPares(); carregarGaleriaSems(); }
+        else { carregarSemanaAtiva(); }
+      }).catch(function(){ carregarSemanaAtiva(); });
+  } else {
+    carregarSemanaAtiva();
+  }
+}
+
+function carregarSemanaAtiva(){
   api("/api/semanas/ativa")
     .then(function(r){ return r.json(); })
     .then(function(d){
-      if(d.erro || d.detail){ document.getElementById("semNome").textContent="Sem semana ativa"; return; }
-      SEMANA = d;
-      var fmt = function(s){ if(!s) return ""; var m=s.match(/(\d{4})-(\d{2})-(\d{2})/); return m?m[3]+"/"+m[2]+"/"+m[1]:s; };
-      document.getElementById("semNome").textContent = d.label || "Semana";
-      document.getElementById("semData").textContent = d.data_ini ? fmt(d.data_ini)+" a "+fmt(d.data_fim) : "";
-      document.getElementById("semBadge").textContent = d.status === "aberta" ? "✅ Aberta" : "📤 Enviada";
+      if(d.erro||d.detail){ document.getElementById("semNome").textContent="Sem semana ativa"; return; }
+      setSemana(d);
       carregarPares();
       carregarGaleriaSems();
     }).catch(function(){ document.getElementById("semNome").textContent="Erro ao carregar"; });
+}
+
+function setSemana(d){
+  SEMANA = d;
+  localStorage.setItem("garra_semana_id", String(d.id));
+  var fmt = function(s){ if(!s) return ""; var m=(s||"").match(/(\d{4})-(\d{2})-(\d{2})/); return m?m[3]+"/"+m[2]+"/"+m[1]:s; };
+  document.getElementById("semNome").textContent = d.label || "Semana";
+  var di = d.data_ini || d.data_inicio || "";
+  var df = d.data_fim || "";
+  document.getElementById("semData").textContent = di ? fmt(di)+" a "+fmt(df) : "";
+  document.getElementById("semBadge").textContent = d.status==="aberta" ? "✅ Aberta" : "📤 Enviada";
+  var maisSem = document.getElementById("maisSem");
+  if(maisSem) maisSem.textContent = d.label || "—";
 }
 
 // ── BANCADA ───────────────────────────────────────────────────
@@ -530,11 +560,10 @@ function removerBancada(id){
 // ── PARES ─────────────────────────────────────────────────────
 function carregarPares(){
   if(!SEMANA) return;
-  api("/api/meses/"+SEMANA.mes_id)
+  api("/api/pares?semana_id="+SEMANA.id)
     .then(function(r){ return r.json(); })
     .then(function(d){
-      var sem = (d.semanas||[]).find(function(s){ return s.id===SEMANA.id; });
-      PARES = sem ? (sem.pares||[]) : [];
+      PARES = d.pares || [];
       renderPares();
     }).catch(function(){});
 }
@@ -611,20 +640,23 @@ function abrirSeletor(parIdx, tipo){
 function encaixarFoto(fotoId){
   var foto = BANCADA.find(function(f){ return f.id===fotoId; });
   var par  = PARES[_selParIdx];
-  if(!foto || !par){ fecharModal("modalSel"); return; }
+  if(!foto){ fecharModal("modalSel"); return; }
+  if(!SEMANA){ toast("Selecione uma semana primeiro!"); fecharModal("modalSel"); return; }
   fecharModal("modalSel");
   toast("Enviando foto...");
   var fd = new FormData();
   var bytes = Uint8Array.from(atob(foto.src.split(",")[1]), function(c){ return c.charCodeAt(0); });
   var blob  = new Blob([bytes], {type:"image/jpeg"});
-  fd.append("par_id", par.id);
-  fd.append("tipo", _selTipo);
   fd.append("foto", blob, foto.nome||_selTipo+".jpg");
-  fetch("/jardinagem/api/fotos/avulsa",{method:"POST",headers:{Authorization:"Bearer "+TOKEN},body:fd})
+  fd.append("semana_id", String(SEMANA.id));
+  fd.append("tipo", _selTipo);
+  fd.append("local_nome", par ? (par.local_nome||"") : "");
+  if(par) fd.append("par_id", String(par.id));
+  fetch("/jardinagem/api/fotos/mobile",{method:"POST",headers:{Authorization:"Bearer "+TOKEN},body:fd})
     .then(function(r){ return r.json(); })
     .then(function(d){
-      if(d.id){ toast("Foto salva!"); carregarPares(); }
-      else { toast("Erro: "+(d.detail||d.erro||JSON.stringify(d))); }
+      if(d.ok){ toast("Foto salva!"); carregarPares(); }
+      else { toast("Erro: "+(d.error||d.detail||JSON.stringify(d))); }
     }).catch(function(e){ toast("Erro: "+e.message); });
 }
 
@@ -741,22 +773,35 @@ function carregarGaleria(){
 
 // ── SEMANAS ───────────────────────────────────────────────────
 function abrirSemanas(){
-  if(!SEMANA) return;
-  api("/api/meses/"+SEMANA.mes_id)
+  api("/api/semanas")
     .then(function(r){ return r.json(); })
     .then(function(d){
-      SEMANAS = d.semanas||[];
+      SEMANAS = d.semanas || [];
       var lista = document.getElementById("semLista");
-      lista.innerHTML = SEMANAS.map(function(s){
-        var ativa = s.id===SEMANA.id;
-        return '<div style="background:'+(ativa?"#EFF6FF":"#fff")+';border:1.5px solid '+(ativa?"var(--bl)":"var(--brd)")+';border-radius:8px;padding:10px 12px;display:flex;align-items:center;gap:8px;">'
-          +'<div style="flex:1;font-size:13px;font-weight:'+(ativa?700:400)+';color:var(--bl);">'+s.label+'</div>'
-          +(ativa?'<span class="badge badge-ok">Atual</span>':'')
-          +'<button onclick="deletarSemana('+s.id+')" style="background:none;border:1px solid #FCA5A5;color:var(--red);border-radius:5px;font-size:10px;padding:2px 7px;cursor:pointer;">🗑</button>'
-          +'</div>';
-      }).join("");
+      if(!SEMANAS.length){
+        lista.innerHTML = '<div style="color:var(--mut);font-size:13px;text-align:center;padding:1rem;">Nenhuma semana encontrada.<br>Crie um mês primeiro.</div>';
+      } else {
+        lista.innerHTML = SEMANAS.map(function(s){
+          var ativa = SEMANA && s.id===SEMANA.id;
+          return '<div style="background:'+(ativa?"#EFF6FF":"#fff")+';border:1.5px solid '+(ativa?"var(--bl)":"var(--brd)")+';border-radius:8px;padding:10px 12px;cursor:pointer;display:flex;align-items:center;gap:8px;" onclick="selecionarSemana('+s.id+')">'
+            +'<div style="flex:1;font-size:13px;font-weight:'+(ativa?700:400)+';color:var(--bl);">'+s.label+'</div>'
+            +(ativa?'<span class="badge badge-ok">Atual</span>':'<span style="font-size:10px;color:var(--mut);">Selecionar</span>')
+            +'<button onclick="event.stopPropagation();deletarSemana('+s.id+')" style="background:none;border:1px solid #FCA5A5;color:var(--red);border-radius:5px;font-size:10px;padding:2px 7px;cursor:pointer;">🗑</button>'
+            +'</div>';
+        }).join("");
+      }
       document.getElementById("modalSem").style.display = "flex";
     }).catch(function(){ toast("Erro ao carregar semanas"); });
+}
+
+function selecionarSemana(sid){
+  var sem = SEMANAS.find(function(s){ return s.id===sid; });
+  if(!sem) return;
+  setSemana(sem);
+  fecharModal("modalSem");
+  carregarPares();
+  carregarGaleriaSems();
+  toast("Semana selecionada: "+sem.label);
 }
 
 function novaSemana(){
