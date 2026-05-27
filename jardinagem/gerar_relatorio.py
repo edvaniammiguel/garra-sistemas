@@ -35,13 +35,18 @@ if not LOGO_PATH:
     LOGO_PATH = os.path.join(os.path.dirname(__file__), "static", "icons", "logo-garra.jpg")
 
 def make_logo(w=160):
-    img = PILImage.open(LOGO_PATH)
-    h   = int(w * img.height / img.width)
-    img = img.resize((w, h), PILImage.LANCZOS)
-    buf = io.BytesIO()
-    img.save(buf, format="JPEG", quality=90)
-    buf.seek(0)
-    return buf, w, h
+    try:
+        if not LOGO_PATH or not os.path.exists(LOGO_PATH):
+            return None, 0, 0
+        img = PILImage.open(LOGO_PATH)
+        h   = int(w * img.height / img.width)
+        img = img.resize((w, h), PILImage.LANCZOS)
+        buf = io.BytesIO()
+        img.save(buf, format="JPEG", quality=90)
+        buf.seek(0)
+        return buf, w, h
+    except Exception:
+        return None, 0, 0
 
 # ── Download foto do Supabase Storage ────────────────────────
 def baixar_foto(storage_path, supabase_url, service_key,
@@ -105,10 +110,12 @@ def gerar_relatorio_fotos(semana: dict, pares: list,
 
     # Logo
     buf_logo, lw, lh = make_logo(160)
-    logo = XLImage(buf_logo)
-    logo.width=lw; logo.height=lh; logo.anchor="B1"
-    ws.add_image(logo)
-    logo_rows = max(5, lh//14+1)
+    logo_rows = 5
+    if buf_logo:
+        logo = XLImage(buf_logo)
+        logo.width=lw; logo.height=lh; logo.anchor="B1"
+        ws.add_image(logo)
+        logo_rows = max(5, lh//14+1)
     for r in range(1, logo_rows+1):
         ws.row_dimensions[r].height = 14
 
@@ -265,10 +272,12 @@ def gerar_relatorio_km(semana: dict, relatorios: list) -> io.BytesIO:
 
     # Logo
     buf_logo, lw, lh = make_logo(120)
-    logo = XLImage(buf_logo)
-    logo.width=lw; logo.height=lh; logo.anchor="A1"
-    ws.add_image(logo)
-    lr = max(3, lh//14+1)
+    lr = 3
+    if buf_logo:
+        logo = XLImage(buf_logo)
+        logo.width=lw; logo.height=lh; logo.anchor="A1"
+        ws.add_image(logo)
+        lr = max(3, lh//14+1)
     for r in range(1, lr+1):
         ws.row_dimensions[r].height = 14
 
