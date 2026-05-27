@@ -745,6 +745,7 @@ async def jard_get_mes(mid: int, payload=Depends(verificar_token_jard)):
     sems = jard_query("SELECT * FROM jardinagem.semanas WHERE mes_id=%s ORDER BY ordem", (mid,))
     for s in sems:
         sd = dict(s)
+        sd["mes_id"] = mid  # garantir mes_id em cada semana
         sd["pares"] = []
         pares = jard_query("SELECT * FROM jardinagem.pares WHERE semana_id=%s ORDER BY ordem", (s["id"],))
         for p in pares:
@@ -831,10 +832,19 @@ async def jard_list_semanas(payload=Depends(verificar_token_jard)):
 @app.get("/jardinagem/api/semanas/ativa")
 async def jard_semana_ativa(payload=Depends(verificar_token_jard)):
     hoje = date.today().isoformat()
+    # Tenta semana pelo intervalo de datas
     row = jard_query("""SELECT s.*,m.id as mes_id,m.ano,m.mes,m.label as mes_label
                         FROM jardinagem.semanas s JOIN jardinagem.meses m ON m.id=s.mes_id
-                        WHERE s.data_ini<=%s AND s.data_fim>=%s LIMIT 1""", (hoje,hoje), fetch="one")
-    if not row: raise HTTPException(status_code=404, detail="Sem semana ativa")
+                        WHERE s.data_ini::date<=%s AND s.data_fim::date>=%s
+                        AND s.status='aberta' LIMIT 1""", (hoje,hoje), fetch="one")
+    if not row:
+        # Fallback: última semana aberta
+        row = jard_query("""SELECT s.*,m.id as mes_id,m.ano,m.mes,m.label as mes_label
+                            FROM jardinagem.semanas s JOIN jardinagem.meses m ON m.id=s.mes_id
+                            WHERE s.status='aberta'
+                            ORDER BY s.id DESC LIMIT 1""", fetch="one")
+    if not row:
+        raise HTTPException(status_code=404, detail="Sem semana ativa")
     return dict(row)
 
 @app.post("/jardinagem/api/semanas")
