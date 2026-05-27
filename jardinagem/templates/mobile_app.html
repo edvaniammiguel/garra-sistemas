@@ -229,19 +229,19 @@ input:focus,textarea:focus,select:focus{border-color:var(--bl);}
     </div>
 
     <div class="bancada" id="bancadaCard">
-      <div class="bancada-hdr">
+      <div class="bancada-hdr" onclick="toggleBancada()" style="cursor:pointer;">
         <div>
-          <div class="bancada-ttl">Bancada</div>
+          <div class="bancada-ttl">Bancada <span id="bancadaToggleIco">▼</span></div>
           <div class="bancada-sub" id="bancadaSub">0 foto(s)</div>
         </div>
-        <div class="bancada-btns">
+        <div class="bancada-btns" onclick="event.stopPropagation();">
           <button class="btn btn-sm" style="background:#fff;color:#92400E;"
             onclick="document.getElementById('inpCam').click()">📷 Câmera</button>
           <button class="btn btn-sm" style="background:#fff;color:#92400E;"
             onclick="document.getElementById('inpGal').click()">🖼 Fotos</button>
         </div>
       </div>
-      <div class="bancada-body">
+      <div class="bancada-body" id="bancadaBody">
         <div id="bancadaGrid" class="bancada-grid"></div>
         <div id="bancadaVazia" class="bancada-vazia">Adicione fotos</div>
       </div>
@@ -570,7 +570,7 @@ function processarFotos(inp){
     rd.onload = function(e){
       BANCADA.push({id:"b"+Date.now()+Math.random(), src:e.target.result, nome:f.name});
       lidas++;
-      if(lidas===files.length){ renderBancada(); toast(BANCADA.length+" foto(s) na bancada"); }
+      if(lidas===files.length){ expandirBancada(); renderBancada(); toast(BANCADA.length+" foto(s) na bancada"); }
     };
     rd.onerror = function(){ lidas++; if(lidas===files.length) renderBancada(); };
     rd.readAsDataURL(f);
@@ -1066,6 +1066,22 @@ function limparCache(){
   } else {
     window.location.href="/jardinagem/mobile";
   }
+}
+
+var _bancadaAberta = true;
+function toggleBancada(){
+  _bancadaAberta = !_bancadaAberta;
+  var body = document.getElementById("bancadaBody");
+  var ico  = document.getElementById("bancadaToggleIco");
+  if(body){ body.style.display = _bancadaAberta ? "block" : "none"; }
+  if(ico){ ico.textContent = _bancadaAberta ? "▼" : "▶"; }
+}
+function expandirBancada(){
+  _bancadaAberta = true;
+  var body = document.getElementById("bancadaBody");
+  var ico  = document.getElementById("bancadaToggleIco");
+  if(body){ body.style.display = "block"; }
+  if(ico){ ico.textContent = "▼"; }
 }
 </script>
 </body>
