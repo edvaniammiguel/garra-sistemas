@@ -524,48 +524,32 @@ function ir(nome){
 
 // ── SEMANA ────────────────────────────────────────────────────
 function carregarSemana(){
-  // Tenta restaurar semana salva no localStorage
-  var semSalva = localStorage.getItem("garra_semana_id");
-  var url = semSalva ? "/api/semanas?mes_id=" : "/api/semanas/ativa";
-
-  if(semSalva){
-    // Busca todas as semanas e usa a salva
-    api("/api/semanas")
-      .then(function(r){ return r.json(); })
-      .then(function(d){
-        var sems = d.semanas || [];
-        var sem = sems.find(function(s){ return String(s.id)===String(semSalva); });
-        if(!sem && sems.length) sem = sems[0];
-        if(sem){ setSemana(sem); carregarPares(); carregarGaleriaSems(); }
-        else { carregarSemanaAtiva(); }
-      }).catch(function(){ carregarSemanaAtiva(); });
-  } else {
-    carregarSemanaAtiva();
-  }
+  carregarSemanaAtiva();
 }
 
 function carregarSemanaAtiva(){
   api("/api/semanas/ativa")
     .then(function(r){ return r.json(); })
     .then(function(d){
-      if(d.erro||d.detail){ document.getElementById("semNome").textContent="Sem semana ativa"; return; }
+      if(!d||d.erro||d.detail||!d.id){
+        SEMANA=null; atualizarCardSemana(); return;
+      }
       setSemana(d);
       carregarPares();
-      carregarGaleriaSems();
-    }).catch(function(){ document.getElementById("semNome").textContent="Erro ao carregar"; });
+      if(SEMANA&&SEMANA.mes_id) carregarGaleriaSems();
+    }).catch(function(){ SEMANA=null; atualizarCardSemana(); });
 }
 
 function setSemana(d){
-  SEMANA = d;
-  localStorage.setItem("garra_semana_id", String(d.id));
-  var fmt = function(s){ if(!s) return ""; var m=(s||"").match(/(\d{4})-(\d{2})-(\d{2})/); return m?m[3]+"/"+m[2]+"/"+m[1]:s; };
-  document.getElementById("semNome").textContent = d.label || "Semana";
-  var di = d.data_ini || d.data_inicio || "";
-  var df = d.data_fim || "";
-  document.getElementById("semData").textContent = di ? fmt(di)+" a "+fmt(df) : "";
-  document.getElementById("semBadge").textContent = d.status==="aberta" ? "✅ Aberta" : "📤 Enviada";
-  var maisSem = document.getElementById("maisSem");
-  if(maisSem) maisSem.textContent = d.label || "—";
+  SEMANA = {
+    id: d.id,
+    label: d.label||"Semana",
+    status: d.status||"aberta",
+    data_ini: d.data_ini||d.data_inicio||"",
+    data_fim: d.data_fim||"",
+    mes_id: d.mes_id||null
+  };
+  atualizarCardSemana();
 }
 
 // ── BANCADA ───────────────────────────────────────────────────
@@ -765,29 +749,7 @@ function atualizarCardSemana(){
   if(maisSem)maisSem.textContent=SEMANA.label||"—";
 }
 
-function carregarSemana(){
-  api("/api/semanas/ativa")
-    .then(function(r){return r.json();})
-    .then(function(d){
-      if(!d||d.erro||d.detail||!d.id){
-        SEMANA=null;
-        atualizarCardSemana();
-        return;
-      }
-      SEMANA = {
-        id: d.id,
-        label: d.label||"Semana",
-        status: d.status||"aberta",
-        data_ini: d.data_ini||"",
-        data_fim: d.data_fim||"",
-        mes_id: d.mes_id||null
-      };
-      atualizarCardSemana();
-      carregarPares();
-      // carregarGaleriaSems só se tiver mes_id
-      if(SEMANA.mes_id) carregarGaleriaSems();
-    }).catch(function(){SEMANA=null;atualizarCardSemana();});
-}
+// carregarSemana consolidada acima
 function salvarLocal(parId, local, idx){
   api("/api/pares/"+parId,{method:"PATCH",body:JSON.stringify({local_nome:local})}).catch(function(){});
   // Replicar para pares seguintes sem local
