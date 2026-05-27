@@ -789,46 +789,6 @@ async def jard_listar_semanas(mes_id: int = None, payload=Depends(verificar_toke
     return {"ok": True, "semanas": semanas}
 
 
-@app.get("/jardinagem/api/semanas")
-async def jard_list_semanas(payload=Depends(verificar_token_jard)):
-    """Lista todas as semanas do mês atual (da semana ativa)."""
-    import datetime as dt
-    hoje = dt.date.today().isoformat()
-    # Tenta pegar mes da semana ativa
-    sem_ativa = jard_query("""
-        SELECT s.*, m.id as mes_id FROM jardinagem.semanas s
-        JOIN jardinagem.meses m ON m.id = s.mes_id
-        WHERE s.data_ini <= %s AND s.data_fim >= %s LIMIT 1
-    """, (hoje, hoje), fetch="one")
-    
-    if sem_ativa:
-        mes_id = sem_ativa["mes_id"]
-    else:
-        # Pega o mes mais recente
-        ultimo_mes = jard_query("""
-            SELECT id FROM jardinagem.meses ORDER BY ano DESC, mes DESC LIMIT 1
-        """, fetch="one")
-        if not ultimo_mes:
-            return {"ok": True, "semanas": []}
-        mes_id = ultimo_mes["id"]
-    
-    semanas = jard_query("""
-        SELECT id, label, data_ini, data_fim, status, ordem
-        FROM jardinagem.semanas WHERE mes_id = %s ORDER BY ordem, data_ini
-    """, (mes_id,))
-    
-    result = []
-    for s in semanas:
-        result.append({
-            "id": s["id"],
-            "label": s["label"] or "",
-            "data_inicio": s["data_ini"].isoformat() if s["data_ini"] else "",
-            "data_fim": s["data_fim"].isoformat() if s["data_fim"] else "",
-            "status": s["status"] or "aberta",
-            "mes_id": mes_id,
-        })
-    return {"ok": True, "semanas": result}
-
 @app.get("/jardinagem/api/semanas/ativa")
 async def jard_semana_ativa(payload=Depends(verificar_token_jard)):
     hoje = date.today().isoformat()
