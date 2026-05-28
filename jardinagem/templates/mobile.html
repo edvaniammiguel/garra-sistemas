@@ -12,8 +12,13 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Garra Jardinagem">
-<title>Garra Jardinagem</title>
 <script>
+// Se já tem token salvo, pular login e ir direto ao app — evita o flash de tela
+(function(){
+  var t=localStorage.getItem("garra_token");
+  var u=localStorage.getItem("garra_usuario");
+  if(t&&u){window.location.replace("/jardinagem/mobile-app");}
+})();
 // Limpar SW antes de tudo
 if(typeof navigator!=="undefined"&&"serviceWorker"in navigator){
   try{
@@ -46,8 +51,6 @@ h1{font-size:15px;font-weight:800;color:#1A2A5E;text-align:center;margin-bottom:
 .btn:disabled{opacity:.6}
 .msg{font-size:12px;text-align:center;margin-top:.75rem;min-height:18px;
   color:#64748B;word-break:break-all;line-height:1.4}
-.lnk{background:none;border:none;color:#94A3B8;font-size:10px;cursor:pointer;
-  text-decoration:underline;display:block;margin:.5rem auto 0;width:100%;text-align:center}
 </style>
 </head>
 <body>
@@ -56,7 +59,7 @@ h1{font-size:15px;font-weight:800;color:#1A2A5E;text-align:center;margin-bottom:
        onerror="this.style.display='none'">
   <h1>Jardinagem</h1>
   <p class="sub">Águas de Pará de Minas</p>
-  <p class="ver">v26.05.26h</p>
+  <p class="ver">v26.05.28</p>
 
   <label class="lbl" for="em">Email</label>
   <input class="inp" type="email" id="em" placeholder="seu@email.com" autocomplete="email">
@@ -79,21 +82,6 @@ function togglePw(){
   var i=$("pw"),e=$("eye");
   i.type=i.type==="password"?"text":"password";
   e.textContent=i.type==="password"?"👁":"🙈";
-}
-
-function limpar(){
-  localStorage.clear();
-  if("serviceWorker" in navigator){
-    navigator.serviceWorker.getRegistrations().then(function(r){
-      r.forEach(function(s){s.unregister();});
-      caches.keys().then(function(k){
-        k.forEach(function(n){caches.delete(n);});
-        window.location.reload(true);
-      });
-    });
-  } else {
-    window.location.reload(true);
-  }
 }
 
 function entrar(){
