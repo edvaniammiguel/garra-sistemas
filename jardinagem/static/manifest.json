@@ -2,7 +2,7 @@
   "name": "Garra Jardinagem",
   "short_name": "Jardinagem",
   "description": "Sistema de fotos Jardinagem — Garra Terraplenagem",
-  "start_url": "/jardinagem/mobile",
+  "start_url": "/jardinagem/mobile-app",
   "scope": "/jardinagem/",
   "display": "standalone",
   "background_color": "#F0F4FF",
