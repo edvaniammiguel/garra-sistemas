@@ -649,7 +649,16 @@ function novoPar(){
   if(!SEMANA){ toast("Sem semana ativa!"); return; }
   api("/api/pares",{method:"POST",body:JSON.stringify({semana_id:SEMANA.id,local_nome:"",ordem:PARES.length})})
     .then(function(r){ return r.json(); })
-    .then(function(d){ if(d.id){ toast("Par criado!"); carregarPares(); } else toast("Erro: "+JSON.stringify(d)); })
+    .then(function(d){
+      if(d.id){
+        toast("Par criado!");
+        carregarPares();
+        expandirBancada();
+        // Rolar para o topo da tela de fotos
+        var tela = document.getElementById("tFotos");
+        if(tela) tela.scrollTop = 0;
+      } else toast("Erro: "+JSON.stringify(d));
+    })
     .catch(function(){ toast("Erro de conexão"); });
 }
 
