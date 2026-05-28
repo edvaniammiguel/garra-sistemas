@@ -43,6 +43,19 @@ body{font-family:system-ui,sans-serif;background:var(--bg);
   display:none;flex-direction:column;gap:.75rem;}
 .tela.ativa{display:flex;}
 
+/* tFotos: layout 2 seções — topo fixo + pares roláveis
+   Remove scroll do container inteiro para evitar sumiço do nav em mobile */
+#tFotos{padding:0;gap:0;overflow-y:hidden;}
+.fotos-topo{flex-shrink:0;padding:.75rem .75rem 0;
+  display:flex;flex-direction:column;gap:.75rem;}
+.fotos-pares{flex:1;overflow-y:auto;
+  padding:.75rem .75rem 5rem;
+  display:flex;flex-direction:column;gap:.75rem;}
+/* Tela boas-vindas: ocupa tudo quando sem semana ativa */
+#telaBemVindo{position:absolute;inset:0;z-index:2;background:var(--bg);
+  flex-direction:column;align-items:center;justify-content:center;
+  padding:2rem;gap:1rem;display:none;}
+
 /* CARDS */
 .card{background:#fff;border-radius:var(--r);border:1.5px solid var(--brd);padding:.875rem;}
 .card-lbl{font-size:9px;font-weight:700;color:var(--mut);text-transform:uppercase;
@@ -59,9 +72,8 @@ body{font-family:system-ui,sans-serif;background:var(--bg);
 .badge-ok{background:rgba(22,163,74,.25);color:#86EFAC;}
 .badge-pend{background:rgba(232,130,12,.25);color:#FCD34D;}
 
-/* BANCADA — sticky para permanecer visível ao rolar os pares */
-.bancada{background:#FEF3C7;border:1.5px solid #F59E0B;border-radius:var(--r);
-  overflow:hidden;position:sticky;top:0;z-index:10;}
+/* BANCADA */
+.bancada{background:#FEF3C7;border:1.5px solid #F59E0B;border-radius:var(--r);overflow:hidden;}
 .bancada-hdr{background:#92400E;padding:6px 12px;display:flex;align-items:center;justify-content:space-between;}
 .bancada-ttl{font-size:12px;font-weight:700;color:#fff;}
 .bancada-sub{font-size:10px;color:#FCD34D;}
@@ -219,64 +231,69 @@ input:focus,textarea:focus,select:focus{border-color:var(--bl);}
 <!-- TELAS -->
 <div class="telas">
 
-  <!-- FOTOS -->
+  <!-- FOTOS: topo fixo (semCard + bancada) + pares roláveis separados -->
   <div class="tela ativa" id="tFotos">
-    <div id="telaBemVindo" style="display:none;flex-direction:column;align-items:center;justify-content:center;padding:2rem;gap:1rem;">
+
+    <!-- Boas-vindas: absolute, cobre tudo quando sem semana ativa -->
+    <div id="telaBemVindo">
       <div style="font-size:48px;">🌿</div>
       <div style="font-size:16px;font-weight:800;color:var(--bl);text-align:center;">Jardinagem Garra</div>
       <div style="font-size:12px;color:var(--mut);text-align:center;">Selecione um mês ou crie um novo.</div>
       <button class="btn btn-or" style="padding:12px 24px;" onclick="abrirDrawer()">📅 Selecionar Mês</button>
       <button class="btn btn-out btn-sm" onclick="abrirCriarMes()">+ Novo Mês</button>
     </div>
-    <div class="sem-card" id="semCard" style="display:none;">
-      <div style="flex:1;min-width:0;">
-        <div class="sem-nome" id="semNome">Carregando...</div>
-        <div class="sem-data" id="semData"></div>
+
+    <!-- Topo fixo: semana + bancada ficam sempre visíveis -->
+    <div class="fotos-topo">
+      <div class="sem-card" id="semCard" style="display:none;">
+        <div style="flex:1;min-width:0;">
+          <div class="sem-nome" id="semNome">Carregando...</div>
+          <div class="sem-data" id="semData"></div>
+        </div>
+        <span class="badge badge-ok" id="semBadge" style="display:none;">—</span>
+        <button class="btn btn-sm" style="background:var(--or);color:#fff;flex-shrink:0;"
+          onclick="abrirSemanas()">📅</button>
       </div>
-      <span class="badge badge-ok" id="semBadge" style="display:none;">—</span>
-      <button class="btn btn-sm" style="background:var(--or);color:#fff;flex-shrink:0;"
-        onclick="abrirSemanas()">📅</button>
+      <div class="bancada" id="bancadaCard">
+        <div class="bancada-hdr" onclick="toggleBancada()" style="cursor:pointer;">
+          <div>
+            <div class="bancada-ttl">Bancada <span id="bancadaToggleIco">▼</span></div>
+            <div class="bancada-sub" id="bancadaSub">0 foto(s)</div>
+          </div>
+          <div class="bancada-btns" onclick="event.stopPropagation();">
+            <button class="btn btn-sm" style="background:#fff;color:#92400E;"
+              onclick="document.getElementById('inpCam').click()">📷 Câmera</button>
+            <button class="btn btn-sm" style="background:#fff;color:#92400E;"
+              onclick="document.getElementById('inpGal').click()">🖼 Fotos</button>
+          </div>
+        </div>
+        <div class="bancada-body" id="bancadaBody">
+          <div id="bancadaGrid" class="bancada-grid"></div>
+          <div id="bancadaVazia" class="bancada-vazia">Adicione fotos</div>
+        </div>
+      </div>
     </div>
 
-    <!-- BANCADA sticky: gruda no topo ao rolar os pares -->
-    <div class="bancada" id="bancadaCard">
-      <div class="bancada-hdr" onclick="toggleBancada()" style="cursor:pointer;">
-        <div>
-          <div class="bancada-ttl">Bancada <span id="bancadaToggleIco">▼</span></div>
-          <div class="bancada-sub" id="bancadaSub">0 foto(s)</div>
-        </div>
-        <div class="bancada-btns" onclick="event.stopPropagation();">
-          <button class="btn btn-sm" style="background:#fff;color:#92400E;"
-            onclick="document.getElementById('inpCam').click()">📷 Câmera</button>
-          <button class="btn btn-sm" style="background:#fff;color:#92400E;"
-            onclick="document.getElementById('inpGal').click()">🖼 Fotos</button>
-        </div>
-      </div>
-      <div class="bancada-body" id="bancadaBody">
-        <div id="bancadaGrid" class="bancada-grid"></div>
-        <div id="bancadaVazia" class="bancada-vazia">Adicione fotos</div>
-      </div>
-    </div>
-
-    <div>
-      <div class="pares-hdr" style="margin-bottom:.5rem;">
-        <span class="pares-ttl">Pares</span>
-        <div style="display:flex;gap:6px;">
+    <!-- Área rolável: apenas pares + fila de sync -->
+    <div class="fotos-pares">
+      <div>
+        <div class="pares-hdr" style="margin-bottom:.5rem;">
+          <span class="pares-ttl">Pares</span>
           <button class="btn btn-sm btn-bl" onclick="novoPar()">+ Novo par</button>
         </div>
-      </div>
-      <div id="paresWrap" style="display:flex;flex-direction:column;gap:.75rem;">
-        <div style="text-align:center;color:var(--mut);font-size:12px;padding:1.5rem 0;">
-          Adicione fotos e crie pares.
+        <div id="paresWrap" style="display:flex;flex-direction:column;gap:.75rem;">
+          <div style="text-align:center;color:var(--mut);font-size:12px;padding:1.5rem 0;">
+            Adicione fotos e crie pares.
+          </div>
         </div>
+      </div>
+      <div class="fila-card" id="filaCard" style="display:none;">
+        <span>⏳</span>
+        <span class="fila-txt" id="filaTxt">0 itens aguardando Wi-Fi</span>
+        <button class="btn btn-sm btn-or" onclick="sincronizar()">Sync</button>
       </div>
     </div>
 
-    <div class="fila-card" id="filaCard" style="display:none;">
-      <span>⏳</span>
-      <span class="fila-txt" id="filaTxt">0 itens aguardando Wi-Fi</span>
-      <button class="btn btn-sm btn-or" onclick="sincronizar()">Sync</button>
-    </div>
   </div>
 
   <!-- GALERIA -->
@@ -650,8 +667,9 @@ function novoPar(){
         toast("Par criado!");
         carregarPares();
         expandirBancada();
-        var tela = document.getElementById("tFotos");
-        if(tela) tela.scrollTop = 0;
+        // Rolar ao topo da área de pares
+        var sc = document.querySelector(".fotos-pares");
+        if(sc) sc.scrollTop = 0;
       } else toast("Erro: "+JSON.stringify(d));
     })
     .catch(function(){ toast("Erro de conexão"); });
@@ -739,13 +757,14 @@ function selecionarMes(mesId){
 }
 
 function atualizarCardSemana(){
+  var bemVindo = document.getElementById("telaBemVindo");
   if(!SEMANA){
     document.getElementById("semCard").style.display="none";
-    document.getElementById("telaBemVindo").style.display="flex";
+    bemVindo.style.display="flex";
     return;
   }
   document.getElementById("semCard").style.display="flex";
-  document.getElementById("telaBemVindo").style.display="none";
+  bemVindo.style.display="none";
   try{
     var fmt=function(s){if(!s)return"";var m=(s||"").match(/(\d{4})-(\d{2})-(\d{2})/);return m?m[3]+"/"+m[2]+"/"+m[1]:s;};
     document.getElementById("semNome").textContent=SEMANA.label||"Semana";
