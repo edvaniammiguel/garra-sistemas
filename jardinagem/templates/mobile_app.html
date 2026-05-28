@@ -515,6 +515,39 @@ window.addEventListener("load", function(){
 window.addEventListener("online",  function(){ ONLINE=true;  atualizarStatus(); sincronizar(); });
 window.addEventListener("offline", function(){ ONLINE=false; atualizarStatus(); });
 
+// ── SERVICE WORKER ─────────────────────────────────────────────
+if("serviceWorker" in navigator){
+  navigator.serviceWorker.register(
+    "/jardinagem/static/js/sw.js",
+    { scope: "/jardinagem/" }
+  ).then(function(reg){
+    console.log("[SW] Registrado, scope:", reg.scope);
+    // Pedir update se há nova versão disponível
+    reg.addEventListener("updatefound", function(){
+      var nw = reg.installing;
+      if(nw) nw.addEventListener("statechange", function(){
+        if(nw.state === "installed" && navigator.serviceWorker.controller){
+          nw.postMessage({ tipo: "SKIP_WAITING" });
+        }
+      });
+    });
+  }).catch(function(e){ console.warn("[SW] Erro ao registrar:", e); });
+
+  // Recebe resultado do sync background
+  navigator.serviceWorker.addEventListener("message", function(event){
+    if(!event.data) return;
+    if(event.data.tipo === "SYNC_CONCLUIDO"){
+      var f = event.data.fotos || 0;
+      var k = event.data.km   || 0;
+      var e = event.data.erros || 0;
+      if(f + k > 0) toast("✅ Sync: " + f + " foto(s), " + k + " km enviados");
+      else if(e > 0) toast("⚠️ Sync com " + e + " erro(s)");
+      verificarFila();
+      if(SEMANA) carregarPares();
+    }
+  });
+}
+
 // ── UTILS ─────────────────────────────────────────────────────
 function toast(msg, dur){
   var el = document.getElementById("toast");
@@ -1038,7 +1071,11 @@ function enviarEmail(){
 // ── SINCRONIZAR ───────────────────────────────────────────────
 function sincronizar(){
   if(!ONLINE){ toast("Sem conexão."); return; }
-  toast("Verificando fila...");
+  toast("Sincronizando...");
+  // Se SW está ativo, pede sync via mensagem (mais robusto)
+  if("serviceWorker" in navigator && navigator.serviceWorker.controller){
+    navigator.serviceWorker.controller.postMessage({ tipo: "SYNC_AGORA" });
+  }
   verificarFila();
 }
 
