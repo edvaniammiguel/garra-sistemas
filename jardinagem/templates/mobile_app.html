@@ -20,8 +20,10 @@
   --txt:#1E293B;--mut:#64748B;--grn:#16A34A;--red:#DC2626;
   --r:10px;
 }
+/* html+body height:100% é mais estável que 100dvh em Android/Chrome mobile */
+html{height:100%;overflow:hidden;}
 body{font-family:system-ui,sans-serif;background:var(--bg);
-  display:flex;flex-direction:column;height:100dvh;overflow:hidden;}
+  display:flex;flex-direction:column;height:100%;overflow:hidden;}
 
 /* HEADER */
 .hdr{background:var(--bl);border-bottom:3px solid var(--or);
@@ -38,7 +40,8 @@ body{font-family:system-ui,sans-serif;background:var(--bg);
   padding:2px 7px;border-radius:99px;}
 
 /* TELAS */
-.telas{flex:1;overflow:hidden;position:relative;}
+/* min-height:0 obrigatório — sem isso flex children podem estourar e sumir o nav */
+.telas{flex:1;min-height:0;overflow:hidden;position:relative;}
 .tela{position:absolute;inset:0;overflow-y:auto;padding:.75rem .75rem 5rem;
   display:none;flex-direction:column;gap:.75rem;}
 .tela.ativa{display:flex;}
