@@ -144,10 +144,30 @@ async def startup():
 
 # ── STATIC FILES — JARDINAGEM ─────────────────────────────────
 # checklist/api/main.py → checklist/ → raiz → jardinagem/
-JARD_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "jardinagem")
-JARD_DIR = os.path.abspath(JARD_DIR)
+# Em Render, o working directory é a raiz do repo
+import sys
+current_file = os.path.abspath(__file__)
+possible_paths = [
+    os.path.join(os.path.dirname(current_file), "..", "..", "jardinagem"),  # Local dev
+    "/app/jardinagem",  # Render default
+    os.path.join(os.getcwd(), "jardinagem"),  # Render com working dir = raiz
+]
+
+JARD_DIR = None
+for path in possible_paths:
+    if os.path.exists(os.path.join(path, "templates")):
+        JARD_DIR = os.path.abspath(path)
+        break
+
+if not JARD_DIR:
+    JARD_DIR = os.path.abspath(possible_paths[0])  # Fallback
+
 STATIC_DIR    = os.path.join(JARD_DIR, "static")
 TEMPLATES_DIR = os.path.join(JARD_DIR, "templates")
+
+print(f"JARD_DIR: {JARD_DIR}")
+print(f"TEMPLATES_DIR: {TEMPLATES_DIR} (exists: {os.path.exists(TEMPLATES_DIR)})")
+print(f"STATIC_DIR: {STATIC_DIR} (exists: {os.path.exists(STATIC_DIR)})")
 
 if os.path.exists(STATIC_DIR):
     app.mount("/jardinagem/static", StaticFiles(directory=STATIC_DIR), name="jard_static")
