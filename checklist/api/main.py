@@ -58,7 +58,7 @@ app.add_middleware(
     allow_origins=[
         "https://garra-checklist-app.onrender.com",
         "https://garra-sistemas.onrender.com",
-        "https://garra-jardinagem.onrender.com",
+        "https://garra-jardinagem-app.onrender.com",  # Static Site PWA mobile
         "http://localhost:3000",
         "http://127.0.0.1:5500",
     ],
@@ -157,7 +157,6 @@ def storage_upload(dados: bytes, path: str) -> str:
     if not SUPABASE_URL or not SUPABASE_SERVICE_KEY:
         raise ValueError("Supabase não configurado")
     url = f"{SUPABASE_URL}/storage/v1/object/{BUCKET_NAME}/{path}"
-    # Supabase aceita tanto Bearer JWT quanto apikey para service role
     headers = {
         "Authorization": f"Bearer {SUPABASE_SERVICE_KEY}",
         "apikey": SUPABASE_SERVICE_KEY,
@@ -332,7 +331,7 @@ def validar_senha(senha: str) -> Optional[str]:
     return None
 
 # ══════════════════════════════════════════════════════════════
-# ROTAS CHECKLIST — iguais ao main.py original
+# ROTAS CHECKLIST
 # ══════════════════════════════════════════════════════════════
 
 @app.post("/auth/login")
@@ -618,29 +617,17 @@ async def remover_registro(registro_id: str, db=Depends(get_db)):
 @app.get("/jardinagem", response_class=HTMLResponse)
 @app.get("/jardinagem/", response_class=HTMLResponse)
 async def jard_index():
-    path = os.path.join(TEMPLATES_DIR, "index.html")
+    path = os.path.join(TEMPLATES_DIR, "desk-admin.html")
     return open(path, encoding="utf-8").read()
 
 @app.get("/jardinagem/mobile", response_class=HTMLResponse)
 async def jard_mobile():
-    path = os.path.join(TEMPLATES_DIR, "mobile.html")
+    path = os.path.join(TEMPLATES_DIR, "desk-login.html")
     return open(path, encoding="utf-8").read()
 
 @app.get("/jardinagem/mobile-app", response_class=HTMLResponse)
 async def jard_mobile_app():
-    path = os.path.join(TEMPLATES_DIR, "mobile_app.html")
-    if not os.path.exists(path):
-        # Fallback para mobile.html se mobile_app.html não existir
-        path = os.path.join(TEMPLATES_DIR, "mobile.html")
-    return open(path, encoding="utf-8").read()
-
-@app.get("/jardinagem/mobile-app", response_class=HTMLResponse)
-async def jard_mobile_app():
-    path = os.path.join(TEMPLATES_DIR, "mobile_app.html")
-    if os.path.exists(path):
-        return open(path, encoding="utf-8").read()
-    # Fallback para mobile.html se mobile_app.html não existir
-    path = os.path.join(TEMPLATES_DIR, "mobile.html")
+    path = os.path.join(TEMPLATES_DIR, "desk-app.html")
     return open(path, encoding="utf-8").read()
 
 @app.get("/jardinagem/manifest.json")
@@ -649,8 +636,9 @@ async def jard_manifest():
 
 @app.get("/jardinagem/sw.js")
 async def jard_sw():
-    return FileResponse(os.path.join(STATIC_DIR, "js", "sw.js"),
-                        headers={"Service-Worker-Allowed":"/jardinagem","Cache-Control":"no-cache"})
+    # sw.js na raiz de static/ (não em static/js/)
+    return FileResponse(os.path.join(STATIC_DIR, "sw.js"),
+                        headers={"Service-Worker-Allowed": "/jardinagem", "Cache-Control": "no-cache"})
 
 # ── AUTH JARDINAGEM ───────────────────────────────────────────
 @app.post("/jardinagem/api/login")
@@ -686,10 +674,8 @@ async def jard_list_meses(payload=Depends(verificar_token_jard)):
     """)
     return [dict(r) for r in meses]
 
-
 @app.delete("/jardinagem/api/meses/{mid}")
 async def jard_del_mes(mid: int, payload=Depends(verificar_token_jard)):
-    """Deleta mês e tudo dentro: semanas, pares, fotos no Supabase."""
     mes = jard_query("SELECT id FROM jardinagem.meses WHERE id=%s", (mid,), fetch="one")
     if not mes:
         raise HTTPException(status_code=404, detail="Mês não encontrado")
@@ -721,13 +707,11 @@ async def jard_criar_mes(request: Request, payload=Depends(verificar_token_jard)
     else:
         row = jard_query_id("INSERT INTO jardinagem.meses(ano,mes,label) VALUES(%s,%s,%s)", (ano,mes,label))
         mes_id = row["id"]
-    # Cria 4 semanas automaticamente apenas se o mês for novo
     sem_exist = jard_query("SELECT id FROM jardinagem.semanas WHERE mes_id=%s LIMIT 1", (mes_id,), fetch="one")
     if not sem_exist:
         semanas_do_mes(ano, mes, mes_id)
     mes_data = jard_query("SELECT * FROM jardinagem.meses WHERE id=%s", (mes_id,), fetch="one")
     return dict(mes_data)
-
 
 @app.patch("/jardinagem/api/meses/{mid}")
 async def jard_patch_mes(mid: int, request: Request, payload=Depends(verificar_token_jard)):
@@ -745,7 +729,7 @@ async def jard_get_mes(mid: int, payload=Depends(verificar_token_jard)):
     sems = jard_query("SELECT * FROM jardinagem.semanas WHERE mes_id=%s ORDER BY ordem", (mid,))
     for s in sems:
         sd = dict(s)
-        sd["mes_id"] = mid  # garantir mes_id em cada semana
+        sd["mes_id"] = mid
         sd["pares"] = []
         pares = jard_query("SELECT * FROM jardinagem.pares WHERE semana_id=%s ORDER BY ordem", (s["id"],))
         for p in pares:
@@ -761,17 +745,14 @@ async def jard_get_mes(mid: int, payload=Depends(verificar_token_jard)):
     return result
 
 # ── SEMANAS ───────────────────────────────────────────────────
-
 @app.get("/jardinagem/api/semanas")
 async def jard_listar_semanas(mes_id: int = None, payload=Depends(verificar_token_jard)):
-    """Lista semanas — se mes_id não informado, usa o mês da semana ativa."""
     if not mes_id:
         hoje = date.today().isoformat()
         row = jard_query("""SELECT m.id FROM jardinagem.meses m
                            JOIN jardinagem.semanas s ON s.mes_id=m.id
                            WHERE s.data_ini<=%s AND s.data_fim>=%s LIMIT 1""", (hoje,hoje), fetch="one")
         if not row:
-            # Pega o mês mais recente
             row = jard_query("SELECT id FROM jardinagem.meses ORDER BY ano DESC, mes DESC LIMIT 1", fetch="one")
         mes_id = row["id"] if row else None
     if not mes_id:
@@ -788,17 +769,14 @@ async def jard_listar_semanas(mes_id: int = None, payload=Depends(verificar_toke
         semanas.append(s)
     return {"ok": True, "semanas": semanas}
 
-
 @app.get("/jardinagem/api/semanas/ativa")
 async def jard_semana_ativa(payload=Depends(verificar_token_jard)):
     hoje = date.today().isoformat()
-    # Tenta semana pelo intervalo de datas
     row = jard_query("""SELECT s.*,m.id as mes_id,m.ano,m.mes,m.label as mes_label
                         FROM jardinagem.semanas s JOIN jardinagem.meses m ON m.id=s.mes_id
                         WHERE s.data_ini::date<=%s AND s.data_fim::date>=%s
                         AND s.status='aberta' LIMIT 1""", (hoje,hoje), fetch="one")
     if not row:
-        # Fallback: última semana aberta
         row = jard_query("""SELECT s.*,m.id as mes_id,m.ano,m.mes,m.label as mes_label
                             FROM jardinagem.semanas s JOIN jardinagem.meses m ON m.id=s.mes_id
                             WHERE s.status='aberta'
@@ -832,7 +810,6 @@ async def jard_del_semana(sid: int, payload=Depends(verificar_token_jard)):
         if paths: storage_delete(paths)
         jard_query("DELETE FROM jardinagem.fotos WHERE par_id=%s", (p["id"],), fetch="none")
     jard_query("DELETE FROM jardinagem.pares WHERE semana_id=%s", (sid,), fetch="none")
-    # Remove referências em fila_sync antes de deletar semana
     jard_query("DELETE FROM jardinagem.fila_sync WHERE semana_id=%s", (sid,), fetch="none")
     jard_query("DELETE FROM jardinagem.emails_enviados WHERE semana_id=%s", (sid,), fetch="none")
     jard_query("DELETE FROM jardinagem.relatorios_diarios WHERE semana_id=%s", (sid,), fetch="none")
@@ -850,10 +827,8 @@ async def jard_status_semana(sid: int, payload=Depends(verificar_token_jard)):
     return {"semana":dict(sem),"total_pares":tp["n"],"total_fotos":tf["n"],"total_relatorios":tr["n"],"emails":[dict(e) for e in emails]}
 
 # ── PARES ─────────────────────────────────────────────────────
-
 @app.get("/jardinagem/api/pares")
 async def jard_listar_pares(semana_id: int = None, payload=Depends(verificar_token_jard)):
-    """Lista pares de uma semana com suas fotos."""
     if not semana_id:
         return {"ok": False, "error": "semana_id obrigatório"}
     pares_raw = jard_query(
@@ -927,59 +902,6 @@ async def jard_foto_avulsa(
         log.error(f"fotos/avulsa erro: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Erro ao salvar foto: {str(e)}")
 
-
-@app.post("/jardinagem/api/fotos/mobile")
-async def jard_foto_mobile(
-    semana_id: int = Form(...),
-    tipo: str = Form(...),
-    local_nome: str = Form(""),
-    par_id: int = Form(None),
-    offline_id: str = Form(None),
-    foto: UploadFile = File(...),
-    payload=Depends(verificar_token_jard)
-):
-    """Upload de foto pelo mobile — cria par automaticamente se par_id não informado."""
-    import logging
-    log = logging.getLogger(__name__)
-    try:
-        # Verificar semana
-        sem = jard_query("SELECT id FROM jardinagem.semanas WHERE id=%s", (semana_id,), fetch="one")
-        if not sem:
-            return {"ok": False, "error": "Semana não encontrada"}
-
-        # Criar par se não informado
-        if not par_id:
-            cod = next_code(2)
-            row = jard_query_id(
-                "INSERT INTO jardinagem.pares (semana_id,codigo_a,codigo_d,local_nome,data_label,ordem) VALUES (%s,%s,%s,%s,'',99)",
-                (semana_id, cod, cod+1, local_nome or "")
-            )
-            par_id = row["id"]
-
-        # Upload foto
-        conteudo = await foto.read()
-        if not conteudo:
-            return {"ok": False, "error": "Arquivo vazio"}
-        dados = comprimir_imagem(conteudo)
-        path  = storage_upload(dados, f"{date.today().strftime('%Y/%m')}/{uuid.uuid4().hex}.jpg")
-
-        # Remover foto antiga do mesmo tipo no par
-        antiga = jard_query("SELECT id,storage_path FROM jardinagem.fotos WHERE par_id=%s AND tipo=%s", (par_id,tipo), fetch="one")
-        if antiga:
-            if antiga.get("storage_path"): storage_delete([antiga["storage_path"]])
-            jard_query("DELETE FROM jardinagem.fotos WHERE id=%s", (antiga["id"],), fetch="none")
-
-        # Salvar foto
-        row = jard_query_id(
-            "INSERT INTO jardinagem.fotos (par_id,tipo,origem,enviado_por,storage_path,filename_orig,sincronizado) VALUES (%s,%s,'mobile',%s,%s,%s,true)",
-            (par_id, tipo, str(payload["sub"]), path, foto.filename or "foto.jpg")
-        )
-        return {"ok": True, "foto_id": row["id"], "par_id": par_id, "storage_path": path, "url": storage_url(path)}
-    except Exception as e:
-        log.error(f"fotos/mobile erro: {e}", exc_info=True)
-        return {"ok": False, "error": str(e)}
-
-
 @app.post("/jardinagem/api/fotos/mobile")
 async def jard_foto_mobile(
     semana_id: str = Form(...),
@@ -994,12 +916,11 @@ async def jard_foto_mobile(
     import logging
     log = logging.getLogger(__name__)
     try:
-        # Resolver semana_id
         sid = None
         if semana_id and semana_id != "ativa":
             try: sid = int(semana_id)
             except: pass
-        
+
         if not sid:
             import datetime as dt
             hoje = dt.date.today().isoformat()
@@ -1008,44 +929,39 @@ async def jard_foto_mobile(
                 WHERE data_ini <= %s AND data_fim >= %s LIMIT 1
             """, (hoje, hoje), fetch="one")
             if row: sid = row["id"]
-        
+
         if not sid:
             raise HTTPException(status_code=400, detail="Sem semana ativa. Crie um mês primeiro.")
-        
-        # Resolver par_id — criar se não existir
+
         pid = None
         if par_id and par_id not in ("null","undefined",""):
             try: pid = int(par_id)
             except: pass
-        
+
         if not pid:
             row = jard_query_id(
                 "INSERT INTO jardinagem.pares (semana_id,codigo_a,codigo_d,local_nome,data_label,ordem) VALUES (%s,%s,%s,%s,%s,%s)",
                 (sid, 0, 0, local_nome or "", "", 99)
             )
             pid = row["id"]
-            # Atualizar códigos sequenciais
             cod = next_code(2)
             jard_query("UPDATE jardinagem.pares SET codigo_a=%s, codigo_d=%s WHERE id=%s",
                       (cod, cod+1, pid), fetch="none")
-        
-        # Dedup por offline_id
+
         if offline_id:
             exist = jard_query(
                 "SELECT id FROM jardinagem.fotos WHERE offline_id=%s", (offline_id,), fetch="one"
             )
             if exist:
                 return {"ok": True, "foto_id": exist["id"], "duplicado": True}
-        
-        # Upload Supabase
+
         conteudo = await foto.read()
         if not conteudo:
             raise HTTPException(status_code=400, detail="Arquivo vazio")
-        
+
         dados = comprimir_imagem(conteudo)
         path  = storage_upload(dados, f"{uuid.uuid4().hex}.jpg")
-        
-        # Remover foto anterior do mesmo tipo no par
+
         antiga = jard_query(
             "SELECT id, storage_path FROM jardinagem.fotos WHERE par_id=%s AND tipo=%s",
             (pid, tipo), fetch="one"
@@ -1053,19 +969,18 @@ async def jard_foto_mobile(
         if antiga:
             if antiga.get("storage_path"): storage_delete([antiga["storage_path"]])
             jard_query("DELETE FROM jardinagem.fotos WHERE id=%s", (antiga["id"],), fetch="none")
-        
-        # Salvar foto
+
         row = jard_query_id("""
             INSERT INTO jardinagem.fotos
             (par_id, tipo, origem, enviado_por, storage_path, filename_orig, sincronizado, offline_id)
             VALUES (%s, %s, 'mobile', %s, %s, %s, true, %s)
         """, (pid, tipo, str(payload["sub"]), path, foto.filename or "foto.jpg", offline_id))
-        
+
         fd = dict(row)
         fd["url"] = storage_url(path)
         fd["par_id"] = pid
         return {"ok": True, "foto_id": fd["id"], "storage_path": path, "url": fd["url"], "par_id": pid}
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -1257,9 +1172,7 @@ async def jard_enviar_email(semana_id: int, payload=Depends(verificar_token_jard
                    (semana_id,MAIL_DESTINO,f"Relatório {semana_dict['label']}",str(e)), fetch="none")
         raise HTTPException(status_code=500, detail=f"Falha no envio: {str(e)}")
 
-
-# ── FALLBACK — assets sem prefixo /jardinagem ────────────────
-# Compatibilidade com browsers que cachearam URLs antigas
+# ── FALLBACK — compatibilidade com browsers que cachearam URLs antigas ───────
 from fastapi.responses import RedirectResponse
 
 @app.get("/manifest.json")
@@ -1274,12 +1187,9 @@ async def redirect_sw():
 async def redirect_mobile():
     return RedirectResponse(url="/jardinagem/mobile")
 
-# /static/icons/ redirect removido — manifest.json atualizado com caminhos corretos
-
 @app.get("/favicon.ico")
 async def redirect_favicon():
     return RedirectResponse(url="/jardinagem/static/icons/favicon.ico")
-
 
 @app.exception_handler(404)
 async def not_found_handler(request: Request, exc):
