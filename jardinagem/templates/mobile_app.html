@@ -20,10 +20,8 @@
   --txt:#1E293B;--mut:#64748B;--grn:#16A34A;--red:#DC2626;
   --r:10px;
 }
-/* html+body height:100% é mais estável que 100dvh em Android/Chrome mobile */
-html{height:100%;overflow:hidden;}
 body{font-family:system-ui,sans-serif;background:var(--bg);
-  display:flex;flex-direction:column;height:100%;overflow:hidden;}
+  display:flex;flex-direction:column;height:100dvh;overflow:hidden;}
 
 /* HEADER */
 .hdr{background:var(--bl);border-bottom:3px solid var(--or);
@@ -40,24 +38,10 @@ body{font-family:system-ui,sans-serif;background:var(--bg);
   padding:2px 7px;border-radius:99px;}
 
 /* TELAS */
-/* min-height:0 obrigatório — sem isso flex children podem estourar e sumir o nav */
-.telas{flex:1;min-height:0;overflow:hidden;position:relative;}
+.telas{flex:1;overflow:hidden;position:relative;}
 .tela{position:absolute;inset:0;overflow-y:auto;padding:.75rem .75rem 5rem;
   display:none;flex-direction:column;gap:.75rem;}
 .tela.ativa{display:flex;}
-
-/* tFotos: layout 2 seções — topo fixo + pares roláveis
-   Remove scroll do container inteiro para evitar sumiço do nav em mobile */
-#tFotos{padding:0;gap:0;overflow-y:hidden;}
-.fotos-topo{flex-shrink:0;padding:.75rem .75rem 0;
-  display:flex;flex-direction:column;gap:.75rem;}
-.fotos-pares{flex:1;overflow-y:auto;
-  padding:.75rem .75rem 5rem;
-  display:flex;flex-direction:column;gap:.75rem;}
-/* Tela boas-vindas: ocupa tudo quando sem semana ativa */
-#telaBemVindo{position:absolute;inset:0;z-index:2;background:var(--bg);
-  flex-direction:column;align-items:center;justify-content:center;
-  padding:2rem;gap:1rem;display:none;}
 
 /* CARDS */
 .card{background:#fff;border-radius:var(--r);border:1.5px solid var(--brd);padding:.875rem;}
@@ -134,6 +118,7 @@ body{font-family:system-ui,sans-serif;background:var(--bg);
 input,textarea,select{width:100%;padding:10px 12px;border:1.5px solid var(--brd);
   border-radius:8px;font-size:13px;background:#F8FAFC;outline:none;font-family:inherit;}
 input:focus,textarea:focus,select:focus{border-color:var(--bl);}
+input[type="time"]{-webkit-appearance:none;appearance:none;cursor:pointer;}
 .lbl{font-size:10px;font-weight:700;color:var(--mut);text-transform:uppercase;
   letter-spacing:.06em;display:block;margin-bottom:3px;}
 .form-grp{display:flex;flex-direction:column;gap:.5rem;}
@@ -234,69 +219,63 @@ input:focus,textarea:focus,select:focus{border-color:var(--bl);}
 <!-- TELAS -->
 <div class="telas">
 
-  <!-- FOTOS: topo fixo (semCard + bancada) + pares roláveis separados -->
+  <!-- FOTOS -->
   <div class="tela ativa" id="tFotos">
-
-    <!-- Boas-vindas: absolute, cobre tudo quando sem semana ativa -->
-    <div id="telaBemVindo">
+    <div id="telaBemVindo" style="display:none;flex-direction:column;align-items:center;justify-content:center;padding:2rem;gap:1rem;">
       <div style="font-size:48px;">🌿</div>
       <div style="font-size:16px;font-weight:800;color:var(--bl);text-align:center;">Jardinagem Garra</div>
       <div style="font-size:12px;color:var(--mut);text-align:center;">Selecione um mês ou crie um novo.</div>
       <button class="btn btn-or" style="padding:12px 24px;" onclick="abrirDrawer()">📅 Selecionar Mês</button>
       <button class="btn btn-out btn-sm" onclick="abrirCriarMes()">+ Novo Mês</button>
     </div>
-
-    <!-- Topo fixo: semana + bancada ficam sempre visíveis -->
-    <div class="fotos-topo">
-      <div class="sem-card" id="semCard" style="display:none;">
-        <div style="flex:1;min-width:0;">
-          <div class="sem-nome" id="semNome">Carregando...</div>
-          <div class="sem-data" id="semData"></div>
-        </div>
-        <span class="badge badge-ok" id="semBadge" style="display:none;">—</span>
-        <button class="btn btn-sm" style="background:var(--or);color:#fff;flex-shrink:0;"
-          onclick="abrirSemanas()">📅</button>
+    <div class="sem-card" id="semCard" style="display:none;">
+      <div style="flex:1;min-width:0;">
+        <div class="sem-nome" id="semNome">Carregando...</div>
+        <div class="sem-data" id="semData"></div>
       </div>
-      <div class="bancada" id="bancadaCard">
-        <div class="bancada-hdr" onclick="toggleBancada()" style="cursor:pointer;">
-          <div>
-            <div class="bancada-ttl">Bancada <span id="bancadaToggleIco">▼</span></div>
-            <div class="bancada-sub" id="bancadaSub">0 foto(s)</div>
-          </div>
-          <div class="bancada-btns" onclick="event.stopPropagation();">
-            <button class="btn btn-sm" style="background:#fff;color:#92400E;"
-              onclick="document.getElementById('inpCam').click()">📷 Câmera</button>
-            <button class="btn btn-sm" style="background:#fff;color:#92400E;"
-              onclick="document.getElementById('inpGal').click()">🖼 Fotos</button>
-          </div>
+      <span class="badge badge-ok" id="semBadge" style="display:none;">—</span>
+      <button class="btn btn-sm" style="background:var(--or);color:#fff;flex-shrink:0;"
+        onclick="abrirSemanas()">📅</button>
+    </div>
+
+    <div class="bancada" id="bancadaCard">
+      <div class="bancada-hdr" onclick="toggleBancada()" style="cursor:pointer;">
+        <div>
+          <div class="bancada-ttl">Bancada <span id="bancadaToggleIco">▼</span></div>
+          <div class="bancada-sub" id="bancadaSub">0 foto(s)</div>
         </div>
-        <div class="bancada-body" id="bancadaBody">
-          <div id="bancadaGrid" class="bancada-grid"></div>
-          <div id="bancadaVazia" class="bancada-vazia">Adicione fotos</div>
+        <div class="bancada-btns" onclick="event.stopPropagation();">
+          <button class="btn btn-sm" style="background:#fff;color:#92400E;"
+            onclick="document.getElementById('inpCam').click()">📷 Câmera</button>
+          <button class="btn btn-sm" style="background:#fff;color:#92400E;"
+            onclick="document.getElementById('inpGal').click()">🖼 Fotos</button>
         </div>
+      </div>
+      <div class="bancada-body" id="bancadaBody">
+        <div id="bancadaGrid" class="bancada-grid"></div>
+        <div id="bancadaVazia" class="bancada-vazia">Adicione fotos</div>
       </div>
     </div>
 
-    <!-- Área rolável: apenas pares + fila de sync -->
-    <div class="fotos-pares">
-      <div>
-        <div class="pares-hdr" style="margin-bottom:.5rem;">
-          <span class="pares-ttl">Pares</span>
+    <div>
+      <div class="pares-hdr" style="margin-bottom:.5rem;">
+        <span class="pares-ttl">Pares</span>
+        <div style="display:flex;gap:6px;">
           <button class="btn btn-sm btn-bl" onclick="novoPar()">+ Novo par</button>
         </div>
-        <div id="paresWrap" style="display:flex;flex-direction:column;gap:.75rem;">
-          <div style="text-align:center;color:var(--mut);font-size:12px;padding:1.5rem 0;">
-            Adicione fotos e crie pares.
-          </div>
-        </div>
       </div>
-      <div class="fila-card" id="filaCard" style="display:none;">
-        <span>⏳</span>
-        <span class="fila-txt" id="filaTxt">0 itens aguardando Wi-Fi</span>
-        <button class="btn btn-sm btn-or" onclick="sincronizar()">Sync</button>
+      <div id="paresWrap" style="display:flex;flex-direction:column;gap:.75rem;">
+        <div style="text-align:center;color:var(--mut);font-size:12px;padding:1.5rem 0;">
+          Adicione fotos e crie pares.
+        </div>
       </div>
     </div>
 
+    <div class="fila-card" id="filaCard" style="display:none;">
+      <span>⏳</span>
+      <span class="fila-txt" id="filaTxt">0 itens aguardando Wi-Fi</span>
+      <button class="btn btn-sm btn-or" onclick="sincronizar()">Sync</button>
+    </div>
   </div>
 
   <!-- GALERIA -->
@@ -356,22 +335,29 @@ input:focus,textarea:focus,select:focus{border-color:var(--bl);}
         <div id="kmMsg" style="font-size:12px;text-align:center;color:var(--mut);min-height:16px;"></div>
       </div>
     </div>
-    <div style="font-size:12px;font-weight:700;color:var(--bl);margin-top:.25rem;">Registros de hoje</div>
+    <div style="font-size:12px;font-weight:700;color:var(--bl);margin-top:.25rem;">Registros do mês</div>
     <div id="kmLista"><div style="color:var(--mut);font-size:12px;text-align:center;padding:1rem;">Nenhum registro hoje.</div></div>
   </div>
 
   <!-- MAIS -->
   <div class="tela" id="tMais">
+    <!-- Info semana -->
     <div class="card" style="margin-bottom:.25rem;">
       <div class="card-lbl">Semana atual</div>
       <div style="font-size:13px;font-weight:700;color:var(--bl);margin-bottom:.25rem;" id="maisSem">—</div>
     </div>
+
+    <!-- Admin: enviar relatório -->
     <div id="adminBloco" style="display:none;">
       <button class="btn btn-bl btn-w" onclick="enviarEmail()" id="btnEmail">📧 Enviar Relatório</button>
       <div id="emailMsg" style="font-size:11px;text-align:center;color:var(--mut);margin-top:.5rem;min-height:14px;"></div>
     </div>
+
+    <!-- Sync -->
     <button class="btn btn-w" style="background:#FFF7ED;color:var(--or);border:1.5px solid var(--or);margin-top:.5rem;"
       onclick="sincronizar()">⟳ Sincronizar dados offline</button>
+
+    <!-- Sair -->
     <button class="btn btn-w" style="background:#FEE2E2;color:var(--red);border:1.5px solid #FCA5A5;margin-top:.5rem;"
       onclick="sair()">↩ Sair</button>
   </div>
@@ -488,6 +474,7 @@ var _selParIdx = null;
 var _selTipo = null;
 var ULT_KM = parseFloat(localStorage.getItem("ult_km")||"0");
 
+// Redirecionar se não tem token
 if(!TOKEN || !USUARIO){
   window.location.href = "/jardinagem/mobile";
 }
@@ -514,39 +501,6 @@ window.addEventListener("load", function(){
 
 window.addEventListener("online",  function(){ ONLINE=true;  atualizarStatus(); sincronizar(); });
 window.addEventListener("offline", function(){ ONLINE=false; atualizarStatus(); });
-
-// ── SERVICE WORKER ─────────────────────────────────────────────
-if("serviceWorker" in navigator){
-  navigator.serviceWorker.register(
-    "/jardinagem/static/js/sw.js",
-    { scope: "/jardinagem/" }
-  ).then(function(reg){
-    console.log("[SW] Registrado, scope:", reg.scope);
-    // Pedir update se há nova versão disponível
-    reg.addEventListener("updatefound", function(){
-      var nw = reg.installing;
-      if(nw) nw.addEventListener("statechange", function(){
-        if(nw.state === "installed" && navigator.serviceWorker.controller){
-          nw.postMessage({ tipo: "SKIP_WAITING" });
-        }
-      });
-    });
-  }).catch(function(e){ console.warn("[SW] Erro ao registrar:", e); });
-
-  // Recebe resultado do sync background
-  navigator.serviceWorker.addEventListener("message", function(event){
-    if(!event.data) return;
-    if(event.data.tipo === "SYNC_CONCLUIDO"){
-      var f = event.data.fotos || 0;
-      var k = event.data.km   || 0;
-      var e = event.data.erros || 0;
-      if(f + k > 0) toast("✅ Sync: " + f + " foto(s), " + k + " km enviados");
-      else if(e > 0) toast("⚠️ Sync com " + e + " erro(s)");
-      verificarFila();
-      if(SEMANA) carregarPares();
-    }
-  });
-}
 
 // ── UTILS ─────────────────────────────────────────────────────
 function toast(msg, dur){
@@ -635,6 +589,7 @@ function processarFotos(inp){
 }
 
 function renderBancada(){
+  var livres = BANCADA.filter(function(f){ return !f.usada; });
   document.getElementById("bancadaSub").textContent = BANCADA.length+" foto(s)";
   var vazia = document.getElementById("bancadaVazia");
   var grid  = document.getElementById("bancadaGrid");
@@ -676,6 +631,12 @@ function renderPares(){
     var fd = (p.fotos||[]).find(function(f){ return f.tipo==="depois"; });
     var pct = (fa?50:0)+(fd?50:0);
     var cor = pct===100?"#16A34A":pct>0?"#F59E0B":"#DC2626";
+    var slotA = fa && fa.url
+      ? '<img src="'+fa.url+'"><span class="slot-lbl antes">ANTES</span>'
+      : '<span class="slot-lbl antes">ANTES</span><span class="slot-ico">📷</span><span class="slot-txt">Toque para encaixar</span>';
+    var slotD = fd && fd.url
+      ? '<img src="'+fd.url+'"><span class="slot-lbl depois">DEPOIS</span>'
+      : '<span class="slot-lbl depois">DEPOIS</span><span class="slot-ico">✅</span><span class="slot-txt">Toque para encaixar</span>';
     return '<div class="par-card">'
       +'<div class="par-top" style="border-left:4px solid '+cor+';">'
       +'<span class="par-cod">'+p.codigo_a+'ª–'+p.codigo_d+'ª</span>'
@@ -703,13 +664,14 @@ function novoPar(){
         toast("Par criado!");
         carregarPares();
         expandirBancada();
-        // Rolar ao topo da área de pares
-        var sc = document.querySelector(".fotos-pares");
-        if(sc) sc.scrollTop = 0;
+        // Rolar para o topo da tela de fotos
+        var tela = document.getElementById("tFotos");
+        if(tela) tela.scrollTop = 0;
       } else toast("Erro: "+JSON.stringify(d));
     })
     .catch(function(){ toast("Erro de conexão"); });
 }
+
 
 function abrirMenuMeses(){ abrirDrawer(); }
 
@@ -733,6 +695,7 @@ function carregarDrawer(){
       body.innerHTML = '<div style="padding:1rem;text-align:center;color:#93C5FD;font-size:12px;">Nenhum mês criado.</div>';
       return;
     }
+    // Agrupar por ano
     var anos = {};
     meses.forEach(function(m){
       var ano = m.ano || new Date().getFullYear();
@@ -768,9 +731,11 @@ function selecionarMes(mesId){
     return r.json();
   }).then(function(d){
     var sems = d.semanas || [];
+    // Pegar semana aberta ou a mais recente
     var ativa = sems.find(function(s){return s.status==="aberta";});
     if(!ativa && sems.length) ativa = sems[sems.length-1];
     if(ativa){
+      // Garantir mes_id no objeto semana
       SEMANA = {
         id: ativa.id,
         label: ativa.label,
@@ -793,14 +758,13 @@ function selecionarMes(mesId){
 }
 
 function atualizarCardSemana(){
-  var bemVindo = document.getElementById("telaBemVindo");
   if(!SEMANA){
     document.getElementById("semCard").style.display="none";
-    bemVindo.style.display="flex";
+    document.getElementById("telaBemVindo").style.display="flex";
     return;
   }
   document.getElementById("semCard").style.display="flex";
-  bemVindo.style.display="none";
+  document.getElementById("telaBemVindo").style.display="none";
   try{
     var fmt=function(s){if(!s)return"";var m=(s||"").match(/(\d{4})-(\d{2})-(\d{2})/);return m?m[3]+"/"+m[2]+"/"+m[1]:s;};
     document.getElementById("semNome").textContent=SEMANA.label||"Semana";
@@ -811,8 +775,10 @@ function atualizarCardSemana(){
   if(maisSem)maisSem.textContent=SEMANA.label||"—";
 }
 
+// carregarSemana consolidada acima
 function salvarLocal(parId, local, idx){
   api("/api/pares/"+parId,{method:"PATCH",body:JSON.stringify({local_nome:local})}).catch(function(){});
+  // Replicar para pares seguintes sem local
   if(typeof idx==="number"){
     for(var i=idx+1;i<PARES.length;i++){
       if(!PARES[i].local_nome||PARES[i].local_nome===""){
@@ -972,7 +938,7 @@ function carregarGaleria(){
         var imgA = fa&&fa.url?'<img src="'+fa.url+'" style="width:100%;height:100%;object-fit:cover;">':'<div class="gal-vazio" style="aspect-ratio:1;">Sem foto</div>';
         var imgB = fd&&fd.url?'<img src="'+fd.url+'" style="width:100%;height:100%;object-fit:cover;">':'<div class="gal-vazio" style="aspect-ratio:1;">Sem foto</div>';
         return '<div class="gal-par">'
-          +'<div class="gal-par-hdr"><span class="par-cod">'+p.codigo_a+'ª–'+p.codigo_d+'ª</span><span style="font-size:12px;color:#fff;font-weight:600;">'+(p.local_nome||"—")+'</span></div>'
+          +'<div class="gal-par-hdr"><span class="par-cod">'+p.codigo_a+'ª–'+p.codigo_d+'ª</span><span style="font-size:12px;color:#fff;font-weight:600;">'+( p.local_nome||"—")+'</span></div>'
           +'<div class="gal-par-grid">'
           +'<div class="gal-slot"><div class="gal-slot-lbl antes">ANTES</div>'+imgA+'</div>'
           +'<div class="gal-slot"><div class="gal-slot-lbl depois">DEPOIS</div>'+imgB+'</div>'
@@ -1062,7 +1028,7 @@ function enviarEmail(){
   api("/api/relatorios/"+SEMANA.id+"/enviar",{method:"POST"})
     .then(function(r){ return r.json(); })
     .then(function(d){
-      if(d.ok||d.mensagem){ msg.textContent="✅ "+(d.mensagem||"Enviado!"); msg.style.color="var(--grn)"; }
+      if(d.ok||d.mensagem){ msg.textContent="✅ "+( d.mensagem||"Enviado!"); msg.style.color="var(--grn)"; }
       else { msg.textContent="❌ "+(d.erro||d.detail||"Erro"); msg.style.color="var(--red)"; }
     }).catch(function(e){ msg.textContent="❌ Erro: "+e.message; msg.style.color="var(--red)"; })
     .finally(function(){ btn.disabled=false; btn.textContent="📧 Enviar Relatório"; });
@@ -1071,15 +1037,12 @@ function enviarEmail(){
 // ── SINCRONIZAR ───────────────────────────────────────────────
 function sincronizar(){
   if(!ONLINE){ toast("Sem conexão."); return; }
-  toast("Sincronizando...");
-  // Se SW está ativo, pede sync via mensagem (mais robusto)
-  if("serviceWorker" in navigator && navigator.serviceWorker.controller){
-    navigator.serviceWorker.controller.postMessage({ tipo: "SYNC_AGORA" });
-  }
+  toast("Verificando fila...");
   verificarFila();
 }
 
 function verificarFila(){
+  // Verificar IndexedDB
   var req = indexedDB.open("garra-offline-v2", 2);
   req.onsuccess = function(e){
     var db = e.target.result;
