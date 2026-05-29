@@ -885,22 +885,44 @@ function salvarKm(){
 }
 
 function carregarKmHoje(){
-  if(!SEMANA||!SEMANA.id) return;
-  api("/api/historico/hoje?semana_id="+SEMANA.id)
+  var lista = document.getElementById("kmLista");
+  if(!SEMANA||!SEMANA.mes_id){ lista.innerHTML='<div style="color:var(--mut);font-size:12px;text-align:center;padding:1rem;">Sem mês selecionado.</div>'; return; }
+  lista.innerHTML='<div style="color:var(--mut);font-size:12px;text-align:center;padding:1rem;">Carregando...</div>';
+  api("/api/meses/"+SEMANA.mes_id)
     .then(function(r){ return r.json(); })
     .then(function(d){
-      var kms = d.km||[];
-      var lista = document.getElementById("kmLista");
-      if(!kms.length){ lista.innerHTML='<div style="color:var(--mut);font-size:12px;text-align:center;padding:1rem;">Nenhum registro hoje.</div>'; return; }
-      var total = kms.reduce(function(s,r){ return s+(r.km_percorrido||0); },0);
-      lista.innerHTML = '<div class="km-total">Total hoje: '+total.toFixed(1)+' km</div>'
-        + kms.map(function(r){
-          return '<div class="km-item">'
-            +'<div class="km-item-top">'+r.local_nome+' — '+(r.km_percorrido||0).toFixed(1)+' km</div>'
-            +'<div class="km-item-sub">'+r.data+(r.hora_inicio?' · '+r.hora_inicio+' → '+r.hora_fim:'')+(r.observacao?' · '+r.observacao:'')+'</div>'
-            +'</div>';
-        }).join("");
-    }).catch(function(){});
+      var semIds = (d.semanas||[]).map(function(s){ return s.id; });
+      if(!semIds.length){ lista.innerHTML='<div style="color:var(--mut);font-size:12px;text-align:center;padding:1rem;">Nenhum registro no mês.</div>'; return; }
+      Promise.all(semIds.map(function(sid){
+        return api("/api/historico/hoje?semana_id="+sid).then(function(r){ return r.json(); });
+      })).then(function(results){
+        var todos = [];
+        results.forEach(function(d){ (d.km||[]).forEach(function(r){ todos.push(r); }); });
+        if(!todos.length){ lista.innerHTML='<div style="color:var(--mut);font-size:12px;text-align:center;padding:1rem;">Nenhum registro no mês.</div>'; return; }
+        // Agrupar por data
+        var grupos = {};
+        todos.forEach(function(r){
+          var dt = r.data||"sem data";
+          if(!grupos[dt]) grupos[dt]=[];
+          grupos[dt].push(r);
+        });
+        var totalMes = todos.reduce(function(s,r){ return s+(r.km_percorrido||0); },0);
+        var fmt = function(s){ var m=(s||"").match(/(\d{4})-(\d{2})-(\d{2})/); return m?m[3]+"/"+m[2]+"/"+m[1]:s; };
+        var html = '<div class="km-total">Total do mês: '+totalMes.toFixed(1)+' km</div>';
+        Object.keys(grupos).sort(function(a,b){ return b.localeCompare(a); }).forEach(function(data){
+          var regs = grupos[data];
+          var totalDia = regs.reduce(function(s,r){ return s+(r.km_percorrido||0); },0);
+          html += '<div style="font-size:11px;font-weight:700;color:var(--bl);padding:6px 0 2px;border-bottom:1px solid var(--brd);margin-top:4px;">'+fmt(data)+' — '+totalDia.toFixed(1)+' km</div>';
+          regs.forEach(function(r){
+            html += '<div class="km-item">'
+              +'<div class="km-item-top">'+(r.local_nome||"—")+' — '+(r.km_percorrido||0).toFixed(1)+' km</div>'
+              +'<div class="km-item-sub">'+(r.hora_inicio?r.hora_inicio+' → '+r.hora_fim+' · ':'')+( r.responsavel?r.responsavel+' · ':'')+( r.observacao||'')+'</div>'
+              +'</div>';
+          });
+        });
+        lista.innerHTML = html;
+      }).catch(function(){ lista.innerHTML='<div style="color:var(--red);font-size:12px;text-align:center;padding:1rem;">Erro ao carregar.</div>'; });
+    }).catch(function(){ lista.innerHTML='<div style="color:var(--red);font-size:12px;text-align:center;padding:1rem;">Erro ao carregar mês.</div>'; });
 }
 
 // ── GALERIA ───────────────────────────────────────────────────
