@@ -67,8 +67,8 @@ async function fazer_login(){
     })
     const d = await r.json()
     if(r.ok){
-      localStorage.setItem("token", d.token)
-      localStorage.setItem("perfil", d.perfil)
+      localStorage.setItem("garra_token", d.token)
+      localStorage.setItem("garra_usuario", JSON.stringify({nome: d.nome, perfil: d.perfil}))
       window.location.href = "/jardinagem/mobile-app"
     }else{
       msg.textContent = d.detail || "Login inválido"
