@@ -477,7 +477,7 @@ var ULT_KM = parseFloat(localStorage.getItem("ult_km")||"0");
 
 // Redirecionar se não tem token
 if(!TOKEN || !USUARIO){
-  window.location.href = "./desk-login.html";
+  window.location.href = "/jardinagem/mobile";
 }
 
 // ── INIT ─────────────────────────────────────────────────────
@@ -1096,7 +1096,7 @@ function sair(){
   if(!confirm("Sair?")) return;
   localStorage.removeItem("garra_token");
   localStorage.removeItem("garra_usuario");
-  window.location.href = "./desk-login.html";
+  window.location.href = "/jardinagem/mobile";
 }
 
 function limparCache(){
@@ -1106,11 +1106,11 @@ function limparCache(){
       r.forEach(function(s){s.unregister();});
       caches.keys().then(function(k){
         k.forEach(function(n){caches.delete(n);});
-        window.location.href="./desk-login.html";
+        window.location.href="/jardinagem/mobile";
       });
     });
   } else {
-    window.location.href="./desk-login.html";
+    window.location.href="/jardinagem/mobile";
   }
 }
 
