@@ -6,7 +6,6 @@
 <link rel="icon" type="image/png" sizes="32x32" href="/jardinagem/static/icons/favicon-32.png">
 <link rel="icon" type="image/png" sizes="16x16" href="/jardinagem/static/icons/favicon-16.png">
 <link rel="apple-touch-icon" href="/jardinagem/static/icons/icon-192.png">
-<link rel="manifest" href="/jardinagem/manifest.json">
 <meta name="theme-color" content="#1A2A5E">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -202,7 +201,7 @@ input[type="time"]{-webkit-appearance:none;appearance:none;cursor:pointer;}
 
 <!-- HEADER -->
 <header class="hdr">
-  <img src="./icons/logo-Garra-e-ca%C3%A7ambas.png"
+  <img src="/jardinagem/static/icons/logo-Garra-e-ca%C3%A7ambas.png"
        class="hdr-logo" onerror="this.style.display='none'">
   <div style="display:flex;align-items:center;gap:6px;">
     <button onclick="abrirDrawer()" style="background:none;border:none;color:#fff;
@@ -498,10 +497,7 @@ window.addEventListener("load", function(){
   carregarSemana();
   carregarKmHoje();
   verificarFila();
-  // Registrar SW para offline
-  if("serviceWorker" in navigator){
-    navigator.serviceWorker.register("./sw.js", {updateViaCache:"none"}).catch(function(){});
-  }
+  // SW desativado no desktop
 });
 
 window.addEventListener("online",  function(){ ONLINE=true;  atualizarStatus(); sincronizar(); });
