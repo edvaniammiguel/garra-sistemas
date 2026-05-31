@@ -21,7 +21,7 @@
   --r:10px;
 }
 body{font-family:system-ui,sans-serif;background:var(--bg);
-  display:flex;flex-direction:column;height:100vh;height:100dvh;overflow:hidden;}
+  display:flex;flex-direction:column;height:100dvh;overflow:hidden;}
 
 /* HEADER */
 .hdr{background:var(--bl);border-bottom:3px solid var(--or);
@@ -177,8 +177,7 @@ input[type="time"]{-webkit-appearance:none;appearance:none;cursor:pointer;}
 .drawer-footer{padding:.75rem 14px;border-top:1px solid rgba(255,255,255,.1);flex-shrink:0;}
 
 /* NAV */
-.nav{background:#fff;border-top:1px solid var(--brd);display:flex;flex-shrink:0;
-  padding-bottom:env(safe-area-inset-bottom,0);}
+.nav{background:#fff;border-top:1px solid var(--brd);display:flex;flex-shrink:0;}
 .nb{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;
   padding:8px 4px;border:none;background:none;cursor:pointer;color:var(--mut);
   font-size:10px;gap:3px;}
@@ -887,7 +886,26 @@ function salvarKm(){
         carregarKmHoje();
         setTimeout(function(){ msg.textContent=""; },2000);
       } else { msg.textContent=d.detail||d.erro||"Erro"; msg.style.color="var(--red)"; }
-    }).catch(function(e){ msg.textContent="Erro: "+e.message; msg.style.color="var(--red)"; });
+    }).catch(function(){
+      // OFFLINE: salvar no localStorage
+      try{
+        var fila = JSON.parse(localStorage.getItem("km_offline")||"[]");
+        fila.push(payload);
+        localStorage.setItem("km_offline", JSON.stringify(fila));
+        localStorage.setItem("ult_km", String(fin));
+        msg.textContent="⏳ Salvo offline — enviará ao conectar"; msg.style.color="var(--or)";
+        document.getElementById("kmLocal").value="";
+        document.getElementById("kmIni").value=fin;
+        document.getElementById("kmFin").value="";
+        document.getElementById("kmHIni").value="";
+        document.getElementById("kmHFim").value="";
+        document.getElementById("kmObs").value="";
+        document.getElementById("kmTotal").style.display="none";
+        carregarKmHoje();
+        verificarFila();
+        setTimeout(function(){ msg.textContent=""; },3000);
+      }catch(e2){ msg.textContent="Erro ao salvar offline"; msg.style.color="var(--red)"; }
+    });
 }
 
 function carregarKmHoje(){
@@ -897,38 +915,60 @@ function carregarKmHoje(){
   api("/api/meses/"+SEMANA.mes_id)
     .then(function(r){ return r.json(); })
     .then(function(d){
-      var semIds = (d.semanas||[]).map(function(s){ return s.id; });
-      if(!semIds.length){ lista.innerHTML='<div style="color:var(--mut);font-size:12px;text-align:center;padding:1rem;">Nenhum registro no mês.</div>'; return; }
-      Promise.all(semIds.map(function(sid){
-        return api("/api/historico/hoje?semana_id="+sid).then(function(r){ return r.json(); });
+      var semanas = d.semanas||[];
+      if(!semanas.length){ lista.innerHTML='<div style="color:var(--mut);font-size:12px;text-align:center;padding:1rem;">Nenhum registro no mês.</div>'; return; }
+      // Buscar relatorios_diarios de cada semana
+      Promise.all(semanas.map(function(sem){
+        return api("/api/relatorios/"+sem.id+"/km-lista").then(function(r){ return r.ok?r.json():Promise.resolve({registros:[]}); }).catch(function(){ return {registros:[]}; });
       })).then(function(results){
         var todos = [];
-        results.forEach(function(d){ (d.km||[]).forEach(function(r){ todos.push(r); }); });
-        if(!todos.length){ lista.innerHTML='<div style="color:var(--mut);font-size:12px;text-align:center;padding:1rem;">Nenhum registro no mês.</div>'; return; }
-        // Agrupar por data
-        var grupos = {};
-        todos.forEach(function(r){
-          var dt = r.data||"sem data";
-          if(!grupos[dt]) grupos[dt]=[];
-          grupos[dt].push(r);
-        });
-        var totalMes = todos.reduce(function(s,r){ return s+(r.km_percorrido||0); },0);
-        var fmt = function(s){ var m=(s||"").match(/(\d{4})-(\d{2})-(\d{2})/); return m?m[3]+"/"+m[2]+"/"+m[1]:s; };
-        var html = '<div class="km-total">Total do mês: '+totalMes.toFixed(1)+' km</div>';
-        Object.keys(grupos).sort(function(a,b){ return b.localeCompare(a); }).forEach(function(data){
-          var regs = grupos[data];
-          var totalDia = regs.reduce(function(s,r){ return s+(r.km_percorrido||0); },0);
-          html += '<div style="font-size:11px;font-weight:700;color:var(--bl);padding:6px 0 2px;border-bottom:1px solid var(--brd);margin-top:4px;">'+fmt(data)+' — '+totalDia.toFixed(1)+' km</div>';
-          regs.forEach(function(r){
-            html += '<div class="km-item">'
-              +'<div class="km-item-top">'+(r.local_nome||"—")+' — '+(r.km_percorrido||0).toFixed(1)+' km</div>'
-              +'<div class="km-item-sub">'+(r.hora_inicio?r.hora_inicio+' → '+r.hora_fim+' · ':'')+( r.responsavel?r.responsavel+' · ':'')+( r.observacao||'')+'</div>'
-              +'</div>';
+        results.forEach(function(d){ (d.registros||d.km||[]).forEach(function(r){ todos.push(r); }); });
+        // Fallback: se a rota km-lista não existir, usa historico/hoje de todas as semanas
+        if(!todos.length){
+          return Promise.all(semanas.map(function(sem){
+            return api("/api/historico/hoje?semana_id="+sem.id).then(function(r){ return r.json(); }).catch(function(){ return {km:[]}; });
+          })).then(function(res){
+            var t2=[];
+            res.forEach(function(d){ (d.km||[]).forEach(function(r){ t2.push(r); }); });
+            renderKmLista(t2, lista);
           });
-        });
-        lista.innerHTML = html;
+        }
+        renderKmLista(todos, lista);
       }).catch(function(){ lista.innerHTML='<div style="color:var(--red);font-size:12px;text-align:center;padding:1rem;">Erro ao carregar.</div>'; });
     }).catch(function(){ lista.innerHTML='<div style="color:var(--red);font-size:12px;text-align:center;padding:1rem;">Erro ao carregar mês.</div>'; });
+}
+
+function renderKmLista(todos, lista){
+  // Inclui itens offline pendentes
+  var offlineItems = [];
+  try{
+    var raw = localStorage.getItem("km_offline")||"[]";
+    offlineItems = JSON.parse(raw).filter(function(r){ return r.semana_id === SEMANA.id; });
+    offlineItems.forEach(function(r){ r._offline=true; todos.push(r); });
+  }catch(e){}
+  if(!todos.length){ lista.innerHTML='<div style="color:var(--mut);font-size:12px;text-align:center;padding:1rem;">Nenhum registro no mês.</div>'; return; }
+  var grupos = {};
+  todos.forEach(function(r){
+    var dt = r.data||"sem data";
+    if(!grupos[dt]) grupos[dt]=[];
+    grupos[dt].push(r);
+  });
+  var totalMes = todos.reduce(function(s,r){ return s+(parseFloat(r.km_percorrido||0)||parseFloat((r.km_final||0)-(r.km_inicial||0))||0); },0);
+  var fmt = function(s){ var m=(s||"").match(/(\d{4})-(\d{2})-(\d{2})/); return m?m[3]+"/"+m[2]+"/"+m[1]:s; };
+  var html = '<div class="km-total">Total do mês: '+totalMes.toFixed(1)+' km</div>';
+  Object.keys(grupos).sort(function(a,b){ return b.localeCompare(a); }).forEach(function(data){
+    var regs = grupos[data];
+    var totalDia = regs.reduce(function(s,r){ return s+(parseFloat(r.km_percorrido||0)||parseFloat((r.km_final||0)-(r.km_inicial||0))||0); },0);
+    html += '<div style="font-size:11px;font-weight:700;color:var(--bl);padding:6px 0 2px;border-bottom:1px solid var(--brd);margin-top:4px;">'+fmt(data)+' — '+totalDia.toFixed(1)+' km</div>';
+    regs.forEach(function(r){
+      var kmVal = parseFloat(r.km_percorrido||0)||parseFloat((r.km_final||0)-(r.km_inicial||0))||0;
+      html += '<div class="km-item'+(r._offline?' offline-item':'')+'">'
+        +'<div class="km-item-top">'+(r.local_nome||"—")+' — '+kmVal.toFixed(1)+' km'+(r._offline?' ⏳':'')+'</div>'
+        +'<div class="km-item-sub">'+(r.hora_inicio?r.hora_inicio+' → '+r.hora_fim+' · ':'')+(r.responsavel?r.responsavel+' · ':'')+(r.observacao||'')+'</div>'
+        +'</div>';
+    });
+  });
+  lista.innerHTML = html;
 }
 
 // ── GALERIA ───────────────────────────────────────────────────
@@ -1065,31 +1105,66 @@ function enviarEmail(){
 // ── SINCRONIZAR ───────────────────────────────────────────────
 function sincronizar(){
   if(!ONLINE){ toast("Sem conexão."); return; }
-  toast("Verificando fila...");
-  verificarFila();
+  toast("Sincronizando...");
+  // Enviar fila KM offline
+  var filaKm = [];
+  try{ filaKm = JSON.parse(localStorage.getItem("km_offline")||"[]"); }catch(e){}
+  if(filaKm.length){
+    var enviados = 0;
+    Promise.all(filaKm.map(function(payload){
+      return api("/api/relatorios/km",{method:"POST",body:JSON.stringify(payload)})
+        .then(function(r){ return r.json(); })
+        .then(function(d){ if(d.ok||d.id) enviados++; })
+        .catch(function(){});
+    })).then(function(){
+      if(enviados === filaKm.length){
+        localStorage.removeItem("km_offline");
+        toast("✅ "+enviados+" KM(s) sincronizados!");
+      } else {
+        var restantes = filaKm.slice(enviados);
+        localStorage.setItem("km_offline", JSON.stringify(restantes));
+        toast("⚠️ "+enviados+" enviados, "+(filaKm.length-enviados)+" falharam");
+      }
+      carregarKmHoje();
+      verificarFila();
+    });
+  } else {
+    toast("Tudo sincronizado ✅");
+    verificarFila();
+  }
 }
 
 function verificarFila(){
-  // Verificar IndexedDB
-  var req = indexedDB.open("garra-offline-v2", 2);
-  req.onsuccess = function(e){
-    var db = e.target.result;
-    var total = 0;
-    try{
-      var tx = db.transaction(["fila_fotos","fila_km"],"readonly");
-      tx.objectStore("fila_fotos").index("enviado").count(false).onsuccess = function(e){
-        total += e.target.result;
-        tx.objectStore("fila_km").index("enviado").count(false).onsuccess = function(e2){
-          total += e2.target.result;
-          var card = document.getElementById("filaCard");
-          var txt  = document.getElementById("filaTxt");
+  var card = document.getElementById("filaCard");
+  var txt  = document.getElementById("filaTxt");
+  // Contar KMs offline no localStorage
+  var total = 0;
+  try{ total += JSON.parse(localStorage.getItem("km_offline")||"[]").length; }catch(e){}
+  // Contar fotos offline no IndexedDB
+  try{
+    var req = indexedDB.open("garra-offline-v2", 2);
+    req.onsuccess = function(e){
+      var db = e.target.result;
+      try{
+        var tx = db.transaction(["fila_fotos"],"readonly");
+        tx.objectStore("fila_fotos").index("enviado").count(false).onsuccess = function(ev){
+          total += ev.target.result;
           if(total>0){ card.style.display="flex"; txt.textContent=total+" item(s) aguardando Wi-Fi"; }
           else { card.style.display="none"; }
         };
-      };
-    }catch(e){ document.getElementById("filaCard").style.display="none"; }
-  };
-  req.onerror = function(){ document.getElementById("filaCard").style.display="none"; };
+      }catch(e2){
+        if(total>0){ card.style.display="flex"; txt.textContent=total+" item(s) aguardando Wi-Fi"; }
+        else { card.style.display="none"; }
+      }
+    };
+    req.onerror = function(){
+      if(total>0){ card.style.display="flex"; txt.textContent=total+" item(s) aguardando Wi-Fi"; }
+      else { card.style.display="none"; }
+    };
+  }catch(e){
+    if(total>0){ card.style.display="flex"; txt.textContent=total+" item(s) aguardando Wi-Fi"; }
+    else { card.style.display="none"; }
+  }
 }
 
 // ── SAIR ──────────────────────────────────────────────────────
