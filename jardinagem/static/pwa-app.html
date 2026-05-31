@@ -912,58 +912,57 @@ function carregarKmHoje(){
   var lista = document.getElementById("kmLista");
   if(!SEMANA||!SEMANA.mes_id){ lista.innerHTML='<div style="color:var(--mut);font-size:12px;text-align:center;padding:1rem;">Sem mês selecionado.</div>'; return; }
   lista.innerHTML='<div style="color:var(--mut);font-size:12px;text-align:center;padding:1rem;">Carregando...</div>';
+  // Busca todas as semanas do mês e chama /preview em cada uma (rota confirmada na API)
   api("/api/meses/"+SEMANA.mes_id)
     .then(function(r){ return r.json(); })
     .then(function(d){
       var semanas = d.semanas||[];
-      if(!semanas.length){ lista.innerHTML='<div style="color:var(--mut);font-size:12px;text-align:center;padding:1rem;">Nenhum registro no mês.</div>'; return; }
-      // Buscar relatorios_diarios de cada semana
+      if(!semanas.length){ renderKmLista([], lista); return; }
       Promise.all(semanas.map(function(sem){
-        return api("/api/relatorios/"+sem.id+"/km-lista").then(function(r){ return r.ok?r.json():Promise.resolve({registros:[]}); }).catch(function(){ return {registros:[]}; });
+        return api("/api/relatorios/"+sem.id+"/preview")
+          .then(function(r){ return r.ok ? r.json() : {relatorios:[]}; })
+          .catch(function(){ return {relatorios:[]}; });
       })).then(function(results){
         var todos = [];
-        results.forEach(function(d){ (d.registros||d.km||[]).forEach(function(r){ todos.push(r); }); });
-        // Fallback: se a rota km-lista não existir, usa historico/hoje de todas as semanas
-        if(!todos.length){
-          return Promise.all(semanas.map(function(sem){
-            return api("/api/historico/hoje?semana_id="+sem.id).then(function(r){ return r.json(); }).catch(function(){ return {km:[]}; });
-          })).then(function(res){
-            var t2=[];
-            res.forEach(function(d){ (d.km||[]).forEach(function(r){ t2.push(r); }); });
-            renderKmLista(t2, lista);
-          });
-        }
+        results.forEach(function(d){
+          // preview retorna: {relatorios:[{data, local_nome, km_inicial, km_final, hora_inicio, hora_fim, responsavel}]}
+          (d.relatorios||[]).forEach(function(r){ todos.push(r); });
+        });
         renderKmLista(todos, lista);
       }).catch(function(){ lista.innerHTML='<div style="color:var(--red);font-size:12px;text-align:center;padding:1rem;">Erro ao carregar.</div>'; });
     }).catch(function(){ lista.innerHTML='<div style="color:var(--red);font-size:12px;text-align:center;padding:1rem;">Erro ao carregar mês.</div>'; });
 }
 
 function renderKmLista(todos, lista){
-  // Inclui itens offline pendentes
-  var offlineItems = [];
+  // Inclui itens offline pendentes do localStorage
   try{
-    var raw = localStorage.getItem("km_offline")||"[]";
-    offlineItems = JSON.parse(raw).filter(function(r){ return r.semana_id === SEMANA.id; });
-    offlineItems.forEach(function(r){ r._offline=true; todos.push(r); });
+    var raw = JSON.parse(localStorage.getItem("km_offline")||"[]");
+    raw.filter(function(r){ return String(r.semana_id)===String(SEMANA.id); })
+       .forEach(function(r){ r._offline=true; todos.push(r); });
   }catch(e){}
   if(!todos.length){ lista.innerHTML='<div style="color:var(--mut);font-size:12px;text-align:center;padding:1rem;">Nenhum registro no mês.</div>'; return; }
+  // Normaliza campos: preview usa local_nome, km_inicial, km_final, data dd/mm/yyyy
+  todos.forEach(function(r){
+    if(!r.km_percorrido) r.km_percorrido = parseFloat((r.km_final||0)-(r.km_inicial||0))||0;
+    if(!r.local_nome && r.local) r.local_nome = r.local;
+    if(!r.hora_inicio && r.hr_ini) r.hora_inicio = r.hr_ini;
+    if(!r.hora_fim && r.hr_fim) r.hora_fim = r.hr_fim;
+  });
   var grupos = {};
   todos.forEach(function(r){
     var dt = r.data||"sem data";
     if(!grupos[dt]) grupos[dt]=[];
     grupos[dt].push(r);
   });
-  var totalMes = todos.reduce(function(s,r){ return s+(parseFloat(r.km_percorrido||0)||parseFloat((r.km_final||0)-(r.km_inicial||0))||0); },0);
-  var fmt = function(s){ var m=(s||"").match(/(\d{4})-(\d{2})-(\d{2})/); return m?m[3]+"/"+m[2]+"/"+m[1]:s; };
+  var totalMes = todos.reduce(function(s,r){ return s+parseFloat(r.km_percorrido||0); },0);
   var html = '<div class="km-total">Total do mês: '+totalMes.toFixed(1)+' km</div>';
   Object.keys(grupos).sort(function(a,b){ return b.localeCompare(a); }).forEach(function(data){
     var regs = grupos[data];
-    var totalDia = regs.reduce(function(s,r){ return s+(parseFloat(r.km_percorrido||0)||parseFloat((r.km_final||0)-(r.km_inicial||0))||0); },0);
-    html += '<div style="font-size:11px;font-weight:700;color:var(--bl);padding:6px 0 2px;border-bottom:1px solid var(--brd);margin-top:4px;">'+fmt(data)+' — '+totalDia.toFixed(1)+' km</div>';
+    var totalDia = regs.reduce(function(s,r){ return s+parseFloat(r.km_percorrido||0); },0);
+    html += '<div style="font-size:11px;font-weight:700;color:var(--bl);padding:6px 0 2px;border-bottom:1px solid var(--brd);margin-top:4px;">'+data+' — '+totalDia.toFixed(1)+' km</div>';
     regs.forEach(function(r){
-      var kmVal = parseFloat(r.km_percorrido||0)||parseFloat((r.km_final||0)-(r.km_inicial||0))||0;
       html += '<div class="km-item'+(r._offline?' offline-item':'')+'">'
-        +'<div class="km-item-top">'+(r.local_nome||"—")+' — '+kmVal.toFixed(1)+' km'+(r._offline?' ⏳':'')+'</div>'
+        +'<div class="km-item-top">'+(r.local_nome||"—")+' — '+parseFloat(r.km_percorrido||0).toFixed(1)+' km'+(r._offline?' ⏳':'')+'</div>'
         +'<div class="km-item-sub">'+(r.hora_inicio?r.hora_inicio+' → '+r.hora_fim+' · ':'')+(r.responsavel?r.responsavel+' · ':'')+(r.observacao||'')+'</div>'
         +'</div>';
     });
