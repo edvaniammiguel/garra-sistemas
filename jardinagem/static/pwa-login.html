@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
-<link rel="icon" type="image/png" sizes="32x32" href="./icons/favicon-32.png">
+<link rel="icon" type="image/png" sizes=a"32x32" href="./icons/favicon-32.png">
 <link rel="icon" type="image/png" sizes="16x16" href="./icons/favicon-16.png">
 <link rel="apple-touch-icon" href="./icons/icon-192.png">
 <link rel="manifest" href="./manifest.json">
@@ -14,11 +14,15 @@
 <meta name="apple-mobile-web-app-title" content="Garra Jardinagem">
 <title>Garra Jardinagem</title>
 <script>
-// Limpar SW antes de tudo
+// Limpar TODOS os SW e caches antigos
 if(typeof navigator!=="undefined"&&"serviceWorker"in navigator){
   try{
-    navigator.serviceWorker.getRegistrations().then(function(r){r.forEach(function(s){s.unregister();});});
-    caches.keys().then(function(k){k.forEach(function(n){caches.delete(n);});});
+    navigator.serviceWorker.getRegistrations().then(function(regs){
+      regs.forEach(function(r){ r.unregister(); });
+    });
+    caches.keys().then(function(keys){
+      keys.forEach(function(k){ caches.delete(k); });
+    });
   }catch(e){}
 }
 </script>
