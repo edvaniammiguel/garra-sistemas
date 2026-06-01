@@ -1087,7 +1087,7 @@ async def jard_editar_km(km_id: int, request: Request, payload=Depends(verificar
         (d.get("data",date.today().isoformat()), local_nome,
          float(km_ini), float(km_fin),
          d.get("hora_inicio"), d.get("hora_fim"), d.get("observacao",""),
-         km_id))
+         km_id), fetch="none")
     return {"ok": True, "id": km_id}
 
 @app.get("/jardinagem/api/historico/hoje")
