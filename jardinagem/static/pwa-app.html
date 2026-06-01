@@ -873,7 +873,13 @@ function editarKm(id){
           if(!kmItem) return;
           
           // Carrega nos campos do formulário
-          document.getElementById("kmData").value = kmItem.data || "";
+          // Converte data de dd/mm/yyyy para YYYY-MM-DD
+          var dataFormatada = kmItem.data || "";
+          if(dataFormatada.match(/^\d{2}\/\d{2}\/\d{4}$/)){
+            var p = dataFormatada.split('/');
+            dataFormatada = p[2] + '-' + p[1] + '-' + p[0];
+          }
+          document.getElementById("kmData").value = dataFormatada;
           document.getElementById("kmLocal").value = kmItem.local_nome || "";
           document.getElementById("kmIni").value = kmItem.km_inicial || 0;
           document.getElementById("kmFin").value = kmItem.km_final || 0;
