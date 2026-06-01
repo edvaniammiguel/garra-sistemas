@@ -628,6 +628,7 @@ function carregarPares(){
         return codA - codB;
       });
       renderPares();
+      garantirBancadaAberta();  // ← FORÇA abrir após carregar pares
     }).catch(function(){});
 }
 
@@ -797,6 +798,7 @@ function salvarLocal(parId, local, idx){
       }
     }
     renderPares();
+    garantirBancadaAberta();  // ← Garantir aberta após salvar local
   }
 }
 
@@ -1293,6 +1295,18 @@ function limparCache(){
 }
 
 var _bancadaAberta = true;
+// Safety check: garantir que bancada fica aberta a cada segundo
+setInterval(function(){ 
+  if(_bancadaAberta) garantirBancadaAberta(); 
+}, 1000);
+function garantirBancadaAberta(){
+  var body = document.getElementById("bancadaBody");
+  var ico  = document.getElementById("bancadaToggleIco");
+  _bancadaAberta = true;
+  if(body){ body.style.display = "block"; body.style.visibility = "visible"; }
+  if(ico){ ico.textContent = "▼"; }
+}
+
 function toggleBancada(){
   _bancadaAberta = !_bancadaAberta;
   var body = document.getElementById("bancadaBody");
@@ -1301,11 +1315,7 @@ function toggleBancada(){
   if(ico){ ico.textContent = _bancadaAberta ? "▼" : "▶"; }
 }
 function expandirBancada(){
-  _bancadaAberta = true;
-  var body = document.getElementById("bancadaBody");
-  var ico  = document.getElementById("bancadaToggleIco");
-  if(body){ body.style.display = "block"; }
-  if(ico){ ico.textContent = "▼"; }
+  garantirBancadaAberta();
 }
 </script>
 </body>
