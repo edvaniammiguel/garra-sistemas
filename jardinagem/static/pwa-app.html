@@ -595,7 +595,16 @@ function renderBancada(){
   document.getElementById("bancadaSub").textContent = BANCADA.length+" foto(s)";
   var vazia = document.getElementById("bancadaVazia");
   var grid  = document.getElementById("bancadaGrid");
-  if(!BANCADA.length){ vazia.style.display="block"; grid.innerHTML=""; return; }
+  var bancada = document.getElementById("bancadaCard");
+  
+  if(!BANCADA.length){ 
+    vazia.style.display="block"; 
+    grid.innerHTML=""; 
+    bancada.style.display="none";  // ← Esconder bancada inteira
+    return; 
+  }
+  
+  bancada.style.display="block";  // ← Mostrar bancada quando tem fotos
   vazia.style.display = "none";
   grid.innerHTML = BANCADA.map(function(f,i){
     return '<div class="thumb">'
