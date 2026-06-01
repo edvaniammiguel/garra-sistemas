@@ -642,6 +642,7 @@ function carregarPares(){
         return codA - codB;
       });
       renderPares();
+      renderBancada();  // ← CRÍTICO: Re-renderizar bancada quando pares são carregados
     }).catch(function(){});
 }
 
