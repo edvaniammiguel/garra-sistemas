@@ -1070,6 +1070,26 @@ async def jard_criar_km(request: Request, payload=Depends(verificar_token_jard))
          float(km_ini),float(km_fin),d.get("hora_inicio"),d.get("hora_fim"),d.get("observacao",""),offline_id))
     return {"ok": True, "id": row["id"]}
 
+@app.patch("/jardinagem/api/relatorios/{km_id}")
+async def jard_editar_km(km_id: int, request: Request, payload=Depends(verificar_token_jard)):
+    d = await request.json()
+    local_nome  = (d.get("local_nome") or "").strip()
+    km_ini      = d.get("km_inicial"); km_fin = d.get("km_final")
+    if not local_nome: raise HTTPException(status_code=400, detail="local_nome obrigatório")
+    if km_ini is None or km_fin is None: raise HTTPException(status_code=400, detail="km_inicial e km_final obrigatórios")
+    if float(km_fin) <= float(km_ini): raise HTTPException(status_code=400, detail="km_final deve ser maior que km_inicial")
+    
+    # Atualiza o registro
+    jard_query("""UPDATE jardinagem.relatorios_diarios 
+        SET data=%s, local_nome=%s, km_inicial=%s, km_final=%s, 
+            hora_inicio=%s, hora_fim=%s, observacao=%s, atualizado_em=NOW()
+        WHERE id=%s""",
+        (d.get("data",date.today().isoformat()), local_nome,
+         float(km_ini), float(km_fin),
+         d.get("hora_inicio"), d.get("hora_fim"), d.get("observacao",""),
+         km_id))
+    return {"ok": True, "id": km_id}
+
 @app.get("/jardinagem/api/historico/hoje")
 async def jard_historico_hoje(semana_id: Optional[int]=None, payload=Depends(verificar_token_jard)):
     hoje = date.today().isoformat()
