@@ -67,7 +67,7 @@ body{font-family:system-ui,sans-serif;background:var(--bg);
 .bancada-ttl{font-size:12px;font-weight:700;color:#fff;}
 .bancada-sub{font-size:10px;color:#FCD34D;}
 .bancada-btns{display:flex;gap:6px;}
-.bancada-body{padding:.75rem;}
+.bancada-body{padding:.75rem;max-height:200px;overflow-y:auto;}
 .bancada-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;}
 .thumb{aspect-ratio:1;border-radius:6px;overflow:hidden;position:relative;
   background:#fff;border:1.5px solid var(--brd);}
@@ -237,7 +237,7 @@ input[type="time"]{-webkit-appearance:none;appearance:none;cursor:pointer;}
     <div class="bancada" id="bancadaCard">
       <div class="bancada-hdr" onclick="toggleBancada()" style="cursor:pointer;">
         <div>
-          <div class="bancada-ttl">Bancada <span id="bancadaToggleIco">▼</span></div>
+          <div class="bancada-ttl">Bancada <span id="bancadaToggleIco">▶</span></div>
           <div class="bancada-sub" id="bancadaSub">0 foto(s)</div>
         </div>
         <div class="bancada-btns" onclick="event.stopPropagation();">
@@ -940,7 +940,10 @@ function salvarKm(){
   var method = _kmEditando ? "PATCH" : "POST";
   
   api(url,{method:method,body:JSON.stringify(payload)})
-    .then(function(r){ return r.json(); })
+    .then(function(r){
+      if(!r.ok) throw new Error(r.status + " " + r.statusText);
+      return r.json();
+    })
     .then(function(d){
       if(d.ok||d.id){
         msg.textContent=_kmEditando?"Atualizado!":"Salvo!"; msg.style.color="var(--grn)";
@@ -960,9 +963,9 @@ function salvarKm(){
         
         carregarKmHoje();
         setTimeout(function(){ msg.textContent=""; },2000);
-      } else { msg.textContent=d.detail||d.erro||"Erro"; msg.style.color="var(--red)"; }
-    }).catch(function(){
-      if(_kmEditando){ msg.textContent="Erro ao atualizar"; msg.style.color="var(--red)"; return; }
+      } else { msg.textContent=d.detail||d.erro||"Erro desconhecido"; msg.style.color="var(--red)"; }
+    }).catch(function(err){
+      if(_kmEditando){ msg.textContent="Erro: "+(err.message||"Sem conexão"); msg.style.color="var(--red)"; return; }
       // OFFLINE: salvar no localStorage (apenas para novos)
       try{
         var fila = JSON.parse(localStorage.getItem("km_offline")||"[]");
@@ -1284,7 +1287,7 @@ function limparCache(){
   }
 }
 
-var _bancadaAberta = true;
+var _bancadaAberta = false;
 function toggleBancada(){
   _bancadaAberta = !_bancadaAberta;
   var body = document.getElementById("bancadaBody");
