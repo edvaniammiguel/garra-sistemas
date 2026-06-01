@@ -597,14 +597,24 @@ function renderBancada(){
   var grid  = document.getElementById("bancadaGrid");
   var bancada = document.getElementById("bancadaCard");
   
+  // Contar slots vazios nos pares: verificar se há algum par sem foto antes OU depois
+  var slotsVazios = PARES.filter(function(p){
+    var temAntes = p.fotos && p.fotos.some(function(f){ return f.tipo==="antes"; });
+    var temDepois = p.fotos && p.fotos.some(function(f){ return f.tipo==="depois"; });
+    return !temAntes || !temDepois;
+  }).length > 0;
+  
+  // Mostrar bancada se: há fotos novas OU há slots vazios esperando
+  var mostrarBancada = BANCADA.length > 0 || slotsVazios;
+  
   if(!BANCADA.length){ 
     vazia.style.display="block"; 
-    grid.innerHTML=""; 
-    bancada.style.display="none";  // ← Esconder bancada inteira
+    grid.innerHTML="";
+    bancada.style.display = mostrarBancada ? "block" : "none";
     return; 
   }
   
-  bancada.style.display="block";  // ← Mostrar bancada quando tem fotos
+  bancada.style.display="block";
   vazia.style.display = "none";
   grid.innerHTML = BANCADA.map(function(f,i){
     return '<div class="thumb">'
