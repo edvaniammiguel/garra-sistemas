@@ -1082,7 +1082,7 @@ async def jard_editar_km(km_id: int, request: Request, payload=Depends(verificar
     # Atualiza o registro
     jard_query("""UPDATE jardinagem.relatorios_diarios 
         SET data=%s, local_nome=%s, km_inicial=%s, km_final=%s, 
-            hora_inicio=%s, hora_fim=%s, observacao=%s, atualizado_em=NOW()
+            hora_inicio=%s, hora_fim=%s, observacao=%s
         WHERE id=%s""",
         (d.get("data",date.today().isoformat()), local_nome,
          float(km_ini), float(km_fin),
