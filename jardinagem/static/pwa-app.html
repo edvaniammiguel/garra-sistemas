@@ -23,7 +23,10 @@
 body{font-family:system-ui,sans-serif;background:var(--bg);
   display:flex;flex-direction:column;height:100dvh;overflow:hidden;}
 
-/* HEADER */
+/* Garantir nav sempre visível */
+.nav{background:#fff;border-top:1px solid var(--brd);display:flex;flex-shrink:0;
+  height:60px;min-height:60px;width:100%;position:relative;z-index:10;}
+.telas{flex:1;overflow:hidden;position:relative;}
 .hdr{background:var(--bl);border-bottom:3px solid var(--or);
   padding:8px 1rem;display:flex;align-items:center;justify-content:space-between;
   flex-shrink:0;}
@@ -38,8 +41,8 @@ body{font-family:system-ui,sans-serif;background:var(--bg);
   padding:2px 7px;border-radius:99px;}
 
 /* TELAS */
-.telas{flex:1;overflow:hidden;position:relative;}
-.tela{position:absolute;inset:0;overflow-y:auto;padding:.75rem .75rem 5rem;
+.telas{flex:1;overflow:hidden;position:relative;padding-bottom:0;}
+.tela{position:absolute;inset:0;overflow-y:auto;padding:.75rem .75rem 70px;
   display:none;flex-direction:column;gap:.75rem;}
 .tela.ativa{display:flex;}
 
@@ -196,6 +199,13 @@ input[type="time"]{-webkit-appearance:none;appearance:none;cursor:pointer;}
 /* SPINNER */
 .spin{display:inline-block;animation:spin .8s linear infinite;}
 @keyframes spin{to{transform:rotate(360deg);}}
+
+/* GARANTIR NAV VISÍVEL EM PWA INSTALADA */
+@media (display-mode: standalone) {
+  body { height: 100dvh; }
+  .nav { display: flex !important; position: fixed; bottom: 0; }
+  .telas { padding-bottom: 70px; }
+}
 </style>
 </head>
 <body>
@@ -620,7 +630,11 @@ function carregarPares(){
   api("/api/pares?semana_id="+SEMANA.id)
     .then(function(r){ return r.json(); })
     .then(function(d){
-      PARES = d.pares || [];
+      PARES = (d.pares || []).sort(function(a, b){
+        var codA = parseInt(a.codigo_a || 0);
+        var codB = parseInt(b.codigo_a || 0);
+        return codA - codB;
+      });
       renderPares();
     }).catch(function(){});
 }
@@ -668,6 +682,7 @@ function novoPar(){
       if(d.id){
         toast("Par criado!");
         carregarPares();
+        renderBancada();
         expandirBancada();
         // Rolar para o topo da tela de fotos
         var tela = document.getElementById("tFotos");
