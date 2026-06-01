@@ -469,6 +469,7 @@ var PARES = [];
 var ONLINE = navigator.onLine;
 var _selParIdx = null;
 var _selTipo = null;
+var _kmEditando = null;
 var ULT_KM = parseFloat(localStorage.getItem("ult_km")||"0");
 
 // Redirecionar se não tem token
@@ -840,6 +841,63 @@ function encaixarFoto(fotoId){
 }
 
 // ── KM ────────────────────────────────────────────────────────
+function editarKm(id){
+  // Busca o elemento do KM no histórico
+  var el = document.querySelector('[data-km-id="' + id + '"]');
+  if(!el) return;
+  
+  // Extrai dados do elemento (presentes no HTML renderizado)
+  var topText = el.querySelector('.km-item-top').textContent;
+  var subText = el.querySelector('.km-item-sub').textContent;
+  
+  // Busca no histórico atual para pegar objeto completo
+  var lista = document.getElementById("kmLista");
+  var kmItem = null;
+  
+  // Tenta encontrar nos dados carregados
+  if(SEMANA && SEMANA.mes_id){
+    api("/api/meses/"+SEMANA.mes_id)
+      .then(function(r){ return r.json(); })
+      .then(function(d){
+        var semanas = d.semanas||[];
+        return Promise.all(semanas.map(function(sem){
+          return api("/api/relatorios/"+sem.id+"/preview")
+            .then(function(r){ return r.ok ? r.json() : {relatorios:[]}; })
+            .catch(function(){ return {relatorios:[]}; });
+        })).then(function(results){
+          results.forEach(function(d){
+            (d.relatorios||[]).forEach(function(r){
+              if(r.id == id) kmItem = r;
+            });
+          });
+          if(!kmItem) return;
+          
+          // Carrega nos campos do formulário
+          document.getElementById("kmData").value = kmItem.data || "";
+          document.getElementById("kmLocal").value = kmItem.local_nome || "";
+          document.getElementById("kmIni").value = kmItem.km_inicial || 0;
+          document.getElementById("kmFin").value = kmItem.km_final || 0;
+          document.getElementById("kmHIni").value = kmItem.hora_inicio || "";
+          document.getElementById("kmHFim").value = kmItem.hora_fim || "";
+          document.getElementById("kmObs").value = kmItem.observacao || "";
+          
+          // Guarda ID sendo editado
+          _kmEditando = id;
+          
+          // Muda botão para "Atualizar"
+          var btn = document.querySelector('#tKm .btn-w');
+          if(btn) btn.textContent = "🔄 Atualizar Serviço";
+          
+          // Calcula KM total
+          calcKm();
+          
+          // Scroll pro formulário
+          document.getElementById("tKm").scrollTop = 0;
+        });
+      });
+  }
+}
+
 function calcKm(){
   var ini = parseFloat(document.getElementById("kmIni").value||0);
   var fin = parseFloat(document.getElementById("kmFin").value||0);
@@ -866,14 +924,20 @@ function salvarKm(){
     hora_inicio: document.getElementById("kmHIni").value||null,
     hora_fim: document.getElementById("kmHFim").value||null,
     observacao: document.getElementById("kmObs").value||"",
-    offline_id: "km-"+Date.now(),
+    offline_id: _kmEditando ? null : "km-"+Date.now(),
     responsavel: USUARIO ? USUARIO.nome : ""
   };
-  api("/api/relatorios/km",{method:"POST",body:JSON.stringify(payload)})
+  
+  // Se editando: PATCH; se novo: POST
+  var metodo = _kmEditando ? "PATCH /api/relatorios/"+_kmEditando : "POST /api/relatorios/km";
+  var url = _kmEditando ? "/api/relatorios/"+_kmEditando : "/api/relatorios/km";
+  var method = _kmEditando ? "PATCH" : "POST";
+  
+  api(url,{method:method,body:JSON.stringify(payload)})
     .then(function(r){ return r.json(); })
     .then(function(d){
       if(d.ok||d.id){
-        msg.textContent="Salvo!"; msg.style.color="var(--grn)";
+        msg.textContent=_kmEditando?"Atualizado!":"Salvo!"; msg.style.color="var(--grn)";
         localStorage.setItem("ult_km", String(fin));
         document.getElementById("kmLocal").value="";
         document.getElementById("kmIni").value=fin;
@@ -882,11 +946,18 @@ function salvarKm(){
         document.getElementById("kmHFim").value="";
         document.getElementById("kmObs").value="";
         document.getElementById("kmTotal").style.display="none";
+        
+        // Limpa modo edição
+        _kmEditando = null;
+        var btn = document.querySelector('#tKm .btn-w');
+        if(btn) btn.textContent = "✅ Salvar Serviço";
+        
         carregarKmHoje();
         setTimeout(function(){ msg.textContent=""; },2000);
       } else { msg.textContent=d.detail||d.erro||"Erro"; msg.style.color="var(--red)"; }
     }).catch(function(){
-      // OFFLINE: salvar no localStorage
+      if(_kmEditando){ msg.textContent="Erro ao atualizar"; msg.style.color="var(--red)"; return; }
+      // OFFLINE: salvar no localStorage (apenas para novos)
       try{
         var fila = JSON.parse(localStorage.getItem("km_offline")||"[]");
         fila.push(payload);
@@ -970,12 +1041,17 @@ function renderKmLista(todos, lista){
     html += '<div style="font-size:11px;font-weight:700;color:var(--bl);padding:6px 0 2px;border-bottom:1px solid var(--brd);margin-top:4px;">'
       + data + ' — ' + totalDia.toFixed(1) + ' km</div>';
     regs.forEach(function(r){
-      html += '<div class="km-item' + (r._offline ? ' offline-item' : '') + '">'
+      html += '<div class="km-item' + (r._offline ? ' offline-item' : '') + '" data-km-id="' + (r.id||'') + '">'
+        + '<div style="display:flex;justify-content:space-between;align-items:start;gap:6px;">'
+        + '<div style="flex:1;min-width:0;">'
         + '<div class="km-item-top">' + r.local_nome + ' — ' + r.km_percorrido.toFixed(1) + ' km' + (r._offline ? ' ⏳' : '') + '</div>'
         + '<div class="km-item-sub">'
           + (r.hora_inicio ? r.hora_inicio + ' → ' + r.hora_fim + ' · ' : '')
           + (r.responsavel ? r.responsavel + ' · ' : '')
           + (r.observacao || '')
+        + '</div>'
+        + '</div>'
+        + (r.id && !r._offline ? '<button class="btn btn-sm" style="background:none;border:none;color:#1A2A5E;font-size:14px;padding:0;cursor:pointer;flex-shrink:0;" onclick="editarKm(' + r.id + ')">✏️</button>' : '')
         + '</div>'
         + '</div>';
     });
