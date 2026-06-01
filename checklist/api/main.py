@@ -640,14 +640,28 @@ async def jard_index():
     path = os.path.join(TEMPLATES_DIR, "desk-admin.html")
     return open(path, encoding="utf-8").read()
 
+@app.get("/jardinagem/desktop", response_class=HTMLResponse)
+async def jard_desktop_login():
+    # Desktop login para Luana/Admin
+    path = os.path.join(TEMPLATES_DIR, "desk-login.html")
+    return open(path, encoding="utf-8").read()
+
+@app.get("/jardinagem/desktop-app", response_class=HTMLResponse)
+async def jard_desktop_app():
+    # Desktop app para Luana/Admin
+    path = os.path.join(TEMPLATES_DIR, "desk-app.html")
+    return open(path, encoding="utf-8").read()
+
 @app.get("/jardinagem/mobile", response_class=HTMLResponse)
 async def jard_mobile():
-    path = os.path.join(TEMPLATES_DIR, "desk-login.html")
+    # Mobile PWA login para Arthur/Breno
+    path = os.path.join(STATIC_DIR, "pwa-login.html")
     return open(path, encoding="utf-8").read()
 
 @app.get("/jardinagem/mobile-app", response_class=HTMLResponse)
 async def jard_mobile_app():
-    path = os.path.join(TEMPLATES_DIR, "desk-app.html")
+    # Mobile PWA app para Arthur/Breno
+    path = os.path.join(STATIC_DIR, "pwa-app.html")
     return open(path, encoding="utf-8").read()
 
 @app.get("/jardinagem/manifest.json")
