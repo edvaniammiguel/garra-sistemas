@@ -51,7 +51,8 @@ body{font-family:system-ui,sans-serif;background:var(--bg);
 
 /* SEMANA */
 .sem-card{background:var(--bl);border-radius:var(--r);padding:8px 12px;
-  display:flex;align-items:center;justify-content:space-between;gap:6px;flex-shrink:0;}
+  display:flex;align-items:center;justify-content:space-between;gap:6px;flex-shrink:0;
+  position:sticky;top:0;z-index:15;}
 .sem-nome{font-size:12px;font-weight:800;color:#fff;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .sem-data{font-size:10px;color:#93C5FD;}
@@ -60,12 +61,13 @@ body{font-family:system-ui,sans-serif;background:var(--bg);
 .badge-pend{background:rgba(232,130,12,.25);color:#FCD34D;}
 
 /* BANCADA */
-.bancada{background:#FEF3C7;border:1.5px solid #F59E0B;border-radius:var(--r);overflow:hidden;}
+.bancada{background:#FEF3C7;border:1.5px solid #F59E0B;border-radius:var(--r);overflow:hidden;
+  position:sticky;top:55px;z-index:14;}
 .bancada-hdr{background:#92400E;padding:6px 12px;display:flex;align-items:center;justify-content:space-between;}
 .bancada-ttl{font-size:12px;font-weight:700;color:#fff;}
 .bancada-sub{font-size:10px;color:#FCD34D;}
 .bancada-btns{display:flex;gap:6px;}
-.bancada-body{padding:.75rem;min-height:200px;}
+.bancada-body{padding:.75rem;}
 .bancada-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;}
 .thumb{aspect-ratio:1;border-radius:6px;overflow:hidden;position:relative;
   background:#fff;border:1.5px solid var(--brd);}
