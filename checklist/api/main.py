@@ -852,7 +852,7 @@ async def jard_listar_pares(semana_id: int = None, payload=Depends(verificar_tok
     if not semana_id:
         return {"ok": False, "error": "semana_id obrigatório"}
     pares_raw = jard_query(
-        "SELECT * FROM jardinagem.pares WHERE semana_id=%s ORDER BY ordem,id",
+        "SELECT * FROM jardinagem.pares WHERE semana_id=%s AND (ativo IS NULL OR ativo=true) ORDER BY ordem,id",
         (semana_id,)
     )
     pares = []
@@ -870,8 +870,19 @@ async def jard_listar_pares(semana_id: int = None, payload=Depends(verificar_tok
 @app.post("/jardinagem/api/pares")
 async def jard_criar_par(request: Request, payload=Depends(verificar_token_jard)):
     d = await request.json()
-    cod = next_code(2)
-    row = jard_query_id("INSERT INTO jardinagem.pares (semana_id,codigo_a,codigo_d,local_nome,data_label,ordem) VALUES (%s,%s,%s,%s,%s,%s)",
+    # Buscar o último codigo_d ativo no banco de dados
+    ultimo = jard_query(
+        "SELECT MAX(codigo_d) as max_cod FROM jardinagem.pares WHERE ativo IS NULL OR ativo=true",
+        fetch="one"
+    )
+    max_cod = int(ultimo.get("max_cod") or 6045)  # Se vazio, começa em 6046
+    cod = max_cod + 1  # Próximo código é sempre MAX+1
+    
+    # Atualizar config.next_code para manter sincronizado
+    jard_query("UPDATE jardinagem.config SET valor=%s WHERE chave='next_code'",
+               (str(cod + 1),), fetch="none")
+    
+    row = jard_query_id("INSERT INTO jardinagem.pares (semana_id,codigo_a,codigo_d,local_nome,data_label,ordem,ativo) VALUES (%s,%s,%s,%s,%s,%s,true)",
                         (d["semana_id"],cod,cod+1,d.get("local_nome",""),d.get("data_label",""),d.get("ordem",0)))
     return dict(row)
 
@@ -885,10 +896,10 @@ async def jard_patch_par(pid: int, request: Request, payload=Depends(verificar_t
 
 @app.delete("/jardinagem/api/pares/{pid}")
 async def jard_del_par(pid: int, payload=Depends(verificar_token_jard)):
-    fotos = jard_query("SELECT storage_path FROM jardinagem.fotos WHERE par_id=%s", (pid,))
-    paths = [f["storage_path"] for f in fotos if f["storage_path"]]
-    if paths: storage_delete(paths)
-    jard_query("DELETE FROM jardinagem.pares WHERE id=%s", (pid,), fetch="none")
+    # Soft delete: marcar par como inativo (campo ativo=false)
+    # Fotos não são deletadas — seguem vinculadas mas não aparecem
+    # next_code NÃO é alterado — sequência de códigos é imutável
+    jard_query("UPDATE jardinagem.pares SET ativo=false WHERE id=%s", (pid,), fetch="none")
     return {"ok": True}
 
 # ── FOTOS ─────────────────────────────────────────────────────
