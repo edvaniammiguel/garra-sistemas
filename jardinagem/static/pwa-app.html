@@ -3,6 +3,24 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<!-- FORCE CACHE BUST v4 -->
+<script>
+(function(){
+  if(!('serviceWorker' in navigator)) return;
+  // Limpar todos os caches antigos
+  if(window.caches){
+    caches.keys().then(function(names){
+      names.forEach(function(n){
+        if(n !== 'garra-jardinagem-v4') caches.delete(n);
+      });
+    });
+  }
+  // Forçar atualização do SW
+  navigator.serviceWorker.getRegistrations().then(function(regs){
+    regs.forEach(function(r){ r.update(); });
+  });
+})();
+</script>
 <link rel="icon" type="image/png" sizes="32x32" href="./icons/favicon-32.png">
 <link rel="icon" type="image/png" sizes="16x16" href="./icons/favicon-16.png">
 <link rel="apple-touch-icon" href="./icons/icon-192.png">
@@ -247,7 +265,7 @@ input[type="time"]{-webkit-appearance:none;appearance:none;cursor:pointer;}
             onclick="document.getElementById('inpGal').click()">🖼 Fotos</button>
         </div>
       </div>
-      <div class="bancada-body" id="bancadaBody">
+      <div class="bancada-body" id="bancadaBody" style="display:block !important;">
         <div id="bancadaGrid" class="bancada-grid"></div>
         <div id="bancadaVazia" class="bancada-vazia">Adicione fotos</div>
       </div>
@@ -1294,29 +1312,9 @@ function limparCache(){
   }
 }
 
-var _bancadaAberta = true;
-// Safety check: garantir que bancada fica aberta a cada segundo
-setInterval(function(){ 
-  if(_bancadaAberta) garantirBancadaAberta(); 
-}, 1000);
-function garantirBancadaAberta(){
-  var body = document.getElementById("bancadaBody");
-  var ico  = document.getElementById("bancadaToggleIco");
-  _bancadaAberta = true;
-  if(body){ body.style.display = "block"; body.style.visibility = "visible"; }
-  if(ico){ ico.textContent = "▼"; }
-}
-
-function toggleBancada(){
-  _bancadaAberta = !_bancadaAberta;
-  var body = document.getElementById("bancadaBody");
-  var ico  = document.getElementById("bancadaToggleIco");
-  if(body){ body.style.display = _bancadaAberta ? "block" : "none"; }
-  if(ico){ ico.textContent = _bancadaAberta ? "▼" : "▶"; }
-}
-function expandirBancada(){
-  garantirBancadaAberta();
-}
+function garantirBancadaAberta(){}
+function toggleBancada(){}
+function expandirBancada(){}
 </script>
 </body>
 </html>
