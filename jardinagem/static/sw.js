@@ -7,15 +7,27 @@ const ASSETS = [
   "./pwa-app.html",
   "./manifest.json",
   "./icons/logo-Garra-e-ca%C3%A7ambas.png",
+  "./icons/favicon.ico",
+  "./icons/favicon-16.png",
+  "./icons/favicon-32.png",
   "./icons/icon-192.png",
-  "./icons/icon-512.png",
-  "./icons/favicon-32.png"
+  "./icons/icon-512.png"
 ];
 
-// Install — cachear assets
+// Install — cachear assets com fallback seguro
 self.addEventListener("install", function(e){
   e.waitUntil(
-    caches.open(CACHE).then(function(c){ return c.addAll(ASSETS); })
+    caches.open(CACHE).then(function(c){
+      // Tentar addAll, se falhar cachear manualmente
+      return c.addAll(ASSETS).catch(function(){
+        // Fallback: cachear apenas os essenciais
+        return Promise.all([
+          c.add("./pwa-login.html"),
+          c.add("./pwa-app.html"),
+          c.add("./manifest.json")
+        ]);
+      });
+    })
   );
   self.skipWaiting();
 });
