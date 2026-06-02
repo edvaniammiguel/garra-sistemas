@@ -174,6 +174,18 @@ button,input,select{font-family:inherit;}
 .lb-l{left:12px;}.lb-r{right:12px;}
 .toast{position:fixed;bottom:20px;right:20px;background:var(--bl);color:#fff;padding:10px 18px;border-radius:8px;font-size:12px;font-weight:700;border-left:4px solid var(--or);box-shadow:0 4px 16px rgba(0,0,0,.22);opacity:0;transform:translateY(10px);transition:.25s;z-index:9999;pointer-events:none;}
 .toast.show{opacity:1;transform:translateY(0);}
+/* SPINNER GLOBAL */
+.loading-bar{position:fixed;top:0;left:0;right:0;height:3px;z-index:9999;
+  background:linear-gradient(90deg,#E8820C 0%,#fff 50%,#E8820C 100%);
+  background-size:200% 100%;animation:loadbar .8s linear infinite;display:none;}
+.loading-bar.ativo{display:block;}
+@keyframes loadbar{0%{background-position:200% 0}100%{background-position:-200% 0}}
+.loading-overlay{position:fixed;inset:0;z-index:9998;display:none;
+  align-items:center;justify-content:center;background:rgba(26,42,94,.18);}
+.loading-overlay.ativo{display:flex;}
+.loading-spinner{width:48px;height:48px;border:4px solid #fff;
+  border-top:4px solid #E8820C;border-radius:50%;animation:spin .7s linear infinite;}
+@keyframes spin{to{transform:rotate(360deg)}}
 @media print{.hdr,.sidebar,.mes-toolbar .btn,.kpis,.wb-hdr .btn,.pc-ftr .btn,.srm,.slot-label,.bancada,.salvar-bar,.lb,.toast,.modal-bg{display:none!important;}body{background:#fff;overflow:auto;}.layout{display:block;}.main{overflow:visible;padding:0;}.wb-hdr,.pc-hdr{-webkit-print-color-adjust:exact;print-color-adjust:exact;}.wb-body{grid-template-columns:1fr 1fr;}}
 
 /* ── MODAL DE ORGANIZAÇÃO ─────────────────────────────── */
@@ -237,6 +249,12 @@ button,input,select{font-family:inherit;}
     <button class="btn btn-red btn-sm" onclick="if(confirm('Sair?')){localStorage.removeItem('garra_token');localStorage.removeItem('garra_usuario');GARRA_TOKEN='';mostrarLoginDesktop();}">Sair</button>
   </div>
 </header>
+
+<!-- LOADING -->
+<div class="loading-bar" id="loadingBar"></div>
+<div class="loading-overlay" id="loadingOverlay">
+  <div class="loading-spinner"></div>
+</div>
 
 <div class="layout">
   <aside class="sidebar" id="sidebar" style="transition:width .2s;">
@@ -388,12 +406,28 @@ var GARRA_TOKEN = localStorage.getItem("garra_token") || "";
 function authHeaders(extra){
   return Object.assign({"Content-Type":"application/json","Authorization":"Bearer "+GARRA_TOKEN}, extra||{});
 }
+var _apiAtivas = 0;
+function showLoading(){
+  _apiAtivas++;
+  document.getElementById("loadingBar").classList.add("ativo");
+  if(_apiAtivas===1) document.getElementById("loadingOverlay").classList.add("ativo");
+}
+function hideLoading(){
+  _apiAtivas = Math.max(0,_apiAtivas-1);
+  if(_apiAtivas===0){
+    document.getElementById("loadingBar").classList.remove("ativo");
+    document.getElementById("loadingOverlay").classList.remove("ativo");
+  }
+}
+
 function fetchAuth(url, opts){
   opts = opts || {};
   opts.headers = Object.assign({"Authorization":"Bearer "+GARRA_TOKEN}, opts.headers||{});
+  showLoading();
   return fetch(url, opts).then(function(r){
+    hideLoading();
     if(r.status===401){ GARRA_TOKEN=""; localStorage.removeItem("garra_token"); mostrarLoginDesktop(); } return r;
-  });
+  }).catch(function(e){ hideLoading(); throw e; });
 }
 
 // Verifica auth ao carregar
@@ -632,7 +666,8 @@ function abrirMes(id){
   document.getElementById('mesContent').style.display='flex';
   document.getElementById('mesTitulo').textContent='Carregando...';
   fetchAuth('/jardinagem/api/meses/'+id).then(r=>r.json()).then(function(data){
-    mesAtual=data;bancada=[];
+    mesAtual=data;
+    // NÃO zera bancada — preserva fotos já carregadas pelo usuário
     quadrante=data.semanas.map(function(sem){
       return{semId:sem.id,label:sem.label,pares:sem.pares.map(function(par){
         var fA=par.fotos.find(f=>f.tipo==='antes'),fD=par.fotos.find(f=>f.tipo==='depois');
