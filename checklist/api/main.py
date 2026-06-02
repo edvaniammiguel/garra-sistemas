@@ -1214,7 +1214,7 @@ async def jard_km_mes(mes_id: int, payload=Depends(verificar_token_jard)):
 async def jard_preview(semana_id: int, payload=Depends(verificar_token_jard)):
     sem = jard_query("SELECT * FROM jardinagem.semanas WHERE id=%s", (semana_id,), fetch="one")
     if not sem: raise HTTPException(status_code=404, detail="Semana não encontrada")
-    pares_raw = jard_query("SELECT * FROM jardinagem.pares WHERE semana_id=%s ORDER BY ordem,id", (semana_id,))
+    pares_raw = jard_query("SELECT * FROM jardinagem.pares WHERE semana_id=%s AND (ativo IS NULL OR ativo=true) ORDER BY ordem,id", (semana_id,))
     pares = []
     for p in pares_raw:
         fotos = jard_query("SELECT * FROM jardinagem.fotos WHERE par_id=%s", (p["id"],))
@@ -1242,7 +1242,7 @@ async def jard_excel_fotos(semana_id: int, payload=Depends(verificar_token_jard)
     sem = jard_query("SELECT * FROM jardinagem.semanas WHERE id=%s", (semana_id,), fetch="one")
     if not sem: raise HTTPException(status_code=404, detail="Semana não encontrada")
     semana_dict = {"label":sem["label"],"data_ini":sem["data_ini"].strftime("%d/%m/%Y") if sem["data_ini"] else "","data_fim":sem["data_fim"].strftime("%d/%m/%Y") if sem["data_fim"] else ""}
-    pares_raw = jard_query("SELECT * FROM jardinagem.pares WHERE semana_id=%s ORDER BY ordem,id", (semana_id,))
+    pares_raw = jard_query("SELECT * FROM jardinagem.pares WHERE semana_id=%s AND (ativo IS NULL OR ativo=true) ORDER BY ordem,id", (semana_id,))
     pares = []
     for p in pares_raw:
         fotos = jard_query("SELECT * FROM jardinagem.fotos WHERE par_id=%s", (p["id"],))
@@ -1279,7 +1279,7 @@ async def jard_enviar_email(semana_id: int, payload=Depends(verificar_token_jard
     sem = jard_query("SELECT * FROM jardinagem.semanas WHERE id=%s", (semana_id,), fetch="one")
     if not sem: raise HTTPException(status_code=404, detail="Semana não encontrada")
     semana_dict = {"label":sem["label"],"data_ini":sem["data_ini"].strftime("%d/%m/%Y") if sem["data_ini"] else "","data_fim":sem["data_fim"].strftime("%d/%m/%Y") if sem["data_fim"] else ""}
-    pares_raw = jard_query("SELECT * FROM jardinagem.pares WHERE semana_id=%s ORDER BY ordem,id", (semana_id,))
+    pares_raw = jard_query("SELECT * FROM jardinagem.pares WHERE semana_id=%s AND (ativo IS NULL OR ativo=true) ORDER BY ordem,id", (semana_id,))
     pares = []
     for p in pares_raw:
         fotos = jard_query("SELECT * FROM jardinagem.fotos WHERE par_id=%s", (p["id"],))
