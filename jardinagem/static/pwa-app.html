@@ -180,6 +180,18 @@ input[type="time"]{-webkit-appearance:none;appearance:none;cursor:pointer;}
 
 /* NAV */
 .nav{background:#fff;border-top:1px solid var(--brd);display:flex;flex-shrink:0;
+/* SPINNER GLOBAL */
+.loading-bar{position:fixed;top:0;left:0;right:0;height:3px;z-index:9999;
+  background:linear-gradient(90deg,#E8820C 0%,#fff 50%,#E8820C 100%);
+  background-size:200% 100%;animation:loadbar .8s linear infinite;display:none;}
+.loading-bar.ativo{display:block;}
+@keyframes loadbar{0%{background-position:200% 0}100%{background-position:-200% 0}}
+.loading-overlay{position:fixed;inset:0;z-index:9998;display:none;
+  align-items:center;justify-content:center;background:rgba(26,42,94,.18);}
+.loading-overlay.ativo{display:flex;}
+.loading-spinner{width:44px;height:44px;border:4px solid #fff;
+  border-top:4px solid #E8820C;border-radius:50%;animation:spin .7s linear infinite;}
+@keyframes spin{to{transform:rotate(360deg)}}
   position:fixed;bottom:0;left:0;right:0;z-index:50;height:56px;}
 .nb{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;
   padding:8px 4px;border:none;background:none;cursor:pointer;color:var(--mut);
@@ -218,6 +230,12 @@ input[type="time"]{-webkit-appearance:none;appearance:none;cursor:pointer;}
     <span class="hdr-badge" id="badge" style="display:none;">ADMIN</span>
   </div>
 </header>
+
+<!-- LOADING -->
+<div class="loading-bar" id="loadingBar"></div>
+<div class="loading-overlay" id="loadingOverlay">
+  <div class="loading-spinner"></div>
+</div>
 
 <!-- TELAS -->
 <div class="telas">
@@ -533,13 +551,30 @@ function atualizarStatus(){
 
 function fecharModal(id){ document.getElementById(id).style.display = "none"; }
 
+// Contador de chamadas ativas — esconde spinner só quando todas terminam
+var _apiAtivas = 0;
+function showLoading(){
+  _apiAtivas++;
+  document.getElementById("loadingBar").classList.add("ativo");
+  if(_apiAtivas === 1) document.getElementById("loadingOverlay").classList.add("ativo");
+}
+function hideLoading(){
+  _apiAtivas = Math.max(0, _apiAtivas-1);
+  if(_apiAtivas === 0){
+    document.getElementById("loadingBar").classList.remove("ativo");
+    document.getElementById("loadingOverlay").classList.remove("ativo");
+  }
+}
+
 function api(path, opts){
   opts = opts || {};
   opts.headers = Object.assign({"Content-Type":"application/json","Authorization":"Bearer "+TOKEN}, opts.headers||{});
+  showLoading();
   return fetch(BASE_API + path, opts).then(function(r){
+    hideLoading();
     if(r.status === 401){ sair(); }
     return r;
-  });
+  }).catch(function(e){ hideLoading(); throw e; });
 }
 
 // ── NAVEGAÇÃO ─────────────────────────────────────────────────
@@ -857,12 +892,13 @@ function encaixarFoto(fotoId){
   fd.append("tipo", _selTipo);
   fd.append("local_nome", par ? (par.local_nome||"") : "");
   if(par) fd.append("par_id", String(par.id));
+  showLoading();
   fetch(BASE_API+"/api/fotos/mobile",{method:"POST",headers:{Authorization:"Bearer "+TOKEN},body:fd})
-    .then(function(r){ return r.json(); })
+    .then(function(r){ hideLoading(); return r.json(); })
     .then(function(d){
       if(d.ok){ toast("Foto salva!"); carregarPares(); }
       else { toast("Erro: "+(d.error||d.detail||JSON.stringify(d))); }
-    }).catch(function(e){ toast("Erro: "+e.message); });
+    }).catch(function(e){ hideLoading(); toast("Erro: "+e.message); });
 }
 
 // ── KM ────────────────────────────────────────────────────────
