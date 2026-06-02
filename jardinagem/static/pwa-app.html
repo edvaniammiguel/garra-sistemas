@@ -1060,24 +1060,12 @@ function carregarKmHoje(){
   var lista = document.getElementById("kmLista");
   if(!SEMANA||!SEMANA.mes_id){ lista.innerHTML='<div style="color:var(--mut);font-size:12px;text-align:center;padding:1rem;">Sem mês selecionado.</div>'; return; }
   lista.innerHTML='<div style="color:var(--mut);font-size:12px;text-align:center;padding:1rem;">Carregando...</div>';
-  // Busca todas as semanas do mês e chama /preview em cada uma (rota confirmada na API)
-  getMes(SEMANA.mes_id)
+  // 1 chamada para todo o mês — sem waterfall de /preview
+  api("/api/km/mes/"+SEMANA.mes_id)
+    .then(function(r){ return r.json(); })
     .then(function(d){
-      var semanas = d.semanas||[];
-      if(!semanas.length){ renderKmLista([], lista); return; }
-      Promise.all(semanas.map(function(sem){
-        return api("/api/relatorios/"+sem.id+"/preview")
-          .then(function(r){ return r.ok ? r.json() : {relatorios:[]}; })
-          .catch(function(){ return {relatorios:[]}; });
-      })).then(function(results){
-        var todos = [];
-        results.forEach(function(d){
-          // preview retorna: {relatorios:[{data, local_nome, km_inicial, km_final, hora_inicio, hora_fim, responsavel}]}
-          (d.relatorios||[]).forEach(function(r){ todos.push(r); });
-        });
-        renderKmLista(todos, lista);
-      }).catch(function(){ lista.innerHTML='<div style="color:var(--red);font-size:12px;text-align:center;padding:1rem;">Erro ao carregar.</div>'; });
-    }).catch(function(){ lista.innerHTML='<div style="color:var(--red);font-size:12px;text-align:center;padding:1rem;">Erro ao carregar mês.</div>'; });
+      renderKmLista(d.relatorios||[], lista);
+    }).catch(function(){ lista.innerHTML='<div style="color:var(--red);font-size:12px;text-align:center;padding:1rem;">Erro ao carregar.</div>'; });
 }
 
 function renderKmLista(todos, lista){
