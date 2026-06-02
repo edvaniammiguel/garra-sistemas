@@ -1125,6 +1125,47 @@ async def jard_historico_hoje(semana_id: Optional[int]=None, payload=Depends(ver
     return {"data":hoje,"fotos":fotos,"km":km_list,"km_total":round(km_total,1)}
 
 # ── CONFIG ────────────────────────────────────────────────────
+@app.get("/jardinagem/api/inicio")
+async def jard_inicio(payload=Depends(verificar_token_jard)):
+    """Rota de carregamento rápido — retorna semana ativa + pares + config em 1 chamada."""
+    hoje = date.today().isoformat()
+    # 1. Semana ativa
+    semana = jard_query("""SELECT s.*,m.id as mes_id,m.ano,m.mes,m.label as mes_label
+                        FROM jardinagem.semanas s JOIN jardinagem.meses m ON m.id=s.mes_id
+                        WHERE s.data_ini::date<=%s AND s.data_fim::date>=%s
+                        AND s.status='aberta' LIMIT 1""", (hoje,hoje), fetch="one")
+    if not semana:
+        semana = jard_query("""SELECT s.*,m.id as mes_id,m.ano,m.mes,m.label as mes_label
+                            FROM jardinagem.semanas s JOIN jardinagem.meses m ON m.id=s.mes_id
+                            WHERE s.status='aberta'
+                            ORDER BY s.id DESC LIMIT 1""", fetch="one")
+    if not semana:
+        return {"semana": None, "pares": [], "next_code": 6050}
+    sid = semana["id"]
+    # 2. Pares da semana (com fotos)
+    pares = jard_query("""SELECT p.id,p.codigo_a,p.codigo_d,p.local_nome,p.ordem
+                          FROM jardinagem.pares p
+                          WHERE p.semana_id=%s AND (p.ativo IS NULL OR p.ativo=true)
+                          ORDER BY p.codigo_a""", (sid,))
+    fotos = jard_query("""SELECT f.id,f.par_id,f.tipo,f.storage_path
+                          FROM jardinagem.fotos f
+                          JOIN jardinagem.pares p ON p.id=f.par_id
+                          WHERE p.semana_id=%s AND (p.ativo IS NULL OR p.ativo=true)""", (sid,))
+    fotos_por_par = {}
+    for f in fotos:
+        pid = f["par_id"]
+        if pid not in fotos_por_par: fotos_por_par[pid] = []
+        fotos_por_par[pid].append({"id":f["id"],"tipo":f["tipo"],"storage_path":f["storage_path"]})
+    pares_com_fotos = []
+    for p in pares:
+        pd = dict(p)
+        pd["fotos"] = fotos_por_par.get(p["id"], [])
+        pares_com_fotos.append(pd)
+    # 3. Config (next_code)
+    cfg = jard_query("SELECT valor FROM jardinagem.config WHERE chave='next_code'", fetch="one")
+    next_code = int(cfg["valor"]) if cfg else 6050
+    return {"semana": dict(semana), "pares": pares_com_fotos, "next_code": next_code}
+
 @app.get("/jardinagem/api/config")
 async def jard_config(payload=Depends(verificar_token_jard)):
     rows = jard_query("SELECT * FROM jardinagem.config")
