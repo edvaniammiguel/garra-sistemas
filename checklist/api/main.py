@@ -765,7 +765,7 @@ async def jard_get_mes(mid: int, payload=Depends(verificar_token_jard)):
         sd = dict(s)
         sd["mes_id"] = mid
         sd["pares"] = []
-        pares = jard_query("SELECT * FROM jardinagem.pares WHERE semana_id=%s ORDER BY ordem", (s["id"],))
+        pares = jard_query("SELECT * FROM jardinagem.pares WHERE semana_id=%s AND (ativo IS NULL OR ativo=true) ORDER BY ordem", (s["id"],))
         for p in pares:
             pd = dict(p)
             fotos = jard_query("SELECT * FROM jardinagem.fotos WHERE par_id=%s", (p["id"],))
