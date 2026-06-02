@@ -884,18 +884,21 @@ async def jard_listar_pares(semana_id: int = None, payload=Depends(verificar_tok
 @app.post("/jardinagem/api/pares")
 async def jard_criar_par(request: Request, payload=Depends(verificar_token_jard)):
     d = await request.json()
-    # Buscar o último codigo_d ativo no banco de dados
+    # Buscar o último codigo_d ativo no banco
     ultimo = jard_query(
         "SELECT MAX(codigo_d) as max_cod FROM jardinagem.pares WHERE ativo IS NULL OR ativo=true",
         fetch="one"
     )
-    max_cod = int(ultimo.get("max_cod") or 6045)  # Se vazio, começa em 6046
+    # Buscar next_code configurado (valor mínimo garantido)
+    cfg = jard_query("SELECT valor FROM jardinagem.config WHERE chave='next_code'", fetch="one")
+    min_code = int(cfg["valor"]) - 1 if cfg else 6049  # next_code aponta para o próximo, então -1 é o piso
+    max_cod = max(int(ultimo.get("max_cod") or 0), min_code)
     cod = max_cod + 1  # Próximo código é sempre MAX+1
-    
+
     # Atualizar config.next_code para manter sincronizado
     jard_query("UPDATE jardinagem.config SET valor=%s WHERE chave='next_code'",
-               (str(cod + 1),), fetch="none")
-    
+               (str(cod + 2),), fetch="none")
+
     row = jard_query_id("INSERT INTO jardinagem.pares (semana_id,codigo_a,codigo_d,local_nome,data_label,ordem,ativo) VALUES (%s,%s,%s,%s,%s,%s,true)",
                         (d["semana_id"],cod,cod+1,d.get("local_nome",""),d.get("data_label",""),d.get("ordem",0)))
     return dict(row)
