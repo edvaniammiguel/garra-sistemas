@@ -187,7 +187,8 @@ input[type="time"]{-webkit-appearance:none;appearance:none;cursor:pointer;}
 .loading-bar.ativo{display:block;}
 @keyframes loadbar{0%{background-position:200% 0}100%{background-position:-200% 0}}
 .loading-overlay{position:fixed;inset:0;z-index:9998;display:none;
-  align-items:center;justify-content:center;background:rgba(26,42,94,.18);}
+  align-items:center;justify-content:center;background:rgba(26,42,94,.18);
+  pointer-events:none;}
 .loading-overlay.ativo{display:flex;}
 .loading-spinner{width:44px;height:44px;border:4px solid #fff;
   border-top:4px solid #E8820C;border-radius:50%;animation:spin .7s linear infinite;}
@@ -972,6 +973,15 @@ function calcKm(){
   else { total.style.display="none"; }
 }
 
+function deletarKm(id){
+  if(!confirm("Excluir este registro de KM?")) return;
+  api("/api/relatorios/"+id, {method:"DELETE"})
+    .then(function(r){
+      if(r.ok){ toast("Registro excluído!"); carregarKmHoje(); }
+      else { toast("Erro ao excluir."); }
+    }).catch(function(){ toast("Erro ao excluir."); });
+}
+
 function salvarKm(){
   var local = document.getElementById("kmLocal").value.trim();
   var ini   = parseFloat(document.getElementById("kmIni").value||0);
@@ -1123,6 +1133,7 @@ function renderKmLista(todos, lista){
         + '</div>'
         + '</div>'
         + (r.id && !r._offline ? '<button class="btn btn-sm" style="background:none;border:none;color:#1A2A5E;font-size:14px;padding:0;cursor:pointer;flex-shrink:0;" onclick="editarKm(' + r.id + ')">✏️</button>' : '')
+        + (r.id && !r._offline ? '<button class="btn btn-sm" style="background:none;border:none;color:#DC2626;font-size:14px;padding:0;cursor:pointer;flex-shrink:0;" onclick="deletarKm(' + r.id + ')">🗑️</button>' : '')
         + '</div>'
         + '</div>';
     });
