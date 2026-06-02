@@ -886,7 +886,7 @@ async def jard_criar_par(request: Request, payload=Depends(verificar_token_jard)
     d = await request.json()
     # Buscar o último codigo_d ativo no banco
     ultimo = jard_query(
-        "SELECT MAX(codigo_d) as max_cod FROM jardinagem.pares WHERE ativo IS NULL OR ativo=true",
+        "SELECT MAX(codigo_d) as max_cod FROM jardinagem.pares WHERE (ativo IS NULL OR ativo=true)",
         fetch="one"
     )
     # Buscar next_code configurado (valor mínimo garantido)
@@ -1185,6 +1185,31 @@ async def jard_clientes(payload=Depends(verificar_token_jard)):
     return [dict(r) for r in rows]
 
 # ── PREVIEW RELATÓRIO ─────────────────────────────────────────
+@app.get("/jardinagem/api/km/mes/{mes_id}")
+async def jard_km_mes(mes_id: int, payload=Depends(verificar_token_jard)):
+    """Retorna todos os KMs do mês em 1 chamada — evita N chamadas /preview."""
+    kms_raw = jard_query("""
+        SELECT r.id, r.data, r.local_nome, r.km_inicial, r.km_final,
+               r.hora_inicio, r.hora_fim, r.observacao, r.responsavel,
+               u.nome as responsavel_nome
+        FROM jardinagem.relatorios_diarios r
+        JOIN jardinagem.semanas s ON s.id = r.semana_id
+        JOIN public.usuarios_garra u ON u.id = r.usuario_id
+        WHERE s.mes_id = %s
+        ORDER BY r.data, r.criado_em
+    """, (mes_id,))
+    kms = [{"id": r["id"],
+            "data": r["data"].strftime("%d/%m/%Y") if r["data"] else "",
+            "local_nome": r["local_nome"] or "",
+            "km_inicial": float(r["km_inicial"] or 0),
+            "km_final": float(r["km_final"] or 0),
+            "hora_inicio": str(r["hora_inicio"]) if r["hora_inicio"] else "",
+            "hora_fim": str(r["hora_fim"]) if r["hora_fim"] else "",
+            "observacao": r["observacao"] or "",
+            "responsavel": r["responsavel_nome"] or r["responsavel"] or ""
+            } for r in kms_raw]
+    return {"mes_id": mes_id, "relatorios": kms}
+
 @app.get("/jardinagem/api/relatorios/{semana_id}/preview")
 async def jard_preview(semana_id: int, payload=Depends(verificar_token_jard)):
     sem = jard_query("SELECT * FROM jardinagem.semanas WHERE id=%s", (semana_id,), fetch="one")
