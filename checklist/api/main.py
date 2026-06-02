@@ -1313,10 +1313,14 @@ async def server_error_handler(request: Request, exc):
         return JSONResponse({"ok": False, "error": "Erro interno do servidor"}, status_code=500)
     raise exc
 
-# ── HEALTH CHECK ──────────────────────────────────────────────
+# ── HEALTH CHECK — mantém banco Neon acordado ──────────────────
 @app.get("/api/health")
 async def health():
-    return {"status":"ok","sistema":"Garra Gestão API","versao":"6.0.0","modulos":["checklist","jardinagem"]}
+    try:
+        jard_query("SELECT 1", fetch="one")
+        return {"status":"ok","db":"conectado","sistema":"Garra Gestão API","versao":"6.0.0"}
+    except Exception as e:
+        return {"status":"erro","db":str(e)}
 
 @app.get("/")
 async def root():
@@ -1324,4 +1328,8 @@ async def root():
 
 @app.get("/jardinagem/api/health")
 async def jard_health():
-    return {"status":"ok","modulo":"jardinagem"}
+    try:
+        jard_query("SELECT 1", fetch="one")
+        return {"status":"ok","db":"conectado","modulo":"jardinagem"}
+    except Exception as e:
+        return {"status":"erro","db":str(e)}
