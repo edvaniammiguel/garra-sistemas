@@ -666,8 +666,7 @@ function abrirMes(id){
   document.getElementById('mesContent').style.display='flex';
   document.getElementById('mesTitulo').textContent='Carregando...';
   fetchAuth('/jardinagem/api/meses/'+id).then(r=>r.json()).then(function(data){
-    mesAtual=data;
-    // NÃO zera bancada — preserva fotos já carregadas pelo usuário
+    mesAtual=data;bancada=[];
     quadrante=data.semanas.map(function(sem){
       return{semId:sem.id,label:sem.label,pares:sem.pares.map(function(par){
         var fA=par.fotos.find(f=>f.tipo==='antes'),fD=par.fotos.find(f=>f.tipo==='depois');
