@@ -924,6 +924,13 @@ async def jard_del_par(pid: int, payload=Depends(verificar_token_jard)):
     return {"ok": True}
 
 # ── FOTOS ─────────────────────────────────────────────────────
+@app.patch("/jardinagem/api/fotos/{fid}")
+async def jard_patch_foto(fid: int, request: Request, payload=Depends(verificar_token_jard)):
+    d = await request.json()
+    if "tipo" in d and d["tipo"] in ("antes", "depois"):
+        jard_query("UPDATE jardinagem.fotos SET tipo=%s WHERE id=%s", (d["tipo"], fid), fetch="none")
+    return {"ok": True}
+
 @app.post("/jardinagem/api/fotos/avulsa")
 async def jard_foto_avulsa(
     par_id: int = Form(...), tipo: str = Form(...),
