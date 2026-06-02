@@ -736,8 +736,10 @@ async def jard_criar_mes(request: Request, payload=Depends(verificar_token_jard)
     nomes = ["","Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"]
     label = d.get("label") or f"{nomes[mes]}/{ano}"
     exist = jard_query("SELECT id FROM jardinagem.meses WHERE ano=%s AND mes=%s", (ano,mes), fetch="one")
+    ja_existia = False
     if exist:
         mes_id = exist["id"]
+        ja_existia = True
     else:
         row = jard_query_id("INSERT INTO jardinagem.meses(ano,mes,label) VALUES(%s,%s,%s)", (ano,mes,label))
         mes_id = row["id"]
@@ -745,7 +747,9 @@ async def jard_criar_mes(request: Request, payload=Depends(verificar_token_jard)
     if not sem_exist:
         semanas_do_mes(ano, mes, mes_id)
     mes_data = jard_query("SELECT * FROM jardinagem.meses WHERE id=%s", (mes_id,), fetch="one")
-    return dict(mes_data)
+    result = dict(mes_data)
+    result["ja_existia"] = ja_existia
+    return result
 
 @app.patch("/jardinagem/api/meses/{mid}")
 async def jard_patch_mes(mid: int, request: Request, payload=Depends(verificar_token_jard)):
