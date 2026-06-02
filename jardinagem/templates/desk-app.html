@@ -958,6 +958,9 @@ function criarMes(){
     .then(r=>r.json()).then(function(d){
       fecharModal('modalMes');
       carregarMeses();
+      if(d.ja_existia){
+        toast('⚠️ Este mês já existe — abrindo o existente.');
+      }
       abrirMes(d.id);
     }).catch(()=>toast('Erro'));
 }
