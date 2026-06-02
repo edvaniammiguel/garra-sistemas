@@ -187,6 +187,10 @@ button,input,select{font-family:inherit;}
 .loading-spinner{width:48px;height:48px;border:4px solid #fff;
   border-top:4px solid #E8820C;border-radius:50%;animation:spin .7s linear infinite;}
 @keyframes spin{to{transform:rotate(360deg)}}
+/* MODO EDIÇÃO */
+.slot-edit{outline:2px dashed var(--bl3);outline-offset:-2px;}
+.slot-edit.slot-e{background:#EFF6FF;}
+.pc-edit{outline:2px solid var(--bl3);outline-offset:-1px;}
 @media print{.hdr,.sidebar,.mes-toolbar .btn,.kpis,.wb-hdr .btn,.pc-ftr .btn,.srm,.slot-label,.bancada,.salvar-bar,.lb,.toast,.modal-bg{display:none!important;}body{background:#fff;overflow:auto;}.layout{display:block;}.main{overflow:visible;padding:0;}.wb-hdr,.pc-hdr{-webkit-print-color-adjust:exact;print-color-adjust:exact;}.wb-body{grid-template-columns:1fr 1fr;}}
 
 /* ── MODAL DE ORGANIZAÇÃO ─────────────────────────────── */
@@ -508,9 +512,10 @@ function mUp(e){
   var sl=el.closest('.slot');
   var bg=el.closest('#bancada-grid, #orgBancadaGrid');
   if(sl){
-    // only drop if slot has no saved photo
     var hasSaved = sl.dataset.sid && sl.dataset.sid!=='';
-    if(!hasSaved){
+    var destPar = findPar(sl.dataset.pid);
+    var isEditMode = destPar && destPar.editando && D.src==='edit';
+    if(!hasSaved || isEditMode){
       dropOnSlot(sl.dataset.pid, sl.dataset.tipo);
     }
   } else if(bg && D.src==='slot'){
@@ -551,10 +556,17 @@ function dropOnSlot(destPId,destTipo){
     destPar[destTipo]=fo;
     origPar.salvo=false;destPar.salvo=false;
     reRender();
+  } else if(D.src==='edit'){
+    var origPar=findPar(D.pId);
+    if(!origPar)return;
+    if(origPar.tid!==destPar.tid){toast('Apenas dentro do mesmo par em edição.');return;}
+    if(D.sTipo===destTipo)return;
+    var tmp=origPar[D.sTipo];
+    origPar[D.sTipo]=destPar[destTipo]||null;
+    destPar[destTipo]=tmp;
+    renderAll();
   }
 }
-
-function dropOnBancada(){
   var p=findPar(D.pId);
   if(!p)return;
   var fo=p[D.sTipo];
@@ -755,6 +767,12 @@ function rPares(sem,si){
       +'<div class="pc-ftr">'
       +'<span style="font-size:10px;color:'+cor+'">● '+pct+'%</span>'
       +(par.antes&&par.antes.iaD?'<span class="ia-desc">🤖 '+esc(par.antes.iaD)+'</span>':'')
+      +(par.salvo
+        ?(par.editando
+          ?'<button class="btn btn-xs" style="background:#16A34A;color:#fff" onclick="salvarParEditado(\''+par.tid+'\')">💾 Salvar</button>'
+           +'<button class="btn btn-xs btn-red" onclick="cancelEdit(\''+par.tid+'\')">✗ Cancelar</button>'
+          :'<button class="btn btn-xs btn-pri" onclick="toggleEdit(\''+par.tid+'\')">✎ Editar</button>')
+        :'')
       +'<button class="btn btn-xs btn-out" onclick="addParDepois('+si+','+pi+')">+</button>'
       +'<button class="btn btn-xs btn-red" onclick="delPar('+si+','+pi+')">🗑</button>'
       +'</div></div>';
@@ -766,6 +784,27 @@ function rSlot(par,tipo){
   var cod=tipo==='antes'?par.codA:par.codD;
   var badge=tipo==='antes'?'<span class="sbadge sb-a">Antes</span>':'<span class="sbadge sb-d">Depois</span>';
   var num='<span class="snum">'+(cod?cod+'ª':'?')+'</span>';
+  // ── MODO EDIÇÃO ───────────────────────────────────────
+  if(par.editando){
+    if(f){
+      return'<div class="slot slot-f slot-edit" data-pid="'+par.tid+'" data-tipo="'+tipo+'"'+(f.sid?' data-sid="'+f.sid+'"':'')+'>'
+        +'<img src="'+f.src+'" alt="" draggable="false" style="cursor:grab" '
+        +'onmousedown="dStart(event,\'edit\',-1,\''+par.tid+'\',\''+tipo+'\',\''+f.src+'\')">'
+        +badge+num
+        +'<input type="file" accept="image/*" id="einp_'+par.tid+'_'+tipo+'" style="display:none" onchange="editFileSlot(this,\''+par.tid+'\',\''+tipo+'\')">'
+        +'<button class="srm" style="right:26px;background:rgba(37,99,235,.85)" title="Substituir arquivo" onmousedown="ev(event)" onclick="ev(event);document.getElementById(\'einp_'+par.tid+'_'+tipo+'\').click()">🔄</button>'
+        +'<button class="srm" onmousedown="ev(event)" onclick="editRmSlot(event,\''+par.tid+'\',\''+tipo+'\')">✕</button>'
+        +'</div>';
+    }
+    return'<div class="slot slot-e slot-edit" data-pid="'+par.tid+'" data-tipo="'+tipo+'">'
+      +badge+num
+      +'<label class="slot-label">'
+      +'<input type="file" accept="image/*" onchange="editFileSlot(this,\''+par.tid+'\',\''+tipo+'\')">'
+      +'<div class="slot-ico">'+(tipo==='antes'?'📷':'✅')+'</div>'
+      +'<div class="slot-txt">Arraste ou<br>clique aqui</div>'
+      +'</label></div>';
+  }
+  // ── MODO NORMAL ───────────────────────────────────────
   if(f){
     return'<div class="slot slot-f" data-pid="'+par.tid+'" data-tipo="'+tipo+'"'+(f.sid?' data-sid="'+f.sid+'"':'')
       +' onclick="lbOpen(\''+par.tid+'\',\''+tipo+'\')">'
@@ -848,6 +887,64 @@ function fileSlot(input,pId,tipo){
 function delFS(e,fid,pId,tipo){
   ev(e);if(!confirm('Remover foto salva do banco?'))return;
   fetchAuth('/jardinagem/api/fotos/'+fid,{method:'DELETE'}).then(()=>{abrirMes(mesAtual.id);toast('Foto removida.');}).catch(()=>toast('Erro.'));
+}
+
+/* ─── EDIÇÃO DE PAR SALVO ─────────────────────────────── */
+function toggleEdit(tid){
+  var par=findPar(tid);if(!par)return;
+  par.editando=true;
+  par._origAntes=par.antes?Object.assign({},par.antes):null;
+  par._origDepois=par.depois?Object.assign({},par.depois):null;
+  renderAll();toast('Modo edição ativado — mova ou substitua as fotos e clique 💾 Salvar.');
+}
+function cancelEdit(tid){
+  var par=findPar(tid);if(!par)return;
+  par.antes=par._origAntes;par.depois=par._origDepois;
+  par.editando=false;renderAll();toast('Edição cancelada.');
+}
+function editFileSlot(input,pId,tipo){
+  var file=input.files[0];if(!file)return;
+  var r=new FileReader();
+  r.onload=function(e){
+    var p=findPar(pId);if(!p)return;
+    p[tipo]={src:e.target.result,nome:file.name,iaL:'',iaD:'',sid:null,_file:file};
+    renderAll();
+  };r.readAsDataURL(file);
+}
+function editRmSlot(e,pId,tipo){
+  ev(e);var p=findPar(pId);if(!p)return;
+  p[tipo]=null;renderAll();
+}
+function salvarParEditado(tid){
+  var par=findPar(tid);if(!par)return;
+  var orig={antes:par._origAntes,depois:par._origDepois};
+  var ups=[];
+  ['antes','depois'].forEach(function(tipo){
+    var cur=par[tipo];
+    var ori=orig[tipo];
+    if(cur===ori)return;
+    if(!cur){
+      // foto removida
+      if(ori&&ori.sid)ups.push(fetchAuth('/jardinagem/api/fotos/'+ori.sid,{method:'DELETE'}));
+    } else if(!cur.sid){
+      // arquivo novo
+      var fd=new FormData();fd.append('par_id',par.dbId);fd.append('tipo',tipo);
+      var blob=cur._file||b64toBlob(cur.src);
+      fd.append('foto',blob,cur.nome||tipo+'.jpg');
+      ups.push(fetchAuth('/jardinagem/api/fotos/avulsa',{method:'POST',body:fd}).then(r=>r.json()));
+    } else if(!ori||cur.sid!==ori.sid){
+      // foto salva movida para este slot — atualiza tipo no banco
+      ups.push(fetchAuth('/jardinagem/api/fotos/'+cur.sid,{
+        method:'PATCH',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({tipo:tipo})
+      }));
+    }
+  });
+  if(!ups.length){par.editando=false;renderAll();return;}
+  toast('Salvando...');
+  Promise.all(ups)
+    .then(function(){abrirMes(mesAtual.id);toast('✅ Par atualizado!');})
+    .catch(function(){toast('Erro ao salvar. Tente novamente.');});
 }
 
 /* ─── SALVAR NO BANCO ─────────────────────────────────── */
