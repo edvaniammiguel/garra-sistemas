@@ -1,6 +1,6 @@
 // Service Worker — Garra Jardinagem PWA v3
 // Arquivos PWA: pwa-login.html + pwa-app.html
-const CACHE = "garra-jardinagem-v4";
+const CACHE = "garra-jardinagem-v5";
 
 const ASSETS = [
   "./pwa-login.html",
