@@ -1090,6 +1090,11 @@ async def jard_editar_km(km_id: int, request: Request, payload=Depends(verificar
          km_id), fetch="none")
     return {"ok": True, "id": km_id}
 
+@app.delete("/jardinagem/api/relatorios/{km_id}")
+async def jard_deletar_km(km_id: int, payload=Depends(verificar_token_jard)):
+    jard_query("DELETE FROM jardinagem.relatorios_diarios WHERE id=%s", (km_id,), fetch="none")
+    return {"ok": True, "id": km_id}
+
 @app.get("/jardinagem/api/historico/hoje")
 async def jard_historico_hoje(semana_id: Optional[int]=None, payload=Depends(verificar_token_jard)):
     hoje = date.today().isoformat()
