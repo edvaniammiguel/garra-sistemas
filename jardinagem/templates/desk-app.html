@@ -693,7 +693,8 @@ function renderAll(){
   document.getElementById('kB').textContent=bancada.length;
   document.getElementById('kP').textContent=salvos;
   document.getElementById('kC').textContent=comp;
-  fetchAuth('/jardinagem/api/config').then(r=>r.json()).then(function(c){document.getElementById('kCod').textContent=c.next_code||'—';}).catch(function(){});
+  // config sem spinner — chamada silenciosa
+  fetch('/jardinagem/api/config', {headers:{"Authorization":"Bearer "+GARRA_TOKEN}}).then(r=>r.json()).then(function(c){document.getElementById('kCod').textContent=c.next_code||'—';}).catch(function(){});
   rBancada();rSemanas();rSalvar();
 }
 
