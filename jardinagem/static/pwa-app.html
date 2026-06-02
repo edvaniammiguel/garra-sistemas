@@ -558,20 +558,25 @@ function ir(nome){
 
 // ── SEMANA ────────────────────────────────────────────────────
 function carregarSemana(){
-  carregarSemanaAtiva();
+  // Rota rápida: semana + pares + config em 1 chamada
+  api("/api/inicio")
+    .then(function(r){ return r.json(); })
+    .then(function(d){
+      // Semana
+      if(!d.semana){ SEMANA=null; atualizarCardSemana(); return; }
+      setSemana(d.semana);
+      // Pares já vêm junto — sem segunda chamada
+      PARES = (d.pares||[]).sort(function(a,b){
+        return parseInt(a.codigo_a||0) - parseInt(b.codigo_a||0);
+      });
+      renderPares();
+      // Galeria em paralelo (não bloqueia)
+      if(SEMANA&&SEMANA.mes_id) carregarGaleriaSems();
+    }).catch(function(){ SEMANA=null; atualizarCardSemana(); });
 }
 
 function carregarSemanaAtiva(){
-  api("/api/semanas/ativa")
-    .then(function(r){ return r.json(); })
-    .then(function(d){
-      if(!d||d.erro||d.detail||!d.id){
-        SEMANA=null; atualizarCardSemana(); return;
-      }
-      setSemana(d);
-      carregarPares();
-      if(SEMANA&&SEMANA.mes_id) carregarGaleriaSems();
-    }).catch(function(){ SEMANA=null; atualizarCardSemana(); });
+  carregarSemana();
 }
 
 function setSemana(d){
