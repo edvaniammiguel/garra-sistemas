@@ -477,7 +477,10 @@ input[type="time"]{-webkit-appearance:none;appearance:none;cursor:pointer;}
 
 <script>
 // ── ESTADO ───────────────────────────────────────────────────
-var BASE_API = "https://garra-sistemas.onrender.com/jardinagem";
+// Detecta ambiente: localhost → DEV (backend local), senão → PRODUÇÃO
+var BASE_API = ((location.hostname === "localhost" || location.hostname === "127.0.0.1")
+  ? "http://localhost:8000"
+  : "https://garra-sistemas.onrender.com") + "/jardinagem";
 var TOKEN = localStorage.getItem("garra_token") || "";
 var USUARIO = null;
 try{ USUARIO = JSON.parse(localStorage.getItem("garra_usuario")||"null"); }catch(e){}

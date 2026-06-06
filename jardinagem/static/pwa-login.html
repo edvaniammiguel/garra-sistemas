@@ -83,6 +83,11 @@ function togglePw(){
   e.textContent=i.type==="password"?"👁":"🙈";
 }
 
+// Detecta ambiente: localhost → DEV (backend local), senão → PRODUÇÃO
+var BASE_API = (location.hostname === "localhost" || location.hostname === "127.0.0.1")
+  ? "http://localhost:8000"
+  : "https://garra-sistemas.onrender.com";
+
 function entrar(){
   var em=($("em").value||"").trim();
   var pw=$("pw").value||"";
@@ -90,7 +95,7 @@ function entrar(){
   $("btn").disabled=true;
   $("btn").textContent="Aguarde...";
   msg("Conectando...","#64748B");
-  fetch("https://garra-sistemas.onrender.com/jardinagem/api/login",{
+  fetch(BASE_API+"/jardinagem/api/login",{
     method:"POST",
     headers:{"Content-Type":"application/json"},
     body:JSON.stringify({email:em,senha:pw})
