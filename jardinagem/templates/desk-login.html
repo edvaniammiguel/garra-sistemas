@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<link rel="icon" type="image/png" sizes="32x32" href="/jardinagem/static/icons/favicon-32.png">
+<link rel="icon" type="image/png" sizes="16x16" href="/jardinagem/static/icons/favicon-16.png">
+<link rel="apple-touch-icon" href="/jardinagem/static/icons/icon-192.png">
+<meta name="theme-color" content="#1A2A5E">
+<title>Garra Jardinagem</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:system-ui,sans-serif;background:#F0F4FF;min-height:100vh;
+  display:flex;align-items:center;justify-content:center;padding:1.5rem}
+.card{background:#fff;border-radius:16px;padding:2rem;width:100%;max-width:360px;
+  box-shadow:0 4px 24px rgba(26,42,94,.12);border:1.5px solid #CBD5E1}
+h1{font-size:15px;font-weight:800;color:#1A2A5E;text-align:center;margin-bottom:3px}
+.sub{font-size:11px;color:#64748B;text-align:center;margin-bottom:.5rem}
+.lbl{font-size:10px;font-weight:700;color:#64748B;text-transform:uppercase;
+  letter-spacing:.06em;margin-bottom:4px;display:block}
+.inp{width:100%;padding:11px 14px;border:1.5px solid #CBD5E1;border-radius:8px;
+  font-size:14px;background:#F8FAFC;margin-bottom:.75rem;outline:none}
+.inp:focus{border-color:#1A2A5E}
+.pw-wrap{position:relative;margin-bottom:.75rem}
+.pw-wrap .inp{margin-bottom:0;padding-right:44px}
+.eye{position:absolute;right:12px;top:50%;transform:translateY(-50%);
+  background:none;border:none;cursor:pointer;font-size:18px;color:#64748B;padding:4px}
+.btn{width:100%;padding:13px;background:#1A2A5E;color:#fff;border:none;
+  border-radius:8px;font-size:15px;font-weight:800;cursor:pointer;margin-top:.25rem}
+.btn:disabled{opacity:.6}
+.msg{font-size:12px;text-align:center;margin-top:.75rem;min-height:18px;
+  color:#64748B}
+</style>
+</head>
+<body>
+<div class="card">
+<h1>Jardinagem</h1>
+<div class="sub">Águas de Pará de Minas</div>
+<label class="lbl">Email</label>
+<input class="inp" type="email" id="email" placeholder="seu@email.com">
+<label class="lbl">Senha</label>
+<div class="pw-wrap">
+<input class="inp" type="password" id="senha" placeholder="••••••">
+<button class="eye" onclick="document.getElementById('senha').type = document.getElementById('senha').type === 'password' ? 'text' : 'password'">👁</button>
+</div>
+<button class="btn" onclick="fazer_login()">Entrar</button>
+<div class="msg" id="msg"></div>
+</div>
+<script>
+// Detecta ambiente: localhost → DEV (backend local), senão → PRODUÇÃO
+const BASE_API = (location.hostname === "localhost" || location.hostname === "127.0.0.1")
+  ? "http://localhost:8000/jardinagem"
+  : "https://garra-sistemas.onrender.com/jardinagem"
+
+async function fazer_login(){
+  const email = document.getElementById('email').value.trim()
+  const senha = document.getElementById('senha').value.trim()
+  const msg = document.getElementById('msg')
+  
+  if(!email || !senha){
+    msg.textContent = "Preencha email e senha"
+    return
+  }
+  
+  try{
+    const r = await fetch(BASE_API + "/api/login", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({email, senha})
+    })
+    const d = await r.json()
+    if(r.ok){
+      localStorage.setItem("garra_token", d.token)
+      localStorage.setItem("garra_usuario", JSON.stringify({nome: d.nome, perfil: d.perfil}))
+      window.location.href = "/jardinagem/desktop-app"
+    }else{
+      msg.textContent = d.detail || "Login inválido"
+    }
+  }catch(e){
+    msg.textContent = "Erro ao conectar"
+  }
+}
+</script>
+</body>
+</html>
