@@ -192,9 +192,23 @@ def storage_upload(dados: bytes, path: str) -> str:
         raise RuntimeError(f"Storage upload falhou [{r.status_code}]: {r.text}")
     return path
 
-def storage_url(path: str, segundos: int = 3600) -> str:
+# Cache de URLs assinadas — evita chamadas repetidas ao Supabase
+# TTL: 23h (URLs do Supabase expiram em 1h por padrão, mas geramos com 24h)
+_url_cache: dict = {}  # {storage_path: (url, expires_at)}
+_URL_TTL = 23 * 3600   # 23 horas em segundos
+_URL_SUPABASE_EXPIRY = 24 * 3600  # 24h — URL válida no Supabase
+
+def storage_url(path: str, segundos: int = _URL_SUPABASE_EXPIRY) -> str:
     if not SUPABASE_URL or not SUPABASE_SERVICE_KEY or not path:
         return ""
+    # Verificar cache
+    agora = time.time()
+    cached = _url_cache.get(path)
+    if cached:
+        url, expires_at = cached
+        if agora < expires_at:
+            return url
+    # Gerar URL nova no Supabase
     try:
         r = req_lib.post(
             f"{SUPABASE_URL}/storage/v1/object/sign/{BUCKET_NAME}/{path}",
@@ -205,7 +219,9 @@ def storage_url(path: str, segundos: int = 3600) -> str:
             json={"expiresIn": segundos}, timeout=10
         )
         if r.status_code == 200:
-            return f"{SUPABASE_URL}/storage/v1{r.json().get('signedURL','')}"
+            url = f"{SUPABASE_URL}/storage/v1{r.json().get('signedURL','')}"
+            _url_cache[path] = (url, agora + _URL_TTL)
+            return url
     except: pass
     return ""
 
@@ -778,25 +794,62 @@ async def jard_patch_mes(mid: int, request: Request, payload=Depends(verificar_t
 
 @app.get("/jardinagem/api/meses/{mid}")
 async def jard_get_mes(mid: int, payload=Depends(verificar_token_jard)):
+    from concurrent.futures import ThreadPoolExecutor
     m = jard_query("SELECT * FROM jardinagem.meses WHERE id=%s", (mid,), fetch="one")
     if not m: raise HTTPException(status_code=404, detail="Não encontrado")
     result = dict(m)
-    result["semanas"] = []
+    # 1 query semanas
     sems = jard_query("SELECT * FROM jardinagem.semanas WHERE mes_id=%s ORDER BY ordem", (mid,))
+    if not sems:
+        result["semanas"] = []
+        return result
+    sem_ids = [s["id"] for s in sems]
+    # 1 query todos os pares do mês (elimina N+1)
+    placeholders = ",".join(["%s"] * len(sem_ids))
+    pares_raw = jard_query(
+        f"SELECT * FROM jardinagem.pares WHERE semana_id IN ({placeholders}) AND (ativo IS NULL OR ativo=true) ORDER BY semana_id, codigo_a",
+        tuple(sem_ids)
+    )
+    par_ids = [p["id"] for p in pares_raw] if pares_raw else []
+    # 1 query todas as fotos do mês (elimina N+1)
+    fotos_raw = []
+    if par_ids:
+        ph2 = ",".join(["%s"] * len(par_ids))
+        fotos_raw = jard_query(
+            f"SELECT * FROM jardinagem.fotos WHERE par_id IN ({ph2})",
+            tuple(par_ids)
+        )
+    # Gerar todas as URLs em paralelo
+    paths_map = {f["id"]: f["storage_path"] for f in fotos_raw if f.get("storage_path")}
+    urls = {}
+    if paths_map:
+        with ThreadPoolExecutor(max_workers=12) as ex:
+            futures = {ex.submit(storage_url, path): fid for fid, path in paths_map.items()}
+            for future, fid in futures.items():
+                try: urls[fid] = future.result(timeout=10)
+                except: urls[fid] = ""
+    # Montar estrutura por par
+    fotos_por_par = {}
+    for f in fotos_raw:
+        pid = f["par_id"]
+        if pid not in fotos_por_par: fotos_por_par[pid] = []
+        fd = dict(f)
+        fd["url"] = urls.get(f["id"], "")
+        fotos_por_par[pid].append(fd)
+    # Montar estrutura por semana
+    pares_por_sem = {}
+    for p in pares_raw:
+        sid = p["semana_id"]
+        if sid not in pares_por_sem: pares_por_sem[sid] = []
+        pd = dict(p)
+        pd["fotos"] = fotos_por_par.get(p["id"], [])
+        pares_por_sem[sid].append(pd)
+    # Montar resultado final
+    result["semanas"] = []
     for s in sems:
         sd = dict(s)
         sd["mes_id"] = mid
-        sd["pares"] = []
-        pares = jard_query("SELECT * FROM jardinagem.pares WHERE semana_id=%s AND (ativo IS NULL OR ativo=true) ORDER BY ordem", (s["id"],))
-        for p in pares:
-            pd = dict(p)
-            fotos = jard_query("SELECT * FROM jardinagem.fotos WHERE par_id=%s", (p["id"],))
-            pd["fotos"] = []
-            for f in fotos:
-                fd = dict(f)
-                fd["url"] = storage_url(f["storage_path"]) if f["storage_path"] else ""
-                pd["fotos"].append(fd)
-            sd["pares"].append(pd)
+        sd["pares"] = pares_por_sem.get(s["id"], [])
         result["semanas"].append(sd)
     return result
 
@@ -814,7 +867,7 @@ async def jard_listar_semanas(mes_id: int = None, payload=Depends(verificar_toke
     if not mes_id:
         return {"ok": True, "semanas": []}
     rows = jard_query(
-        "SELECT * FROM jardinagem.semanas WHERE mes_id=%s ORDER BY ordem,id",
+        "SELECT * FROM jardinagem.semanas WHERE mes_id=%s ORDER BY ordem",
         (mes_id,)
     )
     semanas = []
@@ -888,7 +941,7 @@ async def jard_listar_pares(semana_id: int = None, payload=Depends(verificar_tok
     if not semana_id:
         return {"ok": False, "error": "semana_id obrigatório"}
     pares_raw = jard_query(
-        "SELECT * FROM jardinagem.pares WHERE semana_id=%s AND (ativo IS NULL OR ativo=true) ORDER BY ordem,id",
+        "SELECT * FROM jardinagem.pares WHERE semana_id=%s AND (ativo IS NULL OR ativo=true) ORDER BY codigo_a",
         (semana_id,)
     )
     pares = []
@@ -1256,7 +1309,7 @@ async def jard_preview(semana_id: int, payload=Depends(verificar_token_jard)):
     sem = jard_query("SELECT * FROM jardinagem.semanas WHERE id=%s", (semana_id,), fetch="one")
     if not sem: raise HTTPException(status_code=404, detail="Semana não encontrada")
     # 1 query pares + 1 query fotos (elimina N+1)
-    pares_raw = jard_query("SELECT * FROM jardinagem.pares WHERE semana_id=%s AND (ativo IS NULL OR ativo=true) ORDER BY ordem,id", (semana_id,))
+    pares_raw = jard_query("SELECT * FROM jardinagem.pares WHERE semana_id=%s AND (ativo IS NULL OR ativo=true) ORDER BY codigo_a", (semana_id,))
     fotos_raw = jard_query("""SELECT f.* FROM jardinagem.fotos f
         JOIN jardinagem.pares p ON p.id=f.par_id
         WHERE p.semana_id=%s AND (p.ativo IS NULL OR p.ativo=true)""", (semana_id,))
@@ -1325,7 +1378,7 @@ async def jard_excel_fotos(semana_id: int, payload=Depends(verificar_token_jard)
     sem = jard_query("SELECT * FROM jardinagem.semanas WHERE id=%s", (semana_id,), fetch="one")
     if not sem: raise HTTPException(status_code=404, detail="Semana não encontrada")
     semana_dict = {"label":sem["label"],"data_ini":sem["data_ini"].strftime("%d/%m/%Y") if sem["data_ini"] else "","data_fim":sem["data_fim"].strftime("%d/%m/%Y") if sem["data_fim"] else ""}
-    pares_raw = jard_query("SELECT * FROM jardinagem.pares WHERE semana_id=%s AND (ativo IS NULL OR ativo=true) ORDER BY ordem,id", (semana_id,))
+    pares_raw = jard_query("SELECT * FROM jardinagem.pares WHERE semana_id=%s AND (ativo IS NULL OR ativo=true) ORDER BY codigo_a", (semana_id,))
     # 1 query para todas as fotos (elimina N+1)
     fotos_raw = jard_query("""SELECT f.* FROM jardinagem.fotos f
         JOIN jardinagem.pares p ON p.id=f.par_id
@@ -1370,7 +1423,7 @@ async def jard_enviar_email(semana_id: int, payload=Depends(verificar_token_jard
     sem = jard_query("SELECT * FROM jardinagem.semanas WHERE id=%s", (semana_id,), fetch="one")
     if not sem: raise HTTPException(status_code=404, detail="Semana não encontrada")
     semana_dict = {"label":sem["label"],"data_ini":sem["data_ini"].strftime("%d/%m/%Y") if sem["data_ini"] else "","data_fim":sem["data_fim"].strftime("%d/%m/%Y") if sem["data_fim"] else ""}
-    pares_raw = jard_query("SELECT * FROM jardinagem.pares WHERE semana_id=%s AND (ativo IS NULL OR ativo=true) ORDER BY ordem,id", (semana_id,))
+    pares_raw = jard_query("SELECT * FROM jardinagem.pares WHERE semana_id=%s AND (ativo IS NULL OR ativo=true) ORDER BY codigo_a", (semana_id,))
     # 1 query para todas as fotos (elimina N+1)
     fotos_raw_email = jard_query("""SELECT f.* FROM jardinagem.fotos f
         JOIN jardinagem.pares p ON p.id=f.par_id
