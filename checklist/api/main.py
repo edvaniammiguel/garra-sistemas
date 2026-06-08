@@ -1146,11 +1146,22 @@ async def jard_historico_hoje(semana_id: Optional[int]=None, payload=Depends(ver
         km_raw = jard_query("""SELECT id,data,local_nome,km_inicial,km_final,hora_inicio,hora_fim,observacao
             FROM jardinagem.relatorios_diarios WHERE usuario_id=%s AND data=%s ORDER BY criado_em DESC""",
             (payload["sub"],hoje))
+    # Gerar URLs das fotos em paralelo
+    from concurrent.futures import ThreadPoolExecutor
+    fotos_list = [dict(f) for f in fotos_raw]
+    paths_hoje = [(i, f["storage_path"]) for i, f in enumerate(fotos_list) if f.get("storage_path")]
+    urls_hoje = {}
+    if paths_hoje:
+        with ThreadPoolExecutor(max_workers=8) as ex:
+            futures = {ex.submit(storage_url, path): i for i, path in paths_hoje}
+            for future, i in futures.items():
+                try: urls_hoje[i] = future.result(timeout=10)
+                except: urls_hoje[i] = ""
     fotos = []
-    for f in fotos_raw:
-        fd = dict(f); fd["url"] = storage_url(f["storage_path"]) if f["storage_path"] else ""
-        fd["criado_em"] = f["criado_em"].isoformat() if f["criado_em"] else ""
-        fotos.append(fd)
+    for i, f in enumerate(fotos_list):
+        f["url"] = urls_hoje.get(i, "") if f.get("storage_path") else ""
+        f["criado_em"] = f["criado_em"].isoformat() if f.get("criado_em") else ""
+        fotos.append(f)
     km_list = []; km_total = 0.0
     for r in km_raw:
         rd = dict(r)
@@ -1241,18 +1252,44 @@ async def jard_km_mes(mes_id: int, payload=Depends(verificar_token_jard)):
 
 @app.get("/jardinagem/api/relatorios/{semana_id}/preview")
 async def jard_preview(semana_id: int, payload=Depends(verificar_token_jard)):
+    from concurrent.futures import ThreadPoolExecutor
     sem = jard_query("SELECT * FROM jardinagem.semanas WHERE id=%s", (semana_id,), fetch="one")
     if not sem: raise HTTPException(status_code=404, detail="Semana não encontrada")
+    # 1 query pares + 1 query fotos (elimina N+1)
     pares_raw = jard_query("SELECT * FROM jardinagem.pares WHERE semana_id=%s AND (ativo IS NULL OR ativo=true) ORDER BY ordem,id", (semana_id,))
+    fotos_raw = jard_query("""SELECT f.* FROM jardinagem.fotos f
+        JOIN jardinagem.pares p ON p.id=f.par_id
+        WHERE p.semana_id=%s AND (p.ativo IS NULL OR p.ativo=true)""", (semana_id,))
+    fotos_por_par = {}
+    for f in fotos_raw:
+        pid = f["par_id"]
+        if pid not in fotos_por_par: fotos_por_par[pid] = {}
+        fotos_por_par[pid][f["tipo"]] = f
+    # Coletar paths para gerar URLs em paralelo
+    paths_map = {}
+    for p in pares_raw:
+        pid = p["id"]
+        fp = fotos_por_par.get(pid, {})
+        fa = fp.get("antes"); fd = fp.get("depois")
+        if fa and fa.get("storage_path"): paths_map[f"{pid}_antes"] = fa["storage_path"]
+        if fd and fd.get("storage_path"): paths_map[f"{pid}_depois"] = fd["storage_path"]
+    # Gerar todas as URLs em paralelo
+    urls = {}
+    if paths_map:
+        with ThreadPoolExecutor(max_workers=12) as ex:
+            futures = {ex.submit(storage_url, path): key for key, path in paths_map.items()}
+            for future, key in futures.items():
+                try: urls[key] = future.result(timeout=10)
+                except: urls[key] = ""
     pares = []
     for p in pares_raw:
-        fotos = jard_query("SELECT * FROM jardinagem.fotos WHERE par_id=%s", (p["id"],))
-        fa = next((f for f in fotos if f["tipo"]=="antes"), None)
-        fd = next((f for f in fotos if f["tipo"]=="depois"), None)
-        pares.append({"id":p["id"],"codigo_a":p["codigo_a"],"codigo_d":p["codigo_d"],"local_nome":p["local_nome"] or "",
+        pid = p["id"]
+        fp = fotos_por_par.get(pid, {})
+        fa = fp.get("antes"); fd = fp.get("depois")
+        pares.append({"id":pid,"codigo_a":p["codigo_a"],"codigo_d":p["codigo_d"],"local_nome":p["local_nome"] or "",
                       "foto_antes":bool(fa),"foto_depois":bool(fd),
-                      "url_antes":storage_url(fa["storage_path"]) if fa and fa.get("storage_path") else "",
-                      "url_depois":storage_url(fd["storage_path"]) if fd and fd.get("storage_path") else ""})
+                      "url_antes":urls.get(f"{pid}_antes",""),
+                      "url_depois":urls.get(f"{pid}_depois","")})
     kms_raw = jard_query("""SELECT r.*,u.nome as responsavel_nome FROM jardinagem.relatorios_diarios r
         JOIN public.usuarios_garra u ON u.id=r.usuario_id WHERE r.semana_id=%s ORDER BY r.data,r.criado_em""", (semana_id,))
     kms = [{"id":r["id"],"data":r["data"].strftime("%d/%m/%Y") if r["data"] else "","local_nome":r["local_nome"] or "",
@@ -1289,12 +1326,20 @@ async def jard_excel_fotos(semana_id: int, payload=Depends(verificar_token_jard)
     if not sem: raise HTTPException(status_code=404, detail="Semana não encontrada")
     semana_dict = {"label":sem["label"],"data_ini":sem["data_ini"].strftime("%d/%m/%Y") if sem["data_ini"] else "","data_fim":sem["data_fim"].strftime("%d/%m/%Y") if sem["data_fim"] else ""}
     pares_raw = jard_query("SELECT * FROM jardinagem.pares WHERE semana_id=%s AND (ativo IS NULL OR ativo=true) ORDER BY ordem,id", (semana_id,))
+    # 1 query para todas as fotos (elimina N+1)
+    fotos_raw = jard_query("""SELECT f.* FROM jardinagem.fotos f
+        JOIN jardinagem.pares p ON p.id=f.par_id
+        WHERE p.semana_id=%s AND (p.ativo IS NULL OR p.ativo=true)""", (semana_id,))
+    fotos_por_par = {}
+    for f in fotos_raw:
+        pid = f["par_id"]
+        if pid not in fotos_por_par: fotos_por_par[pid] = {}
+        fotos_por_par[pid][f["tipo"]] = dict(f)
     pares = []
     for p in pares_raw:
-        fotos = jard_query("SELECT * FROM jardinagem.fotos WHERE par_id=%s", (p["id"],))
+        fp = fotos_por_par.get(p["id"], {})
         pares.append({"codigo_a":p["codigo_a"],"codigo_d":p["codigo_d"],"local_nome":p["local_nome"] or "",
-                      "foto_antes":next((dict(f) for f in fotos if f["tipo"]=="antes"),None),
-                      "foto_depois":next((dict(f) for f in fotos if f["tipo"]=="depois"),None)})
+                      "foto_antes":fp.get("antes"), "foto_depois":fp.get("depois")})
     buf = gerar_relatorio_fotos(semana_dict, pares, SUPABASE_URL, SUPABASE_SERVICE_KEY)
     return StreamingResponse(buf, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                              headers={"Content-Disposition":f"attachment; filename={nome_arquivo_semana(sem, 'Fotos')}"})
@@ -1326,12 +1371,20 @@ async def jard_enviar_email(semana_id: int, payload=Depends(verificar_token_jard
     if not sem: raise HTTPException(status_code=404, detail="Semana não encontrada")
     semana_dict = {"label":sem["label"],"data_ini":sem["data_ini"].strftime("%d/%m/%Y") if sem["data_ini"] else "","data_fim":sem["data_fim"].strftime("%d/%m/%Y") if sem["data_fim"] else ""}
     pares_raw = jard_query("SELECT * FROM jardinagem.pares WHERE semana_id=%s AND (ativo IS NULL OR ativo=true) ORDER BY ordem,id", (semana_id,))
+    # 1 query para todas as fotos (elimina N+1)
+    fotos_raw_email = jard_query("""SELECT f.* FROM jardinagem.fotos f
+        JOIN jardinagem.pares p ON p.id=f.par_id
+        WHERE p.semana_id=%s AND (p.ativo IS NULL OR p.ativo=true)""", (semana_id,))
+    fotos_por_par_email = {}
+    for f in fotos_raw_email:
+        pid = f["par_id"]
+        if pid not in fotos_por_par_email: fotos_por_par_email[pid] = {}
+        fotos_por_par_email[pid][f["tipo"]] = dict(f)
     pares = []
     for p in pares_raw:
-        fotos = jard_query("SELECT * FROM jardinagem.fotos WHERE par_id=%s", (p["id"],))
+        fp = fotos_por_par_email.get(p["id"], {})
         pares.append({"codigo_a":p["codigo_a"],"codigo_d":p["codigo_d"],"local_nome":p["local_nome"] or "",
-                      "foto_antes":next((dict(f) for f in fotos if f["tipo"]=="antes"),None),
-                      "foto_depois":next((dict(f) for f in fotos if f["tipo"]=="depois"),None)})
+                      "foto_antes":fp.get("antes"), "foto_depois":fp.get("depois")})
     kms_raw = jard_query("""SELECT r.*,u.nome as responsavel_nome FROM jardinagem.relatorios_diarios r
         JOIN public.usuarios_garra u ON u.id=r.usuario_id WHERE r.semana_id=%s ORDER BY r.data,r.criado_em""", (semana_id,))
     relatorios = [{"data":r["data"].strftime("%d/%m/%Y") if r["data"] else "","local":r["local_nome"] or "",
