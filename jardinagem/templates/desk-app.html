@@ -682,6 +682,7 @@ function abrirMes(id){
   document.getElementById('mesTitulo').textContent='Carregando...';
   fetchAuth('/jardinagem/api/meses/'+id).then(r=>r.json()).then(function(data){
     mesAtual=data;bancada=[];
+    document.getElementById('mesTitulo').textContent=data.label||'—';
     quadrante=data.semanas.map(function(sem){
       return{semId:sem.id,label:sem.label,pares:sem.pares.map(function(par){
         var fA=par.fotos.find(f=>f.tipo==='antes'),fD=par.fotos.find(f=>f.tipo==='depois');
@@ -790,7 +791,7 @@ function rSlot(par,tipo){
   if(par.editando){
     if(f){
       return'<div class="slot slot-f slot-edit" data-pid="'+par.tid+'" data-tipo="'+tipo+'"'+(f.sid?' data-sid="'+f.sid+'"':'')+'>'
-        +'<img src="'+f.src+'" alt="" draggable="false" style="cursor:grab" '
+        +'<img src="'+f.src+'" alt="" loading="lazy" draggable="false" style="cursor:grab" '
         +'onmousedown="dStart(event,\'edit\',-1,\''+par.tid+'\',\''+tipo+'\',\''+f.src+'\')">'
         +badge+num
         +'<input type="file" accept="image/*" id="einp_'+par.tid+'_'+tipo+'" style="display:none" onchange="editFileSlot(this,\''+par.tid+'\',\''+tipo+'\')">'
@@ -810,7 +811,7 @@ function rSlot(par,tipo){
   if(f){
     return'<div class="slot slot-f" data-pid="'+par.tid+'" data-tipo="'+tipo+'"'+(f.sid?' data-sid="'+f.sid+'"':'')
       +' onclick="lbOpen(\''+par.tid+'\',\''+tipo+'\')">'
-      +'<img src="'+f.src+'" alt="" draggable="false" style="cursor:'+(f.sid?'pointer':'grab')+'" '
+      +'<img src="'+f.src+'" alt="" loading="lazy" draggable="false" style="cursor:'+(f.sid?'pointer':'grab')+'" '
       +(f.sid?'':' onmousedown="dStart(event,\'slot\',-1,\''+par.tid+'\',\''+tipo+'\',\''+f.src+'\')"')
       +'>'
       +badge+num
