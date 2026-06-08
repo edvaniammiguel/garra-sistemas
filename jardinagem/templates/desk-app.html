@@ -682,7 +682,6 @@ function abrirMes(id){
   document.getElementById('mesTitulo').textContent='Carregando...';
   fetchAuth('/jardinagem/api/meses/'+id).then(r=>r.json()).then(function(data){
     mesAtual=data;bancada=[];
-    document.getElementById('mesTitulo').textContent=data.label||'—';
     quadrante=data.semanas.map(function(sem){
       return{semId:sem.id,label:sem.label,pares:sem.pares.map(function(par){
         var fA=par.fotos.find(f=>f.tipo==='antes'),fD=par.fotos.find(f=>f.tipo==='depois');
@@ -791,7 +790,7 @@ function rSlot(par,tipo){
   if(par.editando){
     if(f){
       return'<div class="slot slot-f slot-edit" data-pid="'+par.tid+'" data-tipo="'+tipo+'"'+(f.sid?' data-sid="'+f.sid+'"':'')+'>'
-        +'<img src="'+f.src+'" alt="" loading="lazy" draggable="false" style="cursor:grab" '
+        +'<img src="'+f.src+'" alt="" draggable="false" style="cursor:grab" '
         +'onmousedown="dStart(event,\'edit\',-1,\''+par.tid+'\',\''+tipo+'\',\''+f.src+'\')">'
         +badge+num
         +'<input type="file" accept="image/*" id="einp_'+par.tid+'_'+tipo+'" style="display:none" onchange="editFileSlot(this,\''+par.tid+'\',\''+tipo+'\')">'
@@ -811,7 +810,7 @@ function rSlot(par,tipo){
   if(f){
     return'<div class="slot slot-f" data-pid="'+par.tid+'" data-tipo="'+tipo+'"'+(f.sid?' data-sid="'+f.sid+'"':'')
       +' onclick="lbOpen(\''+par.tid+'\',\''+tipo+'\')">'
-      +'<img src="'+f.src+'" alt="" loading="lazy" draggable="false" style="cursor:'+(f.sid?'pointer':'grab')+'" '
+      +'<img src="'+f.src+'" alt="" draggable="false" style="cursor:'+(f.sid?'pointer':'grab')+'" '
       +(f.sid?'':' onmousedown="dStart(event,\'slot\',-1,\''+par.tid+'\',\''+tipo+'\',\''+f.src+'\')"')
       +'>'
       +badge+num
@@ -1319,9 +1318,24 @@ function baixarRelatorio(tipo){
     return r.blob();
   }).then(function(blob){
     var u = URL.createObjectURL(blob);
+    // Gerar nome igual ao backend: relatorio-fotos-jun2026-semana1.xlsx
+    var _meses = ['','jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'];
+    var _nomeArq = 'relatorio-'+tipo+'-';
+    try {
+      var _lbl = sem.label || '';
+      var _mNum = _lbl.match(/\/(\d{2})\/(\d{4})/);   // pega DD/MM/YYYY
+      if(!_mNum) _mNum = _lbl.match(/(\d{2})\/(\d{2})\/(\d{4})/);
+      var _semN = (_lbl.match(/Semana\s*(\d+)/i)||[])[1] || '?';
+      if(_mNum) {
+        var _m = parseInt(_mNum[_mNum.length-2]||_mNum[2]);
+        var _a = _mNum[_mNum.length-1]||_mNum[3];
+        _nomeArq += (_meses[_m]||'???')+_a+'-semana'+_semN;
+      } else { _nomeArq += sem.semId; }
+    } catch(e){ _nomeArq += sem.semId; }
+    _nomeArq += '.xlsx';
     var a2 = document.createElement('a');
     a2.href = u;
-    a2.download = 'Relatorio-'+tipo+'-'+sem.semId+'.xlsx';
+    a2.download = _nomeArq;
     a2.click();
     URL.revokeObjectURL(u);
     toast('✅ Download iniciado!');
