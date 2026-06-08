@@ -1263,6 +1263,23 @@ async def jard_preview(semana_id: int, payload=Depends(verificar_token_jard)):
     return {"semana_id":semana_id,"label":sem["label"],"pares":pares,"relatorios":kms,
             "total_pares":len(pares),"pares_completos":sum(1 for p in pares if p["foto_antes"] and p["foto_depois"]),"total_km":len(kms)}
 
+# ── HELPERS NOME DE ARQUIVO ───────────────────────────────────
+_MESES_PT = {1:"Jan",2:"Fev",3:"Mar",4:"Abr",5:"Mai",6:"Jun",
+             7:"Jul",8:"Ago",9:"Set",10:"Out",11:"Nov",12:"Dez"}
+
+def nome_arquivo_semana(sem, tipo: str) -> str:
+    """Gera nome legível: Fotos-Jun2026-Semana1.xlsx"""
+    try:
+        import re
+        data_ini = sem["data_ini"]
+        mes_abr  = _MESES_PT.get(data_ini.month, f"{data_ini.month:02d}")
+        ano      = data_ini.year
+        match    = re.search(r'Semana\s*(\d+)', sem["label"] or "", re.IGNORECASE)
+        num      = match.group(1) if match else "?"
+        return f"Relatorio-{tipo.lower()}-{mes_abr.lower()}{ano}-semana{num}.xlsx"
+    except Exception:
+        return f"Relatorio-{tipo.lower()}-{sem['id']}.xlsx"
+
 # ── DOWNLOAD EXCEL ────────────────────────────────────────────
 @app.get("/jardinagem/api/relatorios/{semana_id}/fotos")
 async def jard_excel_fotos(semana_id: int, payload=Depends(verificar_token_jard)):
@@ -1280,7 +1297,7 @@ async def jard_excel_fotos(semana_id: int, payload=Depends(verificar_token_jard)
                       "foto_depois":next((dict(f) for f in fotos if f["tipo"]=="depois"),None)})
     buf = gerar_relatorio_fotos(semana_dict, pares, SUPABASE_URL, SUPABASE_SERVICE_KEY)
     return StreamingResponse(buf, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                             headers={"Content-Disposition":f"attachment; filename=Relatorio-Fotos-{semana_id}.xlsx"})
+                             headers={"Content-Disposition":f"attachment; filename={nome_arquivo_semana(sem, 'Fotos')}"})
 
 @app.get("/jardinagem/api/relatorios/{semana_id}/km")
 async def jard_excel_km(semana_id: int, payload=Depends(verificar_token_jard)):
@@ -1297,7 +1314,7 @@ async def jard_excel_km(semana_id: int, payload=Depends(verificar_token_jard)):
                    "obs":r["observacao"] or "","responsavel":r["responsavel_nome"] or ""} for r in kms_raw]
     buf = gerar_relatorio_km(semana_dict, relatorios)
     return StreamingResponse(buf, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                             headers={"Content-Disposition":f"attachment; filename=Relatorio-KM-{semana_id}.xlsx"})
+                             headers={"Content-Disposition":f"attachment; filename={nome_arquivo_semana(sem, 'KM')}"})
 
 @app.post("/jardinagem/api/relatorios/{semana_id}/enviar")
 async def jard_enviar_email(semana_id: int, payload=Depends(verificar_token_jard)):
@@ -1329,8 +1346,8 @@ async def jard_enviar_email(semana_id: int, payload=Depends(verificar_token_jard
             <p>Segue em anexo os relatórios fotográfico e de KM da semana.</p>
             <p style="color:#64748B;font-size:12px;">Garra Terraplenagem e Caçambas</p></div>"""
         enviar_email_smtp(MAIL_DESTINO, f"Relatório Jardinagem — {semana_dict['label']}", corpo,
-                          [(f"Fotos-{semana_id}.xlsx", buf_fotos.getvalue()),
-                           (f"KM-{semana_id}.xlsx", buf_km.getvalue())])
+                          [(nome_arquivo_semana(sem, 'Fotos'), buf_fotos.getvalue()),
+                           (nome_arquivo_semana(sem, 'KM'),    buf_km.getvalue())])
         jard_query("INSERT INTO jardinagem.emails_enviados (semana_id,destinatario,assunto,status) VALUES (%s,%s,%s,'enviado')",
                    (semana_id,MAIL_DESTINO,f"Relatório {semana_dict['label']}"), fetch="none")
         jard_query("UPDATE jardinagem.semanas SET status='enviada',enviado_em=NOW() WHERE id=%s", (semana_id,), fetch="none")
