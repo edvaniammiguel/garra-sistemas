@@ -1143,7 +1143,7 @@ async def jard_criar_km(request: Request, payload=Depends(verificar_token_jard))
     km_ini      = d.get("km_inicial"); km_fin = d.get("km_final")
     if not local_nome: raise HTTPException(status_code=400, detail="local_nome obrigatório")
     if km_ini is None or km_fin is None: raise HTTPException(status_code=400, detail="km_inicial e km_final obrigatórios")
-    if float(km_fin) <= float(km_ini): raise HTTPException(status_code=400, detail="km_final deve ser maior que km_inicial")
+    if float(km_fin) < float(km_ini): raise HTTPException(status_code=400, detail="km_final não pode ser menor que km_inicial")
     offline_id = d.get("offline_id")
     if offline_id:
         exist = jard_query("SELECT id FROM jardinagem.relatorios_diarios WHERE offline_id=%s", (offline_id,), fetch="one")
@@ -1162,7 +1162,7 @@ async def jard_editar_km(km_id: int, request: Request, payload=Depends(verificar
     km_ini      = d.get("km_inicial"); km_fin = d.get("km_final")
     if not local_nome: raise HTTPException(status_code=400, detail="local_nome obrigatório")
     if km_ini is None or km_fin is None: raise HTTPException(status_code=400, detail="km_inicial e km_final obrigatórios")
-    if float(km_fin) <= float(km_ini): raise HTTPException(status_code=400, detail="km_final deve ser maior que km_inicial")
+    if float(km_fin) < float(km_ini): raise HTTPException(status_code=400, detail="km_final não pode ser menor que km_inicial")
     
     # Atualiza o registro
     jard_query("""UPDATE jardinagem.relatorios_diarios 
