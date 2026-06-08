@@ -275,12 +275,15 @@ def semanas_do_mes(ano: int, mes: int, mes_id: int):
                     f"{ano}-{mes:02d}-{fim:02d}", i), fetch="none")
 
 def enviar_email_smtp(destino: str, assunto: str, corpo_html: str, anexos: list = None):
+    # Suporta múltiplos destinatários separados por vírgula em MAIL_DESTINO e MAIL_CC
+    lista_to = [e.strip() for e in destino.split(",") if e.strip()]
+    lista_cc = [e.strip() for e in MAIL_CC.split(",") if e.strip()] if MAIL_CC else []
     msg = MIMEMultipart("mixed")
     msg["Subject"] = assunto
     msg["From"]    = f"Garra Terraplenagem <{MAIL_USERNAME}>"
-    msg["To"]      = destino
-    if MAIL_CC:
-        msg["Cc"] = MAIL_CC
+    msg["To"]      = ", ".join(lista_to)
+    if lista_cc:
+        msg["Cc"]  = ", ".join(lista_cc)
     msg.attach(MIMEText(corpo_html, "html", "utf-8"))
     if anexos:
         for nome, dados in anexos:
@@ -289,7 +292,7 @@ def enviar_email_smtp(destino: str, assunto: str, corpo_html: str, anexos: list 
             encoders.encode_base64(part)
             part.add_header("Content-Disposition", f'attachment; filename="{nome}"')
             msg.attach(part)
-    destinatarios = [destino] + ([MAIL_CC] if MAIL_CC else [])
+    destinatarios = lista_to + lista_cc
     with smtplib.SMTP(MAIL_HOST, MAIL_PORT) as s:
         s.ehlo(); s.starttls()
         s.login(MAIL_USERNAME, MAIL_PASSWORD)
@@ -1331,7 +1334,7 @@ async def jard_enviar_email(semana_id: int, payload=Depends(verificar_token_jard
         jard_query("INSERT INTO jardinagem.emails_enviados (semana_id,destinatario,assunto,status) VALUES (%s,%s,%s,'enviado')",
                    (semana_id,MAIL_DESTINO,f"Relatório {semana_dict['label']}"), fetch="none")
         jard_query("UPDATE jardinagem.semanas SET status='enviada',enviado_em=NOW() WHERE id=%s", (semana_id,), fetch="none")
-        return {"ok": True, "mensagem": f"Relatórios enviados para {MAIL_DESTINO}"}
+        return {"ok": True, "mensagem": f"Relatórios enviados para {MAIL_DESTINO} (cc: {MAIL_CC})"}
     except Exception as e:
         jard_query("INSERT INTO jardinagem.emails_enviados (semana_id,destinatario,assunto,status,erro_msg) VALUES (%s,%s,%s,'erro',%s)",
                    (semana_id,MAIL_DESTINO,f"Relatório {semana_dict['label']}",str(e)), fetch="none")
