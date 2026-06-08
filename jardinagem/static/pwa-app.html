@@ -906,72 +906,39 @@ function encaixarFoto(fotoId){
 
 // ── KM ────────────────────────────────────────────────────────
 function editarKm(id){
-  // Busca o elemento do KM no histórico
+  // Lê dados diretamente do HTML — zero chamadas à API
   var el = document.querySelector('[data-km-id="' + id + '"]');
   if(!el) return;
-  
-  // Extrai dados do elemento (presentes no HTML renderizado)
-  var topText = el.querySelector('.km-item-top').textContent;
-  var subText = el.querySelector('.km-item-sub').textContent;
-  
-  // Busca no histórico atual para pegar objeto completo
-  var lista = document.getElementById("kmLista");
-  var kmItem = null;
-  
-  // Tenta encontrar nos dados carregados
-  if(SEMANA && SEMANA.mes_id){
-    getMes(SEMANA.mes_id)
-      .then(function(d){
-        var semanas = d.semanas||[];
-        return Promise.all(semanas.map(function(sem){
-          return api("/api/relatorios/"+sem.id+"/preview")
-            .then(function(r){ return r.ok ? r.json() : {relatorios:[]}; })
-            .catch(function(){ return {relatorios:[]}; });
-        })).then(function(results){
-          results.forEach(function(d){
-            (d.relatorios||[]).forEach(function(r){
-              if(r.id == id) kmItem = r;
-            });
-          });
-          if(!kmItem) return;
-          
-          // Carrega nos campos do formulário
-          // Converte data de dd/mm/yyyy para YYYY-MM-DD
-          var dataFormatada = kmItem.data || "";
-          if(dataFormatada.match(/^\d{2}\/\d{2}\/\d{4}$/)){
-            var p = dataFormatada.split('/');
-            dataFormatada = p[2] + '-' + p[1] + '-' + p[0];
-          }
-          document.getElementById("kmData").value = dataFormatada;
-          document.getElementById("kmLocal").value = kmItem.local_nome || "";
-          document.getElementById("kmIni").value = kmItem.km_inicial || 0;
-          document.getElementById("kmFin").value = kmItem.km_final || 0;
-          document.getElementById("kmHIni").value = kmItem.hora_inicio || "";
-          document.getElementById("kmHFim").value = kmItem.hora_fim || "";
-          document.getElementById("kmObs").value = kmItem.observacao || "";
-          
-          // Guarda ID sendo editado
-          _kmEditando = id;
-          
-          // Muda botão para "Atualizar"
-          var btn = document.querySelector('#tKm .btn-w');
-          if(btn) btn.textContent = "🔄 Atualizar Serviço";
-          
-          // Calcula KM total
-          calcKm();
-          
-          // Scroll pro formulário
-          document.getElementById("tKm").scrollTop = 0;
-        });
-      });
+
+  // Converte data de dd/mm/yyyy para YYYY-MM-DD se necessário
+  var dataRaw = el.dataset.data || "";
+  if(dataRaw.match(/^\d{2}\/\d{2}\/\d{4}$/)){
+    var p = dataRaw.split('/');
+    dataRaw = p[2] + '-' + p[1] + '-' + p[0];
   }
+
+  document.getElementById("kmData").value    = dataRaw;
+  document.getElementById("kmLocal").value   = el.dataset.local   || "";
+  document.getElementById("kmIni").value     = el.dataset.ini     || 0;
+  document.getElementById("kmFin").value     = el.dataset.fin     || 0;
+  document.getElementById("kmHIni").value    = el.dataset.hinicio || "";
+  document.getElementById("kmHFim").value    = el.dataset.hfim    || "";
+  document.getElementById("kmObs").value     = el.dataset.obs     || "";
+
+  _kmEditando = id;
+
+  var btn = document.querySelector('#tKm .btn-w');
+  if(btn) btn.textContent = "🔄 Atualizar Serviço";
+
+  calcKm();
+  document.getElementById("tKm").scrollTop = 0;
 }
 
 function calcKm(){
   var ini = parseFloat(document.getElementById("kmIni").value||0);
   var fin = parseFloat(document.getElementById("kmFin").value||0);
   var total = document.getElementById("kmTotal");
-  if(fin >= ini && fin > 0){ total.style.display="block"; total.textContent="Total: "+(fin-ini).toFixed(1)+" km"+(fin===ini?" (ponto fixo)":""); }
+  if(fin > ini){ total.style.display="block"; total.textContent="Total: "+(fin-ini).toFixed(1)+" km"; }
   else { total.style.display="none"; }
 }
 
@@ -990,8 +957,7 @@ function salvarKm(){
   var fin   = parseFloat(document.getElementById("kmFin").value||0);
   var msg   = document.getElementById("kmMsg");
   if(!local){ msg.textContent="Informe o local."; msg.style.color="var(--red)"; return; }
-  if(fin<ini){ msg.textContent="KM final não pode ser menor que o inicial."; msg.style.color="var(--red)"; return; }
-  if(fin===0&&ini===0){ msg.textContent="Informe os KMs."; msg.style.color="var(--red)"; return; }
+  if(fin<=ini){ msg.textContent="KM final deve ser maior que inicial."; msg.style.color="var(--red)"; return; }
   if(!SEMANA){ msg.textContent="Sem semana ativa."; msg.style.color="var(--red)"; return; }
   msg.textContent="Salvando..."; msg.style.color="var(--mut)";
   var payload = {
@@ -1110,7 +1076,7 @@ function renderKmLista(todos, lista){
     html += '<div style="font-size:11px;font-weight:700;color:var(--bl);padding:6px 0 2px;border-bottom:1px solid var(--brd);margin-top:4px;">'
       + data + ' — ' + totalDia.toFixed(1) + ' km</div>';
     regs.forEach(function(r){
-      html += '<div class="km-item' + (r._offline ? ' offline-item' : '') + '" data-km-id="' + (r.id||'') + '">'
+      html += '<div class="km-item' + (r._offline ? ' offline-item' : '') + '" data-km-id="' + (r.id||'') + '" data-local="' + (r.local_nome||'').replace(/"/g,'&quot;') + '" data-ini="' + (r.km_inicial||0) + '" data-fin="' + (r.km_final||0) + '" data-hinicio="' + (r.hora_inicio||'') + '" data-hfim="' + (r.hora_fim||'') + '" data-obs="' + (r.observacao||'').replace(/"/g,'&quot;') + '" data-data="' + (r.data_iso||r.data||'') + '"' + '>'
         + '<div style="display:flex;justify-content:space-between;align-items:start;gap:6px;">'
         + '<div style="flex:1;min-width:0;">'
         + '<div class="km-item-top">' + r.local_nome + (r._offline ? ' ⏳' : '') + '</div>'
