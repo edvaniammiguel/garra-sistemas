@@ -1,6 +1,6 @@
-// Service Worker — Garra Jardinagem PWA v6
+// Service Worker — Garra Jardinagem PWA v7
 // Arquivos PWA: pwa-login.html + pwa-app.html
-const CACHE = "garra-jardinagem-v6";
+const CACHE = "garra-jardinagem-v7";
 
 const ASSETS = [
   "./pwa-login.html",
@@ -49,8 +49,18 @@ self.addEventListener("activate", function(e){
 self.addEventListener("fetch", function(e){
   var url = e.request.url;
 
-  // API calls: sempre network, sem cache
-  if(url.includes("garra-sistemas.onrender.com")){
+  // Métodos não-GET (POST/PATCH/DELETE/PUT): sempre rede, NUNCA cache
+  // Cache API só suporta GET — tentar cachear PATCH gera erro
+  if(e.request.method !== "GET"){
+    e.respondWith(fetch(e.request));
+    return;
+  }
+
+  // API calls: sempre network, sem cache (produção E localhost)
+  if(url.includes("garra-sistemas.onrender.com") ||
+     url.includes("/api/") ||
+     url.includes("localhost:8000") ||
+     url.includes("127.0.0.1:8000")){
     e.respondWith(
       fetch(e.request).catch(function(){
         return new Response(JSON.stringify({erro:"Sem conexão"}),
