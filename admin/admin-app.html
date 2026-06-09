@@ -1,1 +1,1059 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<meta name="theme-color" content="#1A2A5E"/>
+<title>Garra — Admin Master</title>
+<link rel="icon" href="/static/icons/favicon.ico"/>
+<style>
+/* ══════════════════════════════════════════════
+   DESIGN SYSTEM — GARRA TERRAPLENAGEM
+   Variáveis, reset e componentes base
+══════════════════════════════════════════════ */
+:root {
+  --blue:    #1A2A5E;
+  --blue2:   #1E3A8A;
+  --orange:  #E8820C;
+  --orange2: #D4700A;
+  --bg:      #F0F4FF;
+  --white:   #FFFFFF;
+  --border:  #CBD5E1;
+  --text:    #1E293B;
+  --muted:   #64748B;
+  --green:   #16A34A;
+  --red:     #DC2626;
+  --r:       12px;
+  --r2:      8px;
+  --shadow:  0 2px 12px rgba(26,42,94,.07);
+}
+*,*::before,*::after { box-sizing:border-box; margin:0; padding:0; }
+body { font-family:system-ui,-apple-system,sans-serif; background:var(--bg); color:var(--text); font-size:14px; height:100vh; overflow:hidden; display:flex; flex-direction:column; }
+button { cursor:pointer; font-family:inherit; }
+input,select,textarea { font-family:inherit; font-size:13px; outline:none; }
+
+/* ── UTILITÁRIOS ── */
+.hidden  { display:none!important; }
+.badge   { display:inline-flex; align-items:center; font-size:10px; font-weight:700; padding:2px 8px; border-radius:99px; }
+.badge-green { background:#DCFCE7; color:#15803D; }
+.badge-gray  { background:#F1F5F9; color:#475569; }
+.badge-orange{ background:#FFF7ED; color:#C2410C; }
+.badge-red   { background:#FEE2E2; color:#B91C1C; }
+.dot { width:8px; height:8px; border-radius:50%; display:inline-block; flex-shrink:0; }
+.dot-green  { background:var(--green); }
+.dot-gray   { background:var(--border); }
+.dot-online { background:var(--green); }
+
+/* ══════════════════════════════════════════════
+   LAYOUT PRINCIPAL
+══════════════════════════════════════════════ */
+#app { display:flex; flex-direction:column; height:100vh; }
+
+/* HEADER */
+#header {
+  background:var(--blue);
+  border-bottom:3px solid var(--orange);
+  padding:10px 20px;
+  display:flex; align-items:center; justify-content:space-between;
+  flex-shrink:0; z-index:10;
+}
+.hd-brand { display:flex; align-items:center; gap:12px; }
+.hd-logo  { width:36px; height:36px; border-radius:50%; background:var(--orange); display:flex; align-items:center; justify-content:center; font-weight:900; font-size:16px; color:#fff; overflow:hidden; }
+.hd-logo img { width:100%; height:100%; object-fit:contain; filter:brightness(0) invert(1); }
+.hd-name  { font-size:16px; font-weight:900; color:var(--orange); letter-spacing:-.3px; }
+.hd-badge { background:var(--orange); color:#fff; font-size:9px; font-weight:700; padding:2px 6px; border-radius:4px; margin-left:6px; letter-spacing:.5px; }
+.hd-sub   { font-size:10px; color:#93C5FD; font-weight:500; }
+.hd-right { display:flex; align-items:center; gap:16px; }
+.hd-user  { display:flex; align-items:center; gap:8px; }
+.hd-avatar{ width:32px; height:32px; border-radius:50%; background:var(--orange); display:flex; align-items:center; justify-content:center; font-size:13px; font-weight:700; color:#fff; }
+.hd-username { font-size:13px; color:#fff; font-weight:500; }
+.hd-status { display:flex; align-items:center; gap:5px; font-size:11px; color:#93C5FD; }
+.btn-logout { background:transparent; border:1px solid rgba(147,197,253,.3); color:#93C5FD; padding:6px 12px; border-radius:6px; font-size:12px; font-weight:600; transition:.15s; }
+.btn-logout:hover { background:rgba(147,197,253,.1); color:#fff; }
+
+/* CORPO */
+#body { display:flex; flex:1; overflow:hidden; }
+
+/* SIDEBAR */
+#sidebar {
+  width:200px; flex-shrink:0;
+  background:var(--blue);
+  display:flex; flex-direction:column;
+  overflow-y:auto; overflow-x:hidden;
+}
+.sb-section { padding:12px 10px 4px; }
+.sb-label { font-size:9px; font-weight:700; text-transform:uppercase; letter-spacing:.8px; color:#93C5FD; padding:0 8px; margin-bottom:6px; display:block; }
+.sb-item {
+  display:flex; align-items:center; gap:9px;
+  padding:8px 10px; border-radius:8px; margin-bottom:2px;
+  color:#93C5FD; font-size:13px; font-weight:500;
+  cursor:pointer; transition:.15s; text-decoration:none;
+}
+.sb-item:hover  { background:rgba(255,255,255,.06); color:#fff; }
+.sb-item.active { background:rgba(232,130,12,.18); color:#fff; }
+.sb-item.active .sb-icon { color:var(--orange); }
+.sb-icon { font-size:15px; flex-shrink:0; }
+.sb-badge { margin-left:auto; background:var(--orange); color:#fff; font-size:10px; padding:1px 6px; border-radius:99px; }
+.sb-divider { height:1px; background:rgba(147,197,253,.12); margin:8px 12px; }
+.sb-dim { opacity:.4; pointer-events:none; }
+.sb-footer { margin-top:auto; padding:12px; text-align:center; font-size:10px; color:rgba(147,197,253,.4); }
+/* Ícones inline SVG na sidebar */
+.ico { width:15px; height:15px; flex-shrink:0; }
+
+/* CONTEÚDO */
+#content { flex:1; overflow-y:auto; padding:20px; display:flex; flex-direction:column; gap:16px; }
+
+/* ══════════════════════════════════════════════
+   SEÇÕES DO DASHBOARD
+══════════════════════════════════════════════ */
+
+/* KPIs */
+.kpi-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; }
+.kpi-card {
+  background:var(--white); border:1.5px solid var(--border);
+  border-left:4px solid var(--orange);
+  border-radius:var(--r); padding:14px 16px;
+  box-shadow:var(--shadow);
+}
+.kpi-label { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); margin-bottom:6px; }
+.kpi-value { font-size:28px; font-weight:800; color:var(--blue); line-height:1; }
+.kpi-sub   { font-size:11px; color:var(--muted); margin-top:4px; }
+.kpi-card.kpi-green { border-left-color:var(--green); }
+.kpi-card.kpi-green .kpi-value { color:var(--green); }
+
+/* GRID 2 colunas */
+.grid-2 { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+.grid-3 { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; }
+
+/* CARDS */
+.card {
+  background:var(--white); border:1.5px solid var(--border);
+  border-radius:var(--r); padding:16px;
+  box-shadow:var(--shadow);
+}
+.card-title {
+  font-size:11px; font-weight:800; text-transform:uppercase;
+  letter-spacing:.06em; color:var(--blue); margin-bottom:12px;
+  display:flex; align-items:center; justify-content:space-between;
+}
+
+/* MÓDULOS */
+.mod-card {
+  background:var(--white); border:1.5px solid var(--border);
+  border-radius:var(--r); padding:14px;
+  box-shadow:var(--shadow); display:flex; flex-direction:column; gap:6px;
+}
+.mod-card.mod-dim { background:#F8FAFC; opacity:.65; }
+.mod-header { display:flex; align-items:center; justify-content:space-between; }
+.mod-icon { font-size:20px; }
+.mod-name { font-size:13px; font-weight:700; color:var(--blue); }
+.mod-desc { font-size:11px; color:var(--muted); }
+.mod-card.mod-dim .mod-name { color:var(--muted); }
+
+/* USUÁRIOS */
+.user-item {
+  display:flex; align-items:center; gap:10px;
+  padding:8px 0; border-bottom:1px solid #F1F5F9;
+}
+.user-item:last-child { border-bottom:none; }
+.u-avatar {
+  width:30px; height:30px; border-radius:50%;
+  display:flex; align-items:center; justify-content:center;
+  font-size:12px; font-weight:700; color:#fff; flex-shrink:0;
+}
+.u-name  { font-size:13px; font-weight:600; color:var(--text); }
+.u-perfil{ font-size:11px; color:var(--muted); }
+.u-actions { margin-left:auto; display:flex; gap:4px; }
+.btn-sm {
+  border:1px solid var(--border); background:var(--white);
+  color:var(--muted); padding:4px 8px; border-radius:6px;
+  font-size:11px; font-weight:600; transition:.15s;
+}
+.btn-sm:hover { background:var(--bg); }
+.btn-sm.danger:hover { border-color:var(--red); color:var(--red); }
+
+/* FEED */
+.feed-item { display:flex; align-items:flex-start; gap:10px; padding:8px 0; border-bottom:1px solid #F1F5F9; }
+.feed-item:last-child { border-bottom:none; }
+.feed-icon { width:26px; height:26px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:13px; flex-shrink:0; }
+.feed-icon.verde  { background:#DCFCE7; }
+.feed-icon.azul   { background:#DBEAFE; }
+.feed-icon.laranja{ background:#FFF7ED; }
+.feed-msg  { font-size:12px; color:var(--text); line-height:1.4; }
+.feed-time { font-size:10px; color:var(--muted); margin-top:2px; }
+
+/* ══════════════════════════════════════════════
+   BOTÕES
+══════════════════════════════════════════════ */
+.btn {
+  border:none; border-radius:var(--r2); padding:10px 20px;
+  font-size:13px; font-weight:700; transition:.15s;
+}
+.btn-primary { background:var(--orange); color:#fff; box-shadow:0 3px 10px rgba(232,130,12,.3); }
+.btn-primary:hover { background:var(--orange2); }
+.btn-secondary { background:transparent; border:1.5px solid var(--blue); color:var(--blue); }
+.btn-secondary:hover { background:var(--blue); color:#fff; }
+.btn-danger { background:var(--red); color:#fff; }
+.btn-danger:hover { background:#B91C1C; }
+.btn-icon-only { background:none; border:none; color:var(--muted); padding:4px; border-radius:6px; font-size:16px; line-height:1; }
+.btn-icon-only:hover { background:var(--bg); color:var(--text); }
+
+/* ══════════════════════════════════════════════
+   MODAL
+══════════════════════════════════════════════ */
+.modal-backdrop {
+  position:fixed; inset:0; background:rgba(0,0,0,.45);
+  display:flex; align-items:center; justify-content:center;
+  z-index:100; padding:20px;
+}
+.modal-card {
+  background:var(--white); border-radius:var(--r);
+  padding:24px; width:100%; max-width:460px;
+  box-shadow:0 8px 40px rgba(0,0,0,.2);
+  max-height:90vh; overflow-y:auto;
+}
+.modal-title { font-size:16px; font-weight:800; color:var(--blue); margin-bottom:20px; }
+.modal-actions { display:flex; gap:8px; justify-content:flex-end; margin-top:20px; }
+.field { margin-bottom:14px; }
+.field label { display:block; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); margin-bottom:5px; }
+.field input, .field select {
+  width:100%; padding:9px 12px;
+  border:1.5px solid var(--border); border-radius:var(--r2);
+  font-size:13px; color:var(--text); background:var(--white);
+  transition:.15s;
+}
+.field input:focus, .field select:focus { border-color:var(--blue); }
+.field-row { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+.field-hint { font-size:11px; color:var(--muted); margin-top:4px; }
+
+/* ══════════════════════════════════════════════
+   TOAST
+══════════════════════════════════════════════ */
+#toast {
+  position:fixed; bottom:24px; right:24px; z-index:200;
+  background:var(--blue); color:#fff;
+  padding:12px 18px; border-radius:var(--r); font-size:13px; font-weight:600;
+  box-shadow:0 4px 20px rgba(0,0,0,.2);
+  transition:opacity .3s, transform .3s;
+  pointer-events:none;
+}
+#toast.success { background:var(--green); }
+#toast.error   { background:var(--red); }
+
+/* ══════════════════════════════════════════════
+   LOADING
+══════════════════════════════════════════════ */
+.loading { text-align:center; padding:20px; color:var(--muted); font-size:13px; }
+.spin { display:inline-block; width:18px; height:18px; border:2px solid var(--border); border-top-color:var(--orange); border-radius:50%; animation:spin .7s linear infinite; vertical-align:middle; margin-right:6px; }
+@keyframes spin { to { transform:rotate(360deg); } }
+
+/* TELA DE LOGIN */
+#screen-login {
+  position:fixed; inset:0; background:var(--bg);
+  display:flex; align-items:center; justify-content:center; z-index:50;
+}
+.login-card {
+  background:var(--white); border:1.5px solid var(--border);
+  border-radius:var(--r); padding:32px; width:360px;
+  box-shadow:0 4px 24px rgba(26,42,94,.1);
+}
+.login-logo { text-align:center; margin-bottom:20px; }
+.login-logo img { height:60px; object-fit:contain; }
+.login-title { font-size:18px; font-weight:800; color:var(--blue); margin-bottom:4px; }
+.login-sub { font-size:13px; color:var(--muted); margin-bottom:20px; }
+.login-error { background:#FEE2E2; color:var(--red); border-radius:var(--r2); padding:8px 12px; font-size:12px; font-weight:600; margin-bottom:12px; }
+.pass-wrap { position:relative; }
+.pass-wrap input { padding-right:40px; }
+.pass-toggle { position:absolute; right:10px; top:50%; transform:translateY(-50%); background:none; border:none; color:var(--muted); font-size:16px; cursor:pointer; }
+
+/* PAGINAÇÃO usuários */
+.users-bar { display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; }
+.users-search { display:flex; gap:8px; flex:1; max-width:280px; }
+.users-search input { flex:1; padding:7px 10px; border:1.5px solid var(--border); border-radius:var(--r2); font-size:13px; }
+.users-filter select { padding:7px 10px; border:1.5px solid var(--border); border-radius:var(--r2); font-size:13px; }
+</style>
+</head>
+<body>
+
+<!-- ════ LOGIN ════ -->
+<div id="screen-login">
+  <div class="login-card">
+    <div class="login-logo">
+      <img src="/static/icons/logo-Garra-e-caçambas.png" alt="Garra Terraplenagem" onerror="this.style.display='none'"/>
+    </div>
+    <div class="login-title">Admin Master</div>
+    <div class="login-sub">Acesse com suas credenciais de administrador</div>
+    <div id="login-err" class="login-error hidden"></div>
+    <div class="field">
+      <label>Usuário</label>
+      <input type="text" id="l-user" placeholder="seu.login" autocomplete="username"/>
+    </div>
+    <div class="field">
+      <label>Senha</label>
+      <div class="pass-wrap">
+        <input type="password" id="l-pass" placeholder="••••••" autocomplete="current-password"/>
+        <button type="button" class="pass-toggle" onclick="togglePass('l-pass',this)">👁</button>
+      </div>
+    </div>
+    <button class="btn btn-primary" style="width:100%;margin-top:4px" id="btn-login" onclick="doLogin()">Entrar</button>
+  </div>
+</div>
+
+<!-- ════ APP ════ -->
+<div id="app" class="hidden">
+
+  <!-- HEADER -->
+  <header id="header">
+    <div class="hd-brand">
+      <div class="hd-logo">
+        <img src="/static/icons/logo-Garra-e-caçambas.png" alt="G" onerror="this.outerHTML='<span style=font-weight:900;color:#fff>G</span>'"/>
+      </div>
+      <div>
+        <div class="hd-name">GARRA <span class="hd-badge">MASTER</span></div>
+        <div class="hd-sub">Sistema de Gestão Integrado</div>
+      </div>
+    </div>
+    <div class="hd-right">
+      <div class="hd-status">
+        <span class="dot dot-online"></span>
+        <span id="hd-online-count">0 online</span>
+      </div>
+      <div class="hd-user">
+        <div class="hd-avatar" id="hd-avatar">A</div>
+        <span class="hd-username" id="hd-username">Admin</span>
+      </div>
+      <button class="btn-logout" onclick="doLogout()">Sair</button>
+    </div>
+  </header>
+
+  <!-- CORPO -->
+  <div id="body">
+
+    <!-- SIDEBAR -->
+    <nav id="sidebar">
+      <div class="sb-section">
+        <span class="sb-label">Visão Geral</span>
+        <div class="sb-item active" onclick="navTo('dashboard',this)">
+          <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+          Dashboard
+        </div>
+        <div class="sb-item" onclick="navTo('usuarios',this)">
+          <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+          Usuários
+          <span class="sb-badge" id="sb-user-count">–</span>
+        </div>
+        <div class="sb-item" onclick="navTo('permissoes',this)">
+          <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+          Permissões
+        </div>
+      </div>
+      <div class="sb-divider"></div>
+      <div class="sb-section">
+        <span class="sb-label">Módulos ativos</span>
+        <a class="sb-item" href="https://garra-checklist-app.onrender.com" target="_blank">
+          <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="#16A34A" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+          Checklist
+          <span class="dot dot-green" style="margin-left:auto"></span>
+        </a>
+        <a class="sb-item" href="https://garra-sistemas.onrender.com/jardinagem/desktop" target="_blank">
+          <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="#16A34A" stroke-width="2"><path d="M12 22V12"/><path d="M5 12c0-3.87 3.13-7 7-7s7 3.13 7 7"/><path d="M5 12H2"/><path d="M22 12h-3"/></svg>
+          Jardinagem
+          <span class="dot dot-green" style="margin-left:auto"></span>
+        </a>
+      </div>
+      <div class="sb-divider"></div>
+      <div class="sb-section">
+        <span class="sb-label">Em breve</span>
+        <div class="sb-item sb-dim">
+          <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="3" width="15" height="13" rx="2"/><path d="M16 8h4l3 5v3h-7V8z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>
+          Operacional
+        </div>
+        <div class="sb-item sb-dim">
+          <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+          RH
+        </div>
+        <div class="sb-item sb-dim">
+          <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
+          Manutenção
+        </div>
+        <div class="sb-item sb-dim">
+          <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+          Financeiro
+        </div>
+      </div>
+      <div class="sb-footer">Garra Sistemas v8 · 2026</div>
+    </nav>
+
+    <!-- CONTEÚDO -->
+    <main id="content">
+
+      <!-- ── SEÇÃO: DASHBOARD ── -->
+      <section id="sec-dashboard">
+        <!-- KPIs -->
+        <div class="kpi-grid" id="kpi-grid">
+          <div class="kpi-card"><div class="kpi-label">Usuários ativos</div><div class="kpi-value" id="kpi-usuarios">–</div><div class="kpi-sub" id="kpi-usuarios-sub">carregando...</div></div>
+          <div class="kpi-card"><div class="kpi-label">Fotos esta semana</div><div class="kpi-value" id="kpi-fotos">–</div><div class="kpi-sub">jardinagem · pares</div></div>
+          <div class="kpi-card"><div class="kpi-label">KM registrado</div><div class="kpi-value" id="kpi-km">–</div><div class="kpi-sub">semana atual</div></div>
+          <div class="kpi-card kpi-green"><div class="kpi-label">Online agora</div><div class="kpi-value" id="kpi-online">–</div><div class="kpi-sub">sessões ativas</div></div>
+        </div>
+
+        <!-- MÓDULOS -->
+        <div>
+          <div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:10px">Módulos do sistema</div>
+          <div class="grid-3">
+            <div class="mod-card">
+              <div class="mod-header">
+                <span class="mod-icon">📋</span>
+                <span class="badge badge-green">Produção</span>
+              </div>
+              <div class="mod-name">Checklist</div>
+              <div class="mod-desc">Máquinas · Frota · Logística</div>
+            </div>
+            <div class="mod-card">
+              <div class="mod-header">
+                <span class="mod-icon">🌿</span>
+                <span class="badge badge-green">Produção</span>
+              </div>
+              <div class="mod-name">Jardinagem</div>
+              <div class="mod-desc">Fotos · KM · Relatórios</div>
+            </div>
+            <div class="mod-card mod-dim">
+              <div class="mod-header">
+                <span class="mod-icon">🚛</span>
+                <span class="badge badge-gray">Em breve</span>
+              </div>
+              <div class="mod-name">Operacional</div>
+              <div class="mod-desc">OS · Horímetro · Viagens</div>
+            </div>
+            <div class="mod-card mod-dim">
+              <div class="mod-header">
+                <span class="mod-icon">👥</span>
+                <span class="badge badge-gray">Planejado</span>
+              </div>
+              <div class="mod-name">RH</div>
+              <div class="mod-desc">Admissão · eSocial · NR</div>
+            </div>
+            <div class="mod-card mod-dim">
+              <div class="mod-header">
+                <span class="mod-icon">🔧</span>
+                <span class="badge badge-gray">Planejado</span>
+              </div>
+              <div class="mod-name">Manutenção</div>
+              <div class="mod-desc">OT · Preventiva · Pneus</div>
+            </div>
+            <div class="mod-card mod-dim">
+              <div class="mod-header">
+                <span class="mod-icon">📊</span>
+                <span class="badge badge-gray">Planejado</span>
+              </div>
+              <div class="mod-name">Financeiro</div>
+              <div class="mod-desc">ERP · Comissões · Book</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- INFERIOR: USUÁRIOS + ATIVIDADE -->
+        <div class="grid-2">
+          <div class="card">
+            <div class="card-title">
+              Colaboradores
+              <button class="btn btn-primary" style="padding:5px 12px;font-size:11px" onclick="abrirModalUsuario()">+ Novo</button>
+            </div>
+            <div id="dash-users-list"><div class="loading"><span class="spin"></span>Carregando...</div></div>
+            <div style="margin-top:10px;text-align:center">
+              <span style="font-size:12px;color:var(--orange);cursor:pointer;font-weight:600" onclick="navTo('usuarios',document.querySelector('.sb-item:nth-child(2)'))">ver todos →</span>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-title">Atividade recente</div>
+            <div id="feed-list"><div class="loading"><span class="spin"></span>Carregando...</div></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ── SEÇÃO: USUÁRIOS ── -->
+      <section id="sec-usuarios" class="hidden">
+        <div class="card">
+          <div class="card-title">
+            Gerenciar Colaboradores
+            <button class="btn btn-primary" style="padding:6px 14px;font-size:12px" onclick="abrirModalUsuario()">+ Novo colaborador</button>
+          </div>
+          <div class="users-bar">
+            <div class="users-search">
+              <input type="text" id="user-search" placeholder="Buscar por nome ou login..." oninput="filtrarUsuarios()"/>
+            </div>
+            <div class="users-filter">
+              <select id="user-filter-perfil" onchange="filtrarUsuarios()">
+                <option value="">Todos os perfis</option>
+                <option value="admin">Admin</option>
+                <option value="luana">Comercial (Luana)</option>
+                <option value="bruna">Mecânica (Bruna)</option>
+                <option value="operador">Operador</option>
+                <option value="motorista">Motorista</option>
+                <option value="campo">Campo</option>
+              </select>
+            </div>
+          </div>
+          <div id="users-table"><div class="loading"><span class="spin"></span>Carregando...</div></div>
+        </div>
+      </section>
+
+      <!-- ── SEÇÃO: PERMISSÕES ── -->
+      <section id="sec-permissoes" class="hidden">
+        <div class="card">
+          <div class="card-title">Controle de Permissões por Perfil</div>
+          <div id="perms-content"></div>
+        </div>
+      </section>
+
+    </main>
+  </div>
+</div>
+
+<!-- ══ MODAL CRIAR / EDITAR USUÁRIO ══ -->
+<div id="modal-usuario" class="modal-backdrop hidden">
+  <div class="modal-card">
+    <div class="modal-title" id="modal-user-title">Novo Colaborador</div>
+    <input type="hidden" id="m-login-original"/>
+    <div class="field-row">
+      <div class="field">
+        <label>Nome completo</label>
+        <input type="text" id="m-nome" placeholder="Nome do colaborador"/>
+      </div>
+      <div class="field">
+        <label>Login</label>
+        <input type="text" id="m-login" placeholder="joao.silva"/>
+      </div>
+    </div>
+    <div class="field-row">
+      <div class="field">
+        <label>Email</label>
+        <input type="email" id="m-email" placeholder="nome@garra.local"/>
+      </div>
+      <div class="field">
+        <label>Senha <span id="m-pass-hint" style="text-transform:none;font-weight:400;color:var(--muted)">(mín. 6 caracteres)</span></label>
+        <input type="password" id="m-senha" placeholder="••••••"/>
+        <div class="field-hint" id="m-pass-edit-hint"></div>
+      </div>
+    </div>
+    <div class="field-row">
+      <div class="field">
+        <label>Perfil de acesso</label>
+        <select id="m-perfil">
+          <option value="campo">Campo (Jardinagem)</option>
+          <option value="motorista">Motorista</option>
+          <option value="operador">Operador de Máquina</option>
+          <option value="bruna">Mecânica / Manutenção</option>
+          <option value="luana">Comercial</option>
+          <option value="admin">Administrador</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Perfil Checklist</label>
+        <select id="m-perfil-cl">
+          <option value="">Mesmo perfil principal</option>
+          <option value="manager">Gestor</option>
+          <option value="superior">Superior</option>
+          <option value="driver">Operacional</option>
+        </select>
+      </div>
+    </div>
+    <div id="m-error" class="login-error hidden"></div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="fecharModalUsuario()">Cancelar</button>
+      <button class="btn btn-primary" id="btn-salvar-user" onclick="salvarUsuario()">Salvar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ MODAL CONFIRMAR DESATIVAR ══ -->
+<div id="modal-desativar" class="modal-backdrop hidden">
+  <div class="modal-card">
+    <div class="modal-title">Desativar colaborador</div>
+    <p style="color:var(--muted);font-size:13px;margin-bottom:8px">O colaborador perderá o acesso ao sistema. Os dados históricos serão mantidos.</p>
+    <div style="background:#FEE2E2;border-radius:8px;padding:10px 12px;font-size:13px;font-weight:600;color:var(--red)" id="modal-desativar-nome"></div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="fecharModalDesativar()">Cancelar</button>
+      <button class="btn btn-danger" id="btn-confirmar-desativar" onclick="confirmarDesativar()">Desativar</button>
+    </div>
+  </div>
+</div>
+
+<!-- TOAST -->
+<div id="toast" class="hidden"></div>
+
+<script>
+/* ══════════════════════════════════════════════
+   CONFIGURAÇÃO
+══════════════════════════════════════════════ */
+const API = (location.hostname === 'localhost' || location.hostname === '127.0.0.1')
+  ? 'http://localhost:8000'
+  : 'https://garra-sistemas.onrender.com';
+
+/* ══════════════════════════════════════════════
+   TOKEN
+══════════════════════════════════════════════ */
+const Token = {
+  get:  ()    => localStorage.getItem('garra_token'),
+  set:  (t)   => localStorage.setItem('garra_token', t),
+  del:  ()    => localStorage.removeItem('garra_token'),
+  user: ()    => { try { return JSON.parse(localStorage.getItem('garra_admin_user') || 'null'); } catch { return null; } },
+  setUser:(u) => localStorage.setItem('garra_admin_user', JSON.stringify(u)),
+  delUser:()  => localStorage.removeItem('garra_admin_user'),
+};
+
+/* ══════════════════════════════════════════════
+   API FETCH — token automático
+══════════════════════════════════════════════ */
+async function apiFetch(path, opts = {}) {
+  const token = Token.get();
+  const res = await fetch(API + path, {
+    ...opts,
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: 'Bearer ' + token } : {}),
+      ...(opts.headers || {}),
+    },
+  });
+  if (res.status === 401) { doLogout(); throw new Error('Sessão expirada'); }
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || 'Erro ' + res.status);
+  }
+  return res.json();
+}
+
+/* ══════════════════════════════════════════════
+   AUTH
+══════════════════════════════════════════════ */
+async function doLogin() {
+  const login = document.getElementById('l-user').value.trim();
+  const senha = document.getElementById('l-pass').value;
+  const err   = document.getElementById('login-err');
+  const btn   = document.getElementById('btn-login');
+  err.classList.add('hidden');
+  btn.textContent = 'Entrando...';
+  btn.disabled = true;
+  try {
+    const res = await fetch(API + '/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ login, senha }),
+    });
+    if (!res.ok) throw new Error((await res.json()).detail || 'Erro');
+    const data = await res.json();
+    // Só admin pode acessar o master
+    if (data.perfil !== 'admin' && data.perfil !== 'gestor') {
+      throw new Error('Acesso restrito. Somente administradores.');
+    }
+    Token.set(data.token);
+    Token.setUser({ login: data.login, nome: data.nome, perfil: data.perfil });
+    iniciarApp(data);
+  } catch(e) {
+    err.textContent = e.message;
+    err.classList.remove('hidden');
+  } finally {
+    btn.textContent = 'Entrar';
+    btn.disabled = false;
+  }
+}
+
+function doLogout() {
+  Token.del();
+  Token.delUser();
+  document.getElementById('app').classList.add('hidden');
+  document.getElementById('screen-login').classList.remove('hidden');
+  document.getElementById('l-pass').value = '';
+}
+
+function togglePass(id, btn) {
+  const el = document.getElementById(id);
+  el.type = el.type === 'password' ? 'text' : 'password';
+  btn.textContent = el.type === 'password' ? '👁' : '🔒';
+}
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && !document.getElementById('screen-login').classList.contains('hidden')) doLogin();
+});
+
+/* ══════════════════════════════════════════════
+   INICIALIZAÇÃO
+══════════════════════════════════════════════ */
+async function iniciarApp(user) {
+  document.getElementById('screen-login').classList.add('hidden');
+  document.getElementById('app').classList.remove('hidden');
+  // Header
+  const nome = user.nome || user.login;
+  document.getElementById('hd-username').textContent = nome;
+  document.getElementById('hd-avatar').textContent = nome.charAt(0).toUpperCase();
+  // Carregar dados
+  await Promise.all([carregarKPIs(), carregarUsuarios(), carregarFeed()]);
+}
+
+// Verificar sessão existente ao carregar
+window.addEventListener('load', async () => {
+  const token = Token.get();
+  const user  = Token.user();
+  if (token && user) {
+    try {
+      // Renovar token silenciosamente
+      const res = await fetch(API + '/auth/renovar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.token) Token.set(data.token);
+      } else {
+        Token.del(); Token.delUser(); return;
+      }
+    } catch { /* offline — mantém token */ }
+    iniciarApp(user);
+  }
+});
+
+/* ══════════════════════════════════════════════
+   NAVEGAÇÃO
+══════════════════════════════════════════════ */
+let secAtual = 'dashboard';
+function navTo(sec, elBtn) {
+  // Esconder todas as seções
+  document.querySelectorAll('#content > section').forEach(s => s.classList.add('hidden'));
+  document.getElementById('sec-' + sec).classList.remove('hidden');
+  // Sidebar active
+  document.querySelectorAll('.sb-item').forEach(i => i.classList.remove('active'));
+  if (elBtn) elBtn.classList.add('active');
+  secAtual = sec;
+  if (sec === 'usuarios') renderTabelaUsuarios();
+  if (sec === 'permissoes') renderPermissoes();
+}
+
+/* ══════════════════════════════════════════════
+   KPIs
+══════════════════════════════════════════════ */
+let _usuarios = [];
+async function carregarKPIs() {
+  try {
+    _usuarios = await apiFetch('/usuarios');
+    const ativos = _usuarios.filter(u => u.ativo);
+    document.getElementById('kpi-usuarios').textContent = ativos.length;
+    document.getElementById('kpi-usuarios-sub').textContent = `${_usuarios.length} cadastrados total`;
+    document.getElementById('sb-user-count').textContent = ativos.length;
+    document.getElementById('kpi-online').textContent = '–';
+    document.getElementById('hd-online-count').textContent = ativos.length + ' ativos';
+  } catch(e) { console.warn('KPI usuários:', e.message); }
+
+  // KPIs jardinagem — usa dados do mês atual
+  try {
+    const agora = new Date();
+    const mesRes = await apiFetch(`/jardinagem/api/meses`);
+    const mesAtual = (mesRes || []).find(m => m.ano === agora.getFullYear() && m.mes === agora.getMonth() + 1);
+    if (mesAtual) {
+      const detail = await apiFetch(`/jardinagem/api/meses/${mesAtual.id}`);
+      let totalPares = 0, totalKm = 0;
+      (detail.semanas || []).forEach(sem => { totalPares += (sem.pares || []).length; });
+      document.getElementById('kpi-fotos').textContent = totalPares;
+      // KM
+      const kmRes = await apiFetch(`/jardinagem/api/km/mes/${mesAtual.id}`);
+      (kmRes || []).forEach(r => { totalKm += Math.max(0, (r.km_final || 0) - (r.km_inicial || 0)); });
+      document.getElementById('kpi-km').textContent = Math.round(totalKm) + ' km';
+    } else {
+      document.getElementById('kpi-fotos').textContent = '–';
+      document.getElementById('kpi-km').textContent = '–';
+    }
+  } catch(e) {
+    document.getElementById('kpi-fotos').textContent = '–';
+    document.getElementById('kpi-km').textContent = '–';
+  }
+}
+
+/* ══════════════════════════════════════════════
+   USUÁRIOS — estado e helpers
+══════════════════════════════════════════════ */
+const PERFIL_COR = {
+  admin:    '#1A2A5E', luana:'#1E3A8A', bruna:'#7C3AED',
+  operador: '#D97706', motorista:'#059669', campo:'#E8820C',
+};
+const PERFIL_LABEL = {
+  admin:'Administrador', luana:'Comercial', bruna:'Mecânica',
+  operador:'Operador', motorista:'Motorista', campo:'Campo',
+};
+
+function avatarCor(perfil) { return PERFIL_COR[perfil] || '#64748B'; }
+function perfilLabel(p) { return PERFIL_LABEL[p] || p; }
+
+async function carregarUsuarios() {
+  if (!_usuarios.length) {
+    try { _usuarios = await apiFetch('/usuarios'); } catch(e) { return; }
+  }
+  renderListaDash();
+}
+
+function renderListaDash() {
+  const ativos = _usuarios.filter(u => u.ativo).slice(0, 6);
+  const el = document.getElementById('dash-users-list');
+  el.innerHTML = ativos.map(u => `
+    <div class="user-item">
+      <div class="u-avatar" style="background:${avatarCor(u.perfil)}">${(u.nome||u.login||'?').charAt(0).toUpperCase()}</div>
+      <div>
+        <div class="u-name">${esc(u.nome || u.login)}</div>
+        <div class="u-perfil">${esc(u.login || '')} · <span class="badge badge-gray" style="font-size:9px">${perfilLabel(u.perfil)}</span></div>
+      </div>
+      <div class="u-actions">
+        <button class="btn-sm" onclick="editarUsuario('${esc(u.login)}')">✎</button>
+        <button class="btn-sm danger" onclick="pedirDesativar('${esc(u.login)}','${esc(u.nome||u.login)}')">✕</button>
+      </div>
+    </div>`).join('');
+}
+
+let _filtro = '', _filtroPerfil = '';
+function filtrarUsuarios() {
+  _filtro = document.getElementById('user-search').value.toLowerCase();
+  _filtroPerfil = document.getElementById('user-filter-perfil').value;
+  renderTabelaUsuarios();
+}
+
+function renderTabelaUsuarios() {
+  const lista = _usuarios.filter(u => {
+    if (_filtroPerfil && u.perfil !== _filtroPerfil) return false;
+    if (_filtro) {
+      const hay = ((u.nome||'') + (u.login||'') + (u.email||'')).toLowerCase();
+      if (!hay.includes(_filtro)) return false;
+    }
+    return true;
+  });
+  const el = document.getElementById('users-table');
+  if (!lista.length) { el.innerHTML = '<div class="loading" style="color:var(--muted)">Nenhum colaborador encontrado.</div>'; return; }
+  el.innerHTML = `
+    <table style="width:100%;border-collapse:collapse">
+      <thead>
+        <tr style="border-bottom:2px solid var(--border)">
+          <th style="text-align:left;padding:8px 10px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)">Colaborador</th>
+          <th style="text-align:left;padding:8px 10px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)">Login</th>
+          <th style="text-align:left;padding:8px 10px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)">Perfil</th>
+          <th style="text-align:left;padding:8px 10px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)">Status</th>
+          <th style="padding:8px 10px"></th>
+        </tr>
+      </thead>
+      <tbody>
+        ${lista.map(u => `
+        <tr style="border-bottom:1px solid #F1F5F9;transition:.1s" onmouseenter="this.style.background='#F8FAFC'" onmouseleave="this.style.background=''">
+          <td style="padding:10px">
+            <div style="display:flex;align-items:center;gap:8px">
+              <div style="width:28px;height:28px;border-radius:50%;background:${avatarCor(u.perfil)};display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#fff;flex-shrink:0">${(u.nome||'?').charAt(0).toUpperCase()}</div>
+              <span style="font-size:13px;font-weight:600;color:var(--text)">${esc(u.nome||u.login)}</span>
+            </div>
+          </td>
+          <td style="padding:10px;font-size:12px;color:var(--muted)">${esc(u.login||'–')}</td>
+          <td style="padding:10px"><span class="badge badge-gray">${perfilLabel(u.perfil)}</span></td>
+          <td style="padding:10px">
+            <span class="badge ${u.ativo ? 'badge-green' : 'badge-red'}">${u.ativo ? '● Ativo' : '○ Inativo'}</span>
+          </td>
+          <td style="padding:10px;text-align:right">
+            <div style="display:flex;gap:4px;justify-content:flex-end">
+              <button class="btn-sm" onclick="editarUsuario('${esc(u.login)}')">✎ Editar</button>
+              ${u.ativo ? `<button class="btn-sm danger" onclick="pedirDesativar('${esc(u.login)}','${esc(u.nome||u.login)}')">✕ Desativar</button>` : ''}
+            </div>
+          </td>
+        </tr>`).join('')}
+      </tbody>
+    </table>`;
+}
+
+/* ── MODAL CRIAR/EDITAR ── */
+let _editandoLogin = null;
+function abrirModalUsuario() {
+  _editandoLogin = null;
+  document.getElementById('modal-user-title').textContent = 'Novo Colaborador';
+  ['m-nome','m-login','m-email','m-senha'].forEach(id => document.getElementById(id).value = '');
+  document.getElementById('m-perfil').value = 'campo';
+  document.getElementById('m-perfil-cl').value = '';
+  document.getElementById('m-login').disabled = false;
+  document.getElementById('m-pass-edit-hint').textContent = '';
+  document.getElementById('m-error').classList.add('hidden');
+  document.getElementById('modal-usuario').classList.remove('hidden');
+}
+
+function editarUsuario(login) {
+  const u = _usuarios.find(x => x.login === login);
+  if (!u) return;
+  _editandoLogin = login;
+  document.getElementById('modal-user-title').textContent = 'Editar Colaborador';
+  document.getElementById('m-nome').value   = u.nome   || '';
+  document.getElementById('m-login').value  = u.login  || '';
+  document.getElementById('m-email').value  = u.email  || '';
+  document.getElementById('m-senha').value  = '';
+  document.getElementById('m-perfil').value = u.perfil || 'campo';
+  document.getElementById('m-perfil-cl').value = u.perfil_checklist || '';
+  document.getElementById('m-login').disabled = true;
+  document.getElementById('m-pass-edit-hint').textContent = 'Deixe em branco para manter a senha atual.';
+  document.getElementById('m-error').classList.add('hidden');
+  document.getElementById('modal-usuario').classList.remove('hidden');
+}
+
+function fecharModalUsuario() { document.getElementById('modal-usuario').classList.add('hidden'); }
+
+async function salvarUsuario() {
+  const nome  = document.getElementById('m-nome').value.trim();
+  const login = document.getElementById('m-login').value.trim().toLowerCase();
+  const email = document.getElementById('m-email').value.trim();
+  const senha = document.getElementById('m-senha').value;
+  const perfil   = document.getElementById('m-perfil').value;
+  const perfilCL = document.getElementById('m-perfil-cl').value;
+  const errEl = document.getElementById('m-error');
+  errEl.classList.add('hidden');
+
+  if (!nome || !login) { errEl.textContent = 'Nome e login são obrigatórios.'; errEl.classList.remove('hidden'); return; }
+  if (!_editandoLogin && !senha) { errEl.textContent = 'Informe uma senha para o novo colaborador.'; errEl.classList.remove('hidden'); return; }
+  if (senha && senha.length < 6) { errEl.textContent = 'A senha deve ter pelo menos 6 caracteres.'; errEl.classList.remove('hidden'); return; }
+
+  const btn = document.getElementById('btn-salvar-user');
+  btn.textContent = 'Salvando...'; btn.disabled = true;
+
+  try {
+    if (_editandoLogin) {
+      // Edição
+      const payload = { nome, perfil, perfil_checklist: perfilCL || null };
+      if (email) payload.email = email;
+      if (senha) payload.senha = senha;
+      await apiFetch(`/usuarios/${_editandoLogin}/editar`, { method: 'POST', body: JSON.stringify(payload) });
+      toast('Colaborador atualizado!', 'success');
+    } else {
+      // Criação
+      await apiFetch('/usuarios', { method: 'POST', body: JSON.stringify({ login, nome, email, senha, perfil, perfil_checklist: perfilCL || null }) });
+      toast('Colaborador criado com sucesso!', 'success');
+    }
+    fecharModalUsuario();
+    // Recarregar lista
+    _usuarios = await apiFetch('/usuarios');
+    renderListaDash();
+    if (secAtual === 'usuarios') renderTabelaUsuarios();
+    document.getElementById('kpi-usuarios').textContent = _usuarios.filter(u => u.ativo).length;
+    document.getElementById('sb-user-count').textContent = _usuarios.filter(u => u.ativo).length;
+  } catch(e) {
+    errEl.textContent = e.message;
+    errEl.classList.remove('hidden');
+  } finally {
+    btn.textContent = 'Salvar'; btn.disabled = false;
+  }
+}
+
+/* ── DESATIVAR ── */
+let _desativarLogin = null;
+function pedirDesativar(login, nome) {
+  _desativarLogin = login;
+  document.getElementById('modal-desativar-nome').textContent = nome + ' (' + login + ')';
+  document.getElementById('modal-desativar').classList.remove('hidden');
+}
+function fecharModalDesativar() { document.getElementById('modal-desativar').classList.add('hidden'); }
+async function confirmarDesativar() {
+  if (!_desativarLogin) return;
+  const btn = document.getElementById('btn-confirmar-desativar');
+  btn.textContent = 'Desativando...'; btn.disabled = true;
+  try {
+    await apiFetch(`/usuarios/${_desativarLogin}`, { method: 'DELETE' });
+    toast('Colaborador desativado.', 'success');
+    fecharModalDesativar();
+    _usuarios = await apiFetch('/usuarios');
+    renderListaDash();
+    if (secAtual === 'usuarios') renderTabelaUsuarios();
+    document.getElementById('kpi-usuarios').textContent = _usuarios.filter(u => u.ativo).length;
+    document.getElementById('sb-user-count').textContent = _usuarios.filter(u => u.ativo).length;
+  } catch(e) { toast(e.message, 'error'); }
+  finally { btn.textContent = 'Desativar'; btn.disabled = false; }
+}
+
+/* ══════════════════════════════════════════════
+   PERMISSÕES — tabela de acesso por perfil
+══════════════════════════════════════════════ */
+function renderPermissoes() {
+  const perms = [
+    { perfil:'admin',     label:'Administrador', cor:'#1A2A5E',
+      acesso:['Admin Master','Jardinagem Desktop','Checklist Gestor','Todos os módulos'] },
+    { perfil:'luana',     label:'Comercial',     cor:'#1E3A8A',
+      acesso:['Jardinagem Desktop','Criar OS completa','Fechamento mensal'] },
+    { perfil:'bruna',     label:'Mecânica',      cor:'#7C3AED',
+      acesso:['Checklist (revisar)','Abrir OT','Módulo Manutenção (futuro)'] },
+    { perfil:'operador',  label:'Operador',      cor:'#D97706',
+      acesso:['Checklist Máquinas','Criar OS simplificada','Executar OS (horímetro)'] },
+    { perfil:'motorista', label:'Motorista',     cor:'#059669',
+      acesso:['Checklist Caminhão','Registrar viagens','Checklist Carro de Apoio'] },
+    { perfil:'campo',     label:'Campo',         cor:'#E8820C',
+      acesso:['Jardinagem Mobile','Fotos antes/depois','KM diário offline'] },
+  ];
+  document.getElementById('perms-content').innerHTML = `
+    <p style="font-size:13px;color:var(--muted);margin-bottom:16px">Permissões definidas por perfil. Cada colaborador é associado a um perfil no cadastro.</p>
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px">
+      ${perms.map(p => `
+        <div style="background:var(--bg);border:1.5px solid var(--border);border-radius:10px;padding:14px;border-top:3px solid ${p.cor}">
+          <div style="font-size:13px;font-weight:700;color:${p.cor};margin-bottom:8px">${p.label}</div>
+          <ul style="list-style:none;display:flex;flex-direction:column;gap:4px">
+            ${p.acesso.map(a => `<li style="font-size:12px;color:var(--text);display:flex;align-items:center;gap:6px"><span style="color:var(--green)">✓</span>${a}</li>`).join('')}
+          </ul>
+          <div style="margin-top:10px;font-size:11px;color:var(--muted)">
+            ${_usuarios.filter(u => u.perfil === p.perfil && u.ativo).length} colaborador(es) ativo(s)
+          </div>
+        </div>`).join('')}
+    </div>`;
+}
+
+/* ══════════════════════════════════════════════
+   FEED DE ATIVIDADE
+══════════════════════════════════════════════ */
+async function carregarFeed() {
+  // Feed baseado em dados reais da jardinagem (últimos KMs e atividade)
+  const el = document.getElementById('feed-list');
+  try {
+    const agora = new Date();
+    const meses = await apiFetch('/jardinagem/api/meses');
+    const mesAtual = (meses||[]).find(m => m.ano === agora.getFullYear() && m.mes === agora.getMonth() + 1);
+    const items = [];
+    if (mesAtual) {
+      const kms = await apiFetch(`/jardinagem/api/km/mes/${mesAtual.id}`);
+      (kms||[]).slice(0,4).forEach(r => {
+        items.push({ tipo:'km', msg:`<strong>${esc(r.responsavel||'Campo')}</strong> registrou KM`, sub:`${r.local_nome||'Sem local'} · ${r.data||''}`, cor:'azul', icone:'🚗' });
+      });
+    }
+    if (!items.length) {
+      items.push({ tipo:'info', msg:'Nenhuma atividade recente', sub:'Os registros aparecem aqui', cor:'', icone:'📋' });
+    }
+    el.innerHTML = items.map(i => `
+      <div class="feed-item">
+        <div class="feed-icon ${i.cor}">${i.icone}</div>
+        <div>
+          <div class="feed-msg">${i.msg}</div>
+          <div class="feed-time">${i.sub}</div>
+        </div>
+      </div>`).join('');
+  } catch { el.innerHTML = '<div class="loading" style="color:var(--muted)">Indisponível no momento.</div>'; }
+}
+
+/* ══════════════════════════════════════════════
+   TOAST
+══════════════════════════════════════════════ */
+let _toastTimer = null;
+function toast(msg, tipo = '') {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = tipo;
+  el.style.opacity = '1';
+  el.style.transform = 'translateY(0)';
+  el.classList.remove('hidden');
+  if (_toastTimer) clearTimeout(_toastTimer);
+  _toastTimer = setTimeout(() => {
+    el.style.opacity = '0';
+    el.style.transform = 'translateY(8px)';
+    setTimeout(() => el.classList.add('hidden'), 300);
+  }, 3000);
+}
+
+/* ══════════════════════════════════════════════
+   UTILIDADES
+══════════════════════════════════════════════ */
+function esc(s) {
+  return String(s||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+</script>
+</body>
+</html>
 
