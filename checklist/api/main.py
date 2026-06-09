@@ -763,8 +763,8 @@ async def jard_login(request: Request):
     email = (d.get("email") or "").strip().lower()
     senha = (d.get("senha") or "").encode()
     usuario = jard_query(
-        "SELECT * FROM public.usuarios_garra WHERE email=%s AND ativo=true LIMIT 1",
-        (email,), fetch="one"
+        "SELECT * FROM public.usuarios_garra WHERE (email=%s OR login=%s) AND ativo=true LIMIT 1",
+        (email, email), fetch="one"
     )
     if not usuario or not bcrypt.checkpw(senha, usuario["senha_hash"].encode()):
         raise HTTPException(status_code=401, detail="Credenciais inválidas")
