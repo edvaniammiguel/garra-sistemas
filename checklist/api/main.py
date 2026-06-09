@@ -1544,18 +1544,19 @@ async def redirect_favicon():
 
 @app.exception_handler(404)
 async def not_found_handler(request: Request, exc):
-    from fastapi.responses import JSONResponse
+    from fastapi.responses import JSONResponse, Response
     path = request.url.path
-    if path.startswith("/jardinagem/api/") or path.startswith("/api/"):
+    if path.startswith("/jardinagem/api/") or path.startswith("/api/") or path.startswith("/auth/") or path.startswith("/usuarios") or path.startswith("/checklist/") or path.startswith("/frota") or path.startswith("/logistica/"):
         return JSONResponse({"ok": False, "error": "Rota não encontrada", "path": path}, status_code=404)
-    raise exc
+    return Response(status_code=404)
 
 @app.exception_handler(500)
 async def server_error_handler(request: Request, exc):
-    from fastapi.responses import JSONResponse
+    from fastapi.responses import JSONResponse, Response
     path = request.url.path
-    if path.startswith("/jardinagem/api/") or path.startswith("/api/"):
+    if path.startswith("/jardinagem/api/") or path.startswith("/api/") or path.startswith("/auth/") or path.startswith("/usuarios") or path.startswith("/checklist/") or path.startswith("/frota") or path.startswith("/logistica/"):
         return JSONResponse({"ok": False, "error": "Erro interno do servidor"}, status_code=500)
+    return Response(status_code=500)
     raise exc
 
 # ── HEALTH CHECK — mantém banco Neon acordado ──────────────────
