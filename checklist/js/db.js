@@ -10,18 +10,37 @@
 
 const API_URL = 'https://garra-sistemas.onrender.com';
 
-// ─── FETCH COM TIMEOUT ─────────────────────────────────────
+// ─── TOKEN JWT ─────────────────────────────────────────────
+const TokenStore = {
+  get()      { return localStorage.getItem('garra_token') || null; },
+  set(token) { localStorage.setItem('garra_token', token); },
+  del()      { localStorage.removeItem('garra_token'); },
+};
+
+// ─── FETCH COM TIMEOUT + JWT ───────────────────────────────
 async function apiFetch(path, options = {}) {
   const controller = new AbortController();
   const timeout    = setTimeout(() => controller.abort(), 8000); // 8s timeout
+  // Injeta token em TODAS as chamadas automaticamente
+  const token = TokenStore.get();
+  const authHeader = token ? { 'Authorization': 'Bearer ' + token } : {};
   try {
     const res = await fetch(API_URL + path, {
       ...options,
       signal: controller.signal,
-      headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
+      headers: {
+        'Content-Type': 'application/json',
+        ...authHeader,
+        ...(options.headers || {}),
+      },
     });
     clearTimeout(timeout);
     if (!res.ok) {
+      // Token expirado — limpar e forçar novo login
+      if (res.status === 401) {
+        TokenStore.del();
+        localStorage.removeItem('garra_current_user');
+      }
       const err = await res.json().catch(() => ({}));
       throw new Error(err.detail || `Erro ${res.status}`);
     }
@@ -78,6 +97,10 @@ const GarraDB = {
       method: 'POST',
       body: JSON.stringify({ login, senha }),
     });
+    // Guarda o token JWT para todas as chamadas seguintes
+    if (user.token) {
+      TokenStore.set(user.token);
+    }
     // Normaliza campos
     return {
       login:       user.login,
@@ -127,11 +150,6 @@ const GarraDB = {
     } catch(e) {
       console.warn('Falha ao atualizar pts:', e.message);
     }
-  },
-
-  // ── CHECKLIST MODELOS ───────────────────────────────────
-  async getModelos() {
-    return await apiFetch('/checklist/modelos');
   },
 
   // ── CHECKLIST ENVIOS ────────────────────────────────────
@@ -189,7 +207,7 @@ const GarraDB = {
   async getModelos() {
     try {
       const data = await apiFetch('/checklist/modelos');
-      return (data || []).filter(m => !m.is_default); // só personalizados
+      return (data || []).filter(m => !m.is_default);
     } catch { return []; }
   },
 
