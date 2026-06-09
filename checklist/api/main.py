@@ -385,13 +385,41 @@ async def login(req: LoginRequest, request: Request, db=Depends(get_db)):
     )
     if not user or not bcrypt.checkpw(req.senha.encode(), user["senha_hash"].encode()):
         raise HTTPException(status_code=401, detail="Usuário ou senha incorretos")
+    token = pyjwt.encode({
+        "sub":              user["login"],
+        "login":            user["login"],
+        "nome":             user["nome"],
+        "perfil":           user["perfil"],
+        "perfil_checklist": user["perfil_checklist"],
+        "exp":              datetime.utcnow() + timedelta(hours=JWT_EXPIRY_HOURS)
+    }, JWT_SECRET, algorithm="HS256")
     return {
+        "token": token,
         "login": user["login"], "nome": user["nome"],
         "perfil": user["perfil"], "perfil_checklist": user["perfil_checklist"],
         "role": user["perfil_checklist"] or user["perfil"],
         "pts": user["pts"] or 0, "total_envios": user["total_envios"] or 0,
         "email": user["email"] or "",
     }
+
+# ── VERIFICADORES JWT CHECKLIST ───────────────────────────────
+def verificar_token(authorization: Optional[str] = Header(None)):
+    """Exige login válido. Retorna o payload do JWT."""
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Não autenticado")
+    token = authorization[7:]
+    try:
+        return pyjwt.decode(token, JWT_SECRET, algorithms=["HS256"])
+    except pyjwt.ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="Sessão expirada")
+    except pyjwt.InvalidTokenError:
+        raise HTTPException(status_code=401, detail="Token inválido")
+
+def verificar_admin(payload=Depends(verificar_token)):
+    """Exige login válido E perfil admin."""
+    if payload.get("perfil") != "admin":
+        raise HTTPException(status_code=403, detail="Acesso restrito a administradores")
+    return payload
 
 @app.post("/auth/solicitar-reset")
 async def solicitar_reset(req: SenhaResetRequest, db=Depends(get_db)):
@@ -441,8 +469,21 @@ async def confirmar_reset(req: SenhaResetConfirm, db=Depends(get_db)):
     await db.execute("UPDATE public.senha_reset_tokens SET usado=TRUE WHERE token=$1", req.token)
     return {"ok": True, "msg": "Senha redefinida com sucesso."}
 
+@app.post("/auth/renovar")
+async def renovar_token(payload=Depends(verificar_token)):
+    """Token válido → gera novo com validade renovada. Chamado silenciosamente ao abrir o app."""
+    novo_token = pyjwt.encode({
+        "sub":              payload["sub"],
+        "login":            payload["login"],
+        "nome":             payload.get("nome", ""),
+        "perfil":           payload.get("perfil", ""),
+        "perfil_checklist": payload.get("perfil_checklist", ""),
+        "exp":              datetime.utcnow() + timedelta(hours=JWT_EXPIRY_HOURS)
+    }, JWT_SECRET, algorithm="HS256")
+    return {"token": novo_token}
+
 @app.post("/auth/alterar-senha")
-async def alterar_senha(req: SenhaChange, login: str, db=Depends(get_db)):
+async def alterar_senha(req: SenhaChange, login: str, db=Depends(get_db), _auth=Depends(verificar_token)):
     erro = validar_senha(req.senha_nova)
     if erro: raise HTTPException(status_code=400, detail=erro)
     user = await db.fetchrow("SELECT * FROM public.usuarios_garra WHERE login=$1", login)
@@ -457,14 +498,14 @@ async def alterar_senha(req: SenhaChange, login: str, db=Depends(get_db)):
     return {"ok": True}
 
 @app.get("/usuarios")
-async def listar_usuarios(db=Depends(get_db)):
+async def listar_usuarios(db=Depends(get_db), _auth=Depends(verificar_token)):
     rows = await db.fetch(
         "SELECT login,nome,email,perfil,perfil_checklist,pts,total_envios,ativo,criado_em FROM public.usuarios_garra ORDER BY nome"
     )
     return [dict(r) for r in rows]
 
 @app.post("/usuarios")
-async def criar_usuario(u: UsuarioCreate, db=Depends(get_db)):
+async def criar_usuario(u: UsuarioCreate, db=Depends(get_db), _auth=Depends(verificar_admin)):
     erro = validar_senha(u.senha)
     if erro: raise HTTPException(status_code=400, detail=erro)
     existe = await db.fetchval(
@@ -479,7 +520,7 @@ async def criar_usuario(u: UsuarioCreate, db=Depends(get_db)):
     return {"ok": True}
 
 @app.post("/usuarios/{login}/editar")
-async def editar_usuario(login: str, dados: UsuarioEdit, db=Depends(get_db)):
+async def editar_usuario(login: str, dados: UsuarioEdit, db=Depends(get_db), _auth=Depends(verificar_admin)):
     sets, params = [], []
     for campo, valor in dados.dict(exclude_none=True).items():
         params.append(valor); sets.append(f"{campo}=${len(params)}")
@@ -491,19 +532,19 @@ async def editar_usuario(login: str, dados: UsuarioEdit, db=Depends(get_db)):
     return {"ok": True}
 
 @app.delete("/usuarios/{login}")
-async def remover_usuario(login: str, db=Depends(get_db)):
+async def remover_usuario(login: str, db=Depends(get_db), _auth=Depends(verificar_admin)):
     await db.execute("UPDATE public.usuarios_garra SET ativo=FALSE WHERE login=$1", login)
     return {"ok": True}
 
 @app.patch("/usuarios/{login}/pts")
-async def atualizar_pts(login: str, pts: int, db=Depends(get_db)):
+async def atualizar_pts(login: str, pts: int, db=Depends(get_db), _auth=Depends(verificar_token)):
     await db.execute(
         "UPDATE public.usuarios_garra SET pts=$1, atualizado_em=NOW() WHERE login=$2", pts, login
     )
     return {"ok": True}
 
 @app.get("/checklist/modelos")
-async def listar_modelos(db=Depends(get_db)):
+async def listar_modelos(db=Depends(get_db), _auth=Depends(verificar_token)):
     rows = await db.fetch("SELECT * FROM checklist.modelos WHERE ativo=TRUE ORDER BY label")
     result = []
     for r in rows:
@@ -514,7 +555,7 @@ async def listar_modelos(db=Depends(get_db)):
     return result
 
 @app.post("/checklist/modelos")
-async def salvar_modelo(cl: ChecklistModeloCreate, db=Depends(get_db)):
+async def salvar_modelo(cl: ChecklistModeloCreate, db=Depends(get_db), _auth=Depends(verificar_token)):
     existe = await db.fetchval("SELECT id FROM checklist.modelos WHERE cl_id=$1", cl.cl_id)
     if existe:
         await db.execute(
@@ -529,12 +570,12 @@ async def salvar_modelo(cl: ChecklistModeloCreate, db=Depends(get_db)):
     return {"ok": True}
 
 @app.delete("/checklist/modelos/{cl_id}")
-async def remover_modelo(cl_id: str, db=Depends(get_db)):
+async def remover_modelo(cl_id: str, db=Depends(get_db), _auth=Depends(verificar_token)):
     await db.execute("UPDATE checklist.modelos SET ativo=FALSE WHERE cl_id=$1", cl_id)
     return {"ok": True}
 
 @app.get("/checklist/envios")
-async def listar_envios(usuario: Optional[str]=None, cl_id: Optional[str]=None, limit: int=100, db=Depends(get_db)):
+async def listar_envios(usuario: Optional[str]=None, cl_id: Optional[str]=None, limit: int=100, db=Depends(get_db), _auth=Depends(verificar_token)):
     where, params = "WHERE arquivado=FALSE", []
     if usuario: params.append(usuario); where += f" AND usuario_login=${len(params)}"
     if cl_id:   params.append(cl_id);   where += f" AND cl_id=${len(params)}"
@@ -549,7 +590,7 @@ async def listar_envios(usuario: Optional[str]=None, cl_id: Optional[str]=None, 
     return result
 
 @app.post("/checklist/envios")
-async def salvar_envio(e: EnvioCreate, db=Depends(get_db)):
+async def salvar_envio(e: EnvioCreate, db=Depends(get_db), _auth=Depends(verificar_token)):
     existe = await db.fetchval("SELECT id FROM checklist.envios WHERE envio_id=$1", e.envio_id)
     if existe: return {"ok": True, "duplicado": True}
     data = datetime.fromisoformat(e.enviado_em) if e.enviado_em else datetime.now()
@@ -564,17 +605,17 @@ async def salvar_envio(e: EnvioCreate, db=Depends(get_db)):
     return {"ok": True}
 
 @app.patch("/checklist/envios/{envio_id}/arquivar")
-async def arquivar_envio(envio_id: str, db=Depends(get_db)):
+async def arquivar_envio(envio_id: str, db=Depends(get_db), _auth=Depends(verificar_token)):
     await db.execute("UPDATE checklist.envios SET arquivado=TRUE WHERE envio_id=$1", envio_id)
     return {"ok": True}
 
 @app.get("/frota")
-async def listar_frota(db=Depends(get_db)):
+async def listar_frota(db=Depends(get_db), _auth=Depends(verificar_token)):
     rows = await db.fetch("SELECT * FROM checklist.frota WHERE ativo=TRUE ORDER BY categoria, identificacao")
     return [dict(r) for r in rows]
 
 @app.post("/frota")
-async def salvar_frota(item: FrotaItem, db=Depends(get_db)):
+async def salvar_frota(item: FrotaItem, db=Depends(get_db), _auth=Depends(verificar_token)):
     existe = await db.fetchval("SELECT id FROM checklist.frota WHERE categoria=$1 AND identificacao=$2", item.categoria, item.identificacao)
     if existe:
         await db.execute("UPDATE checklist.frota SET descricao=$1,ativo=TRUE WHERE categoria=$2 AND identificacao=$3", item.descricao,item.categoria,item.identificacao)
@@ -583,17 +624,17 @@ async def salvar_frota(item: FrotaItem, db=Depends(get_db)):
     return {"ok": True}
 
 @app.delete("/frota/{categoria}/{identificacao}")
-async def remover_frota(categoria: str, identificacao: str, db=Depends(get_db)):
+async def remover_frota(categoria: str, identificacao: str, db=Depends(get_db), _auth=Depends(verificar_token)):
     await db.execute("UPDATE checklist.frota SET ativo=FALSE WHERE categoria=$1 AND identificacao=$2", categoria, identificacao)
     return {"ok": True}
 
 @app.get("/logistica/motoristas")
-async def listar_motoristas(db=Depends(get_db)):
+async def listar_motoristas(db=Depends(get_db), _auth=Depends(verificar_token)):
     rows = await db.fetch("SELECT * FROM checklist.log_motoristas ORDER BY nome")
     return [dict(r) for r in rows]
 
 @app.post("/logistica/motoristas")
-async def salvar_motorista(m: LogMotoristaCreate, db=Depends(get_db)):
+async def salvar_motorista(m: LogMotoristaCreate, db=Depends(get_db), _auth=Depends(verificar_token)):
     existe = await db.fetchval("SELECT id FROM checklist.log_motoristas WHERE motor_id=$1", m.motor_id)
     if existe:
         await db.execute("UPDATE checklist.log_motoristas SET nome=$1,cpf=$2,cnh=$3,telefone=$4,status=$5,observacoes=$6,atualizado_em=NOW() WHERE motor_id=$7", m.nome,m.cpf,m.cnh,m.telefone,m.status,m.observacoes,m.motor_id)
@@ -602,12 +643,12 @@ async def salvar_motorista(m: LogMotoristaCreate, db=Depends(get_db)):
     return {"ok": True}
 
 @app.delete("/logistica/motoristas/{motor_id}")
-async def remover_motorista(motor_id: str, db=Depends(get_db)):
+async def remover_motorista(motor_id: str, db=Depends(get_db), _auth=Depends(verificar_token)):
     await db.execute("DELETE FROM checklist.log_motoristas WHERE motor_id=$1", motor_id)
     return {"ok": True}
 
 @app.get("/logistica/veiculos")
-async def listar_veiculos(db=Depends(get_db)):
+async def listar_veiculos(db=Depends(get_db), _auth=Depends(verificar_token)):
     rows = await db.fetch("SELECT * FROM checklist.log_veiculos ORDER BY car_id")
     result = []
     for r in rows:
@@ -616,7 +657,7 @@ async def listar_veiculos(db=Depends(get_db)):
     return result
 
 @app.post("/logistica/veiculos")
-async def salvar_veiculo(v: LogVeiculoCreate, db=Depends(get_db)):
+async def salvar_veiculo(v: LogVeiculoCreate, db=Depends(get_db), _auth=Depends(verificar_token)):
     existe = await db.fetchval("SELECT id FROM checklist.log_veiculos WHERE veiculo_id=$1", v.veiculo_id)
     if existe:
         await db.execute("UPDATE checklist.log_veiculos SET car_id=$1,placa=$2,modelo=$3,ano=$4,cor=$5,status=$6,extras=$7,observacoes=$8,atualizado_em=NOW() WHERE veiculo_id=$9", v.car_id,v.placa,v.modelo,v.ano,v.cor,v.status,json.dumps(v.extras),v.observacoes,v.veiculo_id)
@@ -625,12 +666,12 @@ async def salvar_veiculo(v: LogVeiculoCreate, db=Depends(get_db)):
     return {"ok": True}
 
 @app.delete("/logistica/veiculos/{veiculo_id}")
-async def remover_veiculo(veiculo_id: str, db=Depends(get_db)):
+async def remover_veiculo(veiculo_id: str, db=Depends(get_db), _auth=Depends(verificar_token)):
     await db.execute("DELETE FROM checklist.log_veiculos WHERE veiculo_id=$1", veiculo_id)
     return {"ok": True}
 
 @app.get("/logistica/registros")
-async def listar_registros(limit: int=50, db=Depends(get_db)):
+async def listar_registros(limit: int=50, db=Depends(get_db), _auth=Depends(verificar_token)):
     rows = await db.fetch("SELECT * FROM checklist.log_registros ORDER BY data_hora DESC LIMIT $1", limit)
     result = []
     for r in rows:
@@ -639,7 +680,7 @@ async def listar_registros(limit: int=50, db=Depends(get_db)):
     return result
 
 @app.post("/logistica/registros")
-async def salvar_registro(r: LogRegistroCreate, db=Depends(get_db)):
+async def salvar_registro(r: LogRegistroCreate, db=Depends(get_db), _auth=Depends(verificar_token)):
     existe = await db.fetchval("SELECT id FROM checklist.log_registros WHERE registro_id=$1", r.registro_id)
     if existe:
         await db.execute("UPDATE checklist.log_registros SET responsavel=$1,data_hora=$2,carros=$3 WHERE registro_id=$4", r.responsavel,datetime.fromisoformat(r.data_hora),json.dumps(r.carros),r.registro_id)
@@ -648,7 +689,7 @@ async def salvar_registro(r: LogRegistroCreate, db=Depends(get_db)):
     return {"ok": True}
 
 @app.delete("/logistica/registros/{registro_id}")
-async def remover_registro(registro_id: str, db=Depends(get_db)):
+async def remover_registro(registro_id: str, db=Depends(get_db), _auth=Depends(verificar_token)):
     await db.execute("DELETE FROM checklist.log_registros WHERE registro_id=$1", registro_id)
     return {"ok": True}
 
