@@ -938,7 +938,7 @@ function calcKm(){
   var ini = parseFloat(document.getElementById("kmIni").value||0);
   var fin = parseFloat(document.getElementById("kmFin").value||0);
   var total = document.getElementById("kmTotal");
-  if(fin > ini){ total.style.display="block"; total.textContent="Total: "+(fin-ini).toFixed(1)+" km"; }
+  if(fin >= ini && fin > 0){ total.style.display="block"; total.textContent="Total: "+(fin-ini).toFixed(1)+" km"+(fin===ini?" (ponto fixo)":""); }
   else { total.style.display="none"; }
 }
 
@@ -957,7 +957,7 @@ function salvarKm(){
   var fin   = parseFloat(document.getElementById("kmFin").value||0);
   var msg   = document.getElementById("kmMsg");
   if(!local){ msg.textContent="Informe o local."; msg.style.color="var(--red)"; return; }
-  if(fin<=ini){ msg.textContent="KM final deve ser maior que inicial."; msg.style.color="var(--red)"; return; }
+  if(fin<ini){ msg.textContent="KM final não pode ser menor que o inicial."; msg.style.color="var(--red)"; return; }
   if(!SEMANA){ msg.textContent="Sem semana ativa."; msg.style.color="var(--red)"; return; }
   msg.textContent="Salvando..."; msg.style.color="var(--mut)";
   var payload = {
