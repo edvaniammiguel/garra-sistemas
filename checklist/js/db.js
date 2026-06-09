@@ -17,6 +17,39 @@ const TokenStore = {
   del()      { localStorage.removeItem('garra_token'); },
 };
 
+// ─── RENOVAÇÃO SILENCIOSA DO TOKEN ────────────────────────
+// Chamado ao iniciar o app — se tem token válido, renova por mais 30 dias
+// O usuário nunca precisa fazer login enquanto usar o app regularmente
+async function renovarTokenSilencioso() {
+  const token = TokenStore.get();
+  if (!token) return; // sem token → não faz nada, usuário vai para login
+  try {
+    const res = await fetch(API_URL + '/auth/renovar', {
+      method: 'POST',
+      signal: AbortSignal.timeout(5000),
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + token,
+      },
+    });
+    if (res.ok) {
+      const data = await res.json();
+      if (data.token) {
+        TokenStore.set(data.token);
+        console.log('[Token] Renovado silenciosamente +' + (JWT_EXPIRY_HOURS||720/24) + ' dias');
+      }
+    } else if (res.status === 401) {
+      // Token expirado — limpa, usuário faz login normal
+      TokenStore.del();
+      localStorage.removeItem('garra_current_user');
+      console.log('[Token] Expirado — login necessário');
+    }
+  } catch(e) {
+    // Offline ou timeout — não faz nada, token continua válido até expirar
+    console.log('[Token] Renovação adiada (offline ou timeout)');
+  }
+}
+
 // ─── FETCH COM TIMEOUT + JWT ───────────────────────────────
 async function apiFetch(path, options = {}) {
   const controller = new AbortController();
