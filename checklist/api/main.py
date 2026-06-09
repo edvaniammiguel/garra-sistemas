@@ -698,6 +698,13 @@ async def remover_registro(registro_id: str, db=Depends(get_db), _auth=Depends(v
 # ══════════════════════════════════════════════════════════════
 
 # ── PAGES ─────────────────────────────────────────────────────
+@app.get("/admin", response_class=HTMLResponse)
+async def admin_page():
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "admin", "admin-app.html")
+    if not os.path.exists(path):
+        raise HTTPException(status_code=404, detail="Admin app não encontrado")
+    return open(path, encoding="utf-8").read()
+
 @app.get("/jardinagem", response_class=HTMLResponse)
 @app.get("/jardinagem/", response_class=HTMLResponse)
 async def jard_index():
