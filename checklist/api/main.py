@@ -421,6 +421,13 @@ def verificar_admin(payload=Depends(verificar_token)):
         raise HTTPException(status_code=403, detail="Acesso restrito a administradores")
     return payload
 
+def verificar_gestor(payload=Depends(verificar_token)):
+    """Exige login válido E perfil de gestão (admin, gestor ou luana)."""
+    perfil = payload.get("perfil")
+    if perfil not in ("admin", "gestor", "luana"):
+        raise HTTPException(status_code=403, detail="Acesso restrito a gestores")
+    return payload
+
 @app.post("/auth/solicitar-reset")
 async def solicitar_reset(req: SenhaResetRequest, db=Depends(get_db)):
     user = await db.fetchrow(
@@ -1523,6 +1530,297 @@ async def jard_enviar_email(semana_id: int, payload=Depends(verificar_token_jard
                    (semana_id,MAIL_DESTINO,f"Relatório {semana_dict['label']}",str(e)), fetch="none")
         raise HTTPException(status_code=500, detail=f"Falha no envio: {str(e)}")
 
+# ═══════════════════════════════════════════════════════════════════════════
+# MÓDULO OPERACIONAL — Ordens de Serviço, Partes Diárias, Comissões
+# Adicionado em 09/06/2026 — Fase B
+# Schema: operacional.* no Neon
+# ═══════════════════════════════════════════════════════════════════════════
+
+# ── HELPERS DE QUERY (usa jard_query — mesmo padrão da jardinagem) ──────────
+
+# ── LISTAS BÁSICAS (para popular selects) ───────────────────────────────────
+
+@app.get("/operacional/api/tipos-servico")
+async def op_listar_tipos_servico(_auth=Depends(verificar_token)):
+    """Lista tipos de serviço ativos para popular select."""
+    rows = jard_query(
+        "SELECT id, nome, descricao FROM operacional.tipos_servico WHERE ativo=true ORDER BY nome"
+    )
+    return [dict(r) for r in (rows or [])]
+
+@app.post("/operacional/api/tipos-servico")
+async def op_criar_tipo_servico(request: Request, payload=Depends(verificar_admin)):
+    """Cria novo tipo de serviço (somente admin)."""
+    d = await request.json()
+    nome = (d.get("nome") or "").strip()
+    descricao = (d.get("descricao") or "").strip()
+    if not nome:
+        raise HTTPException(status_code=400, detail="Nome é obrigatório")
+    try:
+        row = jard_query_id(
+            "INSERT INTO operacional.tipos_servico (nome, descricao) VALUES (%s, %s)",
+            (nome, descricao or None)
+        )
+        return dict(row)
+    except Exception as e:
+        if "duplicate" in str(e).lower():
+            raise HTTPException(status_code=409, detail="Tipo de serviço já existe")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/operacional/api/equipamentos")
+async def op_listar_equipamentos(_auth=Depends(verificar_token)):
+    """Lista equipamentos ativos para popular select."""
+    rows = jard_query(
+        """SELECT id, codigo, descricao, categoria, medicao, horimetro_atual, km_atual
+           FROM operacional.equipamentos
+           WHERE ativo=true
+           ORDER BY categoria, codigo"""
+    )
+    return [dict(r) for r in (rows or [])]
+
+@app.get("/operacional/api/clientes")
+async def op_listar_clientes(_auth=Depends(verificar_token)):
+    """Lista clientes ativos para popular select da OS."""
+    rows = jard_query(
+        "SELECT id, nome FROM public.clientes_garra WHERE ativo=true ORDER BY nome"
+    )
+    return [dict(r) for r in (rows or [])]
+
+@app.get("/operacional/api/operadores")
+async def op_listar_operadores(_auth=Depends(verificar_token)):
+    """Lista usuários elegíveis a operar equipamentos (operadores, motoristas, campo)."""
+    rows = jard_query(
+        """SELECT id, nome, login, perfil
+           FROM public.usuarios_garra
+           WHERE ativo=true AND perfil IN ('operador','motorista','campo')
+           ORDER BY nome"""
+    )
+    return [dict(r) for r in (rows or [])]
+
+
+# ── NUMERAÇÃO DE OS ─────────────────────────────────────────────────────────
+
+@app.get("/operacional/api/proximo-numero")
+async def op_proximo_numero(_auth=Depends(verificar_gestor)):
+    """Retorna o próximo número de OS disponível para o ano atual."""
+    ano = datetime.utcnow().year
+    row = jard_query(
+        "SELECT operacional.proximo_numero_os(%s) AS numero",
+        (ano,), fetch="one"
+    )
+    return {"numero": row["numero"], "ano": ano}
+
+
+# ── ORDENS DE SERVIÇO ───────────────────────────────────────────────────────
+
+@app.post("/operacional/api/os")
+async def op_criar_os(request: Request, payload=Depends(verificar_gestor)):
+    """Cria nova OS. Somente admin, gestor ou luana."""
+    d = await request.json()
+
+    # Campos obrigatórios
+    obra = (d.get("obra") or "").strip()
+    if not obra:
+        raise HTTPException(status_code=400, detail="Obra é obrigatória")
+
+    # Cliente: ou cliente_id (cadastrado) OU cliente_nome_avulso
+    cliente_id = d.get("cliente_id")
+    cliente_nome_avulso = (d.get("cliente_nome_avulso") or "").strip() or None
+    if not cliente_id and not cliente_nome_avulso:
+        raise HTTPException(status_code=400, detail="Informe cliente cadastrado ou nome avulso")
+
+    tipo_servico_id     = d.get("tipo_servico_id")
+    endereco            = (d.get("endereco") or "").strip() or None
+    descricao           = (d.get("descricao") or "").strip() or None
+    data_inicio         = d.get("data_inicio") or datetime.utcnow().date().isoformat()
+    data_fim_prevista   = d.get("data_fim_prevista") or None
+    codigo_erp          = (d.get("codigo_erp") or "").strip() or None
+    origem              = d.get("origem") or "escritorio"
+
+    # Gerar número de OS
+    ano = datetime.utcnow().year
+    row = jard_query("SELECT operacional.proximo_numero_os(%s) AS numero", (ano,), fetch="one")
+    numero = row["numero"]
+    sequencia = int(numero.split("-")[-1])
+
+    # Status inicial baseado em ter ou não codigo_erp
+    status = "aberta_completa" if codigo_erp else "aberta_sem_erp"
+
+    # Snapshot do criador
+    criado_por = payload.get("sub")  # login
+    user_row = jard_query("SELECT id FROM public.usuarios_garra WHERE login=%s",
+                         (criado_por,), fetch="one")
+    criado_por_id = user_row["id"] if user_row else None
+
+    codigo_erp_em  = datetime.utcnow() if codigo_erp else None
+    codigo_erp_por = criado_por_id if codigo_erp else None
+
+    try:
+        os_row = jard_query_id(
+            """INSERT INTO operacional.ordens_servico
+               (numero, ano, sequencia, codigo_erp, codigo_erp_em, codigo_erp_por,
+                cliente_id, cliente_nome_avulso, tipo_servico_id,
+                obra, endereco, descricao,
+                data_inicio, data_fim_prevista,
+                status, origem, criado_por)
+               VALUES (%s,%s,%s,%s,%s,%s, %s,%s,%s, %s,%s,%s, %s,%s, %s,%s,%s)""",
+            (numero, ano, sequencia, codigo_erp, codigo_erp_em, codigo_erp_por,
+             cliente_id, cliente_nome_avulso, tipo_servico_id,
+             obra, endereco, descricao,
+             data_inicio, data_fim_prevista,
+             status, origem, criado_por_id)
+        )
+        return dict(os_row)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erro ao criar OS: {str(e)}")
+
+
+@app.get("/operacional/api/os")
+async def op_listar_os(
+    status: Optional[str] = None,
+    cliente_id: Optional[str] = None,
+    ano: Optional[int] = None,
+    busca: Optional[str] = None,
+    limit: int = 100,
+    _auth=Depends(verificar_token)
+):
+    """Lista OS com filtros opcionais."""
+    sql = """
+        SELECT
+            os.id, os.numero, os.ano, os.sequencia,
+            os.codigo_erp, os.obra, os.endereco, os.descricao,
+            os.data_inicio, os.data_fim_prevista, os.data_fim_real,
+            os.status, os.origem, os.criado_em,
+            os.cliente_id, COALESCE(c.nome, os.cliente_nome_avulso) AS cliente_nome,
+            os.tipo_servico_id, ts.nome AS tipo_servico_nome,
+            u.nome AS criado_por_nome
+        FROM operacional.ordens_servico os
+        LEFT JOIN public.clientes_garra c       ON c.id = os.cliente_id
+        LEFT JOIN operacional.tipos_servico ts  ON ts.id = os.tipo_servico_id
+        LEFT JOIN public.usuarios_garra u       ON u.id = os.criado_por
+        WHERE os.ativo = true
+    """
+    params = []
+    if status:
+        sql += " AND os.status = %s"; params.append(status)
+    if cliente_id:
+        sql += " AND os.cliente_id = %s"; params.append(cliente_id)
+    if ano:
+        sql += " AND os.ano = %s"; params.append(ano)
+    if busca:
+        sql += " AND (os.numero ILIKE %s OR os.obra ILIKE %s OR os.codigo_erp ILIKE %s)"
+        like = f"%{busca}%"
+        params.extend([like, like, like])
+    sql += " ORDER BY os.ano DESC, os.sequencia DESC LIMIT %s"
+    params.append(limit)
+
+    rows = jard_query(sql, tuple(params))
+    return [dict(r) for r in (rows or [])]
+
+
+@app.get("/operacional/api/os/{os_id}")
+async def op_detalhe_os(os_id: str, _auth=Depends(verificar_token)):
+    """Retorna detalhe completo da OS, com partes diárias."""
+    row = jard_query(
+        """SELECT os.*,
+                  COALESCE(c.nome, os.cliente_nome_avulso) AS cliente_nome,
+                  ts.nome AS tipo_servico_nome,
+                  u.nome AS criado_por_nome
+           FROM operacional.ordens_servico os
+           LEFT JOIN public.clientes_garra c       ON c.id = os.cliente_id
+           LEFT JOIN operacional.tipos_servico ts  ON ts.id = os.tipo_servico_id
+           LEFT JOIN public.usuarios_garra u       ON u.id = os.criado_por
+           WHERE os.id = %s AND os.ativo = true""",
+        (os_id,), fetch="one"
+    )
+    if not row:
+        raise HTTPException(status_code=404, detail="OS não encontrada")
+
+    # Buscar partes diárias da OS
+    partes = jard_query(
+        """SELECT pd.*,
+                  e.codigo AS equipamento_codigo, e.descricao AS equipamento_descricao,
+                  e.categoria AS equipamento_categoria,
+                  COALESCE(u.nome, pd.operador_nome_avulso) AS operador_nome
+           FROM operacional.partes_diarias pd
+           LEFT JOIN operacional.equipamentos e  ON e.id = pd.equipamento_id
+           LEFT JOIN public.usuarios_garra u    ON u.id = pd.operador_id
+           WHERE pd.os_id = %s AND pd.ativo = true
+           ORDER BY pd.data DESC, pd.criado_em DESC""",
+        (os_id,)
+    )
+
+    os_dict = dict(row)
+    os_dict["partes_diarias"] = [dict(p) for p in (partes or [])]
+    return os_dict
+
+
+@app.patch("/operacional/api/os/{os_id}")
+async def op_atualizar_os(os_id: str, request: Request, payload=Depends(verificar_gestor)):
+    """Atualiza OS — útil para inserir codigo_erp retroativo, mudar status, etc."""
+    d = await request.json()
+
+    # Verificar se OS existe
+    existente = jard_query(
+        "SELECT * FROM operacional.ordens_servico WHERE id=%s AND ativo=true",
+        (os_id,), fetch="one"
+    )
+    if not existente:
+        raise HTTPException(status_code=404, detail="OS não encontrada")
+
+    # Campos editáveis
+    campos_editaveis = ["codigo_erp", "obra", "endereco", "descricao",
+                        "data_fim_prevista", "data_fim_real", "status",
+                        "tipo_servico_id", "cliente_id", "cliente_nome_avulso"]
+    updates = []
+    params = []
+    for campo in campos_editaveis:
+        if campo in d:
+            updates.append(f"{campo} = %s")
+            params.append(d[campo] if d[campo] != "" else None)
+
+    if not updates:
+        return dict(existente)
+
+    # Snapshot quem inseriu codigo_erp
+    if "codigo_erp" in d and d["codigo_erp"]:
+        login = payload.get("sub")
+        user = jard_query("SELECT id FROM public.usuarios_garra WHERE login=%s",
+                         (login,), fetch="one")
+        if user:
+            updates.append("codigo_erp_em = %s")
+            params.append(datetime.utcnow())
+            updates.append("codigo_erp_por = %s")
+            params.append(user["id"])
+        # Se tinha status aberta_sem_erp e agora tem erp, vira aberta_completa
+        if existente["status"] == "aberta_sem_erp":
+            updates.append("status = %s")
+            params.append("aberta_completa")
+
+    updates.append("atualizado_em = %s")
+    params.append(datetime.utcnow())
+    params.append(os_id)
+
+    sql = f"UPDATE operacional.ordens_servico SET {', '.join(updates)} WHERE id = %s"
+    jard_query(sql, tuple(params), fetch="none")
+
+    # Retornar atualizado
+    return await op_detalhe_os(os_id, _auth=payload)
+
+
+@app.delete("/operacional/api/os/{os_id}")
+async def op_remover_os(os_id: str, _auth=Depends(verificar_admin)):
+    """Soft delete da OS. Somente admin."""
+    jard_query(
+        "UPDATE operacional.ordens_servico SET ativo=false, atualizado_em=now() WHERE id=%s",
+        (os_id,), fetch="none"
+    )
+    return {"ok": True, "id": os_id}
+
+# ═══════════════════════════════════════════════════════════════════════════
+# FIM MÓDULO OPERACIONAL
+# ═══════════════════════════════════════════════════════════════════════════
+
 # ── FALLBACK — compatibilidade com browsers que cachearam URLs antigas ───────
 from fastapi.responses import RedirectResponse
 
@@ -1546,7 +1844,7 @@ async def redirect_favicon():
 async def not_found_handler(request: Request, exc):
     from fastapi.responses import JSONResponse, Response
     path = request.url.path
-    if path.startswith("/jardinagem/api/") or path.startswith("/api/") or path.startswith("/auth/") or path.startswith("/usuarios") or path.startswith("/checklist/") or path.startswith("/frota") or path.startswith("/logistica/"):
+    if path.startswith("/jardinagem/api/") or path.startswith("/api/") or path.startswith("/auth/") or path.startswith("/usuarios") or path.startswith("/checklist/") or path.startswith("/frota") or path.startswith("/logistica/") or path.startswith("/operacional/"):
         return JSONResponse({"ok": False, "error": "Rota não encontrada", "path": path}, status_code=404)
     return Response(status_code=404)
 
@@ -1554,7 +1852,7 @@ async def not_found_handler(request: Request, exc):
 async def server_error_handler(request: Request, exc):
     from fastapi.responses import JSONResponse, Response
     path = request.url.path
-    if path.startswith("/jardinagem/api/") or path.startswith("/api/") or path.startswith("/auth/") or path.startswith("/usuarios") or path.startswith("/checklist/") or path.startswith("/frota") or path.startswith("/logistica/"):
+    if path.startswith("/jardinagem/api/") or path.startswith("/api/") or path.startswith("/auth/") or path.startswith("/usuarios") or path.startswith("/checklist/") or path.startswith("/frota") or path.startswith("/logistica/") or path.startswith("/operacional/"):
         return JSONResponse({"ok": False, "error": "Erro interno do servidor"}, status_code=500)
     return Response(status_code=500)
     raise exc
