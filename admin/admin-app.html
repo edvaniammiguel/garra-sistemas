@@ -649,6 +649,20 @@ input,select,textarea { font-family:inherit; font-size:13px; outline:none; }
         <input type="date" id="os-data-inicio"/>
       </div>
     </div>
+    <div class="field-row">
+      <div class="field">
+        <label>Equipamento principal</label>
+        <select id="os-equipamento">
+          <option value="">Selecione...</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Operador responsável</label>
+        <select id="os-operador">
+          <option value="">Selecione...</option>
+        </select>
+      </div>
+    </div>
     <div class="field">
       <label>Obra / Local <span style="color:var(--red)">*</span></label>
       <input type="text" id="os-obra" placeholder="Ex.: OBRA NOVA SERRANA - PROBASE"/>
@@ -1156,6 +1170,8 @@ function toast(msg, tipo = '') {
 let _osList = [];
 let _tiposServico = [];
 let _clientesOS = [];
+let _equipamentosOS = [];
+let _operadoresOS = [];
 let _osFiltro = '', _osFiltroStatus = '', _osFiltroCliente = '';
 
 const STATUS_LABEL = {
@@ -1180,6 +1196,12 @@ async function carregarOS() {
       sel.innerHTML = '<option value="">Todos os clientes</option>' +
         _clientesOS.map(c => `<option value="${c.id}">${esc(c.nome)}</option>`).join('');
     }
+  }
+  if (!_equipamentosOS.length) {
+    try { _equipamentosOS = await apiFetch('/operacional/api/equipamentos'); } catch {}
+  }
+  if (!_operadoresOS.length) {
+    try { _operadoresOS = await apiFetch('/operacional/api/operadores'); } catch {}
   }
   // Carrega OS
   try {
@@ -1221,6 +1243,7 @@ function renderTabelaOS() {
         <tr style="border-bottom:2px solid var(--border)">
           <th style="text-align:left;padding:8px 10px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)">Nº OS</th>
           <th style="text-align:left;padding:8px 10px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)">Cliente / Obra</th>
+          <th style="text-align:left;padding:8px 10px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)">Equipamento / Operador</th>
           <th style="text-align:left;padding:8px 10px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)">Cód ERP</th>
           <th style="text-align:left;padding:8px 10px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)">Data</th>
           <th style="text-align:left;padding:8px 10px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)">Status</th>
@@ -1237,6 +1260,10 @@ function renderTabelaOS() {
             <td style="padding:10px">
               <div style="font-size:13px;font-weight:600;color:var(--text)">${esc(os.cliente_nome || '–')}</div>
               <div style="font-size:11px;color:var(--muted)">${esc(os.obra || '')}</div>
+            </td>
+            <td style="padding:10px">
+              <div style="font-size:12px;font-weight:600;color:var(--blue)">${esc(os.equipamento_codigo || '–')}</div>
+              <div style="font-size:11px;color:var(--muted)">${esc(os.operador_nome || '–')}</div>
             </td>
             <td style="padding:10px;font-size:12px;color:var(--muted)">${esc(os.codigo_erp || '–')}</td>
             <td style="padding:10px;font-size:12px;color:var(--muted)">${data}</td>
@@ -1265,6 +1292,12 @@ async function abrirModalOS() {
   const selTipo = document.getElementById('os-tipo-servico');
   selTipo.innerHTML = '<option value="">Selecione...</option>' +
     _tiposServico.map(t => `<option value="${t.id}">${esc(t.nome)}</option>`).join('');
+  const selEq = document.getElementById('os-equipamento');
+  selEq.innerHTML = '<option value="">Selecione...</option>' +
+    _equipamentosOS.map(e => `<option value="${e.id}">${esc(e.codigo)} — ${esc(e.descricao)}</option>`).join('');
+  const selOp = document.getElementById('os-operador');
+  selOp.innerHTML = '<option value="">Selecione...</option>' +
+    _operadoresOS.map(o => `<option value="${o.id}">${esc(o.nome)}</option>`).join('');
 
   // Buscar próximo número
   try {
@@ -1299,6 +1332,12 @@ async function editarOS(id) {
   const selTipo = document.getElementById('os-tipo-servico');
   selTipo.innerHTML = '<option value="">Selecione...</option>' +
     _tiposServico.map(t => `<option value="${t.id}" ${t.id===os.tipo_servico_id?'selected':''}>${esc(t.nome)}</option>`).join('');
+  const selEq = document.getElementById('os-equipamento');
+  selEq.innerHTML = '<option value="">Selecione...</option>' +
+    _equipamentosOS.map(e => `<option value="${e.id}" ${e.id===os.equipamento_id?'selected':''}>${esc(e.codigo)} — ${esc(e.descricao)}</option>`).join('');
+  const selOp = document.getElementById('os-operador');
+  selOp.innerHTML = '<option value="">Selecione...</option>' +
+    _operadoresOS.map(o => `<option value="${o.id}" ${o.id===os.operador_id?'selected':''}>${esc(o.nome)}</option>`).join('');
 
   document.getElementById('modal-os').classList.remove('hidden');
 }
@@ -1320,6 +1359,8 @@ async function salvarOS() {
     cliente_id:          document.getElementById('os-cliente').value || null,
     cliente_nome_avulso: document.getElementById('os-cliente-avulso').value.trim() || null,
     tipo_servico_id:     document.getElementById('os-tipo-servico').value || null,
+    equipamento_id:      document.getElementById('os-equipamento').value || null,
+    operador_id:         document.getElementById('os-operador').value || null,
     endereco:            document.getElementById('os-endereco').value.trim() || null,
     descricao:           document.getElementById('os-descricao').value.trim() || null,
     data_inicio:         document.getElementById('os-data-inicio').value || null,
