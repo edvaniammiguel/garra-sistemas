@@ -381,7 +381,8 @@ def validar_senha(senha: str) -> Optional[str]:
 async def login(req: LoginRequest, request: Request, db=Depends(get_db)):
     check_rate_limit(request.client.host)
     user = await db.fetchrow(
-        "SELECT * FROM public.usuarios_garra WHERE login=$1 AND ativo=TRUE", req.login
+        "SELECT * FROM public.usuarios_garra WHERE (login=$1 OR email=$1) AND ativo=TRUE",
+        req.login
     )
     if not user or not bcrypt.checkpw(req.senha.encode(), user["senha_hash"].encode()):
         raise HTTPException(status_code=401, detail="Usuário ou senha incorretos")
@@ -705,6 +706,22 @@ async def remover_registro(registro_id: str, db=Depends(get_db), _auth=Depends(v
 # ══════════════════════════════════════════════════════════════
 
 # ── PAGES ─────────────────────────────────────────────────────
+@app.get("/operacional/manifest.json")
+async def operacional_manifest():
+    """PWA manifest para o mobile operacional."""
+    return {
+        "name": "Garra Operacional",
+        "short_name": "Garra Op",
+        "start_url": "/operacional/mobile",
+        "display": "standalone",
+        "background_color": "#F0F4FF",
+        "theme_color": "#1A2A5E",
+        "icons": [
+            {"src": "/static/icons/icon-192.png", "sizes": "192x192", "type": "image/png"},
+            {"src": "/static/icons/icon-512.png", "sizes": "512x512", "type": "image/png"}
+        ]
+    }
+
 @app.get("/operacional/mobile", response_class=HTMLResponse)
 async def operacional_mobile():
     path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "operacional", "operacional-mobile.html")
