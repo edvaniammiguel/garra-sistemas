@@ -1828,6 +1828,277 @@ async def op_remover_os(os_id: str, _auth=Depends(verificar_admin)):
     )
     return {"ok": True, "id": os_id}
 
+
+# ── PARTES DIÁRIAS ──────────────────────────────────────────────────────────
+
+@app.post("/operacional/api/os/{os_id}/partes")
+async def op_criar_parte(os_id: str, request: Request, payload=Depends(verificar_token)):
+    """Registra parte diária. Operador só pode registrar na OS onde é o operador previsto."""
+    d = await request.json()
+    perfil = payload.get("perfil","")
+    login  = payload.get("sub","")
+
+    # Verificar se OS existe e está ativa
+    os_row = jard_query(
+        "SELECT * FROM operacional.ordens_servico WHERE id=%s AND ativo=true",
+        (os_id,), fetch="one"
+    )
+    if not os_row:
+        raise HTTPException(status_code=404, detail="OS não encontrada")
+
+    # Operadores/motoristas só registram na própria OS
+    if perfil not in ("admin","gestor","luana"):
+        user = jard_query(
+            "SELECT id FROM public.usuarios_garra WHERE login=%s", (login,), fetch="one"
+        )
+        if not user or str(os_row.get("operador_id","")) != str(user["id"]):
+            raise HTTPException(status_code=403, detail="Você não é o operador desta OS")
+
+    # Campos obrigatórios
+    data = d.get("data")
+    equipamento_id = d.get("equipamento_id") or os_row.get("equipamento_id")
+    if not data or not equipamento_id:
+        raise HTTPException(status_code=400, detail="Data e equipamento são obrigatórios")
+
+    # Calcular horas trabalhadas automaticamente
+    h_ini = d.get("horimetro_inicial")
+    h_fin = d.get("horimetro_final")
+    horas = None
+    if h_ini is not None and h_fin is not None:
+        try:
+            horas = round(float(h_fin) - float(h_ini), 2)
+            if horas < 0:
+                raise HTTPException(status_code=400, detail="Horímetro final menor que inicial")
+        except (TypeError, ValueError):
+            pass
+
+    # Buscar ID do operador pelo login
+    user_row = jard_query(
+        "SELECT id FROM public.usuarios_garra WHERE login=%s", (login,), fetch="one"
+    )
+    criado_por_id = user_row["id"] if user_row else None
+    operador_id   = d.get("operador_id") or criado_por_id
+
+    # Calcular KM percorrido
+    km_ini = d.get("km_inicial")
+    km_fin = d.get("km_final")
+    km_perc = None
+    if km_ini is not None and km_fin is not None:
+        try: km_perc = round(float(km_fin) - float(km_ini), 1)
+        except: pass
+
+    try:
+        parte = jard_query_id(
+            """INSERT INTO operacional.partes_diarias
+               (os_id, equipamento_id, operador_id, operador_nome_avulso,
+                data, hora_inicio, hora_fim,
+                tipo_medicao, horimetro_inicial, horimetro_final, horas_trabalhadas,
+                km_inicial, km_final, km_percorrido,
+                quantidade_diarias, qtd_viagens,
+                vinculo_operador, observacao, criado_por)
+               VALUES (%s,%s,%s,%s, %s,%s,%s, %s,%s,%s,%s, %s,%s,%s, %s,%s, %s,%s,%s)""",
+            (os_id, equipamento_id, operador_id, d.get("operador_nome_avulso"),
+             data, d.get("hora_inicio"), d.get("hora_fim"),
+             d.get("tipo_medicao","horimetro"), h_ini, h_fin, horas,
+             km_ini, km_fin, km_perc,
+             d.get("quantidade_diarias", 0), d.get("qtd_viagens", 0),
+             d.get("vinculo_operador","proprio"), d.get("observacao"),
+             criado_por_id)
+        )
+        # Atualizar horímetro atual do equipamento
+        if h_fin is not None:
+            jard_query(
+                "UPDATE operacional.equipamentos SET horimetro_atual=%s, atualizado_em=now() WHERE id=%s",
+                (h_fin, equipamento_id), fetch="none"
+            )
+        return dict(parte)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erro ao registrar parte: {str(e)}")
+
+
+@app.get("/operacional/api/os/{os_id}/partes")
+async def op_listar_partes(os_id: str, _auth=Depends(verificar_token)):
+    """Lista todas as partes diárias de uma OS, com totais acumulados."""
+    partes = jard_query(
+        """SELECT pd.*,
+                  e.codigo  AS equipamento_codigo,
+                  e.descricao AS equipamento_descricao,
+                  e.categoria AS equipamento_categoria,
+                  COALESCE(u.nome, pd.operador_nome_avulso) AS operador_nome
+           FROM operacional.partes_diarias pd
+           LEFT JOIN operacional.equipamentos e ON e.id = pd.equipamento_id
+           LEFT JOIN public.usuarios_garra u    ON u.id = pd.operador_id
+           WHERE pd.os_id = %s AND pd.ativo = true
+           ORDER BY pd.data ASC, pd.criado_em ASC""",
+        (os_id,)
+    )
+    lista = [dict(p) for p in (partes or [])]
+
+    # Totais acumulados
+    total_horas     = sum(float(p.get("horas_trabalhadas") or 0) for p in lista)
+    total_horas_cob = sum(float(p.get("horas_cobradas")   or 0) for p in lista)
+    total_diarias   = sum(float(p.get("quantidade_diarias") or 0) for p in lista)
+    total_viagens   = sum(float(p.get("qtd_viagens")       or 0) for p in lista)
+    dias_trabalhados= len(set(str(p.get("data",""))[:10] for p in lista if p.get("data")))
+
+    return {
+        "partes": lista,
+        "totais": {
+            "dias_trabalhados":  dias_trabalhados,
+            "total_horas":       round(total_horas, 2),
+            "total_horas_cobradas": round(total_horas_cob, 2),
+            "total_diarias":     total_diarias,
+            "total_viagens":     total_viagens,
+        }
+    }
+
+
+@app.patch("/operacional/api/partes/{parte_id}")
+async def op_atualizar_parte(parte_id: str, request: Request, payload=Depends(verificar_gestor)):
+    """Luana/Admin atualiza parte diária — ajusta horas cobradas, diárias, observação."""
+    d = await request.json()
+    existente = jard_query(
+        "SELECT * FROM operacional.partes_diarias WHERE id=%s AND ativo=true",
+        (parte_id,), fetch="one"
+    )
+    if not existente:
+        raise HTTPException(status_code=404, detail="Parte diária não encontrada")
+    if existente.get("fechado"):
+        raise HTTPException(status_code=400, detail="Parte já fechada — não pode editar")
+
+    campos = ["horas_cobradas","quantidade_diarias","qtd_viagens",
+              "observacao","hora_inicio","hora_fim",
+              "horimetro_inicial","horimetro_final","operador_nome_avulso"]
+    updates, params = [], []
+    for c in campos:
+        if c in d:
+            updates.append(f"{c} = %s")
+            params.append(d[c] if d[c] != "" else None)
+
+    # Recalcular horas se horímetro foi atualizado
+    if "horimetro_inicial" in d or "horimetro_final" in d:
+        h_ini = d.get("horimetro_inicial", existente.get("horimetro_inicial"))
+        h_fin = d.get("horimetro_final",   existente.get("horimetro_final"))
+        if h_ini is not None and h_fin is not None:
+            horas = round(float(h_fin) - float(h_ini), 2)
+            updates.append("horas_trabalhadas = %s")
+            params.append(horas)
+
+    if not updates:
+        return dict(existente)
+
+    params.append(parte_id)
+    jard_query(
+        f"UPDATE operacional.partes_diarias SET {', '.join(updates)} WHERE id=%s",
+        tuple(params), fetch="none"
+    )
+    row = jard_query(
+        "SELECT * FROM operacional.partes_diarias WHERE id=%s", (parte_id,), fetch="one"
+    )
+    return dict(row)
+
+
+@app.delete("/operacional/api/partes/{parte_id}")
+async def op_remover_parte(parte_id: str, _auth=Depends(verificar_gestor)):
+    """Soft delete de parte diária."""
+    existente = jard_query(
+        "SELECT fechado FROM operacional.partes_diarias WHERE id=%s AND ativo=true",
+        (parte_id,), fetch="one"
+    )
+    if not existente:
+        raise HTTPException(status_code=404, detail="Parte não encontrada")
+    if existente.get("fechado"):
+        raise HTTPException(status_code=400, detail="Parte fechada — não pode remover")
+    jard_query(
+        "UPDATE operacional.partes_diarias SET ativo=false WHERE id=%s",
+        (parte_id,), fetch="none"
+    )
+    return {"ok": True, "id": parte_id}
+
+
+@app.post("/operacional/api/os/{os_id}/fechar")
+async def op_fechar_os(os_id: str, request: Request, payload=Depends(verificar_gestor)):
+    """Fecha OS após revisão. Congela todas as partes diárias."""
+    os_row = jard_query(
+        "SELECT * FROM operacional.ordens_servico WHERE id=%s AND ativo=true",
+        (os_id,), fetch="one"
+    )
+    if not os_row:
+        raise HTTPException(status_code=404, detail="OS não encontrada")
+    if os_row.get("status") in ("concluida_completa","concluida_sem_erp","cancelada"):
+        raise HTTPException(status_code=400, detail="OS já está fechada")
+
+    d = await request.json()
+    login = payload.get("sub","")
+    user  = jard_query(
+        "SELECT id FROM public.usuarios_garra WHERE login=%s", (login,), fetch="one"
+    )
+    fechado_por_id = user["id"] if user else None
+    agora = datetime.utcnow()
+
+    # Fechar todas as partes abertas
+    jard_query(
+        """UPDATE operacional.partes_diarias
+           SET fechado=true, fechado_em=%s, fechado_por=%s
+           WHERE os_id=%s AND ativo=true AND fechado=false""",
+        (agora, fechado_por_id, os_id), fetch="none"
+    )
+
+    # Determinar status final
+    novo_status = "concluida_completa" if os_row.get("codigo_erp") else "concluida_sem_erp"
+
+    jard_query(
+        """UPDATE operacional.ordens_servico
+           SET status=%s, data_fim_real=%s, atualizado_em=%s
+           WHERE id=%s""",
+        (novo_status, agora.date(), agora, os_id), fetch="none"
+    )
+
+    # Retornar OS fechada com partes
+    return await op_detalhe_os(os_id, _auth=payload)
+
+
+@app.get("/operacional/api/os/{os_id}/revisao")
+async def op_revisao_os(os_id: str, _auth=Depends(verificar_gestor)):
+    """Tela de revisão antes de fechar: OS + partes + totais consolidados."""
+    os_detail = await op_detalhe_os(os_id, _auth=_auth)
+    partes_data = await op_listar_partes(os_id, _auth=_auth)
+    return {
+        "os":     os_detail,
+        "partes": partes_data["partes"],
+        "totais": partes_data["totais"],
+    }
+
+
+@app.get("/operacional/api/minhas-os")
+async def op_minhas_os(payload=Depends(verificar_token)):
+    """Operador/motorista vê APENAS as OS onde é o operador previsto e status ativo."""
+    login = payload.get("sub","")
+    user  = jard_query(
+        "SELECT id FROM public.usuarios_garra WHERE login=%s", (login,), fetch="one"
+    )
+    if not user:
+        raise HTTPException(status_code=404, detail="Usuário não encontrado")
+
+    rows = jard_query(
+        """SELECT os.id, os.numero, os.obra, os.regime_cobranca,
+                  os.data_inicio, os.data_fim_prevista, os.status,
+                  COALESCE(c.nome, os.cliente_nome_avulso) AS cliente_nome,
+                  e.codigo AS equipamento_codigo, e.descricao AS equipamento_descricao,
+                  ts.nome AS tipo_servico_nome
+           FROM operacional.ordens_servico os
+           LEFT JOIN public.clientes_garra c      ON c.id = os.cliente_id
+           LEFT JOIN operacional.equipamentos e   ON e.id = os.equipamento_id
+           LEFT JOIN operacional.tipos_servico ts ON ts.id = os.tipo_servico_id
+           WHERE os.operador_id = %s
+             AND os.ativo = true
+             AND os.status NOT IN ('concluida_completa','concluida_sem_erp','cancelada')
+           ORDER BY os.data_inicio DESC""",
+        (user["id"],)
+    )
+    # Sem campos financeiros — operador não vê valores
+    return [dict(r) for r in (rows or [])]
+
 # ═══════════════════════════════════════════════════════════════════════════
 # FIM MÓDULO OPERACIONAL
 # ═══════════════════════════════════════════════════════════════════════════
