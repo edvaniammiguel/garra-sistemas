@@ -1,1 +1,735 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0"/>
+<meta name="theme-color" content="#1A2A5E"/>
+<meta name="mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+<meta name="apple-mobile-web-app-title" content="Garra Op"/>
+<title>Garra — Operacional</title>
+<link rel="manifest" href="/operacional/manifest.json"/>
+<link rel="icon" href="https://garra-sistemas.onrender.com/static/icons/favicon.ico"/>
+<style>
+/* ══════════════════════════════════════════
+   DESIGN SYSTEM — GARRA OPERACIONAL MOBILE
+══════════════════════════════════════════ */
+:root {
+  --blue:    #1A2A5E;
+  --blue2:   #1E3A8A;
+  --orange:  #E8820C;
+  --orange2: #D4700A;
+  --bg:      #F0F4FF;
+  --white:   #FFFFFF;
+  --border:  #CBD5E1;
+  --text:    #1E293B;
+  --muted:   #64748B;
+  --green:   #16A34A;
+  --red:     #DC2626;
+  --r:       12px;
+  --r2:      8px;
+  --shadow:  0 2px 12px rgba(26,42,94,.07);
+}
+*,*::before,*::after { box-sizing:border-box; margin:0; padding:0; -webkit-tap-highlight-color:transparent; }
+html,body { height:100%; overflow:hidden; font-family:system-ui,-apple-system,sans-serif; background:var(--bg); color:var(--text); font-size:15px; }
+button { cursor:pointer; font-family:inherit; border:none; }
+input,select,textarea { font-family:inherit; font-size:15px; outline:none; }
+
+/* ── LAYOUT ── */
+#app { display:flex; flex-direction:column; height:100vh; }
+
+/* HEADER */
+#header {
+  background:var(--blue); border-bottom:3px solid var(--orange);
+  padding:10px 16px; display:flex; align-items:center; justify-content:space-between;
+  flex-shrink:0;
+}
+.hd-brand { display:flex; align-items:center; gap:10px; }
+.hd-g { width:32px; height:32px; border-radius:50%; background:var(--orange); display:flex; align-items:center; justify-content:center; font-weight:900; font-size:14px; color:#fff; }
+.hd-name { font-size:14px; font-weight:700; color:var(--orange); }
+.hd-sub  { font-size:10px; color:#93C5FD; }
+.hd-right { display:flex; align-items:center; gap:10px; }
+.hd-avatar { width:30px; height:30px; border-radius:50%; background:var(--orange); display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:700; color:#fff; }
+.hd-user { font-size:12px; color:#fff; font-weight:500; }
+.btn-sair { background:transparent; color:#93C5FD; font-size:12px; font-weight:600; padding:5px 10px; border-radius:6px; border:1px solid rgba(147,197,253,.3); }
+
+/* CONTEÚDO */
+#content { flex:1; overflow-y:auto; padding:14px; display:flex; flex-direction:column; gap:12px; }
+
+/* ABAS INFERIORES */
+#tabs {
+  background:var(--white); border-top:1.5px solid var(--border);
+  display:flex; flex-shrink:0;
+}
+.tab-btn {
+  flex:1; padding:10px 4px 8px; display:flex; flex-direction:column;
+  align-items:center; gap:3px; font-size:10px; font-weight:600;
+  color:var(--muted); background:none; transition:.15s;
+}
+.tab-btn.active { color:var(--orange); }
+.tab-btn .tab-icon { font-size:20px; line-height:1; }
+
+/* CARDS DE OS */
+.os-card {
+  background:var(--white); border:1.5px solid var(--border);
+  border-radius:var(--r); padding:14px; box-shadow:var(--shadow);
+  border-left:4px solid var(--orange);
+}
+.os-card.regime-hora    { border-left-color:var(--blue); }
+.os-card.regime-diaria  { border-left-color:var(--green); }
+.os-card.regime-empreito{ border-left-color:#7C3AED; }
+.os-numero { font-size:12px; font-weight:700; color:var(--blue); }
+.os-obra   { font-size:14px; font-weight:700; color:var(--text); margin:3px 0; }
+.os-cliente{ font-size:12px; color:var(--muted); }
+.os-equip  { font-size:12px; color:var(--orange); font-weight:600; margin-top:6px; }
+.os-regime-badge {
+  display:inline-flex; align-items:center; font-size:10px; font-weight:700;
+  padding:2px 8px; border-radius:99px; margin-top:6px;
+}
+.rb-hora     { background:#DBEAFE; color:#1D4ED8; }
+.rb-diaria   { background:#DCFCE7; color:#15803D; }
+.rb-empreito { background:#F3E8FF; color:#7C3AED; }
+.os-actions  { display:flex; gap:8px; margin-top:12px; }
+.btn-reg {
+  flex:1; background:var(--orange); color:#fff;
+  padding:11px; border-radius:var(--r2); font-size:13px; font-weight:700;
+  box-shadow:0 3px 10px rgba(232,130,12,.3);
+}
+.btn-ver {
+  background:transparent; border:1.5px solid var(--blue); color:var(--blue);
+  padding:11px 16px; border-radius:var(--r2); font-size:13px; font-weight:700;
+}
+
+/* EMPTY STATE */
+.empty { text-align:center; padding:40px 20px; color:var(--muted); }
+.empty-icon { font-size:40px; margin-bottom:10px; }
+.empty-title { font-size:15px; font-weight:700; color:var(--text); }
+.empty-sub   { font-size:13px; margin-top:6px; }
+
+/* LOADING */
+.spin { display:inline-block; width:20px; height:20px; border:2px solid var(--border); border-top-color:var(--orange); border-radius:50%; animation:spin .7s linear infinite; }
+@keyframes spin { to { transform:rotate(360deg); } }
+.loading { text-align:center; padding:30px; color:var(--muted); }
+
+/* HISTÓRICO */
+.hist-item {
+  background:var(--white); border:1px solid var(--border);
+  border-radius:var(--r2); padding:12px; display:flex; gap:10px;
+  align-items:flex-start;
+}
+.hist-date { font-size:11px; font-weight:700; color:var(--blue); min-width:42px; text-align:center; }
+.hist-day  { font-size:18px; font-weight:800; color:var(--blue); }
+.hist-body { flex:1; }
+.hist-equip{ font-size:13px; font-weight:600; color:var(--text); }
+.hist-horas{ font-size:12px; color:var(--muted); }
+
+/* BADGE */
+.badge { font-size:10px; font-weight:700; padding:2px 8px; border-radius:99px; display:inline-block; }
+.badge-pend { background:#FFF7ED; color:#C2410C; }
+.badge-ok   { background:#DCFCE7; color:#15803D; }
+
+/* ── MODAL / BOTTOM SHEET ── */
+.modal-backdrop {
+  position:fixed; inset:0; background:rgba(0,0,0,.5);
+  display:flex; align-items:flex-end; z-index:100;
+}
+.modal-sheet {
+  background:var(--white); border-radius:20px 20px 0 0;
+  padding:20px 16px 32px; width:100%;
+  max-height:92vh; overflow-y:auto;
+  animation:slideUp .25s ease;
+}
+@keyframes slideUp { from { transform:translateY(100%); } }
+.sheet-handle { width:36px; height:4px; background:var(--border); border-radius:99px; margin:0 auto 16px; }
+.sheet-title { font-size:16px; font-weight:800; color:var(--blue); margin-bottom:16px; }
+.field { margin-bottom:14px; }
+.field label { display:block; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); margin-bottom:5px; }
+.field input, .field select, .field textarea {
+  width:100%; padding:12px; border:1.5px solid var(--border);
+  border-radius:var(--r2); font-size:16px; color:var(--text);
+  background:var(--white); transition:.15s;
+}
+.field input:focus, .field select:focus, .field textarea:focus { border-color:var(--blue); }
+.field-row { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+.field-calc { font-size:13px; color:var(--green); font-weight:700; margin-top:4px; }
+.field-hint { font-size:11px; color:var(--muted); margin-top:3px; }
+.btn-salvar {
+  width:100%; background:var(--orange); color:#fff;
+  padding:14px; border-radius:var(--r2); font-size:15px; font-weight:700;
+  margin-top:8px; box-shadow:0 4px 14px rgba(232,130,12,.3);
+}
+.btn-cancelar {
+  width:100%; background:transparent; color:var(--muted);
+  padding:12px; font-size:14px; font-weight:600; margin-top:4px;
+}
+.field-error { color:var(--red); font-size:12px; margin-top:4px; }
+
+/* LOGIN */
+#screen-login {
+  position:fixed; inset:0; background:var(--bg);
+  display:flex; align-items:center; justify-content:center; z-index:50; padding:20px;
+}
+.login-card {
+  background:var(--white); border:1.5px solid var(--border);
+  border-radius:var(--r); padding:28px 20px; width:100%; max-width:360px;
+  box-shadow:var(--shadow);
+}
+.login-logo { text-align:center; margin-bottom:18px; }
+.login-logo-g { width:56px; height:56px; border-radius:50%; background:var(--blue); display:flex; align-items:center; justify-content:center; font-size:24px; font-weight:900; color:var(--orange); margin:0 auto; }
+.login-title { font-size:18px; font-weight:800; color:var(--blue); text-align:center; margin-bottom:4px; }
+.login-sub   { font-size:13px; color:var(--muted); text-align:center; margin-bottom:20px; }
+.login-error { background:#FEE2E2; color:var(--red); border-radius:var(--r2); padding:8px 12px; font-size:12px; font-weight:600; margin-bottom:10px; }
+.pass-wrap { position:relative; }
+.pass-wrap input { padding-right:44px; }
+.pass-toggle { position:absolute; right:12px; top:50%; transform:translateY(-50%); background:none; color:var(--muted); font-size:18px; }
+
+/* SEÇÕES DE CONTEÚDO */
+.section { display:none; flex-direction:column; gap:12px; }
+.section.active { display:flex; }
+.section-title { font-size:11px; font-weight:800; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); }
+
+/* TOAST */
+#toast {
+  position:fixed; bottom:80px; left:50%; transform:translateX(-50%);
+  background:var(--blue); color:#fff; padding:10px 18px;
+  border-radius:var(--r); font-size:13px; font-weight:600;
+  box-shadow:0 4px 16px rgba(0,0,0,.2); z-index:200;
+  transition:opacity .3s; pointer-events:none;
+}
+#toast.success { background:var(--green); }
+#toast.error   { background:var(--red); }
+</style>
+</head>
+<body>
+
+<!-- ══ LOGIN ══ -->
+<div id="screen-login">
+  <div class="login-card">
+    <div class="login-logo">
+      <div class="login-logo-g">G</div>
+    </div>
+    <div class="login-title">Operacional</div>
+    <div class="login-sub">Garra Terraplenagem</div>
+    <div id="login-err" class="login-error" style="display:none"></div>
+    <div class="field">
+      <label>Usuário</label>
+      <input type="text" id="l-user" placeholder="seu.login" autocomplete="username" autocapitalize="none"/>
+    </div>
+    <div class="field">
+      <label>Senha</label>
+      <div class="pass-wrap">
+        <input type="password" id="l-pass" placeholder="••••••" autocomplete="current-password"/>
+        <button type="button" class="pass-toggle" onclick="togglePass()">👁</button>
+      </div>
+    </div>
+    <button class="btn-salvar" id="btn-login" onclick="doLogin()">Entrar</button>
+  </div>
+</div>
+
+<!-- ══ APP ══ -->
+<div id="app" style="display:none">
+
+  <!-- HEADER -->
+  <header id="header">
+    <div class="hd-brand">
+      <div class="hd-g">G</div>
+      <div>
+        <div class="hd-name">GARRA</div>
+        <div class="hd-sub">Operacional</div>
+      </div>
+    </div>
+    <div class="hd-right">
+      <div class="hd-avatar" id="hd-avatar">?</div>
+      <div class="hd-user" id="hd-user">–</div>
+      <button class="btn-sair" onclick="doLogout()">Sair</button>
+    </div>
+  </header>
+
+  <!-- CONTEÚDO -->
+  <div id="content">
+
+    <!-- ── SEÇÃO: MINHAS OS ── -->
+    <div id="sec-os" class="section active">
+      <div class="section-title">Minhas Ordens de Serviço</div>
+      <div id="os-lista"><div class="loading"><span class="spin"></span></div></div>
+    </div>
+
+    <!-- ── SEÇÃO: HISTÓRICO ── -->
+    <div id="sec-hist" class="section">
+      <div class="section-title">Meus registros recentes</div>
+      <div id="hist-lista"><div class="loading"><span class="spin"></span></div></div>
+    </div>
+
+  </div>
+
+  <!-- ABAS -->
+  <nav id="tabs">
+    <button class="tab-btn active" id="tab-os" onclick="mudarAba('os',this)">
+      <span class="tab-icon">📋</span>Minhas OS
+    </button>
+    <button class="tab-btn" id="tab-hist" onclick="mudarAba('hist',this)">
+      <span class="tab-icon">🕐</span>Histórico
+    </button>
+  </nav>
+</div>
+
+<!-- ══ MODAL: REGISTRAR PARTE DIÁRIA ══ -->
+<div id="modal-parte" class="modal-backdrop" style="display:none" onclick="fecharModal(event)">
+  <div class="modal-sheet" onclick="event.stopPropagation()">
+    <div class="sheet-handle"></div>
+    <div class="sheet-title" id="modal-titulo">Registrar dia de trabalho</div>
+    <input type="hidden" id="m-os-id"/>
+    <input type="hidden" id="m-tipo-medicao"/>
+
+    <div class="field">
+      <label>Data</label>
+      <input type="date" id="m-data"/>
+    </div>
+
+    <!-- HORÍMETRO (máquinas) -->
+    <div id="bloco-horimetro">
+      <div class="field-row">
+        <div class="field">
+          <label>Horímetro inicial</label>
+          <input type="number" id="m-h-ini" placeholder="0000.0" step="0.1" oninput="calcHoras()"/>
+        </div>
+        <div class="field">
+          <label>Horímetro final</label>
+          <input type="number" id="m-h-fin" placeholder="0000.0" step="0.1" oninput="calcHoras()"/>
+        </div>
+      </div>
+      <div id="horas-calc" class="field-calc" style="display:none"></div>
+    </div>
+
+    <!-- KM (caminhões) -->
+    <div id="bloco-km" style="display:none">
+      <div class="field-row">
+        <div class="field">
+          <label>KM inicial</label>
+          <input type="number" id="m-km-ini" placeholder="000000" step="1"/>
+        </div>
+        <div class="field">
+          <label>KM final</label>
+          <input type="number" id="m-km-fin" placeholder="000000" step="1"/>
+        </div>
+      </div>
+      <div class="field">
+        <label>Quantidade de viagens</label>
+        <input type="number" id="m-viagens" placeholder="0" step="1" min="0"/>
+      </div>
+    </div>
+
+    <div class="field-row">
+      <div class="field">
+        <label>Hora início</label>
+        <input type="time" id="m-h-inicio"/>
+      </div>
+      <div class="field">
+        <label>Hora fim</label>
+        <input type="time" id="m-h-fim"/>
+      </div>
+    </div>
+
+    <div class="field">
+      <label>Observação</label>
+      <textarea id="m-obs" rows="3" placeholder="Problemas, informações do dia..."></textarea>
+    </div>
+
+    <div id="m-error" class="field-error" style="display:none"></div>
+
+    <button class="btn-salvar" id="btn-salvar-parte" onclick="salvarParte()">✅ Salvar registro</button>
+    <button class="btn-cancelar" onclick="fecharModalDireto()">Cancelar</button>
+  </div>
+</div>
+
+<!-- TOAST -->
+<div id="toast" style="display:none"></div>
+
+<script>
+/* ══════════════════════════════════════════
+   CONFIGURAÇÃO
+══════════════════════════════════════════ */
+const API = (location.hostname==='localhost'||location.hostname==='127.0.0.1')
+  ? 'http://localhost:8000'
+  : 'https://garra-sistemas.onrender.com';
+
+/* ══════════════════════════════════════════
+   AUTH
+══════════════════════════════════════════ */
+const Token = {
+  get:     ()  => localStorage.getItem('garra_op_token'),
+  set:     (t) => localStorage.setItem('garra_op_token', t),
+  del:     ()  => localStorage.removeItem('garra_op_token'),
+  user:    ()  => { try { return JSON.parse(localStorage.getItem('garra_op_user')||'null'); } catch { return null; } },
+  setUser: (u) => localStorage.setItem('garra_op_user', JSON.stringify(u)),
+  delUser: ()  => localStorage.removeItem('garra_op_user'),
+};
+
+async function apiFetch(path, opts={}) {
+  const token = Token.get();
+  const res = await fetch(API+path, {
+    ...opts,
+    headers: {
+      'Content-Type':'application/json',
+      ...(token ? {'Authorization':'Bearer '+token} : {}),
+      ...(opts.headers||{}),
+    },
+  });
+  if (res.status===401) { doLogout(); throw new Error('Sessão expirada'); }
+  if (!res.ok) {
+    const e = await res.json().catch(()=>({}));
+    throw new Error(e.detail||'Erro '+res.status);
+  }
+  return res.json();
+}
+
+async function doLogin() {
+  const login = document.getElementById('l-user').value.trim();
+  const senha = document.getElementById('l-pass').value;
+  const err   = document.getElementById('login-err');
+  const btn   = document.getElementById('btn-login');
+  err.style.display = 'none';
+  btn.textContent = 'Entrando...'; btn.disabled = true;
+  try {
+    const res = await fetch(API+'/auth/login', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({login, senha}),
+    });
+    if (!res.ok) throw new Error((await res.json()).detail||'Credenciais inválidas');
+    const data = await res.json();
+    // Apenas operador, motorista ou campo
+    const perfisOk = ['operador','motorista','campo','admin','gestor','luana'];
+    if (!perfisOk.includes(data.perfil)) throw new Error('Acesso não permitido para este perfil');
+    Token.set(data.token);
+    Token.setUser({login:data.login, nome:data.nome, perfil:data.perfil});
+    iniciarApp(data);
+  } catch(e) {
+    err.textContent = e.message; err.style.display='block';
+  } finally { btn.textContent='Entrar'; btn.disabled=false; }
+}
+
+function doLogout() {
+  Token.del(); Token.delUser();
+  document.getElementById('app').style.display = 'none';
+  document.getElementById('screen-login').style.display = 'flex';
+  document.getElementById('l-pass').value = '';
+}
+
+function togglePass() {
+  const el = document.getElementById('l-pass');
+  el.type = el.type==='password' ? 'text' : 'password';
+}
+
+document.addEventListener('keydown', e => {
+  if (e.key==='Enter' && document.getElementById('screen-login').style.display!=='none') doLogin();
+});
+
+/* ══════════════════════════════════════════
+   INICIALIZAÇÃO
+══════════════════════════════════════════ */
+function iniciarApp(user) {
+  document.getElementById('screen-login').style.display = 'none';
+  document.getElementById('app').style.display = 'flex';
+  const nome = user.nome || user.login;
+  document.getElementById('hd-user').textContent   = nome.split(' ')[0];
+  document.getElementById('hd-avatar').textContent = nome.charAt(0).toUpperCase();
+  carregarOS();
+}
+
+window.addEventListener('load', async () => {
+  const token = Token.get();
+  const user  = Token.user();
+  if (token && user) {
+    try {
+      const res = await fetch(API+'/auth/renovar', {
+        method:'POST',
+        headers:{'Content-Type':'application/json','Authorization':'Bearer '+token},
+      });
+      if (res.ok) { const d=await res.json(); if(d.token) Token.set(d.token); }
+      else { Token.del(); Token.delUser(); return; }
+    } catch {}
+    iniciarApp(user);
+  }
+});
+
+/* ══════════════════════════════════════════
+   NAVEGAÇÃO
+══════════════════════════════════════════ */
+function mudarAba(aba, btn) {
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById('sec-'+aba).classList.add('active');
+  if (aba==='hist') carregarHistorico();
+}
+
+/* ══════════════════════════════════════════
+   MINHAS OS
+══════════════════════════════════════════ */
+let _osList = [];
+
+const REGIME_CFG = {
+  hora:     { label:'Por hora',    badge:'rb-hora',     icon:'⏱' },
+  diaria:   { label:'Por diária',  badge:'rb-diaria',   icon:'📅' },
+  empreito: { label:'Empreito',    badge:'rb-empreito', icon:'🔒' },
+};
+
+async function carregarOS() {
+  const el = document.getElementById('os-lista');
+  el.innerHTML = '<div class="loading"><span class="spin"></span></div>';
+  try {
+    _osList = await apiFetch('/operacional/api/minhas-os');
+  } catch(e) { _osList = []; }
+  renderOS();
+}
+
+function renderOS() {
+  const el = document.getElementById('os-lista');
+  if (!_osList.length) {
+    el.innerHTML = `<div class="empty">
+      <div class="empty-icon">📋</div>
+      <div class="empty-title">Nenhuma OS ativa</div>
+      <div class="empty-sub">Quando a Luana abrir uma OS para você, ela aparece aqui</div>
+    </div>`;
+    return;
+  }
+  el.innerHTML = _osList.map(os => {
+    const reg = REGIME_CFG[os.regime_cobranca] || REGIME_CFG.hora;
+    const data = os.data_inicio ? new Date(os.data_inicio+'T00:00').toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'}) : '';
+    return `<div class="os-card regime-${os.regime_cobranca||'hora'}">
+      <div style="display:flex;align-items:center;justify-content:space-between">
+        <span class="os-numero">${esc(os.numero)}</span>
+        <span class="badge os-regime-badge ${reg.badge}">${reg.icon} ${reg.label}</span>
+      </div>
+      <div class="os-obra">${esc(os.obra)}</div>
+      <div class="os-cliente">📍 ${esc(os.cliente_nome||'–')}</div>
+      ${os.equipamento_codigo ? `<div class="os-equip">🚜 ${esc(os.equipamento_codigo)} — ${esc(os.equipamento_descricao||'')}</div>` : ''}
+      ${data ? `<div style="font-size:11px;color:var(--muted);margin-top:4px">📅 Início: ${data}</div>` : ''}
+      <div class="os-actions">
+        <button class="btn-reg" onclick="abrirRegistro('${esc(os.id)}','${esc(os.equipamento_codigo||'')}','${os.regime_cobranca||'hora'}')">
+          ⏱ Registrar dia
+        </button>
+        <button class="btn-ver" onclick="verPartes('${esc(os.id)}','${esc(os.numero)}')">
+          Ver registros
+        </button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+/* ══════════════════════════════════════════
+   REGISTRAR PARTE DIÁRIA
+══════════════════════════════════════════ */
+let _osAtualId = '';
+let _osRegime  = 'hora';
+
+function abrirRegistro(osId, equipCodigo, regime) {
+  _osAtualId = osId;
+  _osRegime  = regime;
+
+  // Definir tipo de medição pelo regime e equipamento
+  const isCaminhao = equipCodigo && (equipCodigo.startsWith('CB') || equipCodigo.startsWith('CP') || equipCodigo.startsWith('CR'));
+  const tipoMedicao = isCaminhao ? 'km' : 'horimetro';
+  document.getElementById('m-tipo-medicao').value = tipoMedicao;
+
+  // Mostrar bloco correto
+  document.getElementById('bloco-horimetro').style.display = isCaminhao ? 'none' : 'block';
+  document.getElementById('bloco-km').style.display        = isCaminhao ? 'block' : 'none';
+
+  // OS info no título
+  const os = _osList.find(o => o.id===osId);
+  document.getElementById('modal-titulo').textContent = os ? os.numero+' — '+os.obra.slice(0,30) : 'Registrar dia';
+
+  // Data default = hoje
+  document.getElementById('m-data').value = new Date().toISOString().slice(0,10);
+
+  // Limpar campos
+  ['m-h-ini','m-h-fin','m-km-ini','m-km-fin','m-viagens','m-h-inicio','m-h-fim','m-obs'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+  document.getElementById('horas-calc').style.display = 'none';
+  document.getElementById('m-error').style.display    = 'none';
+
+  document.getElementById('modal-parte').style.display = 'flex';
+  setTimeout(() => {
+    const first = isCaminhao ? 'm-km-ini' : 'm-h-ini';
+    document.getElementById(first)?.focus();
+  }, 300);
+}
+
+function calcHoras() {
+  const ini = parseFloat(document.getElementById('m-h-ini').value);
+  const fin = parseFloat(document.getElementById('m-h-fin').value);
+  const el  = document.getElementById('horas-calc');
+  if (!isNaN(ini) && !isNaN(fin) && fin > ini) {
+    el.textContent = `✅ ${(fin-ini).toFixed(1)} horas trabalhadas`;
+    el.style.display = 'block';
+  } else if (!isNaN(ini) && !isNaN(fin) && fin <= ini) {
+    el.textContent = '⚠️ Horímetro final deve ser maior que o inicial';
+    el.style.color = 'var(--red)';
+    el.style.display = 'block';
+  } else {
+    el.style.display = 'none';
+  }
+}
+
+async function salvarParte() {
+  const err = document.getElementById('m-error');
+  err.style.display = 'none';
+  const data = document.getElementById('m-data').value;
+  if (!data) { err.textContent='Informe a data'; err.style.display='block'; return; }
+
+  const tipoMedicao = document.getElementById('m-tipo-medicao').value;
+  const hIni = document.getElementById('m-h-ini').value;
+  const hFin = document.getElementById('m-h-fin').value;
+  const kmIni= document.getElementById('m-km-ini').value;
+  const kmFin= document.getElementById('m-km-fin').value;
+
+  // Validar horímetro
+  if (tipoMedicao==='horimetro') {
+    if (!hIni||!hFin) { err.textContent='Informe horímetro inicial e final'; err.style.display='block'; return; }
+    if (parseFloat(hFin) < parseFloat(hIni)) { err.textContent='Horímetro final menor que o inicial'; err.style.display='block'; return; }
+  }
+
+  const payload = {
+    data,
+    tipo_medicao:     tipoMedicao,
+    horimetro_inicial: hIni ? parseFloat(hIni) : null,
+    horimetro_final:   hFin ? parseFloat(hFin) : null,
+    km_inicial:        kmIni ? parseFloat(kmIni) : null,
+    km_final:          kmFin ? parseFloat(kmFin) : null,
+    qtd_viagens:       parseFloat(document.getElementById('m-viagens').value||'0') || 0,
+    hora_inicio:       document.getElementById('m-h-inicio').value || null,
+    hora_fim:          document.getElementById('m-h-fim').value    || null,
+    observacao:        document.getElementById('m-obs').value.trim() || null,
+  };
+
+  const btn = document.getElementById('btn-salvar-parte');
+  btn.textContent='Salvando...'; btn.disabled=true;
+  try {
+    await apiFetch('/operacional/api/os/'+_osAtualId+'/partes', {
+      method:'POST', body:JSON.stringify(payload)
+    });
+    toast('Registro salvo!', 'success');
+    fecharModalDireto();
+  } catch(e) {
+    err.textContent = e.message; err.style.display='block';
+  } finally { btn.textContent='✅ Salvar registro'; btn.disabled=false; }
+}
+
+/* ══════════════════════════════════════════
+   VER PARTES DA OS
+══════════════════════════════════════════ */
+async function verPartes(osId, osNumero) {
+  // Navegar para aba histórico e mostrar partes desta OS
+  mudarAba('hist', document.getElementById('tab-hist'));
+  const el = document.getElementById('hist-lista');
+  el.innerHTML = `<div class="loading"><span class="spin"></span></div>`;
+  try {
+    const data = await apiFetch('/operacional/api/os/'+osId+'/partes');
+    const partes = data.partes || [];
+    const totais = data.totais || {};
+
+    if (!partes.length) {
+      el.innerHTML = `<div class="empty">
+        <div class="empty-icon">📝</div>
+        <div class="empty-title">Nenhum registro ainda</div>
+        <div class="empty-sub">${osNumero} — clique em "Registrar dia" na OS</div>
+      </div>`;
+      return;
+    }
+
+    // Card de totais
+    let totalHtml = `<div class="os-card" style="border-left-color:var(--green)">
+      <div class="os-numero">${esc(osNumero)} — Resumo</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px">
+        <div style="text-align:center;background:#F0F4FF;border-radius:8px;padding:10px">
+          <div style="font-size:22px;font-weight:800;color:var(--blue)">${totais.dias_trabalhados||0}</div>
+          <div style="font-size:11px;color:var(--muted)">dias trabalhados</div>
+        </div>
+        <div style="text-align:center;background:#F0F4FF;border-radius:8px;padding:10px">
+          <div style="font-size:22px;font-weight:800;color:var(--blue)">${totais.total_horas||0}h</div>
+          <div style="font-size:11px;color:var(--muted)">horas totais</div>
+        </div>
+      </div>
+    </div>`;
+
+    // Lista de partes
+    const partesHtml = partes.map(p => {
+      const dt   = p.data ? new Date(p.data+'T00:00') : null;
+      const dia  = dt ? dt.toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'}) : '–';
+      const horas= p.horas_trabalhadas ? parseFloat(p.horas_trabalhadas).toFixed(1)+'h' : '–';
+      const hor  = p.horimetro_inicial && p.horimetro_final
+        ? `${p.horimetro_inicial} → ${p.horimetro_final}` : '';
+      return `<div class="hist-item">
+        <div class="hist-date">
+          <div>${dia.split('/')[0]}</div>
+          <div style="font-size:9px;color:var(--muted)">${dia.split('/')[1]&&'/'+dia.split('/')[1]}</div>
+        </div>
+        <div class="hist-body">
+          <div class="hist-equip">${esc(p.equipamento_codigo||'–')} ${esc(p.equipamento_descricao||'')}</div>
+          <div class="hist-horas">${horas}${hor?' · '+hor:''}${p.hora_inicio&&p.hora_fim?' · '+p.hora_inicio+'-'+p.hora_fim:''}</div>
+          ${p.observacao?`<div style="font-size:12px;color:var(--muted);margin-top:3px">💬 ${esc(p.observacao)}</div>`:''}
+        </div>
+        <div style="font-size:10px;font-weight:700;color:var(--green)">${horas}</div>
+      </div>`;
+    }).join('');
+
+    el.innerHTML = totalHtml + partesHtml;
+  } catch(e) {
+    el.innerHTML = `<div class="empty"><div class="empty-title">Erro ao carregar</div><div class="empty-sub">${esc(e.message)}</div></div>`;
+  }
+}
+
+/* ══════════════════════════════════════════
+   HISTÓRICO GERAL
+══════════════════════════════════════════ */
+async function carregarHistorico() {
+  const el = document.getElementById('hist-lista');
+  // Se já tem conteúdo (foi chamado por verPartes), não sobrescreve
+  if (!el.innerHTML.includes('spin')) return;
+  el.innerHTML = `<div class="empty">
+    <div class="empty-icon">🕐</div>
+    <div class="empty-title">Histórico</div>
+    <div class="empty-sub">Clique em "Ver registros" numa OS para ver o detalhamento</div>
+  </div>`;
+}
+
+/* ══════════════════════════════════════════
+   MODAL
+══════════════════════════════════════════ */
+function fecharModal(e) {
+  if (e.target === document.getElementById('modal-parte')) fecharModalDireto();
+}
+function fecharModalDireto() {
+  document.getElementById('modal-parte').style.display = 'none';
+}
+
+/* ══════════════════════════════════════════
+   TOAST
+══════════════════════════════════════════ */
+let _toastTimer;
+function toast(msg, tipo='') {
+  const el = document.getElementById('toast');
+  el.textContent = msg; el.className = tipo;
+  el.style.display = 'block'; el.style.opacity = '1';
+  if (_toastTimer) clearTimeout(_toastTimer);
+  _toastTimer = setTimeout(() => {
+    el.style.opacity = '0';
+    setTimeout(() => el.style.display='none', 300);
+  }, 3000);
+}
+
+/* ══════════════════════════════════════════
+   UTILIDADES
+══════════════════════════════════════════ */
+function esc(s) {
+  return String(s||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+</script>
+</body>
+</html>
 
