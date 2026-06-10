@@ -39,6 +39,7 @@ input,select,textarea { font-family:inherit; font-size:13px; outline:none; }
 .badge-gray  { background:#F1F5F9; color:#475569; }
 .badge-orange{ background:#FFF7ED; color:#C2410C; }
 .badge-red   { background:#FEE2E2; color:#B91C1C; }
+.badge-info  { background:#DBEAFE; color:#1D4ED8; }
 .dot { width:8px; height:8px; border-radius:50%; display:inline-block; flex-shrink:0; }
 .dot-green  { background:var(--green); }
 .dot-gray   { background:var(--border); }
@@ -349,6 +350,15 @@ input,select,textarea { font-family:inherit; font-size:13px; outline:none; }
       </div>
       <div class="sb-divider"></div>
       <div class="sb-section">
+        <span class="sb-label">Operacional</span>
+        <div class="sb-item" onclick="navTo('os',this)">
+          <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="15" y2="17"/></svg>
+          Ordens de Serviço
+          <span class="sb-badge" id="sb-os-count">–</span>
+        </div>
+      </div>
+      <div class="sb-divider"></div>
+      <div class="sb-section">
         <span class="sb-label">Módulos ativos</span>
         <a class="sb-item" href="https://garra-checklist-app.onrender.com" target="_blank">
           <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="#16A34A" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
@@ -506,6 +516,38 @@ input,select,textarea { font-family:inherit; font-size:13px; outline:none; }
         </div>
       </section>
 
+      <!-- ── SEÇÃO: ORDENS DE SERVIÇO ── -->
+      <section id="sec-os" class="hidden">
+        <div class="card">
+          <div class="card-title">
+            Ordens de Serviço
+            <button class="btn btn-primary" style="padding:6px 14px;font-size:12px" onclick="abrirModalOS()">+ Nova OS</button>
+          </div>
+          <div class="users-bar" style="flex-wrap:wrap;gap:8px">
+            <div class="users-search">
+              <input type="text" id="os-search" placeholder="Buscar por número, obra ou código ERP..." oninput="filtrarOS()"/>
+            </div>
+            <div class="users-filter">
+              <select id="os-filter-status" onchange="filtrarOS()">
+                <option value="">Todos os status</option>
+                <option value="aberta_sem_erp">Aberta (sem cod ERP)</option>
+                <option value="aberta_completa">Aberta (com cod ERP)</option>
+                <option value="em_execucao">Em execução</option>
+                <option value="concluida_sem_erp">Concluída (sem ERP)</option>
+                <option value="concluida_completa">Concluída (completa)</option>
+                <option value="cancelada">Cancelada</option>
+              </select>
+            </div>
+            <div class="users-filter">
+              <select id="os-filter-cliente" onchange="filtrarOS()">
+                <option value="">Todos os clientes</option>
+              </select>
+            </div>
+          </div>
+          <div id="os-table"><div class="loading"><span class="spin"></span>Carregando...</div></div>
+        </div>
+      </section>
+
     </main>
   </div>
 </div>
@@ -567,6 +609,66 @@ input,select,textarea { font-family:inherit; font-size:13px; outline:none; }
 </div>
 
 <!-- ══ MODAL CONFIRMAR DESATIVAR ══ -->
+<!-- ══ MODAL CRIAR / EDITAR OS ══ -->
+<div id="modal-os" class="modal-backdrop hidden">
+  <div class="modal-card" style="max-width:640px">
+    <div class="modal-title" id="modal-os-title">Nova Ordem de Serviço</div>
+    <input type="hidden" id="os-id"/>
+    <div class="field-row">
+      <div class="field">
+        <label>Número OS</label>
+        <input type="text" id="os-numero" disabled style="background:#F1F5F9;font-weight:700;color:var(--blue)"/>
+        <div class="field-hint">Gerado automaticamente</div>
+      </div>
+      <div class="field">
+        <label>Código ERP <span style="text-transform:none;font-weight:400;color:var(--muted)">(opcional)</span></label>
+        <input type="text" id="os-codigo-erp" placeholder="Ex.: 3504"/>
+        <div class="field-hint">Pode preencher depois quando vier do Mais Soluções</div>
+      </div>
+    </div>
+    <div class="field">
+      <label>Cliente</label>
+      <select id="os-cliente">
+        <option value="">Selecione...</option>
+      </select>
+      <div class="field-hint">Para cliente novo, digite o nome abaixo</div>
+    </div>
+    <div class="field">
+      <label>Nome do cliente avulso <span style="text-transform:none;font-weight:400;color:var(--muted)">(só se não estiver na lista)</span></label>
+      <input type="text" id="os-cliente-avulso" placeholder="Ex.: João Silva - obra Rua X"/>
+    </div>
+    <div class="field-row">
+      <div class="field">
+        <label>Tipo de serviço</label>
+        <select id="os-tipo-servico">
+          <option value="">Selecione...</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Data início</label>
+        <input type="date" id="os-data-inicio"/>
+      </div>
+    </div>
+    <div class="field">
+      <label>Obra / Local <span style="color:var(--red)">*</span></label>
+      <input type="text" id="os-obra" placeholder="Ex.: OBRA NOVA SERRANA - PROBASE"/>
+    </div>
+    <div class="field">
+      <label>Endereço</label>
+      <input type="text" id="os-endereco" placeholder="Ex.: Rua das Indústrias, 100 - Nova Serrana/MG"/>
+    </div>
+    <div class="field">
+      <label>Descrição do serviço</label>
+      <input type="text" id="os-descricao" placeholder="Detalhes do que será executado"/>
+    </div>
+    <div id="os-error" class="login-error hidden"></div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="fecharModalOS()">Cancelar</button>
+      <button class="btn btn-primary" id="btn-salvar-os" onclick="salvarOS()">Salvar OS</button>
+    </div>
+  </div>
+</div>
+
 <div id="modal-desativar" class="modal-backdrop hidden">
   <div class="modal-card">
     <div class="modal-title">Desativar colaborador</div>
@@ -726,6 +828,7 @@ function navTo(sec, elBtn) {
   secAtual = sec;
   if (sec === 'usuarios') renderTabelaUsuarios();
   if (sec === 'permissoes') renderPermissoes();
+  if (sec === 'os') carregarOS();
 }
 
 /* ══════════════════════════════════════════════
@@ -1045,6 +1148,213 @@ function toast(msg, tipo = '') {
     el.style.transform = 'translateY(8px)';
     setTimeout(() => el.classList.add('hidden'), 300);
   }, 3000);
+}
+
+/* ══════════════════════════════════════════════
+   MÓDULO OPERACIONAL — Ordens de Serviço
+══════════════════════════════════════════════ */
+let _osList = [];
+let _tiposServico = [];
+let _clientesOS = [];
+let _osFiltro = '', _osFiltroStatus = '', _osFiltroCliente = '';
+
+const STATUS_LABEL = {
+  aberta_sem_erp:     { label:'Aberta (sem ERP)', badge:'badge-orange' },
+  aberta_completa:    { label:'Aberta',           badge:'badge-green' },
+  em_execucao:        { label:'Em execução',      badge:'badge-info' },
+  concluida_sem_erp:  { label:'Concluída (s/ERP)',badge:'badge-orange' },
+  concluida_completa: { label:'Concluída',        badge:'badge-gray' },
+  cancelada:          { label:'Cancelada',        badge:'badge-red' },
+};
+
+async function carregarOS() {
+  // Carrega listas auxiliares primeiro (1x só)
+  if (!_tiposServico.length) {
+    try { _tiposServico = await apiFetch('/operacional/api/tipos-servico'); } catch {}
+  }
+  if (!_clientesOS.length) {
+    try { _clientesOS = await apiFetch('/operacional/api/clientes'); } catch {}
+    // Popular filtro de cliente
+    const sel = document.getElementById('os-filter-cliente');
+    if (sel && _clientesOS.length) {
+      sel.innerHTML = '<option value="">Todos os clientes</option>' +
+        _clientesOS.map(c => `<option value="${c.id}">${esc(c.nome)}</option>`).join('');
+    }
+  }
+  // Carrega OS
+  try {
+    _osList = await apiFetch('/operacional/api/os?limit=200');
+    document.getElementById('sb-os-count').textContent = _osList.filter(o => !o.status.startsWith('concluida') && o.status !== 'cancelada').length;
+  } catch(e) {
+    _osList = [];
+    document.getElementById('os-table').innerHTML = `<div class="loading" style="color:var(--red)">Erro ao carregar: ${esc(e.message)}</div>`;
+    return;
+  }
+  renderTabelaOS();
+}
+
+function filtrarOS() {
+  _osFiltro = document.getElementById('os-search').value.toLowerCase();
+  _osFiltroStatus = document.getElementById('os-filter-status').value;
+  _osFiltroCliente = document.getElementById('os-filter-cliente').value;
+  renderTabelaOS();
+}
+
+function renderTabelaOS() {
+  const lista = _osList.filter(os => {
+    if (_osFiltroStatus && os.status !== _osFiltroStatus) return false;
+    if (_osFiltroCliente && os.cliente_id !== _osFiltroCliente) return false;
+    if (_osFiltro) {
+      const hay = ((os.numero||'') + (os.obra||'') + (os.codigo_erp||'') + (os.cliente_nome||'')).toLowerCase();
+      if (!hay.includes(_osFiltro)) return false;
+    }
+    return true;
+  });
+  const el = document.getElementById('os-table');
+  if (!lista.length) {
+    el.innerHTML = '<div class="loading" style="color:var(--muted)">Nenhuma OS encontrada. Clique em + Nova OS para criar.</div>';
+    return;
+  }
+  el.innerHTML = `
+    <table style="width:100%;border-collapse:collapse">
+      <thead>
+        <tr style="border-bottom:2px solid var(--border)">
+          <th style="text-align:left;padding:8px 10px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)">Nº OS</th>
+          <th style="text-align:left;padding:8px 10px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)">Cliente / Obra</th>
+          <th style="text-align:left;padding:8px 10px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)">Cód ERP</th>
+          <th style="text-align:left;padding:8px 10px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)">Data</th>
+          <th style="text-align:left;padding:8px 10px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)">Status</th>
+          <th style="padding:8px 10px"></th>
+        </tr>
+      </thead>
+      <tbody>
+        ${lista.map(os => {
+          const st = STATUS_LABEL[os.status] || { label: os.status, badge:'badge-gray' };
+          const data = os.data_inicio ? new Date(os.data_inicio + 'T00:00').toLocaleDateString('pt-BR') : '–';
+          return `
+          <tr style="border-bottom:1px solid #F1F5F9;transition:.1s" onmouseenter="this.style.background='#F8FAFC'" onmouseleave="this.style.background=''">
+            <td style="padding:10px;font-weight:700;color:var(--blue);font-size:13px">${esc(os.numero)}</td>
+            <td style="padding:10px">
+              <div style="font-size:13px;font-weight:600;color:var(--text)">${esc(os.cliente_nome || '–')}</div>
+              <div style="font-size:11px;color:var(--muted)">${esc(os.obra || '')}</div>
+            </td>
+            <td style="padding:10px;font-size:12px;color:var(--muted)">${esc(os.codigo_erp || '–')}</td>
+            <td style="padding:10px;font-size:12px;color:var(--muted)">${data}</td>
+            <td style="padding:10px"><span class="badge ${st.badge}">${st.label}</span></td>
+            <td style="padding:10px;text-align:right">
+              <button class="btn-sm" onclick="editarOS('${esc(os.id)}')">✎ Editar</button>
+            </td>
+          </tr>`;
+        }).join('')}
+      </tbody>
+    </table>
+    <div style="margin-top:10px;font-size:11px;color:var(--muted);text-align:right">${lista.length} OS exibida(s)</div>`;
+}
+
+async function abrirModalOS() {
+  document.getElementById('modal-os-title').textContent = 'Nova Ordem de Serviço';
+  document.getElementById('os-id').value = '';
+  ['os-codigo-erp','os-cliente','os-cliente-avulso','os-tipo-servico','os-obra','os-endereco','os-descricao'].forEach(id => document.getElementById(id).value = '');
+  document.getElementById('os-data-inicio').value = new Date().toISOString().slice(0,10);
+  document.getElementById('os-error').classList.add('hidden');
+
+  // Popular selects
+  const selCli = document.getElementById('os-cliente');
+  selCli.innerHTML = '<option value="">Selecione...</option>' +
+    _clientesOS.map(c => `<option value="${c.id}">${esc(c.nome)}</option>`).join('');
+  const selTipo = document.getElementById('os-tipo-servico');
+  selTipo.innerHTML = '<option value="">Selecione...</option>' +
+    _tiposServico.map(t => `<option value="${t.id}">${esc(t.nome)}</option>`).join('');
+
+  // Buscar próximo número
+  try {
+    const r = await apiFetch('/operacional/api/proximo-numero');
+    document.getElementById('os-numero').value = r.numero;
+  } catch(e) {
+    document.getElementById('os-numero').value = '(gerado ao salvar)';
+  }
+
+  document.getElementById('modal-os').classList.remove('hidden');
+  setTimeout(() => document.getElementById('os-obra').focus(), 100);
+}
+
+async function editarOS(id) {
+  const os = _osList.find(x => x.id === id);
+  if (!os) return;
+  document.getElementById('modal-os-title').textContent = 'Editar OS ' + os.numero;
+  document.getElementById('os-id').value = os.id;
+  document.getElementById('os-numero').value = os.numero;
+  document.getElementById('os-codigo-erp').value = os.codigo_erp || '';
+  document.getElementById('os-cliente-avulso').value = os.cliente_nome_avulso || '';
+  document.getElementById('os-obra').value = os.obra || '';
+  document.getElementById('os-endereco').value = os.endereco || '';
+  document.getElementById('os-descricao').value = os.descricao || '';
+  document.getElementById('os-data-inicio').value = os.data_inicio || '';
+  document.getElementById('os-error').classList.add('hidden');
+
+  // Popular selects e selecionar valores
+  const selCli = document.getElementById('os-cliente');
+  selCli.innerHTML = '<option value="">Selecione...</option>' +
+    _clientesOS.map(c => `<option value="${c.id}" ${c.id===os.cliente_id?'selected':''}>${esc(c.nome)}</option>`).join('');
+  const selTipo = document.getElementById('os-tipo-servico');
+  selTipo.innerHTML = '<option value="">Selecione...</option>' +
+    _tiposServico.map(t => `<option value="${t.id}" ${t.id===os.tipo_servico_id?'selected':''}>${esc(t.nome)}</option>`).join('');
+
+  document.getElementById('modal-os').classList.remove('hidden');
+}
+
+function fecharModalOS() { document.getElementById('modal-os').classList.add('hidden'); }
+
+async function salvarOS() {
+  const obra = document.getElementById('os-obra').value.trim();
+  if (!obra) {
+    const errEl = document.getElementById('os-error');
+    errEl.textContent = 'Informe a obra/local.';
+    errEl.classList.remove('hidden');
+    return;
+  }
+
+  const id = document.getElementById('os-id').value;
+  const payload = {
+    obra,
+    cliente_id:          document.getElementById('os-cliente').value || null,
+    cliente_nome_avulso: document.getElementById('os-cliente-avulso').value.trim() || null,
+    tipo_servico_id:     document.getElementById('os-tipo-servico').value || null,
+    endereco:            document.getElementById('os-endereco').value.trim() || null,
+    descricao:           document.getElementById('os-descricao').value.trim() || null,
+    data_inicio:         document.getElementById('os-data-inicio').value || null,
+    codigo_erp:          document.getElementById('os-codigo-erp').value.trim() || null,
+  };
+
+  if (!payload.cliente_id && !payload.cliente_nome_avulso) {
+    const errEl = document.getElementById('os-error');
+    errEl.textContent = 'Selecione um cliente cadastrado ou informe nome avulso.';
+    errEl.classList.remove('hidden');
+    return;
+  }
+
+  const btn = document.getElementById('btn-salvar-os');
+  btn.textContent = 'Salvando...';
+  btn.disabled = true;
+
+  try {
+    if (id) {
+      await apiFetch('/operacional/api/os/' + id, { method:'PATCH', body: JSON.stringify(payload) });
+      toast('OS atualizada!', 'success');
+    } else {
+      const nova = await apiFetch('/operacional/api/os', { method:'POST', body: JSON.stringify(payload) });
+      toast('OS ' + nova.numero + ' criada!', 'success');
+    }
+    fecharModalOS();
+    await carregarOS();
+  } catch(e) {
+    const errEl = document.getElementById('os-error');
+    errEl.textContent = e.message;
+    errEl.classList.remove('hidden');
+  } finally {
+    btn.textContent = 'Salvar OS';
+    btn.disabled = false;
+  }
 }
 
 /* ══════════════════════════════════════════════
