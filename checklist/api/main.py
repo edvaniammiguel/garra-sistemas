@@ -1857,10 +1857,9 @@ async def op_remover_os(os_id: str, _auth=Depends(verificar_admin)):
 
 @app.post("/operacional/api/os/{os_id}/partes")
 async def op_criar_parte(os_id: str, request: Request, payload=Depends(verificar_token)):
-    """Registra parte diária. Operador só pode registrar na OS onde é o operador previsto."""
+    """Registra parte diária. Qualquer operador logado pode registrar numa OS ativa."""
     d = await request.json()
-    perfil = payload.get("perfil","")
-    login  = payload.get("sub","")
+    login = payload.get("sub","")
 
     # Verificar se OS existe e está ativa
     os_row = jard_query(
@@ -1869,14 +1868,6 @@ async def op_criar_parte(os_id: str, request: Request, payload=Depends(verificar
     )
     if not os_row:
         raise HTTPException(status_code=404, detail="OS não encontrada")
-
-    # Operadores/motoristas só registram na própria OS
-    if perfil not in ("admin","gestor","luana"):
-        user = jard_query(
-            "SELECT id FROM public.usuarios_garra WHERE login=%s", (login,), fetch="one"
-        )
-        if not user or str(os_row.get("operador_id","")) != str(user["id"]):
-            raise HTTPException(status_code=403, detail="Você não é o operador desta OS")
 
     # Campos obrigatórios
     data = d.get("data")
@@ -1896,12 +1887,16 @@ async def op_criar_parte(os_id: str, request: Request, payload=Depends(verificar
         except (TypeError, ValueError):
             pass
 
-    # Buscar ID do operador pelo login
+    # Buscar ID do operador pelo login (quem está logado = criado_por)
     user_row = jard_query(
-        "SELECT id FROM public.usuarios_garra WHERE login=%s", (login,), fetch="one"
+        "SELECT id FROM public.usuarios_garra WHERE (login=%s OR email=%s) AND ativo=true",
+        (login, login), fetch="one"
     )
     criado_por_id = user_row["id"] if user_row else None
-    operador_id   = d.get("operador_id") or criado_por_id
+
+    # operador_id: pode ser informado no payload (Gilson registrando pelo Emilson)
+    # ou default para quem está logado
+    operador_id = d.get("operador_id") or criado_por_id
 
     # Calcular KM percorrido
     km_ini = d.get("km_inicial")
@@ -1919,14 +1914,15 @@ async def op_criar_parte(os_id: str, request: Request, payload=Depends(verificar
                 tipo_medicao, horimetro_inicial, horimetro_final, horas_trabalhadas,
                 km_inicial, km_final, km_percorrido,
                 quantidade_diarias, qtd_viagens,
-                vinculo_operador, observacao, criado_por)
-               VALUES (%s,%s,%s,%s, %s,%s,%s, %s,%s,%s,%s, %s,%s,%s, %s,%s, %s,%s,%s)""",
+                vinculo_operador, observacao, trajeto, por_conta_de, criado_por)
+               VALUES (%s,%s,%s,%s, %s,%s,%s, %s,%s,%s,%s, %s,%s,%s, %s,%s, %s,%s,%s,%s,%s)""",
             (os_id, equipamento_id, operador_id, d.get("operador_nome_avulso"),
              data, d.get("hora_inicio"), d.get("hora_fim"),
              d.get("tipo_medicao","horimetro"), h_ini, h_fin, horas,
              km_ini, km_fin, km_perc,
              d.get("quantidade_diarias", 0), d.get("qtd_viagens", 0),
              d.get("vinculo_operador","proprio"), d.get("observacao"),
+             d.get("trajeto"), d.get("por_conta_de","empresa"),
              criado_por_id)
         )
         # Atualizar horímetro atual do equipamento
