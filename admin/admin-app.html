@@ -544,6 +544,31 @@ input,select,textarea { font-family:inherit; font-size:13px; outline:none; }
         </div>
       </section>
 
+      <!-- ── SEÇÃO: PARTES DIÁRIAS DA OS ── -->
+      <section id="sec-partes" class="hidden">
+        <div class="card">
+          <div class="card-title" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+            <div style="display:flex;align-items:center;gap:10px">
+              <button class="btn btn-secondary" style="padding:5px 12px;font-size:12px" onclick="navTo('os',document.querySelector('.sb-item[onclick*=\'os\']'))">← Voltar</button>
+              <span id="partes-os-titulo">Partes Diárias</span>
+            </div>
+            <div style="display:flex;gap:8px">
+              <button class="btn btn-secondary" style="padding:6px 14px;font-size:12px" onclick="abrirModalParte()">+ Adicionar registro</button>
+              <button class="btn btn-primary" id="btn-fechar-os" style="padding:6px 14px;font-size:12px;background:var(--green)" onclick="confirmarFechamento()">✓ Fechar OS</button>
+            </div>
+          </div>
+
+          <!-- Resumo da OS -->
+          <div id="partes-os-info" style="background:#F8FAFC;border-radius:8px;padding:12px;margin-bottom:16px;font-size:13px"></div>
+
+          <!-- Totais -->
+          <div id="partes-totais" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;margin-bottom:16px"></div>
+
+          <!-- Tabela partes -->
+          <div id="partes-tabela"><div class="loading"><span class="spin"></span></div></div>
+        </div>
+      </section>
+
     </main>
   </div>
 </div>
@@ -612,13 +637,13 @@ input,select,textarea { font-family:inherit; font-size:13px; outline:none; }
     <input type="hidden" id="os-id"/>
     <div class="field-row">
       <div class="field">
-        <label>Número OS</label>
+        <label>Cód (interno)</label>
         <input type="text" id="os-numero" disabled style="background:#F1F5F9;font-weight:700;color:var(--blue)"/>
-        <div class="field-hint">Gerado automaticamente</div>
+        <div class="field-hint">Gerado automaticamente pelo sistema</div>
       </div>
       <div class="field">
-        <label>Código ERP <span style="text-transform:none;font-weight:400;color:var(--muted)">(opcional)</span></label>
-        <input type="text" id="os-codigo-erp" placeholder="Ex.: 3504"/>
+        <label>OS <span style="text-transform:none;font-weight:400;color:var(--muted)">(número do cliente)</span></label>
+        <input type="text" id="os-codigo-erp" placeholder="Ex.: 3504 (número da OS do cliente)"/>
         <div class="field-hint">Pode preencher depois quando vier do Mais Soluções</div>
       </div>
     </div>
@@ -690,6 +715,128 @@ input,select,textarea { font-family:inherit; font-size:13px; outline:none; }
     <div class="modal-actions">
       <button class="btn btn-secondary" onclick="fecharModalOS()">Cancelar</button>
       <button class="btn btn-primary" id="btn-salvar-os" onclick="salvarOS()">Salvar OS</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ MODAL ADICIONAR PARTE DIÁRIA ══ -->
+<div id="modal-parte" class="modal-backdrop hidden">
+  <div class="modal-card" style="max-width:600px">
+    <div class="modal-title">Registrar parte diária</div>
+    <input type="hidden" id="mp-os-id"/>
+    <input type="hidden" id="mp-parte-id"/>
+    <div class="field-row">
+      <div class="field">
+        <label>Data <span style="color:var(--red)">*</span></label>
+        <input type="date" id="mp-data"/>
+      </div>
+      <div class="field">
+        <label>Equipamento <span style="color:var(--red)">*</span></label>
+        <select id="mp-equipamento" onchange="onMpEquipChange()">
+          <option value="">Selecione...</option>
+        </select>
+      </div>
+    </div>
+    <div class="field-row">
+      <div class="field">
+        <label>Operador</label>
+        <select id="mp-operador">
+          <option value="">Selecione...</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Vínculo</label>
+        <select id="mp-vinculo">
+          <option value="proprio">Próprio</option>
+          <option value="terceiro">Terceiro</option>
+          <option value="diarista">Diarista</option>
+        </select>
+      </div>
+    </div>
+    <!-- Horímetro -->
+    <div id="mp-bloco-hor">
+      <div class="field-row">
+        <div class="field">
+          <label>Horímetro inicial</label>
+          <input type="number" id="mp-h-ini" step="0.1" oninput="calcMpHoras()"/>
+        </div>
+        <div class="field">
+          <label>Horímetro final</label>
+          <input type="number" id="mp-h-fin" step="0.1" oninput="calcMpHoras()"/>
+        </div>
+      </div>
+      <div id="mp-horas-calc" class="field-hint" style="color:var(--green);font-weight:700"></div>
+      <div class="field-row">
+        <div class="field">
+          <label>Horas cobradas</label>
+          <input type="number" id="mp-horas-cob" step="0.1" placeholder="Ajuste se diferente"/>
+        </div>
+        <div class="field">
+          <label>Hora início / fim</label>
+          <div style="display:flex;gap:6px">
+            <input type="time" id="mp-h-inicio" style="flex:1"/>
+            <input type="time" id="mp-h-fim" style="flex:1"/>
+          </div>
+        </div>
+      </div>
+    </div>
+    <!-- KM / Transporte -->
+    <div id="mp-bloco-km" style="display:none">
+      <div class="field-row">
+        <div class="field">
+          <label>KM inicial</label>
+          <input type="number" id="mp-km-ini" step="1"/>
+        </div>
+        <div class="field">
+          <label>KM final</label>
+          <input type="number" id="mp-km-fin" step="1"/>
+        </div>
+      </div>
+      <div class="field-row">
+        <div class="field">
+          <label>Qtd viagens</label>
+          <input type="number" id="mp-viagens" step="1" min="0"/>
+        </div>
+        <div class="field">
+          <label>Por conta de</label>
+          <select id="mp-por-conta">
+            <option value="empresa">Empresa</option>
+            <option value="cliente">Cliente</option>
+          </select>
+        </div>
+      </div>
+      <div class="field">
+        <label>Trajeto</label>
+        <input type="text" id="mp-trajeto" placeholder="Ex.: Obra → Aterro"/>
+      </div>
+    </div>
+    <div class="field">
+      <label>Serviço / Observação</label>
+      <input type="text" id="mp-obs" placeholder="Ex.: Furação tubulão, 24m bloco 60cm..."/>
+    </div>
+    <div id="mp-error" class="login-error hidden"></div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="fecharModalParte()">Cancelar</button>
+      <button class="btn btn-primary" id="btn-salvar-parte" onclick="salvarParteLuana()">Salvar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ MODAL FECHAR OS ══ -->
+<div id="modal-fechar" class="modal-backdrop hidden">
+  <div class="modal-card" style="max-width:500px">
+    <div class="modal-title">Fechar Ordem de Serviço</div>
+    <div id="modal-fechar-resumo" style="margin-bottom:16px"></div>
+    <div style="background:#FFF7ED;border:1.5px solid #FED7AA;border-radius:8px;padding:12px;font-size:13px;color:#92400E;margin-bottom:16px">
+      ⚠️ Ao fechar a OS, todas as partes diárias serão <strong>congeladas</strong> e não poderão mais ser editadas.
+    </div>
+    <div class="field">
+      <label>Observação final (opcional)</label>
+      <input type="text" id="fechar-obs" placeholder="Observações sobre o encerramento..."/>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="document.getElementById('modal-fechar').classList.add('hidden')">Cancelar</button>
+      <button class="btn btn-primary" style="background:var(--green)" onclick="executarFechamento()">✓ Confirmar fechamento</button>
     </div>
   </div>
 </div>
@@ -1252,10 +1399,10 @@ function renderTabelaOS() {
     <table style="width:100%;border-collapse:collapse">
       <thead>
         <tr style="border-bottom:2px solid var(--border)">
-          <th style="text-align:left;padding:8px 10px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)">Nº OS</th>
+          <th style="text-align:left;padding:8px 10px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)">Cód</th>
           <th style="text-align:left;padding:8px 10px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)">Cliente / Obra</th>
           <th style="text-align:left;padding:8px 10px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)">Equipamento / Operador</th>
-          <th style="text-align:left;padding:8px 10px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)">Cód ERP</th>
+          <th style="text-align:left;padding:8px 10px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)">OS</th>
           <th style="text-align:left;padding:8px 10px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)">Data</th>
           <th style="text-align:left;padding:8px 10px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)">Status</th>
           <th style="padding:8px 10px"></th>
@@ -1279,7 +1426,8 @@ function renderTabelaOS() {
             <td style="padding:10px;font-size:12px;color:var(--muted)">${esc(os.codigo_erp || '–')}</td>
             <td style="padding:10px;font-size:12px;color:var(--muted)">${data}</td>
             <td style="padding:10px"><span class="badge ${st.badge}">${st.label}</span></td>
-            <td style="padding:10px;text-align:right">
+            <td style="padding:10px;text-align:right;display:flex;gap:6px;justify-content:flex-end">
+              <button class="btn-sm" onclick="verPartesOS('${esc(os.id)}','${esc(os.numero)}')">📋 Partes</button>
               <button class="btn-sm" onclick="editarOS('${esc(os.id)}')">✎ Editar</button>
             </td>
           </tr>`;
@@ -1328,7 +1476,7 @@ async function abrirModalOS() {
 async function editarOS(id) {
   const os = _osList.find(x => x.id === id);
   if (!os) return;
-  document.getElementById('modal-os-title').textContent = 'Editar OS ' + os.numero;
+  document.getElementById('modal-os-title').textContent = 'Editar — ' + os.numero;
   document.getElementById('os-id').value = os.id;
   document.getElementById('os-numero').value = os.numero;
   document.getElementById('os-codigo-erp').value = os.codigo_erp || '';
@@ -1427,6 +1575,297 @@ async function salvarOS() {
     btn.textContent = 'Salvar OS';
     btn.disabled = false;
   }
+}
+
+/* ══════════════════════════════════════════════
+   MÓDULO PARTES DIÁRIAS
+══════════════════════════════════════════════ */
+let _osAtualId   = '';
+let _osAtualObj  = null;
+
+async function verPartesOS(osId, osNumero) {
+  _osAtualId  = osId;
+  // Navegar para a seção de partes
+  document.querySelectorAll('section').forEach(s => s.classList.add('hidden'));
+  document.querySelectorAll('.sb-item').forEach(b => b.classList.remove('active'));
+  document.getElementById('sec-partes').classList.remove('hidden');
+
+  document.getElementById('partes-os-titulo').textContent = 'Partes Diárias — ' + osNumero;
+  document.getElementById('partes-tabela').innerHTML = '<div class="loading"><span class="spin"></span></div>';
+  document.getElementById('partes-totais').innerHTML = '';
+  document.getElementById('partes-os-info').innerHTML = '';
+
+  // Carregar listas auxiliares
+  if (!_equipamentosOS.length) try { _equipamentosOS = await apiFetch('/operacional/api/equipamentos'); } catch {}
+  if (!_operadoresOS.length)   try { _operadoresOS   = await apiFetch('/operacional/api/operadores');   } catch {}
+
+  try {
+    // Carregar OS + partes
+    _osAtualObj = await apiFetch('/operacional/api/os/' + osId);
+    const data  = await apiFetch('/operacional/api/os/' + osId + '/partes');
+    renderInfoOS(_osAtualObj);
+    renderTotais(data.totais);
+    renderPartes(data.partes, _osAtualObj.status);
+    // Esconder botão fechar se já fechada
+    const jaConcluida = _osAtualObj.status?.startsWith('concluida') || _osAtualObj.status === 'cancelada';
+    document.getElementById('btn-fechar-os').style.display = jaConcluida ? 'none' : '';
+  } catch(e) {
+    document.getElementById('partes-tabela').innerHTML =
+      `<div class="loading" style="color:var(--red)">Erro: ${esc(e.message)}</div>`;
+  }
+}
+
+function renderInfoOS(os) {
+  const regime = { hora:'Por hora', diaria:'Por diária', empreito:'Empreito' }[os.regime_cobranca] || os.regime_cobranca;
+  const valor  = os.valor_combinado ? `R$ ${parseFloat(os.valor_combinado).toLocaleString('pt-BR',{minimumFractionDigits:2})}` : '–';
+  document.getElementById('partes-os-info').innerHTML = `
+    <div style="display:flex;flex-wrap:wrap;gap:16px">
+      <div><span style="font-size:11px;color:var(--muted);text-transform:uppercase;font-weight:700">Cliente</span><br>
+        <strong>${esc(os.cliente_nome||'–')}</strong></div>
+      <div><span style="font-size:11px;color:var(--muted);text-transform:uppercase;font-weight:700">Obra</span><br>
+        <strong>${esc(os.obra||'–')}</strong></div>
+      <div><span style="font-size:11px;color:var(--muted);text-transform:uppercase;font-weight:700">Regime</span><br>
+        <strong>${regime}</strong></div>
+      <div><span style="font-size:11px;color:var(--muted);text-transform:uppercase;font-weight:700">Valor combinado</span><br>
+        <strong style="color:var(--blue)">${valor}</strong></div>
+      <div><span style="font-size:11px;color:var(--muted);text-transform:uppercase;font-weight:700">Status</span><br>
+        <span class="badge ${(STATUS_LABEL[os.status]||{badge:'badge-gray'}).badge}">${(STATUS_LABEL[os.status]||{label:os.status}).label}</span>
+      </div>
+    </div>`;
+}
+
+function renderTotais(t) {
+  if (!t) return;
+  document.getElementById('partes-totais').innerHTML = `
+    <div style="background:#F0F4FF;border-radius:8px;padding:12px;text-align:center">
+      <div style="font-size:22px;font-weight:800;color:var(--blue)">${t.dias_trabalhados||0}</div>
+      <div style="font-size:11px;color:var(--muted)">dias registrados</div>
+    </div>
+    <div style="background:#F0F4FF;border-radius:8px;padding:12px;text-align:center">
+      <div style="font-size:22px;font-weight:800;color:var(--blue)">${t.total_horas||0}h</div>
+      <div style="font-size:11px;color:var(--muted)">horas trabalhadas</div>
+    </div>
+    <div style="background:#F0F4FF;border-radius:8px;padding:12px;text-align:center">
+      <div style="font-size:22px;font-weight:800;color:var(--blue)">${t.total_horas_cobradas||0}h</div>
+      <div style="font-size:11px;color:var(--muted)">horas cobradas</div>
+    </div>
+    <div style="background:#F0F4FF;border-radius:8px;padding:12px;text-align:center">
+      <div style="font-size:22px;font-weight:800;color:var(--blue)">${t.total_viagens||0}</div>
+      <div style="font-size:11px;color:var(--muted)">viagens</div>
+    </div>`;
+}
+
+function renderPartes(partes, status) {
+  const el = document.getElementById('partes-tabela');
+  const jaConcluida = status?.startsWith('concluida') || status === 'cancelada';
+
+  if (!partes.length) {
+    el.innerHTML = `<div class="loading" style="color:var(--muted)">
+      Nenhuma parte diária registrada ainda.<br>
+      <small>Os operadores registram pelo mobile ou clique em "+ Adicionar registro".</small>
+    </div>`;
+    return;
+  }
+
+  el.innerHTML = `<table style="width:100%;border-collapse:collapse">
+    <thead>
+      <tr style="border-bottom:2px solid var(--border)">
+        <th style="text-align:left;padding:8px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--muted)">Data</th>
+        <th style="text-align:left;padding:8px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--muted)">Equipamento</th>
+        <th style="text-align:left;padding:8px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--muted)">Operador</th>
+        <th style="text-align:center;padding:8px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--muted)">Horímetro</th>
+        <th style="text-align:center;padding:8px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--muted)">Hrs reais</th>
+        <th style="text-align:center;padding:8px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--muted)">Hrs cobradas</th>
+        <th style="text-align:left;padding:8px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--muted)">Serviço</th>
+        <th style="padding:8px"></th>
+      </tr>
+    </thead>
+    <tbody>
+      ${partes.map(p => {
+        const dt = p.data ? new Date(p.data+'T00:00').toLocaleDateString('pt-BR') : '–';
+        const hor = p.horimetro_inicial && p.horimetro_final
+          ? `${p.horimetro_inicial} → ${p.horimetro_final}` : (p.km_inicial ? `${p.km_inicial}km → ${p.km_final}km` : '–');
+        const hrs = p.horas_trabalhadas ? parseFloat(p.horas_trabalhadas).toFixed(1)+'h' : '–';
+        const hCob = p.horas_cobradas ? `<input type="number" value="${parseFloat(p.horas_cobradas).toFixed(1)}"
+          step="0.1" style="width:60px;padding:4px;border:1.5px solid var(--border);border-radius:4px;font-size:12px"
+          onchange="salvarHorasCobradas('${esc(p.id)}',this.value)" ${jaConcluida?'disabled':''}/>h`
+          : `<input type="number" placeholder="${hrs}" step="0.1"
+          style="width:60px;padding:4px;border:1.5px solid var(--border);border-radius:4px;font-size:12px"
+          onchange="salvarHorasCobradas('${esc(p.id)}',this.value)" ${jaConcluida?'disabled':''}/>h`;
+        const fechBadge = p.fechado ? '<span class="badge badge-gray" style="font-size:9px">🔒</span>' : '';
+        return `<tr style="border-bottom:1px solid #F1F5F9" onmouseenter="this.style.background='#F8FAFC'" onmouseleave="this.style.background=''">
+          <td style="padding:8px;font-size:13px;font-weight:600;color:var(--blue)">${dt} ${fechBadge}</td>
+          <td style="padding:8px;font-size:12px"><strong>${esc(p.equipamento_codigo||'–')}</strong><br><span style="color:var(--muted);font-size:11px">${esc(p.equipamento_descricao||'')}</span></td>
+          <td style="padding:8px;font-size:12px">${esc(p.operador_nome||'–')}</td>
+          <td style="padding:8px;font-size:12px;text-align:center;color:var(--muted)">${hor}</td>
+          <td style="padding:8px;text-align:center;font-weight:700;color:var(--blue)">${hrs}</td>
+          <td style="padding:8px;text-align:center">${hCob}</td>
+          <td style="padding:8px;font-size:12px;color:var(--muted);max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(p.observacao||p.trajeto||'')}</td>
+          <td style="padding:8px;text-align:right">
+            ${!jaConcluida && !p.fechado ? `<button class="btn-sm" style="color:var(--red);border-color:var(--red)" onclick="removerParte('${esc(p.id)}')">✕</button>` : ''}
+          </td>
+        </tr>`;
+      }).join('')}
+    </tbody>
+  </table>
+  <div style="margin-top:8px;font-size:11px;color:var(--muted);text-align:right">${partes.length} registro(s)</div>`;
+}
+
+async function salvarHorasCobradas(parteId, valor) {
+  try {
+    await apiFetch('/operacional/api/partes/' + parteId, {
+      method:'PATCH', body: JSON.stringify({ horas_cobradas: parseFloat(valor) })
+    });
+    toast('Horas cobradas atualizadas', 'success');
+  } catch(e) { toast('Erro: ' + e.message, 'error'); }
+}
+
+async function removerParte(parteId) {
+  if (!confirm('Remover este registro?')) return;
+  try {
+    await apiFetch('/operacional/api/partes/' + parteId, { method:'DELETE' });
+    toast('Registro removido', 'success');
+    const data = await apiFetch('/operacional/api/os/' + _osAtualId + '/partes');
+    renderTotais(data.totais);
+    renderPartes(data.partes, _osAtualObj?.status);
+  } catch(e) { toast('Erro: ' + e.message, 'error'); }
+}
+
+// ── Modal adicionar parte (desktop) ──────────────────────────────────────
+
+function abrirModalParte() {
+  document.getElementById('mp-os-id').value  = _osAtualId;
+  document.getElementById('mp-parte-id').value = '';
+  document.getElementById('mp-data').value   = new Date().toISOString().slice(0,10);
+  ['mp-equipamento','mp-operador','mp-h-ini','mp-h-fin','mp-horas-cob',
+   'mp-h-inicio','mp-h-fim','mp-km-ini','mp-km-fin','mp-viagens','mp-trajeto','mp-obs'].forEach(id => {
+    const el = document.getElementById(id); if(el) el.value='';
+  });
+  document.getElementById('mp-vinculo').value   = 'proprio';
+  document.getElementById('mp-por-conta').value = 'empresa';
+  document.getElementById('mp-bloco-hor').style.display = 'block';
+  document.getElementById('mp-bloco-km').style.display  = 'none';
+  document.getElementById('mp-horas-calc').textContent  = '';
+  document.getElementById('mp-error').classList.add('hidden');
+
+  // Popular selects
+  const selEq = document.getElementById('mp-equipamento');
+  selEq.innerHTML = '<option value="">Selecione...</option>' +
+    _equipamentosOS.map(e => `<option value="${e.id}" data-cat="${e.categoria}">${esc(e.codigo)} — ${esc(e.descricao)}</option>`).join('');
+  const selOp = document.getElementById('mp-operador');
+  selOp.innerHTML = '<option value="">Selecione...</option>' +
+    _operadoresOS.map(o => `<option value="${o.id}">${esc(o.nome)}</option>`).join('');
+
+  document.getElementById('modal-parte').classList.remove('hidden');
+}
+
+function fecharModalParte() { document.getElementById('modal-parte').classList.add('hidden'); }
+
+function onMpEquipChange() {
+  const sel = document.getElementById('mp-equipamento');
+  const cat = sel.options[sel.selectedIndex]?.getAttribute('data-cat') || '';
+  const isCam = ['caminhao','pipa','carro'].includes(cat);
+  document.getElementById('mp-bloco-hor').style.display = isCam ? 'none' : 'block';
+  document.getElementById('mp-bloco-km').style.display  = isCam ? 'block' : 'none';
+}
+
+function calcMpHoras() {
+  const ini = parseFloat(document.getElementById('mp-h-ini').value);
+  const fin = parseFloat(document.getElementById('mp-h-fin').value);
+  const el  = document.getElementById('mp-horas-calc');
+  if (!isNaN(ini) && !isNaN(fin) && fin > ini) {
+    el.textContent = `✅ ${(fin-ini).toFixed(1)}h calculadas`;
+    el.style.color = 'var(--green)';
+    // Sugerir horas cobradas se não preenchido
+    const cobEl = document.getElementById('mp-horas-cob');
+    if (!cobEl.value) cobEl.value = (fin-ini).toFixed(1);
+  } else el.textContent = '';
+}
+
+async function salvarParteLuana() {
+  const err = document.getElementById('mp-error');
+  err.classList.add('hidden');
+  const osId = document.getElementById('mp-os-id').value;
+  const data = document.getElementById('mp-data').value;
+  const equipId = document.getElementById('mp-equipamento').value;
+  if (!data || !equipId) {
+    err.textContent = 'Data e equipamento são obrigatórios'; err.classList.remove('hidden'); return;
+  }
+  const sel = document.getElementById('mp-equipamento');
+  const cat = sel.options[sel.selectedIndex]?.getAttribute('data-cat') || '';
+  const isCam = ['caminhao','pipa','carro'].includes(cat);
+
+  const payload = {
+    data, equipamento_id: equipId,
+    operador_id:       document.getElementById('mp-operador').value || null,
+    vinculo_operador:  document.getElementById('mp-vinculo').value,
+    tipo_medicao:      isCam ? 'km' : 'horimetro',
+    horimetro_inicial: document.getElementById('mp-h-ini').value ? parseFloat(document.getElementById('mp-h-ini').value) : null,
+    horimetro_final:   document.getElementById('mp-h-fin').value ? parseFloat(document.getElementById('mp-h-fin').value) : null,
+    horas_cobradas:    document.getElementById('mp-horas-cob').value ? parseFloat(document.getElementById('mp-horas-cob').value) : null,
+    hora_inicio:       document.getElementById('mp-h-inicio').value || null,
+    hora_fim:          document.getElementById('mp-h-fim').value    || null,
+    km_inicial:        document.getElementById('mp-km-ini').value ? parseFloat(document.getElementById('mp-km-ini').value) : null,
+    km_final:          document.getElementById('mp-km-fin').value ? parseFloat(document.getElementById('mp-km-fin').value) : null,
+    qtd_viagens:       parseFloat(document.getElementById('mp-viagens').value||'0') || 0,
+    por_conta_de:      document.getElementById('mp-por-conta').value,
+    trajeto:           document.getElementById('mp-trajeto').value.trim() || null,
+    observacao:        document.getElementById('mp-obs').value.trim() || null,
+  };
+
+  const btn = document.getElementById('btn-salvar-parte');
+  btn.textContent = 'Salvando...'; btn.disabled = true;
+  try {
+    await apiFetch('/operacional/api/os/' + osId + '/partes', { method:'POST', body:JSON.stringify(payload) });
+    toast('Registro salvo!', 'success');
+    fecharModalParte();
+    const d = await apiFetch('/operacional/api/os/' + osId + '/partes');
+    renderTotais(d.totais);
+    renderPartes(d.partes, _osAtualObj?.status);
+  } catch(e) { err.textContent = e.message; err.classList.remove('hidden'); }
+  finally { btn.textContent = 'Salvar'; btn.disabled = false; }
+}
+
+// ── Fechar OS ────────────────────────────────────────────────────────────
+
+async function confirmarFechamento() {
+  const data = await apiFetch('/operacional/api/os/' + _osAtualId + '/revisao');
+  const os   = data.os;
+  const tot  = data.totais;
+  document.getElementById('modal-fechar-resumo').innerHTML = `
+    <div style="background:#F0F4FF;border-radius:8px;padding:12px;font-size:13px">
+      <strong>${esc(os.numero)}</strong> — ${esc(os.obra)}<br>
+      <span style="color:var(--muted)">${esc(os.cliente_nome||'')}</span>
+      <div style="display:flex;gap:16px;margin-top:10px;flex-wrap:wrap">
+        <div><strong>${tot.dias_trabalhados}</strong> dias</div>
+        <div><strong>${tot.total_horas}h</strong> trabalhadas</div>
+        <div><strong>${tot.total_horas_cobradas}h</strong> cobradas</div>
+        <div><strong>${tot.total_viagens}</strong> viagens</div>
+      </div>
+    </div>`;
+  document.getElementById('fechar-obs').value = '';
+  document.getElementById('modal-fechar').classList.remove('hidden');
+}
+
+async function executarFechamento() {
+  try {
+    await apiFetch('/operacional/api/os/' + _osAtualId + '/fechar', {
+      method:'POST',
+      body: JSON.stringify({ observacao: document.getElementById('fechar-obs').value })
+    });
+    document.getElementById('modal-fechar').classList.add('hidden');
+    toast('OS fechada com sucesso!', 'success');
+    // Atualizar tela
+    const d = await apiFetch('/operacional/api/os/' + _osAtualId + '/partes');
+    const osAtual = await apiFetch('/operacional/api/os/' + _osAtualId);
+    _osAtualObj = osAtual;
+    renderInfoOS(osAtual);
+    renderTotais(d.totais);
+    renderPartes(d.partes, osAtual.status);
+    document.getElementById('btn-fechar-os').style.display = 'none';
+    // Atualizar lista
+    await carregarOS();
+  } catch(e) { toast('Erro: ' + e.message, 'error'); }
 }
 
 /* ══════════════════════════════════════════════
