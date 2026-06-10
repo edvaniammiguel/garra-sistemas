@@ -1630,6 +1630,8 @@ async def op_criar_os(request: Request, payload=Depends(verificar_gestor)):
         raise HTTPException(status_code=400, detail="Informe cliente cadastrado ou nome avulso")
 
     tipo_servico_id     = d.get("tipo_servico_id")
+    equipamento_id      = d.get("equipamento_id") or None
+    operador_id         = d.get("operador_id") or None
     endereco            = (d.get("endereco") or "").strip() or None
     descricao           = (d.get("descricao") or "").strip() or None
     data_inicio         = d.get("data_inicio") or datetime.utcnow().date().isoformat()
@@ -1660,12 +1662,14 @@ async def op_criar_os(request: Request, payload=Depends(verificar_gestor)):
             """INSERT INTO operacional.ordens_servico
                (numero, ano, sequencia, codigo_erp, codigo_erp_em, codigo_erp_por,
                 cliente_id, cliente_nome_avulso, tipo_servico_id,
+                equipamento_id, operador_id,
                 obra, endereco, descricao,
                 data_inicio, data_fim_prevista,
                 status, origem, criado_por)
-               VALUES (%s,%s,%s,%s,%s,%s, %s,%s,%s, %s,%s,%s, %s,%s, %s,%s,%s)""",
+               VALUES (%s,%s,%s,%s,%s,%s, %s,%s,%s, %s,%s, %s,%s,%s, %s,%s, %s,%s,%s)""",
             (numero, ano, sequencia, codigo_erp, codigo_erp_em, codigo_erp_por,
              cliente_id, cliente_nome_avulso, tipo_servico_id,
+             equipamento_id, operador_id,
              obra, endereco, descricao,
              data_inicio, data_fim_prevista,
              status, origem, criado_por_id)
@@ -1693,10 +1697,14 @@ async def op_listar_os(
             os.status, os.origem, os.criado_em,
             os.cliente_id, COALESCE(c.nome, os.cliente_nome_avulso) AS cliente_nome,
             os.tipo_servico_id, ts.nome AS tipo_servico_nome,
+            os.equipamento_id, eq.codigo AS equipamento_codigo, eq.descricao AS equipamento_descricao,
+            os.operador_id, op.nome AS operador_nome,
             u.nome AS criado_por_nome
         FROM operacional.ordens_servico os
         LEFT JOIN public.clientes_garra c       ON c.id = os.cliente_id
         LEFT JOIN operacional.tipos_servico ts  ON ts.id = os.tipo_servico_id
+        LEFT JOIN operacional.equipamentos eq   ON eq.id = os.equipamento_id
+        LEFT JOIN public.usuarios_garra op      ON op.id = os.operador_id
         LEFT JOIN public.usuarios_garra u       ON u.id = os.criado_por
         WHERE os.ativo = true
     """
@@ -1729,7 +1737,9 @@ async def op_detalhe_os(os_id: str, _auth=Depends(verificar_token)):
            FROM operacional.ordens_servico os
            LEFT JOIN public.clientes_garra c       ON c.id = os.cliente_id
            LEFT JOIN operacional.tipos_servico ts  ON ts.id = os.tipo_servico_id
+           LEFT JOIN operacional.equipamentos eq   ON eq.id = os.equipamento_id
            LEFT JOIN public.usuarios_garra u       ON u.id = os.criado_por
+           LEFT JOIN public.usuarios_garra op      ON op.id = os.operador_id
            WHERE os.id = %s AND os.ativo = true""",
         (os_id,), fetch="one"
     )
@@ -1771,7 +1781,8 @@ async def op_atualizar_os(os_id: str, request: Request, payload=Depends(verifica
     # Campos editáveis
     campos_editaveis = ["codigo_erp", "obra", "endereco", "descricao",
                         "data_fim_prevista", "data_fim_real", "status",
-                        "tipo_servico_id", "cliente_id", "cliente_nome_avulso"]
+                        "tipo_servico_id", "cliente_id", "cliente_nome_avulso",
+                        "equipamento_id", "operador_id"]
     updates = []
     params = []
     for campo in campos_editaveis:
