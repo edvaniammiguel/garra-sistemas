@@ -280,15 +280,37 @@ input,select,textarea { font-family:inherit; font-size:15px; outline:none; }
     <div class="sheet-handle"></div>
     <div class="sheet-title" id="modal-titulo">Registrar dia de trabalho</div>
     <input type="hidden" id="m-os-id"/>
-    <input type="hidden" id="m-tipo-medicao"/>
 
+    <!-- DATA -->
     <div class="field">
       <label>Data</label>
       <input type="date" id="m-data"/>
     </div>
 
+    <!-- EQUIPAMENTO (livre — não pré-fixado) -->
+    <div class="field-row">
+      <div class="field" style="flex:2">
+        <label>Equipamento <span style="color:var(--red)">*</span></label>
+        <select id="m-equipamento" onchange="onEquipChange()">
+          <option value="">Selecione...</option>
+        </select>
+      </div>
+      <div class="field" style="flex:1">
+        <label>Tipo</label>
+        <div id="m-tipo-badge" style="padding:12px 8px;font-size:12px;font-weight:700;color:var(--muted);border:1.5px solid var(--border);border-radius:8px;text-align:center">–</div>
+      </div>
+    </div>
+
+    <!-- OPERADOR DO EQUIPAMENTO -->
+    <div class="field">
+      <label>Operador / Motorista</label>
+      <select id="m-operador">
+        <option value="">Selecione...</option>
+      </select>
+    </div>
+
     <!-- HORÍMETRO (máquinas) -->
-    <div id="bloco-horimetro">
+    <div id="bloco-horimetro" style="display:none">
       <div class="field-row">
         <div class="field">
           <label>Horímetro inicial</label>
@@ -300,9 +322,19 @@ input,select,textarea { font-family:inherit; font-size:15px; outline:none; }
         </div>
       </div>
       <div id="horas-calc" class="field-calc" style="display:none"></div>
+      <div class="field-row">
+        <div class="field">
+          <label>Hora início</label>
+          <input type="time" id="m-h-inicio"/>
+        </div>
+        <div class="field">
+          <label>Hora fim</label>
+          <input type="time" id="m-h-fim"/>
+        </div>
+      </div>
     </div>
 
-    <!-- KM (caminhões) -->
+    <!-- KM + TRANSPORTE (caminhões) -->
     <div id="bloco-km" style="display:none">
       <div class="field-row">
         <div class="field">
@@ -314,31 +346,35 @@ input,select,textarea { font-family:inherit; font-size:15px; outline:none; }
           <input type="number" id="m-km-fin" placeholder="000000" step="1"/>
         </div>
       </div>
+      <div class="field-row">
+        <div class="field">
+          <label>Qtd viagens</label>
+          <input type="number" id="m-viagens" placeholder="0" step="1" min="0"/>
+        </div>
+        <div class="field">
+          <label>Por conta de</label>
+          <select id="m-por-conta">
+            <option value="empresa">Empresa</option>
+            <option value="cliente">Cliente</option>
+          </select>
+        </div>
+      </div>
       <div class="field">
-        <label>Quantidade de viagens</label>
-        <input type="number" id="m-viagens" placeholder="0" step="1" min="0"/>
+        <label>Trajeto</label>
+        <input type="text" id="m-trajeto" placeholder="Ex.: Obra → Aterro Municipal"/>
       </div>
     </div>
 
-    <div class="field-row">
-      <div class="field">
-        <label>Hora início</label>
-        <input type="time" id="m-h-inicio"/>
-      </div>
-      <div class="field">
-        <label>Hora fim</label>
-        <input type="time" id="m-h-fim"/>
-      </div>
-    </div>
-
+    <!-- SERVIÇO / OBSERVAÇÃO (destaque — igual ao papel) -->
     <div class="field">
-      <label>Observação</label>
-      <textarea id="m-obs" rows="3" placeholder="Problemas, informações do dia..."></textarea>
+      <label>Serviço executado / Observação</label>
+      <input type="text" id="m-obs" placeholder="Ex.: Furação tubulão, 24m bloco 60cm, 1 viagem entulho..."/>
     </div>
 
     <div id="m-error" class="field-error" style="display:none"></div>
 
-    <button class="btn-salvar" id="btn-salvar-parte" onclick="salvarParte()">✅ Salvar registro</button>
+    <button class="btn-salvar" id="btn-salvar-parte" onclick="salvarParte(false)">✅ Salvar registro</button>
+    <button class="btn-salvar" style="background:var(--blue);margin-top:6px;box-shadow:none" id="btn-salvar-mais" onclick="salvarParte(true)">➕ Salvar e adicionar outro equipamento</button>
     <button class="btn-cancelar" onclick="fecharModalDireto()">Cancelar</button>
   </div>
 </div>
@@ -479,6 +515,7 @@ const REGIME_CFG = {
 async function carregarOS() {
   const el = document.getElementById('os-lista');
   el.innerHTML = '<div class="loading"><span class="spin"></span></div>';
+  await carregarListasRegistro();
   try {
     _osList = await apiFetch('/operacional/api/minhas-os');
   } catch(e) { _osList = []; }
@@ -508,7 +545,7 @@ function renderOS() {
       ${os.equipamento_codigo ? `<div class="os-equip">🚜 ${esc(os.equipamento_codigo)} — ${esc(os.equipamento_descricao||'')}</div>` : ''}
       ${data ? `<div style="font-size:11px;color:var(--muted);margin-top:4px">📅 Início: ${data}</div>` : ''}
       <div class="os-actions">
-        <button class="btn-reg" onclick="abrirRegistro('${esc(os.id)}','${esc(os.equipamento_codigo||'')}','${os.regime_cobranca||'hora'}')">
+        <button class="btn-reg" onclick="abrirRegistro('${esc(os.id)}')">
           ⏱ Registrar dia
         </button>
         <button class="btn-ver" onclick="verPartes('${esc(os.id)}','${esc(os.numero)}')">
@@ -523,41 +560,65 @@ function renderOS() {
    REGISTRAR PARTE DIÁRIA
 ══════════════════════════════════════════ */
 let _osAtualId = '';
-let _osRegime  = 'hora';
+let _equipamentos = [];
+let _operadores = [];
 
-function abrirRegistro(osId, equipCodigo, regime) {
+async function carregarListasRegistro() {
+  if (!_equipamentos.length) {
+    try { _equipamentos = await apiFetch('/operacional/api/equipamentos'); } catch {}
+  }
+  if (!_operadores.length) {
+    try { _operadores = await apiFetch('/operacional/api/operadores'); } catch {}
+  }
+}
+
+function abrirRegistro(osId) {
   _osAtualId = osId;
-  _osRegime  = regime;
-
-  // Definir tipo de medição pelo regime e equipamento
-  const isCaminhao = equipCodigo && (equipCodigo.startsWith('CB') || equipCodigo.startsWith('CP') || equipCodigo.startsWith('CR'));
-  const tipoMedicao = isCaminhao ? 'km' : 'horimetro';
-  document.getElementById('m-tipo-medicao').value = tipoMedicao;
-
-  // Mostrar bloco correto
-  document.getElementById('bloco-horimetro').style.display = isCaminhao ? 'none' : 'block';
-  document.getElementById('bloco-km').style.display        = isCaminhao ? 'block' : 'none';
-
-  // OS info no título
-  const os = _osList.find(o => o.id===osId);
-  document.getElementById('modal-titulo').textContent = os ? os.numero+' — '+os.obra.slice(0,30) : 'Registrar dia';
+  const os = _osList.find(o => o.id === osId);
+  document.getElementById('modal-titulo').textContent = os ? os.numero + ' — ' + os.obra.slice(0,28) : 'Registrar dia';
+  document.getElementById('m-os-id').value = osId;
 
   // Data default = hoje
   document.getElementById('m-data').value = new Date().toISOString().slice(0,10);
 
+  // Popular selects
+  const selEq = document.getElementById('m-equipamento');
+  selEq.innerHTML = '<option value="">Selecione...</option>' +
+    _equipamentos.map(e => `<option value="${e.id}" data-cat="${e.categoria}" data-codigo="${esc(e.codigo)}">${esc(e.codigo)} — ${esc(e.descricao)}</option>`).join('');
+
+  const selOp = document.getElementById('m-operador');
+  selOp.innerHTML = '<option value="">Selecione...</option>' +
+    _operadores.map(o => `<option value="${o.id}">${esc(o.nome)}</option>`).join('');
+
   // Limpar campos
-  ['m-h-ini','m-h-fin','m-km-ini','m-km-fin','m-viagens','m-h-inicio','m-h-fim','m-obs'].forEach(id => {
+  ['m-h-ini','m-h-fin','m-km-ini','m-km-fin','m-viagens','m-h-inicio','m-h-fim','m-trajeto','m-obs'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.value = '';
   });
+  document.getElementById('m-por-conta').value = 'empresa';
   document.getElementById('horas-calc').style.display = 'none';
-  document.getElementById('m-error').style.display    = 'none';
+  document.getElementById('bloco-horimetro').style.display = 'none';
+  document.getElementById('bloco-km').style.display = 'none';
+  document.getElementById('m-tipo-badge').textContent = '–';
+  document.getElementById('m-error').style.display = 'none';
 
   document.getElementById('modal-parte').style.display = 'flex';
-  setTimeout(() => {
-    const first = isCaminhao ? 'm-km-ini' : 'm-h-ini';
-    document.getElementById(first)?.focus();
-  }, 300);
+}
+
+function onEquipChange() {
+  const sel = document.getElementById('m-equipamento');
+  const opt = sel.options[sel.selectedIndex];
+  const cat = opt ? opt.getAttribute('data-cat') : '';
+  const cod = opt ? opt.getAttribute('data-codigo') : '';
+
+  const isCaminhao = ['caminhao','pipa','carro'].includes(cat);
+  document.getElementById('bloco-horimetro').style.display = isCaminhao ? 'none' : (cat ? 'block' : 'none');
+  document.getElementById('bloco-km').style.display        = isCaminhao ? 'block' : 'none';
+
+  const badge = document.getElementById('m-tipo-badge');
+  if (!cat) { badge.textContent = '–'; badge.style.color = 'var(--muted)'; }
+  else if (isCaminhao) { badge.textContent = '🚛 KM'; badge.style.color = 'var(--orange)'; }
+  else { badge.textContent = '⏱ Hr'; badge.style.color = 'var(--blue)'; }
 }
 
 function calcHoras() {
@@ -566,8 +627,9 @@ function calcHoras() {
   const el  = document.getElementById('horas-calc');
   if (!isNaN(ini) && !isNaN(fin) && fin > ini) {
     el.textContent = `✅ ${(fin-ini).toFixed(1)} horas trabalhadas`;
+    el.style.color = 'var(--green)';
     el.style.display = 'block';
-  } else if (!isNaN(ini) && !isNaN(fin) && fin <= ini) {
+  } else if (!isNaN(ini) && !isNaN(fin) && fin <= ini && fin !== ini) {
     el.textContent = '⚠️ Horímetro final deve ser maior que o inicial';
     el.style.color = 'var(--red)';
     el.style.display = 'block';
@@ -576,27 +638,38 @@ function calcHoras() {
   }
 }
 
-async function salvarParte() {
+async function salvarParte(adicionarMais) {
   const err = document.getElementById('m-error');
   err.style.display = 'none';
-  const data = document.getElementById('m-data').value;
-  if (!data) { err.textContent='Informe a data'; err.style.display='block'; return; }
 
-  const tipoMedicao = document.getElementById('m-tipo-medicao').value;
+  const data        = document.getElementById('m-data').value;
+  const equipId     = document.getElementById('m-equipamento').value;
+  const operadorId  = document.getElementById('m-operador').value;
+
+  if (!data)    { err.textContent='Informe a data';        err.style.display='block'; return; }
+  if (!equipId) { err.textContent='Selecione o equipamento'; err.style.display='block'; return; }
+
+  // Detectar tipo de medição pelo equipamento selecionado
+  const sel = document.getElementById('m-equipamento');
+  const cat = sel.options[sel.selectedIndex]?.getAttribute('data-cat') || '';
+  const isCaminhao = ['caminhao','pipa','carro'].includes(cat);
+
   const hIni = document.getElementById('m-h-ini').value;
   const hFin = document.getElementById('m-h-fin').value;
   const kmIni= document.getElementById('m-km-ini').value;
   const kmFin= document.getElementById('m-km-fin').value;
 
-  // Validar horímetro
-  if (tipoMedicao==='horimetro') {
-    if (!hIni||!hFin) { err.textContent='Informe horímetro inicial e final'; err.style.display='block'; return; }
-    if (parseFloat(hFin) < parseFloat(hIni)) { err.textContent='Horímetro final menor que o inicial'; err.style.display='block'; return; }
+  if (!isCaminhao && hIni && hFin && parseFloat(hFin) < parseFloat(hIni)) {
+    err.textContent = 'Horímetro final menor que o inicial';
+    err.style.display = 'block';
+    return;
   }
 
   const payload = {
     data,
-    tipo_medicao:     tipoMedicao,
+    equipamento_id:    equipId,
+    operador_id:       operadorId || null,
+    tipo_medicao:      isCaminhao ? 'km' : 'horimetro',
     horimetro_inicial: hIni ? parseFloat(hIni) : null,
     horimetro_final:   hFin ? parseFloat(hFin) : null,
     km_inicial:        kmIni ? parseFloat(kmIni) : null,
@@ -604,20 +677,43 @@ async function salvarParte() {
     qtd_viagens:       parseFloat(document.getElementById('m-viagens').value||'0') || 0,
     hora_inicio:       document.getElementById('m-h-inicio').value || null,
     hora_fim:          document.getElementById('m-h-fim').value    || null,
+    trajeto:           document.getElementById('m-trajeto').value.trim() || null,
+    por_conta_de:      document.getElementById('m-por-conta').value || 'empresa',
     observacao:        document.getElementById('m-obs').value.trim() || null,
   };
 
-  const btn = document.getElementById('btn-salvar-parte');
-  btn.textContent='Salvando...'; btn.disabled=true;
+  const btn1 = document.getElementById('btn-salvar-parte');
+  const btn2 = document.getElementById('btn-salvar-mais');
+  btn1.textContent='Salvando...'; btn1.disabled=true;
+  btn2.disabled=true;
+
   try {
-    await apiFetch('/operacional/api/os/'+_osAtualId+'/partes', {
+    await apiFetch('/operacional/api/os/' + _osAtualId + '/partes', {
       method:'POST', body:JSON.stringify(payload)
     });
     toast('Registro salvo!', 'success');
-    fecharModalDireto();
+
+    if (adicionarMais) {
+      // Limpa só os campos de medição — mantém data e OS
+      ['m-equipamento','m-operador','m-h-ini','m-h-fin','m-km-ini','m-km-fin',
+       'm-viagens','m-h-inicio','m-h-fim','m-trajeto','m-obs'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.value = '';
+      });
+      document.getElementById('por-conta').value = 'empresa';
+      document.getElementById('bloco-horimetro').style.display = 'none';
+      document.getElementById('bloco-km').style.display = 'none';
+      document.getElementById('m-tipo-badge').textContent = '–';
+      document.getElementById('horas-calc').style.display = 'none';
+    } else {
+      fecharModalDireto();
+    }
   } catch(e) {
     err.textContent = e.message; err.style.display='block';
-  } finally { btn.textContent='✅ Salvar registro'; btn.disabled=false; }
+  } finally {
+    btn1.textContent='✅ Salvar registro'; btn1.disabled=false;
+    btn2.disabled=false;
+  }
 }
 
 /* ══════════════════════════════════════════
@@ -732,4 +828,3 @@ function esc(s) {
 </script>
 </body>
 </html>
-
