@@ -663,6 +663,21 @@ input,select,textarea { font-family:inherit; font-size:13px; outline:none; }
         </select>
       </div>
     </div>
+    <div class="field-row">
+      <div class="field">
+        <label>Regime de cobrança <span style="color:var(--red)">*</span></label>
+        <select id="os-regime" onchange="_atualizarLabelRegime()">
+          <option value="hora">Por hora (horímetro)</option>
+          <option value="diaria">Por diária</option>
+          <option value="empreito">Empreito (valor fixo)</option>
+        </select>
+      </div>
+      <div class="field" id="os-valor-wrap">
+        <label id="os-valor-label">Valor combinado (R$)</label>
+        <input type="number" id="os-valor-combinado" placeholder="0.00" step="0.01" min="0"/>
+        <div class="field-hint" id="os-valor-hint">Preço por hora combinado com o cliente</div>
+      </div>
+    </div>
     <div class="field">
       <label>Obra / Local <span style="color:var(--red)">*</span></label>
       <input type="text" id="os-obra" placeholder="Ex.: OBRA NOVA SERRANA - PROBASE"/>
@@ -1283,7 +1298,10 @@ async function abrirModalOS() {
   document.getElementById('os-id').value = '';
   ['os-codigo-erp','os-cliente','os-cliente-avulso','os-tipo-servico','os-obra','os-endereco','os-descricao'].forEach(id => document.getElementById(id).value = '');
   document.getElementById('os-data-inicio').value = new Date().toISOString().slice(0,10);
+  document.getElementById('os-regime').value = 'hora';
+  document.getElementById('os-valor-combinado').value = '';
   document.getElementById('os-error').classList.add('hidden');
+  _atualizarLabelRegime();
 
   // Popular selects
   const selCli = document.getElementById('os-cliente');
@@ -1342,6 +1360,21 @@ async function editarOS(id) {
   document.getElementById('modal-os').classList.remove('hidden');
 }
 
+function _atualizarLabelRegime() {
+  const regime = document.getElementById('os-regime')?.value;
+  const label  = document.getElementById('os-valor-label');
+  const hint   = document.getElementById('os-valor-hint');
+  if (!label || !hint) return;
+  const map = {
+    hora:     { label:'Valor por hora (R$)',      hint:'Ex.: 220.00 — preço/hora combinado com o cliente' },
+    diaria:   { label:'Valor por diária (R$)',     hint:'Ex.: 2300.00 — preço de uma diária' },
+    empreito: { label:'Valor total do empreito (R$)', hint:'Ex.: 50000.00 — valor fixo combinado para toda a OS' },
+  };
+  const cfg = map[regime] || map.hora;
+  label.textContent = cfg.label;
+  hint.textContent  = cfg.hint;
+}
+
 function fecharModalOS() { document.getElementById('modal-os').classList.add('hidden'); }
 
 async function salvarOS() {
@@ -1361,6 +1394,8 @@ async function salvarOS() {
     tipo_servico_id:     document.getElementById('os-tipo-servico').value || null,
     equipamento_id:      document.getElementById('os-equipamento').value || null,
     operador_id:         document.getElementById('os-operador').value || null,
+    regime_cobranca:     document.getElementById('os-regime').value || 'hora',
+    valor_combinado:     parseFloat(document.getElementById('os-valor-combinado').value) || null,
     endereco:            document.getElementById('os-endereco').value.trim() || null,
     descricao:           document.getElementById('os-descricao').value.trim() || null,
     data_inicio:         document.getElementById('os-data-inicio').value || null,
