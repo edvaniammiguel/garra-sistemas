@@ -2168,6 +2168,20 @@ async def health():
     except Exception as e:
         return {"status":"erro","db":str(e)}
 
+@app.get("/api/debug/usuarios")
+async def debug_usuarios(_auth=Depends(verificar_admin)):
+    """Diagnóstico de usuários — somente admin."""
+    rows = jard_query(
+        """SELECT login, email, perfil, ativo,
+                  LEFT(senha_hash,7) AS hash_inicio,
+                  CASE WHEN senha_hash = '$2b$12$y4jgMhNSKtoeBtad7lKEOev.tHk8S9OA1SpPHrowz5XT.AQJK.iZK'
+                       THEN 'padrao_1234' ELSE 'outra' END AS senha_status
+           FROM public.usuarios_garra
+           ORDER BY ativo DESC, perfil, login""",
+        fetch="all"
+    )
+    return [dict(r) for r in (rows or [])]
+
 @app.get("/")
 async def root():
     return RedirectResponse(url="/jardinagem")
