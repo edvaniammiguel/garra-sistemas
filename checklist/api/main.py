@@ -255,7 +255,20 @@ def verificar_token_jard(authorization: Optional[str] = Header(None)):
         raise HTTPException(status_code=401, detail="Não autenticado")
     token = authorization[7:]
     try:
-        return pyjwt.decode(token, JWT_SECRET, algorithms=["HS256"])
+        payload = pyjwt.decode(token, JWT_SECRET, algorithms=["HS256"])
+        # Se sub não é UUID (token do auth central tem sub=login), busca o UUID
+        sub = payload.get("sub", "")
+        import re as _re
+        uuid_pattern = _re.compile(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$', _re.I)
+        if sub and not uuid_pattern.match(str(sub)):
+            # sub é login — busca UUID no banco
+            row = jard_query(
+                "SELECT id FROM public.usuarios_garra WHERE (login=%s OR email=%s) AND ativo=true",
+                (sub, sub), fetch="one"
+            )
+            if row:
+                payload["sub"] = str(row["id"])
+        return payload
     except pyjwt.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Sessão expirada")
     except pyjwt.InvalidTokenError:
@@ -508,7 +521,7 @@ async def alterar_senha(req: SenhaChange, login: str, db=Depends(get_db), _auth=
 @app.get("/usuarios")
 async def listar_usuarios(db=Depends(get_db), _auth=Depends(verificar_token)):
     rows = await db.fetch(
-        "SELECT login,nome,email,perfil,perfil_checklist,pts,total_envios,ativo,criado_em FROM public.usuarios_garra ORDER BY nome"
+        "SELECT id,login,nome,email,perfil,perfil_checklist,pts,total_envios,ativo,criado_em FROM public.usuarios_garra ORDER BY nome"
     )
     return [dict(r) for r in rows]
 
