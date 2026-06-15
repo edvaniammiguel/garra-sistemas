@@ -1446,9 +1446,13 @@ async function salvarNovoPerfil() {
 }
 
 async function iniciarAbaExcecoes() {
-  if (!_todosUsuariosExcecao.length) _todosUsuariosExcecao = _usuarios||[];
+  // Garantir usuários carregados
+  if (!_usuarios.length) {
+    try { _usuarios = await apiFetch('/usuarios'); } catch(e) {}
+  }
+  _todosUsuariosExcecao = _usuarios||[];
   const filtroPerfil = document.getElementById('perm-filter-perfil');
-  if (filtroPerfil.options.length <= 1) {
+  if (filtroPerfil && filtroPerfil.options.length <= 1) {
     const perfis = [...new Set(_todosUsuariosExcecao.filter(u=>u.ativo).map(u=>u.perfil))].sort();
     filtroPerfil.innerHTML = '<option value="">Todos os perfis</option>' +
       perfis.map(p=>`<option value="${p}">${PERFIL_LABEL[p]||p}</option>`).join('');
@@ -1465,31 +1469,29 @@ function renderCardsColaboradores() {
   let lista = (_usuarios||[]).filter(u=>u.ativo);
   if (perfil) lista = lista.filter(u=>u.perfil===perfil);
 
-  // Esconder select antigo se existir
-  const sel = document.getElementById('perm-select-user');
-  if (sel) sel.style.display = 'none';
-
-  // Renderizar cards
   const el = document.getElementById('perm-excecoes-content');
-  const badge = document.getElementById('perm-perfil-badge');
-  if (badge) badge.textContent = '';
+  if (!el) return;
 
-  // Mostrar lista de colaboradores como cards clicáveis
+  if (!lista.length) {
+    el.innerHTML = '<div style="color:var(--muted);font-size:13px;padding:20px 0">Nenhum colaborador encontrado.</div>';
+    return;
+  }
+
   el.innerHTML = `
-    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px;margin-bottom:16px">
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px;margin-bottom:16px">
       ${lista.map(u => `
         <div onclick="abrirPermColaborador('${u.id}','${u.perfil}')"
-          style="padding:12px;border:1.5px solid var(--border);border-radius:10px;
-          cursor:pointer;transition:.15s;background:#fff"
+          style="padding:14px;border:1.5px solid var(--border);border-radius:10px;
+          cursor:pointer;transition:.15s;background:#fff;text-align:center"
           onmouseenter="this.style.borderColor='var(--orange)';this.style.background='#FFF7ED'"
           onmouseleave="this.style.borderColor='var(--border)';this.style.background='#fff'">
-          <div style="width:34px;height:34px;border-radius:50%;background:var(--blue);
+          <div style="width:38px;height:38px;border-radius:50%;background:var(--blue);
             display:flex;align-items:center;justify-content:center;
-            font-size:14px;font-weight:800;color:#fff;margin-bottom:8px">
+            font-size:16px;font-weight:800;color:#fff;margin:0 auto 8px">
             ${esc((u.nome||u.login).charAt(0).toUpperCase())}
           </div>
           <div style="font-size:13px;font-weight:600;color:var(--text)">${esc(u.nome||u.login)}</div>
-          <div style="font-size:11px;color:var(--muted)">${PERFIL_LABEL[u.perfil]||u.perfil}</div>
+          <div style="font-size:11px;color:var(--muted);margin-top:2px">${PERFIL_LABEL[u.perfil]||u.perfil}</div>
         </div>`).join('')}
     </div>
     <div id="perm-detail-content"></div>`;
