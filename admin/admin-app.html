@@ -508,7 +508,10 @@ input,select,textarea { font-family:inherit; font-size:13px; outline:none; }
       <!-- ── SEÇÃO: PERMISSÕES ── -->
       <section id="sec-permissoes" class="hidden">
         <div class="card">
-          <div class="card-title">Controle de Permissões</div>
+          <div class="card-title" style="display:flex;align-items:center;justify-content:space-between">
+            Controle de Permissões
+            <button class="btn btn-primary admin-only" style="padding:5px 12px;font-size:12px" onclick="abrirModalPerfil()">+ Novo Perfil</button>
+          </div>
 
           <!-- Abas -->
           <div style="display:flex;gap:4px;border-bottom:2px solid var(--border);margin-bottom:20px">
@@ -526,6 +529,7 @@ input,select,textarea { font-family:inherit; font-size:13px; outline:none; }
           <div id="perm-perfis">
             <p style="font-size:13px;color:var(--muted);margin-bottom:16px">
               Define o acesso padrão de cada perfil. Novos colaboradores herdam automaticamente.
+              <strong style="color:var(--blue)">Admin Master não pode ser removido do perfil Admin.</strong>
             </p>
             <div id="perm-perfis-content"><div class="loading"><span class="spin"></span></div></div>
           </div>
@@ -535,9 +539,25 @@ input,select,textarea { font-family:inherit; font-size:13px; outline:none; }
             <p style="font-size:13px;color:var(--muted);margin-bottom:16px">
               Ajuste individual por colaborador. Substitui o padrão do perfil apenas para essa pessoa.
             </p>
-            <div style="display:flex;gap:10px;margin-bottom:16px;align-items:center">
+            <!-- Filtros -->
+            <div style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap;align-items:center">
+              <div style="display:flex;gap:6px;align-items:center;background:#F0F4FF;padding:6px 10px;border-radius:8px">
+                <label style="font-size:12px;font-weight:600;cursor:pointer">
+                  <input type="radio" name="perm-status" value="ativo" checked onchange="filtrarSelectExcecao()"/> Ativos
+                </label>
+                <label style="font-size:12px;font-weight:600;cursor:pointer">
+                  <input type="radio" name="perm-status" value="inativo" onchange="filtrarSelectExcecao()"/> Inativos
+                </label>
+                <label style="font-size:12px;font-weight:600;cursor:pointer">
+                  <input type="radio" name="perm-status" value="todos" onchange="filtrarSelectExcecao()"/> Todos
+                </label>
+              </div>
+              <select id="perm-filter-perfil" onchange="filtrarSelectExcecao()"
+                style="padding:7px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:13px">
+                <option value="">Todos os perfis</option>
+              </select>
               <select id="perm-select-user" onchange="carregarPermExcecao()"
-                style="padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;flex:1;max-width:300px">
+                style="padding:7px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;flex:1;min-width:200px">
                 <option value="">Selecione o colaborador...</option>
               </select>
               <span id="perm-perfil-badge" style="font-size:11px;color:var(--muted)"></span>
@@ -873,6 +893,29 @@ input,select,textarea { font-family:inherit; font-size:13px; outline:none; }
     <div class="modal-actions">
       <button class="btn btn-secondary" onclick="document.getElementById('modal-fechar').classList.add('hidden')">Cancelar</button>
       <button class="btn btn-primary" style="background:var(--green)" onclick="executarFechamento()">✓ Confirmar fechamento</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ MODAL CRIAR PERFIL ══ -->
+<div id="modal-perfil" class="modal-backdrop hidden">
+  <div class="modal-card" style="max-width:480px">
+    <div class="modal-title">Novo Perfil de Acesso</div>
+    <div class="field">
+      <label>Nome do perfil <span style="color:var(--red)">*</span></label>
+      <input type="text" id="perfil-nome" placeholder="Ex.: supervisor, tecnico..."/>
+      <div class="field-hint">Use letras minúsculas sem espaço. Ex.: "supervisor"</div>
+    </div>
+    <div class="field">
+      <label>Módulos padrão para este perfil</label>
+      <div id="perfil-modulos" style="display:flex;flex-direction:column;gap:8px;margin-top:6px">
+        <!-- populado pelo JS -->
+      </div>
+    </div>
+    <div id="perfil-error" class="login-error hidden"></div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="document.getElementById('modal-perfil').classList.add('hidden')">Cancelar</button>
+      <button class="btn btn-primary" onclick="salvarNovoPerfil()">Criar perfil</button>
     </div>
   </div>
 </div>
@@ -1288,7 +1331,7 @@ async function confirmarDesativar() {
 }
 
 /* ══════════════════════════════════════════════
-   PERMISSÕES — Híbrido: perfil + exceções
+   PERMISSÕES — Híbrido completo: perfil + exceções
 ══════════════════════════════════════════════ */
 const MODULOS = [
   { id:'admin_master',       label:'Admin Master',       desc:'Painel de gestão' },
@@ -1309,6 +1352,7 @@ const PERFIL_PADRAO = {
 };
 
 let _permTab = 'perfis';
+let _todosUsuariosExcecao = [];
 
 function switchPermTab(tab) {
   _permTab = tab;
@@ -1318,746 +1362,182 @@ function switchPermTab(tab) {
     btn.style.borderBottomColor = t===tab ? 'var(--orange)' : 'transparent';
     btn.style.color = t===tab ? 'var(--orange)' : 'var(--muted)';
   });
-  if (tab==='excecoes') carregarSelectExcecao();
+  if (tab==='excecoes') iniciarAbaExcecoes();
 }
 
-async function renderPermissoes() {
-  // Aba perfis
-  renderPermPerfis();
-}
+async function renderPermissoes() { renderPermPerfis(); }
 
 function renderPermPerfis() {
-  const perfis = ['admin','gestor','operador','motorista','campo','bruna'];
+  const perfis = Object.keys(PERFIL_PADRAO);
   const el = document.getElementById('perm-perfis-content');
+  const contagem = {};
+  (_usuarios||[]).filter(u=>u.ativo).forEach(u => { contagem[u.perfil] = (contagem[u.perfil]||0)+1; });
   el.innerHTML = `
     <div style="overflow-x:auto">
       <table style="width:100%;border-collapse:collapse;min-width:600px">
         <thead>
           <tr style="border-bottom:2px solid var(--border)">
-            <th style="text-align:left;padding:10px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--muted);min-width:140px">Perfil</th>
-            ${MODULOS.map(m=>`
-              <th style="text-align:center;padding:10px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--muted)">
-                ${m.label}<br><span style="font-weight:400;font-size:10px">${m.desc}</span>
-              </th>`).join('')}
+            <th style="text-align:left;padding:10px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--muted);min-width:160px">Perfil</th>
+            ${MODULOS.map(m=>`<th style="text-align:center;padding:10px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--muted)">${m.label}<br><span style="font-weight:400;font-size:10px">${m.desc}</span></th>`).join('')}
+            <th style="padding:10px;width:60px"></th>
           </tr>
         </thead>
         <tbody>
-          ${perfis.map(p => `
-            <tr style="border-bottom:1px solid #F1F5F9" onmouseenter="this.style.background='#F8FAFC'" onmouseleave="this.style.background=''">
-              <td style="padding:10px;font-size:13px;font-weight:700;color:var(--blue)">${PERFIL_LABEL[p]||p}</td>
-              ${MODULOS.map(m=>`
-                <td style="padding:10px;text-align:center">
-                  <input type="checkbox"
-                    style="width:18px;height:18px;cursor:pointer;accent-color:var(--orange)"
-                    ${(PERFIL_PADRAO[p]||[]).includes(m.id) ? 'checked' : ''}
-                    onchange="salvarPermPerfil('${p}','${m.id}',this.checked)"/>
-                </td>`).join('')}
-            </tr>`).join('')}
+          ${perfis.map(p => {
+            const isAdmin = p==='admin';
+            const count = contagem[p]||0;
+            return `<tr style="border-bottom:1px solid #F1F5F9" onmouseenter="this.style.background='#F8FAFC'" onmouseleave="this.style.background=''">
+              <td style="padding:10px">
+                <div style="font-size:13px;font-weight:700;color:var(--blue)">${PERFIL_LABEL[p]||p}</div>
+                <div style="font-size:11px;color:var(--muted)">${count} colaborador(es)</div>
+              </td>
+              ${MODULOS.map(m=>{
+                const checked=(PERFIL_PADRAO[p]||[]).includes(m.id);
+                const bloqueado=isAdmin&&m.id==='admin_master';
+                return `<td style="padding:10px;text-align:center"><input type="checkbox" style="width:18px;height:18px;cursor:${bloqueado?'not-allowed':'pointer'};accent-color:var(--orange)" ${checked?'checked':''} ${bloqueado?'disabled title="Protegido"':''} onchange="salvarPermPerfil('${p}','${m.id}',this.checked)"/></td>`;
+              }).join('')}
+              <td style="padding:8px;text-align:center">${!isAdmin?`<button class="btn-sm" style="color:var(--red);border-color:var(--red)" onclick="excluirPerfil('${p}','${PERFIL_LABEL[p]||p}',${count})">✕</button>`:'<span style="font-size:12px">🔒</span>'}</td>
+            </tr>`;
+          }).join('')}
         </tbody>
       </table>
     </div>
-    <div style="margin-top:12px;font-size:11px;color:var(--muted)">
-      ⚠️ Alterar o perfil afeta todos os colaboradores desse perfil que não têm exceção individual.
-    </div>`;
+    <div style="margin-top:12px;font-size:11px;color:var(--muted)">🔒 Admin Master não pode ser removido do perfil Admin · Alterações aplicadas a todos do perfil.</div>`;
 }
 
 async function salvarPermPerfil(perfil, modulo, permitido) {
-  // Atualiza o padrão local
-  if (!PERFIL_PADRAO[perfil]) PERFIL_PADRAO[perfil] = [];
-  if (permitido) {
-    if (!PERFIL_PADRAO[perfil].includes(modulo)) PERFIL_PADRAO[perfil].push(modulo);
-  } else {
-    PERFIL_PADRAO[perfil] = PERFIL_PADRAO[perfil].filter(m => m !== modulo);
-  }
-  // Salvar para todos do perfil sem exceção individual
+  if (perfil==='admin'&&modulo==='admin_master'&&!permitido) { toast('Protegido — não pode remover','error'); renderPermPerfis(); return; }
+  if (!PERFIL_PADRAO[perfil]) PERFIL_PADRAO[perfil]=[];
+  if (permitido) { if (!PERFIL_PADRAO[perfil].includes(modulo)) PERFIL_PADRAO[perfil].push(modulo); }
+  else { PERFIL_PADRAO[perfil]=PERFIL_PADRAO[perfil].filter(m=>m!==modulo); }
   try {
-    const usuarios = _usuarios.filter(u => u.perfil === perfil && u.ativo);
-    for (const u of usuarios) {
-      await apiFetch('/permissoes/usuario/' + u.id, {
-        method:'POST', body: JSON.stringify({ [modulo]: permitido })
-      });
-    }
-    toast(`Perfil ${PERFIL_LABEL[perfil]} — ${permitido?'✅':'❌'} ${MODULOS.find(m=>m.id===modulo)?.label}`, permitido?'success':'');
+    const usuarios=(_usuarios||[]).filter(u=>u.perfil===perfil&&u.ativo&&u.id);
+    for (const u of usuarios) await apiFetch('/permissoes/usuario/'+u.id,{method:'POST',body:JSON.stringify({[modulo]:permitido})});
+    toast(`${PERFIL_LABEL[perfil]||perfil} — ${permitido?'✅':'❌'} ${MODULOS.find(m=>m.id===modulo)?.label}`,'success');
   } catch(e) { toast('Erro: '+e.message,'error'); }
 }
 
-// ── Exceções individuais ─────────────────────────────────────────────────
+function excluirPerfil(perfil, label, count) {
+  if (count>0) { toast(`Impossível — ${count} colaborador(es) com este perfil`,'error'); return; }
+  if (!confirm(`Excluir perfil "${label}"?`)) return;
+  delete PERFIL_PADRAO[perfil]; delete PERFIL_LABEL[perfil];
+  renderPermPerfis(); toast(`Perfil "${label}" excluído`,'success');
+}
 
-async function carregarSelectExcecao() {
-  const sel = document.getElementById('perm-select-user');
-  if (sel.options.length > 1) return; // já carregado
-  sel.innerHTML = '<option value="">Selecione o colaborador...</option>' +
-    _usuarios.filter(u=>u.ativo).map(u =>
-      `<option value="${u.id}" data-perfil="${u.perfil}">${esc(u.nome||u.login)} (${PERFIL_LABEL[u.perfil]||u.perfil})</option>`
-    ).join('');
+function abrirModalPerfil() {
+  document.getElementById('perfil-nome').value='';
+  document.getElementById('perfil-error').classList.add('hidden');
+  document.getElementById('perfil-modulos').innerHTML=MODULOS.map(m=>`
+    <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px">
+      <input type="checkbox" id="pm-${m.id}" style="width:16px;height:16px;accent-color:var(--orange)"/>
+      <span><strong>${m.label}</strong> — ${m.desc}</span>
+    </label>`).join('');
+  document.getElementById('modal-perfil').classList.remove('hidden');
+  setTimeout(()=>document.getElementById('perfil-nome').focus(),100);
+}
+
+async function salvarNovoPerfil() {
+  const nome=document.getElementById('perfil-nome').value.trim().toLowerCase().replace(/\s+/g,'_');
+  const errEl=document.getElementById('perfil-error'); errEl.classList.add('hidden');
+  if (!nome) { errEl.textContent='Nome é obrigatório'; errEl.classList.remove('hidden'); return; }
+  if (PERFIL_PADRAO[nome]) { errEl.textContent='Perfil já existe'; errEl.classList.remove('hidden'); return; }
+  if (!/^[a-z_]+$/.test(nome)) { errEl.textContent='Use apenas letras minúsculas e _'; errEl.classList.remove('hidden'); return; }
+  const modulos=MODULOS.filter(m=>document.getElementById('pm-'+m.id)?.checked).map(m=>m.id);
+  PERFIL_PADRAO[nome]=modulos;
+  PERFIL_LABEL[nome]=nome.charAt(0).toUpperCase()+nome.slice(1);
+  document.getElementById('modal-perfil').classList.add('hidden');
+  renderPermPerfis();
+  toast(`Perfil "${PERFIL_LABEL[nome]}" criado com ${modulos.length} módulo(s)`,'success');
+}
+
+async function iniciarAbaExcecoes() {
+  if (!_todosUsuariosExcecao.length) _todosUsuariosExcecao=_usuarios||[];
+  const filtroPerfil=document.getElementById('perm-filter-perfil');
+  if (filtroPerfil.options.length<=1) {
+    const perfis=[...new Set(_todosUsuariosExcecao.map(u=>u.perfil))].sort();
+    filtroPerfil.innerHTML='<option value="">Todos os perfis</option>'+perfis.map(p=>`<option value="${p}">${PERFIL_LABEL[p]||p}</option>`).join('');
+  }
+  filtrarSelectExcecao();
+}
+
+function filtrarSelectExcecao() {
+  const status=document.querySelector('input[name="perm-status"]:checked')?.value||'ativo';
+  const perfil=document.getElementById('perm-filter-perfil')?.value||'';
+  const sel=document.getElementById('perm-select-user');
+  const valorAtual=sel.value;
+  let lista=_todosUsuariosExcecao;
+  if (status==='ativo') lista=lista.filter(u=>u.ativo);
+  if (status==='inativo') lista=lista.filter(u=>!u.ativo);
+  if (perfil) lista=lista.filter(u=>u.perfil===perfil);
+  sel.innerHTML='<option value="">Selecione o colaborador...</option>'+
+    lista.map(u=>`<option value="${u.id}" data-perfil="${u.perfil}" ${u.id===valorAtual?'selected':''}>${esc(u.nome||u.login)} (${PERFIL_LABEL[u.perfil]||u.perfil})${!u.ativo?' — Inativo':''}</option>`).join('');
+  if (!valorAtual||!lista.find(u=>u.id===valorAtual)) {
+    document.getElementById('perm-excecoes-content').innerHTML='';
+    document.getElementById('perm-perfil-badge').textContent='';
+  }
 }
 
 async function carregarPermExcecao() {
-  const sel = document.getElementById('perm-select-user');
-  const uid = sel.value;
-  const opt = sel.options[sel.selectedIndex];
-  const perfil = opt?.getAttribute('data-perfil') || '';
-  const el = document.getElementById('perm-excecoes-content');
-  const badge = document.getElementById('perm-perfil-badge');
-
+  const sel=document.getElementById('perm-select-user');
+  const uid=sel.value;
+  const opt=sel.options[sel.selectedIndex];
+  const perfil=opt?.getAttribute('data-perfil')||'';
+  const el=document.getElementById('perm-excecoes-content');
+  const badge=document.getElementById('perm-perfil-badge');
   if (!uid) { el.innerHTML=''; badge.textContent=''; return; }
-
-  badge.textContent = `Perfil padrão: ${PERFIL_LABEL[perfil]||perfil}`;
-  el.innerHTML = '<div class="loading"><span class="spin"></span></div>';
-
+  badge.textContent=`Perfil base: ${PERFIL_LABEL[perfil]||perfil}`;
+  el.innerHTML='<div class="loading"><span class="spin"></span></div>';
   try {
-    const perms = await apiFetch('/permissoes/usuario/' + uid);
-    const padrao = PERFIL_PADRAO[perfil] || [];
-
-    el.innerHTML = `
-      <div style="display:flex;flex-direction:column;gap:10px;max-width:500px">
-        ${MODULOS.map(m => {
-          const temPerm = perms[m.id] ?? padrao.includes(m.id);
-          const ePadrao = padrao.includes(m.id);
-          return `
-          <div style="display:flex;align-items:center;justify-content:space-between;
-            padding:12px 16px;border:1.5px solid var(--border);border-radius:8px;
-            background:${temPerm?'#F0FDF4':'#FFF'}">
+    const perms=await apiFetch('/permissoes/usuario/'+uid);
+    const padrao=PERFIL_PADRAO[perfil]||[];
+    el.innerHTML=`
+      <div style="display:flex;flex-direction:column;gap:8px;max-width:560px">
+        ${MODULOS.map(m=>{
+          const temPerm=perms[m.id]??padrao.includes(m.id);
+          const ePadrao=padrao.includes(m.id);
+          const ehExcecao=perms[m.id]!==undefined&&perms[m.id]!==ePadrao;
+          const bloqueado=perfil==='admin'&&m.id==='admin_master';
+          return `<div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border:1.5px solid ${ehExcecao?'var(--orange)':temPerm?'#BBF7D0':'var(--border)'};border-radius:8px;background:${temPerm?'#F0FDF4':'#FFF'}">
             <div>
               <div style="font-size:13px;font-weight:600;color:var(--text)">${m.label}</div>
-              <div style="font-size:11px;color:var(--muted)">${m.desc}
-                ${ePadrao?'<span style="color:var(--green);margin-left:6px">• padrão do perfil</span>':''}
-              </div>
+              <div style="font-size:11px;color:var(--muted)">${m.desc} <span style="color:${ehExcecao?'var(--orange)':'var(--muted)'}">${ehExcecao?'✎ exceção':'↑ herdado'}</span></div>
             </div>
-            <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
-              <span style="font-size:12px;color:${temPerm?'var(--green)':'var(--muted)'}">
-                ${temPerm?'Liberado':'Bloqueado'}
-              </span>
-              <input type="checkbox"
-                style="width:20px;height:20px;cursor:pointer;accent-color:var(--orange)"
-                ${temPerm?'checked':''}
-                onchange="salvarPermissao('${uid}','${m.id}',this.checked)"/>
-            </label>
+            <div style="display:flex;align-items:center;gap:10px">
+              ${ehExcecao?`<button style="font-size:11px;color:var(--muted);background:none;border:1px solid var(--border);border-radius:4px;padding:2px 6px;cursor:pointer" onclick="resetarPermissao('${uid}','${m.id}','${perfil}')">↺</button>`:''}
+              <label style="display:flex;align-items:center;gap:6px;cursor:${bloqueado?'not-allowed':'pointer'}">
+                <span style="font-size:12px;color:${temPerm?'var(--green)':'var(--muted)'}">${temPerm?'Liberado':'Bloqueado'}</span>
+                <input type="checkbox" style="width:20px;height:20px;cursor:${bloqueado?'not-allowed':'pointer'};accent-color:var(--orange)" ${temPerm?'checked':''} ${bloqueado?'disabled':''} onchange="salvarPermissao('${uid}','${m.id}',this.checked)"/>
+              </label>
+            </div>
           </div>`;
         }).join('')}
       </div>
-      <div style="margin-top:12px;font-size:11px;color:var(--muted)">
-        Alterações salvas automaticamente · Substituem o padrão do perfil para este colaborador.
-      </div>`;
-  } catch(e) {
-    el.innerHTML = `<div style="color:var(--red)">Erro: ${esc(e.message)}</div>`;
-  }
+      <button class="btn btn-secondary" style="margin-top:14px;font-size:12px" onclick="resetarTodasPermissoes('${uid}','${perfil}')">↺ Resetar todas para padrão do perfil</button>
+      <div style="margin-top:8px;font-size:11px;color:var(--muted)">Bordas laranjas = exceção individual · ↑ herdado = segue o perfil</div>`;
+  } catch(e) { el.innerHTML=`<div style="color:var(--red)">Erro: ${esc(e.message)}</div>`; }
 }
 
 async function salvarPermissao(usuarioId, modulo, permitido) {
   try {
-    await apiFetch('/permissoes/usuario/' + usuarioId, {
-      method:'POST', body: JSON.stringify({ [modulo]: permitido })
-    });
-    const label = MODULOS.find(m=>m.id===modulo)?.label || modulo;
-    toast(`${permitido?'✅ Acesso liberado':'❌ Acesso removido'} — ${label}`, permitido?'success':'');
-    // Atualizar visual do toggle
-    const el = document.querySelector(`input[onchange*="${modulo}"]`);
-    if (el) {
-      const span = el.previousElementSibling;
-      if (span) {
-        span.textContent = permitido ? 'Liberado' : 'Bloqueado';
-        span.style.color = permitido ? 'var(--green)' : 'var(--muted)';
-      }
-      el.closest('div[style]').style.background = permitido ? '#F0FDF4' : '#FFF';
-    }
+    await apiFetch('/permissoes/usuario/'+usuarioId,{method:'POST',body:JSON.stringify({[modulo]:permitido})});
+    toast(`${permitido?'✅ Liberado':'❌ Bloqueado'} — ${MODULOS.find(m=>m.id===modulo)?.label||modulo}`,'success');
+    await carregarPermExcecao();
   } catch(e) { toast('Erro: '+e.message,'error'); }
 }
 
-/* ══════════════════════════════════════════════
-   FEED DE ATIVIDADE
-══════════════════════════════════════════════ */
-async function carregarFeed() {
-  // Feed baseado em dados reais da jardinagem (últimos KMs e atividade)
-  const el = document.getElementById('feed-list');
+async function resetarPermissao(usuarioId, modulo, perfil) {
+  await salvarPermissao(usuarioId, modulo, (PERFIL_PADRAO[perfil]||[]).includes(modulo));
+}
+
+async function resetarTodasPermissoes(usuarioId, perfil) {
+  if (!confirm('Resetar todas para o padrão do perfil?')) return;
+  const payload={};
+  MODULOS.forEach(m=>{payload[m.id]=(PERFIL_PADRAO[perfil]||[]).includes(m.id);});
   try {
-    const agora = new Date();
-    const meses = await apiFetch('/jardinagem/api/meses');
-    const mesAtual = (meses||[]).find(m => m.ano === agora.getFullYear() && m.mes === agora.getMonth() + 1);
-    const items = [];
-    if (mesAtual) {
-      const kms = await apiFetch(`/jardinagem/api/km/mes/${mesAtual.id}`);
-      (kms||[]).slice(0,4).forEach(r => {
-        items.push({ tipo:'km', msg:`<strong>${esc(r.responsavel||'Campo')}</strong> registrou KM`, sub:`${r.local_nome||'Sem local'} · ${r.data||''}`, cor:'azul', icone:'🚗' });
-      });
-    }
-    if (!items.length) {
-      items.push({ tipo:'info', msg:'Nenhuma atividade recente', sub:'Os registros aparecem aqui', cor:'', icone:'📋' });
-    }
-    el.innerHTML = items.map(i => `
-      <div class="feed-item">
-        <div class="feed-icon ${i.cor}">${i.icone}</div>
-        <div>
-          <div class="feed-msg">${i.msg}</div>
-          <div class="feed-time">${i.sub}</div>
-        </div>
-      </div>`).join('');
-  } catch { el.innerHTML = '<div class="loading" style="color:var(--muted)">Indisponível no momento.</div>'; }
-}
-
-/* ══════════════════════════════════════════════
-   TOAST
-══════════════════════════════════════════════ */
-let _toastTimer = null;
-function toast(msg, tipo = '') {
-  const el = document.getElementById('toast');
-  el.textContent = msg;
-  el.className = tipo;
-  el.style.opacity = '1';
-  el.style.transform = 'translateY(0)';
-  el.classList.remove('hidden');
-  if (_toastTimer) clearTimeout(_toastTimer);
-  _toastTimer = setTimeout(() => {
-    el.style.opacity = '0';
-    el.style.transform = 'translateY(8px)';
-    setTimeout(() => el.classList.add('hidden'), 300);
-  }, 3000);
-}
-
-/* ══════════════════════════════════════════════
-   MÓDULO OPERACIONAL — Ordens de Serviço
-══════════════════════════════════════════════ */
-let _osList = [];
-let _tiposServico = [];
-let _clientesOS = [];
-let _equipamentosOS = [];
-let _operadoresOS = [];
-let _osFiltro = '', _osFiltroStatus = '', _osFiltroCliente = '';
-
-const STATUS_LABEL = {
-  aberta_sem_erp:     { label:'Aberta (sem ERP)', badge:'badge-orange' },
-  aberta_completa:    { label:'Aberta',           badge:'badge-green' },
-  em_execucao:        { label:'Em execução',      badge:'badge-info' },
-  concluida_sem_erp:  { label:'Concluída (s/ERP)',badge:'badge-orange' },
-  concluida_completa: { label:'Concluída',        badge:'badge-gray' },
-  cancelada:          { label:'Cancelada',        badge:'badge-red' },
-};
-
-async function carregarOS() {
-  // Carrega listas auxiliares primeiro (1x só)
-  if (!_tiposServico.length) {
-    try { _tiposServico = await apiFetch('/operacional/api/tipos-servico'); } catch {}
-  }
-  if (!_clientesOS.length) {
-    try { _clientesOS = await apiFetch('/operacional/api/clientes'); } catch {}
-    // Popular filtro de cliente
-    const sel = document.getElementById('os-filter-cliente');
-    if (sel && _clientesOS.length) {
-      sel.innerHTML = '<option value="">Todos os clientes</option>' +
-        _clientesOS.map(c => `<option value="${c.id}">${esc(c.nome)}</option>`).join('');
-    }
-  }
-  if (!_equipamentosOS.length) {
-    try { _equipamentosOS = await apiFetch('/operacional/api/equipamentos'); } catch {}
-  }
-  if (!_operadoresOS.length) {
-    try { _operadoresOS = await apiFetch('/operacional/api/operadores'); } catch {}
-  }
-  // Carrega OS
-  try {
-    _osList = await apiFetch('/operacional/api/os?limit=200');
-    document.getElementById('sb-os-count').textContent = _osList.filter(o => !o.status.startsWith('concluida') && o.status !== 'cancelada').length;
-  } catch(e) {
-    _osList = [];
-    document.getElementById('os-table').innerHTML = `<div class="loading" style="color:var(--red)">Erro ao carregar: ${esc(e.message)}</div>`;
-    return;
-  }
-  renderTabelaOS();
-}
-
-function filtrarOS() {
-  _osFiltro = document.getElementById('os-search').value.toLowerCase();
-  _osFiltroStatus = document.getElementById('os-filter-status').value;
-  _osFiltroCliente = document.getElementById('os-filter-cliente').value;
-  renderTabelaOS();
-}
-
-function renderTabelaOS() {
-  const lista = _osList.filter(os => {
-    if (_osFiltroStatus && os.status !== _osFiltroStatus) return false;
-    if (_osFiltroCliente && os.cliente_id !== _osFiltroCliente) return false;
-    if (_osFiltro) {
-      const hay = ((os.numero||'') + (os.obra||'') + (os.codigo_erp||'') + (os.cliente_nome||'')).toLowerCase();
-      if (!hay.includes(_osFiltro)) return false;
-    }
-    return true;
-  });
-  const el = document.getElementById('os-table');
-  if (!lista.length) {
-    el.innerHTML = '<div class="loading" style="color:var(--muted)">Nenhuma OS encontrada. Clique em + Nova OS para criar.</div>';
-    return;
-  }
-  el.innerHTML = `
-    <table style="width:100%;border-collapse:collapse">
-      <thead>
-        <tr style="border-bottom:2px solid var(--border)">
-          <th style="text-align:left;padding:8px 10px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)">Cód</th>
-          <th style="text-align:left;padding:8px 10px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)">Cliente / Obra</th>
-          <th style="text-align:left;padding:8px 10px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)">Equipamento / Operador</th>
-          <th style="text-align:left;padding:8px 10px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)">OS</th>
-          <th style="text-align:left;padding:8px 10px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)">Data</th>
-          <th style="text-align:left;padding:8px 10px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)">Status</th>
-          <th style="padding:8px 10px"></th>
-        </tr>
-      </thead>
-      <tbody>
-        ${lista.map(os => {
-          const st = STATUS_LABEL[os.status] || { label: os.status, badge:'badge-gray' };
-          const data = os.data_inicio ? new Date(os.data_inicio + 'T00:00').toLocaleDateString('pt-BR') : '–';
-          return `
-          <tr style="border-bottom:1px solid #F1F5F9;transition:.1s" onmouseenter="this.style.background='#F8FAFC'" onmouseleave="this.style.background=''">
-            <td style="padding:10px;font-weight:700;color:var(--blue);font-size:13px">${esc(os.numero)}</td>
-            <td style="padding:10px">
-              <div style="font-size:13px;font-weight:600;color:var(--text)">${esc(os.cliente_nome || '–')}</div>
-              <div style="font-size:11px;color:var(--muted)">${esc(os.obra || '')}</div>
-            </td>
-            <td style="padding:10px">
-              <div style="font-size:12px;font-weight:600;color:var(--blue)">${esc(os.equipamento_codigo || '–')}</div>
-              <div style="font-size:11px;color:var(--muted)">${esc(os.operador_nome || '–')}</div>
-            </td>
-            <td style="padding:10px;font-size:12px;color:var(--muted)">${esc(os.codigo_erp || '–')}</td>
-            <td style="padding:10px;font-size:12px;color:var(--muted)">${data}</td>
-            <td style="padding:10px"><span class="badge ${st.badge}">${st.label}</span></td>
-            <td style="padding:10px;text-align:right;display:flex;gap:6px;justify-content:flex-end">
-              <button class="btn-sm" onclick="verPartesOS('${esc(os.id)}','${esc(os.numero)}')">📋 Partes</button>
-              <button class="btn-sm" onclick="editarOS('${esc(os.id)}')">✎ Editar</button>
-            </td>
-          </tr>`;
-        }).join('')}
-      </tbody>
-    </table>
-    <div style="margin-top:10px;font-size:11px;color:var(--muted);text-align:right">${lista.length} OS exibida(s)</div>`;
-}
-
-async function abrirModalOS() {
-  document.getElementById('modal-os-title').textContent = 'Nova Ordem de Serviço';
-  document.getElementById('os-id').value = '';
-  ['os-codigo-erp','os-cliente','os-cliente-avulso','os-tipo-servico','os-obra','os-endereco','os-descricao'].forEach(id => document.getElementById(id).value = '');
-  document.getElementById('os-data-inicio').value = new Date().toISOString().slice(0,10);
-  document.getElementById('os-regime').value = 'hora';
-  document.getElementById('os-valor-combinado').value = '';
-  document.getElementById('os-error').classList.add('hidden');
-  _atualizarLabelRegime();
-
-  // Popular selects
-  const selCli = document.getElementById('os-cliente');
-  selCli.innerHTML = '<option value="">Selecione...</option>' +
-    _clientesOS.map(c => `<option value="${c.id}">${esc(c.nome)}</option>`).join('');
-  const selTipo = document.getElementById('os-tipo-servico');
-  selTipo.innerHTML = '<option value="">Selecione...</option>' +
-    _tiposServico.map(t => `<option value="${t.id}">${esc(t.nome)}</option>`).join('');
-  const selEq = document.getElementById('os-equipamento');
-  selEq.innerHTML = '<option value="">Selecione...</option>' +
-    _equipamentosOS.map(e => `<option value="${e.id}">${esc(e.codigo)} — ${esc(e.descricao)}</option>`).join('');
-  const selOp = document.getElementById('os-operador');
-  selOp.innerHTML = '<option value="">Selecione...</option>' +
-    _operadoresOS.map(o => `<option value="${o.id}">${esc(o.nome)}</option>`).join('');
-
-  // Buscar próximo número
-  try {
-    const r = await apiFetch('/operacional/api/proximo-numero');
-    document.getElementById('os-numero').value = r.numero;
-  } catch(e) {
-    document.getElementById('os-numero').value = '(gerado ao salvar)';
-  }
-
-  document.getElementById('modal-os').classList.remove('hidden');
-  setTimeout(() => document.getElementById('os-obra').focus(), 100);
-}
-
-async function editarOS(id) {
-  const os = _osList.find(x => x.id === id);
-  if (!os) return;
-  document.getElementById('modal-os-title').textContent = 'Editar — ' + os.numero;
-  document.getElementById('os-id').value = os.id;
-  document.getElementById('os-numero').value = os.numero;
-  document.getElementById('os-codigo-erp').value = os.codigo_erp || '';
-  document.getElementById('os-cliente-avulso').value = os.cliente_nome_avulso || '';
-  document.getElementById('os-obra').value = os.obra || '';
-  document.getElementById('os-endereco').value = os.endereco || '';
-  document.getElementById('os-descricao').value = os.descricao || '';
-  document.getElementById('os-data-inicio').value = os.data_inicio || '';
-  document.getElementById('os-error').classList.add('hidden');
-
-  // Popular selects e selecionar valores
-  const selCli = document.getElementById('os-cliente');
-  selCli.innerHTML = '<option value="">Selecione...</option>' +
-    _clientesOS.map(c => `<option value="${c.id}" ${c.id===os.cliente_id?'selected':''}>${esc(c.nome)}</option>`).join('');
-  const selTipo = document.getElementById('os-tipo-servico');
-  selTipo.innerHTML = '<option value="">Selecione...</option>' +
-    _tiposServico.map(t => `<option value="${t.id}" ${t.id===os.tipo_servico_id?'selected':''}>${esc(t.nome)}</option>`).join('');
-  const selEq = document.getElementById('os-equipamento');
-  selEq.innerHTML = '<option value="">Selecione...</option>' +
-    _equipamentosOS.map(e => `<option value="${e.id}" ${e.id===os.equipamento_id?'selected':''}>${esc(e.codigo)} — ${esc(e.descricao)}</option>`).join('');
-  const selOp = document.getElementById('os-operador');
-  selOp.innerHTML = '<option value="">Selecione...</option>' +
-    _operadoresOS.map(o => `<option value="${o.id}" ${o.id===os.operador_id?'selected':''}>${esc(o.nome)}</option>`).join('');
-
-  document.getElementById('modal-os').classList.remove('hidden');
-}
-
-function _atualizarLabelRegime() {
-  const regime = document.getElementById('os-regime')?.value;
-  const label  = document.getElementById('os-valor-label');
-  const hint   = document.getElementById('os-valor-hint');
-  if (!label || !hint) return;
-  const map = {
-    hora:     { label:'Valor por hora (R$)',      hint:'Ex.: 220.00 — preço/hora combinado com o cliente' },
-    diaria:   { label:'Valor por diária (R$)',     hint:'Ex.: 2300.00 — preço de uma diária' },
-    empreito: { label:'Valor total do empreito (R$)', hint:'Ex.: 50000.00 — valor fixo combinado para toda a OS' },
-  };
-  const cfg = map[regime] || map.hora;
-  label.textContent = cfg.label;
-  hint.textContent  = cfg.hint;
-}
-
-function fecharModalOS() { document.getElementById('modal-os').classList.add('hidden'); }
-
-async function salvarOS() {
-  const obra = document.getElementById('os-obra').value.trim();
-  if (!obra) {
-    const errEl = document.getElementById('os-error');
-    errEl.textContent = 'Informe a obra/local.';
-    errEl.classList.remove('hidden');
-    return;
-  }
-
-  const id = document.getElementById('os-id').value;
-  const payload = {
-    obra,
-    cliente_id:          document.getElementById('os-cliente').value || null,
-    cliente_nome_avulso: document.getElementById('os-cliente-avulso').value.trim() || null,
-    tipo_servico_id:     document.getElementById('os-tipo-servico').value || null,
-    equipamento_id:      document.getElementById('os-equipamento').value || null,
-    operador_id:         document.getElementById('os-operador').value || null,
-    regime_cobranca:     document.getElementById('os-regime').value || 'hora',
-    valor_combinado:     parseFloat(document.getElementById('os-valor-combinado').value) || null,
-    endereco:            document.getElementById('os-endereco').value.trim() || null,
-    descricao:           document.getElementById('os-descricao').value.trim() || null,
-    data_inicio:         document.getElementById('os-data-inicio').value || null,
-    codigo_erp:          document.getElementById('os-codigo-erp').value.trim() || null,
-  };
-
-  if (!payload.cliente_id && !payload.cliente_nome_avulso) {
-    const errEl = document.getElementById('os-error');
-    errEl.textContent = 'Selecione um cliente cadastrado ou informe nome avulso.';
-    errEl.classList.remove('hidden');
-    return;
-  }
-
-  const btn = document.getElementById('btn-salvar-os');
-  btn.textContent = 'Salvando...';
-  btn.disabled = true;
-
-  try {
-    if (id) {
-      await apiFetch('/operacional/api/os/' + id, { method:'PATCH', body: JSON.stringify(payload) });
-      toast('OS atualizada!', 'success');
-    } else {
-      const nova = await apiFetch('/operacional/api/os', { method:'POST', body: JSON.stringify(payload) });
-      toast('OS ' + nova.numero + ' criada!', 'success');
-    }
-    fecharModalOS();
-    await carregarOS();
-  } catch(e) {
-    const errEl = document.getElementById('os-error');
-    errEl.textContent = e.message;
-    errEl.classList.remove('hidden');
-  } finally {
-    btn.textContent = 'Salvar OS';
-    btn.disabled = false;
-  }
-}
-
-/* ══════════════════════════════════════════════
-   MÓDULO PARTES DIÁRIAS
-══════════════════════════════════════════════ */
-let _osAtualId   = '';
-let _osAtualObj  = null;
-
-async function verPartesOS(osId, osNumero) {
-  _osAtualId  = osId;
-  // Navegar para a seção de partes
-  document.querySelectorAll('section').forEach(s => s.classList.add('hidden'));
-  document.querySelectorAll('.sb-item').forEach(b => b.classList.remove('active'));
-  document.getElementById('sec-partes').classList.remove('hidden');
-
-  document.getElementById('partes-os-titulo').textContent = 'Partes Diárias — ' + osNumero;
-  document.getElementById('partes-tabela').innerHTML = '<div class="loading"><span class="spin"></span></div>';
-  document.getElementById('partes-totais').innerHTML = '';
-  document.getElementById('partes-os-info').innerHTML = '';
-
-  // Carregar listas auxiliares
-  if (!_equipamentosOS.length) try { _equipamentosOS = await apiFetch('/operacional/api/equipamentos'); } catch {}
-  if (!_operadoresOS.length)   try { _operadoresOS   = await apiFetch('/operacional/api/operadores');   } catch {}
-
-  try {
-    // Carregar OS + partes
-    _osAtualObj = await apiFetch('/operacional/api/os/' + osId);
-    const data  = await apiFetch('/operacional/api/os/' + osId + '/partes');
-    renderInfoOS(_osAtualObj);
-    renderTotais(data.totais);
-    renderPartes(data.partes, _osAtualObj.status);
-    // Esconder botão fechar se já fechada
-    const jaConcluida = _osAtualObj.status?.startsWith('concluida') || _osAtualObj.status === 'cancelada';
-    document.getElementById('btn-fechar-os').style.display = jaConcluida ? 'none' : '';
-  } catch(e) {
-    document.getElementById('partes-tabela').innerHTML =
-      `<div class="loading" style="color:var(--red)">Erro: ${esc(e.message)}</div>`;
-  }
-}
-
-function renderInfoOS(os) {
-  const regime = { hora:'Por hora', diaria:'Por diária', empreito:'Empreito' }[os.regime_cobranca] || os.regime_cobranca;
-  const valor  = os.valor_combinado ? `R$ ${parseFloat(os.valor_combinado).toLocaleString('pt-BR',{minimumFractionDigits:2})}` : '–';
-  document.getElementById('partes-os-info').innerHTML = `
-    <div style="display:flex;flex-wrap:wrap;gap:16px">
-      <div><span style="font-size:11px;color:var(--muted);text-transform:uppercase;font-weight:700">Cliente</span><br>
-        <strong>${esc(os.cliente_nome||'–')}</strong></div>
-      <div><span style="font-size:11px;color:var(--muted);text-transform:uppercase;font-weight:700">Obra</span><br>
-        <strong>${esc(os.obra||'–')}</strong></div>
-      <div><span style="font-size:11px;color:var(--muted);text-transform:uppercase;font-weight:700">Regime</span><br>
-        <strong>${regime}</strong></div>
-      <div><span style="font-size:11px;color:var(--muted);text-transform:uppercase;font-weight:700">Valor combinado</span><br>
-        <strong style="color:var(--blue)">${valor}</strong></div>
-      <div><span style="font-size:11px;color:var(--muted);text-transform:uppercase;font-weight:700">Status</span><br>
-        <span class="badge ${(STATUS_LABEL[os.status]||{badge:'badge-gray'}).badge}">${(STATUS_LABEL[os.status]||{label:os.status}).label}</span>
-      </div>
-    </div>`;
-}
-
-function renderTotais(t) {
-  if (!t) return;
-  document.getElementById('partes-totais').innerHTML = `
-    <div style="background:#F0F4FF;border-radius:8px;padding:12px;text-align:center">
-      <div style="font-size:22px;font-weight:800;color:var(--blue)">${t.dias_trabalhados||0}</div>
-      <div style="font-size:11px;color:var(--muted)">dias registrados</div>
-    </div>
-    <div style="background:#F0F4FF;border-radius:8px;padding:12px;text-align:center">
-      <div style="font-size:22px;font-weight:800;color:var(--blue)">${t.total_horas||0}h</div>
-      <div style="font-size:11px;color:var(--muted)">horas trabalhadas</div>
-    </div>
-    <div style="background:#F0F4FF;border-radius:8px;padding:12px;text-align:center">
-      <div style="font-size:22px;font-weight:800;color:var(--blue)">${t.total_horas_cobradas||0}h</div>
-      <div style="font-size:11px;color:var(--muted)">horas cobradas</div>
-    </div>
-    <div style="background:#F0F4FF;border-radius:8px;padding:12px;text-align:center">
-      <div style="font-size:22px;font-weight:800;color:var(--blue)">${t.total_viagens||0}</div>
-      <div style="font-size:11px;color:var(--muted)">viagens</div>
-    </div>`;
-}
-
-function renderPartes(partes, status) {
-  const el = document.getElementById('partes-tabela');
-  const jaConcluida = status?.startsWith('concluida') || status === 'cancelada';
-
-  if (!partes.length) {
-    el.innerHTML = `<div class="loading" style="color:var(--muted)">
-      Nenhuma parte diária registrada ainda.<br>
-      <small>Os operadores registram pelo mobile ou clique em "+ Adicionar registro".</small>
-    </div>`;
-    return;
-  }
-
-  el.innerHTML = `<table style="width:100%;border-collapse:collapse">
-    <thead>
-      <tr style="border-bottom:2px solid var(--border)">
-        <th style="text-align:left;padding:8px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--muted)">Data</th>
-        <th style="text-align:left;padding:8px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--muted)">Equipamento</th>
-        <th style="text-align:left;padding:8px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--muted)">Operador</th>
-        <th style="text-align:center;padding:8px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--muted)">Horímetro</th>
-        <th style="text-align:center;padding:8px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--muted)">Hrs reais</th>
-        <th style="text-align:center;padding:8px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--muted)">Hrs cobradas</th>
-        <th style="text-align:left;padding:8px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--muted)">Serviço</th>
-        <th style="padding:8px"></th>
-      </tr>
-    </thead>
-    <tbody>
-      ${partes.map(p => {
-        const dt = p.data ? new Date(p.data+'T00:00').toLocaleDateString('pt-BR') : '–';
-        const hor = p.horimetro_inicial && p.horimetro_final
-          ? `${p.horimetro_inicial} → ${p.horimetro_final}` : (p.km_inicial ? `${p.km_inicial}km → ${p.km_final}km` : '–');
-        const hrs = p.horas_trabalhadas ? parseFloat(p.horas_trabalhadas).toFixed(1)+'h' : '–';
-        const hCob = p.horas_cobradas ? `<input type="number" value="${parseFloat(p.horas_cobradas).toFixed(1)}"
-          step="0.1" style="width:60px;padding:4px;border:1.5px solid var(--border);border-radius:4px;font-size:12px"
-          onchange="salvarHorasCobradas('${esc(p.id)}',this.value)" ${jaConcluida?'disabled':''}/>h`
-          : `<input type="number" placeholder="${hrs}" step="0.1"
-          style="width:60px;padding:4px;border:1.5px solid var(--border);border-radius:4px;font-size:12px"
-          onchange="salvarHorasCobradas('${esc(p.id)}',this.value)" ${jaConcluida?'disabled':''}/>h`;
-        const fechBadge = p.fechado ? '<span class="badge badge-gray" style="font-size:9px">🔒</span>' : '';
-        return `<tr style="border-bottom:1px solid #F1F5F9" onmouseenter="this.style.background='#F8FAFC'" onmouseleave="this.style.background=''">
-          <td style="padding:8px;font-size:13px;font-weight:600;color:var(--blue)">${dt} ${fechBadge}</td>
-          <td style="padding:8px;font-size:12px"><strong>${esc(p.equipamento_codigo||'–')}</strong><br><span style="color:var(--muted);font-size:11px">${esc(p.equipamento_descricao||'')}</span></td>
-          <td style="padding:8px;font-size:12px">${esc(p.operador_nome||'–')}</td>
-          <td style="padding:8px;font-size:12px;text-align:center;color:var(--muted)">${hor}</td>
-          <td style="padding:8px;text-align:center;font-weight:700;color:var(--blue)">${hrs}</td>
-          <td style="padding:8px;text-align:center">${hCob}</td>
-          <td style="padding:8px;font-size:12px;color:var(--muted);max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(p.observacao||p.trajeto||'')}</td>
-          <td style="padding:8px;text-align:right">
-            ${!jaConcluida && !p.fechado ? `<button class="btn-sm" style="color:var(--red);border-color:var(--red)" onclick="removerParte('${esc(p.id)}')">✕</button>` : ''}
-          </td>
-        </tr>`;
-      }).join('')}
-    </tbody>
-  </table>
-  <div style="margin-top:8px;font-size:11px;color:var(--muted);text-align:right">${partes.length} registro(s)</div>`;
-}
-
-async function salvarHorasCobradas(parteId, valor) {
-  try {
-    await apiFetch('/operacional/api/partes/' + parteId, {
-      method:'PATCH', body: JSON.stringify({ horas_cobradas: parseFloat(valor) })
-    });
-    toast('Horas cobradas atualizadas', 'success');
-  } catch(e) { toast('Erro: ' + e.message, 'error'); }
-}
-
-async function removerParte(parteId) {
-  if (!confirm('Remover este registro?')) return;
-  try {
-    await apiFetch('/operacional/api/partes/' + parteId, { method:'DELETE' });
-    toast('Registro removido', 'success');
-    const data = await apiFetch('/operacional/api/os/' + _osAtualId + '/partes');
-    renderTotais(data.totais);
-    renderPartes(data.partes, _osAtualObj?.status);
-  } catch(e) { toast('Erro: ' + e.message, 'error'); }
-}
-
-// ── Modal adicionar parte (desktop) ──────────────────────────────────────
-
-function abrirModalParte() {
-  document.getElementById('mp-os-id').value  = _osAtualId;
-  document.getElementById('mp-parte-id').value = '';
-  document.getElementById('mp-data').value   = new Date().toISOString().slice(0,10);
-  ['mp-equipamento','mp-operador','mp-h-ini','mp-h-fin','mp-horas-cob',
-   'mp-h-inicio','mp-h-fim','mp-km-ini','mp-km-fin','mp-viagens','mp-trajeto','mp-obs'].forEach(id => {
-    const el = document.getElementById(id); if(el) el.value='';
-  });
-  document.getElementById('mp-vinculo').value   = 'proprio';
-  document.getElementById('mp-por-conta').value = 'empresa';
-  document.getElementById('mp-bloco-hor').style.display = 'block';
-  document.getElementById('mp-bloco-km').style.display  = 'none';
-  document.getElementById('mp-horas-calc').textContent  = '';
-  document.getElementById('mp-error').classList.add('hidden');
-
-  // Popular selects
-  const selEq = document.getElementById('mp-equipamento');
-  selEq.innerHTML = '<option value="">Selecione...</option>' +
-    _equipamentosOS.map(e => `<option value="${e.id}" data-cat="${e.categoria}">${esc(e.codigo)} — ${esc(e.descricao)}</option>`).join('');
-  const selOp = document.getElementById('mp-operador');
-  selOp.innerHTML = '<option value="">Selecione...</option>' +
-    _operadoresOS.map(o => `<option value="${o.id}">${esc(o.nome)}</option>`).join('');
-
-  document.getElementById('modal-parte').classList.remove('hidden');
-}
-
-function fecharModalParte() { document.getElementById('modal-parte').classList.add('hidden'); }
-
-function onMpEquipChange() {
-  const sel = document.getElementById('mp-equipamento');
-  const cat = sel.options[sel.selectedIndex]?.getAttribute('data-cat') || '';
-  const isCam = ['caminhao','pipa','carro'].includes(cat);
-  document.getElementById('mp-bloco-hor').style.display = isCam ? 'none' : 'block';
-  document.getElementById('mp-bloco-km').style.display  = isCam ? 'block' : 'none';
-}
-
-function calcMpHoras() {
-  const ini = parseFloat(document.getElementById('mp-h-ini').value);
-  const fin = parseFloat(document.getElementById('mp-h-fin').value);
-  const el  = document.getElementById('mp-horas-calc');
-  if (!isNaN(ini) && !isNaN(fin) && fin > ini) {
-    el.textContent = `✅ ${(fin-ini).toFixed(1)}h calculadas`;
-    el.style.color = 'var(--green)';
-    // Sugerir horas cobradas se não preenchido
-    const cobEl = document.getElementById('mp-horas-cob');
-    if (!cobEl.value) cobEl.value = (fin-ini).toFixed(1);
-  } else el.textContent = '';
-}
-
-async function salvarParteLuana() {
-  const err = document.getElementById('mp-error');
-  err.classList.add('hidden');
-  const osId = document.getElementById('mp-os-id').value;
-  const data = document.getElementById('mp-data').value;
-  const equipId = document.getElementById('mp-equipamento').value;
-  if (!data || !equipId) {
-    err.textContent = 'Data e equipamento são obrigatórios'; err.classList.remove('hidden'); return;
-  }
-  const sel = document.getElementById('mp-equipamento');
-  const cat = sel.options[sel.selectedIndex]?.getAttribute('data-cat') || '';
-  const isCam = ['caminhao','pipa','carro'].includes(cat);
-
-  const payload = {
-    data, equipamento_id: equipId,
-    operador_id:       document.getElementById('mp-operador').value || null,
-    vinculo_operador:  document.getElementById('mp-vinculo').value,
-    tipo_medicao:      isCam ? 'km' : 'horimetro',
-    horimetro_inicial: document.getElementById('mp-h-ini').value ? parseFloat(document.getElementById('mp-h-ini').value) : null,
-    horimetro_final:   document.getElementById('mp-h-fin').value ? parseFloat(document.getElementById('mp-h-fin').value) : null,
-    horas_cobradas:    document.getElementById('mp-horas-cob').value ? parseFloat(document.getElementById('mp-horas-cob').value) : null,
-    hora_inicio:       document.getElementById('mp-h-inicio').value || null,
-    hora_fim:          document.getElementById('mp-h-fim').value    || null,
-    km_inicial:        document.getElementById('mp-km-ini').value ? parseFloat(document.getElementById('mp-km-ini').value) : null,
-    km_final:          document.getElementById('mp-km-fin').value ? parseFloat(document.getElementById('mp-km-fin').value) : null,
-    qtd_viagens:       parseFloat(document.getElementById('mp-viagens').value||'0') || 0,
-    por_conta_de:      document.getElementById('mp-por-conta').value,
-    trajeto:           document.getElementById('mp-trajeto').value.trim() || null,
-    observacao:        document.getElementById('mp-obs').value.trim() || null,
-  };
-
-  const btn = document.getElementById('btn-salvar-parte');
-  btn.textContent = 'Salvando...'; btn.disabled = true;
-  try {
-    await apiFetch('/operacional/api/os/' + osId + '/partes', { method:'POST', body:JSON.stringify(payload) });
-    toast('Registro salvo!', 'success');
-    fecharModalParte();
-    const d = await apiFetch('/operacional/api/os/' + osId + '/partes');
-    renderTotais(d.totais);
-    renderPartes(d.partes, _osAtualObj?.status);
-  } catch(e) { err.textContent = e.message; err.classList.remove('hidden'); }
-  finally { btn.textContent = 'Salvar'; btn.disabled = false; }
-}
-
-// ── Fechar OS ────────────────────────────────────────────────────────────
-
-async function confirmarFechamento() {
-  const data = await apiFetch('/operacional/api/os/' + _osAtualId + '/revisao');
-  const os   = data.os;
-  const tot  = data.totais;
-  document.getElementById('modal-fechar-resumo').innerHTML = `
-    <div style="background:#F0F4FF;border-radius:8px;padding:12px;font-size:13px">
-      <strong>${esc(os.numero)}</strong> — ${esc(os.obra)}<br>
-      <span style="color:var(--muted)">${esc(os.cliente_nome||'')}</span>
-      <div style="display:flex;gap:16px;margin-top:10px;flex-wrap:wrap">
-        <div><strong>${tot.dias_trabalhados}</strong> dias</div>
-        <div><strong>${tot.total_horas}h</strong> trabalhadas</div>
-        <div><strong>${tot.total_horas_cobradas}h</strong> cobradas</div>
-        <div><strong>${tot.total_viagens}</strong> viagens</div>
-      </div>
-    </div>`;
-  document.getElementById('fechar-obs').value = '';
-  document.getElementById('modal-fechar').classList.remove('hidden');
-}
-
-async function executarFechamento() {
-  try {
-    await apiFetch('/operacional/api/os/' + _osAtualId + '/fechar', {
-      method:'POST',
-      body: JSON.stringify({ observacao: document.getElementById('fechar-obs').value })
-    });
-    document.getElementById('modal-fechar').classList.add('hidden');
-    toast('OS fechada com sucesso!', 'success');
-    // Atualizar tela
-    const d = await apiFetch('/operacional/api/os/' + _osAtualId + '/partes');
-    const osAtual = await apiFetch('/operacional/api/os/' + _osAtualId);
-    _osAtualObj = osAtual;
-    renderInfoOS(osAtual);
-    renderTotais(d.totais);
-    renderPartes(d.partes, osAtual.status);
-    document.getElementById('btn-fechar-os').style.display = 'none';
-    // Atualizar lista
-    await carregarOS();
-  } catch(e) { toast('Erro: ' + e.message, 'error'); }
+    await apiFetch('/permissoes/usuario/'+usuarioId,{method:'POST',body:JSON.stringify(payload)});
+    toast('Permissões resetadas','success');
+    await carregarPermExcecao();
+  } catch(e) { toast('Erro: '+e.message,'error'); }
 }
 
 /* ══════════════════════════════════════════════
@@ -2066,6 +1546,6 @@ async function executarFechamento() {
 function esc(s) {
   return String(s||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
-</script>a
+</script>
 </body>
 </html>
