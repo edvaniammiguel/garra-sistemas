@@ -2123,6 +2123,104 @@ async def op_minhas_os(payload=Depends(verificar_token)):
 # FIM MÓDULO OPERACIONAL
 # ═══════════════════════════════════════════════════════════════════════════
 
+# ═══════════════════════════════════════════════════════════════════════════
+# MÓDULO PERMISSÕES — controle por colaborador
+# ═══════════════════════════════════════════════════════════════════════════
+
+MODULOS_DISPONIVEIS = [
+    {"id": "admin_master",       "label": "Admin Master",        "desc": "Painel de gestão"},
+    {"id": "jardinagem_desktop", "label": "Jardinagem Desktop",  "desc": "Relatórios e fotos"},
+    {"id": "jardinagem_mobile",  "label": "Jardinagem Mobile",   "desc": "Campo — fotos e KM"},
+    {"id": "operacional_mobile", "label": "Operacional Mobile",  "desc": "OS e horímetro"},
+    {"id": "checklist",          "label": "Checklist",           "desc": "Checklist de máquinas"},
+]
+
+PERFIL_MODULOS_PADRAO = {
+    "admin":     ["admin_master","jardinagem_desktop","jardinagem_mobile","operacional_mobile","checklist"],
+    "gestor":    ["admin_master","jardinagem_desktop","operacional_mobile"],
+    "luana":     ["admin_master","jardinagem_desktop","operacional_mobile"],
+    "bruna":     ["admin_master","checklist"],
+    "operador":  ["operacional_mobile","checklist"],
+    "motorista": ["operacional_mobile","checklist"],
+    "campo":     ["jardinagem_mobile"],
+}
+
+@app.get("/permissoes/modulos")
+async def listar_modulos(_auth=Depends(verificar_admin)):
+    """Lista módulos disponíveis."""
+    return MODULOS_DISPONIVEIS
+
+@app.get("/permissoes/usuario/{usuario_id}")
+async def get_permissoes_usuario(usuario_id: str, _auth=Depends(verificar_admin)):
+    """Retorna permissões de um colaborador específico."""
+    rows = jard_query(
+        "SELECT modulo, permitido FROM public.permissoes_colaborador WHERE usuario_id=%s",
+        (usuario_id,)
+    )
+    perms = {r["modulo"]: r["permitido"] for r in (rows or [])}
+    # Se não tem registro, usa padrão do perfil
+    user = jard_query(
+        "SELECT perfil FROM public.usuarios_garra WHERE id=%s AND ativo=true",
+        (usuario_id,), fetch="one"
+    )
+    if user:
+        padrao = PERFIL_MODULOS_PADRAO.get(user["perfil"], [])
+        for m in MODULOS_DISPONIVEIS:
+            if m["id"] not in perms:
+                perms[m["id"]] = m["id"] in padrao
+    return perms
+
+@app.post("/permissoes/usuario/{usuario_id}")
+async def salvar_permissoes_usuario(usuario_id: str, request: Request, _auth=Depends(verificar_admin)):
+    """Salva permissões de um colaborador. Body: {modulo: bool, ...}"""
+    d = await request.json()
+    for modulo, permitido in d.items():
+        jard_query(
+            """INSERT INTO public.permissoes_colaborador (usuario_id, modulo, permitido)
+               VALUES (%s, %s, %s)
+               ON CONFLICT (usuario_id, modulo)
+               DO UPDATE SET permitido=%s, atualizado_em=now()""",
+            (usuario_id, modulo, bool(permitido), bool(permitido)), fetch="none"
+        )
+    return {"ok": True}
+
+@app.get("/permissoes/todos")
+async def get_todas_permissoes(_auth=Depends(verificar_admin)):
+    """Retorna permissões de todos os usuários ativos para a tela de gestão."""
+    usuarios = jard_query(
+        "SELECT id, login, nome, perfil FROM public.usuarios_garra WHERE ativo=true ORDER BY perfil, nome"
+    )
+    perms = jard_query(
+        "SELECT usuario_id, modulo, permitido FROM public.permissoes_colaborador"
+    )
+    perm_map = {}
+    for p in (perms or []):
+        uid = str(p["usuario_id"])
+        if uid not in perm_map: perm_map[uid] = {}
+        perm_map[uid][p["modulo"]] = p["permitido"]
+
+    result = []
+    for u in (usuarios or []):
+        uid = str(u["id"])
+        padrao = PERFIL_MODULOS_PADRAO.get(u["perfil"], [])
+        user_perms = {}
+        for m in MODULOS_DISPONIVEIS:
+            if uid in perm_map and m["id"] in perm_map[uid]:
+                user_perms[m["id"]] = perm_map[uid][m["id"]]
+            else:
+                user_perms[m["id"]] = m["id"] in padrao
+        result.append({
+            "id": uid,
+            "login": u["login"],
+            "nome": u["nome"],
+            "perfil": u["perfil"],
+            "permissoes": user_perms,
+        })
+    return result
+
+# FIM MÓDULO PERMISSÕES
+# ═══════════════════════════════════════════════════════════════════════════
+
 # ── FALLBACK — compatibilidade com browsers que cachearam URLs antigas ───────
 from fastapi.responses import RedirectResponse
 
