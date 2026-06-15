@@ -492,6 +492,7 @@ input,select,textarea { font-family:inherit; font-size:13px; outline:none; }
               <select id="user-filter-perfil" onchange="filtrarUsuarios()">
                 <option value="">Todos os perfis</option>
                 <option value="admin">Admin</option>
+                <option value="gestor">Gestor</option>
                 <option value="luana">Comercial (Luana)</option>
                 <option value="bruna">Mecânica (Bruna)</option>
                 <option value="operador">Operador</option>
@@ -607,6 +608,7 @@ input,select,textarea { font-family:inherit; font-size:13px; outline:none; }
           <option value="motorista">Motorista</option>
           <option value="operador">Operador de Máquina</option>
           <option value="bruna">Mecânica / Manutenção</option>
+          <option value="gestor">Gestor</option>
           <option value="luana">Comercial</option>
           <option value="admin">Administrador</option>
         </select>
@@ -1050,7 +1052,7 @@ const PERFIL_COR = {
   operador: '#D97706', motorista:'#059669', campo:'#E8820C',
 };
 const PERFIL_LABEL = {
-  admin:'Administrador', luana:'Comercial', bruna:'Mecânica',
+  admin:'Administrador', gestor:'Gestor', luana:'Comercial', bruna:'Mecânica',
   operador:'Operador', motorista:'Motorista', campo:'Campo',
 };
 
@@ -1245,6 +1247,7 @@ function renderPermissoes() {
   const perms = [
     { perfil:'admin',     label:'Administrador', cor:'#1A2A5E',
       acesso:['Admin Master','Jardinagem Desktop','Checklist Gestor','Todos os módulos'] },
+    { perfil:'gestor',    label:'Gestor',        cor:'#7C3AED', badge:'badge-info' },
     { perfil:'luana',     label:'Comercial',     cor:'#1E3A8A',
       acesso:['Jardinagem Desktop','Criar OS completa','Fechamento mensal'] },
     { perfil:'bruna',     label:'Mecânica',      cor:'#7C3AED',
