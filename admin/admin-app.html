@@ -1581,12 +1581,14 @@ function renderSidebar(perfil, perms) {
     html += `</div><div class="sb-divider"></div>`;
   }
 
-  // Em breve — sempre visível mas sombreado
-  html += `<div class="sb-section"><span class="sb-label">Em breve</span>
+  // Em breve — só admin vê
+  if (isAdmin) {
+    html += `<div class="sb-section"><span class="sb-label">Em breve</span>
     <div class="sb-item sb-dim"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>RH</div>
     <div class="sb-item sb-dim"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>Manutenção</div>
     <div class="sb-item sb-dim"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>Financeiro</div>
   </div>`;
+  }
 
   document.getElementById('sb-nav-content').innerHTML = html;
 }
@@ -1663,18 +1665,31 @@ async function renderModulos(usuarioId, perfil) {
   const el = document.getElementById('dash-modulos');
   if (!el) return;
 
-  // Buscar permissões do usuário logado
-  let perms = {};
-  try {
-    if (usuarioId) perms = await apiFetch('/permissoes/usuario/' + usuarioId);
-  } catch {}
-
   const padrao = PERFIL_PADRAO[perfil] || [];
   const isAdmin = perfil === 'admin';
 
+  // Buscar permissões do banco — se falhar, usa só o padrão do perfil
+  let permsDB = null;
+  try {
+    if (usuarioId) permsDB = await apiFetch('/permissoes/usuario/' + usuarioId);
+  } catch {}
+
+  // temPerm: banco tem precedência; se não tem banco, usa padrão do perfil
+  const temPerm = (id) => {
+    if (permsDB !== null && permsDB[id] !== undefined) return permsDB[id];
+    return padrao.includes(id);
+  };
+
   const cards = MODULOS_DASHBOARD.map(m => {
-    // Módulos planejados sempre aparecem (sombreados)
+    // Verificar permissão usando a função temPerm definida acima
+    const hasAccess = temPerm(m.id);
+
+    // Se não tem permissão e não é admin → não mostra
+    if (!hasAccess && !isAdmin) return '';
+
+    // Módulos planejados: admin vê sombreado, outros não veem
     if (!m.id) {
+      if (!isAdmin) return '';
       return `<div class="mod-card mod-dim">
         <div class="mod-header">
           <span class="mod-icon">${m.icon}</span>
@@ -1685,31 +1700,27 @@ async function renderModulos(usuarioId, perfil) {
       </div>`;
     }
 
-    // Verificar permissão
-    const temPerm = perms[m.id] !== undefined ? perms[m.id] : padrao.includes(m.id);
-
-    // Se não tem permissão e não é admin → não mostra
-    if (!temPerm && !isAdmin) return '';
-
-    const dim = !temPerm && isAdmin ? ' mod-dim' : '';
-    const cursor = m.url && temPerm ? 'cursor:pointer' : '';
-    const onClick = m.url && temPerm
+    const dim = !hasAccess && isAdmin ? ' mod-dim' : '';
+    const cursor = m.url && hasAccess ? 'cursor:pointer' : '';
+    const onClick = m.url && hasAccess
       ? m.externo
         ? `onclick="window.open('${m.url}','_blank')"`
         : `onclick="window.location.href='${m.url}'"`
       : '';
-    const semPermLabel = !temPerm && isAdmin
+    const semPermLabel = !hasAccess && isAdmin
       ? '<div style="font-size:10px;color:var(--red);margin-top:4px">🔒 sem permissão</div>' : '';
 
     return `<div class="mod-card${dim}" style="${cursor}" ${onClick}
-      ${temPerm && m.url ? 'onmouseenter="this.style.boxShadow=\'0 4px 16px rgba(232,130,12,.2)\';this.style.borderColor=\'var(--orange)\'"' : ''}
-      ${temPerm && m.url ? 'onmouseleave="this.style.boxShadow=\'\';this.style.borderColor=\'var(--border)\'"' : ''}>
+      ${hasAccess && m.url ? 'onmouseenter="this.style.boxShadow=\'0 4px 16px rgba(232,130,12,.2)\';this.style.borderColor=\'var(--orange)\'"' : ''}
+      ${hasAccess && m.url ? 'onmouseleave="this.style.boxShadow=\'\';this.style.borderColor=\'var(--border)\'"' : ''}>
       <div class="mod-header">
         <span class="mod-icon">${m.icon}</span>
         <span class="badge ${STATUS_MODULO[m.status].badge}">${STATUS_MODULO[m.status].label}</span>
       </div>
       <div class="mod-name">${m.nome}</div>
       <div class="mod-desc">${m.desc}</div>
+      ${semPermLabel}
+    </div>`;
       ${semPermLabel}
     </div>`;
   }).filter(Boolean).join('');
