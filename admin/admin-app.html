@@ -332,60 +332,8 @@ input,select,textarea { font-family:inherit; font-size:13px; outline:none; }
 
     <!-- SIDEBAR -->
     <nav id="sidebar">
-      <div class="sb-section">
-        <span class="sb-label">Visão Geral</span>
-        <div class="sb-item active" onclick="navTo('dashboard',this)">
-          <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
-          Dashboard
-        </div>
-        <div class="sb-item admin-only" onclick="navTo('usuarios',this)">
-          <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-          Usuários
-          <span class="sb-badge" id="sb-user-count">–</span>
-        </div>
-        <div class="sb-item admin-only" onclick="navTo('permissoes',this)">
-          <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-          Permissões
-        </div>
-      </div>
-      <div class="sb-divider"></div>
-      <div class="sb-section">
-        <span class="sb-label">Operacional</span>
-        <div class="sb-item" onclick="navTo('os',this)">
-          <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="15" y2="17"/></svg>
-          Ordens de Serviço
-          <span class="sb-badge" id="sb-os-count">–</span>
-        </div>
-      </div>
-      <div class="sb-divider"></div>
-      <div class="sb-section">
-        <span class="sb-label">Módulos ativos</span>
-        <a class="sb-item" href="https://garra-checklist-app.onrender.com" target="_blank">
-          <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="#16A34A" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
-          Checklist
-          <span class="dot dot-green" style="margin-left:auto"></span>
-        </a>
-        <a class="sb-item" href="https://garra-sistemas.onrender.com/jardinagem/desktop" target="_blank">
-          <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="#16A34A" stroke-width="2"><path d="M12 22V12"/><path d="M5 12c0-3.87 3.13-7 7-7s7 3.13 7 7"/><path d="M5 12H2"/><path d="M22 12h-3"/></svg>
-          Jardinagem
-          <span class="dot dot-green" style="margin-left:auto"></span>
-        </a>
-      </div>
-      <div class="sb-divider"></div>
-      <div class="sb-section">
-        <span class="sb-label">Em breve</span>
-        <div class="sb-item sb-dim">
-          <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-          RH
-        </div>
-        <div class="sb-item sb-dim">
-          <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
-          Manutenção
-        </div>
-        <div class="sb-item sb-dim">
-          <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
-          Financeiro
-        </div>
+      <div id="sb-nav-content">
+        <!-- populado dinamicamente pelo JS após login -->
       </div>
       <div class="sb-footer">Garra Sistemas v8 · 2026</div>
     </nav>
@@ -998,12 +946,28 @@ async function iniciarApp(user) {
   // Guardar perfil global
   window._PERFIL = user.perfil;
   window._USER_ID = user.id || null;
+
+  // Se não tem id no token, busca pelo login
+  if (!window._USER_ID) {
+    try {
+      if (!_usuarios.length) _usuarios = await apiFetch('/usuarios');
+      const u = _usuarios.find(x => x.login === user.login || x.email === (user.login+'@garra.local'));
+      if (u) window._USER_ID = u.id;
+    } catch {}
+  }
+
+  // Buscar permissões e renderizar sidebar
+  let perms = {};
+  if (window._USER_ID) {
+    try { perms = await apiFetch('/permissoes/usuario/' + window._USER_ID); } catch {}
+  }
+  renderSidebar(user.perfil, perms);
+
   // Carregar dados conforme perfil
   const promises = [carregarKPIs(), carregarFeed()];
   if (isAdmin) promises.push(carregarUsuarios());
   await Promise.all(promises);
   if (!isAdmin && _usuarios.length === 0) {
-    // Gestor precisa da lista para permissões — carrega silenciosamente
     try { _usuarios = await apiFetch('/usuarios'); } catch {}
   }
   renderModulos(window._USER_ID, user.perfil);
@@ -1559,7 +1523,73 @@ async function resetarTodasPermissoes(usuarioId, perfil) {
 }
 
 /* ══════════════════════════════════════════════
-   FEED DE ATIVIDADE
+   SIDEBAR DINÂMICA
+══════════════════════════════════════════════ */
+function renderSidebar(perfil, perms) {
+  const isAdmin = perfil === 'admin';
+  const padrao  = PERFIL_PADRAO[perfil] || [];
+  const temPerm = (id) => perms[id] !== undefined ? perms[id] : padrao.includes(id);
+
+  let html = `
+    <div class="sb-section">
+      <span class="sb-label">Visão Geral</span>
+      <div class="sb-item active" onclick="navTo('dashboard',this)">
+        <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+        Dashboard
+      </div>`;
+
+  if (isAdmin) html += `
+      <div class="sb-item" onclick="navTo('usuarios',this)">
+        <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+        Usuários <span class="sb-badge" id="sb-user-count">–</span>
+      </div>
+      <div class="sb-item" onclick="navTo('permissoes',this)">
+        <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+        Permissões
+      </div>`;
+
+  html += `</div><div class="sb-divider"></div>
+    <div class="sb-section">
+      <span class="sb-label">Operacional</span>
+      <div class="sb-item" onclick="navTo('os',this)">
+        <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="15" y2="17"/></svg>
+        Ordens de Serviço <span class="sb-badge" id="sb-os-count">–</span>
+      </div>
+    </div><div class="sb-divider"></div>`;
+
+  // Módulos ativos — só os que o usuário tem permissão
+  const modulosSb = [
+    { id:'checklist',          label:'Checklist',  url:'https://garra-checklist-app.onrender.com', externo:true,  icon:'M9 11l3 3L22 4', icon2:'M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11' },
+    { id:'jardinagem_desktop', label:'Jardinagem', url:'/jardinagem/desktop', externo:false, icon:'M12 22V12', icon2:'M5 12c0-3.87 3.13-7 7-7s7 3.13 7 7' },
+    { id:'operacional_mobile', label:'Operacional',url:'/operacional/mobile', externo:false, icon:'M9 17H5a2 2 0 0 0-2 2', icon2:'M13 17h8' },
+  ];
+
+  const modulosVisiveis = modulosSb.filter(m => temPerm(m.id));
+  if (modulosVisiveis.length) {
+    html += `<div class="sb-section"><span class="sb-label">Módulos ativos</span>`;
+    modulosVisiveis.forEach(m => {
+      html += m.externo
+        ? `<a class="sb-item" href="${m.url}" target="_blank">
+            <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="#16A34A" stroke-width="2"><path d="${m.icon}"/><path d="${m.icon2}"/></svg>
+            ${m.label} <span class="dot dot-green" style="margin-left:auto"></span>
+           </a>`
+        : `<div class="sb-item" onclick="window.location.href='${m.url}'">
+            <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="#16A34A" stroke-width="2"><path d="${m.icon}"/><path d="${m.icon2}"/></svg>
+            ${m.label} <span class="dot dot-green" style="margin-left:auto"></span>
+           </div>`;
+    });
+    html += `</div><div class="sb-divider"></div>`;
+  }
+
+  // Em breve — sempre visível mas sombreado
+  html += `<div class="sb-section"><span class="sb-label">Em breve</span>
+    <div class="sb-item sb-dim"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>RH</div>
+    <div class="sb-item sb-dim"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>Manutenção</div>
+    <div class="sb-item sb-dim"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>Financeiro</div>
+  </div>`;
+
+  document.getElementById('sb-nav-content').innerHTML = html;
+}
 ══════════════════════════════════════════════ */
 async function carregarFeed() {
   const el = document.getElementById('feed-list');
