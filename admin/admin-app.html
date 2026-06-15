@@ -508,11 +508,42 @@ input,select,textarea { font-family:inherit; font-size:13px; outline:none; }
       <!-- ── SEÇÃO: PERMISSÕES ── -->
       <section id="sec-permissoes" class="hidden">
         <div class="card">
-          <div class="card-title">Controle de Permissões por Colaborador</div>
-          <p style="font-size:13px;color:var(--muted);margin-bottom:16px">
-            Marque ou desmarque os módulos que cada colaborador pode acessar. As alterações são salvas imediatamente.
-          </p>
-          <div id="perms-content"><div class="loading"><span class="spin"></span></div></div>
+          <div class="card-title">Controle de Permissões</div>
+
+          <!-- Abas -->
+          <div style="display:flex;gap:4px;border-bottom:2px solid var(--border);margin-bottom:20px">
+            <button id="perm-tab-perfis" onclick="switchPermTab('perfis')"
+              style="padding:8px 18px;font-size:13px;font-weight:700;border:none;background:none;cursor:pointer;border-bottom:3px solid var(--orange);color:var(--orange);margin-bottom:-2px">
+              Por Perfil
+            </button>
+            <button id="perm-tab-excecoes" onclick="switchPermTab('excecoes')"
+              style="padding:8px 18px;font-size:13px;font-weight:700;border:none;background:none;cursor:pointer;border-bottom:3px solid transparent;color:var(--muted);margin-bottom:-2px">
+              Exceções Individuais
+            </button>
+          </div>
+
+          <!-- Aba Perfis -->
+          <div id="perm-perfis">
+            <p style="font-size:13px;color:var(--muted);margin-bottom:16px">
+              Define o acesso padrão de cada perfil. Novos colaboradores herdam automaticamente.
+            </p>
+            <div id="perm-perfis-content"><div class="loading"><span class="spin"></span></div></div>
+          </div>
+
+          <!-- Aba Exceções -->
+          <div id="perm-excecoes" style="display:none">
+            <p style="font-size:13px;color:var(--muted);margin-bottom:16px">
+              Ajuste individual por colaborador. Substitui o padrão do perfil apenas para essa pessoa.
+            </p>
+            <div style="display:flex;gap:10px;margin-bottom:16px;align-items:center">
+              <select id="perm-select-user" onchange="carregarPermExcecao()"
+                style="padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;flex:1;max-width:300px">
+                <option value="">Selecione o colaborador...</option>
+              </select>
+              <span id="perm-perfil-badge" style="font-size:11px;color:var(--muted)"></span>
+            </div>
+            <div id="perm-excecoes-content"></div>
+          </div>
         </div>
       </section>
 
@@ -1257,7 +1288,7 @@ async function confirmarDesativar() {
 }
 
 /* ══════════════════════════════════════════════
-   PERMISSÕES — controle por colaborador
+   PERMISSÕES — Híbrido: perfil + exceções
 ══════════════════════════════════════════════ */
 const MODULOS = [
   { id:'admin_master',       label:'Admin Master',       desc:'Painel de gestão' },
@@ -1267,60 +1298,175 @@ const MODULOS = [
   { id:'checklist',          label:'Checklist',          desc:'Checklist de máquinas' },
 ];
 
+const PERFIL_PADRAO = {
+  admin:     ['admin_master','jardinagem_desktop','jardinagem_mobile','operacional_mobile','checklist'],
+  gestor:    ['admin_master','jardinagem_desktop','operacional_mobile'],
+  luana:     ['admin_master','jardinagem_desktop','operacional_mobile'],
+  bruna:     ['admin_master','checklist'],
+  operador:  ['operacional_mobile','checklist'],
+  motorista: ['operacional_mobile','checklist'],
+  campo:     ['jardinagem_mobile'],
+};
+
+const PERFIL_LABEL = {
+  admin:'Administrador', gestor:'Gestor', luana:'Comercial',
+  bruna:'Mecânica', operador:'Operador', motorista:'Motorista', campo:'Campo'
+};
+
+let _permTab = 'perfis';
+
+function switchPermTab(tab) {
+  _permTab = tab;
+  ['perfis','excecoes'].forEach(t => {
+    document.getElementById('perm-'+t).style.display = t===tab ? 'block' : 'none';
+    const btn = document.getElementById('perm-tab-'+t);
+    btn.style.borderBottomColor = t===tab ? 'var(--orange)' : 'transparent';
+    btn.style.color = t===tab ? 'var(--orange)' : 'var(--muted)';
+  });
+  if (tab==='excecoes') carregarSelectExcecao();
+}
+
 async function renderPermissoes() {
-  const el = document.getElementById('perms-content');
-  el.innerHTML = '<div class="loading"><span class="spin"></span>Carregando...</div>';
+  // Aba perfis
+  renderPermPerfis();
+}
+
+function renderPermPerfis() {
+  const perfis = ['admin','gestor','operador','motorista','campo','bruna'];
+  const el = document.getElementById('perm-perfis-content');
+  el.innerHTML = `
+    <div style="overflow-x:auto">
+      <table style="width:100%;border-collapse:collapse;min-width:600px">
+        <thead>
+          <tr style="border-bottom:2px solid var(--border)">
+            <th style="text-align:left;padding:10px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--muted);min-width:140px">Perfil</th>
+            ${MODULOS.map(m=>`
+              <th style="text-align:center;padding:10px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--muted)">
+                ${m.label}<br><span style="font-weight:400;font-size:10px">${m.desc}</span>
+              </th>`).join('')}
+          </tr>
+        </thead>
+        <tbody>
+          ${perfis.map(p => `
+            <tr style="border-bottom:1px solid #F1F5F9" onmouseenter="this.style.background='#F8FAFC'" onmouseleave="this.style.background=''">
+              <td style="padding:10px;font-size:13px;font-weight:700;color:var(--blue)">${PERFIL_LABEL[p]||p}</td>
+              ${MODULOS.map(m=>`
+                <td style="padding:10px;text-align:center">
+                  <input type="checkbox"
+                    style="width:18px;height:18px;cursor:pointer;accent-color:var(--orange)"
+                    ${(PERFIL_PADRAO[p]||[]).includes(m.id) ? 'checked' : ''}
+                    onchange="salvarPermPerfil('${p}','${m.id}',this.checked)"/>
+                </td>`).join('')}
+            </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>
+    <div style="margin-top:12px;font-size:11px;color:var(--muted)">
+      ⚠️ Alterar o perfil afeta todos os colaboradores desse perfil que não têm exceção individual.
+    </div>`;
+}
+
+async function salvarPermPerfil(perfil, modulo, permitido) {
+  // Atualiza o padrão local
+  if (!PERFIL_PADRAO[perfil]) PERFIL_PADRAO[perfil] = [];
+  if (permitido) {
+    if (!PERFIL_PADRAO[perfil].includes(modulo)) PERFIL_PADRAO[perfil].push(modulo);
+  } else {
+    PERFIL_PADRAO[perfil] = PERFIL_PADRAO[perfil].filter(m => m !== modulo);
+  }
+  // Salvar para todos do perfil sem exceção individual
   try {
-    const dados = await apiFetch('/permissoes/todos');
+    const usuarios = _usuarios.filter(u => u.perfil === perfil && u.ativo);
+    for (const u of usuarios) {
+      await apiFetch('/permissoes/usuario/' + u.id, {
+        method:'POST', body: JSON.stringify({ [modulo]: permitido })
+      });
+    }
+    toast(`Perfil ${PERFIL_LABEL[perfil]} — ${permitido?'✅':'❌'} ${MODULOS.find(m=>m.id===modulo)?.label}`, permitido?'success':'');
+  } catch(e) { toast('Erro: '+e.message,'error'); }
+}
+
+// ── Exceções individuais ─────────────────────────────────────────────────
+
+async function carregarSelectExcecao() {
+  const sel = document.getElementById('perm-select-user');
+  if (sel.options.length > 1) return; // já carregado
+  sel.innerHTML = '<option value="">Selecione o colaborador...</option>' +
+    _usuarios.filter(u=>u.ativo).map(u =>
+      `<option value="${u.id}" data-perfil="${u.perfil}">${esc(u.nome||u.login)} (${PERFIL_LABEL[u.perfil]||u.perfil})</option>`
+    ).join('');
+}
+
+async function carregarPermExcecao() {
+  const sel = document.getElementById('perm-select-user');
+  const uid = sel.value;
+  const opt = sel.options[sel.selectedIndex];
+  const perfil = opt?.getAttribute('data-perfil') || '';
+  const el = document.getElementById('perm-excecoes-content');
+  const badge = document.getElementById('perm-perfil-badge');
+
+  if (!uid) { el.innerHTML=''; badge.textContent=''; return; }
+
+  badge.textContent = `Perfil padrão: ${PERFIL_LABEL[perfil]||perfil}`;
+  el.innerHTML = '<div class="loading"><span class="spin"></span></div>';
+
+  try {
+    const perms = await apiFetch('/permissoes/usuario/' + uid);
+    const padrao = PERFIL_PADRAO[perfil] || [];
+
     el.innerHTML = `
-      <div style="overflow-x:auto">
-        <table style="width:100%;border-collapse:collapse;min-width:700px">
-          <thead>
-            <tr style="border-bottom:2px solid var(--border)">
-              <th style="text-align:left;padding:10px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--muted);min-width:180px">Colaborador</th>
-              ${MODULOS.map(m => `
-                <th style="text-align:center;padding:10px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--muted)">
-                  ${m.label}<br>
-                  <span style="font-weight:400;text-transform:none;font-size:10px;color:var(--muted)">${m.desc}</span>
-                </th>`).join('')}
-            </tr>
-          </thead>
-          <tbody>
-            ${dados.map(u => `
-              <tr style="border-bottom:1px solid #F1F5F9" onmouseenter="this.style.background='#F8FAFC'" onmouseleave="this.style.background=''">
-                <td style="padding:10px">
-                  <div style="font-size:13px;font-weight:600;color:var(--text)">${esc(u.nome||u.login)}</div>
-                  <div style="font-size:11px;color:var(--muted)">${esc(u.login)} · ${esc(u.perfil)}</div>
-                </td>
-                ${MODULOS.map(m => `
-                  <td style="padding:10px;text-align:center">
-                    <label style="cursor:pointer;display:inline-flex;align-items:center;justify-content:center">
-                      <input type="checkbox"
-                        style="width:18px;height:18px;cursor:pointer;accent-color:var(--orange)"
-                        ${u.permissoes[m.id] ? 'checked' : ''}
-                        onchange="salvarPermissao('${esc(u.id)}','${m.id}',this.checked,'${esc(u.nome||u.login)}')"/>
-                    </label>
-                  </td>`).join('')}
-              </tr>`).join('')}
-          </tbody>
-        </table>
+      <div style="display:flex;flex-direction:column;gap:10px;max-width:500px">
+        ${MODULOS.map(m => {
+          const temPerm = perms[m.id] ?? padrao.includes(m.id);
+          const ePadrao = padrao.includes(m.id);
+          return `
+          <div style="display:flex;align-items:center;justify-content:space-between;
+            padding:12px 16px;border:1.5px solid var(--border);border-radius:8px;
+            background:${temPerm?'#F0FDF4':'#FFF'}">
+            <div>
+              <div style="font-size:13px;font-weight:600;color:var(--text)">${m.label}</div>
+              <div style="font-size:11px;color:var(--muted)">${m.desc}
+                ${ePadrao?'<span style="color:var(--green);margin-left:6px">• padrão do perfil</span>':''}
+              </div>
+            </div>
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+              <span style="font-size:12px;color:${temPerm?'var(--green)':'var(--muted)'}">
+                ${temPerm?'Liberado':'Bloqueado'}
+              </span>
+              <input type="checkbox"
+                style="width:20px;height:20px;cursor:pointer;accent-color:var(--orange)"
+                ${temPerm?'checked':''}
+                onchange="salvarPermissao('${uid}','${m.id}',this.checked)"/>
+            </label>
+          </div>`;
+        }).join('')}
       </div>
-      <div style="margin-top:12px;font-size:11px;color:var(--muted)">${dados.length} colaborador(es) · Alterações salvas automaticamente</div>`;
+      <div style="margin-top:12px;font-size:11px;color:var(--muted)">
+        Alterações salvas automaticamente · Substituem o padrão do perfil para este colaborador.
+      </div>`;
   } catch(e) {
-    el.innerHTML = `<div class="loading" style="color:var(--red)">Erro: ${esc(e.message)}</div>`;
+    el.innerHTML = `<div style="color:var(--red)">Erro: ${esc(e.message)}</div>`;
   }
 }
 
-async function salvarPermissao(usuarioId, modulo, permitido, nome) {
+async function salvarPermissao(usuarioId, modulo, permitido) {
   try {
     await apiFetch('/permissoes/usuario/' + usuarioId, {
-      method: 'POST',
-      body: JSON.stringify({ [modulo]: permitido })
+      method:'POST', body: JSON.stringify({ [modulo]: permitido })
     });
-    toast(`${nome} — ${permitido ? '✅ acesso liberado' : '❌ acesso removido'}`, permitido ? 'success' : '');
-  } catch(e) {
-    toast('Erro ao salvar: ' + e.message, 'error');
-  }
+    const label = MODULOS.find(m=>m.id===modulo)?.label || modulo;
+    toast(`${permitido?'✅ Acesso liberado':'❌ Acesso removido'} — ${label}`, permitido?'success':'');
+    // Atualizar visual do toggle
+    const el = document.querySelector(`input[onchange*="${modulo}"]`);
+    if (el) {
+      const span = el.previousElementSibling;
+      if (span) {
+        span.textContent = permitido ? 'Liberado' : 'Bloqueado';
+        span.style.color = permitido ? 'var(--green)' : 'var(--muted)';
+      }
+      el.closest('div[style]').style.background = permitido ? '#F0FDF4' : '#FFF';
+    }
+  } catch(e) { toast('Erro: '+e.message,'error'); }
 }
 
 /* ══════════════════════════════════════════════
