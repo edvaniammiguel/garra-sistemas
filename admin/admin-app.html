@@ -999,7 +999,6 @@ async function iniciarApp(user) {
   window._PERFIL = user.perfil;
   window._USER_ID = user.id || null;
   // Carregar dados conforme perfil
-  const isAdmin = user.perfil === 'admin';
   const promises = [carregarKPIs(), carregarFeed()];
   if (isAdmin) promises.push(carregarUsuarios());
   await Promise.all(promises);
