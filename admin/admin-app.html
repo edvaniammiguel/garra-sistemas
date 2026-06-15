@@ -489,6 +489,13 @@ input,select,textarea { font-family:inherit; font-size:13px; outline:none; }
               <input type="text" id="user-search" placeholder="Buscar por nome ou login..." oninput="filtrarUsuarios()"/>
             </div>
             <div class="users-filter">
+              <select id="user-filter-status" onchange="filtrarUsuarios()">
+                <option value="ativo">● Ativos</option>
+                <option value="inativo">○ Inativos</option>
+                <option value="">Todos</option>
+              </select>
+            </div>
+            <div class="users-filter">
               <select id="user-filter-perfil" onchange="filtrarUsuarios()">
                 <option value="">Todos os perfis</option>
                 <option value="admin">Admin</option>
@@ -541,17 +548,6 @@ input,select,textarea { font-family:inherit; font-size:13px; outline:none; }
             </p>
             <!-- Filtros -->
             <div style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap;align-items:center">
-              <div style="display:flex;gap:6px;align-items:center;background:#F0F4FF;padding:6px 10px;border-radius:8px">
-                <label style="font-size:12px;font-weight:600;cursor:pointer">
-                  <input type="radio" name="perm-status" value="ativo" checked onchange="filtrarSelectExcecao()"/> Ativos
-                </label>
-                <label style="font-size:12px;font-weight:600;cursor:pointer">
-                  <input type="radio" name="perm-status" value="inativo" onchange="filtrarSelectExcecao()"/> Inativos
-                </label>
-                <label style="font-size:12px;font-weight:600;cursor:pointer">
-                  <input type="radio" name="perm-status" value="todos" onchange="filtrarSelectExcecao()"/> Todos
-                </label>
-              </div>
               <select id="perm-filter-perfil" onchange="filtrarSelectExcecao()"
                 style="padding:7px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:13px">
                 <option value="">Todos os perfis</option>
@@ -1173,15 +1169,18 @@ function renderListaDash() {
     </div>`).join('');
 }
 
-let _filtro = '', _filtroPerfil = '';
+let _filtro = '', _filtroPerfil = '', _filtroStatus = 'ativo';
 function filtrarUsuarios() {
   _filtro = document.getElementById('user-search').value.toLowerCase();
   _filtroPerfil = document.getElementById('user-filter-perfil').value;
+  _filtroStatus = document.getElementById('user-filter-status')?.value ?? 'ativo';
   renderTabelaUsuarios();
 }
 
 function renderTabelaUsuarios() {
   const lista = _usuarios.filter(u => {
+    if (_filtroStatus === 'ativo'   && !u.ativo) return false;
+    if (_filtroStatus === 'inativo' &&  u.ativo) return false;
     if (_filtroPerfil && u.perfil !== _filtroPerfil) return false;
     if (_filtro) {
       const hay = ((u.nome||'') + (u.login||'') + (u.email||'')).toLowerCase();
@@ -1461,16 +1460,13 @@ async function iniciarAbaExcecoes() {
 }
 
 function filtrarSelectExcecao() {
-  const status=document.querySelector('input[name="perm-status"]:checked')?.value||'ativo';
   const perfil=document.getElementById('perm-filter-perfil')?.value||'';
   const sel=document.getElementById('perm-select-user');
   const valorAtual=sel.value;
-  let lista=_todosUsuariosExcecao;
-  if (status==='ativo') lista=lista.filter(u=>u.ativo);
-  if (status==='inativo') lista=lista.filter(u=>!u.ativo);
+  let lista=(_usuarios||[]).filter(u=>u.ativo); // sempre só ativos em permissões
   if (perfil) lista=lista.filter(u=>u.perfil===perfil);
   sel.innerHTML='<option value="">Selecione o colaborador...</option>'+
-    lista.map(u=>`<option value="${u.id}" data-perfil="${u.perfil}" ${u.id===valorAtual?'selected':''}>${esc(u.nome||u.login)} (${PERFIL_LABEL[u.perfil]||u.perfil})${!u.ativo?' — Inativo':''}</option>`).join('');
+    lista.map(u=>`<option value="${u.id}" data-perfil="${u.perfil}" ${u.id===valorAtual?'selected':''}>${esc(u.nome||u.login)} (${PERFIL_LABEL[u.perfil]||u.perfil})</option>`).join('');
   if (!valorAtual||!lista.find(u=>u.id===valorAtual)) {
     document.getElementById('perm-excecoes-content').innerHTML='';
     document.getElementById('perm-perfil-badge').textContent='';
