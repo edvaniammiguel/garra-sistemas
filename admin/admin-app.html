@@ -338,12 +338,12 @@ input,select,textarea { font-family:inherit; font-size:13px; outline:none; }
           <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
           Dashboard
         </div>
-        <div class="sb-item" onclick="navTo('usuarios',this)">
+        <div class="sb-item admin-only" onclick="navTo('usuarios',this)">
           <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
           Usuários
           <span class="sb-badge" id="sb-user-count">–</span>
         </div>
-        <div class="sb-item" onclick="navTo('permissoes',this)">
+        <div class="sb-item admin-only" onclick="navTo('permissoes',this)">
           <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
           Permissões
         </div>
@@ -397,70 +397,23 @@ input,select,textarea { font-family:inherit; font-size:13px; outline:none; }
       <section id="sec-dashboard">
         <!-- KPIs -->
         <div class="kpi-grid" id="kpi-grid">
-          <div class="kpi-card"><div class="kpi-label">Usuários ativos</div><div class="kpi-value" id="kpi-usuarios">–</div><div class="kpi-sub" id="kpi-usuarios-sub">carregando...</div></div>
+          <div class="kpi-card admin-only"><div class="kpi-label">Usuários ativos</div><div class="kpi-value" id="kpi-usuarios">–</div><div class="kpi-sub" id="kpi-usuarios-sub">carregando...</div></div>
           <div class="kpi-card"><div class="kpi-label">Fotos esta semana</div><div class="kpi-value" id="kpi-fotos">–</div><div class="kpi-sub">jardinagem · pares</div></div>
           <div class="kpi-card"><div class="kpi-label">KM registrado</div><div class="kpi-value" id="kpi-km">–</div><div class="kpi-sub">semana atual</div></div>
-          <div class="kpi-card kpi-green"><div class="kpi-label">Online agora</div><div class="kpi-value" id="kpi-online">–</div><div class="kpi-sub">sessões ativas</div></div>
+          <div class="kpi-card kpi-green admin-only"><div class="kpi-label">Online agora</div><div class="kpi-value" id="kpi-online">–</div><div class="kpi-sub">sessões ativas</div></div>
         </div>
 
         <!-- MÓDULOS -->
         <div>
           <div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:10px">Módulos do sistema</div>
-          <div class="grid-3">
-            <div class="mod-card">
-              <div class="mod-header">
-                <span class="mod-icon">📋</span>
-                <span class="badge badge-green">Produção</span>
-              </div>
-              <div class="mod-name">Checklist</div>
-              <div class="mod-desc">Máquinas · Frota · Logística</div>
-            </div>
-            <div class="mod-card">
-              <div class="mod-header">
-                <span class="mod-icon">🌿</span>
-                <span class="badge badge-green">Produção</span>
-              </div>
-              <div class="mod-name">Jardinagem</div>
-              <div class="mod-desc">Fotos · KM · Relatórios</div>
-            </div>
-            <div class="mod-card">
-              <div class="mod-header">
-                <span class="mod-icon">🚛</span>
-                <span class="badge badge-orange">Em desenvolvimento</span>
-              </div>
-              <div class="mod-name">Operacional</div>
-              <div class="mod-desc">OS · Partes diárias · Fechamento</div>
-            </div>
-            <div class="mod-card mod-dim">
-              <div class="mod-header">
-                <span class="mod-icon">👥</span>
-                <span class="badge badge-gray">Planejado</span>
-              </div>
-              <div class="mod-name">RH</div>
-              <div class="mod-desc">Admissão · eSocial · NR</div>
-            </div>
-            <div class="mod-card mod-dim">
-              <div class="mod-header">
-                <span class="mod-icon">🔧</span>
-                <span class="badge badge-gray">Planejado</span>
-              </div>
-              <div class="mod-name">Manutenção</div>
-              <div class="mod-desc">OT · Preventiva · Pneus</div>
-            </div>
-            <div class="mod-card mod-dim">
-              <div class="mod-header">
-                <span class="mod-icon">📊</span>
-                <span class="badge badge-gray">Planejado</span>
-              </div>
-              <div class="mod-name">Financeiro</div>
-              <div class="mod-desc">ERP · Comissões · Book</div>
-            </div>
+          <div class="grid-3" id="dash-modulos">
+            <div class="loading"><span class="spin"></span></div>
           </div>
         </div>
 
-        <!-- INFERIOR: USUÁRIOS + ATIVIDADE -->
+        <!-- INFERIOR: COLABORADORES (admin) + ATIVIDADE (todos) -->
         <div class="grid-2">
-          <div class="card">
+          <div class="card admin-only">
             <div class="card-title">
               Colaboradores
               <button class="btn btn-primary admin-only" style="padding:5px 12px;font-size:11px" onclick="abrirModalUsuario()">+ Novo</button>
@@ -992,7 +945,7 @@ async function doLogin() {
       throw new Error('Acesso restrito. Somente administradores.');
     }
     Token.set(data.token);
-    Token.setUser({ login: data.login, nome: data.nome, perfil: data.perfil });
+    Token.setUser({ login: data.login, nome: data.nome, perfil: data.perfil, id: data.id || null });
     iniciarApp(data);
   } catch(e) {
     err.textContent = e.message;
@@ -1044,8 +997,17 @@ async function iniciarApp(user) {
   });
   // Guardar perfil global
   window._PERFIL = user.perfil;
-  // Carregar dados
-  await Promise.all([carregarKPIs(), carregarUsuarios(), carregarFeed()]);
+  window._USER_ID = user.id || null;
+  // Carregar dados conforme perfil
+  const isAdmin = user.perfil === 'admin';
+  const promises = [carregarKPIs(), carregarFeed()];
+  if (isAdmin) promises.push(carregarUsuarios());
+  await Promise.all(promises);
+  if (!isAdmin && _usuarios.length === 0) {
+    // Gestor precisa da lista para permissões — carrega silenciosamente
+    try { _usuarios = await apiFetch('/usuarios'); } catch {}
+  }
+  renderModulos(window._USER_ID, user.perfil);
 }
 
 // Verificar sessão existente ao carregar
@@ -1615,6 +1577,115 @@ async function carregarFeed() {
         </div>
       </div>`).join('');
   } catch { el.innerHTML='<div style="color:var(--muted);font-size:13px">Indisponível no momento.</div>'; }
+}
+
+/* ══════════════════════════════════════════════
+   MÓDULOS DO DASHBOARD — dinâmicos por permissão
+══════════════════════════════════════════════ */
+const MODULOS_DASHBOARD = [
+  {
+    id: 'checklist',
+    icon: '📋', nome: 'Checklist', desc: 'Máquinas · Frota · Logística',
+    status: 'producao', badge: 'badge-green',
+    url: 'https://garra-checklist-app.onrender.com',
+    externo: true,
+  },
+  {
+    id: 'jardinagem_desktop',
+    icon: '🌿', nome: 'Jardinagem', desc: 'Fotos · KM · Relatórios',
+    status: 'producao', badge: 'badge-green',
+    url: '/jardinagem/desktop',
+    externo: false,
+  },
+  {
+    id: 'operacional_mobile',
+    icon: '🚛', nome: 'Operacional', desc: 'OS · Partes diárias · Fechamento',
+    status: 'dev', badge: 'badge-orange',
+    url: '/operacional/mobile',
+    externo: false,
+  },
+  {
+    id: null, // planejado — sem permissão
+    icon: '👥', nome: 'RH', desc: 'Admissão · eSocial · NR',
+    status: 'planejado', badge: 'badge-gray',
+    url: null,
+  },
+  {
+    id: null,
+    icon: '🔧', nome: 'Manutenção', desc: 'OT · Preventiva · Pneus',
+    status: 'planejado', badge: 'badge-gray',
+    url: null,
+  },
+  {
+    id: null,
+    icon: '📊', nome: 'Financeiro', desc: 'ERP · Comissões · Book',
+    status: 'planejado', badge: 'badge-gray',
+    url: null,
+  },
+];
+
+const STATUS_MODULO = {
+  producao:  { label:'Produção',         badge:'badge-green'  },
+  dev:       { label:'Em desenvolvimento',badge:'badge-orange' },
+  planejado: { label:'Planejado',         badge:'badge-gray'   },
+};
+
+async function renderModulos(usuarioId, perfil) {
+  const el = document.getElementById('dash-modulos');
+  if (!el) return;
+
+  // Buscar permissões do usuário logado
+  let perms = {};
+  try {
+    if (usuarioId) perms = await apiFetch('/permissoes/usuario/' + usuarioId);
+  } catch {}
+
+  const padrao = PERFIL_PADRAO[perfil] || [];
+  const isAdmin = perfil === 'admin';
+
+  const cards = MODULOS_DASHBOARD.map(m => {
+    // Módulos planejados sempre aparecem (sombreados)
+    if (!m.id) {
+      return `<div class="mod-card mod-dim">
+        <div class="mod-header">
+          <span class="mod-icon">${m.icon}</span>
+          <span class="badge ${m.badge}">${STATUS_MODULO[m.status].label}</span>
+        </div>
+        <div class="mod-name">${m.nome}</div>
+        <div class="mod-desc">${m.desc}</div>
+      </div>`;
+    }
+
+    // Verificar permissão
+    const temPerm = perms[m.id] !== undefined ? perms[m.id] : padrao.includes(m.id);
+
+    // Se não tem permissão e não é admin → não mostra
+    if (!temPerm && !isAdmin) return '';
+
+    const dim = !temPerm && isAdmin ? ' mod-dim' : '';
+    const cursor = m.url && temPerm ? 'cursor:pointer' : '';
+    const onClick = m.url && temPerm
+      ? m.externo
+        ? `onclick="window.open('${m.url}','_blank')"`
+        : `onclick="window.location.href='${m.url}'"`
+      : '';
+    const semPermLabel = !temPerm && isAdmin
+      ? '<div style="font-size:10px;color:var(--red);margin-top:4px">🔒 sem permissão</div>' : '';
+
+    return `<div class="mod-card${dim}" style="${cursor}" ${onClick}
+      ${temPerm && m.url ? 'onmouseenter="this.style.boxShadow=\'0 4px 16px rgba(232,130,12,.2)\';this.style.borderColor=\'var(--orange)\'"' : ''}
+      ${temPerm && m.url ? 'onmouseleave="this.style.boxShadow=\'\';this.style.borderColor=\'var(--border)\'"' : ''}>
+      <div class="mod-header">
+        <span class="mod-icon">${m.icon}</span>
+        <span class="badge ${STATUS_MODULO[m.status].badge}">${STATUS_MODULO[m.status].label}</span>
+      </div>
+      <div class="mod-name">${m.nome}</div>
+      <div class="mod-desc">${m.desc}</div>
+      ${semPermLabel}
+    </div>`;
+  }).filter(Boolean).join('');
+
+  el.innerHTML = cards || '<div style="color:var(--muted);font-size:13px">Nenhum módulo disponível.</div>';
 }
 
 /* ══════════════════════════════════════════════
