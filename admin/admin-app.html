@@ -552,10 +552,6 @@ input,select,textarea { font-family:inherit; font-size:13px; outline:none; }
                 style="padding:7px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:13px">
                 <option value="">Todos os perfis</option>
               </select>
-              <select id="perm-select-user" onchange="carregarPermExcecao()"
-                style="padding:7px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;flex:1;min-width:200px">
-                <option value="">Selecione o colaborador...</option>
-              </select>
               <span id="perm-perfil-badge" style="font-size:11px;color:var(--muted)"></span>
             </div>
             <div id="perm-excecoes-content"></div>
@@ -1450,68 +1446,131 @@ async function salvarNovoPerfil() {
 }
 
 async function iniciarAbaExcecoes() {
-  if (!_todosUsuariosExcecao.length) _todosUsuariosExcecao=_usuarios||[];
-  const filtroPerfil=document.getElementById('perm-filter-perfil');
-  if (filtroPerfil.options.length<=1) {
-    const perfis=[...new Set(_todosUsuariosExcecao.map(u=>u.perfil))].sort();
-    filtroPerfil.innerHTML='<option value="">Todos os perfis</option>'+perfis.map(p=>`<option value="${p}">${PERFIL_LABEL[p]||p}</option>`).join('');
+  if (!_todosUsuariosExcecao.length) _todosUsuariosExcecao = _usuarios||[];
+  const filtroPerfil = document.getElementById('perm-filter-perfil');
+  if (filtroPerfil.options.length <= 1) {
+    const perfis = [...new Set(_todosUsuariosExcecao.filter(u=>u.ativo).map(u=>u.perfil))].sort();
+    filtroPerfil.innerHTML = '<option value="">Todos os perfis</option>' +
+      perfis.map(p=>`<option value="${p}">${PERFIL_LABEL[p]||p}</option>`).join('');
   }
-  filtrarSelectExcecao();
+  renderCardsColaboradores();
 }
 
 function filtrarSelectExcecao() {
-  const perfil=document.getElementById('perm-filter-perfil')?.value||'';
-  const sel=document.getElementById('perm-select-user');
-  const valorAtual=sel.value;
-  let lista=(_usuarios||[]).filter(u=>u.ativo); // sempre só ativos em permissões
-  if (perfil) lista=lista.filter(u=>u.perfil===perfil);
-  sel.innerHTML='<option value="">Selecione o colaborador...</option>'+
-    lista.map(u=>`<option value="${u.id}" data-perfil="${u.perfil}" ${u.id===valorAtual?'selected':''}>${esc(u.nome||u.login)} (${PERFIL_LABEL[u.perfil]||u.perfil})</option>`).join('');
-  if (!valorAtual||!lista.find(u=>u.id===valorAtual)) {
-    document.getElementById('perm-excecoes-content').innerHTML='';
-    document.getElementById('perm-perfil-badge').textContent='';
-  }
+  renderCardsColaboradores();
 }
 
-async function carregarPermExcecao() {
-  const sel=document.getElementById('perm-select-user');
-  const uid=sel.value;
-  const opt=sel.options[sel.selectedIndex];
-  const perfil=opt?.getAttribute('data-perfil')||'';
-  const el=document.getElementById('perm-excecoes-content');
-  const badge=document.getElementById('perm-perfil-badge');
-  if (!uid) { el.innerHTML=''; badge.textContent=''; return; }
-  badge.textContent=`Perfil base: ${PERFIL_LABEL[perfil]||perfil}`;
-  el.innerHTML='<div class="loading"><span class="spin"></span></div>';
+function renderCardsColaboradores() {
+  const perfil = document.getElementById('perm-filter-perfil')?.value||'';
+  let lista = (_usuarios||[]).filter(u=>u.ativo);
+  if (perfil) lista = lista.filter(u=>u.perfil===perfil);
+
+  // Esconder select antigo se existir
+  const sel = document.getElementById('perm-select-user');
+  if (sel) sel.style.display = 'none';
+
+  // Renderizar cards
+  const el = document.getElementById('perm-excecoes-content');
+  const badge = document.getElementById('perm-perfil-badge');
+  if (badge) badge.textContent = '';
+
+  // Mostrar lista de colaboradores como cards clicáveis
+  el.innerHTML = `
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px;margin-bottom:16px">
+      ${lista.map(u => `
+        <div onclick="abrirPermColaborador('${u.id}','${u.perfil}')"
+          style="padding:12px;border:1.5px solid var(--border);border-radius:10px;
+          cursor:pointer;transition:.15s;background:#fff"
+          onmouseenter="this.style.borderColor='var(--orange)';this.style.background='#FFF7ED'"
+          onmouseleave="this.style.borderColor='var(--border)';this.style.background='#fff'">
+          <div style="width:34px;height:34px;border-radius:50%;background:var(--blue);
+            display:flex;align-items:center;justify-content:center;
+            font-size:14px;font-weight:800;color:#fff;margin-bottom:8px">
+            ${esc((u.nome||u.login).charAt(0).toUpperCase())}
+          </div>
+          <div style="font-size:13px;font-weight:600;color:var(--text)">${esc(u.nome||u.login)}</div>
+          <div style="font-size:11px;color:var(--muted)">${PERFIL_LABEL[u.perfil]||u.perfil}</div>
+        </div>`).join('')}
+    </div>
+    <div id="perm-detail-content"></div>`;
+}
+
+async function abrirPermColaborador(uid, perfil) {
+  const el = document.getElementById('perm-detail-content');
+  const user = (_usuarios||[]).find(u=>u.id===uid);
+  el.innerHTML = `
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;padding-top:16px;border-top:2px solid var(--border)">
+      <div style="width:38px;height:38px;border-radius:50%;background:var(--blue);display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:800;color:#fff">
+        ${esc((user?.nome||user?.login||'?').charAt(0).toUpperCase())}
+      </div>
+      <div>
+        <div style="font-size:15px;font-weight:700;color:var(--blue)">${esc(user?.nome||user?.login||'')}</div>
+        <div style="font-size:12px;color:var(--muted)">Perfil: ${PERFIL_LABEL[perfil]||perfil}</div>
+      </div>
+      <button class="btn btn-secondary" style="margin-left:auto;font-size:12px;padding:5px 10px" onclick="document.getElementById('perm-detail-content').innerHTML=''">✕ Fechar</button>
+    </div>
+    <div class="loading"><span class="spin"></span></div>`;
+
   try {
-    const perms=await apiFetch('/permissoes/usuario/'+uid);
-    const padrao=PERFIL_PADRAO[perfil]||[];
-    el.innerHTML=`
+    const perms = await apiFetch('/permissoes/usuario/'+uid);
+    const padrao = PERFIL_PADRAO[perfil]||[];
+    document.getElementById('perm-detail-content').innerHTML = `
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;padding-top:16px;border-top:2px solid var(--border)">
+        <div style="width:38px;height:38px;border-radius:50%;background:var(--blue);display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:800;color:#fff">
+          ${esc((user?.nome||'?').charAt(0).toUpperCase())}
+        </div>
+        <div>
+          <div style="font-size:15px;font-weight:700;color:var(--blue)">${esc(user?.nome||user?.login||'')}</div>
+          <div style="font-size:12px;color:var(--muted)">Perfil: ${PERFIL_LABEL[perfil]||perfil}</div>
+        </div>
+        <button class="btn btn-secondary" style="margin-left:auto;font-size:12px;padding:5px 10px" onclick="document.getElementById('perm-detail-content').innerHTML=''">✕ Fechar</button>
+      </div>
       <div style="display:flex;flex-direction:column;gap:8px;max-width:560px">
         ${MODULOS.map(m=>{
           const temPerm=perms[m.id]??padrao.includes(m.id);
           const ePadrao=padrao.includes(m.id);
           const ehExcecao=perms[m.id]!==undefined&&perms[m.id]!==ePadrao;
           const bloqueado=perfil==='admin'&&m.id==='admin_master';
-          return `<div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border:1.5px solid ${ehExcecao?'var(--orange)':temPerm?'#BBF7D0':'var(--border)'};border-radius:8px;background:${temPerm?'#F0FDF4':'#FFF'}">
+          return `<div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;
+            border:1.5px solid ${ehExcecao?'var(--orange)':temPerm?'#BBF7D0':'var(--border)'};
+            border-radius:8px;background:${temPerm?'#F0FDF4':'#fff'}">
             <div>
               <div style="font-size:13px;font-weight:600;color:var(--text)">${m.label}</div>
-              <div style="font-size:11px;color:var(--muted)">${m.desc} <span style="color:${ehExcecao?'var(--orange)':'var(--muted)'}">${ehExcecao?'✎ exceção':'↑ herdado'}</span></div>
+              <div style="font-size:11px;color:var(--muted)">${m.desc}
+                <span style="color:${ehExcecao?'var(--orange)':'var(--muted)'}">
+                  ${ehExcecao?'✎ exceção':'↑ herdado'}
+                </span>
+              </div>
             </div>
-            <div style="display:flex;align-items:center;gap:10px">
+            <div style="display:flex;align-items:center;gap:8px">
               ${ehExcecao?`<button style="font-size:11px;color:var(--muted);background:none;border:1px solid var(--border);border-radius:4px;padding:2px 6px;cursor:pointer" onclick="resetarPermissao('${uid}','${m.id}','${perfil}')">↺</button>`:''}
               <label style="display:flex;align-items:center;gap:6px;cursor:${bloqueado?'not-allowed':'pointer'}">
                 <span style="font-size:12px;color:${temPerm?'var(--green)':'var(--muted)'}">${temPerm?'Liberado':'Bloqueado'}</span>
-                <input type="checkbox" style="width:20px;height:20px;cursor:${bloqueado?'not-allowed':'pointer'};accent-color:var(--orange)" ${temPerm?'checked':''} ${bloqueado?'disabled':''} onchange="salvarPermissao('${uid}','${m.id}',this.checked)"/>
+                <input type="checkbox" style="width:20px;height:20px;accent-color:var(--orange);cursor:${bloqueado?'not-allowed':'pointer'}"
+                  ${temPerm?'checked':''} ${bloqueado?'disabled':''}
+                  onchange="salvarPermissaoCard('${uid}','${m.id}',this.checked,'${perfil}')"/>
               </label>
             </div>
           </div>`;
         }).join('')}
       </div>
-      <button class="btn btn-secondary" style="margin-top:14px;font-size:12px" onclick="resetarTodasPermissoes('${uid}','${perfil}')">↺ Resetar todas para padrão do perfil</button>
-      <div style="margin-top:8px;font-size:11px;color:var(--muted)">Bordas laranjas = exceção individual · ↑ herdado = segue o perfil</div>`;
-  } catch(e) { el.innerHTML=`<div style="color:var(--red)">Erro: ${esc(e.message)}</div>`; }
+      <button class="btn btn-secondary" style="margin-top:14px;font-size:12px" onclick="resetarTodasPermissoes('${uid}','${perfil}')">
+        ↺ Resetar todas para padrão do perfil
+      </button>`;
+  } catch(e) {
+    document.getElementById('perm-detail-content').innerHTML += `<div style="color:var(--red)">Erro: ${esc(e.message)}</div>`;
+  }
 }
+
+async function salvarPermissaoCard(usuarioId, modulo, permitido, perfil) {
+  try {
+    await apiFetch('/permissoes/usuario/'+usuarioId,{method:'POST',body:JSON.stringify({[modulo]:permitido})});
+    toast(`${permitido?'✅ Liberado':'❌ Bloqueado'} — ${MODULOS.find(m=>m.id===modulo)?.label||modulo}`,'success');
+    await abrirPermColaborador(usuarioId, perfil);
+  } catch(e) { toast('Erro: '+e.message,'error'); }
+}
+
+async function carregarPermExcecao() {}
 
 async function salvarPermissao(usuarioId, modulo, permitido) {
   try {
@@ -1534,6 +1593,26 @@ async function resetarTodasPermissoes(usuarioId, perfil) {
     toast('Permissões resetadas','success');
     await carregarPermExcecao();
   } catch(e) { toast('Erro: '+e.message,'error'); }
+}
+
+/* ══════════════════════════════════════════════
+   FEED DE ATIVIDADE
+══════════════════════════════════════════════ */
+async function carregarFeed() {
+  const el = document.getElementById('feed-list');
+  if (!el) return;
+  try {
+    const kms = await apiFetch('/jardinagem/api/km/mes/4').catch(()=>null);
+    if (!kms || !kms.length) { el.innerHTML='<div style="color:var(--muted);font-size:13px">Indisponível no momento.</div>'; return; }
+    el.innerHTML = kms.slice(0,5).map(k=>`
+      <div style="display:flex;gap:10px;align-items:flex-start;padding:8px 0;border-bottom:1px solid #F1F5F9">
+        <div style="width:28px;height:28px;border-radius:50%;background:var(--blue);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#fff;flex-shrink:0">${esc((k.responsavel||'?').charAt(0))}</div>
+        <div>
+          <div style="font-size:12px;font-weight:600;color:var(--text)">${esc(k.responsavel||'–')}</div>
+          <div style="font-size:11px;color:var(--muted)">${esc(k.local_nome||'')} · ${k.km_inicial||0} → ${k.km_final||0} km</div>
+        </div>
+      </div>`).join('');
+  } catch { el.innerHTML='<div style="color:var(--muted);font-size:13px">Indisponível no momento.</div>'; }
 }
 
 /* ══════════════════════════════════════════════
