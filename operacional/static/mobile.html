@@ -907,19 +907,34 @@ async function salvarParte(adicionarMais) {
    MÓDULO: CHECKLIST
 ════════════════════════════════════════════ */
 function renderChecklist() {
+  const token = Token.get();
+  const usuario = Token.user();
   document.getElementById('app-content').innerHTML = `
-    <div id="sec-check">
-      <div class="check-placeholder">
-        <div style="font-size:48px;margin-bottom:16px">✅</div>
-        <div style="font-size:16px;font-weight:700;color:var(--blue);margin-bottom:8px">Checklist</div>
-        <div style="font-size:13px;color:var(--muted);margin-bottom:24px">Acesse o checklist completo</div>
-        <a href="https://garra-checklist-app.onrender.com" target="_blank"
-           style="display:block;padding:14px 28px;background:var(--orange);color:#fff;
-           border-radius:8px;font-weight:700;font-size:14px;text-decoration:none">
-          Abrir Checklist
-        </a>
-      </div>
+    <div id="sec-check" style="height:calc(100dvh - 130px)">
+      <iframe src="/checklist"
+        style="width:100%;height:100%;border:none;display:block"
+        allow="camera;microphone"
+        id="checklist-frame"
+        onload="injetarTokenChecklist()">
+      </iframe>
     </div>`;
+}
+
+function injetarTokenChecklist() {
+  const frame = document.getElementById('checklist-frame');
+  if (!frame) return;
+  const token = Token.get();
+  const usuario = Token.user();
+  // Enviar token via postMessage para o iframe do checklist
+  setTimeout(() => {
+    try {
+      frame.contentWindow.postMessage({
+        type: 'GARRA_SSO',
+        token: token,
+        usuario: usuario,
+      }, window.location.origin);
+    } catch(e) { console.warn('postMessage checklist:', e); }
+  }, 800);
 }
 
 /* ════════════════════════════════════════════
