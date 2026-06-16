@@ -185,8 +185,14 @@ if os.path.exists(ICONS_DIR):
 # Assets do checklist (css, js)
 CHECKLIST_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "operacional", "checklist")
 if os.path.exists(CHECKLIST_DIR):
-    app.mount("/checklist/css", StaticFiles(directory=os.path.join(CHECKLIST_DIR, "css")), name="checklist_css")
-    app.mount("/checklist/js",  StaticFiles(directory=os.path.join(CHECKLIST_DIR, "js")),  name="checklist_js")
+    app.mount("/checklist/css",      StaticFiles(directory=os.path.join(CHECKLIST_DIR, "css")), name="checklist_css")
+    app.mount("/checklist/js",       StaticFiles(directory=os.path.join(CHECKLIST_DIR, "js")),  name="checklist_js")
+    app.mount("/checklist/icons",    StaticFiles(directory=os.path.join(CHECKLIST_DIR, "icons")), name="checklist_icons_sub")
+    # Caminhos relativos do checklist quando carregado no iframe
+    if os.path.exists(os.path.join(CHECKLIST_DIR, "css")):
+        app.mount("/css", StaticFiles(directory=os.path.join(CHECKLIST_DIR, "css")), name="checklist_css_rel")
+    if os.path.exists(os.path.join(CHECKLIST_DIR, "js")):
+        app.mount("/js",  StaticFiles(directory=os.path.join(CHECKLIST_DIR, "js")),  name="checklist_js_rel")
 
 # ── SUPABASE STORAGE ──────────────────────────────────────────
 def storage_upload(dados: bytes, path: str) -> str:
@@ -2129,7 +2135,29 @@ async def op_revisao_os(os_id: str, _auth=Depends(verificar_gestor)):
     }
 
 
-@app.get("/operacional/api/minhas-os")
+@app.get("/operacional/api/minhas-partes")
+async def op_minhas_partes(payload=Depends(verificar_token)):
+    """Operador vê histórico de partes diárias próprias."""
+    login = payload.get("sub","")
+    user = jard_query(
+        "SELECT id FROM public.usuarios_garra WHERE login=%s", (login,), fetch="one"
+    )
+    if not user:
+        raise HTTPException(status_code=404, detail="Usuário não encontrado")
+    rows = jard_query(
+        """SELECT pd.*, os.numero AS numero_os, os.obra,
+                  e.codigo AS equipamento_codigo
+           FROM operacional.partes_diarias pd
+           JOIN operacional.ordens_servico os ON os.id = pd.os_id
+           LEFT JOIN operacional.equipamentos e ON e.id = pd.equipamento_id
+           WHERE pd.operador_id = %s AND pd.ativo = true
+           ORDER BY pd.data DESC, pd.criado_em DESC
+           LIMIT 60""",
+        (user["id"],)
+    )
+    return [dict(r) for r in (rows or [])]
+
+
 async def op_minhas_os(payload=Depends(verificar_token)):
     """Operador/motorista vê APENAS as OS onde é o operador previsto e status ativo."""
     login = payload.get("sub","")
