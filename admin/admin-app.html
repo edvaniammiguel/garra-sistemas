@@ -1732,6 +1732,47 @@ async function renderModulos(usuarioId, perfil) {
   el.innerHTML = cards || '<div style="color:var(--muted);font-size:13px">Nenhum módulo disponível.</div>';
 }
 
+function fecharModalParte() {
+  document.getElementById('modal-parte').classList.add('hidden');
+}
+
+function onMpEquipChange() {
+  const sel = document.getElementById('mp-equipamento');
+  const cat = sel.options[sel.selectedIndex]?.getAttribute('data-cat')||'';
+  const isCam = ['caminhao','pipa','carro'].includes(cat);
+  document.getElementById('mp-bloco-hor').style.display = cat && !isCam ? 'block' : 'none';
+  document.getElementById('mp-bloco-km').style.display  = isCam ? 'block' : 'none';
+}
+
+async function salvarParteLuana() {
+  const osId  = document.getElementById('mp-os-id').value;
+  const data  = document.getElementById('mp-data').value;
+  const equip = document.getElementById('mp-equipamento').value;
+  if (!data||!equip) { toast('Data e equipamento obrigatórios','error'); return; }
+  const sel = document.getElementById('mp-equipamento');
+  const cat = sel.options[sel.selectedIndex]?.getAttribute('data-cat')||'';
+  const isCam = ['caminhao','pipa','carro'].includes(cat);
+  const payload = {
+    data, equipamento_id: equip,
+    operador_id: document.getElementById('mp-operador').value||null,
+    tipo_medicao: isCam ? 'km' : 'horimetro',
+    horimetro_inicial: document.getElementById('mp-h-ini')?.value ? parseFloat(document.getElementById('mp-h-ini').value) : null,
+    horimetro_final:   document.getElementById('mp-h-fin')?.value ? parseFloat(document.getElementById('mp-h-fin').value) : null,
+    km_inicial:  document.getElementById('mp-km-ini')?.value ? parseFloat(document.getElementById('mp-km-ini').value) : null,
+    km_final:    document.getElementById('mp-km-fin')?.value ? parseFloat(document.getElementById('mp-km-fin').value) : null,
+    observacao:  document.getElementById('mp-obs')?.value.trim()||null,
+  };
+  const btn = document.getElementById('btn-salvar-parte');
+  btn.textContent='Salvando...'; btn.disabled=true;
+  try {
+    await apiFetch('/operacional/api/os/'+osId+'/partes', {method:'POST', body:JSON.stringify(payload)});
+    toast('Registro salvo!','success');
+    fecharModalParte();
+    verPartesOS(_osAtual.id, _osAtual.numero);
+  } catch(e) { toast('Erro: '+e.message,'error'); }
+  finally { btn.textContent='Salvar'; btn.disabled=false; }
+}
+
 /* ══════════════════════════════════════════════
    UTILIDADES
 ══════════════════════════════════════════════ */
@@ -1948,14 +1989,171 @@ async function confirmarFechamento() {
 /* ══════════════════════════════════════════════
    MODAIS OS (placeholder — abrir/editar)
 ══════════════════════════════════════════════ */
-function abrirModalOS() {
-  toast('Criação de OS — em breve nesta tela','info');
+async function abrirModalOS(osId=null) {
+  document.getElementById('os-id').value = osId||'';
+  document.getElementById('modal-os-title').textContent = osId ? 'Editar OS' : 'Nova Ordem de Serviço';
+  document.getElementById('os-error').classList.add('hidden');
+
+  // Carregar selects se ainda não carregados
+  if (!document.getElementById('os-cliente').options.length > 1) await _carregarSelectsOS();
+  await _carregarSelectsOS();
+
+  // Número automático
+  if (!osId) {
+    try {
+      const r = await apiFetch('/operacional/api/proximo-numero');
+      document.getElementById('os-numero').value = r.numero||'';
+    } catch {}
+    // Limpar campos
+    ['os-codigo-erp','os-cliente-avulso','os-obra','os-endereco','os-descricao'].forEach(id=>{
+      const el=document.getElementById(id); if(el) el.value='';
+    });
+    document.getElementById('os-cliente').value='';
+    document.getElementById('os-tipo-servico').value='';
+    document.getElementById('os-equipamento').value='';
+    document.getElementById('os-operador').value='';
+    document.getElementById('os-regime').value='hora';
+    document.getElementById('os-valor-combinado').value='';
+    document.getElementById('os-data-inicio').value=new Date().toISOString().slice(0,10);
+    _atualizarLabelRegime();
+  } else {
+    // Carregar dados da OS existente
+    try {
+      const os = _osListaCompleta.find(o=>o.id===osId)||{};
+      document.getElementById('os-numero').value = os.numero||'';
+      document.getElementById('os-codigo-erp').value = os.codigo_erp||'';
+      document.getElementById('os-cliente').value = os.cliente_id||'';
+      document.getElementById('os-cliente-avulso').value = os.cliente_avulso||'';
+      document.getElementById('os-obra').value = os.obra||'';
+      document.getElementById('os-endereco').value = os.endereco||'';
+      document.getElementById('os-descricao').value = os.descricao||'';
+      document.getElementById('os-regime').value = os.regime_cobranca||'hora';
+      document.getElementById('os-valor-combinado').value = os.valor_combinado||'';
+      document.getElementById('os-data-inicio').value = os.data_inicio||'';
+      document.getElementById('os-equipamento').value = os.equipamento_id||'';
+      document.getElementById('os-operador').value = os.operador_id||'';
+      _atualizarLabelRegime();
+    } catch {}
+  }
+  document.getElementById('modal-os').classList.remove('hidden');
 }
-function editarOS(osId) {
-  toast('Edição de OS — em breve','info');
+
+function editarOS(osId) { abrirModalOS(osId); }
+
+function fecharModalOS() {
+  document.getElementById('modal-os').classList.add('hidden');
 }
-function abrirModalParte() {
-  toast('Adicionar registro manual — em breve','info');
+
+function _atualizarLabelRegime() {
+  const regime = document.getElementById('os-regime')?.value||'hora';
+  const label  = document.getElementById('os-valor-label');
+  const hint   = document.getElementById('os-valor-hint');
+  if (!label) return;
+  const map = {
+    hora:     { label:'Valor/hora (R$)',    hint:'Preço por hora combinado com o cliente' },
+    diaria:   { label:'Valor/diária (R$)',  hint:'Preço por diária combinado' },
+    empreito: { label:'Valor total (R$)',   hint:'Valor fixo combinado para a obra' },
+  };
+  label.textContent = map[regime]?.label || 'Valor (R$)';
+  if (hint) hint.textContent = map[regime]?.hint||'';
+}
+
+async function _carregarSelectsOS() {
+  // Clientes
+  const selCli = document.getElementById('os-cliente');
+  if (selCli && selCli.options.length <= 1) {
+    try {
+      const clis = await apiFetch('/operacional/api/clientes');
+      selCli.innerHTML = '<option value="">Selecione o cliente...</option>' +
+        clis.map(c=>`<option value="${c.id}">${esc(c.nome)}</option>`).join('');
+    } catch {}
+  }
+  // Tipos de serviço
+  const selTipo = document.getElementById('os-tipo-servico');
+  if (selTipo && selTipo.options.length <= 1) {
+    try {
+      const tipos = await apiFetch('/operacional/api/tipos-servico');
+      selTipo.innerHTML = '<option value="">Tipo de serviço...</option>' +
+        tipos.map(t=>`<option value="${t.id}">${esc(t.nome)}</option>`).join('');
+    } catch {}
+  }
+  // Equipamentos
+  const selEq = document.getElementById('os-equipamento');
+  if (selEq && selEq.options.length <= 1) {
+    try {
+      const eqs = await apiFetch('/operacional/api/equipamentos');
+      selEq.innerHTML = '<option value="">Equipamento...</option>' +
+        eqs.map(e=>`<option value="${e.id}">${esc(e.codigo)} — ${esc(e.descricao)}</option>`).join('');
+    } catch {}
+  }
+  // Operadores
+  const selOp = document.getElementById('os-operador');
+  if (selOp && selOp.options.length <= 1) {
+    try {
+      const ops = await apiFetch('/operacional/api/operadores');
+      selOp.innerHTML = '<option value="">Operador responsável...</option>' +
+        ops.map(o=>`<option value="${o.id}">${esc(o.nome)}</option>`).join('');
+    } catch {}
+  }
+}
+
+async function salvarOS() {
+  const err = document.getElementById('os-error');
+  err.classList.add('hidden');
+  const osId = document.getElementById('os-id').value;
+  const obra  = document.getElementById('os-obra').value.trim();
+  if (!obra) { err.textContent='Obra/Local é obrigatório'; err.classList.remove('hidden'); return; }
+
+  const payload = {
+    codigo_erp:        document.getElementById('os-codigo-erp').value.trim()||null,
+    cliente_id:        document.getElementById('os-cliente').value||null,
+    cliente_nome_avulso: document.getElementById('os-cliente-avulso').value.trim()||null,
+    tipo_servico_id:   document.getElementById('os-tipo-servico').value||null,
+    equipamento_id:    document.getElementById('os-equipamento').value||null,
+    operador_id:       document.getElementById('os-operador').value||null,
+    regime_cobranca:   document.getElementById('os-regime').value,
+    valor_combinado:   parseFloat(document.getElementById('os-valor-combinado').value)||null,
+    obra,
+    endereco:          document.getElementById('os-endereco').value.trim()||null,
+    descricao:         document.getElementById('os-descricao').value.trim()||null,
+    data_inicio:       document.getElementById('os-data-inicio').value||null,
+    origem:            'escritorio',
+  };
+
+  const btn = document.getElementById('btn-salvar-os');
+  btn.textContent='Salvando...'; btn.disabled=true;
+  try {
+    if (osId) {
+      await apiFetch('/operacional/api/os/'+osId, {method:'PATCH', body:JSON.stringify(payload)});
+      toast('OS atualizada!','success');
+    } else {
+      await apiFetch('/operacional/api/os', {method:'POST', body:JSON.stringify(payload)});
+      toast('OS criada!','success');
+    }
+    fecharModalOS();
+    await carregarOS();
+  } catch(e) { err.textContent=e.message; err.classList.remove('hidden'); }
+  finally { btn.textContent='Salvar OS'; btn.disabled=false; }
+}
+
+async function abrirModalParte() {
+  if (!_osAtual) return;
+  document.getElementById('mp-os-id').value = _osAtual.id;
+  document.getElementById('mp-parte-id').value = '';
+  document.getElementById('mp-data').value = new Date().toISOString().slice(0,10);
+  // Popular selects
+  const eqs = await apiFetch('/operacional/api/equipamentos').catch(()=>[]);
+  const ops = await apiFetch('/operacional/api/operadores').catch(()=>[]);
+  document.getElementById('mp-equipamento').innerHTML = '<option value="">Selecione...</option>' +
+    eqs.map(e=>`<option value="${e.id}" data-cat="${e.categoria}">${esc(e.codigo)} — ${esc(e.descricao)}</option>`).join('');
+  document.getElementById('mp-operador').innerHTML = '<option value="">Selecione...</option>' +
+    ops.map(o=>`<option value="${o.id}">${esc(o.nome)}</option>`).join('');
+  ['mp-h-ini','mp-h-fin','mp-km-ini','mp-km-fin','mp-obs'].forEach(id=>{
+    const el=document.getElementById(id); if(el) el.value='';
+  });
+  document.getElementById('mp-bloco-hor').style.display='none';
+  document.getElementById('mp-bloco-km').style.display='none';
+  document.getElementById('modal-parte').classList.remove('hidden');
 }
 
 function renderTabelaOS(lista) {
