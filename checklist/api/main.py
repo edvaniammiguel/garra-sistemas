@@ -176,6 +176,12 @@ print(f"STATIC_DIR: {STATIC_DIR} (exists: {os.path.exists(STATIC_DIR)})")
 if os.path.exists(STATIC_DIR):
     app.mount("/jardinagem/static", StaticFiles(directory=STATIC_DIR), name="jard_static")
 
+# Ícones globais — servidos como /static/icons/ para todos os módulos
+ICONS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "icons")
+if os.path.exists(ICONS_DIR):
+    app.mount("/static/icons", StaticFiles(directory=ICONS_DIR), name="static_icons")
+    print(f"ICONS_DIR: {ICONS_DIR} (exists: True)")
+
 # ── SUPABASE STORAGE ──────────────────────────────────────────
 def storage_upload(dados: bytes, path: str) -> str:
     if not SUPABASE_URL or not SUPABASE_SERVICE_KEY:
