@@ -1001,15 +1001,16 @@ window.addEventListener('load', async () => {
 let secAtual = 'dashboard';
 function navTo(sec, elBtn) {
   // Esconder todas as seções
-  document.querySelectorAll('#content > section').forEach(s => s.classList.add('hidden'));
-  document.getElementById('sec-' + sec).classList.remove('hidden');
+  document.querySelectorAll('section[id^="sec-"]').forEach(s => s.classList.add('hidden'));
+  const target = document.getElementById('sec-' + sec);
+  if (target) target.classList.remove('hidden');
   // Sidebar active
   document.querySelectorAll('.sb-item').forEach(i => i.classList.remove('active'));
   if (elBtn) elBtn.classList.add('active');
   secAtual = sec;
-  if (sec === 'usuarios') renderTabelaUsuarios();
+  if (sec === 'usuarios')   renderTabelaUsuarios();
   if (sec === 'permissoes') renderPermissoes();
-  if (sec === 'os') carregarOS();
+  if (sec === 'os')         carregarOS();
 }
 
 /* ══════════════════════════════════════════════
@@ -1750,16 +1751,22 @@ function toast(msg, type='') {
   setTimeout(()=>t.remove(), 3000);
 }
 
+let _osListaCompleta = [];
+
 async function carregarOS() {
   const el = document.getElementById('os-table');
   if (!el) return;
   el.innerHTML = '<div class="loading"><span class="spin"></span></div>';
   try {
-    const lista = await apiFetch('/operacional/api/os');
-    renderTabelaOS(lista);
+    _osListaCompleta = await apiFetch('/operacional/api/os');
+    renderTabelaOS(_osListaCompleta);
   } catch(e) {
     el.innerHTML = `<div style="color:var(--red);padding:20px">Erro ao carregar OS: ${esc(e.message)}</div>`;
   }
+}
+
+function filtrarOS() {
+  renderTabelaOS(_osListaCompleta);
 }
 
 function renderTabelaOS(lista) {
