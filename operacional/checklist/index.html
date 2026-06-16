@@ -20,6 +20,19 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=Barlow:wght@400;500;600&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="css/style.css" />
+<script>
+  // SSO inline — executa antes do DOM carregar para evitar flash de login
+  (function() {
+    const sso = new URLSearchParams(location.search).get('sso');
+    if (sso && sso.length > 10) {
+      // Adicionar CSS para ocultar login imediatamente
+      const s = document.createElement('style');
+      s.textContent = '#screen-login { display: none !important; }';
+      document.head.appendChild(s);
+      localStorage.setItem('garra_token', sso);
+    }
+  })();
+</script>
 </head>
 <body>
 
@@ -786,6 +799,9 @@
     const ssoToken = params.get('sso');
     if (ssoToken && ssoToken.length > 10) {
       localStorage.setItem('garra_token', ssoToken);
+      // Ocultar tela de login imediatamente para evitar flash
+      const loginScreen = document.getElementById('screen-login');
+      if (loginScreen) loginScreen.style.display = 'none';
     }
 
     // Tentar auto-login se tem token
