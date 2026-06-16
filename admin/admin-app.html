@@ -1020,10 +1020,12 @@ async function carregarKPIs() {
   try {
     _usuarios = await apiFetch('/usuarios');
     const ativos = _usuarios.filter(u => u.ativo);
-    document.getElementById('kpi-usuarios').textContent = ativos.length;
-    document.getElementById('kpi-usuarios-sub').textContent = `${_usuarios.length} cadastrados total`;
+    const kpiU = document.getElementById('kpi-usuarios');
+    const kpiUSub = document.getElementById('kpi-usuarios-sub');
+    if (kpiU) kpiU.textContent = ativos.length;
+    if (kpiUSub) kpiUSub.textContent = `${_usuarios.length} cadastrados total`;
     document.getElementById('sb-user-count').textContent = ativos.length;
-    document.getElementById('kpi-online').textContent = '–';
+    const kpiOn = document.getElementById('kpi-online'); if(kpiOn) kpiOn.textContent = '–';
     document.getElementById('hd-online-count').textContent = ativos.length + ' ativos';
   } catch(e) { console.warn('KPI usuários:', e.message); }
 
@@ -1215,8 +1217,8 @@ async function salvarUsuario() {
     _usuarios = await apiFetch('/usuarios');
     renderListaDash();
     if (secAtual === 'usuarios') renderTabelaUsuarios();
-    document.getElementById('kpi-usuarios').textContent = _usuarios.filter(u => u.ativo).length;
-    document.getElementById('sb-user-count').textContent = _usuarios.filter(u => u.ativo).length;
+    const _kpiU = document.getElementById('kpi-usuarios'); if(_kpiU) _kpiU.textContent = _usuarios.filter(u => u.ativo).length;
+    const _kpiSB = document.getElementById('sb-user-count'); if(_kpiSB) _kpiSB.textContent = _usuarios.filter(u => u.ativo).length;
   } catch(e) {
     errEl.textContent = e.message;
     errEl.classList.remove('hidden');
@@ -1244,8 +1246,8 @@ async function confirmarDesativar() {
     _usuarios = await apiFetch('/usuarios');
     renderListaDash();
     if (secAtual === 'usuarios') renderTabelaUsuarios();
-    document.getElementById('kpi-usuarios').textContent = _usuarios.filter(u => u.ativo).length;
-    document.getElementById('sb-user-count').textContent = _usuarios.filter(u => u.ativo).length;
+    const _kpiU = document.getElementById('kpi-usuarios'); if(_kpiU) _kpiU.textContent = _usuarios.filter(u => u.ativo).length;
+    const _kpiSB = document.getElementById('sb-user-count'); if(_kpiSB) _kpiSB.textContent = _usuarios.filter(u => u.ativo).length;
   } catch(e) { toast(e.message, 'error'); }
   finally { btn.textContent = 'Desativar'; btn.disabled = false; }
 }
@@ -1749,7 +1751,7 @@ function toast(msg, type='') {
 }
 
 async function carregarOS() {
-  const el = document.getElementById('os-lista');
+  const el = document.getElementById('os-table');
   if (!el) return;
   el.innerHTML = '<div class="loading"><span class="spin"></span></div>';
   try {
@@ -1758,6 +1760,70 @@ async function carregarOS() {
   } catch(e) {
     el.innerHTML = `<div style="color:var(--red);padding:20px">Erro ao carregar OS: ${esc(e.message)}</div>`;
   }
+}
+
+function renderTabelaOS(lista) {
+  const el = document.getElementById('os-table');
+  if (!el) return;
+
+  // Aplicar filtros
+  const busca  = (document.getElementById('os-search')?.value||'').toLowerCase();
+  const status = document.getElementById('os-filter-status')?.value||'';
+  const cli    = document.getElementById('os-filter-cliente')?.value||'';
+
+  const filtrada = lista.filter(os => {
+    if (status && os.status !== status) return false;
+    if (cli    && os.cliente_id !== cli) return false;
+    if (busca) {
+      const hay = ((os.numero||'')+(os.obra||'')+(os.codigo_erp||'')+(os.cliente_nome||'')).toLowerCase();
+      if (!hay.includes(busca)) return false;
+    }
+    return true;
+  });
+
+  if (!filtrada.length) {
+    el.innerHTML = `<div class="loading" style="color:var(--muted)">
+      ${lista.length ? 'Nenhuma OS encontrada com esses filtros.' : 'Nenhuma OS cadastrada ainda.'}
+    </div>`;
+    return;
+  }
+
+  el.innerHTML = `
+    <table style="width:100%;border-collapse:collapse">
+      <thead>
+        <tr style="border-bottom:2px solid var(--border)">
+          <th style="text-align:left;padding:10px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--muted)">Cód</th>
+          <th style="text-align:left;padding:10px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--muted)">Cliente / Obra</th>
+          <th style="text-align:left;padding:10px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--muted)">Equipamento</th>
+          <th style="text-align:left;padding:10px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--muted)">OS</th>
+          <th style="text-align:left;padding:10px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--muted)">Data</th>
+          <th style="text-align:left;padding:10px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--muted)">Status</th>
+          <th style="padding:10px"></th>
+        </tr>
+      </thead>
+      <tbody>
+        ${filtrada.map(os => {
+          const st = STATUS_LABEL[os.status] || {label:os.status, badge:'badge-info'};
+          const data = os.data_inicio ? new Date(os.data_inicio+'T00:00').toLocaleDateString('pt-BR') : '–';
+          return `<tr style="border-bottom:1px solid #F1F5F9" onmouseenter="this.style.background='#F8FAFC'" onmouseleave="this.style.background=''">
+            <td style="padding:10px;font-size:13px;font-weight:700;color:var(--blue)">${esc(os.numero||'–')}</td>
+            <td style="padding:10px">
+              <div style="font-size:13px;font-weight:600">${esc(os.cliente_nome||os.cliente_avulso||'–')}</div>
+              <div style="font-size:11px;color:var(--muted)">${esc(os.obra||'')}</div>
+            </td>
+            <td style="padding:10px;font-size:12px;color:var(--muted)">${esc(os.equipamento_codigo||'–')}</td>
+            <td style="padding:10px;font-size:12px;color:var(--muted)">${esc(os.codigo_erp||'–')}</td>
+            <td style="padding:10px;font-size:12px;color:var(--muted)">${data}</td>
+            <td style="padding:10px"><span class="badge ${st.badge}">${st.label}</span></td>
+            <td style="padding:10px;text-align:right;display:flex;gap:6px;justify-content:flex-end">
+              <button class="btn-sm" onclick="verPartesOS('${esc(os.id)}','${esc(os.numero)}')">📋 Partes</button>
+              <button class="btn-sm" onclick="editarOS('${esc(os.id)}')">✎ Editar</button>
+            </td>
+          </tr>`;
+        }).join('')}
+      </tbody>
+    </table>
+    <div style="margin-top:10px;font-size:11px;color:var(--muted);text-align:right">${filtrada.length} OS exibida(s)</div>`;
 }
 </script>
 </body>
