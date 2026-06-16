@@ -1751,6 +1751,15 @@ function toast(msg, type='') {
   setTimeout(()=>t.remove(), 3000);
 }
 
+const STATUS_LABEL = {
+  'aberta_sem_erp':      { label:'Aberta (sem ERP)',   badge:'badge-pend' },
+  'aberta_completa':     { label:'Aberta',             badge:'badge-info' },
+  'em_execucao':         { label:'Em execução',        badge:'badge-info' },
+  'concluida_sem_erp':   { label:'Concluída (sem ERP)',badge:'badge-ok'   },
+  'concluida_completa':  { label:'Concluída',          badge:'badge-ok'   },
+  'cancelada':           { label:'Cancelada',          badge:'badge-err'  },
+};
+
 let _osListaCompleta = [];
 
 async function carregarOS() {
