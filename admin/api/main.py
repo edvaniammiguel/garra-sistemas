@@ -2286,7 +2286,8 @@ async def checklist_manifest():
     path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "operacional", "checklist", "manifest.json")
     return FileResponse(path)
 
-
+@app.get("/mobile")
+async def mobile_app():
     return FileResponse(os.path.join(os.path.dirname(__file__), "../../operacional/static/mobile.html"))
 
 @app.get("/mobile/sw.js")
@@ -2305,19 +2306,15 @@ from fastapi.responses import RedirectResponse
 
 @app.get("/manifest.json")
 async def redirect_manifest():
-    return RedirectResponse(url="/jardinagem/manifest.json")
+    return RedirectResponse(url="/mobile/manifest.json")
 
 @app.get("/sw.js")
 async def redirect_sw():
-    return RedirectResponse(url="/jardinagem/sw.js")
-
-@app.get("/mobile")
-async def redirect_mobile():
-    return RedirectResponse(url="/jardinagem/mobile")
+    return RedirectResponse(url="/mobile/sw.js")
 
 @app.get("/favicon.ico")
 async def redirect_favicon():
-    return RedirectResponse(url="/jardinagem/static/icons/favicon.ico")
+    return RedirectResponse(url="/static/icons/favicon.ico")
 
 @app.exception_handler(404)
 async def not_found_handler(request: Request, exc):
@@ -2361,7 +2358,7 @@ async def debug_usuarios(_auth=Depends(verificar_admin)):
 
 @app.get("/")
 async def root():
-    return RedirectResponse(url="/jardinagem")
+    return RedirectResponse(url="/admin")
 
 @app.get("/jardinagem/api/health")
 async def jard_health():
