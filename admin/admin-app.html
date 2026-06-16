@@ -483,6 +483,13 @@ input,select,textarea { font-family:inherit; font-size:13px; outline:none; }
               </select>
             </div>
             <div class="users-filter">
+              <select id="os-filter-origem" onchange="filtrarOS()">
+                <option value="">Todas as origens</option>
+                <option value="escritorio">Escritório</option>
+                <option value="campo">📍 Campo (operador)</option>
+              </select>
+            </div>
+            <div class="users-filter">
               <select id="os-filter-cliente" onchange="filtrarOS()">
                 <option value="">Todos os clientes</option>
               </select>
@@ -2161,13 +2168,15 @@ function renderTabelaOS(lista) {
   if (!el) return;
 
   // Aplicar filtros
-  const busca  = (document.getElementById('os-search')?.value||'').toLowerCase();
-  const status = document.getElementById('os-filter-status')?.value||'';
-  const cli    = document.getElementById('os-filter-cliente')?.value||'';
+  const busca   = (document.getElementById('os-search')?.value||'').toLowerCase();
+  const status  = document.getElementById('os-filter-status')?.value||'';
+  const cli     = document.getElementById('os-filter-cliente')?.value||'';
+  const origem  = document.getElementById('os-filter-origem')?.value||'';
 
   const filtrada = lista.filter(os => {
     if (status && os.status !== status) return false;
     if (cli    && os.cliente_id !== cli) return false;
+    if (origem && os.origem !== origem) return false;
     if (busca) {
       const hay = ((os.numero||'')+(os.obra||'')+(os.codigo_erp||'')+(os.cliente_nome||'')).toLowerCase();
       if (!hay.includes(busca)) return false;
@@ -2200,7 +2209,7 @@ function renderTabelaOS(lista) {
           const st = STATUS_LABEL[os.status] || {label:os.status, badge:'badge-info'};
           const data = os.data_inicio ? new Date(os.data_inicio+'T00:00').toLocaleDateString('pt-BR') : '–';
           return `<tr style="border-bottom:1px solid #F1F5F9" onmouseenter="this.style.background='#F8FAFC'" onmouseleave="this.style.background=''">
-            <td style="padding:10px;font-size:13px;font-weight:700;color:var(--blue)">${esc(os.numero||'–')}</td>
+            <td style="padding:10px;font-size:13px;font-weight:700;color:var(--blue)">${esc(os.numero||'–')} ${os.origem==='campo' ? '<span class="badge badge-pend" style="font-size:9px;margin-left:4px">📍 campo</span>' : ''}</td>
             <td style="padding:10px">
               <div style="font-size:13px;font-weight:600">${esc(os.cliente_nome||os.cliente_avulso||'–')}</div>
               <div style="font-size:11px;color:var(--muted)">${esc(os.obra||'')}</div>
