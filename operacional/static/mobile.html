@@ -707,86 +707,186 @@ function renderOperacional() {
   const el = document.getElementById('app-content');
   el.innerHTML = `
     <div id="sec-op" style="min-height:calc(100dvh - 130px)">
-      <!-- Tabs -->
       <div style="display:flex;border-bottom:2px solid var(--border);background:#fff;position:sticky;top:63px;z-index:10">
         <button style="flex:1;padding:12px;font-size:12px;font-weight:700;color:var(--orange);background:none;border:none;border-bottom:3px solid var(--orange);margin-bottom:-2px" id="op-tab-os" onclick="opTab('os')">📋 Minhas OS</button>
         <button style="flex:1;padding:12px;font-size:12px;font-weight:700;color:var(--muted);background:none;border:none;border-bottom:3px solid transparent;margin-bottom:-2px" id="op-tab-hist" onclick="opTab('hist')">📊 Histórico</button>
       </div>
-      <div id="op-content" style="padding-top:4px"><div class="loading"><span class="spin"></span></div></div>
+      <div style="padding:12px">
+        <button onclick="abrirSheetNovaOS()" style="width:100%;padding:12px;background:var(--blue);color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer">➕ Nova OS</button>
+      </div>
+      <div id="op-lista"></div>
+    </div>
+    <div id="modal-parte" class="modal-backdrop" style="display:none" onclick="fecharModal(event)">
+  <div class="modal-sheet" onclick="event.stopPropagation()">
+    <div class="sheet-handle"></div>
+    <div class="sheet-title" id="modal-titulo">Registrar dia de trabalho</div>
+    <input type="hidden" id="m-os-id"/>
+
+    <!-- DATA -->
+    <div class="field">
+      <label>Data</label>
+      <input type="date" id="m-data"/>
     </div>
 
-    <!-- Sheet registrar dia -->
-    <div class="sheet-backdrop" id="sheet-parte" onclick="fecharSheet(event)">
-      <div class="sheet" onclick="event.stopPropagation()">
-        <div class="sheet-handle"></div>
-        <div class="sheet-title" id="sheet-titulo">Registrar dia</div>
-        <div class="field"><label>Data</label><input type="date" id="sp-data"/></div>
-        <div class="field">
-          <label>Equipamento <span style="color:var(--red)">*</span></label>
-          <select id="sp-equip" onchange="onEquipChange()"><option value="">Selecione...</option></select>
-        </div>
-        <div class="field">
-          <label>Operador/Motorista</label>
-          <select id="sp-oper"><option value="">Selecione...</option></select>
-        </div>
-        <div id="sp-bloco-hor" style="display:none">
-          <div class="field-row">
-            <div class="field"><label>Hor. inicial</label><input type="number" id="sp-h-ini" step="0.1" placeholder="0000.0" oninput="calcHoras()"/></div>
-            <div class="field"><label>Hor. final</label><input type="number" id="sp-h-fin" step="0.1" placeholder="0000.0" oninput="calcHoras()"/></div>
-          </div>
-          <div class="field-calc" id="sp-horas-calc"></div>
-          <div class="field-row">
-            <div class="field"><label>Início</label><input type="time" id="sp-h-ini-t"/></div>
-            <div class="field"><label>Fim</label><input type="time" id="sp-h-fim-t"/></div>
-          </div>
-        </div>
-        <div id="sp-bloco-km" style="display:none">
-          <div class="field-row">
-            <div class="field"><label>KM inicial</label><input type="number" id="sp-km-ini" step="1"/></div>
-            <div class="field"><label>KM final</label><input type="number" id="sp-km-fin" step="1"/></div>
-          </div>
-          <div class="field-row">
-            <div class="field"><label>Viagens</label><input type="number" id="sp-viagens" step="1" min="0" value="0"/></div>
-            <div class="field">
-              <label>Por conta de</label>
-              <select id="sp-conta"><option value="empresa">Empresa</option><option value="cliente" selected>Cliente</option></select>
-            </div>
-          </div>
-          <div class="field"><label>Trajeto</label><input type="text" id="sp-trajeto" placeholder="Ex.: Obra → Aterro"/></div>
-        </div>
-        <div class="field"><label>Serviço / Observação</label><input type="text" id="sp-obs" placeholder="Ex.: Furação tubulão, escavação..."/></div>
-        <div class="field-err" id="sp-err"></div>
-        <button class="btn-primary" id="sp-btn-salvar" onclick="salvarParte(false)" style="margin-bottom:8px">✅ Salvar</button>
-        <button class="btn-secondary" onclick="salvarParte(true)">➕ Salvar e adicionar outro</button>
-        <button style="width:100%;padding:12px;margin-top:8px;background:none;color:var(--muted);font-size:14px;font-weight:600" onclick="fecharSheetDireto()">Cancelar</button>
+    <!-- EQUIPAMENTO (livre — não pré-fixado) -->
+    <div class="field-row">
+      <div class="field" style="flex:2">
+        <label>Equipamento <span style="color:var(--red)">*</span></label>
+        <select id="m-equipamento" onchange="onEquipChange()">
+          <option value="">Selecione...</option>
+        </select>
+      </div>
+      <div class="field" style="flex:1">
+        <label>Tipo</label>
+        <div id="m-tipo-badge" style="padding:12px 8px;font-size:12px;font-weight:700;color:var(--muted);border:1.5px solid var(--border);border-radius:8px;text-align:center">–</div>
       </div>
     </div>
 
-    <!-- Sheet Nova OS avulsa -->
+    <!-- OPERADOR DO EQUIPAMENTO -->
+    <div class="field">
+      <label>Operador / Motorista</label>
+      <select id="m-operador">
+        <option value="">Selecione...</option>
+      </select>
+    </div>
+
+    <!-- HORÍMETRO (máquinas) -->
+    <div id="bloco-horimetro" style="display:none">
+      <div class="field-row">
+        <div class="field">
+          <label>Horímetro inicial</label>
+          <input type="number" id="m-h-ini" placeholder="0000.0" step="0.1" oninput="calcHoras()"/>
+        </div>
+        <div class="field">
+          <label>Horímetro final</label>
+          <input type="number" id="m-h-fin" placeholder="0000.0" step="0.1" oninput="calcHoras()"/>
+        </div>
+      </div>
+      <div id="horas-calc" class="field-calc" style="display:none"></div>
+      <div class="field-row">
+        <div class="field">
+          <label>Hora início</label>
+          <input type="time" id="m-h-inicio"/>
+        </div>
+        <div class="field">
+          <label>Hora fim</label>
+          <input type="time" id="m-h-fim"/>
+        </div>
+      </div>
+    </div>
+
+    <!-- KM + TRANSPORTE (caminhões) -->
+    <div id="bloco-km" style="display:none">
+      <div class="field-row">
+        <div class="field">
+          <label>KM inicial</label>
+          <input type="number" id="m-km-ini" placeholder="000000" step="1"/>
+        </div>
+        <div class="field">
+          <label>KM final</label>
+          <input type="number" id="m-km-fin" placeholder="000000" step="1"/>
+        </div>
+      </div>
+      <div class="field-row">
+        <div class="field">
+          <label>Qtd viagens</label>
+          <input type="number" id="m-viagens" placeholder="0" step="1" min="0"/>
+        </div>
+        <div class="field">
+          <label>Por conta de</label>
+          <select id="m-por-conta">
+            <option value="empresa">Empresa</option>
+            <option value="cliente">Cliente</option>
+          </select>
+        </div>
+      </div>
+      <div class="field">
+        <label>Trajeto</label>
+        <input type="text" id="m-trajeto" placeholder="Ex.: Obra → Aterro Municipal"/>
+      </div>
+    </div>
+
+    <!-- SERVIÇO / OBSERVAÇÃO (destaque — igual ao papel) -->
+    <div class="field">
+      <label>Serviço executado / Observação</label>
+      <input type="text" id="m-obs" placeholder="Ex.: Furação tubulão, 24m bloco 60cm, 1 viagem entulho..."/>
+    </div>
+
+    <div id="m-error" class="field-error" style="display:none"></div>
+
+    <button class="btn-salvar" id="btn-salvar-parte" onclick="salvarParte(false)">✅ Salvar registro</button>
+    <button class="btn-salvar" style="background:var(--blue);margin-top:6px;box-shadow:none" id="btn-salvar-mais" onclick="salvarParte(true)">➕ Salvar e adicionar outro equipamento</button>
+    <button class="btn-cancelar" onclick="fecharModalDireto()">Cancelar</button>
+  </div>
+</div>
     <div class="sheet-backdrop" id="sheet-nova-os" onclick="fecharSheetNovaOS(event)">
       <div class="sheet" onclick="event.stopPropagation()">
         <div class="sheet-handle"></div>
         <div class="sheet-title">Nova OS</div>
-        <div class="field"><label>Obra / Local <span style="color:var(--red)">*</span></label><input type="text" id="nos-obra" placeholder="Ex.: Terraplanagem Rua X"/></div>
-        <div class="field"><label>Cliente (nome)</label><input type="text" id="nos-cliente" placeholder="Ex.: João Silva"/></div>
-        <div class="field">
-          <label>Equipamento</label>
-          <select id="nos-equip"><option value="">Selecione...</option></select>
-        </div>
-        <div class="field">
-          <label>Regime</label>
+        <div class="field"><label>Obra / Local *</label><input type="text" id="nos-obra" placeholder="Ex.: Terraplanagem Rua X"/></div>
+        <div class="field"><label>Cliente</label><input type="text" id="nos-cliente" placeholder="Nome do cliente"/></div>
+        <div class="field"><label>Regime</label>
           <select id="nos-regime"><option value="hora">Por hora</option><option value="diaria">Por diária</option><option value="empreito">Empreito</option></select>
         </div>
-        <div class="field"><label>Observação</label><input type="text" id="nos-obs" placeholder="Detalhes do serviço"/></div>
-        <div class="field-err" id="nos-err"></div>
-        <button class="btn-primary" id="nos-btn" onclick="salvarNovaOS()" style="margin-bottom:8px">✅ Abrir OS</button>
-        <button style="width:100%;padding:12px;margin-top:4px;background:none;color:var(--muted);font-size:14px;font-weight:600" onclick="fecharSheetNovaOS()">Cancelar</button>
+        <div class="field-err" id="nos-err" style="display:none;color:var(--red);font-size:12px;padding:6px 0"></div>
+        <button class="btn-primary" id="nos-btn" onclick="salvarNovaOS()">✅ Abrir OS</button>
+        <button style="width:100%;padding:12px;margin-top:8px;background:none;color:var(--muted);font-size:14px" onclick="fecharSheetNovaOS()">Cancelar</button>
       </div>
     </div>`;
-  carregarOSMobile();
+  carregarOSApp();
 }
 
 let _opTab = 'os';
+function opTab(tab) {
+  _opTab = tab;
+  ['os','hist'].forEach(t => {
+    const btn = document.getElementById('op-tab-'+t);
+    if (!btn) return;
+    btn.style.color = t===tab ? 'var(--orange)' : 'var(--muted)';
+    btn.style.borderBottomColor = t===tab ? 'var(--orange)' : 'transparent';
+  });
+  if (tab==='os')   carregarOSApp();
+  if (tab==='hist') carregarHistorico();
+}
+
+function fecharSheetNovaOS(e) {
+  if (!e || e.target.id==='sheet-nova-os') {
+    const s = document.getElementById('sheet-nova-os');
+    if (s) s.classList.remove('open');
+  }
+}
+async function abrirSheetNovaOS() {
+  const s = document.getElementById('sheet-nova-os');
+  if (s) { s.classList.add('open'); }
+  const nos = document.getElementById('nos-obra');
+  if (nos) nos.value = '';
+  const noc = document.getElementById('nos-cliente');
+  if (noc) noc.value = '';
+  const nor = document.getElementById('nos-regime');
+  if (nor) nor.value = 'hora';
+}
+async function salvarNovaOS() {
+  const err = document.getElementById('nos-err');
+  if (err) err.style.display='none';
+  const obra = (document.getElementById('nos-obra')?.value||'').trim();
+  if (!obra) { if(err){err.textContent='Obra é obrigatória';err.style.display='block';} return; }
+  const btn = document.getElementById('nos-btn');
+  if (btn) { btn.textContent='Salvando...'; btn.disabled=true; }
+  try {
+    await apiFetch('/operacional/api/os', { method:'POST', body: JSON.stringify({
+      obra,
+      cliente_nome_avulso: (document.getElementById('nos-cliente')?.value||'').trim()||null,
+      regime_cobranca: document.getElementById('nos-regime')?.value||'hora',
+      origem: 'campo',
+    })});
+    toast('OS aberta com sucesso!', 'success');
+    fecharSheetNovaOS();
+    carregarOSApp();
+  } catch(e) { if(err){err.textContent=e.message;err.style.display='block';} }
+  finally { if(btn){btn.textContent='✅ Abrir OS';btn.disabled=false;} }
+}
+
+
 function opTab(tab) {
   _opTab = tab;
   ['os','hist'].forEach(t => {
@@ -1035,7 +1135,7 @@ function renderChecklist() {
   // Passar token na URL para auto-login no checklist
   const src = '/checklist?sso=' + encodeURIComponent(token||'');
   document.getElementById('app-content').innerHTML =
-    '<div id="sec-check" style="height:calc(100dvh - 130px);overflow:hidden">' +
+    '<div id="sec-check" style="height:calc(100dvh - 67px);overflow:hidden">' +
     '<iframe src="' + src + '" style="width:100%;height:100%;border:none;display:block" ' +
     'allow="camera;microphone" id="checklist-frame"></iframe>' +
     '</div>';
@@ -1044,6 +1144,315 @@ function renderChecklist() {
 /* ════════════════════════════════════════════
    UTILITÁRIOS
 ════════════════════════════════════════════ */
+
+/* ═══ OPERACIONAL ═══ */
+const REGIME_CFG = {
+  hora:     { label:'Por hora',    badge:'rb-hora',     icon:'⏱' },
+  diaria:   { label:'Por diária',  badge:'rb-diaria',   icon:'📅' },
+  empreito: { label:'Empreito',    badge:'rb-empreito', icon:'🔒' },
+};
+
+async function carregarOSApp() {
+  const el = document.getElementById('os-lista');
+  el.innerHTML = '<div class="loading"><span class="spin"></span></div>';
+  await carregarListasRegistro();
+  try {
+    _osList = await apiFetch('/operacional/api/minhas-os');
+  } catch(e) { _osList = []; }
+  renderOS();
+}
+
+function renderOS() {
+  const el = document.getElementById('os-lista');
+  if (!_osList.length) {
+    el.innerHTML = `<div class="empty">
+      <div class="empty-icon">📋</div>
+      <div class="empty-title">Nenhuma OS ativa</div>
+      <div class="empty-sub">Quando a Luana abrir uma OS para você, ela aparece aqui</div>
+    </div>`;
+    return;
+  }
+  el.innerHTML = _osList.map(os => {
+    const reg = REGIME_CFG[os.regime_cobranca] || REGIME_CFG.hora;
+    const data = os.data_inicio ? new Date(os.data_inicio+'T00:00').toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'}) : '';
+    return `<div class="os-card regime-${os.regime_cobranca||'hora'}">
+      <div style="display:flex;align-items:center;justify-content:space-between">
+        <span class="os-numero">${esc(os.numero)}</span>
+        <span class="badge os-regime-badge ${reg.badge}">${reg.icon} ${reg.label}</span>
+      </div>
+      <div class="os-obra">${esc(os.obra)}</div>
+      <div class="os-cliente">📍 ${esc(os.cliente_nome||'–')}</div>
+      ${os.equipamento_codigo ? `<div class="os-equip">🚜 ${esc(os.equipamento_codigo)} — ${esc(os.equipamento_descricao||'')}</div>` : ''}
+      ${data ? `<div style="font-size:11px;color:var(--muted);margin-top:4px">📅 Início: ${data}</div>` : ''}
+      <div class="os-actions">
+        <button class="btn-reg" onclick="abrirRegistro('${esc(os.id)}')">
+          ⏱ Registrar dia
+        </button>
+        <button class="btn-ver" onclick="verPartes('${esc(os.id)}','${esc(os.numero)}')">
+          Ver registros
+        </button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+/* ══════════════════════════════════════════
+   REGISTRAR PARTE DIÁRIA
+══════════════════════════════════════════ */
+
+async function carregarListasRegistro() {
+  if (!_equipamentos.length) {
+    try { _equipamentos = await apiFetch('/operacional/api/equipamentos'); } catch {}
+  }
+  if (!_operadores.length) {
+    try { _operadores = await apiFetch('/operacional/api/operadores'); } catch {}
+  }
+}
+
+function abrirRegistro(osId) {
+  _osAtualId = osId;
+  const os = _osList.find(o => o.id === osId);
+  document.getElementById('modal-titulo').textContent = os ? os.numero + ' — ' + os.obra.slice(0,28) : 'Registrar dia';
+  document.getElementById('m-os-id').value = osId;
+
+  // Data default = hoje
+  document.getElementById('m-data').value = new Date().toISOString().slice(0,10);
+
+  // Popular selects
+  const selEq = document.getElementById('m-equipamento');
+  selEq.innerHTML = '<option value="">Selecione...</option>' +
+    _equipamentos.map(e => `<option value="${e.id}" data-cat="${e.categoria}" data-codigo="${esc(e.codigo)}">${esc(e.codigo)} — ${esc(e.descricao)}</option>`).join('');
+
+  const selOp = document.getElementById('m-operador');
+  selOp.innerHTML = '<option value="">Selecione...</option>' +
+    _operadores.map(o => `<option value="${o.id}">${esc(o.nome)}</option>`).join('');
+
+  // Limpar campos
+  ['m-h-ini','m-h-fin','m-km-ini','m-km-fin','m-viagens','m-h-inicio','m-h-fim','m-trajeto','m-obs'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+  document.getElementById('m-por-conta').value = 'empresa';
+  document.getElementById('horas-calc').style.display = 'none';
+  document.getElementById('bloco-horimetro').style.display = 'none';
+  document.getElementById('bloco-km').style.display = 'none';
+  document.getElementById('m-tipo-badge').textContent = '–';
+  document.getElementById('m-error').style.display = 'none';
+
+  document.getElementById('modal-parte').style.display = 'flex';
+}
+
+function onEquipChange() {
+  const sel = document.getElementById('m-equipamento');
+  const opt = sel.options[sel.selectedIndex];
+  const cat = opt ? opt.getAttribute('data-cat') : '';
+  const cod = opt ? opt.getAttribute('data-codigo') : '';
+
+  const isCaminhao = ['caminhao','pipa','carro'].includes(cat);
+  document.getElementById('bloco-horimetro').style.display = isCaminhao ? 'none' : (cat ? 'block' : 'none');
+  document.getElementById('bloco-km').style.display        = isCaminhao ? 'block' : 'none';
+
+  const badge = document.getElementById('m-tipo-badge');
+  if (!cat) { badge.textContent = '–'; badge.style.color = 'var(--muted)'; }
+  else if (isCaminhao) { badge.textContent = '🚛 KM'; badge.style.color = 'var(--orange)'; }
+  else { badge.textContent = '⏱ Hr'; badge.style.color = 'var(--blue)'; }
+}
+
+function calcHoras() {
+  const ini = parseFloat(document.getElementById('m-h-ini').value);
+  const fin = parseFloat(document.getElementById('m-h-fin').value);
+  const el  = document.getElementById('horas-calc');
+  if (!isNaN(ini) && !isNaN(fin) && fin > ini) {
+    el.textContent = `✅ ${(fin-ini).toFixed(1)} horas trabalhadas`;
+    el.style.color = 'var(--green)';
+    el.style.display = 'block';
+  } else if (!isNaN(ini) && !isNaN(fin) && fin <= ini && fin !== ini) {
+    el.textContent = '⚠️ Horímetro final deve ser maior que o inicial';
+    el.style.color = 'var(--red)';
+    el.style.display = 'block';
+  } else {
+    el.style.display = 'none';
+  }
+}
+
+async function salvarParte(adicionarMais) {
+  const err = document.getElementById('m-error');
+  err.style.display = 'none';
+
+  const data        = document.getElementById('m-data').value;
+  const equipId     = document.getElementById('m-equipamento').value;
+  const operadorId  = document.getElementById('m-operador').value;
+
+  if (!data)    { err.textContent='Informe a data';        err.style.display='block'; return; }
+  if (!equipId) { err.textContent='Selecione o equipamento'; err.style.display='block'; return; }
+
+  // Detectar tipo de medição pelo equipamento selecionado
+  const sel = document.getElementById('m-equipamento');
+  const cat = sel.options[sel.selectedIndex]?.getAttribute('data-cat') || '';
+  const isCaminhao = ['caminhao','pipa','carro'].includes(cat);
+
+  const hIni = document.getElementById('m-h-ini').value;
+  const hFin = document.getElementById('m-h-fin').value;
+  const kmIni= document.getElementById('m-km-ini').value;
+  const kmFin= document.getElementById('m-km-fin').value;
+
+  if (!isCaminhao && hIni && hFin && parseFloat(hFin) < parseFloat(hIni)) {
+    err.textContent = 'Horímetro final menor que o inicial';
+    err.style.display = 'block';
+    return;
+  }
+
+  const payload = {
+    data,
+    equipamento_id:    equipId,
+    operador_id:       operadorId || null,
+    tipo_medicao:      isCaminhao ? 'km' : 'horimetro',
+    horimetro_inicial: hIni ? parseFloat(hIni) : null,
+    horimetro_final:   hFin ? parseFloat(hFin) : null,
+    km_inicial:        kmIni ? parseFloat(kmIni) : null,
+    km_final:          kmFin ? parseFloat(kmFin) : null,
+    qtd_viagens:       parseFloat(document.getElementById('m-viagens').value||'0') || 0,
+    hora_inicio:       document.getElementById('m-h-inicio').value || null,
+    hora_fim:          document.getElementById('m-h-fim').value    || null,
+    trajeto:           document.getElementById('m-trajeto').value.trim() || null,
+    por_conta_de:      document.getElementById('m-por-conta').value || 'empresa',
+    observacao:        document.getElementById('m-obs').value.trim() || null,
+  };
+
+  const btn1 = document.getElementById('btn-salvar-parte');
+  const btn2 = document.getElementById('btn-salvar-mais');
+  btn1.textContent='Salvando...'; btn1.disabled=true;
+  btn2.disabled=true;
+
+  try {
+    await apiFetch('/operacional/api/os/' + _osAtualId + '/partes', {
+      method:'POST', body:JSON.stringify(payload)
+    });
+    toast('Registro salvo!', 'success');
+
+    if (adicionarMais) {
+      // Limpa só os campos de medição — mantém data e OS
+      ['m-equipamento','m-operador','m-h-ini','m-h-fin','m-km-ini','m-km-fin',
+       'm-viagens','m-h-inicio','m-h-fim','m-trajeto','m-obs'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.value = '';
+      });
+      document.getElementById('por-conta').value = 'empresa';
+      document.getElementById('bloco-horimetro').style.display = 'none';
+      document.getElementById('bloco-km').style.display = 'none';
+      document.getElementById('m-tipo-badge').textContent = '–';
+      document.getElementById('horas-calc').style.display = 'none';
+    } else {
+      fecharModalDireto();
+    }
+  } catch(e) {
+    err.textContent = e.message; err.style.display='block';
+  } finally {
+    btn1.textContent='✅ Salvar registro'; btn1.disabled=false;
+    btn2.disabled=false;
+  }
+}
+
+/* ══════════════════════════════════════════
+   VER PARTES DA OS
+══════════════════════════════════════════ */
+async function verPartes(osId, osNumero) {
+  // Navegar para aba histórico e mostrar partes desta OS
+  mudarAba('hist', document.getElementById('tab-hist'));
+  const el = document.getElementById('hist-lista');
+  el.innerHTML = `<div class="loading"><span class="spin"></span></div>`;
+  try {
+    const data = await apiFetch('/operacional/api/os/'+osId+'/partes');
+    const partes = data.partes || [];
+    const totais = data.totais || {};
+
+    if (!partes.length) {
+      el.innerHTML = `<div class="empty">
+        <div class="empty-icon">📝</div>
+        <div class="empty-title">Nenhum registro ainda</div>
+        <div class="empty-sub">${osNumero} — clique em "Registrar dia" na OS</div>
+      </div>`;
+      return;
+    }
+
+    // Card de totais
+    let totalHtml = `<div class="os-card" style="border-left-color:var(--green)">
+      <div class="os-numero">${esc(osNumero)} — Resumo</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px">
+        <div style="text-align:center;background:#F0F4FF;border-radius:8px;padding:10px">
+          <div style="font-size:22px;font-weight:800;color:var(--blue)">${totais.dias_trabalhados||0}</div>
+          <div style="font-size:11px;color:var(--muted)">dias trabalhados</div>
+        </div>
+        <div style="text-align:center;background:#F0F4FF;border-radius:8px;padding:10px">
+          <div style="font-size:22px;font-weight:800;color:var(--blue)">${totais.total_horas||0}h</div>
+          <div style="font-size:11px;color:var(--muted)">horas totais</div>
+        </div>
+      </div>
+    </div>`;
+
+    // Lista de partes
+    const partesHtml = partes.map(p => {
+      const dt   = p.data ? new Date(p.data+'T00:00') : null;
+      const dia  = dt ? dt.toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'}) : '–';
+      const horas= p.horas_trabalhadas ? parseFloat(p.horas_trabalhadas).toFixed(1)+'h' : '–';
+      const hor  = p.horimetro_inicial && p.horimetro_final
+        ? `${p.horimetro_inicial} → ${p.horimetro_final}` : '';
+      return `<div class="hist-item">
+        <div class="hist-date">
+          <div>${dia.split('/')[0]}</div>
+          <div style="font-size:9px;color:var(--muted)">${dia.split('/')[1]&&'/'+dia.split('/')[1]}</div>
+        </div>
+        <div class="hist-body">
+          <div class="hist-equip">${esc(p.equipamento_codigo||'–')} ${esc(p.equipamento_descricao||'')}</div>
+          <div class="hist-horas">${horas}${hor?' · '+hor:''}${p.hora_inicio&&p.hora_fim?' · '+p.hora_inicio+'-'+p.hora_fim:''}</div>
+          ${p.observacao?`<div style="font-size:12px;color:var(--muted);margin-top:3px">💬 ${esc(p.observacao)}</div>`:''}
+        </div>
+        <div style="font-size:10px;font-weight:700;color:var(--green)">${horas}</div>
+      </div>`;
+    }).join('');
+
+    el.innerHTML = totalHtml + partesHtml;
+  } catch(e) {
+    el.innerHTML = `<div class="empty"><div class="empty-title">Erro ao carregar</div><div class="empty-sub">${esc(e.message)}</div></div>`;
+  }
+}
+
+/* ══════════════════════════════════════════
+   HISTÓRICO GERAL
+══════════════════════════════════════════ */
+async function carregarHistorico() {
+  const el = document.getElementById('hist-lista');
+  // Se já tem conteúdo (foi chamado por verPartes), não sobrescreve
+  if (!el.innerHTML.includes('spin')) return;
+  el.innerHTML = `<div class="empty">
+    <div class="empty-icon">🕐</div>
+    <div class="empty-title">Histórico</div>
+    <div class="empty-sub">Clique em "Ver registros" numa OS para ver o detalhamento</div>
+  </div>`;
+}
+
+/* ══════════════════════════════════════════
+   MODAL
+══════════════════════════════════════════ */
+function fecharModalOp(e) {
+  if (e.target === document.getElementById('modal-parte')) fecharModalDireto();
+}
+function fecharModalDireto() {
+  document.getElementById('modal-parte').style.display = 'none';
+}
+
+/* ══════════════════════════════════════════
+   TOAST
+══════════════════════════════════════════ */
+let _toastTimer;
+
+/* ══════════════════════════════════════════
+   UTILIDADES
+══════════════════════════════════════════ */
+function esc(s) {
+  return String(s||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
 function esc(s) {
   return String(s||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
