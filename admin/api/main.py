@@ -177,10 +177,16 @@ if os.path.exists(STATIC_DIR):
     app.mount("/jardinagem/static", StaticFiles(directory=STATIC_DIR), name="jard_static")
 
 # Ícones globais — servidos como /static/icons/ para todos os módulos
-ICONS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "checklist", "icons")
+ICONS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "operacional", "checklist", "icons")
 if os.path.exists(ICONS_DIR):
     app.mount("/static/icons", StaticFiles(directory=ICONS_DIR), name="static_icons")
     print(f"ICONS_DIR: {ICONS_DIR} (exists: True)")
+
+# Assets do checklist (css, js)
+CHECKLIST_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "operacional", "checklist")
+if os.path.exists(CHECKLIST_DIR):
+    app.mount("/checklist/css", StaticFiles(directory=os.path.join(CHECKLIST_DIR, "css")), name="checklist_css")
+    app.mount("/checklist/js",  StaticFiles(directory=os.path.join(CHECKLIST_DIR, "js")),  name="checklist_js")
 
 # ── SUPABASE STORAGE ──────────────────────────────────────────
 def storage_upload(dados: bytes, path: str) -> str:
@@ -502,7 +508,7 @@ async def renovar_token(payload=Depends(verificar_token)):
     """Token válido → gera novo com validade renovada. Chamado silenciosamente ao abrir o app."""
     novo_token = pyjwt.encode({
         "sub":              payload["sub"],
-        "login":            payload["login"],
+        "login":            payload.get("login") or payload.get("sub", ""),
         "nome":             payload.get("nome", ""),
         "perfil":           payload.get("perfil", ""),
         "perfil_checklist": payload.get("perfil_checklist", ""),
@@ -2252,8 +2258,22 @@ async def get_todas_permissoes(_auth=Depends(verificar_admin)):
 # FIM MÓDULO PERMISSÕES
 # ═══════════════════════════════════════════════════════════════════════════
 
-@app.get("/mobile")
-async def mobile_app():
+@app.get("/checklist")
+async def checklist_app():
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "operacional", "checklist", "index.html")
+    return FileResponse(path)
+
+@app.get("/checklist/sw.js")
+async def checklist_sw():
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "operacional", "checklist", "sw.js")
+    return FileResponse(path, media_type="application/javascript")
+
+@app.get("/checklist/manifest.json")
+async def checklist_manifest():
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "operacional", "checklist", "manifest.json")
+    return FileResponse(path)
+
+
     return FileResponse(os.path.join(os.path.dirname(__file__), "../../operacional/static/mobile.html"))
 
 @app.get("/mobile/sw.js")
