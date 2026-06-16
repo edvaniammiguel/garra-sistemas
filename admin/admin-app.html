@@ -1724,8 +1724,6 @@ async function renderModulos(usuarioId, perfil) {
       <div class="mod-desc">${m.desc}</div>
       ${semPermLabel}
     </div>`;
-      ${semPermLabel}
-    </div>`;
   }).filter(Boolean).join('');
 
   el.innerHTML = cards || '<div style="color:var(--muted);font-size:13px">Nenhum módulo disponível.</div>';
