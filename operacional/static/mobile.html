@@ -697,13 +697,13 @@ let _osAtualId = '';
 function renderOperacional() {
   const el = document.getElementById('app-content');
   el.innerHTML = `
-    <div id="sec-op">
+    <div id="sec-op" style="min-height:calc(100dvh - 130px)">
       <!-- Tabs -->
       <div style="display:flex;border-bottom:2px solid var(--border);background:#fff;position:sticky;top:63px;z-index:10">
         <button style="flex:1;padding:12px;font-size:12px;font-weight:700;color:var(--orange);background:none;border:none;border-bottom:3px solid var(--orange);margin-bottom:-2px" id="op-tab-os" onclick="opTab('os')">📋 Minhas OS</button>
         <button style="flex:1;padding:12px;font-size:12px;font-weight:700;color:var(--muted);background:none;border:none;border-bottom:3px solid transparent;margin-bottom:-2px" id="op-tab-hist" onclick="opTab('hist')">📊 Histórico</button>
       </div>
-      <div id="op-content"><div class="loading"><span class="spin"></span></div></div>
+      <div id="op-content" style="padding-top:4px"><div class="loading"><span class="spin"></span></div></div>
     </div>
 
     <!-- Sheet registrar dia -->
