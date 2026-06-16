@@ -2074,13 +2074,22 @@ async def op_fechar_os(os_id: str, request: Request, payload=Depends(verificar_g
     if os_row.get("status") in ("concluida_completa","concluida_sem_erp","cancelada"):
         raise HTTPException(status_code=400, detail="OS já está fechada")
 
-    d = await request.json()
     login = payload.get("sub","")
     user  = jard_query(
         "SELECT id FROM public.usuarios_garra WHERE login=%s", (login,), fetch="one"
     )
     fechado_por_id = user["id"] if user else None
     agora = datetime.utcnow()
+
+    # Auto-preencher horas_cobradas = horas_trabalhadas onde não foi editado (cobradas=0 ou null)
+    jard_query(
+        """UPDATE operacional.partes_diarias
+           SET horas_cobradas = horas_trabalhadas
+           WHERE os_id=%s AND ativo=true AND fechado=false
+             AND (horas_cobradas IS NULL OR horas_cobradas = 0)
+             AND horas_trabalhadas > 0""",
+        (os_id,), fetch="none"
+    )
 
     # Fechar todas as partes abertas
     jard_query(
@@ -2100,7 +2109,6 @@ async def op_fechar_os(os_id: str, request: Request, payload=Depends(verificar_g
         (novo_status, agora.date(), agora, os_id), fetch="none"
     )
 
-    # Retornar OS fechada com partes
     return await op_detalhe_os(os_id, _auth=payload)
 
 
