@@ -21,6 +21,14 @@
   <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=Barlow:wght@400;500;600&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="css/style.css" />
 <script>
+  // Detectar iframe e ocultar header próprio
+  if (window.self !== window.top) {
+    const s = document.createElement('style');
+    s.textContent = '.topbar { display: none !important; } body { padding-top: 0 !important; }';
+    document.head.appendChild(s);
+  }
+</script>
+<script>
   // SSO inline — executa antes do DOM carregar para evitar flash de login
   (function() {
     const sso = new URLSearchParams(location.search).get('sso');
@@ -820,9 +828,12 @@
           if (data.token) localStorage.setItem('garra_token', data.token);
           // Mapear perfil do sistema central para role do checklist
           const perfil = data.perfil || '';
+          // Usar perfil_checklist do token se disponível (tem precedência)
+          const perfilChecklist = data.perfil_checklist || '';
           const roleMap = { admin:'manager', gestor:'manager', luana:'manager',
                             bruna:'superior', operador:'superior', motorista:'driver', campo:'driver' };
-          const role = roleMap[perfil] || 'driver';
+          const roleByChecklist = { superior:'superior', manager:'manager', driver:'driver' };
+          const role = roleByChecklist[perfilChecklist] || roleMap[perfil] || 'driver';
           // Criar currentUser e navegar
           currentUser = {
             login: data.login || data.sub || '',
