@@ -2256,6 +2256,13 @@ async def get_todas_permissoes(_auth=Depends(verificar_admin)):
 async def mobile_app():
     return FileResponse(os.path.join(os.path.dirname(__file__), "../../operacional/static/mobile.html"))
 
+@app.get("/mobile/sw.js")
+async def mobile_sw():
+    return FileResponse(
+        os.path.join(os.path.dirname(__file__), "../../operacional/static/sw.js"),
+        media_type="application/javascript"
+    )
+
 @app.get("/mobile/manifest.json")
 async def mobile_manifest():
     return FileResponse(os.path.join(os.path.dirname(__file__), "../../operacional/static/mobile.manifest.json"))
