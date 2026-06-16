@@ -780,6 +780,21 @@
 <script src="js/logistics.js"></script>
 
 <script>
+  // SSO — recebe token do app shell mobile via postMessage
+  window.addEventListener('message', function(event) {
+    if (event.origin !== window.location.origin) return;
+    if (event.data?.type === 'GARRA_SSO' && event.data.token) {
+      localStorage.setItem('garra_token', event.data.token);
+      if (event.data.usuario) {
+        localStorage.setItem('garra_usuario', JSON.stringify(event.data.usuario));
+      }
+      // Se está na tela de login, tentar auto-login
+      if (typeof renovarTokenSilencioso === 'function') {
+        renovarTokenSilencioso();
+      }
+    }
+  });
+
   document.addEventListener('DOMContentLoaded', function() {
     renovarTokenSilencioso();
   });
