@@ -698,41 +698,32 @@ function renderOperacional() {
   const el = document.getElementById('app-content');
   el.innerHTML = `
     <div id="sec-op">
-      <div class="page-title">Minhas Ordens de Serviço</div>
-      <div id="op-lista"><div class="loading"><span class="spin"></span></div></div>
+      <!-- Tabs -->
+      <div style="display:flex;border-bottom:2px solid var(--border);background:#fff;position:sticky;top:63px;z-index:10">
+        <button style="flex:1;padding:12px;font-size:12px;font-weight:700;color:var(--orange);background:none;border:none;border-bottom:3px solid var(--orange);margin-bottom:-2px" id="op-tab-os" onclick="opTab('os')">📋 Minhas OS</button>
+        <button style="flex:1;padding:12px;font-size:12px;font-weight:700;color:var(--muted);background:none;border:none;border-bottom:3px solid transparent;margin-bottom:-2px" id="op-tab-hist" onclick="opTab('hist')">📊 Histórico</button>
+      </div>
+      <div id="op-content"><div class="loading"><span class="spin"></span></div></div>
     </div>
+
     <!-- Sheet registrar dia -->
     <div class="sheet-backdrop" id="sheet-parte" onclick="fecharSheet(event)">
       <div class="sheet" onclick="event.stopPropagation()">
         <div class="sheet-handle"></div>
         <div class="sheet-title" id="sheet-titulo">Registrar dia</div>
-        <div class="field">
-          <label>Data</label>
-          <input type="date" id="sp-data"/>
-        </div>
+        <div class="field"><label>Data</label><input type="date" id="sp-data"/></div>
         <div class="field">
           <label>Equipamento <span style="color:var(--red)">*</span></label>
-          <select id="sp-equip" onchange="onEquipChange()">
-            <option value="">Selecione...</option>
-          </select>
+          <select id="sp-equip" onchange="onEquipChange()"><option value="">Selecione...</option></select>
         </div>
         <div class="field">
-          <label>Operador</label>
-          <select id="sp-oper">
-            <option value="">Selecione...</option>
-          </select>
+          <label>Operador/Motorista</label>
+          <select id="sp-oper"><option value="">Selecione...</option></select>
         </div>
-        <!-- Horímetro -->
         <div id="sp-bloco-hor" style="display:none">
           <div class="field-row">
-            <div class="field">
-              <label>Hor. inicial</label>
-              <input type="number" id="sp-h-ini" step="0.1" placeholder="0000.0" oninput="calcHoras()"/>
-            </div>
-            <div class="field">
-              <label>Hor. final</label>
-              <input type="number" id="sp-h-fin" step="0.1" placeholder="0000.0" oninput="calcHoras()"/>
-            </div>
+            <div class="field"><label>Hor. inicial</label><input type="number" id="sp-h-ini" step="0.1" placeholder="0000.0" oninput="calcHoras()"/></div>
+            <div class="field"><label>Hor. final</label><input type="number" id="sp-h-fin" step="0.1" placeholder="0000.0" oninput="calcHoras()"/></div>
           </div>
           <div class="field-calc" id="sp-horas-calc"></div>
           <div class="field-row">
@@ -740,7 +731,6 @@ function renderOperacional() {
             <div class="field"><label>Fim</label><input type="time" id="sp-h-fim-t"/></div>
           </div>
         </div>
-        <!-- KM -->
         <div id="sp-bloco-km" style="display:none">
           <div class="field-row">
             <div class="field"><label>KM inicial</label><input type="number" id="sp-km-ini" step="1"/></div>
@@ -750,26 +740,143 @@ function renderOperacional() {
             <div class="field"><label>Viagens</label><input type="number" id="sp-viagens" step="1" min="0" value="0"/></div>
             <div class="field">
               <label>Por conta de</label>
-              <select id="sp-conta"><option value="empresa">Empresa</option><option value="cliente">Cliente</option></select>
+              <select id="sp-conta"><option value="empresa">Empresa</option><option value="cliente" selected>Cliente</option></select>
             </div>
           </div>
           <div class="field"><label>Trajeto</label><input type="text" id="sp-trajeto" placeholder="Ex.: Obra → Aterro"/></div>
         </div>
-        <div class="field">
-          <label>Serviço / Observação</label>
-          <input type="text" id="sp-obs" placeholder="Ex.: Furação tubulão, escavação..."/>
-        </div>
+        <div class="field"><label>Serviço / Observação</label><input type="text" id="sp-obs" placeholder="Ex.: Furação tubulão, escavação..."/></div>
         <div class="field-err" id="sp-err"></div>
         <button class="btn-primary" id="sp-btn-salvar" onclick="salvarParte(false)" style="margin-bottom:8px">✅ Salvar</button>
         <button class="btn-secondary" onclick="salvarParte(true)">➕ Salvar e adicionar outro</button>
         <button style="width:100%;padding:12px;margin-top:8px;background:none;color:var(--muted);font-size:14px;font-weight:600" onclick="fecharSheetDireto()">Cancelar</button>
       </div>
+    </div>
+
+    <!-- Sheet Nova OS avulsa -->
+    <div class="sheet-backdrop" id="sheet-nova-os" onclick="fecharSheetNovaOS(event)">
+      <div class="sheet" onclick="event.stopPropagation()">
+        <div class="sheet-handle"></div>
+        <div class="sheet-title">Nova OS</div>
+        <div class="field"><label>Obra / Local <span style="color:var(--red)">*</span></label><input type="text" id="nos-obra" placeholder="Ex.: Terraplanagem Rua X"/></div>
+        <div class="field"><label>Cliente (nome)</label><input type="text" id="nos-cliente" placeholder="Ex.: João Silva"/></div>
+        <div class="field">
+          <label>Equipamento</label>
+          <select id="nos-equip"><option value="">Selecione...</option></select>
+        </div>
+        <div class="field">
+          <label>Regime</label>
+          <select id="nos-regime"><option value="hora">Por hora</option><option value="diaria">Por diária</option><option value="empreito">Empreito</option></select>
+        </div>
+        <div class="field"><label>Observação</label><input type="text" id="nos-obs" placeholder="Detalhes do serviço"/></div>
+        <div class="field-err" id="nos-err"></div>
+        <button class="btn-primary" id="nos-btn" onclick="salvarNovaOS()" style="margin-bottom:8px">✅ Abrir OS</button>
+        <button style="width:100%;padding:12px;margin-top:4px;background:none;color:var(--muted);font-size:14px;font-weight:600" onclick="fecharSheetNovaOS()">Cancelar</button>
+      </div>
     </div>`;
   carregarOSMobile();
 }
 
+let _opTab = 'os';
+function opTab(tab) {
+  _opTab = tab;
+  ['os','hist'].forEach(t => {
+    const btn = document.getElementById('op-tab-'+t);
+    if (!btn) return;
+    const active = t===tab;
+    btn.style.color = active ? 'var(--orange)' : 'var(--muted)';
+    btn.style.borderBottomColor = active ? 'var(--orange)' : 'transparent';
+  });
+  if (tab==='os')   carregarOSMobile();
+  if (tab==='hist') carregarHistorico();
+}
+
+async function carregarHistorico() {
+  const el = document.getElementById('op-content');
+  if (!el) return;
+  el.innerHTML = '<div class="loading"><span class="spin"></span></div>';
+  try {
+    const partes = await api('/operacional/api/minhas-partes');
+    if (!partes.length) {
+      el.innerHTML = '<div class="empty"><div class="empty-icon">📊</div><div class="empty-txt">Nenhum registro ainda</div></div>';
+      return;
+    }
+    let html = '';
+    partes.forEach(function(p) {
+      const data = p.data ? new Date(p.data+'T00:00').toLocaleDateString('pt-BR') : '–';
+      const isCam = p.tipo_medicao === 'km';
+      const medicao = isCam
+        ? 'KM ' + (p.km_inicial||0) + '→' + (p.km_final||0)
+        : 'Hor ' + (p.horimetro_inicial||0) + '→' + (p.horimetro_final||0);
+      const horas = parseFloat(p.horas_trabalhadas||0).toFixed(1);
+      const viagens = p.qtd_viagens ? '<span>🔄 ' + p.qtd_viagens + ' viagens</span>' : '';
+      html += '<div class="os-card">' +
+        '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">' +
+        '<span class="os-num">' + esc(p.numero_os||'–') + '</span>' +
+        '<span style="font-size:11px;color:var(--muted)">' + data + '</span>' +
+        '</div>' +
+        '<div class="os-obra">' + esc(p.obra||'–') + '</div>' +
+        '<div class="os-meta">' +
+        '<span>🚛 ' + esc(p.equipamento_codigo||'–') + '</span>' +
+        '<span>📏 ' + medicao + '</span>' +
+        '<span>⏱ ' + horas + 'h</span>' +
+        viagens +
+        '</div></div>';
+    });
+    el.innerHTML = html;
+  } catch(e) {
+    el.innerHTML = '<div class="empty"><div class="empty-icon">⚠️</div><div class="empty-txt">' + e.message + '</div></div>';
+  }
+}
+
+
+async function abrirSheetNovaOS() {
+  if (!_equipamentos.length) _equipamentos = await api('/operacional/api/equipamentos').catch(()=>[]);
+  const selEq = document.getElementById('nos-equip');
+  let opts = '<option value="">Selecione...</option>';
+  _equipamentos.forEach(function(e) {
+    opts += '<option value="' + e.id + '">' + esc(e.codigo) + ' — ' + esc(e.descricao) + '</option>';
+  });
+  selEq.innerHTML = opts;
+  document.getElementById('nos-obra').value='';
+  document.getElementById('nos-cliente').value='';
+  document.getElementById('nos-obs').value='';
+  document.getElementById('nos-regime').value='hora';
+  document.getElementById('nos-err').style.display='none';
+  document.getElementById('sheet-nova-os').classList.add('open');
+}
+
+
+function fecharSheetNovaOS(e) {
+  if (!e || e.target.id==='sheet-nova-os') document.getElementById('sheet-nova-os').classList.remove('open');
+}
+
+async function salvarNovaOS() {
+  const err = document.getElementById('nos-err');
+  err.style.display='none';
+  const obra = document.getElementById('nos-obra').value.trim();
+  if (!obra) { err.textContent='Obra/Local é obrigatório'; err.style.display='block'; return; }
+  const btn = document.getElementById('nos-btn');
+  btn.textContent='Salvando...'; btn.disabled=true;
+  try {
+    await api('/operacional/api/os', { method:'POST', body: JSON.stringify({
+      obra,
+      cliente_nome_avulso: document.getElementById('nos-cliente').value.trim()||null,
+      equipamento_id: document.getElementById('nos-equip').value||null,
+      regime_cobranca: document.getElementById('nos-regime').value,
+      descricao: document.getElementById('nos-obs').value.trim()||null,
+      origem: 'campo',
+    })});
+    toast('OS aberta!','success');
+    document.getElementById('sheet-nova-os').classList.remove('open');
+    await carregarOSMobile();
+  } catch(e) { err.textContent=e.message; err.style.display='block'; }
+  finally { btn.textContent='✅ Abrir OS'; btn.disabled=false; }
+}
+
+
 async function carregarOSMobile() {
-  const el = document.getElementById('op-lista');
+  const el = document.getElementById('op-content');
   if (!el) return;
   try {
     if (!_equipamentos.length) _equipamentos = await api('/operacional/api/equipamentos').catch(()=>[]);
@@ -782,17 +889,22 @@ async function carregarOSMobile() {
 }
 
 function renderOSCards() {
-  const el = document.getElementById('op-lista');
+  const el = document.getElementById('op-content');
   if (!el) return;
   if (!_osList.length) {
-    el.innerHTML = `<div class="empty"><div class="empty-icon">📋</div>
-      <div class="empty-txt">Nenhuma OS ativa</div>
-      <div class="empty-sub">Quando a Luana abrir uma OS para você, ela aparece aqui</div></div>`;
+    el.innerHTML = `
+      <div style="padding:16px">
+        <button class="btn-primary" onclick="abrirSheetNovaOS()" style="margin-bottom:16px">➕ Nova OS</button>
+      </div>
+      <div class="empty"><div class="empty-icon">📋</div>
+        <div class="empty-txt">Nenhuma OS ativa</div>
+        <div class="empty-sub">Abra uma OS ou aguarde a Luana abrir para você</div>
+      </div>`;
     return;
   }
   const regimes = {hora:'Por hora',diaria:'Por diária',empreito:'Empreito'};
   const badges  = {hora:'badge-hora',diaria:'badge-diaria',empreito:'badge-empreito'};
-  el.innerHTML = _osList.map(os=>`
+  el.innerHTML = `<div style="padding:16px 16px 0"><button class="btn-primary" onclick="abrirSheetNovaOS()" style="padding:10px 20px;font-size:13px">➕ Nova OS</button></div>` + _osList.map(os=>`
     <div class="os-card">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
         <span class="os-num">${esc(os.numero)}</span>
@@ -823,7 +935,7 @@ function abrirSheet(osId, osNum) {
   ['sp-h-ini','sp-h-fin','sp-km-ini','sp-km-fin','sp-viagens','sp-h-ini-t','sp-h-fim-t','sp-trajeto','sp-obs'].forEach(id=>{
     const el = document.getElementById(id); if(el) el.value='';
   });
-  document.getElementById('sp-conta').value = 'empresa';
+  document.getElementById('sp-conta').value = 'cliente';
   document.getElementById('sp-bloco-hor').style.display = 'none';
   document.getElementById('sp-bloco-km').style.display  = 'none';
   document.getElementById('sp-horas-calc').textContent  = '';
@@ -908,33 +1020,13 @@ async function salvarParte(adicionarMais) {
 ════════════════════════════════════════════ */
 function renderChecklist() {
   const token = Token.get();
-  const usuario = Token.user();
-  document.getElementById('app-content').innerHTML = `
-    <div id="sec-check" style="height:calc(100dvh - 130px)">
-      <iframe src="/checklist"
-        style="width:100%;height:100%;border:none;display:block"
-        allow="camera;microphone"
-        id="checklist-frame"
-        onload="injetarTokenChecklist()">
-      </iframe>
-    </div>`;
-}
-
-function injetarTokenChecklist() {
-  const frame = document.getElementById('checklist-frame');
-  if (!frame) return;
-  const token = Token.get();
-  const usuario = Token.user();
-  // Enviar token via postMessage para o iframe do checklist
-  setTimeout(() => {
-    try {
-      frame.contentWindow.postMessage({
-        type: 'GARRA_SSO',
-        token: token,
-        usuario: usuario,
-      }, window.location.origin);
-    } catch(e) { console.warn('postMessage checklist:', e); }
-  }, 800);
+  // Passar token na URL para auto-login no checklist
+  const src = '/checklist?sso=' + encodeURIComponent(token||'');
+  document.getElementById('app-content').innerHTML =
+    '<div id="sec-check" style="height:calc(100dvh - 130px)">' +
+    '<iframe src="' + src + '" style="width:100%;height:100%;border:none;display:block" ' +
+    'allow="camera;microphone" id="checklist-frame"></iframe>' +
+    '</div>';
 }
 
 /* ════════════════════════════════════════════
