@@ -193,6 +193,8 @@ if os.path.exists(CHECKLIST_DIR):
         app.mount("/css", StaticFiles(directory=os.path.join(CHECKLIST_DIR, "css")), name="checklist_css_rel")
     if os.path.exists(os.path.join(CHECKLIST_DIR, "js")):
         app.mount("/js",  StaticFiles(directory=os.path.join(CHECKLIST_DIR, "js")),  name="checklist_js_rel")
+    if os.path.exists(os.path.join(CHECKLIST_DIR, "icons")):
+        app.mount("/icons", StaticFiles(directory=os.path.join(CHECKLIST_DIR, "icons")), name="checklist_icons_rel")
 
 # ── SUPABASE STORAGE ──────────────────────────────────────────
 def storage_upload(dados: bytes, path: str) -> str:
@@ -2158,6 +2160,7 @@ async def op_minhas_partes(payload=Depends(verificar_token)):
     return [dict(r) for r in (rows or [])]
 
 
+@app.get("/operacional/api/minhas-os")
 async def op_minhas_os(payload=Depends(verificar_token)):
     """Operador/motorista vê APENAS as OS onde é o operador previsto e status ativo."""
     login = payload.get("sub","")
