@@ -1735,6 +1735,30 @@ async function renderModulos(usuarioId, perfil) {
 function esc(s) {
   return String(s||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
+
+function toast(msg, type='') {
+  const t = document.createElement('div');
+  t.textContent = msg;
+  t.style.cssText = `position:fixed;bottom:24px;right:24px;z-index:9999;
+    padding:12px 20px;border-radius:10px;font-size:13px;font-weight:600;
+    color:#fff;box-shadow:0 4px 16px rgba(0,0,0,.15);max-width:320px;
+    background:${type==='error'?'#DC2626':type==='success'?'#16A34A':'#1A2A5E'};
+    animation:fadeIn .2s ease`;
+  document.body.appendChild(t);
+  setTimeout(()=>t.remove(), 3000);
+}
+
+async function carregarOS() {
+  const el = document.getElementById('os-lista');
+  if (!el) return;
+  el.innerHTML = '<div class="loading"><span class="spin"></span></div>';
+  try {
+    const lista = await apiFetch('/operacional/api/os');
+    renderTabelaOS(lista);
+  } catch(e) {
+    el.innerHTML = `<div style="color:var(--red);padding:20px">Erro ao carregar OS: ${esc(e.message)}</div>`;
+  }
+}
 </script>
 </body>
 </html>
