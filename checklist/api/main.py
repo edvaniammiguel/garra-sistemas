@@ -409,6 +409,7 @@ async def login(req: LoginRequest, request: Request, db=Depends(get_db)):
     }, JWT_SECRET, algorithm="HS256")
     return {
         "token": token,
+        "id": str(user["id"]),
         "login": user["login"], "nome": user["nome"],
         "perfil": user["perfil"], "perfil_checklist": user["perfil_checklist"],
         "role": user["perfil_checklist"] or user["perfil"],
@@ -2164,8 +2165,19 @@ async def listar_modulos(_auth=Depends(verificar_admin)):
     return MODULOS_DISPONIVEIS
 
 @app.get("/permissoes/usuario/{usuario_id}")
-async def get_permissoes_usuario(usuario_id: str, _auth=Depends(verificar_admin)):
-    """Retorna permissões de um colaborador específico."""
+async def get_permissoes_usuario(usuario_id: str, payload=Depends(verificar_token)):
+    """Retorna permissões. Admin vê qualquer usuário; usuário vê só as próprias."""
+    sub = payload.get("sub","")
+    perfil = payload.get("perfil","")
+    # Buscar UUID do usuário logado se sub for login
+    if perfil != "admin":
+        user = jard_query(
+            "SELECT id FROM public.usuarios_garra WHERE (login=%s OR email=%s) AND ativo=true",
+            (sub, sub), fetch="one"
+        )
+        uid_logado = str(user["id"]) if user else None
+        if uid_logado != usuario_id:
+            raise HTTPException(status_code=403, detail="Acesso negado")
     rows = jard_query(
         "SELECT modulo, permitido FROM public.permissoes_colaborador WHERE usuario_id=%s",
         (usuario_id,)
@@ -2233,6 +2245,14 @@ async def get_todas_permissoes(_auth=Depends(verificar_admin)):
 
 # FIM MÓDULO PERMISSÕES
 # ═══════════════════════════════════════════════════════════════════════════
+
+@app.get("/mobile")
+async def mobile_app():
+    return FileResponse(os.path.join(os.path.dirname(__file__), "../../mobile/index.html"))
+
+@app.get("/mobile/manifest.json")
+async def mobile_manifest():
+    return FileResponse(os.path.join(os.path.dirname(__file__), "../../mobile/manifest.json"))
 
 # ── FALLBACK — compatibilidade com browsers que cachearam URLs antigas ───────
 from fastapi.responses import RedirectResponse
