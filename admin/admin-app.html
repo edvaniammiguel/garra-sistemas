@@ -1873,7 +1873,9 @@ function renderTabelaPartes(partes, statusOS) {
             ? `KM: ${p.km_inicial||0}→${p.km_final||0}`
             : `Hor: ${p.horimetro_inicial||0}→${p.horimetro_final||0}`;
           const horas = parseFloat(p.horas_trabalhadas||0).toFixed(1);
-          const cobradas = parseFloat(p.horas_cobradas||p.horas_trabalhadas||0).toFixed(1);
+          const cobradas = parseFloat(p.horas_cobradas||0) > 0
+            ? parseFloat(p.horas_cobradas).toFixed(1)
+            : parseFloat(p.horas_trabalhadas||0).toFixed(1);
           return `<tr style="border-bottom:1px solid #F1F5F9">
             <td style="padding:8px;font-size:13px">${data}</td>
             <td style="padding:8px;font-size:13px">${esc(p.equipamento_codigo||'–')}</td>
