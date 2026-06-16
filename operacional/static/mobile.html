@@ -151,6 +151,15 @@ input,select,textarea{font-family:inherit;outline:none;border:none}
 .empty-txt{font-size:14px;font-weight:600}
 .empty-sub{font-size:12px;margin-top:4px}
 
+/* Checklist iframe */
+#sec-check iframe {
+  width: 100%;
+  height: 100%;
+  border: none;
+  display: block;
+  border-radius: 0;
+}
+
 /* Toast */
 .toast-wrap{position:fixed;bottom:80px;left:50%;transform:translateX(-50%);
             z-index:9999;pointer-events:none;width:90%;max-width:320px;text-align:center}
@@ -792,6 +801,9 @@ function opTab(tab) {
 }
 
 async function carregarHistorico() {
+  // Scroll para o topo ao carregar histórico
+  const el_content = document.getElementById('app-content');
+  if (el_content) el_content.scrollTop = 0;
   const el = document.getElementById('op-content');
   if (!el) return;
   el.innerHTML = '<div class="loading"><span class="spin"></span></div>';
@@ -1023,7 +1035,7 @@ function renderChecklist() {
   // Passar token na URL para auto-login no checklist
   const src = '/checklist?sso=' + encodeURIComponent(token||'');
   document.getElementById('app-content').innerHTML =
-    '<div id="sec-check" style="height:calc(100dvh - 130px)">' +
+    '<div id="sec-check" style="height:calc(100dvh - 130px);overflow:hidden">' +
     '<iframe src="' + src + '" style="width:100%;height:100%;border:none;display:block" ' +
     'allow="camera;microphone" id="checklist-frame"></iframe>' +
     '</div>';
