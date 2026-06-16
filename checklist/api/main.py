@@ -2248,11 +2248,11 @@ async def get_todas_permissoes(_auth=Depends(verificar_admin)):
 
 @app.get("/mobile")
 async def mobile_app():
-    return FileResponse(os.path.join(os.path.dirname(__file__), "../../mobile/index.html"))
+    return FileResponse(os.path.join(os.path.dirname(__file__), "../../operacional/static/mobile.html"))
 
 @app.get("/mobile/manifest.json")
 async def mobile_manifest():
-    return FileResponse(os.path.join(os.path.dirname(__file__), "../../mobile/manifest.json"))
+    return FileResponse(os.path.join(os.path.dirname(__file__), "../../operacional/static/mobile.manifest.json"))
 
 # ── FALLBACK — compatibilidade com browsers que cachearam URLs antigas ───────
 from fastapi.responses import RedirectResponse
