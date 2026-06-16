@@ -143,23 +143,9 @@ function esc(s)   { return String(s||'').replace(/&/g,'&amp;').replace(/"/g,'&qu
 
 // ─── SEEDS ─────────────────────────────────────────
 function seedUsers() {
-  const users = [
-    { login:'admin',     name:'Administrador Garra', pass:'garra2024', role:'manager',  funcao:'', veiculo:'', pts:0,   submissions:0 },
-    { login:'gestor',    name:'Gestor de Frota',     pass:'garra2024', role:'manager',  funcao:'', veiculo:'', pts:0,   submissions:0 },
-    { login:'gilson',    name:'Gilson',              pass:'garra2024', role:'superior', funcao:'', veiculo:'', pts:0,   submissions:0 },
-    { login:'marco',     name:'Marco Aurélio',       pass:'garra2024', role:'superior', funcao:'', veiculo:'', pts:0,   submissions:0 },
-    { login:'andre',     name:'André',               pass:'123456',    role:'driver',   funcao:'fc_operador',  veiculo:'EH-03',  pts:0, submissions:0 },
-    { login:'emerson',   name:'Emerson',             pass:'123456',    role:'driver',   funcao:'fc_motorista', veiculo:'CA-12',  pts:0, submissions:0 },
-    { login:'samuel',    name:'Samuel',              pass:'123456',    role:'driver',   funcao:'fc_motorista', veiculo:'CB-06',  pts:0, submissions:0 },
-    { login:'franciele', name:'Franciele',           pass:'123456',    role:'driver',   funcao:'fc_motorista', veiculo:'CB-037', pts:0, submissions:0 },
-    { login:'gilberto',  name:'Gilberto',            pass:'123456',    role:'driver',   funcao:'fc_motorista', veiculo:'',       pts:0, submissions:0 },
-    { login:'geraldo',   name:'Geraldo',             pass:'123456',    role:'driver',   funcao:'fc_motorista', veiculo:'',       pts:0, submissions:0 },
-    { login:'joao',      name:'João Pedro',          pass:'123456',    role:'driver',   funcao:'fc_motorista', veiculo:'',       pts:0, submissions:0 },
-    { login:'marcio',    name:'Márcio',              pass:'123456',    role:'driver',   funcao:'fc_motorista', veiculo:'',       pts:0, submissions:0 },
-    { login:'motorista', name:'Motorista Demo',      pass:'123456',    role:'driver',   funcao:'', veiculo:'', pts:0,   submissions:0  },
-  ];
-  DB.set('garra_users', users);
-  return users;
+  // Auth central — sem senhas hardcoded
+  // Usuários autenticados via garra_token (admin/api/main.py)
+  return [];
 }
 
 function seedFleet() {
@@ -252,24 +238,21 @@ async function doLogin() {
     console.warn('[Login] API falhou:', apiErr.message);
 
     // ── FALLBACK OFFLINE ──────────────────────────
-    const cached = DB.users().find(u => u.login === login && u.pass === pass);
+    // Verifica se tem sessão ativa cacheada (sem checar senha — já foi validada antes)
+    const cached = DB.users().find(u => u.login === login);
 
-    if (cached) {
-      // Usuário encontrado no cache local — entra offline
+    if (cached && (!isOnline || apiErr.message === 'TIMEOUT')) {
+      // Usuário já logou antes — permite entrar offline sem senha
       currentUser = cached;
       localStorage.setItem('garra_current_user', JSON.stringify(cached));
-
-      // Avisa que está offline mas permite entrar
-      if (!isOnline || apiErr.message === 'TIMEOUT') {
-        showOfflineBanner();
-      }
+      showOfflineBanner();
       _navigate();
       return;
     }
 
     // Não encontrou em lugar nenhum
     if (!isOnline || apiErr.message === 'TIMEOUT') {
-      err.textContent = '📶 Sem conexão. Este usuário não tem cache local neste dispositivo. Conecte à internet para o primeiro acesso.';
+      err.textContent = '📶 Sem conexão. Faça login online ao menos uma vez para usar offline.';
     } else {
       err.textContent = 'Usuário ou senha incorretos.';
     }
