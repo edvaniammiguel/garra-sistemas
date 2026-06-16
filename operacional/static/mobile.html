@@ -281,6 +281,10 @@ input,select,textarea{font-family:inherit;outline:none;border:none}
       </div>
     </div>
     <div class="app-header-right">
+      <div style="position:relative">
+        <div id="sync-badge" style="width:8px;height:8px;border-radius:50%;background:var(--green);margin-right:6px;display:inline-block" title="Online"></div>
+        <div id="sync-count" style="display:none;position:absolute;top:-4px;right:2px;width:16px;height:16px;border-radius:50%;background:var(--orange);color:#fff;font-size:9px;font-weight:800;align-items:center;justify-content:center"></div>
+      </div>
       <div class="user-avatar" id="user-avatar">?</div>
       <button class="btn-sair" onclick="doLogout()">Sair</button>
     </div>
@@ -300,6 +304,48 @@ input,select,textarea{font-family:inherit;outline:none;border:none}
 <div class="toast-wrap" id="toast-wrap"></div>
 
 <script>
+/* ════════════════════════════════════════════
+   SERVICE WORKER + OFFLINE
+════════════════════════════════════════════ */
+// Registrar SW
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('/mobile/sw.js')
+    .then(reg => {
+      console.log('SW registrado:', reg.scope);
+      // Escutar mensagens do SW
+      navigator.serviceWorker.addEventListener('message', event => {
+        const { type, pending } = event.data || {};
+        if (type === 'SYNC_SUCCESS') toast('✅ Registro sincronizado!', 'success');
+        if (type === 'QUEUE_STATUS') atualizarBadgeSync(pending);
+      });
+    })
+    .catch(err => console.warn('SW erro:', err));
+}
+
+// Monitor de conexão
+let _online = navigator.onLine;
+window.addEventListener('online',  () => { _online = true;  atualizarStatusOnline(); syncPendentes(); });
+window.addEventListener('offline', () => { _online = false; atualizarStatusOnline(); });
+
+function atualizarStatusOnline() {
+  const badge = document.getElementById('sync-badge');
+  if (!badge) return;
+  badge.style.background = _online ? 'var(--green)' : 'var(--red)';
+  badge.title = _online ? 'Online' : 'Offline — registros serão sincronizados quando conectar';
+}
+
+function atualizarBadgeSync(pending) {
+  const badge = document.getElementById('sync-count');
+  if (!badge) return;
+  badge.textContent = pending > 0 ? pending : '';
+  badge.style.display = pending > 0 ? 'flex' : 'none';
+}
+
+async function syncPendentes() {
+  if (!navigator.serviceWorker.controller) return;
+  navigator.serviceWorker.controller.postMessage({ type: 'SYNC_NOW' });
+}
+
 /* ════════════════════════════════════════════
    CONFIG
 ════════════════════════════════════════════ */
