@@ -1982,7 +1982,12 @@ async def op_listar_partes(os_id: str, _auth=Depends(verificar_token)):
 
     # Totais acumulados
     total_horas     = sum(float(p.get("horas_trabalhadas") or 0) for p in lista)
-    total_horas_cob = sum(float(p.get("horas_cobradas")   or 0) for p in lista)
+    # Total horas cobradas: usa horas_cobradas se editado, senão horas_trabalhadas
+    total_horas_cob = sum(
+        float(p.get("horas_cobradas") or 0) if float(p.get("horas_cobradas") or 0) > 0
+        else float(p.get("horas_trabalhadas") or 0)
+        for p in lista
+    )
     total_diarias   = sum(float(p.get("quantidade_diarias") or 0) for p in lista)
     total_viagens   = sum(float(p.get("qtd_viagens")       or 0) for p in lista)
     dias_trabalhados= len(set(str(p.get("data",""))[:10] for p in lista if p.get("data")))
