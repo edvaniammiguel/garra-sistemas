@@ -780,14 +780,52 @@
 <script src="js/logistics.js"></script>
 
 <script>
-  document.addEventListener('DOMContentLoaded', function() {
-    // SSO — ler token da URL se veio do app shell
+  document.addEventListener('DOMContentLoaded', async function() {
+    // SSO — ler token da URL se veio do app shell mobile
     const params = new URLSearchParams(window.location.search);
     const ssoToken = params.get('sso');
     if (ssoToken && ssoToken.length > 10) {
       localStorage.setItem('garra_token', ssoToken);
     }
-    renovarTokenSilencioso();
+
+    // Tentar auto-login se tem token
+    const token = localStorage.getItem('garra_token');
+    if (token) {
+      try {
+        // Renovar e buscar dados do usuário
+        const API = (location.hostname === 'localhost' || location.hostname === '127.0.0.1')
+          ? 'http://localhost:8000' : 'https://garra-sistemas.onrender.com';
+        const res = await fetch(API + '/auth/renovar', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token }
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.token) localStorage.setItem('garra_token', data.token);
+          // Mapear perfil do sistema central para role do checklist
+          const perfil = data.perfil || '';
+          const roleMap = { admin:'manager', gestor:'manager', luana:'manager',
+                            bruna:'superior', operador:'superior', motorista:'driver', campo:'driver' };
+          const role = roleMap[perfil] || 'driver';
+          // Criar currentUser e navegar
+          currentUser = {
+            login: data.login || data.sub || '',
+            name:  data.nome  || data.login || '',
+            role:  role,
+            pts:   data.pts   || 0,
+            submissions: data.total_envios || 0,
+          };
+          localStorage.setItem('garra_current_user', JSON.stringify(currentUser));
+          if (typeof _navigate === 'function') _navigate();
+          return;
+        }
+      } catch(e) {
+        console.warn('SSO auto-login falhou:', e.message);
+      }
+    }
+
+    // Sem token ou falhou — mostrar login normal
+    if (typeof renovarTokenSilencioso === 'function') renovarTokenSilencioso();
   });
 </script>  
 </body>
