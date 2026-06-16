@@ -394,12 +394,12 @@ const API = (location.hostname==='localhost'||location.hostname==='127.0.0.1')
    AUTH
 ══════════════════════════════════════════ */
 const Token = {
-  get:     ()  => localStorage.getItem('garra_op_token'),
-  set:     (t) => localStorage.setItem('garra_op_token', t),
-  del:     ()  => localStorage.removeItem('garra_op_token'),
-  user:    ()  => { try { return JSON.parse(localStorage.getItem('garra_op_user')||'null'); } catch { return null; } },
-  setUser: (u) => localStorage.setItem('garra_op_user', JSON.stringify(u)),
-  delUser: ()  => localStorage.removeItem('garra_op_user'),
+  get:     ()  => localStorage.getItem('garra_token'),
+  set:     (t) => localStorage.setItem('garra_token', t),
+  del:     ()  => localStorage.removeItem('garra_token'),
+  user:    ()  => { try { return JSON.parse(localStorage.getItem('garra_usuario')||'null'); } catch { return null; } },
+  setUser: (u) => localStorage.setItem('garra_usuario', JSON.stringify(u)),
+  delUser: ()  => localStorage.removeItem('garra_usuario'),
 };
 
 async function apiFetch(path, opts={}) {
