@@ -1778,6 +1778,184 @@ function filtrarOS() {
   renderTabelaOS(_osListaCompleta);
 }
 
+/* ══════════════════════════════════════════════
+   PARTES DIÁRIAS DA OS
+══════════════════════════════════════════════ */
+let _osAtual = null;
+let _partesAtual = [];
+
+async function verPartesOS(osId, osNumero) {
+  _osAtual = { id: osId, numero: osNumero };
+  navTo('partes', null);
+  document.getElementById('partes-os-titulo').textContent = osNumero + ' — Partes Diárias';
+  const tbl = document.getElementById('partes-tabela');
+  tbl.innerHTML = '<div class="loading"><span class="spin"></span></div>';
+  try {
+    // Buscar detalhes da OS
+    const os = _osListaCompleta.find(o => o.id === osId) || {};
+    renderInfoOS(os);
+
+    // Buscar partes
+    const data = await apiFetch('/operacional/api/os/'+osId+'/partes');
+    _partesAtual = data.partes || [];
+    renderTotaisPartes(data.totais || {});
+    renderTabelaPartes(_partesAtual, os.status);
+
+    // Esconder botão fechar se já concluída
+    const btnFechar = document.getElementById('btn-fechar-os');
+    if (btnFechar) {
+      const fechada = ['concluida_sem_erp','concluida_completa','cancelada'].includes(os.status);
+      btnFechar.style.display = fechada ? 'none' : '';
+    }
+  } catch(e) {
+    tbl.innerHTML = `<div style="color:var(--red);padding:20px">Erro: ${esc(e.message)}</div>`;
+  }
+}
+
+function renderInfoOS(os) {
+  const el = document.getElementById('partes-os-info');
+  if (!el) return;
+  const st = STATUS_LABEL[os.status] || {label:os.status, badge:'badge-info'};
+  el.innerHTML = `
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px">
+      <div><span style="color:var(--muted);font-size:11px">CLIENTE</span><br><strong>${esc(os.cliente_nome||os.cliente_avulso||'–')}</strong></div>
+      <div><span style="color:var(--muted);font-size:11px">OBRA</span><br><strong>${esc(os.obra||'–')}</strong></div>
+      <div><span style="color:var(--muted);font-size:11px">EQUIPAMENTO</span><br><strong>${esc(os.equipamento_codigo||'–')}</strong></div>
+      <div><span style="color:var(--muted);font-size:11px">REGIME</span><br><strong>${esc(os.regime_cobranca||'–')}</strong></div>
+      <div><span style="color:var(--muted);font-size:11px">STATUS</span><br><span class="badge ${st.badge}">${st.label}</span></div>
+    </div>`;
+}
+
+function renderTotaisPartes(t) {
+  const el = document.getElementById('partes-totais');
+  if (!el) return;
+  const cards = [
+    { label:'Dias trabalhados', valor: t.dias_trabalhados||0 },
+    { label:'Total horas',      valor: (t.total_horas||0).toFixed(1)+'h' },
+    { label:'Horas cobradas',   valor: (t.total_horas_cobradas||0).toFixed(1)+'h' },
+    { label:'Diárias',          valor: t.total_diarias||0 },
+    { label:'Viagens',          valor: t.total_viagens||0 },
+  ];
+  el.innerHTML = cards.map(c => `
+    <div style="background:#fff;border:1.5px solid var(--border);border-radius:8px;padding:10px;text-align:center">
+      <div style="font-size:11px;color:var(--muted);text-transform:uppercase">${c.label}</div>
+      <div style="font-size:18px;font-weight:800;color:var(--blue);margin-top:2px">${c.valor}</div>
+    </div>`).join('');
+}
+
+function renderTabelaPartes(partes, statusOS) {
+  const el = document.getElementById('partes-tabela');
+  if (!el) return;
+  const fechada = ['concluida_sem_erp','concluida_completa','cancelada'].includes(statusOS);
+
+  if (!partes.length) {
+    el.innerHTML = '<div class="loading" style="color:var(--muted)">Nenhuma parte diária registrada ainda.</div>';
+    return;
+  }
+
+  el.innerHTML = `
+    <table style="width:100%;border-collapse:collapse">
+      <thead>
+        <tr style="border-bottom:2px solid var(--border)">
+          <th style="text-align:left;padding:8px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--muted)">Data</th>
+          <th style="text-align:left;padding:8px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--muted)">Equipamento</th>
+          <th style="text-align:left;padding:8px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--muted)">Operador</th>
+          <th style="text-align:left;padding:8px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--muted)">Medição</th>
+          <th style="text-align:right;padding:8px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--muted)">Horas</th>
+          <th style="text-align:right;padding:8px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--muted)">Cobradas</th>
+          ${fechada ? '' : '<th style="padding:8px"></th>'}
+        </tr>
+      </thead>
+      <tbody>
+        ${partes.map(p => {
+          const data = p.data ? new Date(p.data+'T00:00').toLocaleDateString('pt-BR') : '–';
+          const medicao = p.tipo_medicao === 'km'
+            ? `KM: ${p.km_inicial||0}→${p.km_final||0}`
+            : `Hor: ${p.horimetro_inicial||0}→${p.horimetro_final||0}`;
+          const horas = parseFloat(p.horas_trabalhadas||0).toFixed(1);
+          const cobradas = parseFloat(p.horas_cobradas||p.horas_trabalhadas||0).toFixed(1);
+          return `<tr style="border-bottom:1px solid #F1F5F9">
+            <td style="padding:8px;font-size:13px">${data}</td>
+            <td style="padding:8px;font-size:13px">${esc(p.equipamento_codigo||'–')}</td>
+            <td style="padding:8px;font-size:13px">${esc(p.operador_nome||'–')}</td>
+            <td style="padding:8px;font-size:12px;color:var(--muted)">${medicao}</td>
+            <td style="padding:8px;font-size:13px;text-align:right">${horas}h</td>
+            <td style="padding:8px;text-align:right">
+              ${fechada
+                ? `<strong>${cobradas}h</strong>`
+                : `<input type="number" step="0.1" value="${cobradas}" style="width:70px;padding:4px 8px;border:1.5px solid var(--border);border-radius:6px;text-align:right;font-size:13px"
+                    onchange="salvarHorasCobradas('${esc(p.id)}', this.value)"/>`}
+            </td>
+            ${fechada ? '' : `<td style="padding:8px;text-align:right">
+              <button class="btn-sm" style="color:var(--red)" onclick="excluirParte('${esc(p.id)}')">🗑</button>
+            </td>`}
+          </tr>`;
+        }).join('')}
+      </tbody>
+    </table>`;
+}
+
+async function salvarHorasCobradas(parteId, valor) {
+  try {
+    await apiFetch('/operacional/api/partes/'+parteId, {
+      method:'PATCH',
+      body: JSON.stringify({ horas_cobradas: parseFloat(valor)||0 }),
+    });
+    toast('Horas cobradas atualizadas','success');
+    // Recarregar totais
+    const data = await apiFetch('/operacional/api/os/'+_osAtual.id+'/partes');
+    renderTotaisPartes(data.totais || {});
+  } catch(e) { toast('Erro: '+e.message,'error'); }
+}
+
+async function excluirParte(parteId) {
+  if (!confirm('Excluir este registro?')) return;
+  try {
+    await apiFetch('/operacional/api/partes/'+parteId, { method:'DELETE' });
+    toast('Registro excluído','success');
+    verPartesOS(_osAtual.id, _osAtual.numero);
+  } catch(e) { toast('Erro: '+e.message,'error'); }
+}
+
+/* ══════════════════════════════════════════════
+   FECHAR OS
+══════════════════════════════════════════════ */
+async function confirmarFechamento() {
+  if (!_osAtual) return;
+  try {
+    // Buscar revisão
+    const rev = await apiFetch('/operacional/api/os/'+_osAtual.id+'/revisao');
+    const t = rev.totais || {};
+    const msg = `Fechar ${_osAtual.numero}?\n\n` +
+      `Dias trabalhados: ${t.dias_trabalhados||0}\n` +
+      `Total horas: ${(t.total_horas||0).toFixed(1)}h\n` +
+      `Horas cobradas: ${(t.total_horas_cobradas||0).toFixed(1)}h\n` +
+      `Diárias: ${t.total_diarias||0}\n` +
+      `Viagens: ${t.total_viagens||0}\n\n` +
+      `Após fechar, as partes ficam congeladas (não editáveis).`;
+    if (!confirm(msg)) return;
+
+    await apiFetch('/operacional/api/os/'+_osAtual.id+'/fechar', { method:'POST' });
+    toast('OS fechada com sucesso!','success');
+    // Recarregar OS e voltar para lista
+    await carregarOS();
+    navTo('os', document.querySelector('.sb-item[onclick*="os"]'));
+  } catch(e) { toast('Erro ao fechar: '+e.message,'error'); }
+}
+
+/* ══════════════════════════════════════════════
+   MODAIS OS (placeholder — abrir/editar)
+══════════════════════════════════════════════ */
+function abrirModalOS() {
+  toast('Criação de OS — em breve nesta tela','info');
+}
+function editarOS(osId) {
+  toast('Edição de OS — em breve','info');
+}
+function abrirModalParte() {
+  toast('Adicionar registro manual — em breve','info');
+}
+
 function renderTabelaOS(lista) {
   const el = document.getElementById('os-table');
   if (!el) return;
