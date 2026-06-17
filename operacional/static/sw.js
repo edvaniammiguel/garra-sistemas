@@ -1,308 +1,240 @@
-/* ═══════════════════════════════════════════════════════
-   Garra Mobile — Service Worker v1
-   Offline-first PWA unificado
-   Módulos: Jardinagem · Operacional · Checklist
-═══════════════════════════════════════════════════════ */
+/**
+ * Service Worker v8 — Estratégia cache + network integrada com GarraDB
+ * 
+ * Escopo: /operacional/
+ * 
+ * Estratégias:
+ * 1. HTML (pages): network-first, fallback para cache
+ * 2. API: network-first, fallback para IndexedDB (GarraDB)
+ * 3. Assets (JS/CSS/icons): cache-first
+ * 4. Imagens: cache-first com limite de tamanho
+ */
 
-const SW_VERSION   = 'garra-mobile-v1';
-const CACHE_STATIC = SW_VERSION + '-static';
-const CACHE_API    = SW_VERSION + '-api';
-const SYNC_QUEUE   = 'garra-sync-queue';
+const CACHE_NAME = 'garra-operacional-v8';
+const ASSETS_CACHE = 'garra-assets-v1';
+const OFFLINE_PAGE = '/operacional/offline.html';
 
-/* ── Assets que sempre ficam em cache ── */
-const STATIC_ASSETS = [
-  '/mobile',
-  '/mobile/manifest.json',
+// Assets que devem sempre estar em cache (shell)
+const PRECACHE_ASSETS = [
+  '/operacional/static/mobile.html',
+  '/operacional/static/sw.js',
+  '/operacional/static/idb.js',
+  '/operacional/manifest.json',
+  '/operacional/static/css/style.css',
+  '/operacional/static/js/app.js',
+  '/static/icons/favicon.ico',
+  '/static/icons/icon-192.png',
+  '/static/icons/icon-512.png'
 ];
 
-/* ── APIs que fazem cache para fallback offline ── */
-const CACHE_API_PATTERNS = [
-  '/operacional/api/minhas-os',
-  '/operacional/api/equipamentos',
-  '/operacional/api/operadores',
-  '/operacional/api/clientes',
-  '/jardinagem/api/inicio',
-  '/jardinagem/api/meses',
-  '/checklist/modelos',
-  '/permissoes/usuario/',
-];
+// ============================================================
+// INSTALL — Cachear assets críticos
+// ============================================================
 
-/* ── APIs que NUNCA fazem cache ── */
-const NO_CACHE_PATTERNS = [
-  '/auth/',
-  '/auth/login',
-  '/auth/renovar',
-];
-
-/* ════════════════════════════════════════
-   INSTALL — pré-cache dos assets estáticos
-════════════════════════════════════════ */
-self.addEventListener('install', event => {
-  event.waitUntil(
-    caches.open(CACHE_STATIC)
-      .then(cache => cache.addAll(STATIC_ASSETS))
+self.addEventListener('install', (e) => {
+  console.log('[SW] Installing v8...');
+  e.waitUntil(
+    caches.open(ASSETS_CACHE)
+      .then(cache => cache.addAll(PRECACHE_ASSETS.filter(url => url)))
       .then(() => self.skipWaiting())
   );
 });
 
-/* ════════════════════════════════════════
-   ACTIVATE — limpar caches antigos
-════════════════════════════════════════ */
-self.addEventListener('activate', event => {
-  event.waitUntil(
-    caches.keys().then(keys =>
+// ============================================================
+// ACTIVATE — Limpar caches antigos
+// ============================================================
+
+self.addEventListener('activate', (e) => {
+  console.log('[SW] Activating v8...');
+  e.waitUntil(
+    caches.keys().then(names =>
       Promise.all(
-        keys
-          .filter(k => k.startsWith('garra-mobile-') && k !== CACHE_STATIC && k !== CACHE_API)
-          .map(k => caches.delete(k))
+        names
+          .filter(name => name !== ASSETS_CACHE && name !== CACHE_NAME)
+          .map(name => {
+            console.log(`[SW] Deletando cache antigo: ${name}`);
+            return caches.delete(name);
+          })
       )
     ).then(() => self.clients.claim())
   );
 });
 
-/* ════════════════════════════════════════
-   FETCH — estratégias por tipo de request
-════════════════════════════════════════ */
-self.addEventListener('fetch', event => {
-  const url = new URL(event.request.url);
-  const path = url.pathname;
+// ============================================================
+// FETCH — Estratégias de cache por tipo de recurso
+// ============================================================
 
-  /* Ignorar requests não-GET que não são POST de sync */
-  if (event.request.method !== 'GET' && event.request.method !== 'POST') return;
+self.addEventListener('fetch', (e) => {
+  const { request } = e;
+  const url = new URL(request.url);
 
-  /* Ignorar auth — sempre online */
-  if (NO_CACHE_PATTERNS.some(p => path.includes(p))) return;
+  // 1. HTML pages — network-first
+  if (request.headers.get('accept')?.includes('text/html')) {
+    return e.respondWith(networkFirstPage(request));
+  }
 
-  /* POST — interceptar para queue offline */
-  if (event.request.method === 'POST') {
-    event.respondWith(handlePost(event.request));
+  // 2. API calls — network-first, fallback para IndexedDB
+  if (url.pathname.includes('/api/')) {
+    if (request.method === 'GET') {
+      return e.respondWith(networkFirstAPI(request));
+    }
+    // POST/PATCH/DELETE — não cachear, deixar GarraDB.postWithQueue gerenciar
     return;
   }
 
-  /* Assets estáticos — Cache First */
-  if (isStaticAsset(path)) {
-    event.respondWith(cacheFirst(event.request, CACHE_STATIC));
-    return;
+  // 3. Assets (JS, CSS, icons) — cache-first
+  if (
+    url.pathname.endsWith('.js') ||
+    url.pathname.endsWith('.css') ||
+    url.pathname.endsWith('.svg') ||
+    url.pathname.includes('/icons/') ||
+    url.pathname.endsWith('/manifest.json')
+  ) {
+    return e.respondWith(cacheFirstAssets(request));
   }
 
-  /* APIs com cache — Network First */
-  if (CACHE_API_PATTERNS.some(p => path.includes(p))) {
-    event.respondWith(networkFirstWithCache(event.request));
-    return;
+  // 4. Imagens — cache-first com limite
+  if (request.destination === 'image') {
+    return e.respondWith(cacheFirstImages(request));
   }
 
-  /* Demais — Network Only */
+  // 5. Default — network-first
+  return e.respondWith(networkFirst(request));
 });
 
-/* ════════════════════════════════════════
-   ESTRATÉGIAS
-════════════════════════════════════════ */
+// ============================================================
+// ESTRATÉGIAS DE CACHE
+// ============================================================
 
-function isStaticAsset(path) {
-  return path === '/mobile' ||
-         path.endsWith('.html') ||
-         path.endsWith('.js') ||
-         path.endsWith('.css') ||
-         path.endsWith('.json') ||
-         path.endsWith('.png') ||
-         path.endsWith('.ico') ||
-         path.endsWith('.jpg');
-}
+async function networkFirstPage(request) {
+  try {
+    const response = await fetch(request);
+    if (response.ok) {
+      const cache = await caches.open(CACHE_NAME);
+      cache.put(request, response.clone());
+      return response;
+    }
+  } catch (err) {
+    console.log('[SW] Network falhou para page, tentando cache...');
+  }
 
-/* Cache First — assets estáticos */
-async function cacheFirst(request, cacheName) {
   const cached = await caches.match(request);
   if (cached) return cached;
-  try {
-    const response = await fetch(request);
-    if (response.ok) {
-      const cache = await caches.open(cacheName);
-      cache.put(request, response.clone());
-    }
-    return response;
-  } catch {
-    return new Response('Offline — recurso não disponível', { status: 503 });
-  }
+
+  return caches.match(OFFLINE_PAGE) || new Response('Offline', { status: 503 });
 }
 
-/* Network First — APIs com fallback cache */
-async function networkFirstWithCache(request) {
+async function networkFirstAPI(request) {
   try {
     const response = await fetch(request);
     if (response.ok) {
-      const cache = await caches.open(CACHE_API);
+      const cache = await caches.open(CACHE_NAME);
       cache.put(request, response.clone());
+      return response;
     }
-    return response;
-  } catch {
+  } catch (err) {
+    console.log(`[SW] Network falhou para ${request.url}, tentando cache...`);
+  }
+
+  // Fallback para cache
+  const cached = await caches.match(request);
+  if (cached) {
+    console.log(`[SW] Cache hit: ${request.url}`);
+    return cached;
+  }
+
+  // Sem cache, retornar erro
+  return new Response(JSON.stringify({ error: 'Offline' }), {
+    status: 503,
+    headers: { 'Content-Type': 'application/json' }
+  });
+}
+
+async function cacheFirstAssets(request) {
+  const cached = await caches.match(request);
+  if (cached) return cached;
+
+  try {
+    const response = await fetch(request);
+    if (response.ok) {
+      const cache = await caches.open(ASSETS_CACHE);
+      cache.put(request, response.clone());
+      return response;
+    }
+  } catch (err) {
+    console.warn(`[SW] Falha ao buscar asset: ${request.url}`);
+  }
+
+  return new Response('Asset não disponível', { status: 404 });
+}
+
+async function cacheFirstImages(request) {
+  const cached = await caches.match(request);
+  if (cached) return cached;
+
+  try {
+    const response = await fetch(request);
+    if (response.ok) {
+      const cache = await caches.open(ASSETS_CACHE);
+      const size = response.headers.get('content-length');
+
+      // Cachear apenas imagens < 5MB
+      if (!size || size < 5242880) {
+        cache.put(request, response.clone());
+      }
+
+      return response;
+    }
+  } catch (err) {
+    console.log(`[SW] Imagem offline: ${request.url}`);
+  }
+
+  // Placeholder para imagem offline
+  return new Response(
+    '<svg width="200" height="200" xmlns="http://www.w3.org/2000/svg"><rect fill="#ddd" width="200" height="200"/><text x="50%" y="50%" text-anchor="middle" dy=".3em" fill="#666" font-size="14">Offline</text></svg>',
+    { headers: { 'Content-Type': 'image/svg+xml' } }
+  );
+}
+
+async function networkFirst(request) {
+  try {
+    return await fetch(request);
+  } catch (err) {
     const cached = await caches.match(request);
-    if (cached) {
-      return new Response(
-        JSON.stringify({ _offline: true, _cached: true,
-          data: await cached.json().catch(() => null) }),
-        { status: 200, headers: { 'Content-Type': 'application/json',
-          'X-Garra-Offline': 'true' }}
-      );
-    }
-    return new Response(
-      JSON.stringify({ error: 'Sem conexão e sem cache disponível' }),
-      { status: 503, headers: { 'Content-Type': 'application/json' }}
-    );
+    return cached || new Response('Offline', { status: 503 });
   }
 }
 
-/* POST offline — salva na fila para sync posterior */
-async function handlePost(request) {
-  try {
-    const response = await fetch(request.clone());
-    return response;
-  } catch {
-    /* Offline — salvar na fila */
-    const url  = request.url;
-    const body = await request.text().catch(() => '{}');
+// ============================================================
+// BACKGROUND SYNC (futuro)
+// ============================================================
 
-    /* Só salva na fila endpoints conhecidos */
-    const syncableEndpoints = [
-      '/operacional/api/os/',
-      '/jardinagem/api/relatorios/km',
-      '/jardinagem/api/pares',
-      '/checklist/envios',
-    ];
-
-    const isSyncable = syncableEndpoints.some(ep => url.includes(ep));
-
-    if (isSyncable) {
-      const queue = await getQueue();
-      queue.push({
-        id:        Date.now() + '_' + Math.random().toString(36).slice(2,6),
-        url,
-        method:    'POST',
-        body,
-        headers:   Object.fromEntries(request.headers.entries()),
-        timestamp: new Date().toISOString(),
-        tentativas: 0,
-      });
-      await saveQueue(queue);
-
-      /* Registrar Background Sync se disponível */
-      try {
-        await self.registration.sync.register('garra-sync-pendentes');
-      } catch {}
-
-      return new Response(
-        JSON.stringify({ ok: true, offline: true, queued: true }),
-        { status: 202, headers: { 'Content-Type': 'application/json',
-          'X-Garra-Queued': 'true' }}
-      );
-    }
-
-    return new Response(
-      JSON.stringify({ error: 'Sem conexão' }),
-      { status: 503, headers: { 'Content-Type': 'application/json' }}
+// Quando voltar online, disparar sync da fila GarraDB
+self.addEventListener('sync', (e) => {
+  if (e.tag === 'garradb-sync') {
+    e.waitUntil(
+      self.clients.matchAll().then(clients => {
+        clients.forEach(client => {
+          client.postMessage({
+            type: 'GARRADB_SYNC_REQUESTED'
+          });
+        });
+      })
     );
-  }
-}
-
-/* ════════════════════════════════════════
-   BACKGROUND SYNC — processar fila
-════════════════════════════════════════ */
-self.addEventListener('sync', event => {
-  if (event.tag === 'garra-sync-pendentes') {
-    event.waitUntil(processQueue());
   }
 });
 
-async function processQueue() {
-  const queue = await getQueue();
-  if (!queue.length) return;
+// ============================================================
+// MESSAGE — Comunicação com frontend
+// ============================================================
 
-  const failed = [];
-  for (const item of queue) {
-    try {
-      const res = await fetch(item.url, {
-        method:  item.method,
-        headers: item.headers,
-        body:    item.body,
-      });
-      if (res.ok) {
-        /* Notificar cliente do sucesso */
-        self.clients.matchAll().then(clients => {
-          clients.forEach(c => c.postMessage({
-            type:    'SYNC_SUCCESS',
-            item_id: item.id,
-            url:     item.url,
-          }));
-        });
-      } else {
-        item.tentativas++;
-        if (item.tentativas < 5) failed.push(item);
-      }
-    } catch {
-      item.tentativas++;
-      if (item.tentativas < 5) failed.push(item);
-    }
-  }
-  await saveQueue(failed);
-}
-
-/* ════════════════════════════════════════
-   FILA OFFLINE — IndexedDB simples via Cache API
-════════════════════════════════════════ */
-async function getQueue() {
-  try {
-    const cache = await caches.open(SYNC_QUEUE);
-    const res   = await cache.match('/sw-queue');
-    if (!res) return [];
-    return await res.json();
-  } catch { return []; }
-}
-
-async function saveQueue(queue) {
-  try {
-    const cache = await caches.open(SYNC_QUEUE);
-    await cache.put('/sw-queue', new Response(
-      JSON.stringify(queue),
-      { headers: { 'Content-Type': 'application/json' }}
-    ));
-  } catch {}
-}
-
-/* ════════════════════════════════════════
-   MENSAGENS DO CLIENTE
-════════════════════════════════════════ */
-self.addEventListener('message', async event => {
-  const { type } = event.data || {};
-
-  /* Cliente pede para processar fila manualmente */
-  if (type === 'SYNC_NOW') {
-    await processQueue();
-    const queue = await getQueue();
-    event.source?.postMessage({ type: 'QUEUE_STATUS', pending: queue.length });
-  }
-
-  /* Cliente pede status da fila */
-  if (type === 'QUEUE_COUNT') {
-    const queue = await getQueue();
-    event.source?.postMessage({ type: 'QUEUE_STATUS', pending: queue.length });
-  }
-
-  /* Forçar update do SW */
-  if (type === 'SKIP_WAITING') {
+self.addEventListener('message', (e) => {
+  if (e.data.type === 'SKIP_WAITING') {
     self.skipWaiting();
   }
-});
-
-/* ════════════════════════════════════════
-   PUSH NOTIFICATIONS (futuro)
-════════════════════════════════════════ */
-self.addEventListener('push', event => {
-  if (!event.data) return;
-  const data = event.data.json();
-  event.waitUntil(
-    self.registration.showNotification(data.title || 'Garra', {
-      body: data.body || '',
-      icon: '/static/icons/icon-192.png',
-      badge: '/static/icons/icon-192.png',
-    })
-  );
+  if (e.data.type === 'GARRADB_CLEAR_CACHE') {
+    caches.delete(CACHE_NAME).then(() => {
+      e.ports[0].postMessage({ cleared: true });
+    });
+  }
 });
