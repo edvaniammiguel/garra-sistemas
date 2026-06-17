@@ -434,12 +434,26 @@ async def login(req: LoginRequest, request: Request, db=Depends(get_db)):
         "perfil_checklist": user["perfil_checklist"],
         "exp":              datetime.utcnow() + timedelta(hours=JWT_EXPIRY_HOURS)
     }, JWT_SECRET, algorithm="HS256")
+    
+    # Determinar redirect_url baseado no perfil
+    redirects = {
+        "admin": "/admin",
+        "gestor": "/admin",
+        "luana": "/jardinagem/desktop",
+        "campo": "/jardinagem/mobile",
+        "operador": "/mobile",
+        "motorista": "/mobile",
+        "bruna": "/mobile"
+    }
+    redirect_url = redirects.get(user["perfil"], "/admin")
+    
     return {
         "token": token,
         "id": str(user["id"]),
         "login": user["login"], "nome": user["nome"],
         "perfil": user["perfil"], "perfil_checklist": user["perfil_checklist"],
         "role": user["perfil_checklist"] or user["perfil"],
+        "redirect_url": redirect_url,
         "pts": user["pts"] or 0, "total_envios": user["total_envios"] or 0,
         "email": user["email"] or "",
     }
