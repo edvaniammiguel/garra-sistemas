@@ -805,6 +805,7 @@
     // SSO — ler token da URL se veio do app shell mobile
     const params = new URLSearchParams(window.location.search);
     const ssoToken = params.get('sso');
+    const tabInicial = params.get('tab') || '';
     if (ssoToken && ssoToken.length > 10) {
       localStorage.setItem('garra_token', ssoToken);
       // Ocultar tela de login imediatamente para evitar flash
@@ -862,6 +863,7 @@
             pts:   data.pts   || 0,
             submissions: data.total_envios || 0,
             temLogistica: temLogistica,
+            tabInicial: tabInicial,
           };
           localStorage.setItem('garra_current_user', JSON.stringify(currentUser));
           if (typeof _navigate === 'function') _navigate();
