@@ -834,13 +834,34 @@
                             bruna:'superior', operador:'superior', motorista:'driver', campo:'driver' };
           const roleByChecklist = { superior:'superior', manager:'manager', driver:'driver' };
           const role = roleByChecklist[perfilChecklist] || roleMap[perfil] || 'driver';
+
+          // Buscar permissão específica de Logística (módulo dentro do Checklist)
+          let temLogistica = (perfil === 'admin'); // admin sempre tem, por padrão de perfil
+          if (data.id) {
+            try {
+              const permRes = await fetch(API + '/permissoes/usuario/' + data.id, {
+                headers: { 'Authorization': 'Bearer ' + (data.token || token) }
+              });
+              if (permRes.ok) {
+                const perms = await permRes.json();
+                if (typeof perms.checklist_logistica === 'boolean') {
+                  temLogistica = perms.checklist_logistica;
+                }
+              }
+            } catch (e) {
+              console.warn('Falha ao buscar permissão de logística:', e.message);
+            }
+          }
+
           // Criar currentUser e navegar
           currentUser = {
+            id:    data.id || '',
             login: data.login || data.sub || '',
             name:  data.nome  || data.login || '',
             role:  role,
             pts:   data.pts   || 0,
             submissions: data.total_envios || 0,
+            temLogistica: temLogistica,
           };
           localStorage.setItem('garra_current_user', JSON.stringify(currentUser));
           if (typeof _navigate === 'function') _navigate();
