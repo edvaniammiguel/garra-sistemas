@@ -1,358 +1,406 @@
-/* ═══════════════════════════════════════════════════════════════
-   idb.js — Garra Sistemas — Camada de persistência offline unificada
-   Usado por: Operacional, Checklist, Jardinagem
+/**
+ * GarraDB v2 — IndexedDB wrapper escalável
+ * Padrão único para offline-first em todos os módulos
+ * (Operacional, Checklist, Jardinagem)
+ * 
+ * Uso:
+ *   await GarraDB.fetchWithFallback('/api/os')  // leitura com fallback
+ *   await GarraDB.postWithQueue('/api/partes', data)  // escrita com fila
+ */
 
-   PRINCÍPIO:
-   - Toda leitura: tenta rede → se sucesso, grava cópia local → retorna
-                   se falha, lê do IndexedDB local → retorna com flag _offline
-   - Toda escrita: tenta rede → se sucesso, grava local → retorna
-                   se falha, grava como PENDENTE local (UI otimista) → entra na fila
-   - Fila de pendentes é resolvida sozinha quando a rede volta (evento 'online'
-     + tentativa periódica), nunca exige ação manual do usuário.
-   - Cada módulo declara seus próprios "stores" (tabelas) e endpoints
-     sincronizáveis; este arquivo só fornece os mecanismos genéricos.
-═══════════════════════════════════════════════════════════════ */
+class GarraDB {
+  static db = null;
+  static isOnline = navigator.onLine;
+  static syncTimer = null;
+  static isSyncing = false;
 
-const GarraDB = (function () {
-  const DB_NAME    = 'garra_offline_db';
-  const DB_VERSION = 1;
-
-  // Stores fixos — um por tipo de dado, compartilhados entre módulos
-  const STORES = {
-    // Cache de leitura (dados vindos do servidor, para uso offline)
-    cache_os:            'cache_os',            // operacional: OS do operador
-    cache_partes:        'cache_partes',        // operacional: histórico de partes
-    cache_equipamentos:  'cache_equipamentos',  // operacional: lista de equipamentos
-    cache_operadores:    'cache_operadores',    // operacional: lista de operadores
-    cache_checklist_mod: 'cache_checklist_mod', // checklist: modelos
-    cache_checklist_env: 'cache_checklist_env', // checklist: últimos envios
-    cache_frota:         'cache_frota',         // checklist: frota
-    cache_usuarios:      'cache_usuarios',      // checklist/admin: usuários
-    cache_jard_meses:    'cache_jard_meses',    // jardinagem: meses/semanas
-    cache_jard_pares:    'cache_jard_pares',    // jardinagem: pares de fotos
-    cache_jard_km:       'cache_jard_km',       // jardinagem: relatórios KM
-    cache_generic:       'cache_generic',       // fallback genérico por chave
-
-    // Fila de escrita pendente (ainda não confirmada pelo servidor)
-    fila_pendentes:      'fila_pendentes',
-    // Fotos pendentes de upload (blob separado por ser pesado)
-    fotos_pendentes:     'fotos_pendentes',
+  // Nomes das tabelas IndexedDB
+  static STORES = {
+    QUEUE: 'queue',        // requisições pendentes
+    CACHE: 'cache',        // leituras cacheadas
+    METADATA: 'metadata'   // timestamps, versão, etc
   };
 
-  let _dbPromise = null;
+  static async init() {
+    return new Promise((resolve, reject) => {
+      if (GarraDB.db) return resolve(GarraDB.db);
 
-  function open() {
-    if (_dbPromise) return _dbPromise;
-    _dbPromise = new Promise((resolve, reject) => {
-      const req = indexedDB.open(DB_NAME, DB_VERSION);
+      const request = indexedDB.open('GarraDB', 2);
 
-      req.onupgradeneeded = (ev) => {
-        const db = ev.target.result;
-        Object.values(STORES).forEach((storeName) => {
-          if (!db.objectStoreNames.contains(storeName)) {
-            const store = db.createObjectStore(storeName, { keyPath: 'id' });
-            store.createIndex('updated_at', 'updated_at', { unique: false });
-          }
-        });
+      request.onerror = () => reject(request.error);
+      request.onsuccess = () => {
+        GarraDB.db = request.result;
+        resolve(GarraDB.db);
       };
 
-      req.onsuccess = (ev) => resolve(ev.target.result);
-      req.onerror   = (ev) => reject(ev.target.error);
-      req.onblocked = ()   => reject(new Error('IndexedDB bloqueado — outra aba pode estar em versão antiga'));
-    });
-    return _dbPromise;
-  }
+      request.onupgradeneeded = (e) => {
+        const db = e.target.result;
 
-  function tx(storeName, mode = 'readonly') {
-    return open().then((db) => db.transaction(storeName, mode).objectStore(storeName));
-  }
-
-  // ── CRUD genérico por store ──────────────────────────────────
-  async function getAll(storeName) {
-    const store = await tx(storeName);
-    return new Promise((resolve, reject) => {
-      const req = store.getAll();
-      req.onsuccess = () => resolve(req.result || []);
-      req.onerror   = () => reject(req.error);
-    });
-  }
-
-  async function get(storeName, id) {
-    const store = await tx(storeName);
-    return new Promise((resolve, reject) => {
-      const req = store.get(id);
-      req.onsuccess = () => resolve(req.result || null);
-      req.onerror   = () => reject(req.error);
-    });
-  }
-
-  async function put(storeName, item) {
-    if (!item.id) throw new Error('idb.put: item precisa de campo "id"');
-    item.updated_at = item.updated_at || new Date().toISOString();
-    const store = await tx(storeName, 'readwrite');
-    return new Promise((resolve, reject) => {
-      const req = store.put(item);
-      req.onsuccess = () => resolve(item);
-      req.onerror   = () => reject(req.error);
-    });
-  }
-
-  async function putMany(storeName, items) {
-    if (!items || !items.length) return [];
-    const store = await tx(storeName, 'readwrite');
-    return new Promise((resolve, reject) => {
-      let count = 0;
-      items.forEach((item) => {
-        item.updated_at = item.updated_at || new Date().toISOString();
-        const req = store.put(item);
-        req.onsuccess = () => { count++; if (count === items.length) resolve(items); };
-        req.onerror   = () => reject(req.error);
-      });
-    });
-  }
-
-  async function del(storeName, id) {
-    const store = await tx(storeName, 'readwrite');
-    return new Promise((resolve, reject) => {
-      const req = store.delete(id);
-      req.onsuccess = () => resolve(true);
-      req.onerror   = () => reject(req.error);
-    });
-  }
-
-  async function clearStore(storeName) {
-    const store = await tx(storeName, 'readwrite');
-    return new Promise((resolve, reject) => {
-      const req = store.clear();
-      req.onsuccess = () => resolve(true);
-      req.onerror   = () => reject(req.error);
-    });
-  }
-
-  // ── Cache genérico por chave única (substitui localStorage de objetos) ──
-  async function cacheSet(key, value) {
-    return put(STORES.cache_generic, { id: key, value });
-  }
-  async function cacheGet(key) {
-    const row = await get(STORES.cache_generic, key);
-    return row ? row.value : null;
-  }
-
-  // ── FETCH inteligente: rede primeiro, IndexedDB como fallback ──
-  // store: nome do store de cache (ex: STORES.cache_os)
-  // listKey: se a resposta é uma lista, cada item precisa de "id" único
-  async function fetchWithFallback(url, options, storeName, opts = {}) {
-    const { isList = true, idField = 'id' } = opts;
-    try {
-      const res = await fetch(url, options);
-      if (!res.ok) throw new Error('HTTP ' + res.status);
-      const data = await res.json();
-
-      // Gravar cópia local para uso offline futuro
-      try {
-        if (storeName) {
-          if (isList && Array.isArray(data)) {
-            const withIds = data.map((d) => ({ ...d, id: d[idField] }));
-            await clearStore(storeName);
-            await putMany(storeName, withIds);
-          } else if (!isList && data && data[idField] !== undefined) {
-            await put(storeName, { ...data, id: data[idField] });
-          } else if (!isList) {
-            await cacheSet(url, data);
-          }
-        }
-      } catch (e) {
-        console.warn('[GarraDB] falha ao gravar cache local:', e.message);
-      }
-
-      return { data, _offline: false };
-    } catch (networkError) {
-      // Sem rede ou erro — tentar IndexedDB
-      try {
-        if (storeName && isList) {
-          const cached = await getAll(storeName);
-          return { data: cached, _offline: true, _error: networkError.message };
-        }
-        if (storeName && !isList) {
-          const cached = await cacheGet(url);
-          return { data: cached, _offline: true, _error: networkError.message };
-        }
-      } catch (dbError) {
-        console.error('[GarraDB] fallback IndexedDB também falhou:', dbError);
-      }
-      return { data: isList ? [] : null, _offline: true, _error: networkError.message };
-    }
-  }
-
-  // ── ESCRITA inteligente: rede primeiro, fila pendente como fallback ──
-  // localItem: objeto já com id local provisório, usado para UI otimista
-  async function postWithQueue(url, body, storeName, localItem, opts = {}) {
-    const { method = 'POST', headers = {} } = opts;
-    try {
-      const res = await fetch(url, {
-        method,
-        headers: { 'Content-Type': 'application/json', ...headers },
-        body: JSON.stringify(body),
-      });
-      if (!res.ok) throw new Error('HTTP ' + res.status);
-      const data = await res.json();
-
-      // Sucesso — gravar resultado real no cache local (substitui o otimista)
-      if (storeName && data && data.id) {
-        await put(storeName, { ...data, id: data.id, _pending: false });
-        if (localItem && localItem.id !== data.id) {
-          await del(storeName, localItem.id).catch(() => {});
-        }
-      }
-      return { data, _offline: false, _queued: false };
-    } catch (networkError) {
-      // Falhou — gravar localmente como pendente + UI otimista
-      const pendingId = (localItem && localItem.id) || ('local_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8));
-      const optimistic = { ...(localItem || body), id: pendingId, _pending: true, updated_at: new Date().toISOString() };
-
-      if (storeName) {
-        await put(storeName, optimistic).catch((e) => console.error('[GarraDB] erro ao salvar otimista:', e));
-      }
-
-      await addToQueue({
-        id: pendingId,
-        url, method, body,
-        headers,
-        storeName,
-        tentativas: 0,
-        criado_em: new Date().toISOString(),
-      });
-
-      registerBackgroundSync();
-
-      return { data: optimistic, _offline: true, _queued: true, _error: networkError.message };
-    }
-  }
-
-  // ── FILA DE PENDENTES ────────────────────────────────────────
-  async function addToQueue(item) {
-    return put(STORES.fila_pendentes, item);
-  }
-
-  async function getQueue() {
-    return getAll(STORES.fila_pendentes);
-  }
-
-  async function removeFromQueue(id) {
-    return del(STORES.fila_pendentes, id);
-  }
-
-  async function countPending() {
-    const q = await getQueue();
-    return q.length;
-  }
-
-  // Tenta reenviar tudo que está na fila. Chamado ao voltar online
-  // e periodicamente como rede de segurança.
-  let _syncing = false;
-  async function syncPendentes(onProgress) {
-    if (_syncing) return { synced: 0, failed: 0 };
-    _syncing = true;
-    let synced = 0, failed = 0;
-
-    try {
-      const queue = await getQueue();
-      for (const item of queue) {
-        try {
-          const res = await fetch(item.url, {
-            method: item.method,
-            headers: { 'Content-Type': 'application/json', ...(item.headers || {}) },
-            body: JSON.stringify(item.body),
+        // Tabela: queue (requisições pendentes)
+        if (!db.objectStoreNames.contains(GarraDB.STORES.QUEUE)) {
+          const qStore = db.createObjectStore(GarraDB.STORES.QUEUE, { 
+            keyPath: 'id', 
+            autoIncrement: true 
           });
-          if (!res.ok) throw new Error('HTTP ' + res.status);
-          const data = await res.json();
+          qStore.createIndex('url', 'url', { unique: false });
+          qStore.createIndex('createdAt', 'createdAt', { unique: false });
+          qStore.createIndex('status', 'status', { unique: false });
+        }
 
-          // Substituir registro otimista pelo real
-          if (item.storeName && data && data.id) {
-            await put(item.storeName, { ...data, id: data.id, _pending: false });
-            if (item.id !== data.id) await del(item.storeName, item.id).catch(() => {});
+        // Tabela: cache (leituras cacheadas)
+        if (!db.objectStoreNames.contains(GarraDB.STORES.CACHE)) {
+          const cStore = db.createObjectStore(GarraDB.STORES.CACHE, { keyPath: 'url' });
+          cStore.createIndex('expiresAt', 'expiresAt', { unique: false });
+        }
+
+        // Tabela: metadata
+        if (!db.objectStoreNames.contains(GarraDB.STORES.METADATA)) {
+          db.createObjectStore(GarraDB.STORES.METADATA, { keyPath: 'key' });
+        }
+      };
+    });
+  }
+
+  /**
+   * fetchWithFallback(url, options)
+   * Tenta rede → cache → null
+   * Opções: { cacheKey, cacheTTL: 3600 }
+   */
+  static async fetchWithFallback(url, options = {}) {
+    const { cacheKey = url, cacheTTL = 1800 } = options;
+
+    try {
+      // 1. Tenta rede
+      if (GarraDB.isOnline) {
+        const response = await fetch(url, {
+          headers: {
+            'Authorization': `Bearer ${localStorage.getItem('garra_token') || ''}`,
+            'Content-Type': 'application/json'
           }
-          await removeFromQueue(item.id);
-          synced++;
-          if (onProgress) onProgress({ type: 'success', item });
-        } catch (e) {
-          item.tentativas = (item.tentativas || 0) + 1;
-          if (item.tentativas >= 8) {
-            // Desiste após muitas tentativas — mantém local mas marca erro
-            item._erro_final = e.message;
-            await put(STORES.fila_pendentes, item);
-            if (onProgress) onProgress({ type: 'gave_up', item, error: e.message });
-          } else {
-            await put(STORES.fila_pendentes, item);
-            if (onProgress) onProgress({ type: 'retry', item, error: e.message });
-          }
-          failed++;
+        });
+
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+        const data = await response.json();
+
+        // Cacheia resposta
+        await GarraDB._cacheSet(cacheKey, data, cacheTTL);
+
+        return data;
+      }
+    } catch (err) {
+      console.warn(`[GarraDB] Falha na rede para ${url}:`, err.message);
+    }
+
+    // 2. Fallback para cache
+    try {
+      const cached = await GarraDB._cacheGet(cacheKey);
+      if (cached) {
+        console.log(`[GarraDB] Cache hit: ${cacheKey}`);
+        return cached;
+      }
+    } catch (err) {
+      console.warn(`[GarraDB] Falha ao ler cache:`, err.message);
+    }
+
+    // 3. Sem cache, sem rede
+    console.warn(`[GarraDB] Nenhum dado disponível para ${url}`);
+    return null;
+  }
+
+  /**
+   * postWithQueue(url, data, options)
+   * Enfileira requisição + tenta POST imediatamente
+   * Opções: { retries: 5, retryDelay: 30000, dedup: 'url+method' }
+   */
+  static async postWithQueue(url, data, options = {}) {
+    const {
+      retries = 5,
+      retryDelay = 30000,  // 30s
+      dedup = 'url+method',
+      method = 'POST'
+    } = options;
+
+    await GarraDB.init();
+
+    const queueItem = {
+      url,
+      method,
+      data,
+      status: 'pending',
+      attempts: 0,
+      maxRetries: retries,
+      retryDelay,
+      createdAt: Date.now(),
+      dedup
+    };
+
+    // Verificar duplicata
+    if (dedup === 'url+method') {
+      const existing = await GarraDB._findQueueItem({ url, method, status: 'pending' });
+      if (existing) {
+        console.warn(`[GarraDB] Requisição duplicada descartada: ${method} ${url}`);
+        return { success: false, reason: 'duplicate' };
+      }
+    }
+
+    // Salvar na fila
+    const qId = await GarraDB._queuePush(queueItem);
+    queueItem.id = qId;
+
+    // Tentar POST imediatamente
+    if (GarraDB.isOnline) {
+      const result = await GarraDB._attemptPost(queueItem);
+      if (result.success) {
+        await GarraDB._queueRemove(qId);
+        return { success: true, data: result.data };
+      }
+    }
+
+    // Disparar sync automático se estiver offline
+    if (!GarraDB.isOnline) {
+      console.log('[GarraDB] Offline - requisição enfileirada');
+      GarraDB._scheduleSync();
+    }
+
+    return { success: false, queued: qId, reason: 'queued' };
+  }
+
+  /**
+   * syncPendentes()
+   * Sincroniza fila quando voltar online
+   * Retry exponencial, máx tentativas, remove sucesso
+   */
+  static async syncPendentes() {
+    if (GarraDB.isSyncing) return;
+    GarraDB.isSyncing = true;
+
+    try {
+      await GarraDB.init();
+      const pending = await GarraDB._getQueueByStatus('pending');
+
+      if (pending.length === 0) {
+        console.log('[GarraDB] Fila vazia - nada para sincronizar');
+        GarraDB.isSyncing = false;
+        return;
+      }
+
+      console.log(`[GarraDB] Sincronizando ${pending.length} itens...`);
+
+      for (const item of pending) {
+        if (!GarraDB.isOnline) break;
+
+        item.attempts += 1;
+        const result = await GarraDB._attemptPost(item);
+
+        if (result.success) {
+          await GarraDB._queueRemove(item.id);
+          console.log(`[GarraDB] ✓ Sincronizado: ${item.method} ${item.url}`);
+          
+          // Disparar evento customizado para UI atualizar
+          window.dispatchEvent(new CustomEvent('garradb:synced', {
+            detail: { url: item.url, method: item.method }
+          }));
+        } else if (item.attempts >= item.maxRetries) {
+          // Marcar como falha permanente
+          item.status = 'failed';
+          await GarraDB._queueUpdate(item);
+          console.error(`[GarraDB] ✗ Falha permanente: ${item.method} ${item.url}`);
+
+          // Disparar evento de erro
+          window.dispatchEvent(new CustomEvent('garradb:failed', {
+            detail: { url: item.url, method: item.method, attempts: item.attempts }
+          }));
+        } else {
+          // Aguardar delay exponencial antes da próxima tentativa
+          item.nextRetryAt = Date.now() + (item.retryDelay * Math.pow(2, item.attempts - 1));
+          await GarraDB._queueUpdate(item);
+          console.log(`[GarraDB] ⏳ Retry em ${item.retryDelay / 1000}s: ${item.method} ${item.url}`);
         }
       }
+    } catch (err) {
+      console.error('[GarraDB] Erro durante sync:', err);
     } finally {
-      _syncing = false;
-    }
-    return { synced, failed };
-  }
-
-  function registerBackgroundSync() {
-    if ('serviceWorker' in navigator && 'SyncManager' in window) {
-      navigator.serviceWorker.ready
-        .then((reg) => reg.sync.register('garra-sync-pendentes'))
-        .catch(() => {});
+      GarraDB.isSyncing = false;
     }
   }
 
-  // ── Monitoramento de conectividade ──────────────────────────
-  let _onlineHandlers = [];
-  function onBackOnline(handler) {
-    _onlineHandlers.push(handler);
-  }
-
-  window.addEventListener('online', async () => {
-    const result = await syncPendentes();
-    _onlineHandlers.forEach((h) => {
-      try { h(result); } catch (e) { console.error(e); }
+  /**
+   * getQueue()
+   * Retorna lista de requisições pendentes (para debug/UI)
+   */
+  static async getQueue() {
+    await GarraDB.init();
+    const db = GarraDB.db;
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction([GarraDB.STORES.QUEUE], 'readonly');
+      const store = tx.objectStore(GarraDB.STORES.QUEUE);
+      const request = store.getAll();
+      request.onerror = () => reject(request.error);
+      request.onsuccess = () => resolve(request.result);
     });
-  });
+  }
 
-  // Tentativa periódica mesmo sem evento 'online' confiável (alguns Android)
-  setInterval(async () => {
-    if (navigator.onLine) {
-      const pending = await countPending();
-      if (pending > 0) {
-        const result = await syncPendentes();
-        if (result.synced > 0) {
-          _onlineHandlers.forEach((h) => {
-            try { h(result); } catch (e) { console.error(e); }
-          });
+  /**
+   * clearQueue()
+   * Remove todos os itens da fila (use com cuidado)
+   */
+  static async clearQueue() {
+    await GarraDB.init();
+    const db = GarraDB.db;
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction([GarraDB.STORES.QUEUE], 'readwrite');
+      const store = tx.objectStore(GarraDB.STORES.QUEUE);
+      const request = store.clear();
+      request.onerror = () => reject(request.error);
+      request.onsuccess = () => resolve();
+    });
+  }
+
+  // ==================== PRIVADOS ====================
+
+  static async _attemptPost(queueItem) {
+    try {
+      const token = localStorage.getItem('garra_token') || '';
+      const response = await fetch(queueItem.url, {
+        method: queueItem.method || 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(queueItem.data)
+      });
+
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+      const data = await response.json();
+      return { success: true, data };
+    } catch (err) {
+      console.warn(`[GarraDB] Tentativa falhou (${queueItem.attempts}/${queueItem.maxRetries}):`, err.message);
+      return { success: false, error: err.message };
+    }
+  }
+
+  static async _queuePush(item) {
+    const db = GarraDB.db;
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction([GarraDB.STORES.QUEUE], 'readwrite');
+      const store = tx.objectStore(GarraDB.STORES.QUEUE);
+      const request = store.add(item);
+      request.onerror = () => reject(request.error);
+      request.onsuccess = () => resolve(request.result);
+    });
+  }
+
+  static async _queueRemove(id) {
+    const db = GarraDB.db;
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction([GarraDB.STORES.QUEUE], 'readwrite');
+      const store = tx.objectStore(GarraDB.STORES.QUEUE);
+      const request = store.delete(id);
+      request.onerror = () => reject(request.error);
+      request.onsuccess = () => resolve();
+    });
+  }
+
+  static async _queueUpdate(item) {
+    const db = GarraDB.db;
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction([GarraDB.STORES.QUEUE], 'readwrite');
+      const store = tx.objectStore(GarraDB.STORES.QUEUE);
+      const request = store.put(item);
+      request.onerror = () => reject(request.error);
+      request.onsuccess = () => resolve();
+    });
+  }
+
+  static async _getQueueByStatus(status) {
+    const db = GarraDB.db;
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction([GarraDB.STORES.QUEUE], 'readonly');
+      const store = tx.objectStore(GarraDB.STORES.QUEUE);
+      const index = store.index('status');
+      const request = index.getAll(status);
+      request.onerror = () => reject(request.error);
+      request.onsuccess = () => resolve(request.result);
+    });
+  }
+
+  static async _findQueueItem(criteria) {
+    const all = await GarraDB.getQueue();
+    return all.find(item =>
+      item.url === criteria.url &&
+      item.method === (criteria.method || 'POST') &&
+      item.status === (criteria.status || 'pending')
+    );
+  }
+
+  static async _cacheSet(key, data, ttl) {
+    const db = GarraDB.db;
+    const expiresAt = Date.now() + (ttl * 1000);
+    const item = { url: key, data, expiresAt };
+
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction([GarraDB.STORES.CACHE], 'readwrite');
+      const store = tx.objectStore(GarraDB.STORES.CACHE);
+      const request = store.put(item);
+      request.onerror = () => reject(request.error);
+      request.onsuccess = () => resolve();
+    });
+  }
+
+  static async _cacheGet(key) {
+    const db = GarraDB.db;
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction([GarraDB.STORES.CACHE], 'readonly');
+      const store = tx.objectStore(GarraDB.STORES.CACHE);
+      const request = store.get(key);
+      request.onerror = () => reject(request.error);
+      request.onsuccess = () => {
+        const item = request.result;
+        if (!item) return resolve(null);
+        if (Date.now() > item.expiresAt) {
+          // Cache expirado
+          GarraDB._cacheDelete(key);
+          return resolve(null);
         }
-      }
-    }
-  }, 30000); // a cada 30s
-
-  // ── Fotos pendentes (blobs maiores, store separado) ─────────
-  async function savePendingPhoto(localId, blob, meta) {
-    return put(STORES.fotos_pendentes, {
-      id: localId,
-      blob,
-      meta,
-      criado_em: new Date().toISOString(),
+        resolve(item.data);
+      };
     });
   }
-  async function getPendingPhotos() {
-    return getAll(STORES.fotos_pendentes);
-  }
-  async function removePendingPhoto(localId) {
-    return del(STORES.fotos_pendentes, localId);
+
+  static async _cacheDelete(key) {
+    const db = GarraDB.db;
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction([GarraDB.STORES.CACHE], 'readwrite');
+      const store = tx.objectStore(GarraDB.STORES.CACHE);
+      const request = store.delete(key);
+      request.onerror = () => reject(request.error);
+      request.onsuccess = () => resolve();
+    });
   }
 
-  return {
-    STORES,
-    open, get, getAll, put, putMany, del, clearStore,
-    cacheGet, cacheSet,
-    fetchWithFallback, postWithQueue,
-    getQueue, countPending, syncPendentes, onBackOnline,
-    savePendingPhoto, getPendingPhotos, removePendingPhoto,
-  };
-})();
+  static _scheduleSync() {
+    if (GarraDB.syncTimer) clearInterval(GarraDB.syncTimer);
+    GarraDB.syncTimer = setInterval(() => {
+      if (GarraDB.isOnline && !GarraDB.isSyncing) {
+        GarraDB.syncPendentes();
+      }
+    }, 30000); // A cada 30s
+  }
+}
+
+// Event listeners globais
+window.addEventListener('online', () => {
+  console.log('[GarraDB] ✓ Online detectado');
+  GarraDB.isOnline = true;
+  GarraDB.syncPendentes();
+});
+
+window.addEventListener('offline', () => {
+  console.log('[GarraDB] ✗ Offline detectado');
+  GarraDB.isOnline = false;
+});
+
+// Inicializar ao carregar
+GarraDB.init().catch(err => console.error('[GarraDB] Falha ao inicializar:', err));
