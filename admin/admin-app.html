@@ -1264,15 +1264,16 @@ async function confirmarDesativar() {
    PERMISSÕES — Híbrido completo: perfil + exceções
 ══════════════════════════════════════════════ */
 const MODULOS = [
-  { id:'admin_master',       label:'Admin Master',       desc:'Painel de gestão' },
-  { id:'jardinagem_desktop', label:'Jardinagem Desktop', desc:'Relatórios e fotos' },
-  { id:'jardinagem_mobile',  label:'Jardinagem Mobile',  desc:'Campo — fotos e KM' },
-  { id:'operacional_mobile', label:'Operacional Mobile', desc:'OS e horímetro' },
-  { id:'checklist',          label:'Checklist',          desc:'Checklist de máquinas' },
+  { id:'admin_master',        label:'Admin Master',        desc:'Painel de gestão' },
+  { id:'jardinagem_desktop',  label:'Jardinagem Desktop',  desc:'Relatórios e fotos' },
+  { id:'jardinagem_mobile',   label:'Jardinagem Mobile',   desc:'Campo — fotos e KM' },
+  { id:'operacional_mobile',  label:'Operacional Mobile',  desc:'OS e horímetro' },
+  { id:'checklist',           label:'Checklist',           desc:'Checklist de máquinas' },
+  { id:'checklist_logistica', label:'Logística (Checklist)', desc:'Aba de carros de apoio dentro do Checklist' },
 ];
 
 const PERFIL_PADRAO = {
-  admin:     ['admin_master','jardinagem_desktop','jardinagem_mobile','operacional_mobile','checklist'],
+  admin:     ['admin_master','jardinagem_desktop','jardinagem_mobile','operacional_mobile','checklist','checklist_logistica'],
   gestor:    ['admin_master','jardinagem_desktop','operacional_mobile'],
   luana:     ['admin_master','jardinagem_desktop','operacional_mobile'],
   bruna:     ['admin_master','checklist'],
