@@ -522,7 +522,23 @@ async def renovar_token(payload=Depends(verificar_token)):
         "perfil_checklist": payload.get("perfil_checklist", ""),
         "exp":              datetime.utcnow() + timedelta(hours=JWT_EXPIRY_HOURS)
     }, JWT_SECRET, algorithm="HS256")
-    return {"token": novo_token}
+
+    login = payload.get("login") or payload.get("sub", "")
+    user = jard_query(
+        "SELECT id, pts, total_envios FROM public.usuarios_garra WHERE (login=%s OR email=%s) AND ativo=true",
+        (login, login), fetch="one"
+    )
+
+    return {
+        "token": novo_token,
+        "id": str(user["id"]) if user else None,
+        "login": login,
+        "nome": payload.get("nome", ""),
+        "perfil": payload.get("perfil", ""),
+        "perfil_checklist": payload.get("perfil_checklist", ""),
+        "pts": (user["pts"] if user else 0) or 0,
+        "total_envios": (user["total_envios"] if user else 0) or 0,
+    }
 
 @app.post("/auth/alterar-senha")
 async def alterar_senha(req: SenhaChange, login: str, db=Depends(get_db), _auth=Depends(verificar_token)):
@@ -2198,15 +2214,16 @@ async def op_minhas_os(payload=Depends(verificar_token)):
 # ═══════════════════════════════════════════════════════════════════════════
 
 MODULOS_DISPONIVEIS = [
-    {"id": "admin_master",       "label": "Admin Master",        "desc": "Painel de gestão"},
-    {"id": "jardinagem_desktop", "label": "Jardinagem Desktop",  "desc": "Relatórios e fotos"},
-    {"id": "jardinagem_mobile",  "label": "Jardinagem Mobile",   "desc": "Campo — fotos e KM"},
-    {"id": "operacional_mobile", "label": "Operacional Mobile",  "desc": "OS e horímetro"},
-    {"id": "checklist",          "label": "Checklist",           "desc": "Checklist de máquinas"},
+    {"id": "admin_master",        "label": "Admin Master",          "desc": "Painel de gestão"},
+    {"id": "jardinagem_desktop",  "label": "Jardinagem Desktop",    "desc": "Relatórios e fotos"},
+    {"id": "jardinagem_mobile",   "label": "Jardinagem Mobile",     "desc": "Campo — fotos e KM"},
+    {"id": "operacional_mobile",  "label": "Operacional Mobile",    "desc": "OS e horímetro"},
+    {"id": "checklist",           "label": "Checklist",             "desc": "Checklist de máquinas"},
+    {"id": "checklist_logistica", "label": "Logística (Checklist)", "desc": "Aba de carros de apoio dentro do Checklist"},
 ]
 
 PERFIL_MODULOS_PADRAO = {
-    "admin":     ["admin_master","jardinagem_desktop","jardinagem_mobile","operacional_mobile","checklist"],
+    "admin":     ["admin_master","jardinagem_desktop","jardinagem_mobile","operacional_mobile","checklist","checklist_logistica"],
     "gestor":    ["admin_master","jardinagem_desktop","operacional_mobile"],
     "luana":     ["admin_master","jardinagem_desktop","operacional_mobile"],
     "bruna":     ["admin_master","checklist"],
