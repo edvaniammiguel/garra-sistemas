@@ -41,7 +41,7 @@
     }
   })();
 </script>
-<script src="../static/idb.js"></script>
+<script src="/operacional/static/js/idb.js"></script>
 </head>
 <body>
 
@@ -808,7 +808,10 @@
     // SSO — ler token da URL se veio do app shell mobile
     const params = new URLSearchParams(window.location.search);
     const ssoToken = params.get('sso');
-    const tabInicial = params.get('tab') || '';
+    let tabInicial = params.get('tab') || '';
+    // Mapear tab do mobile (logistica) para tab interna do checklist (logistics)
+    if (tabInicial === 'logistica') tabInicial = 'logistics';
+    if (tabInicial === 'checklist') tabInicial = 'checklists';
     if (ssoToken && ssoToken.length > 10) {
       localStorage.setItem('garra_token', ssoToken);
       // Ocultar tela de login imediatamente para evitar flash
@@ -881,10 +884,29 @@
     if (typeof renovarTokenSilencioso === 'function') renovarTokenSilencioso();
   });
 </script>  
-<script src="../static/js/offline-ui.js"></script>
+<script src="/operacional/static/js/offline-ui.js"></script>
+<script>
+// Modo embedded: quando carregado dentro do iframe do app shell mobile
+(function() {
+  const params = new URLSearchParams(location.search);
+  const embedded = params.get('embedded') === '1';
+  if (embedded) {
+    document.documentElement.classList.add('embedded');
+    const s = document.createElement('style');
+    s.textContent = `
+      .embedded .top-bar,
+      .embedded header.top-bar,
+      .embedded .top-bar-spacer { display: none !important; }
+      .embedded body { padding-top: 0 !important; }
+      .embedded .screen { padding-top: 0 !important; }
+    `;
+    document.head.appendChild(s);
+  }
+})();
+</script>
 <script>
 if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('../static/sw.js', { scope: '/operacional/' })
+  navigator.serviceWorker.register('/operacional/static/sw.js', { scope: '/' })
     .then(reg => console.log('[Checklist] SW registrado'))
     .catch(err => console.error('[Checklist] SW erro:', err));
 }
