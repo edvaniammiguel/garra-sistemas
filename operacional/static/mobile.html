@@ -325,6 +325,7 @@ input,select,textarea{font-family:inherit;outline:none;border:none}
     <button class="nav-btn active" onclick="ir('Jard')"><span class="nav-icon">🌿</span><span class="nav-label">Jardinagem</span></button>
     <button class="nav-btn" onclick="ir('Op')"><span class="nav-icon">⚙️</span><span class="nav-label">Operacional</span></button>
     <button class="nav-btn" onclick="ir('Check')"><span class="nav-icon">✓</span><span class="nav-label">Checklist</span></button>
+    <button class="nav-btn" onclick="ir('Log')" style="display:none"><span class="nav-icon">🚗</span><span class="nav-label">Logística</span></button>
   </div>
 </div>
 
@@ -437,6 +438,31 @@ function ir(nome) {
     document.getElementById('sec-check').classList.add('active');
     document.querySelectorAll('.nav-btn')[2].classList.add('active');
     document.getElementById('app-modulo').textContent = 'Checklist';
+    carregarIframeChecklist('checklist');
+  } else if (nome === 'Log') {
+    document.getElementById('sec-check').classList.add('active');
+    document.querySelectorAll('.nav-btn')[3].classList.add('active');
+    document.getElementById('app-modulo').textContent = 'Logística';
+    carregarIframeChecklist('logistica');
+  }
+}
+
+// Carrega o iframe do checklist com SSO e aba alvo
+function carregarIframeChecklist(tab) {
+  const sec = document.getElementById('sec-check');
+  const token = localStorage.getItem('garra_token') || '';
+  const url = `/checklist/?sso=${encodeURIComponent(token)}&tab=${tab}&embedded=1`;
+  // Recria iframe só se aba mudou ou ainda não existe
+  let iframe = sec.querySelector('iframe');
+  if (!iframe) {
+    iframe = document.createElement('iframe');
+    iframe.id = 'iframe-check';
+    sec.innerHTML = '';
+    sec.appendChild(iframe);
+  }
+  if (iframe.dataset.tab !== tab) {
+    iframe.src = url;
+    iframe.dataset.tab = tab;
   }
 }
 
@@ -725,18 +751,35 @@ function aplicarPermissoesPerfil() {
   if (!USUARIO) return;
   const perfil = USUARIO.perfil;
   const navs = document.querySelectorAll('.bottom-nav .nav-btn');
-  // navs[0] = Jardinagem, navs[1] = Operacional, navs[2] = Checklist
+  // navs[0] = Jardinagem, navs[1] = Operacional, navs[2] = Checklist, navs[3] = Logística
 
-  // Operador/Motorista: só vê Operacional + Checklist
-  if (perfil === 'operador' || perfil === 'motorista' || perfil === 'bruna') {
-    navs[0].style.display = 'none';  // esconde Jardinagem
+  // Reset: começa tudo escondido
+  navs.forEach(b => b.style.display = 'none');
+
+  // Admin / Gestor / Luana: vê tudo
+  if (perfil === 'admin' || perfil === 'gestor' || perfil === 'luana') {
+    navs[0].style.display = '';
+    navs[1].style.display = '';
+    navs[2].style.display = '';
+    navs[3].style.display = '';
   }
-  // Campo (Arthur/Carlos): só vê Jardinagem
+  // Operador / Motorista / Bruna: Operacional + Checklist
+  else if (perfil === 'operador' || perfil === 'motorista' || perfil === 'bruna') {
+    navs[1].style.display = '';
+    navs[2].style.display = '';
+  }
+  // Campo (Arthur/Carlos): só Jardinagem
   else if (perfil === 'campo') {
-    navs[1].style.display = 'none';  // esconde Operacional
-    navs[2].style.display = 'none';  // esconde Checklist
+    navs[0].style.display = '';
   }
-  // Admin/Gestor/Luana: vê todas
+
+  // Logística é exceção individual via checklist_logistica
+  const podeLogistica = !!(USUARIO.permsDB && USUARIO.permsDB.checklist_logistica)
+                     || USUARIO.checklist_logistica === true
+                     || perfil === 'admin' || perfil === 'gestor' || perfil === 'luana';
+  if (podeLogistica) {
+    navs[3].style.display = '';
+  }
 }
 
 function abrirAbaInicial() {
