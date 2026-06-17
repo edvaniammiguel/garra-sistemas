@@ -182,6 +182,13 @@ if os.path.exists(ICONS_DIR):
     app.mount("/static/icons", StaticFiles(directory=ICONS_DIR), name="static_icons")
     print(f"ICONS_DIR: {ICONS_DIR} (exists: True)")
 
+# idb.js — usado pelo mobile.html (caminho relativo "idb.js" → resolve para raiz, já que a página é servida em /mobile)
+OPERACIONAL_STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "operacional", "static")
+if os.path.exists(os.path.join(OPERACIONAL_STATIC_DIR, "idb.js")):
+    @app.get("/idb.js")
+    async def serve_idb_js():
+        return FileResponse(os.path.join(OPERACIONAL_STATIC_DIR, "idb.js"), media_type="application/javascript")
+
 # Assets do checklist (css, js)
 CHECKLIST_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "operacional", "checklist")
 if os.path.exists(CHECKLIST_DIR):
