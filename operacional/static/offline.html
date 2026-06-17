@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Modo Offline</title>
+  <style>
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      background: #F0F4FF;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      margin: 0;
+    }
+    .card {
+      background: #fff;
+      border: 1px solid #CBD5E1;
+      border-radius: 12px;
+      padding: 2rem;
+      text-align: center;
+      max-width: 300px;
+    }
+    h2 { color: #1A2A5E; margin-bottom: .5rem; }
+    p { color: #64748B; font-size: 14px; line-height: 1.6; }
+    .status { margin-top: 1.5rem; padding: 1rem; background: #FFF7ED; border-radius: 8px; font-size: 13px; color: #EA580C; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h2>📡 Sem conexão</h2>
+    <p>Você está offline. Seus registros serão salvos localmente e sincronizados quando voltar online.</p>
+    <div class="status">
+      <strong>✓ Dados salvos offline</strong><br>
+      Nenhum registro será perdido.
+    </div>
+  </div>
+</body>
+</html>
