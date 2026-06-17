@@ -286,7 +286,7 @@ input,select,textarea{font-family:inherit;outline:none;border:none}
 </div>
 
 <!-- APP SHELL -->
-<div id="screen-app" style="display:flex">
+<div id="screen-app">
   <!-- HEADER -->
   <div class="app-header">
     <div class="app-header-left">
@@ -386,6 +386,10 @@ async function fazerLogin() {
     document.getElementById('screen-login').style.display = 'none';
     document.getElementById('screen-app').style.display = 'flex';
 
+    // Aplicar permissões e abrir aba correta
+    aplicarPermissoesPerfil();
+    abrirAbaInicial();
+
     // Carregar módulos
     await carregarOSApp();
   } catch (e) {
@@ -397,11 +401,15 @@ async function fazerLogin() {
 function fazerLogout() {
   localStorage.removeItem('garra_token');
   localStorage.removeItem('garra_usuario');
+  USUARIO = null;
   document.getElementById('screen-app').style.display = 'none';
   document.getElementById('screen-login').style.display = 'flex';
   document.getElementById('login-err').textContent = '';
+  document.getElementById('login-err').style.display = 'none';
   document.getElementById('field-login').value = '';
   document.getElementById('field-pass').value = '';
+  // Resetar visibilidade de todas as abas
+  document.querySelectorAll('.bottom-nav .nav-btn').forEach(b => b.style.display = '');
 }
 
 function togglePass() {
@@ -704,9 +712,44 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.getElementById('screen-login').style.display = 'none';
     document.getElementById('screen-app').style.display = 'flex';
     document.getElementById('user-avatar').textContent = (USUARIO.nome || '?').charAt(0).toUpperCase();
+    aplicarPermissoesPerfil();
+    abrirAbaInicial();
     carregarOSApp();
   }
 });
+
+// ──────────────────────────────────────────────────────────────────────────────
+// PERMISSÕES POR PERFIL
+// ──────────────────────────────────────────────────────────────────────────────
+function aplicarPermissoesPerfil() {
+  if (!USUARIO) return;
+  const perfil = USUARIO.perfil;
+  const navs = document.querySelectorAll('.bottom-nav .nav-btn');
+  // navs[0] = Jardinagem, navs[1] = Operacional, navs[2] = Checklist
+
+  // Operador/Motorista: só vê Operacional + Checklist
+  if (perfil === 'operador' || perfil === 'motorista' || perfil === 'bruna') {
+    navs[0].style.display = 'none';  // esconde Jardinagem
+  }
+  // Campo (Arthur/Carlos): só vê Jardinagem
+  else if (perfil === 'campo') {
+    navs[1].style.display = 'none';  // esconde Operacional
+    navs[2].style.display = 'none';  // esconde Checklist
+  }
+  // Admin/Gestor/Luana: vê todas
+}
+
+function abrirAbaInicial() {
+  if (!USUARIO) return;
+  const perfil = USUARIO.perfil;
+  if (perfil === 'operador' || perfil === 'motorista' || perfil === 'bruna') {
+    ir('Op');
+  } else if (perfil === 'campo') {
+    ir('Jard');
+  } else {
+    ir('Jard');  // default
+  }
+}
 
 </script>
 
