@@ -312,6 +312,7 @@ input,select,textarea{font-family:inherit;outline:none;border:none}
 <!-- Toast -->
 <div class="toast-wrap" id="toast-wrap"></div>
 
+<script src="idb.js"></script>
 <script>
 /* ════════════════════════════════════════════
    SERVICE WORKER + OFFLINE
@@ -700,6 +701,24 @@ async function renderJardHist(el) {
 ════════════════════════════════════════════ */
 let _osList = [];
 let _equipamentos = [];
+
+// Carrega equipamentos: tenta rede, grava cópia local (IndexedDB),
+// e se a rede falhar usa a última cópia salva — funciona offline.
+async function carregarEquipamentos(force) {
+  if (_equipamentos.length && !force) return _equipamentos;
+  const token = Token.get();
+  const result = await GarraDB.fetchWithFallback(
+    API + '/operacional/api/equipamentos',
+    { headers: { 'Authorization': 'Bearer ' + token } },
+    GarraDB.STORES.cache_equipamentos,
+    { isList: true }
+  );
+  _equipamentos = result.data || [];
+  if (result._offline) {
+    console.warn('[Operacional] equipamentos carregados do cache local (sem rede)');
+  }
+  return _equipamentos;
+}
 let _operadores = [];
 let _osAtualId = '';
 
@@ -943,7 +962,7 @@ async function carregarHistorico() {
 
 
 async function abrirSheetNovaOS() {
-  if (!_equipamentos.length) _equipamentos = await api('/operacional/api/equipamentos').catch(()=>[]);
+  await carregarEquipamentos();
   const selEq = document.getElementById('nos-equip');
   let opts = '<option value="">Selecione...</option>';
   _equipamentos.forEach(function(e) {
@@ -991,7 +1010,7 @@ async function carregarOSMobile() {
   const el = document.getElementById('op-content');
   if (!el) return;
   try {
-    if (!_equipamentos.length) _equipamentos = await api('/operacional/api/equipamentos').catch(()=>[]);
+    await carregarEquipamentos();
     if (!_operadores.length)   _operadores   = await api('/operacional/api/operadores').catch(()=>[]);
     _osList = await api('/operacional/api/minhas-os');
     renderOSCards();
@@ -1202,7 +1221,7 @@ function renderOS() {
 
 async function carregarListasRegistro() {
   if (!_equipamentos.length) {
-    try { _equipamentos = await apiFetch('/operacional/api/equipamentos'); } catch {}
+    await carregarEquipamentos();
   }
   if (!_operadores.length) {
     try { _operadores = await apiFetch('/operacional/api/operadores'); } catch {}
