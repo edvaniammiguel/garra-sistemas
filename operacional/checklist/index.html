@@ -41,6 +41,7 @@
     }
   })();
 </script>
+<script src="../static/idb.js"></script>
 </head>
 <body>
 
@@ -81,6 +82,8 @@
       <button class="btn-icon" onclick="doLogout()" title="Sair">⏏</button>
     </div>
   </header>
+<div id="badge-sincronizando" style="display:none;position:fixed;top:12px;right:12px;background:#FFF7ED;border:1px solid #EA580C;border-radius:20px;padding:8px 16px;font-size:12px;font-weight:700;color:#EA580C;z-index:1000;gap:8px;align-items:center;box-shadow:0 2px 8px rgba(0,0,0,.12);">⏳ Sincronizando...</div>
+
   <div class="driver-content">
     <div class="score-card">
       <div class="sc-left"><div class="sc-pts" id="driver-pts">0</div><div class="sc-label">pontos</div></div>
@@ -878,5 +881,13 @@
     if (typeof renovarTokenSilencioso === 'function') renovarTokenSilencioso();
   });
 </script>  
+<script src="../static/js/offline-ui.js"></script>
+<script>
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('../static/sw.js', { scope: '/operacional/' })
+    .then(reg => console.log('[Checklist] SW registrado'))
+    .catch(err => console.error('[Checklist] SW erro:', err));
+}
+</script>
 </body>
 </html>
