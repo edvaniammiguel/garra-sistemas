@@ -397,7 +397,11 @@ async function fazerLogin() {
 function fazerLogout() {
   localStorage.removeItem('garra_token');
   localStorage.removeItem('garra_usuario');
-  location.reload();
+  document.getElementById('screen-app').style.display = 'none';
+  document.getElementById('screen-login').style.display = 'flex';
+  document.getElementById('login-err').textContent = '';
+  document.getElementById('field-login').value = '';
+  document.getElementById('field-pass').value = '';
 }
 
 function togglePass() {
@@ -683,7 +687,7 @@ function verPartes(osId, osNum) {
 document.addEventListener('DOMContentLoaded', async () => {
   // Registrar Service Worker v8
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('/operacional/static/sw.js', { scope: '/operacional/' })
+    navigator.serviceWorker.register('/operacional/static/sw.js', { scope: '/' })
       .then(reg => console.log('[App] SW v8 registrado'))
       .catch(err => console.error('[App] SW erro:', err));
   }
