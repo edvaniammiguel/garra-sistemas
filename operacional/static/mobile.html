@@ -429,6 +429,11 @@ const MODULOS = [
     perfis: ['operador','motorista','admin'],
     render: renderChecklist,
   },
+  {
+    id: 'checklist_logistica',
+    icon: '🚗', label: 'Logística',
+    render: renderLogistica,
+  },
 ];
 
 const PERFIL_PADRAO = {
@@ -735,7 +740,7 @@ function renderOperacional() {
       </div>
       <div id="os-lista"></div>
     </div>
-    <div id="modal-parte" class="modal-backdrop" style="display:none" onclick="fecharModal(event)">
+    <div id="modal-parte" class="modal-backdrop" style="display:none" onclick="fecharModalOp(event)">
   <div class="modal-sheet" onclick="event.stopPropagation()">
     <div class="sheet-handle"></div>
     <div class="sheet-title" id="modal-titulo">Registrar dia de trabalho</div>
@@ -855,297 +860,6 @@ function renderOperacional() {
   carregarOSApp();
 }
 
-let _opTab = 'os';
-function opTab(tab) {
-  _opTab = tab;
-  ['os','hist'].forEach(t => {
-    const btn = document.getElementById('op-tab-'+t);
-    if (!btn) return;
-    btn.style.color = t===tab ? 'var(--orange)' : 'var(--muted)';
-    btn.style.borderBottomColor = t===tab ? 'var(--orange)' : 'transparent';
-  });
-  if (tab==='os')   carregarOSApp();
-  if (tab==='hist') carregarHistorico();
-}
-
-function fecharSheetNovaOS(e) {
-  if (!e || e.target.id==='sheet-nova-os') {
-    const s = document.getElementById('sheet-nova-os');
-    if (s) s.classList.remove('open');
-  }
-}
-async function abrirSheetNovaOS() {
-  const s = document.getElementById('sheet-nova-os');
-  if (s) { s.classList.add('open'); }
-  const nos = document.getElementById('nos-obra');
-  if (nos) nos.value = '';
-  const noc = document.getElementById('nos-cliente');
-  if (noc) noc.value = '';
-  const nor = document.getElementById('nos-regime');
-  if (nor) nor.value = 'hora';
-}
-async function salvarNovaOS() {
-  const err = document.getElementById('nos-err');
-  if (err) err.style.display='none';
-  const obra = (document.getElementById('nos-obra')?.value||'').trim();
-  if (!obra) { if(err){err.textContent='Obra é obrigatória';err.style.display='block';} return; }
-  const btn = document.getElementById('nos-btn');
-  if (btn) { btn.textContent='Salvando...'; btn.disabled=true; }
-  try {
-    await apiFetch('/operacional/api/os', { method:'POST', body: JSON.stringify({
-      obra,
-      cliente_nome_avulso: (document.getElementById('nos-cliente')?.value||'').trim()||null,
-      regime_cobranca: document.getElementById('nos-regime')?.value||'hora',
-      origem: 'campo',
-    })});
-    toast('OS aberta com sucesso!', 'success');
-    fecharSheetNovaOS();
-    carregarOSApp();
-  } catch(e) { if(err){err.textContent=e.message;err.style.display='block';} }
-  finally { if(btn){btn.textContent='✅ Abrir OS';btn.disabled=false;} }
-}
-
-
-function opTab(tab) {
-  _opTab = tab;
-  ['os','hist'].forEach(t => {
-    const btn = document.getElementById('op-tab-'+t);
-    if (!btn) return;
-    const active = t===tab;
-    btn.style.color = active ? 'var(--orange)' : 'var(--muted)';
-    btn.style.borderBottomColor = active ? 'var(--orange)' : 'transparent';
-  });
-  if (tab==='os')   carregarOSMobile();
-  if (tab==='hist') carregarHistorico();
-}
-
-async function carregarHistorico() {
-  // Scroll para o topo ao carregar histórico
-  const el_content = document.getElementById('app-content');
-  if (el_content) el_content.scrollTop = 0;
-  const el = document.getElementById('op-content');
-  if (!el) return;
-  el.innerHTML = '<div class="loading"><span class="spin"></span></div>';
-  try {
-    const partes = await api('/operacional/api/minhas-partes');
-    if (!partes.length) {
-      el.innerHTML = '<div class="empty"><div class="empty-icon">📊</div><div class="empty-txt">Nenhum registro ainda</div></div>';
-      return;
-    }
-    let html = '';
-    partes.forEach(function(p) {
-      const data = p.data ? new Date(p.data+'T00:00').toLocaleDateString('pt-BR') : '–';
-      const isCam = p.tipo_medicao === 'km';
-      const medicao = isCam
-        ? 'KM ' + (p.km_inicial||0) + '→' + (p.km_final||0)
-        : 'Hor ' + (p.horimetro_inicial||0) + '→' + (p.horimetro_final||0);
-      const horas = parseFloat(p.horas_trabalhadas||0).toFixed(1);
-      const viagens = p.qtd_viagens ? '<span>🔄 ' + p.qtd_viagens + ' viagens</span>' : '';
-      html += '<div class="os-card">' +
-        '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">' +
-        '<span class="os-num">' + esc(p.numero_os||'–') + '</span>' +
-        '<span style="font-size:11px;color:var(--muted)">' + data + '</span>' +
-        '</div>' +
-        '<div class="os-obra">' + esc(p.obra||'–') + '</div>' +
-        '<div class="os-meta">' +
-        '<span>🚛 ' + esc(p.equipamento_codigo||'–') + '</span>' +
-        '<span>📏 ' + medicao + '</span>' +
-        '<span>⏱ ' + horas + 'h</span>' +
-        viagens +
-        '</div></div>';
-    });
-    el.innerHTML = html;
-  } catch(e) {
-    el.innerHTML = '<div class="empty"><div class="empty-icon">⚠️</div><div class="empty-txt">' + e.message + '</div></div>';
-  }
-}
-
-
-async function abrirSheetNovaOS() {
-  await carregarEquipamentos();
-  const selEq = document.getElementById('nos-equip');
-  let opts = '<option value="">Selecione...</option>';
-  _equipamentos.forEach(function(e) {
-    opts += '<option value="' + e.id + '">' + esc(e.codigo) + ' — ' + esc(e.descricao) + '</option>';
-  });
-  selEq.innerHTML = opts;
-  document.getElementById('nos-obra').value='';
-  document.getElementById('nos-cliente').value='';
-  document.getElementById('nos-obs').value='';
-  document.getElementById('nos-regime').value='hora';
-  document.getElementById('nos-err').style.display='none';
-  document.getElementById('sheet-nova-os').classList.add('open');
-}
-
-
-function fecharSheetNovaOS(e) {
-  if (!e || e.target.id==='sheet-nova-os') document.getElementById('sheet-nova-os').classList.remove('open');
-}
-
-async function salvarNovaOS() {
-  const err = document.getElementById('nos-err');
-  err.style.display='none';
-  const obra = document.getElementById('nos-obra').value.trim();
-  if (!obra) { err.textContent='Obra/Local é obrigatório'; err.style.display='block'; return; }
-  const btn = document.getElementById('nos-btn');
-  btn.textContent='Salvando...'; btn.disabled=true;
-  try {
-    await api('/operacional/api/os', { method:'POST', body: JSON.stringify({
-      obra,
-      cliente_nome_avulso: document.getElementById('nos-cliente').value.trim()||null,
-      equipamento_id: document.getElementById('nos-equip').value||null,
-      regime_cobranca: document.getElementById('nos-regime').value,
-      descricao: document.getElementById('nos-obs').value.trim()||null,
-      origem: 'campo',
-    })});
-    toast('OS aberta!','success');
-    document.getElementById('sheet-nova-os').classList.remove('open');
-    await carregarOSMobile();
-  } catch(e) { err.textContent=e.message; err.style.display='block'; }
-  finally { btn.textContent='✅ Abrir OS'; btn.disabled=false; }
-}
-
-
-async function carregarOSMobile() {
-  const el = document.getElementById('op-content');
-  if (!el) return;
-  try {
-    await carregarEquipamentos();
-    if (!_operadores.length)   _operadores   = await api('/operacional/api/operadores').catch(()=>[]);
-    _osList = await api('/operacional/api/minhas-os');
-    renderOSCards();
-  } catch(e) {
-    el.innerHTML = `<div class="empty"><div class="empty-icon">⚠️</div><div class="empty-txt">${e.message}</div></div>`;
-  }
-}
-
-function renderOSCards() {
-  const el = document.getElementById('op-content');
-  if (!el) return;
-  if (!_osList.length) {
-    el.innerHTML = `
-      <div style="padding:16px">
-        <button class="btn-primary" onclick="abrirSheetNovaOS()" style="margin-bottom:16px">➕ Nova OS</button>
-      </div>
-      <div class="empty"><div class="empty-icon">📋</div>
-        <div class="empty-txt">Nenhuma OS ativa</div>
-        <div class="empty-sub">Abra uma OS ou aguarde a Luana abrir para você</div>
-      </div>`;
-    return;
-  }
-  const regimes = {hora:'Por hora',diaria:'Por diária',empreito:'Empreito'};
-  const badges  = {hora:'badge-hora',diaria:'badge-diaria',empreito:'badge-empreito'};
-  el.innerHTML = `<div style="padding:16px 16px 0"><button class="btn-primary" onclick="abrirSheetNovaOS()" style="padding:10px 20px;font-size:13px">➕ Nova OS</button></div>` + _osList.map(os=>`
-    <div class="os-card">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
-        <span class="os-num">${esc(os.numero)}</span>
-        <span class="os-badge ${badges[os.regime_cobranca]||'badge-hora'}">${regimes[os.regime_cobranca]||os.regime_cobranca||'–'}</span>
-      </div>
-      <div class="os-obra">${esc(os.obra||'Sem descrição')}</div>
-      <div class="os-meta">
-        <span>📍 ${esc(os.cliente_nome||'–')}</span>
-        <span>🚛 ${esc(os.equipamento_codigo||'–')}</span>
-        <span>📅 ${os.data_inicio ? new Date(os.data_inicio+'T00:00').toLocaleDateString('pt-BR') : '–'}</span>
-      </div>
-      <button class="btn-reg" onclick="abrirSheet('${esc(os.id)}','${esc(os.numero)}')">⏱ Registrar dia</button>
-    </div>`).join('');
-}
-
-function abrirSheet(osId, osNum) {
-  _osAtualId = osId;
-  document.getElementById('sheet-titulo').textContent = osNum + ' — Registrar dia';
-  document.getElementById('sp-data').value = new Date().toISOString().slice(0,10);
-  // Popular selects
-  const selEq = document.getElementById('sp-equip');
-  selEq.innerHTML = '<option value="">Selecione...</option>' +
-    _equipamentos.map(e=>`<option value="${e.id}" data-cat="${e.categoria}">${esc(e.codigo)} — ${esc(e.descricao)}</option>`).join('');
-  const selOp = document.getElementById('sp-oper');
-  selOp.innerHTML = '<option value="">Selecione...</option>' +
-    _operadores.map(o=>`<option value="${o.id}">${esc(o.nome)}</option>`).join('');
-  // Reset campos
-  ['sp-h-ini','sp-h-fin','sp-km-ini','sp-km-fin','sp-viagens','sp-h-ini-t','sp-h-fim-t','sp-trajeto','sp-obs'].forEach(id=>{
-    const el = document.getElementById(id); if(el) el.value='';
-  });
-  document.getElementById('sp-conta').value = 'cliente';
-  document.getElementById('sp-bloco-hor').style.display = 'none';
-  document.getElementById('sp-bloco-km').style.display  = 'none';
-  document.getElementById('sp-horas-calc').textContent  = '';
-  document.getElementById('sp-err').style.display = 'none';
-  document.getElementById('sheet-parte').classList.add('open');
-}
-
-function fecharSheet(e) {
-  if (e.target.id==='sheet-parte') fecharSheetDireto();
-}
-function fecharSheetDireto() {
-  document.getElementById('sheet-parte').classList.remove('open');
-}
-
-function onEquipChange() {
-  const sel = document.getElementById('sp-equip');
-  const cat = sel.options[sel.selectedIndex]?.getAttribute('data-cat')||'';
-  const isCam = ['caminhao','pipa','carro'].includes(cat);
-  document.getElementById('sp-bloco-hor').style.display = cat && !isCam ? 'block' : 'none';
-  document.getElementById('sp-bloco-km').style.display  = isCam ? 'block' : 'none';
-  document.getElementById('sp-horas-calc').textContent  = '';
-}
-
-function calcHoras() {
-  const ini = parseFloat(document.getElementById('sp-h-ini').value);
-  const fin = parseFloat(document.getElementById('sp-h-fin').value);
-  const el  = document.getElementById('sp-horas-calc');
-  if (!isNaN(ini) && !isNaN(fin)) {
-    if (fin >= ini) { el.textContent = `✅ ${(fin-ini).toFixed(1)}h trabalhadas`; el.style.color='var(--green)'; }
-    else { el.textContent = '⚠️ Final menor que inicial'; el.style.color='var(--red)'; }
-  } else { el.textContent = ''; }
-}
-
-async function salvarParte(adicionarMais) {
-  const err  = document.getElementById('sp-err');
-  err.style.display = 'none';
-  const data  = document.getElementById('sp-data').value;
-  const equip = document.getElementById('sp-equip').value;
-  if (!data||!equip) { err.textContent='Data e equipamento são obrigatórios'; err.style.display='block'; return; }
-  const sel = document.getElementById('sp-equip');
-  const cat = sel.options[sel.selectedIndex]?.getAttribute('data-cat')||'';
-  const isCam = ['caminhao','pipa','carro'].includes(cat);
-  const hIni = document.getElementById('sp-h-ini').value;
-  const hFin = document.getElementById('sp-h-fin').value;
-  if (!isCam && hIni && hFin && parseFloat(hFin) < parseFloat(hIni)) {
-    err.textContent='Horímetro final menor que inicial'; err.style.display='block'; return;
-  }
-  const payload = {
-    data, equipamento_id: equip,
-    operador_id: document.getElementById('sp-oper').value || null,
-    tipo_medicao: isCam ? 'km' : 'horimetro',
-    horimetro_inicial: hIni ? parseFloat(hIni) : null,
-    horimetro_final:   hFin ? parseFloat(hFin) : null,
-    km_inicial:  document.getElementById('sp-km-ini').value ? parseFloat(document.getElementById('sp-km-ini').value) : null,
-    km_final:    document.getElementById('sp-km-fin').value ? parseFloat(document.getElementById('sp-km-fin').value) : null,
-    qtd_viagens: parseFloat(document.getElementById('sp-viagens').value||'0')||0,
-    hora_inicio: document.getElementById('sp-h-ini-t').value||null,
-    hora_fim:    document.getElementById('sp-h-fim-t').value||null,
-    trajeto:     document.getElementById('sp-trajeto').value.trim()||null,
-    por_conta_de:document.getElementById('sp-conta').value,
-    observacao:  document.getElementById('sp-obs').value.trim()||null,
-  };
-  const btn = document.getElementById('sp-btn-salvar');
-  btn.textContent='Salvando...'; btn.disabled=true;
-  try {
-    await api('/operacional/api/os/'+_osAtualId+'/partes', {method:'POST',body:JSON.stringify(payload)});
-    toast('Registro salvo!','success');
-    if (adicionarMais) {
-      ['sp-equip','sp-oper','sp-h-ini','sp-h-fin','sp-km-ini','sp-km-fin','sp-viagens','sp-h-ini-t','sp-h-fim-t','sp-trajeto','sp-obs'].forEach(id=>{
-        const el=document.getElementById(id); if(el) el.value='';
-      });
-      document.getElementById('sp-bloco-hor').style.display='none';
-      document.getElementById('sp-bloco-km').style.display='none';
-      document.getElementById('sp-horas-calc').textContent='';
-    } else { fecharSheetDireto(); }
-  } catch(e) { err.textContent=e.message; err.style.display='block'; }
-  finally { btn.textContent='✅ Salvar'; btn.disabled=false; }
-}
-
 /* ════════════════════════════════════════════
    MÓDULO: CHECKLIST
 ════════════════════════════════════════════ */
@@ -1158,6 +872,238 @@ function renderChecklist() {
     '<iframe src="' + src + '" style="width:100%;height:100%;border:none;display:block" ' +
     'allow="camera;microphone" id="checklist-frame"></iframe>' +
     '</div>';
+}
+
+/* ════════════════════════════════════════════
+   MÓDULO: LOGÍSTICA
+   Carros de apoio — quem está com qual carro
+   Reaproveita: operacional.equipamentos (carros),
+   public.usuarios_garra (motoristas/operadores),
+   checklist.log_registros (histórico de uso)
+════════════════════════════════════════════ */
+let _logCarros = [];
+let _logMotoristas = [];
+let _logRegistros = [];
+
+function renderLogistica() {
+  const el = document.getElementById('app-content');
+  el.innerHTML = `
+    <div id="sec-log" style="min-height:calc(100dvh - 130px)">
+      <div style="padding:12px">
+        <button onclick="abrirSheetNovoRegLog()" style="width:100%;padding:12px;background:var(--blue);color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer">➕ Novo Registro</button>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:0 12px 12px">
+        <div style="background:#fff;border:1.5px solid var(--border);border-radius:8px;padding:12px;text-align:center">
+          <div id="log-kpi-campo" style="font-size:22px;font-weight:800;color:var(--orange)">0</div>
+          <div style="font-size:11px;color:var(--muted);font-weight:700;text-transform:uppercase">Em Campo</div>
+        </div>
+        <div style="background:#fff;border:1.5px solid var(--border);border-radius:8px;padding:12px;text-align:center">
+          <div id="log-kpi-disp" style="font-size:22px;font-weight:800;color:var(--green,#16A34A)">0</div>
+          <div style="font-size:11px;color:var(--muted);font-weight:700;text-transform:uppercase">Disponíveis</div>
+        </div>
+      </div>
+      <div style="padding:0 12px">
+        <div style="font-size:13px;font-weight:800;color:var(--blue);margin-bottom:8px">Situação Atual</div>
+        <div id="log-frota-atual"><div class="loading"><span class="spin"></span></div></div>
+      </div>
+      <div style="padding:16px 12px">
+        <div style="font-size:13px;font-weight:800;color:var(--blue);margin-bottom:8px">Histórico Recente</div>
+        <div id="log-historico"></div>
+      </div>
+    </div>
+
+    <div class="sheet-backdrop" id="sheet-novo-reg-log" onclick="fecharSheetNovoRegLog(event)">
+      <div class="sheet" onclick="event.stopPropagation()">
+        <div class="sheet-handle"></div>
+        <div class="sheet-title">Novo Registro de Logística</div>
+        <div class="field">
+          <label>Responsável *</label>
+          <select id="log-resp">
+            <option value="">Selecione...</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Data / Hora</label>
+          <input type="datetime-local" id="log-datahora"/>
+        </div>
+        <div id="log-car-rows"></div>
+        <button type="button" onclick="addLogCarRow()" style="width:100%;padding:10px;margin-bottom:14px;background:none;border:1.5px dashed var(--border);border-radius:8px;color:var(--blue);font-size:13px;font-weight:700;cursor:pointer">+ Adicionar carro</button>
+        <div class="field-err" id="log-reg-err"></div>
+        <button class="btn-primary" id="log-reg-btn" onclick="salvarNovoRegLog()">✅ Salvar registro</button>
+        <button style="width:100%;padding:12px;margin-top:8px;background:none;color:var(--muted);font-size:14px" onclick="fecharSheetNovoRegLog()">Cancelar</button>
+      </div>
+    </div>`;
+  carregarLogistica();
+}
+
+async function carregarLogistica() {
+  try {
+    const [equipamentos, usuarios, registros] = await Promise.all([
+      api('/operacional/api/equipamentos'),
+      api('/usuarios'),
+      api('/logistica/registros?limit=20'),
+    ]);
+    _logCarros = (equipamentos || []).filter(e => ['carro','pickup','carro_apoio'].includes((e.categoria||'').toLowerCase()));
+    _logMotoristas = (usuarios || []).filter(u => u.ativo);
+    _logRegistros = registros || [];
+  } catch(e) {
+    _logCarros = []; _logMotoristas = []; _logRegistros = [];
+  }
+  renderLogFrotaAtual();
+  renderLogHistoricoLista();
+}
+
+function logStatusAtualPorCarro() {
+  // Para cada carro, encontra o registro mais recente que o menciona
+  const status = {};
+  // _logRegistros já vem ORDER BY data_hora DESC do backend
+  _logRegistros.forEach(reg => {
+    (reg.carros || []).forEach(c => {
+      if (!status[c.id]) status[c.id] = { ...c, data_hora: reg.data_hora, responsavel: reg.responsavel };
+    });
+  });
+  return status;
+}
+
+function renderLogFrotaAtual() {
+  const el = document.getElementById('log-frota-atual');
+  if (!el) return;
+  const status = logStatusAtualPorCarro();
+  const emCampo = _logCarros.filter(c => status[c.id] && status[c.id].status === 'em_campo').length;
+  const disponiveis = _logCarros.length - emCampo;
+  const kc = document.getElementById('log-kpi-campo'); if (kc) kc.textContent = emCampo;
+  const kd = document.getElementById('log-kpi-disp');  if (kd) kd.textContent = disponiveis;
+
+  if (!_logCarros.length) {
+    el.innerHTML = `<div class="empty"><div class="empty-icon">🚗</div><div class="empty-txt">Nenhum carro de apoio cadastrado</div><div class="empty-sub">Cadastre em Equipamentos, categoria "carro"</div></div>`;
+    return;
+  }
+  el.innerHTML = _logCarros.map(c => {
+    const st = status[c.id];
+    const emUso = st && st.status === 'em_campo';
+    return `<div style="background:#fff;border:1.5px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center">
+      <div>
+        <div style="font-size:13px;font-weight:700;color:var(--text)">🚗 ${esc(c.codigo)} — ${esc(c.descricao||'')}</div>
+        ${st ? `<div style="font-size:11px;color:var(--muted);margin-top:2px">${esc(st.driver||'—')} ${st.dest?'→ '+esc(st.dest):''}</div>` : '<div style="font-size:11px;color:var(--muted);margin-top:2px">Sem registro</div>'}
+      </div>
+      <span class="badge" style="font-size:10px;font-weight:700;padding:3px 10px;border-radius:99px;${emUso?'background:#FFF7ED;color:#EA580C':'background:#DCFCE7;color:#16A34A'}">${emUso?'Em campo':'Disponível'}</span>
+    </div>`;
+  }).join('');
+}
+
+function renderLogHistoricoLista() {
+  const el = document.getElementById('log-historico');
+  if (!el) return;
+  if (!_logRegistros.length) {
+    el.innerHTML = `<div class="empty"><div class="empty-icon">🕐</div><div class="empty-txt">Nenhum registro ainda</div></div>`;
+    return;
+  }
+  el.innerHTML = _logRegistros.slice(0, 15).map(reg => {
+    const data = reg.data_hora ? new Date(reg.data_hora).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}) : '';
+    const carros = (reg.carros||[]).map(c => esc(c.id)).join(', ');
+    return `<div style="background:#fff;border:1.5px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:8px">
+      <div style="font-size:13px;font-weight:700;color:var(--text)">${esc(reg.responsavel)}</div>
+      <div style="font-size:11px;color:var(--muted);margin-top:2px">${data} — ${carros||'—'}</div>
+    </div>`;
+  }).join('');
+}
+
+/* ── NOVO REGISTRO ────────────────────────────── */
+let _logCarRowSeq = 0;
+
+function abrirSheetNovoRegLog() {
+  document.getElementById('log-reg-err').style.display = 'none';
+  document.getElementById('log-reg-err').textContent = '';
+  const sel = document.getElementById('log-resp');
+  sel.innerHTML = '<option value="">Selecione...</option>' +
+    _logMotoristas.map(u => `<option value="${esc(u.nome)}">${esc(u.nome)}</option>`).join('');
+  const now = new Date();
+  now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+  document.getElementById('log-datahora').value = now.toISOString().slice(0,16);
+  document.getElementById('log-car-rows').innerHTML = '';
+  _logCarRowSeq = 0;
+  addLogCarRow();
+  document.getElementById('sheet-novo-reg-log').classList.add('open');
+}
+
+function fecharSheetNovoRegLog(e) {
+  if (e && e.target.id !== 'sheet-novo-reg-log') return;
+  document.getElementById('sheet-novo-reg-log').classList.remove('open');
+}
+
+function addLogCarRow() {
+  _logCarRowSeq++;
+  const rowId = 'logrow-' + _logCarRowSeq;
+  const carOpts = _logCarros.map(c => `<option value="${esc(c.codigo)}" data-desc="${esc(c.descricao||'')}">${esc(c.codigo)} — ${esc(c.descricao||'')}</option>`).join('');
+  const driverOpts = _logMotoristas.map(u => `<option value="${esc(u.nome)}">${esc(u.nome)}</option>`).join('');
+  const row = document.createElement('div');
+  row.className = 'log-car-row';
+  row.id = rowId;
+  row.style = 'border:1.5px solid var(--border);border-radius:8px;padding:10px;margin-bottom:10px;position:relative';
+  row.innerHTML = `
+    <button type="button" onclick="document.getElementById('${rowId}').remove()" style="position:absolute;top:6px;right:6px;background:none;border:none;color:var(--red);font-size:16px;cursor:pointer">✕</button>
+    <div class="field" style="margin-bottom:8px">
+      <label>Carro</label>
+      <select id="${rowId}-car"><option value="">Selecione...</option>${carOpts}</select>
+    </div>
+    <div class="field-row" style="margin-bottom:8px">
+      <div class="field">
+        <label>Status</label>
+        <select id="${rowId}-status">
+          <option value="em_campo">Em campo</option>
+          <option value="disponivel">Disponível</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Motorista</label>
+        <select id="${rowId}-driver"><option value="">—</option>${driverOpts}</select>
+      </div>
+    </div>
+    <div class="field" style="margin-bottom:0">
+      <label>Destino / Observação</label>
+      <input type="text" id="${rowId}-dest" placeholder="Ex.: Obra Rua X"/>
+    </div>`;
+  document.getElementById('log-car-rows').appendChild(row);
+}
+
+async function salvarNovoRegLog() {
+  const err = document.getElementById('log-reg-err');
+  err.style.display = 'none';
+  const resp = document.getElementById('log-resp').value;
+  const dataHora = document.getElementById('log-datahora').value;
+  if (!resp)     { err.textContent = 'Selecione o responsável'; err.style.display = 'block'; return; }
+  if (!dataHora) { err.textContent = 'Informe a data/hora';     err.style.display = 'block'; return; }
+
+  const rows = document.querySelectorAll('#log-car-rows .log-car-row');
+  const carros = [];
+  rows.forEach(row => {
+    const id     = document.getElementById(row.id + '-car')?.value;
+    const status = document.getElementById(row.id + '-status')?.value;
+    const driver = document.getElementById(row.id + '-driver')?.value || '';
+    const dest   = document.getElementById(row.id + '-dest')?.value.trim() || '';
+    if (id) carros.push({ id, status, driver, dest });
+  });
+  if (!carros.length) { err.textContent = 'Adicione ao menos um carro'; err.style.display = 'block'; return; }
+
+  const payload = {
+    registro_id: 'log_' + Date.now() + '_' + Math.random().toString(36).slice(2,6),
+    responsavel: resp,
+    data_hora: new Date(dataHora).toISOString(),
+    carros,
+  };
+
+  const btn = document.getElementById('log-reg-btn');
+  btn.textContent = 'Salvando...'; btn.disabled = true;
+  try {
+    await api('/logistica/registros', { method: 'POST', body: JSON.stringify(payload) });
+    toast('Registro salvo!', 'success');
+    fecharSheetNovoRegLog();
+    await carregarLogistica();
+  } catch(e) {
+    err.textContent = e.message; err.style.display = 'block';
+  } finally {
+    btn.textContent = '✅ Salvar registro'; btn.disabled = false;
+  }
 }
 
 /* ════════════════════════════════════════════
@@ -1176,7 +1122,7 @@ async function carregarOSApp() {
   el.innerHTML = '<div class="loading"><span class="spin"></span></div>';
   await carregarListasRegistro();
   try {
-    _osList = await apiFetch('/operacional/api/minhas-os');
+    _osList = await api('/operacional/api/minhas-os');
   } catch(e) { _osList = []; }
   renderOS();
 }
@@ -1224,7 +1170,7 @@ async function carregarListasRegistro() {
     await carregarEquipamentos();
   }
   if (!_operadores.length) {
-    try { _operadores = await apiFetch('/operacional/api/operadores'); } catch {}
+    try { _operadores = await api('/operacional/api/operadores'); } catch {}
   }
 }
 
@@ -1344,7 +1290,7 @@ async function salvarParte(adicionarMais) {
   btn2.disabled=true;
 
   try {
-    await apiFetch('/operacional/api/os/' + _osAtualId + '/partes', {
+    await api('/operacional/api/os/' + _osAtualId + '/partes', {
       method:'POST', body:JSON.stringify(payload)
     });
     toast('Registro salvo!', 'success');
@@ -1356,7 +1302,7 @@ async function salvarParte(adicionarMais) {
         const el = document.getElementById(id);
         if (el) el.value = '';
       });
-      document.getElementById('por-conta').value = 'empresa';
+      document.getElementById('m-por-conta').value = 'empresa';
       document.getElementById('bloco-horimetro').style.display = 'none';
       document.getElementById('bloco-km').style.display = 'none';
       document.getElementById('m-tipo-badge').textContent = '–';
@@ -1375,13 +1321,73 @@ async function salvarParte(adicionarMais) {
 /* ══════════════════════════════════════════
    VER PARTES DA OS
 ══════════════════════════════════════════ */
+/* ══════════════════════════════════════════
+   NOVA OS (operador abre OS avulsa no campo)
+══════════════════════════════════════════ */
+function abrirSheetNovaOS() {
+  document.getElementById('nos-obra').value = '';
+  document.getElementById('nos-cliente').value = '';
+  document.getElementById('nos-regime').value = 'hora';
+  document.getElementById('nos-err').style.display = 'none';
+  document.getElementById('sheet-nova-os').classList.add('open');
+}
+
+function fecharSheetNovaOS(e) {
+  if (e && e.target.id !== 'sheet-nova-os') return;
+  document.getElementById('sheet-nova-os').classList.remove('open');
+}
+
+async function salvarNovaOS() {
+  const err  = document.getElementById('nos-err');
+  err.style.display = 'none';
+  const obra = document.getElementById('nos-obra').value.trim();
+  if (!obra) { err.textContent = 'Informe a obra / local'; err.style.display = 'block'; return; }
+
+  const payload = {
+    obra,
+    cliente_nome_avulso: document.getElementById('nos-cliente').value.trim() || null,
+    regime_cobranca: document.getElementById('nos-regime').value,
+    origem: 'campo',
+  };
+
+  const btn = document.getElementById('nos-btn');
+  btn.textContent = 'Salvando...'; btn.disabled = true;
+  try {
+    await api('/operacional/api/os', { method: 'POST', body: JSON.stringify(payload) });
+    toast('OS aberta!', 'success');
+    fecharSheetNovaOS();
+    await carregarOSApp();
+  } catch(e) {
+    err.textContent = e.message; err.style.display = 'block';
+  } finally {
+    btn.textContent = '✅ Abrir OS'; btn.disabled = false;
+  }
+}
+
+/* ══════════════════════════════════════════
+   ABAS: MINHAS OS / HISTÓRICO
+══════════════════════════════════════════ */
+let _opTab = 'os';
+function opTab(tab) {
+  _opTab = tab;
+  const btnOs   = document.getElementById('op-tab-os');
+  const btnHist = document.getElementById('op-tab-hist');
+  if (btnOs)   { btnOs.style.color = tab==='os' ? 'var(--orange)' : 'var(--muted)'; btnOs.style.borderBottomColor = tab==='os' ? 'var(--orange)' : 'transparent'; }
+  if (btnHist) { btnHist.style.color = tab==='hist' ? 'var(--orange)' : 'var(--muted)'; btnHist.style.borderBottomColor = tab==='hist' ? 'var(--orange)' : 'transparent'; }
+  if (tab === 'os')   renderOS();
+  if (tab === 'hist') carregarHistorico();
+}
+
+/* ══════════════════════════════════════════
+   VER PARTES DA OS
+══════════════════════════════════════════ */
 async function verPartes(osId, osNumero) {
   // Navegar para aba histórico e mostrar partes desta OS
-  mudarAba('hist', document.getElementById('tab-hist'));
-  const el = document.getElementById('hist-lista');
+  opTab('hist');
+  const el = document.getElementById('os-lista');
   el.innerHTML = `<div class="loading"><span class="spin"></span></div>`;
   try {
-    const data = await apiFetch('/operacional/api/os/'+osId+'/partes');
+    const data = await api('/operacional/api/os/'+osId+'/partes');
     const partes = data.partes || [];
     const totais = data.totais || {};
 
@@ -1440,10 +1446,10 @@ async function verPartes(osId, osNumero) {
    HISTÓRICO GERAL
 ══════════════════════════════════════════ */
 async function carregarHistorico() {
-  const el = document.getElementById('hist-lista');
-  // Se já tem conteúdo (foi chamado por verPartes), não sobrescreve
-  if (!el.innerHTML.includes('spin')) return;
-  el.innerHTML = `<div class="empty">
+  const el = document.getElementById('os-lista');
+  // Se já tem conteúdo carregado por verPartes, não sobrescreve
+  if (el && el.innerHTML.includes('spin')) return;
+  if (el) el.innerHTML = `<div class="empty">
     <div class="empty-icon">🕐</div>
     <div class="empty-title">Histórico</div>
     <div class="empty-sub">Clique em "Ver registros" numa OS para ver o detalhamento</div>
@@ -1468,10 +1474,6 @@ let _toastTimer;
 /* ══════════════════════════════════════════
    UTILIDADES
 ══════════════════════════════════════════ */
-function esc(s) {
-  return String(s||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-}
-
 function esc(s) {
   return String(s||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
