@@ -213,6 +213,7 @@ input[type="time"]{-webkit-appearance:none;appearance:none;cursor:pointer;}
 .spin{display:inline-block;animation:spin .8s linear infinite;}
 @keyframes spin{to{transform:rotate(360deg);}}
 </style>
+<script src="../../operacional/static/idb.js"></script>
 </head>
 <body>
 
@@ -1318,5 +1319,14 @@ function garantirBancadaAberta(){}
 function toggleBancada(){}
 function expandirBancada(){}
 </script>
+<script src="../../operacional/static/js/offline-ui.js"></script>
+<script>
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('./sw.js', { scope: '/jardinagem/' })
+    .then(reg => console.log('[Jardinagem] SW registrado'))
+    .catch(err => console.error('[Jardinagem] SW erro:', err));
+}
+</script>
+
 </body>
 </html>
