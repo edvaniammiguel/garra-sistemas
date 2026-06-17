@@ -10,7 +10,7 @@
 <title>Garra — Mobile</title>
 <link rel="manifest" href="/mobile/manifest.json"/>
 <link rel="icon" href="/static/icons/favicon.ico"/>
-<script src="./idb.js"></script>
+<script src="/operacional/static/idb.js"></script>
 <style>
 /* ── RESET & BASE ── */
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
@@ -683,7 +683,7 @@ function verPartes(osId, osNum) {
 document.addEventListener('DOMContentLoaded', async () => {
   // Registrar Service Worker v8
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('./sw.js', { scope: '/operacional/' })
+    navigator.serviceWorker.register('/operacional/static/sw.js', { scope: '/operacional/' })
       .then(reg => console.log('[App] SW v8 registrado'))
       .catch(err => console.error('[App] SW erro:', err));
   }
@@ -707,7 +707,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 </script>
 
 <!-- Offline UI e outros scripts -->
-<script src="./js/offline-ui.js"></script>
+<script src="/operacional/static/js/offline-ui.js"></script>
 
 </body>
 </html>
