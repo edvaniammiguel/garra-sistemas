@@ -185,6 +185,15 @@ if os.path.exists(ICONS_DIR):
 # Operacional static files (idb.js, sw.js, offline-ui.js, etc)
 OPERACIONAL_STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "operacional", "static")
 if os.path.exists(OPERACIONAL_STATIC_DIR):
+    # Rota dedicada para sw.js com header Service-Worker-Allowed: /
+    # Permite o SW ter scope na raiz do site mesmo sendo servido de subpasta
+    @app.get("/operacional/static/sw.js")
+    async def serve_sw_js():
+        return FileResponse(
+            os.path.join(OPERACIONAL_STATIC_DIR, "sw.js"),
+            media_type="application/javascript",
+            headers={"Service-Worker-Allowed": "/"}
+        )
     app.mount("/operacional/static", StaticFiles(directory=OPERACIONAL_STATIC_DIR), name="operacional_static")
     print(f"OPERACIONAL_STATIC_DIR: {OPERACIONAL_STATIC_DIR} (exists: True)")
 
@@ -446,6 +455,20 @@ async def login(req: LoginRequest, request: Request, db=Depends(get_db)):
     }
     redirect_url = redirects.get(user["perfil"], "/admin")
     
+    # Carregar permissões efetivas (DB + padrão do perfil)
+    try:
+        rows_perm = await db.fetch(
+            "SELECT modulo, permitido FROM public.permissoes_colaborador WHERE usuario_id=$1",
+            user["id"]
+        )
+        perms = {r["modulo"]: r["permitido"] for r in (rows_perm or [])}
+        padrao = PERFIL_MODULOS_PADRAO.get(user["perfil"], [])
+        for m in MODULOS_DISPONIVEIS:
+            if m["id"] not in perms:
+                perms[m["id"]] = m["id"] in padrao
+    except Exception:
+        perms = {}
+    
     return {
         "token": token,
         "id": str(user["id"]),
@@ -453,6 +476,7 @@ async def login(req: LoginRequest, request: Request, db=Depends(get_db)):
         "perfil": user["perfil"], "perfil_checklist": user["perfil_checklist"],
         "role": user["perfil_checklist"] or user["perfil"],
         "redirect_url": redirect_url,
+        "permsDB": perms,
         "pts": user["pts"] or 0, "total_envios": user["total_envios"] or 0,
         "email": user["email"] or "",
     }
