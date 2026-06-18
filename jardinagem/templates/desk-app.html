@@ -1308,7 +1308,12 @@ function semanaAtivaSelecionada(){
 
 function baixarRelatorio(tipo){
   if(!mesAtual){toast('Selecione um mês primeiro!');return;}
-  var sem = semanaAtivaSelecionada();
+  var selEl = document.getElementById('emailSemSel');
+  var sem = null;
+  if(selEl && selEl.value){
+    sem = quadrante.find(function(s){return String(s.semId)===String(selEl.value);});
+  }
+  if(!sem) sem = semanaAtivaSelecionada();
   if(!sem){toast('Nenhuma semana disponível!');return;}
   toast('Gerando relatório '+tipo.toUpperCase()+'...');
   var url = '/jardinagem/api/relatorios/'+sem.semId+'/'+(tipo==='fotos'?'fotos':'km');
