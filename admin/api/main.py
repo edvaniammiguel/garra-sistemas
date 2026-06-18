@@ -2249,6 +2249,100 @@ async def op_minhas_os(payload=Depends(verificar_token)):
     # Sem campos financeiros — operador não vê valores
     return [dict(r) for r in (rows or [])]
 
+
+@app.get("/operacional/api/minhas-os/debug")
+async def op_minhas_os_debug(payload=Depends(verificar_token)):
+    """DEBUG — mostra todos os campos para diagnosticar por que OS não aparece."""
+    login = payload.get("sub","") or payload.get("login","")
+    user = jard_query(
+        "SELECT id, login, nome, perfil FROM public.usuarios_garra WHERE login=%s",
+        (login,), fetch="one"
+    )
+    if not user:
+        return {"erro": "usuário não encontrado", "login_buscado": login}
+    
+    todas_os = jard_query(
+        """SELECT id, numero, status, ativo, operador_id, obra
+           FROM operacional.ordens_servico
+           WHERE operador_id = %s
+           ORDER BY data_inicio DESC""",
+        (user["id"],)
+    )
+    
+    os_visiveis = jard_query(
+        """SELECT id, numero, status
+           FROM operacional.ordens_servico
+           WHERE operador_id = %s
+             AND ativo = true
+             AND status NOT IN ('concluida_completa','concluida_sem_erp','cancelada')""",
+        (user["id"],)
+    )
+    
+    return {
+        "login_jwt": login,
+        "usuario": dict(user),
+        "total_os_vinculadas": len(todas_os or []),
+        "todas_os": [dict(r) for r in (todas_os or [])],
+        "os_visiveis_no_mobile": [dict(r) for r in (os_visiveis or [])]
+    }
+
+
+@app.post("/operacional/api/os/avulsa")
+async def op_criar_os_avulsa(req: Request, payload=Depends(verificar_token)):
+    """Operador cria OS avulsa do campo — sem código ERP, status aberta_sem_erp."""
+    login = payload.get("sub","") or payload.get("login","")
+    user = jard_query(
+        "SELECT id, nome, perfil FROM public.usuarios_garra WHERE login=%s",
+        (login,), fetch="one"
+    )
+    if not user:
+        raise HTTPException(status_code=404, detail="Usuário não encontrado")
+    
+    # Perfis autorizados
+    if user["perfil"] not in ("operador", "motorista", "admin", "gestor", "luana"):
+        raise HTTPException(status_code=403, detail="Perfil sem permissão para criar OS avulsa")
+    
+    body = await req.json()
+    obra            = (body.get("obra") or "").strip()
+    cliente_nome    = (body.get("cliente_nome") or "").strip()
+    equipamento_id  = body.get("equipamento_id")
+    tipo_servico_id = body.get("tipo_servico_id")
+    regime_cobranca = (body.get("regime_cobranca") or "diaria").strip()
+    observacao      = (body.get("observacao") or "").strip()
+    
+    if not obra:
+        raise HTTPException(status_code=400, detail="Obra é obrigatória")
+    
+    # Gerar próximo número
+    ano = datetime.utcnow().year
+    ult = jard_query(
+        "SELECT numero FROM operacional.ordens_servico WHERE numero LIKE %s ORDER BY numero DESC LIMIT 1",
+        (f"OS-{ano}-%",), fetch="one"
+    )
+    if ult:
+        try:
+            seq = int(ult["numero"].split("-")[-1]) + 1
+        except Exception:
+            seq = 1
+    else:
+        seq = 1
+    numero = f"OS-{ano}-{seq:04d}"
+    
+    nova = jard_query(
+        """INSERT INTO operacional.ordens_servico
+           (numero, obra, cliente_nome_avulso, equipamento_id, tipo_servico_id,
+            regime_cobranca, operador_id, status, origem, observacoes,
+            data_inicio, ativo, criado_em)
+           VALUES (%s, %s, %s, %s, %s, %s, %s,
+                   'aberta_sem_erp', 'campo', %s,
+                   CURRENT_DATE, true, NOW())
+           RETURNING id, numero, obra, status""",
+        (numero, obra, cliente_nome or None, equipamento_id, tipo_servico_id,
+         regime_cobranca, user["id"], observacao or None),
+        fetch="one"
+    )
+    return {"ok": True, "os": dict(nova) if nova else {"numero": numero}}
+
 # ═══════════════════════════════════════════════════════════════════════════
 # FIM MÓDULO OPERACIONAL
 # ═══════════════════════════════════════════════════════════════════════════
