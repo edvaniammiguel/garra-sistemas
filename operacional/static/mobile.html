@@ -476,9 +476,7 @@ input,select,textarea{font-family:inherit;outline:none;border:none}
     <div style="margin-bottom:14px">
       <label style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:6px">Regime de cobrança</label>
       <select id="novaos-regime" style="width:100%;padding:12px;border:1.5px solid var(--border);border-radius:8px;font-size:14px">
-        <option value="diaria">Diária</option>
-        <option value="hora">Por hora</option>
-        <option value="empreito">Empreito</option>
+        <option value="">— selecionar —</option>
       </select>
     </div>
 
@@ -692,9 +690,20 @@ async function carregarOSApp() {
 
   let html = viaCache ? '<div style="background:#FFF7ED;color:#EA580C;padding:8px;text-align:center;font-size:12px;font-weight:700">⚠️ Modo offline — exibindo dados em cache</div>' : '';
   osLista.forEach(os => {
+    const aguardando = os.status === 'aguardando_fechamento';
+    const statusBadge = aguardando
+      ? '<span style="display:inline-block;background:#FFF7ED;color:#EA580C;font-size:10px;font-weight:700;padding:3px 10px;border-radius:99px;margin-left:8px">⏳ Aguardando fechamento</span>'
+      : '<span style="display:inline-block;background:#DCFCE7;color:#16A34A;font-size:10px;font-weight:700;padding:3px 10px;border-radius:99px;margin-left:8px">● Em andamento</span>';
+
+    const botoes = aguardando
+      ? `<button class="os-btn" style="background:var(--blue)" onclick="verPartes('${os.id}', '${os.numero}')">👁 Ver partes</button>`
+      : `<button class="os-btn" onclick="abrirModalParte('${os.id}')">📝 Registrar</button>
+         <button class="os-btn" style="background:var(--blue)" onclick="verPartes('${os.id}', '${os.numero}')">👁 Ver</button>
+         <button class="os-btn" style="background:#16A34A" onclick="concluirOS('${os.id}', '${os.numero}')">✅ Concluir</button>`;
+
     html += `
-      <div class="os-card">
-        <div class="os-numero">${os.numero}</div>
+      <div class="os-card" ${aguardando ? 'style="opacity:0.7;border-left:4px solid #EA580C"' : ''}>
+        <div class="os-numero">${os.numero} ${statusBadge}</div>
         <div class="os-cliente">${os.cliente_nome || os.obra || '(Cliente avulso)'}</div>
         <div class="os-info">
           <div class="os-info-item">
@@ -706,10 +715,7 @@ async function carregarOSApp() {
             <div class="os-info-value" style="font-size:12px">${os.regime_cobranca || '–'}</div>
           </div>
         </div>
-        <div class="os-btns">
-          <button class="os-btn" onclick="abrirModalParte('${os.id}')">📝 Registrar</button>
-          <button class="os-btn" style="background:var(--blue)" onclick="verPartes('${os.id}', '${os.numero}')">👁 Ver</button>
-        </div>
+        <div class="os-btns">${botoes}</div>
       </div>
     `;
   });
@@ -734,12 +740,13 @@ function fecharModalNovaOS() {
 }
 
 async function carregarListasNovaOS() {
-  // Equipamentos, Tipos de serviço, Clientes — online-first com fallback IDB
+  // Equipamentos, Tipos de serviço, Clientes, Regimes — online-first com fallback IDB
   // TTL 24h pois essas listas mudam pouco
-  const [equipamentos, tipos, clientes] = await Promise.all([
+  const [equipamentos, tipos, clientes, regimes] = await Promise.all([
     fetchComCacheIDB('/operacional/api/equipamentos', 'lst_equipamentos', 86400),
     fetchComCacheIDB('/operacional/api/tipos-servico',  'lst_tipos_servico', 86400),
     fetchComCacheIDB('/operacional/api/clientes',       'lst_clientes',      86400),
+    fetchComCacheIDB('/operacional/api/regimes-cobranca','lst_regimes',       86400),
   ]);
 
   // Equipamentos
@@ -766,6 +773,15 @@ async function carregarListasNovaOS() {
     selCli.innerHTML = '<option value="">— selecionar —</option>';
     (clientes || []).forEach(c => {
       selCli.innerHTML += `<option value="${c.id}">${c.nome}</option>`;
+    });
+  }
+
+  // Regimes de cobrança
+  const selReg = document.getElementById('novaos-regime');
+  if (selReg) {
+    selReg.innerHTML = '<option value="">— selecionar —</option>';
+    (regimes || []).forEach(r => {
+      selReg.innerHTML += `<option value="${r.nome}">${r.nome}${r.descricao ? ' — ' + r.descricao : ''}</option>`;
     });
   }
 }
@@ -817,10 +833,11 @@ async function preCarregarListasOffline() {
   if (!navigator.onLine) return;
   try {
     await Promise.all([
-      fetchComCacheIDB('/operacional/api/equipamentos',  'lst_equipamentos',  86400),
-      fetchComCacheIDB('/operacional/api/tipos-servico', 'lst_tipos_servico', 86400),
-      fetchComCacheIDB('/operacional/api/clientes',      'lst_clientes',      86400),
-      fetchComCacheIDB('/operacional/api/operadores',    'lst_operadores',    86400),
+      fetchComCacheIDB('/operacional/api/equipamentos',      'lst_equipamentos',  86400),
+      fetchComCacheIDB('/operacional/api/tipos-servico',      'lst_tipos_servico', 86400),
+      fetchComCacheIDB('/operacional/api/clientes',           'lst_clientes',      86400),
+      fetchComCacheIDB('/operacional/api/operadores',         'lst_operadores',    86400),
+      fetchComCacheIDB('/operacional/api/regimes-cobranca',   'lst_regimes',       86400),
     ]);
     console.log('[Cache] Listas pré-carregadas para uso offline');
   } catch (e) {
@@ -1273,6 +1290,30 @@ function fecharModalDireto() {
 
 function fecharModalOp(e) {
   if (e.target === document.getElementById('modal-parte')) fecharModalDireto();
+}
+
+async function concluirOS(osId, numero) {
+  if (!confirm(`Confirma conclusão da ${numero}?\n\nApós concluir, a OS ficará aguardando fechamento pela administração.`)) return;
+  try {
+    const token = localStorage.getItem('garra_token') || '';
+    const r = await fetch('/operacional/api/os/' + osId + '/concluir', {
+      method: 'POST',
+      headers: {
+        'Authorization': 'Bearer ' + token,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({})
+    });
+    if (r.ok) {
+      toast('✅ ' + numero + ' concluída — aguardando fechamento', 'success');
+      await carregarOSApp();
+    } else {
+      const data = await r.json().catch(() => ({}));
+      toast('❌ ' + (data.detail || 'Erro ao concluir'), 'error');
+    }
+  } catch (e) {
+    toast('❌ Erro: ' + e.message, 'error');
+  }
 }
 
 function abrirSheetNovaOS() {
