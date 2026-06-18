@@ -157,6 +157,25 @@ async def startup():
                 ALTER TABLE operacional.partes_diarias
                 ADD COLUMN IF NOT EXISTS qtd_metros NUMERIC(10,2)
             """)
+            # Migration: criar tabela regimes_cobranca
+            await conn.execute("""
+                CREATE TABLE IF NOT EXISTS operacional.regimes_cobranca (
+                    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                    nome TEXT NOT NULL UNIQUE,
+                    descricao TEXT,
+                    ativo BOOLEAN DEFAULT TRUE,
+                    criado_em TIMESTAMP DEFAULT NOW()
+                )
+            """)
+            # Inserir regimes padrão se tabela vazia
+            await conn.execute("""
+                INSERT INTO operacional.regimes_cobranca (nome, descricao)
+                VALUES ('hora', 'Cobrança por hora trabalhada'),
+                       ('diaria', 'Cobrança por diária'),
+                       ('empreito', 'Valor fechado por empreita'),
+                       ('metro', 'Cobrança por metro executado')
+                ON CONFLICT (nome) DO NOTHING
+            """)
             # Migration: clientes_garra — garantir colunas de cadastro
             await conn.execute("""
                 ALTER TABLE public.clientes_garra
@@ -1781,6 +1800,71 @@ async def op_remover_tipo_servico(tipo_id: str, payload=Depends(verificar_admin)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
+# ── REGIMES DE COBRANÇA ──────────────────────────────────────────────────────
+
+@app.get("/operacional/api/regimes-cobranca")
+async def op_listar_regimes(_auth=Depends(verificar_token)):
+    rows = jard_query(
+        "SELECT id, nome, descricao FROM operacional.regimes_cobranca WHERE ativo=true ORDER BY nome"
+    )
+    return [dict(r) for r in (rows or [])]
+
+@app.post("/operacional/api/regimes-cobranca")
+async def op_criar_regime(request: Request, payload=Depends(verificar_gestor)):
+    d = await request.json()
+    nome = (d.get("nome") or "").strip().lower()
+    descricao = (d.get("descricao") or "").strip()
+    if not nome:
+        raise HTTPException(status_code=400, detail="Nome é obrigatório")
+    try:
+        row = jard_query(
+            """INSERT INTO operacional.regimes_cobranca (nome, descricao, ativo)
+               VALUES (%s, %s, true) RETURNING id, nome, descricao""",
+            (nome, descricao or None), fetch="one"
+        )
+        return dict(row) if row else {"nome": nome}
+    except Exception as e:
+        if "duplicate" in str(e).lower():
+            raise HTTPException(status_code=409, detail="Regime já existe")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.patch("/operacional/api/regimes-cobranca/{reg_id}")
+async def op_editar_regime(reg_id: str, request: Request, payload=Depends(verificar_gestor)):
+    d = await request.json()
+    updates = []
+    valores = []
+    if "nome" in d:
+        nome = (d.get("nome") or "").strip().lower()
+        if not nome:
+            raise HTTPException(status_code=400, detail="Nome não pode ser vazio")
+        updates.append("nome=%s"); valores.append(nome)
+    if "descricao" in d:
+        updates.append("descricao=%s"); valores.append((d.get("descricao") or "").strip() or None)
+    if not updates:
+        raise HTTPException(status_code=400, detail="Nada a atualizar")
+    valores.append(reg_id)
+    try:
+        row = jard_query(
+            f"UPDATE operacional.regimes_cobranca SET {', '.join(updates)} WHERE id=%s RETURNING id, nome, descricao",
+            tuple(valores), fetch="one"
+        )
+        if not row:
+            raise HTTPException(status_code=404, detail="Regime não encontrado")
+        return dict(row)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.delete("/operacional/api/regimes-cobranca/{reg_id}")
+async def op_remover_regime(reg_id: str, payload=Depends(verificar_gestor)):
+    try:
+        jard_query("UPDATE operacional.regimes_cobranca SET ativo=false WHERE id=%s", (reg_id,))
+        return {"ok": True}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.get("/operacional/api/equipamentos")
 async def op_listar_equipamentos(_auth=Depends(verificar_token)):
     """Lista equipamentos ativos para popular select e tela de cadastro."""
@@ -2417,7 +2501,7 @@ async def op_remover_parte(parte_id: str, _auth=Depends(verificar_gestor)):
 
 @app.post("/operacional/api/os/{os_id}/fechar")
 async def op_fechar_os(os_id: str, request: Request, payload=Depends(verificar_gestor)):
-    """Fecha OS após revisão. Congela todas as partes diárias."""
+    """Fecha OS após revisão pela Luana. Congela todas as partes diárias."""
     os_row = jard_query(
         "SELECT * FROM operacional.ordens_servico WHERE id=%s AND ativo=true",
         (os_id,), fetch="one"
@@ -2463,6 +2547,42 @@ async def op_fechar_os(os_id: str, request: Request, payload=Depends(verificar_g
     )
 
     return await op_detalhe_os(os_id, _auth=payload)
+
+
+@app.post("/operacional/api/os/{os_id}/concluir")
+async def op_concluir_os_operador(os_id: str, request: Request, payload=Depends(verificar_token)):
+    """Operador marca OS como concluída do lado dele → aguarda fechamento pela Luana."""
+    login = payload.get("sub","") or payload.get("login","")
+    user = jard_query(
+        "SELECT id, perfil FROM public.usuarios_garra WHERE login=%s",
+        (login,), fetch="one"
+    )
+    if not user:
+        raise HTTPException(status_code=404, detail="Usuário não encontrado")
+
+    os_row = jard_query(
+        "SELECT id, numero, status, operador_id FROM operacional.ordens_servico WHERE id=%s AND ativo=true",
+        (os_id,), fetch="one"
+    )
+    if not os_row:
+        raise HTTPException(status_code=404, detail="OS não encontrada")
+
+    # Verificar se o operador é dono da OS ou admin/gestor
+    if user["perfil"] not in ("admin","gestor","luana") and str(os_row.get("operador_id")) != str(user["id"]):
+        raise HTTPException(status_code=403, detail="Você não é o operador desta OS")
+
+    if os_row.get("status") in ("concluida_completa","concluida_sem_erp","cancelada","aguardando_fechamento"):
+        raise HTTPException(status_code=400, detail="OS já está concluída ou aguardando fechamento")
+
+    agora = datetime.utcnow()
+    jard_query(
+        """UPDATE operacional.ordens_servico
+           SET status='aguardando_fechamento', atualizado_em=%s
+           WHERE id=%s""",
+        (agora, os_id), fetch="none"
+    )
+
+    return {"ok": True, "numero": os_row.get("numero"), "status": "aguardando_fechamento"}
 
 
 @app.get("/operacional/api/os/{os_id}/revisao")
