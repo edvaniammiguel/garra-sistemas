@@ -297,6 +297,7 @@ input,select,textarea{font-family:inherit;outline:none;border:none}
       </div>
     </div>
     <div class="app-header-right">
+      <div id="net-badge" title="Status de conexão" style="font-size:11px;font-weight:700;padding:4px 10px;border-radius:99px;background:#16A34A;color:#fff;display:none">● Online</div>
       <div class="user-avatar" id="user-avatar">?</div>
       <button class="btn-sair" onclick="fazerLogout()">Sair</button>
     </div>
@@ -449,6 +450,9 @@ async function fazerLogin() {
 
     // Carregar módulos
     await carregarOSApp();
+
+    // Pré-carregar listas para uso offline (background, não bloqueia)
+    preCarregarListasOffline();
   } catch (e) {
     errDiv.textContent = e.message;
     errDiv.style.display = 'block';
@@ -631,31 +635,116 @@ function fecharModalNovaOS() {
 }
 
 async function carregarListasNovaOS() {
-  const token = localStorage.getItem('garra_token');
-  const headers = { 'Authorization': 'Bearer ' + token };
+  // Equipamentos, Tipos de serviço, Clientes — online-first com fallback IDB
+  // TTL 24h pois essas listas mudam pouco
+  const [equipamentos, tipos, clientes] = await Promise.all([
+    fetchComCacheIDB('/operacional/api/equipamentos', 'lst_equipamentos', 86400),
+    fetchComCacheIDB('/operacional/api/tipos-servico',  'lst_tipos_servico', 86400),
+    fetchComCacheIDB('/operacional/api/clientes',       'lst_clientes',      86400),
+  ]);
+
+  // Equipamentos
+  const selEq = document.getElementById('novaos-equipamento');
+  if (selEq) {
+    selEq.innerHTML = '<option value="">— selecionar —</option>';
+    (equipamentos || []).forEach(e => {
+      selEq.innerHTML += `<option value="${e.id}">${e.codigo} — ${e.descricao || ''}</option>`;
+    });
+  }
+
+  // Tipos de serviço
+  const selTs = document.getElementById('novaos-tipo');
+  if (selTs) {
+    selTs.innerHTML = '<option value="">— selecionar —</option>';
+    (tipos || []).forEach(t => {
+      selTs.innerHTML += `<option value="${t.id}">${t.nome}</option>`;
+    });
+  }
+
+  // Clientes (se houver select)
+  const selCli = document.getElementById('novaos-cliente-select');
+  if (selCli) {
+    selCli.innerHTML = '<option value="">— selecionar —</option>';
+    (clientes || []).forEach(c => {
+      selCli.innerHTML += `<option value="${c.id}">${c.nome}</option>`;
+    });
+  }
+}
+
+/**
+ * fetchComCacheIDB(url, cacheKey, ttlSeconds)
+ * Online-first: tenta rede e cacheia. Se rede falha, retorna cache.
+ * Retorna [] se ambos falharem (UI não quebra).
+ */
+async function fetchComCacheIDB(url, cacheKey, ttlSeconds) {
+  const token = localStorage.getItem('garra_token') || '';
+  // 1. Rede primeiro
   try {
-    // Equipamentos
-    const eqRes = await fetch('/operacional/api/equipamentos', { headers });
-    if (eqRes.ok) {
-      const eqs = await eqRes.json();
-      const selEq = document.getElementById('novaos-equipamento');
-      selEq.innerHTML = '<option value="">— selecionar —</option>';
-      (eqs || []).forEach(e => {
-        selEq.innerHTML += `<option value="${e.id}">${e.codigo} — ${e.descricao || ''}</option>`;
-      });
+    const r = await fetch(url, {
+      headers: { 'Authorization': 'Bearer ' + token }
+    });
+    if (r.ok) {
+      const data = await r.json();
+      // Cachear em background, não bloqueia
+      if (typeof GarraDB !== 'undefined') {
+        GarraDB._cacheSet(cacheKey, data, ttlSeconds).catch(() => {});
+      }
+      return data || [];
     }
-    // Tipos de serviço
-    const tsRes = await fetch('/operacional/api/tipos-servico', { headers });
-    if (tsRes.ok) {
-      const tipos = await tsRes.json();
-      const selTs = document.getElementById('novaos-tipo');
-      selTs.innerHTML = '<option value="">— selecionar —</option>';
-      (tipos || []).forEach(t => {
-        selTs.innerHTML += `<option value="${t.id}">${t.nome}</option>`;
-      });
+  } catch (err) {
+    console.warn(`[Cache] Rede falhou para ${url}:`, err.message);
+  }
+  // 2. Cache IDB como fallback
+  if (typeof GarraDB !== 'undefined') {
+    try {
+      const cached = await GarraDB._cacheGet(cacheKey);
+      if (cached) {
+        console.log(`[Cache] Hit offline: ${cacheKey}`);
+        return cached;
+      }
+    } catch (e) {
+      console.warn(`[Cache] Falha leitura cache ${cacheKey}:`, e.message);
     }
+  }
+  return [];
+}
+
+/**
+ * preCarregarListasOffline()
+ * Chama uma vez ao login: baixa listas e armazena em cache IDB.
+ * Garante que selects funcionem offline mesmo na 1ª abertura sem rede.
+ */
+async function preCarregarListasOffline() {
+  if (!navigator.onLine) return;
+  try {
+    await Promise.all([
+      fetchComCacheIDB('/operacional/api/equipamentos', 'lst_equipamentos', 86400),
+      fetchComCacheIDB('/operacional/api/tipos-servico',  'lst_tipos_servico', 86400),
+      fetchComCacheIDB('/operacional/api/clientes',       'lst_clientes',      86400),
+    ]);
+    console.log('[Cache] Listas pré-carregadas para uso offline');
   } catch (e) {
-    console.warn('Falha ao carregar listas para nova OS:', e.message);
+    console.warn('[Cache] Falha ao pré-carregar listas:', e.message);
+  }
+}
+
+/**
+ * atualizarBadgeRede()
+ * Mostra ● Online (verde) / ● Offline (laranja) no header
+ */
+function atualizarBadgeRede() {
+  const badge = document.getElementById('net-badge');
+  if (!badge) return;
+  if (navigator.onLine) {
+    badge.textContent = '● Online';
+    badge.style.background = '#16A34A';
+    badge.style.display = 'inline-block';
+    // some após 3s quando online (não polui visual)
+    setTimeout(() => { if (navigator.onLine && badge) badge.style.display = 'none'; }, 3000);
+  } else {
+    badge.textContent = '● Offline';
+    badge.style.background = '#EA580C';
+    badge.style.display = 'inline-block';
   }
 }
 
@@ -939,6 +1028,11 @@ document.addEventListener('DOMContentLoaded', async () => {
       .catch(err => console.error('[App] SW erro:', err));
   }
 
+  // Indicador online/offline
+  atualizarBadgeRede();
+  window.addEventListener('online',  () => { atualizarBadgeRede(); preCarregarListasOffline(); carregarOSApp(); });
+  window.addEventListener('offline', () => atualizarBadgeRede());
+
   // Inicializar GarraDB
   await GarraDB.init();
   console.log('[App] GarraDB inicializado');
@@ -954,6 +1048,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     aplicarPermissoesPerfil();
     abrirAbaInicial();
     carregarOSApp();
+    // Pré-carregar listas em background para uso offline
+    if (typeof preCarregarListasOffline === 'function') {
+      preCarregarListasOffline();
+    }
   }
 });
 
