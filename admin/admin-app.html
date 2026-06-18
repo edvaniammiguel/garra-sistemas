@@ -524,6 +524,61 @@ input,select,textarea { font-family:inherit; font-size:13px; outline:none; }
         </div>
       </section>
 
+      <!-- ── SEÇÃO: CLIENTES ── -->
+      <section id="sec-clientes" class="hidden">
+        <div class="card">
+          <div class="card-title">
+            👥 Cadastro de Clientes
+            <button class="btn btn-primary" style="padding:6px 14px;font-size:12px" onclick="abrirModalCliente()">+ Novo cliente</button>
+          </div>
+          <div class="users-bar">
+            <div class="users-search">
+              <input type="text" id="cli-search" placeholder="Buscar por nome ou documento..." oninput="filtrarClientes()"/>
+            </div>
+          </div>
+          <div id="cli-lista"><div class="loading"><span class="spin"></span></div></div>
+        </div>
+      </section>
+
+      <!-- ── SEÇÃO: EQUIPAMENTOS ── -->
+      <section id="sec-equipamentos" class="hidden">
+        <div class="card">
+          <div class="card-title">
+            🚜 Cadastro de Equipamentos
+            <button class="btn btn-primary" style="padding:6px 14px;font-size:12px" onclick="abrirModalEquipamento()">+ Novo equipamento</button>
+          </div>
+          <div class="users-bar">
+            <div class="users-search">
+              <input type="text" id="eq-search" placeholder="Buscar por código ou descrição..." oninput="filtrarEquipamentos()"/>
+            </div>
+            <div class="users-filter">
+              <select id="eq-filter-categoria" onchange="filtrarEquipamentos()">
+                <option value="">Todas as categorias</option>
+                <option value="escavadeira">Escavadeira</option>
+                <option value="caminhao">Caminhão</option>
+                <option value="patrol">Patrol</option>
+                <option value="retroescavadeira">Retroescavadeira</option>
+                <option value="compactador">Compactador</option>
+                <option value="carro">Carro</option>
+                <option value="outro">Outro</option>
+              </select>
+            </div>
+          </div>
+          <div id="eq-lista"><div class="loading"><span class="spin"></span></div></div>
+        </div>
+      </section>
+
+      <!-- ── SEÇÃO: TIPOS DE SERVIÇO ── -->
+      <section id="sec-tipos-servico" class="hidden">
+        <div class="card">
+          <div class="card-title">
+            🔧 Tipos de Serviço
+            <button class="btn btn-primary" style="padding:6px 14px;font-size:12px" onclick="abrirModalTipoServico()">+ Novo tipo</button>
+          </div>
+          <div id="ts-lista"><div class="loading"><span class="spin"></span></div></div>
+        </div>
+      </section>
+
     </main>
   </div>
 </div>
@@ -1015,9 +1070,12 @@ function navTo(sec, elBtn) {
   document.querySelectorAll('.sb-item').forEach(i => i.classList.remove('active'));
   if (elBtn) elBtn.classList.add('active');
   secAtual = sec;
-  if (sec === 'usuarios')   renderTabelaUsuarios();
-  if (sec === 'permissoes') renderPermissoes();
-  if (sec === 'os')         carregarOS();
+  if (sec === 'usuarios')      renderTabelaUsuarios();
+  if (sec === 'permissoes')    renderPermissoes();
+  if (sec === 'os')            carregarOS();
+  if (sec === 'clientes')      carregarClientes();
+  if (sec === 'equipamentos')  carregarEquipamentos();
+  if (sec === 'tipos-servico') carregarTiposServico();
 }
 
 /* ══════════════════════════════════════════════
@@ -1567,6 +1625,24 @@ function renderSidebar(perfil, perms) {
         Ordens de Serviço <span class="sb-badge" id="sb-os-count">–</span>
       </div>
     </div><div class="sb-divider"></div>`;
+
+  // Cadastros — admin/gestor/luana
+  if (isAdmin || perfil === 'gestor' || perfil === 'luana') {
+    html += `<div class="sb-section"><span class="sb-label">Cadastros</span>
+      <div class="sb-item" onclick="navTo('clientes',this)">
+        <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+        Clientes <span class="sb-badge" id="sb-clientes-count">–</span>
+      </div>
+      <div class="sb-item" onclick="navTo('equipamentos',this)">
+        <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="6" cy="18" r="2"/><circle cx="18" cy="18" r="2"/><path d="M3 18H1V8a1 1 0 0 1 1-1h12v11h-2"/><path d="M16 8h4l3 5v5h-3"/></svg>
+        Equipamentos <span class="sb-badge" id="sb-equipamentos-count">–</span>
+      </div>
+      <div class="sb-item" onclick="navTo('tipos-servico',this)">
+        <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
+        Tipos de Serviço <span class="sb-badge" id="sb-tipos-count">–</span>
+      </div>
+    </div><div class="sb-divider"></div>`;
+  }
 
   // Módulos ativos — só os que o usuário tem permissão
   const modulosSb = [
@@ -2228,6 +2304,482 @@ function renderTabelaOS(lista) {
       </tbody>
     </table>
     <div style="margin-top:10px;font-size:11px;color:var(--muted);text-align:right">${filtrada.length} OS exibida(s)</div>`;
+}
+
+/* ══════════════════════════════════════════════
+   CADASTROS — CLIENTES / EQUIPAMENTOS / TIPOS DE SERVIÇO
+══════════════════════════════════════════════ */
+
+let _clientes = [];
+let _equipamentos = [];
+let _tiposServico = [];
+
+/* ─── CLIENTES ─── */
+async function carregarClientes() {
+  const el = document.getElementById('cli-lista');
+  el.innerHTML = '<div class="loading"><span class="spin"></span></div>';
+  try {
+    _clientes = await apiFetch('/operacional/api/clientes');
+    const badge = document.getElementById('sb-clientes-count');
+    if (badge) badge.textContent = (_clientes || []).filter(c => c.ativo !== false).length;
+    renderTabelaClientes();
+  } catch (e) {
+    el.innerHTML = `<div style="padding:30px;text-align:center;color:var(--red)">Erro: ${e.message}</div>`;
+  }
+}
+
+function filtrarClientes() { renderTabelaClientes(); }
+
+function renderTabelaClientes() {
+  const busca = (document.getElementById('cli-search')?.value || '').toLowerCase().trim();
+  const lista = (_clientes || [])
+    .filter(c => c.ativo !== false)
+    .filter(c => !busca
+      || (c.nome || '').toLowerCase().includes(busca)
+      || (c.cnpj_cpf || '').toLowerCase().includes(busca)
+    );
+  const el = document.getElementById('cli-lista');
+  if (!lista.length) {
+    el.innerHTML = '<div style="padding:30px;text-align:center;color:var(--muted)">Nenhum cliente cadastrado</div>';
+    return;
+  }
+  el.innerHTML = `
+    <table style="width:100%;border-collapse:collapse;font-size:13px">
+      <thead><tr style="background:#F0F4FF;text-align:left">
+        <th style="padding:10px">Nome</th>
+        <th style="padding:10px">CNPJ/CPF</th>
+        <th style="padding:10px">Telefone</th>
+        <th style="padding:10px">E-mail</th>
+        <th style="padding:10px">Contato</th>
+        <th style="padding:10px;text-align:right">Ações</th>
+      </tr></thead>
+      <tbody>
+        ${lista.map(c => `
+          <tr style="border-bottom:1px solid var(--border)">
+            <td style="padding:10px;font-weight:700">${esc(c.nome || '')}</td>
+            <td style="padding:10px">${esc(c.cnpj_cpf || '–')}</td>
+            <td style="padding:10px">${esc(c.telefone || '–')}</td>
+            <td style="padding:10px">${esc(c.email || '–')}</td>
+            <td style="padding:10px">${esc(c.contato || '–')}</td>
+            <td style="padding:10px;text-align:right;display:flex;gap:6px;justify-content:flex-end">
+              <button class="btn-sm" onclick="editarCliente('${esc(c.id)}')">✎ Editar</button>
+              <button class="btn-sm" style="color:var(--red)" onclick="removerCliente('${esc(c.id)}','${esc(c.nome)}')">🗑</button>
+            </td>
+          </tr>`).join('')}
+      </tbody>
+    </table>
+    <div style="margin-top:10px;font-size:11px;color:var(--muted);text-align:right">${lista.length} cliente(s)</div>`;
+}
+
+function abrirModalCliente(cliente = null) {
+  const c = cliente || {};
+  const isEdit = !!cliente;
+  const html = `
+    <div id="modal-cli" style="position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:300;display:flex;align-items:center;justify-content:center;padding:20px" onclick="if(event.target===this)fecharModalCli()">
+      <div style="background:#fff;width:100%;max-width:520px;max-height:90vh;overflow-y:auto;border-radius:12px;padding:24px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+          <h2 style="font-size:16px;font-weight:800;color:var(--blue)">${isEdit ? '✎ Editar' : '+ Novo'} Cliente</h2>
+          <button onclick="fecharModalCli()" style="background:none;border:none;font-size:24px;color:var(--muted);cursor:pointer">×</button>
+        </div>
+        <div id="cli-err" style="background:#FEE2E2;color:var(--red);border-radius:6px;padding:10px;margin-bottom:14px;font-size:13px;display:none"></div>
+
+        <div style="margin-bottom:12px">
+          <label class="lbl">Nome *</label>
+          <input id="cli-nome" type="text" value="${esc(c.nome || '')}" class="fld">
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px">
+          <div>
+            <label class="lbl">CNPJ / CPF</label>
+            <input id="cli-doc" type="text" value="${esc(c.cnpj_cpf || '')}" class="fld">
+          </div>
+          <div>
+            <label class="lbl">Telefone</label>
+            <input id="cli-tel" type="text" value="${esc(c.telefone || '')}" class="fld">
+          </div>
+        </div>
+        <div style="margin-bottom:12px">
+          <label class="lbl">E-mail</label>
+          <input id="cli-email" type="email" value="${esc(c.email || '')}" class="fld">
+        </div>
+        <div style="margin-bottom:18px">
+          <label class="lbl">Contato (pessoa de referência)</label>
+          <input id="cli-contato" type="text" value="${esc(c.contato || '')}" class="fld">
+        </div>
+
+        <div style="display:flex;gap:8px">
+          <button onclick="fecharModalCli()" class="btn btn-secondary" style="flex:1">Cancelar</button>
+          <button onclick="salvarCliente('${esc(c.id || '')}')" class="btn btn-primary" style="flex:2">${isEdit ? 'Salvar' : 'Cadastrar'}</button>
+        </div>
+      </div>
+    </div>
+    <style>
+      .lbl{font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:5px}
+      .fld{width:100%;padding:10px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;box-sizing:border-box}
+    </style>
+  `;
+  const div = document.createElement('div');
+  div.innerHTML = html;
+  document.body.appendChild(div.firstElementChild);
+}
+function fecharModalCli() {
+  const m = document.getElementById('modal-cli');
+  if (m) m.remove();
+}
+async function salvarCliente(id) {
+  const err = document.getElementById('cli-err');
+  err.style.display = 'none';
+  const payload = {
+    nome:     document.getElementById('cli-nome').value.trim(),
+    cnpj_cpf: document.getElementById('cli-doc').value.trim() || null,
+    telefone: document.getElementById('cli-tel').value.trim() || null,
+    email:    document.getElementById('cli-email').value.trim() || null,
+    contato:  document.getElementById('cli-contato').value.trim() || null,
+  };
+  if (!payload.nome) {
+    err.textContent = 'Nome é obrigatório';
+    err.style.display = 'block';
+    return;
+  }
+  try {
+    if (id) {
+      await apiFetch('/operacional/api/clientes/' + id, { method: 'PATCH', body: JSON.stringify(payload) });
+    } else {
+      await apiFetch('/operacional/api/clientes', { method: 'POST', body: JSON.stringify(payload) });
+    }
+    fecharModalCli();
+    await carregarClientes();
+  } catch (e) {
+    err.textContent = e.message;
+    err.style.display = 'block';
+  }
+}
+async function editarCliente(id) {
+  const c = (_clientes || []).find(x => x.id === id);
+  if (c) abrirModalCliente(c);
+}
+async function removerCliente(id, nome) {
+  if (!confirm(`Remover cliente "${nome}"?`)) return;
+  try {
+    await apiFetch('/operacional/api/clientes/' + id, { method: 'DELETE' });
+    await carregarClientes();
+  } catch (e) {
+    alert('Erro: ' + e.message);
+  }
+}
+
+/* ─── EQUIPAMENTOS ─── */
+async function carregarEquipamentos() {
+  const el = document.getElementById('eq-lista');
+  el.innerHTML = '<div class="loading"><span class="spin"></span></div>';
+  try {
+    _equipamentos = await apiFetch('/operacional/api/equipamentos');
+    const badge = document.getElementById('sb-equipamentos-count');
+    if (badge) badge.textContent = (_equipamentos || []).filter(e => e.ativo !== false).length;
+    renderTabelaEquipamentos();
+  } catch (e) {
+    el.innerHTML = `<div style="padding:30px;text-align:center;color:var(--red)">Erro: ${e.message}</div>`;
+  }
+}
+function filtrarEquipamentos() { renderTabelaEquipamentos(); }
+
+function renderTabelaEquipamentos() {
+  const busca = (document.getElementById('eq-search')?.value || '').toLowerCase().trim();
+  const cat = (document.getElementById('eq-filter-categoria')?.value || '').toLowerCase();
+  const lista = (_equipamentos || [])
+    .filter(e => e.ativo !== false)
+    .filter(e => !busca
+      || (e.codigo || '').toLowerCase().includes(busca)
+      || (e.descricao || '').toLowerCase().includes(busca)
+    )
+    .filter(e => !cat || (e.categoria || '').toLowerCase() === cat);
+  const el = document.getElementById('eq-lista');
+  if (!lista.length) {
+    el.innerHTML = '<div style="padding:30px;text-align:center;color:var(--muted)">Nenhum equipamento cadastrado</div>';
+    return;
+  }
+  el.innerHTML = `
+    <table style="width:100%;border-collapse:collapse;font-size:13px">
+      <thead><tr style="background:#F0F4FF;text-align:left">
+        <th style="padding:10px">Código</th>
+        <th style="padding:10px">Descrição</th>
+        <th style="padding:10px">Categoria</th>
+        <th style="padding:10px">Medição</th>
+        <th style="padding:10px">Placa</th>
+        <th style="padding:10px;text-align:right">Ações</th>
+      </tr></thead>
+      <tbody>
+        ${lista.map(e => `
+          <tr style="border-bottom:1px solid var(--border)">
+            <td style="padding:10px;font-weight:700">${esc(e.codigo || '')}</td>
+            <td style="padding:10px">${esc(e.descricao || '–')}</td>
+            <td style="padding:10px"><span class="badge">${esc(e.categoria || '–')}</span></td>
+            <td style="padding:10px">${esc(e.medicao || 'horímetro')}</td>
+            <td style="padding:10px">${esc(e.placa || '–')}</td>
+            <td style="padding:10px;text-align:right;display:flex;gap:6px;justify-content:flex-end">
+              <button class="btn-sm" onclick="editarEquipamento('${esc(e.id)}')">✎ Editar</button>
+              <button class="btn-sm" style="color:var(--red)" onclick="removerEquipamento('${esc(e.id)}','${esc(e.codigo)}')">🗑</button>
+            </td>
+          </tr>`).join('')}
+      </tbody>
+    </table>
+    <div style="margin-top:10px;font-size:11px;color:var(--muted);text-align:right">${lista.length} equipamento(s)</div>`;
+}
+
+function abrirModalEquipamento(eq = null) {
+  const e = eq || {};
+  const isEdit = !!eq;
+  const html = `
+    <div id="modal-eq" style="position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:300;display:flex;align-items:center;justify-content:center;padding:20px" onclick="if(event.target===this)fecharModalEq()">
+      <div style="background:#fff;width:100%;max-width:560px;max-height:90vh;overflow-y:auto;border-radius:12px;padding:24px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+          <h2 style="font-size:16px;font-weight:800;color:var(--blue)">${isEdit ? '✎ Editar' : '+ Novo'} Equipamento</h2>
+          <button onclick="fecharModalEq()" style="background:none;border:none;font-size:24px;color:var(--muted);cursor:pointer">×</button>
+        </div>
+        <div id="eq-err" style="background:#FEE2E2;color:var(--red);border-radius:6px;padding:10px;margin-bottom:14px;font-size:13px;display:none"></div>
+
+        <div style="display:grid;grid-template-columns:1fr 2fr;gap:8px;margin-bottom:12px">
+          <div>
+            <label class="lbl">Código *</label>
+            <input id="eq-codigo" type="text" value="${esc(e.codigo || '')}" class="fld" placeholder="EH-039">
+          </div>
+          <div>
+            <label class="lbl">Descrição *</label>
+            <input id="eq-descricao" type="text" value="${esc(e.descricao || '')}" class="fld" placeholder="Escavadeira Hidráulica">
+          </div>
+        </div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px">
+          <div>
+            <label class="lbl">Categoria *</label>
+            <select id="eq-categoria" class="fld">
+              <option value="">— selecionar —</option>
+              <option value="escavadeira" ${e.categoria==='escavadeira'?'selected':''}>Escavadeira</option>
+              <option value="caminhao" ${e.categoria==='caminhao'?'selected':''}>Caminhão</option>
+              <option value="patrol" ${e.categoria==='patrol'?'selected':''}>Patrol / Motoniveladora</option>
+              <option value="retroescavadeira" ${e.categoria==='retroescavadeira'?'selected':''}>Retroescavadeira</option>
+              <option value="compactador" ${e.categoria==='compactador'?'selected':''}>Compactador</option>
+              <option value="carro" ${e.categoria==='carro'?'selected':''}>Carro / Veículo</option>
+              <option value="outro" ${e.categoria==='outro'?'selected':''}>Outro</option>
+            </select>
+          </div>
+          <div>
+            <label class="lbl">Medição *</label>
+            <select id="eq-medicao" class="fld">
+              <option value="horimetro" ${(e.medicao||'horimetro')==='horimetro'?'selected':''}>Horímetro</option>
+              <option value="km" ${e.medicao==='km'?'selected':''}>KM</option>
+              <option value="metros" ${e.medicao==='metros'?'selected':''}>Metros</option>
+              <option value="diaria" ${e.medicao==='diaria'?'selected':''}>Diária</option>
+            </select>
+          </div>
+        </div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr 100px;gap:8px;margin-bottom:12px">
+          <div>
+            <label class="lbl">Marca</label>
+            <input id="eq-marca" type="text" value="${esc(e.marca || '')}" class="fld" placeholder="Caterpillar">
+          </div>
+          <div>
+            <label class="lbl">Modelo</label>
+            <input id="eq-modelo" type="text" value="${esc(e.modelo || '')}" class="fld" placeholder="320D">
+          </div>
+          <div>
+            <label class="lbl">Ano</label>
+            <input id="eq-ano" type="number" min="1980" max="2030" value="${esc(e.ano || '')}" class="fld">
+          </div>
+        </div>
+
+        <div style="margin-bottom:18px">
+          <label class="lbl">Placa (carros/caminhões)</label>
+          <input id="eq-placa" type="text" value="${esc(e.placa || '')}" class="fld" placeholder="ABC-1234">
+        </div>
+
+        <div style="display:flex;gap:8px">
+          <button onclick="fecharModalEq()" class="btn btn-secondary" style="flex:1">Cancelar</button>
+          <button onclick="salvarEquipamento('${esc(e.id || '')}')" class="btn btn-primary" style="flex:2">${isEdit ? 'Salvar' : 'Cadastrar'}</button>
+        </div>
+      </div>
+    </div>
+  `;
+  const div = document.createElement('div');
+  div.innerHTML = html;
+  document.body.appendChild(div.firstElementChild);
+}
+function fecharModalEq() {
+  const m = document.getElementById('modal-eq');
+  if (m) m.remove();
+}
+async function salvarEquipamento(id) {
+  const err = document.getElementById('eq-err');
+  err.style.display = 'none';
+  const payload = {
+    codigo:    document.getElementById('eq-codigo').value.trim(),
+    descricao: document.getElementById('eq-descricao').value.trim(),
+    categoria: document.getElementById('eq-categoria').value,
+    medicao:   document.getElementById('eq-medicao').value,
+    marca:     document.getElementById('eq-marca').value.trim() || null,
+    modelo:    document.getElementById('eq-modelo').value.trim() || null,
+    ano:       parseInt(document.getElementById('eq-ano').value) || null,
+    placa:     document.getElementById('eq-placa').value.trim() || null,
+  };
+  if (!payload.codigo || !payload.descricao || !payload.categoria) {
+    err.textContent = 'Código, descrição e categoria são obrigatórios';
+    err.style.display = 'block';
+    return;
+  }
+  try {
+    if (id) {
+      await apiFetch('/operacional/api/equipamentos/' + id, { method: 'PATCH', body: JSON.stringify(payload) });
+    } else {
+      await apiFetch('/operacional/api/equipamentos', { method: 'POST', body: JSON.stringify(payload) });
+    }
+    fecharModalEq();
+    await carregarEquipamentos();
+  } catch (e) {
+    err.textContent = e.message;
+    err.style.display = 'block';
+  }
+}
+async function editarEquipamento(id) {
+  const e = (_equipamentos || []).find(x => x.id === id);
+  if (e) abrirModalEquipamento(e);
+}
+async function removerEquipamento(id, codigo) {
+  if (!confirm(`Remover equipamento "${codigo}"?`)) return;
+  try {
+    await apiFetch('/operacional/api/equipamentos/' + id, { method: 'DELETE' });
+    await carregarEquipamentos();
+  } catch (e) {
+    alert('Erro: ' + e.message);
+  }
+}
+
+/* ─── TIPOS DE SERVIÇO ─── */
+async function carregarTiposServico() {
+  const el = document.getElementById('ts-lista');
+  el.innerHTML = '<div class="loading"><span class="spin"></span></div>';
+  try {
+    _tiposServico = await apiFetch('/operacional/api/tipos-servico');
+    const badge = document.getElementById('sb-tipos-count');
+    if (badge) badge.textContent = (_tiposServico || []).length;
+    renderTabelaTiposServico();
+  } catch (e) {
+    el.innerHTML = `<div style="padding:30px;text-align:center;color:var(--red)">Erro: ${e.message}</div>`;
+  }
+}
+function renderTabelaTiposServico() {
+  const lista = _tiposServico || [];
+  const el = document.getElementById('ts-lista');
+  if (!lista.length) {
+    el.innerHTML = '<div style="padding:30px;text-align:center;color:var(--muted)">Nenhum tipo de serviço cadastrado</div>';
+    return;
+  }
+  el.innerHTML = `
+    <table style="width:100%;border-collapse:collapse;font-size:13px">
+      <thead><tr style="background:#F0F4FF;text-align:left">
+        <th style="padding:10px">Nome</th>
+        <th style="padding:10px">Descrição</th>
+        <th style="padding:10px">Medição</th>
+        <th style="padding:10px;text-align:right">Ações</th>
+      </tr></thead>
+      <tbody>
+        ${lista.map(t => `
+          <tr style="border-bottom:1px solid var(--border)">
+            <td style="padding:10px;font-weight:700">${esc(t.nome || '')}</td>
+            <td style="padding:10px">${esc(t.descricao || '–')}</td>
+            <td style="padding:10px"><span class="badge">${esc(t.medicao || 'horimetro')}</span></td>
+            <td style="padding:10px;text-align:right;display:flex;gap:6px;justify-content:flex-end">
+              <button class="btn-sm" onclick="editarTipoServico('${esc(t.id)}')">✎ Editar</button>
+              <button class="btn-sm" style="color:var(--red)" onclick="removerTipoServico('${esc(t.id)}','${esc(t.nome)}')">🗑</button>
+            </td>
+          </tr>`).join('')}
+      </tbody>
+    </table>
+    <div style="margin-top:10px;font-size:11px;color:var(--muted);text-align:right">${lista.length} tipo(s)</div>`;
+}
+function abrirModalTipoServico(ts = null) {
+  const t = ts || {};
+  const isEdit = !!ts;
+  const html = `
+    <div id="modal-ts" style="position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:300;display:flex;align-items:center;justify-content:center;padding:20px" onclick="if(event.target===this)fecharModalTs()">
+      <div style="background:#fff;width:100%;max-width:480px;border-radius:12px;padding:24px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+          <h2 style="font-size:16px;font-weight:800;color:var(--blue)">${isEdit ? '✎ Editar' : '+ Novo'} Tipo de Serviço</h2>
+          <button onclick="fecharModalTs()" style="background:none;border:none;font-size:24px;color:var(--muted);cursor:pointer">×</button>
+        </div>
+        <div id="ts-err" style="background:#FEE2E2;color:var(--red);border-radius:6px;padding:10px;margin-bottom:14px;font-size:13px;display:none"></div>
+
+        <div style="margin-bottom:12px">
+          <label class="lbl">Nome *</label>
+          <input id="ts-nome" type="text" value="${esc(t.nome || '')}" class="fld" placeholder="Ex: Manilhamento, Aterro, Escavação">
+        </div>
+        <div style="margin-bottom:12px">
+          <label class="lbl">Descrição</label>
+          <textarea id="ts-desc" rows="2" class="fld" placeholder="Detalhes opcionais">${esc(t.descricao || '')}</textarea>
+        </div>
+        <div style="margin-bottom:18px">
+          <label class="lbl">Como é medido? *</label>
+          <select id="ts-medicao" class="fld">
+            <option value="horimetro" ${(t.medicao||'horimetro')==='horimetro'?'selected':''}>⚙️ Horímetro (máquinas)</option>
+            <option value="km" ${t.medicao==='km'?'selected':''}>🚛 KM (caminhões)</option>
+            <option value="metros" ${t.medicao==='metros'?'selected':''}>📏 Metros (ex: manilha, valeta)</option>
+            <option value="diaria" ${t.medicao==='diaria'?'selected':''}>📅 Diária</option>
+          </select>
+          <small style="color:var(--muted);font-size:11px;display:block;margin-top:4px">Define quais campos aparecem ao registrar dia do operador</small>
+        </div>
+
+        <div style="display:flex;gap:8px">
+          <button onclick="fecharModalTs()" class="btn btn-secondary" style="flex:1">Cancelar</button>
+          <button onclick="salvarTipoServico('${esc(t.id || '')}')" class="btn btn-primary" style="flex:2">${isEdit ? 'Salvar' : 'Cadastrar'}</button>
+        </div>
+      </div>
+    </div>
+  `;
+  const div = document.createElement('div');
+  div.innerHTML = html;
+  document.body.appendChild(div.firstElementChild);
+}
+function fecharModalTs() {
+  const m = document.getElementById('modal-ts');
+  if (m) m.remove();
+}
+async function salvarTipoServico(id) {
+  const err = document.getElementById('ts-err');
+  err.style.display = 'none';
+  const payload = {
+    nome:      document.getElementById('ts-nome').value.trim(),
+    descricao: document.getElementById('ts-desc').value.trim() || null,
+    medicao:   document.getElementById('ts-medicao').value,
+  };
+  if (!payload.nome) {
+    err.textContent = 'Nome é obrigatório';
+    err.style.display = 'block';
+    return;
+  }
+  try {
+    if (id) {
+      await apiFetch('/operacional/api/tipos-servico/' + id, { method: 'PATCH', body: JSON.stringify(payload) });
+    } else {
+      await apiFetch('/operacional/api/tipos-servico', { method: 'POST', body: JSON.stringify(payload) });
+    }
+    fecharModalTs();
+    await carregarTiposServico();
+  } catch (e) {
+    err.textContent = e.message;
+    err.style.display = 'block';
+  }
+}
+async function editarTipoServico(id) {
+  const t = (_tiposServico || []).find(x => x.id === id);
+  if (t) abrirModalTipoServico(t);
+}
+async function removerTipoServico(id, nome) {
+  if (!confirm(`Remover tipo "${nome}"?`)) return;
+  try {
+    await apiFetch('/operacional/api/tipos-servico/' + id, { method: 'DELETE' });
+    await carregarTiposServico();
+  } catch (e) {
+    alert('Erro: ' + e.message);
+  }
 }
 </script>
 </body>
