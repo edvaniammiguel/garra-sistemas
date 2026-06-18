@@ -2316,10 +2316,12 @@ async def op_criar_os_avulsa(req: Request, payload=Depends(verificar_token)):
     # Gerar próximo número
     ano = datetime.utcnow().year
     ult = jard_query(
-        "SELECT numero FROM operacional.ordens_servico WHERE numero LIKE %s ORDER BY numero DESC LIMIT 1",
+        "SELECT numero, sequencia FROM operacional.ordens_servico WHERE numero LIKE %s ORDER BY sequencia DESC LIMIT 1",
         (f"OS-{ano}-%",), fetch="one"
     )
-    if ult:
+    if ult and ult.get("sequencia"):
+        seq = int(ult["sequencia"]) + 1
+    elif ult:
         try:
             seq = int(ult["numero"].split("-")[-1]) + 1
         except Exception:
@@ -2330,15 +2332,18 @@ async def op_criar_os_avulsa(req: Request, payload=Depends(verificar_token)):
     
     nova = jard_query(
         """INSERT INTO operacional.ordens_servico
-           (numero, obra, cliente_nome_avulso, equipamento_id, tipo_servico_id,
-            regime_cobranca, operador_id, status, origem, observacoes,
-            data_inicio, ativo, criado_em)
-           VALUES (%s, %s, %s, %s, %s, %s, %s,
-                   'aberta_sem_erp', 'campo', %s,
-                   CURRENT_DATE, true, NOW())
+           (numero, ano, sequencia, obra, cliente_nome_avulso,
+            equipamento_id, tipo_servico_id, regime_cobranca,
+            operador_id, status, origem, descricao,
+            data_inicio, ativo, criado_por, criado_em)
+           VALUES (%s, %s, %s, %s, %s,
+                   %s, %s, %s,
+                   %s, 'aberta_sem_erp', 'campo', %s,
+                   CURRENT_DATE, true, %s, NOW())
            RETURNING id, numero, obra, status""",
-        (numero, obra, cliente_nome or None, equipamento_id, tipo_servico_id,
-         regime_cobranca, user["id"], observacao or None),
+        (numero, ano, seq, obra, cliente_nome or None,
+         equipamento_id, tipo_servico_id, regime_cobranca,
+         user["id"], observacao or None, user["id"]),
         fetch="one"
     )
     return {"ok": True, "os": dict(nova) if nova else {"numero": numero}}
