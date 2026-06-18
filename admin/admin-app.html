@@ -474,6 +474,7 @@ input,select,textarea { font-family:inherit; font-size:13px; outline:none; }
             <div class="users-filter">
               <select id="os-filter-status" onchange="filtrarOS()">
                 <option value="">Todos os status</option>
+                <option value="aguardando_fechamento">⏳ Aguardando fechamento</option>
                 <option value="aberta_sem_erp">Aberta (sem cod ERP)</option>
                 <option value="aberta_completa">Aberta (com cod ERP)</option>
                 <option value="em_execucao">Em execução</option>
@@ -576,6 +577,17 @@ input,select,textarea { font-family:inherit; font-size:13px; outline:none; }
             <button class="btn btn-primary" style="padding:6px 14px;font-size:12px" onclick="abrirModalTipoServico()">+ Novo tipo</button>
           </div>
           <div id="ts-lista"><div class="loading"><span class="spin"></span></div></div>
+        </div>
+      </section>
+
+      <!-- ── SEÇÃO: REGIMES DE COBRANÇA ── -->
+      <section id="sec-regimes" class="hidden">
+        <div class="card">
+          <div class="card-title">
+            💰 Regimes de Cobrança
+            <button class="btn btn-primary" style="padding:6px 14px;font-size:12px" onclick="abrirModalRegime()">+ Novo regime</button>
+          </div>
+          <div id="reg-lista"><div class="loading"><span class="spin"></span></div></div>
         </div>
       </section>
 
@@ -1076,6 +1088,7 @@ function navTo(sec, elBtn) {
   if (sec === 'clientes')      carregarClientes();
   if (sec === 'equipamentos')  carregarEquipamentos();
   if (sec === 'tipos-servico') carregarTiposServico();
+  if (sec === 'regimes')       carregarRegimes();
 }
 
 /* ══════════════════════════════════════════════
@@ -1641,6 +1654,10 @@ function renderSidebar(perfil, perms) {
         <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
         Tipos de Serviço <span class="sb-badge" id="sb-tipos-count">–</span>
       </div>
+      <div class="sb-item" onclick="navTo('regimes',this)">
+        <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+        Regimes de Cobrança <span class="sb-badge" id="sb-regimes-count">–</span>
+      </div>
     </div><div class="sb-divider"></div>`;
   }
 
@@ -1877,12 +1894,13 @@ function toast(msg, type='') {
 }
 
 const STATUS_LABEL = {
-  'aberta_sem_erp':      { label:'Aberta (sem ERP)',   badge:'badge-pend' },
-  'aberta_completa':     { label:'Aberta',             badge:'badge-info' },
-  'em_execucao':         { label:'Em execução',        badge:'badge-info' },
-  'concluida_sem_erp':   { label:'Concluída (sem ERP)',badge:'badge-ok'   },
-  'concluida_completa':  { label:'Concluída',          badge:'badge-ok'   },
-  'cancelada':           { label:'Cancelada',          badge:'badge-err'  },
+  'aberta_sem_erp':         { label:'Aberta (sem ERP)',       badge:'badge-pend'  },
+  'aberta_completa':        { label:'Aberta',                 badge:'badge-info'  },
+  'em_execucao':            { label:'Em execução',            badge:'badge-info'  },
+  'aguardando_fechamento':  { label:'⏳ Aguardando fechamento',badge:'badge-pend' },
+  'concluida_sem_erp':      { label:'Concluída (sem ERP)',    badge:'badge-ok'    },
+  'concluida_completa':     { label:'Concluída',              badge:'badge-ok'    },
+  'cancelada':              { label:'Cancelada',              badge:'badge-err'   },
 };
 
 let _osListaCompleta = [];
@@ -1893,6 +1911,21 @@ async function carregarOS() {
   el.innerHTML = '<div class="loading"><span class="spin"></span></div>';
   try {
     _osListaCompleta = await apiFetch('/operacional/api/os');
+    // Atualizar badge sidebar: mostrar qtd aguardando fechamento
+    const aguardando = (_osListaCompleta || []).filter(o => o.status === 'aguardando_fechamento').length;
+    const abertas = (_osListaCompleta || []).filter(o => !['concluida_completa','concluida_sem_erp','cancelada'].includes(o.status)).length;
+    const badge = document.getElementById('sb-os-count');
+    if (badge) {
+      if (aguardando > 0) {
+        badge.textContent = aguardando;
+        badge.style.background = '#EA580C';
+        badge.title = aguardando + ' OS aguardando fechamento';
+      } else {
+        badge.textContent = abertas || '–';
+        badge.style.background = '';
+        badge.title = '';
+      }
+    }
     renderTabelaOS(_osListaCompleta);
   } catch(e) {
     el.innerHTML = `<div style="color:var(--red);padding:20px">Erro ao carregar OS: ${esc(e.message)}</div>`;
@@ -2777,6 +2810,130 @@ async function removerTipoServico(id, nome) {
   try {
     await apiFetch('/operacional/api/tipos-servico/' + id, { method: 'DELETE' });
     await carregarTiposServico();
+  } catch (e) {
+    alert('Erro: ' + e.message);
+  }
+}
+
+/* ─── REGIMES DE COBRANÇA ─── */
+let _regimes = [];
+
+async function carregarRegimes() {
+  const el = document.getElementById('reg-lista');
+  el.innerHTML = '<div class="loading"><span class="spin"></span></div>';
+  try {
+    _regimes = await apiFetch('/operacional/api/regimes-cobranca');
+    const badge = document.getElementById('sb-regimes-count');
+    if (badge) badge.textContent = (_regimes || []).length;
+    renderTabelaRegimes();
+  } catch (e) {
+    el.innerHTML = `<div style="padding:30px;text-align:center;color:var(--red)">Erro: ${e.message}</div>`;
+  }
+}
+
+function renderTabelaRegimes() {
+  const lista = _regimes || [];
+  const el = document.getElementById('reg-lista');
+  if (!lista.length) {
+    el.innerHTML = '<div style="padding:30px;text-align:center;color:var(--muted)">Nenhum regime cadastrado</div>';
+    return;
+  }
+  el.innerHTML = `
+    <table style="width:100%;border-collapse:collapse;font-size:13px">
+      <thead><tr style="background:#F0F4FF;text-align:left">
+        <th style="padding:10px">Nome</th>
+        <th style="padding:10px">Descrição</th>
+        <th style="padding:10px;text-align:right">Ações</th>
+      </tr></thead>
+      <tbody>
+        ${lista.map(r => `
+          <tr style="border-bottom:1px solid var(--border)">
+            <td style="padding:10px;font-weight:700">${esc(r.nome || '')}</td>
+            <td style="padding:10px">${esc(r.descricao || '–')}</td>
+            <td style="padding:10px;text-align:right;display:flex;gap:6px;justify-content:flex-end">
+              <button class="btn-sm" onclick="editarRegime('${esc(r.id)}')">✎ Editar</button>
+              <button class="btn-sm" style="color:var(--red)" onclick="removerRegime('${esc(r.id)}','${esc(r.nome)}')">🗑</button>
+            </td>
+          </tr>`).join('')}
+      </tbody>
+    </table>
+    <div style="margin-top:10px;font-size:11px;color:var(--muted);text-align:right">${lista.length} regime(s)</div>`;
+}
+
+function abrirModalRegime(reg = null) {
+  const r = reg || {};
+  const isEdit = !!reg;
+  const html = `
+    <div id="modal-reg" style="position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:300;display:flex;align-items:center;justify-content:center;padding:20px" onclick="if(event.target===this)fecharModalReg()">
+      <div style="background:#fff;width:100%;max-width:480px;border-radius:12px;padding:24px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+          <h2 style="font-size:16px;font-weight:800;color:var(--blue)">${isEdit ? '✎ Editar' : '+ Novo'} Regime de Cobrança</h2>
+          <button onclick="fecharModalReg()" style="background:none;border:none;font-size:24px;color:var(--muted);cursor:pointer">×</button>
+        </div>
+        <div id="reg-err" style="background:#FEE2E2;color:var(--red);border-radius:6px;padding:10px;margin-bottom:14px;font-size:13px;display:none"></div>
+
+        <div style="margin-bottom:12px">
+          <label class="lbl">Nome *</label>
+          <input id="reg-nome" type="text" value="${esc(r.nome || '')}" class="fld" placeholder="Ex: hora, diaria, empreito, metro">
+        </div>
+        <div style="margin-bottom:18px">
+          <label class="lbl">Descrição</label>
+          <input id="reg-desc" type="text" value="${esc(r.descricao || '')}" class="fld" placeholder="Descrição opcional">
+        </div>
+
+        <div style="display:flex;gap:8px">
+          <button onclick="fecharModalReg()" class="btn btn-secondary" style="flex:1">Cancelar</button>
+          <button onclick="salvarRegime('${esc(r.id || '')}')" class="btn btn-primary" style="flex:2">${isEdit ? 'Salvar' : 'Cadastrar'}</button>
+        </div>
+      </div>
+    </div>
+  `;
+  const div = document.createElement('div');
+  div.innerHTML = html;
+  document.body.appendChild(div.firstElementChild);
+}
+
+function fecharModalReg() {
+  const m = document.getElementById('modal-reg');
+  if (m) m.remove();
+}
+
+async function salvarRegime(id) {
+  const err = document.getElementById('reg-err');
+  err.style.display = 'none';
+  const payload = {
+    nome:      document.getElementById('reg-nome').value.trim(),
+    descricao: document.getElementById('reg-desc').value.trim() || null,
+  };
+  if (!payload.nome) {
+    err.textContent = 'Nome é obrigatório';
+    err.style.display = 'block';
+    return;
+  }
+  try {
+    if (id) {
+      await apiFetch('/operacional/api/regimes-cobranca/' + id, { method: 'PATCH', body: JSON.stringify(payload) });
+    } else {
+      await apiFetch('/operacional/api/regimes-cobranca', { method: 'POST', body: JSON.stringify(payload) });
+    }
+    fecharModalReg();
+    await carregarRegimes();
+  } catch (e) {
+    err.textContent = e.message;
+    err.style.display = 'block';
+  }
+}
+
+async function editarRegime(id) {
+  const r = (_regimes || []).find(x => x.id === id);
+  if (r) abrirModalRegime(r);
+}
+
+async function removerRegime(id, nome) {
+  if (!confirm(`Remover regime "${nome}"?`)) return;
+  try {
+    await apiFetch('/operacional/api/regimes-cobranca/' + id, { method: 'DELETE' });
+    await carregarRegimes();
   } catch (e) {
     alert('Erro: ' + e.message);
   }
