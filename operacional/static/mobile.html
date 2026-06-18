@@ -314,6 +314,8 @@ input,select,textarea{font-family:inherit;outline:none;border:none}
         <button id="op-tab-hist" class="nav-btn" style="border-bottom:3px solid transparent;color:var(--muted);flex:1;padding:12px" onclick="opTab('hist')">🕐 Histórico</button>
       </div>
       <div id="os-lista"></div>
+      <!-- Botão flutuante + Nova OS -->
+      <button id="btn-nova-os-fab" onclick="abrirModalNovaOS()" style="position:fixed;bottom:90px;right:16px;width:56px;height:56px;border-radius:50%;background:var(--orange);color:#fff;border:none;font-size:28px;font-weight:bold;box-shadow:0 4px 14px rgba(232,130,12,.4);cursor:pointer;z-index:50;display:none">+</button>
     </div>
 
     <!-- CHECKLIST -->
@@ -335,6 +337,60 @@ input,select,textarea{font-family:inherit;outline:none;border:none}
     <h2 style="font-size:16px;font-weight:800;color:var(--blue);margin-bottom:16px">Registrar Dia</h2>
     <div id="m-error" style="background:#FEE2E2;color:var(--red);border-radius:6px;padding:10px;margin-bottom:16px;font-size:13px;display:none"></div>
     <!-- Conteúdo do modal aqui (omitido por brevidade) -->
+  </div>
+</div>
+
+<!-- MODAL NOVA OS AVULSA -->
+<div id="modal-nova-os" style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.5);display:none;z-index:300;align-items:flex-end" onclick="if(event.target===this)fecharModalNovaOS()">
+  <div style="background:#fff;width:100%;border-radius:12px 12px 0 0;padding:24px;max-height:90dvh;overflow-y:auto">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+      <h2 style="font-size:16px;font-weight:800;color:var(--blue)">+ Nova OS avulsa</h2>
+      <button onclick="fecharModalNovaOS()" style="background:none;border:none;font-size:24px;color:var(--muted);cursor:pointer">×</button>
+    </div>
+    <div id="novaos-error" style="background:#FEE2E2;color:var(--red);border-radius:6px;padding:10px;margin-bottom:16px;font-size:13px;display:none"></div>
+
+    <div style="margin-bottom:14px">
+      <label style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:6px">Obra / Local *</label>
+      <input id="novaos-obra" type="text" placeholder="ex: Canteiro de obra Centro" style="width:100%;padding:12px;border:1.5px solid var(--border);border-radius:8px;font-size:14px">
+    </div>
+
+    <div style="margin-bottom:14px">
+      <label style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:6px">Cliente (opcional)</label>
+      <input id="novaos-cliente" type="text" placeholder="Nome do cliente" style="width:100%;padding:12px;border:1.5px solid var(--border);border-radius:8px;font-size:14px">
+    </div>
+
+    <div style="margin-bottom:14px">
+      <label style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:6px">Equipamento</label>
+      <select id="novaos-equipamento" style="width:100%;padding:12px;border:1.5px solid var(--border);border-radius:8px;font-size:14px">
+        <option value="">— selecionar —</option>
+      </select>
+    </div>
+
+    <div style="margin-bottom:14px">
+      <label style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:6px">Tipo de serviço</label>
+      <select id="novaos-tipo" style="width:100%;padding:12px;border:1.5px solid var(--border);border-radius:8px;font-size:14px">
+        <option value="">— selecionar —</option>
+      </select>
+    </div>
+
+    <div style="margin-bottom:14px">
+      <label style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:6px">Regime de cobrança</label>
+      <select id="novaos-regime" style="width:100%;padding:12px;border:1.5px solid var(--border);border-radius:8px;font-size:14px">
+        <option value="diaria">Diária</option>
+        <option value="hora">Por hora</option>
+        <option value="empreito">Empreito</option>
+      </select>
+    </div>
+
+    <div style="margin-bottom:20px">
+      <label style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:6px">Observação</label>
+      <textarea id="novaos-obs" rows="2" placeholder="Detalhes adicionais" style="width:100%;padding:12px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;resize:vertical"></textarea>
+    </div>
+
+    <div style="display:flex;gap:8px">
+      <button onclick="fecharModalNovaOS()" style="flex:1;padding:14px;border:1.5px solid var(--border);background:#fff;color:var(--text);border-radius:8px;font-weight:700;cursor:pointer">Cancelar</button>
+      <button id="btn-salvar-novaos" onclick="salvarNovaOSAvulsa()" style="flex:2;padding:14px;border:none;background:var(--orange);color:#fff;border-radius:8px;font-weight:700;cursor:pointer">Criar OS</button>
+    </div>
   </div>
 </div>
 
@@ -409,6 +465,9 @@ function fazerLogout() {
   document.getElementById('login-err').style.display = 'none';
   document.getElementById('field-login').value = '';
   document.getElementById('field-pass').value = '';
+  // Esconder FAB
+  const fab = document.getElementById('btn-nova-os-fab');
+  if (fab) fab.style.display = 'none';
   // Resetar visibilidade de todas as abas
   document.querySelectorAll('.bottom-nav .nav-btn').forEach(b => b.style.display = '');
 }
@@ -424,6 +483,10 @@ function togglePass() {
 function ir(nome) {
   document.querySelectorAll('.mod-section').forEach(s => s.classList.remove('active'));
   document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+
+  // FAB de Nova OS visível só na aba Operacional
+  const fab = document.getElementById('btn-nova-os-fab');
+  if (fab) fab.style.display = (nome === 'Op') ? 'block' : 'none';
 
   if (nome === 'Jard') {
     document.getElementById('sec-jard').classList.add('active');
@@ -488,9 +551,15 @@ async function carregarOSApp() {
       return;
     }
 
-    const osLista = dados.os || [];
+    // API retorna ARRAY direto de OS, ou objeto com .os (fallback)
+    const osLista = Array.isArray(dados) ? dados : (dados.os || []);
     if (osLista.length === 0) {
-      el.innerHTML = '<div class="empty"><div class="empty-icon">📋</div><div class="empty-txt">Nenhuma OS aberta</div><div class="empty-sub">Clique no botão + para abrir uma nova</div></div>';
+      el.innerHTML = `
+        <div class="empty"><div class="empty-icon">📋</div><div class="empty-txt">Nenhuma OS aberta</div><div class="empty-sub">Clique no botão + para abrir uma nova</div></div>
+        <div style="text-align:center;padding:24px">
+          <button class="os-btn" style="background:var(--orange);font-size:16px;padding:14px 28px" onclick="abrirModalNovaOS()">+ Nova OS avulsa</button>
+        </div>
+      `;
       return;
     }
 
@@ -520,6 +589,110 @@ async function carregarOSApp() {
     el.innerHTML = html;
   } catch (e) {
     el.innerHTML = `<div class="empty"><div class="empty-icon">❌</div><div class="empty-txt">Erro</div><div class="empty-sub">${e.message}</div></div>`;
+  }
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// NOVA OS AVULSA (operador cria do campo)
+// ──────────────────────────────────────────────────────────────────────────────
+async function abrirModalNovaOS() {
+  document.getElementById('novaos-error').style.display = 'none';
+  document.getElementById('novaos-obra').value = '';
+  document.getElementById('novaos-cliente').value = '';
+  document.getElementById('novaos-obs').value = '';
+  document.getElementById('novaos-regime').value = 'diaria';
+  await carregarListasNovaOS();
+  document.getElementById('modal-nova-os').style.display = 'flex';
+}
+
+function fecharModalNovaOS() {
+  document.getElementById('modal-nova-os').style.display = 'none';
+}
+
+async function carregarListasNovaOS() {
+  const token = localStorage.getItem('garra_token');
+  const headers = { 'Authorization': 'Bearer ' + token };
+  try {
+    // Equipamentos
+    const eqRes = await fetch('/operacional/api/equipamentos', { headers });
+    if (eqRes.ok) {
+      const eqs = await eqRes.json();
+      const selEq = document.getElementById('novaos-equipamento');
+      selEq.innerHTML = '<option value="">— selecionar —</option>';
+      (eqs || []).forEach(e => {
+        selEq.innerHTML += `<option value="${e.id}">${e.codigo} — ${e.descricao || ''}</option>`;
+      });
+    }
+    // Tipos de serviço
+    const tsRes = await fetch('/operacional/api/tipos-servico', { headers });
+    if (tsRes.ok) {
+      const tipos = await tsRes.json();
+      const selTs = document.getElementById('novaos-tipo');
+      selTs.innerHTML = '<option value="">— selecionar —</option>';
+      (tipos || []).forEach(t => {
+        selTs.innerHTML += `<option value="${t.id}">${t.nome}</option>`;
+      });
+    }
+  } catch (e) {
+    console.warn('Falha ao carregar listas para nova OS:', e.message);
+  }
+}
+
+async function salvarNovaOSAvulsa() {
+  const err = document.getElementById('novaos-error');
+  err.style.display = 'none';
+  const btn = document.getElementById('btn-salvar-novaos');
+
+  const obra        = document.getElementById('novaos-obra').value.trim();
+  const cliente     = document.getElementById('novaos-cliente').value.trim();
+  const equipId     = document.getElementById('novaos-equipamento').value;
+  const tipoId      = document.getElementById('novaos-tipo').value;
+  const regime      = document.getElementById('novaos-regime').value;
+  const observacao  = document.getElementById('novaos-obs').value.trim();
+
+  if (!obra) {
+    err.textContent = 'Obra / Local é obrigatório';
+    err.style.display = 'block';
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = 'Criando...';
+
+  const payload = {
+    obra,
+    cliente_nome: cliente || null,
+    equipamento_id: equipId || null,
+    tipo_servico_id: tipoId || null,
+    regime_cobranca: regime,
+    observacao: observacao || null
+  };
+
+  try {
+    const result = await GarraDB.postWithQueue(
+      '/operacional/api/os/avulsa',
+      payload,
+      { retries: 5, retryDelay: 30000 }
+    );
+
+    if (result.success) {
+      if (typeof toast === 'function') toast('✓ OS criada', 'success');
+      else alert('OS criada com sucesso');
+      fecharModalNovaOS();
+      await carregarOSApp();
+    } else if (result.queued) {
+      if (typeof toast === 'function') toast('⚠️ Offline — OS será sincronizada', 'info');
+      else alert('Sem conexão — OS salva localmente e será enviada quando voltar online.');
+      fecharModalNovaOS();
+    } else {
+      throw new Error(result.error || 'Falha ao criar OS');
+    }
+  } catch (e) {
+    err.textContent = e.message || 'Erro ao criar OS';
+    err.style.display = 'block';
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Criar OS';
   }
 }
 
