@@ -1306,12 +1306,17 @@ async def jard_url_foto(fid: int, payload=Depends(verificar_token_jard)):
 @app.post("/jardinagem/api/relatorios/km")
 async def jard_criar_km(request: Request, payload=Depends(verificar_token_jard)):
     d = await request.json()
-    semana_id = d.get("semana_id")
-    if not semana_id:
-        hoje = date.today().isoformat()
-        row = jard_query("SELECT id FROM jardinagem.semanas WHERE data_ini<=%s AND data_fim>=%s LIMIT 1", (hoje,hoje), fetch="one")
-        if not row: raise HTTPException(status_code=404, detail="Sem semana ativa")
+    data_km = d.get("data") or date.today().isoformat()
+    row = jard_query("SELECT id FROM jardinagem.semanas WHERE data_ini<=%s AND data_fim>=%s LIMIT 1", (data_km,data_km), fetch="one")
+    if row:
         semana_id = row["id"]
+    else:
+        semana_id = d.get("semana_id")
+        if not semana_id:
+            hoje = date.today().isoformat()
+            row2 = jard_query("SELECT id FROM jardinagem.semanas WHERE data_ini<=%s AND data_fim>=%s LIMIT 1", (hoje,hoje), fetch="one")
+            if not row2: raise HTTPException(status_code=404, detail="Sem semana ativa")
+            semana_id = row2["id"]
     local_nome  = (d.get("local_nome") or "").strip()
     km_ini      = d.get("km_inicial"); km_fin = d.get("km_final")
     if not local_nome: raise HTTPException(status_code=400, detail="local_nome obrigatório")
@@ -1324,7 +1329,7 @@ async def jard_criar_km(request: Request, payload=Depends(verificar_token_jard))
     row = jard_query_id("""INSERT INTO jardinagem.relatorios_diarios
         (semana_id,usuario_id,data,local_nome,km_inicial,km_final,hora_inicio,hora_fim,observacao,offline_id)
         VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
-        (semana_id,payload["sub"],d.get("data",date.today().isoformat()),local_nome,
+        (semana_id,payload["sub"],data_km,local_nome,
          float(km_ini),float(km_fin),d.get("hora_inicio"),d.get("hora_fim"),d.get("observacao",""),offline_id))
     return {"ok": True, "id": row["id"]}
 
@@ -1336,16 +1341,28 @@ async def jard_editar_km(km_id: int, request: Request, payload=Depends(verificar
     if not local_nome: raise HTTPException(status_code=400, detail="local_nome obrigatório")
     if km_ini is None or km_fin is None: raise HTTPException(status_code=400, detail="km_inicial e km_final obrigatórios")
     if float(km_fin) < float(km_ini): raise HTTPException(status_code=400, detail="km_final não pode ser menor que km_inicial")
-    
-    # Atualiza o registro
-    jard_query("""UPDATE jardinagem.relatorios_diarios 
-        SET data=%s, local_nome=%s, km_inicial=%s, km_final=%s, 
-            hora_inicio=%s, hora_fim=%s, observacao=%s
-        WHERE id=%s""",
-        (d.get("data",date.today().isoformat()), local_nome,
-         float(km_ini), float(km_fin),
-         d.get("hora_inicio"), d.get("hora_fim"), d.get("observacao",""),
-         km_id), fetch="none")
+
+    data_km = d.get("data", date.today().isoformat())
+    row = jard_query("SELECT id FROM jardinagem.semanas WHERE data_ini<=%s AND data_fim>=%s LIMIT 1", (data_km,data_km), fetch="one")
+
+    if row:
+        jard_query("""UPDATE jardinagem.relatorios_diarios 
+            SET data=%s, semana_id=%s, local_nome=%s, km_inicial=%s, km_final=%s, 
+                hora_inicio=%s, hora_fim=%s, observacao=%s
+            WHERE id=%s""",
+            (data_km, row["id"], local_nome,
+             float(km_ini), float(km_fin),
+             d.get("hora_inicio"), d.get("hora_fim"), d.get("observacao",""),
+             km_id), fetch="none")
+    else:
+        jard_query("""UPDATE jardinagem.relatorios_diarios 
+            SET data=%s, local_nome=%s, km_inicial=%s, km_final=%s, 
+                hora_inicio=%s, hora_fim=%s, observacao=%s
+            WHERE id=%s""",
+            (data_km, local_nome,
+             float(km_ini), float(km_fin),
+             d.get("hora_inicio"), d.get("hora_fim"), d.get("observacao",""),
+             km_id), fetch="none")
     return {"ok": True, "id": km_id}
 
 @app.delete("/jardinagem/api/relatorios/{km_id}")
@@ -1454,16 +1471,17 @@ async def jard_clientes(payload=Depends(verificar_token_jard)):
 @app.get("/jardinagem/api/km/mes/{mes_id}")
 async def jard_km_mes(mes_id: int, payload=Depends(verificar_token_jard)):
     """Retorna todos os KMs do mês em 1 chamada — evita N chamadas /preview."""
+    m = jard_query("SELECT ano, mes FROM jardinagem.meses WHERE id=%s", (mes_id,), fetch="one")
+    if not m: raise HTTPException(status_code=404, detail="Mês não encontrado")
     kms_raw = jard_query("""
         SELECT r.id, r.data, r.local_nome, r.km_inicial, r.km_final,
                r.hora_inicio, r.hora_fim, r.observacao, r.responsavel,
                u.nome as responsavel_nome
         FROM jardinagem.relatorios_diarios r
-        JOIN jardinagem.semanas s ON s.id = r.semana_id
         JOIN public.usuarios_garra u ON u.id = r.usuario_id
-        WHERE s.mes_id = %s
+        WHERE EXTRACT(YEAR FROM r.data) = %s AND EXTRACT(MONTH FROM r.data) = %s
         ORDER BY r.data, r.criado_em
-    """, (mes_id,))
+    """, (m["ano"], m["mes"]))
     kms = [{"id": r["id"],
             "data": r["data"].strftime("%d/%m/%Y") if r["data"] else "",
             "local_nome": r["local_nome"] or "",
@@ -1517,7 +1535,7 @@ async def jard_preview(semana_id: int, payload=Depends(verificar_token_jard)):
                       "url_antes":urls.get(f"{pid}_antes",""),
                       "url_depois":urls.get(f"{pid}_depois","")})
     kms_raw = jard_query("""SELECT r.*,u.nome as responsavel_nome FROM jardinagem.relatorios_diarios r
-        JOIN public.usuarios_garra u ON u.id=r.usuario_id WHERE r.semana_id=%s ORDER BY r.data,r.criado_em""", (semana_id,))
+        JOIN public.usuarios_garra u ON u.id=r.usuario_id WHERE r.data>=%s AND r.data<=%s ORDER BY r.data,r.criado_em""", (sem["data_ini"],sem["data_fim"]))
     kms = [{"id":r["id"],"data":r["data"].strftime("%d/%m/%Y") if r["data"] else "","local_nome":r["local_nome"] or "",
             "km_inicial":float(r["km_inicial"] or 0),"km_final":float(r["km_final"] or 0),
             "hora_inicio":str(r["hora_inicio"]) if r["hora_inicio"] else "",
@@ -1590,7 +1608,7 @@ async def jard_excel_km(semana_id: int, payload=Depends(verificar_token_jard)):
     if not sem: raise HTTPException(status_code=404, detail="Semana não encontrada")
     semana_dict = {"label":sem["label"],"data_ini":sem["data_ini"].strftime("%d/%m/%Y") if sem["data_ini"] else "","data_fim":sem["data_fim"].strftime("%d/%m/%Y") if sem["data_fim"] else ""}
     kms_raw = jard_query("""SELECT r.*,u.nome as responsavel_nome FROM jardinagem.relatorios_diarios r
-        JOIN public.usuarios_garra u ON u.id=r.usuario_id WHERE r.semana_id=%s ORDER BY r.data,r.criado_em""", (semana_id,))
+        JOIN public.usuarios_garra u ON u.id=r.usuario_id WHERE r.data>=%s AND r.data<=%s ORDER BY r.data,r.criado_em""", (sem["data_ini"],sem["data_fim"]))
     relatorios = [{"data":r["data"].strftime("%d/%m/%Y") if r["data"] else "","local":r["local_nome"] or "",
                    "km_ini":float(r["km_inicial"] or 0),"km_fin":float(r["km_final"] or 0),
                    "hr_ini":str(r["hora_inicio"]) if r["hora_inicio"] else "","hr_fim":str(r["hora_fim"]) if r["hora_fim"] else "",
@@ -1624,7 +1642,7 @@ async def jard_enviar_email(semana_id: int, payload=Depends(verificar_token_jard
         pares.append({"codigo_a":p["codigo_a"],"codigo_d":p["codigo_d"],"local_nome":p["local_nome"] or "",
                       "foto_antes":fp.get("antes"), "foto_depois":fp.get("depois")})
     kms_raw = jard_query("""SELECT r.*,u.nome as responsavel_nome FROM jardinagem.relatorios_diarios r
-        JOIN public.usuarios_garra u ON u.id=r.usuario_id WHERE r.semana_id=%s ORDER BY r.data,r.criado_em""", (semana_id,))
+        JOIN public.usuarios_garra u ON u.id=r.usuario_id WHERE r.data>=%s AND r.data<=%s ORDER BY r.data,r.criado_em""", (sem["data_ini"],sem["data_fim"]))
     relatorios = [{"data":r["data"].strftime("%d/%m/%Y") if r["data"] else "","local":r["local_nome"] or "",
                    "km_ini":float(r["km_inicial"] or 0),"km_fin":float(r["km_final"] or 0),
                    "hr_ini":str(r["hora_inicio"]) if r["hora_inicio"] else "","hr_fim":str(r["hora_fim"]) if r["hora_fim"] else "",
