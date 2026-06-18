@@ -948,7 +948,9 @@ async function salvarParte(adicionarMais) {
   }
 
   const sel = document.getElementById('m-equipamento');
-  const cat = (sel.options[sel.selectedIndex]?.getAttribute('data-cat') || '').toLowerCase();
+  const catEquip = (sel.options[sel.selectedIndex]?.getAttribute('data-cat') || '').toLowerCase();
+  // Prioridade: medição do TIPO DE SERVIÇO da OS > medição do equipamento
+  const cat = (window._osTipoMedicao || catEquip).toLowerCase();
   const isMetros   = cat === 'metro' || cat === 'metros' || cat === 'm' || cat.includes('metro');
   const isCaminhao = !isMetros && (
                        cat === 'km'
@@ -1194,7 +1196,14 @@ async function abrirModalParte(osId) {
     selEq.innerHTML += `<option value="${e.id}" data-cat="${cat}">${e.codigo} — ${e.descricao || ''}</option>`;
   });
   // Pré-selecionar equipamento da OS
-  if (osData?.equipamento_id) selEq.value = osData.equipamento_id;
+  if (osData?.equipamento_id) {
+    selEq.value = osData.equipamento_id;
+    // Se o equipamento da OS não está mais na lista ativa, adiciona como opção
+    if (selEq.value !== osData.equipamento_id && osData.equipamento_codigo) {
+      selEq.innerHTML += `<option value="${osData.equipamento_id}" data-cat="${(osData.equipamento_medicao||'').toLowerCase()}" selected>${osData.equipamento_codigo} — ${osData.equipamento_descricao || ''}</option>`;
+      selEq.value = osData.equipamento_id;
+    }
+  }
 
   // Operadores — selects mostra todos cadastrados
   const selOp = document.getElementById('m-operador');
@@ -1206,14 +1215,19 @@ async function abrirModalParte(osId) {
   // 1) Operador definido na OS  2) Usuário logado (Gilson)
   if (osData?.operador_id) {
     selOp.value = osData.operador_id;
-  } else if (USUARIO?.id) {
-    selOp.value = USUARIO.id;
-    // Se não estiver na lista (admin/luana), adiciona como opção
-    if (!selOp.value && USUARIO?.id) {
-      selOp.innerHTML += `<option value="${USUARIO.id}" selected>${USUARIO.nome || 'Eu'}</option>`;
-      selOp.value = USUARIO.id;
-    }
   }
+  if (!selOp.value && USUARIO?.id) {
+    // Se o logado não está na lista, adiciona
+    if (!Array.from(selOp.options).some(o => o.value === USUARIO.id)) {
+      selOp.innerHTML += `<option value="${USUARIO.id}">${USUARIO.nome || 'Eu'}</option>`;
+    }
+    selOp.value = USUARIO.id;
+  }
+
+  // Guardar medicao do TIPO DE SERVIÇO da OS (tem prioridade sobre medicao do equipamento)
+  // Ex: serviço "Manilhamento por metro" → tipo_servico_medicao='metros'
+  //     mesmo que o equipamento seja medido por horímetro, o registro deve ser por metros
+  window._osTipoMedicao = (osData?.tipo_servico_medicao || '').toLowerCase();
 
   // Atualiza visibilidade dos blocos (horímetro/km/metros/trajeto)
   atualizarCamposMedicao();
@@ -1221,7 +1235,9 @@ async function abrirModalParte(osId) {
 
 function atualizarCamposMedicao() {
   const sel = document.getElementById('m-equipamento');
-  const cat = (sel.options[sel.selectedIndex]?.getAttribute('data-cat') || '').toLowerCase();
+  const catEquip = (sel.options[sel.selectedIndex]?.getAttribute('data-cat') || '').toLowerCase();
+  // Prioridade: medição do TIPO DE SERVIÇO da OS > medição do equipamento
+  const cat = (window._osTipoMedicao || catEquip).toLowerCase();
 
   // Detecta o tipo: metros / km (caminhão) / horímetro (máquina)
   const isMetros   = cat === 'metro' || cat === 'metros' || cat === 'm' || cat.includes('metro');
