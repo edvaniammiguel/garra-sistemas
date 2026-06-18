@@ -530,66 +530,87 @@ function carregarIframeChecklist(tab) {
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
-// OPERACIONAL — CARREGAROSAPP COM OFFLINE
+// OPERACIONAL — CARREGAROSAPP — Online-first com fallback IDB
 // ──────────────────────────────────────────────────────────────────────────────
 async function carregarOSApp() {
   const el = document.getElementById('os-lista');
   el.innerHTML = '<div class="loading"><span class="spin"></span></div>';
 
+  let dados = null;
+  let viaCache = false;
+
+  // 1. Tentar via fetch direto (online-first)
   try {
-    // ✅ OFFLINE-FIRST com GarraDB.fetchWithFallback
-    const dados = await GarraDB.fetchWithFallback(
-      '/operacional/api/minhas-os',
-      {
-        cacheKey: 'os_minhas_' + (USUARIO?.id || 'anonimo'),
-        cacheTTL: 1800  // 30 min
-      }
-    );
-
-    if (!dados) {
-      el.innerHTML = '<div class="empty"><div class="empty-icon">📡</div><div class="empty-txt">Sem conexão</div><div class="empty-sub">Nenhum cache disponível</div></div>';
-      return;
-    }
-
-    // API retorna ARRAY direto de OS, ou objeto com .os (fallback)
-    const osLista = Array.isArray(dados) ? dados : (dados.os || []);
-    if (osLista.length === 0) {
-      el.innerHTML = `
-        <div class="empty"><div class="empty-icon">📋</div><div class="empty-txt">Nenhuma OS aberta</div><div class="empty-sub">Clique no botão + para abrir uma nova</div></div>
-        <div style="text-align:center;padding:24px">
-          <button class="os-btn" style="background:var(--orange);font-size:16px;padding:14px 28px" onclick="abrirModalNovaOS()">+ Nova OS avulsa</button>
-        </div>
-      `;
-      return;
-    }
-
-    let html = '';
-    osLista.forEach(os => {
-      html += `
-        <div class="os-card">
-          <div class="os-numero">${os.numero}</div>
-          <div class="os-cliente">${os.cliente_nome || '(Cliente avulso)'}</div>
-          <div class="os-info">
-            <div class="os-info-item">
-              <div class="os-info-label">Local</div>
-              <div class="os-info-value" style="font-size:12px">${os.local_servico || '–'}</div>
-            </div>
-            <div class="os-info-item">
-              <div class="os-info-label">Regime</div>
-              <div class="os-info-value" style="font-size:12px">${os.regime_cobranca || '–'}</div>
-            </div>
-          </div>
-          <div class="os-btns">
-            <button class="os-btn" onclick="abrirModalParte('${os.id}')">📝 Registrar</button>
-            <button class="os-btn" style="background:var(--blue)" onclick="verPartes('${os.id}', '${os.numero}')">👁 Ver</button>
-          </div>
-        </div>
-      `;
+    const token = localStorage.getItem('garra_token') || '';
+    const r = await fetch('/operacional/api/minhas-os', {
+      headers: { 'Authorization': 'Bearer ' + token }
     });
-    el.innerHTML = html;
-  } catch (e) {
-    el.innerHTML = `<div class="empty"><div class="empty-icon">❌</div><div class="empty-txt">Erro</div><div class="empty-sub">${e.message}</div></div>`;
+    if (r.ok) {
+      dados = await r.json();
+      // Cachear em background (não bloqueia se falhar)
+      if (typeof GarraDB !== 'undefined') {
+        GarraDB._cacheSet('os_minhas_' + (USUARIO?.id || 'anonimo'), dados, 1800).catch(() => {});
+      }
+    } else if (r.status === 401) {
+      el.innerHTML = '<div class="empty"><div class="empty-icon">🔒</div><div class="empty-txt">Sessão expirada</div><div class="empty-sub">Faça login novamente</div></div>';
+      return;
+    }
+  } catch (err) {
+    console.warn('[OS] Rede falhou, tentando cache:', err.message);
   }
+
+  // 2. Fallback para cache do IDB se rede falhou
+  if (!dados && typeof GarraDB !== 'undefined') {
+    try {
+      dados = await GarraDB._cacheGet('os_minhas_' + (USUARIO?.id || 'anonimo'));
+      if (dados) viaCache = true;
+    } catch (e) {
+      console.warn('[OS] Cache também falhou:', e.message);
+    }
+  }
+
+  if (!dados) {
+    el.innerHTML = '<div class="empty"><div class="empty-icon">📡</div><div class="empty-txt">Sem conexão</div><div class="empty-sub">Nenhum cache disponível</div></div>';
+    return;
+  }
+
+  // API retorna ARRAY direto de OS, ou objeto com .os (fallback)
+  const osLista = Array.isArray(dados) ? dados : (dados.os || []);
+  if (osLista.length === 0) {
+    el.innerHTML = `
+      <div class="empty">
+        <div class="empty-icon">📋</div>
+        <div class="empty-txt">Nenhuma OS aberta</div>
+        <div class="empty-sub">Clique no botão + abaixo para abrir uma nova</div>
+      </div>
+    `;
+    return;
+  }
+
+  let html = viaCache ? '<div style="background:#FFF7ED;color:#EA580C;padding:8px;text-align:center;font-size:12px;font-weight:700">⚠️ Modo offline — exibindo dados em cache</div>' : '';
+  osLista.forEach(os => {
+    html += `
+      <div class="os-card">
+        <div class="os-numero">${os.numero}</div>
+        <div class="os-cliente">${os.cliente_nome || os.obra || '(Cliente avulso)'}</div>
+        <div class="os-info">
+          <div class="os-info-item">
+            <div class="os-info-label">Equipamento</div>
+            <div class="os-info-value" style="font-size:12px">${os.equipamento_codigo || '–'}</div>
+          </div>
+          <div class="os-info-item">
+            <div class="os-info-label">Regime</div>
+            <div class="os-info-value" style="font-size:12px">${os.regime_cobranca || '–'}</div>
+          </div>
+        </div>
+        <div class="os-btns">
+          <button class="os-btn" onclick="abrirModalParte('${os.id}')">📝 Registrar</button>
+          <button class="os-btn" style="background:var(--blue)" onclick="verPartes('${os.id}', '${os.numero}')">👁 Ver</button>
+        </div>
+      </div>
+    `;
+  });
+  el.innerHTML = html;
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -669,23 +690,42 @@ async function salvarNovaOSAvulsa() {
   };
 
   try {
-    const result = await GarraDB.postWithQueue(
-      '/operacional/api/os/avulsa',
-      payload,
-      { retries: 5, retryDelay: 30000 }
-    );
+    const token = localStorage.getItem('garra_token') || '';
+    const r = await fetch('/operacional/api/os/avulsa', {
+      method: 'POST',
+      headers: {
+        'Authorization': 'Bearer ' + token,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(payload)
+    });
 
-    if (result.success) {
-      if (typeof toast === 'function') toast('✓ OS criada', 'success');
-      else alert('OS criada com sucesso');
+    if (r.ok) {
+      const data = await r.json();
+      if (typeof toast === 'function') toast('✓ OS criada: ' + (data?.os?.numero || ''), 'success');
+      else alert('OS criada: ' + (data?.os?.numero || 'sucesso'));
       fecharModalNovaOS();
       await carregarOSApp();
-    } else if (result.queued) {
-      if (typeof toast === 'function') toast('⚠️ Offline — OS será sincronizada', 'info');
-      else alert('Sem conexão — OS salva localmente e será enviada quando voltar online.');
-      fecharModalNovaOS();
     } else {
-      throw new Error(result.error || 'Falha ao criar OS');
+      const errData = await r.json().catch(() => ({}));
+      // Se offline ou erro de rede, tentar enfileirar
+      if (r.status >= 500 || !r.status) {
+        // tentativa de fallback offline
+        if (typeof GarraDB !== 'undefined') {
+          try {
+            await GarraDB.postWithQueue(
+              '/operacional/api/os/avulsa',
+              payload,
+              { retries: 5, retryDelay: 30000, dedup: false }
+            );
+            if (typeof toast === 'function') toast('⚠️ Salvo offline — enviará quando voltar', 'info');
+            else alert('Sem conexão — OS será enviada quando voltar online.');
+            fecharModalNovaOS();
+            return;
+          } catch (qe) { /* prossegue para erro */ }
+        }
+      }
+      throw new Error(errData.detail || `Erro HTTP ${r.status}`);
     }
   } catch (e) {
     err.textContent = e.message || 'Erro ao criar OS';
