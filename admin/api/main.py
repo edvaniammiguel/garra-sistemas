@@ -2750,6 +2750,304 @@ async def op_criar_os_avulsa(req: Request, payload=Depends(verificar_token)):
     )
     return {"ok": True, "os": dict(nova) if nova else {"numero": numero}}
 
+# ── CONTROLE MENSAL ───────────────────────────────────────────────────────────
+
+@app.get("/operacional/api/controle-mensal")
+async def op_controle_mensal(
+    mes: int, ano: int,
+    equipamento_id: str = None,
+    operador_id: str = None,
+    _auth=Depends(verificar_gestor)
+):
+    """Retorna partes diárias do mês para preview do controle mensal."""
+    filtros = ["pd.ativo=true", "EXTRACT(MONTH FROM pd.data)=%s", "EXTRACT(YEAR FROM pd.data)=%s"]
+    params = [mes, ano]
+
+    if equipamento_id:
+        filtros.append("pd.equipamento_id=%s")
+        params.append(equipamento_id)
+    if operador_id:
+        filtros.append("pd.operador_id=%s")
+        params.append(operador_id)
+
+    where = " AND ".join(filtros)
+
+    rows = jard_query(f"""
+        SELECT pd.id, pd.data, pd.tipo_medicao,
+               pd.horimetro_inicial, pd.horimetro_final, pd.horas_trabalhadas, pd.horas_cobradas,
+               pd.km_inicial, pd.km_final, pd.km_percorrido,
+               pd.qtd_metros, pd.qtd_viagens,
+               pd.hora_inicio, pd.hora_fim,
+               pd.por_conta_de, pd.observacao, pd.fechado,
+               pd.equipamento_id, pd.operador_id, pd.os_id,
+               e.codigo AS equipamento_codigo, e.descricao AS equipamento_descricao,
+               e.categoria AS equipamento_categoria, e.medicao AS equipamento_medicao,
+               u.nome AS operador_nome,
+               os.numero AS os_numero, os.obra AS os_obra, os.regime_cobranca,
+               COALESCE(c.nome, os.cliente_nome_avulso) AS cliente_nome
+        FROM operacional.partes_diarias pd
+        LEFT JOIN operacional.equipamentos e ON e.id = pd.equipamento_id
+        LEFT JOIN public.usuarios_garra u    ON u.id = pd.operador_id
+        LEFT JOIN operacional.ordens_servico os ON os.id = pd.os_id
+        LEFT JOIN public.clientes_garra c    ON c.id = os.cliente_id
+        WHERE {where}
+        ORDER BY pd.data, e.codigo, u.nome
+    """, tuple(params))
+
+    # Listar equipamentos e operadores do mês (para filtros)
+    equipamentos = {}
+    operadores = {}
+    partes = []
+    total_horas_trab = 0
+    total_horas_cobr = 0
+    total_km = 0
+    total_metros = 0
+    total_viagens = 0
+    dias_trabalhados = set()
+
+    for r in (rows or []):
+        d = dict(r)
+        # Converter date para string ISO
+        if d.get("data"):
+            d["data"] = str(d["data"])
+        if d.get("hora_inicio"):
+            d["hora_inicio"] = str(d["hora_inicio"])
+        if d.get("hora_fim"):
+            d["hora_fim"] = str(d["hora_fim"])
+
+        partes.append(d)
+        dias_trabalhados.add(d["data"])
+        total_horas_trab += float(d.get("horas_trabalhadas") or 0)
+        total_horas_cobr += float(d.get("horas_cobradas") or 0)
+        total_km += float(d.get("km_percorrido") or 0)
+        total_metros += float(d.get("qtd_metros") or 0)
+        total_viagens += float(d.get("qtd_viagens") or 0)
+
+        if d.get("equipamento_id") and d.get("equipamento_codigo"):
+            equipamentos[d["equipamento_id"]] = {
+                "id": d["equipamento_id"],
+                "codigo": d["equipamento_codigo"],
+                "descricao": d["equipamento_descricao"]
+            }
+        if d.get("operador_id") and d.get("operador_nome"):
+            operadores[d["operador_id"]] = {
+                "id": d["operador_id"],
+                "nome": d["operador_nome"]
+            }
+
+    import calendar
+    dias_no_mes = calendar.monthrange(ano, mes)[1]
+
+    return {
+        "mes": mes, "ano": ano,
+        "dias_no_mes": dias_no_mes,
+        "total_registros": len(partes),
+        "dias_trabalhados": len(dias_trabalhados),
+        "dias_parados": dias_no_mes - len(dias_trabalhados),
+        "total_horas_trabalhadas": round(total_horas_trab, 2),
+        "total_horas_cobradas": round(total_horas_cobr, 2),
+        "total_km": round(total_km, 2),
+        "total_metros": round(total_metros, 2),
+        "total_viagens": int(total_viagens),
+        "equipamentos": list(equipamentos.values()),
+        "operadores": list(operadores.values()),
+        "partes": partes
+    }
+
+
+@app.get("/operacional/api/controle-mensal/excel")
+async def op_controle_mensal_excel(
+    mes: int, ano: int,
+    view: str = "equipamento",
+    equipamento_id: str = None,
+    operador_id: str = None,
+    _auth=Depends(verificar_gestor)
+):
+    """Gera Excel do controle mensal — 1 aba por equipamento ou por colaborador."""
+    import openpyxl
+    from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
+    from openpyxl.utils import get_column_letter
+    import io, calendar
+
+    # Buscar dados
+    dados = await op_controle_mensal(mes, ano, equipamento_id, operador_id, _auth=_auth)
+    partes = dados["partes"]
+
+    wb = openpyxl.Workbook()
+    wb.remove(wb.active)
+
+    meses_pt = ['','Janeiro','Fevereiro','Março','Abril','Maio','Junho',
+                'Julho','Agosto','Setembro','Outubro','Novembro','Dezembro']
+    titulo_mes = f"{meses_pt[mes]}/{ano}"
+
+    header_font = Font(bold=True, size=10, color="FFFFFF")
+    header_fill = PatternFill(start_color="1A2A5E", end_color="1A2A5E", fill_type="solid")
+    header_align = Alignment(horizontal="center", vertical="center", wrap_text=True)
+    cell_align = Alignment(vertical="center")
+    border = Border(
+        left=Side(style='thin', color='CBD5E1'),
+        right=Side(style='thin', color='CBD5E1'),
+        top=Side(style='thin', color='CBD5E1'),
+        bottom=Side(style='thin', color='CBD5E1')
+    )
+    total_fill = PatternFill(start_color="FFF7ED", end_color="FFF7ED", fill_type="solid")
+    total_font = Font(bold=True, size=10)
+
+    if view == "equipamento":
+        # Agrupar por equipamento
+        grupos = {}
+        for p in partes:
+            key = p.get("equipamento_id") or "sem_equipamento"
+            label = f"{p.get('equipamento_codigo','?')} — {p.get('equipamento_descricao','')}"
+            if key not in grupos:
+                grupos[key] = {"label": label, "partes": []}
+            grupos[key]["partes"].append(p)
+    else:
+        # Agrupar por operador
+        grupos = {}
+        for p in partes:
+            key = p.get("operador_id") or "sem_operador"
+            label = p.get("operador_nome") or "Sem operador"
+            if key not in grupos:
+                grupos[key] = {"label": label, "partes": []}
+            grupos[key]["partes"].append(p)
+
+    if not grupos:
+        # Aba vazia
+        ws = wb.create_sheet("Sem dados")
+        ws["A1"] = f"Nenhum registro encontrado para {titulo_mes}"
+    else:
+        for key, grupo in grupos.items():
+            nome_aba = grupo["label"][:31]  # Excel limita 31 chars
+            ws = wb.create_sheet(nome_aba)
+
+            # Título
+            ws.merge_cells('A1:J1')
+            ws['A1'] = f"CONTROLE MENSAL — {titulo_mes}"
+            ws['A1'].font = Font(bold=True, size=14, color="1A2A5E")
+            ws.merge_cells('A2:J2')
+            ws['A2'] = grupo["label"]
+            ws['A2'].font = Font(bold=True, size=11, color="E8820C")
+
+            # Headers
+            headers = ['Data','OS','Cliente','Operador' if view=='equipamento' else 'Equipamento',
+                       'H.Inicial','H.Final','Horas Trab.','Horas Cobr.','Regime','Por conta']
+            for col, h in enumerate(headers, 1):
+                cell = ws.cell(row=4, column=col, value=h)
+                cell.font = header_font
+                cell.fill = header_fill
+                cell.alignment = header_align
+                cell.border = border
+
+            row = 5
+            soma_trab = 0
+            soma_cobr = 0
+            dias_set = set()
+
+            for p in sorted(grupo["partes"], key=lambda x: x.get("data","")):
+                data_fmt = ""
+                if p.get("data"):
+                    try:
+                        from datetime import date as dt_date
+                        d = dt_date.fromisoformat(p["data"])
+                        data_fmt = d.strftime("%d/%m/%Y")
+                    except Exception:
+                        data_fmt = p["data"]
+
+                med = p.get("tipo_medicao") or p.get("equipamento_medicao") or "horimetro"
+                if med == "metros":
+                    h_ini = ""
+                    h_fin = ""
+                    h_trab = float(p.get("qtd_metros") or 0)
+                    h_cobr = float(p.get("qtd_metros") or 0)
+                elif med == "km":
+                    h_ini = float(p.get("km_inicial") or 0)
+                    h_fin = float(p.get("km_final") or 0)
+                    h_trab = float(p.get("km_percorrido") or 0)
+                    h_cobr = float(p.get("km_percorrido") or 0)
+                else:
+                    h_ini = float(p.get("horimetro_inicial") or 0)
+                    h_fin = float(p.get("horimetro_final") or 0)
+                    h_trab = float(p.get("horas_trabalhadas") or 0)
+                    h_cobr = float(p.get("horas_cobradas") or h_trab)
+
+                soma_trab += h_trab
+                soma_cobr += h_cobr
+                dias_set.add(p.get("data"))
+
+                col4 = p.get("operador_nome","") if view == "equipamento" else p.get("equipamento_codigo","")
+                valores = [
+                    data_fmt,
+                    p.get("os_numero",""),
+                    p.get("cliente_nome",""),
+                    col4,
+                    h_ini, h_fin,
+                    round(h_trab, 2) if h_trab else 0,
+                    round(h_cobr, 2) if h_cobr else 0,
+                    p.get("regime_cobranca",""),
+                    p.get("por_conta_de","")
+                ]
+                for col, v in enumerate(valores, 1):
+                    cell = ws.cell(row=row, column=col, value=v)
+                    cell.alignment = cell_align
+                    cell.border = border
+                row += 1
+
+            # Linha TOTAL
+            row += 1
+            ws.cell(row=row, column=1, value="TOTAL").font = total_font
+            ws.cell(row=row, column=1).fill = total_fill
+            ws.cell(row=row, column=7, value=round(soma_trab, 2)).font = total_font
+            ws.cell(row=row, column=7).fill = total_fill
+            ws.cell(row=row, column=8, value=round(soma_cobr, 2)).font = total_font
+            ws.cell(row=row, column=8).fill = total_fill
+
+            ws.cell(row=row+1, column=1, value=f"Dias trabalhados: {len(dias_set)}").font = Font(size=10, color="64748B")
+            dias_no_mes = calendar.monthrange(ano, mes)[1]
+            ws.cell(row=row+2, column=1, value=f"Dias parados: {dias_no_mes - len(dias_set)}").font = Font(size=10, color="64748B")
+
+            # Larguras
+            widths = [12, 16, 22, 16, 10, 10, 12, 12, 10, 12]
+            for i, w in enumerate(widths, 1):
+                ws.column_dimensions[get_column_letter(i)].width = w
+
+    # Aba RESUMO
+    ws_res = wb.create_sheet("RESUMO", 0)
+    ws_res['A1'] = f"CONTROLE MENSAL — {titulo_mes}"
+    ws_res['A1'].font = Font(bold=True, size=14, color="1A2A5E")
+    ws_res['A3'] = "Total de registros:"
+    ws_res['B3'] = dados["total_registros"]
+    ws_res['A4'] = "Dias trabalhados:"
+    ws_res['B4'] = dados["dias_trabalhados"]
+    ws_res['A5'] = "Dias parados:"
+    ws_res['B5'] = dados["dias_parados"]
+    ws_res['A6'] = "Horas trabalhadas:"
+    ws_res['B6'] = dados["total_horas_trabalhadas"]
+    ws_res['A7'] = "Horas cobradas:"
+    ws_res['B7'] = dados["total_horas_cobradas"]
+    ws_res['A8'] = "KM total:"
+    ws_res['B8'] = dados["total_km"]
+    ws_res['A9'] = "Metros total:"
+    ws_res['B9'] = dados["total_metros"]
+    for r in range(3,10):
+        ws_res.cell(row=r, column=1).font = Font(bold=True, size=10)
+    ws_res.column_dimensions['A'].width = 22
+    ws_res.column_dimensions['B'].width = 15
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+
+    view_label = "equipamento" if view == "equipamento" else "colaborador"
+    filename = f"controle-mensal-{view_label}-{meses_pt[mes].lower()}{ano}.xlsx"
+
+    return StreamingResponse(
+        buf,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'}
+    )
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 # FIM MÓDULO OPERACIONAL
 # ═══════════════════════════════════════════════════════════════════════════
