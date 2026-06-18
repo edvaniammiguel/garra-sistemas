@@ -357,7 +357,7 @@ input,select,textarea{font-family:inherit;outline:none;border:none}
     <div style="margin-bottom:12px">
       <label style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:5px">Operador</label>
       <select id="m-operador" style="width:100%;padding:11px;border:1.5px solid var(--border);border-radius:8px;font-size:14px">
-        <option value="">— eu mesmo —</option>
+        <option value="">— selecionar —</option>
       </select>
     </div>
 
@@ -395,6 +395,15 @@ input,select,textarea{font-family:inherit;outline:none;border:none}
       </div>
     </div>
 
+    <!-- Bloco METROS (serviços por metragem) -->
+    <div id="bloco-metros" style="background:#ECFDF5;border-radius:8px;padding:12px;margin-bottom:12px;display:none">
+      <div style="font-size:11px;font-weight:700;color:var(--green);margin-bottom:8px">📏 METROS</div>
+      <div>
+        <label style="font-size:10px;color:var(--muted);display:block;margin-bottom:4px">Quantidade de metros executados</label>
+        <input id="m-metros" type="number" step="0.01" min="0" placeholder="0.00" style="width:100%;padding:10px;border:1.5px solid var(--border);border-radius:6px;font-size:14px">
+      </div>
+    </div>
+
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px">
       <div>
         <label style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:5px">Hora início</label>
@@ -414,8 +423,8 @@ input,select,textarea{font-family:inherit;outline:none;border:none}
     <div style="margin-bottom:12px">
       <label style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:5px">Por conta de</label>
       <select id="m-por-conta" style="width:100%;padding:11px;border:1.5px solid var(--border);border-radius:8px;font-size:14px">
+        <option value="cliente" selected>Cliente</option>
         <option value="empresa">Empresa (Garra)</option>
-        <option value="cliente">Cliente</option>
       </select>
     </div>
 
@@ -940,34 +949,52 @@ async function salvarParte(adicionarMais) {
 
   const sel = document.getElementById('m-equipamento');
   const cat = (sel.options[sel.selectedIndex]?.getAttribute('data-cat') || '').toLowerCase();
-  const isCaminhao = cat === 'km'
-                  || ['caminhao','caminhão','pipa','carro','veiculo','veículo'].some(s => cat.includes(s));
+  const isMetros   = cat === 'metro' || cat === 'metros' || cat === 'm' || cat.includes('metro');
+  const isCaminhao = !isMetros && (
+                       cat === 'km'
+                    || ['caminhao','caminhão','pipa','carro','veiculo','veículo'].some(s => cat.includes(s))
+                    );
 
   const hIni = document.getElementById('m-h-ini').value;
   const hFin = document.getElementById('m-h-fin').value;
   const kmIni = document.getElementById('m-km-ini').value;
   const kmFin = document.getElementById('m-km-fin').value;
+  const metros = document.getElementById('m-metros')?.value || '';
 
-  if (!isCaminhao && hIni && hFin && parseFloat(hFin) < parseFloat(hIni)) {
+  if (!isCaminhao && !isMetros && hIni && hFin && parseFloat(hFin) < parseFloat(hIni)) {
     err.textContent = 'Horímetro final menor que o inicial';
     err.style.display = 'block';
     return;
   }
+  if (isCaminhao && kmIni && kmFin && parseFloat(kmFin) < parseFloat(kmIni)) {
+    err.textContent = 'KM final menor que o inicial';
+    err.style.display = 'block';
+    return;
+  }
+  if (isMetros && (!metros || parseFloat(metros) <= 0)) {
+    err.textContent = 'Informe a quantidade de metros';
+    err.style.display = 'block';
+    return;
+  }
+
+  // tipo_medicao: 'metros' | 'km' | 'horimetro'
+  const tipoMedicao = isMetros ? 'metros' : (isCaminhao ? 'km' : 'horimetro');
 
   const payload = {
     data,
     equipamento_id: equipId,
     operador_id: operadorId || null,
-    tipo_medicao: isCaminhao ? 'km' : 'horimetro',
+    tipo_medicao: tipoMedicao,
     horimetro_inicial: hIni ? parseFloat(hIni) : null,
     horimetro_final: hFin ? parseFloat(hFin) : null,
     km_inicial: kmIni ? parseFloat(kmIni) : null,
     km_final: kmFin ? parseFloat(kmFin) : null,
+    qtd_metros: metros ? parseFloat(metros) : null,
     qtd_viagens: parseFloat(document.getElementById('m-viagens').value || '0') || 0,
     hora_inicio: document.getElementById('m-h-inicio').value || null,
     hora_fim: document.getElementById('m-h-fim').value || null,
     trajeto: document.getElementById('m-trajeto').value.trim() || null,
-    por_conta_de: document.getElementById('m-por-conta').value || 'empresa',
+    por_conta_de: document.getElementById('m-por-conta').value || 'cliente',
     observacao: document.getElementById('m-obs').value.trim() || null,
   };
 
@@ -1026,12 +1053,12 @@ async function salvarParte(adicionarMais) {
     }
 
     if (adicionarMais) {
-      ['m-h-ini','m-h-fin','m-km-ini','m-km-fin',
+      ['m-h-ini','m-h-fin','m-km-ini','m-km-fin','m-metros',
        'm-viagens','m-h-inicio','m-h-fim','m-trajeto','m-obs'].forEach(id => {
         const el = document.getElementById(id);
         if (el) el.value = '';
       });
-      document.getElementById('m-por-conta').value = 'empresa';
+      document.getElementById('m-por-conta').value = 'cliente';
       // Mantém equipamento e operador (provavelmente mesma OS no próximo registro)
     } else {
       fecharModalDireto();
@@ -1143,11 +1170,12 @@ async function abrirModalParte(osId) {
   }
 
   // Resetar campos
-  ['m-h-ini','m-h-fin','m-km-ini','m-km-fin','m-viagens','m-h-inicio','m-h-fim','m-trajeto','m-obs'].forEach(id => {
+  ['m-h-ini','m-h-fin','m-km-ini','m-km-fin','m-viagens','m-metros','m-h-inicio','m-h-fim','m-trajeto','m-obs'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.value = '';
   });
-  document.getElementById('m-por-conta').value = 'empresa';
+  // Por conta de: default CLIENTE
+  document.getElementById('m-por-conta').value = 'cliente';
 
   // Pré-preencher data com hoje
   document.getElementById('m-data').value = new Date().toISOString().slice(0,10);
@@ -1158,7 +1186,7 @@ async function abrirModalParte(osId) {
     fetchComCacheIDB('/operacional/api/operadores',   'lst_operadores',    86400),
   ]);
 
-  // Equipamentos com data-cat (categoria/medicao) para detectar máquina/caminhão
+  // Equipamentos com data-cat (categoria/medicao) para detectar máquina/caminhão/metros
   const selEq = document.getElementById('m-equipamento');
   selEq.innerHTML = '<option value="">— selecionar —</option>';
   (equipamentos || []).forEach(e => {
@@ -1168,37 +1196,58 @@ async function abrirModalParte(osId) {
   // Pré-selecionar equipamento da OS
   if (osData?.equipamento_id) selEq.value = osData.equipamento_id;
 
-  // Operadores
+  // Operadores — selects mostra todos cadastrados
   const selOp = document.getElementById('m-operador');
-  selOp.innerHTML = '<option value="">— eu mesmo —</option>';
+  selOp.innerHTML = '<option value="">— selecionar —</option>';
   (operadores || []).forEach(o => {
     selOp.innerHTML += `<option value="${o.id}">${o.nome}</option>`;
   });
-  // Pré-selecionar operador da OS
-  if (osData?.operador_id) selOp.value = osData.operador_id;
+  // Prioridade de pré-seleção do operador:
+  // 1) Operador definido na OS  2) Usuário logado (Gilson)
+  if (osData?.operador_id) {
+    selOp.value = osData.operador_id;
+  } else if (USUARIO?.id) {
+    selOp.value = USUARIO.id;
+    // Se não estiver na lista (admin/luana), adiciona como opção
+    if (!selOp.value && USUARIO?.id) {
+      selOp.innerHTML += `<option value="${USUARIO.id}" selected>${USUARIO.nome || 'Eu'}</option>`;
+      selOp.value = USUARIO.id;
+    }
+  }
 
-  // Atualiza visibilidade dos blocos (horímetro/km/trajeto)
+  // Atualiza visibilidade dos blocos (horímetro/km/metros/trajeto)
   atualizarCamposMedicao();
 }
 
 function atualizarCamposMedicao() {
   const sel = document.getElementById('m-equipamento');
   const cat = (sel.options[sel.selectedIndex]?.getAttribute('data-cat') || '').toLowerCase();
-  // É caminhão se medicao = km, ou categoria contém caminhão/pipa/carro
-  const isCaminhao = cat === 'km'
-                  || ['caminhao','caminhão','pipa','carro','veiculo','veículo'].some(s => cat.includes(s));
+
+  // Detecta o tipo: metros / km (caminhão) / horímetro (máquina)
+  const isMetros   = cat === 'metro' || cat === 'metros' || cat === 'm' || cat.includes('metro');
+  const isCaminhao = !isMetros && (
+                       cat === 'km'
+                    || ['caminhao','caminhão','pipa','carro','veiculo','veículo'].some(s => cat.includes(s))
+                    );
 
   const blocoH  = document.getElementById('bloco-horimetro');
   const blocoKM = document.getElementById('bloco-km');
+  const blocoM  = document.getElementById('bloco-metros');
   const blocoT  = document.getElementById('bloco-trajeto');
-  if (isCaminhao) {
-    blocoH.style.display  = 'none';
-    blocoKM.style.display = 'block';
-    blocoT.style.display  = 'block';
+
+  // Reset
+  if (blocoH)  blocoH.style.display  = 'none';
+  if (blocoKM) blocoKM.style.display = 'none';
+  if (blocoM)  blocoM.style.display  = 'none';
+  if (blocoT)  blocoT.style.display  = 'none';
+
+  if (isMetros) {
+    if (blocoM) blocoM.style.display = 'block';
+  } else if (isCaminhao) {
+    if (blocoKM) blocoKM.style.display = 'block';
+    if (blocoT)  blocoT.style.display  = 'block';
   } else {
-    blocoH.style.display  = 'block';
-    blocoKM.style.display = 'none';
-    blocoT.style.display  = 'none';
+    if (blocoH) blocoH.style.display = 'block';
   }
 }
 
