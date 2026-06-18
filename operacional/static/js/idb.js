@@ -23,13 +23,40 @@ class GarraDB {
 
   static async init() {
     return new Promise((resolve, reject) => {
-      if (GarraDB.db) return resolve(GarraDB.db);
+      // Verificar se DB já existe E ainda está vivo
+      if (GarraDB.db) {
+        try {
+          // Tentativa rápida: criar transaction de teste
+          const testTx = GarraDB.db.transaction(['metadata'], 'readonly');
+          testTx.abort(); // não precisa executar, só queremos saber se abre
+          return resolve(GarraDB.db);
+        } catch (e) {
+          // DB foi fechado/deletado — limpar referência e reabrir
+          console.warn('[GarraDB] DB inválido, reabrindo...');
+          GarraDB.db = null;
+        }
+      }
 
       const request = indexedDB.open('GarraDB', 2);
 
-      request.onerror = () => reject(request.error);
+      request.onerror = () => {
+        console.error('[GarraDB] Falha ao abrir:', request.error);
+        reject(request.error);
+      };
       request.onsuccess = () => {
         GarraDB.db = request.result;
+        // Listener: se banco for fechado/deletado externamente, limpar referência
+        GarraDB.db.onclose = () => {
+          console.warn('[GarraDB] Conexão fechada externamente');
+          GarraDB.db = null;
+        };
+        GarraDB.db.onversionchange = () => {
+          console.warn('[GarraDB] Versão mudou, fechando');
+          if (GarraDB.db) {
+            GarraDB.db.close();
+            GarraDB.db = null;
+          }
+        };
         resolve(GarraDB.db);
       };
 
@@ -59,6 +86,28 @@ class GarraDB {
         }
       };
     });
+  }
+
+  /**
+   * _safeTransaction(stores, mode, fn)
+   * Executa transaction com retry automático se DB estiver fechado
+   */
+  static async _safeTransaction(stores, mode, fn) {
+    try {
+      await GarraDB.init();
+      const tx = GarraDB.db.transaction(stores, mode);
+      return await fn(tx);
+    } catch (e) {
+      // Se DB fechou, força reabertura e tenta de novo
+      if (e.name === 'InvalidStateError' || e.message?.includes('closing')) {
+        console.warn('[GarraDB] Transaction falhou, reabrindo DB...');
+        GarraDB.db = null;
+        await GarraDB.init();
+        const tx = GarraDB.db.transaction(stores, mode);
+        return await fn(tx);
+      }
+      throw e;
+    }
   }
 
   /**
@@ -230,14 +279,13 @@ class GarraDB {
    * Retorna lista de requisições pendentes (para debug/UI)
    */
   static async getQueue() {
-    await GarraDB.init();
-    const db = GarraDB.db;
-    return new Promise((resolve, reject) => {
-      const tx = db.transaction([GarraDB.STORES.QUEUE], 'readonly');
-      const store = tx.objectStore(GarraDB.STORES.QUEUE);
-      const request = store.getAll();
-      request.onerror = () => reject(request.error);
-      request.onsuccess = () => resolve(request.result);
+    return await GarraDB._safeTransaction([GarraDB.STORES.QUEUE], 'readonly', (tx) => {
+      return new Promise((resolve, reject) => {
+        const store = tx.objectStore(GarraDB.STORES.QUEUE);
+        const request = store.getAll();
+        request.onerror = () => reject(request.error);
+        request.onsuccess = () => resolve(request.result || []);
+      });
     });
   }
 
@@ -246,14 +294,13 @@ class GarraDB {
    * Remove todos os itens da fila (use com cuidado)
    */
   static async clearQueue() {
-    await GarraDB.init();
-    const db = GarraDB.db;
-    return new Promise((resolve, reject) => {
-      const tx = db.transaction([GarraDB.STORES.QUEUE], 'readwrite');
-      const store = tx.objectStore(GarraDB.STORES.QUEUE);
-      const request = store.clear();
-      request.onerror = () => reject(request.error);
-      request.onsuccess = () => resolve();
+    return await GarraDB._safeTransaction([GarraDB.STORES.QUEUE], 'readwrite', (tx) => {
+      return new Promise((resolve, reject) => {
+        const store = tx.objectStore(GarraDB.STORES.QUEUE);
+        const request = store.clear();
+        request.onerror = () => reject(request.error);
+        request.onsuccess = () => resolve();
+      });
     });
   }
 
@@ -282,47 +329,47 @@ class GarraDB {
   }
 
   static async _queuePush(item) {
-    const db = GarraDB.db;
-    return new Promise((resolve, reject) => {
-      const tx = db.transaction([GarraDB.STORES.QUEUE], 'readwrite');
-      const store = tx.objectStore(GarraDB.STORES.QUEUE);
-      const request = store.add(item);
-      request.onerror = () => reject(request.error);
-      request.onsuccess = () => resolve(request.result);
+    return await GarraDB._safeTransaction([GarraDB.STORES.QUEUE], 'readwrite', (tx) => {
+      return new Promise((resolve, reject) => {
+        const store = tx.objectStore(GarraDB.STORES.QUEUE);
+        const request = store.add(item);
+        request.onerror = () => reject(request.error);
+        request.onsuccess = () => resolve(request.result);
+      });
     });
   }
 
   static async _queueRemove(id) {
-    const db = GarraDB.db;
-    return new Promise((resolve, reject) => {
-      const tx = db.transaction([GarraDB.STORES.QUEUE], 'readwrite');
-      const store = tx.objectStore(GarraDB.STORES.QUEUE);
-      const request = store.delete(id);
-      request.onerror = () => reject(request.error);
-      request.onsuccess = () => resolve();
+    return await GarraDB._safeTransaction([GarraDB.STORES.QUEUE], 'readwrite', (tx) => {
+      return new Promise((resolve, reject) => {
+        const store = tx.objectStore(GarraDB.STORES.QUEUE);
+        const request = store.delete(id);
+        request.onerror = () => reject(request.error);
+        request.onsuccess = () => resolve();
+      });
     });
   }
 
   static async _queueUpdate(item) {
-    const db = GarraDB.db;
-    return new Promise((resolve, reject) => {
-      const tx = db.transaction([GarraDB.STORES.QUEUE], 'readwrite');
-      const store = tx.objectStore(GarraDB.STORES.QUEUE);
-      const request = store.put(item);
-      request.onerror = () => reject(request.error);
-      request.onsuccess = () => resolve();
+    return await GarraDB._safeTransaction([GarraDB.STORES.QUEUE], 'readwrite', (tx) => {
+      return new Promise((resolve, reject) => {
+        const store = tx.objectStore(GarraDB.STORES.QUEUE);
+        const request = store.put(item);
+        request.onerror = () => reject(request.error);
+        request.onsuccess = () => resolve();
+      });
     });
   }
 
   static async _getQueueByStatus(status) {
-    const db = GarraDB.db;
-    return new Promise((resolve, reject) => {
-      const tx = db.transaction([GarraDB.STORES.QUEUE], 'readonly');
-      const store = tx.objectStore(GarraDB.STORES.QUEUE);
-      const index = store.index('status');
-      const request = index.getAll(status);
-      request.onerror = () => reject(request.error);
-      request.onsuccess = () => resolve(request.result);
+    return await GarraDB._safeTransaction([GarraDB.STORES.QUEUE], 'readonly', (tx) => {
+      return new Promise((resolve, reject) => {
+        const store = tx.objectStore(GarraDB.STORES.QUEUE);
+        const index = store.index('status');
+        const request = index.getAll(status);
+        request.onerror = () => reject(request.error);
+        request.onsuccess = () => resolve(request.result || []);
+      });
     });
   }
 
@@ -336,47 +383,46 @@ class GarraDB {
   }
 
   static async _cacheSet(key, data, ttl) {
-    const db = GarraDB.db;
     const expiresAt = Date.now() + (ttl * 1000);
     const item = { url: key, data, expiresAt };
-
-    return new Promise((resolve, reject) => {
-      const tx = db.transaction([GarraDB.STORES.CACHE], 'readwrite');
-      const store = tx.objectStore(GarraDB.STORES.CACHE);
-      const request = store.put(item);
-      request.onerror = () => reject(request.error);
-      request.onsuccess = () => resolve();
+    return await GarraDB._safeTransaction([GarraDB.STORES.CACHE], 'readwrite', (tx) => {
+      return new Promise((resolve, reject) => {
+        const store = tx.objectStore(GarraDB.STORES.CACHE);
+        const request = store.put(item);
+        request.onerror = () => reject(request.error);
+        request.onsuccess = () => resolve();
+      });
     });
   }
 
   static async _cacheGet(key) {
-    const db = GarraDB.db;
-    return new Promise((resolve, reject) => {
-      const tx = db.transaction([GarraDB.STORES.CACHE], 'readonly');
-      const store = tx.objectStore(GarraDB.STORES.CACHE);
-      const request = store.get(key);
-      request.onerror = () => reject(request.error);
-      request.onsuccess = () => {
-        const item = request.result;
-        if (!item) return resolve(null);
-        if (Date.now() > item.expiresAt) {
-          // Cache expirado
-          GarraDB._cacheDelete(key);
-          return resolve(null);
-        }
-        resolve(item.data);
-      };
+    return await GarraDB._safeTransaction([GarraDB.STORES.CACHE], 'readonly', (tx) => {
+      return new Promise((resolve, reject) => {
+        const store = tx.objectStore(GarraDB.STORES.CACHE);
+        const request = store.get(key);
+        request.onerror = () => reject(request.error);
+        request.onsuccess = () => {
+          const item = request.result;
+          if (!item) return resolve(null);
+          if (Date.now() > item.expiresAt) {
+            // Cache expirado — limpa em background (não aguarda)
+            GarraDB._cacheDelete(key).catch(() => {});
+            return resolve(null);
+          }
+          resolve(item.data);
+        };
+      });
     });
   }
 
   static async _cacheDelete(key) {
-    const db = GarraDB.db;
-    return new Promise((resolve, reject) => {
-      const tx = db.transaction([GarraDB.STORES.CACHE], 'readwrite');
-      const store = tx.objectStore(GarraDB.STORES.CACHE);
-      const request = store.delete(key);
-      request.onerror = () => reject(request.error);
-      request.onsuccess = () => resolve();
+    return await GarraDB._safeTransaction([GarraDB.STORES.CACHE], 'readwrite', (tx) => {
+      return new Promise((resolve, reject) => {
+        const store = tx.objectStore(GarraDB.STORES.CACHE);
+        const request = store.delete(key);
+        request.onerror = () => reject(request.error);
+        request.onsuccess = () => resolve();
+      });
     });
   }
 
