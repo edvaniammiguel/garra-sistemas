@@ -141,6 +141,49 @@ async def startup():
         print("JARD_DIR:", JARD_DIR)
         print("TEMPLATES exists:", os.path.exists(TEMPLATES_DIR))
         print("STATIC exists:", os.path.exists(STATIC_DIR))
+
+        # Migration: adicionar coluna medicao em operacional.tipos_servico
+        try:
+            await conn.execute("""
+                ALTER TABLE operacional.tipos_servico
+                ADD COLUMN IF NOT EXISTS medicao TEXT DEFAULT 'horimetro'
+            """)
+            await conn.execute("""
+                ALTER TABLE operacional.tipos_servico
+                ADD COLUMN IF NOT EXISTS ativo BOOLEAN DEFAULT TRUE
+            """)
+            # Migration: adicionar qtd_metros em partes_diarias
+            await conn.execute("""
+                ALTER TABLE operacional.partes_diarias
+                ADD COLUMN IF NOT EXISTS qtd_metros NUMERIC(10,2)
+            """)
+            # Migration: clientes_garra — garantir colunas de cadastro
+            await conn.execute("""
+                ALTER TABLE public.clientes_garra
+                ADD COLUMN IF NOT EXISTS cnpj_cpf TEXT,
+                ADD COLUMN IF NOT EXISTS telefone TEXT,
+                ADD COLUMN IF NOT EXISTS email TEXT,
+                ADD COLUMN IF NOT EXISTS endereco TEXT,
+                ADD COLUMN IF NOT EXISTS cidade TEXT,
+                ADD COLUMN IF NOT EXISTS uf TEXT,
+                ADD COLUMN IF NOT EXISTS contato TEXT,
+                ADD COLUMN IF NOT EXISTS observacao TEXT,
+                ADD COLUMN IF NOT EXISTS ativo BOOLEAN DEFAULT TRUE,
+                ADD COLUMN IF NOT EXISTS criado_em TIMESTAMP DEFAULT NOW()
+            """)
+            # Migration: equipamentos — garantir colunas para CRUD
+            await conn.execute("""
+                ALTER TABLE operacional.equipamentos
+                ADD COLUMN IF NOT EXISTS marca TEXT,
+                ADD COLUMN IF NOT EXISTS modelo TEXT,
+                ADD COLUMN IF NOT EXISTS ano INTEGER,
+                ADD COLUMN IF NOT EXISTS placa TEXT,
+                ADD COLUMN IF NOT EXISTS ativo BOOLEAN DEFAULT TRUE,
+                ADD COLUMN IF NOT EXISTS criado_em TIMESTAMP DEFAULT NOW()
+            """)
+            print("[Migration] colunas medicao/ativo/qtd_metros/clientes/equipamentos OK")
+        except Exception as me:
+            print(f"[Migration] aviso (não-fatal): {me}")
     except Exception as e:
         print("Erro no startup:", e)
     finally:
@@ -1306,17 +1349,12 @@ async def jard_url_foto(fid: int, payload=Depends(verificar_token_jard)):
 @app.post("/jardinagem/api/relatorios/km")
 async def jard_criar_km(request: Request, payload=Depends(verificar_token_jard)):
     d = await request.json()
-    data_km = d.get("data") or date.today().isoformat()
-    row = jard_query("SELECT id FROM jardinagem.semanas WHERE data_ini<=%s AND data_fim>=%s LIMIT 1", (data_km,data_km), fetch="one")
-    if row:
+    semana_id = d.get("semana_id")
+    if not semana_id:
+        hoje = date.today().isoformat()
+        row = jard_query("SELECT id FROM jardinagem.semanas WHERE data_ini<=%s AND data_fim>=%s LIMIT 1", (hoje,hoje), fetch="one")
+        if not row: raise HTTPException(status_code=404, detail="Sem semana ativa")
         semana_id = row["id"]
-    else:
-        semana_id = d.get("semana_id")
-        if not semana_id:
-            hoje = date.today().isoformat()
-            row2 = jard_query("SELECT id FROM jardinagem.semanas WHERE data_ini<=%s AND data_fim>=%s LIMIT 1", (hoje,hoje), fetch="one")
-            if not row2: raise HTTPException(status_code=404, detail="Sem semana ativa")
-            semana_id = row2["id"]
     local_nome  = (d.get("local_nome") or "").strip()
     km_ini      = d.get("km_inicial"); km_fin = d.get("km_final")
     if not local_nome: raise HTTPException(status_code=400, detail="local_nome obrigatório")
@@ -1329,7 +1367,7 @@ async def jard_criar_km(request: Request, payload=Depends(verificar_token_jard))
     row = jard_query_id("""INSERT INTO jardinagem.relatorios_diarios
         (semana_id,usuario_id,data,local_nome,km_inicial,km_final,hora_inicio,hora_fim,observacao,offline_id)
         VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
-        (semana_id,payload["sub"],data_km,local_nome,
+        (semana_id,payload["sub"],d.get("data",date.today().isoformat()),local_nome,
          float(km_ini),float(km_fin),d.get("hora_inicio"),d.get("hora_fim"),d.get("observacao",""),offline_id))
     return {"ok": True, "id": row["id"]}
 
@@ -1341,28 +1379,16 @@ async def jard_editar_km(km_id: int, request: Request, payload=Depends(verificar
     if not local_nome: raise HTTPException(status_code=400, detail="local_nome obrigatório")
     if km_ini is None or km_fin is None: raise HTTPException(status_code=400, detail="km_inicial e km_final obrigatórios")
     if float(km_fin) < float(km_ini): raise HTTPException(status_code=400, detail="km_final não pode ser menor que km_inicial")
-
-    data_km = d.get("data", date.today().isoformat())
-    row = jard_query("SELECT id FROM jardinagem.semanas WHERE data_ini<=%s AND data_fim>=%s LIMIT 1", (data_km,data_km), fetch="one")
-
-    if row:
-        jard_query("""UPDATE jardinagem.relatorios_diarios 
-            SET data=%s, semana_id=%s, local_nome=%s, km_inicial=%s, km_final=%s, 
-                hora_inicio=%s, hora_fim=%s, observacao=%s
-            WHERE id=%s""",
-            (data_km, row["id"], local_nome,
-             float(km_ini), float(km_fin),
-             d.get("hora_inicio"), d.get("hora_fim"), d.get("observacao",""),
-             km_id), fetch="none")
-    else:
-        jard_query("""UPDATE jardinagem.relatorios_diarios 
-            SET data=%s, local_nome=%s, km_inicial=%s, km_final=%s, 
-                hora_inicio=%s, hora_fim=%s, observacao=%s
-            WHERE id=%s""",
-            (data_km, local_nome,
-             float(km_ini), float(km_fin),
-             d.get("hora_inicio"), d.get("hora_fim"), d.get("observacao",""),
-             km_id), fetch="none")
+    
+    # Atualiza o registro
+    jard_query("""UPDATE jardinagem.relatorios_diarios 
+        SET data=%s, local_nome=%s, km_inicial=%s, km_final=%s, 
+            hora_inicio=%s, hora_fim=%s, observacao=%s
+        WHERE id=%s""",
+        (d.get("data",date.today().isoformat()), local_nome,
+         float(km_ini), float(km_fin),
+         d.get("hora_inicio"), d.get("hora_fim"), d.get("observacao",""),
+         km_id), fetch="none")
     return {"ok": True, "id": km_id}
 
 @app.delete("/jardinagem/api/relatorios/{km_id}")
@@ -1471,17 +1497,16 @@ async def jard_clientes(payload=Depends(verificar_token_jard)):
 @app.get("/jardinagem/api/km/mes/{mes_id}")
 async def jard_km_mes(mes_id: int, payload=Depends(verificar_token_jard)):
     """Retorna todos os KMs do mês em 1 chamada — evita N chamadas /preview."""
-    m = jard_query("SELECT ano, mes FROM jardinagem.meses WHERE id=%s", (mes_id,), fetch="one")
-    if not m: raise HTTPException(status_code=404, detail="Mês não encontrado")
     kms_raw = jard_query("""
         SELECT r.id, r.data, r.local_nome, r.km_inicial, r.km_final,
                r.hora_inicio, r.hora_fim, r.observacao, r.responsavel,
                u.nome as responsavel_nome
         FROM jardinagem.relatorios_diarios r
+        JOIN jardinagem.semanas s ON s.id = r.semana_id
         JOIN public.usuarios_garra u ON u.id = r.usuario_id
-        WHERE EXTRACT(YEAR FROM r.data) = %s AND EXTRACT(MONTH FROM r.data) = %s
+        WHERE s.mes_id = %s
         ORDER BY r.data, r.criado_em
-    """, (m["ano"], m["mes"]))
+    """, (mes_id,))
     kms = [{"id": r["id"],
             "data": r["data"].strftime("%d/%m/%Y") if r["data"] else "",
             "local_nome": r["local_nome"] or "",
@@ -1535,7 +1560,7 @@ async def jard_preview(semana_id: int, payload=Depends(verificar_token_jard)):
                       "url_antes":urls.get(f"{pid}_antes",""),
                       "url_depois":urls.get(f"{pid}_depois","")})
     kms_raw = jard_query("""SELECT r.*,u.nome as responsavel_nome FROM jardinagem.relatorios_diarios r
-        JOIN public.usuarios_garra u ON u.id=r.usuario_id WHERE r.data>=%s AND r.data<=%s ORDER BY r.data,r.criado_em""", (sem["data_ini"],sem["data_fim"]))
+        JOIN public.usuarios_garra u ON u.id=r.usuario_id WHERE r.semana_id=%s ORDER BY r.data,r.criado_em""", (semana_id,))
     kms = [{"id":r["id"],"data":r["data"].strftime("%d/%m/%Y") if r["data"] else "","local_nome":r["local_nome"] or "",
             "km_inicial":float(r["km_inicial"] or 0),"km_final":float(r["km_final"] or 0),
             "hora_inicio":str(r["hora_inicio"]) if r["hora_inicio"] else "",
@@ -1608,7 +1633,7 @@ async def jard_excel_km(semana_id: int, payload=Depends(verificar_token_jard)):
     if not sem: raise HTTPException(status_code=404, detail="Semana não encontrada")
     semana_dict = {"label":sem["label"],"data_ini":sem["data_ini"].strftime("%d/%m/%Y") if sem["data_ini"] else "","data_fim":sem["data_fim"].strftime("%d/%m/%Y") if sem["data_fim"] else ""}
     kms_raw = jard_query("""SELECT r.*,u.nome as responsavel_nome FROM jardinagem.relatorios_diarios r
-        JOIN public.usuarios_garra u ON u.id=r.usuario_id WHERE r.data>=%s AND r.data<=%s ORDER BY r.data,r.criado_em""", (sem["data_ini"],sem["data_fim"]))
+        JOIN public.usuarios_garra u ON u.id=r.usuario_id WHERE r.semana_id=%s ORDER BY r.data,r.criado_em""", (semana_id,))
     relatorios = [{"data":r["data"].strftime("%d/%m/%Y") if r["data"] else "","local":r["local_nome"] or "",
                    "km_ini":float(r["km_inicial"] or 0),"km_fin":float(r["km_final"] or 0),
                    "hr_ini":str(r["hora_inicio"]) if r["hora_inicio"] else "","hr_fim":str(r["hora_fim"]) if r["hora_fim"] else "",
@@ -1642,7 +1667,7 @@ async def jard_enviar_email(semana_id: int, payload=Depends(verificar_token_jard
         pares.append({"codigo_a":p["codigo_a"],"codigo_d":p["codigo_d"],"local_nome":p["local_nome"] or "",
                       "foto_antes":fp.get("antes"), "foto_depois":fp.get("depois")})
     kms_raw = jard_query("""SELECT r.*,u.nome as responsavel_nome FROM jardinagem.relatorios_diarios r
-        JOIN public.usuarios_garra u ON u.id=r.usuario_id WHERE r.data>=%s AND r.data<=%s ORDER BY r.data,r.criado_em""", (sem["data_ini"],sem["data_fim"]))
+        JOIN public.usuarios_garra u ON u.id=r.usuario_id WHERE r.semana_id=%s ORDER BY r.data,r.criado_em""", (semana_id,))
     relatorios = [{"data":r["data"].strftime("%d/%m/%Y") if r["data"] else "","local":r["local_nome"] or "",
                    "km_ini":float(r["km_inicial"] or 0),"km_fin":float(r["km_final"] or 0),
                    "hr_ini":str(r["hora_inicio"]) if r["hora_inicio"] else "","hr_fim":str(r["hora_fim"]) if r["hora_fim"] else "",
@@ -1680,47 +1705,284 @@ async def jard_enviar_email(semana_id: int, payload=Depends(verificar_token_jard
 async def op_listar_tipos_servico(_auth=Depends(verificar_token)):
     """Lista tipos de serviço ativos para popular select."""
     rows = jard_query(
-        "SELECT id, nome, descricao FROM operacional.tipos_servico WHERE ativo=true ORDER BY nome"
+        "SELECT id, nome, descricao, medicao FROM operacional.tipos_servico WHERE ativo=true ORDER BY nome"
     )
     return [dict(r) for r in (rows or [])]
 
 @app.post("/operacional/api/tipos-servico")
 async def op_criar_tipo_servico(request: Request, payload=Depends(verificar_admin)):
-    """Cria novo tipo de serviço (somente admin)."""
+    """Cria novo tipo de serviço (somente admin/gestor)."""
     d = await request.json()
     nome = (d.get("nome") or "").strip()
     descricao = (d.get("descricao") or "").strip()
+    medicao = (d.get("medicao") or "horimetro").strip().lower()
+    if medicao not in ("horimetro","km","metros","diaria"):
+        medicao = "horimetro"
     if not nome:
         raise HTTPException(status_code=400, detail="Nome é obrigatório")
     try:
-        row = jard_query_id(
-            "INSERT INTO operacional.tipos_servico (nome, descricao) VALUES (%s, %s)",
-            (nome, descricao or None)
+        row = jard_query(
+            """INSERT INTO operacional.tipos_servico (nome, descricao, medicao, ativo)
+               VALUES (%s, %s, %s, true)
+               RETURNING id, nome, descricao, medicao""",
+            (nome, descricao or None, medicao),
+            fetch="one"
         )
-        return dict(row)
+        return dict(row) if row else {"nome": nome, "medicao": medicao}
     except Exception as e:
         if "duplicate" in str(e).lower():
             raise HTTPException(status_code=409, detail="Tipo de serviço já existe")
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.patch("/operacional/api/tipos-servico/{tipo_id}")
+async def op_editar_tipo_servico(tipo_id: str, request: Request, payload=Depends(verificar_admin)):
+    """Edita tipo de serviço (somente admin/gestor)."""
+    d = await request.json()
+    updates = []
+    valores = []
+    if "nome" in d:
+        nome = (d.get("nome") or "").strip()
+        if not nome:
+            raise HTTPException(status_code=400, detail="Nome não pode ser vazio")
+        updates.append("nome=%s"); valores.append(nome)
+    if "descricao" in d:
+        updates.append("descricao=%s"); valores.append((d.get("descricao") or "").strip() or None)
+    if "medicao" in d:
+        med = (d.get("medicao") or "horimetro").strip().lower()
+        if med not in ("horimetro","km","metros","diaria"):
+            med = "horimetro"
+        updates.append("medicao=%s"); valores.append(med)
+    if not updates:
+        raise HTTPException(status_code=400, detail="Nada a atualizar")
+    valores.append(tipo_id)
+    try:
+        row = jard_query(
+            f"UPDATE operacional.tipos_servico SET {', '.join(updates)} WHERE id=%s RETURNING id, nome, descricao, medicao",
+            tuple(valores),
+            fetch="one"
+        )
+        if not row:
+            raise HTTPException(status_code=404, detail="Tipo de serviço não encontrado")
+        return dict(row)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.delete("/operacional/api/tipos-servico/{tipo_id}")
+async def op_remover_tipo_servico(tipo_id: str, payload=Depends(verificar_admin)):
+    """Soft delete (ativo=false) — preserva histórico."""
+    try:
+        jard_query(
+            "UPDATE operacional.tipos_servico SET ativo=false WHERE id=%s",
+            (tipo_id,)
+        )
+        return {"ok": True}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.get("/operacional/api/equipamentos")
 async def op_listar_equipamentos(_auth=Depends(verificar_token)):
-    """Lista equipamentos ativos para popular select."""
+    """Lista equipamentos ativos para popular select e tela de cadastro."""
     rows = jard_query(
-        """SELECT id, codigo, descricao, categoria, medicao, horimetro_atual, km_atual
+        """SELECT id, codigo, descricao, categoria, medicao,
+                  marca, modelo, ano, placa,
+                  horimetro_atual, km_atual, ativo
            FROM operacional.equipamentos
            WHERE ativo=true
            ORDER BY categoria, codigo"""
     )
     return [dict(r) for r in (rows or [])]
 
+@app.post("/operacional/api/equipamentos")
+async def op_criar_equipamento(request: Request, payload=Depends(verificar_gestor)):
+    """Cria equipamento — sincroniza em operacional.equipamentos + checklist.frota."""
+    d = await request.json()
+    codigo    = (d.get("codigo") or "").strip()
+    descricao = (d.get("descricao") or "").strip()
+    categoria = (d.get("categoria") or "").strip().lower()
+    medicao   = (d.get("medicao") or "horimetro").strip().lower()
+    if medicao not in ("horimetro","km","metros","diaria"):
+        medicao = "horimetro"
+    if not codigo or not descricao or not categoria:
+        raise HTTPException(status_code=400, detail="Código, descrição e categoria são obrigatórios")
+    marca  = (d.get("marca")  or "").strip() or None
+    modelo = (d.get("modelo") or "").strip() or None
+    ano    = d.get("ano")
+    placa  = (d.get("placa")  or "").strip() or None
+    try:
+        row = jard_query(
+            """INSERT INTO operacional.equipamentos
+               (codigo, descricao, categoria, medicao, marca, modelo, ano, placa, ativo)
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s, true)
+               RETURNING id, codigo, descricao, categoria, medicao,
+                         marca, modelo, ano, placa""",
+            (codigo, descricao, categoria, medicao, marca, modelo, ano, placa),
+            fetch="one"
+        )
+        # Sincronizar com checklist.frota (mesmo código = mesma identificação)
+        try:
+            jard_query(
+                """INSERT INTO checklist.frota (categoria, identificacao, descricao, ativo)
+                   VALUES (%s, %s, %s, true)
+                   ON CONFLICT (categoria, identificacao) DO UPDATE
+                     SET descricao = EXCLUDED.descricao, ativo = true""",
+                (categoria, codigo, descricao)
+            )
+        except Exception as sync_err:
+            print(f"[Sync frota] aviso: {sync_err}")
+        return dict(row) if row else {"codigo": codigo}
+    except Exception as e:
+        if "duplicate" in str(e).lower():
+            raise HTTPException(status_code=409, detail="Código já existe")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.patch("/operacional/api/equipamentos/{eq_id}")
+async def op_editar_equipamento(eq_id: str, request: Request, payload=Depends(verificar_gestor)):
+    """Edita equipamento — sincroniza com checklist.frota."""
+    d = await request.json()
+    updates = []
+    valores = []
+    for campo, key in [("codigo","codigo"),("descricao","descricao"),
+                       ("categoria","categoria"),("medicao","medicao"),
+                       ("marca","marca"),("modelo","modelo"),
+                       ("ano","ano"),("placa","placa")]:
+        if key in d:
+            valor = d.get(key)
+            if isinstance(valor, str):
+                valor = valor.strip() or None
+                if campo in ("categoria","medicao") and valor:
+                    valor = valor.lower()
+            updates.append(f"{campo}=%s"); valores.append(valor)
+    if not updates:
+        raise HTTPException(status_code=400, detail="Nada a atualizar")
+    valores.append(eq_id)
+    try:
+        row = jard_query(
+            f"""UPDATE operacional.equipamentos SET {', '.join(updates)}
+                WHERE id=%s
+                RETURNING id, codigo, descricao, categoria, medicao,
+                          marca, modelo, ano, placa""",
+            tuple(valores),
+            fetch="one"
+        )
+        if not row:
+            raise HTTPException(status_code=404, detail="Equipamento não encontrado")
+        # Sincronizar com checklist.frota
+        try:
+            jard_query(
+                """UPDATE checklist.frota
+                     SET descricao = %s, categoria = %s, ativo = true
+                   WHERE identificacao = %s""",
+                (row["descricao"], row["categoria"], row["codigo"])
+            )
+        except Exception as sync_err:
+            print(f"[Sync frota] aviso: {sync_err}")
+        return dict(row)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.delete("/operacional/api/equipamentos/{eq_id}")
+async def op_remover_equipamento(eq_id: str, payload=Depends(verificar_gestor)):
+    """Soft delete — desativa em ambas as tabelas."""
+    try:
+        row = jard_query(
+            "UPDATE operacional.equipamentos SET ativo=false WHERE id=%s RETURNING codigo",
+            (eq_id,), fetch="one"
+        )
+        if row and row.get("codigo"):
+            try:
+                jard_query(
+                    "UPDATE checklist.frota SET ativo=false WHERE identificacao=%s",
+                    (row["codigo"],)
+                )
+            except Exception:
+                pass
+        return {"ok": True}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.get("/operacional/api/clientes")
 async def op_listar_clientes(_auth=Depends(verificar_token)):
-    """Lista clientes ativos para popular select da OS."""
+    """Lista clientes ativos para popular select da OS e tela de cadastro."""
     rows = jard_query(
-        "SELECT id, nome FROM public.clientes_garra WHERE ativo=true ORDER BY nome"
+        """SELECT id, nome, cnpj_cpf, telefone, email, contato, ativo
+           FROM public.clientes_garra
+           WHERE ativo=true OR ativo IS NULL
+           ORDER BY nome"""
     )
     return [dict(r) for r in (rows or [])]
+
+@app.post("/operacional/api/clientes")
+async def op_criar_cliente(request: Request, payload=Depends(verificar_gestor)):
+    """Cria novo cliente."""
+    d = await request.json()
+    nome = (d.get("nome") or "").strip()
+    if not nome:
+        raise HTTPException(status_code=400, detail="Nome é obrigatório")
+    try:
+        row = jard_query(
+            """INSERT INTO public.clientes_garra
+               (nome, cnpj_cpf, telefone, email, contato, ativo)
+               VALUES (%s,%s,%s,%s,%s, true)
+               RETURNING id, nome, cnpj_cpf, telefone, email, contato""",
+            (nome,
+             (d.get("cnpj_cpf") or "").strip() or None,
+             (d.get("telefone") or "").strip() or None,
+             (d.get("email") or "").strip() or None,
+             (d.get("contato") or "").strip() or None),
+            fetch="one"
+        )
+        return dict(row) if row else {"nome": nome}
+    except Exception as e:
+        if "duplicate" in str(e).lower():
+            raise HTTPException(status_code=409, detail="Cliente já existe")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.patch("/operacional/api/clientes/{cli_id}")
+async def op_editar_cliente(cli_id: str, request: Request, payload=Depends(verificar_gestor)):
+    """Edita cliente."""
+    d = await request.json()
+    updates = []
+    valores = []
+    for campo in ("nome","cnpj_cpf","telefone","email","contato"):
+        if campo in d:
+            val = d.get(campo)
+            if isinstance(val, str):
+                val = val.strip() or None
+            updates.append(f"{campo}=%s"); valores.append(val)
+    if not updates:
+        raise HTTPException(status_code=400, detail="Nada a atualizar")
+    valores.append(cli_id)
+    try:
+        row = jard_query(
+            f"""UPDATE public.clientes_garra SET {', '.join(updates)}
+                WHERE id=%s
+                RETURNING id, nome, cnpj_cpf, telefone, email, contato""",
+            tuple(valores), fetch="one"
+        )
+        if not row:
+            raise HTTPException(status_code=404, detail="Cliente não encontrado")
+        return dict(row)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.delete("/operacional/api/clientes/{cli_id}")
+async def op_remover_cliente(cli_id: str, payload=Depends(verificar_gestor)):
+    """Soft delete cliente."""
+    try:
+        jard_query(
+            "UPDATE public.clientes_garra SET ativo=false WHERE id=%s",
+            (cli_id,)
+        )
+        return {"ok": True}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/operacional/api/operadores")
 async def op_listar_operadores(_auth=Depends(verificar_token)):
@@ -2251,9 +2513,11 @@ async def op_minhas_os(payload=Depends(verificar_token)):
     rows = jard_query(
         """SELECT os.id, os.numero, os.obra, os.regime_cobranca,
                   os.data_inicio, os.data_fim_prevista, os.status,
+                  os.equipamento_id, os.operador_id, os.tipo_servico_id, os.cliente_id,
                   COALESCE(c.nome, os.cliente_nome_avulso) AS cliente_nome,
                   e.codigo AS equipamento_codigo, e.descricao AS equipamento_descricao,
-                  ts.nome AS tipo_servico_nome
+                  e.medicao AS equipamento_medicao,
+                  ts.nome AS tipo_servico_nome, ts.medicao AS tipo_servico_medicao
            FROM operacional.ordens_servico os
            LEFT JOIN public.clientes_garra c      ON c.id = os.cliente_id
            LEFT JOIN operacional.equipamentos e   ON e.id = os.equipamento_id
