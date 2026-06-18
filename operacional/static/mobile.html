@@ -334,10 +334,100 @@ input,select,textarea{font-family:inherit;outline:none;border:none}
 
 <!-- MODAIS -->
 <div id="modal-parte" style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.5);display:none;z-index:300;align-items:flex-end" onclick="fecharModalOp(event)">
-  <div style="background:#fff;width:100%;border-radius:12px 12px 0 0;padding:24px;max-height:90dvh;overflow-y:auto">
-    <h2 style="font-size:16px;font-weight:800;color:var(--blue);margin-bottom:16px">Registrar Dia</h2>
-    <div id="m-error" style="background:#FEE2E2;color:var(--red);border-radius:6px;padding:10px;margin-bottom:16px;font-size:13px;display:none"></div>
-    <!-- Conteúdo do modal aqui (omitido por brevidade) -->
+  <div style="background:#fff;width:100%;border-radius:12px 12px 0 0;padding:20px;max-height:92dvh;overflow-y:auto">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+      <h2 style="font-size:16px;font-weight:800;color:var(--blue)">📝 Registrar Dia</h2>
+      <button onclick="fecharModalDireto()" style="background:none;border:none;font-size:24px;color:var(--muted);cursor:pointer;line-height:1">×</button>
+    </div>
+    <div id="m-os-info" style="font-size:12px;color:var(--muted);margin-bottom:14px;padding:8px 10px;background:#F0F4FF;border-radius:6px"></div>
+    <div id="m-error" style="background:#FEE2E2;color:var(--red);border-radius:6px;padding:10px;margin-bottom:14px;font-size:13px;display:none"></div>
+
+    <div style="margin-bottom:12px">
+      <label style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:5px">Data *</label>
+      <input id="m-data" type="date" style="width:100%;padding:11px;border:1.5px solid var(--border);border-radius:8px;font-size:14px">
+    </div>
+
+    <div style="margin-bottom:12px">
+      <label style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:5px">Equipamento *</label>
+      <select id="m-equipamento" onchange="atualizarCamposMedicao()" style="width:100%;padding:11px;border:1.5px solid var(--border);border-radius:8px;font-size:14px">
+        <option value="">— selecionar —</option>
+      </select>
+    </div>
+
+    <div style="margin-bottom:12px">
+      <label style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:5px">Operador</label>
+      <select id="m-operador" style="width:100%;padding:11px;border:1.5px solid var(--border);border-radius:8px;font-size:14px">
+        <option value="">— eu mesmo —</option>
+      </select>
+    </div>
+
+    <!-- Bloco MÁQUINA (horímetro) -->
+    <div id="bloco-horimetro" style="background:#F0F4FF;border-radius:8px;padding:12px;margin-bottom:12px">
+      <div style="font-size:11px;font-weight:700;color:var(--blue);margin-bottom:8px">⚙️ HORÍMETRO</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+        <div>
+          <label style="font-size:10px;color:var(--muted);display:block;margin-bottom:4px">Inicial</label>
+          <input id="m-h-ini" type="number" step="0.1" placeholder="0.0" style="width:100%;padding:10px;border:1.5px solid var(--border);border-radius:6px;font-size:14px">
+        </div>
+        <div>
+          <label style="font-size:10px;color:var(--muted);display:block;margin-bottom:4px">Final</label>
+          <input id="m-h-fin" type="number" step="0.1" placeholder="0.0" style="width:100%;padding:10px;border:1.5px solid var(--border);border-radius:6px;font-size:14px">
+        </div>
+      </div>
+    </div>
+
+    <!-- Bloco CAMINHÃO (KM) -->
+    <div id="bloco-km" style="background:#FFF7ED;border-radius:8px;padding:12px;margin-bottom:12px;display:none">
+      <div style="font-size:11px;font-weight:700;color:var(--orange);margin-bottom:8px">🚛 KM</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
+        <div>
+          <label style="font-size:10px;color:var(--muted);display:block;margin-bottom:4px">Inicial</label>
+          <input id="m-km-ini" type="number" step="0.1" placeholder="0" style="width:100%;padding:10px;border:1.5px solid var(--border);border-radius:6px;font-size:14px">
+        </div>
+        <div>
+          <label style="font-size:10px;color:var(--muted);display:block;margin-bottom:4px">Final</label>
+          <input id="m-km-fin" type="number" step="0.1" placeholder="0" style="width:100%;padding:10px;border:1.5px solid var(--border);border-radius:6px;font-size:14px">
+        </div>
+      </div>
+      <div>
+        <label style="font-size:10px;color:var(--muted);display:block;margin-bottom:4px">Quantidade de viagens</label>
+        <input id="m-viagens" type="number" step="1" min="0" placeholder="0" style="width:100%;padding:10px;border:1.5px solid var(--border);border-radius:6px;font-size:14px">
+      </div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px">
+      <div>
+        <label style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:5px">Hora início</label>
+        <input id="m-h-inicio" type="time" style="width:100%;padding:10px;border:1.5px solid var(--border);border-radius:6px;font-size:14px">
+      </div>
+      <div>
+        <label style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:5px">Hora fim</label>
+        <input id="m-h-fim" type="time" style="width:100%;padding:10px;border:1.5px solid var(--border);border-radius:6px;font-size:14px">
+      </div>
+    </div>
+
+    <div id="bloco-trajeto" style="margin-bottom:12px;display:none">
+      <label style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:5px">Trajeto</label>
+      <input id="m-trajeto" type="text" placeholder="ex: Garagem → Obra" style="width:100%;padding:11px;border:1.5px solid var(--border);border-radius:8px;font-size:14px">
+    </div>
+
+    <div style="margin-bottom:12px">
+      <label style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:5px">Por conta de</label>
+      <select id="m-por-conta" style="width:100%;padding:11px;border:1.5px solid var(--border);border-radius:8px;font-size:14px">
+        <option value="empresa">Empresa (Garra)</option>
+        <option value="cliente">Cliente</option>
+      </select>
+    </div>
+
+    <div style="margin-bottom:18px">
+      <label style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:5px">Observação</label>
+      <textarea id="m-obs" rows="2" placeholder="Detalhes do dia" style="width:100%;padding:11px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;resize:vertical"></textarea>
+    </div>
+
+    <div style="display:flex;gap:8px">
+      <button id="btn-salvar-parte" onclick="salvarParte(false)" style="flex:2;padding:14px;border:none;background:var(--orange);color:#fff;border-radius:8px;font-weight:700;cursor:pointer;font-size:15px">✅ Salvar registro</button>
+      <button id="btn-salvar-mais" onclick="salvarParte(true)" style="flex:1;padding:14px;border:1.5px solid var(--orange);background:#fff;color:var(--orange);border-radius:8px;font-weight:700;cursor:pointer;font-size:13px">+ Salvar e novo</button>
+    </div>
   </div>
 </div>
 
@@ -718,9 +808,10 @@ async function preCarregarListasOffline() {
   if (!navigator.onLine) return;
   try {
     await Promise.all([
-      fetchComCacheIDB('/operacional/api/equipamentos', 'lst_equipamentos', 86400),
-      fetchComCacheIDB('/operacional/api/tipos-servico',  'lst_tipos_servico', 86400),
-      fetchComCacheIDB('/operacional/api/clientes',       'lst_clientes',      86400),
+      fetchComCacheIDB('/operacional/api/equipamentos',  'lst_equipamentos',  86400),
+      fetchComCacheIDB('/operacional/api/tipos-servico', 'lst_tipos_servico', 86400),
+      fetchComCacheIDB('/operacional/api/clientes',      'lst_clientes',      86400),
+      fetchComCacheIDB('/operacional/api/operadores',    'lst_operadores',    86400),
     ]);
     console.log('[Cache] Listas pré-carregadas para uso offline');
   } catch (e) {
@@ -848,8 +939,9 @@ async function salvarParte(adicionarMais) {
   }
 
   const sel = document.getElementById('m-equipamento');
-  const cat = sel.options[sel.selectedIndex]?.getAttribute('data-cat') || '';
-  const isCaminhao = ['caminhao','pipa','carro'].includes(cat);
+  const cat = (sel.options[sel.selectedIndex]?.getAttribute('data-cat') || '').toLowerCase();
+  const isCaminhao = cat === 'km'
+                  || ['caminhao','caminhão','pipa','carro','veiculo','veículo'].some(s => cat.includes(s));
 
   const hIni = document.getElementById('m-h-ini').value;
   const hFin = document.getElementById('m-h-fin').value;
@@ -886,35 +978,63 @@ async function salvarParte(adicionarMais) {
   btn2.disabled = true;
 
   try {
-    // ✅ OFFLINE-FIRST com GarraDB.postWithQueue
-    const result = await GarraDB.postWithQueue(
-      '/operacional/api/os/' + _osAtualId + '/partes',
-      payload,
-      {
-        retries: 5,
-        retryDelay: 30000,
-        dedup: 'url+method'
-      }
-    );
-
-    if (result.success) {
-      toast('✓ Registro salvo!', 'success');
-
-      if (adicionarMais) {
-        ['m-equipamento','m-operador','m-h-ini','m-h-fin','m-km-ini','m-km-fin',
-         'm-viagens','m-h-inicio','m-h-fim','m-trajeto','m-obs'].forEach(id => {
-          const el = document.getElementById(id);
-          if (el) el.value = '';
-        });
-        document.getElementById('m-por-conta').value = 'empresa';
+    // ONLINE-FIRST: tenta fetch direto
+    let salvouOnline = false;
+    let salvouOffline = false;
+    try {
+      const token = localStorage.getItem('garra_token') || '';
+      const r = await fetch('/operacional/api/os/' + _osAtualId + '/partes', {
+        method: 'POST',
+        headers: {
+          'Authorization': 'Bearer ' + token,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(payload)
+      });
+      if (r.ok) {
+        salvouOnline = true;
       } else {
-        fecharModalDireto();
+        const errData = await r.json().catch(() => ({}));
+        if (r.status >= 500 || !r.status) {
+          // erro de servidor → enfileira
+        } else {
+          throw new Error(errData.detail || `Erro HTTP ${r.status}`);
+        }
       }
-    } else if (result.queued) {
-      toast('⚠️ Offline - será sincronizado quando voltar online', 'info');
-      if (!adicionarMais) fecharModalDireto();
+    } catch (netErr) {
+      // Rede caiu — enfileira offline
+      if (typeof GarraDB !== 'undefined') {
+        try {
+          await GarraDB.postWithQueue(
+            '/operacional/api/os/' + _osAtualId + '/partes',
+            payload,
+            { retries: 5, retryDelay: 30000, dedup: false }
+          );
+          salvouOffline = true;
+        } catch (qe) {
+          throw netErr;
+        }
+      } else {
+        throw netErr;
+      }
+    }
+
+    if (salvouOnline) {
+      toast('✓ Registro salvo!', 'success');
+    } else if (salvouOffline) {
+      toast('⚠️ Offline — será enviado ao voltar online', 'info');
+    }
+
+    if (adicionarMais) {
+      ['m-h-ini','m-h-fin','m-km-ini','m-km-fin',
+       'm-viagens','m-h-inicio','m-h-fim','m-trajeto','m-obs'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.value = '';
+      });
+      document.getElementById('m-por-conta').value = 'empresa';
+      // Mantém equipamento e operador (provavelmente mesma OS no próximo registro)
     } else {
-      toast('❌ Erro ao salvar', 'error');
+      fecharModalDireto();
     }
 
     carregarOSApp();
@@ -988,9 +1108,98 @@ function toast(msg, type) {
   console.log('[Toast]', msg);
 }
 
-function abrirModalParte(osId) {
+async function abrirModalParte(osId) {
   _osAtualId = osId;
+  document.getElementById('m-error').style.display = 'none';
   document.getElementById('modal-parte').style.display = 'flex';
+
+  // Buscar dados da OS na lista já carregada (cache em memória) ou via API
+  let osData = null;
+  try {
+    const token = localStorage.getItem('garra_token') || '';
+    const r = await fetch('/operacional/api/minhas-os', {
+      headers: { 'Authorization': 'Bearer ' + token }
+    });
+    if (r.ok) {
+      const lista = await r.json();
+      osData = (Array.isArray(lista) ? lista : (lista.os || []))
+        .find(o => o.id === osId);
+    }
+  } catch (e) {
+    // offline — pega do cache IDB
+    try {
+      const cached = await GarraDB._cacheGet('os_minhas_' + (USUARIO?.id || 'anonimo'));
+      const lista = Array.isArray(cached) ? cached : (cached?.os || []);
+      osData = lista.find(o => o.id === osId);
+    } catch (_) {}
+  }
+
+  // Header com info da OS
+  const info = document.getElementById('m-os-info');
+  if (osData) {
+    info.innerHTML = `<strong>${osData.numero}</strong> — ${osData.obra || osData.cliente_nome || '(sem obra)'} <span style="color:var(--orange)">· ${osData.regime_cobranca || 'diaria'}</span>`;
+  } else {
+    info.innerHTML = `OS #${osId.substring(0,8)}…`;
+  }
+
+  // Resetar campos
+  ['m-h-ini','m-h-fin','m-km-ini','m-km-fin','m-viagens','m-h-inicio','m-h-fim','m-trajeto','m-obs'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+  document.getElementById('m-por-conta').value = 'empresa';
+
+  // Pré-preencher data com hoje
+  document.getElementById('m-data').value = new Date().toISOString().slice(0,10);
+
+  // Carregar selects (equipamentos + operadores) com cache offline
+  const [equipamentos, operadores] = await Promise.all([
+    fetchComCacheIDB('/operacional/api/equipamentos', 'lst_equipamentos',  86400),
+    fetchComCacheIDB('/operacional/api/operadores',   'lst_operadores',    86400),
+  ]);
+
+  // Equipamentos com data-cat (categoria/medicao) para detectar máquina/caminhão
+  const selEq = document.getElementById('m-equipamento');
+  selEq.innerHTML = '<option value="">— selecionar —</option>';
+  (equipamentos || []).forEach(e => {
+    const cat = (e.medicao || e.categoria || e.tipo || '').toLowerCase();
+    selEq.innerHTML += `<option value="${e.id}" data-cat="${cat}">${e.codigo} — ${e.descricao || ''}</option>`;
+  });
+  // Pré-selecionar equipamento da OS
+  if (osData?.equipamento_id) selEq.value = osData.equipamento_id;
+
+  // Operadores
+  const selOp = document.getElementById('m-operador');
+  selOp.innerHTML = '<option value="">— eu mesmo —</option>';
+  (operadores || []).forEach(o => {
+    selOp.innerHTML += `<option value="${o.id}">${o.nome}</option>`;
+  });
+  // Pré-selecionar operador da OS
+  if (osData?.operador_id) selOp.value = osData.operador_id;
+
+  // Atualiza visibilidade dos blocos (horímetro/km/trajeto)
+  atualizarCamposMedicao();
+}
+
+function atualizarCamposMedicao() {
+  const sel = document.getElementById('m-equipamento');
+  const cat = (sel.options[sel.selectedIndex]?.getAttribute('data-cat') || '').toLowerCase();
+  // É caminhão se medicao = km, ou categoria contém caminhão/pipa/carro
+  const isCaminhao = cat === 'km'
+                  || ['caminhao','caminhão','pipa','carro','veiculo','veículo'].some(s => cat.includes(s));
+
+  const blocoH  = document.getElementById('bloco-horimetro');
+  const blocoKM = document.getElementById('bloco-km');
+  const blocoT  = document.getElementById('bloco-trajeto');
+  if (isCaminhao) {
+    blocoH.style.display  = 'none';
+    blocoKM.style.display = 'block';
+    blocoT.style.display  = 'block';
+  } else {
+    blocoH.style.display  = 'block';
+    blocoKM.style.display = 'none';
+    blocoT.style.display  = 'none';
+  }
 }
 
 function fecharModalDireto() {
