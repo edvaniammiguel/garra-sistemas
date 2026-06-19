@@ -153,9 +153,19 @@ input,select,textarea{font-family:inherit;outline:none;border:none}
 .empty-sub{font-size:12px;margin-top:4px}
 
 /* Checklist iframe */
+#sec-check {
+  height: calc(100dvh - 120px);
+  padding: 0 !important;
+}
+#sec-check.active {
+  display: flex !important;
+  flex-direction: column;
+}
 #sec-check iframe {
   width: 100%;
+  flex: 1;
   height: 100%;
+  min-height: calc(100dvh - 120px);
   border: none;
   display: block;
   border-radius: 0;
@@ -282,6 +292,24 @@ input,select,textarea{font-family:inherit;outline:none;border:none}
       <button class="btn-eye" onclick="togglePass()">👁</button>
     </div>
     <button class="btn-login" onclick="fazerLogin()">🚀 Entrar</button>
+    <div style="text-align:center;margin-top:16px">
+      <a href="#" onclick="abrirEsqueciSenha();return false" style="color:var(--muted);font-size:13px;text-decoration:none">Esqueci minha senha</a>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL ESQUECI SENHA -->
+<div id="modal-esqueci" style="position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:500;display:none;align-items:center;justify-content:center;padding:20px" onclick="if(event.target===this)fecharEsqueciSenha()">
+  <div style="background:#fff;width:100%;max-width:380px;border-radius:12px;padding:24px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+      <h2 style="font-size:16px;font-weight:800;color:var(--blue)">🔑 Redefinir senha</h2>
+      <button onclick="fecharEsqueciSenha()" style="background:none;border:none;font-size:24px;color:var(--muted);cursor:pointer">×</button>
+    </div>
+    <div id="esq-err" style="background:#FEE2E2;color:var(--red);border-radius:6px;padding:10px;margin-bottom:14px;font-size:13px;display:none"></div>
+    <div id="esq-ok" style="background:#DCFCE7;color:#16A34A;border-radius:6px;padding:10px;margin-bottom:14px;font-size:13px;display:none"></div>
+    <p style="font-size:13px;color:var(--muted);margin-bottom:16px">Informe seu e-mail cadastrado. Você receberá um link para criar uma nova senha.</p>
+    <input id="esq-email" type="email" placeholder="seu.email@garra.local" style="width:100%;padding:11px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;box-sizing:border-box;margin-bottom:16px">
+    <button onclick="enviarEsqueciSenha()" style="width:100%;padding:14px;border:none;background:var(--orange);color:#fff;border-radius:8px;font-weight:700;font-size:15px;cursor:pointer">Enviar link de redefinição</button>
   </div>
 </div>
 
@@ -298,7 +326,7 @@ input,select,textarea{font-family:inherit;outline:none;border:none}
     </div>
     <div class="app-header-right">
       <div id="net-badge" title="Status de conexão" style="font-size:11px;font-weight:700;padding:4px 10px;border-radius:99px;background:#16A34A;color:#fff;display:none">● Online</div>
-      <div class="user-avatar" id="user-avatar">?</div>
+      <div class="user-avatar" id="user-avatar" onclick="abrirPainelConta()" style="cursor:pointer" title="Minha conta">?</div>
       <button class="btn-sair" onclick="fazerLogout()">Sair</button>
     </div>
   </div>
@@ -333,7 +361,7 @@ input,select,textarea{font-family:inherit;outline:none;border:none}
   <!-- BOTTOM NAV -->
   <div class="bottom-nav">
     <button class="nav-btn active" onclick="ir('Jard')"><span class="nav-icon">🌿</span><span class="nav-label">Jardinagem</span></button>
-    <button class="nav-btn" onclick="ir('Op')"><span class="nav-icon">⚙️</span><span class="nav-label">Operacional</span></button>
+    <button class="nav-btn" onclick="ir('Op')"><span class="nav-icon">⚙️</span><span class="nav-label">OS</span></button>
     <button class="nav-btn" onclick="ir('Check')"><span class="nav-icon">✓</span><span class="nav-label">Checklist</span></button>
     <button class="nav-btn" onclick="ir('Log')" style="display:none"><span class="nav-icon">🚗</span><span class="nav-label">Logística</span></button>
   </div>
@@ -514,6 +542,41 @@ let _opTab = 'os';
 // ──────────────────────────────────────────────────────────────────────────────
 // LOGIN
 // ──────────────────────────────────────────────────────────────────────────────
+function abrirEsqueciSenha() {
+  document.getElementById('modal-esqueci').style.display = 'flex';
+  document.getElementById('esq-err').style.display = 'none';
+  document.getElementById('esq-ok').style.display = 'none';
+}
+function fecharEsqueciSenha() {
+  document.getElementById('modal-esqueci').style.display = 'none';
+}
+async function enviarEsqueciSenha() {
+  const err = document.getElementById('esq-err');
+  const ok = document.getElementById('esq-ok');
+  err.style.display = 'none';
+  ok.style.display = 'none';
+  const email = document.getElementById('esq-email').value.trim();
+  if (!email) {
+    err.textContent = 'Informe seu e-mail';
+    err.style.display = 'block';
+    return;
+  }
+  try {
+    const r = await fetch('/auth/solicitar-reset', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email })
+    });
+    // Sempre mostra sucesso (não revela se email existe — segurança)
+    ok.textContent = '✓ Se o e-mail estiver cadastrado, você receberá o link em instantes.';
+    ok.style.display = 'block';
+    document.getElementById('esq-email').value = '';
+  } catch (e) {
+    err.textContent = 'Erro ao enviar. Tente novamente.';
+    err.style.display = 'block';
+  }
+}
+
 async function fazerLogin() {
   const login = document.getElementById('field-login').value.trim();
   const pass = document.getElementById('field-pass').value;
@@ -622,7 +685,7 @@ function ir(nome) {
 function carregarIframeChecklist(tab) {
   const sec = document.getElementById('sec-check');
   const token = localStorage.getItem('garra_token') || '';
-  const url = `/checklist/?sso=${encodeURIComponent(token)}&tab=${tab}&embedded=1`;
+  const url = `/checklist?sso=${encodeURIComponent(token)}&tab=${tab}&embedded=1`;
   // Recria iframe só se aba mudou ou ainda não existe
   let iframe = sec.querySelector('iframe');
   if (!iframe) {
@@ -1358,10 +1421,233 @@ function fecharSheetNovaOS() {
 
 function opTab(tab) {
   _opTab = tab;
+  const tabOS = document.getElementById('op-tab-os');
+  const tabHist = document.getElementById('op-tab-hist');
+
+  if (tab === 'os') {
+    tabOS.style.borderBottomColor = 'var(--orange)';
+    tabOS.style.color = 'var(--orange)';
+    tabHist.style.borderBottomColor = 'transparent';
+    tabHist.style.color = 'var(--muted)';
+    carregarOSApp();
+  } else {
+    tabHist.style.borderBottomColor = 'var(--orange)';
+    tabHist.style.color = 'var(--orange)';
+    tabOS.style.borderBottomColor = 'transparent';
+    tabOS.style.color = 'var(--muted)';
+    carregarHistoricoOS();
+  }
 }
 
-function verPartes(osId, osNum) {
-  alert('Ver partes da OS: ' + osNum);
+async function carregarHistoricoOS() {
+  const el = document.getElementById('os-lista');
+  el.innerHTML = '<div class="loading"><span class="spin"></span></div>';
+  try {
+    const token = localStorage.getItem('garra_token') || '';
+    const r = await fetch('/operacional/api/minhas-os?historico=1', {
+      headers: { 'Authorization': 'Bearer ' + token }
+    });
+    let lista = [];
+    if (r.ok) {
+      const dados = await r.json();
+      lista = Array.isArray(dados) ? dados : (dados.os || []);
+    }
+    // Filtrar apenas concluídas/fechadas
+    const concluidas = lista.filter(o =>
+      ['concluida_completa','concluida_sem_erp','aguardando_fechamento'].includes(o.status)
+    );
+
+    if (!concluidas.length) {
+      el.innerHTML = `<div class="empty">
+        <div class="empty-icon">🕐</div>
+        <div class="empty-txt">Nenhuma OS no histórico</div>
+        <div class="empty-sub">OS concluídas aparecerão aqui</div>
+      </div>`;
+      return;
+    }
+
+    let html = '';
+    concluidas.forEach(os => {
+      const statusLabel = {
+        'aguardando_fechamento': '⏳ Aguardando fechamento',
+        'concluida_sem_erp': '✅ Concluída',
+        'concluida_completa': '✅ Concluída'
+      }[os.status] || os.status;
+
+      html += `
+        <div class="os-card" onclick="verPartes('${os.id}', '${os.numero}')" style="cursor:pointer">
+          <div class="os-numero">${os.numero}
+            <span style="display:inline-block;background:#DCFCE7;color:#16A34A;font-size:10px;font-weight:700;padding:3px 10px;border-radius:99px;margin-left:8px">${statusLabel}</span>
+          </div>
+          <div class="os-cliente">${os.cliente_nome || os.obra || '(Cliente avulso)'}</div>
+          <div class="os-info">
+            <div class="os-info-item">
+              <div class="os-info-label">Equipamento</div>
+              <div class="os-info-value" style="font-size:12px">${os.equipamento_codigo || '–'}</div>
+            </div>
+            <div class="os-info-item">
+              <div class="os-info-label">Regime</div>
+              <div class="os-info-value" style="font-size:12px">${os.regime_cobranca || '–'}</div>
+            </div>
+          </div>
+          <div style="text-align:center;padding:8px;color:var(--orange);font-size:12px;font-weight:700">👁 Ver partes registradas</div>
+        </div>`;
+    });
+    el.innerHTML = html;
+  } catch (e) {
+    el.innerHTML = `<div class="empty"><div class="empty-txt">Erro ao carregar histórico</div></div>`;
+  }
+}
+
+function abrirPainelConta() {
+  if (!USUARIO) return;
+  const modal = document.createElement('div');
+  modal.id = 'modal-conta';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:400;display:flex;align-items:flex-end';
+  modal.onclick = (e) => { if (e.target === modal) modal.remove(); };
+  modal.innerHTML = `
+    <div style="background:#fff;width:100%;border-radius:12px 12px 0 0;padding:24px;max-height:85dvh;overflow-y:auto">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px">
+        <h2 style="font-size:16px;font-weight:800;color:var(--blue)">👤 Minha conta</h2>
+        <button onclick="document.getElementById('modal-conta').remove()" style="background:none;border:none;font-size:24px;color:var(--muted);cursor:pointer">×</button>
+      </div>
+
+      <div style="background:#F0F4FF;border-radius:8px;padding:16px;margin-bottom:20px;display:flex;align-items:center;gap:12px">
+        <div style="width:48px;height:48px;border-radius:50%;background:var(--orange);display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:800;color:#fff">${(USUARIO.nome||'?').charAt(0).toUpperCase()}</div>
+        <div>
+          <div style="font-size:15px;font-weight:800;color:var(--blue)">${USUARIO.nome || USUARIO.login}</div>
+          <div style="font-size:12px;color:var(--muted)">${USUARIO.login} · ${USUARIO.perfil || ''}</div>
+        </div>
+      </div>
+
+      <div style="font-size:13px;font-weight:800;color:var(--blue);margin-bottom:12px;text-transform:uppercase;letter-spacing:.06em">Alterar senha</div>
+      <div id="conta-err" style="background:#FEE2E2;color:var(--red);border-radius:6px;padding:10px;margin-bottom:14px;font-size:13px;display:none"></div>
+      <div id="conta-ok" style="background:#DCFCE7;color:#16A34A;border-radius:6px;padding:10px;margin-bottom:14px;font-size:13px;display:none"></div>
+
+      <div style="margin-bottom:12px">
+        <label style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;display:block;margin-bottom:5px">Senha atual</label>
+        <input id="conta-senha-atual" type="password" style="width:100%;padding:11px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;box-sizing:border-box">
+      </div>
+      <div style="margin-bottom:12px">
+        <label style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;display:block;margin-bottom:5px">Nova senha</label>
+        <input id="conta-senha-nova" type="password" style="width:100%;padding:11px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;box-sizing:border-box">
+      </div>
+      <div style="margin-bottom:18px">
+        <label style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;display:block;margin-bottom:5px">Confirmar nova senha</label>
+        <input id="conta-senha-conf" type="password" style="width:100%;padding:11px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;box-sizing:border-box">
+      </div>
+
+      <button onclick="salvarNovaSenha()" style="width:100%;padding:14px;border:none;background:var(--orange);color:#fff;border-radius:8px;font-weight:700;font-size:15px;cursor:pointer">Alterar senha</button>
+    </div>`;
+  document.body.appendChild(modal);
+}
+
+async function salvarNovaSenha() {
+  const err = document.getElementById('conta-err');
+  const ok = document.getElementById('conta-ok');
+  err.style.display = 'none';
+  ok.style.display = 'none';
+
+  const atual = document.getElementById('conta-senha-atual').value;
+  const nova = document.getElementById('conta-senha-nova').value;
+  const conf = document.getElementById('conta-senha-conf').value;
+
+  if (!atual || !nova || !conf) {
+    err.textContent = 'Preencha todos os campos';
+    err.style.display = 'block';
+    return;
+  }
+  if (nova.length < 6) {
+    err.textContent = 'A nova senha deve ter ao menos 6 caracteres';
+    err.style.display = 'block';
+    return;
+  }
+  if (nova !== conf) {
+    err.textContent = 'As senhas não coincidem';
+    err.style.display = 'block';
+    return;
+  }
+
+  try {
+    const token = localStorage.getItem('garra_token') || '';
+    const r = await fetch('/auth/alterar-senha', {
+      method: 'POST',
+      headers: {
+        'Authorization': 'Bearer ' + token,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ senha_atual: atual, senha_nova: nova })
+    });
+    if (r.ok) {
+      ok.textContent = '✓ Senha alterada com sucesso!';
+      ok.style.display = 'block';
+      document.getElementById('conta-senha-atual').value = '';
+      document.getElementById('conta-senha-nova').value = '';
+      document.getElementById('conta-senha-conf').value = '';
+    } else {
+      const data = await r.json().catch(() => ({}));
+      err.textContent = data.detail || 'Erro ao alterar senha';
+      err.style.display = 'block';
+    }
+  } catch (e) {
+    err.textContent = 'Erro: ' + e.message;
+    err.style.display = 'block';
+  }
+}
+
+async function verPartes(osId, osNum) {
+  const token = localStorage.getItem('garra_token') || '';
+  let partes = [];
+  try {
+    const r = await fetch('/operacional/api/os/' + osId + '/partes', {
+      headers: { 'Authorization': 'Bearer ' + token }
+    });
+    if (r.ok) {
+      const dados = await r.json();
+      partes = Array.isArray(dados) ? dados : (dados.partes || []);
+    }
+  } catch (e) { /* offline — mostra vazio */ }
+
+  let linhas = '';
+  if (!partes.length) {
+    linhas = '<div style="padding:30px;text-align:center;color:var(--muted)">Nenhuma parte registrada</div>';
+  } else {
+    partes.forEach(p => {
+      let dataFmt = p.data || '';
+      try { dataFmt = new Date(p.data + 'T00:00').toLocaleDateString('pt-BR'); } catch(e){}
+      const med = p.tipo_medicao || 'horimetro';
+      let medInfo = '';
+      if (med === 'metros') {
+        medInfo = `${p.qtd_metros || 0} m`;
+      } else if (med === 'km') {
+        medInfo = `${p.km_percorrido || 0} km (${p.qtd_viagens || 0} viagens)`;
+      } else {
+        medInfo = `${p.horas_trabalhadas || 0}h trab. / ${p.horas_cobradas || 0}h cobr.`;
+      }
+      linhas += `
+        <div style="border-bottom:1px solid var(--border);padding:12px 0">
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <strong style="font-size:13px;color:var(--blue)">${dataFmt}</strong>
+            <span style="font-size:12px;font-weight:700;color:var(--orange)">${medInfo}</span>
+          </div>
+          ${p.observacao ? `<div style="font-size:12px;color:var(--muted);margin-top:4px">${p.observacao}</div>` : ''}
+        </div>`;
+    });
+  }
+
+  const modal = document.createElement('div');
+  modal.id = 'modal-ver-partes';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:400;display:flex;align-items:flex-end';
+  modal.onclick = (e) => { if (e.target === modal) modal.remove(); };
+  modal.innerHTML = `
+    <div style="background:#fff;width:100%;border-radius:12px 12px 0 0;padding:20px;max-height:80dvh;overflow-y:auto">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+        <h2 style="font-size:16px;font-weight:800;color:var(--blue)">📋 Partes — ${osNum}</h2>
+        <button onclick="document.getElementById('modal-ver-partes').remove()" style="background:none;border:none;font-size:24px;color:var(--muted);cursor:pointer">×</button>
+      </div>
+      ${linhas}
+    </div>`;
+  document.body.appendChild(modal);
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -1408,45 +1694,69 @@ document.addEventListener('DOMContentLoaded', async () => {
 function aplicarPermissoesPerfil() {
   if (!USUARIO) return;
   const perfil = USUARIO.perfil;
+  const perms = USUARIO.permsDB || {};
   const navs = document.querySelectorAll('.bottom-nav .nav-btn');
   // navs[0] = Jardinagem, navs[1] = Operacional, navs[2] = Checklist, navs[3] = Logística
+
+  // Módulos mapeados para cada aba
+  const modulos = [
+    { aba: 0, id: 'jardinagem_mobile' },
+    { aba: 1, id: 'operacional_mobile' },
+    { aba: 2, id: 'checklist' },
+    { aba: 3, id: 'checklist_logistica' },
+  ];
+
+  // Padrão por perfil (usado quando permsDB não define o módulo)
+  const padrao = {
+    admin:     ['jardinagem_mobile','operacional_mobile','checklist','checklist_logistica'],
+    gestor:    ['jardinagem_mobile','operacional_mobile','checklist','checklist_logistica'],
+    luana:     ['jardinagem_mobile','operacional_mobile','checklist'],
+    bruna:     ['operacional_mobile','checklist'],
+    operador:  ['operacional_mobile','checklist'],
+    motorista: ['operacional_mobile','checklist'],
+    campo:     ['jardinagem_mobile'],
+  };
+
+  const meuPadrao = padrao[perfil] || [];
 
   // Reset: começa tudo escondido
   navs.forEach(b => b.style.display = 'none');
 
-  // Admin / Gestor / Luana: vê tudo
-  if (perfil === 'admin' || perfil === 'gestor' || perfil === 'luana') {
-    navs[0].style.display = '';
-    navs[1].style.display = '';
-    navs[2].style.display = '';
-    navs[3].style.display = '';
-  }
-  // Operador / Motorista / Bruna: Operacional + Checklist
-  else if (perfil === 'operador' || perfil === 'motorista' || perfil === 'bruna') {
-    navs[1].style.display = '';
-    navs[2].style.display = '';
-  }
-  // Campo (Arthur/Carlos): só Jardinagem
-  else if (perfil === 'campo') {
-    navs[0].style.display = '';
-  }
-
-  // Logística é exceção individual via checklist_logistica
-  const podeLogistica = !!(USUARIO.permsDB && USUARIO.permsDB.checklist_logistica)
-                     || USUARIO.checklist_logistica === true
-                     || perfil === 'admin' || perfil === 'gestor' || perfil === 'luana';
-  if (podeLogistica) {
-    navs[3].style.display = '';
-  }
+  // Aplicar: permsDB tem prioridade sobre padrão
+  modulos.forEach(m => {
+    let permitido;
+    if (m.id in perms) {
+      // Permissão explícita no banco (admin marcou/desmarcou)
+      permitido = !!perms[m.id];
+    } else {
+      // Sem permissão explícita → usa padrão do perfil
+      permitido = meuPadrao.includes(m.id);
+    }
+    if (permitido && navs[m.aba]) {
+      navs[m.aba].style.display = '';
+    }
+  });
 }
 
 function abrirAbaInicial() {
   if (!USUARIO) return;
-  const perfil = USUARIO.perfil;
-  if (perfil === 'campo') {
-    ir('Jard');
-  } else {
-    ir('Op');  // admin, gestor, luana, operador, motorista, bruna → Operacional
+  const navs = document.querySelectorAll('.bottom-nav .nav-btn');
+  const abas = ['Jard', 'Op', 'Check', 'Log'];
+  // Abre na primeira aba visível, priorizando Op > Jard > Check > Log
+  const prioridade = ['Op', 'Jard', 'Check', 'Log'];
+  for (const nome of prioridade) {
+    const idx = abas.indexOf(nome);
+    if (idx >= 0 && navs[idx] && navs[idx].style.display !== 'none') {
+      ir(nome);
+      return;
+    }
+  }
+  // Fallback: primeira visível
+  for (let i = 0; i < navs.length; i++) {
+    if (navs[i].style.display !== 'none') {
+      ir(abas[i]);
+      return;
+    }
   }
 }
 
