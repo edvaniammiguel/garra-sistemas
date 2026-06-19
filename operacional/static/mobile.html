@@ -306,7 +306,14 @@ input,select,textarea{font-family:inherit;outline:none;border:none}
   <!-- CONTEÚDO -->
   <div class="app-content">
     <!-- JARDINAGEM -->
-    <div id="sec-jard" class="mod-section active"></div>
+    <div id="sec-jard" class="mod-section active">
+      <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:60px 20px;text-align:center">
+        <div style="font-size:48px;margin-bottom:16px">🌿</div>
+        <div style="font-size:16px;font-weight:800;color:var(--blue);margin-bottom:8px">Módulo Jardinagem</div>
+        <div style="font-size:13px;color:var(--muted);margin-bottom:24px">O módulo de Jardinagem possui seu próprio aplicativo<br>com fotos, KM e relatórios.</div>
+        <a href="/jardinagem/mobile" style="display:inline-block;padding:14px 28px;background:var(--orange);color:#fff;border-radius:8px;font-weight:700;font-size:14px;text-decoration:none;box-shadow:0 4px 14px rgba(232,130,12,.3)">Abrir Jardinagem →</a>
+      </div>
+    </div>
 
     <!-- OPERACIONAL -->
     <div id="sec-op" class="mod-section">
@@ -1436,12 +1443,10 @@ function aplicarPermissoesPerfil() {
 function abrirAbaInicial() {
   if (!USUARIO) return;
   const perfil = USUARIO.perfil;
-  if (perfil === 'operador' || perfil === 'motorista' || perfil === 'bruna') {
-    ir('Op');
-  } else if (perfil === 'campo') {
+  if (perfil === 'campo') {
     ir('Jard');
   } else {
-    ir('Jard');  // default
+    ir('Op');  // admin, gestor, luana, operador, motorista, bruna → Operacional
   }
 }
 
