@@ -4,6 +4,25 @@
    Offline-first PWA | PostgreSQL via API
 ═══════════════════════════════════════════════════ */
 
+// ─── API FETCH COM TOKEN ───────────────────────────
+async function apiFetch(url, options = {}) {
+  const token = localStorage.getItem('garra_token') || '';
+  const headers = {
+    'Authorization': 'Bearer ' + token,
+    ...(options.headers || {})
+  };
+  if (options.body && typeof options.body === 'string') {
+    headers['Content-Type'] = 'application/json';
+  }
+  const r = await fetch(url, { ...options, headers });
+  if (!r.ok) {
+    const data = await r.json().catch(() => ({}));
+    throw new Error(data.detail || `Erro HTTP ${r.status}`);
+  }
+  const text = await r.text();
+  try { return JSON.parse(text); } catch(e) { return text; }
+}
+
 // ─── ESTADO GLOBAL ─────────────────────────────────
 let currentUser  = null;
 let currentCLId  = null;
@@ -170,6 +189,14 @@ let isOnline = navigator.onLine;
 window.addEventListener('online',  () => { isOnline = true;  updateSyncUI(); syncNow(); });
 window.addEventListener('offline', () => { isOnline = false; updateSyncUI(); });
 
+// Timer periódico: tenta sync a cada 60s (cobre Android que não dispara 'online' sempre)
+setInterval(() => {
+  if (navigator.onLine) {
+    isOnline = true;
+    syncNow();
+  }
+}, 60000);
+
 function updateSyncUI() {
   ['sync-dot','mgr-sync-dot','sup-sync-dot'].forEach(id => {
     const el = document.getElementById(id);
@@ -188,12 +215,45 @@ function updateSyncUI() {
   if (cnt)    cnt.textContent = pending.length;
 }
 
-function syncNow() {
+async function syncNow() {
   if (!isOnline) return;
   const pending = DB.pendingSync();
   if (!pending.length) return;
-  pending.forEach(s => { s.synced = true; DB.saveSubmission(s); });
-  DB.clearPending();
+  console.log('[Sync] Reenviando', pending.length, 'checklist(s) pendente(s)...');
+
+  const enviados = [];
+  for (const s of pending) {
+    try {
+      await GarraDB.salvarEnvio({
+        envio_id:      s.id,
+        usuario_login: s.user,
+        usuario_nome:  s.userName,
+        cl_id:         s.type,
+        cl_label:      s.clLabel,
+        meta:          s.meta,
+        respostas:     s.answers,
+        pts:           s.pts,
+        tem_nc:        (s.meta?.totalNC || 0) > 0,
+        total_nc:      s.meta?.totalNC || 0,
+        enviado_em:    s.date,
+      });
+      s.synced = true;
+      DB.saveSubmission(s);
+      enviados.push(s.id);
+      console.log('[Sync] ✅ Enviado:', s.id);
+    } catch (e) {
+      console.warn('[Sync] ❌ Falhou:', s.id, e.message);
+      // Mantém na fila para próxima tentativa
+    }
+  }
+
+  // Remover da fila apenas os que foram enviados com sucesso
+  if (enviados.length > 0) {
+    const restante = pending.filter(s => !enviados.includes(s.id));
+    DB.set('garra_pending', restante);
+    console.log('[Sync] ✅', enviados.length, 'enviado(s),', restante.length, 'restante(s)');
+  }
+
   updateSyncUI();
   if (currentUser?.role === 'driver') renderDriverDashboard();
 }
@@ -1471,7 +1531,9 @@ function formatDate(iso)     { if(!iso)return'–';return new Date(iso).toLocale
 function formatDateTime(iso) { if(!iso)return'–';return new Date(iso).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}); }
 
 // ─── SERVICE WORKER ────────────────────────────────
-if ('serviceWorker' in navigator) {
+// Não registrar SW quando em iframe embedded (o app shell pai já tem)
+const _isEmbedded = new URLSearchParams(window.location.search).get('embedded') === '1';
+if ('serviceWorker' in navigator && !_isEmbedded) {
   navigator.serviceWorker.register('./sw.js', {scope: './'}).then(reg => {
     console.log('[App] Service Worker registrado ✅');
 
