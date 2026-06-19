@@ -1296,20 +1296,45 @@ async function concluirOS(osId, numero) {
   if (!confirm(`Confirma conclusão da ${numero}?\n\nApós concluir, a OS ficará aguardando fechamento pela administração.`)) return;
   try {
     const token = localStorage.getItem('garra_token') || '';
-    const r = await fetch('/operacional/api/os/' + osId + '/concluir', {
-      method: 'POST',
-      headers: {
-        'Authorization': 'Bearer ' + token,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({})
-    });
-    if (r.ok) {
+    let salvouOnline = false;
+    try {
+      const r = await fetch('/operacional/api/os/' + osId + '/concluir', {
+        method: 'POST',
+        headers: {
+          'Authorization': 'Bearer ' + token,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({})
+      });
+      if (r.ok) {
+        salvouOnline = true;
+      } else {
+        const data = await r.json().catch(() => ({}));
+        if (r.status < 500) {
+          toast('❌ ' + (data.detail || 'Erro ao concluir'), 'error');
+          return;
+        }
+      }
+    } catch (netErr) {
+      // Rede falhou — enfileirar
+      if (typeof GarraDB !== 'undefined') {
+        try {
+          await GarraDB.postWithQueue(
+            '/operacional/api/os/' + osId + '/concluir',
+            {},
+            { retries: 5, retryDelay: 30000, dedup: false }
+          );
+          toast('⚠️ Offline — conclusão será enviada ao voltar online', 'info');
+          await carregarOSApp();
+          return;
+        } catch (qe) { /* prossegue */ }
+      }
+      toast('❌ Sem conexão', 'error');
+      return;
+    }
+    if (salvouOnline) {
       toast('✅ ' + numero + ' concluída — aguardando fechamento', 'success');
       await carregarOSApp();
-    } else {
-      const data = await r.json().catch(() => ({}));
-      toast('❌ ' + (data.detail || 'Erro ao concluir'), 'error');
     }
   } catch (e) {
     toast('❌ Erro: ' + e.message, 'error');
