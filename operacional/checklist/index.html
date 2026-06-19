@@ -41,7 +41,6 @@
     }
   })();
 </script>
-<script src="/operacional/static/js/idb.js"></script>
 </head>
 <body>
 
@@ -883,8 +882,7 @@
     // Sem token ou falhou — mostrar login normal
     if (typeof renovarTokenSilencioso === 'function') renovarTokenSilencioso();
   });
-</script>  
-<script src="/operacional/static/js/offline-ui.js"></script>
+</script>
 <script>
 // Modo embedded: quando carregado dentro do iframe do app shell mobile
 (function() {
@@ -899,17 +897,11 @@
       .embedded .top-bar-spacer { display: none !important; }
       .embedded body { padding-top: 0 !important; }
       .embedded .screen { padding-top: 0 !important; }
+      .embedded #screen-login { display: none !important; }
     `;
     document.head.appendChild(s);
   }
 })();
-</script>
-<script>
-if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('/operacional/static/sw.js', { scope: '/' })
-    .then(reg => console.log('[Checklist] SW registrado'))
-    .catch(err => console.error('[Checklist] SW erro:', err));
-}
 </script>
 </body>
 </html>
