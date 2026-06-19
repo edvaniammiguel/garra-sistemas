@@ -1126,6 +1126,15 @@ window.addEventListener('load', async () => {
 });
 
 /* ══════════════════════════════════════════════
+   CHECKLIST ADMIN — abre em nova aba com SSO
+══════════════════════════════════════════════ */
+function abrirChecklistAdmin() {
+  const token = localStorage.getItem('garra_token') || '';
+  const url = '/checklist?sso=' + encodeURIComponent(token);
+  window.open(url, '_blank');
+}
+
+/* ══════════════════════════════════════════════
    NAVEGAÇÃO
 ══════════════════════════════════════════════ */
 let secAtual = 'dashboard';
@@ -1729,7 +1738,7 @@ function renderSidebar(perfil, perms) {
 
   // Módulos ativos — só os que o usuário tem permissão
   const modulosSb = [
-    { id:'checklist',          label:'Checklist',  url:'https://garra-checklist-app.onrender.com', externo:true,  icon:'M9 11l3 3L22 4', icon2:'M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11' },
+    { id:'checklist',          label:'Checklist',  url:null, abrirChecklist:true, icon:'M9 11l3 3L22 4', icon2:'M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11' },
     { id:'jardinagem_desktop', label:'Jardinagem', url:'/jardinagem/desktop', externo:false, icon:'M12 22V12', icon2:'M5 12c0-3.87 3.13-7 7-7s7 3.13 7 7' },
     { id:'operacional_mobile', label:'Operacional',url:'/mobile', externo:false, icon:'M9 17H5a2 2 0 0 0-2 2', icon2:'M13 17h8' },
   ];
@@ -1738,15 +1747,18 @@ function renderSidebar(perfil, perms) {
   if (modulosVisiveis.length) {
     html += `<div class="sb-section"><span class="sb-label">Módulos ativos</span>`;
     modulosVisiveis.forEach(m => {
-      html += m.externo
-        ? `<a class="sb-item" href="${m.url}" target="_blank">
-            <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="#16A34A" stroke-width="2"><path d="${m.icon}"/><path d="${m.icon2}"/></svg>
-            ${m.label} <span class="dot dot-green" style="margin-left:auto"></span>
-           </a>`
-        : `<div class="sb-item" onclick="window.location.href='${m.url}'">
+      if (m.abrirChecklist) {
+        // Checklist abre em nova aba com SSO token
+        html += `<div class="sb-item" onclick="abrirChecklistAdmin()">
             <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="#16A34A" stroke-width="2"><path d="${m.icon}"/><path d="${m.icon2}"/></svg>
             ${m.label} <span class="dot dot-green" style="margin-left:auto"></span>
            </div>`;
+      } else {
+        html += `<div class="sb-item" onclick="window.location.href='${m.url}'">
+            <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="#16A34A" stroke-width="2"><path d="${m.icon}"/><path d="${m.icon2}"/></svg>
+            ${m.label} <span class="dot dot-green" style="margin-left:auto"></span>
+           </div>`;
+      }
     });
     html += `</div><div class="sb-divider"></div>`;
   }
