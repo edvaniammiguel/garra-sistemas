@@ -1359,8 +1359,30 @@ async function salvarUsuario() {
       toast('Colaborador atualizado!', 'success');
     } else {
       // Criação
-      await apiFetch('/usuarios', { method: 'POST', body: JSON.stringify({ login, nome, email, senha, perfil, perfil_checklist: perfilCL || null }) });
-      toast('Colaborador criado com sucesso!', 'success');
+      const novoUser = await apiFetch('/usuarios', { method: 'POST', body: JSON.stringify({ login, nome, email, senha, perfil, perfil_checklist: perfilCL || null }) });
+
+      // Aplicar permissões padrão por perfil automaticamente
+      // motorista → só checklist | operador → checklist + operacional
+      const permsPadrao = {
+        motorista: { checklist: true,  operacional_mobile: false, checklist_logistica: false, jardinagem_mobile: false },
+        operador:  { checklist: true,  operacional_mobile: true,  checklist_logistica: false, jardinagem_mobile: false },
+        campo:     { checklist: false, operacional_mobile: false, checklist_logistica: false, jardinagem_mobile: true  },
+        bruna:     { checklist: true,  operacional_mobile: true,  checklist_logistica: true,  jardinagem_mobile: false },
+      };
+      const perms = permsPadrao[perfil];
+      if (perms) {
+        // Buscar ID do novo usuário recém-criado
+        const lista = await apiFetch('/usuarios');
+        const u = lista.find(x => x.login === login);
+        if (u && u.id) {
+          try {
+            await apiFetch('/permissoes/usuario/' + u.id, { method: 'POST', body: JSON.stringify(perms) });
+          } catch (pe) {
+            console.warn('Falha ao aplicar permissões padrão:', pe.message);
+          }
+        }
+      }
+      toast('Colaborador criado com permissões padrão!', 'success');
     }
     fecharModalUsuario();
     // Recarregar lista
@@ -1740,7 +1762,7 @@ function renderSidebar(perfil, perms) {
   const modulosSb = [
     { id:'checklist',          label:'Checklist',  url:null, abrirChecklist:true, icon:'M9 11l3 3L22 4', icon2:'M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11' },
     { id:'jardinagem_desktop', label:'Jardinagem', url:'/jardinagem/desktop', externo:false, icon:'M12 22V12', icon2:'M5 12c0-3.87 3.13-7 7-7s7 3.13 7 7' },
-    { id:'operacional_mobile', label:'Operacional',url:'/mobile', externo:false, icon:'M9 17H5a2 2 0 0 0-2 2', icon2:'M13 17h8' },
+    { id:'operacional_mobile', label:'Operacional',url:null, abrirOS:true, icon:'M9 17H5a2 2 0 0 0-2 2', icon2:'M13 17h8' },
   ];
 
   const modulosVisiveis = modulosSb.filter(m => temPerm(m.id));
@@ -1748,12 +1770,16 @@ function renderSidebar(perfil, perms) {
     html += `<div class="sb-section"><span class="sb-label">Módulos ativos</span>`;
     modulosVisiveis.forEach(m => {
       if (m.abrirChecklist) {
-        // Checklist abre em nova aba com SSO token
         html += `<div class="sb-item" onclick="abrirChecklistAdmin()">
             <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="#16A34A" stroke-width="2"><path d="${m.icon}"/><path d="${m.icon2}"/></svg>
             ${m.label} <span class="dot dot-green" style="margin-left:auto"></span>
            </div>`;
-      } else {
+      } else if (m.abrirOS) {
+        html += `<div class="sb-item" onclick="navTo('os',this)">
+            <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="#16A34A" stroke-width="2"><path d="${m.icon}"/><path d="${m.icon2}"/></svg>
+            ${m.label} <span class="dot dot-green" style="margin-left:auto"></span>
+           </div>`;
+      } else if (m.url) {
         html += `<div class="sb-item" onclick="window.location.href='${m.url}'">
             <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="#16A34A" stroke-width="2"><path d="${m.icon}"/><path d="${m.icon2}"/></svg>
             ${m.label} <span class="dot dot-green" style="margin-left:auto"></span>
@@ -1886,18 +1912,26 @@ async function renderModulos(usuarioId, perfil) {
     }
 
     const dim = !hasAccess && isAdmin ? ' mod-dim' : '';
-    const cursor = m.url && hasAccess ? 'cursor:pointer' : '';
-    const onClick = m.url && hasAccess
-      ? m.externo
-        ? `onclick="window.open('${m.url}','_blank')"`
-        : `onclick="window.location.href='${m.url}'"`
-      : '';
+    const cursor = (m.url || m.id === 'operacional_mobile' || m.id === 'checklist') && hasAccess ? 'cursor:pointer' : '';
+    let onClick = '';
+    if (hasAccess) {
+      if (m.id === 'operacional_mobile') {
+        onClick = `onclick="navTo('os')"`;
+      } else if (m.id === 'checklist') {
+        onClick = `onclick="abrirChecklistAdmin()"`;
+      } else if (m.url) {
+        onClick = m.externo
+          ? `onclick="window.open('${m.url}','_blank')"`
+          : `onclick="window.location.href='${m.url}'"`;
+      }
+    }
+    const temClique = onClick !== '';
     const semPermLabel = !hasAccess && isAdmin
       ? '<div style="font-size:10px;color:var(--red);margin-top:4px">🔒 sem permissão</div>' : '';
 
     return `<div class="mod-card${dim}" style="${cursor}" ${onClick}
-      ${hasAccess && m.url ? 'onmouseenter="this.style.boxShadow=\'0 4px 16px rgba(232,130,12,.2)\';this.style.borderColor=\'var(--orange)\'"' : ''}
-      ${hasAccess && m.url ? 'onmouseleave="this.style.boxShadow=\'\';this.style.borderColor=\'var(--border)\'"' : ''}>
+      ${hasAccess && temClique ? 'onmouseenter="this.style.boxShadow=\'0 4px 16px rgba(232,130,12,.2)\';this.style.borderColor=\'var(--orange)\'"' : ''}
+      ${hasAccess && temClique ? 'onmouseleave="this.style.boxShadow=\'\';this.style.borderColor=\'var(--border)\'"' : ''}>
       <div class="mod-header">
         <span class="mod-icon">${m.icon}</span>
         <span class="badge ${STATUS_MODULO[m.status].badge}">${STATUS_MODULO[m.status].label}</span>
