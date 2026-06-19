@@ -661,7 +661,11 @@ async def renovar_token(payload=Depends(verificar_token)):
     }
 
 @app.post("/auth/alterar-senha")
-async def alterar_senha(req: SenhaChange, login: str, db=Depends(get_db), _auth=Depends(verificar_token)):
+async def alterar_senha(req: SenhaChange, db=Depends(get_db), _auth=Depends(verificar_token)):
+    # Login vem do token do usuário logado (não query param) — mais seguro
+    login = _auth.get("sub") or _auth.get("login")
+    if not login:
+        raise HTTPException(status_code=401, detail="Token inválido")
     erro = validar_senha(req.senha_nova)
     if erro: raise HTTPException(status_code=400, detail=erro)
     user = await db.fetchrow("SELECT * FROM public.usuarios_garra WHERE login=$1", login)
@@ -2684,17 +2688,37 @@ async def op_minhas_partes(payload=Depends(verificar_token)):
 
 
 @app.get("/operacional/api/minhas-os")
-async def op_minhas_os(payload=Depends(verificar_token)):
-    """Operador/motorista vê APENAS as OS onde é o operador previsto e status ativo."""
+async def op_minhas_os(historico: int = 0, payload=Depends(verificar_token)):
+    """Operador/motorista vê suas OS. historico=0: ativas | historico=1: concluídas."""
     login = payload.get("sub","")
     user  = jard_query(
-        "SELECT id FROM public.usuarios_garra WHERE login=%s", (login,), fetch="one"
+        "SELECT id, perfil FROM public.usuarios_garra WHERE login=%s", (login,), fetch="one"
     )
     if not user:
         raise HTTPException(status_code=404, detail="Usuário não encontrado")
 
+    # Verificar permissão do módulo operacional_mobile
+    perm = jard_query(
+        "SELECT permitido FROM public.permissoes_colaborador WHERE usuario_id=%s AND modulo='operacional_mobile'",
+        (user["id"],), fetch="one"
+    )
+    if perm and perm.get("permitido") == False:
+        # Permissão explicitamente negada → retorna lista vazia
+        return []
+    # Se não tem registro, usa padrão do perfil (operador/motorista/admin/gestor/luana/bruna têm acesso)
+    if not perm:
+        perfis_com_acesso = ('admin','gestor','luana','bruna','operador','motorista')
+        if user.get("perfil") not in perfis_com_acesso:
+            return []
+
+    # Filtro de status conforme histórico ou ativas
+    if historico == 1:
+        status_filter = "os.status IN ('concluida_completa','concluida_sem_erp','aguardando_fechamento')"
+    else:
+        status_filter = "os.status NOT IN ('concluida_completa','concluida_sem_erp','cancelada')"
+
     rows = jard_query(
-        """SELECT os.id, os.numero, os.obra, os.regime_cobranca,
+        f"""SELECT os.id, os.numero, os.obra, os.regime_cobranca,
                   os.data_inicio, os.data_fim_prevista, os.status,
                   os.equipamento_id, os.operador_id, os.tipo_servico_id, os.cliente_id,
                   COALESCE(c.nome, os.cliente_nome_avulso) AS cliente_nome,
@@ -2707,7 +2731,7 @@ async def op_minhas_os(payload=Depends(verificar_token)):
            LEFT JOIN operacional.tipos_servico ts ON ts.id = os.tipo_servico_id
            WHERE os.operador_id = %s
              AND os.ativo = true
-             AND os.status NOT IN ('concluida_completa','concluida_sem_erp','cancelada')
+             AND {status_filter}
            ORDER BY os.data_inicio DESC""",
         (user["id"],)
     )
