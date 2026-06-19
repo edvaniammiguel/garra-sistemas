@@ -213,7 +213,7 @@ input[type="time"]{-webkit-appearance:none;appearance:none;cursor:pointer;}
 .spin{display:inline-block;animation:spin .8s linear infinite;}
 @keyframes spin{to{transform:rotate(360deg);}}
 </style>
-<script src="../../operacional/static/idb.js"></script>
+<!-- GarraDB não é usado na jardinagem — ela tem seu próprio offline -->
 </head>
 <body>
 
@@ -541,6 +541,12 @@ window.addEventListener("load", function(){
 
 window.addEventListener("online",  function(){ ONLINE=true;  atualizarStatus(); sincronizar(); });
 window.addEventListener("offline", function(){ ONLINE=false; atualizarStatus(); });
+
+// Timer: tenta sync a cada 60s (cobre Android que não dispara 'online' sempre)
+setInterval(function(){
+  if(navigator.onLine && !ONLINE){ ONLINE=true; atualizarStatus(); }
+  if(ONLINE){ sincronizar(); }
+}, 60000);
 
 // ── UTILS ─────────────────────────────────────────────────────
 function toast(msg, dur){
@@ -1319,7 +1325,7 @@ function garantirBancadaAberta(){}
 function toggleBancada(){}
 function expandirBancada(){}
 </script>
-<script src="../../operacional/static/js/offline-ui.js"></script>
+<!-- Offline UI não necessário — jardinagem tem seu próprio feedback -->
 <script>
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('./sw.js', { scope: '/jardinagem/' })
