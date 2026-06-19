@@ -1731,7 +1731,7 @@ function renderSidebar(perfil, perms) {
   const modulosSb = [
     { id:'checklist',          label:'Checklist',  url:'https://garra-checklist-app.onrender.com', externo:true,  icon:'M9 11l3 3L22 4', icon2:'M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11' },
     { id:'jardinagem_desktop', label:'Jardinagem', url:'/jardinagem/desktop', externo:false, icon:'M12 22V12', icon2:'M5 12c0-3.87 3.13-7 7-7s7 3.13 7 7' },
-    { id:'operacional_mobile', label:'Operacional',url:'/operacional/mobile', externo:false, icon:'M9 17H5a2 2 0 0 0-2 2', icon2:'M13 17h8' },
+    { id:'operacional_mobile', label:'Operacional',url:'/mobile', externo:false, icon:'M9 17H5a2 2 0 0 0-2 2', icon2:'M13 17h8' },
   ];
 
   const modulosVisiveis = modulosSb.filter(m => temPerm(m.id));
@@ -1805,7 +1805,7 @@ const MODULOS_DASHBOARD = [
     id: 'operacional_mobile',
     icon: '🚛', nome: 'Operacional', desc: 'OS · Partes diárias · Fechamento',
     status: 'dev', badge: 'badge-orange',
-    url: '/operacional/mobile',
+    url: '/mobile',
     externo: false,
   },
   {
