@@ -134,10 +134,35 @@ def jard_query_id(sql, params=None):
 # ── STARTUP ───────────────────────────────────────────────────
 @app.on_event("startup")
 async def startup():
-    conn = await asyncpg.connect(DATABASE_URL)
+    """
+    Startup resiliente: tenta conectar e rodar migrations, mas NUNCA derruba
+    o app se o banco estiver dormindo/acordando ou com cota excedida.
+    As migrations rodam na primeira conexão bem-sucedida; se falharem aqui,
+    o app sobe mesmo assim (as tabelas já existem em produção) e o banco é
+    acessado sob demanda nas rotas.
+    """
+    import asyncio
+    conn = None
+    # Tenta conectar com retry curto — banco pode estar "acordando"
+    for tentativa in range(1, 4):
+        try:
+            conn = await asyncio.wait_for(asyncpg.connect(DATABASE_URL), timeout=10)
+            break
+        except Exception as e:
+            print(f"[Startup] tentativa {tentativa}/3 de conexão falhou: {type(e).__name__}: {e}")
+            if tentativa < 3:
+                await asyncio.sleep(2 * tentativa)
+
+    if conn is None:
+        # Banco indisponível (dormindo, cota, rede). App sobe assim mesmo.
+        # As rotas que precisam do banco vão tentar conectar sob demanda.
+        print("[Startup] ⚠️ Banco indisponível no boot — app subindo sem migrations. "
+              "Serão aplicadas na próxima vez que o banco responder.")
+        return
+
     try:
         await conn.execute("SET search_path TO public, checklist, jardinagem")
-        print("Garra Gestao v6 - banco unificado conectado")
+        print("Garra Gestao - banco conectado")
         print("JARD_DIR:", JARD_DIR)
         print("TEMPLATES exists:", os.path.exists(TEMPLATES_DIR))
         print("STATIC exists:", os.path.exists(STATIC_DIR))
@@ -218,9 +243,12 @@ async def startup():
         except Exception as me:
             print(f"[Migration] aviso (não-fatal): {me}")
     except Exception as e:
-        print("Erro no startup:", e)
+        print("Erro no startup (não-fatal):", e)
     finally:
-        await conn.close()
+        try:
+            await conn.close()
+        except Exception:
+            pass
 
 # ── STATIC FILES — JARDINAGEM ─────────────────────────────────
 # checklist/api/main.py → checklist/ → raiz → jardinagem/
@@ -3325,11 +3353,23 @@ async def server_error_handler(request: Request, exc):
 # ── HEALTH CHECK — mantém banco Neon acordado ──────────────────
 @app.get("/api/health")
 async def health():
+    """
+    Health check LEVE — não toca no banco.
+    Serve apenas para o Render saber que o processo está vivo.
+    NÃO usar este endpoint em cron de keep-alive contra o banco:
+    manter o Neon acordado 24/7 estoura a cota de compute do free tier.
+    Para testar o banco use /api/health/db (manual).
+    """
+    return {"status": "ok", "sistema": "Garra Gestão API", "app": "vivo"}
+
+@app.get("/api/health/db")
+async def health_db():
+    """Testa a conexão com o banco — uso manual de diagnóstico, NÃO em cron."""
     try:
         jard_query("SELECT 1", fetch="one")
-        return {"status":"ok","db":"conectado","sistema":"Garra Gestão API","versao":"6.0.0"}
+        return {"status": "ok", "db": "conectado"}
     except Exception as e:
-        return {"status":"erro","db":str(e)}
+        return {"status": "erro", "db": str(e)}
 
 @app.get("/api/debug/usuarios")
 async def debug_usuarios(chave: str = "", authorization: Optional[str] = Header(None)):
