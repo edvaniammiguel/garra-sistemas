@@ -2066,13 +2066,19 @@ async function verPartesOS(osId, osNumero) {
   const tbl = document.getElementById('partes-tabela');
   tbl.innerHTML = '<div class="loading"><span class="spin"></span></div>';
   try {
-    // Buscar detalhes da OS
-    const os = _osListaCompleta.find(o => o.id === osId) || {};
-    renderInfoOS(os);
-
-    // Buscar partes
+    // Buscar partes E detalhe da OS (fresco do backend, não cache obsoleto)
     const data = await apiFetch('/operacional/api/os/'+osId+'/partes');
     _partesAtual = data.partes || [];
+
+    // OS fresca: tenta detalhe do backend, fallback para cache
+    let os;
+    try {
+      os = await apiFetch('/operacional/api/os/'+osId);
+    } catch {
+      os = _osListaCompleta.find(o => o.id === osId) || {};
+    }
+    _osAtual = { ...os, id: osId, numero: osNumero };
+    renderInfoOS(os);
     renderTotaisPartes(data.totais || {});
     renderTabelaPartes(_partesAtual, os.status);
 
@@ -2145,7 +2151,9 @@ function renderTabelaPartes(partes, statusOS) {
         ${partes.map(p => {
           const data = p.data ? new Date(p.data+'T00:00').toLocaleDateString('pt-BR') : '–';
           const medicao = p.tipo_medicao === 'km'
-            ? `KM: ${p.km_inicial||0}→${p.km_final||0}`
+            ? `KM: ${p.km_inicial||0}→${p.km_final||0} (${p.qtd_viagens||0} viagens)`
+            : p.tipo_medicao === 'metros'
+            ? `${p.qtd_metros||0} m`
             : `Hor: ${p.horimetro_inicial||0}→${p.horimetro_final||0}`;
           const horas = parseFloat(p.horas_trabalhadas||0).toFixed(1);
           const cobradas = parseFloat(p.horas_cobradas||0) > 0
