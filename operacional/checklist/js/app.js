@@ -380,6 +380,12 @@ function showSuperior() {
   }
 
   renderSuperiorDashboard();
+
+  // Botão "Novo Check List" só para admin/gestor/luana (não operador comum)
+  const criarBar = document.getElementById('sup-criar-bar');
+  if (criarBar) {
+    criarBar.style.display = currentUser.podeEditar ? '' : 'none';
+  }
 }
 function showManager() {
   showScreen('screen-manager');
