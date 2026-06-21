@@ -396,6 +396,16 @@ input,select,textarea{font-family:inherit;outline:none;border:none}
       </select>
     </div>
 
+    <!-- Seletor: o que registrar (operador escolhe) -->
+    <div style="margin-bottom:12px">
+      <label style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:5px">O que registrar?</label>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px">
+        <button type="button" id="btn-med-horimetro" onclick="selecionarMedicao('horimetro')" style="padding:10px;border:1.5px solid var(--border);background:#fff;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer">⚙️ Horímetro</button>
+        <button type="button" id="btn-med-km" onclick="selecionarMedicao('km')" style="padding:10px;border:1.5px solid var(--border);background:#fff;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer">🚛 KM</button>
+        <button type="button" id="btn-med-metros" onclick="selecionarMedicao('metros')" style="padding:10px;border:1.5px solid var(--border);background:#fff;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer">📏 Metros</button>
+      </div>
+    </div>
+
     <!-- Bloco MÁQUINA (horímetro) -->
     <div id="bloco-horimetro" style="background:#F0F4FF;border-radius:8px;padding:12px;margin-bottom:12px">
       <div style="font-size:11px;font-weight:700;color:var(--blue);margin-bottom:8px">⚙️ HORÍMETRO</div>
@@ -1034,15 +1044,10 @@ async function salvarParte(adicionarMais) {
     return;
   }
 
-  const sel = document.getElementById('m-equipamento');
-  const catEquip = (sel.options[sel.selectedIndex]?.getAttribute('data-cat') || '').toLowerCase();
-  // Prioridade: medição do TIPO DE SERVIÇO da OS > medição do equipamento
-  const cat = (window._osTipoMedicao || catEquip).toLowerCase();
-  const isMetros   = cat === 'metro' || cat === 'metros' || cat === 'm' || cat.includes('metro');
-  const isCaminhao = !isMetros && (
-                       cat === 'km'
-                    || ['caminhao','caminhão','pipa','carro','veiculo','veículo'].some(s => cat.includes(s))
-                    );
+  // Tipo de medição = o que o OPERADOR escolheu nos botões
+  const tipoMedicao = window._medicaoAtual || 'horimetro';
+  const isMetros   = tipoMedicao === 'metros';
+  const isCaminhao = tipoMedicao === 'km';
 
   const hIni = document.getElementById('m-h-ini').value;
   const hFin = document.getElementById('m-h-fin').value;
@@ -1065,9 +1070,6 @@ async function salvarParte(adicionarMais) {
     err.style.display = 'block';
     return;
   }
-
-  // tipo_medicao: 'metros' | 'km' | 'horimetro'
-  const tipoMedicao = isMetros ? 'metros' : (isCaminhao ? 'km' : 'horimetro');
 
   const payload = {
     data,
@@ -1317,41 +1319,68 @@ async function abrirModalParte(osId) {
   window._osTipoMedicao = (osData?.tipo_servico_medicao || '').toLowerCase();
 
   // Atualiza visibilidade dos blocos (horímetro/km/metros/trajeto)
-  atualizarCamposMedicao();
+  // Sugere medição inicial baseado no tipo de serviço/equipamento, mas operador pode trocar
+  const catEquip = (document.getElementById('m-equipamento').options[document.getElementById('m-equipamento').selectedIndex]?.getAttribute('data-cat') || '').toLowerCase();
+  const cat = (window._osTipoMedicao || catEquip).toLowerCase();
+  let sugestao = 'horimetro';
+  if (cat === 'metro' || cat === 'metros' || cat.includes('metro')) sugestao = 'metros';
+  else if (cat === 'km' || ['caminhao','caminhão','pipa','carro','veiculo','veículo'].some(s => cat.includes(s))) sugestao = 'km';
+  selecionarMedicao(sugestao);
 }
 
-function atualizarCamposMedicao() {
-  const sel = document.getElementById('m-equipamento');
-  const catEquip = (sel.options[sel.selectedIndex]?.getAttribute('data-cat') || '').toLowerCase();
-  // Prioridade: medição do TIPO DE SERVIÇO da OS > medição do equipamento
-  const cat = (window._osTipoMedicao || catEquip).toLowerCase();
+// _medicaoAtual guarda o que o operador escolheu registrar
+window._medicaoAtual = 'horimetro';
 
-  // Detecta o tipo: metros / km (caminhão) / horímetro (máquina)
-  const isMetros   = cat === 'metro' || cat === 'metros' || cat === 'm' || cat.includes('metro');
-  const isCaminhao = !isMetros && (
-                       cat === 'km'
-                    || ['caminhao','caminhão','pipa','carro','veiculo','veículo'].some(s => cat.includes(s))
-                    );
+function selecionarMedicao(tipo) {
+  window._medicaoAtual = tipo;
 
   const blocoH  = document.getElementById('bloco-horimetro');
   const blocoKM = document.getElementById('bloco-km');
   const blocoM  = document.getElementById('bloco-metros');
   const blocoT  = document.getElementById('bloco-trajeto');
 
-  // Reset
+  // Reset blocos
   if (blocoH)  blocoH.style.display  = 'none';
   if (blocoKM) blocoKM.style.display = 'none';
   if (blocoM)  blocoM.style.display  = 'none';
   if (blocoT)  blocoT.style.display  = 'none';
 
-  if (isMetros) {
+  // Reset botões
+  ['horimetro','km','metros'].forEach(t => {
+    const btn = document.getElementById('btn-med-' + t);
+    if (btn) {
+      btn.style.background = '#fff';
+      btn.style.color = 'var(--text)';
+      btn.style.borderColor = 'var(--border)';
+    }
+  });
+
+  // Ativa botão e bloco escolhido
+  const btnAtivo = document.getElementById('btn-med-' + tipo);
+  if (btnAtivo) {
+    btnAtivo.style.background = 'var(--orange)';
+    btnAtivo.style.color = '#fff';
+    btnAtivo.style.borderColor = 'var(--orange)';
+  }
+
+  if (tipo === 'metros') {
     if (blocoM) blocoM.style.display = 'block';
-  } else if (isCaminhao) {
+  } else if (tipo === 'km') {
     if (blocoKM) blocoKM.style.display = 'block';
     if (blocoT)  blocoT.style.display  = 'block';
   } else {
     if (blocoH) blocoH.style.display = 'block';
   }
+}
+
+// Compatibilidade: chamadas antigas a atualizarCamposMedicao
+function atualizarCamposMedicao() {
+  const catEquip = (document.getElementById('m-equipamento').options[document.getElementById('m-equipamento').selectedIndex]?.getAttribute('data-cat') || '').toLowerCase();
+  const cat = (window._osTipoMedicao || catEquip).toLowerCase();
+  let sugestao = 'horimetro';
+  if (cat === 'metro' || cat === 'metros' || cat.includes('metro')) sugestao = 'metros';
+  else if (cat === 'km' || ['caminhao','caminhão','pipa','carro','veiculo','veículo'].some(s => cat.includes(s))) sugestao = 'km';
+  selecionarMedicao(sugestao);
 }
 
 function fecharModalDireto() {
@@ -1622,7 +1651,7 @@ async function verPartes(osId, osNum) {
       } else if (med === 'km') {
         medInfo = `${p.km_percorrido || 0} km (${p.qtd_viagens || 0} viagens)`;
       } else {
-        medInfo = `${p.horas_trabalhadas || 0}h trab. / ${p.horas_cobradas || 0}h cobr.`;
+        medInfo = `${p.horas_trabalhadas || 0}h trabalhadas`;
       }
       linhas += `
         <div style="border-bottom:1px solid var(--border);padding:12px 0">
