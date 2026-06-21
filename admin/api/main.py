@@ -2479,28 +2479,39 @@ async def op_listar_partes(os_id: str, _auth=Depends(verificar_token)):
     )
     lista = [dict(p) for p in (partes or [])]
 
+    # Perfil do solicitante — operador/motorista NÃO vê horas cobradas (valores)
+    perfil = _auth.get("perfil", "")
+    eh_gestor = perfil in ("admin", "gestor", "luana", "bruna")
+
+    if not eh_gestor:
+        # Remover campos financeiros/cobrança da resposta para operador
+        for p in lista:
+            p.pop("horas_cobradas", None)
+            p.pop("quantidade_diarias_cobradas", None)
+            p.pop("valor_calculado", None)
+
     # Totais acumulados
     total_horas     = sum(float(p.get("horas_trabalhadas") or 0) for p in lista)
-    # Total horas cobradas: usa horas_cobradas se editado, senão horas_trabalhadas
-    total_horas_cob = sum(
-        float(p.get("horas_cobradas") or 0) if float(p.get("horas_cobradas") or 0) > 0
-        else float(p.get("horas_trabalhadas") or 0)
-        for p in lista
-    )
     total_diarias   = sum(float(p.get("quantidade_diarias") or 0) for p in lista)
     total_viagens   = sum(float(p.get("qtd_viagens")       or 0) for p in lista)
     dias_trabalhados= len(set(str(p.get("data",""))[:10] for p in lista if p.get("data")))
 
-    return {
-        "partes": lista,
-        "totais": {
-            "dias_trabalhados":  dias_trabalhados,
-            "total_horas":       round(total_horas, 2),
-            "total_horas_cobradas": round(total_horas_cob, 2),
-            "total_diarias":     total_diarias,
-            "total_viagens":     total_viagens,
-        }
+    totais = {
+        "dias_trabalhados":  dias_trabalhados,
+        "total_horas":       round(total_horas, 2),
+        "total_diarias":     total_diarias,
+        "total_viagens":     total_viagens,
     }
+    # Total cobrado só para gestores
+    if eh_gestor:
+        total_horas_cob = sum(
+            float(p.get("horas_cobradas") or 0) if float(p.get("horas_cobradas") or 0) > 0
+            else float(p.get("horas_trabalhadas") or 0)
+            for p in lista
+        )
+        totais["total_horas_cobradas"] = round(total_horas_cob, 2)
+
+    return {"partes": lista, "totais": totais}
 
 
 @app.patch("/operacional/api/partes/{parte_id}")
@@ -3321,10 +3332,22 @@ async def health():
         return {"status":"erro","db":str(e)}
 
 @app.get("/api/debug/usuarios")
-async def debug_usuarios(_auth=Depends(verificar_admin)):
-    """Diagnóstico de usuários — somente admin."""
+async def debug_usuarios(chave: str = "", authorization: Optional[str] = Header(None)):
+    """Diagnóstico de usuários. Acesso: admin logado OU chave de diagnóstico."""
+    # Permite acesso com chave de diagnóstico (para resolver problema de login)
+    autorizado = (chave == "garra-diag-2026")
+    if not autorizado:
+        # Senão exige admin via token
+        if not authorization or not authorization.startswith("Bearer "):
+            raise HTTPException(status_code=401, detail="Não autenticado")
+        try:
+            payload = pyjwt.decode(authorization[7:], JWT_SECRET, algorithms=["HS256"])
+            if payload.get("perfil") != "admin":
+                raise HTTPException(status_code=403, detail="Acesso restrito a administradores")
+        except pyjwt.InvalidTokenError:
+            raise HTTPException(status_code=401, detail="Token inválido")
     rows = jard_query(
-        """SELECT login, email, perfil, ativo,
+        """SELECT login, nome, email, perfil, perfil_checklist, ativo,
                   LEFT(senha_hash,7) AS hash_inicio,
                   CASE WHEN senha_hash = '$2b$12$y4jgMhNSKtoeBtad7lKEOev.tHk8S9OA1SpPHrowz5XT.AQJK.iZK'
                        THEN 'padrao_1234' ELSE 'outra' END AS senha_status
