@@ -599,7 +599,7 @@
     </div>
 
     <div id="sup-tab-checklists" class="tab-panel">
-      <div class="tab-action-bar">
+      <div class="tab-action-bar" id="sup-criar-bar" style="display:none">
         <button class="btn-primary" onclick="openBuilder(null)">+ Novo Check List</button>
       </div>
       <h3 class="section-title">Preencher Check List</h3>
@@ -865,6 +865,8 @@
             login: data.login || data.sub || '',
             name:  data.nome  || data.login || '',
             role:  role,
+            perfil: perfil,
+            podeEditar: (perfil === 'admin' || perfil === 'gestor' || perfil === 'luana'),
             pts:   data.pts   || 0,
             submissions: data.total_envios || 0,
             temLogistica: temLogistica,
