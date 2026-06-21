@@ -767,9 +767,7 @@ input,select,textarea { font-family:inherit; font-size:13px; outline:none; }
       <div class="field">
         <label>Regime de cobrança <span style="color:var(--red)">*</span></label>
         <select id="os-regime" onchange="_atualizarLabelRegime()">
-          <option value="hora">Por hora (horímetro)</option>
-          <option value="diaria">Por diária</option>
-          <option value="empreito">Empreito (valor fixo)</option>
+          <option value="">— selecionar —</option>
         </select>
       </div>
       <div class="field" id="os-valor-wrap">
@@ -2023,12 +2021,19 @@ async function carregarOS() {
   el.innerHTML = '<div class="loading"><span class="spin"></span></div>';
   try {
     _osListaCompleta = await apiFetch('/operacional/api/os');
-    // Atualizar badge sidebar: mostrar qtd aguardando fechamento
+    // Badge sidebar: prioridade 1) sem responsável  2) aguardando fechamento
+    const semResp = (_osListaCompleta || []).filter(o =>
+      !o.operador_id && !['concluida_completa','concluida_sem_erp','cancelada'].includes(o.status)
+    ).length;
     const aguardando = (_osListaCompleta || []).filter(o => o.status === 'aguardando_fechamento').length;
     const abertas = (_osListaCompleta || []).filter(o => !['concluida_completa','concluida_sem_erp','cancelada'].includes(o.status)).length;
     const badge = document.getElementById('sb-os-count');
     if (badge) {
-      if (aguardando > 0) {
+      if (semResp > 0) {
+        badge.textContent = '⚠️' + semResp;
+        badge.style.background = '#DC2626';
+        badge.title = semResp + ' OS sem responsável';
+      } else if (aguardando > 0) {
         badge.textContent = aguardando;
         badge.style.background = '#EA580C';
         badge.title = aguardando + ' OS aguardando fechamento';
@@ -2241,7 +2246,7 @@ async function abrirModalOS(osId=null) {
     document.getElementById('os-tipo-servico').value='';
     document.getElementById('os-equipamento').value='';
     document.getElementById('os-operador').value='';
-    document.getElementById('os-regime').value='hora';
+    document.getElementById('os-regime').value='';
     document.getElementById('os-valor-combinado').value='';
     document.getElementById('os-data-inicio').value=new Date().toISOString().slice(0,10);
     _atualizarLabelRegime();
@@ -2256,7 +2261,7 @@ async function abrirModalOS(osId=null) {
       document.getElementById('os-obra').value = os.obra||'';
       document.getElementById('os-endereco').value = os.endereco||'';
       document.getElementById('os-descricao').value = os.descricao||'';
-      document.getElementById('os-regime').value = os.regime_cobranca||'hora';
+      document.getElementById('os-regime').value = os.regime_cobranca || '';
       document.getElementById('os-valor-combinado').value = os.valor_combinado||'';
       document.getElementById('os-data-inicio').value = os.data_inicio||'';
       document.getElementById('os-equipamento').value = os.equipamento_id||'';
@@ -2274,7 +2279,7 @@ function fecharModalOS() {
 }
 
 function _atualizarLabelRegime() {
-  const regime = document.getElementById('os-regime')?.value||'hora';
+  const regime = document.getElementById('os-regime')?.value||'';
   const label  = document.getElementById('os-valor-label');
   const hint   = document.getElementById('os-valor-hint');
   if (!label) return;
@@ -2282,8 +2287,9 @@ function _atualizarLabelRegime() {
     hora:     { label:'Valor/hora (R$)',    hint:'Preço por hora combinado com o cliente' },
     diaria:   { label:'Valor/diária (R$)',  hint:'Preço por diária combinado' },
     empreito: { label:'Valor total (R$)',   hint:'Valor fixo combinado para a obra' },
+    metro:    { label:'Valor/metro (R$)',   hint:'Preço por metro executado' },
   };
-  label.textContent = map[regime]?.label || 'Valor (R$)';
+  label.textContent = map[regime]?.label || 'Valor combinado (R$)';
   if (hint) hint.textContent = map[regime]?.hint||'';
 }
 
@@ -2322,6 +2328,15 @@ async function _carregarSelectsOS() {
       const ops = await apiFetch('/operacional/api/operadores');
       selOp.innerHTML = '<option value="">Operador responsável...</option>' +
         ops.map(o=>`<option value="${o.id}">${esc(o.nome)}</option>`).join('');
+    } catch {}
+  }
+  // Regimes de cobrança (do banco)
+  const selReg = document.getElementById('os-regime');
+  if (selReg && selReg.options.length <= 1) {
+    try {
+      const regs = await apiFetch('/operacional/api/regimes-cobranca');
+      selReg.innerHTML = '<option value="">— selecionar —</option>' +
+        regs.map(r=>`<option value="${r.nome}">${esc(r.descricao || r.nome)}</option>`).join('');
     } catch {}
   }
 }
@@ -2413,14 +2428,32 @@ function renderTabelaOS(lista) {
     return;
   }
 
-  el.innerHTML = `
+  // Detectar OS abertas SEM operador responsável (precisam de atenção da Luana)
+  const semResponsavel = filtrada.filter(os =>
+    !os.operador_id &&
+    !['concluida_completa','concluida_sem_erp','cancelada'].includes(os.status)
+  );
+
+  let bannerAlerta = '';
+  if (semResponsavel.length > 0) {
+    bannerAlerta = `
+      <div style="background:#FFF7ED;border:1.5px solid #FB923C;border-radius:8px;padding:12px 16px;margin-bottom:16px;display:flex;align-items:center;gap:10px">
+        <span style="font-size:20px">⚠️</span>
+        <div style="flex:1">
+          <div style="font-size:13px;font-weight:800;color:#EA580C">${semResponsavel.length} OS sem responsável designado</div>
+          <div style="font-size:12px;color:#9A3412">Estas OS estão sem operador. Clique em "Editar" para designar um responsável.</div>
+        </div>
+      </div>`;
+  }
+
+  el.innerHTML = bannerAlerta + `
     <table style="width:100%;border-collapse:collapse">
       <thead>
         <tr style="border-bottom:2px solid var(--border)">
           <th style="text-align:left;padding:10px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--muted)">Cód</th>
           <th style="text-align:left;padding:10px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--muted)">Cliente / Obra</th>
           <th style="text-align:left;padding:10px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--muted)">Equipamento</th>
-          <th style="text-align:left;padding:10px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--muted)">OS</th>
+          <th style="text-align:left;padding:10px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--muted)">Responsável</th>
           <th style="text-align:left;padding:10px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--muted)">Data</th>
           <th style="text-align:left;padding:10px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--muted)">Status</th>
           <th style="padding:10px"></th>
@@ -2430,19 +2463,27 @@ function renderTabelaOS(lista) {
         ${filtrada.map(os => {
           const st = STATUS_LABEL[os.status] || {label:os.status, badge:'badge-info'};
           const data = os.data_inicio ? new Date(os.data_inicio+'T00:00').toLocaleDateString('pt-BR') : '–';
-          return `<tr style="border-bottom:1px solid #F1F5F9" onmouseenter="this.style.background='#F8FAFC'" onmouseleave="this.style.background=''">
+          const concluida = ['concluida_completa','concluida_sem_erp','cancelada'].includes(os.status);
+          const semOperador = !os.operador_id && !concluida;
+          const operadorCell = os.operador_id
+            ? `<span style="font-size:12px;color:var(--text)">${esc(os.operador_nome||'–')}</span>`
+            : (concluida
+                ? `<span style="font-size:12px;color:var(--muted)">–</span>`
+                : `<span class="badge badge-pend" style="font-size:10px;cursor:pointer" onclick="editarOS('${esc(os.id)}')">⚠️ Sem responsável</span>`);
+          const rowBg = semOperador ? 'background:#FFFBEB' : '';
+          return `<tr style="border-bottom:1px solid #F1F5F9;${rowBg}" onmouseenter="this.style.background='#F8FAFC'" onmouseleave="this.style.background='${semOperador ? '#FFFBEB' : ''}'">
             <td style="padding:10px;font-size:13px;font-weight:700;color:var(--blue)">${esc(os.numero||'–')} ${os.origem==='campo' ? '<span class="badge badge-pend" style="font-size:9px;margin-left:4px">📍 campo</span>' : ''}</td>
             <td style="padding:10px">
               <div style="font-size:13px;font-weight:600">${esc(os.cliente_nome||os.cliente_avulso||'–')}</div>
               <div style="font-size:11px;color:var(--muted)">${esc(os.obra||'')}</div>
             </td>
             <td style="padding:10px;font-size:12px;color:var(--muted)">${esc(os.equipamento_codigo||'–')}</td>
-            <td style="padding:10px;font-size:12px;color:var(--muted)">${esc(os.codigo_erp||'–')}</td>
+            <td style="padding:10px">${operadorCell}</td>
             <td style="padding:10px;font-size:12px;color:var(--muted)">${data}</td>
             <td style="padding:10px"><span class="badge ${st.badge}">${st.label}</span></td>
             <td style="padding:10px;text-align:right;display:flex;gap:6px;justify-content:flex-end">
               <button class="btn-sm" onclick="verPartesOS('${esc(os.id)}','${esc(os.numero)}')">📋 Partes</button>
-              <button class="btn-sm" onclick="editarOS('${esc(os.id)}')">✎ Editar</button>
+              <button class="btn-sm ${semOperador ? '' : ''}" style="${semOperador ? 'background:var(--orange);color:#fff' : ''}" onclick="editarOS('${esc(os.id)}')">✎ ${semOperador ? 'Designar' : 'Editar'}</button>
             </td>
           </tr>`;
         }).join('')}
