@@ -2359,13 +2359,20 @@ async def op_atualizar_os(os_id: str, request: Request, payload=Depends(verifica
     campos_editaveis = ["codigo_erp", "obra", "endereco", "descricao",
                         "data_fim_prevista", "data_fim_real", "status",
                         "tipo_servico_id", "cliente_id", "cliente_nome_avulso",
-                        "equipamento_id", "operador_id"]
+                        "equipamento_id", "operador_id",
+                        "regime_cobranca", "valor_combinado", "data_inicio"]
     updates = []
     params = []
     for campo in campos_editaveis:
         if campo in d:
+            val = d[campo]
+            # valor_combinado: aceitar número, vazio vira NULL
+            if campo == "valor_combinado":
+                val = float(val) if (val not in (None, "")) else None
+            elif val == "":
+                val = None
             updates.append(f"{campo} = %s")
-            params.append(d[campo] if d[campo] != "" else None)
+            params.append(val)
 
     if not updates:
         return dict(existente)
@@ -3370,6 +3377,35 @@ async def health_db():
         return {"status": "ok", "db": "conectado"}
     except Exception as e:
         return {"status": "erro", "db": str(e)}
+
+@app.get("/api/debug/os")
+async def debug_os(numero: str = "", chave: str = ""):
+    """Diagnóstico de uma OS e suas partes. Uso: ?numero=OS-2026-0005&chave=garra-diag-2026"""
+    if chave != "garra-diag-2026":
+        raise HTTPException(status_code=403, detail="Chave inválida")
+    os_row = jard_query(
+        """SELECT id, numero, obra, regime_cobranca, valor_combinado, status,
+                  equipamento_id, operador_id, tipo_servico_id, data_inicio
+           FROM operacional.ordens_servico WHERE numero=%s""",
+        (numero,), fetch="one"
+    )
+    if not os_row:
+        return {"erro": "OS não encontrada", "numero": numero}
+    partes = jard_query(
+        """SELECT id, data, tipo_medicao,
+                  horimetro_inicial, horimetro_final, horas_trabalhadas, horas_cobradas,
+                  km_inicial, km_final, km_percorrido, qtd_viagens, qtd_metros,
+                  hora_inicio, hora_fim, observacao, criado_em
+           FROM operacional.partes_diarias
+           WHERE os_id=%s AND ativo=true
+           ORDER BY data, criado_em""",
+        (os_row["id"],)
+    )
+    return {
+        "os": dict(os_row),
+        "total_partes": len(partes or []),
+        "partes": [dict(p) for p in (partes or [])]
+    }
 
 @app.get("/api/debug/usuarios")
 async def debug_usuarios(chave: str = "", authorization: Optional[str] = Header(None)):
