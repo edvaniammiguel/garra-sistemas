@@ -2109,7 +2109,7 @@ function renderInfoOS(os) {
   const st = STATUS_LABEL[os.status] || {label:os.status, badge:'badge-info'};
   el.innerHTML = `
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px">
-      <div><span style="color:var(--muted);font-size:11px">CLIENTE</span><br><strong>${esc(os.cliente_nome||os.cliente_avulso||'–')}</strong></div>
+      <div><span style="color:var(--muted);font-size:11px">CLIENTE</span><br><strong>${esc(os.cliente_nome||os.cliente_nome_avulso||'–')}</strong></div>
       <div><span style="color:var(--muted);font-size:11px">OBRA</span><br><strong>${esc(os.obra||'–')}</strong></div>
       <div><span style="color:var(--muted);font-size:11px">EQUIPAMENTO</span><br><strong>${esc(os.equipamento_codigo||'–')}</strong></div>
       <div><span style="color:var(--muted);font-size:11px">REGIME</span><br><strong>${esc(os.regime_cobranca||'–')}</strong></div>
@@ -2179,7 +2179,7 @@ function renderTabelaPartes(partes, statusOS) {
 
   // Cabeçalho da 5ª/6ª coluna conforme regime
   let col5, col6;
-  if (regime === 'metro')      { col5 = 'Metros';  col6 = 'Valor'; }
+  if (regime === 'metro')      { col5 = 'Subtotal'; col6 = ''; }
   else if (regime === 'diaria'){ col5 = 'Diárias'; col6 = 'Valor'; }
   else if (regime === 'empreito'){ col5 = 'Horas'; col6 = '—'; }
   else                         { col5 = 'Horas';   col6 = 'Cobradas'; }
@@ -2189,24 +2189,32 @@ function renderTabelaPartes(partes, statusOS) {
       <thead>
         <tr style="border-bottom:2px solid var(--border)">
           <th style="text-align:left;padding:8px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--muted)">Data</th>
-          <th style="text-align:left;padding:8px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--muted)">Equipamento</th>
-          <th style="text-align:left;padding:8px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--muted)">Operador/Motorista</th>
-          <th style="text-align:left;padding:8px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--muted)">Medição</th>
+          <th style="text-align:left;padding:8px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--muted)">Equip.</th>
+          <th style="text-align:left;padding:8px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--muted)">Operador</th>
+          <th style="text-align:left;padding:8px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--muted)">${regime==='metro'?'Metros':(regime==='km'?'KM':'Horímetro')}</th>
+          <th style="text-align:left;padding:8px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--muted)">⚙️ Horas máq.</th>
           <th style="text-align:right;padding:8px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--muted)">${col5}</th>
-          <th style="text-align:right;padding:8px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--muted)">${col6}</th>
+          ${col6 ? `<th style="text-align:right;padding:8px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--muted)">${col6}</th>` : ''}
           ${fechada ? '' : '<th style="padding:8px"></th>'}
         </tr>
       </thead>
       <tbody>
         ${partes.map(p => {
           const data = p.data ? new Date(p.data+'T00:00').toLocaleDateString('pt-BR') : '–';
+          // Horas da máquina (horímetro) — controle interno, sempre mostrado
+          const horasMaq = (p.horimetro_inicial != null && p.horimetro_final != null)
+            ? (parseFloat(p.horimetro_final) - parseFloat(p.horimetro_inicial)).toFixed(1)
+            : (p.horas_trabalhadas != null ? parseFloat(p.horas_trabalhadas).toFixed(1) : '0.0');
+          const horimetroCell = `<span style="font-size:12px;color:var(--blue);font-weight:600">${horasMaq}h</span>
+            <div style="font-size:10px;color:var(--muted)">${p.horimetro_inicial||0}→${p.horimetro_final||0}</div>`;
+
           let medicaoCell;
           if (fechada) {
             medicaoCell = p.tipo_medicao === 'km'
-              ? `KM: ${p.km_inicial||0}→${p.km_final||0} (${p.qtd_viagens||0} viagens)`
+              ? `KM: ${p.km_inicial||0}→${p.km_final||0} (${p.qtd_viagens||0} viag.)`
               : p.tipo_medicao === 'metros'
               ? `${p.qtd_metros||0} m`
-              : `Hor: ${p.horimetro_inicial||0}→${p.horimetro_final||0}`;
+              : `${horasMaq}h`;
             medicaoCell = `<span style="font-size:12px;color:var(--muted)">${medicaoCell}</span>`;
           } else if (p.tipo_medicao === 'metros') {
             medicaoCell = `<div style="display:flex;align-items:center;gap:4px">
@@ -2215,17 +2223,17 @@ function renderTabelaPartes(partes, statusOS) {
               <span style="font-size:12px;color:var(--muted)">m</span></div>`;
           } else if (p.tipo_medicao === 'km') {
             medicaoCell = `<div style="display:flex;align-items:center;gap:3px">
-              <input type="number" step="0.1" value="${p.km_inicial||0}" style="width:70px;padding:4px 6px;border:1.5px solid var(--border);border-radius:6px;text-align:right;font-size:12px"
+              <input type="number" step="0.1" value="${p.km_inicial||0}" style="width:62px;padding:4px 6px;border:1.5px solid var(--border);border-radius:6px;text-align:right;font-size:12px"
                 onchange="salvarMedicaoParte('${esc(p.id)}','km_inicial',this.value)"/>
               <span style="font-size:11px;color:var(--muted)">→</span>
-              <input type="number" step="0.1" value="${p.km_final||0}" style="width:70px;padding:4px 6px;border:1.5px solid var(--border);border-radius:6px;text-align:right;font-size:12px"
+              <input type="number" step="0.1" value="${p.km_final||0}" style="width:62px;padding:4px 6px;border:1.5px solid var(--border);border-radius:6px;text-align:right;font-size:12px"
                 onchange="salvarMedicaoParte('${esc(p.id)}','km_final',this.value)"/></div>`;
           } else {
             medicaoCell = `<div style="display:flex;align-items:center;gap:3px">
-              <input type="number" step="0.1" value="${p.horimetro_inicial||0}" style="width:70px;padding:4px 6px;border:1.5px solid var(--border);border-radius:6px;text-align:right;font-size:12px"
+              <input type="number" step="0.1" value="${p.horimetro_inicial||0}" style="width:62px;padding:4px 6px;border:1.5px solid var(--border);border-radius:6px;text-align:right;font-size:12px"
                 onchange="salvarMedicaoParte('${esc(p.id)}','horimetro_inicial',this.value)"/>
               <span style="font-size:11px;color:var(--muted)">→</span>
-              <input type="number" step="0.1" value="${p.horimetro_final||0}" style="width:70px;padding:4px 6px;border:1.5px solid var(--border);border-radius:6px;text-align:right;font-size:12px"
+              <input type="number" step="0.1" value="${p.horimetro_final||0}" style="width:62px;padding:4px 6px;border:1.5px solid var(--border);border-radius:6px;text-align:right;font-size:12px"
                 onchange="salvarMedicaoParte('${esc(p.id)}','horimetro_final',this.value)"/></div>`;
           }
 
@@ -2233,8 +2241,8 @@ function renderTabelaPartes(partes, statusOS) {
           let cel5, cel6;
           if (regime === 'metro') {
             const metros = parseFloat(p.qtd_metros||0);
-            cel5 = `${metros.toFixed(0)} m`;
-            cel6 = `R$ ${(metros*valorComb).toFixed(2)}`;
+            cel5 = `<strong>R$ ${(metros*valorComb).toFixed(2)}</strong>`;
+            cel6 = '';
           } else if (regime === 'diaria') {
             const diarias = parseFloat(p.quantidade_diarias||0) || 1;
             cel5 = fechada
@@ -2243,15 +2251,14 @@ function renderTabelaPartes(partes, statusOS) {
                   onchange="salvarMedicaoParte('${esc(p.id)}','quantidade_diarias',this.value)"/>`;
             cel6 = `R$ ${(diarias*valorComb).toFixed(2)}`;
           } else if (regime === 'empreito') {
-            cel5 = `${parseFloat(p.horas_trabalhadas||0).toFixed(1)}h`;
+            cel5 = `${horasMaq}h`;
             cel6 = '—';
           } else {
-            // hora
-            const horas = parseFloat(p.horas_trabalhadas||0).toFixed(1);
+            // hora — cobra pelo horímetro
             const cobradas = parseFloat(p.horas_cobradas||0) > 0
               ? parseFloat(p.horas_cobradas).toFixed(1)
-              : parseFloat(p.horas_trabalhadas||0).toFixed(1);
-            cel5 = `${horas}h`;
+              : horasMaq;
+            cel5 = `${horasMaq}h`;
             cel6 = fechada
               ? `<strong>${cobradas}h</strong>`
               : `<input type="number" step="0.1" value="${cobradas}" style="width:70px;padding:4px 8px;border:1.5px solid var(--border);border-radius:6px;text-align:right;font-size:13px"
@@ -2263,8 +2270,9 @@ function renderTabelaPartes(partes, statusOS) {
             <td style="padding:8px;font-size:13px">${esc(p.equipamento_codigo||'–')}</td>
             <td style="padding:8px;font-size:13px">${esc(p.operador_nome||'–')}</td>
             <td style="padding:8px">${medicaoCell}</td>
+            <td style="padding:8px">${horimetroCell}</td>
             <td style="padding:8px;font-size:13px;text-align:right">${cel5}</td>
-            <td style="padding:8px;text-align:right;font-size:13px">${cel6}</td>
+            ${col6 ? `<td style="padding:8px;text-align:right;font-size:13px">${cel6}</td>` : ''}
             ${fechada ? '' : `<td style="padding:8px;text-align:right">
               <button class="btn-sm" style="color:var(--red)" onclick="excluirParte('${esc(p.id)}')">🗑</button>
             </td>`}
@@ -2397,7 +2405,7 @@ async function abrirModalOS(osId=null) {
       document.getElementById('os-numero').value = os.numero||'';
       document.getElementById('os-codigo-erp').value = os.codigo_erp||'';
       document.getElementById('os-cliente').value = os.cliente_id||'';
-      document.getElementById('os-cliente-avulso').value = os.cliente_avulso||'';
+      document.getElementById('os-cliente-avulso').value = os.cliente_nome_avulso||'';
       document.getElementById('os-obra').value = os.obra||'';
       document.getElementById('os-endereco').value = os.endereco||'';
       document.getElementById('os-descricao').value = os.descricao||'';
@@ -2614,8 +2622,11 @@ function renderTabelaOS(lista) {
           return `<tr style="border-bottom:1px solid #F1F5F9;${rowBg}" onmouseenter="this.style.background='#F8FAFC'" onmouseleave="this.style.background='${semOperador ? '#FFFBEB' : ''}'">
             <td style="padding:10px;font-size:13px;font-weight:700;color:var(--blue)">${esc(os.numero||'–')} ${os.origem==='campo' ? '<span class="badge badge-pend" style="font-size:9px;margin-left:4px">📍 campo</span>' : ''}</td>
             <td style="padding:10px">
-              <div style="font-size:13px;font-weight:600">${esc(os.cliente_nome||os.cliente_avulso||'–')}</div>
-              <div style="font-size:11px;color:var(--muted)">${esc(os.obra||'')}</div>
+              <div style="font-size:13px;font-weight:600">${
+                esc(os.cliente_nome || os.cliente_nome_avulso || '') ||
+                (os.obra ? esc(os.obra) : '<span style="color:#EA580C;font-weight:700">⚠️ Cliente a definir</span>')
+              }</div>
+              <div style="font-size:11px;color:var(--muted)">${esc(os.obra && (os.cliente_nome||os.cliente_nome_avulso) ? os.obra : '')}</div>
             </td>
             <td style="padding:10px;font-size:12px;color:var(--muted)">${esc(os.equipamento_codigo||'–')}</td>
             <td style="padding:10px">${operadorCell}</td>
