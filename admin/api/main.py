@@ -182,6 +182,11 @@ async def startup():
                 ALTER TABLE operacional.partes_diarias
                 ADD COLUMN IF NOT EXISTS qtd_metros NUMERIC(10,2)
             """)
+            # Migration: coluna de diárias cobradas (ajuste pela Luana)
+            await conn.execute("""
+                ALTER TABLE operacional.partes_diarias
+                ADD COLUMN IF NOT EXISTS quantidade_diarias_cobradas NUMERIC(8,1)
+            """)
             # Migration: criar tabela regimes_cobranca
             await conn.execute("""
                 CREATE TABLE IF NOT EXISTS operacional.regimes_cobranca (
@@ -2466,6 +2471,13 @@ async def op_criar_parte(os_id: str, request: Request, payload=Depends(verificar
         try: km_perc = round(float(km_fin) - float(km_ini), 1)
         except: pass
 
+    # Quantidade de metros (serviços medidos por metragem)
+    qtd_metros = d.get("qtd_metros")
+    try:
+        qtd_metros = float(qtd_metros) if qtd_metros not in (None, "") else None
+    except (TypeError, ValueError):
+        qtd_metros = None
+
     try:
         parte = jard_query_id(
             """INSERT INTO operacional.partes_diarias
@@ -2473,14 +2485,14 @@ async def op_criar_parte(os_id: str, request: Request, payload=Depends(verificar
                 data, hora_inicio, hora_fim,
                 tipo_medicao, horimetro_inicial, horimetro_final, horas_trabalhadas,
                 km_inicial, km_final, km_percorrido,
-                quantidade_diarias, qtd_viagens,
+                quantidade_diarias, qtd_viagens, qtd_metros,
                 vinculo_operador, observacao, trajeto, por_conta_de, criado_por)
-               VALUES (%s,%s,%s,%s, %s,%s,%s, %s,%s,%s,%s, %s,%s,%s, %s,%s, %s,%s,%s,%s,%s)""",
+               VALUES (%s,%s,%s,%s, %s,%s,%s, %s,%s,%s,%s, %s,%s,%s, %s,%s,%s, %s,%s,%s,%s,%s)""",
             (os_id, equipamento_id, operador_id, d.get("operador_nome_avulso"),
              data, d.get("hora_inicio"), d.get("hora_fim"),
              d.get("tipo_medicao","horimetro"), h_ini, h_fin, horas,
              km_ini, km_fin, km_perc,
-             d.get("quantidade_diarias", 0), d.get("qtd_viagens", 0),
+             d.get("quantidade_diarias", 0), d.get("qtd_viagens", 0), qtd_metros,
              d.get("vinculo_operador","proprio"), d.get("observacao"),
              d.get("trajeto"), d.get("por_conta_de","empresa"),
              criado_por_id)
@@ -2562,9 +2574,10 @@ async def op_atualizar_parte(parte_id: str, request: Request, payload=Depends(ve
     if existente.get("fechado"):
         raise HTTPException(status_code=400, detail="Parte já fechada — não pode editar")
 
-    campos = ["horas_cobradas","quantidade_diarias","qtd_viagens",
-              "observacao","hora_inicio","hora_fim",
-              "horimetro_inicial","horimetro_final","operador_nome_avulso"]
+    campos = ["horas_cobradas","quantidade_diarias","quantidade_diarias_cobradas",
+              "qtd_viagens","qtd_metros","observacao","hora_inicio","hora_fim",
+              "horimetro_inicial","horimetro_final","km_inicial","km_final",
+              "operador_nome_avulso"]
     updates, params = [], []
     for c in campos:
         if c in d:
@@ -2579,6 +2592,14 @@ async def op_atualizar_parte(parte_id: str, request: Request, payload=Depends(ve
             horas = round(float(h_fin) - float(h_ini), 2)
             updates.append("horas_trabalhadas = %s")
             params.append(horas)
+
+    # Recalcular km_percorrido se km foi atualizado
+    if "km_inicial" in d or "km_final" in d:
+        k_ini = d.get("km_inicial", existente.get("km_inicial"))
+        k_fin = d.get("km_final",   existente.get("km_final"))
+        if k_ini is not None and k_fin is not None:
+            updates.append("km_percorrido = %s")
+            params.append(round(float(k_fin) - float(k_ini), 1))
 
     if not updates:
         return dict(existente)
