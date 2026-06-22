@@ -2150,11 +2150,38 @@ function renderTabelaPartes(partes, statusOS) {
       <tbody>
         ${partes.map(p => {
           const data = p.data ? new Date(p.data+'T00:00').toLocaleDateString('pt-BR') : '–';
-          const medicao = p.tipo_medicao === 'km'
-            ? `KM: ${p.km_inicial||0}→${p.km_final||0} (${p.qtd_viagens||0} viagens)`
-            : p.tipo_medicao === 'metros'
-            ? `${p.qtd_metros||0} m`
-            : `Hor: ${p.horimetro_inicial||0}→${p.horimetro_final||0}`;
+          let medicaoCell;
+          if (fechada) {
+            // Só leitura quando OS fechada
+            medicaoCell = p.tipo_medicao === 'km'
+              ? `KM: ${p.km_inicial||0}→${p.km_final||0} (${p.qtd_viagens||0} viagens)`
+              : p.tipo_medicao === 'metros'
+              ? `${p.qtd_metros||0} m`
+              : `Hor: ${p.horimetro_inicial||0}→${p.horimetro_final||0}`;
+            medicaoCell = `<span style="font-size:12px;color:var(--muted)">${medicaoCell}</span>`;
+          } else if (p.tipo_medicao === 'metros') {
+            // Editável: quantidade de metros
+            medicaoCell = `<div style="display:flex;align-items:center;gap:4px">
+              <input type="number" step="0.01" value="${p.qtd_metros||0}" style="width:80px;padding:4px 8px;border:1.5px solid var(--border);border-radius:6px;text-align:right;font-size:13px"
+                onchange="salvarMedicaoParte('${esc(p.id)}','qtd_metros',this.value)"/>
+              <span style="font-size:12px;color:var(--muted)">m</span></div>`;
+          } else if (p.tipo_medicao === 'km') {
+            // Editável: km inicial → final
+            medicaoCell = `<div style="display:flex;align-items:center;gap:3px">
+              <input type="number" step="0.1" value="${p.km_inicial||0}" style="width:70px;padding:4px 6px;border:1.5px solid var(--border);border-radius:6px;text-align:right;font-size:12px"
+                onchange="salvarMedicaoParte('${esc(p.id)}','km_inicial',this.value)"/>
+              <span style="font-size:11px;color:var(--muted)">→</span>
+              <input type="number" step="0.1" value="${p.km_final||0}" style="width:70px;padding:4px 6px;border:1.5px solid var(--border);border-radius:6px;text-align:right;font-size:12px"
+                onchange="salvarMedicaoParte('${esc(p.id)}','km_final',this.value)"/></div>`;
+          } else {
+            // Editável: horímetro inicial → final
+            medicaoCell = `<div style="display:flex;align-items:center;gap:3px">
+              <input type="number" step="0.1" value="${p.horimetro_inicial||0}" style="width:70px;padding:4px 6px;border:1.5px solid var(--border);border-radius:6px;text-align:right;font-size:12px"
+                onchange="salvarMedicaoParte('${esc(p.id)}','horimetro_inicial',this.value)"/>
+              <span style="font-size:11px;color:var(--muted)">→</span>
+              <input type="number" step="0.1" value="${p.horimetro_final||0}" style="width:70px;padding:4px 6px;border:1.5px solid var(--border);border-radius:6px;text-align:right;font-size:12px"
+                onchange="salvarMedicaoParte('${esc(p.id)}','horimetro_final',this.value)"/></div>`;
+          }
           const horas = parseFloat(p.horas_trabalhadas||0).toFixed(1);
           const cobradas = parseFloat(p.horas_cobradas||0) > 0
             ? parseFloat(p.horas_cobradas).toFixed(1)
@@ -2163,7 +2190,7 @@ function renderTabelaPartes(partes, statusOS) {
             <td style="padding:8px;font-size:13px">${data}</td>
             <td style="padding:8px;font-size:13px">${esc(p.equipamento_codigo||'–')}</td>
             <td style="padding:8px;font-size:13px">${esc(p.operador_nome||'–')}</td>
-            <td style="padding:8px;font-size:12px;color:var(--muted)">${medicao}</td>
+            <td style="padding:8px">${medicaoCell}</td>
             <td style="padding:8px;font-size:13px;text-align:right">${horas}h</td>
             <td style="padding:8px;text-align:right">
               ${fechada
@@ -2178,6 +2205,23 @@ function renderTabelaPartes(partes, statusOS) {
         }).join('')}
       </tbody>
     </table>`;
+}
+
+async function salvarMedicaoParte(parteId, campo, valor) {
+  try {
+    const body = {};
+    body[campo] = parseFloat(valor) || 0;
+    await apiFetch('/operacional/api/partes/'+parteId, {
+      method:'PATCH',
+      body: JSON.stringify(body),
+    });
+    toast('Medição atualizada','success');
+    // Recarregar tabela e totais (recalcula horas/km)
+    const data = await apiFetch('/operacional/api/os/'+_osAtual.id+'/partes');
+    _partesAtual = data.partes || [];
+    renderTotaisPartes(data.totais || {});
+    renderTabelaPartes(_partesAtual, _osAtual.status);
+  } catch(e) { toast('Erro: '+e.message,'error'); }
 }
 
 async function salvarHorasCobradas(parteId, valor) {
