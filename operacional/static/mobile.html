@@ -396,19 +396,9 @@ input,select,textarea{font-family:inherit;outline:none;border:none}
       </select>
     </div>
 
-    <!-- Seletor: o que registrar (operador escolhe) -->
-    <div style="margin-bottom:12px">
-      <label style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:5px">O que registrar?</label>
-      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px">
-        <button type="button" id="btn-med-horimetro" onclick="selecionarMedicao('horimetro')" style="padding:10px;border:1.5px solid var(--border);background:#fff;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer">⚙️ Horímetro</button>
-        <button type="button" id="btn-med-km" onclick="selecionarMedicao('km')" style="padding:10px;border:1.5px solid var(--border);background:#fff;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer">🚛 KM</button>
-        <button type="button" id="btn-med-metros" onclick="selecionarMedicao('metros')" style="padding:10px;border:1.5px solid var(--border);background:#fff;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer">📏 Metros</button>
-      </div>
-    </div>
-
-    <!-- Bloco MÁQUINA (horímetro) -->
-    <div id="bloco-horimetro" style="background:#F0F4FF;border-radius:8px;padding:12px;margin-bottom:12px">
-      <div style="font-size:11px;font-weight:700;color:var(--blue);margin-bottom:8px">⚙️ HORÍMETRO</div>
+    <!-- HORÍMETRO — SEMPRE visível (controle interno da máquina) -->
+    <div id="bloco-horimetro" style="background:#F0F4FF;border-radius:8px;padding:12px;margin-bottom:12px;border:1.5px solid #C7D2FE">
+      <div style="font-size:11px;font-weight:700;color:var(--blue);margin-bottom:8px">⚙️ HORÍMETRO DA MÁQUINA <span style="font-weight:500;color:var(--muted)">(controle interno)</span></div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
         <div>
           <label style="font-size:10px;color:var(--muted);display:block;margin-bottom:4px">Inicial</label>
@@ -421,9 +411,20 @@ input,select,textarea{font-family:inherit;outline:none;border:none}
       </div>
     </div>
 
+    <!-- MEDIÇÃO DE COBRANÇA — muda conforme regime da OS -->
+    <div style="margin-bottom:8px">
+      <label style="font-size:11px;font-weight:700;color:var(--orange);text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:5px">💰 Medição de cobrança</label>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px">
+        <button type="button" id="btn-med-horimetro" onclick="selecionarMedicao('horimetro')" style="padding:9px;border:1.5px solid var(--border);background:#fff;border-radius:8px;font-size:11px;font-weight:700;cursor:pointer">⏱️ Por hora</button>
+        <button type="button" id="btn-med-km" onclick="selecionarMedicao('km')" style="padding:9px;border:1.5px solid var(--border);background:#fff;border-radius:8px;font-size:11px;font-weight:700;cursor:pointer">🚛 KM</button>
+        <button type="button" id="btn-med-metros" onclick="selecionarMedicao('metros')" style="padding:9px;border:1.5px solid var(--border);background:#fff;border-radius:8px;font-size:11px;font-weight:700;cursor:pointer">📏 Metros</button>
+      </div>
+      <div style="font-size:10px;color:var(--muted);margin-top:4px">Como esse dia é cobrado do cliente</div>
+    </div>
+
     <!-- Bloco CAMINHÃO (KM) -->
     <div id="bloco-km" style="background:#FFF7ED;border-radius:8px;padding:12px;margin-bottom:12px;display:none">
-      <div style="font-size:11px;font-weight:700;color:var(--orange);margin-bottom:8px">🚛 KM</div>
+      <div style="font-size:11px;font-weight:700;color:var(--orange);margin-bottom:8px">🚛 KM PERCORRIDO</div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
         <div>
           <label style="font-size:10px;color:var(--muted);display:block;margin-bottom:4px">Inicial</label>
@@ -442,7 +443,7 @@ input,select,textarea{font-family:inherit;outline:none;border:none}
 
     <!-- Bloco METROS (serviços por metragem) -->
     <div id="bloco-metros" style="background:#ECFDF5;border-radius:8px;padding:12px;margin-bottom:12px;display:none">
-      <div style="font-size:11px;font-weight:700;color:var(--green);margin-bottom:8px">📏 METROS</div>
+      <div style="font-size:11px;font-weight:700;color:var(--green);margin-bottom:8px">📏 METROS EXECUTADOS</div>
       <div>
         <label style="font-size:10px;color:var(--muted);display:block;margin-bottom:4px">Quantidade de metros executados</label>
         <input id="m-metros" type="number" step="0.01" min="0" placeholder="0.00" style="width:100%;padding:10px;border:1.5px solid var(--border);border-radius:6px;font-size:14px">
@@ -781,6 +782,10 @@ async function carregarOSApp() {
          <button class="os-btn" style="background:var(--blue)" onclick="verPartes('${os.id}', '${os.numero}')">👁 Ver</button>
          <button class="os-btn" style="background:#16A34A" onclick="concluirOS('${os.id}', '${os.numero}')">✅ Concluir</button>`;
 
+    // Botão "Passar OS" — só quando em andamento (operador saiu p/ outra obra/máquina)
+    const botaoLiberar = aguardando ? '' :
+      `<button onclick="liberarOS('${os.id}', '${os.numero}')" style="width:100%;margin-top:6px;padding:8px;background:transparent;border:1.5px dashed var(--muted);color:var(--muted);border-radius:8px;font-size:12px;font-weight:600;cursor:pointer">🔄 Passar OS para outro operador</button>`;
+
     html += `
       <div class="os-card" ${aguardando ? 'style="opacity:0.7;border-left:4px solid #EA580C"' : ''}>
         <div class="os-numero">${os.numero} ${statusBadge}</div>
@@ -796,6 +801,7 @@ async function carregarOSApp() {
           </div>
         </div>
         <div class="os-btns">${botoes}</div>
+        ${botaoLiberar}
       </div>
     `;
   });
@@ -1055,7 +1061,8 @@ async function salvarParte(adicionarMais) {
   const kmFin = document.getElementById('m-km-fin').value;
   const metros = document.getElementById('m-metros')?.value || '';
 
-  if (!isCaminhao && !isMetros && hIni && hFin && parseFloat(hFin) < parseFloat(hIni)) {
+  // Horímetro é SEMPRE visível agora — validar sempre que ambos preenchidos
+  if (hIni && hFin && parseFloat(hFin) < parseFloat(hIni)) {
     err.textContent = 'Horímetro final menor que o inicial';
     err.style.display = 'block';
     return;
@@ -1066,7 +1073,7 @@ async function salvarParte(adicionarMais) {
     return;
   }
   if (isMetros && (!metros || parseFloat(metros) <= 0)) {
-    err.textContent = 'Informe a quantidade de metros';
+    err.textContent = 'Informe a quantidade de metros executados';
     err.style.display = 'block';
     return;
   }
@@ -1334,13 +1341,12 @@ window._medicaoAtual = 'horimetro';
 function selecionarMedicao(tipo) {
   window._medicaoAtual = tipo;
 
-  const blocoH  = document.getElementById('bloco-horimetro');
   const blocoKM = document.getElementById('bloco-km');
   const blocoM  = document.getElementById('bloco-metros');
   const blocoT  = document.getElementById('bloco-trajeto');
 
-  // Reset blocos
-  if (blocoH)  blocoH.style.display  = 'none';
+  // HORÍMETRO fica SEMPRE visível (controle interno) — não mexe nele.
+  // Aqui só alterna os blocos de COBRANÇA (km/metros).
   if (blocoKM) blocoKM.style.display = 'none';
   if (blocoM)  blocoM.style.display  = 'none';
   if (blocoT)  blocoT.style.display  = 'none';
@@ -1355,7 +1361,7 @@ function selecionarMedicao(tipo) {
     }
   });
 
-  // Ativa botão e bloco escolhido
+  // Ativa botão escolhido
   const btnAtivo = document.getElementById('btn-med-' + tipo);
   if (btnAtivo) {
     btnAtivo.style.background = 'var(--orange)';
@@ -1363,14 +1369,15 @@ function selecionarMedicao(tipo) {
     btnAtivo.style.borderColor = 'var(--orange)';
   }
 
+  // Mostra bloco de cobrança correspondente
+  // (horímetro de cobrança usa o próprio bloco-horimetro que já está sempre visível)
   if (tipo === 'metros') {
     if (blocoM) blocoM.style.display = 'block';
   } else if (tipo === 'km') {
     if (blocoKM) blocoKM.style.display = 'block';
     if (blocoT)  blocoT.style.display  = 'block';
-  } else {
-    if (blocoH) blocoH.style.display = 'block';
   }
+  // tipo === 'horimetro': nada extra — o bloco horímetro sempre visível já cobre
 }
 
 // Compatibilidade: chamadas antigas a atualizarCamposMedicao
@@ -1389,6 +1396,51 @@ function fecharModalDireto() {
 
 function fecharModalOp(e) {
   if (e.target === document.getElementById('modal-parte')) fecharModalDireto();
+}
+
+async function liberarOS(osId, numero) {
+  if (!confirm(
+    `Passar a ${numero} para outro operador?\n\n` +
+    `• A OS sairá da sua lista\n` +
+    `• A administração será avisada para designar outro operador\n` +
+    `• Os dias que você já registrou continuam seus (para comissão)\n\n` +
+    `Use isso quando for movido para outra obra ou máquina.`
+  )) return;
+
+  try {
+    const token = localStorage.getItem('garra_token') || '';
+    let ok = false;
+    try {
+      const r = await fetch('/operacional/api/os/' + osId + '/liberar', {
+        method: 'POST',
+        headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+        body: JSON.stringify({})
+      });
+      if (r.ok) ok = true;
+      else {
+        const d = await r.json().catch(()=>({}));
+        if (r.status < 500) { toast('❌ ' + (d.detail||'Erro'), 'error'); return; }
+      }
+    } catch (netErr) {
+      // Offline → enfileira
+      if (typeof GarraDB !== 'undefined') {
+        try {
+          await GarraDB.postWithQueue('/operacional/api/os/'+osId+'/liberar', {}, { retries:5, retryDelay:30000 });
+          toast('⚠️ Offline — será enviado ao reconectar', 'info');
+          await carregarOSApp();
+          return;
+        } catch(e){}
+      }
+      toast('❌ Sem conexão', 'error');
+      return;
+    }
+    if (ok) {
+      toast('✅ ' + numero + ' liberada — administração avisada', 'success');
+      await carregarOSApp();
+    }
+  } catch (e) {
+    toast('❌ Erro: ' + e.message, 'error');
+  }
 }
 
 async function concluirOS(osId, numero) {
