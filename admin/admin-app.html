@@ -990,6 +990,16 @@ async function apiFetch(path, opts = {}) {
     },
   });
   if (res.status === 401) { doLogout(); throw new Error('Sessão expirada'); }
+  if (res.status === 403) {
+    const err = await res.json().catch(() => ({}));
+    const msg = err.detail || '';
+    if (msg.includes('Acesso restrito')) {
+      alert('Sua sessão está desatualizada. Faça login novamente.');
+      doLogout();
+      throw new Error(msg);
+    }
+    throw new Error(msg || 'Acesso negado');
+  }
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error(err.detail || 'Erro ' + res.status);
@@ -2110,13 +2120,43 @@ function renderInfoOS(os) {
 function renderTotaisPartes(t) {
   const el = document.getElementById('partes-totais');
   if (!el) return;
-  const cards = [
-    { label:'Dias trabalhados', valor: t.dias_trabalhados||0 },
-    { label:'Total horas',      valor: (t.total_horas||0).toFixed(1)+'h' },
-    { label:'Horas cobradas',   valor: (t.total_horas_cobradas||0).toFixed(1)+'h' },
-    { label:'Diárias',          valor: t.total_diarias||0 },
-    { label:'Viagens',          valor: t.total_viagens||0 },
-  ];
+  const regime = (_osAtual && _osAtual.regime_cobranca) || 'hora';
+
+  // Soma os metros de todas as partes (para regime metro)
+  const totalMetros = (_partesAtual || []).reduce((s,p) => s + (parseFloat(p.qtd_metros)||0), 0);
+
+  let cards;
+  if (regime === 'metro') {
+    cards = [
+      { label:'Dias trabalhados', valor: t.dias_trabalhados||0 },
+      { label:'Total metros',     valor: totalMetros.toFixed(0)+' m' },
+      { label:'Valor/metro',      valor: 'R$ '+parseFloat(_osAtual.valor_combinado||0).toFixed(2) },
+      { label:'Total a cobrar',   valor: 'R$ '+(totalMetros*parseFloat(_osAtual.valor_combinado||0)).toFixed(2) },
+    ];
+  } else if (regime === 'diaria') {
+    cards = [
+      { label:'Dias trabalhados', valor: t.dias_trabalhados||0 },
+      { label:'Total diárias',    valor: t.total_diarias||0 },
+      { label:'Valor/diária',     valor: 'R$ '+parseFloat(_osAtual.valor_combinado||0).toFixed(2) },
+      { label:'Total a cobrar',   valor: 'R$ '+((t.total_diarias||0)*parseFloat(_osAtual.valor_combinado||0)).toFixed(2) },
+    ];
+  } else if (regime === 'empreito') {
+    cards = [
+      { label:'Dias trabalhados', valor: t.dias_trabalhados||0 },
+      { label:'Total horas',      valor: (t.total_horas||0).toFixed(1)+'h' },
+      { label:'Valor fechado',    valor: 'R$ '+parseFloat(_osAtual.valor_combinado||0).toFixed(2) },
+    ];
+  } else {
+    // hora (padrão)
+    cards = [
+      { label:'Dias trabalhados', valor: t.dias_trabalhados||0 },
+      { label:'Total horas',      valor: (t.total_horas||0).toFixed(1)+'h' },
+      { label:'Horas cobradas',   valor: (t.total_horas_cobradas||0).toFixed(1)+'h' },
+      { label:'Valor/hora',       valor: 'R$ '+parseFloat(_osAtual.valor_combinado||0).toFixed(2) },
+      { label:'Total a cobrar',   valor: 'R$ '+((t.total_horas_cobradas||0)*parseFloat(_osAtual.valor_combinado||0)).toFixed(2) },
+    ];
+  }
+
   el.innerHTML = cards.map(c => `
     <div style="background:#fff;border:1.5px solid var(--border);border-radius:8px;padding:10px;text-align:center">
       <div style="font-size:11px;color:var(--muted);text-transform:uppercase">${c.label}</div>
@@ -2134,6 +2174,16 @@ function renderTabelaPartes(partes, statusOS) {
     return;
   }
 
+  const regime = (_osAtual && _osAtual.regime_cobranca) || 'hora';
+  const valorComb = parseFloat((_osAtual && _osAtual.valor_combinado) || 0);
+
+  // Cabeçalho da 5ª/6ª coluna conforme regime
+  let col5, col6;
+  if (regime === 'metro')      { col5 = 'Metros';  col6 = 'Valor'; }
+  else if (regime === 'diaria'){ col5 = 'Diárias'; col6 = 'Valor'; }
+  else if (regime === 'empreito'){ col5 = 'Horas'; col6 = '—'; }
+  else                         { col5 = 'Horas';   col6 = 'Cobradas'; }
+
   el.innerHTML = `
     <table style="width:100%;border-collapse:collapse">
       <thead>
@@ -2142,8 +2192,8 @@ function renderTabelaPartes(partes, statusOS) {
           <th style="text-align:left;padding:8px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--muted)">Equipamento</th>
           <th style="text-align:left;padding:8px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--muted)">Operador/Motorista</th>
           <th style="text-align:left;padding:8px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--muted)">Medição</th>
-          <th style="text-align:right;padding:8px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--muted)">Horas</th>
-          <th style="text-align:right;padding:8px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--muted)">Cobradas</th>
+          <th style="text-align:right;padding:8px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--muted)">${col5}</th>
+          <th style="text-align:right;padding:8px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--muted)">${col6}</th>
           ${fechada ? '' : '<th style="padding:8px"></th>'}
         </tr>
       </thead>
@@ -2152,7 +2202,6 @@ function renderTabelaPartes(partes, statusOS) {
           const data = p.data ? new Date(p.data+'T00:00').toLocaleDateString('pt-BR') : '–';
           let medicaoCell;
           if (fechada) {
-            // Só leitura quando OS fechada
             medicaoCell = p.tipo_medicao === 'km'
               ? `KM: ${p.km_inicial||0}→${p.km_final||0} (${p.qtd_viagens||0} viagens)`
               : p.tipo_medicao === 'metros'
@@ -2160,13 +2209,11 @@ function renderTabelaPartes(partes, statusOS) {
               : `Hor: ${p.horimetro_inicial||0}→${p.horimetro_final||0}`;
             medicaoCell = `<span style="font-size:12px;color:var(--muted)">${medicaoCell}</span>`;
           } else if (p.tipo_medicao === 'metros') {
-            // Editável: quantidade de metros
             medicaoCell = `<div style="display:flex;align-items:center;gap:4px">
               <input type="number" step="0.01" value="${p.qtd_metros||0}" style="width:80px;padding:4px 8px;border:1.5px solid var(--border);border-radius:6px;text-align:right;font-size:13px"
                 onchange="salvarMedicaoParte('${esc(p.id)}','qtd_metros',this.value)"/>
               <span style="font-size:12px;color:var(--muted)">m</span></div>`;
           } else if (p.tipo_medicao === 'km') {
-            // Editável: km inicial → final
             medicaoCell = `<div style="display:flex;align-items:center;gap:3px">
               <input type="number" step="0.1" value="${p.km_inicial||0}" style="width:70px;padding:4px 6px;border:1.5px solid var(--border);border-radius:6px;text-align:right;font-size:12px"
                 onchange="salvarMedicaoParte('${esc(p.id)}','km_inicial',this.value)"/>
@@ -2174,7 +2221,6 @@ function renderTabelaPartes(partes, statusOS) {
               <input type="number" step="0.1" value="${p.km_final||0}" style="width:70px;padding:4px 6px;border:1.5px solid var(--border);border-radius:6px;text-align:right;font-size:12px"
                 onchange="salvarMedicaoParte('${esc(p.id)}','km_final',this.value)"/></div>`;
           } else {
-            // Editável: horímetro inicial → final
             medicaoCell = `<div style="display:flex;align-items:center;gap:3px">
               <input type="number" step="0.1" value="${p.horimetro_inicial||0}" style="width:70px;padding:4px 6px;border:1.5px solid var(--border);border-radius:6px;text-align:right;font-size:12px"
                 onchange="salvarMedicaoParte('${esc(p.id)}','horimetro_inicial',this.value)"/>
@@ -2182,22 +2228,43 @@ function renderTabelaPartes(partes, statusOS) {
               <input type="number" step="0.1" value="${p.horimetro_final||0}" style="width:70px;padding:4px 6px;border:1.5px solid var(--border);border-radius:6px;text-align:right;font-size:12px"
                 onchange="salvarMedicaoParte('${esc(p.id)}','horimetro_final',this.value)"/></div>`;
           }
-          const horas = parseFloat(p.horas_trabalhadas||0).toFixed(1);
-          const cobradas = parseFloat(p.horas_cobradas||0) > 0
-            ? parseFloat(p.horas_cobradas).toFixed(1)
-            : parseFloat(p.horas_trabalhadas||0).toFixed(1);
+
+          // Colunas 5 e 6 conforme regime
+          let cel5, cel6;
+          if (regime === 'metro') {
+            const metros = parseFloat(p.qtd_metros||0);
+            cel5 = `${metros.toFixed(0)} m`;
+            cel6 = `R$ ${(metros*valorComb).toFixed(2)}`;
+          } else if (regime === 'diaria') {
+            const diarias = parseFloat(p.quantidade_diarias||0) || 1;
+            cel5 = fechada
+              ? `${diarias}`
+              : `<input type="number" step="0.5" value="${diarias}" style="width:60px;padding:4px 6px;border:1.5px solid var(--border);border-radius:6px;text-align:right;font-size:13px"
+                  onchange="salvarMedicaoParte('${esc(p.id)}','quantidade_diarias',this.value)"/>`;
+            cel6 = `R$ ${(diarias*valorComb).toFixed(2)}`;
+          } else if (regime === 'empreito') {
+            cel5 = `${parseFloat(p.horas_trabalhadas||0).toFixed(1)}h`;
+            cel6 = '—';
+          } else {
+            // hora
+            const horas = parseFloat(p.horas_trabalhadas||0).toFixed(1);
+            const cobradas = parseFloat(p.horas_cobradas||0) > 0
+              ? parseFloat(p.horas_cobradas).toFixed(1)
+              : parseFloat(p.horas_trabalhadas||0).toFixed(1);
+            cel5 = `${horas}h`;
+            cel6 = fechada
+              ? `<strong>${cobradas}h</strong>`
+              : `<input type="number" step="0.1" value="${cobradas}" style="width:70px;padding:4px 8px;border:1.5px solid var(--border);border-radius:6px;text-align:right;font-size:13px"
+                  onchange="salvarHorasCobradas('${esc(p.id)}', this.value)"/>`;
+          }
+
           return `<tr style="border-bottom:1px solid #F1F5F9">
             <td style="padding:8px;font-size:13px">${data}</td>
             <td style="padding:8px;font-size:13px">${esc(p.equipamento_codigo||'–')}</td>
             <td style="padding:8px;font-size:13px">${esc(p.operador_nome||'–')}</td>
             <td style="padding:8px">${medicaoCell}</td>
-            <td style="padding:8px;font-size:13px;text-align:right">${horas}h</td>
-            <td style="padding:8px;text-align:right">
-              ${fechada
-                ? `<strong>${cobradas}h</strong>`
-                : `<input type="number" step="0.1" value="${cobradas}" style="width:70px;padding:4px 8px;border:1.5px solid var(--border);border-radius:6px;text-align:right;font-size:13px"
-                    onchange="salvarHorasCobradas('${esc(p.id)}', this.value)"/>`}
-            </td>
+            <td style="padding:8px;font-size:13px;text-align:right">${cel5}</td>
+            <td style="padding:8px;text-align:right;font-size:13px">${cel6}</td>
             ${fechada ? '' : `<td style="padding:8px;text-align:right">
               <button class="btn-sm" style="color:var(--red)" onclick="excluirParte('${esc(p.id)}')">🗑</button>
             </td>`}
@@ -2255,18 +2322,39 @@ async function confirmarFechamento() {
     // Buscar revisão
     const rev = await apiFetch('/operacional/api/os/'+_osAtual.id+'/revisao');
     const t = rev.totais || {};
-    const msg = `Fechar ${_osAtual.numero}?\n\n` +
-      `Dias trabalhados: ${t.dias_trabalhados||0}\n` +
-      `Total horas: ${(t.total_horas||0).toFixed(1)}h\n` +
-      `Horas cobradas: ${(t.total_horas_cobradas||0).toFixed(1)}h\n` +
-      `Diárias: ${t.total_diarias||0}\n` +
-      `Viagens: ${t.total_viagens||0}\n\n` +
+    const regime = (_osAtual.regime_cobranca) || 'hora';
+    const valorComb = parseFloat(_osAtual.valor_combinado||0);
+
+    let resumo;
+    if (regime === 'metro') {
+      const totalMetros = (_partesAtual||[]).reduce((s,p)=>s+(parseFloat(p.qtd_metros)||0),0);
+      resumo = `Dias trabalhados: ${t.dias_trabalhados||0}\n` +
+               `Total metros: ${totalMetros.toFixed(0)} m\n` +
+               `Valor/metro: R$ ${valorComb.toFixed(2)}\n` +
+               `Total a cobrar: R$ ${(totalMetros*valorComb).toFixed(2)}`;
+    } else if (regime === 'diaria') {
+      resumo = `Dias trabalhados: ${t.dias_trabalhados||0}\n` +
+               `Total diárias: ${t.total_diarias||0}\n` +
+               `Valor/diária: R$ ${valorComb.toFixed(2)}\n` +
+               `Total a cobrar: R$ ${((t.total_diarias||0)*valorComb).toFixed(2)}`;
+    } else if (regime === 'empreito') {
+      resumo = `Dias trabalhados: ${t.dias_trabalhados||0}\n` +
+               `Total horas: ${(t.total_horas||0).toFixed(1)}h\n` +
+               `Valor fechado: R$ ${valorComb.toFixed(2)}`;
+    } else {
+      resumo = `Dias trabalhados: ${t.dias_trabalhados||0}\n` +
+               `Total horas: ${(t.total_horas||0).toFixed(1)}h\n` +
+               `Horas cobradas: ${(t.total_horas_cobradas||0).toFixed(1)}h\n` +
+               `Valor/hora: R$ ${valorComb.toFixed(2)}\n` +
+               `Total a cobrar: R$ ${((t.total_horas_cobradas||0)*valorComb).toFixed(2)}`;
+    }
+
+    const msg = `Fechar ${_osAtual.numero}?\n\n${resumo}\n\n` +
       `Após fechar, as partes ficam congeladas (não editáveis).`;
     if (!confirm(msg)) return;
 
     await apiFetch('/operacional/api/os/'+_osAtual.id+'/fechar', { method:'POST' });
     toast('OS fechada com sucesso!','success');
-    // Recarregar OS e voltar para lista
     await carregarOS();
     navTo('os', document.querySelector('.sb-item[onclick*="os"]'));
   } catch(e) { toast('Erro ao fechar: '+e.message,'error'); }
