@@ -2278,6 +2278,7 @@ async def op_listar_os(
             os.data_inicio, os.data_fim_prevista, os.data_fim_real,
             os.status, os.origem, os.criado_em,
             os.cliente_id, COALESCE(c.nome, os.cliente_nome_avulso) AS cliente_nome,
+            os.cliente_nome_avulso,
             os.tipo_servico_id, ts.nome AS tipo_servico_nome,
             os.equipamento_id, eq.codigo AS equipamento_codigo, eq.descricao AS equipamento_descricao,
             os.operador_id, op.nome AS operador_nome,
@@ -2717,6 +2718,48 @@ async def op_concluir_os_operador(os_id: str, request: Request, payload=Depends(
     )
 
     return {"ok": True, "numero": os_row.get("numero"), "status": "aguardando_fechamento"}
+
+
+@app.post("/operacional/api/os/{os_id}/liberar")
+async def op_liberar_os(os_id: str, payload=Depends(verificar_token)):
+    """
+    Operador LIBERA a OS (foi movido para outra obra/máquina).
+    A OS perde o responsável (operador_id = NULL) → vira órfã → cai no alerta
+    vermelho do admin para a Luana redesignar.
+    As partes já registradas continuam com o operador original (comissão preservada).
+    """
+    login = payload.get("sub","") or payload.get("login","")
+    user = jard_query(
+        "SELECT id, perfil FROM public.usuarios_garra WHERE login=%s",
+        (login,), fetch="one"
+    )
+    if not user:
+        raise HTTPException(status_code=404, detail="Usuário não encontrado")
+
+    os_row = jard_query(
+        "SELECT id, numero, status, operador_id FROM operacional.ordens_servico WHERE id=%s AND ativo=true",
+        (os_id,), fetch="one"
+    )
+    if not os_row:
+        raise HTTPException(status_code=404, detail="OS não encontrada")
+
+    # Só o operador dono (ou admin/gestor) pode liberar
+    if user["perfil"] not in ("admin","gestor","luana") and str(os_row.get("operador_id")) != str(user["id"]):
+        raise HTTPException(status_code=403, detail="Você não é o operador desta OS")
+
+    if os_row.get("status") in ("concluida_completa","concluida_sem_erp","cancelada"):
+        raise HTTPException(status_code=400, detail="OS já está concluída")
+
+    # Zera o responsável → OS órfã. Partes diárias NÃO são tocadas (mantêm operador_id).
+    agora = datetime.utcnow()
+    jard_query(
+        """UPDATE operacional.ordens_servico
+           SET operador_id=NULL, atualizado_em=%s
+           WHERE id=%s""",
+        (agora, os_id), fetch="none"
+    )
+
+    return {"ok": True, "numero": os_row.get("numero"), "liberada": True}
 
 
 @app.get("/operacional/api/os/{os_id}/revisao")
