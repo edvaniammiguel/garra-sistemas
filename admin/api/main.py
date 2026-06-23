@@ -2575,7 +2575,7 @@ async def op_atualizar_parte(parte_id: str, request: Request, payload=Depends(ve
     if existente.get("fechado"):
         raise HTTPException(status_code=400, detail="Parte já fechada — não pode editar")
 
-    campos = ["horas_cobradas","quantidade_diarias","quantidade_diarias_cobradas",
+    campos = ["data","horas_cobradas","quantidade_diarias","quantidade_diarias_cobradas",
               "qtd_viagens","qtd_metros","observacao","hora_inicio","hora_fim",
               "horimetro_inicial","horimetro_final","km_inicial","km_final",
               "operador_nome_avulso"]
