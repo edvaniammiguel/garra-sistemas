@@ -3476,7 +3476,8 @@ function renderControleMensal(dados) {
       label = `${p.equipamento_codigo || '?'} — ${p.equipamento_descricao || ''}`;
     } else if (_cmView === 'os') {
       key = p.os_id || p.os_numero || 'sem';
-      label = `${p.os_numero || '?'}${p.cliente_nome ? ' — ' + p.cliente_nome : ''}`;
+      const erp = p.codigo_erp ? ` · ERP: ${p.codigo_erp}` : ' · sem ERP';
+      label = `${p.os_numero || '?'}${erp}${p.cliente_nome ? ' — ' + p.cliente_nome : ''}`;
     } else if (_cmView === 'codigo_erp') {
       key = p.codigo_erp || 'sem_erp';
       label = p.codigo_erp ? `ERP: ${p.codigo_erp}` : '⚠️ Sem código ERP';
@@ -3552,7 +3553,7 @@ function renderControleMensal(dados) {
 
       html += `<tr style="border-bottom:1px solid #F1F5F9;${bgFechado}">
         <td style="padding:6px 8px">${dataFmt}</td>
-        <td style="padding:6px 8px;font-size:11px">${esc(p.os_numero||'')}</td>
+        <td style="padding:6px 8px;font-size:11px">${esc(p.os_numero||'')}${p.codigo_erp?`<br><span style="color:var(--green);font-weight:600">ERP: ${esc(p.codigo_erp)}</span>`:''}</td>
         <td style="padding:6px 8px">${esc(p.cliente_nome||'')}</td>
         <td style="padding:6px 8px">${col4}</td>
         <td style="padding:6px 8px;text-align:right">${ini !== '' ? ini : '–'}</td>
