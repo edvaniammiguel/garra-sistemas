@@ -407,13 +407,14 @@ input,select,textarea{font-family:inherit;outline:none;border:none}
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
         <div>
           <label style="font-size:10px;color:var(--muted);display:block;margin-bottom:4px">Inicial</label>
-          <input id="m-h-ini" type="number" step="0.1" placeholder="0.0" style="width:100%;padding:10px;border:1.5px solid var(--border);border-radius:6px;font-size:14px">
+          <input id="m-h-ini" type="number" step="0.1" placeholder="0.0" oninput="calcularHorasMaquina()" style="width:100%;padding:10px;border:1.5px solid var(--border);border-radius:6px;font-size:14px">
         </div>
         <div>
           <label style="font-size:10px;color:var(--muted);display:block;margin-bottom:4px">Final</label>
-          <input id="m-h-fin" type="number" step="0.1" placeholder="0.0" style="width:100%;padding:10px;border:1.5px solid var(--border);border-radius:6px;font-size:14px">
+          <input id="m-h-fin" type="number" step="0.1" placeholder="0.0" oninput="calcularHorasMaquina()" style="width:100%;padding:10px;border:1.5px solid var(--border);border-radius:6px;font-size:14px">
         </div>
       </div>
+      <div id="m-horas-calc" style="display:none;margin-top:8px;font-size:13px;font-weight:700;color:var(--blue);text-align:center"></div>
     </div>
 
     <!-- MEDIÇÃO DE COBRANÇA — muda conforme regime da OS -->
@@ -1055,13 +1056,9 @@ async function salvarParte(adicionarMais) {
     return;
   }
 
-  // Tipo de medição = o que o OPERADOR escolheu nos botões (obrigatório escolher)
-  const tipoMedicao = window._medicaoAtual;
-  if (!tipoMedicao) {
-    err.textContent = 'Selecione a medição de cobrança (Por hora, KM ou Metros)';
-    err.style.display = 'block';
-    return;
-  }
+  // Tipo de medição = o que está selecionado (pré-vem pelo regime da OS).
+  // Não é obrigatório escolher — se por algum motivo vier vazio, usa horímetro.
+  const tipoMedicao = window._medicaoAtual || 'horimetro';
   const isMetros   = tipoMedicao === 'metros';
   const isCaminhao = tipoMedicao === 'km';
 
@@ -1326,17 +1323,26 @@ async function abrirModalParte(osId) {
   document.getElementById('m-error').style.display = 'none';
   document.getElementById('modal-parte').style.display = 'flex';
 
-  // Buscar dados da OS na lista já carregada (cache em memória) ou via API
+  // Buscar dados da OS FRESCOS do backend (operador_id pode ter mudado por reatribuição)
   let osData = null;
   try {
     const token = localStorage.getItem('garra_token') || '';
-    const r = await fetch('/operacional/api/minhas-os', {
+    // 1ª tentativa: detalhe direto da OS (sempre traz operador_id atual)
+    const rDet = await fetch('/operacional/api/os/' + osId, {
       headers: { 'Authorization': 'Bearer ' + token }
     });
-    if (r.ok) {
-      const lista = await r.json();
-      osData = (Array.isArray(lista) ? lista : (lista.os || []))
-        .find(o => o.id === osId);
+    if (rDet.ok) {
+      osData = await rDet.json();
+    } else {
+      // fallback: lista minhas-os
+      const r = await fetch('/operacional/api/minhas-os', {
+        headers: { 'Authorization': 'Bearer ' + token }
+      });
+      if (r.ok) {
+        const lista = await r.json();
+        osData = (Array.isArray(lista) ? lista : (lista.os || []))
+          .find(o => o.id === osId);
+      }
     }
   } catch (e) {
     // offline — pega do cache IDB
@@ -1360,6 +1366,7 @@ async function abrirModalParte(osId) {
     const el = document.getElementById(id);
     if (el) el.value = '';
   });
+  const horasCalc = document.getElementById('m-horas-calc'); if (horasCalc) horasCalc.style.display = 'none';
   // Horário de funcionamento padrão
   const hIni = document.getElementById('m-h-inicio'); if (hIni) hIni.value = '07:00';
   const hFim = document.getElementById('m-h-fim');    if (hFim) hFim.value = '17:00';
@@ -1398,25 +1405,34 @@ async function abrirModalParte(osId) {
   (operadores || []).forEach(o => {
     selOp.innerHTML += `<option value="${o.id}">${o.nome}</option>`;
   });
-  // Prioridade de pré-seleção do operador:
-  // 1) Operador definido na OS  2) Usuário logado (Gilson)
+  // Pré-seleção do operador:
+  // SEMPRE o operador ATUAL da OS (reflete reatribuição). Se a OS não tiver
+  // operador definido, cai para o usuário logado.
   if (osData?.operador_id) {
+    // garante que o operador atual está na lista (mesmo se inativo/filtrado)
+    if (!Array.from(selOp.options).some(o => String(o.value) === String(osData.operador_id))) {
+      const nome = osData.operador_nome || osData.operador || 'Operador da OS';
+      selOp.innerHTML += `<option value="${osData.operador_id}">${nome}</option>`;
+    }
     selOp.value = osData.operador_id;
   }
   if (!selOp.value && USUARIO?.id) {
-    // Se o logado não está na lista, adiciona
     if (!Array.from(selOp.options).some(o => o.value === USUARIO.id)) {
       selOp.innerHTML += `<option value="${USUARIO.id}">${USUARIO.nome || 'Eu'}</option>`;
     }
     selOp.value = USUARIO.id;
   }
 
-  // Guardar medicao do TIPO DE SERVIÇO da OS (apenas referência, NÃO pré-seleciona)
+  // Guardar medicao do TIPO DE SERVIÇO da OS (referência)
   window._osTipoMedicao = (osData?.tipo_servico_medicao || '').toLowerCase();
 
-  // NÃO pré-selecionar medição de cobrança — operador escolhe sempre.
-  // Horímetro permanece sempre visível (controle interno); blocos km/metros ocultos.
-  resetMedicaoCobranca();
+  // Pré-seleciona a medição de cobrança pelo REGIME da OS (operador pode trocar)
+  // hora/diaria/empreito → horímetro | km → km | metro → metros
+  const regime = (osData?.regime_cobranca || '').toLowerCase();
+  const medicaoPorRegime = (regime === 'km') ? 'km'
+                         : (regime === 'metro') ? 'metros'
+                         : 'horimetro'; // hora, diaria, empreito → controle por hora
+  selecionarMedicao(medicaoPorRegime);
 }
 
 function resetMedicaoCobranca() {
@@ -1483,9 +1499,30 @@ function selecionarMedicao(tipo) {
   // tipo === 'horimetro': nada extra — o bloco horímetro sempre visível já cobre
 }
 
-// Trocar equipamento NÃO pré-seleciona medição — operador escolhe sempre
+// Trocar equipamento NÃO reseta a medição — operador mantém a escolha atual
+// (a mesma máquina pode trocar implemento; a seleção é livre pelos botões)
 function atualizarCamposMedicao() {
-  resetMedicaoCobranca();
+  // mantém _medicaoAtual; nada a fazer aqui
+}
+
+// Calcula horas da máquina automaticamente (final - inicial)
+function calcularHorasMaquina() {
+  const ini = parseFloat(document.getElementById('m-h-ini').value);
+  const fin = parseFloat(document.getElementById('m-h-fin').value);
+  const el = document.getElementById('m-horas-calc');
+  if (!el) return;
+  if (!isNaN(ini) && !isNaN(fin) && fin >= ini) {
+    const horas = (fin - ini).toFixed(1);
+    el.textContent = '⏱️ ' + horas + ' horas de máquina';
+    el.style.color = 'var(--blue)';
+    el.style.display = 'block';
+  } else if (!isNaN(ini) && !isNaN(fin) && fin < ini) {
+    el.textContent = '⚠️ Final menor que inicial';
+    el.style.color = 'var(--red)';
+    el.style.display = 'block';
+  } else {
+    el.style.display = 'none';
+  }
 }
 
 function fecharModalDireto() {
@@ -1803,12 +1840,18 @@ async function verPartes(osId, osNum) {
       } else {
         medInfo = `${p.horas_trabalhadas || 0}h trabalhadas`;
       }
+      // Horário de trabalho (início–fim), quando registrado
+      const hIni = p.hora_inicio ? String(p.hora_inicio).slice(0,5) : '';
+      const hFim = p.hora_fim ? String(p.hora_fim).slice(0,5) : '';
+      const horarioInfo = (hIni || hFim)
+        ? `<div style="font-size:11px;color:var(--muted);margin-top:3px">🕐 ${hIni||'--'} às ${hFim||'--'}</div>` : '';
       linhas += `
         <div style="border-bottom:1px solid var(--border);padding:12px 0">
           <div style="display:flex;justify-content:space-between;align-items:center">
             <strong style="font-size:13px;color:var(--blue)">${dataFmt}</strong>
             <span style="font-size:12px;font-weight:700;color:var(--orange)">${medInfo}</span>
           </div>
+          ${horarioInfo}
           ${p.observacao ? `<div style="font-size:12px;color:var(--muted);margin-top:4px">${p.observacao}</div>` : ''}
         </div>`;
     });
