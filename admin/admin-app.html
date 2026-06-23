@@ -2073,6 +2073,7 @@ function filtrarOS() {
 ══════════════════════════════════════════════ */
 let _osAtual = null;
 let _partesAtual = [];
+let _operadoresPartes = [];
 
 async function verPartesOS(osId, osNumero) {
   _osAtual = { id: osId, numero: osNumero };
@@ -2081,6 +2082,13 @@ async function verPartesOS(osId, osNumero) {
   const tbl = document.getElementById('partes-tabela');
   tbl.innerHTML = '<div class="loading"><span class="spin"></span></div>';
   try {
+    // Garantir listas para selects editáveis
+    if (!_equipamentos || !_equipamentos.length) {
+      _equipamentos = await apiFetch('/operacional/api/equipamentos').catch(()=>[]);
+    }
+    if (!_operadoresPartes.length) {
+      _operadoresPartes = await apiFetch('/operacional/api/operadores').catch(()=>[]);
+    }
     // Buscar partes E detalhe da OS (fresco do backend, não cache obsoleto)
     const data = await apiFetch('/operacional/api/os/'+osId+'/partes');
     _partesAtual = data.partes || [];
@@ -2212,8 +2220,36 @@ function renderTabelaPartes(partes, statusOS) {
             : (p.horas_trabalhadas != null ? parseFloat(p.horas_trabalhadas).toFixed(1) : '0.0');
           // Sinaliza horímetro suspeito (>24h num dia = provável erro de digitação)
           const horasSuspeita = parseFloat(horasMaq) > 24;
-          const horimetroCell = `<span style="font-size:12px;color:${horasSuspeita?'var(--red)':'var(--blue)'};font-weight:600">${horasMaq}h ${horasSuspeita?'⚠️':''}</span>
-            <div style="font-size:10px;color:var(--muted)">${p.horimetro_inicial||0}→${p.horimetro_final||0}</div>`;
+          // Horímetro editável (inicial → final) — controle interno
+          const horimetroCell = fechada
+            ? `<span style="font-size:12px;color:${horasSuspeita?'var(--red)':'var(--blue)'};font-weight:600">${horasMaq}h ${horasSuspeita?'⚠️':''}</span>
+               <div style="font-size:10px;color:var(--muted)">${p.horimetro_inicial||0}→${p.horimetro_final||0}</div>`
+            : `<div style="display:flex;align-items:center;gap:3px">
+                <input type="number" step="0.1" value="${p.horimetro_inicial||0}" title="Horímetro inicial" style="width:60px;padding:4px 6px;border:1.5px solid var(--border);border-radius:6px;text-align:right;font-size:12px"
+                  onchange="salvarMedicaoParte('${esc(p.id)}','horimetro_inicial',this.value)"/>
+                <span style="font-size:11px;color:var(--muted)">→</span>
+                <input type="number" step="0.1" value="${p.horimetro_final||0}" title="Horímetro final" style="width:60px;padding:4px 6px;border:1.5px solid var(--border);border-radius:6px;text-align:right;font-size:12px"
+                  onchange="salvarMedicaoParte('${esc(p.id)}','horimetro_final',this.value)"/>
+               </div>
+               <div style="font-size:10px;color:${horasSuspeita?'var(--red)':'var(--muted)'};text-align:center">${horasMaq}h ${horasSuspeita?'⚠️':''}</div>`;
+
+          // Equipamento editável (select)
+          const equipCell = fechada
+            ? `<span style="font-size:13px">${esc(p.equipamento_codigo||'–')}</span>`
+            : `<select onchange="salvarMedicaoParte('${esc(p.id)}','equipamento_id',this.value)" style="padding:4px 6px;border:1.5px solid var(--border);border-radius:6px;font-size:12px;max-width:110px">
+                ${(_equipamentos||[]).filter(e=>e.ativo!==false).map(e =>
+                  `<option value="${esc(e.id)}" ${String(e.id)===String(p.equipamento_id)?'selected':''}>${esc(e.codigo)}</option>`
+                ).join('')}
+               </select>`;
+
+          // Operador editável (select)
+          const operCell = fechada
+            ? `<span style="font-size:13px">${esc(p.operador_nome||'–')}</span>`
+            : `<select onchange="salvarMedicaoParte('${esc(p.id)}','operador_id',this.value)" style="padding:4px 6px;border:1.5px solid var(--border);border-radius:6px;font-size:12px;max-width:120px">
+                ${(_operadoresPartes||[]).map(o =>
+                  `<option value="${esc(o.id)}" ${String(o.id)===String(p.operador_id)?'selected':''}>${esc(o.nome)}</option>`
+                ).join('')}
+               </select>`;
 
           let medicaoCell;
           if (fechada) {
@@ -2283,8 +2319,8 @@ function renderTabelaPartes(partes, statusOS) {
           const linhaSuspeita = horasSuspeita ? 'background:#FEF2F2;' : '';
           return `<tr style="border-bottom:1px solid #F1F5F9;${linhaSuspeita}">
             <td style="padding:8px">${dataCell}</td>
-            <td style="padding:8px;font-size:13px">${esc(p.equipamento_codigo||'–')}</td>
-            <td style="padding:8px;font-size:13px">${esc(p.operador_nome||'–')}</td>
+            <td style="padding:8px">${equipCell}</td>
+            <td style="padding:8px">${operCell}</td>
             <td style="padding:8px">${medicaoCell}</td>
             <td style="padding:8px">${horimetroCell}</td>
             <td style="padding:8px;font-size:13px;text-align:right">${cel5}</td>
@@ -2321,7 +2357,8 @@ async function salvarMedicaoParte(parteId, campo, valor) {
       if (campo === 'qtd_metros' && v > 5000 && !confirm('⚠️ ' + v + ' metros é um valor alto.\n\nSalvar mesmo assim?')) { verPartesOS(_osAtual.id, _osAtual.numero); return; }
     }
     const body = {};
-    body[campo] = (campo === 'data') ? valor : v;
+    const camposTexto = ['data','equipamento_id','operador_id','operador_nome_avulso','observacao'];
+    body[campo] = camposTexto.includes(campo) ? valor : v;
     await apiFetch('/operacional/api/partes/'+parteId, {
       method:'PATCH',
       body: JSON.stringify(body),
