@@ -1050,8 +1050,13 @@ async function salvarParte(adicionarMais) {
     return;
   }
 
-  // Tipo de medição = o que o OPERADOR escolheu nos botões
-  const tipoMedicao = window._medicaoAtual || 'horimetro';
+  // Tipo de medição = o que o OPERADOR escolheu nos botões (obrigatório escolher)
+  const tipoMedicao = window._medicaoAtual;
+  if (!tipoMedicao) {
+    err.textContent = 'Selecione a medição de cobrança (Por hora, KM ou Metros)';
+    err.style.display = 'block';
+    return;
+  }
   const isMetros   = tipoMedicao === 'metros';
   const isCaminhao = tipoMedicao === 'km';
 
@@ -1401,19 +1406,31 @@ async function abrirModalParte(osId) {
     selOp.value = USUARIO.id;
   }
 
-  // Guardar medicao do TIPO DE SERVIÇO da OS (tem prioridade sobre medicao do equipamento)
-  // Ex: serviço "Manilhamento por metro" → tipo_servico_medicao='metros'
-  //     mesmo que o equipamento seja medido por horímetro, o registro deve ser por metros
+  // Guardar medicao do TIPO DE SERVIÇO da OS (apenas referência, NÃO pré-seleciona)
   window._osTipoMedicao = (osData?.tipo_servico_medicao || '').toLowerCase();
 
-  // Atualiza visibilidade dos blocos (horímetro/km/metros/trajeto)
-  // Sugere medição inicial baseado no tipo de serviço/equipamento, mas operador pode trocar
-  const catEquip = (document.getElementById('m-equipamento').options[document.getElementById('m-equipamento').selectedIndex]?.getAttribute('data-cat') || '').toLowerCase();
-  const cat = (window._osTipoMedicao || catEquip).toLowerCase();
-  let sugestao = 'horimetro';
-  if (cat === 'metro' || cat === 'metros' || cat.includes('metro')) sugestao = 'metros';
-  else if (cat === 'km' || ['caminhao','caminhão','pipa','carro','veiculo','veículo'].some(s => cat.includes(s))) sugestao = 'km';
-  selecionarMedicao(sugestao);
+  // NÃO pré-selecionar medição de cobrança — operador escolhe sempre.
+  // Horímetro permanece sempre visível (controle interno); blocos km/metros ocultos.
+  resetMedicaoCobranca();
+}
+
+function resetMedicaoCobranca() {
+  window._medicaoAtual = null;
+  const blocoKM = document.getElementById('bloco-km');
+  const blocoM  = document.getElementById('bloco-metros');
+  const blocoT  = document.getElementById('bloco-trajeto');
+  if (blocoKM) blocoKM.style.display = 'none';
+  if (blocoM)  blocoM.style.display  = 'none';
+  if (blocoT)  blocoT.style.display  = 'none';
+  // Nenhum botão ativo
+  ['horimetro','km','metros'].forEach(t => {
+    const btn = document.getElementById('btn-med-' + t);
+    if (btn) {
+      btn.style.background = '#fff';
+      btn.style.color = 'var(--text)';
+      btn.style.borderColor = 'var(--border)';
+    }
+  });
 }
 
 // _medicaoAtual guarda o que o operador escolheu registrar
@@ -1461,14 +1478,9 @@ function selecionarMedicao(tipo) {
   // tipo === 'horimetro': nada extra — o bloco horímetro sempre visível já cobre
 }
 
-// Compatibilidade: chamadas antigas a atualizarCamposMedicao
+// Trocar equipamento NÃO pré-seleciona medição — operador escolhe sempre
 function atualizarCamposMedicao() {
-  const catEquip = (document.getElementById('m-equipamento').options[document.getElementById('m-equipamento').selectedIndex]?.getAttribute('data-cat') || '').toLowerCase();
-  const cat = (window._osTipoMedicao || catEquip).toLowerCase();
-  let sugestao = 'horimetro';
-  if (cat === 'metro' || cat === 'metros' || cat.includes('metro')) sugestao = 'metros';
-  else if (cat === 'km' || ['caminhao','caminhão','pipa','carro','veiculo','veículo'].some(s => cat.includes(s))) sugestao = 'km';
-  selecionarMedicao(sugestao);
+  resetMedicaoCobranca();
 }
 
 function fecharModalDireto() {
