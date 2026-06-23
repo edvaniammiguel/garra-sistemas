@@ -634,10 +634,10 @@ input,select,textarea { font-family:inherit; font-size:13px; outline:none; }
           <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;padding-bottom:12px;border-bottom:2px solid var(--border)">
             <label style="font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em">Agrupar por:</label>
             <select id="cm-agrupar" style="padding:8px 14px;border:1.5px solid var(--blue);border-radius:8px;font-size:14px;font-weight:700;color:var(--blue);background:#fff;cursor:pointer" onchange="cmTab(this.value)">
+              <option value="equipamento" selected>🚜 Equipamento</option>
               <option value="colaborador">👤 Colaborador</option>
-              <option value="equipamento">🚜 Equipamento</option>
-              <option value="os">📋 Número da OS</option>
-              <option value="codigo_erp">🏷️ Código ERP</option>
+              <option value="os">📋 Cód Interno</option>
+              <option value="codigo_erp">🏷️ OS (ERP)</option>
             </select>
           </div>
 
@@ -2633,7 +2633,7 @@ function renderTabelaOS(lista) {
     <table style="width:100%;border-collapse:collapse">
       <thead>
         <tr style="border-bottom:2px solid var(--border)">
-          <th style="text-align:left;padding:10px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--muted)">OS / Cód. ERP</th>
+          <th style="text-align:left;padding:10px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--muted)">Cód Interno / OS</th>
           <th style="text-align:left;padding:10px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--muted)">Cliente / Obra</th>
           <th style="text-align:left;padding:10px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--muted)">Equipamento</th>
           <th style="text-align:left;padding:10px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--muted)">Responsável</th>
@@ -3380,7 +3380,7 @@ async function salvarAjustePts(login) {
    CONTROLE MENSAL
 ══════════════════════════════════════════════ */
 let _cmDados = null;
-let _cmView = 'colaborador';
+let _cmView = 'equipamento';
 
 function initControleMensal() {
   const hoje = new Date();
@@ -3480,7 +3480,7 @@ function renderControleMensal(dados) {
       label = `${p.os_numero || '?'}${erp}${p.cliente_nome ? ' — ' + p.cliente_nome : ''}`;
     } else if (_cmView === 'codigo_erp') {
       key = p.codigo_erp || 'sem_erp';
-      label = p.codigo_erp ? `ERP: ${p.codigo_erp}` : '⚠️ Sem código ERP';
+      label = p.codigo_erp ? `OS (ERP): ${p.codigo_erp}` : '⚠️ Sem OS (ERP)';
     } else {
       key = p.operador_id || 'sem';
       label = p.operador_nome || 'Sem operador';
@@ -3504,6 +3504,7 @@ function renderControleMensal(dados) {
       <table style="width:100%;border-collapse:collapse;font-size:12px">
         <thead><tr style="background:#F8FAFC;border-bottom:2px solid var(--border)">
           <th style="padding:8px;text-align:left">Data</th>
+          <th style="padding:8px;text-align:left">Cód Interno</th>
           <th style="padding:8px;text-align:left">OS</th>
           <th style="padding:8px;text-align:left">Cliente</th>
           <th style="padding:8px;text-align:left">${col4label}</th>
@@ -3553,7 +3554,8 @@ function renderControleMensal(dados) {
 
       html += `<tr style="border-bottom:1px solid #F1F5F9;${bgFechado}">
         <td style="padding:6px 8px">${dataFmt}</td>
-        <td style="padding:6px 8px;font-size:11px">${esc(p.os_numero||'')}${p.codigo_erp?`<br><span style="color:var(--green);font-weight:600">ERP: ${esc(p.codigo_erp)}</span>`:''}</td>
+        <td style="padding:6px 8px;font-size:11px;font-weight:600;color:var(--blue)">${esc(p.os_numero||'–')}</td>
+        <td style="padding:6px 8px;font-size:11px">${p.codigo_erp?`<span style="color:var(--green);font-weight:600">${esc(p.codigo_erp)}</span>`:'<span style="color:var(--muted)">–</span>'}</td>
         <td style="padding:6px 8px">${esc(p.cliente_nome||'')}</td>
         <td style="padding:6px 8px">${col4}</td>
         <td style="padding:6px 8px;text-align:right">${ini !== '' ? ini : '–'}</td>
@@ -3567,7 +3569,7 @@ function renderControleMensal(dados) {
 
     html += `</tbody>
         <tfoot><tr style="background:#FFF7ED;font-weight:700">
-          <td style="padding:8px" colspan="6">TOTAL — ${dias.size} dia(s)</td>
+          <td style="padding:8px" colspan="7">TOTAL — ${dias.size} dia(s)</td>
           <td style="padding:8px;text-align:right">${somaTrab.toFixed(1)}</td>
           <td style="padding:8px;text-align:right;color:var(--orange)">${somaCobr.toFixed(1)}</td>
           <td colspan="2"></td>
