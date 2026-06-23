@@ -1768,27 +1768,14 @@ function renderSidebar(perfil, perms) {
 
   html += `</div><div class="sb-divider"></div>
     <div class="sb-section">
-      <span class="sb-label">Gestão Operacional</span>
-      <div class="sb-group open" id="grp-operacional">
-        <div class="sb-item" onclick="toggleSbGroup('grp-operacional')">
-          <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 17H5a2 2 0 0 0-2 2"/><circle cx="6" cy="18" r="2"/><circle cx="18" cy="18" r="2"/><path d="M3 18H1V8a1 1 0 0 1 1-1h12v11h-2"/><path d="M16 8h4l3 5v5h-3"/></svg>
-          Operacional
-          <svg class="sb-caret" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
-        </div>
-        <div class="sb-sub">
-          <div class="sb-subitem" onclick="navTo('os',this)">
-            📋 Ordens de Serviço <span class="sb-badge" id="sb-os-count">–</span>
-          </div>
-          <div class="sb-subitem" onclick="navTo('controle-mensal',this)">
-            📅 Controle Mensal
-          </div>
-          <div class="sb-subitem" onclick="abrirChecklistAdmin()">
-            ✅ Checklist <span class="sb-ext-tag">↗</span>
-          </div>
-          <div class="sb-subitem sb-dim" title="Em breve">
-            🔧 Manutenção <span class="sb-ext-tag">em breve</span>
-          </div>
-        </div>
+      <span class="sb-label">Gestão Administrativa</span>
+      <div class="sb-item" onclick="navTo('os',this)">
+        <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="15" y2="17"/></svg>
+        Ordens de Serviço <span class="sb-badge" id="sb-os-count">–</span>
+      </div>
+      <div class="sb-item" onclick="navTo('controle-mensal',this)">
+        <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+        Controle Mensal
       </div>
     </div><div class="sb-divider"></div>`;
 
@@ -1814,26 +1801,42 @@ function renderSidebar(perfil, perms) {
     </div><div class="sb-divider"></div>`;
   }
 
-  // Módulos ativos — sistemas satélite (Jardinagem). Checklist/Operacional ficam no grupo Gestão Operacional.
+  // Módulos ativos — Operacional (grupo: Checklist + Manutenção) e Jardinagem (separada).
   const modulosSb = [
     { id:'jardinagem_desktop', label:'Jardinagem', url:'/jardinagem/desktop', externo:false, icon:'M12 22V12', icon2:'M5 12c0-3.87 3.13-7 7-7s7 3.13 7 7' },
   ];
 
   const modulosVisiveis = modulosSb.filter(m => temPerm(m.id));
-  if (modulosVisiveis.length) {
+  // Operacional aparece se tiver acesso ao checklist
+  const temOperacional = temPerm('checklist');
+  if (modulosVisiveis.length || temOperacional) {
     html += `<div class="sb-section"><span class="sb-label">Módulos ativos</span>`;
+
+    // Operacional — grupo expansível (Checklist + Manutenção)
+    if (temOperacional) {
+      html += `<div class="sb-group open" id="grp-operacional">
+        <div class="sb-item" onclick="toggleSbGroup('grp-operacional')">
+          <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="#16A34A" stroke-width="2"><path d="M9 17H5a2 2 0 0 0-2 2"/><circle cx="6" cy="18" r="2"/><circle cx="18" cy="18" r="2"/><path d="M3 18H1V8a1 1 0 0 1 1-1h12v11h-2"/><path d="M16 8h4l3 5v5h-3"/></svg>
+          Operacional <span class="dot dot-green"></span>
+          <svg class="sb-caret" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-left:6px"><polyline points="9 18 15 12 9 6"/></svg>
+        </div>
+        <div class="sb-sub">
+          <div class="sb-subitem" onclick="abrirChecklistAdmin()">
+            ✅ Checklist <span class="sb-ext-tag">↗</span>
+          </div>
+          <div class="sb-subitem sb-dim" title="Em breve">
+            🔧 Manutenção <span class="sb-ext-tag">em breve</span>
+          </div>
+        </div>
+      </div>`;
+    }
+
+    // Jardinagem — separada, abre em tela própria
     modulosVisiveis.forEach(m => {
-      if (m.abrirChecklist) {
-        html += `<div class="sb-item" onclick="abrirChecklistAdmin()">
-            <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="#16A34A" stroke-width="2"><path d="${m.icon}"/><path d="${m.icon2}"/></svg>
-            ${m.label} <span class="dot dot-green" style="margin-left:auto"></span>
-           </div>`;
-      } else if (m.url) {
-        html += `<div class="sb-item" onclick="abrirModuloUrl('${m.url}',${m.externo?'true':'false'})">
-            <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="#16A34A" stroke-width="2"><path d="${m.icon}"/><path d="${m.icon2}"/></svg>
-            ${m.label} <span class="dot dot-green" style="margin-left:auto"></span>
-           </div>`;
-      }
+      html += `<div class="sb-item" onclick="abrirModuloUrl('${m.url}',${m.externo?'true':'false'})">
+          <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="#16A34A" stroke-width="2"><path d="${m.icon}"/><path d="${m.icon2}"/></svg>
+          ${m.label} <span class="dot dot-green" style="margin-left:auto"></span>
+         </div>`;
     });
     html += `</div><div class="sb-divider"></div>`;
   }
