@@ -277,9 +277,12 @@ input,select,textarea{font-family:inherit;outline:none;border:none}
 <div id="screen-login">
   <div class="login-card">
     <div class="login-logo">
-      <div class="login-logo-fallback">G</div>
-      <div style="font-size:13px;font-weight:700;color:var(--blue)">GARRA</div>
-      <div style="font-size:9px;color:var(--muted);letter-spacing:.05em">SISTEMAS</div>
+      <img src="https://garra-sistemas.onrender.com/static/icons/logo-Garra-e-ca%C3%A7ambas.png" alt="Garra Terraplenagem" style="height:56px;object-fit:contain" onerror="this.style.display='none';this.nextElementSibling.style.display='block'" />
+      <div style="display:none">
+        <div class="login-logo-fallback">G</div>
+        <div style="font-size:13px;font-weight:700;color:var(--blue)">GARRA</div>
+        <div style="font-size:9px;color:var(--muted);letter-spacing:.05em">SISTEMAS</div>
+      </div>
     </div>
     <h2 class="login-title">Operacional</h2>
     <p class="login-sub">Acesso ao módulo de operações</p>
@@ -318,7 +321,9 @@ input,select,textarea{font-family:inherit;outline:none;border:none}
   <!-- HEADER -->
   <div class="app-header">
     <div class="app-header-left">
-      <div class="app-logo-g">G</div>
+      <div class="app-logo-g" style="overflow:hidden">
+        <img src="https://garra-sistemas.onrender.com/static/icons/logo-Garra-e-ca%C3%A7ambas.png" alt="G" style="width:100%;height:100%;object-fit:contain;filter:brightness(0) invert(1)" onerror="this.outerHTML='G'" />
+      </div>
       <div>
         <div class="app-title">GARRA</div>
         <div class="app-modulo" id="app-modulo">Operacional</div>
