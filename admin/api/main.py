@@ -2981,6 +2981,7 @@ async def op_controle_mensal(
                e.categoria AS equipamento_categoria, e.medicao AS equipamento_medicao,
                u.nome AS operador_nome,
                os.numero AS os_numero, os.obra AS os_obra, os.regime_cobranca,
+               os.id AS os_id, os.codigo_erp,
                COALESCE(c.nome, os.cliente_nome_avulso) AS cliente_nome
         FROM operacional.partes_diarias pd
         LEFT JOIN operacional.equipamentos e ON e.id = pd.equipamento_id
