@@ -2981,7 +2981,7 @@ async def op_controle_mensal(
                e.categoria AS equipamento_categoria, e.medicao AS equipamento_medicao,
                u.nome AS operador_nome,
                os.numero AS os_numero, os.obra AS os_obra, os.regime_cobranca,
-               os.id AS os_id, os.codigo_erp,
+               os.codigo_erp,
                COALESCE(c.nome, os.cliente_nome_avulso) AS cliente_nome
         FROM operacional.partes_diarias pd
         LEFT JOIN operacional.equipamentos e ON e.id = pd.equipamento_id
@@ -3120,15 +3120,15 @@ async def op_controle_mensal_excel(
             ws = wb.create_sheet(nome_aba)
 
             # Título
-            ws.merge_cells('A1:J1')
+            ws.merge_cells('A1:K1')
             ws['A1'] = f"CONTROLE MENSAL — {titulo_mes}"
             ws['A1'].font = Font(bold=True, size=14, color="1A2A5E")
-            ws.merge_cells('A2:J2')
+            ws.merge_cells('A2:K2')
             ws['A2'] = grupo["label"]
             ws['A2'].font = Font(bold=True, size=11, color="E8820C")
 
             # Headers
-            headers = ['Data','OS','Cliente','Operador' if view=='equipamento' else 'Equipamento',
+            headers = ['Data','Cód Interno','OS','Cliente','Operador' if view=='equipamento' else 'Equipamento',
                        'H.Inicial','H.Final','Horas Trab.','Horas Cobr.','Regime','Por conta']
             for col, h in enumerate(headers, 1):
                 cell = ws.cell(row=4, column=col, value=h)
@@ -3177,6 +3177,7 @@ async def op_controle_mensal_excel(
                 valores = [
                     data_fmt,
                     p.get("os_numero",""),
+                    p.get("codigo_erp","") or "",
                     p.get("cliente_nome",""),
                     col4,
                     h_ini, h_fin,
@@ -3195,17 +3196,17 @@ async def op_controle_mensal_excel(
             row += 1
             ws.cell(row=row, column=1, value="TOTAL").font = total_font
             ws.cell(row=row, column=1).fill = total_fill
-            ws.cell(row=row, column=7, value=round(soma_trab, 2)).font = total_font
-            ws.cell(row=row, column=7).fill = total_fill
-            ws.cell(row=row, column=8, value=round(soma_cobr, 2)).font = total_font
+            ws.cell(row=row, column=8, value=round(soma_trab, 2)).font = total_font
             ws.cell(row=row, column=8).fill = total_fill
+            ws.cell(row=row, column=9, value=round(soma_cobr, 2)).font = total_font
+            ws.cell(row=row, column=9).fill = total_fill
 
             ws.cell(row=row+1, column=1, value=f"Dias trabalhados: {len(dias_set)}").font = Font(size=10, color="64748B")
             dias_no_mes = calendar.monthrange(ano, mes)[1]
             ws.cell(row=row+2, column=1, value=f"Dias parados: {dias_no_mes - len(dias_set)}").font = Font(size=10, color="64748B")
 
-            # Larguras
-            widths = [12, 16, 22, 16, 10, 10, 12, 12, 10, 12]
+            # Larguras (11 colunas: Data, Cód Interno, OS, Cliente, Op/Equip, H.Ini, H.Fin, Trab, Cobr, Regime, Conta)
+            widths = [12, 14, 14, 22, 16, 10, 10, 12, 12, 10, 12]
             for i, w in enumerate(widths, 1):
                 ws.column_dimensions[get_column_letter(i)].width = w
 
