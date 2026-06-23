@@ -2191,8 +2191,8 @@ function renderTabelaPartes(partes, statusOS) {
           <th style="text-align:left;padding:8px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--muted)">Data</th>
           <th style="text-align:left;padding:8px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--muted)">Equip.</th>
           <th style="text-align:left;padding:8px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--muted)">Operador</th>
-          <th style="text-align:left;padding:8px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--muted)">${regime==='metro'?'Metros':(regime==='km'?'KM':'Horímetro')}</th>
-          <th style="text-align:left;padding:8px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--muted)">⚙️ Horas máq.</th>
+          <th style="text-align:left;padding:8px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--muted)">${regime==='metro'?'Metros':(regime==='km'?'KM':'Hora equipamento')}</th>
+          <th style="text-align:left;padding:8px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--muted)">⚙️ Horímetro</th>
           <th style="text-align:right;padding:8px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--muted)">${col5}</th>
           ${col6 ? `<th style="text-align:right;padding:8px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--muted)">${col6}</th>` : ''}
           ${fechada ? '' : '<th style="padding:8px"></th>'}
@@ -2265,8 +2265,15 @@ function renderTabelaPartes(partes, statusOS) {
                   onchange="salvarHorasCobradas('${esc(p.id)}', this.value)"/>`;
           }
 
+          // Data editável (operador pode ter digitado errado)
+          const dataISO = p.data ? String(p.data).slice(0,10) : '';
+          const dataCell = fechada
+            ? `<span style="font-size:13px">${data}</span>`
+            : `<input type="date" value="${dataISO}" style="padding:4px 6px;border:1.5px solid var(--border);border-radius:6px;font-size:12px"
+                onchange="salvarMedicaoParte('${esc(p.id)}','data',this.value)"/>`;
+
           return `<tr style="border-bottom:1px solid #F1F5F9">
-            <td style="padding:8px;font-size:13px">${data}</td>
+            <td style="padding:8px">${dataCell}</td>
             <td style="padding:8px;font-size:13px">${esc(p.equipamento_codigo||'–')}</td>
             <td style="padding:8px;font-size:13px">${esc(p.operador_nome||'–')}</td>
             <td style="padding:8px">${medicaoCell}</td>
