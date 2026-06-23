@@ -97,6 +97,21 @@ input,select,textarea { font-family:inherit; font-size:13px; outline:none; }
 .sb-badge { margin-left:auto; background:var(--orange); color:#fff; font-size:10px; padding:1px 6px; border-radius:99px; }
 .sb-divider { height:1px; background:rgba(147,197,253,.12); margin:8px 12px; }
 .sb-dim { opacity:.4; pointer-events:none; }
+/* Submenu expansível */
+.sb-group > .sb-item .sb-caret { margin-left:auto; transition:transform .2s; }
+.sb-group.open > .sb-item .sb-caret { transform:rotate(90deg); }
+.sb-sub { max-height:0; overflow:hidden; transition:max-height .25s ease; }
+.sb-group.open .sb-sub { max-height:400px; }
+.sb-subitem {
+  display:flex; align-items:center; gap:8px;
+  padding:7px 10px 7px 30px; border-radius:8px; margin-bottom:2px;
+  color:#93C5FD; font-size:12.5px; font-weight:500;
+  cursor:pointer; transition:.15s;
+}
+.sb-subitem:hover  { background:rgba(255,255,255,.06); color:#fff; }
+.sb-subitem.active { background:rgba(232,130,12,.18); color:#fff; }
+.sb-subitem.sb-dim { opacity:.4; pointer-events:none; }
+.sb-ext-tag { margin-left:auto; font-size:9px; color:#64748B; }
 .sb-footer { margin-top:auto; padding:12px; text-align:center; font-size:10px; color:rgba(147,197,253,.4); }
 /* Ícones inline SVG na sidebar */
 .ico { width:15px; height:15px; flex-shrink:0; }
@@ -1147,17 +1162,32 @@ function abrirChecklistAdmin() {
   window.open(url, '_blank');
 }
 
+// Abre módulo (ex: jardinagem) passando o token via SSO para evitar novo login
+function abrirModuloUrl(url, novaAba) {
+  const token = localStorage.getItem('garra_token') || '';
+  const sep = url.includes('?') ? '&' : '?';
+  const full = token ? `${url}${sep}sso=${encodeURIComponent(token)}` : url;
+  if (novaAba) window.open(full, '_blank');
+  else window.location.href = full;
+}
+
 /* ══════════════════════════════════════════════
    NAVEGAÇÃO
 ══════════════════════════════════════════════ */
 let secAtual = 'dashboard';
+
+function toggleSbGroup(id) {
+  const g = document.getElementById(id);
+  if (g) g.classList.toggle('open');
+}
+
 function navTo(sec, elBtn) {
   // Esconder todas as seções
   document.querySelectorAll('section[id^="sec-"]').forEach(s => s.classList.add('hidden'));
   const target = document.getElementById('sec-' + sec);
   if (target) target.classList.remove('hidden');
-  // Sidebar active
-  document.querySelectorAll('.sb-item').forEach(i => i.classList.remove('active'));
+  // Sidebar active (itens e subitens)
+  document.querySelectorAll('.sb-item, .sb-subitem').forEach(i => i.classList.remove('active'));
   if (elBtn) elBtn.classList.add('active');
   secAtual = sec;
   if (sec === 'usuarios')      renderTabelaUsuarios();
@@ -1738,14 +1768,27 @@ function renderSidebar(perfil, perms) {
 
   html += `</div><div class="sb-divider"></div>
     <div class="sb-section">
-      <span class="sb-label">Operacional</span>
-      <div class="sb-item" onclick="navTo('os',this)">
-        <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="15" y2="17"/></svg>
-        Ordens de Serviço <span class="sb-badge" id="sb-os-count">–</span>
-      </div>
-      <div class="sb-item" onclick="navTo('controle-mensal',this)">
-        <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
-        Controle Mensal
+      <span class="sb-label">Gestão Operacional</span>
+      <div class="sb-group open" id="grp-operacional">
+        <div class="sb-item" onclick="toggleSbGroup('grp-operacional')">
+          <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 17H5a2 2 0 0 0-2 2"/><circle cx="6" cy="18" r="2"/><circle cx="18" cy="18" r="2"/><path d="M3 18H1V8a1 1 0 0 1 1-1h12v11h-2"/><path d="M16 8h4l3 5v5h-3"/></svg>
+          Operacional
+          <svg class="sb-caret" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+        </div>
+        <div class="sb-sub">
+          <div class="sb-subitem" onclick="navTo('os',this)">
+            📋 Ordens de Serviço <span class="sb-badge" id="sb-os-count">–</span>
+          </div>
+          <div class="sb-subitem" onclick="navTo('controle-mensal',this)">
+            📅 Controle Mensal
+          </div>
+          <div class="sb-subitem" onclick="abrirChecklistAdmin()">
+            ✅ Checklist <span class="sb-ext-tag">↗</span>
+          </div>
+          <div class="sb-subitem sb-dim" title="Em breve">
+            🔧 Manutenção <span class="sb-ext-tag">em breve</span>
+          </div>
+        </div>
       </div>
     </div><div class="sb-divider"></div>`;
 
@@ -1771,11 +1814,9 @@ function renderSidebar(perfil, perms) {
     </div><div class="sb-divider"></div>`;
   }
 
-  // Módulos ativos — só os que o usuário tem permissão
+  // Módulos ativos — sistemas satélite (Jardinagem). Checklist/Operacional ficam no grupo Gestão Operacional.
   const modulosSb = [
-    { id:'checklist',          label:'Checklist',  url:null, abrirChecklist:true, icon:'M9 11l3 3L22 4', icon2:'M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11' },
     { id:'jardinagem_desktop', label:'Jardinagem', url:'/jardinagem/desktop', externo:false, icon:'M12 22V12', icon2:'M5 12c0-3.87 3.13-7 7-7s7 3.13 7 7' },
-    { id:'operacional_mobile', label:'Operacional',url:null, abrirOS:true, icon:'M9 17H5a2 2 0 0 0-2 2', icon2:'M13 17h8' },
   ];
 
   const modulosVisiveis = modulosSb.filter(m => temPerm(m.id));
@@ -1787,13 +1828,8 @@ function renderSidebar(perfil, perms) {
             <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="#16A34A" stroke-width="2"><path d="${m.icon}"/><path d="${m.icon2}"/></svg>
             ${m.label} <span class="dot dot-green" style="margin-left:auto"></span>
            </div>`;
-      } else if (m.abrirOS) {
-        html += `<div class="sb-item" onclick="navTo('os',this)">
-            <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="#16A34A" stroke-width="2"><path d="${m.icon}"/><path d="${m.icon2}"/></svg>
-            ${m.label} <span class="dot dot-green" style="margin-left:auto"></span>
-           </div>`;
       } else if (m.url) {
-        html += `<div class="sb-item" onclick="window.location.href='${m.url}'">
+        html += `<div class="sb-item" onclick="abrirModuloUrl('${m.url}',${m.externo?'true':'false'})">
             <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="#16A34A" stroke-width="2"><path d="${m.icon}"/><path d="${m.icon2}"/></svg>
             ${m.label} <span class="dot dot-green" style="margin-left:auto"></span>
            </div>`;
@@ -1806,7 +1842,6 @@ function renderSidebar(perfil, perms) {
   if (isAdmin) {
     html += `<div class="sb-section"><span class="sb-label">Em breve</span>
     <div class="sb-item sb-dim"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>RH</div>
-    <div class="sb-item sb-dim"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>Manutenção</div>
     <div class="sb-item sb-dim"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>Financeiro</div>
   </div>`;
   }
@@ -1934,8 +1969,8 @@ async function renderModulos(usuarioId, perfil) {
         onClick = `onclick="abrirChecklistAdmin()"`;
       } else if (m.url) {
         onClick = m.externo
-          ? `onclick="window.open('${m.url}','_blank')"`
-          : `onclick="window.location.href='${m.url}'"`;
+          ? `onclick="abrirModuloUrl('${m.url}',true)"`
+          : `onclick="abrirModuloUrl('${m.url}')"`;
       }
     }
     const temClique = onClick !== '';
