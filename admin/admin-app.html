@@ -630,10 +630,15 @@ input,select,textarea { font-family:inherit; font-size:13px; outline:none; }
           <!-- KPIs resumo -->
           <div id="cm-kpis" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin:16px 0"></div>
 
-          <!-- Tabs -->
-          <div style="display:flex;border-bottom:2px solid var(--border);margin-bottom:16px">
-            <button id="cm-tab-equip" class="btn" style="flex:1;padding:10px;border:none;border-bottom:3px solid var(--orange);background:transparent;font-weight:700;color:var(--orange);cursor:pointer" onclick="cmTab('equipamento')">🚜 Por Equipamento</button>
-            <button id="cm-tab-colab" class="btn" style="flex:1;padding:10px;border:none;border-bottom:3px solid transparent;background:transparent;font-weight:700;color:var(--muted);cursor:pointer" onclick="cmTab('colaborador')">👤 Por Colaborador</button>
+          <!-- Agrupar por (substitui abas) -->
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;padding-bottom:12px;border-bottom:2px solid var(--border)">
+            <label style="font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em">Agrupar por:</label>
+            <select id="cm-agrupar" style="padding:8px 14px;border:1.5px solid var(--blue);border-radius:8px;font-size:14px;font-weight:700;color:var(--blue);background:#fff;cursor:pointer" onchange="cmTab(this.value)">
+              <option value="colaborador">👤 Colaborador</option>
+              <option value="equipamento">🚜 Equipamento</option>
+              <option value="os">📋 Número da OS</option>
+              <option value="codigo_erp">🏷️ Código ERP</option>
+            </select>
           </div>
 
           <!-- Tabela -->
@@ -2205,7 +2210,9 @@ function renderTabelaPartes(partes, statusOS) {
           const horasMaq = (p.horimetro_inicial != null && p.horimetro_final != null)
             ? (parseFloat(p.horimetro_final) - parseFloat(p.horimetro_inicial)).toFixed(1)
             : (p.horas_trabalhadas != null ? parseFloat(p.horas_trabalhadas).toFixed(1) : '0.0');
-          const horimetroCell = `<span style="font-size:12px;color:var(--blue);font-weight:600">${horasMaq}h</span>
+          // Sinaliza horímetro suspeito (>24h num dia = provável erro de digitação)
+          const horasSuspeita = parseFloat(horasMaq) > 24;
+          const horimetroCell = `<span style="font-size:12px;color:${horasSuspeita?'var(--red)':'var(--blue)'};font-weight:600">${horasMaq}h ${horasSuspeita?'⚠️':''}</span>
             <div style="font-size:10px;color:var(--muted)">${p.horimetro_inicial||0}→${p.horimetro_final||0}</div>`;
 
           let medicaoCell;
@@ -2272,7 +2279,8 @@ function renderTabelaPartes(partes, statusOS) {
             : `<input type="date" value="${dataISO}" style="padding:4px 6px;border:1.5px solid var(--border);border-radius:6px;font-size:12px"
                 onchange="salvarMedicaoParte('${esc(p.id)}','data',this.value)"/>`;
 
-          return `<tr style="border-bottom:1px solid #F1F5F9">
+          const linhaSuspeita = horasSuspeita ? 'background:#FEF2F2;' : '';
+          return `<tr style="border-bottom:1px solid #F1F5F9;${linhaSuspeita}">
             <td style="padding:8px">${dataCell}</td>
             <td style="padding:8px;font-size:13px">${esc(p.equipamento_codigo||'–')}</td>
             <td style="padding:8px;font-size:13px">${esc(p.operador_nome||'–')}</td>
@@ -2291,13 +2299,33 @@ function renderTabelaPartes(partes, statusOS) {
 
 async function salvarMedicaoParte(parteId, campo, valor) {
   try {
+    const v = parseFloat(valor) || 0;
+    // Validação: horímetro/km final vs inicial e saltos absurdos
+    const parte = (_partesAtual||[]).find(p => String(p.id) === String(parteId));
+    if (parte) {
+      if (campo === 'horimetro_final') {
+        const ini = parseFloat(parte.horimetro_inicial||0);
+        if (v < ini) { toast('Horímetro final menor que o inicial', 'error'); verPartesOS(_osAtual.id, _osAtual.numero); return; }
+        if (v - ini > 24 && !confirm('⚠️ ' + (v-ini).toFixed(1) + ' horas em um dia (passa de 24h).\n\nSalvar mesmo assim?')) { verPartesOS(_osAtual.id, _osAtual.numero); return; }
+      }
+      if (campo === 'horimetro_inicial') {
+        const fin = parseFloat(parte.horimetro_final||0);
+        if (fin > 0 && v > fin) { toast('Horímetro inicial maior que o final', 'error'); verPartesOS(_osAtual.id, _osAtual.numero); return; }
+      }
+      if (campo === 'km_final') {
+        const ini = parseFloat(parte.km_inicial||0);
+        if (v < ini) { toast('KM final menor que o inicial', 'error'); verPartesOS(_osAtual.id, _osAtual.numero); return; }
+        if (v - ini > 1500 && !confirm('⚠️ ' + (v-ini).toFixed(0) + ' km em um dia é muito alto.\n\nSalvar mesmo assim?')) { verPartesOS(_osAtual.id, _osAtual.numero); return; }
+      }
+      if (campo === 'qtd_metros' && v > 5000 && !confirm('⚠️ ' + v + ' metros é um valor alto.\n\nSalvar mesmo assim?')) { verPartesOS(_osAtual.id, _osAtual.numero); return; }
+    }
     const body = {};
-    body[campo] = parseFloat(valor) || 0;
+    body[campo] = (campo === 'data') ? valor : v;
     await apiFetch('/operacional/api/partes/'+parteId, {
       method:'PATCH',
       body: JSON.stringify(body),
     });
-    toast('Medição atualizada','success');
+    toast('Atualizado','success');
     // Recarregar tabela e totais (recalcula horas/km)
     const data = await apiFetch('/operacional/api/os/'+_osAtual.id+'/partes');
     _partesAtual = data.partes || [];
@@ -2605,7 +2633,7 @@ function renderTabelaOS(lista) {
     <table style="width:100%;border-collapse:collapse">
       <thead>
         <tr style="border-bottom:2px solid var(--border)">
-          <th style="text-align:left;padding:10px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--muted)">Cód</th>
+          <th style="text-align:left;padding:10px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--muted)">OS / Cód. ERP</th>
           <th style="text-align:left;padding:10px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--muted)">Cliente / Obra</th>
           <th style="text-align:left;padding:10px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--muted)">Equipamento</th>
           <th style="text-align:left;padding:10px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--muted)">Responsável</th>
@@ -2627,7 +2655,12 @@ function renderTabelaOS(lista) {
                 : `<span class="badge badge-pend" style="font-size:10px;cursor:pointer" onclick="editarOS('${esc(os.id)}')">⚠️ Sem responsável</span>`);
           const rowBg = semOperador ? 'background:#FFFBEB' : '';
           return `<tr style="border-bottom:1px solid #F1F5F9;${rowBg}" onmouseenter="this.style.background='#F8FAFC'" onmouseleave="this.style.background='${semOperador ? '#FFFBEB' : ''}'">
-            <td style="padding:10px;font-size:13px;font-weight:700;color:var(--blue)">${esc(os.numero||'–')} ${os.origem==='campo' ? '<span class="badge badge-pend" style="font-size:9px;margin-left:4px">📍 campo</span>' : ''}</td>
+            <td style="padding:10px">
+              <div style="font-size:13px;font-weight:700;color:var(--blue)">${esc(os.numero||'–')} ${os.origem==='campo' ? '<span class="badge badge-pend" style="font-size:9px;margin-left:4px">📍 campo</span>' : ''}</div>
+              ${os.codigo_erp
+                ? `<div style="font-size:11px;color:var(--green);font-weight:600;margin-top:2px">ERP: ${esc(os.codigo_erp)}</div>`
+                : `<div style="font-size:10px;color:var(--muted);margin-top:2px">sem ERP</div>`}
+            </td>
             <td style="padding:10px">
               <div style="font-size:13px;font-weight:600">${
                 esc(os.cliente_nome || os.cliente_nome_avulso || '') ||
@@ -3347,7 +3380,7 @@ async function salvarAjustePts(login) {
    CONTROLE MENSAL
 ══════════════════════════════════════════════ */
 let _cmDados = null;
-let _cmView = 'equipamento';
+let _cmView = 'colaborador';
 
 function initControleMensal() {
   const hoje = new Date();
@@ -3358,10 +3391,8 @@ function initControleMensal() {
 
 function cmTab(view) {
   _cmView = view;
-  document.getElementById('cm-tab-equip').style.borderBottomColor = view === 'equipamento' ? 'var(--orange)' : 'transparent';
-  document.getElementById('cm-tab-equip').style.color = view === 'equipamento' ? 'var(--orange)' : 'var(--muted)';
-  document.getElementById('cm-tab-colab').style.borderBottomColor = view === 'colaborador' ? 'var(--orange)' : 'transparent';
-  document.getElementById('cm-tab-colab').style.color = view === 'colaborador' ? 'var(--orange)' : 'var(--muted)';
+  const sel = document.getElementById('cm-agrupar');
+  if (sel && sel.value !== view) sel.value = view;
   if (_cmDados) renderControleMensal(_cmDados);
 }
 
@@ -3402,6 +3433,13 @@ async function carregarControleMensal() {
     }
 
     // KPIs
+    // Conta partes suspeitas (horímetro >24h num dia)
+    const suspeitas = (_cmDados.partes||[]).filter(p => {
+      const med = p.tipo_medicao || p.equipamento_medicao || 'horimetro';
+      if (med === 'metros' || med === 'km') return false;
+      return parseFloat(p.horas_trabalhadas||0) > 24;
+    }).length;
+
     const kpis = document.getElementById('cm-kpis');
     kpis.innerHTML = `
       <div class="kpi-card"><div class="kpi-label">Registros</div><div class="kpi-value">${_cmDados.total_registros}</div></div>
@@ -3411,6 +3449,7 @@ async function carregarControleMensal() {
       <div class="kpi-card"><div class="kpi-label">Horas cobradas</div><div class="kpi-value">${_cmDados.total_horas_cobradas}</div></div>
       ${_cmDados.total_km > 0 ? `<div class="kpi-card"><div class="kpi-label">KM total</div><div class="kpi-value">${_cmDados.total_km}</div></div>` : ''}
       ${_cmDados.total_metros > 0 ? `<div class="kpi-card"><div class="kpi-label">Metros total</div><div class="kpi-value">${_cmDados.total_metros}</div></div>` : ''}
+      ${suspeitas > 0 ? `<div class="kpi-card" style="border-color:var(--red);background:#FEF2F2"><div class="kpi-label" style="color:var(--red)">⚠️ Verificar</div><div class="kpi-value" style="color:var(--red)">${suspeitas}</div></div>` : ''}
     `;
 
     renderControleMensal(_cmDados);
@@ -3428,13 +3467,19 @@ function renderControleMensal(dados) {
     return;
   }
 
-  // Agrupar
+  // Agrupar conforme _cmView
   const grupos = {};
   partes.forEach(p => {
     let key, label;
     if (_cmView === 'equipamento') {
       key = p.equipamento_id || 'sem';
       label = `${p.equipamento_codigo || '?'} — ${p.equipamento_descricao || ''}`;
+    } else if (_cmView === 'os') {
+      key = p.os_id || p.os_numero || 'sem';
+      label = `${p.os_numero || '?'}${p.cliente_nome ? ' — ' + p.cliente_nome : ''}`;
+    } else if (_cmView === 'codigo_erp') {
+      key = p.codigo_erp || 'sem_erp';
+      label = p.codigo_erp ? `ERP: ${p.codigo_erp}` : '⚠️ Sem código ERP';
     } else {
       key = p.operador_id || 'sem';
       label = p.operador_nome || 'Sem operador';
@@ -3442,6 +3487,11 @@ function renderControleMensal(dados) {
     if (!grupos[key]) grupos[key] = { label, partes: [] };
     grupos[key].partes.push(p);
   });
+
+  // Coluna 4: o que mostrar na 4ª coluna depende do agrupamento
+  const col4label = (_cmView === 'equipamento') ? 'Operador'
+    : (_cmView === 'colaborador') ? 'Equipamento'
+    : 'Operador / Equip.';
 
   let html = '';
   Object.values(grupos).forEach(grupo => {
@@ -3455,7 +3505,7 @@ function renderControleMensal(dados) {
           <th style="padding:8px;text-align:left">Data</th>
           <th style="padding:8px;text-align:left">OS</th>
           <th style="padding:8px;text-align:left">Cliente</th>
-          <th style="padding:8px;text-align:left">${_cmView === 'equipamento' ? 'Operador' : 'Equipamento'}</th>
+          <th style="padding:8px;text-align:left">${col4label}</th>
           <th style="padding:8px;text-align:right">Inicial</th>
           <th style="padding:8px;text-align:right">Final</th>
           <th style="padding:8px;text-align:right;font-weight:700">Trab.</th>
@@ -3492,8 +3542,13 @@ function renderControleMensal(dados) {
       let dataFmt = p.data || '';
       try { dataFmt = new Date(p.data+'T00:00').toLocaleDateString('pt-BR'); } catch(e){}
 
-      const col4 = _cmView === 'equipamento' ? esc(p.operador_nome||'') : esc(p.equipamento_codigo||'');
-      const bgFechado = p.fechado ? 'background:#F0FDF4' : '';
+      const col4 = (_cmView === 'equipamento') ? esc(p.operador_nome||'')
+        : (_cmView === 'colaborador') ? esc(p.equipamento_codigo||'')
+        : `${esc(p.operador_nome||'–')} · ${esc(p.equipamento_codigo||'–')}`;
+      // Sinaliza horas absurdas (>24h num dia)
+      const trabSuspeito = (med !== 'metros' && med !== 'km') && trab > 24;
+      const bgFechado = trabSuspeito ? 'background:#FEF2F2' : (p.fechado ? 'background:#F0FDF4' : '');
+      const avisoTrab = trabSuspeito ? ' ⚠️' : '';
 
       html += `<tr style="border-bottom:1px solid #F1F5F9;${bgFechado}">
         <td style="padding:6px 8px">${dataFmt}</td>
@@ -3502,7 +3557,7 @@ function renderControleMensal(dados) {
         <td style="padding:6px 8px">${col4}</td>
         <td style="padding:6px 8px;text-align:right">${ini !== '' ? ini : '–'}</td>
         <td style="padding:6px 8px;text-align:right">${fin !== '' ? fin : '–'}</td>
-        <td style="padding:6px 8px;text-align:right;font-weight:700">${trab ? trab.toFixed(1) : '0'}</td>
+        <td style="padding:6px 8px;text-align:right;font-weight:700;${trabSuspeito?'color:var(--red)':''}">${trab ? trab.toFixed(1) : '0'}${avisoTrab}</td>
         <td style="padding:6px 8px;text-align:right;font-weight:700;color:var(--orange)">${cobr ? cobr.toFixed(1) : '0'}</td>
         <td style="padding:6px 8px;text-align:center;font-size:10px">${esc(p.regime_cobranca||'')}</td>
         <td style="padding:6px 8px;text-align:center;font-size:10px">${esc(p.por_conta_de||'')}</td>
