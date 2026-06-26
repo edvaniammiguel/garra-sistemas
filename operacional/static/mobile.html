@@ -387,11 +387,35 @@ input,select,textarea{font-family:inherit;outline:none;border:none}
       <input id="m-data" type="date" style="width:100%;padding:11px;border:1.5px solid var(--border);border-radius:8px;font-size:14px">
     </div>
 
+    <!-- VÍNCULO — define toda a lógica do registro -->
     <div style="margin-bottom:12px">
+      <label style="font-size:11px;font-weight:700;color:var(--orange);text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:5px">Vínculo *</label>
+      <select id="m-vinculo" onchange="atualizarVinculo()" style="width:100%;padding:11px;border:1.5px solid var(--border);border-radius:8px;font-size:14px">
+        <option value="proprio" selected>Próprio (Garra)</option>
+        <option value="terceiro">Equipamento de terceiro</option>
+        <option value="diarista">Operador diarista</option>
+        <option value="frete">Frete de máquina (Garra)</option>
+      </select>
+    </div>
+
+    <!-- EQUIPAMENTO PRÓPRIO (Garra) — some quando é terceiro -->
+    <div id="bloco-equip-proprio" style="margin-bottom:12px">
       <label style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:5px">Equipamento *</label>
       <select id="m-equipamento" onchange="atualizarCamposMedicao()" style="width:100%;padding:11px;border:1.5px solid var(--border);border-radius:8px;font-size:14px">
         <option value="">— selecionar —</option>
       </select>
+    </div>
+
+    <!-- EQUIPAMENTO DE TERCEIRO (texto livre) — aparece só quando é terceiro -->
+    <div id="bloco-equip-terceiro" style="margin-bottom:12px;display:none">
+      <label style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:5px">Equipamento de terceiro</label>
+      <input id="m-equip-terceiro" type="text" placeholder="ex: Escavadeira CAT 320 (de terceiro)" style="width:100%;padding:11px;border:1.5px solid var(--border);border-radius:8px;font-size:14px">
+    </div>
+
+    <!-- Campo "de quem" (terceiro/diarista/frete) — logo após equipamento -->
+    <div id="bloco-fornecedor" style="margin-bottom:12px;display:none">
+      <label style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:5px" id="lbl-fornecedor">De quem</label>
+      <input id="m-fornecedor" type="text" placeholder="Nome do fornecedor / dono" style="width:100%;padding:11px;border:1.5px solid var(--border);border-radius:8px;font-size:14px">
     </div>
 
     <div style="margin-bottom:12px">
@@ -492,23 +516,6 @@ input,select,textarea{font-family:inherit;outline:none;border:none}
       Dia corrido — sem intervalo de almoço
     </label>
     <div id="m-horas-jornada" style="display:none;font-size:13px;font-weight:700;color:var(--blue);background:#EEF2FF;padding:8px 10px;border-radius:6px;margin-bottom:12px;text-align:center"></div>
-
-    <!-- VÍNCULO do equipamento/operador -->
-    <div style="margin-bottom:12px">
-      <label style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:5px">Vínculo</label>
-      <select id="m-vinculo" onchange="atualizarVinculo()" style="width:100%;padding:11px;border:1.5px solid var(--border);border-radius:8px;font-size:14px">
-        <option value="proprio" selected>Próprio (Garra)</option>
-        <option value="terceiro">Equipamento de terceiro</option>
-        <option value="diarista">Operador diarista</option>
-        <option value="frete">Frete de máquina</option>
-      </select>
-    </div>
-
-    <!-- Campo "de quem" (terceiro/diarista/frete) -->
-    <div id="bloco-fornecedor" style="margin-bottom:12px;display:none">
-      <label style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:5px" id="lbl-fornecedor">De quem</label>
-      <input id="m-fornecedor" type="text" placeholder="Nome do fornecedor / dono" style="width:100%;padding:11px;border:1.5px solid var(--border);border-radius:8px;font-size:14px">
-    </div>
 
     <!-- Trajeto do frete (origem → destino) -->
     <div id="bloco-trajeto" style="margin-bottom:12px;display:none">
@@ -1086,7 +1093,10 @@ async function salvarParte(adicionarMais) {
   err.style.display = 'none';
 
   const data = document.getElementById('m-data').value;
-  const equipId = document.getElementById('m-equipamento').value;
+  const vinculo = document.getElementById('m-vinculo').value || 'proprio';
+  const ehTerceiro = (vinculo === 'terceiro');
+  const equipId = ehTerceiro ? '' : document.getElementById('m-equipamento').value;
+  const equipTerceiro = document.getElementById('m-equip-terceiro')?.value.trim() || '';
   const operadorId = document.getElementById('m-operador').value;
 
   if (!data) {
@@ -1094,10 +1104,19 @@ async function salvarParte(adicionarMais) {
     err.style.display = 'block';
     return;
   }
-  if (!equipId) {
-    err.textContent = 'Selecione o equipamento';
-    err.style.display = 'block';
-    return;
+  if (ehTerceiro) {
+    // Terceiro: exige o nome do equipamento livre (não usa equipamento da Garra)
+    if (!equipTerceiro) {
+      err.textContent = 'Informe qual é o equipamento de terceiro';
+      err.style.display = 'block';
+      return;
+    }
+  } else {
+    if (!equipId) {
+      err.textContent = 'Selecione o equipamento';
+      err.style.display = 'block';
+      return;
+    }
   }
 
   // Tipo de medição = o que está selecionado (pré-vem pelo regime da OS).
@@ -1231,7 +1250,8 @@ async function salvarParte(adicionarMais) {
 
   const payload = {
     data,
-    equipamento_id: equipId,
+    equipamento_id: equipId || null,
+    equipamento_terceiro: ehTerceiro ? equipTerceiro : null,
     operador_id: operadorId || null,
     tipo_medicao: tipoMedicao,
     horimetro_inicial: hIni ? parseFloat(hIni) : null,
@@ -1246,7 +1266,7 @@ async function salvarParte(adicionarMais) {
     sem_almoco: document.getElementById('m-sem-almoco').checked,
     trajeto: document.getElementById('m-trajeto').value.trim() || null,
     por_conta_de: document.getElementById('m-por-conta').value || 'cliente',
-    vinculo_operador: document.getElementById('m-vinculo').value || 'proprio',
+    vinculo_operador: vinculo,
     fornecedor: document.getElementById('m-fornecedor').value.trim() || null,
     observacao: document.getElementById('m-obs').value.trim() || null,
   };
@@ -1306,7 +1326,7 @@ async function salvarParte(adicionarMais) {
     }
 
     if (adicionarMais) {
-      ['m-h-ini','m-h-fin','m-km-ini','m-km-fin','m-metros','m-diarias','m-fornecedor',
+      ['m-h-ini','m-h-fin','m-km-ini','m-km-fin','m-metros','m-diarias','m-fornecedor','m-equip-terceiro',
        'm-viagens','m-trajeto','m-obs'].forEach(id => {
         const el = document.getElementById(id);
         if (el) el.value = '';
@@ -1437,7 +1457,7 @@ async function abrirModalParte(osId) {
   }
 
   // Resetar campos (hora início/fim NÃO entram aqui — mantêm padrão 07:00/17:00)
-  ['m-h-ini','m-h-fin','m-km-ini','m-km-fin','m-viagens','m-metros','m-diarias','m-fornecedor','m-trajeto','m-obs'].forEach(id => {
+  ['m-h-ini','m-h-fin','m-km-ini','m-km-fin','m-viagens','m-metros','m-diarias','m-fornecedor','m-equip-terceiro','m-trajeto','m-obs'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.value = '';
   });
@@ -1634,12 +1654,25 @@ function _rotuloMedicao(t) {
   return ({horimetro:'Hora',diaria:'Diária',viagem:'Viagem',metros:'Metros',km:'KM'})[t] || 'Hora';
 }
 
-// Vínculo: mostra campos condicionais (de quem / trajeto do frete)
+// Vínculo governa toda a lógica do registro:
+// - proprio  → equipamento da Garra (select) + operador da Garra
+// - terceiro → equipamento texto livre + fornecedor (não usa equipamento da Garra)
+// - diarista → equipamento da Garra (opera nossa máquina) + nome do diarista
+// - frete    → equipamento da Garra (sendo transportado) + transportadora + trajeto
 function atualizarVinculo() {
   const v = document.getElementById('m-vinculo').value;
+  const blocoProprio  = document.getElementById('bloco-equip-proprio');
+  const blocoTerceiro = document.getElementById('bloco-equip-terceiro');
   const blocoForn = document.getElementById('bloco-fornecedor');
   const blocoTraj = document.getElementById('bloco-trajeto');
   const lbl = document.getElementById('lbl-fornecedor');
+
+  const ehTerceiro = (v === 'terceiro');
+  // Equipamento: próprio mostra select da Garra; terceiro mostra texto livre
+  if (blocoProprio)  blocoProprio.style.display  = ehTerceiro ? 'none' : 'block';
+  if (blocoTerceiro) blocoTerceiro.style.display = ehTerceiro ? 'block' : 'none';
+
+  // Fornecedor/de quem: terceiro, diarista e frete
   const precisaForn = (v === 'terceiro' || v === 'diarista' || v === 'frete');
   if (blocoForn) blocoForn.style.display = precisaForn ? 'block' : 'none';
   if (blocoTraj) blocoTraj.style.display = (v === 'frete') ? 'block' : 'none';
@@ -1648,6 +1681,9 @@ function atualizarVinculo() {
                     : (v === 'frete') ? 'Transportadora / dono'
                     : 'Fornecedor / dono da máquina';
   }
+  // Por conta de: terceiro/frete normalmente é custo da empresa
+  const porConta = document.getElementById('m-por-conta');
+  if (porConta && (v === 'terceiro' || v === 'frete')) porConta.value = 'empresa';
 }
 
 // Calcula horas da máquina automaticamente (final - inicial)
@@ -2037,10 +2073,16 @@ async function verPartes(osId, osNum) {
         medInfo = `${horas || 0}h`;
       }
 
-      // Linha secundária: equipamento + operador
-      const equip = p.equipamento_codigo || '';
+      // Linha secundária: equipamento + operador + marcador de terceiro
+      let equip = p.equipamento_codigo || '';
       const oper  = p.operador_nome || '';
-      const metaLinha = [equip, oper].filter(Boolean).join(' · ');
+      const vinc = (p.vinculo_operador || 'proprio');
+      let tag = '';
+      if (vinc === 'terceiro') tag = ' 🔶 terceiro';
+      else if (vinc === 'diarista') tag = ' 👷 diarista';
+      else if (vinc === 'frete') tag = ' 🚚 frete';
+      const fornec = p.fornecedor ? ` (${p.fornecedor})` : '';
+      const metaLinha = [equip + tag, oper].filter(Boolean).join(' · ') + fornec;
 
       // Detalhe por baixo: horário e (quando km) horímetro como controle interno
       const horarioInfo = (hIni || hFim)
