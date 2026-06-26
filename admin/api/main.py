@@ -246,6 +246,7 @@ async def startup():
                 ADD COLUMN IF NOT EXISTS modelo TEXT,
                 ADD COLUMN IF NOT EXISTS ano INTEGER,
                 ADD COLUMN IF NOT EXISTS placa TEXT,
+                ADD COLUMN IF NOT EXISTS operador_responsavel_id UUID REFERENCES public.usuarios_garra(id),
                 ADD COLUMN IF NOT EXISTS ativo BOOLEAN DEFAULT TRUE,
                 ADD COLUMN IF NOT EXISTS criado_em TIMESTAMP DEFAULT NOW()
             """)
@@ -1974,12 +1975,15 @@ async def op_remover_regime(reg_id: str, payload=Depends(verificar_gestor)):
 async def op_listar_equipamentos(_auth=Depends(verificar_token)):
     """Lista equipamentos ativos para popular select e tela de cadastro."""
     rows = jard_query(
-        """SELECT id, codigo, descricao, categoria, medicao,
-                  marca, modelo, ano, placa,
-                  horimetro_atual, km_atual, ativo
-           FROM operacional.equipamentos
-           WHERE ativo=true
-           ORDER BY categoria, codigo"""
+        """SELECT eq.id, eq.codigo, eq.descricao, eq.categoria, eq.medicao,
+                  eq.marca, eq.modelo, eq.ano, eq.placa,
+                  eq.horimetro_atual, eq.km_atual, eq.ativo,
+                  eq.operador_responsavel_id,
+                  resp.nome AS operador_responsavel_nome
+           FROM operacional.equipamentos eq
+           LEFT JOIN public.usuarios_garra resp ON resp.id = eq.operador_responsavel_id
+           WHERE eq.ativo=true
+           ORDER BY eq.categoria, eq.codigo"""
     )
     return [dict(r) for r in (rows or [])]
 
@@ -1999,14 +2003,15 @@ async def op_criar_equipamento(request: Request, payload=Depends(verificar_gesto
     modelo = (d.get("modelo") or "").strip() or None
     ano    = d.get("ano")
     placa  = (d.get("placa")  or "").strip() or None
+    operador_resp = (d.get("operador_responsavel_id") or "").strip() or None
     try:
         row = jard_query(
             """INSERT INTO operacional.equipamentos
-               (codigo, descricao, categoria, medicao, marca, modelo, ano, placa, ativo)
-               VALUES (%s,%s,%s,%s,%s,%s,%s,%s, true)
+               (codigo, descricao, categoria, medicao, marca, modelo, ano, placa, operador_responsavel_id, ativo)
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s, true)
                RETURNING id, codigo, descricao, categoria, medicao,
-                         marca, modelo, ano, placa""",
-            (codigo, descricao, categoria, medicao, marca, modelo, ano, placa),
+                         marca, modelo, ano, placa, operador_responsavel_id""",
+            (codigo, descricao, categoria, medicao, marca, modelo, ano, placa, operador_resp),
             fetch="one"
         )
         # Sincronizar com checklist.frota (mesmo código = mesma identificação)
@@ -2035,7 +2040,8 @@ async def op_editar_equipamento(eq_id: str, request: Request, payload=Depends(ve
     for campo, key in [("codigo","codigo"),("descricao","descricao"),
                        ("categoria","categoria"),("medicao","medicao"),
                        ("marca","marca"),("modelo","modelo"),
-                       ("ano","ano"),("placa","placa")]:
+                       ("ano","ano"),("placa","placa"),
+                       ("operador_responsavel_id","operador_responsavel_id")]:
         if key in d:
             valor = d.get(key)
             if isinstance(valor, str):
@@ -2286,6 +2292,9 @@ async def op_listar_os(
             os.cliente_nome_avulso,
             os.tipo_servico_id, ts.nome AS tipo_servico_nome,
             os.equipamento_id, eq.codigo AS equipamento_codigo, eq.descricao AS equipamento_descricao,
+            eq.medicao AS equipamento_medicao,
+            eq.operador_responsavel_id AS equipamento_responsavel_id,
+            resp.nome AS equipamento_responsavel_nome,
             os.operador_id, op.nome AS operador_nome,
             u.nome AS criado_por_nome
         FROM operacional.ordens_servico os
@@ -2293,6 +2302,7 @@ async def op_listar_os(
         LEFT JOIN operacional.tipos_servico ts  ON ts.id = os.tipo_servico_id
         LEFT JOIN operacional.equipamentos eq   ON eq.id = os.equipamento_id
         LEFT JOIN public.usuarios_garra op      ON op.id = os.operador_id
+        LEFT JOIN public.usuarios_garra resp    ON resp.id = eq.operador_responsavel_id
         LEFT JOIN public.usuarios_garra u       ON u.id = os.criado_por
         WHERE os.ativo = true
     """
