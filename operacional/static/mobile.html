@@ -417,21 +417,43 @@ input,select,textarea{font-family:inherit;outline:none;border:none}
       <div id="m-horas-calc" style="display:none;margin-top:8px;font-size:13px;font-weight:700;color:var(--blue);text-align:center"></div>
     </div>
 
-    <!-- MEDIÇÃO DE COBRANÇA — muda conforme regime da OS -->
+    <!-- MEDIÇÃO DE COBRANÇA — sugere pelo equipamento, todos visíveis -->
     <div style="margin-bottom:8px">
       <label style="font-size:11px;font-weight:700;color:var(--orange);text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:5px">💰 Medição de cobrança</label>
-      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px">
-        <button type="button" id="btn-med-horimetro" onclick="selecionarMedicao('horimetro')" style="padding:9px;border:1.5px solid var(--border);background:#fff;border-radius:8px;font-size:11px;font-weight:700;cursor:pointer">⏱️ Por hora</button>
-        <button type="button" id="btn-med-km" onclick="selecionarMedicao('km')" style="padding:9px;border:1.5px solid var(--border);background:#fff;border-radius:8px;font-size:11px;font-weight:700;cursor:pointer">🚛 KM</button>
-        <button type="button" id="btn-med-metros" onclick="selecionarMedicao('metros')" style="padding:9px;border:1.5px solid var(--border);background:#fff;border-radius:8px;font-size:11px;font-weight:700;cursor:pointer">📏 Metros</button>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:6px">
+        <button type="button" id="btn-med-horimetro" onclick="selecionarMedicao('horimetro')" style="padding:9px 4px;border:1.5px solid var(--border);background:#fff;border-radius:8px;font-size:11px;font-weight:700;cursor:pointer">⏱️ Hora</button>
+        <button type="button" id="btn-med-diaria" onclick="selecionarMedicao('diaria')" style="padding:9px 4px;border:1.5px solid var(--border);background:#fff;border-radius:8px;font-size:11px;font-weight:700;cursor:pointer">📅 Diária</button>
+        <button type="button" id="btn-med-viagem" onclick="selecionarMedicao('viagem')" style="padding:9px 4px;border:1.5px solid var(--border);background:#fff;border-radius:8px;font-size:11px;font-weight:700;cursor:pointer">🚛 Viagem</button>
       </div>
-      <div style="font-size:10px;color:var(--muted);margin-top:4px">Como esse dia é cobrado do cliente</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+        <button type="button" id="btn-med-metros" onclick="selecionarMedicao('metros')" style="padding:9px 4px;border:1.5px solid var(--border);background:#fff;border-radius:8px;font-size:11px;font-weight:700;cursor:pointer">📏 Metros</button>
+        <button type="button" id="btn-med-km" onclick="selecionarMedicao('km')" style="padding:9px 4px;border:1.5px solid var(--border);background:#fff;border-radius:8px;font-size:11px;font-weight:700;cursor:pointer">🛣️ KM</button>
+      </div>
+      <div id="med-hint" style="font-size:10px;color:var(--muted);margin-top:4px">Como esse dia é cobrado do cliente</div>
+    </div>
+
+    <!-- Bloco DIÁRIA (rolo, pipa) -->
+    <div id="bloco-diaria" style="background:#EEF2FF;border-radius:8px;padding:12px;margin-bottom:12px;display:none">
+      <div style="font-size:11px;font-weight:700;color:var(--blue);margin-bottom:8px">📅 DIÁRIAS</div>
+      <div>
+        <label style="font-size:10px;color:var(--muted);display:block;margin-bottom:4px">Quantidade de diárias</label>
+        <input id="m-diarias" type="number" step="0.5" min="0" placeholder="1" style="width:100%;padding:10px;border:1.5px solid var(--border);border-radius:6px;font-size:14px">
+      </div>
+    </div>
+
+    <!-- Bloco VIAGEM (caçamba, pipa) -->
+    <div id="bloco-viagem" style="background:#FFF7ED;border-radius:8px;padding:12px;margin-bottom:12px;display:none">
+      <div style="font-size:11px;font-weight:700;color:var(--orange);margin-bottom:8px">🚛 VIAGENS</div>
+      <div>
+        <label style="font-size:10px;color:var(--muted);display:block;margin-bottom:4px">Quantidade de viagens</label>
+        <input id="m-viagens" type="number" step="1" min="0" placeholder="0" style="width:100%;padding:10px;border:1.5px solid var(--border);border-radius:6px;font-size:14px">
+      </div>
     </div>
 
     <!-- Bloco CAMINHÃO (KM) -->
-    <div id="bloco-km" style="background:#FFF7ED;border-radius:8px;padding:12px;margin-bottom:12px;display:none">
-      <div style="font-size:11px;font-weight:700;color:var(--orange);margin-bottom:8px">🚛 KM PERCORRIDO</div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
+    <div id="bloco-km" style="background:#FEF3C7;border-radius:8px;padding:12px;margin-bottom:12px;display:none">
+      <div style="font-size:11px;font-weight:700;color:#B45309;margin-bottom:8px">🛣️ KM PERCORRIDO</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
         <div>
           <label style="font-size:10px;color:var(--muted);display:block;margin-bottom:4px">Inicial</label>
           <input id="m-km-ini" type="number" step="0.1" placeholder="0" style="width:100%;padding:10px;border:1.5px solid var(--border);border-radius:6px;font-size:14px">
@@ -440,10 +462,6 @@ input,select,textarea{font-family:inherit;outline:none;border:none}
           <label style="font-size:10px;color:var(--muted);display:block;margin-bottom:4px">Final</label>
           <input id="m-km-fin" type="number" step="0.1" placeholder="0" style="width:100%;padding:10px;border:1.5px solid var(--border);border-radius:6px;font-size:14px">
         </div>
-      </div>
-      <div>
-        <label style="font-size:10px;color:var(--muted);display:block;margin-bottom:4px">Quantidade de viagens</label>
-        <input id="m-viagens" type="number" step="1" min="0" placeholder="0" style="width:100%;padding:10px;border:1.5px solid var(--border);border-radius:6px;font-size:14px">
       </div>
     </div>
 
@@ -467,6 +485,24 @@ input,select,textarea{font-family:inherit;outline:none;border:none}
       </div>
     </div>
 
+    <!-- VÍNCULO do equipamento/operador -->
+    <div style="margin-bottom:12px">
+      <label style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:5px">Vínculo</label>
+      <select id="m-vinculo" onchange="atualizarVinculo()" style="width:100%;padding:11px;border:1.5px solid var(--border);border-radius:8px;font-size:14px">
+        <option value="proprio" selected>Próprio (Garra)</option>
+        <option value="terceiro">Equipamento de terceiro</option>
+        <option value="diarista">Operador diarista</option>
+        <option value="frete">Frete de máquina</option>
+      </select>
+    </div>
+
+    <!-- Campo "de quem" (terceiro/diarista/frete) -->
+    <div id="bloco-fornecedor" style="margin-bottom:12px;display:none">
+      <label style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:5px" id="lbl-fornecedor">De quem</label>
+      <input id="m-fornecedor" type="text" placeholder="Nome do fornecedor / dono" style="width:100%;padding:11px;border:1.5px solid var(--border);border-radius:8px;font-size:14px">
+    </div>
+
+    <!-- Trajeto do frete (origem → destino) -->
     <div id="bloco-trajeto" style="margin-bottom:12px;display:none">
       <label style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:5px">Trajeto</label>
       <input id="m-trajeto" type="text" placeholder="ex: Garagem → Obra" style="width:100%;padding:11px;border:1.5px solid var(--border);border-radius:8px;font-size:14px">
@@ -1093,6 +1129,28 @@ async function salvarParte(adicionarMais) {
     err.style.display = 'block';
     return;
   }
+
+  // ALERTA: máquina que usa horímetro mas ficou sem registro.
+  // Horímetro é a base da manutenção — importante preencher.
+  // Não bloqueia (rolo e similares não marcam horímetro).
+  const selEqAlert = document.getElementById('m-equipamento');
+  const optEqAlert = selEqAlert && selEqAlert.options[selEqAlert.selectedIndex];
+  const catEqAlert = optEqAlert ? (optEqAlert.getAttribute('data-cat') || '').toLowerCase() : '';
+  const usaHorimetro = catEqAlert.includes('horimetro') || catEqAlert.includes('hora')
+                    || catEqAlert.includes('maquina') || catEqAlert.includes('escavadeira')
+                    || catEqAlert.includes('retro') || catEqAlert.includes('patrola')
+                    || catEqAlert.includes('trator') || catEqAlert.includes('pa ')
+                    || catEqAlert.includes('carregadeira');
+  const semHorimetro = !hIni && !hFin;
+  if (usaHorimetro && semHorimetro) {
+    if (!confirm('⚠️ Horímetro não preenchido.\n\nEsta máquina usa horímetro — ele é importante para o controle de manutenção.\n\nDeseja salvar mesmo assim sem o horímetro?')) {
+      err.textContent = 'Preencha o horímetro da máquina (inicial e final)';
+      err.style.display = 'block';
+      document.getElementById('m-h-ini').focus();
+      return;
+    }
+  }
+
   // data muito antiga (mais de 60 dias) provavelmente é erro de ano/mês
   const diffDias = (new Date(hojeStr) - new Date(data)) / 86400000;
   if (diffDias > 60) {
@@ -1174,10 +1232,13 @@ async function salvarParte(adicionarMais) {
     km_final: kmFin ? parseFloat(kmFin) : null,
     qtd_metros: metros ? parseFloat(metros) : null,
     qtd_viagens: parseFloat(document.getElementById('m-viagens').value || '0') || 0,
+    quantidade_diarias: parseFloat(document.getElementById('m-diarias').value || '0') || 0,
     hora_inicio: document.getElementById('m-h-inicio').value || null,
     hora_fim: document.getElementById('m-h-fim').value || null,
     trajeto: document.getElementById('m-trajeto').value.trim() || null,
     por_conta_de: document.getElementById('m-por-conta').value || 'cliente',
+    vinculo_operador: document.getElementById('m-vinculo').value || 'proprio',
+    fornecedor: document.getElementById('m-fornecedor').value.trim() || null,
     observacao: document.getElementById('m-obs').value.trim() || null,
   };
 
@@ -1236,7 +1297,7 @@ async function salvarParte(adicionarMais) {
     }
 
     if (adicionarMais) {
-      ['m-h-ini','m-h-fin','m-km-ini','m-km-fin','m-metros',
+      ['m-h-ini','m-h-fin','m-km-ini','m-km-fin','m-metros','m-diarias','m-fornecedor',
        'm-viagens','m-h-inicio','m-h-fim','m-trajeto','m-obs'].forEach(id => {
         const el = document.getElementById(id);
         if (el) el.value = '';
@@ -1362,7 +1423,7 @@ async function abrirModalParte(osId) {
   }
 
   // Resetar campos (hora início/fim NÃO entram aqui — mantêm padrão 07:00/17:00)
-  ['m-h-ini','m-h-fin','m-km-ini','m-km-fin','m-viagens','m-metros','m-trajeto','m-obs'].forEach(id => {
+  ['m-h-ini','m-h-fin','m-km-ini','m-km-fin','m-viagens','m-metros','m-diarias','m-fornecedor','m-trajeto','m-obs'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.value = '';
   });
@@ -1426,83 +1487,119 @@ async function abrirModalParte(osId) {
   // Guardar medicao do TIPO DE SERVIÇO da OS (referência)
   window._osTipoMedicao = (osData?.tipo_servico_medicao || '').toLowerCase();
 
-  // Pré-seleciona a medição de cobrança pelo REGIME da OS (operador pode trocar)
-  // hora/diaria/empreito → horímetro | km → km | metro → metros
+  // Sugestão de medição (sem acender botão). Prioridade:
+  // 1) regime da OS (definido pela Luana)  2) medição padrão do equipamento
+  // Misto: sugere o bloco certo, mas todos os botões ficam disponíveis.
   const regime = (osData?.regime_cobranca || '').toLowerCase();
-  const medicaoPorRegime = (regime === 'km') ? 'km'
-                         : (regime === 'metro') ? 'metros'
-                         : 'horimetro'; // hora, diaria, empreito → controle por hora
-  selecionarMedicao(medicaoPorRegime);
+  let sugestao = null;
+  if (regime === 'km') sugestao = 'km';
+  else if (regime === 'metro') sugestao = 'metros';
+  else if (regime === 'diaria') sugestao = 'diaria';
+  else if (regime === 'hora' || regime === 'empreito') sugestao = 'horimetro';
+  // Se o regime não definiu claramente, usa a medição do equipamento
+  if (!sugestao) {
+    const catEq = (osData?.equipamento_medicao || '').toLowerCase();
+    sugestao = _medicaoPorCategoria(catEq);
+  }
+  prepararMedicao(sugestao || 'horimetro');
+  // Vínculo padrão = próprio
+  const selVinc = document.getElementById('m-vinculo');
+  if (selVinc) { selVinc.value = 'proprio'; atualizarVinculo(); }
+}
+
+// Lista única de medições e seus blocos
+const MEDICOES = ['horimetro','diaria','viagem','metros','km'];
+const BLOCO_DE = { horimetro:null, diaria:'bloco-diaria', viagem:'bloco-viagem', metros:'bloco-metros', km:'bloco-km' };
+
+function _ocultarBlocosMedicao() {
+  ['bloco-diaria','bloco-viagem','bloco-metros','bloco-km'].forEach(id => {
+    const el = document.getElementById(id); if (el) el.style.display = 'none';
+  });
+}
+function _resetBotoesMedicao() {
+  MEDICOES.forEach(t => {
+    const btn = document.getElementById('btn-med-' + t);
+    if (btn) { btn.style.background='#fff'; btn.style.color='var(--text)'; btn.style.borderColor='var(--border)'; }
+  });
+}
+function _mostrarBloco(tipo) {
+  const id = BLOCO_DE[tipo];
+  if (id) { const el = document.getElementById(id); if (el) el.style.display = 'block'; }
+}
+
+// Mostra o bloco sugerido pelo equipamento/regime, SEM acender botão (abertura)
+function prepararMedicao(tipo) {
+  if (!MEDICOES.includes(tipo)) tipo = 'horimetro';
+  window._medicaoAtual = tipo;
+  _ocultarBlocosMedicao();
+  _mostrarBloco(tipo);
+  _resetBotoesMedicao(); // nenhum destaque até clicar
 }
 
 function resetMedicaoCobranca() {
   window._medicaoAtual = null;
-  const blocoKM = document.getElementById('bloco-km');
-  const blocoM  = document.getElementById('bloco-metros');
-  const blocoT  = document.getElementById('bloco-trajeto');
-  if (blocoKM) blocoKM.style.display = 'none';
-  if (blocoM)  blocoM.style.display  = 'none';
-  if (blocoT)  blocoT.style.display  = 'none';
-  // Nenhum botão ativo
-  ['horimetro','km','metros'].forEach(t => {
-    const btn = document.getElementById('btn-med-' + t);
-    if (btn) {
-      btn.style.background = '#fff';
-      btn.style.color = 'var(--text)';
-      btn.style.borderColor = 'var(--border)';
-    }
-  });
+  _ocultarBlocosMedicao();
+  _resetBotoesMedicao();
 }
 
-// _medicaoAtual guarda o que o operador escolheu registrar
+// _medicaoAtual guarda o que será registrado
 window._medicaoAtual = 'horimetro';
 
+// Clique do operador — acende o botão e mostra o bloco
 function selecionarMedicao(tipo) {
+  if (!MEDICOES.includes(tipo)) return;
   window._medicaoAtual = tipo;
-
-  const blocoKM = document.getElementById('bloco-km');
-  const blocoM  = document.getElementById('bloco-metros');
-  const blocoT  = document.getElementById('bloco-trajeto');
-
-  // HORÍMETRO fica SEMPRE visível (controle interno) — não mexe nele.
-  // Aqui só alterna os blocos de COBRANÇA (km/metros).
-  if (blocoKM) blocoKM.style.display = 'none';
-  if (blocoM)  blocoM.style.display  = 'none';
-  if (blocoT)  blocoT.style.display  = 'none';
-
-  // Reset botões
-  ['horimetro','km','metros'].forEach(t => {
-    const btn = document.getElementById('btn-med-' + t);
-    if (btn) {
-      btn.style.background = '#fff';
-      btn.style.color = 'var(--text)';
-      btn.style.borderColor = 'var(--border)';
-    }
-  });
-
-  // Ativa botão escolhido
+  _ocultarBlocosMedicao();
+  _resetBotoesMedicao();
+  // Acende o botão escolhido
   const btnAtivo = document.getElementById('btn-med-' + tipo);
-  if (btnAtivo) {
-    btnAtivo.style.background = 'var(--orange)';
-    btnAtivo.style.color = '#fff';
-    btnAtivo.style.borderColor = 'var(--orange)';
-  }
-
-  // Mostra bloco de cobrança correspondente
-  // (horímetro de cobrança usa o próprio bloco-horimetro que já está sempre visível)
-  if (tipo === 'metros') {
-    if (blocoM) blocoM.style.display = 'block';
-  } else if (tipo === 'km') {
-    if (blocoKM) blocoKM.style.display = 'block';
-    if (blocoT)  blocoT.style.display  = 'block';
-  }
-  // tipo === 'horimetro': nada extra — o bloco horímetro sempre visível já cobre
+  if (btnAtivo) { btnAtivo.style.background='var(--orange)'; btnAtivo.style.color='#fff'; btnAtivo.style.borderColor='var(--orange)'; }
+  // Mostra bloco correspondente (horímetro usa o bloco fixo sempre visível)
+  _mostrarBloco(tipo);
 }
 
-// Trocar equipamento NÃO reseta a medição — operador mantém a escolha atual
-// (a mesma máquina pode trocar implemento; a seleção é livre pelos botões)
+// Trocar equipamento: SUGERE a medição padrão do equipamento (sem acender botão),
+// mantendo todos os botões disponíveis. Misto: sugere + deixa trocar.
 function atualizarCamposMedicao() {
-  // mantém _medicaoAtual; nada a fazer aqui
+  const sel = document.getElementById('m-equipamento');
+  const opt = sel && sel.options[sel.selectedIndex];
+  const cat = opt ? (opt.getAttribute('data-cat') || '') : '';
+  const sugestao = _medicaoPorCategoria(cat);
+  if (sugestao) {
+    prepararMedicao(sugestao);
+    const hint = document.getElementById('med-hint');
+    if (hint) hint.textContent = 'Sugerido para este equipamento: ' + _rotuloMedicao(sugestao) + ' (pode trocar)';
+  }
+}
+
+// Mapeia a medição/categoria do equipamento para uma das 5 medições
+function _medicaoPorCategoria(cat) {
+  cat = (cat || '').toLowerCase();
+  if (cat.includes('diaria') || cat.includes('rolo')) return 'diaria';
+  if (cat.includes('viagem') || cat.includes('cacamba') || cat.includes('caçamba') || cat.includes('pipa') || cat.includes('basculante')) return 'viagem';
+  if (cat.includes('metro')) return 'metros';
+  if (cat === 'km' || cat.includes('km')) return 'km';
+  if (cat.includes('horimetro') || cat.includes('hora') || cat.includes('maquina') || cat.includes('escavadeira')) return 'horimetro';
+  return 'horimetro';
+}
+function _rotuloMedicao(t) {
+  return ({horimetro:'Hora',diaria:'Diária',viagem:'Viagem',metros:'Metros',km:'KM'})[t] || 'Hora';
+}
+
+// Vínculo: mostra campos condicionais (de quem / trajeto do frete)
+function atualizarVinculo() {
+  const v = document.getElementById('m-vinculo').value;
+  const blocoForn = document.getElementById('bloco-fornecedor');
+  const blocoTraj = document.getElementById('bloco-trajeto');
+  const lbl = document.getElementById('lbl-fornecedor');
+  const precisaForn = (v === 'terceiro' || v === 'diarista' || v === 'frete');
+  if (blocoForn) blocoForn.style.display = precisaForn ? 'block' : 'none';
+  if (blocoTraj) blocoTraj.style.display = (v === 'frete') ? 'block' : 'none';
+  if (lbl) {
+    lbl.textContent = (v === 'diarista') ? 'Nome do diarista'
+                    : (v === 'frete') ? 'Transportadora / dono'
+                    : 'Fornecedor / dono da máquina';
+  }
 }
 
 // Calcula horas da máquina automaticamente (final - inicial)
@@ -1832,27 +1929,60 @@ async function verPartes(osId, osNum) {
       let dataFmt = p.data || '';
       try { dataFmt = new Date(p.data + 'T00:00').toLocaleDateString('pt-BR'); } catch(e){}
       const med = p.tipo_medicao || 'horimetro';
+
+      // Horário de relógio (início–fim)
+      const hIni = p.hora_inicio ? String(p.hora_inicio).slice(0,5) : '';
+      const hFim = p.hora_fim ? String(p.hora_fim).slice(0,5) : '';
+
+      // Horas trabalhadas: usa horímetro; se 0/nulo, calcula pelo relógio
+      let horas = parseFloat(p.horas_trabalhadas || 0);
+      let horasFonte = 'horímetro';
+      if ((!horas || horas <= 0) && hIni && hFim) {
+        const [a,b] = hIni.split(':').map(Number);
+        const [c,d2] = hFim.split(':').map(Number);
+        let diff = (c*60+d2) - (a*60+b);
+        if (diff < 0) diff += 24*60; // virou o dia
+        horas = +(diff/60).toFixed(1);
+        horasFonte = 'relógio';
+      }
+
+      // Destaque principal por tipo de medição (cobrança)
       let medInfo = '';
       if (med === 'metros') {
         medInfo = `${p.qtd_metros || 0} m`;
       } else if (med === 'km') {
-        medInfo = `${p.km_percorrido || 0} km (${p.qtd_viagens || 0} viagens)`;
+        const kmTxt = `${p.km_percorrido || 0} km`;
+        const viagTxt = p.qtd_viagens ? ` · ${p.qtd_viagens} viagem(ns)` : '';
+        medInfo = kmTxt + viagTxt;
       } else {
-        medInfo = `${p.horas_trabalhadas || 0}h trabalhadas`;
+        medInfo = `${horas || 0}h`;
       }
-      // Horário de trabalho (início–fim), quando registrado
-      const hIni = p.hora_inicio ? String(p.hora_inicio).slice(0,5) : '';
-      const hFim = p.hora_fim ? String(p.hora_fim).slice(0,5) : '';
+
+      // Linha secundária: equipamento + operador
+      const equip = p.equipamento_codigo || '';
+      const oper  = p.operador_nome || '';
+      const metaLinha = [equip, oper].filter(Boolean).join(' · ');
+
+      // Detalhe por baixo: horário e (quando km) horímetro como controle interno
       const horarioInfo = (hIni || hFim)
-        ? `<div style="font-size:11px;color:var(--muted);margin-top:3px">🕐 ${hIni||'--'} às ${hFim||'--'}</div>` : '';
+        ? `🕐 ${hIni||'--'} às ${hFim||'--'}` : '';
+      let horimetroInfo = '';
+      if (med === 'km' && (p.horimetro_inicial || p.horimetro_final)) {
+        horimetroInfo = `⚙️ ${p.horimetro_inicial||0}→${p.horimetro_final||0}`;
+      }
+      const detalhes = [horarioInfo, horimetroInfo].filter(Boolean).join('  •  ');
+
       linhas += `
         <div style="border-bottom:1px solid var(--border);padding:12px 0">
-          <div style="display:flex;justify-content:space-between;align-items:center">
-            <strong style="font-size:13px;color:var(--blue)">${dataFmt}</strong>
-            <span style="font-size:12px;font-weight:700;color:var(--orange)">${medInfo}</span>
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px">
+            <div>
+              <strong style="font-size:13px;color:var(--blue)">${dataFmt}</strong>
+              ${metaLinha ? `<div style="font-size:11px;color:var(--muted);margin-top:2px">${metaLinha}</div>` : ''}
+            </div>
+            <span style="font-size:14px;font-weight:800;color:var(--orange);white-space:nowrap">${medInfo}</span>
           </div>
-          ${horarioInfo}
-          ${p.observacao ? `<div style="font-size:12px;color:var(--muted);margin-top:4px">${p.observacao}</div>` : ''}
+          ${detalhes ? `<div style="font-size:11px;color:var(--muted);margin-top:5px">${detalhes}</div>` : ''}
+          ${p.observacao ? `<div style="font-size:12px;color:var(--text);margin-top:4px;background:var(--bg);padding:6px 8px;border-radius:6px">${p.observacao}</div>` : ''}
         </div>`;
     });
   }
