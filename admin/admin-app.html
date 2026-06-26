@@ -3019,9 +3019,11 @@ function abrirModalEquipamento(eq = null) {
             <label class="lbl">Medição *</label>
             <select id="eq-medicao" class="fld">
               <option value="horimetro" ${(e.medicao||'horimetro')==='horimetro'?'selected':''}>Horímetro</option>
-              <option value="km" ${e.medicao==='km'?'selected':''}>KM</option>
-              <option value="metros" ${e.medicao==='metros'?'selected':''}>Metros</option>
+              <option value="hora" ${e.medicao==='hora'?'selected':''}>Horas</option>
               <option value="diaria" ${e.medicao==='diaria'?'selected':''}>Diária</option>
+              <option value="viagem" ${e.medicao==='viagem'?'selected':''}>Viagem</option>
+              <option value="metros" ${e.medicao==='metros'?'selected':''}>Metros</option>
+              <option value="km" ${e.medicao==='km'?'selected':''}>KM</option>
             </select>
           </div>
         </div>
