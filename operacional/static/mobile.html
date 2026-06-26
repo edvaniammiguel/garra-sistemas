@@ -399,6 +399,7 @@ input,select,textarea{font-family:inherit;outline:none;border:none}
       <select id="m-operador" style="width:100%;padding:11px;border:1.5px solid var(--border);border-radius:8px;font-size:14px">
         <option value="">— selecionar —</option>
       </select>
+      <div id="m-resp-aviso" style="display:none;font-size:11px;color:var(--blue);margin-top:5px;background:#EEF2FF;padding:6px 8px;border-radius:6px"></div>
     </div>
 
     <!-- HORÍMETRO — SEMPRE visível (controle interno da máquina) -->
@@ -1581,15 +1582,26 @@ function atualizarCamposMedicao() {
   }
   // Puxa o operador/motorista responsável do equipamento (operador pode alterar)
   const respId = opt ? (opt.getAttribute('data-resp') || '') : '';
-  if (respId) {
-    const selOp = document.getElementById('m-operador');
-    if (selOp) {
-      // garante a opção na lista
-      if (!Array.from(selOp.options).some(o => String(o.value) === String(respId))) {
-        selOp.innerHTML += `<option value="${respId}">Responsável</option>`;
-      }
-      selOp.value = respId;
+  const selOp = document.getElementById('m-operador');
+  if (respId && selOp) {
+    // Tenta achar o nome do responsável entre as opções já carregadas
+    let nomeResp = 'Responsável';
+    const existente = Array.from(selOp.options).find(o => String(o.value) === String(respId));
+    if (existente) {
+      nomeResp = existente.textContent;
+    } else {
+      selOp.innerHTML += `<option value="${respId}">${nomeResp}</option>`;
     }
+    selOp.value = respId;
+    // Aviso visual de que puxou o responsável do equipamento
+    const aviso = document.getElementById('m-resp-aviso');
+    if (aviso) {
+      aviso.textContent = '👤 Responsável do equipamento: ' + nomeResp + ' (pode alterar)';
+      aviso.style.display = 'block';
+    }
+  } else {
+    const aviso = document.getElementById('m-resp-aviso');
+    if (aviso) aviso.style.display = 'none';
   }
 }
 
