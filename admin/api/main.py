@@ -1468,12 +1468,15 @@ async def jard_url_foto(fid: int, payload=Depends(verificar_token_jard)):
 @app.post("/jardinagem/api/relatorios/km")
 async def jard_criar_km(request: Request, payload=Depends(verificar_token_jard)):
     d = await request.json()
-    semana_id = d.get("semana_id")
-    if not semana_id:
-        hoje = date.today().isoformat()
-        row = jard_query("SELECT id FROM jardinagem.semanas WHERE data_ini<=%s AND data_fim>=%s LIMIT 1", (hoje,hoje), fetch="one")
-        if not row: raise HTTPException(status_code=404, detail="Sem semana ativa")
-        semana_id = row["id"]
+    # Sempre derivar semana_id da data real do registro — nunca confiar no cliente
+    data_registro = d.get("data") or date.today().isoformat()
+    sem_row = jard_query(
+        "SELECT id FROM jardinagem.semanas WHERE data_ini<=%s AND data_fim>=%s LIMIT 1",
+        (data_registro, data_registro), fetch="one"
+    )
+    if not sem_row:
+        raise HTTPException(status_code=404, detail=f"Nenhuma semana cobre a data {data_registro}")
+    semana_id = sem_row["id"]
     local_nome  = (d.get("local_nome") or "").strip()
     km_ini      = d.get("km_inicial"); km_fin = d.get("km_final")
     if not local_nome: raise HTTPException(status_code=400, detail="local_nome obrigatório")
@@ -1486,7 +1489,7 @@ async def jard_criar_km(request: Request, payload=Depends(verificar_token_jard))
     row = jard_query_id("""INSERT INTO jardinagem.relatorios_diarios
         (semana_id,usuario_id,data,local_nome,km_inicial,km_final,hora_inicio,hora_fim,observacao,offline_id)
         VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
-        (semana_id,payload["sub"],d.get("data",date.today().isoformat()),local_nome,
+        (semana_id,payload["sub"],data_registro,local_nome,
          float(km_ini),float(km_fin),d.get("hora_inicio"),d.get("hora_fim"),d.get("observacao",""),offline_id))
     return {"ok": True, "id": row["id"]}
 
@@ -1499,12 +1502,20 @@ async def jard_editar_km(km_id: int, request: Request, payload=Depends(verificar
     if km_ini is None or km_fin is None: raise HTTPException(status_code=400, detail="km_inicial e km_final obrigatórios")
     if float(km_fin) < float(km_ini): raise HTTPException(status_code=400, detail="km_final não pode ser menor que km_inicial")
     
-    # Atualiza o registro
-    jard_query("""UPDATE jardinagem.relatorios_diarios 
-        SET data=%s, local_nome=%s, km_inicial=%s, km_final=%s, 
+    # Recalcular semana_id pela data editada — nunca confiar no cliente
+    data_registro = d.get("data") or date.today().isoformat()
+    sem_row = jard_query(
+        "SELECT id FROM jardinagem.semanas WHERE data_ini<=%s AND data_fim>=%s LIMIT 1",
+        (data_registro, data_registro), fetch="one"
+    )
+    if not sem_row:
+        raise HTTPException(status_code=404, detail=f"Nenhuma semana cobre a data {data_registro}")
+    nova_semana_id = sem_row["id"]
+    jard_query("""UPDATE jardinagem.relatorios_diarios
+        SET semana_id=%s, data=%s, local_nome=%s, km_inicial=%s, km_final=%s,
             hora_inicio=%s, hora_fim=%s, observacao=%s
         WHERE id=%s""",
-        (d.get("data",date.today().isoformat()), local_nome,
+        (nova_semana_id, data_registro, local_nome,
          float(km_ini), float(km_fin),
          d.get("hora_inicio"), d.get("hora_fim"), d.get("observacao",""),
          km_id), fetch="none")
