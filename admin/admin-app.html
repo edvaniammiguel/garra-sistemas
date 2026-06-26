@@ -3046,6 +3046,14 @@ function abrirModalEquipamento(eq = null) {
           <input id="eq-placa" type="text" value="${esc(e.placa || '')}" class="fld" placeholder="ABC-1234">
         </div>
 
+        <div style="margin-bottom:18px">
+          <label class="lbl">Operador / Motorista responsável</label>
+          <select id="eq-responsavel" class="fld" data-sel="${esc(e.operador_responsavel_id || '')}">
+            <option value="">— nenhum —</option>
+          </select>
+          <div style="font-size:11px;color:var(--muted);margin-top:4px">Usado na manutenção e pré-preenchido no registro do operador</div>
+        </div>
+
         <div style="display:flex;gap:8px">
           <button onclick="fecharModalEq()" class="btn btn-secondary" style="flex:1">Cancelar</button>
           <button onclick="salvarEquipamento('${esc(e.id || '')}')" class="btn btn-primary" style="flex:2">${isEdit ? 'Salvar' : 'Cadastrar'}</button>
@@ -3056,6 +3064,22 @@ function abrirModalEquipamento(eq = null) {
   const div = document.createElement('div');
   div.innerHTML = html;
   document.body.appendChild(div.firstElementChild);
+  // Carregar operadores/motoristas no select de responsável
+  (async () => {
+    try {
+      const ops = await apiFetch('/operacional/api/operadores').catch(()=>[]);
+      const sel = document.getElementById('eq-responsavel');
+      if (sel && Array.isArray(ops)) {
+        const selId = sel.getAttribute('data-sel') || '';
+        ops.forEach(o => {
+          const opt = document.createElement('option');
+          opt.value = o.id; opt.textContent = o.nome;
+          if (String(o.id) === String(selId)) opt.selected = true;
+          sel.appendChild(opt);
+        });
+      }
+    } catch(e) {}
+  })();
 }
 function fecharModalEq() {
   const m = document.getElementById('modal-eq');
@@ -3073,6 +3097,7 @@ async function salvarEquipamento(id) {
     modelo:    document.getElementById('eq-modelo').value.trim() || null,
     ano:       parseInt(document.getElementById('eq-ano').value) || null,
     placa:     document.getElementById('eq-placa').value.trim() || null,
+    operador_responsavel_id: document.getElementById('eq-responsavel').value || null,
   };
   if (!payload.codigo || !payload.descricao || !payload.categoria) {
     err.textContent = 'Código, descrição e categoria são obrigatórios';
