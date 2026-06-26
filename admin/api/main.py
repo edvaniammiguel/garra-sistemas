@@ -3501,6 +3501,25 @@ async def debug_os(numero: str = "", chave: str = ""):
         "partes": [dict(p) for p in (partes or [])]
     }
 
+@app.get("/api/debug/equipamentos")
+async def debug_equipamentos(codigo: str = "", chave: str = ""):
+    """Diagnóstico de equipamentos e responsável. Uso: ?chave=garra-diag-2026 (ou &codigo=CB-037)"""
+    if chave != "garra-diag-2026":
+        raise HTTPException(status_code=403, detail="Chave inválida")
+    filtro = "WHERE eq.codigo=%s" if codigo else ""
+    params = (codigo,) if codigo else ()
+    rows = jard_query(
+        f"""SELECT eq.codigo, eq.descricao, eq.categoria, eq.medicao,
+                   eq.operador_responsavel_id, resp.nome AS responsavel_nome,
+                   eq.ativo
+            FROM operacional.equipamentos eq
+            LEFT JOIN public.usuarios_garra resp ON resp.id = eq.operador_responsavel_id
+            {filtro}
+            ORDER BY eq.codigo""",
+        params
+    )
+    return {"total": len(rows or []), "equipamentos": [dict(r) for r in (rows or [])]}
+
 @app.get("/api/debug/usuarios")
 async def debug_usuarios(chave: str = "", authorization: Optional[str] = Header(None)):
     """Diagnóstico de usuários. Acesso: admin logado OU chave de diagnóstico."""
