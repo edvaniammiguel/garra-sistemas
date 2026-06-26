@@ -187,6 +187,11 @@ async def startup():
                 ALTER TABLE operacional.partes_diarias
                 ADD COLUMN IF NOT EXISTS quantidade_diarias_cobradas NUMERIC(8,1)
             """)
+            # Migration: coluna fornecedor (terceiro/diarista/frete)
+            await conn.execute("""
+                ALTER TABLE operacional.partes_diarias
+                ADD COLUMN IF NOT EXISTS fornecedor TEXT
+            """)
             # Migration: criar tabela regimes_cobranca
             await conn.execute("""
                 CREATE TABLE IF NOT EXISTS operacional.regimes_cobranca (
@@ -1468,15 +1473,12 @@ async def jard_url_foto(fid: int, payload=Depends(verificar_token_jard)):
 @app.post("/jardinagem/api/relatorios/km")
 async def jard_criar_km(request: Request, payload=Depends(verificar_token_jard)):
     d = await request.json()
-    # Sempre derivar semana_id da data real do registro — nunca confiar no cliente
-    data_registro = d.get("data") or date.today().isoformat()
-    sem_row = jard_query(
-        "SELECT id FROM jardinagem.semanas WHERE data_ini<=%s AND data_fim>=%s LIMIT 1",
-        (data_registro, data_registro), fetch="one"
-    )
-    if not sem_row:
-        raise HTTPException(status_code=404, detail=f"Nenhuma semana cobre a data {data_registro}")
-    semana_id = sem_row["id"]
+    semana_id = d.get("semana_id")
+    if not semana_id:
+        hoje = date.today().isoformat()
+        row = jard_query("SELECT id FROM jardinagem.semanas WHERE data_ini<=%s AND data_fim>=%s LIMIT 1", (hoje,hoje), fetch="one")
+        if not row: raise HTTPException(status_code=404, detail="Sem semana ativa")
+        semana_id = row["id"]
     local_nome  = (d.get("local_nome") or "").strip()
     km_ini      = d.get("km_inicial"); km_fin = d.get("km_final")
     if not local_nome: raise HTTPException(status_code=400, detail="local_nome obrigatório")
@@ -1489,7 +1491,7 @@ async def jard_criar_km(request: Request, payload=Depends(verificar_token_jard))
     row = jard_query_id("""INSERT INTO jardinagem.relatorios_diarios
         (semana_id,usuario_id,data,local_nome,km_inicial,km_final,hora_inicio,hora_fim,observacao,offline_id)
         VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
-        (semana_id,payload["sub"],data_registro,local_nome,
+        (semana_id,payload["sub"],d.get("data",date.today().isoformat()),local_nome,
          float(km_ini),float(km_fin),d.get("hora_inicio"),d.get("hora_fim"),d.get("observacao",""),offline_id))
     return {"ok": True, "id": row["id"]}
 
@@ -1502,20 +1504,12 @@ async def jard_editar_km(km_id: int, request: Request, payload=Depends(verificar
     if km_ini is None or km_fin is None: raise HTTPException(status_code=400, detail="km_inicial e km_final obrigatórios")
     if float(km_fin) < float(km_ini): raise HTTPException(status_code=400, detail="km_final não pode ser menor que km_inicial")
     
-    # Recalcular semana_id pela data editada — nunca confiar no cliente
-    data_registro = d.get("data") or date.today().isoformat()
-    sem_row = jard_query(
-        "SELECT id FROM jardinagem.semanas WHERE data_ini<=%s AND data_fim>=%s LIMIT 1",
-        (data_registro, data_registro), fetch="one"
-    )
-    if not sem_row:
-        raise HTTPException(status_code=404, detail=f"Nenhuma semana cobre a data {data_registro}")
-    nova_semana_id = sem_row["id"]
-    jard_query("""UPDATE jardinagem.relatorios_diarios
-        SET semana_id=%s, data=%s, local_nome=%s, km_inicial=%s, km_final=%s,
+    # Atualiza o registro
+    jard_query("""UPDATE jardinagem.relatorios_diarios 
+        SET data=%s, local_nome=%s, km_inicial=%s, km_final=%s, 
             hora_inicio=%s, hora_fim=%s, observacao=%s
         WHERE id=%s""",
-        (nova_semana_id, data_registro, local_nome,
+        (d.get("data",date.today().isoformat()), local_nome,
          float(km_ini), float(km_fin),
          d.get("hora_inicio"), d.get("hora_fim"), d.get("observacao",""),
          km_id), fetch="none")
@@ -2463,6 +2457,18 @@ async def op_criar_parte(os_id: str, request: Request, payload=Depends(verificar
                 raise HTTPException(status_code=400, detail="Horímetro final menor que inicial")
         except (TypeError, ValueError):
             pass
+    # Fallback: sem horímetro, calcula horas pela hora de relógio (início→fim).
+    # Cobre diária/viagem/empreito, onde a base de comissão vem do tempo trabalhado.
+    if (horas is None or horas == 0):
+        hi = d.get("hora_inicio"); hf = d.get("hora_fim")
+        if hi and hf:
+            try:
+                ph = lambda s: int(str(s)[:2]) * 60 + int(str(s)[3:5])
+                diff = ph(hf) - ph(hi)
+                if diff < 0: diff += 24 * 60
+                horas = round(diff / 60, 2)
+            except (TypeError, ValueError):
+                pass
 
     # Buscar ID do operador pelo login (quem está logado = criado_por)
     user_row = jard_query(
@@ -2498,14 +2504,14 @@ async def op_criar_parte(os_id: str, request: Request, payload=Depends(verificar
                 tipo_medicao, horimetro_inicial, horimetro_final, horas_trabalhadas,
                 km_inicial, km_final, km_percorrido,
                 quantidade_diarias, qtd_viagens, qtd_metros,
-                vinculo_operador, observacao, trajeto, por_conta_de, criado_por)
-               VALUES (%s,%s,%s,%s, %s,%s,%s, %s,%s,%s,%s, %s,%s,%s, %s,%s,%s, %s,%s,%s,%s,%s)""",
+                vinculo_operador, fornecedor, observacao, trajeto, por_conta_de, criado_por)
+               VALUES (%s,%s,%s,%s, %s,%s,%s, %s,%s,%s,%s, %s,%s,%s, %s,%s,%s, %s,%s,%s,%s,%s,%s)""",
             (os_id, equipamento_id, operador_id, d.get("operador_nome_avulso"),
              data, d.get("hora_inicio"), d.get("hora_fim"),
              d.get("tipo_medicao","horimetro"), h_ini, h_fin, horas,
              km_ini, km_fin, km_perc,
              d.get("quantidade_diarias", 0), d.get("qtd_viagens", 0), qtd_metros,
-             d.get("vinculo_operador","proprio"), d.get("observacao"),
+             d.get("vinculo_operador","proprio"), d.get("fornecedor"), d.get("observacao"),
              d.get("trajeto"), d.get("por_conta_de","empresa"),
              criado_por_id)
         )
@@ -2589,7 +2595,8 @@ async def op_atualizar_parte(parte_id: str, request: Request, payload=Depends(ve
     campos = ["data","horas_cobradas","quantidade_diarias","quantidade_diarias_cobradas",
               "qtd_viagens","qtd_metros","observacao","hora_inicio","hora_fim",
               "horimetro_inicial","horimetro_final","km_inicial","km_final",
-              "equipamento_id","operador_id","operador_nome_avulso"]
+              "equipamento_id","operador_id","operador_nome_avulso",
+              "vinculo_operador","fornecedor","por_conta_de","trajeto"]
     updates, params = [], []
     for c in campos:
         if c in d:
