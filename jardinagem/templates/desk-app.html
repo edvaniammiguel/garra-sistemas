@@ -950,22 +950,33 @@ function salvarParEditado(tid){
 }
 
 /* ─── SALVAR NO BANCO ─────────────────────────────────── */
+// Executa salvamentos EM SEQUÊNCIA (um de cada vez), não em paralelo.
+// Isso garante que cada par recebe seu código antes do próximo começar,
+// reforçando a proteção contra códigos duplicados.
+function salvarSequencial(lista){
+  var falhas=0;
+  var p=Promise.resolve();
+  lista.forEach(function(x){
+    p=p.then(function(){
+      return salvarPar(x.sem,x.p).catch(function(){ falhas++; });
+    });
+  });
+  return p.then(function(){ return falhas; });
+}
+
 function salvarTodos(){
   var lista=[];
   quadrante.forEach(function(sem){sem.pares.forEach(function(p){if(!p.salvo&&(p.antes||p.depois))lista.push({sem,p});});});
   if(!lista.length){toast('Nada para salvar.');return;}
   toast('Salvando '+lista.length+' par(es)...');
-  // allSettled: não para no primeiro erro; reporta o que falhou
-  Promise.allSettled(lista.map(function(x){return salvarPar(x.sem,x.p);}))
-    .then(function(results){
-      var falhas=results.filter(function(r){return r.status==='rejected';}).length;
-      abrirMes(mesAtual.id);carregarMeses();
-      if(falhas>0){
-        alert('⚠️ '+falhas+' par(es) NÃO foram salvos completamente (falha no envio das fotos).\n\nVerifique sua conexão e tente salvar novamente os pares que ficaram pendentes.');
-      } else {
-        toast('✅ Salvo!');
-      }
-    });
+  salvarSequencial(lista).then(function(falhas){
+    abrirMes(mesAtual.id);carregarMeses();
+    if(falhas>0){
+      alert('⚠️ '+falhas+' par(es) NÃO foram salvos completamente (falha no envio das fotos).\n\nVerifique sua conexão e tente salvar novamente os pares que ficaram pendentes.');
+    } else {
+      toast('✅ Salvo!');
+    }
+  });
 }
 function salvarPar(sem,par){
   var criar=par.dbId?Promise.resolve({id:par.dbId})
@@ -1314,16 +1325,14 @@ function orgSalvar(){
   });});
   if(!lista.length){ fecharOrg(); return; }
   toast('Salvando '+lista.length+' par(es)...');
-  Promise.allSettled(lista.map(function(x){ return salvarPar(x.sem,x.p); }))
-    .then(function(results){
-      var falhas=results.filter(function(r){return r.status==='rejected';}).length;
-      abrirMes(mesAtual.id); carregarMeses();
-      if(falhas>0){
-        alert('⚠️ '+falhas+' par(es) NÃO foram salvos completamente (falha no envio das fotos).\n\nOs pares ficaram pendentes. Verifique a conexão e salve novamente antes de gerar o relatório.');
-      } else {
-        fecharOrg(); toast('✅ Salvo!');
-      }
-    });
+  salvarSequencial(lista).then(function(falhas){
+    abrirMes(mesAtual.id); carregarMeses();
+    if(falhas>0){
+      alert('⚠️ '+falhas+' par(es) NÃO foram salvos completamente (falha no envio das fotos).\n\nOs pares ficaram pendentes. Verifique a conexão e salve novamente antes de gerar o relatório.');
+    } else {
+      fecharOrg(); toast('✅ Salvo!');
+    }
+  });
 }
 
 
