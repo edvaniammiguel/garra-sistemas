@@ -197,6 +197,11 @@ async def startup():
                 ALTER TABLE operacional.partes_diarias
                 ADD COLUMN IF NOT EXISTS sem_almoco BOOLEAN DEFAULT false
             """)
+            # Migration: nome do equipamento de terceiro (quando vínculo=terceiro)
+            await conn.execute("""
+                ALTER TABLE operacional.partes_diarias
+                ADD COLUMN IF NOT EXISTS equipamento_terceiro TEXT
+            """)
             # Migration: criar tabela regimes_cobranca
             await conn.execute("""
                 CREATE TABLE IF NOT EXISTS operacional.regimes_cobranca (
@@ -2457,9 +2462,18 @@ async def op_criar_parte(os_id: str, request: Request, payload=Depends(verificar
 
     # Campos obrigatórios
     data = d.get("data")
-    equipamento_id = d.get("equipamento_id") or os_row.get("equipamento_id")
-    if not data or not equipamento_id:
-        raise HTTPException(status_code=400, detail="Data e equipamento são obrigatórios")
+    vinculo = (d.get("vinculo_operador") or "proprio").lower()
+    eh_terceiro = (vinculo == "terceiro")
+    equipamento_terceiro = (d.get("equipamento_terceiro") or "").strip() or None
+    # Terceiro: não usa equipamento da Garra; exige o nome livre
+    if eh_terceiro:
+        equipamento_id = None
+        if not data or not equipamento_terceiro:
+            raise HTTPException(status_code=400, detail="Data e equipamento de terceiro são obrigatórios")
+    else:
+        equipamento_id = d.get("equipamento_id") or os_row.get("equipamento_id")
+        if not data or not equipamento_id:
+            raise HTTPException(status_code=400, detail="Data e equipamento são obrigatórios")
 
     # Calcular horas trabalhadas automaticamente
     h_ini = d.get("horimetro_inicial")
@@ -2526,19 +2540,20 @@ async def op_criar_parte(os_id: str, request: Request, payload=Depends(verificar
                 tipo_medicao, horimetro_inicial, horimetro_final, horas_trabalhadas,
                 km_inicial, km_final, km_percorrido,
                 quantidade_diarias, qtd_viagens, qtd_metros,
-                vinculo_operador, fornecedor, observacao, trajeto, por_conta_de, sem_almoco, criado_por)
-               VALUES (%s,%s,%s,%s, %s,%s,%s, %s,%s,%s,%s, %s,%s,%s, %s,%s,%s, %s,%s,%s,%s,%s,%s,%s)""",
+                vinculo_operador, fornecedor, equipamento_terceiro, observacao, trajeto, por_conta_de, sem_almoco, criado_por)
+               VALUES (%s,%s,%s,%s, %s,%s,%s, %s,%s,%s,%s, %s,%s,%s, %s,%s,%s, %s,%s,%s,%s,%s,%s,%s,%s)""",
             (os_id, equipamento_id, operador_id, d.get("operador_nome_avulso"),
              data, d.get("hora_inicio"), d.get("hora_fim"),
              d.get("tipo_medicao","horimetro"), h_ini, h_fin, horas,
              km_ini, km_fin, km_perc,
              d.get("quantidade_diarias", 0), d.get("qtd_viagens", 0), qtd_metros,
-             d.get("vinculo_operador","proprio"), d.get("fornecedor"), d.get("observacao"),
+             d.get("vinculo_operador","proprio"), d.get("fornecedor"), equipamento_terceiro,
+             d.get("observacao"),
              d.get("trajeto"), d.get("por_conta_de","empresa"), bool(d.get("sem_almoco")),
              criado_por_id)
         )
-        # Atualizar horímetro atual do equipamento
-        if h_fin is not None:
+        # Atualizar horímetro atual do equipamento (só equipamento próprio da Garra)
+        if h_fin is not None and equipamento_id:
             jard_query(
                 "UPDATE operacional.equipamentos SET horimetro_atual=%s, atualizado_em=now() WHERE id=%s",
                 (h_fin, equipamento_id), fetch="none"
@@ -2553,7 +2568,7 @@ async def op_listar_partes(os_id: str, _auth=Depends(verificar_token)):
     """Lista todas as partes diárias de uma OS, com totais acumulados."""
     partes = jard_query(
         """SELECT pd.*,
-                  e.codigo  AS equipamento_codigo,
+                  COALESCE(e.codigo, pd.equipamento_terceiro) AS equipamento_codigo,
                   e.descricao AS equipamento_descricao,
                   e.categoria AS equipamento_categoria,
                   COALESCE(u.nome, pd.operador_nome_avulso) AS operador_nome
@@ -3017,7 +3032,9 @@ async def op_controle_mensal(
                pd.hora_inicio, pd.hora_fim, pd.sem_almoco,
                pd.por_conta_de, pd.observacao, pd.fechado,
                pd.equipamento_id, pd.operador_id, pd.os_id,
-               e.codigo AS equipamento_codigo, e.descricao AS equipamento_descricao,
+               pd.equipamento_terceiro, pd.vinculo_operador, pd.fornecedor,
+               COALESCE(e.codigo, pd.equipamento_terceiro) AS equipamento_codigo,
+               e.descricao AS equipamento_descricao,
                e.categoria AS equipamento_categoria, e.medicao AS equipamento_medicao,
                u.nome AS operador_nome,
                os.numero AS os_numero, os.obra AS os_obra, os.regime_cobranca,
