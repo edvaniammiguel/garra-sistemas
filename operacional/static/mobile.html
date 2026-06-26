@@ -475,16 +475,23 @@ input,select,textarea{font-family:inherit;outline:none;border:none}
       </div>
     </div>
 
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
       <div>
         <label style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:5px">Hora início</label>
-        <input id="m-h-inicio" type="time" value="07:00" style="width:100%;padding:10px;border:1.5px solid var(--border);border-radius:6px;font-size:14px">
+        <input id="m-h-inicio" type="time" value="07:00" oninput="calcularHorasJornada()" style="width:100%;padding:10px;border:1.5px solid var(--border);border-radius:6px;font-size:14px">
       </div>
       <div>
         <label style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:5px">Hora fim</label>
-        <input id="m-h-fim" type="time" value="17:00" style="width:100%;padding:10px;border:1.5px solid var(--border);border-radius:6px;font-size:14px">
+        <input id="m-h-fim" type="time" value="17:00" oninput="calcularHorasJornada()" style="width:100%;padding:10px;border:1.5px solid var(--border);border-radius:6px;font-size:14px">
       </div>
     </div>
+
+    <!-- Almoço + resumo de horas -->
+    <label style="display:flex;align-items:center;gap:8px;margin-bottom:8px;cursor:pointer;font-size:13px;color:var(--text)">
+      <input id="m-sem-almoco" type="checkbox" onchange="calcularHorasJornada()" style="width:18px;height:18px;cursor:pointer">
+      Dia corrido — sem intervalo de almoço
+    </label>
+    <div id="m-horas-jornada" style="display:none;font-size:13px;font-weight:700;color:var(--blue);background:#EEF2FF;padding:8px 10px;border-radius:6px;margin-bottom:12px;text-align:center"></div>
 
     <!-- VÍNCULO do equipamento/operador -->
     <div style="margin-bottom:12px">
@@ -1236,6 +1243,7 @@ async function salvarParte(adicionarMais) {
     quantidade_diarias: parseFloat(document.getElementById('m-diarias').value || '0') || 0,
     hora_inicio: document.getElementById('m-h-inicio').value || null,
     hora_fim: document.getElementById('m-h-fim').value || null,
+    sem_almoco: document.getElementById('m-sem-almoco').checked,
     trajeto: document.getElementById('m-trajeto').value.trim() || null,
     por_conta_de: document.getElementById('m-por-conta').value || 'cliente',
     vinculo_operador: document.getElementById('m-vinculo').value || 'proprio',
@@ -1299,10 +1307,15 @@ async function salvarParte(adicionarMais) {
 
     if (adicionarMais) {
       ['m-h-ini','m-h-fin','m-km-ini','m-km-fin','m-metros','m-diarias','m-fornecedor',
-       'm-viagens','m-h-inicio','m-h-fim','m-trajeto','m-obs'].forEach(id => {
+       'm-viagens','m-trajeto','m-obs'].forEach(id => {
         const el = document.getElementById(id);
         if (el) el.value = '';
       });
+      // Horas voltam ao padrão (não zera, para o próximo dia)
+      document.getElementById('m-h-inicio').value = '07:00';
+      document.getElementById('m-h-fim').value = '17:00';
+      document.getElementById('m-sem-almoco').checked = false;
+      calcularHorasJornada();
       document.getElementById('m-por-conta').value = 'cliente';
       // Mantém equipamento e operador (provavelmente mesma OS no próximo registro)
     } else {
@@ -1432,6 +1445,8 @@ async function abrirModalParte(osId) {
   // Horário de funcionamento padrão
   const hIni = document.getElementById('m-h-inicio'); if (hIni) hIni.value = '07:00';
   const hFim = document.getElementById('m-h-fim');    if (hFim) hFim.value = '17:00';
+  const semAlm = document.getElementById('m-sem-almoco'); if (semAlm) semAlm.checked = false;
+  calcularHorasJornada();
   // Por conta de: default CLIENTE
   document.getElementById('m-por-conta').value = 'cliente';
 
@@ -1636,6 +1651,41 @@ function atualizarVinculo() {
 }
 
 // Calcula horas da máquina automaticamente (final - inicial)
+// Calcula horas da jornada (relógio) com desconto de 1h de almoço quando
+// a jornada cruza o horário de almoço (passa das 12h), salvo "dia corrido".
+// Retorna {bruto, almoco, liquido} em horas decimais, ou null se inválido.
+function _calcularJornada(hIni, hFim, semAlmoco) {
+  if (!hIni || !hFim) return null;
+  const ph = s => { const [h,m] = String(s).split(':').map(Number); return h*60 + (m||0); };
+  let ini = ph(hIni), fim = ph(hFim);
+  if (isNaN(ini) || isNaN(fim)) return null;
+  let diff = fim - ini;
+  if (diff < 0) diff += 24*60; // virou o dia
+  const bruto = diff / 60;
+  // Desconta 1h de almoço se a jornada cruza 12:00 (almoço) e não é dia corrido
+  const cruzaAlmoco = (ini < 12*60) && (fim > 12*60 || (fim < ini)); // começa antes do meio-dia e termina depois
+  const almoco = (!semAlmoco && cruzaAlmoco && bruto > 6) ? 1 : 0;
+  const liquido = Math.max(0, bruto - almoco);
+  return { bruto: +bruto.toFixed(2), almoco, liquido: +liquido.toFixed(2) };
+}
+
+function calcularHorasJornada() {
+  const hIni = document.getElementById('m-h-inicio').value;
+  const hFim = document.getElementById('m-h-fim').value;
+  const semAlmoco = document.getElementById('m-sem-almoco').checked;
+  const el = document.getElementById('m-horas-jornada');
+  if (!el) return;
+  const j = _calcularJornada(hIni, hFim, semAlmoco);
+  if (!j) { el.style.display = 'none'; return; }
+  if (j.almoco > 0) {
+    el.innerHTML = `🕐 ${j.bruto.toFixed(1)}h brutas − 1h almoço = <span style="color:var(--orange)">${j.liquido.toFixed(1)}h</span>`;
+  } else {
+    const obs = semAlmoco ? ' (sem intervalo)' : '';
+    el.innerHTML = `🕐 <span style="color:var(--orange)">${j.liquido.toFixed(1)}h</span>${obs}`;
+  }
+  el.style.display = 'block';
+}
+
 function calcularHorasMaquina() {
   const ini = parseFloat(document.getElementById('m-h-ini').value);
   const fin = parseFloat(document.getElementById('m-h-fin').value);
@@ -1968,15 +2018,11 @@ async function verPartes(osId, osNum) {
       const hFim = p.hora_fim ? String(p.hora_fim).slice(0,5) : '';
 
       // Horas trabalhadas: usa horímetro; se 0/nulo, calcula pelo relógio
+      // com desconto de almoço (mesma regra do registro)
       let horas = parseFloat(p.horas_trabalhadas || 0);
-      let horasFonte = 'horímetro';
       if ((!horas || horas <= 0) && hIni && hFim) {
-        const [a,b] = hIni.split(':').map(Number);
-        const [c,d2] = hFim.split(':').map(Number);
-        let diff = (c*60+d2) - (a*60+b);
-        if (diff < 0) diff += 24*60; // virou o dia
-        horas = +(diff/60).toFixed(1);
-        horasFonte = 'relógio';
+        const j = _calcularJornada(hIni, hFim, !!p.sem_almoco);
+        if (j) horas = j.liquido;
       }
 
       // Destaque principal por tipo de medição (cobrança)
