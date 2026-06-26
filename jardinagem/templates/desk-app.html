@@ -955,26 +955,51 @@ function salvarTodos(){
   quadrante.forEach(function(sem){sem.pares.forEach(function(p){if(!p.salvo&&(p.antes||p.depois))lista.push({sem,p});});});
   if(!lista.length){toast('Nada para salvar.');return;}
   toast('Salvando '+lista.length+' par(es)...');
-  Promise.all(lista.map(x=>salvarPar(x.sem,x.p)))
-    .then(()=>{abrirMes(mesAtual.id);carregarMeses();toast('✅ Salvo!');})
-    .catch(e=>toast('Erro: '+e.message));
+  // allSettled: não para no primeiro erro; reporta o que falhou
+  Promise.allSettled(lista.map(function(x){return salvarPar(x.sem,x.p);}))
+    .then(function(results){
+      var falhas=results.filter(function(r){return r.status==='rejected';}).length;
+      abrirMes(mesAtual.id);carregarMeses();
+      if(falhas>0){
+        alert('⚠️ '+falhas+' par(es) NÃO foram salvos completamente (falha no envio das fotos).\n\nVerifique sua conexão e tente salvar novamente os pares que ficaram pendentes.');
+      } else {
+        toast('✅ Salvo!');
+      }
+    });
 }
 function salvarPar(sem,par){
   var criar=par.dbId?Promise.resolve({id:par.dbId})
     :fetchAuth('/jardinagem/api/pares',{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({semana_id:sem.semId,local_nome:par.nome||'',data_label:par.dataLabel||''})
-    }).then(r=>r.json());
+    }).then(function(r){ if(!r.ok) throw new Error('Falha ao criar par'); return r.json(); });
   return criar.then(function(resp){
     par.dbId=resp.id;
     var ups=[];
+    var falhas=[];
     ['antes','depois'].forEach(function(tipo){
       var f=par[tipo];if(!f||f.sid)return;
       var blob=b64toBlob(f.src);
       var fd=new FormData();fd.append('par_id',par.dbId);fd.append('tipo',tipo);fd.append('foto',blob,f.nome||tipo+'.jpg');
-      ups.push(fetchAuth('/jardinagem/api/fotos/avulsa',{method:'POST',body:fd}).then(r=>r.json()).then(r=>{f.sid=r.id;}));
+      ups.push(
+        fetchAuth('/jardinagem/api/fotos/avulsa',{method:'POST',body:fd})
+          .then(function(r){
+            // Verifica de verdade se o upload deu certo (status HTTP + id retornado)
+            return r.json().then(function(data){
+              if(!r.ok || !data || !data.id){
+                throw new Error((data && data.detail) ? data.detail : ('Falha no upload da foto '+tipo));
+              }
+              f.sid=data.id; // só marca como enviada se realmente subiu
+            });
+          })
+          .catch(function(e){ falhas.push(tipo); throw e; })
+      );
     });
     if(par.nome)ups.push(fetchAuth('/jardinagem/api/pares/'+par.dbId,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({local_nome:par.nome})}));
-    return Promise.all(ups).then(()=>{par.salvo=true;});
+    return Promise.all(ups).then(function(){
+      // Só marca como salvo se TODAS as fotos do par subiram
+      par.salvo=true;
+    });
+    // Se qualquer upload falhar, Promise.all rejeita → par NÃO é marcado salvo
   });
 }
 function b64toBlob(d){var p=d.split(','),m=p[0].match(/:(.*?);/)[1],b=atob(p[1]),a=new Uint8Array(b.length);for(var i=0;i<b.length;i++)a[i]=b.charCodeAt(i);return new Blob([a],{type:m});}
@@ -1289,9 +1314,16 @@ function orgSalvar(){
   });});
   if(!lista.length){ fecharOrg(); return; }
   toast('Salvando '+lista.length+' par(es)...');
-  Promise.all(lista.map(function(x){ return salvarPar(x.sem,x.p); }))
-    .then(function(){ abrirMes(mesAtual.id); carregarMeses(); fecharOrg(); toast('✅ Salvo!'); })
-    .catch(function(e){ toast('Erro: '+e.message); });
+  Promise.allSettled(lista.map(function(x){ return salvarPar(x.sem,x.p); }))
+    .then(function(results){
+      var falhas=results.filter(function(r){return r.status==='rejected';}).length;
+      abrirMes(mesAtual.id); carregarMeses();
+      if(falhas>0){
+        alert('⚠️ '+falhas+' par(es) NÃO foram salvos completamente (falha no envio das fotos).\n\nOs pares ficaram pendentes. Verifique a conexão e salve novamente antes de gerar o relatório.');
+      } else {
+        fecharOrg(); toast('✅ Salvo!');
+      }
+    });
 }
 
 
