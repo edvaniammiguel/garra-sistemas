@@ -1157,23 +1157,51 @@ async function salvarParte(adicionarMais) {
     return;
   }
 
-  // ALERTA: máquina que usa horímetro mas ficou sem registro.
-  // Horímetro é a base da manutenção — importante preencher.
-  // Não bloqueia (rolo e similares não marcam horímetro).
+  // ALERTA: equipamento já registrado nesta OS na mesma data.
+  // Protege contra esquecer de trocar o equipamento ao registrar vários dias.
+  // Não bloqueia (pode haver 2 turnos com a mesma máquina), só confirma.
+  if (Array.isArray(_partesExistentesOS) && _partesExistentesOS.length) {
+    const idEquip = ehTerceiro ? null : equipId;
+    const dup = _partesExistentesOS.find(p => {
+      const mesmaData = String(p.data).slice(0,10) === data;
+      if (!mesmaData) return false;
+      if (ehTerceiro) {
+        return (p.vinculo_operador === 'terceiro') &&
+               ((p.equipamento_terceiro || '').toLowerCase() === equipTerceiro.toLowerCase());
+      }
+      return String(p.equipamento_id) === String(idEquip);
+    });
+    if (dup) {
+      const nomeEquip = ehTerceiro ? equipTerceiro
+        : (document.getElementById('m-equipamento').options[document.getElementById('m-equipamento').selectedIndex]?.text || 'este equipamento');
+      const dataFmt = new Date(data + 'T00:00').toLocaleDateString('pt-BR');
+      if (!confirm('⚠️ ' + nomeEquip + ' já tem registro em ' + dataFmt + '.\n\nVocê esqueceu de trocar o equipamento?\n\nSe for outro turno/serviço com a mesma máquina, pode salvar.\nDeseja salvar mesmo assim?')) {
+        err.textContent = 'Selecione o equipamento correto deste dia';
+        err.style.display = 'block';
+        return;
+      }
+    }
+  }
+
+  // ALERTA: equipamento cadastrado com medição = HORÍMETRO ficou sem registro.
+  // A medição do cadastro é o indicador confiável — se é horímetro, exige.
+  // Rolo, caminhão, caçamba (diária/km/viagem) não disparam. Não bloqueia:
+  // o operador pode persistir para máquinas que excepcionalmente não marcam.
   const selEqAlert = document.getElementById('m-equipamento');
   const optEqAlert = selEqAlert && selEqAlert.options[selEqAlert.selectedIndex];
-  const catEqAlert = optEqAlert ? (optEqAlert.getAttribute('data-cat') || '').toLowerCase() : '';
-  const usaHorimetro = catEqAlert.includes('horimetro') || catEqAlert.includes('hora')
-                    || catEqAlert.includes('maquina') || catEqAlert.includes('escavadeira')
-                    || catEqAlert.includes('retro') || catEqAlert.includes('patrola')
-                    || catEqAlert.includes('trator') || catEqAlert.includes('pa ')
-                    || catEqAlert.includes('carregadeira');
+  const medEqAlert = optEqAlert ? (optEqAlert.getAttribute('data-med') || optEqAlert.getAttribute('data-cat') || '').toLowerCase() : '';
+  // Considera "usa horímetro" quando a medição cadastrada é exatamente horímetro
+  const usaHorimetro = (medEqAlert === 'horimetro') && !ehTerceiro;
   const semHorimetro = !hIni && !hFin;
   if (usaHorimetro && semHorimetro) {
-    if (!confirm('⚠️ Horímetro não preenchido.\n\nEsta máquina usa horímetro — ele é importante para o controle de manutenção.\n\nDeseja salvar mesmo assim sem o horímetro?')) {
-      err.textContent = 'Preencha o horímetro da máquina (inicial e final)';
+    if (!confirm('⚠️ Horímetro não preenchido.\n\nEste equipamento usa horímetro — é a base do controle de manutenção.\n\nDeseja salvar mesmo assim sem o horímetro?')) {
+      err.textContent = 'Preencha o horímetro (inicial e final)';
       err.style.display = 'block';
-      document.getElementById('m-h-ini').focus();
+      const campoH = document.getElementById('m-h-ini');
+      if (campoH) {
+        campoH.focus();
+        campoH.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
       return;
     }
   }
@@ -1325,6 +1353,14 @@ async function salvarParte(adicionarMais) {
       toast('⚠️ Offline — será enviado ao voltar online', 'info');
     }
 
+    // Registrar a parte salva no cache local (alerta duplicidade no "salvar e novo")
+    _partesExistentesOS.push({
+      data: data,
+      equipamento_id: equipId || null,
+      equipamento_terceiro: ehTerceiro ? equipTerceiro : null,
+      vinculo_operador: vinculo
+    });
+
     if (adicionarMais) {
       ['m-h-ini','m-h-fin','m-km-ini','m-km-fin','m-metros','m-diarias','m-fornecedor','m-equip-terceiro',
        'm-viagens','m-trajeto','m-obs'].forEach(id => {
@@ -1413,10 +1449,25 @@ function toast(msg, type) {
   console.log('[Toast]', msg);
 }
 
+let _partesExistentesOS = [];
+
 async function abrirModalParte(osId) {
   _osAtualId = osId;
+  _partesExistentesOS = [];
   document.getElementById('m-error').style.display = 'none';
   document.getElementById('modal-parte').style.display = 'flex';
+
+  // Carregar partes já registradas desta OS (para alertar duplicidade)
+  try {
+    const token = localStorage.getItem('garra_token') || '';
+    const rp = await fetch('/operacional/api/os/' + osId + '/partes', {
+      headers: { 'Authorization': 'Bearer ' + token }
+    });
+    if (rp.ok) {
+      const dp = await rp.json();
+      _partesExistentesOS = Array.isArray(dp) ? dp : (dp.partes || []);
+    }
+  } catch (e) { /* offline — segue sem validação de duplicidade */ }
 
   // Buscar dados da OS FRESCOS do backend (operador_id pode ter mudado por reatribuição)
   let osData = null;
@@ -1484,15 +1535,16 @@ async function abrirModalParte(osId) {
   selEq.innerHTML = '<option value="">— selecionar —</option>';
   (equipamentos || []).forEach(e => {
     const cat = (e.medicao || e.categoria || e.tipo || '').toLowerCase();
+    const med = (e.medicao || '').toLowerCase();
     const resp = e.operador_responsavel_id || '';
-    selEq.innerHTML += `<option value="${e.id}" data-cat="${cat}" data-resp="${resp}">${e.codigo} — ${e.descricao || ''}</option>`;
+    selEq.innerHTML += `<option value="${e.id}" data-cat="${cat}" data-med="${med}" data-resp="${resp}">${e.codigo} — ${e.descricao || ''}</option>`;
   });
   // Pré-selecionar equipamento da OS
   if (osData?.equipamento_id) {
     selEq.value = osData.equipamento_id;
     if (selEq.value !== osData.equipamento_id && osData.equipamento_codigo) {
       const resp = osData.equipamento_responsavel_id || '';
-      selEq.innerHTML += `<option value="${osData.equipamento_id}" data-cat="${(osData.equipamento_medicao||'').toLowerCase()}" data-resp="${resp}" selected>${osData.equipamento_codigo} — ${osData.equipamento_descricao || ''}</option>`;
+      selEq.innerHTML += `<option value="${osData.equipamento_id}" data-cat="${(osData.equipamento_medicao||'').toLowerCase()}" data-med="${(osData.equipamento_medicao||'').toLowerCase()}" data-resp="${resp}" selected>${osData.equipamento_codigo} — ${osData.equipamento_descricao || ''}</option>`;
       selEq.value = osData.equipamento_id;
     }
   }
