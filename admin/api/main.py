@@ -192,6 +192,11 @@ async def startup():
                 ALTER TABLE operacional.partes_diarias
                 ADD COLUMN IF NOT EXISTS fornecedor TEXT
             """)
+            # Migration: flag de dia corrido (sem desconto de almoço)
+            await conn.execute("""
+                ALTER TABLE operacional.partes_diarias
+                ADD COLUMN IF NOT EXISTS sem_almoco BOOLEAN DEFAULT false
+            """)
             # Migration: criar tabela regimes_cobranca
             await conn.execute("""
                 CREATE TABLE IF NOT EXISTS operacional.regimes_cobranca (
@@ -2467,16 +2472,23 @@ async def op_criar_parte(os_id: str, request: Request, payload=Depends(verificar
                 raise HTTPException(status_code=400, detail="Horímetro final menor que inicial")
         except (TypeError, ValueError):
             pass
-    # Fallback: sem horímetro, calcula horas pela hora de relógio (início→fim).
+    # Fallback: sem horímetro, calcula horas pela hora de relógio (início→fim),
+    # descontando 1h de almoço quando a jornada cruza o horário de almoço (12h)
+    # e o operador NÃO marcou "dia corrido" (sem_almoco).
     # Cobre diária/viagem/empreito, onde a base de comissão vem do tempo trabalhado.
     if (horas is None or horas == 0):
         hi = d.get("hora_inicio"); hf = d.get("hora_fim")
         if hi and hf:
             try:
                 ph = lambda s: int(str(s)[:2]) * 60 + int(str(s)[3:5])
-                diff = ph(hf) - ph(hi)
+                ini_m = ph(hi); fim_m = ph(hf)
+                diff = fim_m - ini_m
                 if diff < 0: diff += 24 * 60
-                horas = round(diff / 60, 2)
+                bruto = diff / 60
+                cruza_almoco = (ini_m < 12*60) and (fim_m > 12*60 or fim_m < ini_m)
+                sem_almoco = bool(d.get("sem_almoco"))
+                almoco = 1 if (not sem_almoco and cruza_almoco and bruto > 6) else 0
+                horas = round(max(0, bruto - almoco), 2)
             except (TypeError, ValueError):
                 pass
 
@@ -2514,15 +2526,15 @@ async def op_criar_parte(os_id: str, request: Request, payload=Depends(verificar
                 tipo_medicao, horimetro_inicial, horimetro_final, horas_trabalhadas,
                 km_inicial, km_final, km_percorrido,
                 quantidade_diarias, qtd_viagens, qtd_metros,
-                vinculo_operador, fornecedor, observacao, trajeto, por_conta_de, criado_por)
-               VALUES (%s,%s,%s,%s, %s,%s,%s, %s,%s,%s,%s, %s,%s,%s, %s,%s,%s, %s,%s,%s,%s,%s,%s)""",
+                vinculo_operador, fornecedor, observacao, trajeto, por_conta_de, sem_almoco, criado_por)
+               VALUES (%s,%s,%s,%s, %s,%s,%s, %s,%s,%s,%s, %s,%s,%s, %s,%s,%s, %s,%s,%s,%s,%s,%s,%s)""",
             (os_id, equipamento_id, operador_id, d.get("operador_nome_avulso"),
              data, d.get("hora_inicio"), d.get("hora_fim"),
              d.get("tipo_medicao","horimetro"), h_ini, h_fin, horas,
              km_ini, km_fin, km_perc,
              d.get("quantidade_diarias", 0), d.get("qtd_viagens", 0), qtd_metros,
              d.get("vinculo_operador","proprio"), d.get("fornecedor"), d.get("observacao"),
-             d.get("trajeto"), d.get("por_conta_de","empresa"),
+             d.get("trajeto"), d.get("por_conta_de","empresa"), bool(d.get("sem_almoco")),
              criado_por_id)
         )
         # Atualizar horímetro atual do equipamento
@@ -2606,7 +2618,7 @@ async def op_atualizar_parte(parte_id: str, request: Request, payload=Depends(ve
               "qtd_viagens","qtd_metros","observacao","hora_inicio","hora_fim",
               "horimetro_inicial","horimetro_final","km_inicial","km_final",
               "equipamento_id","operador_id","operador_nome_avulso",
-              "vinculo_operador","fornecedor","por_conta_de","trajeto"]
+              "vinculo_operador","fornecedor","por_conta_de","trajeto","sem_almoco"]
     updates, params = [], []
     for c in campos:
         if c in d:
@@ -3002,7 +3014,7 @@ async def op_controle_mensal(
                pd.horimetro_inicial, pd.horimetro_final, pd.horas_trabalhadas, pd.horas_cobradas,
                pd.km_inicial, pd.km_final, pd.km_percorrido,
                pd.qtd_metros, pd.qtd_viagens,
-               pd.hora_inicio, pd.hora_fim,
+               pd.hora_inicio, pd.hora_fim, pd.sem_almoco,
                pd.por_conta_de, pd.observacao, pd.fechado,
                pd.equipamento_id, pd.operador_id, pd.os_id,
                e.codigo AS equipamento_codigo, e.descricao AS equipamento_descricao,
@@ -3041,9 +3053,26 @@ async def op_controle_mensal(
         if d.get("hora_fim"):
             d["hora_fim"] = str(d["hora_fim"])
 
+        # Horas trabalhadas: usa o gravado; se vazio, calcula pelo relógio
+        # com desconto de almoço (cobre registros antigos sem horas_trabalhadas)
+        horas_trab = float(d.get("horas_trabalhadas") or 0)
+        if horas_trab <= 0 and d.get("hora_inicio") and d.get("hora_fim"):
+            try:
+                ph = lambda s: int(str(s)[:2]) * 60 + int(str(s)[3:5])
+                im = ph(d["hora_inicio"]); fm = ph(d["hora_fim"])
+                dm = fm - im
+                if dm < 0: dm += 24 * 60
+                bruto = dm / 60
+                cruza = (im < 12*60) and (fm > 12*60 or fm < im)
+                almoco = 1 if (not d.get("sem_almoco") and cruza and bruto > 6) else 0
+                horas_trab = round(max(0, bruto - almoco), 2)
+                d["horas_trabalhadas"] = horas_trab
+            except (TypeError, ValueError):
+                pass
+
         partes.append(d)
         dias_trabalhados.add(d["data"])
-        total_horas_trab += float(d.get("horas_trabalhadas") or 0)
+        total_horas_trab += horas_trab
         total_horas_cobr += float(d.get("horas_cobradas") or 0)
         total_km += float(d.get("km_percorrido") or 0)
         total_metros += float(d.get("qtd_metros") or 0)
