@@ -1310,20 +1310,37 @@ async def jard_listar_pares(semana_id: int = None, payload=Depends(verificar_tok
 @app.post("/jardinagem/api/pares")
 async def jard_criar_par(request: Request, payload=Depends(verificar_token_jard)):
     d = await request.json()
-    # Buscar o último codigo_d ativo no banco
-    ultimo = jard_query(
-        "SELECT MAX(codigo_d) as max_cod FROM jardinagem.pares WHERE (ativo IS NULL OR ativo=true)",
+    # ── Reserva ATÔMICA do próximo código (evita duplicação em salvamento paralelo) ──
+    # Uma única UPDATE ... RETURNING: o config.next_code é elevado ao maior entre
+    # (ele mesmo) e (MAX(codigo_d ativo)+1), depois avançado +2, e retorna o código
+    # reservado. Por ser atômico no Postgres, dois pares simultâneos pegam números
+    # diferentes — elimina a race condition que duplicava códigos.
+    reserva = jard_query(
+        """
+        UPDATE jardinagem.config c
+        SET valor = (
+            GREATEST(
+                (c.valor)::int,
+                COALESCE((SELECT MAX(codigo_d)+1 FROM jardinagem.pares
+                          WHERE (ativo IS NULL OR ativo=true)), 6050)
+            ) + 2
+        )::text
+        WHERE c.chave = 'next_code'
+        RETURNING (c.valor)::int - 2 AS cod
+        """,
         fetch="one"
     )
-    # Buscar next_code configurado (valor mínimo garantido)
-    cfg = jard_query("SELECT valor FROM jardinagem.config WHERE chave='next_code'", fetch="one")
-    min_code = int(cfg["valor"]) - 1 if cfg else 6049  # next_code aponta para o próximo, então -1 é o piso
-    max_cod = max(int(ultimo.get("max_cod") or 0), min_code)
-    cod = max_cod + 1  # Próximo código é sempre MAX+1
-
-    # Atualizar config.next_code para manter sincronizado
-    jard_query("UPDATE jardinagem.config SET valor=%s WHERE chave='next_code'",
-               (str(cod + 2),), fetch="none")
+    if reserva and reserva.get("cod") is not None:
+        cod = int(reserva["cod"])
+    else:
+        # Fallback: config inexistente — calcula direto e cria a chave
+        ultimo = jard_query(
+            "SELECT MAX(codigo_d) as max_cod FROM jardinagem.pares WHERE (ativo IS NULL OR ativo=true)",
+            fetch="one"
+        )
+        cod = max(int(ultimo.get("max_cod") or 6049), 6049) + 1
+        jard_query("INSERT INTO jardinagem.config (chave,valor) VALUES ('next_code',%s) ON CONFLICT (chave) DO UPDATE SET valor=EXCLUDED.valor",
+                   (str(cod + 2),), fetch="none")
 
     row = jard_query_id("INSERT INTO jardinagem.pares (semana_id,codigo_a,codigo_d,local_nome,data_label,ordem,ativo) VALUES (%s,%s,%s,%s,%s,%s,true)",
                         (d["semana_id"],cod,cod+1,d.get("local_nome",""),d.get("data_label",""),d.get("ordem",0)))
@@ -3517,6 +3534,47 @@ async def health_db():
         return {"status": "ok", "db": "conectado"}
     except Exception as e:
         return {"status": "erro", "db": str(e)}
+
+@app.get("/api/debug/jardinagem-pares")
+async def debug_jard_pares(mes: str = "", chave: str = ""):
+    """Diagnóstico de pares: duplicados, vazios e sequência.
+    Uso: ?chave=garra-diag-2026 (opcional &mes=ID_DO_MES)"""
+    if chave != "garra-diag-2026":
+        raise HTTPException(status_code=403, detail="Chave inválida")
+    filtro = "AND s.mes_id = %s" if mes else ""
+    params = (mes,) if mes else ()
+    pares = jard_query(
+        f"""SELECT p.id, p.codigo_a, p.codigo_d, p.local_nome, p.semana_id,
+                   s.label AS semana_label, s.mes_id,
+                   (SELECT COUNT(*) FROM jardinagem.fotos f
+                    WHERE f.par_id = p.id) AS num_fotos
+            FROM jardinagem.pares p
+            LEFT JOIN jardinagem.semanas s ON s.id = p.semana_id
+            WHERE (p.ativo IS NULL OR p.ativo=true) {filtro}
+            ORDER BY p.codigo_a, p.id""",
+        params
+    )
+    pares = [dict(p) for p in (pares or [])]
+    # Detectar duplicados de codigo_a
+    vistos = {}
+    duplicados = []
+    vazios = []
+    for p in pares:
+        ca = p.get("codigo_a")
+        if ca in vistos:
+            duplicados.append({"codigo_a": ca, "ids": [vistos[ca], p["id"]]})
+        else:
+            vistos[ca] = p["id"]
+        if not p.get("num_fotos"):
+            vazios.append({"id": p["id"], "codigo_a": ca, "local": p.get("local_nome")})
+    cfg = jard_query("SELECT valor FROM jardinagem.config WHERE chave='next_code'", fetch="one")
+    return {
+        "total_pares": len(pares),
+        "next_code_config": cfg["valor"] if cfg else None,
+        "duplicados": duplicados,
+        "vazios_sem_foto": vazios,
+        "pares": pares
+    }
 
 @app.get("/api/debug/os")
 async def debug_os(numero: str = "", chave: str = ""):
