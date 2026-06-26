@@ -395,7 +395,7 @@ input,select,textarea{font-family:inherit;outline:none;border:none}
     </div>
 
     <div style="margin-bottom:12px">
-      <label style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:5px">Operador</label>
+      <label style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:5px">Operador / Motorista</label>
       <select id="m-operador" style="width:100%;padding:11px;border:1.5px solid var(--border);border-radius:8px;font-size:14px">
         <option value="">— selecionar —</option>
       </select>
@@ -1443,19 +1443,20 @@ async function abrirModalParte(osId) {
     fetchComCacheIDB('/operacional/api/operadores',   'lst_operadores',    86400),
   ]);
 
-  // Equipamentos com data-cat (categoria/medicao) para detectar máquina/caminhão/metros
+  // Equipamentos com data-cat (categoria/medicao) e data-resp (operador responsável)
   const selEq = document.getElementById('m-equipamento');
   selEq.innerHTML = '<option value="">— selecionar —</option>';
   (equipamentos || []).forEach(e => {
     const cat = (e.medicao || e.categoria || e.tipo || '').toLowerCase();
-    selEq.innerHTML += `<option value="${e.id}" data-cat="${cat}">${e.codigo} — ${e.descricao || ''}</option>`;
+    const resp = e.operador_responsavel_id || '';
+    selEq.innerHTML += `<option value="${e.id}" data-cat="${cat}" data-resp="${resp}">${e.codigo} — ${e.descricao || ''}</option>`;
   });
   // Pré-selecionar equipamento da OS
   if (osData?.equipamento_id) {
     selEq.value = osData.equipamento_id;
-    // Se o equipamento da OS não está mais na lista ativa, adiciona como opção
     if (selEq.value !== osData.equipamento_id && osData.equipamento_codigo) {
-      selEq.innerHTML += `<option value="${osData.equipamento_id}" data-cat="${(osData.equipamento_medicao||'').toLowerCase()}" selected>${osData.equipamento_codigo} — ${osData.equipamento_descricao || ''}</option>`;
+      const resp = osData.equipamento_responsavel_id || '';
+      selEq.innerHTML += `<option value="${osData.equipamento_id}" data-cat="${(osData.equipamento_medicao||'').toLowerCase()}" data-resp="${resp}" selected>${osData.equipamento_codigo} — ${osData.equipamento_descricao || ''}</option>`;
       selEq.value = osData.equipamento_id;
     }
   }
@@ -1466,16 +1467,24 @@ async function abrirModalParte(osId) {
   (operadores || []).forEach(o => {
     selOp.innerHTML += `<option value="${o.id}">${o.nome}</option>`;
   });
-  // Pré-seleção do operador:
-  // SEMPRE o operador ATUAL da OS (reflete reatribuição). Se a OS não tiver
-  // operador definido, cai para o usuário logado.
+  // Pré-seleção do operador/motorista:
+  // 1) operador da OS (reflete reatribuição)
+  // 2) responsável do equipamento (cadastro) — para manutenção e comissão
+  // 3) usuário logado
   if (osData?.operador_id) {
-    // garante que o operador atual está na lista (mesmo se inativo/filtrado)
     if (!Array.from(selOp.options).some(o => String(o.value) === String(osData.operador_id))) {
       const nome = osData.operador_nome || osData.operador || 'Operador da OS';
       selOp.innerHTML += `<option value="${osData.operador_id}">${nome}</option>`;
     }
     selOp.value = osData.operador_id;
+  }
+  // Se a OS não tem operador, usa o responsável do equipamento
+  if (!selOp.value && osData?.equipamento_responsavel_id) {
+    const respId = osData.equipamento_responsavel_id;
+    if (!Array.from(selOp.options).some(o => String(o.value) === String(respId))) {
+      selOp.innerHTML += `<option value="${respId}">${osData.equipamento_responsavel_nome || 'Responsável'}</option>`;
+    }
+    selOp.value = respId;
   }
   if (!selOp.value && USUARIO?.id) {
     if (!Array.from(selOp.options).some(o => o.value === USUARIO.id)) {
@@ -1569,6 +1578,18 @@ function atualizarCamposMedicao() {
     prepararMedicao(sugestao);
     const hint = document.getElementById('med-hint');
     if (hint) hint.textContent = 'Sugerido para este equipamento: ' + _rotuloMedicao(sugestao) + ' (pode trocar)';
+  }
+  // Puxa o operador/motorista responsável do equipamento (operador pode alterar)
+  const respId = opt ? (opt.getAttribute('data-resp') || '') : '';
+  if (respId) {
+    const selOp = document.getElementById('m-operador');
+    if (selOp) {
+      // garante a opção na lista
+      if (!Array.from(selOp.options).some(o => String(o.value) === String(respId))) {
+        selOp.innerHTML += `<option value="${respId}">Responsável</option>`;
+      }
+      selOp.value = respId;
+    }
   }
 }
 
