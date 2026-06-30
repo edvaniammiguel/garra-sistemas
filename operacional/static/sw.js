@@ -10,12 +10,13 @@
  * 4. Imagens: cache-first com limite de tamanho
  */
 
-const CACHE_NAME = 'garra-operacional-v8';
+const CACHE_NAME = 'garra-operacional-v9';
 const ASSETS_CACHE = 'garra-assets-v1';
 const OFFLINE_PAGE = '/operacional/offline.html';
 
 // Assets que devem sempre estar em cache (shell)
 const PRECACHE_ASSETS = [
+  '/mobile',
   '/operacional/static/mobile.html',
   '/operacional/static/sw.js',
   '/operacional/static/idb.js',
@@ -32,10 +33,20 @@ const PRECACHE_ASSETS = [
 // ============================================================
 
 self.addEventListener('install', (e) => {
-  console.log('[SW] Installing v8...');
+  console.log('[SW] Installing v9...');
   e.waitUntil(
     caches.open(ASSETS_CACHE)
-      .then(cache => cache.addAll(PRECACHE_ASSETS.filter(url => url)))
+      .then(async (cache) => {
+        // Precache resiliente: cada item individual, falha de um não quebra os outros.
+        // (Se /mobile redirecionar ou um asset faltar, o resto ainda é cacheado.)
+        await Promise.all(
+          PRECACHE_ASSETS.filter(url => url).map(url =>
+            cache.add(url).catch(err =>
+              console.warn('[SW] Falha ao pré-cachear', url, err.message)
+            )
+          )
+        );
+      })
       .then(() => self.skipWaiting())
   );
 });
@@ -118,9 +129,18 @@ async function networkFirstPage(request) {
     console.log('[SW] Network falhou para page, tentando cache...');
   }
 
+  // 1. Tenta a própria URL no cache
   const cached = await caches.match(request);
   if (cached) return cached;
 
+  // 2. Fallback: serve o app principal cacheado (a URL pode diferir do que
+  //    foi pré-cacheado — ex: usuário acessa /mobile mas cache tem mobile.html).
+  //    Para qualquer rota de página do app, devolve o mobile.html já cacheado.
+  const appShell = await caches.match('/mobile')
+                || await caches.match('/operacional/static/mobile.html');
+  if (appShell) return appShell;
+
+  // 3. Último recurso: página offline
   return caches.match(OFFLINE_PAGE) || new Response('Offline', { status: 503 });
 }
 
