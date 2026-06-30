@@ -333,12 +333,12 @@ input,select,textarea { font-family:inherit; font-size:13px; outline:none; }
   <!-- HEADER -->
   <header id="header">
     <div class="hd-brand">
-      <div class="hd-logo">
-        <img src="/static/icons/icon-192.png" alt="G" onerror="this.outerHTML='<span style=font-weight:900;color:var(--orange)>G</span>'"/>
+      <img src="/static/icons/logo.png" alt="Garra Terraplenagem" style="height:40px;object-fit:contain;filter:brightness(0) invert(1)" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"/>
+      <div style="display:none;align-items:center" id="hd-logo-fallback">
+        <span style="font-weight:900;color:#fff;font-size:18px">GARRA</span>
       </div>
       <div>
-        <div class="hd-name">GARRA <span class="hd-badge" id="hd-badge">MASTER</span></div>
-        <div class="hd-sub">Sistema de Gestão Integrado</div>
+        <div class="hd-sub" style="margin-top:2px">Sistema de Gestão Integrado <span class="hd-badge" id="hd-badge">MASTER</span></div>
       </div>
     </div>
     <div class="hd-right">
