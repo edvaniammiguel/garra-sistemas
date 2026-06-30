@@ -52,6 +52,27 @@ const BASE_API = (location.hostname === "localhost" || location.hostname === "12
   ? "http://localhost:8000/jardinagem"
   : "https://garra-sistemas.onrender.com/jardinagem"
 
+// ── SSO: entra direto se houver token válido (vindo do Admin via ?sso= ou localStorage) ──
+(async function ssoAutoLogin(){
+  const params = new URLSearchParams(location.search);
+  const ssoToken = params.get('sso');
+  if (ssoToken) {
+    localStorage.setItem('garra_token', ssoToken);
+  }
+  const token = localStorage.getItem('garra_token');
+  if (!token) return; // sem token → mostra tela de login normal
+  try {
+    const r = await fetch(BASE_API + "/api/meses", {
+      headers: { "Authorization": "Bearer " + token }
+    });
+    if (r.ok) {
+      // token válido → entra direto, sem pedir login
+      window.location.replace("/jardinagem/desktop-app");
+    }
+    // se 401, deixa a tela de login aparecer
+  } catch(e) { /* erro de rede → mostra login */ }
+})();
+
 async function fazer_login(){
   const email = document.getElementById('email').value.trim()
   const senha = document.getElementById('senha').value.trim()
