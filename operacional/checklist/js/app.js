@@ -539,14 +539,15 @@ function startChecklist(clId) {
 }
 function getCL() { return DB.allCLs()[currentCLId]; }
 
-function renderFormStep() {
+function renderFormStep(manterScroll) {
+  const content = document.getElementById('form-content');
+  const scrollAnterior = content ? content.scrollTop : 0;
   const cl = getCL(), step = cl.steps[currentStep], total = cl.steps.length;
   document.getElementById('form-title').textContent       = `${cl.icon} ${cl.label}`;
   document.getElementById('form-step-label').textContent  = `${currentStep+1} / ${total}`;
   document.getElementById('form-prog-bar').style.width    = Math.round((currentStep/total)*100)+'%';
   document.getElementById('btn-prev').style.visibility    = currentStep===0 ? 'hidden' : 'visible';
   document.getElementById('btn-next').textContent         = currentStep===total-1 ? 'Enviar ✓' : 'Próximo';
-  const content = document.getElementById('form-content');
   if (step.type === 'meta') {
     // Get vehicles for the CL category; if none specified, offer all active fleet
     let vehicles = DB.getFleetVehicles(cl.vehicleCat||'').map(v=>v.id);
@@ -564,7 +565,9 @@ function renderFormStep() {
     content.innerHTML = `<div class="form-step"><div class="form-step-title">${step.title}</div><div class="form-step-sub">${step.sub}</div>${step.fields.map(f=>renderObsField(f)).join('')}</div>`;
     step.fields.forEach(f => { const el=document.getElementById('obs-'+f.id); if(el&&formMeta[f.id]) el.value=formMeta[f.id]; });
   }
-  content.scrollTop = 0;
+  // Ao responder uma pergunta (manterScroll=true) preserva a posição;
+  // ao mudar de step vai ao topo.
+  content.scrollTop = manterScroll ? scrollAnterior : 0;
 }
 
 function renderMetaField(f, vehicles) {
@@ -678,23 +681,23 @@ function renderObsField(f) {
   return `<div class="form-meta-field"><label>${f.label}</label><input type="text" id="obs-${f.id}" placeholder="${f.placeholder||''}" /></div>`;
 }
 
-function setAnswer(itemId,val)        { if(!formAnswers[itemId])formAnswers[itemId]={}; formAnswers[itemId].val=val; renderFormStep(); }
+function setAnswer(itemId,val)        { if(!formAnswers[itemId])formAnswers[itemId]={}; formAnswers[itemId].val=val; renderFormStep(true); }
 function updateObsAnswer(itemId,val)  { if(!formAnswers[itemId])formAnswers[itemId]={}; formAnswers[itemId].obs=val; }
-function setTextAnswer(itemId,val)    { if(!formAnswers[itemId])formAnswers[itemId]={}; formAnswers[itemId].text=val; renderFormStep(); }
-function setSelectedAnswer(itemId,val){ if(!formAnswers[itemId])formAnswers[itemId]={}; formAnswers[itemId].selected=val; renderFormStep(); }
+function setTextAnswer(itemId,val)    { if(!formAnswers[itemId])formAnswers[itemId]={}; formAnswers[itemId].text=val; renderFormStep(true); }
+function setSelectedAnswer(itemId,val){ if(!formAnswers[itemId])formAnswers[itemId]={}; formAnswers[itemId].selected=val; renderFormStep(true); }
 function toggleCheckboxAnswer(itemId,val,checked) {
   if(!formAnswers[itemId])formAnswers[itemId]={};
   let sel=formAnswers[itemId].selected?formAnswers[itemId].selected.split('|||'):[];
   if(checked){if(!sel.includes(val))sel.push(val);}else sel=sel.filter(v=>v!==val);
-  formAnswers[itemId].selected=sel.join('|||'); renderFormStep();
+  formAnswers[itemId].selected=sel.join('|||'); renderFormStep(true);
 }
 function setPhotoAnswer(itemId,input) {
   const file=input.files[0]; if(!file)return;
   const reader=new FileReader();
-  reader.onload=e=>{if(!formAnswers[itemId])formAnswers[itemId]={}; formAnswers[itemId].photo=e.target.result; renderFormStep();};
+  reader.onload=e=>{if(!formAnswers[itemId])formAnswers[itemId]={}; formAnswers[itemId].photo=e.target.result; renderFormStep(true);};
   reader.readAsDataURL(file);
 }
-function clearPhotoAnswer(itemId) { if(formAnswers[itemId])formAnswers[itemId].photo=null; renderFormStep(); }
+function clearPhotoAnswer(itemId) { if(formAnswers[itemId])formAnswers[itemId].photo=null; renderFormStep(true); }
 
 function saveCurrentStep() {
   const step=getCL().steps[currentStep];
