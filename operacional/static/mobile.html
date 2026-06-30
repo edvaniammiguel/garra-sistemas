@@ -576,13 +576,6 @@ input,select,textarea{font-family:inherit;outline:none;border:none}
       </select>
     </div>
 
-    <div style="margin-bottom:14px">
-      <label style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:6px">Regime de cobrança</label>
-      <select id="novaos-regime" style="width:100%;padding:12px;border:1.5px solid var(--border);border-radius:8px;font-size:14px">
-        <option value="">— selecionar —</option>
-      </select>
-    </div>
-
     <div style="margin-bottom:20px">
       <label style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:6px">Observação</label>
       <textarea id="novaos-obs" rows="2" placeholder="Detalhes adicionais" style="width:100%;padding:12px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;resize:vertical"></textarea>
@@ -873,7 +866,6 @@ async function abrirModalNovaOS() {
   document.getElementById('novaos-obra').value = '';
   document.getElementById('novaos-cliente').value = '';
   document.getElementById('novaos-obs').value = '';
-  document.getElementById('novaos-regime').value = 'diaria';
   await carregarListasNovaOS();
   document.getElementById('modal-nova-os').style.display = 'flex';
 }
@@ -916,15 +908,6 @@ async function carregarListasNovaOS() {
     selCli.innerHTML = '<option value="">— selecionar —</option>';
     (clientes || []).forEach(c => {
       selCli.innerHTML += `<option value="${c.id}">${c.nome}</option>`;
-    });
-  }
-
-  // Regimes de cobrança
-  const selReg = document.getElementById('novaos-regime');
-  if (selReg) {
-    selReg.innerHTML = '<option value="">— selecionar —</option>';
-    (regimes || []).forEach(r => {
-      selReg.innerHTML += `<option value="${r.nome}">${r.nome}${r.descricao ? ' — ' + r.descricao : ''}</option>`;
     });
   }
 }
@@ -1017,7 +1000,6 @@ async function salvarNovaOSAvulsa() {
   const cliente     = document.getElementById('novaos-cliente').value.trim();
   const equipId     = document.getElementById('novaos-equipamento').value;
   const tipoId      = document.getElementById('novaos-tipo').value;
-  const regime      = document.getElementById('novaos-regime').value;
   const observacao  = document.getElementById('novaos-obs').value.trim();
 
   if (!obra) {
@@ -1034,7 +1016,7 @@ async function salvarNovaOSAvulsa() {
     cliente_nome: cliente || null,
     equipamento_id: equipId || null,
     tipo_servico_id: tipoId || null,
-    regime_cobranca: regime,
+    regime_cobranca: null,
     observacao: observacao || null
   };
 
