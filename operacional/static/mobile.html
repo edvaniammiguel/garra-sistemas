@@ -2176,7 +2176,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Registrar Service Worker v8
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('/operacional/static/sw.js', { scope: '/' })
-      .then(reg => console.log('[App] SW v8 registrado'))
+      .then(reg => console.log('[App] Service Worker registrado'))
       .catch(err => console.error('[App] SW erro:', err));
   }
 
@@ -2197,6 +2197,24 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.getElementById('screen-login').style.display = 'none';
     document.getElementById('screen-app').style.display = 'flex';
     document.getElementById('user-avatar').textContent = (USUARIO.nome || '?').charAt(0).toUpperCase();
+
+    // Se o usuário salvo não tem permsDB (ex: veio por SSO/cache antigo),
+    // busca do servidor para não cair no padrão e perder permissões extras.
+    if (!USUARIO.permsDB) {
+      try {
+        const rr = await fetch('/auth/renovar', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token }
+        });
+        if (rr.ok) {
+          const dd = await rr.json();
+          if (dd.permsDB) USUARIO.permsDB = dd.permsDB;
+          if (dd.token) localStorage.setItem('garra_token', dd.token);
+          localStorage.setItem('garra_usuario', JSON.stringify(USUARIO));
+        }
+      } catch (e) { /* offline: usa o que tem */ }
+    }
+
     aplicarPermissoesPerfil();
     abrirAbaInicial();
     carregarOSApp();
