@@ -1,5 +1,5 @@
 /**
- * Service Worker v11 — Estratégia cache + network integrada com GarraDB
+ * Service Worker v12 — Estratégia cache + network integrada com GarraDB
  * 
  * Escopo: /operacional/
  * 
@@ -10,7 +10,7 @@
  * 4. Imagens: cache-first com limite de tamanho
  */
 
-const CACHE_NAME = 'garra-operacional-v11';
+const CACHE_NAME = 'garra-operacional-v12';
 const ASSETS_CACHE = 'garra-assets-v2';
 const OFFLINE_PAGE = '/operacional/offline.html';
 
@@ -32,7 +32,7 @@ const PRECACHE_ASSETS = [
 // ============================================================
 
 self.addEventListener('install', (e) => {
-  console.log('[SW] Installing v11...');
+  console.log('[SW] Installing v12...');
   e.waitUntil(
     caches.open(ASSETS_CACHE)
       .then(async (cache) => {
@@ -55,7 +55,7 @@ self.addEventListener('install', (e) => {
 // ============================================================
 
 self.addEventListener('activate', (e) => {
-  console.log('[SW] Activating v11...');
+  console.log('[SW] Activating v12...');
   e.waitUntil(
     caches.keys().then(names =>
       Promise.all(
