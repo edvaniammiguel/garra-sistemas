@@ -1807,7 +1807,7 @@ function renderSidebar(perfil, perms) {
 
   // Módulos ativos — Operacional (grupo: Checklist + Manutenção) e Jardinagem (separada).
   const modulosSb = [
-    { id:'jardinagem_desktop', label:'Jardinagem', url:'/jardinagem/desktop', externo:true, icon:'M12 22V12', icon2:'M5 12c0-3.87 3.13-7 7-7s7 3.13 7 7' },
+    { id:'jardinagem_desktop', label:'Jardinagem', url:'/jardinagem/desktop-app', externo:true, icon:'M12 22V12', icon2:'M5 12c0-3.87 3.13-7 7-7s7 3.13 7 7' },
   ];
 
   const modulosVisiveis = modulosSb.filter(m => temPerm(m.id));
@@ -1891,7 +1891,7 @@ const MODULOS_DASHBOARD = [
     id: 'jardinagem_desktop',
     icon: '🌿', nome: 'Jardinagem', desc: 'Fotos · KM · Relatórios',
     status: 'producao', badge: 'badge-green',
-    url: '/jardinagem/desktop',
+    url: '/jardinagem/desktop-app',
     externo: true,
   },
   {
