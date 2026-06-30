@@ -2262,16 +2262,42 @@ function abrirAbaInicial() {
   const navs = document.querySelectorAll('.bottom-nav .nav-btn');
   const abas = ['Jard', 'Op', 'Check', 'Log'];
 
+  // Veio do botão "Módulos" da jardinagem → NÃO reabrir jardinagem (evita loop)
+  const veioDaJardinagem = new URLSearchParams(location.search).get('from') === 'jardinagem';
+
   // Quais abas estão visíveis (permitidas)
   const visiveis = [];
   for (let i = 0; i < navs.length; i++) {
     if (navs[i].style.display !== 'none') visiveis.push(abas[i]);
   }
 
-  // Se a ÚNICA permissão é Jardinagem → entra direto no app, sem tela intermediária
-  if (visiveis.length === 1 && visiveis[0] === 'Jard') {
+  // Se a ÚNICA permissão é Jardinagem → entra direto no app, sem tela intermediária.
+  // Exceto quando veio do botão "Módulos" (aí mostra a tela com as abas).
+  if (visiveis.length === 1 && visiveis[0] === 'Jard' && !veioDaJardinagem) {
     abrirJardinagemSSO();
     return;
+  }
+
+  // Veio da jardinagem e tem outros módulos → abre numa aba que não seja a jardinagem
+  if (veioDaJardinagem) {
+    const prioOutros = ['Op', 'Check', 'Log'];
+    for (const nome of prioOutros) {
+      const idx = abas.indexOf(nome);
+      if (idx >= 0 && navs[idx] && navs[idx].style.display !== 'none') {
+        ir(nome);
+        return;
+      }
+    }
+    // Só tem jardinagem → mostra a aba jardinagem selecionada (sem reabrir o app)
+    const idxJ = abas.indexOf('Jard');
+    if (navs[idxJ] && navs[idxJ].style.display !== 'none') {
+      document.querySelectorAll('.mod-section').forEach(s => s.classList.remove('active'));
+      document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+      document.getElementById('sec-jard').classList.add('active');
+      navs[idxJ].classList.add('active');
+      document.getElementById('app-modulo').textContent = 'Jardinagem';
+      return;
+    }
   }
 
   // Abre na primeira aba visível, priorizando Op > Jard > Check > Log
