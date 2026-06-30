@@ -334,9 +334,12 @@ function showOfflineBanner() {
 }
 
 function _navigate() {
+  // Quem tem permissão de Logística vê o painel que a contém (superior),
+  // mesmo sendo driver — a permissão manda, não o role.
   if (currentUser.role === 'manager') showManager();
   else if (currentUser.role === 'superior') showSuperior();
-  else showDriver(); // driver e diarista vão para o mesmo painel
+  else if (currentUser.temLogistica) showSuperior(); // driver com logística
+  else showDriver(); // driver e diarista sem logística → painel padrão
 }
 
 document.addEventListener('keydown', e => {
@@ -390,6 +393,17 @@ function showSuperior() {
 function showManager() {
   showScreen('screen-manager');
   document.getElementById('user-badge-mgr').textContent = currentUser.name.charAt(0).toUpperCase();
+
+  // Aba Logística controlada por permissão específica (igual ao painel superior)
+  const tabLog = document.querySelector('#screen-manager .tab[onclick*="logistics"]');
+  if (tabLog) tabLog.style.display = currentUser.temLogistica ? '' : 'none';
+
+  // Se veio pela aba Logística do app shell e tem permissão → abre direto nela
+  const querLogistica = currentUser.tabInicial === 'logistics' && currentUser.temLogistica;
+  if (querLogistica && tabLog) {
+    mgrTab('logistics', tabLog);
+  }
+
   renderManagerDashboard();
 }
 function goBack()        { if (currentUser?.role==='manager') showManager(); else if (currentUser?.role==='superior') showSuperior(); else showDriver(); }
