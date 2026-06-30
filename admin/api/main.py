@@ -434,6 +434,32 @@ def verificar_token_jard(authorization: Optional[str] = Header(None)):
     except pyjwt.InvalidTokenError:
         raise HTTPException(status_code=401, detail="Token inválido")
 
+def exigir_acesso_jardinagem(payload=Depends(verificar_token_jard)):
+    """Garante que o usuário tem permissão de jardinagem (banco tem prioridade
+    sobre o padrão do perfil). Bloqueia operador/motorista/bruna."""
+    perfil = (payload.get("perfil") or "").lower()
+    uid = payload.get("sub")
+    # 1. Permissão explícita no banco (admin marcou)
+    permitido = None
+    try:
+        row = jard_query(
+            "SELECT permitido FROM public.permissoes_colaborador "
+            "WHERE usuario_id=%s AND modulo IN ('jardinagem_mobile','jardinagem_desktop') "
+            "ORDER BY permitido DESC LIMIT 1",
+            (uid,), fetch="one"
+        )
+        if row is not None:
+            permitido = bool(row["permitido"])
+    except Exception:
+        permitido = None
+    # 2. Sem registro no banco → usa padrão do perfil
+    if permitido is None:
+        padrao = PERFIL_MODULOS_PADRAO.get(perfil, [])
+        permitido = ("jardinagem_mobile" in padrao) or ("jardinagem_desktop" in padrao)
+    if not permitido:
+        raise HTTPException(status_code=403, detail="Sem acesso ao módulo de Jardinagem")
+    return payload
+
 # ── HELPERS JARDINAGEM ────────────────────────────────────────
 def comprimir_imagem(dados: bytes, max_px: int = 1400, qualidade: int = 82) -> bytes:
     img = Image.open(io.BytesIO(dados))
@@ -1084,7 +1110,7 @@ async def jard_logout():
 
 # ── MESES ─────────────────────────────────────────────────────
 @app.get("/jardinagem/api/meses")
-async def jard_list_meses(payload=Depends(verificar_token_jard)):
+async def jard_list_meses(payload=Depends(exigir_acesso_jardinagem)):
     meses = jard_query("""
         SELECT m.*, COUNT(DISTINCT s.id) as total_semanas
         FROM jardinagem.meses m
