@@ -482,6 +482,24 @@ input[type="time"]{-webkit-appearance:none;appearance:none;cursor:pointer;}
 var BASE_API = ((location.hostname === "localhost" || location.hostname === "127.0.0.1")
   ? "http://localhost:8000"
   : "https://garra-sistemas.onrender.com") + "/jardinagem";
+// ── SSO: se veio token na URL (?sso=), salva token+usuario antes de checar ──
+(function(){
+  var sso = new URLSearchParams(location.search).get('sso');
+  if (!sso) return;
+  localStorage.setItem('garra_token', sso);
+  try {
+    var b64 = sso.split('.')[1].replace(/-/g,'+').replace(/_/g,'/');
+    var pl = JSON.parse(decodeURIComponent(atob(b64).split('').map(function(c){
+      return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
+    }).join('')));
+    localStorage.setItem('garra_usuario', JSON.stringify({
+      nome: pl.nome || pl.sub || 'Usuário', perfil: pl.perfil || ''
+    }));
+  } catch(e){}
+  // limpa o ?sso= da URL (sem recarregar)
+  history.replaceState(null, '', location.pathname);
+})();
+
 var TOKEN = localStorage.getItem("garra_token") || "";
 var USUARIO = null;
 try{ USUARIO = JSON.parse(localStorage.getItem("garra_usuario")||"null"); }catch(e){}
