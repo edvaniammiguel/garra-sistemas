@@ -1,5 +1,5 @@
 /**
- * Service Worker v8 — Estratégia cache + network integrada com GarraDB
+ * Service Worker v10 — Estratégia cache + network integrada com GarraDB
  * 
  * Escopo: /operacional/
  * 
@@ -10,8 +10,8 @@
  * 4. Imagens: cache-first com limite de tamanho
  */
 
-const CACHE_NAME = 'garra-operacional-v9';
-const ASSETS_CACHE = 'garra-assets-v1';
+const CACHE_NAME = 'garra-operacional-v10';
+const ASSETS_CACHE = 'garra-assets-v2';
 const OFFLINE_PAGE = '/operacional/offline.html';
 
 // Assets que devem sempre estar em cache (shell)
@@ -19,10 +19,9 @@ const PRECACHE_ASSETS = [
   '/mobile',
   '/operacional/static/mobile.html',
   '/operacional/static/sw.js',
-  '/operacional/static/idb.js',
-  '/operacional/manifest.json',
-  '/operacional/static/css/style.css',
-  '/operacional/static/js/app.js',
+  '/operacional/static/js/idb.js',
+  '/operacional/static/js/offline-ui.js',
+  '/mobile/manifest.json',
   '/static/icons/favicon.ico',
   '/static/icons/icon-192.png',
   '/static/icons/icon-512.png'
@@ -33,7 +32,7 @@ const PRECACHE_ASSETS = [
 // ============================================================
 
 self.addEventListener('install', (e) => {
-  console.log('[SW] Installing v9...');
+  console.log('[SW] Installing v10...');
   e.waitUntil(
     caches.open(ASSETS_CACHE)
       .then(async (cache) => {
@@ -56,7 +55,7 @@ self.addEventListener('install', (e) => {
 // ============================================================
 
 self.addEventListener('activate', (e) => {
-  console.log('[SW] Activating v8...');
+  console.log('[SW] Activating v10...');
   e.waitUntil(
     caches.keys().then(names =>
       Promise.all(
