@@ -3650,6 +3650,159 @@ async def debug_usuarios(chave: str = "", authorization: Optional[str] = Header(
     )
     return [dict(r) for r in (rows or [])]
 
+@app.get("/api/debug/sistema")
+async def debug_sistema(chave: str = ""):
+    """Diagnóstico completo do sistema — passo a passo de todas as áreas.
+    Uso: /api/debug/sistema?chave=garra-diag-2026"""
+    if chave != "garra-diag-2026":
+        raise HTTPException(status_code=403, detail="Chave inválida")
+
+    import datetime as _dt
+    rel = {"timestamp": _dt.datetime.now().isoformat(), "checks": []}
+
+    def add(area, item, ok, detalhe=""):
+        rel["checks"].append({
+            "area": area, "item": item,
+            "status": "OK" if ok else "FALHA", "detalhe": str(detalhe)
+        })
+
+    # 1. BANCO — conexão
+    try:
+        r = jard_query("SELECT 1 AS ok", fetch="one")
+        add("banco", "conexão Neon", bool(r), "conectado")
+    except Exception as e:
+        add("banco", "conexão Neon", False, e)
+
+    # 2. TABELAS essenciais existem
+    tabelas = [
+        ("public", "usuarios_garra"),
+        ("operacional", "ordens_servico"),
+        ("operacional", "equipamentos"),
+        ("operacional", "partes_diarias"),
+        ("jardinagem", "meses"),
+        ("jardinagem", "semanas"),
+        ("jardinagem", "pares"),
+        ("jardinagem", "fotos"),
+    ]
+    for sch, tab in tabelas:
+        try:
+            n = jard_query(
+                f"SELECT COUNT(*) AS n FROM {sch}.{tab}", fetch="one"
+            )
+            add("tabelas", f"{sch}.{tab}", True, f"{n['n']} registros")
+        except Exception as e:
+            add("tabelas", f"{sch}.{tab}", False, e)
+
+    # 3. USUÁRIOS — quantos ativos e perfis
+    try:
+        us = jard_query(
+            "SELECT perfil, COUNT(*) AS n FROM public.usuarios_garra "
+            "WHERE ativo=true GROUP BY perfil ORDER BY perfil",
+            fetch="all"
+        )
+        perfis = {u["perfil"]: u["n"] for u in (us or [])}
+        add("usuarios", "ativos por perfil", bool(perfis), perfis)
+    except Exception as e:
+        add("usuarios", "ativos por perfil", False, e)
+
+    # 4. JARDINAGEM — integridade dos pares (duplicados/vazios)
+    try:
+        pares = jard_query(
+            "SELECT codigo_a, codigo_d FROM jardinagem.pares "
+            "WHERE (ativo IS NULL OR ativo=true) ORDER BY codigo_a",
+            fetch="all"
+        )
+        pares = [dict(p) for p in (pares or [])]
+        codigos = [p["codigo_a"] for p in pares if p["codigo_a"]]
+        dups = [c for c in set(codigos) if codigos.count(c) > 1]
+        vazios = [p for p in pares if not p.get("codigo_a")]
+        # buracos na sequência
+        nums = sorted(set(int(c) for c in codigos if str(c).isdigit()))
+        buracos = []
+        if nums:
+            for x in range(nums[0], nums[-1] + 1):
+                if x not in nums:
+                    buracos.append(x)
+        ok = (len(dups) == 0 and len(vazios) == 0 and len(buracos) == 0)
+        add("jardinagem", "integridade pares", ok, {
+            "total": len(pares),
+            "duplicados": dups,
+            "vazios": len(vazios),
+            "buracos": buracos[:10],
+            "faixa": f"{nums[0]}–{nums[-1]}" if nums else "—",
+        })
+    except Exception as e:
+        add("jardinagem", "integridade pares", False, e)
+
+    # 5. JARDINAGEM — next_code coerente
+    try:
+        cfg = jard_query(
+            "SELECT valor FROM jardinagem.config WHERE chave='next_code'",
+            fetch="one"
+        )
+        maxc = jard_query(
+            "SELECT MAX(codigo_d) AS m FROM jardinagem.pares WHERE ativo",
+            fetch="one"
+        )
+        nc = int(cfg["valor"]) if cfg else None
+        mc = maxc["m"] if maxc else None
+        ok = (nc is not None and mc is not None and nc > mc)
+        add("jardinagem", "next_code", ok,
+            f"next_code={nc}, max_codigo_d={mc}")
+    except Exception as e:
+        add("jardinagem", "next_code", False, e)
+
+    # 6. JARDINAGEM — trava UNIQUE anti-duplicação ativa
+    try:
+        idx = jard_query(
+            "SELECT indexname FROM pg_indexes "
+            "WHERE schemaname='jardinagem' AND tablename='pares' "
+            "AND indexname='uq_pares_codigo_a_ativo'",
+            fetch="one"
+        )
+        add("jardinagem", "trava UNIQUE", bool(idx),
+            "ativa" if idx else "AUSENTE — risco de duplicação")
+    except Exception as e:
+        add("jardinagem", "trava UNIQUE", False, e)
+
+    # 7. OPERACIONAL — colunas novas existem
+    try:
+        cols = jard_query(
+            "SELECT column_name FROM information_schema.columns "
+            "WHERE table_schema='operacional' AND table_name='partes_diarias' "
+            "AND column_name IN ('sem_almoco','fornecedor','equipamento_terceiro')",
+            fetch="all"
+        )
+        nomes = {c["column_name"] for c in (cols or [])}
+        faltam = {"sem_almoco", "fornecedor", "equipamento_terceiro"} - nomes
+        add("operacional", "colunas partes_diarias", not faltam,
+            "todas presentes" if not faltam else f"faltam: {faltam}")
+    except Exception as e:
+        add("operacional", "colunas partes_diarias", False, e)
+
+    # 8. OPERACIONAL — operador_responsavel em equipamentos
+    try:
+        col = jard_query(
+            "SELECT column_name FROM information_schema.columns "
+            "WHERE table_schema='operacional' AND table_name='equipamentos' "
+            "AND column_name='operador_responsavel_id'",
+            fetch="one"
+        )
+        add("operacional", "operador_responsavel_id", bool(col),
+            "presente" if col else "AUSENTE")
+    except Exception as e:
+        add("operacional", "operador_responsavel_id", False, e)
+
+    # Resumo
+    falhas = [c for c in rel["checks"] if c["status"] == "FALHA"]
+    rel["resumo"] = {
+        "total_checks": len(rel["checks"]),
+        "ok": len(rel["checks"]) - len(falhas),
+        "falhas": len(falhas),
+        "areas_com_falha": sorted(set(c["area"] for c in falhas)),
+    }
+    return rel
+
 @app.get("/")
 async def root():
     return RedirectResponse(url="/admin")
