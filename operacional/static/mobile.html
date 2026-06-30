@@ -717,10 +717,9 @@ function togglePass() {
 // (a jardinagem valida o token e entra direto, sem pedir login de novo)
 function abrirJardinagemSSO() {
   const token = localStorage.getItem('garra_token') || '';
-  const nc = 'nc=' + Date.now();
   const url = token
-    ? '/jardinagem/mobile?sso=' + encodeURIComponent(token) + '&' + nc
-    : '/jardinagem/mobile?' + nc;
+    ? '/jardinagem/pwa-app.html?sso=' + encodeURIComponent(token)
+    : '/jardinagem/mobile';
   window.location.href = url;
 }
 
