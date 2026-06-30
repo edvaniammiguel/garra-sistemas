@@ -2198,22 +2198,22 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.getElementById('screen-app').style.display = 'flex';
     document.getElementById('user-avatar').textContent = (USUARIO.nome || '?').charAt(0).toUpperCase();
 
-    // Se o usuário salvo não tem permsDB (ex: veio por SSO/cache antigo),
-    // busca do servidor para não cair no padrão e perder permissões extras.
-    if (!USUARIO.permsDB) {
-      try {
-        const rr = await fetch('/auth/renovar', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token }
-        });
-        if (rr.ok) {
-          const dd = await rr.json();
-          if (dd.permsDB) USUARIO.permsDB = dd.permsDB;
-          if (dd.token) localStorage.setItem('garra_token', dd.token);
-          localStorage.setItem('garra_usuario', JSON.stringify(USUARIO));
-        }
-      } catch (e) { /* offline: usa o que tem */ }
-    }
+    // Renova o permsDB do servidor SEMPRE que possível (online), para refletir
+    // as permissões atuais do painel — não confiar no permsDB salvo, que pode
+    // estar velho (login antigo antes de marcar permissões) ou ausente (SSO).
+    // Se offline, usa o que tiver salvo.
+    try {
+      const rr = await fetch('/auth/renovar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token }
+      });
+      if (rr.ok) {
+        const dd = await rr.json();
+        if (dd.permsDB) USUARIO.permsDB = dd.permsDB;
+        if (dd.token) localStorage.setItem('garra_token', dd.token);
+        localStorage.setItem('garra_usuario', JSON.stringify(USUARIO));
+      }
+    } catch (e) { /* offline: usa o permsDB salvo */ }
 
     aplicarPermissoesPerfil();
     abrirAbaInicial();
