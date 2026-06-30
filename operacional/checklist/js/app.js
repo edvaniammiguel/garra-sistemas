@@ -1638,8 +1638,12 @@ async function syncFrotaFromAPI() {
     // Mescla com dados locais para não perder equipamentos
     const localFleet = DB.fleet();
     const apiFleet   = { maquinas: [], carro: [], caminhao: [] };
+    const vistos     = { maquinas: new Set(), carro: new Set(), caminhao: new Set() };
     data.forEach(item => {
       if (!apiFleet[item.categoria]) return;
+      // Deduplica: ignora identificação já incluída na mesma categoria
+      if (vistos[item.categoria].has(item.identificacao)) return;
+      vistos[item.categoria].add(item.identificacao);
       apiFleet[item.categoria].push({
         id:     item.identificacao,
         desc:   item.descricao || '',
