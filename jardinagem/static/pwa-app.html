@@ -222,6 +222,10 @@ input[type="time"]{-webkit-appearance:none;appearance:none;cursor:pointer;}
   <img src="./icons/logo-Garra-e-ca%C3%A7ambas.png"
        class="hdr-logo" onerror="this.style.display='none'">
   <div style="display:flex;align-items:center;gap:6px;">
+    <button onclick="voltarModulos()" id="btnModulos" title="Voltar aos módulos"
+      style="display:none;background:rgba(255,255,255,.15);border:none;color:#fff;
+      font-size:12px;font-weight:700;cursor:pointer;padding:5px 10px;border-radius:6px;
+      line-height:1;">⬅ Módulos</button>
     <button onclick="abrirDrawer()" style="background:none;border:none;color:#fff;
       font-size:20px;cursor:pointer;padding:2px 6px;line-height:1;">☰</button>
   </div>
@@ -541,6 +545,7 @@ window.addEventListener("load", function(){
     document.getElementById("badge").style.display = "inline-block";
     document.getElementById("adminBloco").style.display = "block";
   }
+  verificarOutrosModulos();
   document.getElementById("kmData").value = new Date().toISOString().split("T")[0];
   document.getElementById("inpCam").addEventListener("change", function(){ processarFotos(this); });
   document.getElementById("inpGal").addEventListener("change", function(){ processarFotos(this); });
@@ -1317,6 +1322,19 @@ function verificarFila(){
 }
 
 // ── SAIR ──────────────────────────────────────────────────────
+// Volta ao app geral (/mobile). Se o usuário só tem jardinagem, o /mobile
+// reabre a jardinagem direto; se tem outros módulos, mostra as abas.
+function voltarModulos(){
+  window.location.href = "/mobile?from=jardinagem";
+}
+
+// Mostra o botão "Módulos" (volta ao app geral). Sempre visível — o /mobile
+// reavalia a permissão: se só tem jardinagem, reabre jardinagem; senão mostra abas.
+function verificarOutrosModulos(){
+  var btn = document.getElementById("btnModulos");
+  if(btn) btn.style.display = "inline-block";
+}
+
 function sair(){
   if(!confirm("Sair?")) return;
   localStorage.removeItem("garra_token");
