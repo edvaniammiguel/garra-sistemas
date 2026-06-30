@@ -97,11 +97,34 @@ var BASE_API = (location.hostname === "localhost" || location.hostname === "127.
   }
   var token = localStorage.getItem('garra_token');
   if (!token) return; // sem token → mostra login normal
+
+  // Decodifica o payload do JWT para salvar o usuário
+  // (o pwa-app exige garra_usuario no localStorage, senão volta pro login)
+  function decodeJwt(t){
+    try {
+      var base64 = t.split('.')[1].replace(/-/g,'+').replace(/_/g,'/');
+      var json = decodeURIComponent(atob(base64).split('').map(function(c){
+        return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
+      }).join(''));
+      return JSON.parse(json);
+    } catch(e){ return null; }
+  }
+
   fetch(BASE_API + "/jardinagem/api/meses", {
     headers: { "Authorization": "Bearer " + token }
   }).then(function(r){
     if (r.ok) {
-      // token válido → entra direto, sem pedir login
+      // garante o usuário no localStorage antes de entrar no app
+      if (!localStorage.getItem('garra_usuario')) {
+        var p = decodeJwt(token);
+        if (p) {
+          localStorage.setItem('garra_usuario', JSON.stringify({
+            nome: p.nome || p.sub || 'Usuário',
+            perfil: p.perfil || ''
+          }));
+        }
+      }
+      // entra direto, sem pedir login
       window.location.replace("./pwa-app.html");
     }
     // se 401, deixa a tela de login aparecer
