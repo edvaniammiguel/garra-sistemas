@@ -532,6 +532,26 @@ if(!TOKEN || !USUARIO){
   throw new Error("Sem autenticação");  // ← PARA o script imediatamente
 }
 
+// Bloquear perfis SEM permissão de jardinagem.
+// Perfis com acesso: admin, gestor, luana, campo. Os demais (operador, motorista, bruna) NÃO.
+(function(){
+  var PERFIS_JARDINAGEM = ["admin","gestor","luana","campo"];
+  var perfil = (USUARIO.perfil || "").toLowerCase();
+  if (PERFIS_JARDINAGEM.indexOf(perfil) === -1) {
+    document.documentElement.innerHTML =
+      '<div style="font-family:system-ui,sans-serif;min-height:100vh;display:flex;'
+      + 'flex-direction:column;align-items:center;justify-content:center;padding:2rem;'
+      + 'text-align:center;background:#F0F4FF;color:#1A2A5E">'
+      + '<div style="font-size:48px;margin-bottom:12px">🔒</div>'
+      + '<h1 style="font-size:18px;margin-bottom:8px">Acesso não autorizado</h1>'
+      + '<p style="font-size:14px;color:#64748B;max-width:300px">Seu perfil não tem '
+      + 'acesso ao módulo de Jardinagem.</p>'
+      + '<a href="/mobile" style="margin-top:20px;padding:12px 24px;background:#E8820C;'
+      + 'color:#fff;border-radius:8px;text-decoration:none;font-weight:700">Voltar</a></div>';
+    throw new Error("Perfil sem acesso à jardinagem");
+  }
+})();
+
 // ── INIT ─────────────────────────────────────────────────────
 window.addEventListener("load", function(){
   if(!USUARIO) return;  // ← proteção extra
