@@ -917,7 +917,11 @@ async def arquivar_envio(envio_id: str, db=Depends(get_db), _auth=Depends(verifi
 
 @app.get("/frota")
 async def listar_frota(db=Depends(get_db), _auth=Depends(verificar_token)):
-    rows = await db.fetch("SELECT * FROM checklist.frota WHERE ativo=TRUE ORDER BY categoria, identificacao")
+    rows = await db.fetch(
+        "SELECT DISTINCT ON (categoria, identificacao) * "
+        "FROM checklist.frota WHERE ativo=TRUE "
+        "ORDER BY categoria, identificacao, id"
+    )
     return [dict(r) for r in rows]
 
 @app.post("/frota")
