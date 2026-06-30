@@ -61,11 +61,31 @@ const BASE_API = (location.hostname === "localhost" || location.hostname === "12
   }
   const token = localStorage.getItem('garra_token');
   if (!token) return; // sem token → mostra tela de login normal
+
+  function decodeJwt(t){
+    try {
+      const base64 = t.split('.')[1].replace(/-/g,'+').replace(/_/g,'/');
+      const json = decodeURIComponent(atob(base64).split('').map(function(c){
+        return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
+      }).join(''));
+      return JSON.parse(json);
+    } catch(e){ return null; }
+  }
+
   try {
     const r = await fetch(BASE_API + "/api/meses", {
       headers: { "Authorization": "Bearer " + token }
     });
     if (r.ok) {
+      if (!localStorage.getItem('garra_usuario')) {
+        const p = decodeJwt(token);
+        if (p) {
+          localStorage.setItem('garra_usuario', JSON.stringify({
+            nome: p.nome || p.sub || 'Usuário',
+            perfil: p.perfil || ''
+          }));
+        }
+      }
       // token válido → entra direto, sem pedir login
       window.location.replace("/jardinagem/desktop-app");
     }
