@@ -1165,8 +1165,12 @@ function abrirChecklistAdmin() {
 // Abre módulo (ex: jardinagem) passando o token via SSO para evitar novo login
 function abrirModuloUrl(url, novaAba) {
   const token = localStorage.getItem('garra_token') || '';
+  const params = [];
+  if (token) params.push('sso=' + encodeURIComponent(token));
+  // nocache para módulos internos: evita que SW antigo sirva cache e perca o SSO
+  if (url.startsWith('/')) params.push('nc=' + Date.now());
   const sep = url.includes('?') ? '&' : '?';
-  const full = token ? `${url}${sep}sso=${encodeURIComponent(token)}` : url;
+  const full = params.length ? `${url}${sep}${params.join('&')}` : url;
   if (novaAba) window.open(full, '_blank');
   else window.location.href = full;
 }
