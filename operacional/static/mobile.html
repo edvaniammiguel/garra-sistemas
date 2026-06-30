@@ -732,9 +732,9 @@ function ir(nome) {
   if (fab) fab.style.display = (nome === 'Op') ? 'block' : 'none';
 
   if (nome === 'Jard') {
-    document.getElementById('sec-jard').classList.add('active');
-    document.querySelectorAll('.nav-btn')[0].classList.add('active');
-    document.getElementById('app-modulo').textContent = 'Jardinagem';
+    // Jardinagem tem app próprio — abre direto, sem tela intermediária
+    abrirJardinagemSSO();
+    return;
   } else if (nome === 'Op') {
     document.getElementById('sec-op').classList.add('active');
     document.querySelectorAll('.nav-btn')[1].classList.add('active');
@@ -2260,6 +2260,19 @@ function abrirAbaInicial() {
   if (!USUARIO) return;
   const navs = document.querySelectorAll('.bottom-nav .nav-btn');
   const abas = ['Jard', 'Op', 'Check', 'Log'];
+
+  // Quais abas estão visíveis (permitidas)
+  const visiveis = [];
+  for (let i = 0; i < navs.length; i++) {
+    if (navs[i].style.display !== 'none') visiveis.push(abas[i]);
+  }
+
+  // Se a ÚNICA permissão é Jardinagem → entra direto no app, sem tela intermediária
+  if (visiveis.length === 1 && visiveis[0] === 'Jard') {
+    abrirJardinagemSSO();
+    return;
+  }
+
   // Abre na primeira aba visível, priorizando Op > Jard > Check > Log
   const prioridade = ['Op', 'Jard', 'Check', 'Log'];
   for (const nome of prioridade) {
