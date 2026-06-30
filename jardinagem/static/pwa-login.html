@@ -14,17 +14,7 @@
 <meta name="apple-mobile-web-app-title" content="Garra Jardinagem">
 <title>Garra Jardinagem</title>
 <script>
-// Limpar TODOS os SW e caches antigos
-if(typeof navigator!=="undefined"&&"serviceWorker"in navigator){
-  try{
-    navigator.serviceWorker.getRegistrations().then(function(regs){
-      regs.forEach(function(r){ r.unregister(); });
-    });
-    caches.keys().then(function(keys){
-      keys.forEach(function(k){ caches.delete(k); });
-    });
-  }catch(e){}
-}
+// (cleanup de SW removido — sabotava o SSO ao desregistrar durante o redirect)
 </script>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
@@ -125,7 +115,7 @@ var BASE_API = (location.hostname === "localhost" || location.hostname === "127.
         }
       }
       // entra direto, sem pedir login
-      window.location.replace("./pwa-app.html");
+      window.location.replace("/jardinagem/pwa-app.html");
     }
     // se 401, deixa a tela de login aparecer
   }).catch(function(){ /* erro de rede → mostra login */ });
@@ -154,7 +144,7 @@ function entrar(){
     localStorage.setItem("garra_usuario",JSON.stringify({nome:d.nome,perfil:d.perfil}));
     msg("Bem-vindo(a), "+d.nome+"! Entrando...","#16A34A");
     // ← pwa-app.html (não mobile-app.html)
-    setTimeout(function(){ window.location.href="./pwa-app.html"; }, 800);
+    setTimeout(function(){ window.location.href="/jardinagem/pwa-app.html"; }, 800);
   }).catch(function(e){
     msg("Erro de conexão: "+e.message,"#DC2626");
     $("btn").disabled=false;
