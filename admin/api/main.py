@@ -454,7 +454,7 @@ def exigir_acesso_jardinagem(payload=Depends(verificar_token_jard)):
         permitido = None
     # 2. Sem registro no banco → usa padrão do perfil
     if permitido is None:
-        padrao = PERFIL_MODULOS_PADRAO.get(perfil, [])
+        padrao = perfil_modulos_padrao(perfil)
         permitido = ("jardinagem_mobile" in padrao) or ("jardinagem_desktop" in padrao)
     if not permitido:
         raise HTTPException(status_code=403, detail="Sem acesso ao módulo de Jardinagem")
@@ -613,7 +613,7 @@ async def login(req: LoginRequest, request: Request, db=Depends(get_db)):
             user["id"]
         )
         perms = {r["modulo"]: r["permitido"] for r in (rows_perm or [])}
-        padrao = PERFIL_MODULOS_PADRAO.get(user["perfil"], [])
+        padrao = perfil_modulos_padrao(user["perfil"])
         for m in MODULOS_DISPONIVEIS:
             if m["id"] not in perms:
                 perms[m["id"]] = m["id"] in padrao
@@ -734,7 +734,7 @@ async def renovar_token(payload=Depends(verificar_token)):
                 (str(user["id"]),), fetch="all"
             )
             perms = {r["modulo"]: r["permitido"] for r in (rows_perm or [])}
-            padrao = PERFIL_MODULOS_PADRAO.get(perfil, [])
+            padrao = perfil_modulos_padrao(perfil)
             for m in MODULOS_DISPONIVEIS:
                 if m["id"] not in perms:
                     perms[m["id"]] = m["id"] in padrao
@@ -1973,7 +1973,7 @@ async def op_remover_tipo_servico(tipo_id: str, payload=Depends(verificar_admin)
     try:
         jard_query(
             "UPDATE operacional.tipos_servico SET ativo=false WHERE id=%s",
-            (tipo_id,)
+            (tipo_id,), fetch="none"
         )
         return {"ok": True}
     except Exception as e:
@@ -2039,7 +2039,7 @@ async def op_editar_regime(reg_id: str, request: Request, payload=Depends(verifi
 @app.delete("/operacional/api/regimes-cobranca/{reg_id}")
 async def op_remover_regime(reg_id: str, payload=Depends(verificar_gestor)):
     try:
-        jard_query("UPDATE operacional.regimes_cobranca SET ativo=false WHERE id=%s", (reg_id,))
+        jard_query("UPDATE operacional.regimes_cobranca SET ativo=false WHERE id=%s", (reg_id,), fetch="none")
         return {"ok": True}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -2094,7 +2094,7 @@ async def op_criar_equipamento(request: Request, payload=Depends(verificar_gesto
                    VALUES (%s, %s, %s, true)
                    ON CONFLICT (categoria, identificacao) DO UPDATE
                      SET descricao = EXCLUDED.descricao, ativo = true""",
-                (categoria, codigo, descricao)
+                (categoria, codigo, descricao), fetch="none"
             )
         except Exception as sync_err:
             print(f"[Sync frota] aviso: {sync_err}")
@@ -2142,7 +2142,7 @@ async def op_editar_equipamento(eq_id: str, request: Request, payload=Depends(ve
                 """UPDATE checklist.frota
                      SET descricao = %s, categoria = %s, ativo = true
                    WHERE identificacao = %s""",
-                (row["descricao"], row["categoria"], row["codigo"])
+                (row["descricao"], row["categoria"], row["codigo"]), fetch="none"
             )
         except Exception as sync_err:
             print(f"[Sync frota] aviso: {sync_err}")
@@ -2164,7 +2164,7 @@ async def op_remover_equipamento(eq_id: str, payload=Depends(verificar_gestor)):
             try:
                 jard_query(
                     "UPDATE checklist.frota SET ativo=false WHERE identificacao=%s",
-                    (row["codigo"],)
+                    (row["codigo"],), fetch="none"
                 )
             except Exception:
                 pass
@@ -2246,7 +2246,7 @@ async def op_remover_cliente(cli_id: str, payload=Depends(verificar_gestor)):
     try:
         jard_query(
             "UPDATE public.clientes_garra SET ativo=false WHERE id=%s",
-            (cli_id,)
+            (cli_id,), fetch="none"
         )
         return {"ok": True}
     except Exception as e:
@@ -3411,6 +3411,129 @@ PERFIL_MODULOS_PADRAO = {
     "campo":     ["jardinagem_mobile"],
 }
 
+# ═══════════════════════════════════════════════════════════════════════════
+# PERFIS CUSTOMIZADOS (persistência real — antes só existia em memória JS)
+# ═══════════════════════════════════════════════════════════════════════════
+
+PERFIL_LABEL_SEED = {
+    "admin": "Administrador", "gestor": "Gestor", "luana": "Comercial",
+    "bruna": "Mecânica", "operador": "Operador", "motorista": "Motorista", "campo": "Campo",
+}
+
+PERFIS_TABLE_SQL = """
+CREATE TABLE IF NOT EXISTS public.perfis_customizados (
+    nome TEXT PRIMARY KEY,
+    label TEXT NOT NULL,
+    modulos TEXT DEFAULT '',
+    ativo BOOLEAN DEFAULT true,
+    criado_em TIMESTAMP DEFAULT NOW(),
+    atualizado_em TIMESTAMP DEFAULT NOW()
+)
+"""
+
+@app.on_event("startup")
+async def criar_tabela_perfis():
+    try:
+        jard_query(PERFIS_TABLE_SQL, fetch="none")
+        existe = jard_query("SELECT COUNT(*) as c FROM public.perfis_customizados", fetch="one")
+        if existe and existe.get("c", 0) == 0:
+            for nome, modulos in PERFIL_MODULOS_PADRAO.items():
+                label = PERFIL_LABEL_SEED.get(nome, nome.capitalize())
+                jard_query(
+                    "INSERT INTO public.perfis_customizados (nome, label, modulos) VALUES (%s, %s, %s)",
+                    (nome, label, ",".join(modulos)), fetch="none"
+                )
+    except Exception:
+        pass
+
+def perfil_modulos_padrao(perfil: str):
+    """Fonte da verdade: banco. Se o perfil não existir lá (ex: banco fora do ar),
+    cai no dict hardcoded como rede de segurança."""
+    try:
+        row = jard_query(
+            "SELECT modulos FROM public.perfis_customizados WHERE nome=%s AND ativo=true",
+            (perfil,), fetch="one"
+        )
+        if row is not None:
+            modulos_str = row.get("modulos") or ""
+            return [m.strip() for m in modulos_str.split(",") if m.strip()]
+    except Exception:
+        pass
+    return PERFIL_MODULOS_PADRAO.get(perfil, [])
+
+@app.get("/permissoes/perfis")
+async def listar_perfis(payload=Depends(verificar_admin)):
+    """Lista todos os perfis persistidos (usado para hidratar a tela Permissões)."""
+    rows = jard_query(
+        "SELECT nome, label, modulos FROM public.perfis_customizados WHERE ativo=true ORDER BY nome",
+        fetch="all"
+    ) or []
+    return [
+        {
+            "nome": r["nome"],
+            "label": r["label"],
+            "modulos": [m.strip() for m in (r.get("modulos") or "").split(",") if m.strip()],
+        }
+        for r in rows
+    ]
+
+class PerfilCreate(BaseModel):
+    nome: str
+    label: str
+    modulos: List[str] = []
+
+@app.post("/permissoes/perfis")
+async def criar_perfil(dados: PerfilCreate, payload=Depends(verificar_admin)):
+    """Cria um novo perfil, persistido no banco."""
+    nome = dados.nome.strip().lower().replace(" ", "_")
+    if not nome:
+        raise HTTPException(status_code=400, detail="Nome é obrigatório")
+    existe = jard_query("SELECT nome FROM public.perfis_customizados WHERE nome=%s", (nome,), fetch="one")
+    if existe:
+        raise HTTPException(status_code=409, detail="Perfil já existe")
+    jard_query(
+        "INSERT INTO public.perfis_customizados (nome, label, modulos) VALUES (%s, %s, %s)",
+        (nome, dados.label, ",".join(dados.modulos)), fetch="none"
+    )
+    return {"ok": True, "nome": nome}
+
+class PerfilUpdate(BaseModel):
+    modulos: List[str]
+    label: Optional[str] = None
+
+@app.put("/permissoes/perfis/{nome}")
+async def atualizar_perfil(nome: str, dados: PerfilUpdate, payload=Depends(verificar_admin)):
+    """Atualiza os módulos padrão (e opcionalmente o label) de um perfil existente."""
+    modulos_str = ",".join(dados.modulos)
+    if dados.label:
+        jard_query(
+            "UPDATE public.perfis_customizados SET modulos=%s, label=%s, atualizado_em=NOW() WHERE nome=%s",
+            (modulos_str, dados.label, nome), fetch="none"
+        )
+    else:
+        jard_query(
+            "UPDATE public.perfis_customizados SET modulos=%s, atualizado_em=NOW() WHERE nome=%s",
+            (modulos_str, nome), fetch="none"
+        )
+    return {"ok": True}
+
+@app.delete("/permissoes/perfis/{nome}")
+async def excluir_perfil_db(nome: str, payload=Depends(verificar_admin)):
+    """Remove um perfil — bloqueado se houver colaboradores ativos usando ele."""
+    if nome == "admin":
+        raise HTTPException(status_code=400, detail="Perfil Admin não pode ser removido")
+    count = jard_query(
+        "SELECT COUNT(*) as c FROM public.usuarios_garra WHERE perfil=%s AND ativo=true",
+        (nome,), fetch="one"
+    )
+    if count and count.get("c", 0) > 0:
+        raise HTTPException(status_code=400, detail=f"Impossível — {count['c']} colaborador(es) com este perfil")
+    jard_query("DELETE FROM public.perfis_customizados WHERE nome=%s", (nome,), fetch="none")
+    return {"ok": True}
+
+# FIM PERFIS CUSTOMIZADOS
+# ═══════════════════════════════════════════════════════════════════════════
+
 @app.get("/permissoes/modulos")
 async def listar_modulos(_auth=Depends(verificar_admin)):
     """Lista módulos disponíveis."""
@@ -3441,7 +3564,7 @@ async def get_permissoes_usuario(usuario_id: str, payload=Depends(verificar_toke
         (usuario_id,), fetch="one"
     )
     if user:
-        padrao = PERFIL_MODULOS_PADRAO.get(user["perfil"], [])
+        padrao = perfil_modulos_padrao(user["perfil"])
         for m in MODULOS_DISPONIVEIS:
             if m["id"] not in perms:
                 perms[m["id"]] = m["id"] in padrao
@@ -3479,7 +3602,7 @@ async def get_todas_permissoes(_auth=Depends(verificar_admin)):
     result = []
     for u in (usuarios or []):
         uid = str(u["id"])
-        padrao = PERFIL_MODULOS_PADRAO.get(u["perfil"], [])
+        padrao = perfil_modulos_padrao(u["perfil"])
         user_perms = {}
         for m in MODULOS_DISPONIVEIS:
             if uid in perm_map and m["id"] in perm_map[uid]:
@@ -3519,9 +3642,9 @@ CREATE TABLE IF NOT EXISTS public.mural_avisos (
 @app.on_event("startup")
 async def criar_tabela_mural():
     try:
-        jard_query(MURAL_TABLE_SQL)
+        jard_query(MURAL_TABLE_SQL, fetch="none")
         # Garantir coluna destinatario (tabela pode já existir sem ela)
-        jard_query("ALTER TABLE public.mural_avisos ADD COLUMN IF NOT EXISTS destinatario TEXT DEFAULT ''")
+        jard_query("ALTER TABLE public.mural_avisos ADD COLUMN IF NOT EXISTS destinatario TEXT DEFAULT ''", fetch="none")
     except Exception:
         pass
 
@@ -3539,7 +3662,7 @@ async def listar_mural(payload=Depends(verificar_token)):
     except Exception:
         # Coluna destinatario pode não existir ainda — migrar e tentar de novo
         try:
-            jard_query("ALTER TABLE public.mural_avisos ADD COLUMN IF NOT EXISTS destinatario TEXT DEFAULT ''")
+            jard_query("ALTER TABLE public.mural_avisos ADD COLUMN IF NOT EXISTS destinatario TEXT DEFAULT ''", fetch="none")
         except Exception:
             pass
         rows = jard_query(
@@ -3583,7 +3706,7 @@ async def criar_aviso_mural(dados: MuralCreate, payload=Depends(verificar_admin)
     """Admin cria aviso no mural."""
     jard_query(
         "INSERT INTO public.mural_avisos (titulo, mensagem, perfis, destinatario, criado_por) VALUES (%s, %s, %s, %s, %s)",
-        (dados.titulo, dados.mensagem, dados.perfis, dados.destinatario, payload.get("nome", ""))
+        (dados.titulo, dados.mensagem, dados.perfis, dados.destinatario, payload.get("nome", "")), fetch="none"
     )
     return {"ok": True}
 
@@ -3592,7 +3715,7 @@ async def desativar_aviso_mural(aviso_id: int, payload=Depends(verificar_admin))
     """Admin desativa aviso (soft delete)."""
     jard_query(
         "UPDATE public.mural_avisos SET ativo=false WHERE id=%s",
-        (aviso_id,)
+        (aviso_id,), fetch="none"
     )
     return {"ok": True}
 
@@ -3631,13 +3754,13 @@ CARTILHA_SEED = [
 @app.on_event("startup")
 async def criar_tabela_cartilha():
     try:
-        jard_query(CARTILHA_TABLE_SQL)
+        jard_query(CARTILHA_TABLE_SQL, fetch="none")
         existe = jard_query("SELECT COUNT(*) as c FROM public.cartilha_blocos", fetch="one")
         if existe and existe.get("c", 0) == 0:
             for ordem, titulo, subtitulo, conteudo in CARTILHA_SEED:
                 jard_query(
                     "INSERT INTO public.cartilha_blocos (ordem, titulo, subtitulo, conteudo) VALUES (%s, %s, %s, %s)",
-                    (ordem, titulo, subtitulo, conteudo)
+                    (ordem, titulo, subtitulo, conteudo), fetch="none"
                 )
     except Exception:
         pass
@@ -3669,7 +3792,7 @@ async def criar_bloco_cartilha(dados: CartilhaBloco, payload=Depends(verificar_a
     """Admin cria novo bloco no manual."""
     jard_query(
         "INSERT INTO public.cartilha_blocos (ordem, titulo, subtitulo, conteudo) VALUES (%s, %s, %s, %s)",
-        (dados.ordem, dados.titulo, dados.subtitulo, dados.conteudo)
+        (dados.ordem, dados.titulo, dados.subtitulo, dados.conteudo), fetch="none"
     )
     return {"ok": True}
 
@@ -3678,14 +3801,14 @@ async def editar_bloco_cartilha(bloco_id: int, dados: CartilhaBloco, payload=Dep
     """Admin edita um bloco existente."""
     jard_query(
         "UPDATE public.cartilha_blocos SET ordem=%s, titulo=%s, subtitulo=%s, conteudo=%s, atualizado_em=NOW() WHERE id=%s",
-        (dados.ordem, dados.titulo, dados.subtitulo, dados.conteudo, bloco_id)
+        (dados.ordem, dados.titulo, dados.subtitulo, dados.conteudo, bloco_id), fetch="none"
     )
     return {"ok": True}
 
 @app.delete("/api/cartilha/{bloco_id}")
 async def excluir_bloco_cartilha(bloco_id: int, payload=Depends(verificar_admin)):
     """Admin remove um bloco definitivamente."""
-    jard_query("DELETE FROM public.cartilha_blocos WHERE id=%s", (bloco_id,))
+    jard_query("DELETE FROM public.cartilha_blocos WHERE id=%s", (bloco_id,), fetch="none")
     return {"ok": True}
 
 # FIM CARTILHA
