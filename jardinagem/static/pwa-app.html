@@ -1399,165 +1399,58 @@ function carregarMuralJard() {
 }
 
 // ── MANUAL DO COLABORADOR ──────────────────────────────────
-function abrirCartilha() {
+function renderConteudoCartilhaJard(texto) {
+  const linhas = texto.split('\n');
+  let html = '', listaAberta = false, paragrafoAtual = [];
+  function fecharParagrafo() {
+    if (paragrafoAtual.length) {
+      let p = paragrafoAtual.join('<br>').replace(/\*\*(.+?)\*\*/g, '<strong style="color:var(--bl)">$1</strong>');
+      html += '<p style="margin:0 0 12px 0">' + p + '</p>';
+      paragrafoAtual = [];
+    }
+  }
+  function fecharLista() { if (listaAberta) { html += '</ul>'; listaAberta = false; } }
+  linhas.forEach(function(linha) {
+    const t = linha.trim();
+    if (t === '') { fecharParagrafo(); fecharLista(); return; }
+    if (t.startsWith('- ')) {
+      fecharParagrafo();
+      if (!listaAberta) { html += '<ul style="margin:0 0 12px 0;padding-left:20px">'; listaAberta = true; }
+      html += '<li style="margin-bottom:4px">' + t.slice(2) + '</li>';
+      return;
+    }
+    fecharLista();
+    paragrafoAtual.push(t.replace(/\*\*(.+?)\*\*/g, '<strong style="color:var(--bl)">$1</strong>'));
+  });
+  fecharParagrafo(); fecharLista();
+  return html;
+}
+
+async function abrirCartilha() {
   var m = document.createElement("div");
   m.id = "modal-cartilha";
   m.style.cssText = "position:fixed;inset:0;background:#fff;z-index:500;display:flex;flex-direction:column";
-  m.innerHTML = ''
-    // Header fixo
-    + '<div style="background:var(--bl);border-bottom:3px solid var(--or);padding:12px 16px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0">'
+  m.innerHTML = '<div style="background:var(--bl);border-bottom:3px solid var(--or);padding:12px 16px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0">'
     + '<div style="color:#fff;font-size:15px;font-weight:800">📖 Manual do Colaborador</div>'
-    + '<button onclick="document.getElementById(\'modal-cartilha\').remove();abrirPainelConta()" style="background:none;border:none;color:#fff;font-size:22px;cursor:pointer;padding:0 4px">✕</button>'
-    + '</div>'
-
-    // Conteúdo scrollável
-    + '<div style="flex:1;overflow-y:auto;padding:20px 16px;font-size:13px;color:var(--txt);line-height:1.6">'
-
-    // ── BOAS-VINDAS ──
-    + '<div style="text-align:center;margin-bottom:24px">'
-    + '<div style="font-size:28px;margin-bottom:8px">🚜</div>'
-    + '<div style="font-size:18px;font-weight:800;color:var(--bl)">Seja bem-vindo(a)!</div>'
-    + '<div style="font-size:13px;color:var(--mut)">Aqui começa a sua história com a gente.</div>'
-    + '<div style="font-size:11px;color:var(--mut);margin-top:4px">Edição 2026 · Versão 0.1</div>'
-    + '</div>'
-
-    + '<div style="background:var(--bg);border-radius:8px;padding:14px;margin-bottom:20px;font-size:13px;color:var(--txt)">'
-    + 'É com entusiasmo que nós da Garra Terraplenagem recebemos você em nossa casa. '
-    + 'Você está ingressando em uma empresa sólida, que atua com excelência no setor da construção civil '
-    + 'e é reconhecida pela qualidade de seus serviços, comprometimento com clientes e respeito às pessoas e ao meio ambiente.'
-    + '<br><br>Se chegou até aqui é porque confiamos na sua capacidade em fazer a diferença. '
-    + 'Conte conosco no seu desenvolvimento profissional.'
-    + '</div>'
-
-    // ── QUEM SOMOS ──
-    + secao("Quem somos", "Nossa história")
-    + '<p>A Garra Terraplenagem é uma empresa especializada em soluções para o setor da construção civil, '
-    + 'com sede em Pará de Minas – MG e atuação em todo o território nacional. Fundada em 2016, '
-    + 'construiu sua trajetória com base na excelência operacional, segurança e compromisso socioambiental.</p>'
-    + '<p>Com uma frota moderna, equipe qualificada e processos alinhados às melhores práticas do mercado, '
-    + 'já executamos dezenas de projetos de grande porte.</p>'
-    + '<p>Em 2020, ampliamos nosso portfólio com a licença ambiental para operação de área de bota-fora, '
-    + 'reforçando nosso papel na gestão responsável de resíduos da construção civil.</p>'
-
-    // ── MISSÃO, VISÃO, VALORES ──
-    + secao("Missão, Visão e Valores", "")
-    + destaque("Missão", "Gerar valor para nossos clientes.")
-    + destaque("Visão", "Preparamos terrenos para gerar valor ao nosso cliente e nos tornar referência no segmento.")
-    + destaque("Valores", "Respeito, senso colaborativo, equipe, cuidado com o meio ambiente começando por nossa empresa.")
-
-    // ── NOSSOS SERVIÇOS ──
-    + secao("Nossos Serviços", "")
-    + '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:16px">'
-    + tag("Terraplenagem") + tag("Demolição") + tag("Disk Entulho") + tag("Escavação") + tag("Destoca de Eucalipto")
-    + tag("Furação para Tubulões") + tag("Limpeza de Lagoas") + tag("Biodigestores")
-    + '</div>'
-
-    // ── DEVERES ──
-    + secao("Deveres do Colaborador", "")
-    + item("1","Assiduidade e Pontualidade","Comparecer pontualmente ao local de trabalho é obrigação fundamental, sendo critério relevante de desempenho e conduta profissional.")
-    + item("2","Registro de Ponto","É obrigatório registrar o ponto no início da jornada, no início e término do intervalo para refeição e ao final do expediente, respeitando a tolerância de até 5 minutos.")
-    + item("3","Envio de Atestado Médico","Em caso de ausência por motivo de saúde, o atestado deve ser enviado imediatamente via WhatsApp ao Departamento Pessoal e entregue fisicamente no retorno.")
-    + item("4","Uso e Higiene do Uniforme","O uso do uniforme fornecido pela empresa é obrigatório. O colaborador é responsável por mantê-lo em boas condições de higiene e conservação.")
-    + item("5","Cumprimento de Ordens","Executar com zelo as tarefas designadas, observando as ordens da liderança, as normas internas e os padrões de qualidade exigidos.")
-    + item("6","Uso de Celular Pessoal","O colaborador poderá utilizar seu celular pessoal para fins profissionais durante a jornada, somente para uso profissional, visando agilidade e eficiência dos processos.")
-    + item("7","Segurança do Trabalho e Trânsito","Cumprir todas as normas de segurança, incluindo o uso obrigatório de EPIs, bem como obedecer às leis de trânsito nas atividades externas.")
-    + item("8","Acidentes de Trânsito","Comunicar imediatamente à empresa, podendo acionar o setor administrativo, liderança e as autoridades competentes (Bombeiro, PM e afins).")
-    + item("9","Multas de Trânsito","Multas por infrações do condutor serão de responsabilidade do colaborador, salvo falha mecânica previamente reportada por escrito no checklist.")
-    + item("10","Atualização de Dados","Manter sempre atualizadas junto ao Departamento Pessoal as informações de endereço, telefone, estado civil e dependentes.")
-    + item("11","Limpeza e Organização","Zelar pela higiene e conservação dos ambientes, especialmente banheiros, refeitórios e áreas operacionais.")
-    + item("12","Saídas fora de Férias","Ausências por motivos particulares devem ser previamente autorizadas, sob pena de serem consideradas faltas injustificadas.")
-    + item("13","Comunicação de Faltas","Faltas devem ser comunicadas antecipadamente ao superior imediato, salvo emergências.")
-    + item("14","Exames Ocupacionais","Submeter-se aos exames admissionais, periódicos, de retorno, de mudança de função ou demissionais.")
-    + item("15","Respeito Interpessoal","Tratar colegas, superiores, clientes e terceiros com respeito, cordialidade e profissionalismo.")
-    + item("16","Devolução de Materiais","No desligamento, devolver EPIs, uniformes, ferramentas e demais equipamentos. A não devolução poderá implicar desconto na rescisão.")
-
-    // ── DIREITOS ──
-    + secao("Direitos do Colaborador", "")
-    + item("1","Pagamento de Salário","Efetuado até o 5º dia útil de cada mês. 13º em duas parcelas: 1ª até 30/nov, 2ª até 20/dez (com descontos de INSS e IRRF).")
-    + item("2","Adiantamento Salarial","Até 30% do salário, realizado no dia 20 de cada mês, mediante comunicação prévia ao DP.")
-    + item("3","Uniforme Fornecido","A empresa fornece os uniformes necessários ao exercício das funções.")
-    + item("4","Acesso a Dados Cadastrais","Direito de acesso e atualização dos dados mantidos pela empresa, conforme a LGPD.")
-    + item("5","Exames Gratuitos","Todos os exames ocupacionais exigidos por lei serão realizados sem custo para o colaborador.")
-    + item("6","Faltas Legais","2 dias por falecimento (avós, pais, filhos, esposa) · 3 dias por casamento · 5 dias por nascimento de filho(a) · 1 dia/ano para doação de sangue · Dias de prova vestibular · Dobro de dias de convocação eleitoral · 1 dia/ano para levar filho ao médico · 2 dias para pré-natal da esposa · Gestante: mínimo 6 consultas. Todos mediante documento comprobatório.")
-    + item("7","Licença Maternidade","120 dias, podendo a mãe escolher se tira tempo antes do parto, sem prejuízo do emprego e salário.")
-    + item("8","Licença Paternidade","5 dias consecutivos a partir do dia útil ao da data de nascimento, sem prejuízo de remuneração.")
-    + item("9","Férias","A cada 12 meses, podendo ser dividida em até 3 períodos (um ≥ 14 dias, demais ≥ 5 dias cada). Afastamento INSS > 6 meses = perda de férias proporcionais.")
-
-    // ── PRÁTICAS NÃO PERMITIDAS ──
-    + secao("Práticas não permitidas", "")
-    + item("1","Informações Confidenciais","Proibido divulgar dados de clientes, fornecedores, contratos, valores, processos ou qualquer conteúdo obtido em razão do vínculo.")
-    + item("2","Comportamento na Área de Alimentação","Manter silêncio e respeito. Vedado consumo de bebida alcoólica e uso de cigarro nas áreas de alimentação.")
-    + item("3","Saída sem Autorização","Vedado ausentar-se durante o expediente sem autorização prévia do superior imediato.")
-    + item("4","Uso de Equipamentos fora da Empresa","Só com autorização formal da liderança ou diretoria. Uso indevido = penalidades.")
-    + item("5","Serviços Particulares com Recursos da Empresa","Proibido executar serviços pessoais utilizando máquinas, materiais ou tempo de trabalho da empresa. Pode ensejar justa causa.")
-    + item("6","Pessoas não Autorizadas","Proibido trazer familiares, amigos ou crianças ao ambiente de trabalho ou obras sem autorização.")
-    + item("7","Lavagem de Veículos Particulares","Não permitida nas dependências da empresa, salvo com autorização escrita da direção.")
-    + item("8","Veículos da Empresa para Uso Pessoal","Proibido caronas a não-funcionários, transportar menores ou usar para fins pessoais.")
-    + item("9","Uso Indevido de Conhecimentos","Vedado utilizar conhecimento técnico, metodologia ou informação da empresa para fins pessoais ou repassar a terceiros.")
-    + item("10","Comercialização","Não é permitida a comercialização de quaisquer produtos ou serviços durante a jornada.")
-
-    // ── PUNIÇÕES ──
-    + secao("Punições", "")
-    + '<div style="background:#FEF3C7;border-left:4px solid var(--or);padding:12px;border-radius:0 8px 8px 0;margin-bottom:16px;font-size:13px">'
-    + 'Colaboradores que infringirem as normas estão sujeitos a: <strong>advertência verbal</strong>, '
-    + '<strong>advertência escrita</strong>, <strong>suspensão</strong> ou <strong>dispensa por justa causa</strong>. '
-    + 'A ordem da penalidade pode ser aplicada de acordo com a gravidade do fato.'
-    + '</div>'
-
-    // ── CONDUTA ÉTICA ──
-    + secao("Conduta Ética", "")
-    + '<div style="display:flex;flex-direction:column;gap:8px;margin-bottom:16px">'
-    + etica("Banheiro: pense no próximo. Dê a descarga, cuide do assento, da pia e do chão.")
-    + etica("Jogue o papel higiênico no lixo, não no vaso.")
-    + etica("Ao sair, não deixe torneira aberta ou pingando, nem a luz acesa.")
-    + etica("Limpe a mesa ao acabar a refeição. Higienize e guarde seus utensílios.")
-    + etica("Não jogue restos de comida na pia. A cozinha é de uso coletivo.")
-    + etica("Tenha sua garrafinha reutilizável. Um copo descartável leva até 450 anos para se decompor.")
-    + etica("Respeite as diferenças e os espaços das outras pessoas.")
-    + '</div>'
-    + '<div style="font-size:11px;color:var(--mut);margin-bottom:16px">A empresa não se responsabiliza por objetos ou valores deixados nas dependências.</div>'
-
-    // ── CANAIS ──
-    + secao("Canais de comunicação", "")
-    + canal("📞","Comunicação interna","(37) 99153-1090")
-    + canal("📞","Comunicação externa","(37) 3236-8625 | (37) 99971-8000")
-    + canal("🌐","Site","garraterraplenagem.com.br")
-    + canal("📸","Instagram","@garraterraplenagem")
-    + canal("📍","Endereço","Av. Santos Dumont, 346 – São Cristóvão, Pará de Minas - MG")
-
-    + '<div style="text-align:center;padding:20px 0;font-size:11px;color:var(--mut)">Garra Terraplenagem e Caçambas · Edição 2026 v0.1</div>'
-    + '</div>';
-
+    + '<button onclick="document.getElementById(\'modal-cartilha\').remove();abrirPainelConta()" style="background:none;border:none;color:#fff;font-size:22px;cursor:pointer;padding:0 4px">✕</button></div>'
+    + '<div id="cartilha-jard-body" style="flex:1;overflow-y:auto;padding:20px 16px;font-size:13px;color:var(--txt);line-height:1.6"><div style="text-align:center;color:var(--mut);padding:40px 0">Carregando...</div></div>';
   document.body.appendChild(m);
-}
 
-function secao(titulo, sub) {
-  return '<div style="margin-top:8px;margin-bottom:12px;border-bottom:2px solid var(--or);padding-bottom:6px">'
-    + '<div style="font-size:16px;font-weight:800;color:var(--bl)">' + titulo + '</div>'
-    + (sub ? '<div style="font-size:11px;color:var(--mut)">' + sub + '</div>' : '')
-    + '</div>';
-}
-function destaque(label, texto) {
-  return '<div style="background:var(--bg);border-left:4px solid var(--or);padding:10px 12px;border-radius:0 8px 8px 0;margin-bottom:8px">'
-    + '<div style="font-size:12px;font-weight:800;color:var(--or)">' + label + '</div>'
-    + '<div style="font-size:13px;color:var(--txt)">' + texto + '</div></div>';
-}
-function tag(t) {
-  return '<span style="background:var(--bl);color:#fff;padding:4px 10px;border-radius:99px;font-size:11px;font-weight:700">' + t + '</span>';
-}
-function item(n, titulo, texto) {
-  return '<div style="margin-bottom:10px;padding:10px 12px;background:#fff;border:1px solid var(--brd);border-radius:8px">'
-    + '<div style="font-size:12px;font-weight:800;color:var(--bl)">' + n + '. ' + titulo + '</div>'
-    + '<div style="font-size:12px;color:var(--txt);margin-top:3px">' + texto + '</div></div>';
-}
-function etica(t) {
-  return '<div style="padding:8px 12px;background:var(--bg);border-radius:8px;font-size:12px;color:var(--txt)">✓ ' + t + '</div>';
-}
-function canal(ico, label, valor) {
-  return '<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--brd)">'
-    + '<span style="font-size:18px">' + ico + '</span>'
-    + '<div><div style="font-size:11px;color:var(--mut)">' + label + '</div>'
-    + '<div style="font-size:13px;font-weight:700;color:var(--bl)">' + valor + '</div></div></div>';
+  try {
+    const r = await fetch("/api/cartilha", {headers:{"Authorization":"Bearer "+TOKEN}});
+    const blocos = await r.json();
+    const body = document.getElementById("cartilha-jard-body");
+    if (!blocos.length) { body.innerHTML = '<div style="text-align:center;color:var(--mut);padding:40px 0">Nenhum conteúdo publicado ainda.</div>'; return; }
+    body.innerHTML = blocos.map(function(b) {
+      return '<div style="margin-top:8px;margin-bottom:12px;border-bottom:2px solid var(--or);padding-bottom:6px">'
+        + '<div style="font-size:16px;font-weight:800;color:var(--bl)">' + b.titulo + '</div>'
+        + (b.subtitulo ? '<div style="font-size:11px;color:var(--mut)">' + b.subtitulo + '</div>' : '')
+        + '</div>'
+        + renderConteudoCartilhaJard(b.conteudo);
+    }).join('') + '<div style="text-align:center;padding:20px 0;font-size:11px;color:var(--mut)">Garra Terraplenagem e Caçambas</div>';
+  } catch(e) {
+    document.getElementById("cartilha-jard-body").innerHTML = '<div style="text-align:center;color:var(--mut);padding:40px 0">Erro ao carregar o manual.</div>';
+  }
 }
 
 async function salvarNovaSenhaJard() {
