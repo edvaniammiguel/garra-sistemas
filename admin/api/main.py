@@ -3498,6 +3498,81 @@ async def get_todas_permissoes(_auth=Depends(verificar_admin)):
 # FIM MÓDULO PERMISSÕES
 # ═══════════════════════════════════════════════════════════════════════════
 
+# ═══════════════════════════════════════════════════════════════════════════
+# MURAL DE AVISOS
+# ═══════════════════════════════════════════════════════════════════════════
+
+# Tabela criada automaticamente no startup (ver evento startup)
+MURAL_TABLE_SQL = """
+CREATE TABLE IF NOT EXISTS public.mural_avisos (
+    id SERIAL PRIMARY KEY,
+    titulo TEXT NOT NULL,
+    mensagem TEXT NOT NULL,
+    perfis TEXT DEFAULT '',
+    ativo BOOLEAN DEFAULT true,
+    criado_em TIMESTAMP DEFAULT NOW(),
+    criado_por TEXT DEFAULT ''
+)
+"""
+
+@app.on_event("startup")
+async def criar_tabela_mural():
+    try:
+        jard_query(MURAL_TABLE_SQL)
+    except Exception:
+        pass
+
+@app.get("/api/mural")
+async def listar_mural(payload=Depends(verificar_token)):
+    """Lista avisos ativos para o perfil do usuário."""
+    perfil = payload.get("perfil", "")
+    rows = jard_query(
+        "SELECT id, titulo, mensagem, perfis, criado_em, criado_por "
+        "FROM public.mural_avisos WHERE ativo=true ORDER BY criado_em DESC",
+        fetch="all"
+    ) or []
+    result = []
+    for r in rows:
+        perfis_str = r.get("perfis") or ""
+        perfis_list = [p.strip() for p in perfis_str.split(",") if p.strip()]
+        # Sem filtro de perfil = todos veem; com filtro = só os listados
+        if not perfis_list or perfil in perfis_list:
+            result.append({
+                "id": r["id"],
+                "titulo": r["titulo"],
+                "mensagem": r["mensagem"],
+                "perfis": perfis_str,
+                "criado_em": r["criado_em"].isoformat() if r["criado_em"] else "",
+                "criado_por": r.get("criado_por") or "",
+            })
+    return result
+
+class MuralCreate(BaseModel):
+    titulo: str
+    mensagem: str
+    perfis: str = ""  # "" = todos, ou "operador,campo,motorista"
+
+@app.post("/api/mural")
+async def criar_aviso_mural(dados: MuralCreate, payload=Depends(verificar_admin)):
+    """Admin cria aviso no mural."""
+    jard_query(
+        "INSERT INTO public.mural_avisos (titulo, mensagem, perfis, criado_por) VALUES (%s, %s, %s, %s)",
+        (dados.titulo, dados.mensagem, dados.perfis, payload.get("nome", ""))
+    )
+    return {"ok": True}
+
+@app.delete("/api/mural/{aviso_id}")
+async def desativar_aviso_mural(aviso_id: int, payload=Depends(verificar_admin)):
+    """Admin desativa aviso (soft delete)."""
+    jard_query(
+        "UPDATE public.mural_avisos SET ativo=false WHERE id=%s",
+        (aviso_id,)
+    )
+    return {"ok": True}
+
+# FIM MURAL
+# ═══════════════════════════════════════════════════════════════════════════
+
 @app.get("/checklist")
 async def checklist_app():
     path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "operacional", "checklist", "index.html")
