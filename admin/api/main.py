@@ -598,8 +598,8 @@ async def login(req: LoginRequest, request: Request, db=Depends(get_db)):
     redirects = {
         "admin": "/admin",
         "gestor": "/admin",
-        "luana": "/jardinagem/desktop",
-        "campo": "/jardinagem/mobile",
+        "luana": "/admin",
+        "campo": "/mobile",
         "operador": "/mobile",
         "motorista": "/mobile",
         "bruna": "/mobile"
@@ -1046,9 +1046,9 @@ async def jard_index():
 
 @app.get("/jardinagem/desktop", response_class=HTMLResponse)
 async def jard_desktop_login():
-    # Desktop login para Luana/Admin
-    path = os.path.join(TEMPLATES_DIR, "desk-login.html")
-    return open(path, encoding="utf-8").read()
+    # Login unificado — redireciona para o admin central
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse(url="/admin", status_code=302)
 
 @app.get("/jardinagem/desktop-app", response_class=HTMLResponse)
 async def jard_desktop_app():
@@ -1058,9 +1058,9 @@ async def jard_desktop_app():
 
 @app.get("/jardinagem/mobile", response_class=HTMLResponse)
 async def jard_mobile():
-    # Mobile PWA login para Arthur/Breno
-    path = os.path.join(STATIC_DIR, "pwa-login.html")
-    return open(path, encoding="utf-8").read()
+    # Login unificado — redireciona para o mobile central
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse(url="/", status_code=302)
 
 @app.get("/jardinagem/mobile-app", response_class=HTMLResponse)
 async def jard_mobile_app():
