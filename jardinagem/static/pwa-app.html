@@ -532,7 +532,7 @@ var ULT_KM = parseFloat(localStorage.getItem("ult_km")||"0");
 
 // Redirecionar se não tem token
 if(!TOKEN || !USUARIO){
-  window.location.href = "./pwa-login.html";
+  window.location.href = "/";
   throw new Error("Sem autenticação");  // ← PARA o script imediatamente
 }
 
@@ -1339,7 +1339,7 @@ function sair(){
   if(!confirm("Sair?")) return;
   localStorage.removeItem("garra_token");
   localStorage.removeItem("garra_usuario");
-  window.location.href = "./pwa-login.html";
+  window.location.href = "/";
 }
 
 function limparCache(){
@@ -1349,11 +1349,11 @@ function limparCache(){
       r.forEach(function(s){s.unregister();});
       caches.keys().then(function(k){
         k.forEach(function(n){caches.delete(n);});
-        window.location.href="./pwa-login.html";
+        window.location.href="/";
       });
     });
   } else {
-    window.location.href="./pwa-login.html";
+    window.location.href="/";
   }
 }
 
