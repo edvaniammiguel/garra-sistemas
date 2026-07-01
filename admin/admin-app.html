@@ -1046,8 +1046,9 @@ async function doLogin() {
     });
     if (!res.ok) throw new Error((await res.json()).detail || 'Erro');
     const data = await res.json();
-    // Só admin pode acessar o master
-    if (data.perfil !== 'admin' && data.perfil !== 'gestor') {
+    // Só perfis com acesso ao admin
+    const perfisAdmin = ['admin','gestor','luana','bruna'];
+    if (!perfisAdmin.includes(data.perfil)) {
       throw new Error('Acesso restrito. Somente administradores.');
     }
     Token.set(data.token);
@@ -1149,6 +1150,12 @@ window.addEventListener('load', async () => {
         Token.del(); Token.delUser(); return;
       }
     } catch { /* offline — mantém token */ }
+    // Bloquear perfis sem acesso ao painel admin
+    const perfisAdmin = ['admin','gestor','luana','bruna'];
+    if (!perfisAdmin.includes(user.perfil)) {
+      window.location.href = '/mobile';
+      return;
+    }
     iniciarApp(user);
   }
 });
