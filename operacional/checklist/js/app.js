@@ -541,7 +541,15 @@ function getCL() { return DB.allCLs()[currentCLId]; }
 
 function renderFormStep(manterScroll) {
   const content = document.getElementById('form-content');
-  const scrollAnterior = content ? content.scrollTop : 0;
+  const scrollAnterior = manterScroll && content ? content.scrollTop : 0;
+
+  // Tirar foco do botão ANTES de destruir o DOM —
+  // sem isso o browser tenta relocalizar o elemento focado após o innerHTML
+  // e reseta o scroll para o topo
+  if (manterScroll && document.activeElement) {
+    document.activeElement.blur();
+  }
+
   const cl = getCL(), step = cl.steps[currentStep], total = cl.steps.length;
   document.getElementById('form-title').textContent       = `${cl.icon} ${cl.label}`;
   document.getElementById('form-step-label').textContent  = `${currentStep+1} / ${total}`;
@@ -567,7 +575,13 @@ function renderFormStep(manterScroll) {
   }
   // Ao responder uma pergunta (manterScroll=true) preserva a posição;
   // ao mudar de step vai ao topo.
-  content.scrollTop = manterScroll ? scrollAnterior : 0;
+  if (manterScroll && scrollAnterior > 0) {
+    content.scrollTop = scrollAnterior;
+    // Garantia: rAF sobrevive a qualquer reflow assíncrono do browser
+    requestAnimationFrame(() => { content.scrollTop = scrollAnterior; });
+  } else {
+    content.scrollTop = 0;
+  }
 }
 
 function renderMetaField(f, vehicles) {
