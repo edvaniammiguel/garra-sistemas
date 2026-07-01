@@ -1380,8 +1380,6 @@ function abrirPainelConta() {
   document.body.appendChild(modal);
 }
 
-async function salvarNovaSenhaJard() {
-
 // ── MANUAL DO COLABORADOR ──────────────────────────────────
 function abrirCartilha() {
   var m = document.createElement("div");
@@ -1543,6 +1541,8 @@ function canal(ico, label, valor) {
     + '<div><div style="font-size:11px;color:var(--mut)">' + label + '</div>'
     + '<div style="font-size:13px;font-weight:700;color:var(--bl)">' + valor + '</div></div></div>';
 }
+
+async function salvarNovaSenhaJard() {
   var err = document.getElementById("jconta-err");
   var ok  = document.getElementById("jconta-ok");
   err.style.display = "none"; ok.style.display = "none";
