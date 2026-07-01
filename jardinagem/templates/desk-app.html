@@ -251,7 +251,7 @@ button,input,select{font-family:inherit;}
     <button class="btn btn-or btn-sm" onclick="abrirModalMes()">+ Novo Mês</button>
     <button class="btn btn-out btn-sm" onclick="window.print()">🖨 Imprimir</button>
     <div style="width:1px;height:24px;background:rgba(255,255,255,.2);margin:0 2px;"></div>
-    <button class="btn btn-red btn-sm" onclick="if(confirm('Sair?')){localStorage.removeItem('garra_token');localStorage.removeItem('garra_usuario');GARRA_TOKEN='';mostrarLoginDesktop();}">Sair</button>
+    <button class="btn btn-red btn-sm" onclick="if(confirm('Sair?')){localStorage.removeItem('garra_token');localStorage.removeItem('garra_usuario');window.location.href='/admin';}">Sair</button>
   </div>
 </header>
 
@@ -447,12 +447,12 @@ function fetchAuth(url, opts){
   showLoading();
   return fetch(url, opts).then(function(r){
     hideLoading();
-    if(r.status===401){ GARRA_TOKEN=""; localStorage.removeItem("garra_token"); mostrarLoginDesktop(); } return r;
+    if(r.status===401){ GARRA_TOKEN=""; localStorage.removeItem("garra_token"); window.location.href="/admin"; } return r;
   }).catch(function(e){ hideLoading(); throw e; });
 }
 
 // Verifica auth ao carregar
-if(!GARRA_TOKEN){ mostrarLoginDesktop(); }
+if(!GARRA_TOKEN){ window.location.href="/admin"; }
 
 var mesAtual=null, bancada=[], quadrante=[], _tid=0, lbList=[], lbIdx=0, uploadFiles=[];
 function tid(){return 'T'+(++_tid);}
@@ -1560,42 +1560,8 @@ function enviarEmailCliente(){
 }
 
 
-function mostrarLoginDesktop(){
-  var modal = document.getElementById("modalLoginDesktop");
-  if(modal){
-    modal.style.display = "flex";
-    setTimeout(function(){ document.getElementById("deskLoginEmail").focus(); }, 100);
-  }
-}
 
-function esconderLoginDesktop(){
-  var modal = document.getElementById("modalLoginDesktop");
-  if(modal) modal.style.display = "none";
-}
 
-async function fazerLoginDesktop(){
-  var email = document.getElementById("deskLoginEmail").value.trim();
-  var senha = document.getElementById("deskLoginSenha").value;
-  var erro  = document.getElementById("deskLoginErro");
-  erro.textContent = "";
-  if(!email || !senha){ erro.textContent = "Preencha email e senha."; return; }
-  try {
-    var r = await fetch("/jardinagem/api/login", {
-      method: "POST",
-      headers: {"Content-Type":"application/json"},
-      body: JSON.stringify({email, senha})
-    });
-    var d = await r.json();
-    if(d.erro){ erro.textContent = d.erro; return; }
-    GARRA_TOKEN = d.token;
-    localStorage.setItem("garra_token", d.token);
-    localStorage.setItem("garra_usuario", JSON.stringify({nome:d.nome,perfil:d.perfil}));
-    esconderLoginDesktop();
-    carregarMeses();
-  } catch(e){
-    erro.textContent = "Erro de conexão.";
-  }
-}
 
 function deletarMes(mid, label){
   if(!confirm('Excluir o mês "'+label+'" e TODOS os dados dentro (semanas, pares, fotos)? Esta ação não pode ser desfeita.')) return;
@@ -1766,32 +1732,6 @@ function editarMes(mid, event){
 </div>
 
 <!-- MODAL LOGIN DESKTOP -->
-<div id="modalLoginDesktop" style="display:none;position:fixed;inset:0;background:#F0F4FF;z-index:9999;align-items:center;justify-content:center;">
-  <div style="background:#fff;border-radius:16px;padding:2.5rem 2rem;width:100%;max-width:400px;
-    box-shadow:0 4px 24px rgba(26,42,94,.12);border:1.5px solid #CBD5E1;display:flex;flex-direction:column;align-items:center;">
-    <img src="/jardinagem/static/icons/logo-Garra-e-ca%C3%A7ambas.png" style="height:60px;object-fit:contain;margin-bottom:.75rem;" onerror="this.style.display='none';">
-    <div style="font-size:16px;font-weight:800;color:#1A2A5E;margin-bottom:4px;">Sistema de Fotos</div>
-    <div style="font-size:12px;color:#64748B;margin-bottom:1.5rem;">Jardinagem — Águas de Pará de Minas</div>
-    <div style="width:100%;display:flex;flex-direction:column;gap:.75rem;">
-      <div>
-        <label style="font-size:10px;font-weight:700;color:#64748B;text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:4px;">Email</label>
-        <input id="deskLoginEmail" type="email" placeholder="seu@email.com"
-          style="width:100%;border:1.5px solid #CBD5E1;border-radius:8px;padding:12px 14px;font-size:14px;background:#F8FAFC;"
-          onkeydown="if(event.key==='Enter') fazerLoginDesktop()">
-      </div>
-      <div>
-        <label style="font-size:10px;font-weight:700;color:#64748B;text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:4px;">Senha</label>
-        <input id="deskLoginSenha" type="password" placeholder="••••••••"
-          style="width:100%;border:1.5px solid #CBD5E1;border-radius:8px;padding:12px 14px;font-size:14px;background:#F8FAFC;"
-          onkeydown="if(event.key==='Enter') fazerLoginDesktop()">
-      </div>
-      <div id="deskLoginErro" style="font-size:12px;color:#DC2626;text-align:center;min-height:16px;"></div>
-      <button onclick="fazerLoginDesktop()"
-        style="padding:14px;background:#1A2A5E;color:#fff;border:none;border-radius:8px;font-size:15px;font-weight:800;cursor:pointer;width:100%;">
-        Entrar
-      </button>
-    </div>
-  </div>
-</div>
+
 </body>
 </html>
