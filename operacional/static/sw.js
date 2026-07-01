@@ -1,5 +1,5 @@
 /**
- * Service Worker v12 — Estratégia cache + network integrada com GarraDB
+ * Service Worker v13 — Estratégia cache + network integrada com GarraDB
  * 
  * Escopo: /operacional/
  * 
@@ -10,7 +10,7 @@
  * 4. Imagens: cache-first com limite de tamanho
  */
 
-const CACHE_NAME = 'garra-operacional-v12';
+const CACHE_NAME = 'garra-operacional-v13';
 const ASSETS_CACHE = 'garra-assets-v2';
 const OFFLINE_PAGE = '/operacional/offline.html';
 
@@ -24,7 +24,15 @@ const PRECACHE_ASSETS = [
   '/mobile/manifest.json',
   '/static/icons/favicon.ico',
   '/static/icons/icon-192.png',
-  '/static/icons/icon-512.png'
+  '/static/icons/icon-512.png',
+  // Checklist (roda dentro do iframe do app shell) — necessário p/ offline
+  '/checklist',
+  '/css/style.css',
+  '/js/db.js',
+  '/js/data.js',
+  '/js/app.js',
+  '/js/logistics.js',
+  '/icons/logo.png'
 ];
 
 // ============================================================
@@ -32,7 +40,7 @@ const PRECACHE_ASSETS = [
 // ============================================================
 
 self.addEventListener('install', (e) => {
-  console.log('[SW] Installing v12...');
+  console.log('[SW] Installing v13...');
   e.waitUntil(
     caches.open(ASSETS_CACHE)
       .then(async (cache) => {
@@ -55,7 +63,7 @@ self.addEventListener('install', (e) => {
 // ============================================================
 
 self.addEventListener('activate', (e) => {
-  console.log('[SW] Activating v12...');
+  console.log('[SW] Activating v13...');
   e.waitUntil(
     caches.keys().then(names =>
       Promise.all(
@@ -89,8 +97,15 @@ self.addEventListener('fetch', (e) => {
     return e.respondWith(networkFirstPage(request));
   }
 
-  // 2. API calls — network-first, fallback para IndexedDB
-  if (url.pathname.includes('/api/')) {
+  // 2. API calls — network-first, fallback para IndexedDB.
+  //    Inclui endpoints do checklist que não têm /api/ no caminho
+  //    (/checklist/modelos, /frota, /usuarios, /permissoes) — necessário offline.
+  const ehApi = url.pathname.includes('/api/')
+             || url.pathname.startsWith('/checklist/modelos')
+             || url.pathname.startsWith('/frota')
+             || url.pathname.startsWith('/usuarios')
+             || url.pathname.startsWith('/permissoes');
+  if (ehApi) {
     if (request.method === 'GET') {
       return e.respondWith(networkFirstAPI(request));
     }
@@ -138,12 +153,18 @@ async function networkFirstPage(request) {
   const cached = await caches.match(request);
   if (cached) return cached;
 
-  // 2. Fallback: serve o app principal cacheado (a URL pode diferir do que
-  //    foi pré-cacheado — ex: usuário acessa /mobile mas cache tem mobile.html).
-  //    Para qualquer rota de página do app, devolve o mobile.html já cacheado.
-  const appShell = await caches.match('/mobile')
-                || await caches.match('/operacional/static/mobile.html');
-  if (appShell) return appShell;
+  // 2. Fallback: serve o app principal cacheado — MAS só para a navegação
+  //    top-level do próprio app shell. NUNCA para iframes (ex: /checklist),
+  //    senão o mobile carrega dentro do iframe e recursa (página dentro de página).
+  const url = new URL(request.url);
+  const ehIframe = request.destination === 'iframe' || request.mode === 'nested-navigate';
+  const ehModuloEmbutido = url.pathname.startsWith('/checklist')
+                        || url.searchParams.get('embedded') === '1';
+  if (!ehIframe && !ehModuloEmbutido) {
+    const appShell = await caches.match('/mobile')
+                  || await caches.match('/operacional/static/mobile.html');
+    if (appShell) return appShell;
+  }
 
   // 3. Último recurso: página offline
   return caches.match(OFFLINE_PAGE) || new Response('Offline', { status: 503 });
