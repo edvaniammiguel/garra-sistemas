@@ -340,12 +340,10 @@ input,select,textarea{font-family:inherit;outline:none;border:none}
   <!-- CONTEÚDO -->
   <div class="app-content">
     <!-- JARDINAGEM -->
-    <div id="sec-jard" class="mod-section active">
+    <div id="sec-jard" class="mod-section">
       <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:60px 20px;text-align:center">
-        <div style="font-size:48px;margin-bottom:16px">🌿</div>
-        <div style="font-size:16px;font-weight:800;color:var(--blue);margin-bottom:8px">Módulo Jardinagem</div>
-        <div style="font-size:13px;color:var(--muted);margin-bottom:24px">O módulo de Jardinagem possui seu próprio aplicativo<br>com fotos, KM e relatórios.</div>
-        <button onclick="abrirJardinagemSSO()" style="display:inline-block;padding:14px 28px;background:var(--orange);color:#fff;border:none;border-radius:8px;font-weight:700;font-size:14px;cursor:pointer;box-shadow:0 4px 14px rgba(232,130,12,.3)">Abrir Jardinagem →</button>
+        <div style="font-size:32px;margin-bottom:12px">⟳</div>
+        <div style="font-size:14px;color:var(--muted)">Abrindo Jardinagem...</div>
       </div>
     </div>
 
@@ -366,7 +364,7 @@ input,select,textarea{font-family:inherit;outline:none;border:none}
 
   <!-- BOTTOM NAV -->
   <div class="bottom-nav">
-    <button class="nav-btn active" onclick="ir('Jard')"><span class="nav-icon">🌿</span><span class="nav-label">Jardinagem</span></button>
+    <button class="nav-btn" onclick="ir('Jard')"><span class="nav-icon">🌿</span><span class="nav-label">Jardinagem</span></button>
     <button class="nav-btn" onclick="ir('Op')"><span class="nav-icon">⚙️</span><span class="nav-label">OS</span></button>
     <button class="nav-btn" onclick="ir('Check')"><span class="nav-icon">✓</span><span class="nav-label">Checklist</span></button>
     <button class="nav-btn" onclick="ir('Log')" style="display:none"><span class="nav-icon">🚗</span><span class="nav-label">Logística</span></button>
@@ -718,15 +716,14 @@ function togglePass() {
 // (a jardinagem valida o token e entra direto, sem pedir login de novo)
 function abrirJardinagemSSO() {
   const token = localStorage.getItem('garra_token') || '';
-  const url = token
-    ? '/jardinagem/pwa-app.html?sso=' + encodeURIComponent(token)
-    : '/jardinagem/mobile';
-  window.location.href = url;
+  if (!token) return; // sem token → fica no mobile (login unificado)
+  window.location.href = '/jardinagem/pwa-app.html?sso=' + encodeURIComponent(token);
 }
 
 function ir(nome) {
   document.querySelectorAll('.mod-section').forEach(s => s.classList.remove('active'));
-  document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+  const bottomNavs = document.querySelectorAll('.bottom-nav .nav-btn');
+  bottomNavs.forEach(b => b.classList.remove('active'));
 
   // FAB de Nova OS visível só na aba Operacional
   const fab = document.getElementById('btn-nova-os-fab');
@@ -738,17 +735,17 @@ function ir(nome) {
     return;
   } else if (nome === 'Op') {
     document.getElementById('sec-op').classList.add('active');
-    document.querySelectorAll('.nav-btn')[1].classList.add('active');
+    bottomNavs[1].classList.add('active');
     document.getElementById('app-modulo').textContent = 'Operacional';
     carregarOSApp();
   } else if (nome === 'Check') {
     document.getElementById('sec-check').classList.add('active');
-    document.querySelectorAll('.nav-btn')[2].classList.add('active');
+    bottomNavs[2].classList.add('active');
     document.getElementById('app-modulo').textContent = 'Checklist';
     carregarIframeChecklist('checklist');
   } else if (nome === 'Log') {
     document.getElementById('sec-check').classList.add('active');
-    document.querySelectorAll('.nav-btn')[3].classList.add('active');
+    bottomNavs[3].classList.add('active');
     document.getElementById('app-modulo').textContent = 'Logística';
     carregarIframeChecklist('logistica');
   }
@@ -2310,7 +2307,7 @@ function abrirAbaInicial() {
     const idxJ = abas.indexOf('Jard');
     if (navs[idxJ] && navs[idxJ].style.display !== 'none') {
       document.querySelectorAll('.mod-section').forEach(s => s.classList.remove('active'));
-      document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.bottom-nav .nav-btn').forEach(b => b.classList.remove('active'));
       document.getElementById('sec-jard').classList.add('active');
       navs[idxJ].classList.add('active');
       document.getElementById('app-modulo').textContent = 'Jardinagem';
