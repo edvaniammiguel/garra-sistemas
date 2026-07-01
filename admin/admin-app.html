@@ -1816,33 +1816,28 @@ async function salvarAvisoMural() {
   const perfis = document.getElementById('mural-perfis').value.trim();
   if (!titulo || !mensagem) { toast('Preencha título e mensagem','error'); return; }
   try {
-    const res = await apiFetch('/api/mural', {
+    await apiFetch('/api/mural', {
       method: 'POST',
       body: JSON.stringify({ titulo, mensagem, perfis, destinatario })
     });
-    if (res.ok) {
-      toast('Aviso publicado!','success');
-      fecharFormMural();
-      carregarMuralAdmin();
-    } else {
-      const d = await res.json().catch(()=>({}));
-      toast(d.detail || 'Erro ao publicar','error');
-    }
-  } catch(e) { toast('Erro: '+e.message,'error'); }
+    toast('Aviso publicado!','success');
+    fecharFormMural();
+    carregarMuralAdmin();
+  } catch(e) { toast(e.message || 'Erro ao publicar','error'); }
 }
 async function excluirAvisoMural(id) {
   if (!confirm('Desativar este aviso?')) return;
   try {
-    const res = await apiFetch('/api/mural/'+id, { method: 'DELETE' });
-    if (res.ok) { toast('Aviso removido','success'); carregarMuralAdmin(); }
-  } catch(e) { toast('Erro: '+e.message,'error'); }
+    await apiFetch('/api/mural/'+id, { method: 'DELETE' });
+    toast('Aviso removido','success');
+    carregarMuralAdmin();
+  } catch(e) { toast(e.message || 'Erro ao remover','error'); }
 }
 async function carregarMuralAdmin() {
   const el = document.getElementById('mural-lista');
   if (!el) return;
   try {
-    const res = await apiFetch('/api/mural');
-    const avisos = await res.json();
+    const avisos = await apiFetch('/api/mural');
     if (!avisos.length) {
       el.innerHTML = '<div style="color:var(--muted);font-size:13px;padding:20px;text-align:center">Nenhum aviso publicado.</div>';
       return;
@@ -1859,7 +1854,7 @@ async function carregarMuralAdmin() {
       const data = a.criado_em ? new Date(a.criado_em).toLocaleDateString('pt-BR') : '';
       return `<div style="display:flex;align-items:flex-start;gap:12px;padding:12px 0;border-bottom:1px solid var(--border)">
         <div style="flex:1">
-          <div style="font-size:14px;font-weight:700;color:var(--navy)">${a.titulo}${tagHtml}</div>
+          <div style="font-size:14px;font-weight:700;color:var(--blue)">${a.titulo}${tagHtml}</div>
           <div style="font-size:13px;color:var(--muted);margin-top:4px">${a.mensagem}</div>
           <div style="font-size:11px;color:var(--muted);margin-top:4px">${data} · ${a.criado_por||''}</div>
         </div>
