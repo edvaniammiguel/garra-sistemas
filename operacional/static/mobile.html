@@ -364,9 +364,9 @@ input,select,textarea{font-family:inherit;outline:none;border:none}
 
   <!-- BOTTOM NAV -->
   <div class="bottom-nav">
-    <button class="nav-btn" onclick="ir('Jard')"><span class="nav-icon">🌿</span><span class="nav-label">Jardinagem</span></button>
-    <button class="nav-btn" onclick="ir('Op')"><span class="nav-icon">⚙️</span><span class="nav-label">OS</span></button>
-    <button class="nav-btn" onclick="ir('Check')"><span class="nav-icon">✓</span><span class="nav-label">Checklist</span></button>
+    <button class="nav-btn" onclick="ir('Jard')" style="display:none"><span class="nav-icon">🌿</span><span class="nav-label">Jardinagem</span></button>
+    <button class="nav-btn" onclick="ir('Op')" style="display:none"><span class="nav-icon">⚙️</span><span class="nav-label">OS</span></button>
+    <button class="nav-btn" onclick="ir('Check')" style="display:none"><span class="nav-icon">✓</span><span class="nav-label">Checklist</span></button>
     <button class="nav-btn" onclick="ir('Log')" style="display:none"><span class="nav-icon">🚗</span><span class="nav-label">Logística</span></button>
   </div>
 </div>
@@ -699,8 +699,8 @@ function fazerLogout() {
   // Esconder FAB
   const fab = document.getElementById('btn-nova-os-fab');
   if (fab) fab.style.display = 'none';
-  // Resetar visibilidade de todas as abas
-  document.querySelectorAll('.bottom-nav .nav-btn').forEach(b => b.style.display = '');
+  // Resetar visibilidade de todas as abas (esconder — login reaplicará permissões)
+  document.querySelectorAll('.bottom-nav .nav-btn').forEach(b => b.style.display = 'none');
 }
 
 function togglePass() {
