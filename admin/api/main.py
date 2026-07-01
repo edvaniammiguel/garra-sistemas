@@ -3530,11 +3530,23 @@ async def listar_mural(payload=Depends(verificar_token)):
     """Lista avisos ativos para o perfil/login do usuário."""
     perfil = payload.get("perfil", "")
     login = payload.get("login") or payload.get("sub", "")
-    rows = jard_query(
-        "SELECT id, titulo, mensagem, perfis, destinatario, criado_em, criado_por "
-        "FROM public.mural_avisos WHERE ativo=true ORDER BY criado_em DESC",
-        fetch="all"
-    ) or []
+    try:
+        rows = jard_query(
+            "SELECT id, titulo, mensagem, perfis, destinatario, criado_em, criado_por "
+            "FROM public.mural_avisos WHERE ativo=true ORDER BY criado_em DESC",
+            fetch="all"
+        ) or []
+    except Exception:
+        # Coluna destinatario pode não existir ainda — migrar e tentar de novo
+        try:
+            jard_query("ALTER TABLE public.mural_avisos ADD COLUMN IF NOT EXISTS destinatario TEXT DEFAULT ''")
+        except Exception:
+            pass
+        rows = jard_query(
+            "SELECT id, titulo, mensagem, perfis, destinatario, criado_em, criado_por "
+            "FROM public.mural_avisos WHERE ativo=true ORDER BY criado_em DESC",
+            fetch="all"
+        ) or []
     result = []
     for r in rows:
         dest = (r.get("destinatario") or "").strip()
