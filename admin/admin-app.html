@@ -497,7 +497,7 @@ input,select,textarea { font-family:inherit; font-size:13px; outline:none; }
           <p style="font-size:13px;color:var(--muted);margin-bottom:16px">Avisos aparecem no painel do avatar de todos os colaboradores (ou filtrado por perfil).</p>
 
           <!-- Form novo aviso (escondido) -->
-          <div id="mural-form" style="display:none;background:var(--bg-light);border:1.5px solid var(--border);border-radius:8px;padding:16px;margin-bottom:16px">
+          <div id="mural-form" style="display:none;background:var(--bg);border:1.5px solid var(--border);border-radius:8px;padding:16px;margin-bottom:16px">
             <div style="margin-bottom:10px">
               <label style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;display:block;margin-bottom:4px">Título</label>
               <input id="mural-titulo" type="text" placeholder="Ex: Lembrete exames periódicos" style="width:100%;padding:10px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;box-sizing:border-box">
@@ -520,15 +520,9 @@ input,select,textarea { font-family:inherit; font-size:13px; outline:none; }
                 </label>
               </div>
 
-              <!-- Por perfil: checkboxes -->
+              <!-- Por perfil: checkboxes (gerados dinamicamente) -->
               <div id="mural-bloco-perfil" style="display:none;background:#fff;border:1.5px solid var(--border);border-radius:8px;padding:12px">
-                <label style="display:flex;align-items:center;gap:6px;font-size:13px;margin-bottom:6px;cursor:pointer"><input type="checkbox" value="admin" class="mural-perfil-cb"> Admin</label>
-                <label style="display:flex;align-items:center;gap:6px;font-size:13px;margin-bottom:6px;cursor:pointer"><input type="checkbox" value="gestor" class="mural-perfil-cb"> Gestor</label>
-                <label style="display:flex;align-items:center;gap:6px;font-size:13px;margin-bottom:6px;cursor:pointer"><input type="checkbox" value="luana" class="mural-perfil-cb"> Luana</label>
-                <label style="display:flex;align-items:center;gap:6px;font-size:13px;margin-bottom:6px;cursor:pointer"><input type="checkbox" value="bruna" class="mural-perfil-cb"> Bruna</label>
-                <label style="display:flex;align-items:center;gap:6px;font-size:13px;margin-bottom:6px;cursor:pointer"><input type="checkbox" value="operador" class="mural-perfil-cb"> Operador</label>
-                <label style="display:flex;align-items:center;gap:6px;font-size:13px;margin-bottom:6px;cursor:pointer"><input type="checkbox" value="motorista" class="mural-perfil-cb"> Motorista</label>
-                <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer"><input type="checkbox" value="campo" class="mural-perfil-cb"> Campo</label>
+                <div id="mural-perfis-lista">Carregando perfis...</div>
               </div>
 
               <!-- Individual: select de usuário -->
@@ -559,7 +553,7 @@ input,select,textarea { font-family:inherit; font-size:13px; outline:none; }
           <p style="font-size:13px;color:var(--muted);margin-bottom:16px">Conteúdo exibido no avatar de todos os colaboradores (mobile, jardinagem e admin). Edite conforme necessário — recomendado revisar ao menos uma vez por ano.</p>
 
           <!-- Form bloco (escondido) -->
-          <div id="cartilha-form" style="display:none;background:var(--bg-light);border:1.5px solid var(--border);border-radius:8px;padding:16px;margin-bottom:16px">
+          <div id="cartilha-form" style="display:none;background:var(--bg);border:1.5px solid var(--border);border-radius:8px;padding:16px;margin-bottom:16px">
             <input type="hidden" id="cartilha-edit-id" value="">
             <div style="display:grid;grid-template-columns:80px 1fr;gap:10px;margin-bottom:10px">
               <div>
@@ -1930,7 +1924,7 @@ async function carregarMuralAvatarAdmin() {
     const avisos = await apiFetch('/api/mural');
     if (!avisos.length) { el.innerHTML = '<div style="font-size:12px;color:var(--muted);text-align:center">Nenhum aviso no momento.</div>'; return; }
     el.innerHTML = avisos.map(a =>
-      '<div style="background:var(--bg-light);border-left:3px solid var(--orange);border-radius:0 6px 6px 0;padding:10px 12px;margin-bottom:8px">'
+      '<div style="background:var(--bg);border-left:3px solid var(--orange);border-radius:0 6px 6px 0;padding:10px 12px;margin-bottom:8px">'
       + '<div style="font-size:12px;font-weight:800;color:var(--blue)">' + a.titulo + '</div>'
       + '<div style="font-size:12px;color:var(--text);margin-top:3px">' + a.mensagem + '</div>'
       + '</div>'
@@ -2095,7 +2089,7 @@ async function carregarCartilhaAdmin() {
     el.innerHTML = _cartilhaBlocos.map(b => {
       const preview = b.conteudo.length > 140 ? b.conteudo.slice(0,140)+'…' : b.conteudo;
       return `<div style="display:flex;align-items:flex-start;gap:12px;padding:12px 0;border-bottom:1px solid var(--border)">
-        <div style="width:28px;height:28px;border-radius:6px;background:var(--bg-light);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:var(--muted);flex-shrink:0">${b.ordem}</div>
+        <div style="width:28px;height:28px;border-radius:6px;background:var(--bg);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:var(--muted);flex-shrink:0">${b.ordem}</div>
         <div style="flex:1">
           <div style="font-size:14px;font-weight:700;color:var(--blue)">${b.titulo}${b.subtitulo?' <span style="font-weight:400;color:var(--muted);font-size:12px">— '+b.subtitulo+'</span>':''}</div>
           <div style="font-size:12px;color:var(--muted);margin-top:4px;white-space:pre-line">${preview}</div>
@@ -2115,11 +2109,28 @@ function abrirFormMural() {
   document.getElementById('mural-form').style.display = 'block';
   document.getElementById('mural-titulo').value = '';
   document.getElementById('mural-mensagem').value = '';
-  document.querySelectorAll('.mural-perfil-cb').forEach(cb => cb.checked = false);
   document.querySelector('input[name="mural-modo"][value="todos"]').checked = true;
   mudarModoMural();
+  popularPerfisMural();
   popularSelectUsuariosMural();
   document.getElementById('mural-titulo').focus();
+}
+async function popularPerfisMural() {
+  const el = document.getElementById('mural-perfis-lista');
+  if (!el) return;
+  try {
+    if (!_usuarios.length) _usuarios = await apiFetch('/usuarios');
+  } catch(e) {}
+  // União: perfis já usados por usuários reais + perfis definidos em sessão (PERFIL_LABEL)
+  const perfisEmUso = new Set((_usuarios||[]).map(u => u.perfil).filter(Boolean));
+  Object.keys(PERFIL_LABEL||{}).forEach(p => perfisEmUso.add(p));
+  const perfis = Array.from(perfisEmUso).sort();
+  if (!perfis.length) { el.innerHTML = '<div style="font-size:12px;color:var(--muted)">Nenhum perfil encontrado.</div>'; return; }
+  el.innerHTML = perfis.map((p, i) =>
+    `<label style="display:flex;align-items:center;gap:6px;font-size:13px;margin-bottom:${i===perfis.length-1?'0':'6px'};cursor:pointer">
+      <input type="checkbox" value="${p}" class="mural-perfil-cb"> ${PERFIL_LABEL[p] || p}
+    </label>`
+  ).join('');
 }
 function fecharFormMural() {
   document.getElementById('mural-form').style.display = 'none';
