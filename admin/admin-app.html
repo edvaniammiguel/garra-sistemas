@@ -507,6 +507,11 @@ input,select,textarea { font-family:inherit; font-size:13px; outline:none; }
               <textarea id="mural-mensagem" rows="3" placeholder="Texto do aviso..." style="width:100%;padding:10px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;box-sizing:border-box;font-family:inherit;resize:vertical"></textarea>
             </div>
             <div style="margin-bottom:14px">
+              <label style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;display:block;margin-bottom:4px">Destinatário individual (opcional)</label>
+              <input id="mural-dest" type="text" placeholder="Ex: gilson@garra.local" style="width:100%;padding:10px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;box-sizing:border-box">
+              <div style="font-size:11px;color:var(--muted);margin-top:4px">Se preenchido, só esse colaborador vê o aviso (ignora perfis)</div>
+            </div>
+            <div style="margin-bottom:14px">
               <label style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;display:block;margin-bottom:4px">Perfis (vazio = todos)</label>
               <input id="mural-perfis" type="text" placeholder="Ex: operador,campo,motorista" style="width:100%;padding:10px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;box-sizing:border-box">
               <div style="font-size:11px;color:var(--muted);margin-top:4px">Deixe vazio para enviar a todos. Ou separe por vírgula: operador,campo,motorista</div>
@@ -1797,6 +1802,7 @@ function abrirFormMural() {
   document.getElementById('mural-form').style.display = 'block';
   document.getElementById('mural-titulo').value = '';
   document.getElementById('mural-mensagem').value = '';
+  document.getElementById('mural-dest').value = '';
   document.getElementById('mural-perfis').value = '';
   document.getElementById('mural-titulo').focus();
 }
@@ -1806,12 +1812,13 @@ function fecharFormMural() {
 async function salvarAvisoMural() {
   const titulo = document.getElementById('mural-titulo').value.trim();
   const mensagem = document.getElementById('mural-mensagem').value.trim();
+  const destinatario = document.getElementById('mural-dest').value.trim();
   const perfis = document.getElementById('mural-perfis').value.trim();
   if (!titulo || !mensagem) { toast('Preencha título e mensagem','error'); return; }
   try {
     const res = await apiFetch('/api/mural', {
       method: 'POST',
-      body: JSON.stringify({ titulo, mensagem, perfis })
+      body: JSON.stringify({ titulo, mensagem, perfis, destinatario })
     });
     if (res.ok) {
       toast('Aviso publicado!','success');
@@ -1841,11 +1848,18 @@ async function carregarMuralAdmin() {
       return;
     }
     el.innerHTML = avisos.map(a => {
-      const perfisTag = a.perfis ? '<span style="font-size:10px;background:#EEF2FF;color:var(--blue);padding:2px 8px;border-radius:99px;margin-left:8px">' + a.perfis + '</span>' : '<span style="font-size:10px;background:#DCFCE7;color:#16A34A;padding:2px 8px;border-radius:99px;margin-left:8px">todos</span>';
+      let tagHtml = '';
+      if (a.destinatario) {
+        tagHtml = '<span style="font-size:10px;background:#FEF3C7;color:#92400E;padding:2px 8px;border-radius:99px;margin-left:8px">👤 ' + a.destinatario + '</span>';
+      } else if (a.perfis) {
+        tagHtml = '<span style="font-size:10px;background:#EEF2FF;color:var(--blue);padding:2px 8px;border-radius:99px;margin-left:8px">' + a.perfis + '</span>';
+      } else {
+        tagHtml = '<span style="font-size:10px;background:#DCFCE7;color:#16A34A;padding:2px 8px;border-radius:99px;margin-left:8px">todos</span>';
+      }
       const data = a.criado_em ? new Date(a.criado_em).toLocaleDateString('pt-BR') : '';
       return `<div style="display:flex;align-items:flex-start;gap:12px;padding:12px 0;border-bottom:1px solid var(--border)">
         <div style="flex:1">
-          <div style="font-size:14px;font-weight:700;color:var(--navy)">${a.titulo}${perfisTag}</div>
+          <div style="font-size:14px;font-weight:700;color:var(--navy)">${a.titulo}${tagHtml}</div>
           <div style="font-size:13px;color:var(--muted);margin-top:4px">${a.mensagem}</div>
           <div style="font-size:11px;color:var(--muted);margin-top:4px">${data} · ${a.criado_por||''}</div>
         </div>
