@@ -346,7 +346,7 @@ input,select,textarea { font-family:inherit; font-size:13px; outline:none; }
         <span class="dot dot-online"></span>
         <span id="hd-online-count">0 online</span>
       </div>
-      <div class="hd-user">
+      <div class="hd-user" onclick="abrirPainelContaAdmin()" style="cursor:pointer">
         <div class="hd-avatar" id="hd-avatar">A</div>
         <span class="hd-username" id="hd-username">Admin</span>
       </div>
@@ -507,14 +507,36 @@ input,select,textarea { font-family:inherit; font-size:13px; outline:none; }
               <textarea id="mural-mensagem" rows="3" placeholder="Texto do aviso..." style="width:100%;padding:10px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;box-sizing:border-box;font-family:inherit;resize:vertical"></textarea>
             </div>
             <div style="margin-bottom:14px">
-              <label style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;display:block;margin-bottom:4px">Destinatário individual (opcional)</label>
-              <input id="mural-dest" type="text" placeholder="Ex: gilson@garra.local" style="width:100%;padding:10px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;box-sizing:border-box">
-              <div style="font-size:11px;color:var(--muted);margin-top:4px">Se preenchido, só esse colaborador vê o aviso (ignora perfis)</div>
-            </div>
-            <div style="margin-bottom:14px">
-              <label style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;display:block;margin-bottom:4px">Perfis (vazio = todos)</label>
-              <input id="mural-perfis" type="text" placeholder="Ex: operador,campo,motorista" style="width:100%;padding:10px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;box-sizing:border-box">
-              <div style="font-size:11px;color:var(--muted);margin-top:4px">Deixe vazio para enviar a todos. Ou separe por vírgula: operador,campo,motorista</div>
+              <label style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;display:block;margin-bottom:6px">Enviar para</label>
+              <div style="display:flex;gap:16px;margin-bottom:10px">
+                <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer">
+                  <input type="radio" name="mural-modo" value="todos" checked onchange="mudarModoMural()"> Todos
+                </label>
+                <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer">
+                  <input type="radio" name="mural-modo" value="perfil" onchange="mudarModoMural()"> Por perfil
+                </label>
+                <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer">
+                  <input type="radio" name="mural-modo" value="individual" onchange="mudarModoMural()"> Individual
+                </label>
+              </div>
+
+              <!-- Por perfil: checkboxes -->
+              <div id="mural-bloco-perfil" style="display:none;background:#fff;border:1.5px solid var(--border);border-radius:8px;padding:12px">
+                <label style="display:flex;align-items:center;gap:6px;font-size:13px;margin-bottom:6px;cursor:pointer"><input type="checkbox" value="admin" class="mural-perfil-cb"> Admin</label>
+                <label style="display:flex;align-items:center;gap:6px;font-size:13px;margin-bottom:6px;cursor:pointer"><input type="checkbox" value="gestor" class="mural-perfil-cb"> Gestor</label>
+                <label style="display:flex;align-items:center;gap:6px;font-size:13px;margin-bottom:6px;cursor:pointer"><input type="checkbox" value="luana" class="mural-perfil-cb"> Luana</label>
+                <label style="display:flex;align-items:center;gap:6px;font-size:13px;margin-bottom:6px;cursor:pointer"><input type="checkbox" value="bruna" class="mural-perfil-cb"> Bruna</label>
+                <label style="display:flex;align-items:center;gap:6px;font-size:13px;margin-bottom:6px;cursor:pointer"><input type="checkbox" value="operador" class="mural-perfil-cb"> Operador</label>
+                <label style="display:flex;align-items:center;gap:6px;font-size:13px;margin-bottom:6px;cursor:pointer"><input type="checkbox" value="motorista" class="mural-perfil-cb"> Motorista</label>
+                <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer"><input type="checkbox" value="campo" class="mural-perfil-cb"> Campo</label>
+              </div>
+
+              <!-- Individual: select de usuário -->
+              <div id="mural-bloco-individual" style="display:none">
+                <select id="mural-usuario-select" style="width:100%;padding:10px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;box-sizing:border-box">
+                  <option value="">Selecione o colaborador...</option>
+                </select>
+              </div>
             </div>
             <div style="display:flex;gap:8px">
               <button onclick="salvarAvisoMural()" class="btn btn-primary" style="padding:8px 20px;font-size:13px">Publicar</button>
@@ -524,6 +546,50 @@ input,select,textarea { font-family:inherit; font-size:13px; outline:none; }
 
           <!-- Lista de avisos -->
           <div id="mural-lista"><div style="color:var(--muted);font-size:13px;padding:20px;text-align:center">Carregando...</div></div>
+        </div>
+      </section>
+
+      <!-- ── SEÇÃO: MANUAL DO COLABORADOR (CARTILHA) ── -->
+      <section id="sec-cartilha" class="hidden">
+        <div class="card">
+          <div class="card-title">
+            Manual do Colaborador
+            <button class="btn btn-primary" style="padding:6px 14px;font-size:12px" onclick="abrirFormCartilha()">+ Novo bloco</button>
+          </div>
+          <p style="font-size:13px;color:var(--muted);margin-bottom:16px">Conteúdo exibido no avatar de todos os colaboradores (mobile, jardinagem e admin). Edite conforme necessário — recomendado revisar ao menos uma vez por ano.</p>
+
+          <!-- Form bloco (escondido) -->
+          <div id="cartilha-form" style="display:none;background:var(--bg-light);border:1.5px solid var(--border);border-radius:8px;padding:16px;margin-bottom:16px">
+            <input type="hidden" id="cartilha-edit-id" value="">
+            <div style="display:grid;grid-template-columns:80px 1fr;gap:10px;margin-bottom:10px">
+              <div>
+                <label style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;display:block;margin-bottom:4px">Ordem</label>
+                <input id="cartilha-ordem" type="number" value="0" style="width:100%;padding:10px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;box-sizing:border-box">
+              </div>
+              <div>
+                <label style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;display:block;margin-bottom:4px">Título da seção</label>
+                <input id="cartilha-titulo" type="text" placeholder="Ex: Deveres do Colaborador" style="width:100%;padding:10px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;box-sizing:border-box">
+              </div>
+            </div>
+            <div style="margin-bottom:10px">
+              <label style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;display:block;margin-bottom:4px">Subtítulo (opcional)</label>
+              <input id="cartilha-subtitulo" type="text" placeholder="Ex: Nossa história" style="width:100%;padding:10px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;box-sizing:border-box">
+            </div>
+            <div style="margin-bottom:10px">
+              <label style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;display:block;margin-bottom:4px">Conteúdo</label>
+              <textarea id="cartilha-conteudo" rows="8" placeholder="Texto do bloco..." style="width:100%;padding:10px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;box-sizing:border-box;font-family:inherit;resize:vertical"></textarea>
+              <div style="font-size:11px;color:var(--muted);margin-top:4px">
+                Dica de formatação: linha em branco separa parágrafos · <code>**texto**</code> fica em negrito · linha começando com <code>- </code> vira item de lista
+              </div>
+            </div>
+            <div style="display:flex;gap:8px">
+              <button onclick="salvarBlocoCartilha()" class="btn btn-primary" style="padding:8px 20px;font-size:13px">Salvar</button>
+              <button onclick="fecharFormCartilha()" class="btn btn-secondary" style="padding:8px 20px;font-size:13px">Cancelar</button>
+            </div>
+          </div>
+
+          <!-- Lista de blocos -->
+          <div id="cartilha-lista"><div style="color:var(--muted);font-size:13px;padding:20px;text-align:center">Carregando...</div></div>
         </div>
       </section>
 
@@ -1250,6 +1316,7 @@ function navTo(sec, elBtn) {
   if (sec === 'regimes')         carregarRegimes();
   if (sec === 'controle-mensal') initControleMensal();
   if (sec === 'mural')           carregarMuralAdmin();
+  if (sec === 'cartilha')        carregarCartilhaAdmin();
 }
 
 /* ══════════════════════════════════════════════
@@ -1798,22 +1865,294 @@ async function resetarTodasPermissoes(usuarioId, perfil) {
 /* ══════════════════════════════════════════════
    MURAL DE AVISOS
 ══════════════════════════════════════════════ */
+/* ══════════════════════════════════════════════
+   PAINEL MINHA CONTA (avatar do admin)
+══════════════════════════════════════════════ */
+function abrirPainelContaAdmin() {
+  const user = Token.user();
+  if (!user) return;
+  const nome = user.nome || user.login || '?';
+  const ini = nome.charAt(0).toUpperCase();
+  const modal = document.createElement('div');
+  modal.id = 'modal-conta-admin';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:500;display:flex;align-items:flex-start;justify-content:flex-end';
+  modal.onclick = (e) => { if (e.target === modal) modal.remove(); };
+  modal.innerHTML = `
+    <div style="background:#fff;width:100%;max-width:380px;height:100dvh;overflow-y:auto;box-shadow:-4px 0 24px rgba(0,0,0,.15)">
+
+      <div style="padding:16px 20px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--border)">
+        <div style="font-size:15px;font-weight:800;color:var(--blue)">Minha conta</div>
+        <button onclick="document.getElementById('modal-conta-admin').remove()" style="background:none;border:none;font-size:22px;color:var(--muted);cursor:pointer">✕</button>
+      </div>
+
+      <div style="padding:16px 20px;display:flex;align-items:center;gap:12px;border-bottom:1px solid var(--border)">
+        <div style="width:44px;height:44px;border-radius:50%;background:var(--orange);display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:800;color:#fff;flex-shrink:0">${ini}</div>
+        <div>
+          <div style="font-size:14px;font-weight:800;color:var(--blue)">${nome}</div>
+          <div style="font-size:12px;color:var(--muted)">${user.login || ''} · ${user.perfil || ''}</div>
+        </div>
+      </div>
+
+      <div style="padding:16px 20px;border-bottom:1px solid var(--border)">
+        <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px">Mural</div>
+        <div id="mural-avisos-admin" style="margin-bottom:12px"><div style="font-size:12px;color:var(--muted);text-align:center">Carregando...</div></div>
+        <button onclick="document.getElementById('modal-conta-admin').remove();abrirCartilhaAdmin()" style="width:100%;padding:11px;background:var(--blue);color:#fff;border:none;border-radius:8px;font-weight:700;font-size:13px;cursor:pointer">📖 Manual do colaborador</button>
+      </div>
+
+      <div style="padding:16px 20px">
+        <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px">Alterar senha</div>
+        <div id="ctaadm-err" style="background:#FEE2E2;color:var(--red);border-radius:6px;padding:10px;margin-bottom:10px;font-size:13px;display:none"></div>
+        <div id="ctaadm-ok" style="background:#DCFCE7;color:#16A34A;border-radius:6px;padding:10px;margin-bottom:10px;font-size:13px;display:none"></div>
+        <div style="margin-bottom:10px">
+          <label style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;display:block;margin-bottom:4px">Senha atual</label>
+          <input id="ctaadm-atual" type="password" style="width:100%;padding:10px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;box-sizing:border-box">
+        </div>
+        <div style="margin-bottom:10px">
+          <label style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;display:block;margin-bottom:4px">Nova senha</label>
+          <input id="ctaadm-nova" type="password" style="width:100%;padding:10px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;box-sizing:border-box">
+        </div>
+        <div style="margin-bottom:14px">
+          <label style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;display:block;margin-bottom:4px">Confirmar nova senha</label>
+          <input id="ctaadm-conf" type="password" style="width:100%;padding:10px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;box-sizing:border-box">
+        </div>
+        <button onclick="salvarNovaSenhaAdmin()" style="width:100%;padding:11px;border:none;background:var(--orange);color:#fff;border-radius:8px;font-weight:700;font-size:13px;cursor:pointer">Alterar senha</button>
+      </div>
+
+    </div>`;
+  document.body.appendChild(modal);
+  carregarMuralAvatarAdmin();
+}
+
+async function carregarMuralAvatarAdmin() {
+  const el = document.getElementById('mural-avisos-admin');
+  if (!el) return;
+  try {
+    const avisos = await apiFetch('/api/mural');
+    if (!avisos.length) { el.innerHTML = '<div style="font-size:12px;color:var(--muted);text-align:center">Nenhum aviso no momento.</div>'; return; }
+    el.innerHTML = avisos.map(a =>
+      '<div style="background:var(--bg-light);border-left:3px solid var(--orange);border-radius:0 6px 6px 0;padding:10px 12px;margin-bottom:8px">'
+      + '<div style="font-size:12px;font-weight:800;color:var(--blue)">' + a.titulo + '</div>'
+      + '<div style="font-size:12px;color:var(--text);margin-top:3px">' + a.mensagem + '</div>'
+      + '</div>'
+    ).join('');
+  } catch(e) {
+    el.innerHTML = '<div style="font-size:12px;color:var(--muted);text-align:center">Nenhum aviso no momento.</div>';
+  }
+}
+
+async function salvarNovaSenhaAdmin() {
+  const err = document.getElementById('ctaadm-err');
+  const ok = document.getElementById('ctaadm-ok');
+  err.style.display = 'none'; ok.style.display = 'none';
+  const atual = document.getElementById('ctaadm-atual').value;
+  const nova = document.getElementById('ctaadm-nova').value;
+  const conf = document.getElementById('ctaadm-conf').value;
+  if (!atual || !nova || !conf) { err.textContent = 'Preencha todos os campos'; err.style.display = 'block'; return; }
+  if (nova.length < 6) { err.textContent = 'A nova senha deve ter ao menos 6 caracteres'; err.style.display = 'block'; return; }
+  if (nova !== conf) { err.textContent = 'As senhas não coincidem'; err.style.display = 'block'; return; }
+  try {
+    await apiFetch('/auth/alterar-senha', {
+      method: 'POST',
+      body: JSON.stringify({ senha_atual: atual, senha_nova: nova })
+    });
+    ok.textContent = '✓ Senha alterada com sucesso!'; ok.style.display = 'block';
+    document.getElementById('ctaadm-atual').value = '';
+    document.getElementById('ctaadm-nova').value = '';
+    document.getElementById('ctaadm-conf').value = '';
+  } catch(e) {
+    err.textContent = e.message || 'Erro ao alterar senha'; err.style.display = 'block';
+  }
+}
+
+function renderConteudoCartilha(texto) {
+  // Markdown-lite: linha em branco = parágrafo · **texto** = negrito · "- " = item de lista
+  const linhas = texto.split('\n');
+  let html = '';
+  let listaAberta = false;
+  let paragrafoAtual = [];
+
+  function fecharParagrafo() {
+    if (paragrafoAtual.length) {
+      let p = paragrafoAtual.join('<br>').replace(/\*\*(.+?)\*\*/g, '<strong style="color:var(--blue)">$1</strong>');
+      html += '<p style="margin:0 0 12px 0">' + p + '</p>';
+      paragrafoAtual = [];
+    }
+  }
+  function fecharLista() {
+    if (listaAberta) { html += '</ul>'; listaAberta = false; }
+  }
+
+  linhas.forEach(function(linha) {
+    const t = linha.trim();
+    if (t === '') { fecharParagrafo(); fecharLista(); return; }
+    if (t.startsWith('- ')) {
+      fecharParagrafo();
+      if (!listaAberta) { html += '<ul style="margin:0 0 12px 0;padding-left:20px">'; listaAberta = true; }
+      html += '<li style="margin-bottom:4px">' + t.slice(2) + '</li>';
+      return;
+    }
+    fecharLista();
+    paragrafoAtual.push(t.replace(/\*\*(.+?)\*\*/g, '<strong style="color:var(--blue)">$1</strong>'));
+  });
+  fecharParagrafo();
+  fecharLista();
+  return html;
+}
+
+async function abrirCartilhaAdmin() {
+  const m = document.createElement("div");
+  m.id = "modal-cartilha-admin";
+  m.style.cssText = "position:fixed;inset:0;background:#fff;z-index:500;display:flex;flex-direction:column";
+  m.innerHTML = '<div style="background:var(--blue);border-bottom:3px solid var(--orange);padding:12px 16px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0">'
+    + '<div style="color:#fff;font-size:15px;font-weight:800">📖 Manual do Colaborador</div>'
+    + '<button onclick="document.getElementById(\'modal-cartilha-admin\').remove();abrirPainelContaAdmin()" style="background:none;border:none;color:#fff;font-size:22px;cursor:pointer;padding:0 4px">✕</button></div>'
+    + '<div id="cartilha-admin-body" style="flex:1;overflow-y:auto;padding:20px 16px;font-size:13px;color:var(--text);line-height:1.6"><div style="text-align:center;color:var(--muted);padding:40px 0">Carregando...</div></div>';
+  document.body.appendChild(m);
+
+  try {
+    const blocos = await apiFetch('/api/cartilha');
+    const body = document.getElementById('cartilha-admin-body');
+    if (!blocos.length) { body.innerHTML = '<div style="text-align:center;color:var(--muted);padding:40px 0">Nenhum conteúdo publicado ainda.</div>'; return; }
+    body.innerHTML = blocos.map(b =>
+      '<div style="margin-top:8px;margin-bottom:12px;border-bottom:2px solid var(--orange);padding-bottom:6px">'
+      + '<div style="font-size:16px;font-weight:800;color:var(--blue)">' + b.titulo + '</div>'
+      + (b.subtitulo ? '<div style="font-size:11px;color:var(--muted)">' + b.subtitulo + '</div>' : '')
+      + '</div>'
+      + renderConteudoCartilha(b.conteudo)
+    ).join('') + '<div style="text-align:center;padding:20px 0;font-size:11px;color:var(--muted)">Garra Terraplenagem e Caçambas</div>';
+  } catch(e) {
+    document.getElementById('cartilha-admin-body').innerHTML = '<div style="text-align:center;color:var(--muted);padding:40px 0">Erro ao carregar o manual.</div>';
+  }
+}
+
+/* ══════════════════════════════════════════════
+   MANUAL DO COLABORADOR (CARTILHA) — CRUD
+══════════════════════════════════════════════ */
+function abrirFormCartilha(bloco) {
+  document.getElementById('cartilha-form').style.display = 'block';
+  if (bloco) {
+    document.getElementById('cartilha-edit-id').value = bloco.id;
+    document.getElementById('cartilha-ordem').value = bloco.ordem;
+    document.getElementById('cartilha-titulo').value = bloco.titulo;
+    document.getElementById('cartilha-subtitulo').value = bloco.subtitulo || '';
+    document.getElementById('cartilha-conteudo').value = bloco.conteudo;
+  } else {
+    document.getElementById('cartilha-edit-id').value = '';
+    document.getElementById('cartilha-ordem').value = 0;
+    document.getElementById('cartilha-titulo').value = '';
+    document.getElementById('cartilha-subtitulo').value = '';
+    document.getElementById('cartilha-conteudo').value = '';
+  }
+  document.getElementById('cartilha-titulo').focus();
+  document.getElementById('cartilha-form').scrollIntoView({behavior:'smooth', block:'center'});
+}
+function fecharFormCartilha() {
+  document.getElementById('cartilha-form').style.display = 'none';
+}
+async function salvarBlocoCartilha() {
+  const id = document.getElementById('cartilha-edit-id').value;
+  const ordem = parseInt(document.getElementById('cartilha-ordem').value) || 0;
+  const titulo = document.getElementById('cartilha-titulo').value.trim();
+  const subtitulo = document.getElementById('cartilha-subtitulo').value.trim();
+  const conteudo = document.getElementById('cartilha-conteudo').value.trim();
+  if (!titulo || !conteudo) { toast('Preencha título e conteúdo','error'); return; }
+  try {
+    if (id) {
+      await apiFetch('/api/cartilha/'+id, {
+        method: 'PUT',
+        body: JSON.stringify({ ordem, titulo, subtitulo, conteudo })
+      });
+      toast('Bloco atualizado!','success');
+    } else {
+      await apiFetch('/api/cartilha', {
+        method: 'POST',
+        body: JSON.stringify({ ordem, titulo, subtitulo, conteudo })
+      });
+      toast('Bloco criado!','success');
+    }
+    fecharFormCartilha();
+    carregarCartilhaAdmin();
+  } catch(e) { toast(e.message || 'Erro ao salvar','error'); }
+}
+async function excluirBlocoCartilha(id) {
+  if (!confirm('Excluir este bloco do manual? Esta ação não pode ser desfeita.')) return;
+  try {
+    await apiFetch('/api/cartilha/'+id, { method: 'DELETE' });
+    toast('Bloco excluído','success');
+    carregarCartilhaAdmin();
+  } catch(e) { toast(e.message || 'Erro ao excluir','error'); }
+}
+let _cartilhaBlocos = [];
+async function carregarCartilhaAdmin() {
+  const el = document.getElementById('cartilha-lista');
+  if (!el) return;
+  try {
+    _cartilhaBlocos = await apiFetch('/api/cartilha');
+    if (!_cartilhaBlocos.length) {
+      el.innerHTML = '<div style="color:var(--muted);font-size:13px;padding:20px;text-align:center">Nenhum bloco cadastrado.</div>';
+      return;
+    }
+    el.innerHTML = _cartilhaBlocos.map(b => {
+      const preview = b.conteudo.length > 140 ? b.conteudo.slice(0,140)+'…' : b.conteudo;
+      return `<div style="display:flex;align-items:flex-start;gap:12px;padding:12px 0;border-bottom:1px solid var(--border)">
+        <div style="width:28px;height:28px;border-radius:6px;background:var(--bg-light);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:var(--muted);flex-shrink:0">${b.ordem}</div>
+        <div style="flex:1">
+          <div style="font-size:14px;font-weight:700;color:var(--blue)">${b.titulo}${b.subtitulo?' <span style="font-weight:400;color:var(--muted);font-size:12px">— '+b.subtitulo+'</span>':''}</div>
+          <div style="font-size:12px;color:var(--muted);margin-top:4px;white-space:pre-line">${preview}</div>
+        </div>
+        <div style="display:flex;gap:6px;flex-shrink:0">
+          <button onclick='abrirFormCartilha(${JSON.stringify(b).replace(/'/g,"&apos;")})' class="btn-sm" style="padding:4px 10px;font-size:11px">✎ Editar</button>
+          <button onclick="excluirBlocoCartilha(${b.id})" class="btn-sm" style="color:var(--red);border-color:var(--red);padding:4px 10px;font-size:11px">✕</button>
+        </div>
+      </div>`;
+    }).join('');
+  } catch(e) {
+    el.innerHTML = '<div style="color:var(--muted);font-size:13px;padding:20px;text-align:center">Erro ao carregar manual.</div>';
+  }
+}
+
 function abrirFormMural() {
   document.getElementById('mural-form').style.display = 'block';
   document.getElementById('mural-titulo').value = '';
   document.getElementById('mural-mensagem').value = '';
-  document.getElementById('mural-dest').value = '';
-  document.getElementById('mural-perfis').value = '';
+  document.querySelectorAll('.mural-perfil-cb').forEach(cb => cb.checked = false);
+  document.querySelector('input[name="mural-modo"][value="todos"]').checked = true;
+  mudarModoMural();
+  popularSelectUsuariosMural();
   document.getElementById('mural-titulo').focus();
 }
 function fecharFormMural() {
   document.getElementById('mural-form').style.display = 'none';
 }
+function mudarModoMural() {
+  const modo = document.querySelector('input[name="mural-modo"]:checked').value;
+  document.getElementById('mural-bloco-perfil').style.display = modo === 'perfil' ? 'block' : 'none';
+  document.getElementById('mural-bloco-individual').style.display = modo === 'individual' ? 'block' : 'none';
+}
+async function popularSelectUsuariosMural() {
+  const sel = document.getElementById('mural-usuario-select');
+  if (!sel) return;
+  try {
+    if (!_usuarios.length) _usuarios = await apiFetch('/usuarios');
+    sel.innerHTML = '<option value="">Selecione o colaborador...</option>'
+      + _usuarios.filter(u => u.ativo !== false).map(u =>
+          `<option value="${u.login}">${u.nome || u.login} (${u.perfil})</option>`
+        ).join('');
+  } catch(e) {}
+}
 async function salvarAvisoMural() {
   const titulo = document.getElementById('mural-titulo').value.trim();
   const mensagem = document.getElementById('mural-mensagem').value.trim();
-  const destinatario = document.getElementById('mural-dest').value.trim();
-  const perfis = document.getElementById('mural-perfis').value.trim();
+  const modo = document.querySelector('input[name="mural-modo"]:checked').value;
+  let perfis = '';
+  let destinatario = '';
+  if (modo === 'perfil') {
+    perfis = Array.from(document.querySelectorAll('.mural-perfil-cb:checked')).map(cb => cb.value).join(',');
+    if (!perfis) { toast('Selecione ao menos um perfil','error'); return; }
+  } else if (modo === 'individual') {
+    destinatario = document.getElementById('mural-usuario-select').value;
+    if (!destinatario) { toast('Selecione um colaborador','error'); return; }
+  }
   if (!titulo || !mensagem) { toast('Preencha título e mensagem','error'); return; }
   try {
     await apiFetch('/api/mural', {
@@ -1891,6 +2230,10 @@ function renderSidebar(perfil, perms) {
       <div class="sb-item" onclick="navTo('mural',this)">
         <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
         Mural
+      </div>
+      <div class="sb-item" onclick="navTo('cartilha',this)">
+        <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+        Manual do Colaborador
       </div>`;
 
   html += `</div><div class="sb-divider"></div>
