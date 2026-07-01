@@ -1347,12 +1347,10 @@ function abrirPainelConta() {
     // Sincronizar
     + '<button onclick="sincronizar();document.getElementById(\'modal-conta-jard\').remove()" style="width:100%;padding:14px;background:#FFF7ED;color:var(--or);border:1.5px solid var(--or);border-radius:8px;font-weight:700;font-size:14px;cursor:pointer;margin-bottom:16px">⟳ Sincronizar dados offline</button>'
 
-    // Info empresa
+    // Mural
     + '<div style="background:var(--bg);border-radius:8px;padding:16px;margin-bottom:20px">'
-    + '<div style="font-size:11px;font-weight:700;color:var(--mut);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">Empresa</div>'
-    + '<div style="font-size:14px;font-weight:800;color:var(--bl);margin-bottom:4px">Garra Terraplenagem e Caçambas</div>'
-    + '<div style="font-size:12px;color:var(--mut)">Pará de Minas - MG</div>'
-    + '<div style="font-size:12px;color:var(--mut);margin-bottom:12px">CNPJ: 28.415.398/0001-13</div>'
+    + '<div style="font-size:11px;font-weight:700;color:var(--mut);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">Mural</div>'
+    + '<div id="mural-avisos-jard" style="margin-bottom:12px"><div style="font-size:12px;color:var(--mut);text-align:center">Carregando...</div></div>'
     + '<button onclick="document.getElementById(\'modal-conta-jard\').remove();abrirCartilha()" style="width:100%;padding:12px;background:var(--bl);color:#fff;border:none;border-radius:8px;font-weight:700;font-size:13px;cursor:pointer">📖 Manual do Colaborador</button>'
     + '</div>'
 
@@ -1378,6 +1376,24 @@ function abrirPainelConta() {
     + '<button onclick="sair()" style="width:100%;padding:14px;background:#FEE2E2;color:var(--red);border:1.5px solid #FCA5A5;border-radius:8px;font-weight:700;font-size:14px;cursor:pointer">↩ Sair</button>'
     + '</div>';
   document.body.appendChild(modal);
+  carregarMuralJard();
+}
+
+function carregarMuralJard() {
+  var el = document.getElementById("mural-avisos-jard");
+  if (!el) return;
+  fetch("/api/mural", {headers:{"Authorization":"Bearer "+TOKEN}})
+    .then(function(r){return r.json();})
+    .then(function(avisos){
+      if (!avisos.length) { el.innerHTML = '<div style="font-size:12px;color:var(--mut);text-align:center">Nenhum aviso no momento.</div>'; return; }
+      el.innerHTML = avisos.map(function(a){
+        return '<div style="background:#fff;border-left:3px solid var(--or);border-radius:0 6px 6px 0;padding:10px 12px;margin-bottom:8px">'
+          + '<div style="font-size:12px;font-weight:800;color:var(--bl)">' + a.titulo + '</div>'
+          + '<div style="font-size:12px;color:var(--txt);margin-top:3px">' + a.mensagem + '</div>'
+          + '</div>';
+      }).join("");
+    })
+    .catch(function(){ el.innerHTML = '<div style="font-size:12px;color:var(--mut);text-align:center">Nenhum aviso no momento.</div>'; });
 }
 
 // ── MANUAL DO COLABORADOR ──────────────────────────────────
@@ -1389,7 +1405,7 @@ function abrirCartilha() {
     // Header fixo
     + '<div style="background:var(--bl);border-bottom:3px solid var(--or);padding:12px 16px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0">'
     + '<div style="color:#fff;font-size:15px;font-weight:800">📖 Manual do Colaborador</div>'
-    + '<button onclick="document.getElementById(\'modal-cartilha\').remove()" style="background:none;border:none;color:#fff;font-size:22px;cursor:pointer;padding:0 4px">✕</button>'
+    + '<button onclick="document.getElementById(\'modal-cartilha\').remove();abrirPainelConta()" style="background:none;border:none;color:#fff;font-size:22px;cursor:pointer;padding:0 4px">✕</button>'
     + '</div>'
 
     // Conteúdo scrollável
