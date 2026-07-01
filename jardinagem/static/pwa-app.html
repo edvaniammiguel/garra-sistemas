@@ -232,7 +232,7 @@ input[type="time"]{-webkit-appearance:none;appearance:none;cursor:pointer;}
   <div class="hdr-r">
     <div class="hdr-dot" id="dot"></div>
     <span class="hdr-status" id="status">Online</span>
-    <div class="hdr-av" id="av">?</div>
+    <div class="hdr-av" id="av" onclick="abrirPainelConta()" style="cursor:pointer" title="Minha conta">?</div>
     <span class="hdr-badge" id="badge" style="display:none;">ADMIN</span>
   </div>
 </header>
@@ -372,14 +372,6 @@ input[type="time"]{-webkit-appearance:none;appearance:none;cursor:pointer;}
       <button class="btn btn-bl btn-w" onclick="enviarEmail()" id="btnEmail">📧 Enviar Relatório</button>
       <div id="emailMsg" style="font-size:11px;text-align:center;color:var(--mut);margin-top:.5rem;min-height:14px;"></div>
     </div>
-
-    <!-- Sync -->
-    <button class="btn btn-w" style="background:#FFF7ED;color:var(--or);border:1.5px solid var(--or);margin-top:.5rem;"
-      onclick="sincronizar()">⟳ Sincronizar dados offline</button>
-
-    <!-- Sair -->
-    <button class="btn btn-w" style="background:#FEE2E2;color:var(--red);border:1.5px solid #FCA5A5;margin-top:.5rem;"
-      onclick="sair()">↩ Sair</button>
   </div>
 
 </div>
@@ -530,9 +522,9 @@ var _selTipo = null;
 var _kmEditando = null;
 var ULT_KM = parseFloat(localStorage.getItem("ult_km")||"0");
 
-// Redirecionar se não tem token
+// Redirecionar se não tem token — login unificado pelo /mobile
 if(!TOKEN || !USUARIO){
-  window.location.href = "/";
+  window.location.href = "/mobile";
   throw new Error("Sem autenticação");  // ← PARA o script imediatamente
 }
 
@@ -1324,6 +1316,97 @@ function verificarFila(){
 // ── SAIR ──────────────────────────────────────────────────────
 // Volta ao app geral (/mobile). Se o usuário só tem jardinagem, o /mobile
 // reabre a jardinagem direto; se tem outros módulos, mostra as abas.
+// ── PAINEL MINHA CONTA (avatar) ──────────────────────────────
+function abrirPainelConta() {
+  if (!USUARIO) return;
+  var nome = USUARIO.nome || USUARIO.login || "?";
+  var inicial = nome.charAt(0).toUpperCase();
+  var login = USUARIO.login || "";
+  var perfil = USUARIO.perfil || "";
+  var modal = document.createElement("div");
+  modal.id = "modal-conta-jard";
+  modal.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:400;display:flex;align-items:flex-end";
+  modal.onclick = function(e){ if(e.target===modal) modal.remove(); };
+  modal.innerHTML = '<div style="background:#fff;width:100%;border-radius:12px 12px 0 0;padding:24px;max-height:85dvh;overflow-y:auto">'
+
+    // Header
+    + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px">'
+    + '<div style="font-size:16px;font-weight:800;color:var(--bl)">👤 Minha conta</div>'
+    + '<button onclick="document.getElementById(\'modal-conta-jard\').remove()" style="background:none;border:none;font-size:24px;color:var(--mut);cursor:pointer">×</button>'
+    + '</div>'
+
+    // User info
+    + '<div style="background:var(--bg);border-radius:8px;padding:16px;margin-bottom:20px;display:flex;align-items:center;gap:12px">'
+    + '<div style="width:48px;height:48px;border-radius:50%;background:var(--or);display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:800;color:#fff">' + inicial + '</div>'
+    + '<div>'
+    + '<div style="font-size:15px;font-weight:800;color:var(--bl)">' + nome + '</div>'
+    + '<div style="font-size:12px;color:var(--mut)">' + login + ' · ' + perfil + '</div>'
+    + '</div>'
+    + '</div>'
+
+    // Sincronizar
+    + '<button onclick="sincronizar();document.getElementById(\'modal-conta-jard\').remove()" style="width:100%;padding:14px;background:#FFF7ED;color:var(--or);border:1.5px solid var(--or);border-radius:8px;font-weight:700;font-size:14px;cursor:pointer;margin-bottom:16px">⟳ Sincronizar dados offline</button>'
+
+    // Info empresa
+    + '<div style="background:var(--bg);border-radius:8px;padding:16px;margin-bottom:20px">'
+    + '<div style="font-size:11px;font-weight:700;color:var(--mut);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">Empresa</div>'
+    + '<div style="font-size:14px;font-weight:800;color:var(--bl);margin-bottom:4px">Garra Terraplenagem e Caçambas</div>'
+    + '<div style="font-size:12px;color:var(--mut)">Pará de Minas - MG</div>'
+    + '<div style="font-size:12px;color:var(--mut)">CNPJ: 28.415.398/0001-13</div>'
+    + '</div>'
+
+    // Alterar senha
+    + '<div style="font-size:13px;font-weight:800;color:var(--bl);margin-bottom:12px;text-transform:uppercase;letter-spacing:.06em">Alterar senha</div>'
+    + '<div id="jconta-err" style="background:#FEE2E2;color:var(--red);border-radius:6px;padding:10px;margin-bottom:14px;font-size:13px;display:none"></div>'
+    + '<div id="jconta-ok" style="background:#DCFCE7;color:#16A34A;border-radius:6px;padding:10px;margin-bottom:14px;font-size:13px;display:none"></div>'
+    + '<div style="margin-bottom:12px">'
+    + '<label style="font-size:11px;font-weight:700;color:var(--mut);text-transform:uppercase;display:block;margin-bottom:5px">Senha atual</label>'
+    + '<input id="jconta-atual" type="password" style="width:100%;padding:11px;border:1.5px solid var(--brd);border-radius:8px;font-size:14px;box-sizing:border-box">'
+    + '</div>'
+    + '<div style="margin-bottom:12px">'
+    + '<label style="font-size:11px;font-weight:700;color:var(--mut);text-transform:uppercase;display:block;margin-bottom:5px">Nova senha</label>'
+    + '<input id="jconta-nova" type="password" style="width:100%;padding:11px;border:1.5px solid var(--brd);border-radius:8px;font-size:14px;box-sizing:border-box">'
+    + '</div>'
+    + '<div style="margin-bottom:18px">'
+    + '<label style="font-size:11px;font-weight:700;color:var(--mut);text-transform:uppercase;display:block;margin-bottom:5px">Confirmar nova senha</label>'
+    + '<input id="jconta-conf" type="password" style="width:100%;padding:11px;border:1.5px solid var(--brd);border-radius:8px;font-size:14px;box-sizing:border-box">'
+    + '</div>'
+    + '<button onclick="salvarNovaSenhaJard()" style="width:100%;padding:14px;border:none;background:var(--or);color:#fff;border-radius:8px;font-weight:700;font-size:15px;cursor:pointer;margin-bottom:20px">Alterar senha</button>'
+
+    // Sair
+    + '<button onclick="sair()" style="width:100%;padding:14px;background:#FEE2E2;color:var(--red);border:1.5px solid #FCA5A5;border-radius:8px;font-weight:700;font-size:14px;cursor:pointer">↩ Sair</button>'
+    + '</div>';
+  document.body.appendChild(modal);
+}
+
+async function salvarNovaSenhaJard() {
+  var err = document.getElementById("jconta-err");
+  var ok  = document.getElementById("jconta-ok");
+  err.style.display = "none"; ok.style.display = "none";
+  var atual = document.getElementById("jconta-atual").value;
+  var nova  = document.getElementById("jconta-nova").value;
+  var conf  = document.getElementById("jconta-conf").value;
+  if(!atual||!nova||!conf){ err.textContent="Preencha todos os campos"; err.style.display="block"; return; }
+  if(nova.length<6){ err.textContent="A nova senha deve ter ao menos 6 caracteres"; err.style.display="block"; return; }
+  if(nova!==conf){ err.textContent="As senhas não coincidem"; err.style.display="block"; return; }
+  try {
+    var r = await fetch("/auth/alterar-senha", {
+      method:"POST",
+      headers:{"Authorization":"Bearer "+TOKEN,"Content-Type":"application/json"},
+      body:JSON.stringify({senha_atual:atual,senha_nova:nova})
+    });
+    if(r.ok){
+      ok.textContent="✓ Senha alterada com sucesso!"; ok.style.display="block";
+      document.getElementById("jconta-atual").value="";
+      document.getElementById("jconta-nova").value="";
+      document.getElementById("jconta-conf").value="";
+    } else {
+      var d = await r.json().catch(function(){return{};});
+      err.textContent=d.detail||"Erro ao alterar senha"; err.style.display="block";
+    }
+  } catch(e){ err.textContent="Erro: "+e.message; err.style.display="block"; }
+}
+
 function voltarModulos(){
   window.location.href = "/mobile?from=jardinagem";
 }
@@ -1339,7 +1422,7 @@ function sair(){
   if(!confirm("Sair?")) return;
   localStorage.removeItem("garra_token");
   localStorage.removeItem("garra_usuario");
-  window.location.href = "/";
+  window.location.href = "/mobile";
 }
 
 function limparCache(){
@@ -1349,11 +1432,11 @@ function limparCache(){
       r.forEach(function(s){s.unregister();});
       caches.keys().then(function(k){
         k.forEach(function(n){caches.delete(n);});
-        window.location.href="/";
+        window.location.href="/mobile";
       });
     });
   } else {
-    window.location.href="/";
+    window.location.href="/mobile";
   }
 }
 
