@@ -487,6 +487,41 @@ input,select,textarea { font-family:inherit; font-size:13px; outline:none; }
         </div>
       </section>
 
+      <!-- ── SEÇÃO: MURAL ── -->
+      <section id="sec-mural" class="hidden">
+        <div class="card">
+          <div class="card-title">
+            Mural de Avisos
+            <button class="btn btn-primary" style="padding:6px 14px;font-size:12px" onclick="abrirFormMural()">+ Novo aviso</button>
+          </div>
+          <p style="font-size:13px;color:var(--muted);margin-bottom:16px">Avisos aparecem no painel do avatar de todos os colaboradores (ou filtrado por perfil).</p>
+
+          <!-- Form novo aviso (escondido) -->
+          <div id="mural-form" style="display:none;background:var(--bg-light);border:1.5px solid var(--border);border-radius:8px;padding:16px;margin-bottom:16px">
+            <div style="margin-bottom:10px">
+              <label style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;display:block;margin-bottom:4px">Título</label>
+              <input id="mural-titulo" type="text" placeholder="Ex: Lembrete exames periódicos" style="width:100%;padding:10px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;box-sizing:border-box">
+            </div>
+            <div style="margin-bottom:10px">
+              <label style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;display:block;margin-bottom:4px">Mensagem</label>
+              <textarea id="mural-mensagem" rows="3" placeholder="Texto do aviso..." style="width:100%;padding:10px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;box-sizing:border-box;font-family:inherit;resize:vertical"></textarea>
+            </div>
+            <div style="margin-bottom:14px">
+              <label style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;display:block;margin-bottom:4px">Perfis (vazio = todos)</label>
+              <input id="mural-perfis" type="text" placeholder="Ex: operador,campo,motorista" style="width:100%;padding:10px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;box-sizing:border-box">
+              <div style="font-size:11px;color:var(--muted);margin-top:4px">Deixe vazio para enviar a todos. Ou separe por vírgula: operador,campo,motorista</div>
+            </div>
+            <div style="display:flex;gap:8px">
+              <button onclick="salvarAvisoMural()" class="btn btn-primary" style="padding:8px 20px;font-size:13px">Publicar</button>
+              <button onclick="fecharFormMural()" class="btn btn-secondary" style="padding:8px 20px;font-size:13px">Cancelar</button>
+            </div>
+          </div>
+
+          <!-- Lista de avisos -->
+          <div id="mural-lista"><div style="color:var(--muted);font-size:13px;padding:20px;text-align:center">Carregando...</div></div>
+        </div>
+      </section>
+
       <!-- ── SEÇÃO: ORDENS DE SERVIÇO ── -->
       <section id="sec-os" class="hidden">
         <div class="card">
@@ -1209,6 +1244,7 @@ function navTo(sec, elBtn) {
   if (sec === 'tipos-servico')   carregarTiposServico();
   if (sec === 'regimes')         carregarRegimes();
   if (sec === 'controle-mensal') initControleMensal();
+  if (sec === 'mural')           carregarMuralAdmin();
 }
 
 /* ══════════════════════════════════════════════
@@ -1754,6 +1790,73 @@ async function resetarTodasPermissoes(usuarioId, perfil) {
 /* ══════════════════════════════════════════════
    SIDEBAR DINÂMICA
 ══════════════════════════════════════════════ */
+/* ══════════════════════════════════════════════
+   MURAL DE AVISOS
+══════════════════════════════════════════════ */
+function abrirFormMural() {
+  document.getElementById('mural-form').style.display = 'block';
+  document.getElementById('mural-titulo').value = '';
+  document.getElementById('mural-mensagem').value = '';
+  document.getElementById('mural-perfis').value = '';
+  document.getElementById('mural-titulo').focus();
+}
+function fecharFormMural() {
+  document.getElementById('mural-form').style.display = 'none';
+}
+async function salvarAvisoMural() {
+  const titulo = document.getElementById('mural-titulo').value.trim();
+  const mensagem = document.getElementById('mural-mensagem').value.trim();
+  const perfis = document.getElementById('mural-perfis').value.trim();
+  if (!titulo || !mensagem) { toast('Preencha título e mensagem','error'); return; }
+  try {
+    const res = await apiFetch('/api/mural', {
+      method: 'POST',
+      body: JSON.stringify({ titulo, mensagem, perfis })
+    });
+    if (res.ok) {
+      toast('Aviso publicado!','success');
+      fecharFormMural();
+      carregarMuralAdmin();
+    } else {
+      const d = await res.json().catch(()=>({}));
+      toast(d.detail || 'Erro ao publicar','error');
+    }
+  } catch(e) { toast('Erro: '+e.message,'error'); }
+}
+async function excluirAvisoMural(id) {
+  if (!confirm('Desativar este aviso?')) return;
+  try {
+    const res = await apiFetch('/api/mural/'+id, { method: 'DELETE' });
+    if (res.ok) { toast('Aviso removido','success'); carregarMuralAdmin(); }
+  } catch(e) { toast('Erro: '+e.message,'error'); }
+}
+async function carregarMuralAdmin() {
+  const el = document.getElementById('mural-lista');
+  if (!el) return;
+  try {
+    const res = await apiFetch('/api/mural');
+    const avisos = await res.json();
+    if (!avisos.length) {
+      el.innerHTML = '<div style="color:var(--muted);font-size:13px;padding:20px;text-align:center">Nenhum aviso publicado.</div>';
+      return;
+    }
+    el.innerHTML = avisos.map(a => {
+      const perfisTag = a.perfis ? '<span style="font-size:10px;background:#EEF2FF;color:var(--blue);padding:2px 8px;border-radius:99px;margin-left:8px">' + a.perfis + '</span>' : '<span style="font-size:10px;background:#DCFCE7;color:#16A34A;padding:2px 8px;border-radius:99px;margin-left:8px">todos</span>';
+      const data = a.criado_em ? new Date(a.criado_em).toLocaleDateString('pt-BR') : '';
+      return `<div style="display:flex;align-items:flex-start;gap:12px;padding:12px 0;border-bottom:1px solid var(--border)">
+        <div style="flex:1">
+          <div style="font-size:14px;font-weight:700;color:var(--navy)">${a.titulo}${perfisTag}</div>
+          <div style="font-size:13px;color:var(--muted);margin-top:4px">${a.mensagem}</div>
+          <div style="font-size:11px;color:var(--muted);margin-top:4px">${data} · ${a.criado_por||''}</div>
+        </div>
+        <button onclick="excluirAvisoMural(${a.id})" class="btn-sm" style="color:var(--red);border-color:var(--red);flex-shrink:0;padding:4px 10px;font-size:11px" title="Remover">✕</button>
+      </div>`;
+    }).join('');
+  } catch(e) {
+    el.innerHTML = '<div style="color:var(--muted);font-size:13px;padding:20px;text-align:center">Erro ao carregar avisos.</div>';
+  }
+}
+
 function renderSidebar(perfil, perms) {
   const isAdmin = perfil === 'admin';
   const padrao  = PERFIL_PADRAO[perfil] || [];
@@ -1775,6 +1878,10 @@ function renderSidebar(perfil, perms) {
       <div class="sb-item" onclick="navTo('permissoes',this)">
         <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
         Permissões
+      </div>
+      <div class="sb-item" onclick="navTo('mural',this)">
+        <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+        Mural
       </div>`;
 
   html += `</div><div class="sb-divider"></div>
