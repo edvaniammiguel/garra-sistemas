@@ -720,9 +720,26 @@ async def renovar_token(payload=Depends(verificar_token)):
 
     login = payload.get("login") or payload.get("sub", "")
     user = jard_query(
-        "SELECT id, pts, total_envios FROM public.usuarios_garra WHERE (login=%s OR email=%s) AND ativo=true",
+        "SELECT id, perfil, pts, total_envios FROM public.usuarios_garra WHERE (login=%s OR email=%s) AND ativo=true",
         (login, login), fetch="one"
     )
+
+    # Carregar permissões efetivas (DB + padrão do perfil) — mesma lógica do /auth/login
+    perms = {}
+    if user:
+        try:
+            perfil = user.get("perfil") or payload.get("perfil", "")
+            rows_perm = jard_query(
+                "SELECT modulo, permitido FROM public.permissoes_colaborador WHERE usuario_id=%s",
+                (str(user["id"]),), fetch="all"
+            )
+            perms = {r["modulo"]: r["permitido"] for r in (rows_perm or [])}
+            padrao = PERFIL_MODULOS_PADRAO.get(perfil, [])
+            for m in MODULOS_DISPONIVEIS:
+                if m["id"] not in perms:
+                    perms[m["id"]] = m["id"] in padrao
+        except Exception:
+            perms = {}
 
     return {
         "token": novo_token,
@@ -733,6 +750,7 @@ async def renovar_token(payload=Depends(verificar_token)):
         "perfil_checklist": payload.get("perfil_checklist", ""),
         "pts": (user["pts"] if user else 0) or 0,
         "total_envios": (user["total_envios"] if user else 0) or 0,
+        "permsDB": perms,
     }
 
 @app.post("/auth/alterar-senha")
@@ -1044,11 +1062,10 @@ async def jard_index():
     path = os.path.join(TEMPLATES_DIR, "desk-admin.html")
     return open(path, encoding="utf-8").read()
 
-@app.get("/jardinagem/desktop", response_class=HTMLResponse)
+@app.get("/jardinagem/desktop")
 async def jard_desktop_login():
-    # Login unificado — redireciona para o admin central
-    from fastapi.responses import RedirectResponse
-    return RedirectResponse(url="/admin", status_code=302)
+    # Login unificado — redireciona para o admin (SSO abre desk-app direto)
+    return RedirectResponse(url="/admin")
 
 @app.get("/jardinagem/desktop-app", response_class=HTMLResponse)
 async def jard_desktop_app():
@@ -1056,11 +1073,10 @@ async def jard_desktop_app():
     path = os.path.join(TEMPLATES_DIR, "desk-app.html")
     return open(path, encoding="utf-8").read()
 
-@app.get("/jardinagem/mobile", response_class=HTMLResponse)
+@app.get("/jardinagem/mobile")
 async def jard_mobile():
-    # Login unificado — redireciona para o mobile central
-    from fastapi.responses import RedirectResponse
-    return RedirectResponse(url="/", status_code=302)
+    # Login unificado — redireciona para o mobile (SSO abre pwa-app direto)
+    return RedirectResponse(url="/mobile")
 
 @app.get("/jardinagem/mobile-app", response_class=HTMLResponse)
 async def jard_mobile_app():
@@ -1068,10 +1084,10 @@ async def jard_mobile_app():
     path = os.path.join(STATIC_DIR, "pwa-app.html")
     return open(path, encoding="utf-8").read()
 
-@app.get("/jardinagem/pwa-login.html", response_class=HTMLResponse)
+@app.get("/jardinagem/pwa-login.html")
 async def jard_pwa_login_html():
-    path = os.path.join(STATIC_DIR, "pwa-login.html")
-    return open(path, encoding="utf-8").read()
+    # Login unificado — redireciona para o mobile
+    return RedirectResponse(url="/mobile")
 
 @app.get("/jardinagem/pwa-app.html", response_class=HTMLResponse)
 async def jard_pwa_app_html():
