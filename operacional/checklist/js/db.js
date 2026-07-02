@@ -86,11 +86,81 @@ async function apiFetch(path, options = {}) {
   }
 }
 
+// ─── ARMAZENAMENTO SEGURO (evita estourar a cota do navegador) ─────
+// Usado por qualquer fila/cache do checklist que grave listas no localStorage.
+// Nunca deixa o app travar: se a cota estourar, poda o mais antigo,
+// depois remove fotos, e só como último recurso reduz ao mínimo.
+const SafeStorage = {
+  // Remove qualquer foto em base64 de dentro de um objeto/array, não importa
+  // o quão aninhada esteja — funciona tanto para submissions quanto para
+  // itens da fila offline (que guardam o envio serializado como string em options.body).
+  _stripPhotosDeep(value) {
+    if (typeof value === 'string') {
+      if (value.startsWith('data:image')) return null;
+      if (value.length > 200 && (value.trim()[0] === '{' || value.trim()[0] === '[')) {
+        try { return JSON.stringify(this._stripPhotosDeep(JSON.parse(value))); }
+        catch { return value; }
+      }
+      return value;
+    }
+    if (Array.isArray(value)) return value.map(v => this._stripPhotosDeep(v));
+    if (value && typeof value === 'object') {
+      const out = {};
+      for (const k in value) out[k] = this._stripPhotosDeep(value[k]);
+      return out;
+    }
+    return value;
+  },
+
+  set(key, value) {
+    try {
+      localStorage.setItem(key, JSON.stringify(value));
+      return true;
+    } catch (e) {
+      const quotaEstourada = e && (e.name === 'QuotaExceededError' || /quota/i.test(e.message || ''));
+      if (!quotaEstourada) throw e;
+      console.warn('[SafeStorage] Cota excedida ao salvar "' + key + '" — recuperando...');
+
+      let recuperado = value;
+      if (Array.isArray(value)) {
+        const pendentes = value.filter(x => x && x.synced === false);
+        const resto     = value.filter(x => !x || x.synced !== false).slice(0, 100);
+        recuperado = [...pendentes, ...resto];
+        try {
+          localStorage.setItem(key, JSON.stringify(recuperado));
+          console.warn('[SafeStorage] "' + key + '" podado para', recuperado.length, 'itens.');
+          return true;
+        } catch (e2) { /* segue para remoção de fotos */ }
+      }
+
+      const semFotos = this._stripPhotosDeep(recuperado);
+      try {
+        localStorage.setItem(key, JSON.stringify(semFotos));
+        console.warn('[SafeStorage] Fotos removidas de "' + key + '" para liberar espaço.');
+        return true;
+      } catch (e3) { /* segue para último recurso */ }
+
+      if (Array.isArray(semFotos)) {
+        const minimo = semFotos.slice(0, 20);
+        try {
+          localStorage.setItem(key, JSON.stringify(minimo));
+          console.error('[SafeStorage] "' + key + '" reduzido ao mínimo (20 itens) — espaço crítico.');
+          return true;
+        } catch (e4) {
+          console.error('[SafeStorage] Não foi possível salvar "' + key + '":', e4);
+          throw e4;
+        }
+      }
+      throw e;
+    }
+  },
+};
+
 // ─── FILA OFFLINE ──────────────────────────────────────────
 const OfflineQueue = {
   get()     { try { return JSON.parse(localStorage.getItem('garra_offline_q') || '[]'); } catch { return []; } },
-  add(item) { const q = this.get(); q.push({...item, ts: Date.now()}); localStorage.setItem('garra_offline_q', JSON.stringify(q)); },
-  clear()   { localStorage.setItem('garra_offline_q', '[]'); },
+  add(item) { const q = this.get(); q.push({...item, ts: Date.now()}); SafeStorage.set('garra_offline_q', q); },
+  clear()   { SafeStorage.set('garra_offline_q', []); },
   async flush() {
     if (!navigator.onLine) return;
     const queue = this.get();
@@ -100,7 +170,7 @@ const OfflineQueue = {
       try { await apiFetch(item.path, item.options); }
       catch { failed.push(item); }
     }
-    localStorage.setItem('garra_offline_q', JSON.stringify(failed));
+    SafeStorage.set('garra_offline_q', failed);
     if (!failed.length) console.log('✅ Fila offline sincronizada');
   }
 };
