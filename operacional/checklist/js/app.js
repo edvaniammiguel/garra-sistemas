@@ -961,8 +961,33 @@ async function submitChecklist() {
       document.getElementById('pts-earned').textContent    = '+0 pts';
       console.log('[Submit] Salvo em modo emergência:', id);
     } catch(e2) {
-      alert('Erro crítico ao salvar. Erro: ' + fatalErr.message);
-      if (btnNext) { btnNext.textContent = 'Enviar ✓'; btnNext.disabled = false; }
+      // Última rede de segurança: o histórico local (garra_submissions) é só
+      // cache de exibição — quem controla o reenvio de verdade é garra_pending/
+      // garra_offline_q, que NÃO são tocados aqui. Então é seguro zerar o
+      // histórico para liberar espaço e tentar salvar mais uma vez.
+      try {
+        console.warn('[Submit] Espaço esgotado mesmo após poda — limpando histórico local e tentando novamente...');
+        localStorage.removeItem('garra_submissions');
+        const cl  = getCL();
+        const id  = 'sub_emergency_' + Date.now();
+        const sub = {
+          id, user: currentUser?.login || 'unknown',
+          userName: currentUser?.name  || 'unknown',
+          type: currentCLId, clLabel: cl?.label || '',
+          date: new Date().toISOString(),
+          meta: { ...formMeta }, answers: { ...formAnswers },
+          synced: false, archived: false, pts: 0,
+        };
+        DB.saveSubmission(sub);
+        showScreen('screen-success');
+        document.getElementById('success-title').textContent = 'Check List Salvo!';
+        document.getElementById('success-msg').textContent   = '⚠️ Espaço do celular estava cheio — histórico local foi limpo automaticamente. Seu checklist foi salvo.';
+        document.getElementById('pts-earned').textContent    = '+0 pts';
+        console.log('[Submit] Salvo após limpeza de emergência:', id);
+      } catch(e3) {
+        alert('Erro crítico ao salvar. Erro: ' + fatalErr.message + '\n\nPor favor, informe o gestor: o armazenamento do celular está cheio e não foi possível liberar espaço automaticamente.');
+        if (btnNext) { btnNext.textContent = 'Enviar ✓'; btnNext.disabled = false; }
+      }
     }
   }
 }
