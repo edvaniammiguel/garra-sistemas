@@ -38,7 +38,8 @@ MAIL_PORT            = int(os.environ.get("MAIL_PORT", "587"))
 MAIL_DESTINO         = os.environ.get("MAIL_DESTINO", "")
 MAIL_CC              = os.environ.get("MAIL_CC", "")
 FRONTEND_URL         = os.environ.get("FRONTEND_URL", "https://garra-checklist-app.onrender.com")
-BUCKET_NAME          = "jardinagem-fotos"
+BUCKET_NAME          = "jardinagem-fotos"      # legado — fotos antigas continuam aqui
+BUCKET_ATUAL         = "garra-fotos"           # bucket unificado — todas as fotos novas (jardinagem + checklist)
 
 # ── RATE LIMITER ──────────────────────────────────────────────
 _login_attempts: dict = defaultdict(list)
@@ -340,7 +341,8 @@ if os.path.exists(CHECKLIST_DIR):
 def storage_upload(dados: bytes, path: str) -> str:
     if not SUPABASE_URL or not SUPABASE_SERVICE_KEY:
         raise ValueError("Supabase não configurado")
-    url = f"{SUPABASE_URL}/storage/v1/object/{BUCKET_NAME}/{path}"
+    # Fotos novas vão para o bucket unificado 'garra-fotos'
+    url = f"{SUPABASE_URL}/storage/v1/object/{BUCKET_ATUAL}/{path}"
     headers = {
         "Authorization": f"Bearer {SUPABASE_SERVICE_KEY}",
         "apikey": SUPABASE_SERVICE_KEY,
@@ -350,7 +352,9 @@ def storage_upload(dados: bytes, path: str) -> str:
     r = req_lib.post(url, headers=headers, data=dados, timeout=30)
     if r.status_code not in (200, 201):
         raise RuntimeError(f"Storage upload falhou [{r.status_code}]: {r.text}")
-    return path
+    # Prefixa o path com o bucket para que a leitura saiba onde buscar.
+    # Fotos antigas (sem prefixo) continuam sendo lidas do bucket legado.
+    return f"{BUCKET_ATUAL}:{path}"
 
 # Cache de URLs assinadas — evita chamadas repetidas ao Supabase
 # TTL: 23h (URLs do Supabase expiram em 1h por padrão, mas geramos com 24h)
@@ -361,6 +365,12 @@ _URL_SUPABASE_EXPIRY = 24 * 3600  # 24h — URL válida no Supabase
 def storage_url(path: str, segundos: int = _URL_SUPABASE_EXPIRY) -> str:
     if not SUPABASE_URL or not SUPABASE_SERVICE_KEY or not path:
         return ""
+    # Resolve o bucket a partir do prefixo "bucket:path".
+    # Fotos antigas (gravadas antes da unificação) não têm prefixo → bucket legado.
+    if ":" in path and not path.startswith("http"):
+        bucket, real_path = path.split(":", 1)
+    else:
+        bucket, real_path = BUCKET_NAME, path
     # Verificar cache
     agora = time.time()
     cached = _url_cache.get(path)
@@ -371,7 +381,7 @@ def storage_url(path: str, segundos: int = _URL_SUPABASE_EXPIRY) -> str:
     # Gerar URL nova no Supabase
     try:
         r = req_lib.post(
-            f"{SUPABASE_URL}/storage/v1/object/sign/{BUCKET_NAME}/{path}",
+            f"{SUPABASE_URL}/storage/v1/object/sign/{bucket}/{real_path}",
             headers={
                 "Authorization": f"Bearer {SUPABASE_SERVICE_KEY}",
                 "apikey": SUPABASE_SERVICE_KEY
@@ -387,16 +397,25 @@ def storage_url(path: str, segundos: int = _URL_SUPABASE_EXPIRY) -> str:
 
 def storage_delete(paths: list):
     if not paths or not SUPABASE_URL: return
-    try:
-        req_lib.delete(
-            f"{SUPABASE_URL}/storage/v1/object/{BUCKET_NAME}",
-            headers={
-                "Authorization": f"Bearer {SUPABASE_SERVICE_KEY}",
-                "apikey": SUPABASE_SERVICE_KEY
-            },
-            json={"prefixes": paths}, timeout=10
-        )
-    except: pass
+    # Agrupa os paths por bucket (fotos novas têm prefixo "bucket:", antigas não).
+    por_bucket = {}
+    for p in paths:
+        if ":" in p and not p.startswith("http"):
+            bucket, real_path = p.split(":", 1)
+        else:
+            bucket, real_path = BUCKET_NAME, p
+        por_bucket.setdefault(bucket, []).append(real_path)
+    for bucket, lista in por_bucket.items():
+        try:
+            req_lib.delete(
+                f"{SUPABASE_URL}/storage/v1/object/{bucket}",
+                headers={
+                    "Authorization": f"Bearer {SUPABASE_SERVICE_KEY}",
+                    "apikey": SUPABASE_SERVICE_KEY
+                },
+                json={"prefixes": lista}, timeout=10
+            )
+        except: pass
 
 # ── FOTOS DO CHECKLIST → SUPABASE STORAGE ──────────────────────
 # Reaproveita storage_upload/storage_url (mesmo bucket da jardinagem,
@@ -1474,7 +1493,7 @@ async def jard_foto_avulsa(
         if not conteudo:
             raise HTTPException(status_code=400, detail="Arquivo vazio")
         dados = comprimir_imagem(conteudo)
-        path  = storage_upload(dados, f"{datetime.now().strftime('%Y/%m')}/{uuid.uuid4().hex}.jpg")
+        path  = storage_upload(dados, f"jardinagem/{datetime.now().strftime('%Y/%m')}/{uuid.uuid4().hex}.jpg")
         antiga = jard_query("SELECT id,storage_path FROM jardinagem.fotos WHERE par_id=%s AND tipo=%s", (par_id,tipo), fetch="one")
         if antiga:
             if antiga.get("storage_path"):
@@ -1550,7 +1569,7 @@ async def jard_foto_mobile(
             raise HTTPException(status_code=400, detail="Arquivo vazio")
 
         dados = comprimir_imagem(conteudo)
-        path  = storage_upload(dados, f"{uuid.uuid4().hex}.jpg")
+        path  = storage_upload(dados, f"jardinagem/{uuid.uuid4().hex}.jpg")
 
         antiga = jard_query(
             "SELECT id, storage_path FROM jardinagem.fotos WHERE par_id=%s AND tipo=%s",
