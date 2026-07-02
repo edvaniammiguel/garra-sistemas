@@ -1,5 +1,5 @@
 /**
- * Service Worker v13 — Estratégia cache + network integrada com GarraDB
+ * Service Worker v14 — Estratégia cache + network integrada com GarraDB
  * 
  * Escopo: /operacional/
  * 
@@ -10,8 +10,8 @@
  * 4. Imagens: cache-first com limite de tamanho
  */
 
-const CACHE_NAME = 'garra-operacional-v13';
-const ASSETS_CACHE = 'garra-assets-v2';
+const CACHE_NAME = 'garra-operacional-v14';
+const ASSETS_CACHE = 'garra-assets-v3';
 const OFFLINE_PAGE = '/operacional/offline.html';
 
 // Assets que devem sempre estar em cache (shell)
@@ -40,7 +40,7 @@ const PRECACHE_ASSETS = [
 // ============================================================
 
 self.addEventListener('install', (e) => {
-  console.log('[SW] Installing v13...');
+  console.log('[SW] Installing v14...');
   e.waitUntil(
     caches.open(ASSETS_CACHE)
       .then(async (cache) => {
@@ -63,7 +63,7 @@ self.addEventListener('install', (e) => {
 // ============================================================
 
 self.addEventListener('activate', (e) => {
-  console.log('[SW] Activating v13...');
+  console.log('[SW] Activating v14...');
   e.waitUntil(
     caches.keys().then(names =>
       Promise.all(
@@ -86,7 +86,15 @@ self.addEventListener('fetch', (e) => {
   const { request } = e;
   const url = new URL(request.url);
 
-  // 0. Não interceptar a Jardinagem — ela tem seu próprio app/SW.
+  // 0a. Só intercepta requisições do PRÓPRIO domínio. Imagens/recursos de outra
+  //     origem (ex: fotos do Supabase Storage) passam direto — senão o SW
+  //     captura o fetch cross-origin, ele falha, e devolve o placeholder "Offline"
+  //     por cima de uma foto que na verdade existe.
+  if (url.origin !== self.location.origin) {
+    return; // deixa o navegador buscar direto da rede
+  }
+
+  // 0b. Não interceptar a Jardinagem — ela tem seu próprio app/SW.
   //    Sem isso, o SSO (/jardinagem/mobile?sso=) é capturado e o token se perde.
   if (url.pathname.startsWith('/jardinagem')) {
     return; // deixa o navegador buscar direto da rede
