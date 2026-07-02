@@ -496,8 +496,10 @@ input,select,textarea { font-family:inherit; font-size:13px; outline:none; }
           </div>
           <p style="font-size:13px;color:var(--muted);margin-bottom:16px">Avisos aparecem no painel do avatar de todos os colaboradores (ou filtrado por perfil).</p>
 
-          <!-- Form novo aviso (escondido) -->
+          <!-- Form novo/editar aviso (escondido) -->
           <div id="mural-form" style="display:none;background:var(--bg);border:1.5px solid var(--border);border-radius:8px;padding:16px;margin-bottom:16px">
+            <input type="hidden" id="mural-edit-id" value="">
+            <div id="mural-form-titulo" style="font-size:13px;font-weight:800;color:var(--blue);margin-bottom:12px">Novo aviso</div>
             <div style="margin-bottom:10px">
               <label style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;display:block;margin-bottom:4px">Título</label>
               <input id="mural-titulo" type="text" placeholder="Ex: Lembrete exames periódicos" style="width:100%;padding:10px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;box-sizing:border-box">
@@ -533,7 +535,7 @@ input,select,textarea { font-family:inherit; font-size:13px; outline:none; }
               </div>
             </div>
             <div style="display:flex;gap:8px">
-              <button onclick="salvarAvisoMural()" class="btn btn-primary" style="padding:8px 20px;font-size:13px">Publicar</button>
+              <button id="mural-btn-salvar" onclick="salvarAvisoMural()" class="btn btn-primary" style="padding:8px 20px;font-size:13px">Publicar</button>
               <button onclick="fecharFormMural()" class="btn btn-secondary" style="padding:8px 20px;font-size:13px">Cancelar</button>
             </div>
           </div>
@@ -2105,14 +2107,35 @@ async function carregarCartilhaAdmin() {
   }
 }
 
-function abrirFormMural() {
+function abrirFormMural(aviso) {
   document.getElementById('mural-form').style.display = 'block';
-  document.getElementById('mural-titulo').value = '';
-  document.getElementById('mural-mensagem').value = '';
-  document.querySelector('input[name="mural-modo"][value="todos"]').checked = true;
+  document.getElementById('mural-edit-id').value = aviso ? aviso.id : '';
+  document.getElementById('mural-titulo').value = aviso ? aviso.titulo : '';
+  document.getElementById('mural-mensagem').value = aviso ? aviso.mensagem : '';
+  document.querySelectorAll('.mural-perfil-cb').forEach(cb => cb.checked = false);
+  if (aviso && aviso.destinatario) {
+    document.querySelector('input[name="mural-modo"][value="individual"]').checked = true;
+  } else if (aviso && aviso.perfis) {
+    document.querySelector('input[name="mural-modo"][value="perfil"]').checked = true;
+  } else {
+    document.querySelector('input[name="mural-modo"][value="todos"]').checked = true;
+  }
   mudarModoMural();
-  popularPerfisMural();
-  popularSelectUsuariosMural();
+  popularPerfisMural().then(() => {
+    if (aviso && aviso.perfis) {
+      aviso.perfis.split(',').forEach(p => {
+        const cb = document.querySelector('.mural-perfil-cb[value="'+p.trim()+'"]');
+        if (cb) cb.checked = true;
+      });
+    }
+  });
+  popularSelectUsuariosMural().then(() => {
+    if (aviso && aviso.destinatario) {
+      document.getElementById('mural-usuario-select').value = aviso.destinatario;
+    }
+  });
+  document.getElementById('mural-form-titulo').textContent = aviso ? 'Editar aviso' : 'Novo aviso';
+  document.getElementById('mural-btn-salvar').textContent = aviso ? 'Salvar alterações' : 'Publicar';
   document.getElementById('mural-titulo').focus();
 }
 async function popularPerfisMural() {
@@ -2134,6 +2157,7 @@ async function popularPerfisMural() {
 }
 function fecharFormMural() {
   document.getElementById('mural-form').style.display = 'none';
+  document.getElementById('mural-edit-id').value = '';
 }
 function mudarModoMural() {
   const modo = document.querySelector('input[name="mural-modo"]:checked').value;
@@ -2152,6 +2176,7 @@ async function popularSelectUsuariosMural() {
   } catch(e) {}
 }
 async function salvarAvisoMural() {
+  const editId = document.getElementById('mural-edit-id').value;
   const titulo = document.getElementById('mural-titulo').value.trim();
   const mensagem = document.getElementById('mural-mensagem').value.trim();
   const modo = document.querySelector('input[name="mural-modo"]:checked').value;
@@ -2166,14 +2191,22 @@ async function salvarAvisoMural() {
   }
   if (!titulo || !mensagem) { toast('Preencha título e mensagem','error'); return; }
   try {
-    await apiFetch('/api/mural', {
-      method: 'POST',
-      body: JSON.stringify({ titulo, mensagem, perfis, destinatario })
-    });
-    toast('Aviso publicado!','success');
+    if (editId) {
+      await apiFetch('/api/mural/'+editId, {
+        method: 'PUT',
+        body: JSON.stringify({ titulo, mensagem, perfis, destinatario })
+      });
+      toast('Aviso atualizado!','success');
+    } else {
+      await apiFetch('/api/mural', {
+        method: 'POST',
+        body: JSON.stringify({ titulo, mensagem, perfis, destinatario })
+      });
+      toast('Aviso publicado!','success');
+    }
     fecharFormMural();
     carregarMuralAdmin();
-  } catch(e) { toast(e.message || 'Erro ao publicar','error'); }
+  } catch(e) { toast(e.message || 'Erro ao salvar','error'); }
 }
 async function excluirAvisoMural(id) {
   if (!confirm('Desativar este aviso?')) return;
@@ -2208,6 +2241,7 @@ async function carregarMuralAdmin() {
           <div style="font-size:13px;color:var(--muted);margin-top:4px">${a.mensagem}</div>
           <div style="font-size:11px;color:var(--muted);margin-top:4px">${data} · ${a.criado_por||''}</div>
         </div>
+        <button onclick='abrirFormMural(${JSON.stringify(a).replace(/'/g,"&apos;")})' class="btn-sm" style="flex-shrink:0;padding:4px 10px;font-size:11px" title="Editar">✎</button>
         <button onclick="excluirAvisoMural(${a.id})" class="btn-sm" style="color:var(--red);border-color:var(--red);flex-shrink:0;padding:4px 10px;font-size:11px" title="Remover">✕</button>
       </div>`;
     }).join('');
