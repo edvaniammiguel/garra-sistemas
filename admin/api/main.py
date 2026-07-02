@@ -3710,6 +3710,15 @@ async def criar_aviso_mural(dados: MuralCreate, payload=Depends(verificar_admin)
     )
     return {"ok": True}
 
+@app.put("/api/mural/{aviso_id}")
+async def editar_aviso_mural(aviso_id: int, dados: MuralCreate, payload=Depends(verificar_admin)):
+    """Admin edita um aviso existente."""
+    jard_query(
+        "UPDATE public.mural_avisos SET titulo=%s, mensagem=%s, perfis=%s, destinatario=%s WHERE id=%s",
+        (dados.titulo, dados.mensagem, dados.perfis, dados.destinatario, aviso_id), fetch="none"
+    )
+    return {"ok": True}
+
 @app.delete("/api/mural/{aviso_id}")
 async def desativar_aviso_mural(aviso_id: int, payload=Depends(verificar_admin)):
     """Admin desativa aviso (soft delete)."""
