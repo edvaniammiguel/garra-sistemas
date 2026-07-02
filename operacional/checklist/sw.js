@@ -1,8 +1,8 @@
 /* ═══════════════════════════════════════════════════
-   sw.js — Garra Check List v9 — 20260518
+   sw.js — Garra Check List v10 — 20260702
 ═══════════════════════════════════════════════════ */
 
-const CACHE = 'garra-v9-20260518';
+const CACHE = 'garra-v10-20260702';
 
 const APP_SHELL = [
   '/index.html',
@@ -81,6 +81,22 @@ self.addEventListener('fetch', e => {
           return res;
         }).catch(() => new Response('', {status:200}));
       })
+    );
+    return;
+  }
+
+  // JS e CSS — Network First: sempre tenta a versão mais nova da rede,
+  // usa o cache só se estiver offline. Evita servir código velho (ex: fixes
+  // que não chegavam ao dispositivo por causa do Cache First).
+  if (url.pathname.endsWith('.js') || url.pathname.endsWith('.css')) {
+    e.respondWith(
+      fetch(e.request).then(res => {
+        if (res && res.ok) {
+          const clone = res.clone();
+          caches.open(CACHE).then(c => c.put(e.request, clone));
+        }
+        return res;
+      }).catch(() => caches.match(e.request))
     );
     return;
   }
