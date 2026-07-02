@@ -690,6 +690,10 @@ async function fazerLogin() {
 }
 
 function fazerLogout() {
+  // Remove o painel do avatar (Minha conta), se estiver aberto — senão fica
+  // flutuando por cima da tela de login mesmo depois do logout.
+  const painelConta = document.getElementById('modal-conta');
+  if (painelConta) painelConta.remove();
   localStorage.removeItem('garra_token');
   localStorage.removeItem('garra_usuario');
   USUARIO = null;
