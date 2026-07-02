@@ -43,42 +43,9 @@ let builderFocusId   = null;
 // ─── STORAGE LOCAL ─────────────────────────────────
 const DB = {
   get: k => { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } },
-  set(k, v) {
-    try {
-      localStorage.setItem(k, JSON.stringify(v));
-    } catch (e) {
-      const quotaEstourada = e && (e.name === 'QuotaExceededError' || /quota/i.test(e.message || ''));
-      if (!quotaEstourada || k !== 'garra_submissions' || !Array.isArray(v)) { throw e; }
-      // Cota do navegador estourada — poda o histórico local mais antigo e tenta de novo.
-      // Nunca descarta envios ainda não sincronizados (synced:false).
-      console.warn('[DB] Cota de armazenamento excedida — podando histórico local...');
-      const pendentes    = v.filter(s => s.synced === false);
-      const sincronizadas = v.filter(s => s.synced !== false).slice(0, 80);
-      try {
-        localStorage.setItem(k, JSON.stringify([...pendentes, ...sincronizadas]));
-        console.warn('[DB] Histórico local podado para', pendentes.length + sincronizadas.length, 'itens.');
-        return;
-      } catch (e2) {
-        // Ainda não coube — remove as fotos (maior peso) das já sincronizadas como último recurso
-        const semFotos = sincronizadas.map(s => {
-          const answers = {};
-          Object.keys(s.answers || {}).forEach(id => {
-            const a = { ...s.answers[id] };
-            if (a.photo) a.photo = null;
-            answers[id] = a;
-          });
-          return { ...s, answers };
-        });
-        try {
-          localStorage.setItem(k, JSON.stringify([...pendentes, ...semFotos]));
-          console.warn('[DB] Fotos removidas do histórico local sincronizado para liberar espaço.');
-        } catch (e3) {
-          console.error('[DB] Não foi possível salvar mesmo após poda:', e3);
-          throw e3;
-        }
-      }
-    }
-  },
+  // Grava com proteção contra estouro de cota — lógica compartilhada com a fila
+  // offline em db.js (SafeStorage), evitando duas implementações paralelas.
+  set: (k, v) => SafeStorage.set(k, v),
   users()       { return this.get('garra_users')       || seedUsers(); },
   submissions() { return this.get('garra_submissions') || []; },
   pendingSync() { return this.get('garra_pending')     || []; },
@@ -746,9 +713,43 @@ function toggleCheckboxAnswer(itemId,val,checked) {
 }
 function setPhotoAnswer(itemId,input) {
   const file=input.files[0]; if(!file)return;
-  const reader=new FileReader();
-  reader.onload=e=>{if(!formAnswers[itemId])formAnswers[itemId]={}; formAnswers[itemId].photo=e.target.result; renderFormStep(true);};
-  reader.readAsDataURL(file);
+  comprimirImagem(file, 1280, 0.7).then(dataUrl => {
+    if(!formAnswers[itemId])formAnswers[itemId]={};
+    formAnswers[itemId].photo=dataUrl;
+    renderFormStep(true);
+  }).catch(() => {
+    // Se a compressão falhar por qualquer motivo, usa a foto original como fallback
+    const reader=new FileReader();
+    reader.onload=e=>{if(!formAnswers[itemId])formAnswers[itemId]={}; formAnswers[itemId].photo=e.target.result; renderFormStep(true);};
+    reader.readAsDataURL(file);
+  });
+}
+// Redimensiona a foto (lado maior = maxLado) e recomprime em JPEG — uma foto de
+// câmera (3-8MB) vira tipicamente 150-400KB, sem perda visual perceptível para
+// documentação de checklist. Isso é o que evita a cota do navegador estourar.
+function comprimirImagem(file, maxLado, qualidade) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = reject;
+    reader.onload = e => {
+      const img = new Image();
+      img.onerror = reject;
+      img.onload = () => {
+        let { width, height } = img;
+        if (width > maxLado || height > maxLado) {
+          if (width > height) { height = Math.round(height * maxLado / width); width = maxLado; }
+          else { width = Math.round(width * maxLado / height); height = maxLado; }
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = width; canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL('image/jpeg', qualidade));
+      };
+      img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+  });
 }
 function clearPhotoAnswer(itemId) { if(formAnswers[itemId])formAnswers[itemId].photo=null; renderFormStep(true); }
 
