@@ -43,7 +43,42 @@ let builderFocusId   = null;
 // ─── STORAGE LOCAL ─────────────────────────────────
 const DB = {
   get: k => { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } },
-  set: (k, v) => localStorage.setItem(k, JSON.stringify(v)),
+  set(k, v) {
+    try {
+      localStorage.setItem(k, JSON.stringify(v));
+    } catch (e) {
+      const quotaEstourada = e && (e.name === 'QuotaExceededError' || /quota/i.test(e.message || ''));
+      if (!quotaEstourada || k !== 'garra_submissions' || !Array.isArray(v)) { throw e; }
+      // Cota do navegador estourada — poda o histórico local mais antigo e tenta de novo.
+      // Nunca descarta envios ainda não sincronizados (synced:false).
+      console.warn('[DB] Cota de armazenamento excedida — podando histórico local...');
+      const pendentes    = v.filter(s => s.synced === false);
+      const sincronizadas = v.filter(s => s.synced !== false).slice(0, 80);
+      try {
+        localStorage.setItem(k, JSON.stringify([...pendentes, ...sincronizadas]));
+        console.warn('[DB] Histórico local podado para', pendentes.length + sincronizadas.length, 'itens.');
+        return;
+      } catch (e2) {
+        // Ainda não coube — remove as fotos (maior peso) das já sincronizadas como último recurso
+        const semFotos = sincronizadas.map(s => {
+          const answers = {};
+          Object.keys(s.answers || {}).forEach(id => {
+            const a = { ...s.answers[id] };
+            if (a.photo) a.photo = null;
+            answers[id] = a;
+          });
+          return { ...s, answers };
+        });
+        try {
+          localStorage.setItem(k, JSON.stringify([...pendentes, ...semFotos]));
+          console.warn('[DB] Fotos removidas do histórico local sincronizado para liberar espaço.');
+        } catch (e3) {
+          console.error('[DB] Não foi possível salvar mesmo após poda:', e3);
+          throw e3;
+        }
+      }
+    }
+  },
   users()       { return this.get('garra_users')       || seedUsers(); },
   submissions() { return this.get('garra_submissions') || []; },
   pendingSync() { return this.get('garra_pending')     || []; },
@@ -60,7 +95,11 @@ const DB = {
     const list = this.submissions();
     const dup = list.findIndex(x => x.id === s.id);
     if (dup >= 0) list[dup] = s; else list.unshift(s);
-    this.set('garra_submissions', list);
+    // Poda proativa: mantém TODAS as pendentes de sync + as 150 sincronizadas mais recentes.
+    // Evita que o histórico local cresça sem limite até estourar a cota do navegador.
+    const pendentes     = list.filter(x => x.synced === false);
+    const sincronizadas = list.filter(x => x.synced !== false).slice(0, 150);
+    this.set('garra_submissions', [...pendentes, ...sincronizadas]);
   },
   addPending(s)  { const p = this.pendingSync(); p.push(s); this.set('garra_pending', p); },
   clearPending() { this.set('garra_pending', []); },
