@@ -1790,9 +1790,13 @@ async function syncCustomCLsFromAPI() {
 }
 
 async function syncAllFromAPI() {
-  await syncUsersFromAPI();
-  await syncFrotaFromAPI();
-  await syncCustomCLsFromAPI();
+  // Em PARALELO — antes era sequencial (um await esperando o outro),
+  // o que triplicava o tempo de boot em conexões móveis.
+  await Promise.all([
+    syncUsersFromAPI(),
+    syncFrotaFromAPI(),
+    syncCustomCLsFromAPI(),
+  ]);
 }
 
 async function syncFrotaFromAPI() {
@@ -1885,9 +1889,10 @@ async function saveCustomCLToAPI(cl) {
 
 // ─── INIT ──────────────────────────────────────────
 updateSyncUI();
+// syncAllFromAPI já inclui usuários + frota + modelos (em paralelo).
+// As 2 chamadas extras de syncCustomCLsFromAPI foram removidas — o
+// /checklist/modelos era buscado 3x a cada abertura do app.
 syncAllFromAPI();
-syncCustomCLsFromAPI();
-syncCustomCLsFromAPI();
 
 
 
