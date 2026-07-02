@@ -415,6 +415,8 @@ function showSuperior() {
   }
 
   renderSuperiorDashboard();
+  // Busca envios do servidor e re-renderiza (mesma hidratação do manager)
+  sincronizarEnviosDoServidor().then(ok => { if (ok) renderSuperiorDashboard(); });
 
   // Botão "Novo Check List" só para admin/gestor/luana (não operador comum)
   const criarBar = document.getElementById('sup-criar-bar');
@@ -437,6 +439,9 @@ function showManager() {
   }
 
   renderManagerDashboard();
+  // Renderiza primeiro do cache local (rápido), depois busca do servidor
+  // e re-renderiza — o painel do gestor mostra TODOS os envios do banco.
+  sincronizarEnviosDoServidor().then(ok => { if (ok) renderManagerDashboard(); });
 }
 function goBack()        { if (currentUser?.role==='manager') showManager(); else if (currentUser?.role==='superior') showSuperior(); else showDriver(); }
 function goToDashboard() { goBack(); }
@@ -871,6 +876,47 @@ function formPrev() { saveCurrentStep(); if(currentStep>0){currentStep--;renderF
 
 // ─── PONTUAÇÃO ─────────────────────────────────────
 function countNC(s) { return Object.values(s.answers||{}).filter(a=>a.val==='NC').length; }
+
+// ─── HIDRATAÇÃO DO SERVIDOR (banco é a fonte da verdade) ────────────
+// O painel do gestor/admin renderizava SÓ do localStorage do próprio
+// dispositivo — envios feitos no celular do operador nunca apareciam no
+// desktop. Agora: busca do servidor e mescla com o cache local.
+function mesclarEnviosServidor(serverRows) {
+  const locais = DB.submissions();
+  const doServidor = (serverRows || []).map(r => ({
+    id:       r.envio_id,
+    user:     r.usuario_login,
+    userName: r.usuario_nome,
+    type:     r.cl_id,
+    clLabel:  r.cl_label,
+    meta:     r.meta || {},
+    answers:  r.respostas || {},
+    pts:      r.pts || 0,
+    date:     r.enviado_em,
+    synced:   true,
+    archived: false, // o GET só retorna arquivado=FALSE
+  }));
+  const idsServidor = new Set(doServidor.map(s => s.id));
+  // Preserva locais que o servidor não retornou: pendentes de sync (fila
+  // offline) e arquivados (excluídos do GET) — nunca perder pendências.
+  const soLocais = locais.filter(s => !idsServidor.has(s.id));
+  const lista = [...doServidor, ...soLocais]
+    .sort((a, b) => new Date(b.date) - new Date(a.date));
+  DB.set('garra_submissions', lista);
+}
+
+async function sincronizarEnviosDoServidor() {
+  if (!navigator.onLine) return false;
+  try {
+    const rows = await GarraDB.getEnvios({ limit: 200 });
+    mesclarEnviosServidor(rows);
+    console.log('[Envios] Hidratado do servidor:', (rows || []).length, 'envio(s)');
+    return true;
+  } catch (e) {
+    console.warn('[Envios] Falha ao buscar do servidor:', e.message);
+    return false;
+  }
+}
 function calculatePoints(s, cl) {
   const rules=cl.scoreRules||{full:100,nc:60,obs:20,ontime:10};
   const nc=countNC(s);
@@ -1051,7 +1097,7 @@ function renderOverview() {
   const subs=DB.submissions(),weekAgo=new Date(Date.now()-7*86400000);
   document.getElementById('kpi-total').textContent        = subs.length;
   document.getElementById('kpi-week').textContent         = subs.filter(s=>new Date(s.date)>weekAgo).length;
-  document.getElementById('kpi-pending-sync').textContent = DB.pendingSync().length;
+  document.getElementById('kpi-pending-sync').textContent = OfflineQueue.get().length + DB.pendingSync().length;
   document.getElementById('kpi-nc').textContent           = subs.filter(s=>countNC(s)>0).length;
   const allCLs=DB.allCLs(),counts={};
   Object.keys(allCLs).forEach(k=>counts[k]=0);
