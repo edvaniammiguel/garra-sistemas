@@ -203,6 +203,14 @@ setInterval(() => {
   }
 }, 60000);
 
+// Na abertura do app: migra a fila legada (garra_pending → garra_offline_q)
+// e tenta um sync inicial se estiver online. Idempotente.
+window.addEventListener('load', () => {
+  migrarFilaAntiga();
+  if (navigator.onLine) syncNow();
+  updateSyncUI();
+});
+
 function updateSyncUI() {
   ['sync-dot','mgr-sync-dot','sup-sync-dot'].forEach(id => {
     const el = document.getElementById(id);
@@ -214,23 +222,30 @@ function updateSyncUI() {
   });
   const badge = document.getElementById('offline-badge');
   if (badge) badge.style.display = isOnline ? 'none' : 'flex';
-  const pending = DB.pendingSync();
+  // Fila UNIFICADA (garra_offline_q) + residual da fila antiga (garra_pending,
+  // zerada pela migração na abertura — mantida na soma por segurança)
+  const pendentes = OfflineQueue.get().length + DB.pendingSync().length;
   const banner  = document.getElementById('pending-banner');
   const cnt     = document.getElementById('pending-count');
-  if (banner) banner.style.display = pending.length > 0 ? 'flex' : 'none';
-  if (cnt)    cnt.textContent = pending.length;
+  if (banner) banner.style.display = pendentes > 0 ? 'flex' : 'none';
+  if (cnt)    cnt.textContent = pendentes;
 }
 
-async function syncNow() {
-  if (!isOnline) return;
-  const pending = DB.pendingSync();
-  if (!pending.length) return;
-  console.log('[Sync] Reenviando', pending.length, 'checklist(s) pendente(s)...');
-
-  const enviados = [];
-  for (const s of pending) {
-    try {
-      await GarraDB.salvarEnvio({
+// ─── MIGRAÇÃO: fila antiga (garra_pending) → fila unificada (garra_offline_q) ───
+// Roda na abertura do app. Converte submissions pendentes da fila legada em
+// itens tipados da fila unificada e limpa a chave antiga. Idempotente.
+function migrarFilaAntiga() {
+  const legado = DB.pendingSync();
+  if (!legado.length) return;
+  const jaEnfileirados = new Set(OfflineQueue.get().map(i => i.ref_id).filter(Boolean));
+  let migrados = 0;
+  for (const s of legado) {
+    if (jaEnfileirados.has(s.id)) continue; // já está na fila unificada — não duplicar
+    OfflineQueue.add({
+      tipo: 'envio',
+      ref_id: s.id,
+      path: '/checklist/envios',
+      options: { method: 'POST', body: JSON.stringify({
         envio_id:      s.id,
         usuario_login: s.user,
         usuario_nome:  s.userName,
@@ -242,27 +257,38 @@ async function syncNow() {
         tem_nc:        (s.meta?.totalNC || 0) > 0,
         total_nc:      s.meta?.totalNC || 0,
         enviado_em:    s.date,
-      });
-      s.synced = true;
-      DB.saveSubmission(s);
-      enviados.push(s.id);
-      console.log('[Sync] ✅ Enviado:', s.id);
-    } catch (e) {
-      console.warn('[Sync] ❌ Falhou:', s.id, e.message);
-      // Mantém na fila para próxima tentativa
+      })}
+    });
+    migrados++;
+  }
+  DB.clearPending();
+  if (migrados) console.log('[Migração] ', migrados, 'item(ns) da fila antiga movido(s) para a fila unificada');
+}
+
+async function syncNow() {
+  if (!isOnline) return;
+  migrarFilaAntiga();            // garante que nada ficou na fila legada
+  await OfflineQueue.flush();    // fila ÚNICA: envios + logística + usuários
+  updateSyncUI();
+}
+
+// Quando a fila unificada sincroniza envios de checklist, marcar as
+// submissions locais como synced (o backend deduplica por envio_id).
+window.addEventListener('garra:fila-sincronizada', (ev) => {
+  const enviados = (ev.detail && ev.detail.enviados) || [];
+  const idsEnvio = enviados.filter(i => i.tipo === 'envio' && i.ref_id).map(i => i.ref_id);
+  if (idsEnvio.length) {
+    const subs = DB.submissions();
+    let mudou = false;
+    for (const s of subs) {
+      if (idsEnvio.includes(s.id) && s.synced === false) { s.synced = true; mudou = true; }
     }
+    if (mudou) DB.set('garra_submissions', subs);
+    console.log('[Sync] ✅', idsEnvio.length, 'checklist(s) sincronizado(s) da fila unificada');
   }
-
-  // Remover da fila apenas os que foram enviados com sucesso
-  if (enviados.length > 0) {
-    const restante = pending.filter(s => !enviados.includes(s.id));
-    DB.set('garra_pending', restante);
-    console.log('[Sync] ✅', enviados.length, 'enviado(s),', restante.length, 'restante(s)');
-  }
-
   updateSyncUI();
   if (currentUser?.role === 'driver') renderDriverDashboard();
-}
+});
 
 // ─── AUTH ───────────────────────────────────────────
 async function doLogin() {
@@ -889,27 +915,39 @@ async function submitChecklist() {
 
     // 2. Tenta enviar para o banco
     let sincronizado = false;
+    const payloadEnvio = {
+      envio_id:      submission.id,
+      usuario_login: submission.user,
+      usuario_nome:  submission.userName,
+      cl_id:         submission.type,
+      cl_label:      submission.clLabel,
+      meta:          submission.meta,
+      respostas:     submission.answers,
+      pts:           submission.pts,
+      tem_nc:        countNC(submission) > 0,
+      total_nc:      countNC(submission),
+      enviado_em:    submission.date,
+    };
     try {
-      await GarraDB.salvarEnvio({
-        envio_id:      submission.id,
-        usuario_login: submission.user,
-        usuario_nome:  submission.userName,
-        cl_id:         submission.type,
-        cl_label:      submission.clLabel,
-        meta:          submission.meta,
-        respostas:     submission.answers,
-        pts:           submission.pts,
-        tem_nc:        countNC(submission) > 0,
-        total_nc:      countNC(submission),
-        enviado_em:    submission.date,
-      });
-      sincronizado = true;
-      submission.synced = true;
-      DB.saveSubmission(submission);
+      const res = await GarraDB.salvarEnvio(payloadEnvio);
+      if (res && res.offline) {
+        // Offline: o salvarEnvio JÁ enfileirou na fila unificada (garra_offline_q).
+        // NÃO marcar como sincronizado — o evento garra:fila-sincronizada marca depois.
+        console.warn('[Submit] Offline — envio na fila unificada:', submission.id);
+      } else {
+        sincronizado = true;
+        submission.synced = true;
+        DB.saveSubmission(submission);
+      }
     } catch(apiErr) {
-      // Offline ou erro na API — adiciona à fila para sync posterior
-      console.warn('[Submit] API falhou, salvando offline:', apiErr.message);
-      DB.addPending(submission);
+      // Erro não-offline (ex: 500) — enfileira na MESMA fila unificada
+      console.warn('[Submit] API falhou, salvando na fila:', apiErr.message);
+      OfflineQueue.add({
+        tipo: 'envio',
+        ref_id: submission.id,
+        path: '/checklist/envios',
+        options: { method: 'POST', body: JSON.stringify(payloadEnvio) }
+      });
     }
 
     // 3. Atualiza pontos do colaborador localmente
@@ -1275,6 +1313,7 @@ async function saveEditUser() {
         DB.set('garra_users', users);
       }
       OfflineQueue.add({
+        tipo: 'usuario',
         path: `/usuarios/${editingUserLogin}/editar`,
         options: { method:'POST', body: JSON.stringify({nome:name, perfil:role, senha:pass||null}) }
       });
@@ -1309,7 +1348,7 @@ async function saveNewUser() {
   } catch(e) {
     if(e.message==='OFFLINE'){
       DB.saveUser({name,login,pass,role,funcao,veiculo,pts:0,submissions:0});
-      OfflineQueue.add({path:'/usuarios',options:{method:'POST',body:JSON.stringify({login,nome:name,senha:pass,perfil:role})}});
+      OfflineQueue.add({tipo:'usuario',path:'/usuarios',options:{method:'POST',body:JSON.stringify({login,nome:name,senha:pass,perfil:role})}});
       ['nu-name','nu-user','nu-pass'].forEach(id=>document.getElementById(id).value='');
       closeModal('user-modal');renderUsers();
       alert('⚠️ Salvo localmente. Sincronizará quando online.');
