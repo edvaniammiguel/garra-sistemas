@@ -839,9 +839,14 @@
           const roleByChecklist = { superior:'superior', manager:'manager', driver:'driver' };
           const role = roleByChecklist[perfilChecklist] || roleMap[perfil] || 'driver';
 
-          // Buscar permissão específica de Logística (módulo dentro do Checklist)
+          // Permissão de Logística: o /auth/renovar JÁ retorna permsDB
+          // (banco + padrão do perfil) — mesma fonte do /mobile. Usar direto
+          // elimina 1 round-trip inteiro do boot. Fallback: chamada antiga
+          // /permissoes só se o permsDB não vier (compatibilidade de deploy).
           let temLogistica = (perfil === 'admin'); // admin sempre tem, por padrão de perfil
-          if (data.id) {
+          if (data.permsDB && typeof data.permsDB.checklist_logistica === 'boolean') {
+            temLogistica = data.permsDB.checklist_logistica;
+          } else if (data.id) {
             try {
               const permRes = await fetch(API + '/permissoes/usuario/' + data.id, {
                 headers: { 'Authorization': 'Bearer ' + (data.token || token) }
