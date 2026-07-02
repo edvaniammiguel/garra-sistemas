@@ -1,17 +1,20 @@
 /**
- * Service Worker v14 — Estratégia cache + network integrada com GarraDB
+ * Service Worker v15 — Estratégia cache + network integrada com GarraDB
  * 
  * Escopo: /operacional/
  * 
  * Estratégias:
  * 1. HTML (pages): network-first, fallback para cache
  * 2. API: network-first, fallback para IndexedDB (GarraDB)
- * 3. Assets (JS/CSS/icons): cache-first
- * 4. Imagens: cache-first com limite de tamanho
+ * 3. Assets (JS/CSS): stale-while-revalidate — serve o cache NA HORA
+ *    (abertura instantânea) e atualiza em background; a próxima abertura
+ *    já pega a versão nova. Resolve "fix não chega ao aparelho" sem
+ *    precisar de bump de SW a cada mudança de JS.
+ * 4. Imagens/ícones: cache-first com limite de tamanho
  */
 
-const CACHE_NAME = 'garra-operacional-v14';
-const ASSETS_CACHE = 'garra-assets-v3';
+const CACHE_NAME = 'garra-operacional-v15';
+const ASSETS_CACHE = 'garra-assets-v4';
 const OFFLINE_PAGE = '/operacional/offline.html';
 
 // Assets que devem sempre estar em cache (shell)
@@ -40,7 +43,7 @@ const PRECACHE_ASSETS = [
 // ============================================================
 
 self.addEventListener('install', (e) => {
-  console.log('[SW] Installing v14...');
+  console.log('[SW] Installing v15...');
   e.waitUntil(
     caches.open(ASSETS_CACHE)
       .then(async (cache) => {
@@ -63,7 +66,7 @@ self.addEventListener('install', (e) => {
 // ============================================================
 
 self.addEventListener('activate', (e) => {
-  console.log('[SW] Activating v14...');
+  console.log('[SW] Activating v15...');
   e.waitUntil(
     caches.keys().then(names =>
       Promise.all(
@@ -121,10 +124,13 @@ self.addEventListener('fetch', (e) => {
     return;
   }
 
-  // 3. Assets (JS, CSS, icons) — cache-first
+  // 3. JS/CSS — stale-while-revalidate: cache na hora + atualização em background
+  if (url.pathname.endsWith('.js') || url.pathname.endsWith('.css')) {
+    return e.respondWith(staleWhileRevalidateAssets(e));
+  }
+
+  // 3b. Ícones/SVG/manifest — cache-first (imutáveis na prática)
   if (
-    url.pathname.endsWith('.js') ||
-    url.pathname.endsWith('.css') ||
     url.pathname.endsWith('.svg') ||
     url.pathname.includes('/icons/') ||
     url.pathname.endsWith('/manifest.json')
@@ -202,6 +208,32 @@ async function networkFirstAPI(request) {
     status: 503,
     headers: { 'Content-Type': 'application/json' }
   });
+}
+
+// Stale-while-revalidate: responde do cache IMEDIATAMENTE (abertura
+// instantânea) e busca a versão nova em background, atualizando o cache
+// para a próxima abertura. Se não há cache (1ª visita), espera a rede.
+async function staleWhileRevalidateAssets(event) {
+  const request = event.request;
+  const cache = await caches.open(ASSETS_CACHE);
+  const cached = await cache.match(request);
+
+  const atualizar = fetch(request)
+    .then(response => {
+      if (response.ok) cache.put(request, response.clone());
+      return response;
+    })
+    .catch(() => null);
+
+  if (cached) {
+    // Garante que a atualização em background termina mesmo após responder
+    event.waitUntil(atualizar);
+    return cached;
+  }
+
+  const fresco = await atualizar;
+  if (fresco) return fresco;
+  return new Response('Asset não disponível', { status: 404 });
 }
 
 async function cacheFirstAssets(request) {
