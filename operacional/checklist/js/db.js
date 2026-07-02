@@ -156,22 +156,38 @@ const SafeStorage = {
   },
 };
 
-// ─── FILA OFFLINE ──────────────────────────────────────────
+// ─── FILA OFFLINE (UNIFICADA) ──────────────────────────────
+// Fila ÚNICA de escrita offline do checklist/logística/usuários.
+// Item: { tipo: 'envio'|'logistica'|'usuario', ref_id?, path, options, ts }
+//   tipo/ref_id permitem que o app.js atualize o estado local (ex: marcar
+//   submission synced=true) quando o item é sincronizado com sucesso.
+// Ao fim de um flush com sucessos, dispara o evento 'garra:fila-sincronizada'
+// com detail.enviados = itens sincronizados.
 const OfflineQueue = {
+  flushing: false,
   get()     { try { return JSON.parse(localStorage.getItem('garra_offline_q') || '[]'); } catch { return []; } },
   add(item) { const q = this.get(); q.push({...item, ts: Date.now()}); SafeStorage.set('garra_offline_q', q); },
   clear()   { SafeStorage.set('garra_offline_q', []); },
   async flush() {
     if (!navigator.onLine) return;
-    const queue = this.get();
-    if (!queue.length) return;
-    const failed = [];
-    for (const item of queue) {
-      try { await apiFetch(item.path, item.options); }
-      catch { failed.push(item); }
+    if (this.flushing) return;           // evita flush concorrente (online + timer)
+    this.flushing = true;
+    try {
+      const queue = this.get();
+      if (!queue.length) return;
+      const failed = [], enviados = [];
+      for (const item of queue) {
+        try { await apiFetch(item.path, item.options); enviados.push(item); }
+        catch { failed.push(item); }
+      }
+      SafeStorage.set('garra_offline_q', failed);
+      if (enviados.length) {
+        window.dispatchEvent(new CustomEvent('garra:fila-sincronizada', { detail: { enviados } }));
+        console.log('✅ Fila offline:', enviados.length, 'sincronizado(s),', failed.length, 'restante(s)');
+      }
+    } finally {
+      this.flushing = false;
     }
-    SafeStorage.set('garra_offline_q', failed);
-    if (!failed.length) console.log('✅ Fila offline sincronizada');
   }
 };
 window.addEventListener('online', () => OfflineQueue.flush());
@@ -273,6 +289,8 @@ const GarraDB = {
     } catch(e) {
       if (e.message === 'OFFLINE' || e.message === 'TIMEOUT') {
         OfflineQueue.add({
+          tipo: 'envio',
+          ref_id: envio.envio_id,
           path: '/checklist/envios',
           options: { method: 'POST', body: JSON.stringify(envio) }
         });
@@ -400,6 +418,7 @@ const GarraDB = {
     } catch(e) {
       if (e.message === 'OFFLINE' || e.message === 'TIMEOUT') {
         OfflineQueue.add({
+          tipo: 'logistica',
           path: '/logistica/registros',
           options: { method: 'POST', body: JSON.stringify(r) }
         });
