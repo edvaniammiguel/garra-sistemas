@@ -398,6 +398,50 @@ def storage_delete(paths: list):
         )
     except: pass
 
+# ── FOTOS DO CHECKLIST → SUPABASE STORAGE ──────────────────────
+# Reaproveita storage_upload/storage_url (mesmo bucket da jardinagem,
+# path com prefixo "checklist/" para não colidir).
+import base64 as _b64
+
+def _checklist_extrair_fotos_para_storage(envio_id: str, respostas: dict) -> dict:
+    """Percorre as respostas de um envio; troca cada foto em base64 por um
+    upload real no Supabase Storage, guardando só o path no lugar do base64.
+    Se o upload falhar por qualquer motivo, mantém o base64 original (nunca perde a foto)."""
+    if not isinstance(respostas, dict):
+        return respostas
+    for item_id, ans in respostas.items():
+        if not isinstance(ans, dict):
+            continue
+        photo = ans.get("photo")
+        if not photo or not isinstance(photo, str) or not photo.startswith("data:image"):
+            continue
+        try:
+            header, b64data = photo.split(",", 1)
+            dados = _b64.b64decode(b64data)
+            path = f"checklist/{envio_id}/{item_id}.jpg"
+            storage_upload(dados, path)
+            ans["photo"] = path  # guarda só o caminho, não mais a imagem inteira
+        except Exception as e:
+            print(f"[Checklist Storage] upload falhou para {item_id}: {e} — mantendo base64 como fallback")
+    return respostas
+
+def _checklist_assinar_fotos_para_leitura(respostas: dict) -> dict:
+    """Percorre as respostas de um envio; troca cada path de foto salvo no Storage
+    por uma URL assinada válida para exibição. Base64 antigo (dados pré-migração)
+    passa direto, sem alteração."""
+    if not isinstance(respostas, dict):
+        return respostas
+    for item_id, ans in respostas.items():
+        if not isinstance(ans, dict):
+            continue
+        photo = ans.get("photo")
+        if not photo or not isinstance(photo, str):
+            continue
+        if photo.startswith("data:image") or photo.startswith("http"):
+            continue  # já é base64 antigo ou já é uma URL — não mexe
+        ans["photo"] = storage_url(photo) or photo
+    return respostas
+
 # ── JWT (jardinagem) ──────────────────────────────────────────
 import jwt as pyjwt
 
@@ -910,6 +954,7 @@ async def listar_envios(usuario: Optional[str]=None, cl_id: Optional[str]=None, 
         d = dict(r)
         d["meta"]      = d["meta"]      if isinstance(d["meta"],dict)      else json.loads(d["meta"]      or "{}")
         d["respostas"] = d["respostas"] if isinstance(d["respostas"],dict) else json.loads(d["respostas"] or "{}")
+        d["respostas"] = _checklist_assinar_fotos_para_leitura(d["respostas"])
         result.append(d)
     return result
 
@@ -918,9 +963,10 @@ async def salvar_envio(e: EnvioCreate, db=Depends(get_db), _auth=Depends(verific
     existe = await db.fetchval("SELECT id FROM checklist.envios WHERE envio_id=$1", e.envio_id)
     if existe: return {"ok": True, "duplicado": True}
     data = datetime.fromisoformat(e.enviado_em) if e.enviado_em else datetime.now()
+    respostas_processadas = _checklist_extrair_fotos_para_storage(e.envio_id, dict(e.respostas))
     await db.execute(
         "INSERT INTO checklist.envios (envio_id,usuario_login,usuario_nome,cl_id,cl_label,meta,respostas,pts,tem_nc,total_nc,enviado_em) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)",
-        e.envio_id,e.usuario_login,e.usuario_nome,e.cl_id,e.cl_label,json.dumps(e.meta),json.dumps(e.respostas),e.pts,e.tem_nc,e.total_nc,data
+        e.envio_id,e.usuario_login,e.usuario_nome,e.cl_id,e.cl_label,json.dumps(e.meta),json.dumps(respostas_processadas),e.pts,e.tem_nc,e.total_nc,data
     )
     await db.execute(
         "UPDATE public.usuarios_garra SET pts=pts+$1, total_envios=total_envios+1, atualizado_em=NOW() WHERE login=$2",
