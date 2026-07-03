@@ -60,6 +60,10 @@ from core.models import (
     SenhaResetRequest, SenhaResetConfirm, EnvioCreate, FrotaItem,
     ChecklistModeloCreate, LogMotoristaCreate, LogVeiculoCreate, LogRegistroCreate,
 )
+from core.webauthn import (
+    WEBAUTHN_TABLES_SQL, gerar_opcoes_registro, verificar_registro,
+    gerar_opcoes_login, verificar_login,
+)
 from core.permissions import (
     MODULOS_DISPONIVEIS, PERFIL_MODULOS_PADRAO, PERFIL_LABEL_SEED,
     PERFIS_TABLE_SQL, perfil_modulos_padrao,
@@ -462,6 +466,188 @@ async def renovar_token(payload=Depends(verificar_token)):
         "total_envios": (user["total_envios"] if user else 0) or 0,
         "permsDB": perms,
     }
+
+# ══════════════════════════════════════════════════════════════
+# BIOMETRIA (WebAuthn) — login por digital/Face ID
+# Sessão 1 (03/07/2026). Senha permanece SEMPRE como fallback.
+# Helpers em core/webauthn.py; desafios persistidos no banco
+# (WEB_CONCURRENCY=2 — memória não sobrevive entre workers).
+# ══════════════════════════════════════════════════════════════
+
+@app.on_event("startup")
+async def criar_tabelas_webauthn():
+    try:
+        jard_query(WEBAUTHN_TABLES_SQL, fetch="none")
+    except Exception as e:
+        print(f"[WebAuthn] Falha ao criar tabelas: {e}")
+
+
+@app.post("/auth/webauthn/registro/desafio")
+async def webauthn_registro_desafio(db=Depends(get_db), payload=Depends(verificar_token)):
+    """Passo 1 do cadastro (usuário LOGADO): gera as opções para
+    navigator.credentials.create() e persiste o desafio."""
+    user = await db.fetchrow(
+        "SELECT id, login, nome FROM public.usuarios_garra WHERE login=$1 AND ativo=TRUE",
+        payload["login"]
+    )
+    if not user:
+        raise HTTPException(status_code=404, detail="Usuário não encontrado")
+    existentes = await db.fetch(
+        "SELECT credential_id FROM public.credenciais_webauthn WHERE usuario_id=$1 AND ativo=TRUE",
+        user["id"]
+    )
+    options_json, desafio = gerar_opcoes_registro(dict(user), [dict(r) for r in existentes])
+    await db.execute("DELETE FROM public.webauthn_desafios WHERE login=$1 AND tipo='registro'", user["login"])
+    await db.execute(
+        "INSERT INTO public.webauthn_desafios (login, desafio, tipo) VALUES ($1,$2,'registro')",
+        user["login"], desafio
+    )
+    return json.loads(options_json)
+
+
+@app.post("/auth/webauthn/registro/verificar")
+async def webauthn_registro_verificar(request: Request, db=Depends(get_db), payload=Depends(verificar_token)):
+    """Passo 2 do cadastro: valida a resposta do create() e salva a chave pública."""
+    body = await request.json()
+    credencial = body.get("credencial")
+    apelido = (body.get("apelido") or "")[:60]
+    if not credencial:
+        raise HTTPException(status_code=400, detail="Credencial ausente")
+    row = await db.fetchrow(
+        "SELECT desafio FROM public.webauthn_desafios "
+        "WHERE login=$1 AND tipo='registro' AND criado_em > NOW() - INTERVAL '5 minutes' "
+        "ORDER BY criado_em DESC LIMIT 1",
+        payload["login"]
+    )
+    if not row:
+        raise HTTPException(status_code=400, detail="Desafio expirado — tente novamente")
+    try:
+        dados = verificar_registro(credencial, row["desafio"])
+    except Exception:
+        raise HTTPException(status_code=400, detail="Falha na validação da credencial")
+    user = await db.fetchrow("SELECT id FROM public.usuarios_garra WHERE login=$1", payload["login"])
+    await db.execute(
+        "INSERT INTO public.credenciais_webauthn (usuario_id, credential_id, public_key, sign_count, apelido) "
+        "VALUES ($1,$2,$3,$4,$5) ON CONFLICT (credential_id) DO NOTHING",
+        user["id"], dados["credential_id"], dados["public_key"], dados["sign_count"], apelido
+    )
+    await db.execute("DELETE FROM public.webauthn_desafios WHERE login=$1 AND tipo='registro'", payload["login"])
+    return {"ok": True, "mensagem": "Biometria cadastrada — próximo login pode ser pela digital"}
+
+
+@app.post("/auth/webauthn/login/desafio")
+async def webauthn_login_desafio(request: Request, db=Depends(get_db)):
+    """Passo 1 do login por digital (DESLOGADO): recebe o login/email e
+    gera as opções para navigator.credentials.get()."""
+    check_rate_limit(request.client.host)
+    body = await request.json()
+    login_req = (body.get("login") or "").strip()
+    if not login_req:
+        raise HTTPException(status_code=400, detail="Informe o login")
+    user = await db.fetchrow(
+        "SELECT id, login FROM public.usuarios_garra WHERE (login=$1 OR email=$1) AND ativo=TRUE",
+        login_req
+    )
+    creds = []
+    if user:
+        creds = await db.fetch(
+            "SELECT credential_id FROM public.credenciais_webauthn WHERE usuario_id=$1 AND ativo=TRUE",
+            user["id"]
+        )
+    if not user or not creds:
+        # mesma mensagem para login inexistente e sem biometria — não vaza cadastro
+        raise HTTPException(status_code=404, detail="Biometria não cadastrada para este usuário")
+    options_json, desafio = gerar_opcoes_login([dict(r) for r in creds])
+    await db.execute("DELETE FROM public.webauthn_desafios WHERE login=$1 AND tipo='login'", user["login"])
+    await db.execute(
+        "INSERT INTO public.webauthn_desafios (login, desafio, tipo) VALUES ($1,$2,'login')",
+        user["login"], desafio
+    )
+    return json.loads(options_json)
+
+
+@app.post("/auth/webauthn/login/verificar")
+async def webauthn_login_verificar(request: Request, db=Depends(get_db)):
+    """Passo 2 do login por digital: valida a assinatura e emite o MESMO
+    payload do /auth/login (token + permsDB + redirect)."""
+    check_rate_limit(request.client.host)
+    body = await request.json()
+    login_req = (body.get("login") or "").strip()
+    credencial = body.get("credencial")
+    if not login_req or not credencial:
+        raise HTTPException(status_code=400, detail="Dados incompletos")
+    user = await db.fetchrow(
+        "SELECT * FROM public.usuarios_garra WHERE (login=$1 OR email=$1) AND ativo=TRUE",
+        login_req
+    )
+    if not user:
+        raise HTTPException(status_code=401, detail="Falha na autenticação biométrica")
+    desafio_row = await db.fetchrow(
+        "SELECT desafio FROM public.webauthn_desafios "
+        "WHERE login=$1 AND tipo='login' AND criado_em > NOW() - INTERVAL '5 minutes' "
+        "ORDER BY criado_em DESC LIMIT 1",
+        user["login"]
+    )
+    if not desafio_row:
+        raise HTTPException(status_code=400, detail="Desafio expirado — tente novamente")
+    cred_id = (credencial.get("id") or "")
+    cred_row = await db.fetchrow(
+        "SELECT credential_id, public_key, sign_count FROM public.credenciais_webauthn "
+        "WHERE usuario_id=$1 AND credential_id=$2 AND ativo=TRUE",
+        user["id"], cred_id
+    )
+    if not cred_row:
+        raise HTTPException(status_code=401, detail="Falha na autenticação biométrica")
+    try:
+        novo_count = verificar_login(
+            credencial, desafio_row["desafio"],
+            cred_row["public_key"], cred_row["sign_count"] or 0
+        )
+    except Exception:
+        raise HTTPException(status_code=401, detail="Falha na autenticação biométrica")
+    await db.execute(
+        "UPDATE public.credenciais_webauthn SET sign_count=$1, ultimo_uso=NOW() WHERE credential_id=$2",
+        novo_count, cred_id
+    )
+    await db.execute("DELETE FROM public.webauthn_desafios WHERE login=$1 AND tipo='login'", user["login"])
+
+    # ── Mesmo payload do /auth/login ──
+    token = pyjwt.encode({
+        "sub":              user["login"],
+        "login":            user["login"],
+        "nome":             user["nome"],
+        "perfil":           user["perfil"],
+        "perfil_checklist": user["perfil_checklist"],
+        "exp":              datetime.utcnow() + timedelta(hours=JWT_EXPIRY_HOURS)
+    }, JWT_SECRET, algorithm="HS256")
+    redirects = {
+        "admin": "/admin", "gestor": "/admin", "luana": "/admin",
+        "campo": "/mobile", "operador": "/mobile", "motorista": "/mobile", "bruna": "/mobile"
+    }
+    try:
+        rows_perm = await db.fetch(
+            "SELECT modulo, permitido FROM public.permissoes_colaborador WHERE usuario_id=$1",
+            user["id"]
+        )
+        perms = {r["modulo"]: r["permitido"] for r in (rows_perm or [])}
+        padrao = perfil_modulos_padrao(user["perfil"])
+        for m in MODULOS_DISPONIVEIS:
+            if m["id"] not in perms:
+                perms[m["id"]] = m["id"] in padrao
+    except Exception:
+        perms = {}
+    return {
+        "token": token,
+        "id": str(user["id"]),
+        "login": user["login"], "nome": user["nome"],
+        "perfil": user["perfil"], "perfil_checklist": user["perfil_checklist"],
+        "role": user["perfil_checklist"] or user["perfil"],
+        "redirect_url": redirects.get(user["perfil"], "/admin"),
+        "permsDB": perms,
+        "pts": user["pts"] or 0, "total_envios": user["total_envios"] or 0,
+        "email": user["email"] or "",
+    }
+
 
 @app.post("/auth/alterar-senha")
 async def alterar_senha(req: SenhaChange, db=Depends(get_db), _auth=Depends(verificar_token)):
