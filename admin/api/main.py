@@ -3132,16 +3132,39 @@ async def op_criar_os_avulsa(req: Request, payload=Depends(verificar_token)):
 
 # ── CONTROLE MENSAL ───────────────────────────────────────────────────────────
 
+@app.get("/operacional/api/controle-mensal/periodos")
+async def op_controle_mensal_periodos(db=Depends(get_db), _auth=Depends(verificar_gestor)):
+    """Lista os meses que têm partes diárias salvas, agrupados por ano.
+    Alimenta o menu suspenso de períodos do Controle Mensal (asyncpg — regra #44)."""
+    rows = await db.fetch("""
+        SELECT EXTRACT(YEAR FROM data)::int  AS ano,
+               EXTRACT(MONTH FROM data)::int AS mes,
+               COUNT(*)::int                 AS total
+        FROM operacional.partes_diarias
+        WHERE ativo = TRUE
+        GROUP BY 1, 2
+        ORDER BY 1 DESC, 2 DESC
+    """)
+    return [dict(r) for r in rows]
+
+
 @app.get("/operacional/api/controle-mensal")
 async def op_controle_mensal(
-    mes: int, ano: int,
+    ano: int,
+    mes: int = None,
     equipamento_id: str = None,
     operador_id: str = None,
     _auth=Depends(verificar_gestor)
 ):
-    """Retorna partes diárias do mês para preview do controle mensal."""
-    filtros = ["pd.ativo=true", "EXTRACT(MONTH FROM pd.data)=%s", "EXTRACT(YEAR FROM pd.data)=%s"]
-    params = [mes, ano]
+    """Retorna partes diárias do mês (ou do ANO inteiro, se mes ausente)
+    para preview do controle mensal / exportação anual."""
+    filtros = ["pd.ativo=true"]
+    params = []
+    if mes:
+        filtros.append("EXTRACT(MONTH FROM pd.data)=%s")
+        params.append(mes)
+    filtros.append("EXTRACT(YEAR FROM pd.data)=%s")
+    params.append(ano)
 
     if equipamento_id:
         filtros.append("pd.equipamento_id=%s")
@@ -3236,7 +3259,10 @@ async def op_controle_mensal(
             }
 
     import calendar
-    dias_no_mes = calendar.monthrange(ano, mes)[1]
+    if mes:
+        dias_no_mes = calendar.monthrange(ano, mes)[1]
+    else:
+        dias_no_mes = 366 if calendar.isleap(ano) else 365
 
     return {
         "mes": mes, "ano": ano,
@@ -3257,20 +3283,22 @@ async def op_controle_mensal(
 
 @app.get("/operacional/api/controle-mensal/excel")
 async def op_controle_mensal_excel(
-    mes: int, ano: int,
+    ano: int,
+    mes: int = None,
     view: str = "equipamento",
     equipamento_id: str = None,
     operador_id: str = None,
     _auth=Depends(verificar_gestor)
 ):
-    """Gera Excel do controle mensal — 1 aba por equipamento ou por colaborador."""
+    """Gera Excel do controle mensal (ou ANUAL, se mes ausente) —
+    1 aba por equipamento ou por colaborador."""
     import openpyxl
     from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
     from openpyxl.utils import get_column_letter
     import io, calendar
 
     # Buscar dados
-    dados = await op_controle_mensal(mes, ano, equipamento_id, operador_id, _auth=_auth)
+    dados = await op_controle_mensal(ano=ano, mes=mes, equipamento_id=equipamento_id, operador_id=operador_id, _auth=_auth)
     partes = dados["partes"]
 
     wb = openpyxl.Workbook()
@@ -3278,7 +3306,12 @@ async def op_controle_mensal_excel(
 
     meses_pt = ['','Janeiro','Fevereiro','Março','Abril','Maio','Junho',
                 'Julho','Agosto','Setembro','Outubro','Novembro','Dezembro']
-    titulo_mes = f"{meses_pt[mes]}/{ano}"
+    if mes:
+        titulo_mes = f"{meses_pt[mes]}/{ano}"
+        titulo_doc = f"CONTROLE MENSAL — {titulo_mes}"
+    else:
+        titulo_mes = f"Ano {ano}"
+        titulo_doc = f"CONTROLE ANUAL — {ano}"
 
     header_font = Font(bold=True, size=10, color="FFFFFF")
     header_fill = PatternFill(start_color="1A2A5E", end_color="1A2A5E", fill_type="solid")
@@ -3323,7 +3356,7 @@ async def op_controle_mensal_excel(
 
             # Título
             ws.merge_cells('A1:K1')
-            ws['A1'] = f"CONTROLE MENSAL — {titulo_mes}"
+            ws['A1'] = titulo_doc
             ws['A1'].font = Font(bold=True, size=14, color="1A2A5E")
             ws.merge_cells('A2:K2')
             ws['A2'] = grupo["label"]
@@ -3404,7 +3437,7 @@ async def op_controle_mensal_excel(
             ws.cell(row=row, column=9).fill = total_fill
 
             ws.cell(row=row+1, column=1, value=f"Dias trabalhados: {len(dias_set)}").font = Font(size=10, color="64748B")
-            dias_no_mes = calendar.monthrange(ano, mes)[1]
+            dias_no_mes = dados["dias_no_mes"]
             ws.cell(row=row+2, column=1, value=f"Dias parados: {dias_no_mes - len(dias_set)}").font = Font(size=10, color="64748B")
 
             # Larguras (11 colunas: Data, Cód Interno, OS, Cliente, Op/Equip, H.Ini, H.Fin, Trab, Cobr, Regime, Conta)
@@ -3414,7 +3447,7 @@ async def op_controle_mensal_excel(
 
     # Aba RESUMO
     ws_res = wb.create_sheet("RESUMO", 0)
-    ws_res['A1'] = f"CONTROLE MENSAL — {titulo_mes}"
+    ws_res['A1'] = titulo_doc
     ws_res['A1'].font = Font(bold=True, size=14, color="1A2A5E")
     ws_res['A3'] = "Total de registros:"
     ws_res['B3'] = dados["total_registros"]
@@ -3440,7 +3473,10 @@ async def op_controle_mensal_excel(
     buf.seek(0)
 
     view_label = "equipamento" if view == "equipamento" else "colaborador"
-    filename = f"controle-mensal-{view_label}-{meses_pt[mes].lower()}{ano}.xlsx"
+    if mes:
+        filename = f"controle-mensal-{view_label}-{meses_pt[mes].lower()}{ano}.xlsx"
+    else:
+        filename = f"controle-anual-{view_label}-{ano}.xlsx"
 
     return StreamingResponse(
         buf,
