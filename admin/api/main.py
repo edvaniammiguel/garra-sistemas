@@ -29,7 +29,19 @@ app = FastAPI(title="Garra Gestão API", version="6.0.0")  # main em admin/api/m
 DATABASE_URL         = os.environ.get("DATABASE_URL", "")
 SUPABASE_URL         = os.environ.get("SUPABASE_URL", "")
 SUPABASE_SERVICE_KEY = os.environ.get("SUPABASE_SERVICE_KEY", "")
-JWT_SECRET           = os.environ.get("JWT_SECRET", "dev-secret")
+JWT_SECRET           = os.environ.get("JWT_SECRET", "")
+if not JWT_SECRET:
+    # F-06: sem fallback — segredo previsível permitiria forjar tokens.
+    # Defina JWT_SECRET no Render (e no ambiente local) antes de iniciar.
+    raise RuntimeError("JWT_SECRET não configurado — defina a variável de ambiente antes de iniciar.")
+
+# F-01: chave das rotas de diagnóstico sai do código-fonte.
+# Sem DEBUG_KEY definida no ambiente, as rotas de debug ficam DESATIVADAS.
+DEBUG_KEY            = os.environ.get("DEBUG_KEY", "")
+
+def _debug_autorizado(chave: str) -> bool:
+    """Compara em tempo constante; se DEBUG_KEY não está no ambiente, nega tudo."""
+    return bool(DEBUG_KEY) and secrets.compare_digest(chave or "", DEBUG_KEY)
 JWT_EXPIRY_HOURS     = int(os.environ.get("JWT_EXPIRY_HOURS", "8"))
 MAIL_USERNAME        = os.environ.get("MAIL_USERNAME", "")
 MAIL_PASSWORD        = os.environ.get("MAIL_PASSWORD", "")
@@ -301,6 +313,13 @@ print(f"STATIC_DIR: {STATIC_DIR} (exists: {os.path.exists(STATIC_DIR)})")
 
 if os.path.exists(STATIC_DIR):
     app.mount("/jardinagem/static", StaticFiles(directory=STATIC_DIR), name="jard_static")
+
+# Ícones da jardinagem — o pwa-app.html referencia ./icons/ (= /jardinagem/icons/),
+# mas os arquivos vivem em jardinagem/static/icons/. Sem este mount: 404 no ícone
+# do PWA, favicons e logo do header.
+JARD_ICONS_DIR = os.path.join(STATIC_DIR, "icons")
+if os.path.exists(JARD_ICONS_DIR):
+    app.mount("/jardinagem/icons", StaticFiles(directory=JARD_ICONS_DIR), name="jard_icons")
 
 # Ícones globais — servidos como /static/icons/ para todos os módulos
 ICONS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "operacional", "checklist", "icons")
@@ -4021,8 +4040,8 @@ async def health_db():
 @app.get("/api/debug/jardinagem-pares")
 async def debug_jard_pares(mes: str = "", chave: str = ""):
     """Diagnóstico de pares: duplicados, vazios e sequência.
-    Uso: ?chave=garra-diag-2026 (opcional &mes=ID_DO_MES)"""
-    if chave != "garra-diag-2026":
+    Uso: ?chave=DEBUG_KEY (opcional &mes=ID_DO_MES)"""
+    if not _debug_autorizado(chave):
         raise HTTPException(status_code=403, detail="Chave inválida")
     filtro = "AND s.mes_id = %s" if mes else ""
     params = (mes,) if mes else ()
@@ -4061,8 +4080,8 @@ async def debug_jard_pares(mes: str = "", chave: str = ""):
 
 @app.get("/api/debug/os")
 async def debug_os(numero: str = "", chave: str = ""):
-    """Diagnóstico de uma OS e suas partes. Uso: ?numero=OS-2026-0005&chave=garra-diag-2026"""
-    if chave != "garra-diag-2026":
+    """Diagnóstico de uma OS e suas partes. Uso: ?numero=OS-2026-0005&chave=DEBUG_KEY"""
+    if not _debug_autorizado(chave):
         raise HTTPException(status_code=403, detail="Chave inválida")
     os_row = jard_query(
         """SELECT id, numero, obra, regime_cobranca, valor_combinado, status,
@@ -4090,8 +4109,8 @@ async def debug_os(numero: str = "", chave: str = ""):
 
 @app.get("/api/debug/equipamentos")
 async def debug_equipamentos(codigo: str = "", chave: str = ""):
-    """Diagnóstico de equipamentos e responsável. Uso: ?chave=garra-diag-2026 (ou &codigo=CB-037)"""
-    if chave != "garra-diag-2026":
+    """Diagnóstico de equipamentos e responsável. Uso: ?chave=DEBUG_KEY (ou &codigo=CB-037)"""
+    if not _debug_autorizado(chave):
         raise HTTPException(status_code=403, detail="Chave inválida")
     filtro = "WHERE eq.codigo=%s" if codigo else ""
     params = (codigo,) if codigo else ()
@@ -4111,7 +4130,7 @@ async def debug_equipamentos(codigo: str = "", chave: str = ""):
 async def debug_usuarios(chave: str = "", authorization: Optional[str] = Header(None)):
     """Diagnóstico de usuários. Acesso: admin logado OU chave de diagnóstico."""
     # Permite acesso com chave de diagnóstico (para resolver problema de login)
-    autorizado = (chave == "garra-diag-2026")
+    autorizado = _debug_autorizado(chave)
     if not autorizado:
         # Senão exige admin via token
         if not authorization or not authorization.startswith("Bearer "):
@@ -4136,8 +4155,8 @@ async def debug_usuarios(chave: str = "", authorization: Optional[str] = Header(
 @app.get("/api/debug/sistema")
 async def debug_sistema(chave: str = ""):
     """Diagnóstico completo do sistema — passo a passo de todas as áreas.
-    Uso: /api/debug/sistema?chave=garra-diag-2026"""
-    if chave != "garra-diag-2026":
+    Uso: /api/debug/sistema?chave=DEBUG_KEY"""
+    if not _debug_autorizado(chave):
         raise HTTPException(status_code=403, detail="Chave inválida")
 
     import datetime as _dt
