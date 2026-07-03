@@ -31,7 +31,13 @@ app = FastAPI(title="Garra Gestão API", version="6.0.0")  # main em admin/api/m
 # Config, banco, auth, storage, helpers, models e permissões vivem
 # em admin/api/core/. As rotas permanecem TODAS neste arquivo até a
 # Fase 2 (routers). Golden test: auditoria_rotas.py (150 rotas).
+# No Render o app sobe como 'admin.api.main:app' (raiz do repo);
+# localmente como 'main:app' (de dentro de admin/api). A linha abaixo
+# coloca admin/api no sys.path para 'core' resolver nos DOIS modos.
 # ══════════════════════════════════════════════════════════════
+import sys as _sys
+_sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
 from core.config import (
     DATABASE_URL, FRONTEND_URL,
     SUPABASE_URL, SUPABASE_SERVICE_KEY, BUCKET_ATUAL,
