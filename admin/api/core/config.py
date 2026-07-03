@@ -18,6 +18,13 @@ if not JWT_SECRET:
 # Sem DEBUG_KEY definida no ambiente, as rotas de debug ficam DESATIVADAS.
 DEBUG_KEY            = os.environ.get("DEBUG_KEY", "")
 
+# ── WEBAUTHN (biometria) ──────────────────────────────────────
+# RP ID = domínio (sem esquema/porta). Em localhost o navegador aceita
+# 'localhost' automaticamente — as envs permitem sobrescrever em dev.
+WEBAUTHN_RP_ID   = os.environ.get("WEBAUTHN_RP_ID", "garra-sistemas.onrender.com")
+WEBAUTHN_RP_NAME = os.environ.get("WEBAUTHN_RP_NAME", "Garra Sistemas")
+WEBAUTHN_ORIGIN  = os.environ.get("WEBAUTHN_ORIGIN", "https://garra-sistemas.onrender.com")
+
 def _debug_autorizado(chave: str) -> bool:
     """Compara em tempo constante; se DEBUG_KEY não está no ambiente, nega tudo."""
     return bool(DEBUG_KEY) and secrets.compare_digest(chave or "", DEBUG_KEY)
