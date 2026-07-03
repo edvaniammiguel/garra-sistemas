@@ -14,6 +14,7 @@ import asyncpg, bcrypt, os, json, time, secrets, smtplib, uuid, io, calendar
 from dotenv import load_dotenv
 load_dotenv()
 import psycopg2, psycopg2.extras
+import jwt as pyjwt
 import requests as req_lib
 from datetime import datetime, timedelta, date
 from collections import defaultdict
@@ -25,47 +26,38 @@ from PIL import Image
 
 app = FastAPI(title="Garra Gestão API", version="6.0.0")  # main em admin/api/main.py
 
-# ── CONFIG ────────────────────────────────────────────────────
-DATABASE_URL         = os.environ.get("DATABASE_URL", "")
-SUPABASE_URL         = os.environ.get("SUPABASE_URL", "")
-SUPABASE_SERVICE_KEY = os.environ.get("SUPABASE_SERVICE_KEY", "")
-JWT_SECRET           = os.environ.get("JWT_SECRET", "")
-if not JWT_SECRET:
-    # F-06: sem fallback — segredo previsível permitiria forjar tokens.
-    # Defina JWT_SECRET no Render (e no ambiente local) antes de iniciar.
-    raise RuntimeError("JWT_SECRET não configurado — defina a variável de ambiente antes de iniciar.")
-
-# F-01: chave das rotas de diagnóstico sai do código-fonte.
-# Sem DEBUG_KEY definida no ambiente, as rotas de debug ficam DESATIVADAS.
-DEBUG_KEY            = os.environ.get("DEBUG_KEY", "")
-
-def _debug_autorizado(chave: str) -> bool:
-    """Compara em tempo constante; se DEBUG_KEY não está no ambiente, nega tudo."""
-    return bool(DEBUG_KEY) and secrets.compare_digest(chave or "", DEBUG_KEY)
-JWT_EXPIRY_HOURS     = int(os.environ.get("JWT_EXPIRY_HOURS", "8"))
-MAIL_USERNAME        = os.environ.get("MAIL_USERNAME", "")
-MAIL_PASSWORD        = os.environ.get("MAIL_PASSWORD", "")
-MAIL_HOST            = os.environ.get("MAIL_HOST", "smtp.hostinger.com")
-MAIL_PORT            = int(os.environ.get("MAIL_PORT", "587"))
-MAIL_DESTINO         = os.environ.get("MAIL_DESTINO", "")
-MAIL_CC              = os.environ.get("MAIL_CC", "")
-FRONTEND_URL         = os.environ.get("FRONTEND_URL", "https://garra-checklist-app.onrender.com")
-BUCKET_NAME          = "jardinagem-fotos"      # legado — fotos antigas continuam aqui
-BUCKET_ATUAL         = "garra-fotos"           # bucket unificado — todas as fotos novas (jardinagem + checklist)
-
-# ── RATE LIMITER ──────────────────────────────────────────────
-_login_attempts: dict = defaultdict(list)
-MAX_ATTEMPTS = 10
-WINDOW_SECS  = 300
-
-def check_rate_limit(ip: str):
-    now  = time.time()
-    reqs = [t for t in _login_attempts[ip] if now - t < WINDOW_SECS]
-    _login_attempts[ip] = reqs
-    if len(reqs) >= MAX_ATTEMPTS:
-        raise HTTPException(status_code=429,
-            detail=f"Muitas tentativas. Aguarde {WINDOW_SECS//60} minutos.")
-    _login_attempts[ip].append(now)
+# ══════════════════════════════════════════════════════════════
+# CORE — Refatoração Fase 1 (03/07/2026)
+# Config, banco, auth, storage, helpers, models e permissões vivem
+# em admin/api/core/. As rotas permanecem TODAS neste arquivo até a
+# Fase 2 (routers). Golden test: auditoria_rotas.py (150 rotas).
+# ══════════════════════════════════════════════════════════════
+from core.config import (
+    DATABASE_URL, FRONTEND_URL,
+    SUPABASE_URL, SUPABASE_SERVICE_KEY, BUCKET_ATUAL,
+    MAIL_HOST, MAIL_PORT, MAIL_USERNAME, MAIL_PASSWORD, MAIL_CC, MAIL_DESTINO,
+    JWT_SECRET, JWT_EXPIRY_HOURS, DEBUG_KEY, _debug_autorizado,
+)
+from core.db import get_db, get_jard_db, jard_query, jard_query_id
+from core.storage import (
+    storage_upload, storage_url, storage_delete, _URL_SUPABASE_EXPIRY,
+    _checklist_extrair_fotos_para_storage, _checklist_assinar_fotos_para_leitura,
+)
+from core.auth import (
+    check_rate_limit, _login_attempts,
+    gerar_token_jard, verificar_token_jard, exigir_acesso_jardinagem,
+    verificar_token, verificar_admin, verificar_gestor, validar_senha,
+)
+from core.helpers import comprimir_imagem, next_code, semanas_do_mes, enviar_email_smtp
+from core.models import (
+    LoginRequest, UsuarioCreate, UsuarioEdit, SenhaChange,
+    SenhaResetRequest, SenhaResetConfirm, EnvioCreate, FrotaItem,
+    ChecklistModeloCreate, LogMotoristaCreate, LogVeiculoCreate, LogRegistroCreate,
+)
+from core.permissions import (
+    MODULOS_DISPONIVEIS, PERFIL_MODULOS_PADRAO, PERFIL_LABEL_SEED,
+    PERFIS_TABLE_SQL, perfil_modulos_padrao,
+)
 
 # ── CORS ──────────────────────────────────────────────────────
 app.add_middleware(
@@ -99,50 +91,6 @@ async def security_headers(request: Request, call_next):
 # asyncpg (async) → checklist
 # psycopg2 (sync) → jardinagem (mantém compatibilidade)
 # ══════════════════════════════════════════════════════════════
-
-# ── asyncpg (checklist) ───────────────────────────────────────
-async def get_db():
-    conn = await asyncpg.connect(DATABASE_URL)
-    try:
-        yield conn
-    finally:
-        await conn.close()
-
-# ── psycopg2 (jardinagem) ─────────────────────────────────────
-import threading
-_local = threading.local()
-
-def get_jard_db():
-    """Conexão psycopg2 para rotas síncronas do jardinagem."""
-    conn = psycopg2.connect(
-        DATABASE_URL,
-        cursor_factory=psycopg2.extras.RealDictCursor,
-        sslmode="require",
-        connect_timeout=10
-    )
-    return conn
-
-def jard_query(sql, params=None, fetch="all"):
-    conn = get_jard_db()
-    try:
-        with conn.cursor() as cur:
-            cur.execute(sql, params or ())
-            conn.commit()
-            if fetch == "one":  return cur.fetchone()
-            if fetch == "all":  return cur.fetchall()
-            if fetch == "none": return None
-    finally:
-        conn.close()
-
-def jard_query_id(sql, params=None):
-    conn = get_jard_db()
-    try:
-        with conn.cursor() as cur:
-            cur.execute(sql + " RETURNING *", params or ())
-            conn.commit()
-            return cur.fetchone()
-    finally:
-        conn.close()
 
 # ── STARTUP ───────────────────────────────────────────────────
 @app.on_event("startup")
@@ -356,308 +304,7 @@ if os.path.exists(CHECKLIST_DIR):
     if os.path.exists(os.path.join(CHECKLIST_DIR, "icons")):
         app.mount("/icons", StaticFiles(directory=os.path.join(CHECKLIST_DIR, "icons")), name="checklist_icons_rel")
 
-# ── SUPABASE STORAGE ──────────────────────────────────────────
-def storage_upload(dados: bytes, path: str) -> str:
-    if not SUPABASE_URL or not SUPABASE_SERVICE_KEY:
-        raise ValueError("Supabase não configurado")
-    # Fotos novas vão para o bucket unificado 'garra-fotos'
-    url = f"{SUPABASE_URL}/storage/v1/object/{BUCKET_ATUAL}/{path}"
-    headers = {
-        "Authorization": f"Bearer {SUPABASE_SERVICE_KEY}",
-        "apikey": SUPABASE_SERVICE_KEY,
-        "Content-Type": "image/jpeg",
-        "x-upsert": "true"
-    }
-    r = req_lib.post(url, headers=headers, data=dados, timeout=30)
-    if r.status_code not in (200, 201):
-        raise RuntimeError(f"Storage upload falhou [{r.status_code}]: {r.text}")
-    # Prefixa o path com o bucket para que a leitura saiba onde buscar.
-    # Fotos antigas (sem prefixo) continuam sendo lidas do bucket legado.
-    return f"{BUCKET_ATUAL}:{path}"
 
-# Cache de URLs assinadas — evita chamadas repetidas ao Supabase
-# TTL: 23h (URLs do Supabase expiram em 1h por padrão, mas geramos com 24h)
-_url_cache: dict = {}  # {storage_path: (url, expires_at)}
-_URL_TTL = 23 * 3600   # 23 horas em segundos
-_URL_SUPABASE_EXPIRY = 24 * 3600  # 24h — URL válida no Supabase
-
-def storage_url(path: str, segundos: int = _URL_SUPABASE_EXPIRY) -> str:
-    if not SUPABASE_URL or not SUPABASE_SERVICE_KEY or not path:
-        return ""
-    # Resolve o bucket a partir do prefixo "bucket:path".
-    # Fotos antigas (gravadas antes da unificação) não têm prefixo → bucket legado.
-    if ":" in path and not path.startswith("http"):
-        bucket, real_path = path.split(":", 1)
-    else:
-        bucket, real_path = BUCKET_NAME, path
-    # Verificar cache
-    agora = time.time()
-    cached = _url_cache.get(path)
-    if cached:
-        url, expires_at = cached
-        if agora < expires_at:
-            return url
-    # Gerar URL nova no Supabase
-    try:
-        r = req_lib.post(
-            f"{SUPABASE_URL}/storage/v1/object/sign/{bucket}/{real_path}",
-            headers={
-                "Authorization": f"Bearer {SUPABASE_SERVICE_KEY}",
-                "apikey": SUPABASE_SERVICE_KEY
-            },
-            json={"expiresIn": segundos}, timeout=10
-        )
-        if r.status_code == 200:
-            url = f"{SUPABASE_URL}/storage/v1{r.json().get('signedURL','')}"
-            _url_cache[path] = (url, agora + _URL_TTL)
-            return url
-    except: pass
-    return ""
-
-def storage_delete(paths: list):
-    if not paths or not SUPABASE_URL: return
-    # Agrupa os paths por bucket (fotos novas têm prefixo "bucket:", antigas não).
-    por_bucket = {}
-    for p in paths:
-        if ":" in p and not p.startswith("http"):
-            bucket, real_path = p.split(":", 1)
-        else:
-            bucket, real_path = BUCKET_NAME, p
-        por_bucket.setdefault(bucket, []).append(real_path)
-    for bucket, lista in por_bucket.items():
-        try:
-            req_lib.delete(
-                f"{SUPABASE_URL}/storage/v1/object/{bucket}",
-                headers={
-                    "Authorization": f"Bearer {SUPABASE_SERVICE_KEY}",
-                    "apikey": SUPABASE_SERVICE_KEY
-                },
-                json={"prefixes": lista}, timeout=10
-            )
-        except: pass
-
-# ── FOTOS DO CHECKLIST → SUPABASE STORAGE ──────────────────────
-# Reaproveita storage_upload/storage_url (mesmo bucket da jardinagem,
-# path com prefixo "checklist/" para não colidir).
-import base64 as _b64
-
-def _checklist_extrair_fotos_para_storage(envio_id: str, respostas: dict) -> dict:
-    """Percorre as respostas de um envio; troca cada foto em base64 por um
-    upload real no Supabase Storage, guardando só o path no lugar do base64.
-    Se o upload falhar por qualquer motivo, mantém o base64 original (nunca perde a foto)."""
-    if not isinstance(respostas, dict):
-        return respostas
-    for item_id, ans in respostas.items():
-        if not isinstance(ans, dict):
-            continue
-        photo = ans.get("photo")
-        if not photo or not isinstance(photo, str) or not photo.startswith("data:image"):
-            continue
-        try:
-            header, b64data = photo.split(",", 1)
-            dados = _b64.b64decode(b64data)
-            path = f"checklist/{envio_id}/{item_id}.jpg"
-            storage_upload(dados, path)
-            ans["photo"] = path  # guarda só o caminho, não mais a imagem inteira
-        except Exception as e:
-            print(f"[Checklist Storage] upload falhou para {item_id}: {e} — mantendo base64 como fallback")
-    return respostas
-
-def _checklist_assinar_fotos_para_leitura(respostas: dict) -> dict:
-    """Percorre as respostas de um envio; troca cada path de foto salvo no Storage
-    por uma URL assinada válida para exibição. Base64 antigo (dados pré-migração)
-    passa direto, sem alteração."""
-    if not isinstance(respostas, dict):
-        return respostas
-    for item_id, ans in respostas.items():
-        if not isinstance(ans, dict):
-            continue
-        photo = ans.get("photo")
-        if not photo or not isinstance(photo, str):
-            continue
-        if photo.startswith("data:image") or photo.startswith("http"):
-            continue  # já é base64 antigo ou já é uma URL — não mexe
-        ans["photo"] = storage_url(photo) or photo
-    return respostas
-
-# ── JWT (jardinagem) ──────────────────────────────────────────
-import jwt as pyjwt
-
-def gerar_token_jard(usuario: dict) -> str:
-    return pyjwt.encode({
-        "sub":    str(usuario["id"]),
-        "nome":   usuario["nome"],
-        "perfil": usuario["perfil"],
-        "email":  usuario.get("email",""),
-        "exp":    datetime.utcnow() + timedelta(hours=JWT_EXPIRY_HOURS)
-    }, JWT_SECRET, algorithm="HS256")
-
-def verificar_token_jard(authorization: Optional[str] = Header(None)):
-    if not authorization or not authorization.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Não autenticado")
-    token = authorization[7:]
-    try:
-        payload = pyjwt.decode(token, JWT_SECRET, algorithms=["HS256"])
-        # Se sub não é UUID (token do auth central tem sub=login), busca o UUID
-        sub = payload.get("sub", "")
-        import re as _re
-        uuid_pattern = _re.compile(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$', _re.I)
-        if sub and not uuid_pattern.match(str(sub)):
-            # sub é login — busca UUID no banco
-            row = jard_query(
-                "SELECT id FROM public.usuarios_garra WHERE (login=%s OR email=%s) AND ativo=true",
-                (sub, sub), fetch="one"
-            )
-            if row:
-                payload["sub"] = str(row["id"])
-        return payload
-    except pyjwt.ExpiredSignatureError:
-        raise HTTPException(status_code=401, detail="Sessão expirada")
-    except pyjwt.InvalidTokenError:
-        raise HTTPException(status_code=401, detail="Token inválido")
-
-def exigir_acesso_jardinagem(payload=Depends(verificar_token_jard)):
-    """Garante que o usuário tem permissão de jardinagem (banco tem prioridade
-    sobre o padrão do perfil). Bloqueia operador/motorista/bruna."""
-    perfil = (payload.get("perfil") or "").lower()
-    uid = payload.get("sub")
-    # 1. Permissão explícita no banco (admin marcou)
-    permitido = None
-    try:
-        row = jard_query(
-            "SELECT permitido FROM public.permissoes_colaborador "
-            "WHERE usuario_id=%s AND modulo IN ('jardinagem_mobile','jardinagem_desktop') "
-            "ORDER BY permitido DESC LIMIT 1",
-            (uid,), fetch="one"
-        )
-        if row is not None:
-            permitido = bool(row["permitido"])
-    except Exception:
-        permitido = None
-    # 2. Sem registro no banco → usa padrão do perfil
-    if permitido is None:
-        padrao = perfil_modulos_padrao(perfil)
-        permitido = ("jardinagem_mobile" in padrao) or ("jardinagem_desktop" in padrao)
-    if not permitido:
-        raise HTTPException(status_code=403, detail="Sem acesso ao módulo de Jardinagem")
-    return payload
-
-# ── HELPERS JARDINAGEM ────────────────────────────────────────
-def comprimir_imagem(dados: bytes, max_px: int = 1400, qualidade: int = 82) -> bytes:
-    img = Image.open(io.BytesIO(dados))
-    if img.mode not in ("RGB","L"):
-        img = img.convert("RGB")
-    img.thumbnail((max_px, max_px), Image.LANCZOS)
-    buf = io.BytesIO()
-    img.save(buf, format="JPEG", quality=qualidade, optimize=True)
-    return buf.getvalue()
-
-def next_code(n: int = 2) -> int:
-    row = jard_query("SELECT valor FROM jardinagem.config WHERE chave='next_code'", fetch="one")
-    atual = int(row["valor"])
-    jard_query("UPDATE jardinagem.config SET valor=%s WHERE chave='next_code'",
-               (str(atual + n),), fetch="none")
-    return atual
-
-def semanas_do_mes(ano: int, mes: int, mes_id: int):
-    _, ultimo_dia = calendar.monthrange(ano, mes)
-    intervalos = [(1,7),(8,14),(15,21),(22,ultimo_dia)]
-    for i, (ini, fim) in enumerate(intervalos):
-        label = f"Semana {i+1} — {ini:02d}/{mes:02d} a {fim:02d}/{mes:02d}/{ano}"
-        jard_query("""INSERT INTO jardinagem.semanas
-                      (mes_id,label,data_ini,data_fim,ordem,status)
-                      VALUES (%s,%s,%s,%s,%s,'aberta')""",
-                   (mes_id, label,
-                    f"{ano}-{mes:02d}-{ini:02d}",
-                    f"{ano}-{mes:02d}-{fim:02d}", i), fetch="none")
-
-def enviar_email_smtp(destino: str, assunto: str, corpo_html: str, anexos: list = None):
-    # Suporta múltiplos destinatários separados por vírgula em MAIL_DESTINO e MAIL_CC
-    lista_to = [e.strip() for e in destino.split(",") if e.strip()]
-    lista_cc = [e.strip() for e in MAIL_CC.split(",") if e.strip()] if MAIL_CC else []
-    msg = MIMEMultipart("mixed")
-    msg["Subject"] = assunto
-    msg["From"]    = f"Garra Terraplenagem <{MAIL_USERNAME}>"
-    msg["To"]      = ", ".join(lista_to)
-    if lista_cc:
-        msg["Cc"]  = ", ".join(lista_cc)
-    msg.attach(MIMEText(corpo_html, "html", "utf-8"))
-    if anexos:
-        for nome, dados in anexos:
-            part = MIMEBase("application", "octet-stream")
-            part.set_payload(dados)
-            encoders.encode_base64(part)
-            part.add_header("Content-Disposition", f'attachment; filename="{nome}"')
-            msg.attach(part)
-    destinatarios = lista_to + lista_cc
-    with smtplib.SMTP(MAIL_HOST, MAIL_PORT) as s:
-        s.ehlo(); s.starttls()
-        s.login(MAIL_USERNAME, MAIL_PASSWORD)
-        s.sendmail(MAIL_USERNAME, destinatarios, msg.as_string())
-
-# ── PYDANTIC MODELS ───────────────────────────────────────────
-class LoginRequest(BaseModel):
-    login: str
-    senha: str
-
-class UsuarioCreate(BaseModel):
-    login: str; nome: str; email: str; senha: str
-    perfil: str; perfil_checklist: Optional[str] = None
-
-class UsuarioEdit(BaseModel):
-    nome: Optional[str] = None; email: Optional[str] = None
-    perfil: Optional[str] = None; perfil_checklist: Optional[str] = None
-    ativo: Optional[bool] = None
-    senha: Optional[str] = None  # tratada à parte: vira senha_hash com bcrypt
-
-class SenhaChange(BaseModel):
-    senha_atual: str; senha_nova: str
-
-class SenhaResetRequest(BaseModel):
-    login: str
-
-class SenhaResetConfirm(BaseModel):
-    token: str; senha_nova: str
-
-class EnvioCreate(BaseModel):
-    envio_id: str; usuario_login: str; usuario_nome: str
-    cl_id: str; cl_label: Optional[str] = ""
-    meta: dict = {}; respostas: dict = {}
-    pts: int = 0; tem_nc: bool = False; total_nc: int = 0
-    enviado_em: Optional[str] = None
-
-class FrotaItem(BaseModel):
-    categoria: str; identificacao: str; descricao: Optional[str] = ""
-
-class ChecklistModeloCreate(BaseModel):
-    cl_id: str; label: str; icon: str = "📋"
-    descricao: Optional[str] = ""; vehicle_cat: Optional[str] = ""
-    is_default: bool = False; score_full: int = 100
-    score_nc: int = 60; score_obs: int = 20; score_ontime: int = 10
-    questions: List[dict] = []; steps: List[dict] = []
-
-class LogMotoristaCreate(BaseModel):
-    motor_id: str; nome: str; cpf: Optional[str] = ""
-    cnh: Optional[str] = ""; telefone: Optional[str] = ""
-    status: str = "ativo"; observacoes: Optional[str] = ""
-
-class LogVeiculoCreate(BaseModel):
-    veiculo_id: str; car_id: str; placa: Optional[str] = ""
-    modelo: Optional[str] = ""; ano: Optional[int] = None
-    cor: Optional[str] = ""; status: str = "disponivel"
-    extras: List[dict] = []; observacoes: Optional[str] = ""
-
-class LogRegistroCreate(BaseModel):
-    registro_id: str; responsavel: str
-    data_hora: str; carros: List[dict] = []
-
-def validar_senha(senha: str) -> Optional[str]:
-    if len(senha) < 6: return "Senha deve ter no mínimo 6 caracteres."
-    return None
-
-# ══════════════════════════════════════════════════════════════
-# ROTAS CHECKLIST
-# ══════════════════════════════════════════════════════════════
 
 @app.post("/auth/login")
 async def login(req: LoginRequest, request: Request, db=Depends(get_db)):
@@ -714,32 +361,6 @@ async def login(req: LoginRequest, request: Request, db=Depends(get_db)):
         "pts": user["pts"] or 0, "total_envios": user["total_envios"] or 0,
         "email": user["email"] or "",
     }
-
-# ── VERIFICADORES JWT CHECKLIST ───────────────────────────────
-def verificar_token(authorization: Optional[str] = Header(None)):
-    """Exige login válido. Retorna o payload do JWT."""
-    if not authorization or not authorization.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Não autenticado")
-    token = authorization[7:]
-    try:
-        return pyjwt.decode(token, JWT_SECRET, algorithms=["HS256"])
-    except pyjwt.ExpiredSignatureError:
-        raise HTTPException(status_code=401, detail="Sessão expirada")
-    except pyjwt.InvalidTokenError:
-        raise HTTPException(status_code=401, detail="Token inválido")
-
-def verificar_admin(payload=Depends(verificar_token)):
-    """Exige login válido E perfil admin."""
-    if payload.get("perfil") != "admin":
-        raise HTTPException(status_code=403, detail="Acesso restrito a administradores")
-    return payload
-
-def verificar_gestor(payload=Depends(verificar_token)):
-    """Exige login válido E perfil de gestão (admin, gestor ou luana)."""
-    perfil = payload.get("perfil")
-    if perfil not in ("admin", "gestor", "luana"):
-        raise HTTPException(status_code=403, detail="Acesso restrito a gestores")
-    return payload
 
 @app.post("/auth/solicitar-reset")
 async def solicitar_reset(req: SenhaResetRequest, db=Depends(get_db)):
@@ -3522,45 +3143,9 @@ async def op_controle_mensal_excel(
 # ═══════════════════════════════════════════════════════════════════════════
 # MÓDULO PERMISSÕES — controle por colaborador
 # ═══════════════════════════════════════════════════════════════════════════
-
-MODULOS_DISPONIVEIS = [
-    {"id": "admin_master",        "label": "Admin Master",          "desc": "Painel de gestão"},
-    {"id": "jardinagem_desktop",  "label": "Jardinagem Desktop",    "desc": "Relatórios e fotos"},
-    {"id": "jardinagem_mobile",   "label": "Jardinagem Mobile",     "desc": "Campo — fotos e KM"},
-    {"id": "operacional_mobile",  "label": "Operacional Mobile",    "desc": "OS e horímetro"},
-    {"id": "checklist",           "label": "Checklist",             "desc": "Checklist de máquinas"},
-    {"id": "checklist_logistica", "label": "Logística (Checklist)", "desc": "Aba de carros de apoio dentro do Checklist"},
-]
-
-PERFIL_MODULOS_PADRAO = {
-    "admin":     ["admin_master","jardinagem_desktop","jardinagem_mobile","operacional_mobile","checklist","checklist_logistica"],
-    "gestor":    ["admin_master","jardinagem_desktop","operacional_mobile"],
-    "luana":     ["admin_master","jardinagem_desktop","operacional_mobile"],
-    "bruna":     ["admin_master","checklist"],
-    "operador":  ["operacional_mobile","checklist"],
-    "motorista": ["operacional_mobile","checklist"],
-    "campo":     ["jardinagem_mobile"],
-}
-
-# ═══════════════════════════════════════════════════════════════════════════
 # PERFIS CUSTOMIZADOS (persistência real — antes só existia em memória JS)
 # ═══════════════════════════════════════════════════════════════════════════
 
-PERFIL_LABEL_SEED = {
-    "admin": "Administrador", "gestor": "Gestor", "luana": "Comercial",
-    "bruna": "Mecânica", "operador": "Operador", "motorista": "Motorista", "campo": "Campo",
-}
-
-PERFIS_TABLE_SQL = """
-CREATE TABLE IF NOT EXISTS public.perfis_customizados (
-    nome TEXT PRIMARY KEY,
-    label TEXT NOT NULL,
-    modulos TEXT DEFAULT '',
-    ativo BOOLEAN DEFAULT true,
-    criado_em TIMESTAMP DEFAULT NOW(),
-    atualizado_em TIMESTAMP DEFAULT NOW()
-)
-"""
 
 @app.on_event("startup")
 async def criar_tabela_perfis():
@@ -3577,20 +3162,6 @@ async def criar_tabela_perfis():
     except Exception:
         pass
 
-def perfil_modulos_padrao(perfil: str):
-    """Fonte da verdade: banco. Se o perfil não existir lá (ex: banco fora do ar),
-    cai no dict hardcoded como rede de segurança."""
-    try:
-        row = jard_query(
-            "SELECT modulos FROM public.perfis_customizados WHERE nome=%s AND ativo=true",
-            (perfil,), fetch="one"
-        )
-        if row is not None:
-            modulos_str = row.get("modulos") or ""
-            return [m.strip() for m in modulos_str.split(",") if m.strip()]
-    except Exception:
-        pass
-    return PERFIL_MODULOS_PADRAO.get(perfil, [])
 
 @app.get("/permissoes/perfis")
 async def listar_perfis(payload=Depends(verificar_admin)):
