@@ -726,15 +726,9 @@ input,select,textarea { font-family:inherit; font-size:13px; outline:none; }
           <div class="card-title" style="flex-wrap:wrap;gap:8px">
             📅 Controle Mensal
             <div style="display:flex;gap:6px;align-items:center;margin-left:auto">
-              <select id="cm-mes" style="padding:6px 10px;border:1.5px solid var(--border);border-radius:6px;font-size:13px" onchange="carregarControleMensal()">
-                <option value="1">Janeiro</option><option value="2">Fevereiro</option>
-                <option value="3">Março</option><option value="4">Abril</option>
-                <option value="5">Maio</option><option value="6">Junho</option>
-                <option value="7">Julho</option><option value="8">Agosto</option>
-                <option value="9">Setembro</option><option value="10">Outubro</option>
-                <option value="11">Novembro</option><option value="12">Dezembro</option>
+              <select id="cm-periodo" style="padding:6px 10px;border:1.5px solid var(--blue);border-radius:6px;font-size:13px;font-weight:600;color:var(--blue);min-width:180px" onchange="carregarControleMensal()">
+                <option value="">Carregando períodos...</option>
               </select>
-              <input id="cm-ano" type="number" min="2024" max="2030" style="width:80px;padding:6px 10px;border:1.5px solid var(--border);border-radius:6px;font-size:13px" onchange="carregarControleMensal()">
               <select id="cm-filtro-equip" style="padding:6px 10px;border:1.5px solid var(--border);border-radius:6px;font-size:13px" onchange="carregarControleMensal()">
                 <option value="">Todos os equipamentos</option>
               </select>
@@ -763,7 +757,8 @@ input,select,textarea { font-family:inherit; font-size:13px; outline:none; }
 
           <!-- Exportar -->
           <div style="display:flex;gap:8px;margin-top:16px;justify-content:flex-end" id="cm-exportar" style="display:none">
-            <button class="btn btn-secondary" style="padding:8px 16px;font-size:12px" onclick="cmExportExcel()">📊 Exportar Excel</button>
+            <button class="btn btn-secondary" style="padding:8px 16px;font-size:12px" onclick="cmExportExcel()">📊 Exportar Excel (mês)</button>
+            <button class="btn btn-secondary" style="padding:8px 16px;font-size:12px" onclick="cmExportExcelAnual()">📥 Exportar Excel (ano)</button>
             <button class="btn btn-secondary" style="padding:8px 16px;font-size:12px" onclick="window.print()">🖨 Imprimir / PDF</button>
           </div>
         </div>
@@ -4000,11 +3995,55 @@ async function salvarAjustePts(login) {
 let _cmDados = null;
 let _cmView = 'equipamento';
 
-function initControleMensal() {
+const CM_MESES_PT = ['','Janeiro','Fevereiro','Março','Abril','Maio','Junho',
+                     'Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+
+async function initControleMensal() {
   const hoje = new Date();
-  document.getElementById('cm-mes').value = hoje.getMonth() + 1;
-  document.getElementById('cm-ano').value = hoje.getFullYear();
+  const mesAtual = hoje.getMonth() + 1;
+  const anoAtual = hoje.getFullYear();
+  const sel = document.getElementById('cm-periodo');
+
+  // Buscar meses salvos no servidor (agrupados por ano)
+  let periodos = [];
+  try {
+    periodos = await apiFetch('/operacional/api/controle-mensal/periodos') || [];
+  } catch (e) {
+    console.warn('Falha ao buscar períodos:', e.message);
+  }
+
+  // Garantir que o mês ATUAL sempre aparece, mesmo sem registros ainda
+  if (!periodos.some(p => p.ano === anoAtual && p.mes === mesAtual)) {
+    periodos.unshift({ ano: anoAtual, mes: mesAtual, total: 0 });
+    periodos.sort((a, b) => (b.ano - a.ano) || (b.mes - a.mes));
+  }
+
+  // Montar optgroups por ano (mais recente primeiro)
+  const porAno = {};
+  for (const p of periodos) (porAno[p.ano] = porAno[p.ano] || []).push(p);
+  let html = '';
+  for (const ano of Object.keys(porAno).sort((a, b) => b - a)) {
+    html += `<optgroup label="${ano}">`;
+    for (const p of porAno[ano]) {
+      const atual = (p.ano === anoAtual && p.mes === mesAtual);
+      const qtd = atual && p.total === 0 ? ' (atual)' : ` (${p.total} registro${p.total === 1 ? '' : 's'})`;
+      html += `<option value="${p.ano}-${p.mes}">${CM_MESES_PT[p.mes]}${qtd}</option>`;
+    }
+    html += '</optgroup>';
+  }
+  sel.innerHTML = html;
+  sel.value = `${anoAtual}-${mesAtual}`;
+  if (!sel.value && sel.options.length) sel.selectedIndex = 0;
+
   carregarControleMensal();
+}
+
+// Lê o período selecionado no menu suspenso → {mes, ano}
+function cmPeriodoSelecionado() {
+  const v = document.getElementById('cm-periodo').value || '';
+  const [ano, mes] = v.split('-');
+  return { mes: parseInt(mes) || (new Date().getMonth() + 1),
+           ano: parseInt(ano) || new Date().getFullYear() };
 }
 
 function cmTab(view) {
@@ -4018,8 +4057,7 @@ async function carregarControleMensal() {
   const el = document.getElementById('cm-tabela');
   el.innerHTML = '<div class="loading"><span class="spin"></span>Carregando...</div>';
 
-  const mes = document.getElementById('cm-mes').value;
-  const ano = document.getElementById('cm-ano').value;
+  const { mes, ano } = cmPeriodoSelecionado();
   const eqId = document.getElementById('cm-filtro-equip').value;
   const opId = document.getElementById('cm-filtro-oper').value;
 
@@ -4199,8 +4237,7 @@ function renderControleMensal(dados) {
 }
 
 function cmExportExcel() {
-  const mes = document.getElementById('cm-mes').value;
-  const ano = document.getElementById('cm-ano').value;
+  const { mes, ano } = cmPeriodoSelecionado();
   const eqId = document.getElementById('cm-filtro-equip').value;
   const opId = document.getElementById('cm-filtro-oper').value;
 
@@ -4208,6 +4245,24 @@ function cmExportExcel() {
   if (eqId) url += `&equipamento_id=${eqId}`;
   if (opId) url += `&operador_id=${opId}`;
 
+  const meses = ['','jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'];
+  cmBaixarExcel(url, `controle-mensal-${_cmView}-${meses[mes]}${ano}.xlsx`);
+}
+
+// Excel do ANO inteiro (todos os meses do ano selecionado no menu)
+function cmExportExcelAnual() {
+  const { ano } = cmPeriodoSelecionado();
+  const eqId = document.getElementById('cm-filtro-equip').value;
+  const opId = document.getElementById('cm-filtro-oper').value;
+
+  let url = `/operacional/api/controle-mensal/excel?ano=${ano}&view=${_cmView}`;
+  if (eqId) url += `&equipamento_id=${eqId}`;
+  if (opId) url += `&operador_id=${opId}`;
+
+  cmBaixarExcel(url, `controle-anual-${_cmView}-${ano}.xlsx`);
+}
+
+function cmBaixarExcel(url, nomeArquivo) {
   const token = localStorage.getItem('garra_token') || '';
   fetch(url, { headers: { 'Authorization': 'Bearer ' + token } })
     .then(r => {
@@ -4217,8 +4272,7 @@ function cmExportExcel() {
     .then(blob => {
       const a = document.createElement('a');
       a.href = URL.createObjectURL(blob);
-      const meses = ['','jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'];
-      a.download = `controle-mensal-${_cmView}-${meses[parseInt(mes)]}${ano}.xlsx`;
+      a.download = nomeArquivo;
       a.click();
       URL.revokeObjectURL(a.href);
     })
