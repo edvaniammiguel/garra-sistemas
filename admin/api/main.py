@@ -589,6 +589,7 @@ class UsuarioEdit(BaseModel):
     nome: Optional[str] = None; email: Optional[str] = None
     perfil: Optional[str] = None; perfil_checklist: Optional[str] = None
     ativo: Optional[bool] = None
+    senha: Optional[str] = None  # tratada à parte: vira senha_hash com bcrypt
 
 class SenhaChange(BaseModel):
     senha_atual: str; senha_nova: str
@@ -859,9 +860,19 @@ async def criar_usuario(u: UsuarioCreate, db=Depends(get_db), _auth=Depends(veri
 
 @app.post("/usuarios/{login}/editar")
 async def editar_usuario(login: str, dados: UsuarioEdit, db=Depends(get_db), _auth=Depends(verificar_admin)):
+    d = dados.dict(exclude_none=True)
+    # Senha é tratada à parte: NUNCA vai direto pro SET (a coluna é senha_hash
+    # e o valor precisa de bcrypt). Antes deste fix, o campo era descartado
+    # silenciosamente pelo Pydantic — a troca de senha pelo Admin não funcionava.
+    senha = d.pop("senha", None)
     sets, params = [], []
-    for campo, valor in dados.dict(exclude_none=True).items():
+    for campo, valor in d.items():
         params.append(valor); sets.append(f"{campo}=${len(params)}")
+    if senha:
+        erro = validar_senha(senha)
+        if erro: raise HTTPException(status_code=400, detail=erro)
+        novo_hash = bcrypt.hashpw(senha.encode(), bcrypt.gensalt(12)).decode()
+        params.append(novo_hash); sets.append(f"senha_hash=${len(params)}")
     if not sets: return {"ok": True}
     params.append(login)
     await db.execute(
