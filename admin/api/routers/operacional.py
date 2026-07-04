@@ -10,6 +10,7 @@ from typing import Optional
 from fastapi import APIRouter, Request, HTTPException, Depends, Header, UploadFile, File, Form, Body
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, JSONResponse, Response, StreamingResponse
 
+from core.config import OPERACIONAL_DIR
 from core.db import jard_query, jard_query_id, get_db
 from core.auth import verificar_token, verificar_gestor, verificar_admin
 
@@ -33,7 +34,7 @@ async def operacional_manifest():
 
 @router.get("/operacional/mobile", response_class=HTMLResponse)
 async def operacional_mobile():
-    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "operacional", "operacional-mobile.html")
+    path = os.path.join(OPERACIONAL_DIR, "operacional-mobile.html")
     if not os.path.exists(path):
         raise HTTPException(status_code=404, detail="Mobile operacional não encontrado")
     return open(path, encoding="utf-8").read()

@@ -10,6 +10,7 @@ from typing import Optional
 from fastapi import APIRouter, Request, HTTPException, Depends, Header, Body
 from fastapi.responses import FileResponse, JSONResponse
 
+from core.config import CHECKLIST_DIR
 from core.db import get_db
 from core.auth import verificar_token, verificar_gestor, verificar_admin
 from core.storage import _checklist_extrair_fotos_para_storage, _checklist_assinar_fotos_para_leitura
@@ -178,15 +179,15 @@ async def remover_registro(registro_id: str, db=Depends(get_db), _auth=Depends(v
 
 @router.get("/checklist")
 async def checklist_app():
-    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "operacional", "checklist", "index.html")
+    path = os.path.join(CHECKLIST_DIR, "index.html")
     return FileResponse(path)
 
 @router.get("/checklist/sw.js")
 async def checklist_sw():
-    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "operacional", "checklist", "sw.js")
+    path = os.path.join(CHECKLIST_DIR, "sw.js")
     return FileResponse(path, media_type="application/javascript")
 
 @router.get("/checklist/manifest.json")
 async def checklist_manifest():
-    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "operacional", "checklist", "manifest.json")
+    path = os.path.join(CHECKLIST_DIR, "manifest.json")
     return FileResponse(path)
