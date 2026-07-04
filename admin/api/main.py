@@ -46,7 +46,7 @@ from core.config import (
     JARD_DIR, STATIC_DIR, TEMPLATES_DIR, JARD_ICONS_DIR,
     ICONS_DIR, OPERACIONAL_STATIC_DIR, OPERACIONAL_DIR, CHECKLIST_DIR,
 )
-from core.db import get_db, get_jard_db, jard_query, jard_query_id
+from core.db import get_db, get_jard_db, jard_query, jard_query_id, ajard_query, ajard_query_id
 from core.storage import (
     storage_upload, storage_url, storage_delete, _URL_SUPABASE_EXPIRY,
     _checklist_extrair_fotos_para_storage, _checklist_assinar_fotos_para_leitura,
@@ -305,7 +305,7 @@ if os.path.exists(CHECKLIST_DIR):
 @app.on_event("startup")
 async def criar_tabelas_webauthn():
     try:
-        jard_query(WEBAUTHN_TABLES_SQL, fetch="none")
+        await ajard_query(WEBAUTHN_TABLES_SQL, fetch="none")
     except Exception as e:
         print(f"[WebAuthn] Falha ao criar tabelas: {e}")
 
@@ -502,12 +502,12 @@ async def criar_tabelas_webauthn():
 @app.on_event("startup")
 async def criar_tabela_perfis():
     try:
-        jard_query(PERFIS_TABLE_SQL, fetch="none")
-        existe = jard_query("SELECT COUNT(*) as c FROM public.perfis_customizados", fetch="one")
+        await ajard_query(PERFIS_TABLE_SQL, fetch="none")
+        existe = await ajard_query("SELECT COUNT(*) as c FROM public.perfis_customizados", fetch="one")
         if existe and existe.get("c", 0) == 0:
             for nome, modulos in PERFIL_MODULOS_PADRAO.items():
                 label = PERFIL_LABEL_SEED.get(nome, nome.capitalize())
-                jard_query(
+                await ajard_query(
                     "INSERT INTO public.perfis_customizados (nome, label, modulos) VALUES (%s, %s, %s)",
                     (nome, label, ",".join(modulos)), fetch="none"
                 )
@@ -552,9 +552,9 @@ CREATE TABLE IF NOT EXISTS public.mural_avisos (
 @app.on_event("startup")
 async def criar_tabela_mural():
     try:
-        jard_query(MURAL_TABLE_SQL, fetch="none")
+        await ajard_query(MURAL_TABLE_SQL, fetch="none")
         # Garantir coluna destinatario (tabela pode já existir sem ela)
-        jard_query("ALTER TABLE public.mural_avisos ADD COLUMN IF NOT EXISTS destinatario TEXT DEFAULT ''", fetch="none")
+        await ajard_query("ALTER TABLE public.mural_avisos ADD COLUMN IF NOT EXISTS destinatario TEXT DEFAULT ''", fetch="none")
     except Exception:
         pass
 
@@ -598,11 +598,11 @@ CARTILHA_SEED = [
 @app.on_event("startup")
 async def criar_tabela_cartilha():
     try:
-        jard_query(CARTILHA_TABLE_SQL, fetch="none")
-        existe = jard_query("SELECT COUNT(*) as c FROM public.cartilha_blocos", fetch="one")
+        await ajard_query(CARTILHA_TABLE_SQL, fetch="none")
+        existe = await ajard_query("SELECT COUNT(*) as c FROM public.cartilha_blocos", fetch="one")
         if existe and existe.get("c", 0) == 0:
             for ordem, titulo, subtitulo, conteudo in CARTILHA_SEED:
-                jard_query(
+                await ajard_query(
                     "INSERT INTO public.cartilha_blocos (ordem, titulo, subtitulo, conteudo) VALUES (%s, %s, %s, %s)",
                     (ordem, titulo, subtitulo, conteudo), fetch="none"
                 )
