@@ -679,6 +679,12 @@ async function fazerLogin() {
 
 // Pós-login compartilhado — senha e biometria entregam o MESMO payload
 async function aplicarLoginSucesso(data) {
+  // Fecha modais que podem ter ficado abertos por cima do login (ex: o
+  // usuário abriu "Esqueci senha" e a biometria autocompletou o login
+  // enquanto o modal estava na tela) — mesma causa do bug do modal-conta.
+  const modalEsq = document.getElementById('modal-esqueci');
+  if (modalEsq) modalEsq.style.display = 'none';
+
   localStorage.setItem('garra_token', data.token);
   localStorage.setItem('garra_usuario', JSON.stringify(data));
 
