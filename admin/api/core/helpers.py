@@ -40,10 +40,12 @@ def semanas_do_mes(ano: int, mes: int, mes_id: int):
                     f"{ano}-{mes:02d}-{ini:02d}",
                     f"{ano}-{mes:02d}-{fim:02d}", i), fetch="none")
 
-def enviar_email_smtp(destino: str, assunto: str, corpo_html: str, anexos: list = None):
-    # Suporta múltiplos destinatários separados por vírgula em MAIL_DESTINO e MAIL_CC
+def enviar_email_smtp(destino: str, assunto: str, corpo_html: str, anexos: list = None, incluir_cc: bool = True):
+    # Suporta múltiplos destinatários separados por vírgula em MAIL_DESTINO e MAIL_CC.
+    # incluir_cc=False para emails PESSOAIS (ex: redefinição de senha) — o CC
+    # da empresa não pode receber links sensíveis de outros colaboradores.
     lista_to = [e.strip() for e in destino.split(",") if e.strip()]
-    lista_cc = [e.strip() for e in MAIL_CC.split(",") if e.strip()] if MAIL_CC else []
+    lista_cc = [e.strip() for e in MAIL_CC.split(",") if e.strip()] if (MAIL_CC and incluir_cc) else []
     msg = MIMEMultipart("mixed")
     msg["Subject"] = assunto
     msg["From"]    = f"Garra Terraplenagem <{MAIL_USERNAME}>"
