@@ -50,6 +50,8 @@ JARD_ICONS_DIR = os.path.join(STATIC_DIR, "icons")
 
 ICONS_DIR = os.path.join(_API_DIR, "..", "..", "operacional", "checklist", "icons")
 OPERACIONAL_STATIC_DIR = os.path.join(_API_DIR, "..", "..", "operacional", "static")
+OPERACIONAL_DIR = os.path.join(_API_DIR, "..", "..", "operacional")
+CHECKLIST_DIR   = os.path.join(OPERACIONAL_DIR, "checklist")
 
 print(f"JARD_DIR: {JARD_DIR}")
 print(f"TEMPLATES_DIR: {TEMPLATES_DIR} (exists: {os.path.exists(TEMPLATES_DIR)})")
