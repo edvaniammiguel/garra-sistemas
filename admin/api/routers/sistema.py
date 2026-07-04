@@ -11,7 +11,7 @@ from fastapi.responses import JSONResponse
 
 import jwt as pyjwt
 from core.config import DEBUG_KEY, _debug_autorizado, DATABASE_URL, JWT_SECRET
-from core.db import get_db, jard_query
+from core.db import get_db, ajard_query
 from core.auth import verificar_token, verificar_admin, verificar_gestor
 from core.models import MuralCreate, CartilhaBloco
 
@@ -23,7 +23,7 @@ async def listar_mural(payload=Depends(verificar_token)):
     perfil = payload.get("perfil", "")
     login = payload.get("login") or payload.get("sub", "")
     try:
-        rows = jard_query(
+        rows = await ajard_query(
             "SELECT id, titulo, mensagem, perfis, destinatario, criado_em, criado_por "
             "FROM public.mural_avisos WHERE ativo=true ORDER BY criado_em DESC",
             fetch="all"
@@ -31,10 +31,10 @@ async def listar_mural(payload=Depends(verificar_token)):
     except Exception:
         # Coluna destinatario pode não existir ainda — migrar e tentar de novo
         try:
-            jard_query("ALTER TABLE public.mural_avisos ADD COLUMN IF NOT EXISTS destinatario TEXT DEFAULT ''", fetch="none")
+            await ajard_query("ALTER TABLE public.mural_avisos ADD COLUMN IF NOT EXISTS destinatario TEXT DEFAULT ''", fetch="none")
         except Exception:
             pass
-        rows = jard_query(
+        rows = await ajard_query(
             "SELECT id, titulo, mensagem, perfis, destinatario, criado_em, criado_por "
             "FROM public.mural_avisos WHERE ativo=true ORDER BY criado_em DESC",
             fetch="all"
@@ -67,7 +67,7 @@ async def listar_mural(payload=Depends(verificar_token)):
 @router.post("/api/mural")
 async def criar_aviso_mural(dados: MuralCreate, payload=Depends(verificar_admin)):
     """Admin cria aviso no mural."""
-    jard_query(
+    await ajard_query(
         "INSERT INTO public.mural_avisos (titulo, mensagem, perfis, destinatario, criado_por) VALUES (%s, %s, %s, %s, %s)",
         (dados.titulo, dados.mensagem, dados.perfis, dados.destinatario, payload.get("nome", "")), fetch="none"
     )
@@ -76,7 +76,7 @@ async def criar_aviso_mural(dados: MuralCreate, payload=Depends(verificar_admin)
 @router.put("/api/mural/{aviso_id}")
 async def editar_aviso_mural(aviso_id: int, dados: MuralCreate, payload=Depends(verificar_admin)):
     """Admin edita um aviso existente."""
-    jard_query(
+    await ajard_query(
         "UPDATE public.mural_avisos SET titulo=%s, mensagem=%s, perfis=%s, destinatario=%s WHERE id=%s",
         (dados.titulo, dados.mensagem, dados.perfis, dados.destinatario, aviso_id), fetch="none"
     )
@@ -85,7 +85,7 @@ async def editar_aviso_mural(aviso_id: int, dados: MuralCreate, payload=Depends(
 @router.delete("/api/mural/{aviso_id}")
 async def desativar_aviso_mural(aviso_id: int, payload=Depends(verificar_admin)):
     """Admin desativa aviso (soft delete)."""
-    jard_query(
+    await ajard_query(
         "UPDATE public.mural_avisos SET ativo=false WHERE id=%s",
         (aviso_id,), fetch="none"
     )
@@ -94,7 +94,7 @@ async def desativar_aviso_mural(aviso_id: int, payload=Depends(verificar_admin))
 @router.get("/api/cartilha")
 async def listar_cartilha(payload=Depends(verificar_token)):
     """Lista blocos ativos do manual, em ordem — qualquer usuário logado pode ler."""
-    rows = jard_query(
+    rows = await ajard_query(
         "SELECT id, ordem, titulo, subtitulo, conteudo, atualizado_em "
         "FROM public.cartilha_blocos WHERE ativo=true ORDER BY ordem ASC, id ASC",
         fetch="all"
@@ -110,7 +110,7 @@ async def listar_cartilha(payload=Depends(verificar_token)):
 @router.post("/api/cartilha")
 async def criar_bloco_cartilha(dados: CartilhaBloco, payload=Depends(verificar_admin)):
     """Admin cria novo bloco no manual."""
-    jard_query(
+    await ajard_query(
         "INSERT INTO public.cartilha_blocos (ordem, titulo, subtitulo, conteudo) VALUES (%s, %s, %s, %s)",
         (dados.ordem, dados.titulo, dados.subtitulo, dados.conteudo), fetch="none"
     )
@@ -119,7 +119,7 @@ async def criar_bloco_cartilha(dados: CartilhaBloco, payload=Depends(verificar_a
 @router.put("/api/cartilha/{bloco_id}")
 async def editar_bloco_cartilha(bloco_id: int, dados: CartilhaBloco, payload=Depends(verificar_admin)):
     """Admin edita um bloco existente."""
-    jard_query(
+    await ajard_query(
         "UPDATE public.cartilha_blocos SET ordem=%s, titulo=%s, subtitulo=%s, conteudo=%s, atualizado_em=NOW() WHERE id=%s",
         (dados.ordem, dados.titulo, dados.subtitulo, dados.conteudo, bloco_id), fetch="none"
     )
@@ -128,7 +128,7 @@ async def editar_bloco_cartilha(bloco_id: int, dados: CartilhaBloco, payload=Dep
 @router.delete("/api/cartilha/{bloco_id}")
 async def excluir_bloco_cartilha(bloco_id: int, payload=Depends(verificar_admin)):
     """Admin remove um bloco definitivamente."""
-    jard_query("DELETE FROM public.cartilha_blocos WHERE id=%s", (bloco_id,), fetch="none")
+    await ajard_query("DELETE FROM public.cartilha_blocos WHERE id=%s", (bloco_id,), fetch="none")
     return {"ok": True}
 
 @router.get("/api/health")
@@ -146,7 +146,7 @@ async def health():
 async def health_db():
     """Testa a conexão com o banco — uso manual de diagnóstico, NÃO em cron."""
     try:
-        jard_query("SELECT 1", fetch="one")
+        await ajard_query("SELECT 1", fetch="one")
         return {"status": "ok", "db": "conectado"}
     except Exception as e:
         return {"status": "erro", "db": str(e)}
@@ -159,7 +159,7 @@ async def debug_jard_pares(mes: str = "", chave: str = ""):
         raise HTTPException(status_code=403, detail="Chave inválida")
     filtro = "AND s.mes_id = %s" if mes else ""
     params = (mes,) if mes else ()
-    pares = jard_query(
+    pares = await ajard_query(
         f"""SELECT p.id, p.codigo_a, p.codigo_d, p.local_nome, p.semana_id,
                    s.label AS semana_label, s.mes_id,
                    (SELECT COUNT(*) FROM jardinagem.fotos f
@@ -183,7 +183,7 @@ async def debug_jard_pares(mes: str = "", chave: str = ""):
             vistos[ca] = p["id"]
         if not p.get("num_fotos"):
             vazios.append({"id": p["id"], "codigo_a": ca, "local": p.get("local_nome")})
-    cfg = jard_query("SELECT valor FROM jardinagem.config WHERE chave='next_code'", fetch="one")
+    cfg = await ajard_query("SELECT valor FROM jardinagem.config WHERE chave='next_code'", fetch="one")
     return {
         "total_pares": len(pares),
         "next_code_config": cfg["valor"] if cfg else None,
@@ -197,7 +197,7 @@ async def debug_os(numero: str = "", chave: str = ""):
     """Diagnóstico de uma OS e suas partes. Uso: ?numero=OS-2026-0005&chave=DEBUG_KEY"""
     if not _debug_autorizado(chave):
         raise HTTPException(status_code=403, detail="Chave inválida")
-    os_row = jard_query(
+    os_row = await ajard_query(
         """SELECT id, numero, obra, regime_cobranca, valor_combinado, status,
                   equipamento_id, operador_id, tipo_servico_id, data_inicio
            FROM operacional.ordens_servico WHERE numero=%s""",
@@ -205,7 +205,7 @@ async def debug_os(numero: str = "", chave: str = ""):
     )
     if not os_row:
         return {"erro": "OS não encontrada", "numero": numero}
-    partes = jard_query(
+    partes = await ajard_query(
         """SELECT id, data, tipo_medicao,
                   horimetro_inicial, horimetro_final, horas_trabalhadas, horas_cobradas,
                   km_inicial, km_final, km_percorrido, qtd_viagens, qtd_metros,
@@ -228,7 +228,7 @@ async def debug_equipamentos(codigo: str = "", chave: str = ""):
         raise HTTPException(status_code=403, detail="Chave inválida")
     filtro = "WHERE eq.codigo=%s" if codigo else ""
     params = (codigo,) if codigo else ()
-    rows = jard_query(
+    rows = await ajard_query(
         f"""SELECT eq.codigo, eq.descricao, eq.categoria, eq.medicao,
                    eq.operador_responsavel_id, resp.nome AS responsavel_nome,
                    eq.ativo
@@ -255,7 +255,7 @@ async def debug_usuarios(chave: str = "", authorization: Optional[str] = Header(
                 raise HTTPException(status_code=403, detail="Acesso restrito a administradores")
         except pyjwt.InvalidTokenError:
             raise HTTPException(status_code=401, detail="Token inválido")
-    rows = jard_query(
+    rows = await ajard_query(
         """SELECT login, nome, email, perfil, perfil_checklist, ativo,
                   LEFT(senha_hash,7) AS hash_inicio,
                   CASE WHEN senha_hash = '$2b$12$y4jgMhNSKtoeBtad7lKEOev.tHk8S9OA1SpPHrowz5XT.AQJK.iZK'
@@ -284,7 +284,7 @@ async def debug_sistema(chave: str = ""):
 
     # 1. BANCO — conexão
     try:
-        r = jard_query("SELECT 1 AS ok", fetch="one")
+        r = await ajard_query("SELECT 1 AS ok", fetch="one")
         add("banco", "conexão Neon", bool(r), "conectado")
     except Exception as e:
         add("banco", "conexão Neon", False, e)
@@ -302,7 +302,7 @@ async def debug_sistema(chave: str = ""):
     ]
     for sch, tab in tabelas:
         try:
-            n = jard_query(
+            n = await ajard_query(
                 f"SELECT COUNT(*) AS n FROM {sch}.{tab}", fetch="one"
             )
             add("tabelas", f"{sch}.{tab}", True, f"{n['n']} registros")
@@ -311,7 +311,7 @@ async def debug_sistema(chave: str = ""):
 
     # 3. USUÁRIOS — quantos ativos e perfis
     try:
-        us = jard_query(
+        us = await ajard_query(
             "SELECT perfil, COUNT(*) AS n FROM public.usuarios_garra "
             "WHERE ativo=true GROUP BY perfil ORDER BY perfil",
             fetch="all"
@@ -323,7 +323,7 @@ async def debug_sistema(chave: str = ""):
 
     # 4. JARDINAGEM — integridade dos pares (duplicados/vazios)
     try:
-        pares = jard_query(
+        pares = await ajard_query(
             "SELECT codigo_a, codigo_d FROM jardinagem.pares "
             "WHERE (ativo IS NULL OR ativo=true) ORDER BY codigo_a",
             fetch="all"
@@ -352,11 +352,11 @@ async def debug_sistema(chave: str = ""):
 
     # 5. JARDINAGEM — next_code coerente
     try:
-        cfg = jard_query(
+        cfg = await ajard_query(
             "SELECT valor FROM jardinagem.config WHERE chave='next_code'",
             fetch="one"
         )
-        maxc = jard_query(
+        maxc = await ajard_query(
             "SELECT MAX(codigo_d) AS m FROM jardinagem.pares WHERE ativo",
             fetch="one"
         )
@@ -370,7 +370,7 @@ async def debug_sistema(chave: str = ""):
 
     # 6. JARDINAGEM — trava UNIQUE anti-duplicação ativa
     try:
-        idx = jard_query(
+        idx = await ajard_query(
             "SELECT indexname FROM pg_indexes "
             "WHERE schemaname='jardinagem' AND tablename='pares' "
             "AND indexname='uq_pares_codigo_a_ativo'",
@@ -383,7 +383,7 @@ async def debug_sistema(chave: str = ""):
 
     # 7. OPERACIONAL — colunas novas existem
     try:
-        cols = jard_query(
+        cols = await ajard_query(
             "SELECT column_name FROM information_schema.columns "
             "WHERE table_schema='operacional' AND table_name='partes_diarias' "
             "AND column_name IN ('sem_almoco','fornecedor','equipamento_terceiro')",
@@ -398,7 +398,7 @@ async def debug_sistema(chave: str = ""):
 
     # 8. OPERACIONAL — operador_responsavel em equipamentos
     try:
-        col = jard_query(
+        col = await ajard_query(
             "SELECT column_name FROM information_schema.columns "
             "WHERE table_schema='operacional' AND table_name='equipamentos' "
             "AND column_name='operador_responsavel_id'",

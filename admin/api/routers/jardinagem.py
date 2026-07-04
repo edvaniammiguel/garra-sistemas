@@ -17,7 +17,7 @@ from core.config import (
     MAIL_DESTINO, MAIL_CC, MAIL_USERNAME, MAIL_PASSWORD,
     SUPABASE_URL, SUPABASE_SERVICE_KEY,
 )
-from core.db import jard_query, jard_query_id
+from core.db import ajard_query, ajard_query_id
 from core.auth import gerar_token_jard, verificar_token_jard, exigir_acesso_jardinagem
 from core.storage import storage_upload, storage_url, storage_delete
 from core.helpers import comprimir_imagem, next_code, semanas_do_mes, enviar_email_smtp
@@ -106,7 +106,7 @@ async def jard_login(request: Request):
     d = await request.json()
     email = (d.get("email") or "").strip().lower()
     senha = (d.get("senha") or "").encode()
-    usuario = jard_query(
+    usuario = await ajard_query(
         "SELECT * FROM public.usuarios_garra WHERE (email=%s OR login=%s) AND ativo=true LIMIT 1",
         (email, email), fetch="one"
     )
@@ -125,7 +125,7 @@ async def jard_logout():
 
 @router.get("/jardinagem/api/meses")
 async def jard_list_meses(payload=Depends(exigir_acesso_jardinagem)):
-    meses = jard_query("""
+    meses = await ajard_query("""
         SELECT m.*, COUNT(DISTINCT s.id) as total_semanas
         FROM jardinagem.meses m
         LEFT JOIN jardinagem.semanas s ON s.mes_id=m.id
@@ -135,23 +135,23 @@ async def jard_list_meses(payload=Depends(exigir_acesso_jardinagem)):
 
 @router.delete("/jardinagem/api/meses/{mid}")
 async def jard_del_mes(mid: int, payload=Depends(verificar_token_jard)):
-    mes = jard_query("SELECT id FROM jardinagem.meses WHERE id=%s", (mid,), fetch="one")
+    mes = await ajard_query("SELECT id FROM jardinagem.meses WHERE id=%s", (mid,), fetch="one")
     if not mes:
         raise HTTPException(status_code=404, detail="Mês não encontrado")
-    semanas = jard_query("SELECT id FROM jardinagem.semanas WHERE mes_id=%s", (mid,))
+    semanas = await ajard_query("SELECT id FROM jardinagem.semanas WHERE mes_id=%s", (mid,))
     for s in semanas:
-        pares = jard_query("SELECT id FROM jardinagem.pares WHERE semana_id=%s", (s["id"],))
+        pares = await ajard_query("SELECT id FROM jardinagem.pares WHERE semana_id=%s", (s["id"],))
         for p in pares:
-            fotos = jard_query("SELECT storage_path FROM jardinagem.fotos WHERE par_id=%s", (p["id"],))
+            fotos = await ajard_query("SELECT storage_path FROM jardinagem.fotos WHERE par_id=%s", (p["id"],))
             paths = [f["storage_path"] for f in fotos if f["storage_path"]]
             if paths: storage_delete(paths)
-            jard_query("DELETE FROM jardinagem.fotos WHERE par_id=%s", (p["id"],), fetch="none")
-        jard_query("DELETE FROM jardinagem.pares WHERE semana_id=%s", (s["id"],), fetch="none")
-        jard_query("DELETE FROM jardinagem.fila_sync WHERE semana_id=%s", (s["id"],), fetch="none")
-        jard_query("DELETE FROM jardinagem.emails_enviados WHERE semana_id=%s", (s["id"],), fetch="none")
-        jard_query("DELETE FROM jardinagem.relatorios_diarios WHERE semana_id=%s", (s["id"],), fetch="none")
-    jard_query("DELETE FROM jardinagem.semanas WHERE mes_id=%s", (mid,), fetch="none")
-    jard_query("DELETE FROM jardinagem.meses WHERE id=%s", (mid,), fetch="none")
+            await ajard_query("DELETE FROM jardinagem.fotos WHERE par_id=%s", (p["id"],), fetch="none")
+        await ajard_query("DELETE FROM jardinagem.pares WHERE semana_id=%s", (s["id"],), fetch="none")
+        await ajard_query("DELETE FROM jardinagem.fila_sync WHERE semana_id=%s", (s["id"],), fetch="none")
+        await ajard_query("DELETE FROM jardinagem.emails_enviados WHERE semana_id=%s", (s["id"],), fetch="none")
+        await ajard_query("DELETE FROM jardinagem.relatorios_diarios WHERE semana_id=%s", (s["id"],), fetch="none")
+    await ajard_query("DELETE FROM jardinagem.semanas WHERE mes_id=%s", (mid,), fetch="none")
+    await ajard_query("DELETE FROM jardinagem.meses WHERE id=%s", (mid,), fetch="none")
     return {"ok": True}
 
 @router.post("/jardinagem/api/meses")
@@ -160,18 +160,18 @@ async def jard_criar_mes(request: Request, payload=Depends(verificar_token_jard)
     ano, mes = int(d["ano"]), int(d["mes"])
     nomes = ["","Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"]
     label = d.get("label") or f"{nomes[mes]}/{ano}"
-    exist = jard_query("SELECT id FROM jardinagem.meses WHERE ano=%s AND mes=%s", (ano,mes), fetch="one")
+    exist = await ajard_query("SELECT id FROM jardinagem.meses WHERE ano=%s AND mes=%s", (ano,mes), fetch="one")
     ja_existia = False
     if exist:
         mes_id = exist["id"]
         ja_existia = True
     else:
-        row = jard_query_id("INSERT INTO jardinagem.meses(ano,mes,label) VALUES(%s,%s,%s)", (ano,mes,label))
+        row = await ajard_query_id("INSERT INTO jardinagem.meses(ano,mes,label) VALUES(%s,%s,%s)", (ano,mes,label))
         mes_id = row["id"]
-    sem_exist = jard_query("SELECT id FROM jardinagem.semanas WHERE mes_id=%s LIMIT 1", (mes_id,), fetch="one")
+    sem_exist = await ajard_query("SELECT id FROM jardinagem.semanas WHERE mes_id=%s LIMIT 1", (mes_id,), fetch="one")
     if not sem_exist:
-        semanas_do_mes(ano, mes, mes_id)
-    mes_data = jard_query("SELECT * FROM jardinagem.meses WHERE id=%s", (mes_id,), fetch="one")
+        await semanas_do_mes(ano, mes, mes_id)
+    mes_data = await ajard_query("SELECT * FROM jardinagem.meses WHERE id=%s", (mes_id,), fetch="one")
     result = dict(mes_data)
     result["ja_existia"] = ja_existia
     return result
@@ -180,24 +180,24 @@ async def jard_criar_mes(request: Request, payload=Depends(verificar_token_jard)
 async def jard_patch_mes(mid: int, request: Request, payload=Depends(verificar_token_jard)):
     d = await request.json()
     if "label" in d:
-        jard_query("UPDATE jardinagem.meses SET label=%s WHERE id=%s", (d["label"], mid), fetch="none")
+        await ajard_query("UPDATE jardinagem.meses SET label=%s WHERE id=%s", (d["label"], mid), fetch="none")
     return {"ok": True}
 
 @router.get("/jardinagem/api/meses/{mid}")
 async def jard_get_mes(mid: int, payload=Depends(verificar_token_jard)):
     from concurrent.futures import ThreadPoolExecutor
-    m = jard_query("SELECT * FROM jardinagem.meses WHERE id=%s", (mid,), fetch="one")
+    m = await ajard_query("SELECT * FROM jardinagem.meses WHERE id=%s", (mid,), fetch="one")
     if not m: raise HTTPException(status_code=404, detail="Não encontrado")
     result = dict(m)
     # 1 query semanas
-    sems = jard_query("SELECT * FROM jardinagem.semanas WHERE mes_id=%s ORDER BY ordem", (mid,))
+    sems = await ajard_query("SELECT * FROM jardinagem.semanas WHERE mes_id=%s ORDER BY ordem", (mid,))
     if not sems:
         result["semanas"] = []
         return result
     sem_ids = [s["id"] for s in sems]
     # 1 query todos os pares do mês (elimina N+1)
     placeholders = ",".join(["%s"] * len(sem_ids))
-    pares_raw = jard_query(
+    pares_raw = await ajard_query(
         f"SELECT * FROM jardinagem.pares WHERE semana_id IN ({placeholders}) AND (ativo IS NULL OR ativo=true) ORDER BY semana_id, codigo_a",
         tuple(sem_ids)
     )
@@ -206,7 +206,7 @@ async def jard_get_mes(mid: int, payload=Depends(verificar_token_jard)):
     fotos_raw = []
     if par_ids:
         ph2 = ",".join(["%s"] * len(par_ids))
-        fotos_raw = jard_query(
+        fotos_raw = await ajard_query(
             f"SELECT * FROM jardinagem.fotos WHERE par_id IN ({ph2})",
             tuple(par_ids)
         )
@@ -248,15 +248,15 @@ async def jard_get_mes(mid: int, payload=Depends(verificar_token_jard)):
 async def jard_listar_semanas(mes_id: int = None, payload=Depends(verificar_token_jard)):
     if not mes_id:
         hoje = date.today().isoformat()
-        row = jard_query("""SELECT m.id FROM jardinagem.meses m
+        row = await ajard_query("""SELECT m.id FROM jardinagem.meses m
                            JOIN jardinagem.semanas s ON s.mes_id=m.id
                            WHERE s.data_ini<=%s AND s.data_fim>=%s LIMIT 1""", (hoje,hoje), fetch="one")
         if not row:
-            row = jard_query("SELECT id FROM jardinagem.meses ORDER BY ano DESC, mes DESC LIMIT 1", fetch="one")
+            row = await ajard_query("SELECT id FROM jardinagem.meses ORDER BY ano DESC, mes DESC LIMIT 1", fetch="one")
         mes_id = row["id"] if row else None
     if not mes_id:
         return {"ok": True, "semanas": []}
-    rows = jard_query(
+    rows = await ajard_query(
         "SELECT * FROM jardinagem.semanas WHERE mes_id=%s ORDER BY ordem",
         (mes_id,)
     )
@@ -271,12 +271,12 @@ async def jard_listar_semanas(mes_id: int = None, payload=Depends(verificar_toke
 @router.get("/jardinagem/api/semanas/ativa")
 async def jard_semana_ativa(payload=Depends(verificar_token_jard)):
     hoje = date.today().isoformat()
-    row = jard_query("""SELECT s.*,m.id as mes_id,m.ano,m.mes,m.label as mes_label
+    row = await ajard_query("""SELECT s.*,m.id as mes_id,m.ano,m.mes,m.label as mes_label
                         FROM jardinagem.semanas s JOIN jardinagem.meses m ON m.id=s.mes_id
                         WHERE s.data_ini::date<=%s AND s.data_fim::date>=%s
                         AND s.status='aberta' LIMIT 1""", (hoje,hoje), fetch="one")
     if not row:
-        row = jard_query("""SELECT s.*,m.id as mes_id,m.ano,m.mes,m.label as mes_label
+        row = await ajard_query("""SELECT s.*,m.id as mes_id,m.ano,m.mes,m.label as mes_label
                             FROM jardinagem.semanas s JOIN jardinagem.meses m ON m.id=s.mes_id
                             WHERE s.status='aberta'
                             ORDER BY s.id DESC LIMIT 1""", fetch="one")
@@ -289,7 +289,7 @@ async def jard_criar_semana(request: Request, payload=Depends(verificar_token_ja
     d = await request.json()
     mes_id = d.get("mes_id"); label = (d.get("label") or "").strip(); ordem = d.get("ordem",0)
     if not mes_id or not label: raise HTTPException(status_code=400, detail="mes_id e label obrigatórios")
-    row = jard_query_id("INSERT INTO jardinagem.semanas (mes_id,label,ordem,status) VALUES (%s,%s,%s,'aberta')", (mes_id,label,ordem))
+    row = await ajard_query_id("INSERT INTO jardinagem.semanas (mes_id,label,ordem,status) VALUES (%s,%s,%s,'aberta')", (mes_id,label,ordem))
     return dict(row)
 
 @router.patch("/jardinagem/api/semanas/{sid}")
@@ -297,46 +297,46 @@ async def jard_patch_semana(sid: int, request: Request, payload=Depends(verifica
     d = await request.json()
     for col in ["label","status","enviado_em"]:
         if col in d:
-            jard_query(f"UPDATE jardinagem.semanas SET {col}=%s WHERE id=%s", (d[col],sid), fetch="none")
+            await ajard_query(f"UPDATE jardinagem.semanas SET {col}=%s WHERE id=%s", (d[col],sid), fetch="none")
     return {"ok": True}
 
 @router.delete("/jardinagem/api/semanas/{sid}")
 async def jard_del_semana(sid: int, payload=Depends(verificar_token_jard)):
-    pares = jard_query("SELECT id FROM jardinagem.pares WHERE semana_id=%s", (sid,))
+    pares = await ajard_query("SELECT id FROM jardinagem.pares WHERE semana_id=%s", (sid,))
     for p in pares:
-        fotos = jard_query("SELECT storage_path FROM jardinagem.fotos WHERE par_id=%s", (p["id"],))
+        fotos = await ajard_query("SELECT storage_path FROM jardinagem.fotos WHERE par_id=%s", (p["id"],))
         paths = [f["storage_path"] for f in fotos if f["storage_path"]]
         if paths: storage_delete(paths)
-        jard_query("DELETE FROM jardinagem.fotos WHERE par_id=%s", (p["id"],), fetch="none")
-    jard_query("DELETE FROM jardinagem.pares WHERE semana_id=%s", (sid,), fetch="none")
-    jard_query("DELETE FROM jardinagem.fila_sync WHERE semana_id=%s", (sid,), fetch="none")
-    jard_query("DELETE FROM jardinagem.emails_enviados WHERE semana_id=%s", (sid,), fetch="none")
-    jard_query("DELETE FROM jardinagem.relatorios_diarios WHERE semana_id=%s", (sid,), fetch="none")
-    jard_query("DELETE FROM jardinagem.semanas WHERE id=%s", (sid,), fetch="none")
+        await ajard_query("DELETE FROM jardinagem.fotos WHERE par_id=%s", (p["id"],), fetch="none")
+    await ajard_query("DELETE FROM jardinagem.pares WHERE semana_id=%s", (sid,), fetch="none")
+    await ajard_query("DELETE FROM jardinagem.fila_sync WHERE semana_id=%s", (sid,), fetch="none")
+    await ajard_query("DELETE FROM jardinagem.emails_enviados WHERE semana_id=%s", (sid,), fetch="none")
+    await ajard_query("DELETE FROM jardinagem.relatorios_diarios WHERE semana_id=%s", (sid,), fetch="none")
+    await ajard_query("DELETE FROM jardinagem.semanas WHERE id=%s", (sid,), fetch="none")
     return {"ok": True}
 
 @router.get("/jardinagem/api/semanas/{sid}/status")
 async def jard_status_semana(sid: int, payload=Depends(verificar_token_jard)):
-    sem = jard_query("SELECT * FROM jardinagem.semanas WHERE id=%s", (sid,), fetch="one")
+    sem = await ajard_query("SELECT * FROM jardinagem.semanas WHERE id=%s", (sid,), fetch="one")
     if not sem: raise HTTPException(status_code=404, detail="Não encontrada")
-    emails = jard_query("SELECT * FROM jardinagem.emails_enviados WHERE semana_id=%s ORDER BY enviado_em DESC", (sid,))
-    tp = jard_query("SELECT COUNT(*) as n FROM jardinagem.pares WHERE semana_id=%s", (sid,), fetch="one")
-    tf = jard_query("SELECT COUNT(*) as n FROM jardinagem.fotos f JOIN jardinagem.pares p ON p.id=f.par_id WHERE p.semana_id=%s", (sid,), fetch="one")
-    tr = jard_query("SELECT COUNT(*) as n FROM jardinagem.relatorios_diarios WHERE semana_id=%s", (sid,), fetch="one")
+    emails = await ajard_query("SELECT * FROM jardinagem.emails_enviados WHERE semana_id=%s ORDER BY enviado_em DESC", (sid,))
+    tp = await ajard_query("SELECT COUNT(*) as n FROM jardinagem.pares WHERE semana_id=%s", (sid,), fetch="one")
+    tf = await ajard_query("SELECT COUNT(*) as n FROM jardinagem.fotos f JOIN jardinagem.pares p ON p.id=f.par_id WHERE p.semana_id=%s", (sid,), fetch="one")
+    tr = await ajard_query("SELECT COUNT(*) as n FROM jardinagem.relatorios_diarios WHERE semana_id=%s", (sid,), fetch="one")
     return {"semana":dict(sem),"total_pares":tp["n"],"total_fotos":tf["n"],"total_relatorios":tr["n"],"emails":[dict(e) for e in emails]}
 
 @router.get("/jardinagem/api/pares")
 async def jard_listar_pares(semana_id: int = None, payload=Depends(verificar_token_jard)):
     if not semana_id:
         return {"ok": False, "error": "semana_id obrigatório"}
-    pares_raw = jard_query(
+    pares_raw = await ajard_query(
         "SELECT * FROM jardinagem.pares WHERE semana_id=%s AND (ativo IS NULL OR ativo=true) ORDER BY codigo_a",
         (semana_id,)
     )
     pares = []
     for p in pares_raw:
         pd = dict(p)
-        fotos = jard_query("SELECT * FROM jardinagem.fotos WHERE par_id=%s", (p["id"],))
+        fotos = await ajard_query("SELECT * FROM jardinagem.fotos WHERE par_id=%s", (p["id"],))
         pd["fotos"] = []
         for f in fotos:
             fd = dict(f)
@@ -353,7 +353,7 @@ async def jard_criar_par(request: Request, payload=Depends(verificar_token_jard)
     # (ele mesmo) e (MAX(codigo_d ativo)+1), depois avançado +2, e retorna o código
     # reservado. Por ser atômico no Postgres, dois pares simultâneos pegam números
     # diferentes — elimina a race condition que duplicava códigos.
-    reserva = jard_query(
+    reserva = await ajard_query(
         """
         UPDATE jardinagem.config c
         SET valor = (
@@ -372,15 +372,15 @@ async def jard_criar_par(request: Request, payload=Depends(verificar_token_jard)
         cod = int(reserva["cod"])
     else:
         # Fallback: config inexistente — calcula direto e cria a chave
-        ultimo = jard_query(
+        ultimo = await ajard_query(
             "SELECT MAX(codigo_d) as max_cod FROM jardinagem.pares WHERE (ativo IS NULL OR ativo=true)",
             fetch="one"
         )
         cod = max(int(ultimo.get("max_cod") or 6049), 6049) + 1
-        jard_query("INSERT INTO jardinagem.config (chave,valor) VALUES ('next_code',%s) ON CONFLICT (chave) DO UPDATE SET valor=EXCLUDED.valor",
+        await ajard_query("INSERT INTO jardinagem.config (chave,valor) VALUES ('next_code',%s) ON CONFLICT (chave) DO UPDATE SET valor=EXCLUDED.valor",
                    (str(cod + 2),), fetch="none")
 
-    row = jard_query_id("INSERT INTO jardinagem.pares (semana_id,codigo_a,codigo_d,local_nome,data_label,ordem,ativo) VALUES (%s,%s,%s,%s,%s,%s,true)",
+    row = await ajard_query_id("INSERT INTO jardinagem.pares (semana_id,codigo_a,codigo_d,local_nome,data_label,ordem,ativo) VALUES (%s,%s,%s,%s,%s,%s,true)",
                         (d["semana_id"],cod,cod+1,d.get("local_nome",""),d.get("data_label",""),d.get("ordem",0)))
     return dict(row)
 
@@ -389,7 +389,7 @@ async def jard_patch_par(pid: int, request: Request, payload=Depends(verificar_t
     d = await request.json()
     for col in ["local_nome","ordem","semana_id","data_label"]:
         if col in d:
-            jard_query(f"UPDATE jardinagem.pares SET {col}=%s WHERE id=%s", (d[col],pid), fetch="none")
+            await ajard_query(f"UPDATE jardinagem.pares SET {col}=%s WHERE id=%s", (d[col],pid), fetch="none")
     return {"ok": True}
 
 @router.delete("/jardinagem/api/pares/{pid}")
@@ -397,14 +397,14 @@ async def jard_del_par(pid: int, payload=Depends(verificar_token_jard)):
     # Soft delete: marcar par como inativo (campo ativo=false)
     # Fotos não são deletadas — seguem vinculadas mas não aparecem
     # next_code NÃO é alterado — sequência de códigos é imutável
-    jard_query("UPDATE jardinagem.pares SET ativo=false WHERE id=%s", (pid,), fetch="none")
+    await ajard_query("UPDATE jardinagem.pares SET ativo=false WHERE id=%s", (pid,), fetch="none")
     return {"ok": True}
 
 @router.patch("/jardinagem/api/fotos/{fid}")
 async def jard_patch_foto(fid: int, request: Request, payload=Depends(verificar_token_jard)):
     d = await request.json()
     if "tipo" in d and d["tipo"] in ("antes", "depois"):
-        jard_query("UPDATE jardinagem.fotos SET tipo=%s WHERE id=%s", (d["tipo"], fid), fetch="none")
+        await ajard_query("UPDATE jardinagem.fotos SET tipo=%s WHERE id=%s", (d["tipo"], fid), fetch="none")
     return {"ok": True}
 
 @router.post("/jardinagem/api/fotos/avulsa")
@@ -420,12 +420,12 @@ async def jard_foto_avulsa(
             raise HTTPException(status_code=400, detail="Arquivo vazio")
         dados = comprimir_imagem(conteudo)
         path  = storage_upload(dados, f"jardinagem/{datetime.now().strftime('%Y/%m')}/{uuid.uuid4().hex}.jpg")
-        antiga = jard_query("SELECT id,storage_path FROM jardinagem.fotos WHERE par_id=%s AND tipo=%s", (par_id,tipo), fetch="one")
+        antiga = await ajard_query("SELECT id,storage_path FROM jardinagem.fotos WHERE par_id=%s AND tipo=%s", (par_id,tipo), fetch="one")
         if antiga:
             if antiga.get("storage_path"):
                 storage_delete([antiga["storage_path"]])
-            jard_query("DELETE FROM jardinagem.fotos WHERE id=%s", (antiga["id"],), fetch="none")
-        row = jard_query_id(
+            await ajard_query("DELETE FROM jardinagem.fotos WHERE id=%s", (antiga["id"],), fetch="none")
+        row = await ajard_query_id(
             "INSERT INTO jardinagem.fotos (par_id,tipo,origem,enviado_por,storage_path,filename_orig,sincronizado) VALUES (%s,%s,'desktop',%s,%s,%s,true)",
             (par_id,tipo,str(payload["sub"]),path,foto.filename or "foto.jpg")
         )
@@ -459,7 +459,7 @@ async def jard_foto_mobile(
         if not sid:
             import datetime as dt
             hoje = dt.date.today().isoformat()
-            row = jard_query("""
+            row = await ajard_query("""
                 SELECT id FROM jardinagem.semanas
                 WHERE data_ini <= %s AND data_fim >= %s LIMIT 1
             """, (hoje, hoje), fetch="one")
@@ -474,17 +474,17 @@ async def jard_foto_mobile(
             except: pass
 
         if not pid:
-            row = jard_query_id(
+            row = await ajard_query_id(
                 "INSERT INTO jardinagem.pares (semana_id,codigo_a,codigo_d,local_nome,data_label,ordem) VALUES (%s,%s,%s,%s,%s,%s)",
                 (sid, 0, 0, local_nome or "", "", 99)
             )
             pid = row["id"]
-            cod = next_code(2)
-            jard_query("UPDATE jardinagem.pares SET codigo_a=%s, codigo_d=%s WHERE id=%s",
+            cod = await next_code(2)
+            await ajard_query("UPDATE jardinagem.pares SET codigo_a=%s, codigo_d=%s WHERE id=%s",
                       (cod, cod+1, pid), fetch="none")
 
         if offline_id:
-            exist = jard_query(
+            exist = await ajard_query(
                 "SELECT id FROM jardinagem.fotos WHERE offline_id=%s", (offline_id,), fetch="one"
             )
             if exist:
@@ -497,15 +497,15 @@ async def jard_foto_mobile(
         dados = comprimir_imagem(conteudo)
         path  = storage_upload(dados, f"jardinagem/{uuid.uuid4().hex}.jpg")
 
-        antiga = jard_query(
+        antiga = await ajard_query(
             "SELECT id, storage_path FROM jardinagem.fotos WHERE par_id=%s AND tipo=%s",
             (pid, tipo), fetch="one"
         )
         if antiga:
             if antiga.get("storage_path"): storage_delete([antiga["storage_path"]])
-            jard_query("DELETE FROM jardinagem.fotos WHERE id=%s", (antiga["id"],), fetch="none")
+            await ajard_query("DELETE FROM jardinagem.fotos WHERE id=%s", (antiga["id"],), fetch="none")
 
-        row = jard_query_id("""
+        row = await ajard_query_id("""
             INSERT INTO jardinagem.fotos
             (par_id, tipo, origem, enviado_por, storage_path, filename_orig, sincronizado, offline_id)
             VALUES (%s, %s, 'mobile', %s, %s, %s, true, %s)
@@ -524,13 +524,13 @@ async def jard_foto_mobile(
 
 @router.delete("/jardinagem/api/fotos/{fid}")
 async def jard_del_foto(fid: int, payload=Depends(verificar_token_jard)):
-    f = jard_query("SELECT storage_path FROM jardinagem.fotos WHERE id=%s", (fid,), fetch="one")
-    if f: storage_delete([f["storage_path"]]); jard_query("DELETE FROM jardinagem.fotos WHERE id=%s", (fid,), fetch="none")
+    f = await ajard_query("SELECT storage_path FROM jardinagem.fotos WHERE id=%s", (fid,), fetch="one")
+    if f: storage_delete([f["storage_path"]]); await ajard_query("DELETE FROM jardinagem.fotos WHERE id=%s", (fid,), fetch="none")
     return {"ok": True}
 
 @router.get("/jardinagem/api/fotos/{fid}/url")
 async def jard_url_foto(fid: int, payload=Depends(verificar_token_jard)):
-    f = jard_query("SELECT storage_path FROM jardinagem.fotos WHERE id=%s", (fid,), fetch="one")
+    f = await ajard_query("SELECT storage_path FROM jardinagem.fotos WHERE id=%s", (fid,), fetch="one")
     if not f: raise HTTPException(status_code=404, detail="Não encontrado")
     return {"url": storage_url(f["storage_path"])}
 
@@ -540,7 +540,7 @@ async def jard_criar_km(request: Request, payload=Depends(verificar_token_jard))
     semana_id = d.get("semana_id")
     if not semana_id:
         hoje = date.today().isoformat()
-        row = jard_query("SELECT id FROM jardinagem.semanas WHERE data_ini<=%s AND data_fim>=%s LIMIT 1", (hoje,hoje), fetch="one")
+        row = await ajard_query("SELECT id FROM jardinagem.semanas WHERE data_ini<=%s AND data_fim>=%s LIMIT 1", (hoje,hoje), fetch="one")
         if not row: raise HTTPException(status_code=404, detail="Sem semana ativa")
         semana_id = row["id"]
     local_nome  = (d.get("local_nome") or "").strip()
@@ -550,9 +550,9 @@ async def jard_criar_km(request: Request, payload=Depends(verificar_token_jard))
     if float(km_fin) < float(km_ini): raise HTTPException(status_code=400, detail="km_final não pode ser menor que km_inicial")
     offline_id = d.get("offline_id")
     if offline_id:
-        exist = jard_query("SELECT id FROM jardinagem.relatorios_diarios WHERE offline_id=%s", (offline_id,), fetch="one")
+        exist = await ajard_query("SELECT id FROM jardinagem.relatorios_diarios WHERE offline_id=%s", (offline_id,), fetch="one")
         if exist: return {"ok": True, "duplicado": True, "id": exist["id"]}
-    row = jard_query_id("""INSERT INTO jardinagem.relatorios_diarios
+    row = await ajard_query_id("""INSERT INTO jardinagem.relatorios_diarios
         (semana_id,usuario_id,data,local_nome,km_inicial,km_final,hora_inicio,hora_fim,observacao,offline_id)
         VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
         (semana_id,payload["sub"],d.get("data",date.today().isoformat()),local_nome,
@@ -569,7 +569,7 @@ async def jard_editar_km(km_id: int, request: Request, payload=Depends(verificar
     if float(km_fin) < float(km_ini): raise HTTPException(status_code=400, detail="km_final não pode ser menor que km_inicial")
     
     # Atualiza o registro
-    jard_query("""UPDATE jardinagem.relatorios_diarios 
+    await ajard_query("""UPDATE jardinagem.relatorios_diarios 
         SET data=%s, local_nome=%s, km_inicial=%s, km_final=%s, 
             hora_inicio=%s, hora_fim=%s, observacao=%s
         WHERE id=%s""",
@@ -581,26 +581,26 @@ async def jard_editar_km(km_id: int, request: Request, payload=Depends(verificar
 
 @router.delete("/jardinagem/api/relatorios/{km_id}")
 async def jard_deletar_km(km_id: int, payload=Depends(verificar_token_jard)):
-    jard_query("DELETE FROM jardinagem.relatorios_diarios WHERE id=%s", (km_id,), fetch="none")
+    await ajard_query("DELETE FROM jardinagem.relatorios_diarios WHERE id=%s", (km_id,), fetch="none")
     return {"ok": True, "id": km_id}
 
 @router.get("/jardinagem/api/historico/hoje")
 async def jard_historico_hoje(semana_id: Optional[int]=None, payload=Depends(verificar_token_jard)):
     hoje = date.today().isoformat()
     if semana_id:
-        fotos_raw = jard_query("""SELECT f.id,f.tipo,f.storage_path,f.filename_orig,p.local_nome,f.criado_em
+        fotos_raw = await ajard_query("""SELECT f.id,f.tipo,f.storage_path,f.filename_orig,p.local_nome,f.criado_em
             FROM jardinagem.fotos f JOIN jardinagem.pares p ON p.id=f.par_id
             WHERE p.semana_id=%s AND f.enviado_por=%s AND DATE(f.criado_em)=%s ORDER BY f.criado_em DESC""",
             (semana_id,payload["sub"],hoje))
-        km_raw = jard_query("""SELECT id,data,local_nome,km_inicial,km_final,hora_inicio,hora_fim,observacao
+        km_raw = await ajard_query("""SELECT id,data,local_nome,km_inicial,km_final,hora_inicio,hora_fim,observacao
             FROM jardinagem.relatorios_diarios WHERE semana_id=%s AND usuario_id=%s AND data=%s ORDER BY criado_em DESC""",
             (semana_id,payload["sub"],hoje))
     else:
-        fotos_raw = jard_query("""SELECT f.id,f.tipo,f.storage_path,f.filename_orig,p.local_nome,f.criado_em
+        fotos_raw = await ajard_query("""SELECT f.id,f.tipo,f.storage_path,f.filename_orig,p.local_nome,f.criado_em
             FROM jardinagem.fotos f JOIN jardinagem.pares p ON p.id=f.par_id
             WHERE f.enviado_por=%s AND DATE(f.criado_em)=%s ORDER BY f.criado_em DESC""",
             (payload["sub"],hoje))
-        km_raw = jard_query("""SELECT id,data,local_nome,km_inicial,km_final,hora_inicio,hora_fim,observacao
+        km_raw = await ajard_query("""SELECT id,data,local_nome,km_inicial,km_final,hora_inicio,hora_fim,observacao
             FROM jardinagem.relatorios_diarios WHERE usuario_id=%s AND data=%s ORDER BY criado_em DESC""",
             (payload["sub"],hoje))
     # Gerar URLs das fotos em paralelo
@@ -634,12 +634,12 @@ async def jard_inicio(payload=Depends(verificar_token_jard)):
     """Rota de carregamento rápido — retorna semana ativa + pares + config em 1 chamada."""
     hoje = date.today().isoformat()
     # 1. Semana ativa
-    semana = jard_query("""SELECT s.*,m.id as mes_id,m.ano,m.mes,m.label as mes_label
+    semana = await ajard_query("""SELECT s.*,m.id as mes_id,m.ano,m.mes,m.label as mes_label
                         FROM jardinagem.semanas s JOIN jardinagem.meses m ON m.id=s.mes_id
                         WHERE s.data_ini::date<=%s AND s.data_fim::date>=%s
                         AND s.status='aberta' LIMIT 1""", (hoje,hoje), fetch="one")
     if not semana:
-        semana = jard_query("""SELECT s.*,m.id as mes_id,m.ano,m.mes,m.label as mes_label
+        semana = await ajard_query("""SELECT s.*,m.id as mes_id,m.ano,m.mes,m.label as mes_label
                             FROM jardinagem.semanas s JOIN jardinagem.meses m ON m.id=s.mes_id
                             WHERE s.status='aberta'
                             ORDER BY s.id DESC LIMIT 1""", fetch="one")
@@ -647,11 +647,11 @@ async def jard_inicio(payload=Depends(verificar_token_jard)):
         return {"semana": None, "pares": [], "next_code": 6050}
     sid = semana["id"]
     # 2. Pares da semana (com fotos)
-    pares = jard_query("""SELECT p.id,p.codigo_a,p.codigo_d,p.local_nome,p.ordem
+    pares = await ajard_query("""SELECT p.id,p.codigo_a,p.codigo_d,p.local_nome,p.ordem
                           FROM jardinagem.pares p
                           WHERE p.semana_id=%s AND (p.ativo IS NULL OR p.ativo=true)
                           ORDER BY p.codigo_a""", (sid,))
-    fotos = jard_query("""SELECT f.id,f.par_id,f.tipo,f.storage_path
+    fotos = await ajard_query("""SELECT f.id,f.par_id,f.tipo,f.storage_path
                           FROM jardinagem.fotos f
                           JOIN jardinagem.pares p ON p.id=f.par_id
                           WHERE p.semana_id=%s AND (p.ativo IS NULL OR p.ativo=true)""", (sid,))
@@ -666,24 +666,24 @@ async def jard_inicio(payload=Depends(verificar_token_jard)):
         pd["fotos"] = fotos_por_par.get(p["id"], [])
         pares_com_fotos.append(pd)
     # 3. Config (next_code)
-    cfg = jard_query("SELECT valor FROM jardinagem.config WHERE chave='next_code'", fetch="one")
+    cfg = await ajard_query("SELECT valor FROM jardinagem.config WHERE chave='next_code'", fetch="one")
     next_code = int(cfg["valor"]) if cfg else 6050
     return {"semana": dict(semana), "pares": pares_com_fotos, "next_code": next_code}
 
 @router.get("/jardinagem/api/config")
 async def jard_config(payload=Depends(verificar_token_jard)):
-    rows = jard_query("SELECT * FROM jardinagem.config")
+    rows = await ajard_query("SELECT * FROM jardinagem.config")
     return {r["chave"]: r["valor"] for r in rows}
 
 @router.get("/jardinagem/api/clientes")
 async def jard_clientes(payload=Depends(verificar_token_jard)):
-    rows = jard_query("SELECT id,nome FROM public.clientes_garra WHERE ativo=true")
+    rows = await ajard_query("SELECT id,nome FROM public.clientes_garra WHERE ativo=true")
     return [dict(r) for r in rows]
 
 @router.get("/jardinagem/api/km/mes/{mes_id}")
 async def jard_km_mes(mes_id: int, payload=Depends(verificar_token_jard)):
     """Retorna todos os KMs do mês em 1 chamada — evita N chamadas /preview."""
-    kms_raw = jard_query("""
+    kms_raw = await ajard_query("""
         SELECT r.id, r.data, r.local_nome, r.km_inicial, r.km_final,
                r.hora_inicio, r.hora_fim, r.observacao, r.responsavel,
                u.nome as responsavel_nome
@@ -708,11 +708,11 @@ async def jard_km_mes(mes_id: int, payload=Depends(verificar_token_jard)):
 @router.get("/jardinagem/api/relatorios/{semana_id}/preview")
 async def jard_preview(semana_id: int, payload=Depends(verificar_token_jard)):
     from concurrent.futures import ThreadPoolExecutor
-    sem = jard_query("SELECT * FROM jardinagem.semanas WHERE id=%s", (semana_id,), fetch="one")
+    sem = await ajard_query("SELECT * FROM jardinagem.semanas WHERE id=%s", (semana_id,), fetch="one")
     if not sem: raise HTTPException(status_code=404, detail="Semana não encontrada")
     # 1 query pares + 1 query fotos (elimina N+1)
-    pares_raw = jard_query("SELECT * FROM jardinagem.pares WHERE semana_id=%s AND (ativo IS NULL OR ativo=true) ORDER BY codigo_a", (semana_id,))
-    fotos_raw = jard_query("""SELECT f.* FROM jardinagem.fotos f
+    pares_raw = await ajard_query("SELECT * FROM jardinagem.pares WHERE semana_id=%s AND (ativo IS NULL OR ativo=true) ORDER BY codigo_a", (semana_id,))
+    fotos_raw = await ajard_query("""SELECT f.* FROM jardinagem.fotos f
         JOIN jardinagem.pares p ON p.id=f.par_id
         WHERE p.semana_id=%s AND (p.ativo IS NULL OR p.ativo=true)""", (semana_id,))
     fotos_por_par = {}
@@ -745,7 +745,7 @@ async def jard_preview(semana_id: int, payload=Depends(verificar_token_jard)):
                       "foto_antes":bool(fa),"foto_depois":bool(fd),
                       "url_antes":urls.get(f"{pid}_antes",""),
                       "url_depois":urls.get(f"{pid}_depois","")})
-    kms_raw = jard_query("""SELECT r.*,u.nome as responsavel_nome FROM jardinagem.relatorios_diarios r
+    kms_raw = await ajard_query("""SELECT r.*,u.nome as responsavel_nome FROM jardinagem.relatorios_diarios r
         JOIN public.usuarios_garra u ON u.id=r.usuario_id WHERE r.semana_id=%s ORDER BY r.data,r.criado_em""", (semana_id,))
     kms = [{"id":r["id"],"data":r["data"].strftime("%d/%m/%Y") if r["data"] else "","local_nome":r["local_nome"] or "",
             "km_inicial":float(r["km_inicial"] or 0),"km_final":float(r["km_final"] or 0),
@@ -759,12 +759,12 @@ async def jard_preview(semana_id: int, payload=Depends(verificar_token_jard)):
 async def jard_excel_fotos(semana_id: int, payload=Depends(verificar_token_jard)):
     import sys; sys.path.insert(0, os.path.join(JARD_DIR))
     from gerar_relatorio import gerar_relatorio_fotos
-    sem = jard_query("SELECT * FROM jardinagem.semanas WHERE id=%s", (semana_id,), fetch="one")
+    sem = await ajard_query("SELECT * FROM jardinagem.semanas WHERE id=%s", (semana_id,), fetch="one")
     if not sem: raise HTTPException(status_code=404, detail="Semana não encontrada")
     semana_dict = {"label":sem["label"],"data_ini":sem["data_ini"].strftime("%d/%m/%Y") if sem["data_ini"] else "","data_fim":sem["data_fim"].strftime("%d/%m/%Y") if sem["data_fim"] else ""}
-    pares_raw = jard_query("SELECT * FROM jardinagem.pares WHERE semana_id=%s AND (ativo IS NULL OR ativo=true) ORDER BY codigo_a", (semana_id,))
+    pares_raw = await ajard_query("SELECT * FROM jardinagem.pares WHERE semana_id=%s AND (ativo IS NULL OR ativo=true) ORDER BY codigo_a", (semana_id,))
     # 1 query para todas as fotos (elimina N+1)
-    fotos_raw = jard_query("""SELECT f.* FROM jardinagem.fotos f
+    fotos_raw = await ajard_query("""SELECT f.* FROM jardinagem.fotos f
         JOIN jardinagem.pares p ON p.id=f.par_id
         WHERE p.semana_id=%s AND (p.ativo IS NULL OR p.ativo=true)""", (semana_id,))
     fotos_por_par = {}
@@ -785,10 +785,10 @@ async def jard_excel_fotos(semana_id: int, payload=Depends(verificar_token_jard)
 async def jard_excel_km(semana_id: int, payload=Depends(verificar_token_jard)):
     import sys; sys.path.insert(0, os.path.join(JARD_DIR))
     from gerar_relatorio import gerar_relatorio_km
-    sem = jard_query("SELECT * FROM jardinagem.semanas WHERE id=%s", (semana_id,), fetch="one")
+    sem = await ajard_query("SELECT * FROM jardinagem.semanas WHERE id=%s", (semana_id,), fetch="one")
     if not sem: raise HTTPException(status_code=404, detail="Semana não encontrada")
     semana_dict = {"label":sem["label"],"data_ini":sem["data_ini"].strftime("%d/%m/%Y") if sem["data_ini"] else "","data_fim":sem["data_fim"].strftime("%d/%m/%Y") if sem["data_fim"] else ""}
-    kms_raw = jard_query("""SELECT r.*,u.nome as responsavel_nome FROM jardinagem.relatorios_diarios r
+    kms_raw = await ajard_query("""SELECT r.*,u.nome as responsavel_nome FROM jardinagem.relatorios_diarios r
         JOIN public.usuarios_garra u ON u.id=r.usuario_id WHERE r.semana_id=%s ORDER BY r.data,r.criado_em""", (semana_id,))
     relatorios = [{"data":r["data"].strftime("%d/%m/%Y") if r["data"] else "","local":r["local_nome"] or "",
                    "km_ini":float(r["km_inicial"] or 0),"km_fin":float(r["km_final"] or 0),
@@ -804,12 +804,12 @@ async def jard_enviar_email(semana_id: int, payload=Depends(verificar_token_jard
         raise HTTPException(status_code=400, detail="Email não configurado")
     import sys; sys.path.insert(0, os.path.join(JARD_DIR))
     from gerar_relatorio import gerar_relatorio_fotos, gerar_relatorio_km
-    sem = jard_query("SELECT * FROM jardinagem.semanas WHERE id=%s", (semana_id,), fetch="one")
+    sem = await ajard_query("SELECT * FROM jardinagem.semanas WHERE id=%s", (semana_id,), fetch="one")
     if not sem: raise HTTPException(status_code=404, detail="Semana não encontrada")
     semana_dict = {"label":sem["label"],"data_ini":sem["data_ini"].strftime("%d/%m/%Y") if sem["data_ini"] else "","data_fim":sem["data_fim"].strftime("%d/%m/%Y") if sem["data_fim"] else ""}
-    pares_raw = jard_query("SELECT * FROM jardinagem.pares WHERE semana_id=%s AND (ativo IS NULL OR ativo=true) ORDER BY codigo_a", (semana_id,))
+    pares_raw = await ajard_query("SELECT * FROM jardinagem.pares WHERE semana_id=%s AND (ativo IS NULL OR ativo=true) ORDER BY codigo_a", (semana_id,))
     # 1 query para todas as fotos (elimina N+1)
-    fotos_raw_email = jard_query("""SELECT f.* FROM jardinagem.fotos f
+    fotos_raw_email = await ajard_query("""SELECT f.* FROM jardinagem.fotos f
         JOIN jardinagem.pares p ON p.id=f.par_id
         WHERE p.semana_id=%s AND (p.ativo IS NULL OR p.ativo=true)""", (semana_id,))
     fotos_por_par_email = {}
@@ -822,7 +822,7 @@ async def jard_enviar_email(semana_id: int, payload=Depends(verificar_token_jard
         fp = fotos_por_par_email.get(p["id"], {})
         pares.append({"codigo_a":p["codigo_a"],"codigo_d":p["codigo_d"],"local_nome":p["local_nome"] or "",
                       "foto_antes":fp.get("antes"), "foto_depois":fp.get("depois")})
-    kms_raw = jard_query("""SELECT r.*,u.nome as responsavel_nome FROM jardinagem.relatorios_diarios r
+    kms_raw = await ajard_query("""SELECT r.*,u.nome as responsavel_nome FROM jardinagem.relatorios_diarios r
         JOIN public.usuarios_garra u ON u.id=r.usuario_id WHERE r.semana_id=%s ORDER BY r.data,r.criado_em""", (semana_id,))
     relatorios = [{"data":r["data"].strftime("%d/%m/%Y") if r["data"] else "","local":r["local_nome"] or "",
                    "km_ini":float(r["km_inicial"] or 0),"km_fin":float(r["km_final"] or 0),
@@ -838,19 +838,19 @@ async def jard_enviar_email(semana_id: int, payload=Depends(verificar_token_jard
         enviar_email_smtp(MAIL_DESTINO, f"Relatório Jardinagem — {semana_dict['label']}", corpo,
                           [(nome_arquivo_semana(sem, 'Fotos'), buf_fotos.getvalue()),
                            (nome_arquivo_semana(sem, 'KM'),    buf_km.getvalue())])
-        jard_query("INSERT INTO jardinagem.emails_enviados (semana_id,destinatario,assunto,status) VALUES (%s,%s,%s,'enviado')",
+        await ajard_query("INSERT INTO jardinagem.emails_enviados (semana_id,destinatario,assunto,status) VALUES (%s,%s,%s,'enviado')",
                    (semana_id,MAIL_DESTINO,f"Relatório {semana_dict['label']}"), fetch="none")
-        jard_query("UPDATE jardinagem.semanas SET status='enviada',enviado_em=NOW() WHERE id=%s", (semana_id,), fetch="none")
+        await ajard_query("UPDATE jardinagem.semanas SET status='enviada',enviado_em=NOW() WHERE id=%s", (semana_id,), fetch="none")
         return {"ok": True, "mensagem": f"Relatórios enviados para {MAIL_DESTINO} (cc: {MAIL_CC})"}
     except Exception as e:
-        jard_query("INSERT INTO jardinagem.emails_enviados (semana_id,destinatario,assunto,status,erro_msg) VALUES (%s,%s,%s,'erro',%s)",
+        await ajard_query("INSERT INTO jardinagem.emails_enviados (semana_id,destinatario,assunto,status,erro_msg) VALUES (%s,%s,%s,'erro',%s)",
                    (semana_id,MAIL_DESTINO,f"Relatório {semana_dict['label']}",str(e)), fetch="none")
         raise HTTPException(status_code=500, detail=f"Falha no envio: {str(e)}")
 
 @router.get("/jardinagem/api/health")
 async def jard_health():
     try:
-        jard_query("SELECT 1", fetch="one")
+        await ajard_query("SELECT 1", fetch="one")
         return {"status":"ok","db":"conectado","modulo":"jardinagem"}
     except Exception as e:
         return {"status":"erro","db":str(e)}

@@ -11,7 +11,7 @@ from fastapi import APIRouter, Request, HTTPException, Depends, Header, UploadFi
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, JSONResponse, Response, StreamingResponse
 
 from core.config import OPERACIONAL_DIR
-from core.db import jard_query, jard_query_id, get_db
+from core.db import ajard_query, ajard_query_id, get_db
 from core.auth import verificar_token, verificar_gestor, verificar_admin
 
 router = APIRouter()
@@ -42,7 +42,7 @@ async def operacional_mobile():
 @router.get("/operacional/api/tipos-servico")
 async def op_listar_tipos_servico(_auth=Depends(verificar_token)):
     """Lista tipos de serviço ativos para popular select."""
-    rows = jard_query(
+    rows = await ajard_query(
         "SELECT id, nome, descricao, medicao FROM operacional.tipos_servico WHERE ativo=true ORDER BY nome"
     )
     return [dict(r) for r in (rows or [])]
@@ -59,7 +59,7 @@ async def op_criar_tipo_servico(request: Request, payload=Depends(verificar_admi
     if not nome:
         raise HTTPException(status_code=400, detail="Nome é obrigatório")
     try:
-        row = jard_query(
+        row = await ajard_query(
             """INSERT INTO operacional.tipos_servico (nome, descricao, medicao, ativo)
                VALUES (%s, %s, %s, true)
                RETURNING id, nome, descricao, medicao""",
@@ -94,7 +94,7 @@ async def op_editar_tipo_servico(tipo_id: str, request: Request, payload=Depends
         raise HTTPException(status_code=400, detail="Nada a atualizar")
     valores.append(tipo_id)
     try:
-        row = jard_query(
+        row = await ajard_query(
             f"UPDATE operacional.tipos_servico SET {', '.join(updates)} WHERE id=%s RETURNING id, nome, descricao, medicao",
             tuple(valores),
             fetch="one"
@@ -111,7 +111,7 @@ async def op_editar_tipo_servico(tipo_id: str, request: Request, payload=Depends
 async def op_remover_tipo_servico(tipo_id: str, payload=Depends(verificar_admin)):
     """Soft delete (ativo=false) — preserva histórico."""
     try:
-        jard_query(
+        await ajard_query(
             "UPDATE operacional.tipos_servico SET ativo=false WHERE id=%s",
             (tipo_id,), fetch="none"
         )
@@ -121,7 +121,7 @@ async def op_remover_tipo_servico(tipo_id: str, payload=Depends(verificar_admin)
 
 @router.get("/operacional/api/regimes-cobranca")
 async def op_listar_regimes(_auth=Depends(verificar_token)):
-    rows = jard_query(
+    rows = await ajard_query(
         "SELECT id, nome, descricao FROM operacional.regimes_cobranca WHERE ativo=true ORDER BY nome"
     )
     return [dict(r) for r in (rows or [])]
@@ -134,7 +134,7 @@ async def op_criar_regime(request: Request, payload=Depends(verificar_gestor)):
     if not nome:
         raise HTTPException(status_code=400, detail="Nome é obrigatório")
     try:
-        row = jard_query(
+        row = await ajard_query(
             """INSERT INTO operacional.regimes_cobranca (nome, descricao, ativo)
                VALUES (%s, %s, true) RETURNING id, nome, descricao""",
             (nome, descricao or None), fetch="one"
@@ -161,7 +161,7 @@ async def op_editar_regime(reg_id: str, request: Request, payload=Depends(verifi
         raise HTTPException(status_code=400, detail="Nada a atualizar")
     valores.append(reg_id)
     try:
-        row = jard_query(
+        row = await ajard_query(
             f"UPDATE operacional.regimes_cobranca SET {', '.join(updates)} WHERE id=%s RETURNING id, nome, descricao",
             tuple(valores), fetch="one"
         )
@@ -176,7 +176,7 @@ async def op_editar_regime(reg_id: str, request: Request, payload=Depends(verifi
 @router.delete("/operacional/api/regimes-cobranca/{reg_id}")
 async def op_remover_regime(reg_id: str, payload=Depends(verificar_gestor)):
     try:
-        jard_query("UPDATE operacional.regimes_cobranca SET ativo=false WHERE id=%s", (reg_id,), fetch="none")
+        await ajard_query("UPDATE operacional.regimes_cobranca SET ativo=false WHERE id=%s", (reg_id,), fetch="none")
         return {"ok": True}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -184,7 +184,7 @@ async def op_remover_regime(reg_id: str, payload=Depends(verificar_gestor)):
 @router.get("/operacional/api/equipamentos")
 async def op_listar_equipamentos(_auth=Depends(verificar_token)):
     """Lista equipamentos ativos para popular select e tela de cadastro."""
-    rows = jard_query(
+    rows = await ajard_query(
         """SELECT eq.id, eq.codigo, eq.descricao, eq.categoria, eq.medicao,
                   eq.marca, eq.modelo, eq.ano, eq.placa,
                   eq.horimetro_atual, eq.km_atual, eq.ativo,
@@ -215,7 +215,7 @@ async def op_criar_equipamento(request: Request, payload=Depends(verificar_gesto
     placa  = (d.get("placa")  or "").strip() or None
     operador_resp = (d.get("operador_responsavel_id") or "").strip() or None
     try:
-        row = jard_query(
+        row = await ajard_query(
             """INSERT INTO operacional.equipamentos
                (codigo, descricao, categoria, medicao, marca, modelo, ano, placa, operador_responsavel_id, ativo)
                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s, true)
@@ -226,7 +226,7 @@ async def op_criar_equipamento(request: Request, payload=Depends(verificar_gesto
         )
         # Sincronizar com checklist.frota (mesmo código = mesma identificação)
         try:
-            jard_query(
+            await ajard_query(
                 """INSERT INTO checklist.frota (categoria, identificacao, descricao, ativo)
                    VALUES (%s, %s, %s, true)
                    ON CONFLICT (categoria, identificacao) DO UPDATE
@@ -263,7 +263,7 @@ async def op_editar_equipamento(eq_id: str, request: Request, payload=Depends(ve
         raise HTTPException(status_code=400, detail="Nada a atualizar")
     valores.append(eq_id)
     try:
-        row = jard_query(
+        row = await ajard_query(
             f"""UPDATE operacional.equipamentos SET {', '.join(updates)}
                 WHERE id=%s
                 RETURNING id, codigo, descricao, categoria, medicao,
@@ -275,7 +275,7 @@ async def op_editar_equipamento(eq_id: str, request: Request, payload=Depends(ve
             raise HTTPException(status_code=404, detail="Equipamento não encontrado")
         # Sincronizar com checklist.frota
         try:
-            jard_query(
+            await ajard_query(
                 """UPDATE checklist.frota
                      SET descricao = %s, categoria = %s, ativo = true
                    WHERE identificacao = %s""",
@@ -293,13 +293,13 @@ async def op_editar_equipamento(eq_id: str, request: Request, payload=Depends(ve
 async def op_remover_equipamento(eq_id: str, payload=Depends(verificar_gestor)):
     """Soft delete — desativa em ambas as tabelas."""
     try:
-        row = jard_query(
+        row = await ajard_query(
             "UPDATE operacional.equipamentos SET ativo=false WHERE id=%s RETURNING codigo",
             (eq_id,), fetch="one"
         )
         if row and row.get("codigo"):
             try:
-                jard_query(
+                await ajard_query(
                     "UPDATE checklist.frota SET ativo=false WHERE identificacao=%s",
                     (row["codigo"],), fetch="none"
                 )
@@ -312,7 +312,7 @@ async def op_remover_equipamento(eq_id: str, payload=Depends(verificar_gestor)):
 @router.get("/operacional/api/clientes")
 async def op_listar_clientes(_auth=Depends(verificar_token)):
     """Lista clientes ativos para popular select da OS e tela de cadastro."""
-    rows = jard_query(
+    rows = await ajard_query(
         """SELECT id, nome, cnpj_cpf, telefone, email, contato, ativo
            FROM public.clientes_garra
            WHERE ativo=true OR ativo IS NULL
@@ -328,7 +328,7 @@ async def op_criar_cliente(request: Request, payload=Depends(verificar_gestor)):
     if not nome:
         raise HTTPException(status_code=400, detail="Nome é obrigatório")
     try:
-        row = jard_query(
+        row = await ajard_query(
             """INSERT INTO public.clientes_garra
                (nome, cnpj_cpf, telefone, email, contato, ativo)
                VALUES (%s,%s,%s,%s,%s, true)
@@ -362,7 +362,7 @@ async def op_editar_cliente(cli_id: str, request: Request, payload=Depends(verif
         raise HTTPException(status_code=400, detail="Nada a atualizar")
     valores.append(cli_id)
     try:
-        row = jard_query(
+        row = await ajard_query(
             f"""UPDATE public.clientes_garra SET {', '.join(updates)}
                 WHERE id=%s
                 RETURNING id, nome, cnpj_cpf, telefone, email, contato""",
@@ -380,7 +380,7 @@ async def op_editar_cliente(cli_id: str, request: Request, payload=Depends(verif
 async def op_remover_cliente(cli_id: str, payload=Depends(verificar_gestor)):
     """Soft delete cliente."""
     try:
-        jard_query(
+        await ajard_query(
             "UPDATE public.clientes_garra SET ativo=false WHERE id=%s",
             (cli_id,), fetch="none"
         )
@@ -391,7 +391,7 @@ async def op_remover_cliente(cli_id: str, payload=Depends(verificar_gestor)):
 @router.get("/operacional/api/operadores")
 async def op_listar_operadores(_auth=Depends(verificar_token)):
     """Lista usuários elegíveis a operar equipamentos (operadores, motoristas, campo)."""
-    rows = jard_query(
+    rows = await ajard_query(
         """SELECT id, nome, login, perfil
            FROM public.usuarios_garra
            WHERE ativo=true AND perfil IN ('operador','motorista','campo')
@@ -403,7 +403,7 @@ async def op_listar_operadores(_auth=Depends(verificar_token)):
 async def op_proximo_numero(_auth=Depends(verificar_gestor)):
     """Retorna o próximo número de OS disponível para o ano atual."""
     ano = datetime.utcnow().year
-    row = jard_query(
+    row = await ajard_query(
         "SELECT operacional.proximo_numero_os(%s) AS numero",
         (ano,), fetch="one"
     )
@@ -437,7 +437,7 @@ async def op_criar_os(request: Request, payload=Depends(verificar_gestor)):
 
     # Gerar número de OS
     ano = datetime.utcnow().year
-    row = jard_query("SELECT operacional.proximo_numero_os(%s) AS numero", (ano,), fetch="one")
+    row = await ajard_query("SELECT operacional.proximo_numero_os(%s) AS numero", (ano,), fetch="one")
     numero = row["numero"]
     sequencia = int(numero.split("-")[-1])
 
@@ -446,7 +446,7 @@ async def op_criar_os(request: Request, payload=Depends(verificar_gestor)):
 
     # Snapshot do criador
     criado_por = payload.get("sub")  # login
-    user_row = jard_query("SELECT id FROM public.usuarios_garra WHERE login=%s",
+    user_row = await ajard_query("SELECT id FROM public.usuarios_garra WHERE login=%s",
                          (criado_por,), fetch="one")
     criado_por_id = user_row["id"] if user_row else None
 
@@ -454,7 +454,7 @@ async def op_criar_os(request: Request, payload=Depends(verificar_gestor)):
     codigo_erp_por = criado_por_id if codigo_erp else None
 
     try:
-        os_row = jard_query_id(
+        os_row = await ajard_query_id(
             """INSERT INTO operacional.ordens_servico
                (numero, ano, sequencia, codigo_erp, codigo_erp_em, codigo_erp_por,
                 cliente_id, cliente_nome_avulso, tipo_servico_id,
@@ -522,13 +522,13 @@ async def op_listar_os(
     sql += " ORDER BY os.ano DESC, os.sequencia DESC LIMIT %s"
     params.append(limit)
 
-    rows = jard_query(sql, tuple(params))
+    rows = await ajard_query(sql, tuple(params))
     return [dict(r) for r in (rows or [])]
 
 @router.get("/operacional/api/os/{os_id}")
 async def op_detalhe_os(os_id: str, _auth=Depends(verificar_token)):
     """Retorna detalhe completo da OS, com partes diárias."""
-    row = jard_query(
+    row = await ajard_query(
         """SELECT os.*,
                   COALESCE(c.nome, os.cliente_nome_avulso) AS cliente_nome,
                   ts.nome AS tipo_servico_nome,
@@ -546,7 +546,7 @@ async def op_detalhe_os(os_id: str, _auth=Depends(verificar_token)):
         raise HTTPException(status_code=404, detail="OS não encontrada")
 
     # Buscar partes diárias da OS
-    partes = jard_query(
+    partes = await ajard_query(
         """SELECT pd.*,
                   e.codigo AS equipamento_codigo, e.descricao AS equipamento_descricao,
                   e.categoria AS equipamento_categoria,
@@ -569,7 +569,7 @@ async def op_atualizar_os(os_id: str, request: Request, payload=Depends(verifica
     d = await request.json()
 
     # Verificar se OS existe
-    existente = jard_query(
+    existente = await ajard_query(
         "SELECT * FROM operacional.ordens_servico WHERE id=%s AND ativo=true",
         (os_id,), fetch="one"
     )
@@ -601,7 +601,7 @@ async def op_atualizar_os(os_id: str, request: Request, payload=Depends(verifica
     # Snapshot quem inseriu codigo_erp
     if "codigo_erp" in d and d["codigo_erp"]:
         login = payload.get("sub")
-        user = jard_query("SELECT id FROM public.usuarios_garra WHERE login=%s",
+        user = await ajard_query("SELECT id FROM public.usuarios_garra WHERE login=%s",
                          (login,), fetch="one")
         if user:
             updates.append("codigo_erp_em = %s")
@@ -618,7 +618,7 @@ async def op_atualizar_os(os_id: str, request: Request, payload=Depends(verifica
     params.append(os_id)
 
     sql = f"UPDATE operacional.ordens_servico SET {', '.join(updates)} WHERE id = %s"
-    jard_query(sql, tuple(params), fetch="none")
+    await ajard_query(sql, tuple(params), fetch="none")
 
     # Retornar atualizado
     return await op_detalhe_os(os_id, _auth=payload)
@@ -626,7 +626,7 @@ async def op_atualizar_os(os_id: str, request: Request, payload=Depends(verifica
 @router.delete("/operacional/api/os/{os_id}")
 async def op_remover_os(os_id: str, _auth=Depends(verificar_admin)):
     """Soft delete da OS. Somente admin."""
-    jard_query(
+    await ajard_query(
         "UPDATE operacional.ordens_servico SET ativo=false, atualizado_em=now() WHERE id=%s",
         (os_id,), fetch="none"
     )
@@ -639,7 +639,7 @@ async def op_criar_parte(os_id: str, request: Request, payload=Depends(verificar
     login = payload.get("sub","")
 
     # Verificar se OS existe e está ativa
-    os_row = jard_query(
+    os_row = await ajard_query(
         "SELECT * FROM operacional.ordens_servico WHERE id=%s AND ativo=true",
         (os_id,), fetch="one"
     )
@@ -693,7 +693,7 @@ async def op_criar_parte(os_id: str, request: Request, payload=Depends(verificar
                 pass
 
     # Buscar ID do operador pelo login (quem está logado = criado_por)
-    user_row = jard_query(
+    user_row = await ajard_query(
         "SELECT id FROM public.usuarios_garra WHERE (login=%s OR email=%s) AND ativo=true",
         (login, login), fetch="one"
     )
@@ -719,7 +719,7 @@ async def op_criar_parte(os_id: str, request: Request, payload=Depends(verificar
         qtd_metros = None
 
     try:
-        parte = jard_query_id(
+        parte = await ajard_query_id(
             """INSERT INTO operacional.partes_diarias
                (os_id, equipamento_id, operador_id, operador_nome_avulso,
                 data, hora_inicio, hora_fim,
@@ -740,7 +740,7 @@ async def op_criar_parte(os_id: str, request: Request, payload=Depends(verificar
         )
         # Atualizar horímetro atual do equipamento (só equipamento próprio da Garra)
         if h_fin is not None and equipamento_id:
-            jard_query(
+            await ajard_query(
                 "UPDATE operacional.equipamentos SET horimetro_atual=%s, atualizado_em=now() WHERE id=%s",
                 (h_fin, equipamento_id), fetch="none"
             )
@@ -751,7 +751,7 @@ async def op_criar_parte(os_id: str, request: Request, payload=Depends(verificar
 @router.get("/operacional/api/os/{os_id}/partes")
 async def op_listar_partes(os_id: str, _auth=Depends(verificar_token)):
     """Lista todas as partes diárias de uma OS, com totais acumulados."""
-    partes = jard_query(
+    partes = await ajard_query(
         """SELECT pd.*,
                   COALESCE(e.codigo, pd.equipamento_terceiro) AS equipamento_codigo,
                   e.descricao AS equipamento_descricao,
@@ -804,7 +804,7 @@ async def op_listar_partes(os_id: str, _auth=Depends(verificar_token)):
 async def op_atualizar_parte(parte_id: str, request: Request, payload=Depends(verificar_gestor)):
     """Luana/Admin atualiza parte diária — ajusta horas cobradas, diárias, observação."""
     d = await request.json()
-    existente = jard_query(
+    existente = await ajard_query(
         "SELECT * FROM operacional.partes_diarias WHERE id=%s AND ativo=true",
         (parte_id,), fetch="one"
     )
@@ -845,11 +845,11 @@ async def op_atualizar_parte(parte_id: str, request: Request, payload=Depends(ve
         return dict(existente)
 
     params.append(parte_id)
-    jard_query(
+    await ajard_query(
         f"UPDATE operacional.partes_diarias SET {', '.join(updates)} WHERE id=%s",
         tuple(params), fetch="none"
     )
-    row = jard_query(
+    row = await ajard_query(
         "SELECT * FROM operacional.partes_diarias WHERE id=%s", (parte_id,), fetch="one"
     )
     return dict(row)
@@ -857,7 +857,7 @@ async def op_atualizar_parte(parte_id: str, request: Request, payload=Depends(ve
 @router.delete("/operacional/api/partes/{parte_id}")
 async def op_remover_parte(parte_id: str, _auth=Depends(verificar_gestor)):
     """Soft delete de parte diária."""
-    existente = jard_query(
+    existente = await ajard_query(
         "SELECT fechado FROM operacional.partes_diarias WHERE id=%s AND ativo=true",
         (parte_id,), fetch="one"
     )
@@ -865,7 +865,7 @@ async def op_remover_parte(parte_id: str, _auth=Depends(verificar_gestor)):
         raise HTTPException(status_code=404, detail="Parte não encontrada")
     if existente.get("fechado"):
         raise HTTPException(status_code=400, detail="Parte fechada — não pode remover")
-    jard_query(
+    await ajard_query(
         "UPDATE operacional.partes_diarias SET ativo=false WHERE id=%s",
         (parte_id,), fetch="none"
     )
@@ -874,7 +874,7 @@ async def op_remover_parte(parte_id: str, _auth=Depends(verificar_gestor)):
 @router.post("/operacional/api/os/{os_id}/fechar")
 async def op_fechar_os(os_id: str, request: Request, payload=Depends(verificar_gestor)):
     """Fecha OS após revisão pela Luana. Congela todas as partes diárias."""
-    os_row = jard_query(
+    os_row = await ajard_query(
         "SELECT * FROM operacional.ordens_servico WHERE id=%s AND ativo=true",
         (os_id,), fetch="one"
     )
@@ -884,14 +884,14 @@ async def op_fechar_os(os_id: str, request: Request, payload=Depends(verificar_g
         raise HTTPException(status_code=400, detail="OS já está fechada")
 
     login = payload.get("sub","")
-    user  = jard_query(
+    user  = await ajard_query(
         "SELECT id FROM public.usuarios_garra WHERE login=%s", (login,), fetch="one"
     )
     fechado_por_id = user["id"] if user else None
     agora = datetime.utcnow()
 
     # Auto-preencher horas_cobradas = horas_trabalhadas onde não foi editado (cobradas=0 ou null)
-    jard_query(
+    await ajard_query(
         """UPDATE operacional.partes_diarias
            SET horas_cobradas = horas_trabalhadas
            WHERE os_id=%s AND ativo=true AND fechado=false
@@ -901,7 +901,7 @@ async def op_fechar_os(os_id: str, request: Request, payload=Depends(verificar_g
     )
 
     # Fechar todas as partes abertas
-    jard_query(
+    await ajard_query(
         """UPDATE operacional.partes_diarias
            SET fechado=true, fechado_em=%s, fechado_por=%s
            WHERE os_id=%s AND ativo=true AND fechado=false""",
@@ -911,7 +911,7 @@ async def op_fechar_os(os_id: str, request: Request, payload=Depends(verificar_g
     # Determinar status final
     novo_status = "concluida_completa" if os_row.get("codigo_erp") else "concluida_sem_erp"
 
-    jard_query(
+    await ajard_query(
         """UPDATE operacional.ordens_servico
            SET status=%s, data_fim_real=%s, atualizado_em=%s
            WHERE id=%s""",
@@ -924,14 +924,14 @@ async def op_fechar_os(os_id: str, request: Request, payload=Depends(verificar_g
 async def op_concluir_os_operador(os_id: str, request: Request, payload=Depends(verificar_token)):
     """Operador marca OS como concluída do lado dele → aguarda fechamento pela Luana."""
     login = payload.get("sub","") or payload.get("login","")
-    user = jard_query(
+    user = await ajard_query(
         "SELECT id, perfil FROM public.usuarios_garra WHERE login=%s",
         (login,), fetch="one"
     )
     if not user:
         raise HTTPException(status_code=404, detail="Usuário não encontrado")
 
-    os_row = jard_query(
+    os_row = await ajard_query(
         "SELECT id, numero, status, operador_id FROM operacional.ordens_servico WHERE id=%s AND ativo=true",
         (os_id,), fetch="one"
     )
@@ -946,7 +946,7 @@ async def op_concluir_os_operador(os_id: str, request: Request, payload=Depends(
         raise HTTPException(status_code=400, detail="OS já está concluída ou aguardando fechamento")
 
     agora = datetime.utcnow()
-    jard_query(
+    await ajard_query(
         """UPDATE operacional.ordens_servico
            SET status='aguardando_fechamento', atualizado_em=%s
            WHERE id=%s""",
@@ -964,14 +964,14 @@ async def op_liberar_os(os_id: str, payload=Depends(verificar_token)):
     As partes já registradas continuam com o operador original (comissão preservada).
     """
     login = payload.get("sub","") or payload.get("login","")
-    user = jard_query(
+    user = await ajard_query(
         "SELECT id, perfil FROM public.usuarios_garra WHERE login=%s",
         (login,), fetch="one"
     )
     if not user:
         raise HTTPException(status_code=404, detail="Usuário não encontrado")
 
-    os_row = jard_query(
+    os_row = await ajard_query(
         "SELECT id, numero, status, operador_id FROM operacional.ordens_servico WHERE id=%s AND ativo=true",
         (os_id,), fetch="one"
     )
@@ -987,7 +987,7 @@ async def op_liberar_os(os_id: str, payload=Depends(verificar_token)):
 
     # Zera o responsável → OS órfã. Partes diárias NÃO são tocadas (mantêm operador_id).
     agora = datetime.utcnow()
-    jard_query(
+    await ajard_query(
         """UPDATE operacional.ordens_servico
            SET operador_id=NULL, atualizado_em=%s
            WHERE id=%s""",
@@ -1011,12 +1011,12 @@ async def op_revisao_os(os_id: str, _auth=Depends(verificar_gestor)):
 async def op_minhas_partes(payload=Depends(verificar_token)):
     """Operador vê histórico de partes diárias próprias."""
     login = payload.get("sub","")
-    user = jard_query(
+    user = await ajard_query(
         "SELECT id FROM public.usuarios_garra WHERE login=%s", (login,), fetch="one"
     )
     if not user:
         raise HTTPException(status_code=404, detail="Usuário não encontrado")
-    rows = jard_query(
+    rows = await ajard_query(
         """SELECT pd.*, os.numero AS numero_os, os.obra,
                   e.codigo AS equipamento_codigo
            FROM operacional.partes_diarias pd
@@ -1033,14 +1033,14 @@ async def op_minhas_partes(payload=Depends(verificar_token)):
 async def op_minhas_os(historico: int = 0, payload=Depends(verificar_token)):
     """Operador/motorista vê suas OS. historico=0: ativas | historico=1: concluídas."""
     login = payload.get("sub","")
-    user  = jard_query(
+    user  = await ajard_query(
         "SELECT id, perfil FROM public.usuarios_garra WHERE login=%s", (login,), fetch="one"
     )
     if not user:
         raise HTTPException(status_code=404, detail="Usuário não encontrado")
 
     # Verificar permissão do módulo operacional_mobile
-    perm = jard_query(
+    perm = await ajard_query(
         "SELECT permitido FROM public.permissoes_colaborador WHERE usuario_id=%s AND modulo='operacional_mobile'",
         (user["id"],), fetch="one"
     )
@@ -1059,7 +1059,7 @@ async def op_minhas_os(historico: int = 0, payload=Depends(verificar_token)):
     else:
         status_filter = "os.status NOT IN ('concluida_completa','concluida_sem_erp','cancelada')"
 
-    rows = jard_query(
+    rows = await ajard_query(
         f"""SELECT os.id, os.numero, os.obra, os.regime_cobranca,
                   os.data_inicio, os.data_fim_prevista, os.status,
                   os.equipamento_id, os.operador_id, os.tipo_servico_id, os.cliente_id,
@@ -1084,14 +1084,14 @@ async def op_minhas_os(historico: int = 0, payload=Depends(verificar_token)):
 async def op_minhas_os_debug(payload=Depends(verificar_token)):
     """DEBUG — mostra todos os campos para diagnosticar por que OS não aparece."""
     login = payload.get("sub","") or payload.get("login","")
-    user = jard_query(
+    user = await ajard_query(
         "SELECT id, login, nome, perfil FROM public.usuarios_garra WHERE login=%s",
         (login,), fetch="one"
     )
     if not user:
         return {"erro": "usuário não encontrado", "login_buscado": login}
     
-    todas_os = jard_query(
+    todas_os = await ajard_query(
         """SELECT id, numero, status, ativo, operador_id, obra
            FROM operacional.ordens_servico
            WHERE operador_id = %s
@@ -1099,7 +1099,7 @@ async def op_minhas_os_debug(payload=Depends(verificar_token)):
         (user["id"],)
     )
     
-    os_visiveis = jard_query(
+    os_visiveis = await ajard_query(
         """SELECT id, numero, status
            FROM operacional.ordens_servico
            WHERE operador_id = %s
@@ -1120,7 +1120,7 @@ async def op_minhas_os_debug(payload=Depends(verificar_token)):
 async def op_criar_os_avulsa(req: Request, payload=Depends(verificar_token)):
     """Operador cria OS avulsa do campo — sem código ERP, status aberta_sem_erp."""
     login = payload.get("sub","") or payload.get("login","")
-    user = jard_query(
+    user = await ajard_query(
         "SELECT id, nome, perfil FROM public.usuarios_garra WHERE login=%s",
         (login,), fetch="one"
     )
@@ -1144,7 +1144,7 @@ async def op_criar_os_avulsa(req: Request, payload=Depends(verificar_token)):
     
     # Gerar próximo número
     ano = datetime.utcnow().year
-    ult = jard_query(
+    ult = await ajard_query(
         "SELECT numero, sequencia FROM operacional.ordens_servico WHERE numero LIKE %s ORDER BY sequencia DESC LIMIT 1",
         (f"OS-{ano}-%",), fetch="one"
     )
@@ -1159,7 +1159,7 @@ async def op_criar_os_avulsa(req: Request, payload=Depends(verificar_token)):
         seq = 1
     numero = f"OS-{ano}-{seq:04d}"
     
-    nova = jard_query(
+    nova = await ajard_query(
         """INSERT INTO operacional.ordens_servico
            (numero, ano, sequencia, obra, cliente_nome_avulso,
             equipamento_id, tipo_servico_id, regime_cobranca,
@@ -1219,7 +1219,7 @@ async def op_controle_mensal(
 
     where = " AND ".join(filtros)
 
-    rows = jard_query(f"""
+    rows = await ajard_query(f"""
         SELECT pd.id, pd.data, pd.tipo_medicao,
                pd.horimetro_inicial, pd.horimetro_final, pd.horas_trabalhadas, pd.horas_cobradas,
                pd.km_inicial, pd.km_final, pd.km_percorrido,

@@ -12,7 +12,7 @@ from fastapi import APIRouter, Request, HTTPException, Depends, Header, Body
 from fastapi.responses import JSONResponse
 
 from core.config import JWT_SECRET, JWT_EXPIRY_HOURS, FRONTEND_URL
-from core.db import get_db, jard_query
+from core.db import get_db, ajard_query
 from core.auth import (
     check_rate_limit, validar_senha,
     verificar_token, verificar_admin, verificar_gestor,
@@ -67,7 +67,7 @@ async def login(req: LoginRequest, request: Request, db=Depends(get_db)):
             user["id"]
         )
         perms = {r["modulo"]: r["permitido"] for r in (rows_perm or [])}
-        padrao = perfil_modulos_padrao(user["perfil"])
+        padrao = await perfil_modulos_padrao(user["perfil"])
         for m in MODULOS_DISPONIVEIS:
             if m["id"] not in perms:
                 perms[m["id"]] = m["id"] in padrao
@@ -117,7 +117,9 @@ async def solicitar_reset(req: SenhaResetRequest, db=Depends(get_db)):
         # incluir_cc=False: link de redefinição é PESSOAL — nunca pode ir em
         # cópia para as caixas da empresa (permitiria redefinir senha alheia).
         enviar_email_smtp(user["email"], "Redefinição de senha — Garra Gestão", corpo, incluir_cc=False)
+        print(f"[Reset] SMTP aceitou o email de redefinição para {user['email']}")
     except Exception as e:
+        print(f"[Reset] FALHA SMTP ao enviar para {user['email']}: {type(e).__name__}: {e}")
         raise HTTPException(status_code=500, detail="Erro ao enviar email.")
     return {"ok": True, "msg": "Email enviado com sucesso."}
 
@@ -152,7 +154,7 @@ async def renovar_token(payload=Depends(verificar_token)):
     }, JWT_SECRET, algorithm="HS256")
 
     login = payload.get("login") or payload.get("sub", "")
-    user = jard_query(
+    user = await ajard_query(
         "SELECT id, perfil, pts, total_envios FROM public.usuarios_garra WHERE (login=%s OR email=%s) AND ativo=true",
         (login, login), fetch="one"
     )
@@ -162,12 +164,12 @@ async def renovar_token(payload=Depends(verificar_token)):
     if user:
         try:
             perfil = user.get("perfil") or payload.get("perfil", "")
-            rows_perm = jard_query(
+            rows_perm = await ajard_query(
                 "SELECT modulo, permitido FROM public.permissoes_colaborador WHERE usuario_id=%s",
                 (str(user["id"]),), fetch="all"
             )
             perms = {r["modulo"]: r["permitido"] for r in (rows_perm or [])}
-            padrao = perfil_modulos_padrao(perfil)
+            padrao = await perfil_modulos_padrao(perfil)
             for m in MODULOS_DISPONIVEIS:
                 if m["id"] not in perms:
                     perms[m["id"]] = m["id"] in padrao
@@ -331,7 +333,7 @@ async def webauthn_login_verificar(request: Request, db=Depends(get_db)):
             user["id"]
         )
         perms = {r["modulo"]: r["permitido"] for r in (rows_perm or [])}
-        padrao = perfil_modulos_padrao(user["perfil"])
+        padrao = await perfil_modulos_padrao(user["perfil"])
         for m in MODULOS_DISPONIVEIS:
             if m["id"] not in perms:
                 perms[m["id"]] = m["id"] in padrao
@@ -475,7 +477,7 @@ async def ajustar_pts(login: str, request: Request, db=Depends(get_db), _auth=De
 @router.get("/permissoes/perfis")
 async def listar_perfis(payload=Depends(verificar_admin)):
     """Lista todos os perfis persistidos (usado para hidratar a tela Permissões)."""
-    rows = jard_query(
+    rows = await ajard_query(
         "SELECT nome, label, modulos FROM public.perfis_customizados WHERE ativo=true ORDER BY nome",
         fetch="all"
     ) or []
@@ -494,10 +496,10 @@ async def criar_perfil(dados: PerfilCreate, payload=Depends(verificar_admin)):
     nome = dados.nome.strip().lower().replace(" ", "_")
     if not nome:
         raise HTTPException(status_code=400, detail="Nome é obrigatório")
-    existe = jard_query("SELECT nome FROM public.perfis_customizados WHERE nome=%s", (nome,), fetch="one")
+    existe = await ajard_query("SELECT nome FROM public.perfis_customizados WHERE nome=%s", (nome,), fetch="one")
     if existe:
         raise HTTPException(status_code=409, detail="Perfil já existe")
-    jard_query(
+    await ajard_query(
         "INSERT INTO public.perfis_customizados (nome, label, modulos) VALUES (%s, %s, %s)",
         (nome, dados.label, ",".join(dados.modulos)), fetch="none"
     )
@@ -508,12 +510,12 @@ async def atualizar_perfil(nome: str, dados: PerfilUpdate, payload=Depends(verif
     """Atualiza os módulos padrão (e opcionalmente o label) de um perfil existente."""
     modulos_str = ",".join(dados.modulos)
     if dados.label:
-        jard_query(
+        await ajard_query(
             "UPDATE public.perfis_customizados SET modulos=%s, label=%s, atualizado_em=NOW() WHERE nome=%s",
             (modulos_str, dados.label, nome), fetch="none"
         )
     else:
-        jard_query(
+        await ajard_query(
             "UPDATE public.perfis_customizados SET modulos=%s, atualizado_em=NOW() WHERE nome=%s",
             (modulos_str, nome), fetch="none"
         )
@@ -524,13 +526,13 @@ async def excluir_perfil_db(nome: str, payload=Depends(verificar_admin)):
     """Remove um perfil — bloqueado se houver colaboradores ativos usando ele."""
     if nome == "admin":
         raise HTTPException(status_code=400, detail="Perfil Admin não pode ser removido")
-    count = jard_query(
+    count = await ajard_query(
         "SELECT COUNT(*) as c FROM public.usuarios_garra WHERE perfil=%s AND ativo=true",
         (nome,), fetch="one"
     )
     if count and count.get("c", 0) > 0:
         raise HTTPException(status_code=400, detail=f"Impossível — {count['c']} colaborador(es) com este perfil")
-    jard_query("DELETE FROM public.perfis_customizados WHERE nome=%s", (nome,), fetch="none")
+    await ajard_query("DELETE FROM public.perfis_customizados WHERE nome=%s", (nome,), fetch="none")
     return {"ok": True}
 
 @router.get("/permissoes/modulos")
@@ -545,25 +547,25 @@ async def get_permissoes_usuario(usuario_id: str, payload=Depends(verificar_toke
     perfil = payload.get("perfil","")
     # Buscar UUID do usuário logado se sub for login
     if perfil != "admin":
-        user = jard_query(
+        user = await ajard_query(
             "SELECT id FROM public.usuarios_garra WHERE (login=%s OR email=%s) AND ativo=true",
             (sub, sub), fetch="one"
         )
         uid_logado = str(user["id"]) if user else None
         if uid_logado != usuario_id:
             raise HTTPException(status_code=403, detail="Acesso negado")
-    rows = jard_query(
+    rows = await ajard_query(
         "SELECT modulo, permitido FROM public.permissoes_colaborador WHERE usuario_id=%s",
         (usuario_id,)
     )
     perms = {r["modulo"]: r["permitido"] for r in (rows or [])}
     # Se não tem registro, usa padrão do perfil
-    user = jard_query(
+    user = await ajard_query(
         "SELECT perfil FROM public.usuarios_garra WHERE id=%s AND ativo=true",
         (usuario_id,), fetch="one"
     )
     if user:
-        padrao = perfil_modulos_padrao(user["perfil"])
+        padrao = await perfil_modulos_padrao(user["perfil"])
         for m in MODULOS_DISPONIVEIS:
             if m["id"] not in perms:
                 perms[m["id"]] = m["id"] in padrao
@@ -574,7 +576,7 @@ async def salvar_permissoes_usuario(usuario_id: str, request: Request, _auth=Dep
     """Salva permissões de um colaborador. Body: {modulo: bool, ...}"""
     d = await request.json()
     for modulo, permitido in d.items():
-        jard_query(
+        await ajard_query(
             """INSERT INTO public.permissoes_colaborador (usuario_id, modulo, permitido)
                VALUES (%s, %s, %s)
                ON CONFLICT (usuario_id, modulo)
@@ -586,10 +588,10 @@ async def salvar_permissoes_usuario(usuario_id: str, request: Request, _auth=Dep
 @router.get("/permissoes/todos")
 async def get_todas_permissoes(_auth=Depends(verificar_admin)):
     """Retorna permissões de todos os usuários ativos para a tela de gestão."""
-    usuarios = jard_query(
+    usuarios = await ajard_query(
         "SELECT id, login, nome, perfil FROM public.usuarios_garra WHERE ativo=true ORDER BY perfil, nome"
     )
-    perms = jard_query(
+    perms = await ajard_query(
         "SELECT usuario_id, modulo, permitido FROM public.permissoes_colaborador"
     )
     perm_map = {}
@@ -601,7 +603,7 @@ async def get_todas_permissoes(_auth=Depends(verificar_admin)):
     result = []
     for u in (usuarios or []):
         uid = str(u["id"])
-        padrao = perfil_modulos_padrao(u["perfil"])
+        padrao = await perfil_modulos_padrao(u["perfil"])
         user_perms = {}
         for m in MODULOS_DISPONIVEIS:
             if uid in perm_map and m["id"] in perm_map[uid]:
