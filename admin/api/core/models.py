@@ -59,3 +59,14 @@ class LogVeiculoCreate(BaseModel):
 class LogRegistroCreate(BaseModel):
     registro_id: str; responsavel: str
     data_hora: str; carros: List[dict] = []
+
+
+# Perfis customizados (movidos do main na Fase 2 · Etapa 4)
+class PerfilCreate(BaseModel):
+    nome: str
+    label: str
+    modulos: List[str] = []
+
+class PerfilUpdate(BaseModel):
+    modulos: List[str]
+    label: Optional[str] = None
