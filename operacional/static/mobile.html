@@ -625,8 +625,9 @@ async function enviarEsqueciSenha() {
     const r = await fetch('/auth/solicitar-reset', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email })
+      body: JSON.stringify({ login: email })
     });
+    if (!r.ok) throw new Error('Falha ao solicitar redefinição');
     // Sempre mostra sucesso (não revela se email existe — segurança)
     ok.textContent = '✓ Se o e-mail estiver cadastrado, você receberá o link em instantes.';
     ok.style.display = 'block';
