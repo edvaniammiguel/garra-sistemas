@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
+  <title>Redefinir senha — Garra Sistemas</title>
+  <style>
+    :root{--blue:#1A2A5E;--orange:#E8820C;--bg:#F0F4FF;--border:#CBD5E1;--text:#1E293B;--muted:#64748B;--red:#DC2626;--green:#16A34A;}
+    *{margin:0;padding:0;box-sizing:border-box;font-family:-apple-system,'Segoe UI',Roboto,Arial,sans-serif;}
+    body{background:var(--bg);min-height:100dvh;display:flex;align-items:center;justify-content:center;padding:20px;}
+    .card{background:#fff;width:100%;max-width:400px;border-radius:14px;padding:28px 24px;box-shadow:0 4px 24px rgba(26,42,94,.10);}
+    .logo{text-align:center;margin-bottom:18px;}
+    .logo img{height:52px;object-fit:contain;}
+    h1{font-size:17px;font-weight:800;color:var(--blue);text-align:center;margin-bottom:6px;}
+    .sub{font-size:13px;color:var(--muted);text-align:center;margin-bottom:20px;}
+    label{display:block;font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin:14px 0 6px;}
+    input{width:100%;padding:12px 14px;border:1.5px solid var(--border);border-radius:8px;font-size:15px;color:var(--text);}
+    input:focus{outline:none;border-color:var(--blue);}
+    .btn{width:100%;margin-top:20px;padding:13px;background:var(--orange);color:#fff;border:none;border-radius:10px;font-weight:800;font-size:15px;cursor:pointer;}
+    .btn:disabled{opacity:.6;cursor:default;}
+    .msg{display:none;border-radius:8px;padding:11px 12px;font-size:13px;margin-bottom:14px;}
+    .msg.err{background:#FEE2E2;color:#991B1B;}
+    .msg.ok{background:#DCFCE7;color:#166534;}
+    .voltar{display:none;text-align:center;margin-top:16px;}
+    .voltar a{color:var(--blue);font-weight:700;font-size:14px;text-decoration:none;}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="logo"><img src="/static/icons/logo.png" alt="Garra Terraplenagem" onerror="this.style.display='none'"></div>
+    <h1>🔑 Criar nova senha</h1>
+    <p class="sub">Defina a nova senha do seu acesso ao Garra Sistemas.</p>
+    <div id="msg" class="msg"></div>
+    <div id="form">
+      <label>Nova senha</label>
+      <input type="password" id="senha1" placeholder="mínimo 6 caracteres" autocomplete="new-password" />
+      <label>Confirmar nova senha</label>
+      <input type="password" id="senha2" placeholder="repita a senha" autocomplete="new-password" />
+      <button class="btn" id="btn" onclick="salvar()">Salvar nova senha</button>
+    </div>
+    <div class="voltar" id="voltar"><a href="/mobile">→ Ir para o login</a></div>
+  </div>
+
+<script>
+const token = new URLSearchParams(location.search).get('token') || '';
+
+function mostrar(texto, ok) {
+  const m = document.getElementById('msg');
+  m.textContent = texto;
+  m.className = 'msg ' + (ok ? 'ok' : 'err');
+  m.style.display = 'block';
+}
+
+if (!token) {
+  mostrar('Link inválido — solicite a redefinição novamente pelo app.', false);
+  document.getElementById('form').style.display = 'none';
+  document.getElementById('voltar').style.display = 'block';
+}
+
+async function salvar() {
+  const s1 = document.getElementById('senha1').value;
+  const s2 = document.getElementById('senha2').value;
+  if (s1.length < 6) { mostrar('A senha deve ter no mínimo 6 caracteres.', false); return; }
+  if (s1 !== s2)     { mostrar('As senhas não conferem.', false); return; }
+  const btn = document.getElementById('btn');
+  btn.disabled = true; btn.textContent = 'Salvando...';
+  try {
+    const r = await fetch('/auth/confirmar-reset', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token, senha_nova: s1 })
+    });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.detail || 'Não foi possível redefinir.');
+    mostrar('✅ Senha alterada com sucesso! Já pode entrar no app.', true);
+    document.getElementById('form').style.display = 'none';
+    document.getElementById('voltar').style.display = 'block';
+  } catch (e) {
+    mostrar(e.message, false);
+    btn.disabled = false; btn.textContent = 'Salvar nova senha';
+  }
+}
+</script>
+</body>
+</html>
