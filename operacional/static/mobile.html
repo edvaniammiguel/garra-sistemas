@@ -2498,11 +2498,14 @@ function prepararLoginBiometrico(autoTentar) {
   bioSuportada().then(ok => {
     const b = document.getElementById('btn-bio-login');
     const campo = document.getElementById('field-login');
-    if (!ok || !bioAtiva()) { if (b) b.style.display = 'none'; return; }
-    if (b) b.style.display = 'flex';
+    // Ícone: visível SEMPRE que o aparelho suporta (discreto; sobrevive à
+    // limpeza do armazenamento local — a credencial vive no servidor).
+    if (b) b.style.display = ok ? 'flex' : 'none';
+    if (!ok) return;
     const ultimo = localStorage.getItem('garra_ultimo_login');
     if (ultimo && campo && !campo.value) campo.value = ultimo;
     // Gatilho do campo: trocou/terminou o login → leitor abre (1x por tela)
+    // — apenas se a biometria está ATIVA neste aparelho (sem sustos).
     if (campo && !campo.dataset.bioGatilho) {
       campo.dataset.bioGatilho = '1';
       const disparar = () => {
@@ -2515,8 +2518,8 @@ function prepararLoginBiometrico(autoTentar) {
       campo.addEventListener('change', disparar);
       campo.addEventListener('keydown', ev => { if (ev.key === 'Enter') disparar(); });
     }
-    // Tela de login apareceu com biometria ativa → leitor abre DIRETO
-    if (autoTentar && campo && campo.value.trim() && !bioAutoTentado && !bioEmAndamento) {
+    // Tela apareceu com biometria ATIVA neste aparelho → leitor abre DIRETO
+    if (autoTentar && bioAtiva() && campo && campo.value.trim() && !bioAutoTentado && !bioEmAndamento) {
       bioAutoTentado = true;
       setTimeout(() => entrarComDigital(true), 350);
     }
@@ -2687,6 +2690,8 @@ async function entrarComDigital(automatico) {
     if (!automatico) {
       if (e.name === 'NotAllowedError') {
         errDiv.textContent = 'Leitura da digital cancelada — use a senha.';
+      } else if ((e.message || '').includes('não cadastrada')) {
+        errDiv.textContent = 'Biometria não cadastrada — entre com a senha e ative pelo menu da conta (avatar).';
       } else {
         errDiv.textContent = e.message;
       }
