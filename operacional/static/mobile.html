@@ -297,6 +297,7 @@ input,select,textarea{font-family:inherit;outline:none;border:none}
       <button class="btn-eye" onclick="togglePass()">👁</button>
     </div>
     <button class="btn-login" onclick="fazerLogin()">🚀 Entrar</button>
+    <button id="btn-bio-login" onclick="entrarComDigital()" style="display:none;width:100%;margin-top:10px;padding:13px;background:#fff;color:var(--blue);border:1.5px solid var(--blue);border-radius:10px;font-weight:800;font-size:14px;cursor:pointer">👆 Entrar com digital</button>
     <div style="text-align:center;margin-top:16px">
       <a href="#" onclick="abrirEsqueciSenha();return false" style="color:var(--muted);font-size:13px;text-decoration:none">Esqueci minha senha</a>
     </div>
@@ -664,29 +665,35 @@ async function fazerLogin() {
     }
 
     const data = await r.json();
-    localStorage.setItem('garra_token', data.token);
-    localStorage.setItem('garra_usuario', JSON.stringify(data));
-
-    USUARIO = data;
-    document.getElementById('user-avatar').textContent = (data.nome || '?').charAt(0).toUpperCase();
-
-    // Mostrar app
-    document.getElementById('screen-login').style.display = 'none';
-    document.getElementById('screen-app').style.display = 'flex';
-
-    // Aplicar permissões e abrir aba correta
-    aplicarPermissoesPerfil();
-    abrirAbaInicial();
-
-    // Carregar módulos
-    await carregarOSApp();
-
-    // Pré-carregar listas para uso offline (background, não bloqueia)
-    preCarregarListasOffline();
+    localStorage.setItem('garra_ultimo_login', login); // pré-preenche p/ digital
+    await aplicarLoginSucesso(data);
   } catch (e) {
     errDiv.textContent = e.message;
     errDiv.style.display = 'block';
   }
+}
+
+// Pós-login compartilhado — senha e biometria entregam o MESMO payload
+async function aplicarLoginSucesso(data) {
+  localStorage.setItem('garra_token', data.token);
+  localStorage.setItem('garra_usuario', JSON.stringify(data));
+
+  USUARIO = data;
+  document.getElementById('user-avatar').textContent = (data.nome || '?').charAt(0).toUpperCase();
+
+  // Mostrar app
+  document.getElementById('screen-login').style.display = 'none';
+  document.getElementById('screen-app').style.display = 'flex';
+
+  // Aplicar permissões e abrir aba correta
+  aplicarPermissoesPerfil();
+  abrirAbaInicial();
+
+  // Carregar módulos
+  await carregarOSApp();
+
+  // Pré-carregar listas para uso offline (background, não bloqueia)
+  preCarregarListasOffline();
 }
 
 function fazerLogout() {
@@ -2016,6 +2023,13 @@ function abrirPainelConta() {
         <button onclick="document.getElementById('modal-conta').remove();abrirCartilhaMobile()" style="width:100%;padding:11px;background:var(--blue);color:#fff;border:none;border-radius:8px;font-weight:700;font-size:13px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px">📖 Manual do colaborador</button>
       </div>
 
+      <!-- 2b. BIOMETRIA (só aparece em aparelho com suporte) -->
+      <div id="sec-bio-conta" style="display:none;padding:16px 20px;border-bottom:1px solid var(--border)">
+        <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px">Login por digital</div>
+        <button onclick="ativarDigital()" style="width:100%;padding:11px;background:#fff;color:var(--blue);border:1.5px solid var(--blue);border-radius:8px;font-weight:700;font-size:13px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px">👆 Ativar login por digital neste aparelho</button>
+        <div style="font-size:11px;color:var(--muted);margin-top:8px;text-align:center">A senha continua funcionando normalmente.</div>
+      </div>
+
       <!-- 3. ALTERAR SENHA -->
       <div style="padding:16px 20px;border-bottom:1px solid var(--border)">
         <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px">Alterar senha</div>
@@ -2044,6 +2058,10 @@ function abrirPainelConta() {
     </div>`;
   document.body.appendChild(modal);
   carregarMuralMobile();
+  bioSuportada().then(ok => {
+    const sec = document.getElementById('sec-bio-conta');
+    if (sec && ok) sec.style.display = 'block';
+  });
 }
 
 function carregarMuralMobile() {
@@ -2273,6 +2291,16 @@ async function verPartes(osId, osNum) {
 // INIT
 // ──────────────────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', async () => {
+  // ── BIOMETRIA: mostra "Entrar com digital" se o aparelho suporta ──
+  bioSuportada().then(ok => {
+    const b = document.getElementById('btn-bio-login');
+    if (b && ok) {
+      b.style.display = 'block';
+      const ultimo = localStorage.getItem('garra_ultimo_login');
+      const campo = document.getElementById('field-login');
+      if (ultimo && campo && !campo.value) campo.value = ultimo;
+    }
+  });
   // Registrar Service Worker v8
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('/operacional/static/sw.js', { scope: '/' })
@@ -2433,6 +2461,127 @@ function abrirAbaInicial() {
       ir(abas[i]);
       return;
     }
+  }
+}
+
+// ══════════════════════════════════════════════════════════════
+// BIOMETRIA (WebAuthn) — Sessão 2 (03/07/2026)
+// Cadastro: painel de conta → ativarDigital()
+// Login:    tela de login  → entrarComDigital()
+// A senha permanece SEMPRE como fallback.
+// ══════════════════════════════════════════════════════════════
+
+// aparelho tem leitor de digital/Face ID utilizável pelo navegador?
+async function bioSuportada() {
+  try {
+    return !!(window.PublicKeyCredential &&
+      await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable());
+  } catch { return false; }
+}
+
+// conversões base64url ⇄ ArrayBuffer (formato das rotas ⇄ formato do navegador)
+function bioB64uParaBuf(s) {
+  s = s.replace(/-/g, '+').replace(/_/g, '/');
+  const bin = atob(s + '='.repeat((4 - s.length % 4) % 4));
+  const buf = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
+  return buf.buffer;
+}
+function bioBufParaB64u(buf) {
+  const bytes = new Uint8Array(buf);
+  let bin = '';
+  for (const b of bytes) bin += String.fromCharCode(b);
+  return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+// ── CADASTRO (usuário logado, no painel de conta) ──
+async function ativarDigital() {
+  try {
+    const token = localStorage.getItem('garra_token') || '';
+    const r1 = await fetch('/auth/webauthn/registro/desafio', {
+      method: 'POST', headers: { 'Authorization': 'Bearer ' + token }
+    });
+    if (!r1.ok) throw new Error((await r1.json()).detail || 'Falha ao iniciar cadastro');
+    const opts = await r1.json();
+
+    // strings base64url → ArrayBuffer (exigência do navigator.credentials)
+    opts.challenge = bioB64uParaBuf(opts.challenge);
+    opts.user.id   = bioB64uParaBuf(opts.user.id);
+    (opts.excludeCredentials || []).forEach(c => c.id = bioB64uParaBuf(c.id));
+
+    const cred = await navigator.credentials.create({ publicKey: opts });
+
+    const credencial = {
+      id: cred.id, rawId: bioBufParaB64u(cred.rawId), type: cred.type,
+      response: {
+        clientDataJSON:    bioBufParaB64u(cred.response.clientDataJSON),
+        attestationObject: bioBufParaB64u(cred.response.attestationObject),
+      },
+    };
+    const r2 = await fetch('/auth/webauthn/registro/verificar', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+      body: JSON.stringify({ credencial, apelido: 'Celular' })
+    });
+    const res = await r2.json();
+    if (!r2.ok) throw new Error(res.detail || 'Falha ao validar biometria');
+    localStorage.setItem('garra_bio_ativa', '1');
+    alert('✅ ' + (res.mensagem || 'Biometria cadastrada!'));
+  } catch (e) {
+    if (e.name === 'NotAllowedError') alert('Cadastro cancelado.');
+    else alert('Erro: ' + e.message);
+  }
+}
+
+// ── LOGIN POR DIGITAL (tela de login) ──
+async function entrarComDigital() {
+  const errDiv = document.getElementById('login-err');
+  errDiv.style.display = 'none';
+  const login = document.getElementById('field-login').value.trim()
+             || localStorage.getItem('garra_ultimo_login') || '';
+  if (!login) {
+    errDiv.textContent = 'Digite seu login para entrar com a digital';
+    errDiv.style.display = 'block';
+    return;
+  }
+  try {
+    const r1 = await fetch('/auth/webauthn/login/desafio', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ login })
+    });
+    if (!r1.ok) throw new Error((await r1.json()).detail || 'Falha ao iniciar login');
+    const opts = await r1.json();
+
+    opts.challenge = bioB64uParaBuf(opts.challenge);
+    (opts.allowCredentials || []).forEach(c => c.id = bioB64uParaBuf(c.id));
+
+    const cred = await navigator.credentials.get({ publicKey: opts });
+
+    const credencial = {
+      id: cred.id, rawId: bioBufParaB64u(cred.rawId), type: cred.type,
+      response: {
+        clientDataJSON:    bioBufParaB64u(cred.response.clientDataJSON),
+        authenticatorData: bioBufParaB64u(cred.response.authenticatorData),
+        signature:         bioBufParaB64u(cred.response.signature),
+        userHandle: cred.response.userHandle ? bioBufParaB64u(cred.response.userHandle) : null,
+      },
+    };
+    const r2 = await fetch('/auth/webauthn/login/verificar', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ login, credencial })
+    });
+    const data = await r2.json();
+    if (!r2.ok) throw new Error(data.detail || 'Falha na autenticação biométrica');
+    localStorage.setItem('garra_ultimo_login', login);
+    localStorage.setItem('garra_bio_ativa', '1');
+    await aplicarLoginSucesso(data);
+  } catch (e) {
+    if (e.name === 'NotAllowedError') {
+      errDiv.textContent = 'Leitura da digital cancelada — use a senha.';
+    } else {
+      errDiv.textContent = e.message;
+    }
+    errDiv.style.display = 'block';
   }
 }
 
