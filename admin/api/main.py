@@ -753,161 +753,23 @@ async def ajustar_pts(login: str, request: Request, db=Depends(get_db), _auth=De
         "motivo": motivo
     }
 
-@app.get("/checklist/modelos")
-async def listar_modelos(db=Depends(get_db), _auth=Depends(verificar_token)):
-    rows = await db.fetch("SELECT * FROM checklist.modelos WHERE ativo=TRUE ORDER BY label")
-    result = []
-    for r in rows:
-        d = dict(r)
-        d["questions"] = d["questions"] if isinstance(d["questions"],list) else json.loads(d["questions"] or "[]")
-        d["steps"]     = d["steps"]     if isinstance(d["steps"],list)     else json.loads(d["steps"]     or "[]")
-        result.append(d)
-    return result
 
-@app.post("/checklist/modelos")
-async def salvar_modelo(cl: ChecklistModeloCreate, db=Depends(get_db), _auth=Depends(verificar_token)):
-    existe = await db.fetchval("SELECT id FROM checklist.modelos WHERE cl_id=$1", cl.cl_id)
-    if existe:
-        await db.execute(
-            "UPDATE checklist.modelos SET label=$1,icon=$2,descricao=$3,vehicle_cat=$4,is_default=$5,score_full=$6,score_nc=$7,score_obs=$8,score_ontime=$9,questions=$10,steps=$11 WHERE cl_id=$12",
-            cl.label,cl.icon,cl.descricao,cl.vehicle_cat,cl.is_default,cl.score_full,cl.score_nc,cl.score_obs,cl.score_ontime,json.dumps(cl.questions),json.dumps(cl.steps),cl.cl_id
-        )
-    else:
-        await db.execute(
-            "INSERT INTO checklist.modelos (cl_id,label,icon,descricao,vehicle_cat,is_default,score_full,score_nc,score_obs,score_ontime,questions,steps) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)",
-            cl.cl_id,cl.label,cl.icon,cl.descricao,cl.vehicle_cat,cl.is_default,cl.score_full,cl.score_nc,cl.score_obs,cl.score_ontime,json.dumps(cl.questions),json.dumps(cl.steps)
-        )
-    return {"ok": True}
 
-@app.delete("/checklist/modelos/{cl_id}")
-async def remover_modelo(cl_id: str, db=Depends(get_db), _auth=Depends(verificar_token)):
-    await db.execute("UPDATE checklist.modelos SET ativo=FALSE WHERE cl_id=$1", cl_id)
-    return {"ok": True}
 
-@app.get("/checklist/envios")
-async def listar_envios(usuario: Optional[str]=None, cl_id: Optional[str]=None, limit: int=100, db=Depends(get_db), _auth=Depends(verificar_token)):
-    where, params = "WHERE arquivado=FALSE", []
-    if usuario: params.append(usuario); where += f" AND usuario_login=${len(params)}"
-    if cl_id:   params.append(cl_id);   where += f" AND cl_id=${len(params)}"
-    params.append(limit)
-    rows = await db.fetch(f"SELECT * FROM checklist.envios {where} ORDER BY enviado_em DESC LIMIT ${len(params)}", *params)
-    result = []
-    for r in rows:
-        d = dict(r)
-        d["meta"]      = d["meta"]      if isinstance(d["meta"],dict)      else json.loads(d["meta"]      or "{}")
-        d["respostas"] = d["respostas"] if isinstance(d["respostas"],dict) else json.loads(d["respostas"] or "{}")
-        d["respostas"] = _checklist_assinar_fotos_para_leitura(d["respostas"])
-        result.append(d)
-    return result
 
-@app.post("/checklist/envios")
-async def salvar_envio(e: EnvioCreate, db=Depends(get_db), _auth=Depends(verificar_token)):
-    existe = await db.fetchval("SELECT id FROM checklist.envios WHERE envio_id=$1", e.envio_id)
-    if existe: return {"ok": True, "duplicado": True}
-    data = datetime.fromisoformat(e.enviado_em) if e.enviado_em else datetime.now()
-    respostas_processadas = _checklist_extrair_fotos_para_storage(e.envio_id, dict(e.respostas))
-    await db.execute(
-        "INSERT INTO checklist.envios (envio_id,usuario_login,usuario_nome,cl_id,cl_label,meta,respostas,pts,tem_nc,total_nc,enviado_em) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)",
-        e.envio_id,e.usuario_login,e.usuario_nome,e.cl_id,e.cl_label,json.dumps(e.meta),json.dumps(respostas_processadas),e.pts,e.tem_nc,e.total_nc,data
-    )
-    await db.execute(
-        "UPDATE public.usuarios_garra SET pts=pts+$1, total_envios=total_envios+1, atualizado_em=NOW() WHERE login=$2",
-        e.pts, e.usuario_login
-    )
-    return {"ok": True}
 
-@app.patch("/checklist/envios/{envio_id}/arquivar")
-async def arquivar_envio(envio_id: str, db=Depends(get_db), _auth=Depends(verificar_token)):
-    await db.execute("UPDATE checklist.envios SET arquivado=TRUE WHERE envio_id=$1", envio_id)
-    return {"ok": True}
 
-@app.get("/frota")
-async def listar_frota(db=Depends(get_db), _auth=Depends(verificar_token)):
-    rows = await db.fetch(
-        "SELECT DISTINCT ON (categoria, identificacao) * "
-        "FROM checklist.frota WHERE ativo=TRUE "
-        "ORDER BY categoria, identificacao, id"
-    )
-    return [dict(r) for r in rows]
 
-@app.post("/frota")
-async def salvar_frota(item: FrotaItem, db=Depends(get_db), _auth=Depends(verificar_token)):
-    existe = await db.fetchval("SELECT id FROM checklist.frota WHERE categoria=$1 AND identificacao=$2", item.categoria, item.identificacao)
-    if existe:
-        await db.execute("UPDATE checklist.frota SET descricao=$1,ativo=TRUE WHERE categoria=$2 AND identificacao=$3", item.descricao,item.categoria,item.identificacao)
-    else:
-        await db.execute("INSERT INTO checklist.frota (categoria,identificacao,descricao) VALUES ($1,$2,$3)", item.categoria,item.identificacao,item.descricao)
-    return {"ok": True}
 
-@app.delete("/frota/{categoria}/{identificacao}")
-async def remover_frota(categoria: str, identificacao: str, db=Depends(get_db), _auth=Depends(verificar_token)):
-    await db.execute("UPDATE checklist.frota SET ativo=FALSE WHERE categoria=$1 AND identificacao=$2", categoria, identificacao)
-    return {"ok": True}
 
-@app.get("/logistica/motoristas")
-async def listar_motoristas(db=Depends(get_db), _auth=Depends(verificar_token)):
-    rows = await db.fetch("SELECT * FROM checklist.log_motoristas ORDER BY nome")
-    return [dict(r) for r in rows]
 
-@app.post("/logistica/motoristas")
-async def salvar_motorista(m: LogMotoristaCreate, db=Depends(get_db), _auth=Depends(verificar_token)):
-    existe = await db.fetchval("SELECT id FROM checklist.log_motoristas WHERE motor_id=$1", m.motor_id)
-    if existe:
-        await db.execute("UPDATE checklist.log_motoristas SET nome=$1,cpf=$2,cnh=$3,telefone=$4,status=$5,observacoes=$6,atualizado_em=NOW() WHERE motor_id=$7", m.nome,m.cpf,m.cnh,m.telefone,m.status,m.observacoes,m.motor_id)
-    else:
-        await db.execute("INSERT INTO checklist.log_motoristas (motor_id,nome,cpf,cnh,telefone,status,observacoes) VALUES ($1,$2,$3,$4,$5,$6,$7)", m.motor_id,m.nome,m.cpf,m.cnh,m.telefone,m.status,m.observacoes)
-    return {"ok": True}
 
-@app.delete("/logistica/motoristas/{motor_id}")
-async def remover_motorista(motor_id: str, db=Depends(get_db), _auth=Depends(verificar_token)):
-    await db.execute("DELETE FROM checklist.log_motoristas WHERE motor_id=$1", motor_id)
-    return {"ok": True}
 
-@app.get("/logistica/veiculos")
-async def listar_veiculos(db=Depends(get_db), _auth=Depends(verificar_token)):
-    rows = await db.fetch("SELECT * FROM checklist.log_veiculos ORDER BY car_id")
-    result = []
-    for r in rows:
-        d = dict(r); d["extras"] = d["extras"] if isinstance(d["extras"],list) else json.loads(d["extras"] or "[]")
-        result.append(d)
-    return result
 
-@app.post("/logistica/veiculos")
-async def salvar_veiculo(v: LogVeiculoCreate, db=Depends(get_db), _auth=Depends(verificar_token)):
-    existe = await db.fetchval("SELECT id FROM checklist.log_veiculos WHERE veiculo_id=$1", v.veiculo_id)
-    if existe:
-        await db.execute("UPDATE checklist.log_veiculos SET car_id=$1,placa=$2,modelo=$3,ano=$4,cor=$5,status=$6,extras=$7,observacoes=$8,atualizado_em=NOW() WHERE veiculo_id=$9", v.car_id,v.placa,v.modelo,v.ano,v.cor,v.status,json.dumps(v.extras),v.observacoes,v.veiculo_id)
-    else:
-        await db.execute("INSERT INTO checklist.log_veiculos (veiculo_id,car_id,placa,modelo,ano,cor,status,extras,observacoes) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)", v.veiculo_id,v.car_id,v.placa,v.modelo,v.ano,v.cor,v.status,json.dumps(v.extras),v.observacoes)
-    return {"ok": True}
 
-@app.delete("/logistica/veiculos/{veiculo_id}")
-async def remover_veiculo(veiculo_id: str, db=Depends(get_db), _auth=Depends(verificar_token)):
-    await db.execute("DELETE FROM checklist.log_veiculos WHERE veiculo_id=$1", veiculo_id)
-    return {"ok": True}
 
-@app.get("/logistica/registros")
-async def listar_registros(limit: int=50, db=Depends(get_db), _auth=Depends(verificar_token)):
-    rows = await db.fetch("SELECT * FROM checklist.log_registros ORDER BY data_hora DESC LIMIT $1", limit)
-    result = []
-    for r in rows:
-        d = dict(r); d["carros"] = d["carros"] if isinstance(d["carros"],list) else json.loads(d["carros"] or "[]")
-        result.append(d)
-    return result
 
-@app.post("/logistica/registros")
-async def salvar_registro(r: LogRegistroCreate, db=Depends(get_db), _auth=Depends(verificar_token)):
-    existe = await db.fetchval("SELECT id FROM checklist.log_registros WHERE registro_id=$1", r.registro_id)
-    if existe:
-        await db.execute("UPDATE checklist.log_registros SET responsavel=$1,data_hora=$2,carros=$3 WHERE registro_id=$4", r.responsavel,datetime.fromisoformat(r.data_hora),json.dumps(r.carros),r.registro_id)
-    else:
-        await db.execute("INSERT INTO checklist.log_registros (registro_id,responsavel,data_hora,carros) VALUES ($1,$2,$3,$4)", r.registro_id,r.responsavel,datetime.fromisoformat(r.data_hora),json.dumps(r.carros))
-    return {"ok": True}
 
-@app.delete("/logistica/registros/{registro_id}")
-async def remover_registro(registro_id: str, db=Depends(get_db), _auth=Depends(verificar_token)):
-    await db.execute("DELETE FROM checklist.log_registros WHERE registro_id=$1", registro_id)
-    return {"ok": True}
 
 # ══════════════════════════════════════════════════════════════
 # ROTAS JARDINAGEM — prefixo /jardinagem
@@ -1448,20 +1310,8 @@ async def excluir_bloco_cartilha(bloco_id: int, payload=Depends(verificar_admin)
 # FIM CARTILHA
 # ═══════════════════════════════════════════════════════════════════════════
 
-@app.get("/checklist")
-async def checklist_app():
-    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "operacional", "checklist", "index.html")
-    return FileResponse(path)
 
-@app.get("/checklist/sw.js")
-async def checklist_sw():
-    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "operacional", "checklist", "sw.js")
-    return FileResponse(path, media_type="application/javascript")
 
-@app.get("/checklist/manifest.json")
-async def checklist_manifest():
-    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "operacional", "checklist", "manifest.json")
-    return FileResponse(path)
 
 @app.get("/mobile")
 async def mobile_app():
@@ -1817,5 +1667,7 @@ async def root():
 # ══════════════════════════════════════════════════════════════
 from routers.jardinagem import router as jardinagem_router
 from routers.operacional import router as operacional_router
+from routers.checklist import router as checklist_router
 app.include_router(jardinagem_router)
 app.include_router(operacional_router)
+app.include_router(checklist_router)
