@@ -21,6 +21,7 @@ from webauthn import (
 from webauthn.helpers.structs import (
     PublicKeyCredentialDescriptor, UserVerificationRequirement,
     AuthenticatorSelectionCriteria, ResidentKeyRequirement,
+    AuthenticatorAttachment,
 )
 from webauthn.helpers import base64url_to_bytes, bytes_to_base64url
 
@@ -60,6 +61,12 @@ def gerar_opcoes_registro(usuario: dict, credenciais_existentes: list) -> tuple:
         user_name=usuario["login"],
         user_display_name=usuario["nome"] or usuario["login"],
         authenticator_selection=AuthenticatorSelectionCriteria(
+            # Só o leitor do PRÓPRIO aparelho (digital/Face ID) — remove as
+            # opções de chave externa/outro aparelho da tela de consentimento
+            # do Android, deixando o cadastro com o mínimo de passos possível.
+            # (A tela de consentimento em si é do sistema e aparece 1x por
+            # aparelho, apenas no cadastro — o login diário vai direto ao dedo.)
+            authenticator_attachment=AuthenticatorAttachment.PLATFORM,
             user_verification=UserVerificationRequirement.REQUIRED,
             resident_key=ResidentKeyRequirement.PREFERRED,
         ),
