@@ -70,3 +70,17 @@ class PerfilCreate(BaseModel):
 class PerfilUpdate(BaseModel):
     modulos: List[str]
     label: Optional[str] = None
+
+
+# Mural de Avisos e Cartilha (movidos do main na Fase 2 · Etapa 5)
+class MuralCreate(BaseModel):
+    titulo: str
+    mensagem: str
+    perfis: str = ""  # "" = todos, ou "operador,campo,motorista"
+    destinatario: str = ""  # "" = usa perfis, ou "gilson@garra.local" = só ele
+
+class CartilhaBloco(BaseModel):
+    ordem: int = 0
+    titulo: str
+    subtitulo: str = ""
+    conteudo: str
