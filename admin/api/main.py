@@ -374,8 +374,10 @@ async def login(req: LoginRequest, request: Request, db=Depends(get_db)):
 
 @app.post("/auth/solicitar-reset")
 async def solicitar_reset(req: SenhaResetRequest, db=Depends(get_db)):
+    # O modal pede o EMAIL, mas usuários também podem digitar o login —
+    # buscar pelos dois (mesmo padrão do /auth/login).
     user = await db.fetchrow(
-        "SELECT id, nome, email FROM public.usuarios_garra WHERE login=$1 AND ativo=TRUE", req.login
+        "SELECT id, nome, email FROM public.usuarios_garra WHERE (login=$1 OR email=$1) AND ativo=TRUE", req.login
     )
     if not user or not user["email"]:
         return {"ok": True, "msg": "Se o usuário existir, um email será enviado."}
@@ -397,7 +399,9 @@ async def solicitar_reset(req: SenhaResetRequest, db=Depends(get_db)):
         <p style="color:#64748B;font-size:12px;">Este link expira em 1 hora.</p>
       </div></div>"""
     try:
-        enviar_email_smtp(user["email"], "Redefinição de senha — Garra Gestão", corpo)
+        # incluir_cc=False: link de redefinição é PESSOAL — nunca pode ir em
+        # cópia para as caixas da empresa (permitiria redefinir senha alheia).
+        enviar_email_smtp(user["email"], "Redefinição de senha — Garra Gestão", corpo, incluir_cc=False)
     except Exception as e:
         raise HTTPException(status_code=500, detail="Erro ao enviar email.")
     return {"ok": True, "msg": "Email enviado com sucesso."}
@@ -3735,6 +3739,12 @@ async def checklist_manifest():
 @app.get("/mobile")
 async def mobile_app():
     return FileResponse(os.path.join(os.path.dirname(__file__), "../../operacional/static/mobile.html"))
+
+@app.get("/reset-senha.html")
+async def reset_senha_page():
+    """Página que o link de 'Esqueci minha senha' abre. Estava ausente do
+    repositório — o email de reset era enviado mas o link dava 404."""
+    return FileResponse(os.path.join(os.path.dirname(__file__), "reset-senha.html"))
 
 @app.get("/mobile/sw.js")
 async def mobile_sw():
