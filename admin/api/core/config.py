@@ -52,6 +52,8 @@ ICONS_DIR = os.path.join(_API_DIR, "..", "..", "operacional", "checklist", "icon
 OPERACIONAL_STATIC_DIR = os.path.join(_API_DIR, "..", "..", "operacional", "static")
 OPERACIONAL_DIR = os.path.join(_API_DIR, "..", "..", "operacional")
 CHECKLIST_DIR   = os.path.join(OPERACIONAL_DIR, "checklist")
+API_DIR   = _API_DIR                              # admin/api (reset-senha.html mora aqui)
+ADMIN_DIR = os.path.join(_API_DIR, "..")          # admin/ (admin-app.html mora aqui)
 
 print(f"JARD_DIR: {JARD_DIR}")
 print(f"TEMPLATES_DIR: {TEMPLATES_DIR} (exists: {os.path.exists(TEMPLATES_DIR)})")
