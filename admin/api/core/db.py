@@ -96,6 +96,15 @@ def _converter_placeholders(sql: str) -> str:
 async def ajard_query(sql, params=None, fetch="all"):
     pool = await _get_apool()
     args = list(params) if params else []
+    # asyncpg é estrito com tipos: strings de data/datetime vindas do front
+    # precisam virar objetos nativos (psycopg2 aceitava strings em silêncio).
+    for i, v in enumerate(args):
+        if isinstance(v, str) and len(v) == 10:
+            try:
+                from datetime import date as _date
+                args[i] = _date.fromisoformat(v)
+            except (ValueError, TypeError):
+                pass
     async with pool.acquire() as conn:
         if fetch == "none" and not args:
             # protocolo simples: aceita SQL com múltiplos comandos (DDL)
