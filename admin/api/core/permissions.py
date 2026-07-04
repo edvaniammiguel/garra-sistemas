@@ -1,7 +1,7 @@
 """core.permissions — módulos disponíveis e módulos-padrão por perfil."""
 # Extraído do main.py na Refatoração Fase 1 (03/07/2026) — código idêntico ao original.
 
-from .db import jard_query
+from .db import ajard_query
 
 # ═══════════════════════════════════════════════════════════════════════════
 
@@ -40,11 +40,11 @@ CREATE TABLE IF NOT EXISTS public.perfis_customizados (
 )
 """
 
-def perfil_modulos_padrao(perfil: str):
+async def perfil_modulos_padrao(perfil: str):
     """Fonte da verdade: banco. Se o perfil não existir lá (ex: banco fora do ar),
     cai no dict hardcoded como rede de segurança."""
     try:
-        row = jard_query(
+        row = await ajard_query(
             "SELECT modulos FROM public.perfis_customizados WHERE nome=%s AND ativo=true",
             (perfil,), fetch="one"
         )

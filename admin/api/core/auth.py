@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 from typing import Optional
 from fastapi import HTTPException, Header, Depends
 from .config import JWT_SECRET, JWT_EXPIRY_HOURS
-from .db import jard_query
+from .db import ajard_query
 from .permissions import perfil_modulos_padrao
 
 # ── RATE LIMITER ──────────────────────────────────────────────
@@ -36,7 +36,7 @@ def gerar_token_jard(usuario: dict) -> str:
         "exp":    datetime.utcnow() + timedelta(hours=JWT_EXPIRY_HOURS)
     }, JWT_SECRET, algorithm="HS256")
 
-def verificar_token_jard(authorization: Optional[str] = Header(None)):
+async def verificar_token_jard(authorization: Optional[str] = Header(None)):
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Não autenticado")
     token = authorization[7:]
@@ -48,7 +48,7 @@ def verificar_token_jard(authorization: Optional[str] = Header(None)):
         uuid_pattern = _re.compile(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$', _re.I)
         if sub and not uuid_pattern.match(str(sub)):
             # sub é login — busca UUID no banco
-            row = jard_query(
+            row = await ajard_query(
                 "SELECT id FROM public.usuarios_garra WHERE (login=%s OR email=%s) AND ativo=true",
                 (sub, sub), fetch="one"
             )
@@ -60,7 +60,7 @@ def verificar_token_jard(authorization: Optional[str] = Header(None)):
     except pyjwt.InvalidTokenError:
         raise HTTPException(status_code=401, detail="Token inválido")
 
-def exigir_acesso_jardinagem(payload=Depends(verificar_token_jard)):
+async def exigir_acesso_jardinagem(payload=Depends(verificar_token_jard)):
     """Garante que o usuário tem permissão de jardinagem (banco tem prioridade
     sobre o padrão do perfil). Bloqueia operador/motorista/bruna."""
     perfil = (payload.get("perfil") or "").lower()
@@ -68,7 +68,7 @@ def exigir_acesso_jardinagem(payload=Depends(verificar_token_jard)):
     # 1. Permissão explícita no banco (admin marcou)
     permitido = None
     try:
-        row = jard_query(
+        row = await ajard_query(
             "SELECT permitido FROM public.permissoes_colaborador "
             "WHERE usuario_id=%s AND modulo IN ('jardinagem_mobile','jardinagem_desktop') "
             "ORDER BY permitido DESC LIMIT 1",
@@ -95,7 +95,7 @@ def validar_senha(senha: str) -> Optional[str]:
 # ══════════════════════════════════════════════════════════════
 
 # ── VERIFICADORES JWT CHECKLIST ───────────────────────────────
-def verificar_token(authorization: Optional[str] = Header(None)):
+async def verificar_token(authorization: Optional[str] = Header(None)):
     """Exige login válido. Retorna o payload do JWT."""
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Não autenticado")

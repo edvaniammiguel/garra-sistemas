@@ -9,7 +9,7 @@ from email.mime.base import MIMEBase
 from email import encoders
 from PIL import Image
 from .config import MAIL_HOST, MAIL_PORT, MAIL_USERNAME, MAIL_PASSWORD, MAIL_CC
-from .db import jard_query
+from .db import ajard_query
 
 # ── HELPERS JARDINAGEM ────────────────────────────────────────
 def comprimir_imagem(dados: bytes, max_px: int = 1400, qualidade: int = 82) -> bytes:
@@ -21,19 +21,19 @@ def comprimir_imagem(dados: bytes, max_px: int = 1400, qualidade: int = 82) -> b
     img.save(buf, format="JPEG", quality=qualidade, optimize=True)
     return buf.getvalue()
 
-def next_code(n: int = 2) -> int:
-    row = jard_query("SELECT valor FROM jardinagem.config WHERE chave='next_code'", fetch="one")
+async def next_code(n: int = 2) -> int:
+    row = await ajard_query("SELECT valor FROM jardinagem.config WHERE chave='next_code'", fetch="one")
     atual = int(row["valor"])
-    jard_query("UPDATE jardinagem.config SET valor=%s WHERE chave='next_code'",
+    await ajard_query("UPDATE jardinagem.config SET valor=%s WHERE chave='next_code'",
                (str(atual + n),), fetch="none")
     return atual
 
-def semanas_do_mes(ano: int, mes: int, mes_id: int):
+async def semanas_do_mes(ano: int, mes: int, mes_id: int):
     _, ultimo_dia = calendar.monthrange(ano, mes)
     intervalos = [(1,7),(8,14),(15,21),(22,ultimo_dia)]
     for i, (ini, fim) in enumerate(intervalos):
         label = f"Semana {i+1} — {ini:02d}/{mes:02d} a {fim:02d}/{mes:02d}/{ano}"
-        jard_query("""INSERT INTO jardinagem.semanas
+        await ajard_query("""INSERT INTO jardinagem.semanas
                       (mes_id,label,data_ini,data_fim,ordem,status)
                       VALUES (%s,%s,%s,%s,%s,'aberta')""",
                    (mes_id, label,
