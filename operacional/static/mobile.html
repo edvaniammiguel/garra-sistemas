@@ -2025,9 +2025,18 @@ function abrirPainelConta() {
 
       <!-- 2b. BIOMETRIA (só aparece em aparelho com suporte) -->
       <div id="sec-bio-conta" style="display:none;padding:16px 20px;border-bottom:1px solid var(--border)">
-        <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px">Login por digital</div>
-        <button onclick="ativarDigital()" style="width:100%;padding:11px;background:#fff;color:var(--blue);border:1.5px solid var(--blue);border-radius:8px;font-weight:700;font-size:13px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px">👆 Ativar login por digital neste aparelho</button>
-        <div style="font-size:11px;color:var(--muted);margin-top:8px;text-align:center">A senha continua funcionando normalmente.</div>
+        <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px">Ativar biometria</div>
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px">
+          <div>
+            <div style="font-size:13px;font-weight:700;color:var(--blue)">Entrar com a digital</div>
+            <div id="bio-status-txt" style="font-size:11px;color:var(--muted);margin-top:2px">Desativada neste aparelho</div>
+          </div>
+          <div id="bio-switch" onclick="alternarBiometria()" style="width:52px;height:30px;border-radius:15px;background:#CBD5E1;position:relative;cursor:pointer;flex-shrink:0;transition:background .2s">
+            <div id="bio-switch-knob" style="width:24px;height:24px;border-radius:50%;background:#fff;position:absolute;top:3px;left:3px;transition:left .2s;box-shadow:0 1px 3px rgba(0,0,0,.3)"></div>
+          </div>
+        </div>
+        <div id="bio-msg" style="display:none;font-size:12px;margin-top:10px;padding:8px 10px;border-radius:6px"></div>
+        <div style="font-size:11px;color:var(--muted);margin-top:8px">A senha continua funcionando normalmente.</div>
       </div>
 
       <!-- 3. ALTERAR SENHA -->
@@ -2060,7 +2069,7 @@ function abrirPainelConta() {
   carregarMuralMobile();
   bioSuportada().then(ok => {
     const sec = document.getElementById('sec-bio-conta');
-    if (sec && ok) sec.style.display = 'block';
+    if (sec && ok) { sec.style.display = 'block'; atualizarSwitchBio(); }
   });
 }
 
@@ -2291,16 +2300,25 @@ async function verPartes(osId, osNum) {
 // INIT
 // ──────────────────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', async () => {
-  // ── BIOMETRIA: mostra "Entrar com digital" se o aparelho suporta ──
+  // ── BIOMETRIA: botão do login só aparece se ATIVA neste aparelho ──
   bioSuportada().then(ok => {
     const b = document.getElementById('btn-bio-login');
-    if (b && ok) {
+    if (b && ok && bioAtiva()) {
       b.style.display = 'block';
       const ultimo = localStorage.getItem('garra_ultimo_login');
       const campo = document.getElementById('field-login');
       if (ultimo && campo && !campo.value) campo.value = ultimo;
     }
   });
+  // ── BIOMETRIA: sem sessão + biometria ativa → tenta entrar DIRETO ──
+  // (cancelou/falhou: cai na tela de login normal, sem alerta)
+  setTimeout(async () => {
+    const temSessao = !!localStorage.getItem('garra_token');
+    if (!temSessao && bioAtiva() && localStorage.getItem('garra_ultimo_login')
+        && await bioSuportada()) {
+      entrarComDigital(true); // true = modo automático (silencioso)
+    }
+  }, 400);
   // Registrar Service Worker v8
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('/operacional/static/sw.js', { scope: '/' })
@@ -2466,10 +2484,14 @@ function abrirAbaInicial() {
 
 // ══════════════════════════════════════════════════════════════
 // BIOMETRIA (WebAuthn) — Sessão 2 (03/07/2026)
-// Cadastro: painel de conta → ativarDigital()
-// Login:    tela de login  → entrarComDigital()
+// Toggle no painel de conta; entrada automática ao abrir o app;
+// trava anti-toque-duplo (corrige "A request is already pending").
 // A senha permanece SEMPRE como fallback.
 // ══════════════════════════════════════════════════════════════
+
+let bioEmAndamento = false; // trava: uma cerimônia biométrica por vez
+
+function bioAtiva() { return localStorage.getItem('garra_bio_ativa') === '1'; }
 
 // aparelho tem leitor de digital/Face ID utilizável pelo navegador?
 async function bioSuportada() {
@@ -2477,6 +2499,42 @@ async function bioSuportada() {
     return !!(window.PublicKeyCredential &&
       await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable());
   } catch { return false; }
+}
+
+// mensagem inline no painel (substitui os alerts)
+function bioMostrarMsg(texto, ok) {
+  const el = document.getElementById('bio-msg');
+  if (!el) return;
+  el.textContent = texto;
+  el.style.display = 'block';
+  el.style.background = ok ? '#DCFCE7' : '#FEE2E2';
+  el.style.color = ok ? '#166534' : '#991B1B';
+}
+
+// sincroniza o visual do toggle com o estado
+function atualizarSwitchBio() {
+  const sw = document.getElementById('bio-switch');
+  const knob = document.getElementById('bio-switch-knob');
+  const txt = document.getElementById('bio-status-txt');
+  if (!sw || !knob) return;
+  const on = bioAtiva();
+  sw.style.background = on ? 'var(--green, #16A34A)' : '#CBD5E1';
+  knob.style.left = on ? '25px' : '3px';
+  if (txt) txt.textContent = on ? 'Ativa — o app entra direto pela digital' : 'Desativada neste aparelho';
+}
+
+// toque no toggle: ON → cadastra a digital | OFF → desliga neste aparelho
+async function alternarBiometria() {
+  if (bioEmAndamento) return;
+  const msg = document.getElementById('bio-msg');
+  if (msg) msg.style.display = 'none';
+  if (bioAtiva()) {
+    localStorage.removeItem('garra_bio_ativa');
+    atualizarSwitchBio();
+    bioMostrarMsg('Biometria desativada neste aparelho.', true);
+    return;
+  }
+  await ativarDigital();
 }
 
 // conversões base64url ⇄ ArrayBuffer (formato das rotas ⇄ formato do navegador)
@@ -2494,8 +2552,10 @@ function bioBufParaB64u(buf) {
   return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
 
-// ── CADASTRO (usuário logado, no painel de conta) ──
+// ── CADASTRO (usuário logado, toggle do painel de conta) ──
 async function ativarDigital() {
+  if (bioEmAndamento) return;   // anti-toque-duplo
+  bioEmAndamento = true;
   try {
     const token = localStorage.getItem('garra_token') || '';
     const r1 = await fetch('/auth/webauthn/registro/desafio', {
@@ -2526,22 +2586,31 @@ async function ativarDigital() {
     const res = await r2.json();
     if (!r2.ok) throw new Error(res.detail || 'Falha ao validar biometria');
     localStorage.setItem('garra_bio_ativa', '1');
-    alert('✅ ' + (res.mensagem || 'Biometria cadastrada!'));
+    if (USUARIO && USUARIO.login) localStorage.setItem('garra_ultimo_login', USUARIO.login);
+    atualizarSwitchBio();
+    bioMostrarMsg('✅ Biometria ativa — o app vai entrar direto pela digital.', true);
   } catch (e) {
-    if (e.name === 'NotAllowedError') alert('Cadastro cancelado.');
-    else alert('Erro: ' + e.message);
+    if (e.name === 'NotAllowedError') bioMostrarMsg('Cadastro cancelado.', false);
+    else bioMostrarMsg('Erro: ' + e.message, false);
+  } finally {
+    bioEmAndamento = false;
   }
 }
 
-// ── LOGIN POR DIGITAL (tela de login) ──
-async function entrarComDigital() {
+// ── LOGIN POR DIGITAL (botão da tela de login OU automático no boot) ──
+async function entrarComDigital(automatico) {
+  if (bioEmAndamento) return;   // anti-toque-duplo
+  bioEmAndamento = true;
   const errDiv = document.getElementById('login-err');
   errDiv.style.display = 'none';
   const login = document.getElementById('field-login').value.trim()
              || localStorage.getItem('garra_ultimo_login') || '';
   if (!login) {
-    errDiv.textContent = 'Digite seu login para entrar com a digital';
-    errDiv.style.display = 'block';
+    bioEmAndamento = false;
+    if (!automatico) {
+      errDiv.textContent = 'Digite seu login para entrar com a digital';
+      errDiv.style.display = 'block';
+    }
     return;
   }
   try {
@@ -2576,12 +2645,17 @@ async function entrarComDigital() {
     localStorage.setItem('garra_bio_ativa', '1');
     await aplicarLoginSucesso(data);
   } catch (e) {
-    if (e.name === 'NotAllowedError') {
-      errDiv.textContent = 'Leitura da digital cancelada — use a senha.';
-    } else {
-      errDiv.textContent = e.message;
+    // modo automático: silencioso — cancelou/falhou, fica na tela de login
+    if (!automatico) {
+      if (e.name === 'NotAllowedError') {
+        errDiv.textContent = 'Leitura da digital cancelada — use a senha.';
+      } else {
+        errDiv.textContent = e.message;
+      }
+      errDiv.style.display = 'block';
     }
-    errDiv.style.display = 'block';
+  } finally {
+    bioEmAndamento = false;
   }
 }
 
