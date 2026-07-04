@@ -89,13 +89,7 @@ input,select,textarea{font-family:inherit;outline:none;border:none}
   position:sticky;top:0;z-index:100;
 }
 .app-header-left{display:flex;align-items:center;gap:10px}
-.app-logo-g{
-  width:32px;height:32px;border-radius:50%;background:#fff;
-  display:flex;align-items:center;justify-content:center;
-  font-size:16px;font-weight:900;color:var(--orange);
-  padding:3px;box-sizing:border-box;
-}
-.app-title{font-size:15px;font-weight:800;color:#fff}
+.app-logo-wordmark{height:34px;object-fit:contain;filter:brightness(0) invert(1);}
 .app-modulo{font-size:11px;color:#93C5FD;font-weight:500}
 .app-header-right{display:flex;align-items:center;gap:10px}
 .user-avatar{
@@ -328,12 +322,10 @@ input,select,textarea{font-family:inherit;outline:none;border:none}
   <!-- HEADER -->
   <div class="app-header">
     <div class="app-header-left">
-      <div class="app-logo-g" style="overflow:hidden">
-        <img src="/static/icons/icon-192.png" alt="G" style="width:100%;height:100%;object-fit:contain" onerror="this.outerHTML='G'" />
-      </div>
+      <img src="/static/icons/logo.png" alt="Garra Terraplenagem"
+           class="app-logo-wordmark" onerror="this.style.display='none'" />
       <div>
-        <div class="app-title">GARRA</div>
-        <div class="app-modulo" id="app-modulo">Operacional</div>
+        <div class="app-modulo" id="app-modulo" style="color:#fff;font-size:12px;font-weight:700">Operacional</div>
       </div>
     </div>
     <div class="app-header-right">
