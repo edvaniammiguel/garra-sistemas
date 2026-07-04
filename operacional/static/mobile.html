@@ -297,7 +297,11 @@ input,select,textarea{font-family:inherit;outline:none;border:none}
       <button class="btn-eye" onclick="togglePass()">👁</button>
     </div>
     <button class="btn-login" onclick="fazerLogin()">🚀 Entrar</button>
-    <button id="btn-bio-login" onclick="entrarComDigital()" style="display:none;width:100%;margin-top:10px;padding:13px;background:#fff;color:var(--blue);border:1.5px solid var(--blue);border-radius:10px;font-weight:800;font-size:14px;cursor:pointer">👆 Entrar com digital</button>
+    <div style="display:flex;justify-content:center;margin-top:14px">
+      <button id="btn-bio-login" onclick="entrarComDigital()" title="Entrar com a digital" aria-label="Entrar com a digital" style="display:none;width:54px;height:54px;border-radius:50%;background:#fff;border:1.5px solid var(--border);cursor:pointer;align-items:center;justify-content:center;padding:0">
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#1A2A5E" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 10a2 2 0 0 0-2 2c0 1.02-.1 2.51-.26 4"/><path d="M14 13.12c0 2.38 0 6.38-1 8.88"/><path d="M17.29 21.02c.12-.6.43-2.3.5-3.02"/><path d="M2 12a10 10 0 0 1 18-6"/><path d="M2 16h.01"/><path d="M21.8 16c.2-2 .131-5.354 0-6"/><path d="M5 19.5C5.5 18 6 15 6 12a6 6 0 0 1 .34-2"/><path d="M8.65 22c.21-.66.45-1.32.57-2"/><path d="M9 6.8a6 6 0 0 1 9 5.2v2"/></svg>
+      </button>
+    </div>
     <div style="text-align:center;margin-top:16px">
       <a href="#" onclick="abrirEsqueciSenha();return false" style="color:var(--muted);font-size:13px;text-decoration:none">Esqueci minha senha</a>
     </div>
@@ -710,7 +714,7 @@ function fazerLogout() {
   document.getElementById('login-err').style.display = 'none';
   document.getElementById('field-login').value = '';
   document.getElementById('field-pass').value = '';
-  prepararLoginBiometrico(); // reavalia botão da digital + pré-preenche login
+  prepararLoginBiometrico(true); // tela de login voltou → leitor abre direto
   // Esconder FAB
   const fab = document.getElementById('btn-nova-os-fab');
   if (fab) fab.style.display = 'none';
@@ -2487,20 +2491,19 @@ let bioAutoTentado = false; // evita reabrir o leitor em loop na mesma tela
 
 function bioAtiva() { return localStorage.getItem('garra_bio_ativa') === '1'; }
 
-// Prepara a tela de login: mostra o botão da digital, pré-preenche o login
-// e liga o gatilho "preencheu o email → leitor de digital abre sozinho".
-// Chamada na abertura do app E no logout (quando a tela de login reaparece).
-function prepararLoginBiometrico() {
+// Prepara a tela de login: mostra o ícone da digital, pré-preenche o login,
+// arma o gatilho do campo e — se autoTentar — JÁ ABRE O LEITOR sozinho.
+// Chamada na abertura do app e no logout (quando a tela de login reaparece).
+function prepararLoginBiometrico(autoTentar) {
   bioAutoTentado = false;
   bioSuportada().then(ok => {
     const b = document.getElementById('btn-bio-login');
     const campo = document.getElementById('field-login');
     if (!ok || !bioAtiva()) { if (b) b.style.display = 'none'; return; }
-    if (b) b.style.display = 'block';
+    if (b) b.style.display = 'flex';
     const ultimo = localStorage.getItem('garra_ultimo_login');
     if (ultimo && campo && !campo.value) campo.value = ultimo;
-    // Gatilho: terminou de preencher o login (saiu do campo ou deu Enter)
-    // → abre o leitor de digital automaticamente, uma vez por tela.
+    // Gatilho do campo: trocou/terminou o login → leitor abre (1x por tela)
     if (campo && !campo.dataset.bioGatilho) {
       campo.dataset.bioGatilho = '1';
       const disparar = () => {
@@ -2510,7 +2513,13 @@ function prepararLoginBiometrico() {
         }
       };
       campo.addEventListener('blur', disparar);
+      campo.addEventListener('change', disparar);
       campo.addEventListener('keydown', ev => { if (ev.key === 'Enter') disparar(); });
+    }
+    // Tela de login apareceu com biometria ativa → leitor abre DIRETO
+    if (autoTentar && campo && campo.value.trim() && !bioAutoTentado && !bioEmAndamento) {
+      bioAutoTentado = true;
+      setTimeout(() => entrarComDigital(true), 350);
     }
   });
 }
