@@ -25,6 +25,36 @@ WEBAUTHN_RP_ID   = os.environ.get("WEBAUTHN_RP_ID", "garra-sistemas.onrender.com
 WEBAUTHN_RP_NAME = os.environ.get("WEBAUTHN_RP_NAME", "Garra Sistemas")
 WEBAUTHN_ORIGIN  = os.environ.get("WEBAUTHN_ORIGIN", "https://garra-sistemas.onrender.com")
 
+# ── CAMINHOS DO REPOSITÓRIO (Fase 2 — antes viviam no main.py) ─────────
+# Este arquivo está em admin/api/core/ → a raiz do repo fica 3 níveis acima.
+_CORE_FILE = os.path.abspath(__file__)
+_API_DIR   = os.path.dirname(os.path.dirname(_CORE_FILE))          # admin/api
+possible_paths = [
+    os.path.join(_API_DIR, "..", "..", "jardinagem"),  # relativo ao código
+    "/app/jardinagem",                                  # Render default antigo
+    os.path.join(os.getcwd(), "jardinagem"),            # Render: cwd = raiz do repo
+]
+
+JARD_DIR = None
+for path in possible_paths:
+    if os.path.exists(os.path.join(path, "templates")):
+        JARD_DIR = os.path.abspath(path)
+        break
+
+if not JARD_DIR:
+    JARD_DIR = os.path.abspath(possible_paths[0])  # Fallback
+
+STATIC_DIR    = os.path.join(JARD_DIR, "static")
+TEMPLATES_DIR = os.path.join(JARD_DIR, "templates")
+JARD_ICONS_DIR = os.path.join(STATIC_DIR, "icons")
+
+ICONS_DIR = os.path.join(_API_DIR, "..", "..", "operacional", "checklist", "icons")
+OPERACIONAL_STATIC_DIR = os.path.join(_API_DIR, "..", "..", "operacional", "static")
+
+print(f"JARD_DIR: {JARD_DIR}")
+print(f"TEMPLATES_DIR: {TEMPLATES_DIR} (exists: {os.path.exists(TEMPLATES_DIR)})")
+print(f"STATIC_DIR: {STATIC_DIR} (exists: {os.path.exists(STATIC_DIR)})")
+
 def _debug_autorizado(chave: str) -> bool:
     """Compara em tempo constante; se DEBUG_KEY não está no ambiente, nega tudo."""
     return bool(DEBUG_KEY) and secrets.compare_digest(chave or "", DEBUG_KEY)
