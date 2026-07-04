@@ -247,7 +247,7 @@ async def jard_get_mes(mid: int, payload=Depends(verificar_token_jard)):
 @router.get("/jardinagem/api/semanas")
 async def jard_listar_semanas(mes_id: int = None, payload=Depends(verificar_token_jard)):
     if not mes_id:
-        hoje = date.today().isoformat()
+        hoje = date.today()
         row = await ajard_query("""SELECT m.id FROM jardinagem.meses m
                            JOIN jardinagem.semanas s ON s.mes_id=m.id
                            WHERE s.data_ini<=%s AND s.data_fim>=%s LIMIT 1""", (hoje,hoje), fetch="one")
@@ -270,7 +270,7 @@ async def jard_listar_semanas(mes_id: int = None, payload=Depends(verificar_toke
 
 @router.get("/jardinagem/api/semanas/ativa")
 async def jard_semana_ativa(payload=Depends(verificar_token_jard)):
-    hoje = date.today().isoformat()
+    hoje = date.today()
     row = await ajard_query("""SELECT s.*,m.id as mes_id,m.ano,m.mes,m.label as mes_label
                         FROM jardinagem.semanas s JOIN jardinagem.meses m ON m.id=s.mes_id
                         WHERE s.data_ini::date<=%s AND s.data_fim::date>=%s
@@ -458,7 +458,7 @@ async def jard_foto_mobile(
 
         if not sid:
             import datetime as dt
-            hoje = dt.date.today().isoformat()
+            hoje = dt.date.today()
             row = await ajard_query("""
                 SELECT id FROM jardinagem.semanas
                 WHERE data_ini <= %s AND data_fim >= %s LIMIT 1
@@ -539,7 +539,7 @@ async def jard_criar_km(request: Request, payload=Depends(verificar_token_jard))
     d = await request.json()
     semana_id = d.get("semana_id")
     if not semana_id:
-        hoje = date.today().isoformat()
+        hoje = date.today()
         row = await ajard_query("SELECT id FROM jardinagem.semanas WHERE data_ini<=%s AND data_fim>=%s LIMIT 1", (hoje,hoje), fetch="one")
         if not row: raise HTTPException(status_code=404, detail="Sem semana ativa")
         semana_id = row["id"]
@@ -586,7 +586,7 @@ async def jard_deletar_km(km_id: int, payload=Depends(verificar_token_jard)):
 
 @router.get("/jardinagem/api/historico/hoje")
 async def jard_historico_hoje(semana_id: Optional[int]=None, payload=Depends(verificar_token_jard)):
-    hoje = date.today().isoformat()
+    hoje = date.today()
     if semana_id:
         fotos_raw = await ajard_query("""SELECT f.id,f.tipo,f.storage_path,f.filename_orig,p.local_nome,f.criado_em
             FROM jardinagem.fotos f JOIN jardinagem.pares p ON p.id=f.par_id
@@ -627,12 +627,12 @@ async def jard_historico_hoje(semana_id: Optional[int]=None, payload=Depends(ver
         rd["hora_inicio"] = str(r["hora_inicio"]) if r["hora_inicio"] else ""
         rd["hora_fim"]    = str(r["hora_fim"])    if r["hora_fim"]    else ""
         km_total += rd["km_percorrido"]; km_list.append(rd)
-    return {"data":hoje,"fotos":fotos,"km":km_list,"km_total":round(km_total,1)}
+    return {"data":hoje.isoformat(),"fotos":fotos,"km":km_list,"km_total":round(km_total,1)}
 
 @router.get("/jardinagem/api/inicio")
 async def jard_inicio(payload=Depends(verificar_token_jard)):
     """Rota de carregamento rápido — retorna semana ativa + pares + config em 1 chamada."""
-    hoje = date.today().isoformat()
+    hoje = date.today()
     # 1. Semana ativa
     semana = await ajard_query("""SELECT s.*,m.id as mes_id,m.ano,m.mes,m.label as mes_label
                         FROM jardinagem.semanas s JOIN jardinagem.meses m ON m.id=s.mes_id
