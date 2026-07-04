@@ -2590,7 +2590,15 @@ async function ativarDigital() {
     atualizarSwitchBio();
     bioMostrarMsg('✅ Biometria ativa — o app vai entrar direto pela digital.', true);
   } catch (e) {
-    if (e.name === 'NotAllowedError') bioMostrarMsg('Cadastro cancelado.', false);
+    if (e.name === 'InvalidStateError') {
+      // O aparelho informou que ESTA digital já está cadastrada no servidor
+      // (proteção anti-duplicata). Não é erro — é só religar o interruptor.
+      localStorage.setItem('garra_bio_ativa', '1');
+      if (USUARIO && USUARIO.login) localStorage.setItem('garra_ultimo_login', USUARIO.login);
+      atualizarSwitchBio();
+      bioMostrarMsg('✅ Este aparelho já tinha a digital cadastrada — biometria ativada.', true);
+    }
+    else if (e.name === 'NotAllowedError') bioMostrarMsg('Cadastro cancelado.', false);
     else bioMostrarMsg('Erro: ' + e.message, false);
   } finally {
     bioEmAndamento = false;
