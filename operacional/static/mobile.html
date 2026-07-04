@@ -710,6 +710,7 @@ function fazerLogout() {
   document.getElementById('login-err').style.display = 'none';
   document.getElementById('field-login').value = '';
   document.getElementById('field-pass').value = '';
+  prepararLoginBiometrico(); // reavalia botão da digital + pré-preenche login
   // Esconder FAB
   const fab = document.getElementById('btn-nova-os-fab');
   if (fab) fab.style.display = 'none';
@@ -2300,16 +2301,8 @@ async function verPartes(osId, osNum) {
 // INIT
 // ──────────────────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', async () => {
-  // ── BIOMETRIA: botão do login só aparece se ATIVA neste aparelho ──
-  bioSuportada().then(ok => {
-    const b = document.getElementById('btn-bio-login');
-    if (b && ok && bioAtiva()) {
-      b.style.display = 'block';
-      const ultimo = localStorage.getItem('garra_ultimo_login');
-      const campo = document.getElementById('field-login');
-      if (ultimo && campo && !campo.value) campo.value = ultimo;
-    }
-  });
+  // ── BIOMETRIA: prepara a tela de login (botão + pré-preenchimento) ──
+  prepararLoginBiometrico();
   // ── BIOMETRIA: sem sessão + biometria ativa → tenta entrar DIRETO ──
   // (cancelou/falhou: cai na tela de login normal, sem alerta)
   setTimeout(async () => {
@@ -2490,8 +2483,37 @@ function abrirAbaInicial() {
 // ══════════════════════════════════════════════════════════════
 
 let bioEmAndamento = false; // trava: uma cerimônia biométrica por vez
+let bioAutoTentado = false; // evita reabrir o leitor em loop na mesma tela
 
 function bioAtiva() { return localStorage.getItem('garra_bio_ativa') === '1'; }
+
+// Prepara a tela de login: mostra o botão da digital, pré-preenche o login
+// e liga o gatilho "preencheu o email → leitor de digital abre sozinho".
+// Chamada na abertura do app E no logout (quando a tela de login reaparece).
+function prepararLoginBiometrico() {
+  bioAutoTentado = false;
+  bioSuportada().then(ok => {
+    const b = document.getElementById('btn-bio-login');
+    const campo = document.getElementById('field-login');
+    if (!ok || !bioAtiva()) { if (b) b.style.display = 'none'; return; }
+    if (b) b.style.display = 'block';
+    const ultimo = localStorage.getItem('garra_ultimo_login');
+    if (ultimo && campo && !campo.value) campo.value = ultimo;
+    // Gatilho: terminou de preencher o login (saiu do campo ou deu Enter)
+    // → abre o leitor de digital automaticamente, uma vez por tela.
+    if (campo && !campo.dataset.bioGatilho) {
+      campo.dataset.bioGatilho = '1';
+      const disparar = () => {
+        if (campo.value.trim() && bioAtiva() && !bioAutoTentado && !bioEmAndamento) {
+          bioAutoTentado = true;
+          entrarComDigital(true);
+        }
+      };
+      campo.addEventListener('blur', disparar);
+      campo.addEventListener('keydown', ev => { if (ev.key === 'Enter') disparar(); });
+    }
+  });
+}
 
 // aparelho tem leitor de digital/Face ID utilizável pelo navegador?
 async function bioSuportada() {
