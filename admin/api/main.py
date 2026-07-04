@@ -44,7 +44,7 @@ from core.config import (
     MAIL_HOST, MAIL_PORT, MAIL_USERNAME, MAIL_PASSWORD, MAIL_CC, MAIL_DESTINO,
     JWT_SECRET, JWT_EXPIRY_HOURS, DEBUG_KEY, _debug_autorizado,
     JARD_DIR, STATIC_DIR, TEMPLATES_DIR, JARD_ICONS_DIR,
-    ICONS_DIR, OPERACIONAL_STATIC_DIR,
+    ICONS_DIR, OPERACIONAL_STATIC_DIR, OPERACIONAL_DIR, CHECKLIST_DIR,
 )
 from core.db import get_db, get_jard_db, jard_query, jard_query_id
 from core.storage import (
@@ -277,7 +277,6 @@ if os.path.exists(OPERACIONAL_STATIC_DIR):
     print(f"OPERACIONAL_STATIC_DIR: {OPERACIONAL_STATIC_DIR} (exists: True)")
 
 # Assets do checklist (css, js)
-CHECKLIST_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "operacional", "checklist")
 if os.path.exists(CHECKLIST_DIR):
     app.mount("/checklist/css",      StaticFiles(directory=os.path.join(CHECKLIST_DIR, "css")), name="checklist_css")
     app.mount("/checklist/js",       StaticFiles(directory=os.path.join(CHECKLIST_DIR, "js")),  name="checklist_js")
