@@ -97,7 +97,8 @@ async def solicitar_reset(req: SenhaResetRequest, db=Depends(get_db)):
         return {"ok": True, "msg": "Se o usuário existir, um email será enviado."}
     token = secrets.token_urlsafe(32)
     await db.execute(
-        "INSERT INTO public.senha_reset_tokens (usuario_id, token) VALUES ($1,$2)",
+        "INSERT INTO public.senha_reset_tokens (usuario_id, token, expira_em) "
+        "VALUES ($1, $2, NOW() + INTERVAL '1 hour')",
         user["id"], token
     )
     link = f"{FRONTEND_URL}/reset-senha.html?token={token}"
