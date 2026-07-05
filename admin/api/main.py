@@ -165,6 +165,11 @@ async def startup():
                 ALTER TABLE operacional.partes_diarias
                 ADD COLUMN IF NOT EXISTS fornecedor TEXT
             """)
+            # Migration: "considerar X horas" padrão por OS (planilha da Luana)
+            await conn.execute("""
+                ALTER TABLE operacional.ordens_servico
+                ADD COLUMN IF NOT EXISTS horas_padrao_dia NUMERIC(5,2)
+            """)
             # Migration: flag de dia corrido (sem desconto de almoço)
             await conn.execute("""
                 ALTER TABLE operacional.partes_diarias
