@@ -16,6 +16,38 @@ from core.auth import verificar_token, verificar_gestor, verificar_admin
 
 router = APIRouter()
 
+def _calc_horas_parte(d):
+    """Horas trabalhadas: horímetro (fim-ini); fallback relógio com desconto
+    de 1h de almoço quando cruza 12h e não marcou dia corrido. Fonte única —
+    usada no registro (operador) e na edição (operador corrige e recalcula)."""
+    h_ini = d.get("horimetro_inicial")
+    h_fin = d.get("horimetro_final")
+    horas = None
+    if h_ini is not None and h_fin is not None:
+        try:
+            horas = round(float(h_fin) - float(h_ini), 2)
+            if horas < 0:
+                raise HTTPException(status_code=400, detail="Horímetro final menor que inicial")
+        except (TypeError, ValueError):
+            pass
+    if (horas is None or horas == 0):
+        hi = d.get("hora_inicio"); hf = d.get("hora_fim")
+        if hi and hf:
+            try:
+                ph = lambda s: int(str(s)[:2]) * 60 + int(str(s)[3:5])
+                ini_m = ph(hi); fim_m = ph(hf)
+                diff = fim_m - ini_m
+                if diff < 0: diff += 24 * 60
+                bruto = diff / 60
+                cruza_almoco = (ini_m < 12*60) and (fim_m > 12*60 or fim_m < ini_m)
+                sem_almoco = bool(d.get("sem_almoco"))
+                almoco = 1 if (not sem_almoco and cruza_almoco and bruto > 6) else 0
+                horas = round(max(0, bruto - almoco), 2)
+            except (TypeError, ValueError):
+                pass
+    return horas
+
+
 @router.get("/operacional/manifest.json")
 async def operacional_manifest():
     """PWA manifest para o mobile operacional."""
@@ -662,36 +694,9 @@ async def op_criar_parte(os_id: str, request: Request, payload=Depends(verificar
         if not data or not equipamento_id:
             raise HTTPException(status_code=400, detail="Data e equipamento são obrigatórios")
 
-    # Calcular horas trabalhadas automaticamente
+    horas = _calc_horas_parte(d)
     h_ini = d.get("horimetro_inicial")
     h_fin = d.get("horimetro_final")
-    horas = None
-    if h_ini is not None and h_fin is not None:
-        try:
-            horas = round(float(h_fin) - float(h_ini), 2)
-            if horas < 0:
-                raise HTTPException(status_code=400, detail="Horímetro final menor que inicial")
-        except (TypeError, ValueError):
-            pass
-    # Fallback: sem horímetro, calcula horas pela hora de relógio (início→fim),
-    # descontando 1h de almoço quando a jornada cruza o horário de almoço (12h)
-    # e o operador NÃO marcou "dia corrido" (sem_almoco).
-    # Cobre diária/viagem/empreito, onde a base de comissão vem do tempo trabalhado.
-    if (horas is None or horas == 0):
-        hi = d.get("hora_inicio"); hf = d.get("hora_fim")
-        if hi and hf:
-            try:
-                ph = lambda s: int(str(s)[:2]) * 60 + int(str(s)[3:5])
-                ini_m = ph(hi); fim_m = ph(hf)
-                diff = fim_m - ini_m
-                if diff < 0: diff += 24 * 60
-                bruto = diff / 60
-                cruza_almoco = (ini_m < 12*60) and (fim_m > 12*60 or fim_m < ini_m)
-                sem_almoco = bool(d.get("sem_almoco"))
-                almoco = 1 if (not sem_almoco and cruza_almoco and bruto > 6) else 0
-                horas = round(max(0, bruto - almoco), 2)
-            except (TypeError, ValueError):
-                pass
 
     # Buscar ID do operador pelo login (quem está logado = criado_por)
     user_row = await ajard_query(
@@ -1570,6 +1575,7 @@ async def op_resumo_mensal(payload=Depends(verificar_token)):
              COUNT(DISTINCT p.data) AS dias_trabalhados,
              COALESCE(SUM(p.horas_trabalhadas), 0) AS total_horas,
              COALESCE(SUM(p.horas_cobradas), 0) AS total_horas_cobradas,
+             COALESCE(SUM(p.qtd_metros), 0) AS total_metros,
              COUNT(p.id) AS total_apontamentos,
              COUNT(DISTINCT p.os_id) AS total_os
            FROM operacional.partes_diarias p
@@ -1589,6 +1595,77 @@ async def op_resumo_mensal(payload=Depends(verificar_token)):
         "dias_trabalhados": int(resumo["dias_trabalhados"] or 0),
         "total_horas": round(float(resumo["total_horas"] or 0), 1),
         "total_horas_cobradas": round(float(resumo["total_horas_cobradas"] or 0), 1),
+        "total_metros": round(float(resumo["total_metros"] or 0), 1),
         "total_apontamentos": int(resumo["total_apontamentos"] or 0),
         "total_os": int(resumo["total_os"] or 0),
     }
+
+
+# ══════════════════════════════════════════════════════════════
+# OPERADOR EDITA SUA PRÓPRIA PARTE (04/07/2026)
+# Caso real: esqueceu o horímetro → precisa conferir e corrigir.
+# Permite editar APENAS medição/observação de partes que ele criou
+# (ou de OS dele), enquanto não fechadas. Horas recalculam pela
+# mesma regra do registro (_calc_horas_parte). Horas COBRADAS não
+# são tocadas aqui — domínio da gestão (Luana/Edvania).
+# ══════════════════════════════════════════════════════════════
+
+@router.patch("/operacional/api/minhas-partes/{parte_id}")
+async def op_editar_minha_parte(parte_id: str, request: Request, payload=Depends(verificar_token)):
+    d = await request.json()
+    login = payload.get("sub", "")
+    user = await ajard_query(
+        "SELECT id FROM public.usuarios_garra WHERE login=%s", (login,), fetch="one"
+    )
+    if not user:
+        raise HTTPException(status_code=404, detail="Usuário não encontrado")
+
+    parte = await ajard_query(
+        """SELECT p.*, os.operador_id AS os_operador_id
+           FROM operacional.partes_diarias p
+           JOIN operacional.ordens_servico os ON os.id = p.os_id
+           WHERE p.id=%s AND p.ativo=true""",
+        (parte_id,), fetch="one"
+    )
+    if not parte:
+        raise HTTPException(status_code=404, detail="Parte não encontrada")
+    if parte.get("fechado"):
+        raise HTTPException(status_code=403, detail="Parte já fechada — fale com a gestão para ajustes.")
+    dono = str(parte.get("criado_por") or "") == str(user["id"]) or \
+           str(parte.get("os_operador_id") or "") == str(user["id"])
+    if not dono:
+        raise HTTPException(status_code=403, detail="Você só pode editar os seus próprios registros.")
+
+    # Campos que o operador pode corrigir (medição + observação)
+    EDITAVEIS = ["horimetro_inicial", "horimetro_final", "hora_inicio", "hora_fim",
+                 "sem_almoco", "qtd_metros", "observacao"]
+    merged = dict(parte)
+    algum = False
+    for c in EDITAVEIS:
+        if c in d:
+            merged[c] = d[c]
+            algum = True
+    if not algum:
+        return {"ok": True, "msg": "Nada a alterar."}
+
+    horas = _calc_horas_parte(merged)
+
+    def _num(v):
+        try: return float(v) if v not in (None, "") else None
+        except (TypeError, ValueError): return None
+
+    await ajard_query(
+        """UPDATE operacional.partes_diarias
+           SET horimetro_inicial=%s, horimetro_final=%s,
+               hora_inicio=%s, hora_fim=%s, sem_almoco=%s,
+               qtd_metros=%s, observacao=%s, horas_trabalhadas=%s
+           WHERE id=%s""",
+        (_num(merged.get("horimetro_inicial")), _num(merged.get("horimetro_final")),
+         merged.get("hora_inicio") or None, merged.get("hora_fim") or None,
+         bool(merged.get("sem_almoco")),
+         _num(merged.get("qtd_metros")),
+         (merged.get("observacao") or "").strip() or None,
+         horas, parte_id),
+        fetch="none"
+    )
+    return {"ok": True, "horas_trabalhadas": horas}
