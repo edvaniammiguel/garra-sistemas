@@ -1113,7 +1113,7 @@ html,body { height:100%; overflow:hidden; font-family:var(--fb); background:var(
 .ciclo-banner.inativo { background: var(--off-white); border: 1.5px dashed var(--gray-light); color: var(--text-light); }
 .ciclo-banner-info    { flex: 1; }
 .ciclo-banner-nome    { font-size: 15px; font-weight: 800; font-family: var(--fd); }
-.ciclo-banner-periodo { font-size: 12px; opacity: .8; margin-top: 2px; }
+.ciclo-banner-periodo { font-size: 12px; margin-top: 2px; color: #E8820C; font-weight: 700; }
 .ciclo-banner-desc    { font-size: 11px; opacity: .7; margin-top: 3px; font-style: italic; }
 .ciclo-banner-right   { text-align: center; flex-shrink: 0; }
 .ciclo-dias           { font-size: 36px; font-weight: 900; font-family: var(--fd); line-height: 1; color: var(--orange); }
