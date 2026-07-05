@@ -482,8 +482,8 @@ function saveLogCar() {
     extras: logCarExtraFields.filter(f=>f.label.trim()),
   };
   LDB.saveLogCar(c);
-  // Sync to main fleet too
-  DB.saveFleetItem('carro', {id:carId, desc:c.model+(c.color?' – '+c.color:''), active:true});
+  // (05/07/2026) Removido sync p/ frota do checklist: carro de APOIO da
+  // logística não é item de checklist de máquinas.
   editingCarId=null;
   closeModal('log-car-modal');
   renderLogCars();

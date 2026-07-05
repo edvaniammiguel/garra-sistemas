@@ -1144,6 +1144,28 @@ function renderOverview() {
 }
 
 // ── RANKING ──
+async function ajustarPontos(login, nome) {
+  // Penalidade por má conduta (negativo) ou bônus (positivo) — só gestor.
+  const v = prompt(`Ajustar pontos de ${nome}\n\nUse NEGATIVO para penalidade (ex: -20)\nou positivo para bônus:`, '-10');
+  if (v === null) return;
+  const pts = parseInt(v, 10);
+  if (isNaN(pts) || pts === 0) { alert('Valor inválido.'); return; }
+  const motivo = prompt('Motivo do ajuste (obrigatório):');
+  if (!motivo || !motivo.trim()) return;
+  try {
+    const token = localStorage.getItem('garra_token') || '';
+    const r = await fetch('/checklist/pontos-ajuste', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+      body: JSON.stringify({ login, pts, motivo: motivo.trim() })
+    });
+    const resp = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(resp.detail || 'Erro ao ajustar');
+    if (typeof toast === 'function') toast(`✅ ${pts > 0 ? '+' : ''}${pts} pts — ${nome}`, 'success');
+    renderRanking();
+  } catch (e) { alert('❌ ' + e.message); }
+}
+
 async function renderRanking() {
   // Fonte única: SERVIDOR (checklist.envios) — 05/07/2026.
   // Período: ciclo ativo → config de pontos → geral. Offline: cai no local.
@@ -1161,16 +1183,16 @@ async function renderRanking() {
       const rk = await r.json();
       const top3=rk.slice(0,3),rest=rk.slice(3);
       const medals=['🥇','🥈','🥉'],cls=['p1','p2','p3'];
-      document.getElementById('podium').innerHTML=top3.length?top3.map((u,i)=>`<div class="podium-place ${cls[i]}"><div class="pp-medal">${medals[i]}</div><div class="pp-avatar">${sanitize(u.nome||u.login).charAt(0)}</div><div class="pp-name">${sanitize((u.nome||u.login).split(' ')[0])}</div><div class="pp-pts">${u.pts||0}</div></div>`).join(''):'<div class="empty-state">Sem envios no período ainda</div>';
-      document.getElementById('full-ranking').innerHTML=rest.map((u,i)=>`<div class="rank-item"><div class="rank-pos">${i+4}</div><div class="rank-avatar">${sanitize(u.nome||u.login).charAt(0)}</div><div class="rank-info"><div class="rank-name">${sanitize(u.nome||u.login)}</div><div class="rank-sub">${u.envios||0} envios</div></div><div class="rank-pts">${u.pts||0} pts</div></div>`).join('')||'<div class="empty-state" style="padding:16px 0;font-size:13px">Apenas os 3 primeiros no pódio!</div>';
+      document.getElementById('podium').innerHTML=top3.length?top3.map((u,i)=>`<div class="podium-place ${cls[i]}" style="cursor:pointer" onclick="ajustarPontos('${u.login}','${sanitize(u.nome||u.login)}')" title="Clique para ajustar pontos"><div class="pp-medal">${medals[i]}</div><div class="pp-avatar">${sanitize(u.nome||u.login).charAt(0)}</div><div class="pp-name">${sanitize((u.nome||u.login).split(' ')[0])}</div><div class="pp-pts">${u.pts||0}</div></div>`).join(''):'<div class="empty-state">Sem envios no período ainda</div>';
+      document.getElementById('full-ranking').innerHTML=rest.map((u,i)=>`<div class="rank-item" style="cursor:pointer" onclick="ajustarPontos('${u.login}','${sanitize(u.nome||u.login)}')" title="Clique para ajustar pontos"><div class="rank-pos">${i+4}</div><div class="rank-avatar">${sanitize(u.nome||u.login).charAt(0)}</div><div class="rank-info"><div class="rank-name">${sanitize(u.nome||u.login)}</div><div class="rank-sub">${u.envios||0} envios</div></div><div class="rank-pts">${u.pts||0} pts</div></div>`).join('')||'<div class="empty-state" style="padding:16px 0;font-size:13px">Apenas os 3 primeiros no pódio!</div>';
       return;
     }
   } catch(e) { /* offline → ranking local abaixo */ }
   const drivers=DB.users().filter(u=>u.role==='driver'||u.role==='diarista').sort((a,b)=>(b.pts||0)-(a.pts||0));
   const top3=drivers.slice(0,3),rest=drivers.slice(3);
   const medals=['🥇','🥈','🥉'],cls=['p1','p2','p3'];
-  document.getElementById('podium').innerHTML=top3.length?top3.map((u,i)=>`<div class="podium-place ${cls[i]}"><div class="pp-medal">${medals[i]}</div><div class="pp-avatar">${sanitize(u.name).charAt(0)}</div><div class="pp-name">${sanitize(u.name.split(' ')[0])}</div><div class="pp-pts">${u.pts||0}</div></div>`).join(''):'<div class="empty-state">Sem dados de ranking ainda</div>';
-  document.getElementById('full-ranking').innerHTML=rest.map((u,i)=>`<div class="rank-item"><div class="rank-pos">${i+4}</div><div class="rank-avatar">${sanitize(u.name).charAt(0)}</div><div class="rank-info"><div class="rank-name">${sanitize(u.name)}</div><div class="rank-sub">${u.submissions||0} envios</div></div><div class="rank-pts">${u.pts||0} pts</div></div>`).join('')||'<div class="empty-state" style="padding:16px 0;font-size:13px">Apenas os 3 primeiros no pódio!</div>';
+  document.getElementById('podium').innerHTML=top3.length?top3.map((u,i)=>`<div class="podium-place ${cls[i]}" style="cursor:pointer" onclick="ajustarPontos('${u.login}','${sanitize(u.nome||u.login)}')" title="Clique para ajustar pontos"><div class="pp-medal">${medals[i]}</div><div class="pp-avatar">${sanitize(u.name).charAt(0)}</div><div class="pp-name">${sanitize(u.name.split(' ')[0])}</div><div class="pp-pts">${u.pts||0}</div></div>`).join(''):'<div class="empty-state">Sem dados de ranking ainda</div>';
+  document.getElementById('full-ranking').innerHTML=rest.map((u,i)=>`<div class="rank-item" style="cursor:pointer" onclick="ajustarPontos('${u.login}','${sanitize(u.nome||u.login)}')" title="Clique para ajustar pontos"><div class="rank-pos">${i+4}</div><div class="rank-avatar">${sanitize(u.name).charAt(0)}</div><div class="rank-info"><div class="rank-name">${sanitize(u.name)}</div><div class="rank-sub">${u.submissions||0} envios</div></div><div class="rank-pts">${u.pts||0} pts</div></div>`).join('')||'<div class="empty-state" style="padding:16px 0;font-size:13px">Apenas os 3 primeiros no pódio!</div>';
 }
 
 // ── SUBMISSIONS ──
@@ -2269,17 +2291,17 @@ function renderPontosConfigPanel() {
           <div class="field-group" style="margin:0">
             <label style="font-size:11px;font-weight:700;color:var(--text-light);display:block;margin-bottom:4px">📅 Contar a partir de</label>
             <input type="date" id="pontos-inicio" value="${inicio}"
-              onchange="salvarPontosConfig()"
+              onchange="salvarPontosConfig(false)"
               style="padding:8px 10px;border:1.5px solid var(--gray-light);border-radius:var(--radius-sm);font-size:13px;width:100%;background:var(--white)" />
           </div>
           <div class="field-group" style="margin:0">
             <label style="font-size:11px;font-weight:700;color:var(--text-light);display:block;margin-bottom:4px">📅 Até (opcional)</label>
             <input type="date" id="pontos-fim" value="${fim}"
-              onchange="salvarPontosConfig()"
+              onchange="salvarPontosConfig(false)"
               style="padding:8px 10px;border:1.5px solid var(--gray-light);border-radius:var(--radius-sm);font-size:13px;width:100%;background:var(--white)" />
           </div>
         </div>
-        <div class="pontos-config-preview">
+        <div class="pontos-config-preview" id="pontos-preview">
           ${ativo
             ? `✅ Colaboradores <strong>veem</strong> seus pontos${inicio ? ' a partir de <strong>' + formatDate(inicio) + '</strong>' : ''}${fim ? ' até <strong>' + formatDate(fim) + '</strong>' : ''}`
             : `⏸ Colaboradores <strong>não veem</strong> pontos — exibe "Pontuação em breve"`
@@ -2289,14 +2311,51 @@ function renderPontosConfigPanel() {
     </div>`;
 }
 
-function salvarPontosConfig() {
+function salvarPontosConfig(rerender = true) {
   const ativo  = document.getElementById('pontos-ativo')?.checked || false;
   const inicio = document.getElementById('pontos-inicio')?.value  || null;
   const fim    = document.getElementById('pontos-fim')?.value     || null;
-  PontosConfig.save({ ativo, data_inicio: inicio, data_fim: fim });
-  renderPontosConfigPanel();
-  renderRankingTab();
+  const cfg = { ativo, data_inicio: inicio, data_fim: fim };
+  PontosConfig.save(cfg);
+
+  // Fonte única: grava no SERVIDOR (todos os aparelhos leem a mesma regra)
+  try {
+    const token = localStorage.getItem('garra_token') || '';
+    fetch('/checklist/pontos-config', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+      body: JSON.stringify(cfg)
+    }).then(r => { if (r.ok && typeof toast === 'function') toast('✅ Configuração salva', 'success'); })
+      .catch(() => {});
+  } catch(e) {}
+
+  if (rerender) {
+    // Só o toggle re-renderiza (habilita/desabilita o corpo).
+    // As DATAS não re-renderizam — era isso que matava o campo no meio da escolha.
+    renderPontosConfigPanel();
+    renderRankingTab();
+  } else {
+    const pv = document.getElementById('pontos-preview');
+    if (pv) pv.innerHTML = ativo
+      ? `✅ Colaboradores <strong>veem</strong> seus pontos${inicio ? ' a partir de <strong>' + formatDate(inicio) + '</strong>' : ''}${fim ? ' até <strong>' + formatDate(fim) + '</strong>' : ''}`
+      : `⏸ Colaboradores <strong>não veem</strong> pontos — exibe "Pontuação em breve"`;
+  }
 }
+
+// Carrega a config OFICIAL do servidor no boot (cache local = fallback offline)
+(async function carregarPontosConfigServidor() {
+  try {
+    const token = localStorage.getItem('garra_token') || '';
+    if (!token) return;
+    const r = await fetch('/checklist/pontos-config', {
+      headers: { 'Authorization': 'Bearer ' + token }
+    });
+    if (r.ok) {
+      const cfg = await r.json();
+      DB.set('garra_pontos_config', cfg);
+    }
+  } catch(e) { /* offline: usa cache local */ }
+})();
 
 // Hook no renderRankingTab para incluir painel de config
 const _renderRankingTabOrig = renderRankingTab;
