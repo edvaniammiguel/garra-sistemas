@@ -892,6 +892,11 @@ input,select,textarea { font-family:inherit; font-size:13px; outline:none; }
         <input type="number" id="os-valor-combinado" placeholder="0.00" step="0.01" min="0"/>
         <div class="field-hint" id="os-valor-hint">Preço por hora combinado com o cliente</div>
       </div>
+      <div class="field">
+        <label>Considerar horas/dia (opcional)</label>
+        <input type="number" id="os-horas-padrao" placeholder="ex: 9" step="0.5" min="0"/>
+        <div class="field-hint">Se preenchido, cada dia apontado nasce com estas horas na coluna Cobr. (o "considerar X hr" da planilha). A Luana pode ajustar linha a linha depois.</div>
+      </div>
     </div>
     <div class="field">
       <label>Obra / Local <span style="color:var(--red)">*</span></label>
@@ -3021,6 +3026,7 @@ async function abrirModalOS(osId=null) {
     document.getElementById('os-operador').value='';
     document.getElementById('os-regime').value='';
     document.getElementById('os-valor-combinado').value='';
+    document.getElementById('os-horas-padrao').value='';
     document.getElementById('os-data-inicio').value=new Date().toISOString().slice(0,10);
     _atualizarLabelRegime();
   } else {
@@ -3036,6 +3042,7 @@ async function abrirModalOS(osId=null) {
       document.getElementById('os-descricao').value = os.descricao||'';
       document.getElementById('os-regime').value = os.regime_cobranca || '';
       document.getElementById('os-valor-combinado').value = os.valor_combinado||'';
+      document.getElementById('os-horas-padrao').value = os.horas_padrao_dia||'';
       document.getElementById('os-data-inicio').value = os.data_inicio||'';
       document.getElementById('os-equipamento').value = os.equipamento_id||'';
       document.getElementById('os-operador').value = os.operador_id||'';
@@ -3130,6 +3137,7 @@ async function salvarOS() {
     operador_id:       document.getElementById('os-operador').value||null,
     regime_cobranca:   document.getElementById('os-regime').value,
     valor_combinado:   parseFloat(document.getElementById('os-valor-combinado').value)||null,
+    horas_padrao_dia:  parseFloat(document.getElementById('os-horas-padrao').value)||null,
     obra,
     endereco:          document.getElementById('os-endereco').value.trim()||null,
     descricao:         document.getElementById('os-descricao').value.trim()||null,
@@ -4189,9 +4197,12 @@ function renderControleMensal(dados) {
       const gaps = [];
       for (let d = 1; d <= ultimoDia; d++) {
         const dt = new Date(dados.ano, dados.mes-1, d);
-        if (dt.getDay() === 0) continue; // domingo não conta
         const iso = `${dados.ano}-${String(dados.mes).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
-        if (!diasComRegistro.has(iso)) gaps.push({ data: iso, _gap: true });
+        if (!diasComRegistro.has(iso)) {
+          const dow = dt.getDay();
+          const rotulo = dow === 0 ? 'DOMINGO' : (dow === 6 ? 'SÁBADO' : 'NÃO RODOU');
+          gaps.push({ data: iso, _gap: true, _rotulo: rotulo });
+        }
       }
       linhas = linhas.concat(gaps).sort((a,b) => (a.data||'').localeCompare(b.data||''));
     }
@@ -4200,9 +4211,11 @@ function renderControleMensal(dados) {
       if (p._gap) {
         let dataFmt = p.data;
         try { dataFmt = new Date(p.data+'T00:00').toLocaleDateString('pt-BR'); } catch(e){}
+        const fimDeSemana = (p._rotulo === 'SÁBADO' || p._rotulo === 'DOMINGO');
+        const cor = fimDeSemana ? 'color:#DC2626;font-weight:700' : 'color:#475569;font-weight:700';
         html += `<tr style="border-bottom:1px solid #F1F5F9;background:#F8FAFC">
           <td style="padding:6px 8px;color:var(--muted)">${dataFmt}</td>
-          <td colspan="10" style="padding:6px 8px;color:var(--muted);font-style:italic">— Não rodou (sem apontamento) —</td>
+          <td colspan="10" style="padding:6px 8px;${cor}">${p._rotulo}</td>
         </tr>`;
         return;
       }
