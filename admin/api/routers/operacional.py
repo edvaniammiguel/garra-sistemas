@@ -734,7 +734,9 @@ async def op_criar_parte(os_id: str, request: Request, payload=Depends(verificar
             "SELECT horas_padrao_dia FROM operacional.ordens_servico WHERE id=%s",
             (os_id,), fetch="one"
         )
-        if os_pad and os_pad.get("horas_padrao_dia") and horas and float(horas) > 0:
+        medicao_registro = (d.get("tipo_medicao") or "horimetro").lower()
+        if (os_pad and os_pad.get("horas_padrao_dia") and horas and float(horas) > 0
+                and medicao_registro not in ("metros", "km")):
             horas_cobradas_padrao = float(os_pad["horas_padrao_dia"])
     except Exception:
         pass
@@ -1690,3 +1692,40 @@ async def op_editar_minha_parte(parte_id: str, request: Request, payload=Depends
         fetch="none"
     )
     return {"ok": True, "horas_trabalhadas": horas}
+
+
+# ══════════════════════════════════════════════════════════════
+# ALERTA DE CONFLITO DE EQUIPAMENTO (05/07/2026)
+# Caso real: pausar uma obra e levar a máquina para outra é legítimo —
+# mas precisa ser DECISÃO CONSCIENTE. Ao abrir/editar OS com máquina
+# que já está em OS ativa, o front consulta aqui e pede confirmação.
+# ══════════════════════════════════════════════════════════════
+
+@router.get("/operacional/api/equipamentos/{eq_id}/conflito")
+async def op_conflito_equipamento(eq_id: str, ignorar_os: str = None,
+                                  payload=Depends(verificar_token)):
+    """Retorna a OS ATIVA que já usa este equipamento (se houver),
+    ignorando a própria OS em edição."""
+    args = [eq_id]
+    filtro_ignorar = ""
+    if ignorar_os:
+        args.append(ignorar_os)
+        filtro_ignorar = "AND os.id <> %s"
+    row = await ajard_query(
+        f"""SELECT os.numero, os.obra,
+                  COALESCE(c.nome, os.cliente_nome_avulso) AS cliente_nome,
+                  op.nome AS operador_nome
+           FROM operacional.ordens_servico os
+           LEFT JOIN public.clientes_garra c  ON c.id = os.cliente_id
+           LEFT JOIN public.usuarios_garra op ON op.id = os.operador_id
+           WHERE os.equipamento_id = %s
+             AND os.ativo = true
+             AND os.status NOT IN ('concluida_completa','concluida_sem_erp','cancelada')
+             {filtro_ignorar}
+           ORDER BY os.criado_em DESC
+           LIMIT 1""",
+        args, fetch="one"
+    )
+    if not row:
+        return {"conflito": False}
+    return {"conflito": True, "os": dict(row)}
