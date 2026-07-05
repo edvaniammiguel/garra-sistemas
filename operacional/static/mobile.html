@@ -1510,6 +1510,7 @@ async function abrirModalParte(osId) {
 
   // Header com info da OS
   const info = document.getElementById('m-os-info');
+  window._osDataAtual = osData;
   if (osData) {
     info.innerHTML = `<strong>${osData.numero}</strong> — ${osData.obra || osData.cliente_nome || '(sem obra)'} <span style="color:var(--orange)">· ${osData.regime_cobranca || 'diaria'}</span>`;
   } else {
@@ -1546,11 +1547,12 @@ async function abrirModalParte(osId) {
     const cat = (e.medicao || e.categoria || e.tipo || '').toLowerCase();
     const med = (e.medicao || '').toLowerCase();
     const resp = e.operador_responsavel_id || '';
-    selEq.innerHTML += `<option value="${e.id}" data-cat="${cat}" data-med="${med}" data-resp="${resp}">${e.codigo} — ${e.descricao || ''}</option>`;
+    selEq.innerHTML += `<option value="${e.id}" data-cat="${cat}" data-med="${med}" data-resp="${resp}" data-horimetro="${e.horimetro_atual ?? ''}">${e.codigo} — ${e.descricao || ''}</option>`;
   });
   // Pré-selecionar equipamento da OS
   if (osData?.equipamento_id) {
     selEq.value = osData.equipamento_id;
+    setTimeout(preencherUltimoHorimetro, 50);
     if (selEq.value !== osData.equipamento_id && osData.equipamento_codigo) {
       const resp = osData.equipamento_responsavel_id || '';
       selEq.innerHTML += `<option value="${osData.equipamento_id}" data-cat="${(osData.equipamento_medicao||'').toLowerCase()}" data-med="${(osData.equipamento_medicao||'').toLowerCase()}" data-resp="${resp}" selected>${osData.equipamento_codigo} — ${osData.equipamento_descricao || ''}</option>`;
@@ -1666,10 +1668,36 @@ function selecionarMedicao(tipo) {
 
 // Trocar equipamento: SUGERE a medição padrão do equipamento (sem acender botão),
 // mantendo todos os botões disponíveis. Misto: sugere + deixa trocar.
+function preencherUltimoHorimetro() {
+  // Agiliza o registro: campo "horímetro inicial" nasce com a ÚLTIMA leitura
+  // do equipamento (continuidade). Só preenche se o campo estiver VAZIO —
+  // nunca sobrescreve o que o operador digitou.
+  const campo = document.getElementById('m-h-ini');
+  if (!campo || campo.value) return;
+  const sel = document.getElementById('m-equipamento');
+  const opt = sel && sel.options[sel.selectedIndex];
+  if (!opt || !opt.value) return;
+  let ultimo = '';
+  // Prioridade 1: dado FRESCO do detalhe da OS (se é o equipamento dela)
+  const od = window._osDataAtual;
+  if (od && od.equipamento_id === opt.value && od.equipamento_horimetro_atual != null) {
+    ultimo = od.equipamento_horimetro_atual;
+  } else {
+    // Prioridade 2: cache da lista de equipamentos
+    ultimo = opt.getAttribute('data-horimetro') || '';
+  }
+  if (ultimo !== '' && ultimo != null && parseFloat(ultimo) > 0) {
+    campo.value = parseFloat(ultimo);
+    const hint = document.getElementById('m-horas-calc');
+    if (hint) { hint.style.display = 'block'; hint.textContent = '⚙️ Último horímetro puxado: ' + ultimo + ' — confira antes de salvar'; }
+  }
+}
+
 function atualizarCamposMedicao() {
   const sel = document.getElementById('m-equipamento');
   const opt = sel && sel.options[sel.selectedIndex];
   const cat = opt ? (opt.getAttribute('data-cat') || '') : '';
+  setTimeout(preencherUltimoHorimetro, 50);
   const sugestao = _medicaoPorCategoria(cat);
   if (sugestao) {
     prepararMedicao(sugestao);
