@@ -1035,6 +1035,26 @@ async function salvarNovaOSAvulsa() {
     return;
   }
 
+  // ── Máquina já ativa em outra OS? Alerta consciente (pausa de obra é legítima)
+  if (equipId) {
+    try {
+      const token = localStorage.getItem('garra_token') || '';
+      const rc = await fetch('/operacional/api/equipamentos/' + equipId + '/conflito', {
+        headers: { 'Authorization': 'Bearer ' + token }
+      });
+      if (rc.ok) {
+        const cf = await rc.json();
+        if (cf?.conflito) {
+          const o = cf.os;
+          const msg = `⚠️ Esta máquina já está ATIVA em outra OS:\n\n${o.numero} — ${o.obra || o.cliente_nome || ''}` +
+            (o.operador_nome ? `\nOperador: ${o.operador_nome}` : '') +
+            `\n\nConfirma usar nesta nova OS mesmo assim?`;
+          if (!confirm(msg)) return;
+        }
+      }
+    } catch(e) { /* offline → segue sem verificação */ }
+  }
+
   btn.disabled = true;
   btn.textContent = 'Criando...';
 
