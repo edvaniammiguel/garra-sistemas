@@ -1937,6 +1937,31 @@ async function carregarHistoricoOS() {
   el.innerHTML = '<div class="loading"><span class="spin"></span></div>';
   try {
     const token = localStorage.getItem('garra_token') || '';
+
+    // ── Resumo mensal (horas do mês) ──
+    let resumoHtml = '';
+    try {
+      const rRes = await fetch('/operacional/api/resumo-mensal', {
+        headers: { 'Authorization': 'Bearer ' + token }
+      });
+      if (rRes.ok) {
+        const res = await rRes.json();
+        resumoHtml = `
+          <div style="background:linear-gradient(135deg,var(--blue),#2A3F7E);border-radius:12px;padding:16px 20px;margin-bottom:16px;color:#fff">
+            <div style="font-size:11px;opacity:.7;text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">Suas horas em ${res.mes_nome || res.mes}</div>
+            <div style="display:flex;align-items:baseline;gap:6px;margin-bottom:12px">
+              <span style="font-size:32px;font-weight:800">${res.total_horas}h</span>
+              <span style="font-size:13px;opacity:.7">trabalhadas</span>
+            </div>
+            <div style="display:flex;gap:16px;font-size:12px;opacity:.85">
+              <div>📅 ${res.dias_trabalhados} dias</div>
+              <div>📋 ${res.total_apontamentos} apontamentos</div>
+              <div>🔧 ${res.total_os} OS</div>
+            </div>
+          </div>`;
+      }
+    } catch(e) { /* silencioso — card é bônus */ }
+
     const r = await fetch('/operacional/api/minhas-os?historico=1', {
       headers: { 'Authorization': 'Bearer ' + token }
     });
@@ -1951,7 +1976,7 @@ async function carregarHistoricoOS() {
     );
 
     if (!concluidas.length) {
-      el.innerHTML = `<div class="empty">
+      el.innerHTML = resumoHtml + `<div class="empty">
         <div class="empty-icon">🕐</div>
         <div class="empty-txt">Nenhuma OS no histórico</div>
         <div class="empty-sub">OS concluídas aparecerão aqui</div>
@@ -1959,7 +1984,7 @@ async function carregarHistoricoOS() {
       return;
     }
 
-    let html = '';
+    let html = resumoHtml;
     concluidas.forEach(os => {
       const statusLabel = {
         'aguardando_fechamento': '⏳ Aguardando fechamento',
