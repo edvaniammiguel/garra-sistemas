@@ -566,6 +566,7 @@ async def op_detalhe_os(os_id: str, _auth=Depends(verificar_token)):
         """SELECT os.*,
                   COALESCE(c.nome, os.cliente_nome_avulso) AS cliente_nome,
                   ts.nome AS tipo_servico_nome,
+                  eq.horimetro_atual AS equipamento_horimetro_atual,
                   u.nome AS criado_por_nome
            FROM operacional.ordens_servico os
            LEFT JOIN public.clientes_garra c       ON c.id = os.cliente_id
