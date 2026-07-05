@@ -191,3 +191,41 @@ async def checklist_sw():
 async def checklist_manifest():
     path = os.path.join(CHECKLIST_DIR, "manifest.json")
     return FileResponse(path)
+
+
+# ══════════════════════════════════════════════════════════════
+# RANKING SERVIDOR (05/07/2026) — fim da fragmentação local
+# O ranking era montado do localStorage de cada aparelho: o gestor
+# não via os envios dos operadores (que estão no SERVIDOR). Agora
+# uma fonte única: agrega checklist.envios (com período opcional).
+# ══════════════════════════════════════════════════════════════
+
+@router.get("/checklist/ranking")
+async def checklist_ranking(inicio: str = None, fim: str = None,
+                            _auth=Depends(verificar_token), db=Depends(get_db)):
+    """Ranking de pontos agregado no servidor. inicio/fim (YYYY-MM-DD)
+    delimitam a campanha; sem período = geral (todos os envios)."""
+    where, args = ["1=1"], []
+    from datetime import date as _date
+    try:
+        if inicio:
+            args.append(_date.fromisoformat(inicio))
+            where.append(f"e.enviado_em::date >= ${len(args)}")
+        if fim:
+            args.append(_date.fromisoformat(fim))
+            where.append(f"e.enviado_em::date <= ${len(args)}")
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Período inválido (use YYYY-MM-DD)")
+    rows = await db.fetch(
+        f"""SELECT e.usuario_login AS login,
+                  COALESCE(MAX(u.nome), MAX(e.usuario_nome)) AS nome,
+                  COUNT(*)::int AS envios,
+                  COALESCE(SUM(e.pts), 0)::int AS pts
+           FROM checklist.envios e
+           LEFT JOIN public.usuarios_garra u ON u.login = e.usuario_login
+           WHERE {' AND '.join(where)}
+           GROUP BY e.usuario_login
+           ORDER BY pts DESC, envios DESC""",
+        *args
+    )
+    return [dict(r) for r in rows]
