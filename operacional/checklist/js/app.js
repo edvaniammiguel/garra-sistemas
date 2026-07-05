@@ -1179,7 +1179,8 @@ async function renderRanking() {
     const r = await fetch('/checklist/ranking' + (qs?'?'+qs:''), {
       headers: { 'Authorization': 'Bearer ' + token }
     });
-    if (r.ok) {
+    if (!r.ok) throw new Error('HTTP ' + r.status + ' no /checklist/ranking');
+    {
       let rk = await r.json();
       if (!rk.length && qs) {
         // Período do ciclo/config filtrou tudo — mostra o GERAL para não ficar vazio
@@ -1192,7 +1193,13 @@ async function renderRanking() {
       document.getElementById('full-ranking').innerHTML=rest.map((u,i)=>`<div class="rank-item" style="cursor:pointer" onclick="ajustarPontos('${u.login}','${sanitize(u.nome||u.login)}')" title="Clique para ajustar pontos"><div class="rank-pos">${i+4}</div><div class="rank-avatar">${sanitize(u.nome||u.login).charAt(0)}</div><div class="rank-info"><div class="rank-name">${sanitize(u.nome||u.login)}</div><div class="rank-sub">${u.envios||0} envios</div></div><div class="rank-pts">${u.pts||0} pts</div></div>`).join('')||'<div class="empty-state" style="padding:16px 0;font-size:13px">Apenas os 3 primeiros no pódio!</div>';
       return;
     }
-  } catch(e) { console.error('[ranking] caiu no local:', e); }
+  } catch(e) {
+    console.error('[ranking] caiu no local:', e);
+    const pd = document.getElementById('podium');
+    if (pd) pd.innerHTML = '<div class="empty-state" style="color:#DC2626">⚠️ Ranking do servidor indisponível: ' + (e.message||e) + '<br><small>Envie este texto para o suporte</small></div>';
+    const fr = document.getElementById('full-ranking'); if (fr) fr.innerHTML = '';
+    return;
+  }
   const drivers=DB.users().filter(u=>u.role==='driver'||u.role==='diarista').sort((a,b)=>(b.pts||0)-(a.pts||0));
   const top3=drivers.slice(0,3),rest=drivers.slice(3);
   const medals=['🥇','🥈','🥉'],cls=['p1','p2','p3'];
