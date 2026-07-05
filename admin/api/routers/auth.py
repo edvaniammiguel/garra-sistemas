@@ -409,9 +409,14 @@ async def editar_usuario(login: str, dados: UsuarioEdit, db=Depends(get_db), _au
         params.append(novo_hash); sets.append(f"senha_hash=${len(params)}")
     if not sets: return {"ok": True}
     params.append(login)
-    await db.execute(
-        f"UPDATE public.usuarios_garra SET {','.join(sets)},atualizado_em=NOW() WHERE login=${len(params)}", *params
-    )
+    try:
+        await db.execute(
+            f"UPDATE public.usuarios_garra SET {','.join(sets)},atualizado_em=NOW() WHERE login=${len(params)}", *params
+        )
+    except Exception as e:
+        if "email" in str(e).lower() and "unique" in str(e).lower():
+            raise HTTPException(status_code=409, detail="Este email já está cadastrado em outro usuário.")
+        raise HTTPException(status_code=500, detail=f"Erro ao salvar: {str(e)[:120]}")
     return {"ok": True}
 
 @router.delete("/usuarios/{login}")
