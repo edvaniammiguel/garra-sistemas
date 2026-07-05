@@ -687,6 +687,37 @@ app.include_router(sistema_router)
 app.include_router(pages_router)
 
 @app.on_event("startup")
+async def criar_tabela_checklist_config():
+    """Config compartilhada do checklist (visibilidade de pontos + período)
+    — servidor = fonte única; todos os aparelhos leem a mesma regra."""
+    try:
+        await ajard_query("""
+            CREATE TABLE IF NOT EXISTS checklist.config (
+                chave TEXT PRIMARY KEY,
+                valor JSONB NOT NULL,
+                atualizado_em TIMESTAMPTZ DEFAULT now()
+            )""", fetch="none")
+    except Exception as e:
+        print(f"[Startup] checklist.config: {e}")
+
+@app.on_event("startup")
+async def criar_tabela_ajustes_pontos():
+    """Ajustes manuais de pontos do checklist (penalidade por má conduta
+    ou bônus) — somados ao ranking dentro do período."""
+    try:
+        await ajard_query("""
+            CREATE TABLE IF NOT EXISTS checklist.ajustes_pontos (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                usuario_login TEXT NOT NULL,
+                pts INT NOT NULL,
+                motivo TEXT NOT NULL,
+                criado_por TEXT,
+                criado_em TIMESTAMPTZ DEFAULT now()
+            )""", fetch="none")
+    except Exception as e:
+        print(f"[Startup] ajustes_pontos: {e}")
+
+@app.on_event("startup")
 async def seed_equipamento_combinado():
     """Equipamento padrão do sistema para apontamento de Combinados/Apoio.
     Categoria 'apoio': trabalho interno não motorizado (deslocamento, ajuda,
