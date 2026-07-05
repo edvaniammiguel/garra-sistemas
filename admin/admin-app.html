@@ -3135,7 +3135,7 @@ async function salvarOS() {
     tipo_servico_id:   document.getElementById('os-tipo-servico').value||null,
     equipamento_id:    document.getElementById('os-equipamento').value||null,
     operador_id:       document.getElementById('os-operador').value||null,
-    regime_cobranca:   document.getElementById('os-regime').value,
+    regime_cobranca:   document.getElementById('os-regime').value || undefined,
     valor_combinado:   parseFloat(document.getElementById('os-valor-combinado').value)||null,
     horas_padrao_dia:  parseFloat(document.getElementById('os-horas-padrao').value)||null,
     obra,
