@@ -852,7 +852,7 @@ async def op_atualizar_parte(parte_id: str, request: Request, payload=Depends(ve
     if existente.get("fechado"):
         raise HTTPException(status_code=400, detail="Parte já fechada — não pode editar")
 
-    campos = ["data","horas_cobradas","quantidade_diarias","quantidade_diarias_cobradas",
+    campos = ["data","horas_cobradas","valor","quantidade_diarias","quantidade_diarias_cobradas",
               "qtd_viagens","qtd_metros","observacao","hora_inicio","hora_fim",
               "horimetro_inicial","horimetro_final","km_inicial","km_final",
               "equipamento_id","operador_id","operador_nome_avulso",
@@ -1605,6 +1605,7 @@ async def op_resumo_mensal(payload=Depends(verificar_token)):
            JOIN operacional.ordens_servico os ON os.id = p.os_id
            WHERE os.operador_id = %s
              AND p.ativo = true
+             AND COALESCE(p.vinculo_operador, 'proprio') <> 'terceiro'
              AND p.data >= %s
              AND p.data <= %s""",
         (user["id"], primeiro_dia, hoje), fetch="one"
@@ -1729,3 +1730,39 @@ async def op_conflito_equipamento(eq_id: str, ignorar_os: str = None,
     if not row:
         return {"conflito": False}
     return {"conflito": True, "os": dict(row)}
+
+
+# ══════════════════════════════════════════════════════════════
+# OPERADOR EXCLUI SUA PRÓPRIA PARTE (05/07/2026)
+# Caso real: registro duplicado por engano. Soft delete (ativo=false),
+# mesmas guardas da edição: só o criador/operador da OS, não fechada.
+# ══════════════════════════════════════════════════════════════
+
+@router.delete("/operacional/api/minhas-partes/{parte_id}")
+async def op_excluir_minha_parte(parte_id: str, payload=Depends(verificar_token)):
+    login = payload.get("sub", "")
+    user = await ajard_query(
+        "SELECT id FROM public.usuarios_garra WHERE login=%s", (login,), fetch="one"
+    )
+    if not user:
+        raise HTTPException(status_code=404, detail="Usuário não encontrado")
+    parte = await ajard_query(
+        """SELECT p.id, p.criado_por, p.fechado, os.operador_id AS os_operador_id
+           FROM operacional.partes_diarias p
+           JOIN operacional.ordens_servico os ON os.id = p.os_id
+           WHERE p.id=%s AND p.ativo=true""",
+        (parte_id,), fetch="one"
+    )
+    if not parte:
+        raise HTTPException(status_code=404, detail="Registro não encontrado")
+    if parte.get("fechado"):
+        raise HTTPException(status_code=403, detail="Registro fechado — fale com a gestão.")
+    dono = str(parte.get("criado_por") or "") == str(user["id"]) or \
+           str(parte.get("os_operador_id") or "") == str(user["id"])
+    if not dono:
+        raise HTTPException(status_code=403, detail="Você só pode excluir os seus próprios registros.")
+    await ajard_query(
+        "UPDATE operacional.partes_diarias SET ativo=false WHERE id=%s",
+        (parte_id,), fetch="none"
+    )
+    return {"ok": True}
