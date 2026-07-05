@@ -523,6 +523,7 @@ async def op_listar_os(
             os.codigo_erp, os.obra, os.endereco, os.descricao,
             os.data_inicio, os.data_fim_prevista, os.data_fim_real,
             os.status, os.origem, os.criado_em,
+            os.regime_cobranca, os.valor_combinado, os.horas_padrao_dia,
             os.cliente_id, COALESCE(c.nome, os.cliente_nome_avulso) AS cliente_nome,
             os.cliente_nome_avulso,
             os.tipo_servico_id, ts.nome AS tipo_servico_nome,
