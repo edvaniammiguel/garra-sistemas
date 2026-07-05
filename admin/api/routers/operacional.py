@@ -1661,8 +1661,9 @@ async def op_editar_minha_parte(parte_id: str, request: Request, payload=Depends
         raise HTTPException(status_code=403, detail="Você só pode editar os seus próprios registros.")
 
     # Campos que o operador pode corrigir (medição + observação)
-    EDITAVEIS = ["horimetro_inicial", "horimetro_final", "hora_inicio", "hora_fim",
-                 "sem_almoco", "qtd_metros", "observacao"]
+    EDITAVEIS = ["data", "horimetro_inicial", "horimetro_final", "hora_inicio", "hora_fim",
+                 "sem_almoco", "qtd_metros", "observacao",
+                 "km_inicial", "km_final", "qtd_viagens"]
     merged = dict(parte)
     algum = False
     for c in EDITAVEIS:
@@ -1678,18 +1679,27 @@ async def op_editar_minha_parte(parte_id: str, request: Request, payload=Depends
         try: return float(v) if v not in (None, "") else None
         except (TypeError, ValueError): return None
 
+    k_ini = _num(merged.get("km_inicial")); k_fin = _num(merged.get("km_final"))
+    km_perc = round(k_fin - k_ini, 1) if (k_ini is not None and k_fin is not None) else None
+    try:
+        viagens = int(merged.get("qtd_viagens")) if merged.get("qtd_viagens") not in (None, "") else None
+    except (TypeError, ValueError):
+        viagens = None
     await ajard_query(
         """UPDATE operacional.partes_diarias
-           SET horimetro_inicial=%s, horimetro_final=%s,
+           SET data=%s, horimetro_inicial=%s, horimetro_final=%s,
                hora_inicio=%s, hora_fim=%s, sem_almoco=%s,
-               qtd_metros=%s, observacao=%s, horas_trabalhadas=%s
+               qtd_metros=%s, observacao=%s, horas_trabalhadas=%s,
+               km_inicial=%s, km_final=%s, km_percorrido=%s, qtd_viagens=%s
            WHERE id=%s""",
-        (_num(merged.get("horimetro_inicial")), _num(merged.get("horimetro_final")),
+        (merged.get("data"), _num(merged.get("horimetro_inicial")), _num(merged.get("horimetro_final")),
          merged.get("hora_inicio") or None, merged.get("hora_fim") or None,
          bool(merged.get("sem_almoco")),
          _num(merged.get("qtd_metros")),
          (merged.get("observacao") or "").strip() or None,
-         horas, parte_id),
+         horas,
+         k_ini, k_fin, km_perc, viagens,
+         parte_id),
         fetch="none"
     )
     return {"ok": True, "horas_trabalhadas": horas}
