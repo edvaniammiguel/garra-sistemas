@@ -108,6 +108,7 @@ const PontosConfig = {
   },
   save(cfg) { DB.set('garra_pontos_config', cfg); },
   visivel() {
+    if (typeof currentUser !== 'undefined' && currentUser?.role === 'manager') return true;
     const cfg = this.get();
     if (!cfg.ativo) return false;
     const hoje = new Date().toISOString().slice(0,10);
@@ -2369,6 +2370,7 @@ function salvarPontosConfig(rerender = true) {
     if (r.ok) {
       const cfg = await r.json();
       DB.set('garra_pontos_config', cfg);
+      try { if (typeof renderPontosConfigPanel === 'function') renderPontosConfigPanel(); } catch(e) {}
     }
   } catch(e) { /* offline: usa cache local */ }
 })();
