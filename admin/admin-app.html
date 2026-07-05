@@ -3526,6 +3526,7 @@ function abrirModalEquipamento(eq = null) {
               <option value="retroescavadeira" ${e.categoria==='retroescavadeira'?'selected':''}>Retroescavadeira</option>
               <option value="compactador" ${e.categoria==='compactador'?'selected':''}>Compactador</option>
               <option value="carro" ${e.categoria==='carro'?'selected':''}>Carro / Veículo</option>
+              <option value="apoio" ${e.categoria==='apoio'?'selected':''}>Apoio / Combinado (não motorizado)</option>
               <option value="outro" ${e.categoria==='outro'?'selected':''}>Outro</option>
             </select>
           </div>
@@ -4177,7 +4178,34 @@ function renderControleMensal(dados) {
         </tr></thead>
         <tbody>`;
 
-    grupo.partes.sort((a,b) => (a.data||'').localeCompare(b.data||'')).forEach(p => {
+    // ── Linhas "Não rodou": injeta lacunas de dias (seg–sáb) sem apontamento ──
+    // Só na visão por equipamento e só em mês específico (não no ano inteiro)
+    let linhas = grupo.partes.slice().sort((a,b) => (a.data||'').localeCompare(b.data||''));
+    if (_cmView === 'equipamento' && dados.mes && grupo.partes[0]?.equipamento_id) {
+      const diasComRegistro = new Set(grupo.partes.map(p => p.data));
+      const hoje = new Date();
+      const ehMesAtual = (dados.ano === hoje.getFullYear() && dados.mes === (hoje.getMonth()+1));
+      const ultimoDia = ehMesAtual ? hoje.getDate() : dados.dias_no_mes;
+      const gaps = [];
+      for (let d = 1; d <= ultimoDia; d++) {
+        const dt = new Date(dados.ano, dados.mes-1, d);
+        if (dt.getDay() === 0) continue; // domingo não conta
+        const iso = `${dados.ano}-${String(dados.mes).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+        if (!diasComRegistro.has(iso)) gaps.push({ data: iso, _gap: true });
+      }
+      linhas = linhas.concat(gaps).sort((a,b) => (a.data||'').localeCompare(b.data||''));
+    }
+
+    linhas.forEach(p => {
+      if (p._gap) {
+        let dataFmt = p.data;
+        try { dataFmt = new Date(p.data+'T00:00').toLocaleDateString('pt-BR'); } catch(e){}
+        html += `<tr style="border-bottom:1px solid #F1F5F9;background:#F8FAFC">
+          <td style="padding:6px 8px;color:var(--muted)">${dataFmt}</td>
+          <td colspan="10" style="padding:6px 8px;color:var(--muted);font-style:italic">— Não rodou (sem apontamento) —</td>
+        </tr>`;
+        return;
+      }
       const med = p.tipo_medicao || p.equipamento_medicao || 'horimetro';
       let ini='', fin='', trab=0, cobr=0;
 
