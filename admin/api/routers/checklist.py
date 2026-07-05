@@ -216,16 +216,89 @@ async def checklist_ranking(inicio: str = None, fim: str = None,
             where.append(f"e.enviado_em::date <= ${len(args)}")
     except ValueError:
         raise HTTPException(status_code=400, detail="Período inválido (use YYYY-MM-DD)")
+    cond = ' AND '.join(where)
+    cond_aj = cond.replace('e.enviado_em', 'a.criado_em')
     rows = await db.fetch(
-        f"""SELECT e.usuario_login AS login,
-                  COALESCE(MAX(u.nome), MAX(e.usuario_nome)) AS nome,
-                  COUNT(*)::int AS envios,
-                  COALESCE(SUM(e.pts), 0)::int AS pts
-           FROM checklist.envios e
-           LEFT JOIN public.usuarios_garra u ON u.login = e.usuario_login
-           WHERE {' AND '.join(where)}
-           GROUP BY e.usuario_login
+        f"""WITH env AS (
+              SELECT e.usuario_login AS login,
+                     MAX(e.usuario_nome) AS nome,
+                     COUNT(*)::int AS envios,
+                     COALESCE(SUM(e.pts), 0)::int AS pts
+              FROM checklist.envios e
+              WHERE {cond}
+              GROUP BY e.usuario_login
+           ), aj AS (
+              SELECT a.usuario_login AS login,
+                     COALESCE(SUM(a.pts), 0)::int AS pts
+              FROM checklist.ajustes_pontos a
+              WHERE {cond_aj}
+              GROUP BY a.usuario_login
+           )
+           SELECT COALESCE(env.login, aj.login) AS login,
+                  COALESCE(MAX(u.nome), MAX(env.nome), COALESCE(env.login, aj.login)) AS nome,
+                  COALESCE(MAX(env.envios), 0)::int AS envios,
+                  (COALESCE(MAX(env.pts), 0) + COALESCE(MAX(aj.pts), 0))::int AS pts
+           FROM env
+           FULL OUTER JOIN aj ON aj.login = env.login
+           LEFT JOIN public.usuarios_garra u ON u.login = COALESCE(env.login, aj.login)
+           GROUP BY COALESCE(env.login, aj.login)
            ORDER BY pts DESC, envios DESC""",
         *args
     )
     return [dict(r) for r in rows]
+
+
+@router.post("/checklist/pontos-ajuste")
+async def checklist_ajustar_pontos(request: Request, _auth=Depends(verificar_token), db=Depends(get_db)):
+    """Gestor aplica penalidade (pts negativo) ou bônus a um colaborador."""
+    if _auth.get("perfil") not in ("admin", "gestor"):
+        raise HTTPException(status_code=403, detail="Apenas gestores podem ajustar pontos.")
+    d = await request.json()
+    login = (d.get("login") or "").strip()
+    motivo = (d.get("motivo") or "").strip()
+    try:
+        pts = int(d.get("pts"))
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="Pontos inválidos.")
+    if not login or not motivo or pts == 0:
+        raise HTTPException(status_code=400, detail="Informe login, pontos (≠0) e motivo.")
+    await db.execute(
+        """INSERT INTO checklist.ajustes_pontos (usuario_login, pts, motivo, criado_por)
+           VALUES ($1, $2, $3, $4)""",
+        login, pts, motivo, _auth.get("sub", "")
+    )
+    return {"ok": True, "login": login, "pts": pts}
+
+
+# ══════════════════════════════════════════════════════════════
+# CONFIG DE PONTOS NO SERVIDOR (05/07/2026) — os campos de data
+# não funcionavam (re-render matava o input) E a config era local
+# por aparelho. Agora: fonte única, todos leem a mesma regra.
+# ══════════════════════════════════════════════════════════════
+
+@router.get("/checklist/pontos-config")
+async def checklist_get_pontos_config(_auth=Depends(verificar_token), db=Depends(get_db)):
+    row = await db.fetchrow("SELECT valor FROM checklist.config WHERE chave='pontos'")
+    if not row:
+        return {"ativo": False, "data_inicio": None, "data_fim": None}
+    import json as _json
+    v = row["valor"]
+    return _json.loads(v) if isinstance(v, str) else v
+
+
+@router.put("/checklist/pontos-config")
+async def checklist_put_pontos_config(request: Request, _auth=Depends(verificar_token), db=Depends(get_db)):
+    if _auth.get("perfil") not in ("admin", "gestor"):
+        raise HTTPException(status_code=403, detail="Apenas gestores.")
+    d = await request.json()
+    import json as _json
+    cfg = {"ativo": bool(d.get("ativo")),
+           "data_inicio": d.get("data_inicio") or None,
+           "data_fim": d.get("data_fim") or None}
+    await db.execute(
+        """INSERT INTO checklist.config (chave, valor, atualizado_em)
+           VALUES ('pontos', $1::jsonb, now())
+           ON CONFLICT (chave) DO UPDATE SET valor=$1::jsonb, atualizado_em=now()""",
+        _json.dumps(cfg)
+    )
+    return {"ok": True, **cfg}
