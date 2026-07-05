@@ -4411,7 +4411,7 @@ function renderControleMensal(dados) {
         <td style="padding:6px 8px;text-align:right;font-weight:700;color:var(--orange);${(!p.fechado&&med!=='km')?'cursor:pointer;text-decoration:underline dotted':''}"
             ${(!p.fechado&&med!=='km')?(med==='metros'
               ?`onclick="cmEditarMetros('${p.id}', this, ${cobr||0})" title="Clique para ajustar os metros"`
-              :`onclick="cmEditarCobr('${p.id}', this, ${cobr||0})" title="Clique para ajustar (considerar)"`):''}>${cobr ? cobr.toFixed(1) : '0'}${med==='metros'?' <span style="font-size:9px">m</span>':''}</td>
+              :`onclick="cmEditarCobr('${p.id}', this, ${cobr||0})" title="Clique para ajustar (considerar)"`):''} ${p.fechado?'title="Parte FECHADA — reabra a OS para editar"':''}>${cobr ? cobr.toFixed(1) : '0'}${med==='metros'?' <span style="font-size:9px">m</span>':''}${p.fechado?' <span style="font-size:10px" title="Fechada — não editável">🔒</span>':''}</td>
         <td style="padding:6px 8px;text-align:center;font-size:10px">${med==='metros' ? '<span style="color:var(--blue);font-weight:700">metros</span>' : (med==='km' ? '<span style="color:var(--blue);font-weight:700">km</span>' : esc(p.regime_cobranca||''))}</td>
         <td style="padding:6px 8px;text-align:center;font-size:10px">${esc(p.por_conta_de||'')}</td>
       </tr>`;
