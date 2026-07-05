@@ -4299,7 +4299,7 @@ function renderControleMensal(dados) {
         <td style="padding:6px 8px;text-align:right;font-weight:700;${trabSuspeito?'color:var(--red)':''}">${trab ? trab.toFixed(1) : '0'}${avisoTrab}</td>
         <td style="padding:6px 8px;text-align:right;font-weight:700;color:var(--orange);${(med!=='km'&&med!=='metros'&&!p.fechado)?'cursor:pointer;text-decoration:underline dotted':''}"
             ${(med!=='km'&&med!=='metros'&&!p.fechado)?`onclick="cmEditarCobr('${p.id}', this, ${cobr||0})" title="Clique para ajustar (considerar)"`:''}>${cobr ? cobr.toFixed(1) : '0'}</td>
-        <td style="padding:6px 8px;text-align:center;font-size:10px">${esc(p.regime_cobranca||'')}</td>
+        <td style="padding:6px 8px;text-align:center;font-size:10px">${med==='metros' ? '<span style="color:var(--blue);font-weight:700">metros</span>' : (med==='km' ? '<span style="color:var(--blue);font-weight:700">km</span>' : esc(p.regime_cobranca||''))}</td>
         <td style="padding:6px 8px;text-align:center;font-size:10px">${esc(p.por_conta_de||'')}</td>
       </tr>`;
     });
