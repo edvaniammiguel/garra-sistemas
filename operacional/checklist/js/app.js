@@ -1791,7 +1791,7 @@ function showSubmissionDetail(id) {
 // ─── MODAIS / UTILS ────────────────────────────────
 function openModal(id)  { document.getElementById(id).classList.remove('hidden'); }
 function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
-function formatDate(iso)     { if(!iso)return'–';return new Date(iso).toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric'}); }
+function formatDate(iso)     { if(!iso)return'–';const s=String(iso);const d=/^\d{4}-\d{2}-\d{2}$/.test(s)?new Date(s+'T00:00'):new Date(s);return d.toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric'}); }
 function formatDateTime(iso) { if(!iso)return'–';return new Date(iso).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}); }
 
 // ─── SERVICE WORKER ────────────────────────────────
