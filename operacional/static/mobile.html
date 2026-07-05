@@ -1953,10 +1953,11 @@ async function carregarHistoricoOS() {
               <span style="font-size:32px;font-weight:800">${res.total_horas}h</span>
               <span style="font-size:13px;opacity:.7">trabalhadas</span>
             </div>
-            <div style="display:flex;gap:16px;font-size:12px;opacity:.85">
+            <div style="display:flex;gap:14px;font-size:12px;opacity:.85;flex-wrap:wrap">
               <div>📅 ${res.dias_trabalhados} dias</div>
               <div>📋 ${res.total_apontamentos} apontamentos</div>
               <div>🔧 ${res.total_os} OS</div>
+              ${res.total_metros > 0 ? `<div>📏 ${res.total_metros} m</div>` : ''}
             </div>
           </div>`;
       }
@@ -2231,6 +2232,7 @@ async function abrirCartilhaMobile() {
 
 async function verPartes(osId, osNum) {
   const token = localStorage.getItem('garra_token') || '';
+  window._vpOsId = osId; window._vpOsNum = osNum;
   let partes = [];
   try {
     const r = await fetch('/operacional/api/os/' + osId + '/partes', {
@@ -2246,7 +2248,8 @@ async function verPartes(osId, osNum) {
   if (!partes.length) {
     linhas = '<div style="padding:30px;text-align:center;color:var(--muted)">Nenhuma parte registrada</div>';
   } else {
-    partes.forEach(p => {
+    window._vpPartes = partes;
+    partes.forEach((p, _idx) => {
       let dataFmt = p.data || '';
       try { dataFmt = new Date(p.data + 'T00:00').toLocaleDateString('pt-BR'); } catch(e){}
       const med = p.tipo_medicao || 'horimetro';
@@ -2302,7 +2305,10 @@ async function verPartes(osId, osNum) {
               <strong style="font-size:13px;color:var(--blue)">${dataFmt}</strong>
               ${metaLinha ? `<div style="font-size:11px;color:var(--muted);margin-top:2px">${metaLinha}</div>` : ''}
             </div>
-            <span style="font-size:14px;font-weight:800;color:var(--orange);white-space:nowrap">${medInfo}</span>
+            <div style="display:flex;align-items:center;gap:8px">
+              <span style="font-size:14px;font-weight:800;color:var(--orange);white-space:nowrap">${medInfo}</span>
+              ${!p.fechado ? `<button onclick="abrirEditarParte(${_idx})" style="background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:4px 8px;font-size:13px;cursor:pointer">✎</button>` : ''}
+            </div>
           </div>
           ${detalhes ? `<div style="font-size:11px;color:var(--muted);margin-top:5px">${detalhes}</div>` : ''}
           ${p.observacao ? `<div style="font-size:12px;color:var(--text);margin-top:4px;background:var(--bg);padding:6px 8px;border-radius:6px">${p.observacao}</div>` : ''}
@@ -2323,6 +2329,98 @@ async function verPartes(osId, osNum) {
       ${linhas}
     </div>`;
   document.body.appendChild(modal);
+}
+
+// ── EDITAR MINHA PARTE (conferir/corrigir horímetro, horários, metros, obs) ──
+function abrirEditarParte(idx) {
+  const p = (window._vpPartes || [])[idx];
+  if (!p) return;
+  const med = p.tipo_medicao || 'horimetro';
+  const v = (x) => (x === null || x === undefined) ? '' : x;
+  const hIni = p.hora_inicio ? String(p.hora_inicio).slice(0,5) : '';
+  const hFim = p.hora_fim ? String(p.hora_fim).slice(0,5) : '';
+  let campos = '';
+  if (med === 'metros') {
+    campos = `
+      <label style="font-size:12px;font-weight:700;color:var(--muted)">Metros executados</label>
+      <input id="ep-metros" type="number" step="0.1" min="0" value="${v(p.qtd_metros)}" style="width:100%;padding:11px;border:1.5px solid var(--border);border-radius:8px;font-size:15px;box-sizing:border-box;margin:4px 0 12px">`;
+  } else {
+    campos = `
+      <div style="display:flex;gap:10px">
+        <div style="flex:1">
+          <label style="font-size:12px;font-weight:700;color:var(--muted)">Horímetro inicial</label>
+          <input id="ep-hini" type="number" step="0.1" value="${v(p.horimetro_inicial)}" style="width:100%;padding:11px;border:1.5px solid var(--border);border-radius:8px;font-size:15px;box-sizing:border-box;margin:4px 0 12px">
+        </div>
+        <div style="flex:1">
+          <label style="font-size:12px;font-weight:700;color:var(--muted)">Horímetro final</label>
+          <input id="ep-hfin" type="number" step="0.1" value="${v(p.horimetro_final)}" style="width:100%;padding:11px;border:1.5px solid var(--border);border-radius:8px;font-size:15px;box-sizing:border-box;margin:4px 0 12px">
+        </div>
+      </div>
+      <div style="display:flex;gap:10px">
+        <div style="flex:1">
+          <label style="font-size:12px;font-weight:700;color:var(--muted)">Hora início</label>
+          <input id="ep-horaini" type="time" value="${hIni}" style="width:100%;padding:11px;border:1.5px solid var(--border);border-radius:8px;font-size:15px;box-sizing:border-box;margin:4px 0 12px">
+        </div>
+        <div style="flex:1">
+          <label style="font-size:12px;font-weight:700;color:var(--muted)">Hora fim</label>
+          <input id="ep-horafim" type="time" value="${hFim}" style="width:100%;padding:11px;border:1.5px solid var(--border);border-radius:8px;font-size:15px;box-sizing:border-box;margin:4px 0 12px">
+        </div>
+      </div>
+      <label style="display:flex;align-items:center;gap:8px;font-size:13px;margin-bottom:12px">
+        <input id="ep-semalmoco" type="checkbox" ${p.sem_almoco ? 'checked' : ''}> Dia corrido (sem desconto de almoço)
+      </label>`;
+  }
+  let dataFmt = p.data || '';
+  try { dataFmt = new Date(p.data + 'T00:00').toLocaleDateString('pt-BR'); } catch(e){}
+  const m = document.createElement('div');
+  m.id = 'modal-editar-parte';
+  m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:410;display:flex;align-items:flex-end';
+  m.onclick = (e) => { if (e.target === m) m.remove(); };
+  m.innerHTML = `
+    <div style="background:#fff;width:100%;border-radius:12px 12px 0 0;padding:20px;max-height:85dvh;overflow-y:auto">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+        <h2 style="font-size:16px;font-weight:800;color:var(--blue)">✎ Corrigir registro — ${dataFmt}</h2>
+        <button onclick="document.getElementById('modal-editar-parte').remove()" style="background:none;border:none;font-size:24px;color:var(--muted);cursor:pointer">×</button>
+      </div>
+      <div id="ep-err" style="display:none;background:#FEE;color:#C00;padding:10px;border-radius:8px;font-size:13px;margin-bottom:12px"></div>
+      ${campos}
+      <label style="font-size:12px;font-weight:700;color:var(--muted)">Observação</label>
+      <textarea id="ep-obs" rows="2" style="width:100%;padding:11px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;box-sizing:border-box;margin:4px 0 16px">${v(p.observacao)}</textarea>
+      <button onclick="salvarEdicaoParte('${p.id}','${med}')" style="width:100%;padding:14px;border:none;background:var(--orange);color:#fff;border-radius:8px;font-weight:700;font-size:15px;cursor:pointer">💾 Salvar correção</button>
+    </div>`;
+  document.body.appendChild(m);
+}
+
+async function salvarEdicaoParte(parteId, med) {
+  const err = document.getElementById('ep-err');
+  err.style.display = 'none';
+  const body = { observacao: document.getElementById('ep-obs').value };
+  if (med === 'metros') {
+    body.qtd_metros = document.getElementById('ep-metros').value || null;
+  } else {
+    body.horimetro_inicial = document.getElementById('ep-hini').value || null;
+    body.horimetro_final   = document.getElementById('ep-hfin').value || null;
+    body.hora_inicio       = document.getElementById('ep-horaini').value || null;
+    body.hora_fim          = document.getElementById('ep-horafim').value || null;
+    body.sem_almoco        = document.getElementById('ep-semalmoco').checked;
+  }
+  try {
+    const token = localStorage.getItem('garra_token') || '';
+    const r = await fetch('/operacional/api/minhas-partes/' + parteId, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+      body: JSON.stringify(body)
+    });
+    const resp = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(resp.detail || 'Erro ao salvar');
+    document.getElementById('modal-editar-parte')?.remove();
+    document.getElementById('modal-ver-partes')?.remove();
+    if (typeof toast === 'function') toast('✅ Registro corrigido' + (resp.horas_trabalhadas != null ? ` — ${resp.horas_trabalhadas}h` : ''), 'success');
+    verPartes(window._vpOsId, window._vpOsNum);
+  } catch (e) {
+    err.textContent = e.message;
+    err.style.display = 'block';
+  }
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
