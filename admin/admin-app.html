@@ -4251,6 +4251,37 @@ function cmOperAtualizarLabel(nome) {
   if (!sel.value) inp.placeholder = 'Todos os colaboradores';
 }
 
+function cmEditarSelect(parteId, campo, td, atualId) {
+  if (td.querySelector('select')) return;
+  const original = td.innerHTML;
+  let opts = '';
+  if (campo === 'por_conta_de') {
+    opts = ['empresa','cliente'].map(v => `<option value="${v}" ${v===atualId?'selected':''}>${v}</option>`).join('');
+  } else {
+    const lista = (campo === 'equipamento_id') ? (_cmDados?.equipamentos||[]) : (_cmDados?.operadores||[]);
+    if (!lista.length) { toast('Lista indisponível — recarregue a página', 'error'); return; }
+    opts = lista.map(o => `<option value="${o.id}" ${String(o.id)===String(atualId)?'selected':''}>${esc(o.codigo ? (o.codigo+' — '+(o.descricao||'')) : o.nome)}</option>`).join('');
+  }
+  td.innerHTML = `<select style="padding:4px 6px;border:1.5px solid var(--blue);border-radius:6px;font-size:12px;max-width:170px">${opts}</select>`;
+  const sel = td.querySelector('select');
+  sel.focus();
+  let done = false;
+  const salvar = async () => {
+    if (done) return; done = true;
+    const val = sel.value;
+    if (!val || String(val) === String(atualId)) { td.innerHTML = original; return; }
+    try {
+      const body = {}; body[campo] = val;
+      await apiFetch(`/operacional/api/partes/${parteId}`, { method:'PATCH', body: JSON.stringify(body) });
+      toast('✅ Registro atualizado', 'success');
+      carregarControleMensal();
+    } catch (e) { toast('❌ ' + (e.message||'Erro'), 'error'); td.innerHTML = original; }
+  };
+  sel.addEventListener('change', salvar);
+  sel.addEventListener('blur', () => { if (!done) td.innerHTML = original; });
+  sel.addEventListener('keydown', ev => { if (ev.key === 'Escape') { done = true; td.innerHTML = original; } });
+}
+
 function cmEditarCampo(parteId, campo, td, atual, tipo) {
   if (td.querySelector('input')) return;
   const original = td.innerHTML;
@@ -4515,7 +4546,8 @@ function renderControleMensal(dados) {
         <td style="padding:6px 8px;font-size:11px;font-weight:600;color:var(--blue)">${esc(p.os_numero||'–')}</td>
         <td style="padding:6px 8px;font-size:11px">${p.codigo_erp?`<span style="color:var(--green);font-weight:600">${esc(p.codigo_erp)}</span>`:'<span style="color:var(--muted)">–</span>'}</td>
         <td style="padding:6px 8px">${esc(p.cliente_nome||'')}</td>
-        <td style="padding:6px 8px">${col4}</td>
+        <td style="padding:6px 8px;${!p.fechado?'cursor:pointer;text-decoration:underline dotted':''}"
+            ${!p.fechado?`onclick="cmEditarSelect('${p.id}', '${_cmView==='colaborador'?'equipamento_id':'operador_id'}', this, '${_cmView==='colaborador'?(p.equipamento_id||''):(p.operador_id||'')}')" title="Clique para trocar"`:''}>${col4}</td>
         <td style="padding:6px 8px;text-align:right;${(!p.fechado&&med!=='metros')?'cursor:pointer;text-decoration:underline dotted':''}"
             ${(!p.fechado&&med!=='metros')?`onclick="cmEditarCampo('${p.id}','${med==='km'?'km_inicial':'horimetro_inicial'}',this,${ini||0},'number')" title="Clique para corrigir"`:''}>${ini !== '' ? ini : '–'}</td>
         <td style="padding:6px 8px;text-align:right;${(!p.fechado&&med!=='metros')?'cursor:pointer;text-decoration:underline dotted':''}"
@@ -4528,7 +4560,8 @@ function renderControleMensal(dados) {
         <td style="padding:6px 8px;text-align:right;font-weight:700;color:var(--green);${!p.fechado?'cursor:pointer;text-decoration:underline dotted':''}"
             ${!p.fechado?`onclick="cmEditarValor('${p.id}', this, ${parseFloat(p.valor||0)})" title="Valor do dia (fechamento/comissão)"`:''}>${p.valor!=null&&p.valor!==''?('R$ '+parseFloat(p.valor).toFixed(2)):'–'}${p.fechado?' <span style="font-size:10px">🔒</span>':''}</td>
         <td style="padding:6px 8px;text-align:center;font-size:10px">${med==='metros' ? '<span style="color:var(--blue);font-weight:700">metros</span>' : (med==='km' ? '<span style="color:var(--blue);font-weight:700">km</span>' : esc(p.regime_cobranca||''))}</td>
-        <td style="padding:6px 8px;text-align:center;font-size:10px">${esc(p.por_conta_de||'')}</td>
+        <td style="padding:6px 8px;text-align:center;font-size:10px;${!p.fechado?'cursor:pointer;text-decoration:underline dotted':''}"
+            ${!p.fechado?`onclick="cmEditarSelect('${p.id}', 'por_conta_de', this, '${p.por_conta_de||'empresa'}')" title="Empresa ou cliente?"`:''}>${esc(p.por_conta_de||'')}</td>
       </tr>`;
     });
 
