@@ -1788,7 +1788,7 @@ function atualizarVinculo() {
   if (lbl) {
     lbl.textContent = (v === 'diarista') ? 'Nome do diarista'
                     : (v === 'frete') ? 'Transportadora / dono'
-                    : 'Fornecedor / dono da máquina';
+                    : 'Fornecedor / dono do equipamento';
   }
   // Por conta de: terceiro/frete normalmente é custo da empresa
   const porConta = document.getElementById('m-por-conta');
@@ -2435,8 +2435,29 @@ function abrirEditarParte(idx) {
       <label style="font-size:12px;font-weight:700;color:var(--muted)">Observação</label>
       <textarea id="ep-obs" rows="2" style="width:100%;padding:11px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;box-sizing:border-box;margin:4px 0 16px">${v(p.observacao)}</textarea>
       <button onclick="salvarEdicaoParte('${p.id}','${med}')" style="width:100%;padding:14px;border:none;background:var(--orange);color:#fff;border-radius:8px;font-weight:700;font-size:15px;cursor:pointer">💾 Salvar correção</button>
+      <button onclick="excluirMinhaParte('${p.id}')" style="width:100%;padding:12px;border:1.5px solid #DC2626;background:#fff;color:#DC2626;border-radius:8px;font-weight:700;font-size:14px;cursor:pointer;margin-top:10px">🗑️ Excluir registro (duplicado)</button>
     </div>`;
   document.body.appendChild(m);
+}
+
+async function excluirMinhaParte(parteId) {
+  if (!confirm('Excluir este registro?\n\nUse apenas em caso de DUPLICIDADE. Esta ação não pode ser desfeita.')) return;
+  try {
+    const token = localStorage.getItem('garra_token') || '';
+    const r = await fetch('/operacional/api/minhas-partes/' + parteId, {
+      method: 'DELETE',
+      headers: { 'Authorization': 'Bearer ' + token }
+    });
+    const resp = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(resp.detail || 'Erro ao excluir');
+    document.getElementById('modal-editar-parte')?.remove();
+    document.getElementById('modal-ver-partes')?.remove();
+    if (typeof toast === 'function') toast('🗑️ Registro excluído', 'success');
+    verPartes(window._vpOsId, window._vpOsNum);
+  } catch (e) {
+    const err = document.getElementById('ep-err');
+    if (err) { err.textContent = e.message; err.style.display = 'block'; }
+  }
 }
 
 async function salvarEdicaoParte(parteId, med) {
