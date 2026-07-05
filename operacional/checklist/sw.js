@@ -2,7 +2,7 @@
    sw.js — Garra Check List v11 — 20260705 (ranking servidor)
 ═══════════════════════════════════════════════════ */
 
-const CACHE = 'garra-v17-20260705g';
+const CACHE = 'garra-v18-20260705h';
 
 const APP_SHELL = [
   '/index.html',
