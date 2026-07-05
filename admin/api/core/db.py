@@ -93,18 +93,30 @@ def _converter_placeholders(sql: str) -> str:
         numerado.append(out)
     return "%".join(numerado)
 
+def _coagir_datas(args):
+    """asyncpg é estrito com tipos: strings de data e hora (JSON universal)
+    viram objetos nativos. Fonte única — usada por ajard_query E ajard_query_id.
+    (Regra 56 — psycopg2 aceitava strings; asyncpg exige date/time nativos.)"""
+    import re as _re
+    from datetime import date as _date, time as _time
+    for i, v in enumerate(args):
+        if isinstance(v, str):
+            if len(v) == 10 and v[4:5] == '-':
+                try:
+                    args[i] = _date.fromisoformat(v)
+                    continue
+                except (ValueError, TypeError):
+                    pass
+            if _re.fullmatch(r'\d{2}:\d{2}(:\d{2})?', v):
+                try:
+                    args[i] = _time.fromisoformat(v)
+                except (ValueError, TypeError):
+                    pass
+    return args
+
 async def ajard_query(sql, params=None, fetch="all"):
     pool = await _get_apool()
-    args = list(params) if params else []
-    # asyncpg é estrito com tipos: strings de data/datetime vindas do front
-    # precisam virar objetos nativos (psycopg2 aceitava strings em silêncio).
-    for i, v in enumerate(args):
-        if isinstance(v, str) and len(v) == 10:
-            try:
-                from datetime import date as _date
-                args[i] = _date.fromisoformat(v)
-            except (ValueError, TypeError):
-                pass
+    args = _coagir_datas(list(params) if params else [])
     async with pool.acquire() as conn:
         if fetch == "none" and not args:
             # protocolo simples: aceita SQL com múltiplos comandos (DDL)
@@ -122,7 +134,7 @@ async def ajard_query(sql, params=None, fetch="all"):
 
 async def ajard_query_id(sql, params=None):
     pool = await _get_apool()
-    args = list(params) if params else []
+    args = _coagir_datas(list(params) if params else [])
     q = _converter_placeholders(sql + " RETURNING *")
     async with pool.acquire() as conn:
         row = await conn.fetchrow(q, *args)
