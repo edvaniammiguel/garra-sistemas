@@ -175,6 +175,12 @@ async def startup():
                 ALTER TABLE operacional.partes_diarias
                 ADD COLUMN IF NOT EXISTS sem_almoco BOOLEAN DEFAULT false
             """)
+            # Migration: VALOR por dia/parte (fechamento do Combinado — Edvania
+            # define no Controle Mensal; base da comissão exata)
+            await conn.execute("""
+                ALTER TABLE operacional.partes_diarias
+                ADD COLUMN IF NOT EXISTS valor NUMERIC(12,2)
+            """)
             # Migration: nome do equipamento de terceiro (quando vínculo=terceiro)
             await conn.execute("""
                 ALTER TABLE operacional.partes_diarias
