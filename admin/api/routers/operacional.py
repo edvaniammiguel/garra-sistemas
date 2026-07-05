@@ -461,14 +461,15 @@ async def op_criar_os(request: Request, payload=Depends(verificar_gestor)):
                 equipamento_id, operador_id,
                 obra, endereco, descricao,
                 data_inicio, data_fim_prevista,
-                status, origem, criado_por)
-               VALUES (%s,%s,%s,%s,%s,%s, %s,%s,%s, %s,%s, %s,%s,%s, %s,%s, %s,%s,%s)""",
+                status, origem, criado_por, horas_padrao_dia)
+               VALUES (%s,%s,%s,%s,%s,%s, %s,%s,%s, %s,%s, %s,%s,%s, %s,%s, %s,%s,%s, %s)""",
             (numero, ano, sequencia, codigo_erp, codigo_erp_em, codigo_erp_por,
              cliente_id, cliente_nome_avulso, tipo_servico_id,
              equipamento_id, operador_id,
              obra, endereco, descricao,
              data_inicio, data_fim_prevista,
-             status, origem, criado_por_id)
+             status, origem, criado_por_id,
+             float(d.get("horas_padrao_dia")) if d.get("horas_padrao_dia") else None)
         )
         return dict(os_row)
     except Exception as e:
@@ -581,14 +582,14 @@ async def op_atualizar_os(os_id: str, request: Request, payload=Depends(verifica
                         "data_fim_prevista", "data_fim_real", "status",
                         "tipo_servico_id", "cliente_id", "cliente_nome_avulso",
                         "equipamento_id", "operador_id",
-                        "regime_cobranca", "valor_combinado", "data_inicio"]
+                        "regime_cobranca", "valor_combinado", "data_inicio", "horas_padrao_dia"]
     updates = []
     params = []
     for campo in campos_editaveis:
         if campo in d:
             val = d[campo]
             # valor_combinado: aceitar número, vazio vira NULL
-            if campo == "valor_combinado":
+            if campo in ("valor_combinado", "horas_padrao_dia"):
                 val = float(val) if (val not in (None, "")) else None
             elif val == "":
                 val = None
@@ -718,6 +719,19 @@ async def op_criar_parte(os_id: str, request: Request, payload=Depends(verificar
     except (TypeError, ValueError):
         qtd_metros = None
 
+    # "Considerar X horas" (padrão por OS — planilha da Luana): se a OS tem
+    # horas_padrao_dia configurado e há horas reais, a cobrada nasce com o padrão.
+    horas_cobradas_padrao = None
+    try:
+        os_pad = await ajard_query(
+            "SELECT horas_padrao_dia FROM operacional.ordens_servico WHERE id=%s",
+            (os_id,), fetch="one"
+        )
+        if os_pad and os_pad.get("horas_padrao_dia") and horas and float(horas) > 0:
+            horas_cobradas_padrao = float(os_pad["horas_padrao_dia"])
+    except Exception:
+        pass
+
     try:
         parte = await ajard_query_id(
             """INSERT INTO operacional.partes_diarias
@@ -726,8 +740,9 @@ async def op_criar_parte(os_id: str, request: Request, payload=Depends(verificar
                 tipo_medicao, horimetro_inicial, horimetro_final, horas_trabalhadas,
                 km_inicial, km_final, km_percorrido,
                 quantidade_diarias, qtd_viagens, qtd_metros,
-                vinculo_operador, fornecedor, equipamento_terceiro, observacao, trajeto, por_conta_de, sem_almoco, criado_por)
-               VALUES (%s,%s,%s,%s, %s,%s,%s, %s,%s,%s,%s, %s,%s,%s, %s,%s,%s, %s,%s,%s,%s,%s,%s,%s,%s)""",
+                vinculo_operador, fornecedor, equipamento_terceiro, observacao, trajeto, por_conta_de, sem_almoco, criado_por,
+                horas_cobradas)
+               VALUES (%s,%s,%s,%s, %s,%s,%s, %s,%s,%s,%s, %s,%s,%s, %s,%s,%s, %s,%s,%s,%s,%s,%s,%s,%s, %s)""",
             (os_id, equipamento_id, operador_id, d.get("operador_nome_avulso"),
              data, d.get("hora_inicio"), d.get("hora_fim"),
              d.get("tipo_medicao","horimetro"), h_ini, h_fin, horas,
@@ -736,7 +751,8 @@ async def op_criar_parte(os_id: str, request: Request, payload=Depends(verificar
              d.get("vinculo_operador","proprio"), d.get("fornecedor"), equipamento_terceiro,
              d.get("observacao"),
              d.get("trajeto"), d.get("por_conta_de","empresa"), bool(d.get("sem_almoco")),
-             criado_por_id)
+             criado_por_id,
+             horas_cobradas_padrao)
         )
         # Atualizar horímetro atual do equipamento (só equipamento próprio da Garra)
         if h_fin is not None and equipamento_id:
@@ -892,11 +908,13 @@ async def op_fechar_os(os_id: str, request: Request, payload=Depends(verificar_g
 
     # Auto-preencher horas_cobradas = horas_trabalhadas onde não foi editado (cobradas=0 ou null)
     await ajard_query(
-        """UPDATE operacional.partes_diarias
-           SET horas_cobradas = horas_trabalhadas
-           WHERE os_id=%s AND ativo=true AND fechado=false
-             AND (horas_cobradas IS NULL OR horas_cobradas = 0)
-             AND horas_trabalhadas > 0""",
+        """UPDATE operacional.partes_diarias pd
+           SET horas_cobradas = COALESCE(os.horas_padrao_dia, pd.horas_trabalhadas)
+           FROM operacional.ordens_servico os
+           WHERE os.id = pd.os_id
+             AND pd.os_id=%s AND pd.ativo=true AND pd.fechado=false
+             AND (pd.horas_cobradas IS NULL OR pd.horas_cobradas = 0)
+             AND pd.horas_trabalhadas > 0""",
         (os_id,), fetch="none"
     )
 
