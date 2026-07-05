@@ -2271,6 +2271,10 @@ function toggleSenha(inputId, btn) {
 function renderPontosConfigPanel() {
   const el = document.getElementById('pontos-config-panel');
   if (!el || currentUser?.role !== 'manager') return;
+  // Não redesenhar enquanto o gestor está DIGITANDO nas datas —
+  // o refresh automático da aba apagava o campo no meio da escolha.
+  const ae = document.activeElement;
+  if (ae && (ae.id === 'pontos-inicio' || ae.id === 'pontos-fim')) return;
 
   const cfg    = PontosConfig.get();
   const ativo  = cfg.ativo;
