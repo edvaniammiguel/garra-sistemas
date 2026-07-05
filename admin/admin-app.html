@@ -732,9 +732,15 @@ input,select,textarea { font-family:inherit; font-size:13px; outline:none; }
               <select id="cm-filtro-equip" style="padding:6px 10px;border:1.5px solid var(--border);border-radius:6px;font-size:13px" onchange="carregarControleMensal()">
                 <option value="">Todos os equipamentos</option>
               </select>
-              <select id="cm-filtro-oper" style="padding:6px 10px;border:1.5px solid var(--border);border-radius:6px;font-size:13px" onchange="carregarControleMensal()">
+              <select id="cm-filtro-oper" style="display:none" onchange="carregarControleMensal()">
                 <option value="">Todos os colaboradores</option>
               </select>
+              <div id="cm-oper-combo" style="position:relative">
+                <input id="cm-oper-busca" type="text" placeholder="Todos os colaboradores" autocomplete="off" readonly
+                  onclick="cmOperAbrir()"
+                  style="padding:6px 10px;border:1.5px solid var(--border);border-radius:6px;font-size:13px;min-width:190px;cursor:pointer;background:#fff"/>
+                <div id="cm-oper-lista" style="display:none;position:absolute;top:calc(100% + 4px);left:0;right:0;background:#fff;border:1.5px solid var(--border);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.12);z-index:60;max-height:280px;overflow-y:auto"></div>
+              </div>
             </div>
           </div>
 
@@ -2808,6 +2814,7 @@ function renderTabelaPartes(partes, statusOS) {
                 ).join('')}
                </select>`;
 
+          const medParte = (p.tipo_medicao || '').toLowerCase();
           let medicaoCell;
           if (fechada) {
             medicaoCell = regime === 'km'
@@ -2838,6 +2845,19 @@ function renderTabelaPartes(partes, statusOS) {
                 onchange="salvarMedicaoParte('${esc(p.id)}','horimetro_final',this.value)"/></div>`;
           }
 
+          // ── Linha registrada como METROS numa OS de outro regime:
+          // fidelidade ao Controle Mensal — mostra metros, traça o resto.
+          let horimetroCellFinal = horimetroCell;
+          if (medParte === 'metros' && regime !== 'metro') {
+            medicaoCell = fechada
+              ? `<span style="font-size:12px;color:var(--blue);font-weight:700">${p.qtd_metros||0} m</span>`
+              : `<div style="display:flex;align-items:center;gap:4px">
+                  <input type="number" step="0.01" value="${p.qtd_metros||0}" style="width:80px;padding:4px 8px;border:1.5px solid var(--border);border-radius:6px;text-align:right;font-size:13px"
+                    onchange="salvarMedicaoParte('${esc(p.id)}','qtd_metros',this.value)"/>
+                  <span style="font-size:12px;color:var(--muted)">m</span></div>`;
+            horimetroCellFinal = '<span style="color:var(--muted);font-size:12px">–</span>';
+          }
+
           // Colunas 5 e 6 conforme regime
           let cel5, cel6;
           if (regime === 'metro') {
@@ -2866,6 +2886,11 @@ function renderTabelaPartes(partes, statusOS) {
                   onchange="salvarHorasCobradas('${esc(p.id)}', this.value)"/>`;
           }
 
+          if (medParte === 'metros' && regime !== 'metro') {
+            cel5 = '<span style="color:var(--muted)">–</span>';
+            cel6 = `<strong style="color:var(--blue)">${p.qtd_metros||0} m</strong>`;
+          }
+
           // Data editável (operador pode ter digitado errado)
           const dataISO = p.data ? String(p.data).slice(0,10) : '';
           const dataCell = fechada
@@ -2879,7 +2904,7 @@ function renderTabelaPartes(partes, statusOS) {
             <td style="padding:8px">${equipCell}</td>
             <td style="padding:8px">${operCell}</td>
             <td style="padding:8px">${medicaoCell}</td>
-            <td style="padding:8px">${horimetroCell}</td>
+            <td style="padding:8px">${horimetroCellFinal}</td>
             <td style="padding:8px;font-size:13px;text-align:right">${cel5}</td>
             ${col6 ? `<td style="padding:8px;text-align:right;font-size:13px">${cel6}</td>` : ''}
             ${fechada ? '' : `<td style="padding:8px;text-align:right">
@@ -4125,6 +4150,62 @@ async function carregarControleMensal() {
   } catch (e) {
     el.innerHTML = `<div style="padding:30px;text-align:center;color:var(--red)">Erro: ${esc(e.message)}</div>`;
   }
+}
+
+function cmOperAbrir() {
+  const inp = document.getElementById('cm-oper-busca');
+  const lista = document.getElementById('cm-oper-lista');
+  inp.removeAttribute('readonly');
+  inp.value = '';
+  inp.oninput = () => cmOperRenderLista(inp.value);
+  cmOperRenderLista('');
+  lista.style.display = 'block';
+  const fechar = (ev) => {
+    if (!document.getElementById('cm-oper-combo').contains(ev.target)) {
+      lista.style.display = 'none';
+      cmOperAtualizarLabel();
+      document.removeEventListener('click', fechar);
+    }
+  };
+  setTimeout(() => document.addEventListener('click', fechar), 0);
+  inp.focus();
+}
+
+function cmOperRenderLista(filtro) {
+  const lista = document.getElementById('cm-oper-lista');
+  const sel = document.getElementById('cm-filtro-oper');
+  const f = (filtro || '').toLowerCase();
+  const ops = (_cmDados?.operadores || []).filter(o => !f || (o.nome||'').toLowerCase().includes(f));
+  let html = `<div onclick="cmOperEscolher('','Todos os colaboradores')" style="padding:9px 12px;cursor:pointer;font-size:13px;border-bottom:1px solid var(--border);color:var(--muted)">Todos os colaboradores</div>`;
+  if (!ops.length) {
+    html += `<div style="padding:12px;color:var(--muted);font-size:12px;text-align:center">Nenhum nome encontrado</div>`;
+  } else {
+    ops.forEach(o => {
+      const ativo = String(sel.value) === String(o.id);
+      html += `<div onclick="cmOperEscolher('${o.id}','${esc(o.nome).replace(/'/g,"\\'")}')"
+        style="padding:9px 12px;cursor:pointer;font-size:13px;${ativo?'background:var(--bg);font-weight:700;color:var(--blue)':''}"
+        onmouseover="this.style.background='var(--bg)'" onmouseout="this.style.background='${ativo?'var(--bg)':''}'">${esc(o.nome)}</div>`;
+    });
+  }
+  lista.innerHTML = html;
+}
+
+function cmOperEscolher(id, nome) {
+  const sel = document.getElementById('cm-filtro-oper');
+  sel.value = id;
+  document.getElementById('cm-oper-lista').style.display = 'none';
+  cmOperAtualizarLabel(nome);
+  carregarControleMensal();
+}
+
+function cmOperAtualizarLabel(nome) {
+  const inp = document.getElementById('cm-oper-busca');
+  const sel = document.getElementById('cm-filtro-oper');
+  inp.setAttribute('readonly', '');
+  if (nome !== undefined) { inp.value = sel.value ? nome : ''; inp.placeholder = sel.value ? '' : 'Todos os colaboradores'; return; }
+  const opt = sel.options[sel.selectedIndex];
+  inp.value = sel.value ? (opt?.text || '') : '';
+  if (!sel.value) inp.placeholder = 'Todos os colaboradores';
 }
 
 function cmEditarCobr(parteId, td, atual) {
