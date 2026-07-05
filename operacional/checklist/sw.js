@@ -1,8 +1,8 @@
 /* ═══════════════════════════════════════════════════
-   sw.js — Garra Check List v10 — 20260702
+   sw.js — Garra Check List v11 — 20260705 (ranking servidor)
 ═══════════════════════════════════════════════════ */
 
-const CACHE = 'garra-v10-20260702';
+const CACHE = 'garra-v11-20260705';
 
 const APP_SHELL = [
   '/index.html',
