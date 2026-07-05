@@ -1563,9 +1563,11 @@ async def op_resumo_mensal(payload=Depends(verificar_token)):
         (user["id"], primeiro_dia, hoje), fetch="one"
     )
 
+    _MESES = {1:"Janeiro",2:"Fevereiro",3:"Março",4:"Abril",5:"Maio",6:"Junho",
+              7:"Julho",8:"Agosto",9:"Setembro",10:"Outubro",11:"Novembro",12:"Dezembro"}
     return {
         "mes": hoje.strftime("%m/%Y"),
-        "mes_nome": hoje.strftime("%B").capitalize(),
+        "mes_nome": _MESES[hoje.month],
         "dias_trabalhados": int(resumo["dias_trabalhados"] or 0),
         "total_horas": round(float(resumo["total_horas"] or 0), 1),
         "total_horas_cobradas": round(float(resumo["total_horas_cobradas"] or 0), 1),
