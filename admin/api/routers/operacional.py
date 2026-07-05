@@ -1526,3 +1526,49 @@ async def op_controle_mensal_excel(
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'}
     )
+
+
+# ══════════════════════════════════════════════════════════════
+# RESUMO MENSAL DO OPERADOR (Item C — horas do mês no mobile)
+# Adicionado em 04/07/2026. O operador vê no Histórico quantas
+# horas acumulou no mês corrente e quanto falta para fechar.
+# ══════════════════════════════════════════════════════════════
+
+@router.get("/operacional/api/resumo-mensal")
+async def op_resumo_mensal(payload=Depends(verificar_token)):
+    """Retorna total de horas e dias trabalhados do operador no mês corrente."""
+    login = payload.get("sub", "")
+    user = await ajard_query(
+        "SELECT id FROM public.usuarios_garra WHERE login=%s", (login,), fetch="one"
+    )
+    if not user:
+        raise HTTPException(status_code=404, detail="Usuário não encontrado")
+
+    hoje = date.today()
+    primeiro_dia = hoje.replace(day=1)
+
+    resumo = await ajard_query(
+        """SELECT
+             COUNT(DISTINCT p.data) AS dias_trabalhados,
+             COALESCE(SUM(p.horas_trabalhadas), 0) AS total_horas,
+             COALESCE(SUM(p.horas_cobradas), 0) AS total_horas_cobradas,
+             COUNT(p.id) AS total_apontamentos,
+             COUNT(DISTINCT p.os_id) AS total_os
+           FROM operacional.partes_diarias p
+           JOIN operacional.ordens_servico os ON os.id = p.os_id
+           WHERE os.operador_id = %s
+             AND p.ativo = true
+             AND p.data >= %s
+             AND p.data <= %s""",
+        (user["id"], primeiro_dia, hoje), fetch="one"
+    )
+
+    return {
+        "mes": hoje.strftime("%m/%Y"),
+        "mes_nome": hoje.strftime("%B").capitalize(),
+        "dias_trabalhados": int(resumo["dias_trabalhados"] or 0),
+        "total_horas": round(float(resumo["total_horas"] or 0), 1),
+        "total_horas_cobradas": round(float(resumo["total_horas_cobradas"] or 0), 1),
+        "total_apontamentos": int(resumo["total_apontamentos"] or 0),
+        "total_os": int(resumo["total_os"] or 0),
+    }
