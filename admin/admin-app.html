@@ -2888,7 +2888,7 @@ function renderTabelaPartes(partes, statusOS) {
 
           if (medParte === 'metros' && regime !== 'metro') {
             cel5 = '<span style="color:var(--muted)">–</span>';
-            cel6 = `<strong style="color:var(--blue)">${p.qtd_metros||0} m</strong>`;
+            cel6 = '<span style="color:var(--muted)">–</span>';
           }
 
           // Data editável (operador pode ter digitado errado)
@@ -4208,6 +4208,36 @@ function cmOperAtualizarLabel(nome) {
   if (!sel.value) inp.placeholder = 'Todos os colaboradores';
 }
 
+function cmEditarMetros(parteId, td, atual) {
+  if (td.querySelector('input')) return;
+  const original = td.innerHTML;
+  td.innerHTML = `<input type="number" step="0.01" min="0" value="${atual}"
+    style="width:80px;padding:4px 6px;border:1.5px solid var(--orange);border-radius:6px;text-align:right;font-weight:700">`;
+  const inp = td.querySelector('input');
+  inp.focus(); inp.select();
+  let salvando = false;
+  const salvar = async () => {
+    if (salvando) return; salvando = true;
+    const val = parseFloat(inp.value);
+    if (isNaN(val) || val < 0) { td.innerHTML = original; return; }
+    try {
+      await apiFetch(`/operacional/api/partes/${parteId}`, {
+        method: 'PATCH', body: JSON.stringify({ qtd_metros: val })
+      });
+      toast('✅ Metros ajustados para ' + val, 'success');
+      carregarControleMensal();
+    } catch (e) {
+      toast('❌ ' + (e.message || 'Erro ao salvar'), 'error');
+      td.innerHTML = original;
+    }
+  };
+  inp.addEventListener('keydown', ev => {
+    if (ev.key === 'Enter') { ev.preventDefault(); salvar(); }
+    if (ev.key === 'Escape') { td.innerHTML = original; }
+  });
+  inp.addEventListener('blur', salvar);
+}
+
 function cmEditarCobr(parteId, td, atual) {
   if (td.querySelector('input')) return;
   const original = td.innerHTML;
@@ -4378,8 +4408,10 @@ function renderControleMensal(dados) {
         <td style="padding:6px 8px;text-align:right">${ini !== '' ? ini : '–'}</td>
         <td style="padding:6px 8px;text-align:right">${fin !== '' ? fin : '–'}</td>
         <td style="padding:6px 8px;text-align:right;font-weight:700;${trabSuspeito?'color:var(--red)':''}">${trab ? trab.toFixed(1) : '0'}${avisoTrab}</td>
-        <td style="padding:6px 8px;text-align:right;font-weight:700;color:var(--orange);${(med!=='km'&&med!=='metros'&&!p.fechado)?'cursor:pointer;text-decoration:underline dotted':''}"
-            ${(med!=='km'&&med!=='metros'&&!p.fechado)?`onclick="cmEditarCobr('${p.id}', this, ${cobr||0})" title="Clique para ajustar (considerar)"`:''}>${cobr ? cobr.toFixed(1) : '0'}</td>
+        <td style="padding:6px 8px;text-align:right;font-weight:700;color:var(--orange);${(!p.fechado&&med!=='km')?'cursor:pointer;text-decoration:underline dotted':''}"
+            ${(!p.fechado&&med!=='km')?(med==='metros'
+              ?`onclick="cmEditarMetros('${p.id}', this, ${cobr||0})" title="Clique para ajustar os metros"`
+              :`onclick="cmEditarCobr('${p.id}', this, ${cobr||0})" title="Clique para ajustar (considerar)"`):''}>${cobr ? cobr.toFixed(1) : '0'}${med==='metros'?' <span style="font-size:9px">m</span>':''}</td>
         <td style="padding:6px 8px;text-align:center;font-size:10px">${med==='metros' ? '<span style="color:var(--blue);font-weight:700">metros</span>' : (med==='km' ? '<span style="color:var(--blue);font-weight:700">km</span>' : esc(p.regime_cobranca||''))}</td>
         <td style="padding:6px 8px;text-align:center;font-size:10px">${esc(p.por_conta_de||'')}</td>
       </tr>`;
