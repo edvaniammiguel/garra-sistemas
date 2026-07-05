@@ -674,3 +674,21 @@ app.include_router(checklist_router)
 app.include_router(auth_router)
 app.include_router(sistema_router)
 app.include_router(pages_router)
+
+@app.on_event("startup")
+async def seed_equipamento_combinado():
+    """Equipamento padrão do sistema para apontamento de Combinados/Apoio.
+    Categoria 'apoio': trabalho interno não motorizado (deslocamento, ajuda,
+    combinados). A futura Manutenção EXCLUI categoria 'apoio' de OT/preventiva.
+    Valor dos apontamentos é definido pela gestão no fechamento mensal."""
+    try:
+        await ajard_query(
+            """INSERT INTO operacional.equipamentos (codigo, descricao, categoria, medicao, ativo)
+               SELECT 'APOIO-01', 'Combinado / Apoio', 'apoio', 'hora', true
+               WHERE NOT EXISTS (
+                   SELECT 1 FROM operacional.equipamentos WHERE codigo = 'APOIO-01'
+               )""", fetch="none"
+        )
+        print("[Seed] Equipamento Combinado/Apoio (APOIO-01) garantido")
+    except Exception as e:
+        print(f"[Seed] equipamento combinado: {e}")
