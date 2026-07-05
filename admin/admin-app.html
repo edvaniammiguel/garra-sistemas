@@ -1508,7 +1508,7 @@ async function salvarUsuario() {
       const payload = { nome, perfil, perfil_checklist: perfilCL || null };
       if (email) payload.email = email;
       if (senha) payload.senha = senha;
-      await apiFetch(`/usuarios/${_editandoLogin}/editar`, { method: 'POST', body: JSON.stringify(payload) });
+      await apiFetch(`/usuarios/${encodeURIComponent(_editandoLogin)}/editar`, { method: 'POST', body: JSON.stringify(payload) });
       toast('Colaborador atualizado!', 'success');
     } else {
       // Criação
@@ -1565,7 +1565,7 @@ async function confirmarDesativar() {
   const btn = document.getElementById('btn-confirmar-desativar');
   btn.textContent = 'Desativando...'; btn.disabled = true;
   try {
-    await apiFetch(`/usuarios/${_desativarLogin}`, { method: 'DELETE' });
+    await apiFetch(`/usuarios/${encodeURIComponent(_desativarLogin)}`, { method: 'DELETE' });
     toast('Colaborador desativado.', 'success');
     fecharModalDesativar();
     _usuarios = await apiFetch('/usuarios');
@@ -3974,7 +3974,7 @@ async function salvarAjustePts(login) {
   if (!confirm(`Confirma ${acao} ${Math.abs(ajuste)} pontos?\nMotivo: ${motivo}`)) return;
 
   try {
-    const result = await apiFetch(`/usuarios/${login}/ajustar-pts`, {
+    const result = await apiFetch(`/usuarios/${encodeURIComponent(login)}/ajustar-pts`, {
       method: 'POST',
       body: JSON.stringify({ ajuste, motivo })
     });
