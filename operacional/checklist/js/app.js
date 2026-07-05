@@ -1180,14 +1180,19 @@ async function renderRanking() {
       headers: { 'Authorization': 'Bearer ' + token }
     });
     if (r.ok) {
-      const rk = await r.json();
+      let rk = await r.json();
+      if (!rk.length && qs) {
+        // Período do ciclo/config filtrou tudo — mostra o GERAL para não ficar vazio
+        const r2 = await fetch('/checklist/ranking', { headers: { 'Authorization': 'Bearer ' + token } });
+        if (r2.ok) rk = await r2.json();
+      }
       const top3=rk.slice(0,3),rest=rk.slice(3);
       const medals=['🥇','🥈','🥉'],cls=['p1','p2','p3'];
       document.getElementById('podium').innerHTML=top3.length?top3.map((u,i)=>`<div class="podium-place ${cls[i]}" style="cursor:pointer" onclick="ajustarPontos('${u.login}','${sanitize(u.nome||u.login)}')" title="Clique para ajustar pontos"><div class="pp-medal">${medals[i]}</div><div class="pp-avatar">${sanitize(u.nome||u.login).charAt(0)}</div><div class="pp-name">${sanitize((u.nome||u.login).split(' ')[0])}</div><div class="pp-pts">${u.pts||0}</div></div>`).join(''):'<div class="empty-state">Sem envios no período ainda</div>';
       document.getElementById('full-ranking').innerHTML=rest.map((u,i)=>`<div class="rank-item" style="cursor:pointer" onclick="ajustarPontos('${u.login}','${sanitize(u.nome||u.login)}')" title="Clique para ajustar pontos"><div class="rank-pos">${i+4}</div><div class="rank-avatar">${sanitize(u.nome||u.login).charAt(0)}</div><div class="rank-info"><div class="rank-name">${sanitize(u.nome||u.login)}</div><div class="rank-sub">${u.envios||0} envios</div></div><div class="rank-pts">${u.pts||0} pts</div></div>`).join('')||'<div class="empty-state" style="padding:16px 0;font-size:13px">Apenas os 3 primeiros no pódio!</div>';
       return;
     }
-  } catch(e) { /* offline → ranking local abaixo */ }
+  } catch(e) { console.error('[ranking] caiu no local:', e); }
   const drivers=DB.users().filter(u=>u.role==='driver'||u.role==='diarista').sort((a,b)=>(b.pts||0)-(a.pts||0));
   const top3=drivers.slice(0,3),rest=drivers.slice(3);
   const medals=['🥇','🥈','🥉'],cls=['p1','p2','p3'];
@@ -2291,16 +2296,16 @@ function renderPontosConfigPanel() {
           <div class="field-group" style="margin:0">
             <label style="font-size:11px;font-weight:700;color:var(--text-light);display:block;margin-bottom:4px">📅 Contar a partir de</label>
             <input type="date" id="pontos-inicio" value="${inicio}"
-              onchange="salvarPontosConfig(false)"
               style="padding:8px 10px;border:1.5px solid var(--gray-light);border-radius:var(--radius-sm);font-size:13px;width:100%;background:var(--white)" />
           </div>
           <div class="field-group" style="margin:0">
             <label style="font-size:11px;font-weight:700;color:var(--text-light);display:block;margin-bottom:4px">📅 Até (opcional)</label>
             <input type="date" id="pontos-fim" value="${fim}"
-              onchange="salvarPontosConfig(false)"
               style="padding:8px 10px;border:1.5px solid var(--gray-light);border-radius:var(--radius-sm);font-size:13px;width:100%;background:var(--white)" />
           </div>
         </div>
+        <button onclick="salvarPontosConfig(false)"
+          style="margin-top:10px;padding:9px 18px;border:none;border-radius:8px;background:var(--orange,#E8820C);color:#fff;font-weight:700;font-size:13px;cursor:pointer">💾 Salvar período</button>
         <div class="pontos-config-preview" id="pontos-preview">
           ${ativo
             ? `✅ Colaboradores <strong>veem</strong> seus pontos${inicio ? ' a partir de <strong>' + formatDate(inicio) + '</strong>' : ''}${fim ? ' até <strong>' + formatDate(fim) + '</strong>' : ''}`
