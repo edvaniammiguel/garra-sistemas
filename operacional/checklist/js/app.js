@@ -495,6 +495,28 @@ function renderDriverDashboard() {
   document.getElementById('driver-pts').textContent    = ptsExibir;
   document.getElementById('driver-streak').textContent = `🔥 ${u.submissions || 0} envios`;
 
+  // Atualiza com o valor OFICIAL do servidor (assíncrono; local é só placeholder)
+  if (ptsVisiveis) {
+    (async () => {
+      try {
+        const ini = cfg.data_inicio || '', fim = cfg.data_fim || '';
+        const qs = [ini?('inicio='+ini):'', fim?('fim='+fim):''].filter(Boolean).join('&');
+        const token = localStorage.getItem('garra_token') || '';
+        const r = await fetch('/checklist/ranking' + (qs?'?'+qs:''), {
+          headers: { 'Authorization': 'Bearer ' + token }
+        });
+        if (r.ok) {
+          const rk = await r.json();
+          const eu = rk.find(x => x.login === u.login);
+          const elP = document.getElementById('driver-pts');
+          const elS = document.getElementById('driver-streak');
+          if (eu && elP) elP.textContent = eu.pts;
+          if (eu && elS) elS.textContent = `🔥 ${eu.envios} envios`;
+        }
+      } catch(e) { /* offline: mantém local */ }
+    })();
+  }
+
   // Mostra mensagem sutil abaixo dos pontos se desativado
   const existingMsg = document.getElementById('pts-soon-msg');
   if (existingMsg) existingMsg.remove();
@@ -1122,7 +1144,28 @@ function renderOverview() {
 }
 
 // ── RANKING ──
-function renderRanking() {
+async function renderRanking() {
+  // Fonte única: SERVIDOR (checklist.envios) — 05/07/2026.
+  // Período: ciclo ativo → config de pontos → geral. Offline: cai no local.
+  try {
+    const ciclo = (typeof CicloDB !== 'undefined' && CicloDB.atual && CicloDB.atual()) || null;
+    const cfg   = PontosConfig.get();
+    const ini = ciclo?.inicio || cfg.data_inicio || '';
+    const fim = ciclo?.fim    || cfg.data_fim    || '';
+    const qs = [ini?('inicio='+ini):'', fim?('fim='+fim):''].filter(Boolean).join('&');
+    const token = localStorage.getItem('garra_token') || '';
+    const r = await fetch('/checklist/ranking' + (qs?'?'+qs:''), {
+      headers: { 'Authorization': 'Bearer ' + token }
+    });
+    if (r.ok) {
+      const rk = await r.json();
+      const top3=rk.slice(0,3),rest=rk.slice(3);
+      const medals=['🥇','🥈','🥉'],cls=['p1','p2','p3'];
+      document.getElementById('podium').innerHTML=top3.length?top3.map((u,i)=>`<div class="podium-place ${cls[i]}"><div class="pp-medal">${medals[i]}</div><div class="pp-avatar">${sanitize(u.nome||u.login).charAt(0)}</div><div class="pp-name">${sanitize((u.nome||u.login).split(' ')[0])}</div><div class="pp-pts">${u.pts||0}</div></div>`).join(''):'<div class="empty-state">Sem envios no período ainda</div>';
+      document.getElementById('full-ranking').innerHTML=rest.map((u,i)=>`<div class="rank-item"><div class="rank-pos">${i+4}</div><div class="rank-avatar">${sanitize(u.nome||u.login).charAt(0)}</div><div class="rank-info"><div class="rank-name">${sanitize(u.nome||u.login)}</div><div class="rank-sub">${u.envios||0} envios</div></div><div class="rank-pts">${u.pts||0} pts</div></div>`).join('')||'<div class="empty-state" style="padding:16px 0;font-size:13px">Apenas os 3 primeiros no pódio!</div>';
+      return;
+    }
+  } catch(e) { /* offline → ranking local abaixo */ }
   const drivers=DB.users().filter(u=>u.role==='driver'||u.role==='diarista').sort((a,b)=>(b.pts||0)-(a.pts||0));
   const top3=drivers.slice(0,3),rest=drivers.slice(3);
   const medals=['🥇','🥈','🥉'],cls=['p1','p2','p3'];
