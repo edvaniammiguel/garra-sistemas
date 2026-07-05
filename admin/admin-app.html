@@ -2690,6 +2690,7 @@ function renderTotaisPartes(t) {
   if (regime === 'metro') {
     cards = [
       { label:'Dias trabalhados', valor: t.dias_trabalhados||0 },
+      { label:'Sem apontamento', valor: (t.dias_parados||0)+' dias' },
       { label:'Total metros',     valor: totalMetros.toFixed(0)+' m' },
       { label:'Valor/metro',      valor: 'R$ '+parseFloat(_osAtual.valor_combinado||0).toFixed(2) },
       { label:'Total a cobrar',   valor: 'R$ '+(totalMetros*parseFloat(_osAtual.valor_combinado||0)).toFixed(2) },
@@ -2697,6 +2698,7 @@ function renderTotaisPartes(t) {
   } else if (regime === 'diaria') {
     cards = [
       { label:'Dias trabalhados', valor: t.dias_trabalhados||0 },
+      { label:'Sem apontamento', valor: (t.dias_parados||0)+' dias' },
       { label:'Total diárias',    valor: t.total_diarias||0 },
       { label:'Valor/diária',     valor: 'R$ '+parseFloat(_osAtual.valor_combinado||0).toFixed(2) },
       { label:'Total a cobrar',   valor: 'R$ '+((t.total_diarias||0)*parseFloat(_osAtual.valor_combinado||0)).toFixed(2) },
@@ -2704,6 +2706,7 @@ function renderTotaisPartes(t) {
   } else if (regime === 'empreito') {
     cards = [
       { label:'Dias trabalhados', valor: t.dias_trabalhados||0 },
+      { label:'Sem apontamento', valor: (t.dias_parados||0)+' dias' },
       { label:'Total horas',      valor: (t.total_horas||0).toFixed(1)+'h' },
       { label:'Valor fechado',    valor: 'R$ '+parseFloat(_osAtual.valor_combinado||0).toFixed(2) },
     ];
@@ -2711,6 +2714,7 @@ function renderTotaisPartes(t) {
     // hora (padrão)
     cards = [
       { label:'Dias trabalhados', valor: t.dias_trabalhados||0 },
+      { label:'Sem apontamento', valor: (t.dias_parados||0)+' dias' },
       { label:'Total horas',      valor: (t.total_horas||0).toFixed(1)+'h' },
       { label:'Horas cobradas',   valor: (t.total_horas_cobradas||0).toFixed(1)+'h' },
       { label:'Valor/hora',       valor: 'R$ '+parseFloat(_osAtual.valor_combinado||0).toFixed(2) },
