@@ -3070,6 +3070,7 @@ async function abrirModalOS(osId=null) {
       document.getElementById('os-horas-padrao').value = os.horas_padrao_dia||'';
       document.getElementById('os-data-inicio').value = os.data_inicio||'';
       document.getElementById('os-equipamento').value = os.equipamento_id||'';
+      window._osEquipAntes = os.equipamento_id || null;
       document.getElementById('os-operador').value = os.operador_id||'';
       _atualizarLabelRegime();
     } catch {}
@@ -3176,6 +3177,31 @@ async function salvarOS() {
     if (osId) {
       await apiFetch('/operacional/api/os/'+osId, {method:'PATCH', body:JSON.stringify(payload)});
       toast('OS atualizada!','success');
+
+      // ── Equipamento da OS mudou? Oferecer propagar aos registros já feitos
+      // (caso real: OS criada com máquina em conflito — corrigir tudo de uma vez)
+      const equipNovo  = payload.equipamento_id;
+      const equipAntes = window._osEquipAntes || null;
+      if (equipNovo && equipAntes && equipNovo !== equipAntes) {
+        try {
+          const dp = await apiFetch('/operacional/api/os/'+osId+'/partes');
+          const partes = Array.isArray(dp) ? dp : (dp.partes || []);
+          const alvo = partes.filter(p => String(p.equipamento_id) === String(equipAntes) && !p.fechado);
+          if (alvo.length && confirm(`Este OS tem ${alvo.length} registro(s) feito(s) com o equipamento antigo.\n\nAtualizar também esses registros para o novo equipamento?`)) {
+            let ok = 0;
+            for (const p of alvo) {
+              try {
+                await apiFetch('/operacional/api/partes/'+p.id, {
+                  method:'PATCH', body: JSON.stringify({ equipamento_id: equipNovo })
+                });
+                ok++;
+              } catch(e) { /* segue os demais */ }
+            }
+            toast(`✅ ${ok} registro(s) atualizados para o novo equipamento`, 'success');
+          }
+        } catch(e) { /* silencioso — a OS já foi salva */ }
+      }
+      window._osEquipAntes = null;
     } else {
       await apiFetch('/operacional/api/os', {method:'POST', body:JSON.stringify(payload)});
       toast('OS criada!','success');
