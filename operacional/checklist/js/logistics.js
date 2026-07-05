@@ -291,10 +291,6 @@ function addLogCarRow(prefill) {
       <label>Nome do motorista (confirme ou edite)</label>
       <input type="text" id="${rowId}-driver" placeholder="Nome completo do motorista" value="${prefill?.driver||''}" />
     </div>
-    <div class="field-group">
-      <label>Modelo do veículo</label>
-      <input type="text" id="${rowId}-model" placeholder="Ex.: Strada, Gol..." value="${prefill?.model||''}" />
-    </div>
     <div class="field-group log-car-row-full">
       <label>Observação (opcional)</label>
       <input type="text" id="${rowId}-obs" placeholder="Ex.: levando equipamento, retornando..." value="${prefill?.obs||''}" />
@@ -326,7 +322,8 @@ function saveLogEntry() {
     const status = document.getElementById(rowId+'-status')?.value;
     const dest   = document.getElementById(rowId+'-dest')?.value.trim();
     const driver = document.getElementById(rowId+'-driver')?.value.trim();
-    const model  = document.getElementById(rowId+'-model')?.value.trim();
+    // Modelo vem do CADASTRO do carro (fonte única) — campo removido do form 05/07/2026
+    const model  = ((LDB.logCars().find(c => (c.carId || c.id) === id) || {}).model || '').trim();
     const obs    = document.getElementById(rowId+'-obs')?.value.trim();
     if (id) cars.push({id, status, dest, driver, model, obs});
   });
