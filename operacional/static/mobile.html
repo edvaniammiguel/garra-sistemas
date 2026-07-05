@@ -283,8 +283,8 @@ input,select,textarea{font-family:inherit;outline:none;border:none}
     <h2 class="login-title">Operacional</h2>
     <p class="login-sub">Acesso ao módulo de operações</p>
     <div id="login-err" class="login-err"></div>
-    <label class="field-label">Login</label>
-    <input type="text" id="field-login" class="field-input" placeholder="seu.login@garra.local" autocomplete="username"/>
+    <label class="field-label">Email</label>
+    <input type="email" id="field-login" class="field-input" placeholder="seu.email@exemplo.com" autocomplete="username"/>
     <label class="field-label">Senha</label>
     <div class="field-pass-wrap">
       <input type="password" id="field-pass" class="field-input" placeholder="●●●●●●" autocomplete="current-password"/>
@@ -312,7 +312,7 @@ input,select,textarea{font-family:inherit;outline:none;border:none}
     <div id="esq-err" style="background:#FEE2E2;color:var(--red);border-radius:6px;padding:10px;margin-bottom:14px;font-size:13px;display:none"></div>
     <div id="esq-ok" style="background:#DCFCE7;color:#16A34A;border-radius:6px;padding:10px;margin-bottom:14px;font-size:13px;display:none"></div>
     <p style="font-size:13px;color:var(--muted);margin-bottom:16px">Informe seu e-mail cadastrado. Você receberá um link para criar uma nova senha.</p>
-    <input id="esq-email" type="email" placeholder="seu.email@garra.local" style="width:100%;padding:11px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;box-sizing:border-box;margin-bottom:16px">
+    <input id="esq-email" type="email" placeholder="seu.email@exemplo.com" style="width:100%;padding:11px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;box-sizing:border-box;margin-bottom:16px">
     <button onclick="enviarEsqueciSenha()" style="width:100%;padding:14px;border:none;background:var(--orange);color:#fff;border-radius:8px;font-weight:700;font-size:15px;cursor:pointer">Enviar link de redefinição</button>
   </div>
 </div>
@@ -2649,7 +2649,7 @@ async function entrarComDigital(automatico) {
   if (!login) {
     bioEmAndamento = false;
     if (!automatico) {
-      errDiv.textContent = 'Digite seu login para entrar com a digital';
+      errDiv.textContent = 'Digite seu email para entrar com a digital';
       errDiv.style.display = 'block';
     }
     return;
