@@ -793,6 +793,20 @@ async def op_listar_partes(os_id: str, _auth=Depends(verificar_token)):
     eh_gestor = perfil in ("admin", "gestor", "luana", "bruna")
 
     if not eh_gestor:
+        # Menor privilégio (decisão 05/07/2026): operador vê SOMENTE os
+        # registros que ELE criou — horas do colega = comissão do colega.
+        # A continuidade do horímetro é garantida pelo horimetro_atual do
+        # equipamento (pré-preenchido no registro), não pela visão alheia.
+        login = _auth.get("sub", "")
+        eu = await ajard_query(
+            "SELECT id FROM public.usuarios_garra WHERE login=%s", (login,), fetch="one"
+        )
+        meu_id = str(eu["id"]) if eu else "?"
+        lista = [p for p in lista
+                 if str(p.get("criado_por") or "") == meu_id
+                 or str(p.get("operador_id") or "") == meu_id]
+
+    if not eh_gestor:
         # Remover campos financeiros/cobrança da resposta para operador
         for p in lista:
             p.pop("horas_cobradas", None)
@@ -1079,7 +1093,12 @@ async def op_minhas_os(historico: int = 0, payload=Depends(verificar_token)):
 
     # Filtro de status conforme histórico ou ativas
     if historico == 1:
-        status_filter = "os.status IN ('concluida_completa','concluida_sem_erp','aguardando_fechamento')"
+        # Histórico: só OS concluídas COM registro no MÊS CORRENTE
+        # (decisão 05/07/2026 — operador não precisa ver OS antigas)
+        status_filter = """os.status IN ('concluida_completa','concluida_sem_erp','aguardando_fechamento')
+             AND EXISTS (SELECT 1 FROM operacional.partes_diarias p
+                         WHERE p.os_id = os.id AND p.ativo = true
+                           AND p.data >= date_trunc('month', CURRENT_DATE)::date)"""
     else:
         status_filter = "os.status NOT IN ('concluida_completa','concluida_sem_erp','cancelada')"
 
