@@ -2042,7 +2042,7 @@ async function carregarHistoricoOS() {
       }[os.status] || os.status;
 
       html += `
-        <div class="os-card" onclick="verPartes('${os.id}', '${os.numero}')" style="cursor:pointer">
+        <div class="os-card" onclick="verPartes('${os.id}', '${os.numero}', false)" style="cursor:pointer">
           <div class="os-numero">${os.numero}
             <span style="display:inline-block;background:#DCFCE7;color:#16A34A;font-size:10px;font-weight:700;padding:3px 10px;border-radius:99px;margin-left:8px">${statusLabel}</span>
           </div>
@@ -2278,7 +2278,8 @@ async function abrirCartilhaMobile() {
   }
 }
 
-async function verPartes(osId, osNum) {
+async function verPartes(osId, osNum, editavel = true) {
+  window._vpEditavel = editavel;
   const token = localStorage.getItem('garra_token') || '';
   window._vpOsId = osId; window._vpOsNum = osNum;
   let partes = [];
@@ -2355,7 +2356,7 @@ async function verPartes(osId, osNum) {
             </div>
             <div style="display:flex;align-items:center;gap:8px">
               <span style="font-size:14px;font-weight:800;color:var(--orange);white-space:nowrap">${medInfo}</span>
-              ${!p.fechado ? `<button onclick="abrirEditarParte(${_idx})" style="background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:4px 8px;font-size:13px;cursor:pointer">✎</button>` : ''}
+              ${(!p.fechado && window._vpEditavel !== false) ? `<button onclick="abrirEditarParte(${_idx})" style="background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:4px 8px;font-size:13px;cursor:pointer">✎</button>` : ''}
             </div>
           </div>
           ${detalhes ? `<div style="font-size:11px;color:var(--muted);margin-top:5px">${detalhes}</div>` : ''}
@@ -2387,13 +2388,31 @@ function abrirEditarParte(idx) {
   const v = (x) => (x === null || x === undefined) ? '' : x;
   const hIni = p.hora_inicio ? String(p.hora_inicio).slice(0,5) : '';
   const hFim = p.hora_fim ? String(p.hora_fim).slice(0,5) : '';
-  let campos = '';
-  if (med === 'metros') {
-    campos = `
+  let dataIso = '';
+  try { dataIso = String(p.data).slice(0,10); } catch(e){}
+  let campos = `
+      <label style="font-size:12px;font-weight:700;color:var(--muted)">Data do registro</label>
+      <input id="ep-data" type="date" value="${dataIso}" style="width:100%;padding:11px;border:1.5px solid var(--border);border-radius:8px;font-size:15px;box-sizing:border-box;margin:4px 0 12px">`;
+  if (med === 'km') {
+    campos += `
+      <div style="display:flex;gap:10px">
+        <div style="flex:1">
+          <label style="font-size:12px;font-weight:700;color:var(--muted)">KM inicial</label>
+          <input id="ep-kmini" type="number" step="0.1" value="${v(p.km_inicial)}" style="width:100%;padding:11px;border:1.5px solid var(--border);border-radius:8px;font-size:15px;box-sizing:border-box;margin:4px 0 12px">
+        </div>
+        <div style="flex:1">
+          <label style="font-size:12px;font-weight:700;color:var(--muted)">KM final</label>
+          <input id="ep-kmfin" type="number" step="0.1" value="${v(p.km_final)}" style="width:100%;padding:11px;border:1.5px solid var(--border);border-radius:8px;font-size:15px;box-sizing:border-box;margin:4px 0 12px">
+        </div>
+      </div>
+      <label style="font-size:12px;font-weight:700;color:var(--muted)">Viagens</label>
+      <input id="ep-viagens" type="number" step="1" min="0" value="${v(p.qtd_viagens)}" style="width:100%;padding:11px;border:1.5px solid var(--border);border-radius:8px;font-size:15px;box-sizing:border-box;margin:4px 0 12px">`;
+  } else if (med === 'metros') {
+    campos += `
       <label style="font-size:12px;font-weight:700;color:var(--muted)">Metros executados</label>
       <input id="ep-metros" type="number" step="0.1" min="0" value="${v(p.qtd_metros)}" style="width:100%;padding:11px;border:1.5px solid var(--border);border-radius:8px;font-size:15px;box-sizing:border-box;margin:4px 0 12px">`;
   } else {
-    campos = `
+    campos += `
       <div style="display:flex;gap:10px">
         <div style="flex:1">
           <label style="font-size:12px;font-weight:700;color:var(--muted)">Horímetro inicial</label>
@@ -2464,7 +2483,13 @@ async function salvarEdicaoParte(parteId, med) {
   const err = document.getElementById('ep-err');
   err.style.display = 'none';
   const body = { observacao: document.getElementById('ep-obs').value };
-  if (med === 'metros') {
+  const _d = document.getElementById('ep-data')?.value;
+  if (_d) body.data = _d;
+  if (med === 'km') {
+    body.km_inicial  = document.getElementById('ep-kmini').value || null;
+    body.km_final    = document.getElementById('ep-kmfin').value || null;
+    body.qtd_viagens = document.getElementById('ep-viagens').value || null;
+  } else if (med === 'metros') {
     body.qtd_metros = document.getElementById('ep-metros').value || null;
   } else {
     body.horimetro_inicial = document.getElementById('ep-hini').value || null;
