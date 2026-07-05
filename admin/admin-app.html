@@ -3171,6 +3171,23 @@ async function salvarOS() {
     origem:            'escritorio',
   };
 
+  // ── Máquina já ativa em OUTRA OS? Pausar obra e mover é legítimo,
+  // mas tem que ser decisão CONSCIENTE (alerta, não bloqueio).
+  if (payload.equipamento_id) {
+    try {
+      const qs = osId ? ('?ignorar_os=' + osId) : '';
+      const cf = await apiFetch('/operacional/api/equipamentos/' + payload.equipamento_id + '/conflito' + qs);
+      if (cf?.conflito) {
+        const o = cf.os;
+        const msg = `⚠️ ATENÇÃO: esta máquina já está ATIVA em outra OS:\n\n` +
+          `${o.numero} — ${o.obra || o.cliente_nome || '(sem obra)'}` +
+          (o.operador_nome ? `\nOperador: ${o.operador_nome}` : '') +
+          `\n\nPode ser pausa de obra (legítimo). Confirma usar a máquina nesta OS mesmo assim?`;
+        if (!confirm(msg)) return;
+      }
+    } catch(e) { /* verificação indisponível → segue (não bloqueia operação) */ }
+  }
+
   const btn = document.getElementById('btn-salvar-os');
   btn.textContent='Salvando...'; btn.disabled=true;
   try {
