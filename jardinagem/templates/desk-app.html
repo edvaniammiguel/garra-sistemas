@@ -251,7 +251,7 @@ button,input,select{font-family:inherit;}
     <button class="btn btn-or btn-sm" onclick="abrirModalMes()">+ Novo Mês</button>
     <button class="btn btn-out btn-sm" onclick="window.print()">🖨 Imprimir</button>
     <div style="width:1px;height:24px;background:rgba(255,255,255,.2);margin:0 2px;"></div>
-    <button class="btn btn-red btn-sm" onclick="if(confirm('Sair?')){localStorage.removeItem('garra_token');localStorage.removeItem('garra_usuario');window.location.href='/admin';}">Sair</button>
+    <button class="btn btn-red btn-sm" onclick="if(confirm('Sair?')){sessionStorage.removeItem('garra_jard_token');localStorage.removeItem('garra_usuario');window.location.href='/admin';}">Sair</button>
   </div>
 </header>
 
@@ -411,7 +411,8 @@ button,input,select{font-family:inherit;}
 (function(){
   var sso = new URLSearchParams(location.search).get('sso');
   if (!sso) return;
-  localStorage.setItem('garra_token', sso);
+  // (06/07/2026) Sessão POR ABA: não polui o token global da origem
+  sessionStorage.setItem('garra_jard_token', sso);
   try {
     var b64 = sso.split('.')[1].replace(/-/g,'+').replace(/_/g,'/');
     var pl = JSON.parse(decodeURIComponent(atob(b64).split('').map(function(c){
@@ -423,7 +424,7 @@ button,input,select{font-family:inherit;}
   } catch(e){}
   history.replaceState(null, '', location.pathname);
 })();
-var GARRA_TOKEN = localStorage.getItem("garra_token") || "";
+var GARRA_TOKEN = sessionStorage.getItem("garra_jard_token") || localStorage.getItem("garra_token") || "";
 function authHeaders(extra){
   return Object.assign({"Content-Type":"application/json","Authorization":"Bearer "+GARRA_TOKEN}, extra||{});
 }
@@ -447,7 +448,7 @@ function fetchAuth(url, opts){
   showLoading();
   return fetch(url, opts).then(function(r){
     hideLoading();
-    if(r.status===401){ GARRA_TOKEN=""; localStorage.removeItem("garra_token"); window.location.href="/admin"; } return r;
+    if(r.status===401){ GARRA_TOKEN=""; sessionStorage.removeItem("garra_jard_token"); window.location.href="/admin"; } return r;
   }).catch(function(e){ hideLoading(); throw e; });
 }
 
