@@ -2208,42 +2208,10 @@ function renderRankingTab() {
     }
   }
 
-  // Ranking atual (pontos desde início do ciclo ou total)
-  const drivers = DB.users().filter(u => u.role === 'driver' || u.role === 'diarista').sort((a,b)=>(b.pts||0)-(a.pts||0));
-  const top3 = drivers.slice(0,3), rest = drivers.slice(3);
-  const medals = ['🥇','🥈','🥉'], cls = ['p1','p2','p3'];
-
-  const podiumEl = document.getElementById('podium');
-  if (podiumEl) {
-    podiumEl.innerHTML = top3.length
-      ? top3.map((u,i) => {
-          const pts = cicloAtual ? Math.max(0,(u.pts||0)-(cicloAtual.snapshot?.find(s=>s.login===u.login)?.pts_inicio||0)) : (u.pts||0);
-          return `<div class="podium-place ${cls[i]}">
-            <div class="pp-medal">${medals[i]}</div>
-            <div class="pp-avatar">${sanitize(u.name).charAt(0)}</div>
-            <div class="pp-name">${sanitize(u.name.split(' ')[0])}</div>
-            <div class="pp-pts">${pts} pts</div>
-          </div>`;
-        }).join('')
-      : '<div class="empty-state">Sem dados de ranking ainda</div>';
-  }
-
-  const rankEl = document.getElementById('full-ranking');
-  if (rankEl) {
-    rankEl.innerHTML = rest.map((u,i) => {
-      const pts = cicloAtual ? Math.max(0,(u.pts||0)-(cicloAtual.snapshot?.find(s=>s.login===u.login)?.pts_inicio||0)) : (u.pts||0);
-      const funcao = u.funcao ? FuncaoDB.byId(u.funcao) : null;
-      return `<div class="rank-item">
-        <div class="rank-pos">${i+4}</div>
-        <div class="rank-avatar">${sanitize(u.name).charAt(0)}</div>
-        <div class="rank-info">
-          <div class="rank-name">${sanitize(u.name)}</div>
-          <div class="rank-sub">${u.submissions||0} envios${funcao?' • '+funcao.nome:''}</div>
-        </div>
-        <div class="rank-pts">${pts} pts</div>
-      </div>`;
-    }).join('') || '<div class="empty-state" style="padding:16px 0;font-size:13px">Apenas os 3 primeiros no pódio!</div>';
-  }
+  // Ranking (05/07/2026): fonte ÚNICA = SERVIDOR via renderRanking().
+  // O bloco local que existia aqui era o 3º escritor de #podium e causava a
+  // race condition do "ranking que some" — o ciclo agora só delega.
+  renderRanking();
 
   // Histórico de ciclos fechados
   renderHistoricoCiclos();
