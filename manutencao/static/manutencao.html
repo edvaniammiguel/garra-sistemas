@@ -465,7 +465,7 @@ tr.sel td{background:#DBEAFE!important;color:#1A2A5E}
           <div class="tw">
             <table>
               <thead><tr><th style="width:24px"></th><th style="width:80px">Equip. ↕</th><th>Descrição</th><th style="width:70px">Horímetro</th><th style="width:65px">OTs</th><th style="width:65px">Situação</th><th style="width:55px">Semáforo</th></tr></thead>
-              <tbody>
+              <tbody id="equip-tbody">
                 <tr oncontextmenu="showCtx(event)" onclick="selectEquip(this)">
                   <td style="text-align:center"><span class="dot r"></span></td><td class="bold">EH-0002</td><td>Escavadeira Hidráulica CB-06</td><td class="mono">8.685 h</td><td><span class="chip em">2 abertas</span></td><td><span class="chip em">Ativo</span></td><td><span class="dot r"></span> <span class="muted">Vencido</span></td>
                 </tr>
@@ -3349,7 +3349,33 @@ async function abrirOTRapida(){
     carregarOTsReais();
   } catch(e) { mostrarToast('❌ ' + e.message, 'warn'); }
 }
-document.addEventListener('DOMContentLoaded', function(){ carregarOTsReais(); carregarEquipReais(); });
+const SEM_DOT = { vermelho:'r', laranja:'o', amarelo:'y', verde:'g' };
+const SEM_LBL = { vermelho:'Vencido', laranja:'Urgente', amarelo:'Atenção', verde:'OK' };
+async function carregarSemaforosReais(){
+  const tb = document.getElementById('equip-tbody');
+  if (!tb) return;
+  try {
+    const eqs = await mntFetch('/manutencao/api/semaforos');
+    tb.innerHTML = eqs.map(e => {
+      const d = SEM_DOT[e.status], l = SEM_LBL[e.status];
+      const hor = e.horimetro ? (e.medicao==='km' ? Math.round(e.horimetro).toLocaleString('pt-BR')+' km'
+                                                  : Math.round(e.horimetro).toLocaleString('pt-BR')+' h') : '—';
+      const ots = e.ots_abertas > 0 ? `<span class="chip em">${e.ots_abertas} aberta${e.ots_abertas>1?'s':''}</span>`
+                                    : '<span class="chip tm">Nenhuma</span>';
+      const tip = (e.pontos||[]).map(p=>`${p.codigo}: ${p.leitura}${p.atencao?' (🟡'+p.atencao+')':''}`).join(' · ');
+      return `<tr onclick="selectEquip(this)" title="${_esc(tip)}">
+        <td style="text-align:center"><span class="dot ${d}"></span></td>
+        <td class="bold">${_esc(e.codigo)}</td>
+        <td>${_esc(e.descricao||'')}</td>
+        <td class="mono">${hor}</td>
+        <td>${ots}</td>
+        <td><span class="chip em">Ativo</span></td>
+        <td><span class="dot ${d}"></span> <span class="muted">${l}</span></td>
+      </tr>`;
+    }).join('');
+  } catch(e) { console.error('[semaforos]', e); }
+}
+document.addEventListener('DOMContentLoaded', function(){ carregarOTsReais(); carregarEquipReais(); carregarSemaforosReais(); });
 </script>
 </body>
 </html>
