@@ -275,3 +275,56 @@ async def semaforos_frota(_auth=Depends(verificar_token)):
                 eq["status"] = st
     lista = sorted(equipes.values(), key=lambda x: (ordem[x["status"]], x["codigo"]))
     return lista
+
+
+# ── ALMOXARIFADO: peças reais (Onda 1) com busca ──
+@router.get("/manutencao/api/pecas")
+async def listar_pecas(busca: str = None, limit: int = 100, _auth=Depends(verificar_token)):
+    limit = min(max(int(limit or 100), 1), 300)
+    if busca and busca.strip():
+        b = f"%{busca.strip()}%"
+        rows = await ajard_query(
+            """SELECT codigo, descricao, unidade, familia_codigo, custo_medio
+               FROM manutencao.pecas WHERE ativo=true
+                 AND (codigo ILIKE %s OR descricao ILIKE %s)
+               ORDER BY codigo LIMIT """ + str(limit), (b, b))
+    else:
+        rows = await ajard_query(
+            """SELECT codigo, descricao, unidade, familia_codigo, custo_medio
+               FROM manutencao.pecas WHERE ativo=true
+               ORDER BY codigo LIMIT """ + str(limit))
+    total = await ajard_query("SELECT COUNT(*)::int AS n FROM manutencao.pecas WHERE ativo=true", fetch="one")
+    return {"total": total["n"], "itens": [dict(r) for r in rows]}
+
+
+# ── FICHA DO EQUIPAMENTO: Ondas 1+2+3 agregadas ──
+@router.get("/manutencao/api/equipamentos/{eq_id}/detalhe")
+async def detalhe_equipamento(eq_id: str, _auth=Depends(verificar_token)):
+    eq = await ajard_query(
+        """SELECT e.*, p.codigo AS pai_codigo,
+                  (SELECT COUNT(*)::int FROM operacional.equipamentos f
+                    WHERE f.equipamento_pai = e.id) AS filhos
+           FROM operacional.equipamentos e
+           LEFT JOIN operacional.equipamentos p ON p.id = e.equipamento_pai
+           WHERE e.id=%s""", (eq_id,), fetch="one")
+    if not eq:
+        raise HTTPException(status_code=404, detail="Equipamento não encontrado")
+    pontos = await ajard_query(
+        """SELECT codigo, leitura_atual, data_leitura, limiar_atencao, limiar_urgente, limiar_maximo
+           FROM manutencao.pontos_controle WHERE equipamento_id=%s AND ativo=true ORDER BY codigo""", (eq_id,))
+    planos = await ajard_query(
+        """SELECT codigo, descricao, tempo_horas, hh_previsto, custo_previsto, plano_proximo_codigo
+           FROM manutencao.planos WHERE equipamento_id=%s AND ativo=true ORDER BY codigo""", (eq_id,))
+    ots = await ajard_query(
+        """SELECT numero, tipo, prioridade, status, descricao, data_abertura, data_conclusao, custo_total
+           FROM manutencao.ot WHERE equipamento_id=%s AND ativo=true
+           ORDER BY data_abertura DESC LIMIT 25""", (eq_id,))
+    filhos = await ajard_query(
+        """SELECT codigo, descricao, posicao FROM operacional.equipamentos
+           WHERE equipamento_pai=%s ORDER BY codigo""", (eq_id,))
+    d = dict(eq)
+    d["pontos"] = [dict(x) for x in pontos]
+    d["planos"] = [dict(x) for x in planos]
+    d["ots"] = [dict(x) for x in ots]
+    d["componentes"] = [dict(x) for x in filhos]
+    return d
