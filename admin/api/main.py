@@ -785,6 +785,29 @@ async def criar_schema_manutencao():
                 usuario_id UUID,
                 criado_em TIMESTAMPTZ DEFAULT now()
             )""", fetch="none")
+        # Aderência à spec v16 (ManWinWin): tabela chama-se manutencao.ot
+        await ajard_query("""
+            DO $$ BEGIN
+              IF to_regclass('manutencao.ordens_trabalho') IS NOT NULL
+                 AND to_regclass('manutencao.ot') IS NULL THEN
+                ALTER TABLE manutencao.ordens_trabalho RENAME TO ot;
+              END IF;
+            END $$;""", fetch="none")
+        # Colunas do fluxo completo (7.5): NF/financeiro (Luana), fechamento
+        # técnico (Bruna), envio WhatsApp, encadeamento preventivo, pedido
+        await ajard_query("""
+            ALTER TABLE manutencao.ot
+              ADD COLUMN IF NOT EXISTS numero_nf TEXT,
+              ADD COLUMN IF NOT EXISTS valor_servico NUMERIC(12,2),
+              ADD COLUMN IF NOT EXISTS data_nf DATE,
+              ADD COLUMN IF NOT EXISTS horas_parada NUMERIC(8,1),
+              ADD COLUMN IF NOT EXISTS data_retorno_operacao DATE,
+              ADD COLUMN IF NOT EXISTS enviado_por UUID,
+              ADD COLUMN IF NOT EXISTS enviado_em TIMESTAMPTZ,
+              ADD COLUMN IF NOT EXISTS ot_origem_id UUID,
+              ADD COLUMN IF NOT EXISTS ot_proxima_id UUID,
+              ADD COLUMN IF NOT EXISTS pedido_id UUID
+        """, fetch="none")
         print("[Startup] schema manutencao OK")
     except Exception as e:
         print(f"[Startup] manutencao: {e}")
