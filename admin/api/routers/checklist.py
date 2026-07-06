@@ -55,6 +55,10 @@ async def remover_modelo(cl_id: str, db=Depends(get_db), _auth=Depends(verificar
 @router.get("/checklist/envios")
 async def listar_envios(usuario: Optional[str]=None, cl_id: Optional[str]=None, limit: int=100, db=Depends(get_db), _auth=Depends(verificar_token)):
     where, params = "WHERE arquivado=FALSE", []
+    # Menor privilégio (05/07/2026): operador/motorista só vê os PRÓPRIOS envios,
+    # independente do parâmetro. Gestor/admin filtram livremente.
+    if _auth.get("perfil") not in ("admin", "gestor"):
+        usuario = _auth.get("sub", "")
     if usuario: params.append(usuario); where += f" AND usuario_login=${len(params)}"
     if cl_id:   params.append(cl_id);   where += f" AND cl_id=${len(params)}"
     params.append(limit)
