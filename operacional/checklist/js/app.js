@@ -1,3 +1,17 @@
+// ── TOKEN DE SESSÃO DO CHECKLIST (06/07/2026) ──
+// localStorage é por ORIGEM: um login no /mobile sobrescrevia garra_token e a
+// aba do gestor passava a agir com o token do operador (403 fantasma).
+// O SSO da URL vira sessão própria desta aba/app.
+(function(){
+  try {
+    const sso = new URLSearchParams(location.search).get('sso');
+    if (sso && sso.length > 10) sessionStorage.setItem('garra_ck_token', sso);
+  } catch(e) {}
+})();
+function ckToken() {
+  return sessionStorage.getItem('garra_ck_token') || ckToken();
+}
+
 /* ═══════════════════════════════════════════════════
    app.js — Garra Check List System v3
    Garra Terraplenagem e Caçambas
@@ -6,7 +20,7 @@
 
 // ─── API FETCH COM TOKEN ───────────────────────────
 async function apiFetch(url, options = {}) {
-  const token = localStorage.getItem('garra_token') || '';
+  const token = ckToken();
   const headers = {
     'Authorization': 'Bearer ' + token,
     ...(options.headers || {})
@@ -468,7 +482,7 @@ function renderSupChecklistCards() {
       const cfg = PontosConfig.get();
       const ini = cfg.data_inicio || '', fim = cfg.data_fim || '';
       const qs = [ini?('inicio='+ini):'', fim?('fim='+fim):''].filter(Boolean).join('&');
-      const token = localStorage.getItem('garra_token') || '';
+      const token = ckToken();
       const r = await fetch('/checklist/ranking' + (qs?'?'+qs:''), { headers: { 'Authorization': 'Bearer ' + token } });
       if (!r.ok) return;
       const rk = await r.json();
@@ -541,7 +555,7 @@ function renderDriverDashboard() {
       try {
         const ini = cfg.data_inicio || '', fim = cfg.data_fim || '';
         const qs = [ini?('inicio='+ini):'', fim?('fim='+fim):''].filter(Boolean).join('&');
-        const token = localStorage.getItem('garra_token') || '';
+        const token = ckToken();
         const r = await fetch('/checklist/ranking' + (qs?'?'+qs:''), {
           headers: { 'Authorization': 'Bearer ' + token }
         });
@@ -617,7 +631,7 @@ function renderDriverDashboard() {
   histEl.innerHTML = '<div class="empty-state" style="opacity:.6">Carregando…</div>';
   (async () => {
     try {
-      const token = localStorage.getItem('garra_token') || '';
+      const token = ckToken();
       const r = await fetch('/checklist/envios?usuario=' + encodeURIComponent(u.login) + '&limit=15',
                             { headers: { 'Authorization': 'Bearer ' + token } });
       if (!r.ok) throw new Error('HTTP ' + r.status);
@@ -1190,7 +1204,7 @@ async function renderOverview() {
   const weekAgo = new Date(Date.now() - 7*86400000);
   let subs = null;
   try {
-    const token = localStorage.getItem('garra_token') || '';
+    const token = ckToken();
     const r = await fetch('/checklist/envios?limit=500', { headers: { 'Authorization': 'Bearer ' + token } });
     if (!r.ok) throw new Error('HTTP ' + r.status);
     const envios = await r.json();
@@ -1243,7 +1257,7 @@ async function ajustarPontos(login, nome) {
   const motivo = prompt('Motivo do ajuste (obrigatório):');
   if (!motivo || !motivo.trim()) return;
   try {
-    const token = localStorage.getItem('garra_token') || '';
+    const token = ckToken();
     const r = await fetch('/checklist/pontos-ajuste', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
@@ -1268,7 +1282,7 @@ async function renderRanking() {
     const ini = ciclo?.inicio || cfg.data_inicio || '';
     const fim = ciclo?.fim    || cfg.data_fim    || '';
     const qs = [ini?('inicio='+ini):'', fim?('fim='+fim):''].filter(Boolean).join('&');
-    const token = localStorage.getItem('garra_token') || '';
+    const token = ckToken();
     const r = await fetch('/checklist/ranking' + (qs?'?'+qs:''), {
       headers: { 'Authorization': 'Bearer ' + token }
     });
@@ -1284,6 +1298,26 @@ async function renderRanking() {
       const medals=['🥇','🥈','🥉'],cls=['p1','p2','p3'];
       document.getElementById('podium').innerHTML=top3.length?top3.map((u,i)=>`<div class="podium-place ${cls[i]}" style="cursor:pointer" onclick="ajustarPontos('${u.login}','${sanitize(u.nome||u.login)}')" title="Clique para ajustar pontos"><div class="pp-medal">${medals[i]}</div><div class="pp-avatar">${sanitize(u.nome||u.login).charAt(0)}</div><div class="pp-name">${sanitize((u.nome||u.login).split(' ')[0])}</div><div class="pp-pts">${u.pts||0}</div></div>`).join(''):'<div class="empty-state">Sem envios no período ainda</div>';
       document.getElementById('full-ranking').innerHTML=rest.map((u,i)=>`<div class="rank-item" style="cursor:pointer" onclick="ajustarPontos('${u.login}','${sanitize(u.nome||u.login)}')" title="Clique para ajustar pontos"><div class="rank-pos">${i+4}</div><div class="rank-avatar">${sanitize(u.nome||u.login).charAt(0)}</div><div class="rank-info"><div class="rank-name">${sanitize(u.nome||u.login)}</div><div class="rank-sub">${u.envios||0} envios</div></div><div class="rank-pts">${u.pts||0} pts</div></div>`).join('')||'<div class="empty-state" style="padding:16px 0;font-size:13px">Apenas os 3 primeiros no pódio!</div>';
+      // 📜 Extrato de ajustes (auditoria)
+      try {
+        const ra = await fetch('/checklist/pontos-ajustes', { headers: { 'Authorization': 'Bearer ' + token } });
+        if (ra.ok) {
+          const ajs = await ra.json();
+          let sec = document.getElementById('ajustes-extrato');
+          const fr = document.getElementById('full-ranking');
+          if (!sec && fr) { sec = document.createElement('div'); sec.id = 'ajustes-extrato';
+            sec.style.cssText = 'margin-top:18px'; fr.parentElement.appendChild(sec); }
+          if (sec) sec.innerHTML = ajs.length ? `
+            <div style="font-weight:800;font-size:13px;letter-spacing:.04em;margin-bottom:8px">📜 AJUSTES DE PONTOS (${ajs.length})</div>
+            ${ajs.map(x => { let dt=''; try{dt=new Date(x.criado_em).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});}catch(_){}
+              return `<div style="display:flex;gap:10px;align-items:baseline;padding:7px 10px;border-bottom:1px solid rgba(0,0,0,.06);font-size:13px">
+                <span style="min-width:88px;color:#64748B;font-size:11px">${dt}</span>
+                <strong style="min-width:110px">${sanitize(x.nome)}</strong>
+                <span style="font-weight:800;color:${x.pts<0?'#DC2626':'#16A34A'}">${x.pts>0?'+':''}${x.pts} pts</span>
+                <span style="color:#475569;flex:1">${sanitize(x.motivo)}</span>
+              </div>`;}).join('')}` : '';
+        }
+      } catch(e) { console.error('[extrato]', e); }
       return;
     }
   } catch(e) {
@@ -2401,7 +2435,7 @@ function salvarPontosConfig(rerender = true) {
 
   // Fonte única: grava no SERVIDOR (todos os aparelhos leem a mesma regra)
   try {
-    const token = localStorage.getItem('garra_token') || '';
+    const token = ckToken();
     fetch('/checklist/pontos-config', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
@@ -2426,7 +2460,7 @@ function salvarPontosConfig(rerender = true) {
 // Carrega a config OFICIAL do servidor no boot (cache local = fallback offline)
 (async function carregarPontosConfigServidor() {
   try {
-    const token = localStorage.getItem('garra_token') || '';
+    const token = ckToken();
     if (!token) return;
     const r = await fetch('/checklist/pontos-config', {
       headers: { 'Authorization': 'Bearer ' + token }
