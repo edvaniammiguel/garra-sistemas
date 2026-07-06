@@ -1155,6 +1155,9 @@ function mgrTab(tab,btn) {
 
 // ── OVERVIEW ──
 async function renderOverview() {
+  // Preload
+  const _cl0 = document.getElementById('compliance-list');
+  if (_cl0 && !_cl0.children.length) _cl0.innerHTML = '<div class="empty-state" style="opacity:.6">⏳ Carregando…</div>';
   const weekAgo = new Date(Date.now() - 7*86400000);
   let subs = null;
   try {
@@ -1225,6 +1228,9 @@ async function ajustarPontos(login, nome) {
 }
 
 async function renderRanking() {
+  // Preload: indica busca no servidor
+  const _pd0 = document.getElementById('podium');
+  if (_pd0 && !_pd0.querySelector('.podium-place')) _pd0.innerHTML = '<div class="empty-state" style="opacity:.6">⏳ Carregando ranking…</div>';
   // Fonte única: SERVIDOR (checklist.envios) — 05/07/2026.
   // Período: ciclo ativo → config de pontos → geral. Offline: cai no local.
   try {
@@ -2311,8 +2317,12 @@ function renderPontosConfigPanel() {
 
   const cfg    = PontosConfig.get();
   const ativo  = cfg.ativo;
-  const inicio = cfg.data_inicio || '';
-  const fim    = cfg.data_fim    || '';
+  // Re-render PRESERVA o que está na tela (o picker nativo tira o foco do
+  // input e o auto-refresh apagava a data escolhida antes do Salvar — 06/07/2026)
+  const _exI = document.getElementById('pontos-inicio');
+  const _exF = document.getElementById('pontos-fim');
+  const inicio = _exI ? _exI.value : (cfg.data_inicio || '');
+  const fim    = _exF ? _exF.value : (cfg.data_fim    || '');
 
   el.innerHTML = `
     <div class="pontos-config-card">
