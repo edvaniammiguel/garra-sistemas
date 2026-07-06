@@ -472,8 +472,13 @@ function renderSupChecklistCards() {
       const r = await fetch('/checklist/ranking' + (qs?'?'+qs:''), { headers: { 'Authorization': 'Bearer ' + token } });
       if (!r.ok) return;
       const rk = await r.json();
-      const eu = rk.find(x => x.login === currentUser?.login);
-      const medals = ['🥇','🥈','🥉'];
+      const eu = rk.find(x => x.login === currentUser?.login) || rk[0];
+      // Últimos envios DELE (menor privilégio no backend garante o filtro)
+      let envios3 = [];
+      try {
+        const re = await fetch('/checklist/envios?limit=3', { headers: { 'Authorization': 'Bearer ' + token } });
+        if (re.ok) envios3 = await re.json();
+      } catch(e) {}
       let card = document.getElementById('sup-pts-card');
       if (!card) { card = document.createElement('div'); card.id = 'sup-pts-card';
         card.style.cssText = 'background:linear-gradient(135deg,#1A2A5E,#2A3F7E);border-radius:12px;padding:16px 18px;margin:0 0 14px;color:#fff';
@@ -483,9 +488,13 @@ function renderSupChecklistCards() {
           <div><div style="font-size:11px;opacity:.7;text-transform:uppercase;letter-spacing:.05em">Seus pontos</div>
           <div style="font-size:30px;font-weight:800;color:#E8820C">${eu ? eu.pts : 0}</div>
           <div style="font-size:12px;opacity:.8">🔥 ${eu ? eu.envios : 0} envios</div></div>
-          <div style="text-align:right;font-size:12px">
-            <div style="font-weight:800;font-size:11px;letter-spacing:.05em;opacity:.7;margin-bottom:4px">🏆 RANKING</div>
-            ${rk.slice(0,3).map((x,i)=>`<div style="${x.login===currentUser?.login?'font-weight:800;color:#E8820C':''}">${medals[i]} ${sanitize((x.nome||x.login).split(' ')[0])} — ${x.pts}</div>`).join('')}
+          <div style="text-align:right;font-size:12px;max-width:55%">
+            <div style="font-weight:800;font-size:11px;letter-spacing:.05em;opacity:.7;margin-bottom:4px">📋 ÚLTIMOS ENVIOS</div>
+            ${envios3.length ? envios3.map(e => {
+              const nc = e.total_nc || 0;
+              let dt = ''; try { dt = new Date(e.enviado_em).toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'}); } catch(_){}
+              return `<div style="opacity:.9">${dt} · ${sanitize((e.cl_label||'').split(' ')[0])} ${nc>0?`<span style=\"color:#FCA5A5\">⚠ ${nc} NC</span>`:'<span style=\"color:#86EFAC\">✓</span>'}</div>`;
+            }).join('') : '<div style="opacity:.6">Nenhum envio ainda</div>'}
           </div>
         </div>`;
     } catch(e) { console.error('[sup-pts]', e); }
@@ -543,18 +552,8 @@ function renderDriverDashboard() {
           const elS = document.getElementById('driver-streak');
           if (eu && elP) elP.textContent = eu.pts;
           if (eu && elS) elS.textContent = `🔥 ${eu.envios} envios`;
-          // Mini-pódio do colaborador (top 3 do servidor)
-          if (elP && rk.length) {
-            const card = elP.closest('div[class]') || elP.parentElement;
-            let pod = document.getElementById('driver-podium');
-            if (!pod) { pod = document.createElement('div'); pod.id = 'driver-podium';
-              pod.style.cssText = 'margin-top:10px;padding:10px 12px;background:rgba(255,255,255,.08);border-radius:10px;font-size:12px';
-              (card?.parentElement || document.body).insertBefore(pod, card?.nextSibling || null); }
-            const medals = ['🥇','🥈','🥉'];
-            pod.innerHTML = '<div style="font-weight:800;font-size:11px;letter-spacing:.05em;opacity:.7;margin-bottom:6px">🏆 RANKING</div>' +
-              rk.slice(0,3).map((x,i) => `<div style="display:flex;justify-content:space-between;padding:2px 0${x.login===u.login?';font-weight:800;color:#E8820C':''}">
-                <span>${medals[i]} ${sanitize((x.nome||x.login).split(' ')[0])}</span><span>${x.pts} pts</span></div>`).join('');
-          }
+          // (06/07/2026) Mini-pódio removido: ranking comparativo é só da gestão.
+          document.getElementById('driver-podium')?.remove();
         }
       } catch(e) { /* offline: mantém local */ }
     })();
