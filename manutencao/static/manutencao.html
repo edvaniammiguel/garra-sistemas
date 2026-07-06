@@ -387,8 +387,8 @@ tr.sel td{background:#DBEAFE!important;color:#1A2A5E}
   <div class="tb-right">
     <div class="tbr" onclick="showModule('param')">⚙️ Parametrizar</div>
     <div class="tbr">🔔 <span class="bell-badge">5</span></div>
-    <div class="tbr"><b>Bruna</b> — Manutenção</div>
-    <div class="tbr">↪</div>
+    <div class="tbr"><b id="tb-user">—</b> — Manutenção</div>
+    <div class="tbr" title="Sair" style="cursor:pointer" onclick="sairModulo()">↪ Sair</div>
   </div>
 </div>
 
@@ -2048,10 +2048,10 @@ tr.sel td{background:#DBEAFE!important;color:#1A2A5E}
   <span>Modo: <b>Manutenção</b></span>
   <span><b>88</b> equipamentos</span>
   <span style="margin-left:auto">
-    <span style="color:#EF4444">🔴 7 vencidos</span> &nbsp;|&nbsp;
-    <span style="color:#F97316">🟠 3 urgentes</span> &nbsp;|&nbsp;
-    <span style="color:#EAB308">🟡 4 atenção</span> &nbsp;|&nbsp;
-    <b>Bruna</b> — 29/06/2026 &nbsp;10:44
+    <span style="color:#EF4444">🔴 <span id="sb-verm">0</span> vencidos</span> &nbsp;|&nbsp;
+    <span style="color:#F97316">🟠 <span id="sb-urg">0</span> urgentes</span> &nbsp;|&nbsp;
+    <span style="color:#EAB308">🟡 <span id="sb-ate">0</span> atenção</span> &nbsp;|&nbsp;
+    <b id="sb-user">—</b> — <span id="sb-agora"></span>
   </span>
 </div>
 
@@ -3278,30 +3278,22 @@ const MNT_DOT  = { urgente:'r', alta:'r', media:'y', baixa:'g' };
 let _mntEquipList = [];
 function _esc(s){ return String(s??'').replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 async function carregarOTsReais(){
-  const tb = document.getElementById('ots-tbody');
   const st = document.getElementById('ots-strip');
-  if (!tb) return;
   try {
-    const ots = await mntFetch('/manutencao/api/ots');
-    if (st) st.textContent = ots.length + ' OT(s) · dados reais';
-    tb.innerHTML = ots.length ? ots.map(o => {
-      const [cc, cl] = MNT_CHIP[o.status] || ['nr', o.status];
-      const dot = MNT_DOT[o.prioridade] || 'y';
-      const d = v => { if(!v) return '—'; try { return new Date(v).toLocaleDateString('pt-BR'); } catch(e){ return '—'; } };
-      return `<tr oncontextmenu="showCtxReal(event,'${o.id}','ot','${_esc(o.numero)}')" onclick="this.parentNode.querySelectorAll('tr').forEach(r=>r.classList.remove('sel'));this.classList.add('sel')">
-        <td><span class="dot ${dot}"></span></td>
-        <td class="bold">${_esc(o.numero)}</td>
-        <td>${_esc(o.descricao)}</td>
-        <td>${_esc(o.equipamento_codigo||'')}</td>
-        <td><span class="chip pe" style="font-size:9px">${_esc(o.responsavel_nome||'Manutenção')}</span></td>
-        <td><span class="chip ${cc}">${cl}</span></td>
-        <td>${d(o.data_abertura)}</td><td class="mono">${o.horimetro_na_abertura ?? '—'}</td>
-        <td>${d(o.data_abertura)}</td><td>${d(o.data_conclusao)}</td>
-      </tr>`;
-    }).join('') : '<tr><td colspan="10" style="padding:16px;color:#64748B">Nenhuma OT registrada ainda — use a Abertura rápida acima.</td></tr>';
-  } catch(e) {
-    if (st) st.textContent = '⚠ ' + e.message;
-  }
+    _otsCache = await mntFetch('/manutencao/api/ots');
+    if (st) st.textContent = _otsCache.length + ' OT(s) · dados reais';
+    renderOTsLista(_otsCache);
+    montarArvoreOTs('');
+  } catch(e) { if (st) st.textContent = '⚠ ' + e.message; }
+}
+function renderOTsLista(ots){
+  const tb = document.getElementById('ots-tbody');
+  if (!tb) return;
+  tb.innerHTML = ots.length ? ots.map(function(o){
+    const cc = (MNT_CHIP[o.status]||['nr'])[0], cl = (MNT_CHIP[o.status]||['nr',o.status])[1];
+    const d = function(v){ if(!v) return '—'; try{ return new Date(v).toLocaleDateString('pt-BR'); }catch(e){ return '—'; } };
+    return '<tr oncontextmenu="showCtxReal(event,\''+o.id+'\',\'ot\',\''+_esc(o.numero)+'\')" onclick="this.parentNode.querySelectorAll(\'tr\').forEach(function(r){r.classList.remove(\'sel\')});this.classList.add(\'sel\')"><td><span class="dot '+(MNT_DOT[o.prioridade]||'y')+'"></span></td><td class="bold">'+_esc(o.numero)+'</td><td>'+_esc(o.descricao)+'</td><td>'+_esc(o.equipamento_codigo||'')+'</td><td><span class="chip pe" style="font-size:9px">Manutenção</span></td><td><span class="chip '+cc+'">'+cl+'</span></td><td>'+d(o.data_abertura)+'</td><td class="mono">'+(o.horimetro_na_abertura!=null?o.horimetro_na_abertura:'—')+'</td><td>'+d(o.data_abertura)+'</td><td>'+d(o.data_conclusao)+'</td></tr>';
+  }).join('') : '<tr><td colspan="10" style="padding:14px;color:#64748B">Nenhuma OT registrada — use a Abertura rápida acima.</td></tr>';
 }
 async function carregarEquipReais(){
   try {
@@ -3325,11 +3317,10 @@ async function abrirOTRapida(){
 }
 const SEM_DOT = { vermelho:'r', laranja:'o', amarelo:'y', verde:'g' };
 const SEM_LBL = { vermelho:'Vencido', laranja:'Urgente', amarelo:'Atenção', verde:'OK' };
-async function carregarSemaforosReais(){
+function renderSemaforos(eqs){
   const tb = document.getElementById('equip-tbody');
   if (!tb) return;
-  try {
-    const eqs = await mntFetch('/manutencao/api/semaforos');
+  {
     tb.innerHTML = eqs.map(e => {
       const d = SEM_DOT[e.status], l = SEM_LBL[e.status];
       const hor = e.horimetro ? (e.medicao==='km' ? Math.round(e.horimetro).toLocaleString('pt-BR')+' km'
@@ -3347,8 +3338,79 @@ async function carregarSemaforosReais(){
         <td><span class="dot ${d}"></span> <span class="muted">${l}</span></td>
       </tr>`;
     }).join('');
+  }
+}
+async function carregarSemaforosReais(){
+  try {
+    _semCache = await mntFetch('/manutencao/api/semaforos');
+    renderSemaforos(_semCache);
+    _rodapeSemaforos();
+    montarArvoreFrota('');
   } catch(e) { console.error('[semaforos]', e); }
 }
+// ══ SHELL VIVO: usuário real, sair, relógio, lateral contextual com filtros reais ══
+let _semCache = [], _otsCache = [], _tiposMap = {};
+function _jwtPayload(){
+  try { const t = mntToken(); const p = JSON.parse(atob(t.split('.')[1].replace(/-/g,'+').replace(/_/g,'/'))); return p || {}; } catch(e){ return {}; }
+}
+function sairModulo(){
+  if (!confirm('Sair do módulo Manutenção?')) return;
+  try { sessionStorage.removeItem('garra_mnt_token'); } catch(e){}
+  location.href = '/admin';
+}
+function _tickAgora(){
+  const el = document.getElementById('sb-agora');
+  if (el) el.textContent = new Date().toLocaleString('pt-BR', {day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
+}
+function _identidade(){
+  const p = _jwtPayload();
+  const nome = p.nome || p.login || '—';
+  const tu = document.getElementById('tb-user'); if (tu) tu.textContent = nome;
+  const su = document.getElementById('sb-user'); if (su) su.textContent = nome;
+  _tickAgora(); setInterval(_tickAgora, 30000);
+}
+function _rodapeSemaforos(){
+  const v = _semCache.filter(e=>e.status==='vermelho').length;
+  const u = _semCache.filter(e=>e.status==='laranja').length;
+  const a = _semCache.filter(e=>e.status==='amarelo').length;
+  const set = (id,n)=>{ const el=document.getElementById(id); if(el) el.textContent=n; };
+  set('sb-verm',v); set('sb-urg',u); set('sb-ate',a);
+}
+// ── árvores contextuais
+function montarArvoreFrota(filtroAtivo){
+  const t = document.getElementById('lp-title'); if (t) t.textContent = 'Frota — Tipos de Equipamento';
+  const tree = document.getElementById('lp-tree'); if (!tree) return;
+  const grupos = {};
+  _semCache.forEach(e => { const s = e.codigo.split('-')[0]; (grupos[s]=grupos[s]||[]).push(e); });
+  const linha = (rot, n, on, ativo) => '<div class="tn'+(ativo?' on':'')+'" style="padding-left:14px;cursor:pointer" onclick="'+on+'"><span class="tt"></span><span class="ti">🔷</span><span class="tl">'+rot+'</span><span class="tc">'+n+'</span></div>';
+  let h = linha('Todos os equipamentos', _semCache.length, "filtrarFrota('')", !filtroAtivo);
+  Object.keys(grupos).sort().forEach(s => {
+    h += linha(_tiposMap[s] || s, grupos[s].length, "filtrarFrota('"+s+"')", filtroAtivo===s);
+  });
+  tree.innerHTML = h;
+}
+function filtrarFrota(sigla){
+  renderSemaforos(sigla ? _semCache.filter(e=>e.codigo.split('-')[0]===sigla) : _semCache);
+  montarArvoreFrota(sigla);
+}
+function montarArvoreOTs(filtroAtivo){
+  const t = document.getElementById('lp-title'); if (t) t.textContent = 'OTs — Situação';
+  const tree = document.getElementById('lp-tree'); if (!tree) return;
+  const linha = (rot, n, on, ativo) => '<div class="tn'+(ativo?' on':'')+'" style="padding-left:14px;cursor:pointer" onclick="'+on+'"><span class="tt"></span><span class="ti">📋</span><span class="tl">'+rot+'</span><span class="tc">'+n+'</span></div>';
+  let h = linha('Todas', _otsCache.length, "filtrarOTs('')", !filtroAtivo);
+  Object.keys(MNT_CHIP).forEach(st => {
+    const n = _otsCache.filter(o=>o.status===st).length;
+    h += linha(MNT_CHIP[st][1], n, "filtrarOTs('"+st+"')", filtroAtivo===st);
+  });
+  tree.innerHTML = h;
+}
+function filtrarOTs(st){
+  renderOTsLista(st ? _otsCache.filter(o=>o.status===st) : _otsCache);
+  montarArvoreOTs(st);
+  const strip = document.getElementById('ots-strip');
+  if (strip) strip.textContent = (st ? MNT_CHIP[st][1]+': ' : '') + (st ? _otsCache.filter(o=>o.status===st).length : _otsCache.length) + ' OT(s) · dados reais';
+}
+
 // ══ MENU DE CONTEXTO REAL (botão direito = acesso a tudo do objeto) ══
 function _ctxMenuEl(){
   let m = document.getElementById('ctx-real');
@@ -3486,8 +3548,17 @@ async function verEquipReal(id){
   } catch(e) { console.error('[detalhe]', e); }
 }
 const _origShowModule = showModule;
-showModule = function(id){ _origShowModule(id); if (id==='alm') carregarPecasReais(); };
-document.addEventListener('DOMContentLoaded', function(){ carregarOTsReais(); carregarEquipReais(); carregarSemaforosReais(); });
+showModule = function(id){
+  _origShowModule(id);
+  if (id==='alm') carregarPecasReais();
+  if (id==='manut') montarArvoreFrota('');
+  if (id==='ots') montarArvoreOTs('');
+};
+document.addEventListener('DOMContentLoaded', function(){
+  _identidade();
+  mntFetch('/manutencao/api/tipos').then(function(ts){ ts.forEach(function(t){ _tiposMap[t.sigla]=t.nome; }); montarArvoreFrota(''); }).catch(function(){});
+  carregarOTsReais(); carregarEquipReais(); carregarSemaforosReais();
+});
 </script>
 </body>
 </html>
