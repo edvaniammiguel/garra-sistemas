@@ -1096,9 +1096,12 @@ const API = (location.hostname === 'localhost' || location.hostname === '127.0.0
    TOKEN
 ══════════════════════════════════════════════ */
 const Token = {
-  get:  ()    => localStorage.getItem('garra_token'),
-  set:  (t)   => localStorage.setItem('garra_token', t),
-  del:  ()    => localStorage.removeItem('garra_token'),
+  // (06/07/2026) Sessão POR ABA: localStorage é por origem — um login no
+  // /mobile no mesmo navegador sobrescrevia o token e derrubava o admin e
+  // o SSO da Jardinagem. sessionStorage prende a sessão a esta aba.
+  get:  ()    => sessionStorage.getItem('garra_adm_token') || localStorage.getItem('garra_token'),
+  set:  (t)   => { sessionStorage.setItem('garra_adm_token', t); localStorage.setItem('garra_token', t); },
+  del:  ()    => { sessionStorage.removeItem('garra_adm_token'); localStorage.removeItem('garra_token'); },
   user: ()    => { try { return JSON.parse(localStorage.getItem('garra_usuario') || 'null'); } catch { return null; } },
   setUser:(u) => localStorage.setItem('garra_usuario', JSON.stringify(u)),
   delUser:()  => localStorage.removeItem('garra_usuario'),
@@ -1272,14 +1275,14 @@ window.addEventListener('load', async () => {
    CHECKLIST ADMIN — abre em nova aba com SSO
 ══════════════════════════════════════════════ */
 function abrirChecklistAdmin() {
-  const token = localStorage.getItem('garra_token') || '';
+  const token = Token.get() || '';
   const url = '/checklist?sso=' + encodeURIComponent(token);
   window.open(url, '_blank');
 }
 
 // Abre módulo (ex: jardinagem) passando o token via SSO para evitar novo login
 function abrirModuloUrl(url, novaAba) {
-  const token = localStorage.getItem('garra_token') || '';
+  const token = Token.get() || '';
   const params = [];
   if (token) params.push('sso=' + encodeURIComponent(token));
   // nocache para módulos internos: evita que SW antigo sirva cache e perca o SSO
@@ -4606,7 +4609,7 @@ function cmExportExcelAnual() {
 }
 
 function cmBaixarExcel(url, nomeArquivo) {
-  const token = localStorage.getItem('garra_token') || '';
+  const token = Token.get() || '';
   fetch(url, { headers: { 'Authorization': 'Bearer ' + token } })
     .then(r => {
       if (!r.ok) throw new Error('Erro ao gerar Excel');
