@@ -720,72 +720,6 @@ input,select,textarea { font-family:inherit; font-size:13px; outline:none; }
         </div>
       </section>
 
-      <!-- ── SEÇÃO: MANUTENÇÃO (v26) ── -->
-      <section id="sec-manutencao" class="hidden">
-        <div class="card">
-          <div class="card-title" style="flex-wrap:wrap;gap:8px">
-            🔧 Manutenção — Ordens de Trabalho
-            <div style="display:flex;gap:8px;margin-left:auto">
-              <button class="btn btn-secondary" style="padding:6px 14px;font-size:12px" onclick="abrirFornecedores()">🏪 Fornecedores</button>
-              <button class="btn btn-primary" style="padding:6px 14px;font-size:12px" onclick="abrirModalOT()">+ Nova OT</button>
-            </div>
-          </div>
-          <div id="mnt-resumo" style="display:flex;gap:10px;flex-wrap:wrap;margin:10px 0 16px"></div>
-          <div id="mnt-lista" style="overflow-x:auto"></div>
-        </div>
-      </section>
-
-      <!-- Modal Nova OT -->
-      <div id="modal-ot" class="modal hidden">
-        <div class="modal-box" style="max-width:520px">
-          <h2 style="font-size:16px;font-weight:800;color:var(--blue);margin-bottom:14px">🔧 Nova Ordem de Trabalho</h2>
-          <div id="ot-error" style="display:none;background:#FEE;color:#C00;padding:10px;border-radius:8px;font-size:13px;margin-bottom:12px"></div>
-          <div class="field"><label>Equipamento *</label>
-            <select id="ot-equipamento"><option value="">— selecionar —</option></select></div>
-          <div style="display:flex;gap:12px">
-            <div class="field" style="flex:1"><label>Tipo</label>
-              <select id="ot-tipo"><option value="corretiva">Corretiva</option><option value="preventiva">Preventiva</option><option value="melhoria">Melhoria</option></select></div>
-            <div class="field" style="flex:1"><label>Prioridade</label>
-              <select id="ot-prioridade"><option value="baixa">Baixa</option><option value="media" selected>Média</option><option value="alta">Alta</option><option value="urgente">Urgente</option></select></div>
-          </div>
-          <div class="field"><label>Descrição do problema/serviço *</label>
-            <textarea id="ot-descricao" rows="3" placeholder="Ex: vazamento no cilindro da lança"></textarea></div>
-          <div style="display:flex;gap:12px">
-            <div class="field" style="flex:1"><label>Responsável</label>
-              <select id="ot-responsavel"><option value="">—</option></select></div>
-            <div class="field" style="flex:1"><label>Fornecedor</label>
-              <select id="ot-fornecedor"><option value="">—</option></select></div>
-          </div>
-          <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:14px">
-            <button class="btn btn-secondary" onclick="document.getElementById('modal-ot').classList.add('hidden')">Cancelar</button>
-            <button class="btn btn-primary" id="btn-salvar-ot" onclick="salvarOT()">Abrir OT</button>
-          </div>
-        </div>
-      </div>
-
-      <!-- Modal Detalhe OT -->
-      <div id="modal-ot-det" class="modal hidden">
-        <div class="modal-box" style="max-width:560px" id="ot-det-body"></div>
-      </div>
-
-      <!-- Modal Fornecedores -->
-      <div id="modal-fornecedores" class="modal hidden">
-        <div class="modal-box" style="max-width:560px">
-          <h2 style="font-size:16px;font-weight:800;color:var(--blue);margin-bottom:12px">🏪 Fornecedores</h2>
-          <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
-            <input id="fn-nome" placeholder="Nome *" style="flex:2;min-width:150px;padding:8px;border:1.5px solid var(--border);border-radius:8px"/>
-            <input id="fn-tel" placeholder="Telefone" style="flex:1;min-width:110px;padding:8px;border:1.5px solid var(--border);border-radius:8px"/>
-            <select id="fn-tipo" style="padding:8px;border:1.5px solid var(--border);border-radius:8px">
-              <option value="pecas">Peças</option><option value="servico">Serviço</option><option value="ambos">Ambos</option></select>
-            <button class="btn btn-primary" style="padding:8px 14px" onclick="salvarFornecedor()">+ Add</button>
-          </div>
-          <div id="fn-lista" style="max-height:300px;overflow-y:auto"></div>
-          <div style="display:flex;justify-content:flex-end;margin-top:12px">
-            <button class="btn btn-secondary" onclick="document.getElementById('modal-fornecedores').classList.add('hidden')">Fechar</button>
-          </div>
-        </div>
-      </div>
-
       <!-- ── SEÇÃO: CONTROLE MENSAL ── -->
       <section id="sec-controle-mensal" class="hidden">
         <div class="card">
@@ -1386,7 +1320,6 @@ function navTo(sec, elBtn) {
   if (sec === 'tipos-servico')   carregarTiposServico();
   if (sec === 'regimes')         carregarRegimes();
   if (sec === 'controle-mensal') initControleMensal();
-  if (sec === 'manutencao') initManutencao();
   if (sec === 'mural')           carregarMuralAdmin();
   if (sec === 'cartilha')        carregarCartilhaAdmin();
 }
@@ -2368,10 +2301,6 @@ function renderSidebar(perfil, perms) {
         <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
         Controle Mensal
       </div>
-      <div class="sb-item" onclick="navTo('manutencao',this)">
-        <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
-        Manutenção <span class="sb-badge" id="sb-mnt-count">–</span>
-      </div>
     </div><div class="sb-divider"></div>`;
 
   // Cadastros — admin/gestor/luana
@@ -2419,8 +2348,8 @@ function renderSidebar(perfil, perms) {
           <div class="sb-subitem" onclick="abrirChecklistAdmin()">
             ✅ Checklist <span class="sb-ext-tag">↗</span>
           </div>
-          <div class="sb-subitem sb-dim" title="Em breve">
-            🔧 Manutenção <span class="sb-ext-tag">em breve</span>
+          <div class="sb-subitem" onclick="abrirModuloUrl('/manutencao', true)">
+            🔧 Manutenção <span class="sb-ext-tag">novo</span>
           </div>
         </div>
       </div>`;
@@ -4267,202 +4196,6 @@ async function carregarControleMensal() {
   } catch (e) {
     el.innerHTML = `<div style="padding:30px;text-align:center;color:var(--red)">Erro: ${esc(e.message)}</div>`;
   }
-}
-
-/* ══════════════════════════════════════════════
-   MANUTENÇÃO (v26) — telas da Bruna
-══════════════════════════════════════════════ */
-let _mntFiltro = '', _mntEquip = [], _mntOps = [], _mntForn = [];
-const MNT_ST = {
-  aberta:          { l:'Aberta',           c:'#DC2626' },
-  em_andamento:    { l:'Em andamento',     c:'#D97706' },
-  aguardando_peca: { l:'Aguard. peça',     c:'#7C3AED' },
-  concluida:       { l:'Concluída',        c:'#16A34A' },
-  cancelada:       { l:'Cancelada',        c:'#64748B' },
-};
-const MNT_PR = { baixa:'#64748B', media:'#2563EB', alta:'#D97706', urgente:'#DC2626' };
-const MNT_TRANS = {
-  aberta: ['em_andamento','cancelada'],
-  em_andamento: ['aguardando_peca','concluida','cancelada'],
-  aguardando_peca: ['em_andamento','concluida','cancelada'],
-};
-
-async function initManutencao() {
-  carregarResumoMnt();
-  carregarOTs(_mntFiltro);
-  // listas para os selects (uma vez)
-  if (!_mntEquip.length) {
-    try {
-      const [eq, ops, forn] = await Promise.all([
-        apiFetch('/operacional/api/equipamentos'),
-        apiFetch('/operacional/api/operadores'),
-        apiFetch('/manutencao/api/fornecedores'),
-      ]);
-      _mntEquip = (eq || []).filter(e => (e.categoria || '').toLowerCase() !== 'apoio');
-      _mntOps = ops || [];
-      _mntForn = forn || [];
-    } catch (e) { console.error('[mnt] listas:', e); }
-  }
-}
-
-async function carregarResumoMnt() {
-  try {
-    const r = await apiFetch('/manutencao/api/resumo');
-    const el = document.getElementById('mnt-resumo');
-    if (el) el.innerHTML = Object.entries(MNT_ST).map(([k, s]) => `
-      <div onclick="_mntFiltro=(_mntFiltro==='${k}'?'':'${k}');carregarOTs(_mntFiltro);carregarResumoMnt()"
-           style="flex:1;min-width:110px;cursor:pointer;background:${_mntFiltro===k?s.c:'var(--bg)'};color:${_mntFiltro===k?'#fff':'inherit'};border:1.5px solid ${s.c};border-radius:10px;padding:10px 12px;text-align:center">
-        <div style="font-size:22px;font-weight:800;color:${_mntFiltro===k?'#fff':s.c}">${r[k] || 0}</div>
-        <div style="font-size:11px;font-weight:700">${s.l}</div>
-      </div>`).join('');
-    const badge = document.getElementById('sb-mnt-count');
-    if (badge) badge.textContent = (r.aberta || 0) + (r.em_andamento || 0) + (r.aguardando_peca || 0);
-  } catch (e) { console.error('[mnt] resumo:', e); }
-}
-
-async function carregarOTs(status) {
-  const el = document.getElementById('mnt-lista');
-  if (!el) return;
-  el.innerHTML = '<div style="padding:20px;opacity:.6">⏳ Carregando OTs…</div>';
-  try {
-    const ots = await apiFetch('/manutencao/api/ots' + (status ? '?status=' + status : ''));
-    if (!ots.length) { el.innerHTML = '<div style="padding:20px;opacity:.6">Nenhuma OT ' + (status ? 'neste status' : 'registrada') + '.</div>'; return; }
-    el.innerHTML = `<table style="width:100%;border-collapse:collapse;font-size:13px">
-      <thead><tr style="background:var(--bg);text-align:left">
-        <th style="padding:8px">Nº</th><th style="padding:8px">Equipamento</th>
-        <th style="padding:8px">Tipo</th><th style="padding:8px">Prior.</th>
-        <th style="padding:8px">Descrição</th><th style="padding:8px">Responsável</th>
-        <th style="padding:8px">Abertura</th><th style="padding:8px">Status</th>
-        <th style="padding:8px;text-align:right">Ações</th></tr></thead>
-      <tbody>${ots.map(o => {
-        const st = MNT_ST[o.status] || { l: o.status, c: '#666' };
-        const trans = (MNT_TRANS[o.status] || []).map(t =>
-          `<button onclick="mntStatus('${o.id}','${t}')" title="${MNT_ST[t].l}"
-             style="padding:3px 8px;margin-left:4px;border:1px solid ${MNT_ST[t].c};color:${MNT_ST[t].c};background:#fff;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer">${t==='concluida'?'✔ Concluir':t==='cancelada'?'✖':MNT_ST[t].l}</button>`).join('');
-        let dt = ''; try { dt = new Date(o.data_abertura).toLocaleDateString('pt-BR'); } catch(_){}
-        return `<tr style="border-bottom:1px solid var(--border)">
-          <td style="padding:8px;font-weight:700;color:var(--blue);cursor:pointer" onclick="verOT('${o.id}')">${esc(o.numero)}</td>
-          <td style="padding:8px">${esc(o.equipamento_codigo || '')}</td>
-          <td style="padding:8px;font-size:11px">${esc(o.tipo)}</td>
-          <td style="padding:8px"><span style="color:${MNT_PR[o.prioridade]||'#666'};font-weight:800;font-size:11px;text-transform:uppercase">${esc(o.prioridade)}</span></td>
-          <td style="padding:8px;max-width:220px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${esc(o.descricao)}">${esc(o.descricao)}</td>
-          <td style="padding:8px">${esc(o.responsavel_nome || '–')}</td>
-          <td style="padding:8px">${dt}</td>
-          <td style="padding:8px"><span style="background:${st.c}18;color:${st.c};padding:3px 8px;border-radius:99px;font-size:11px;font-weight:800">${st.l}</span></td>
-          <td style="padding:8px;text-align:right;white-space:nowrap">
-            <button onclick="verOT('${o.id}')" style="padding:3px 8px;border:1px solid var(--border);background:#fff;border-radius:6px;font-size:11px;cursor:pointer">👁</button>${trans}</td>
-        </tr>`; }).join('')}</tbody></table>`;
-  } catch (e) { el.innerHTML = '<div style="padding:20px;color:#C00">❌ ' + (e.message || 'Erro') + '</div>'; }
-}
-
-function abrirModalOT() {
-  const fill = (id, lista, fmt) => {
-    const s = document.getElementById(id);
-    s.innerHTML = '<option value="">—' + (id === 'ot-equipamento' ? ' selecionar —' : '') + '</option>' +
-      lista.map(x => `<option value="${x.id}">${fmt(x)}</option>`).join('');
-  };
-  fill('ot-equipamento', _mntEquip, e => esc((e.codigo || '') + ' — ' + (e.descricao || '')));
-  fill('ot-responsavel', _mntOps, o => esc(o.nome));
-  fill('ot-fornecedor', _mntForn, f => esc(f.nome));
-  document.getElementById('ot-descricao').value = '';
-  document.getElementById('ot-error').style.display = 'none';
-  document.getElementById('modal-ot').classList.remove('hidden');
-}
-
-async function salvarOT() {
-  const err = document.getElementById('ot-error');
-  const body = {
-    equipamento_id: document.getElementById('ot-equipamento').value,
-    tipo: document.getElementById('ot-tipo').value,
-    prioridade: document.getElementById('ot-prioridade').value,
-    descricao: document.getElementById('ot-descricao').value.trim(),
-    responsavel_id: document.getElementById('ot-responsavel').value || null,
-    fornecedor_id: document.getElementById('ot-fornecedor').value || null,
-  };
-  if (!body.equipamento_id || !body.descricao) {
-    err.textContent = 'Equipamento e descrição são obrigatórios.'; err.style.display = 'block'; return;
-  }
-  const btn = document.getElementById('btn-salvar-ot'); btn.disabled = true;
-  try {
-    const r = await apiFetch('/manutencao/api/ots', { method: 'POST', body: JSON.stringify(body) });
-    toast('✅ ' + (r.numero || 'OT') + ' aberta', 'success');
-    document.getElementById('modal-ot').classList.add('hidden');
-    carregarResumoMnt(); carregarOTs(_mntFiltro);
-  } catch (e) { err.textContent = e.message || 'Erro ao abrir OT'; err.style.display = 'block'; }
-  btn.disabled = false;
-}
-
-async function mntStatus(otId, novo) {
-  let obs = null, custo = null;
-  if (novo === 'concluida') {
-    const c = prompt('Custo total da manutenção (R$):', '');
-    if (c === null) return;
-    custo = parseFloat(String(c).replace(',', '.')) || null;
-    obs = prompt('Observação de conclusão (o que foi feito):', '') || null;
-  } else if (novo === 'cancelada') {
-    if (!confirm('Cancelar esta OT?')) return;
-    obs = prompt('Motivo do cancelamento:', '') || null;
-  }
-  try {
-    await apiFetch(`/manutencao/api/ots/${otId}/status`, {
-      method: 'PATCH', body: JSON.stringify({ status: novo, observacao: obs, custo_total: custo })
-    });
-    toast('✅ OT → ' + (MNT_ST[novo]?.l || novo), 'success');
-    carregarResumoMnt(); carregarOTs(_mntFiltro);
-  } catch (e) { toast('❌ ' + (e.message || 'Erro'), 'error'); }
-}
-
-async function verOT(otId) {
-  try {
-    const o = await apiFetch('/manutencao/api/ots/' + otId);
-    const st = MNT_ST[o.status] || { l: o.status, c: '#666' };
-    let dt = ''; try { dt = new Date(o.data_abertura).toLocaleString('pt-BR'); } catch(_){}
-    document.getElementById('ot-det-body').innerHTML = `
-      <h2 style="font-size:16px;font-weight:800;color:var(--blue);margin-bottom:4px">${esc(o.numero)} — ${esc(o.equipamento_codigo || '')}</h2>
-      <div style="margin-bottom:10px"><span style="background:${st.c}18;color:${st.c};padding:3px 10px;border-radius:99px;font-size:12px;font-weight:800">${st.l}</span>
-        <span style="margin-left:8px;color:${MNT_PR[o.prioridade]||'#666'};font-weight:800;font-size:12px;text-transform:uppercase">${esc(o.prioridade)}</span></div>
-      <div style="font-size:13px;line-height:1.7">
-        <strong>Descrição:</strong> ${esc(o.descricao)}<br>
-        <strong>Abertura:</strong> ${dt} · <strong>Horímetro:</strong> ${o.horimetro_na_abertura ?? '–'}<br>
-        ${o.custo_total != null ? '<strong>Custo:</strong> R$ ' + parseFloat(o.custo_total).toFixed(2) + '<br>' : ''}
-        ${o.observacao_conclusao ? '<strong>Conclusão:</strong> ' + esc(o.observacao_conclusao) + '<br>' : ''}
-      </div>
-      <div style="margin-top:12px;font-weight:800;font-size:12px;letter-spacing:.04em">📜 HISTÓRICO</div>
-      ${(o.historico || []).map(h => { let hd=''; try{hd=new Date(h.criado_em).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});}catch(_){}
-        return `<div style="font-size:12px;padding:5px 0;border-bottom:1px solid var(--border)">
-          <span style="color:#64748B">${hd}</span> — <strong>${esc(MNT_ST[h.status_para]?.l || h.status_para)}</strong>
-          ${h.observacao ? ' · ' + esc(h.observacao) : ''} <span style="color:#94A3B8">${h.usuario_nome ? '(' + esc(h.usuario_nome) + ')' : ''}</span></div>`; }).join('')}
-      <div style="display:flex;justify-content:flex-end;margin-top:14px">
-        <button class="btn btn-secondary" onclick="document.getElementById('modal-ot-det').classList.add('hidden')">Fechar</button>
-      </div>`;
-    document.getElementById('modal-ot-det').classList.remove('hidden');
-  } catch (e) { toast('❌ ' + (e.message || 'Erro'), 'error'); }
-}
-
-async function abrirFornecedores() {
-  document.getElementById('modal-fornecedores').classList.remove('hidden');
-  renderFornecedores();
-}
-async function renderFornecedores() {
-  try {
-    _mntForn = await apiFetch('/manutencao/api/fornecedores');
-    document.getElementById('fn-lista').innerHTML = _mntForn.length ? _mntForn.map(f => `
-      <div style="display:flex;justify-content:space-between;padding:8px 4px;border-bottom:1px solid var(--border);font-size:13px">
-        <div><strong>${esc(f.nome)}</strong> <span style="color:#64748B;font-size:11px">${esc(f.tipo || '')}</span></div>
-        <div style="color:#64748B">${esc(f.telefone || '')}</div>
-      </div>`).join('') : '<div style="padding:12px;opacity:.6">Nenhum fornecedor ainda.</div>';
-  } catch (e) { console.error(e); }
-}
-async function salvarFornecedor() {
-  const nome = document.getElementById('fn-nome').value.trim();
-  if (!nome) { toast('Informe o nome', 'error'); return; }
-  try {
-    await apiFetch('/manutencao/api/fornecedores', { method: 'POST', body: JSON.stringify({
-      nome, telefone: document.getElementById('fn-tel').value.trim(), tipo: document.getElementById('fn-tipo').value }) });
-    document.getElementById('fn-nome').value = ''; document.getElementById('fn-tel').value = '';
-    toast('✅ Fornecedor cadastrado', 'success');
-    renderFornecedores();
-  } catch (e) { toast('❌ ' + (e.message || 'Erro'), 'error'); }
 }
 
 function cmOperAbrir() {
