@@ -291,8 +291,8 @@ button,input,select{font-family:inherit;}
           <button class="btn btn-out btn-sm" onclick="adicionarSemanaAtual()">+ Semana</button>
           <button class="btn btn-out btn-sm" onclick="adicionarParAtual()">+ Par vazio</button>
           <div style="width:1px;height:24px;background:rgba(255,255,255,.2);margin:0 4px;"></div>
-          <button class="btn btn-sm" style="background:#16A34A;color:#fff" onclick="baixarRelatorio('fotos')">📥 Fotos</button>
-          <button class="btn btn-sm" style="background:#16A34A;color:#fff" onclick="baixarRelatorio('km')">📥 KM</button>
+          <button class="btn btn-sm" style="background:#16A34A;color:#fff" onclick="baixarRelatorioMes('fotos')" title="Excel de fotos do mês inteiro">📥 Fotos (mês)</button>
+          <button class="btn btn-sm" style="background:#16A34A;color:#fff" onclick="baixarRelatorioMes('km')" title="Excel de KM do mês inteiro">📥 KM (mês)</button>
           <button class="btn btn-sm" style="background:#1D4ED8;color:#fff" onclick="abrirModalEmail()">👁 Visualizar</button>
         </div>
       </div>
@@ -1361,6 +1361,24 @@ function semanaAtivaSelecionada(){
     if(quadrante[i].pares.length) return quadrante[i];
   }
   return quadrante[quadrante.length-1];
+}
+
+function baixarRelatorioMes(tipo){
+  // 06/07/2026: download do MÊS COMPLETO (fotos ou km) — substitui o semanal no topo
+  if(!mesAtual){toast('Selecione um mês primeiro!');return;}
+  toast('Gerando relatório do MÊS ('+tipo.toUpperCase()+')... pode levar alguns segundos');
+  var url = '/jardinagem/api/relatorios/mes/'+mesAtual.id+'/'+(tipo==='fotos'?'fotos':'km');
+  fetchAuth(url).then(function(r){
+    if(!r.ok) throw new Error('Erro '+r.status);
+    return r.blob();
+  }).then(function(blob){
+    var u = URL.createObjectURL(blob);
+    var _m = ['','jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'];
+    var nome = 'relatorio-'+tipo+'-'+(_m[mesAtual.mes]||'mes')+mesAtual.ano+'-MES-COMPLETO.xlsx';
+    var a = document.createElement('a'); a.href = u; a.download = nome;
+    document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(u);
+    toast('✅ Relatório do mês baixado!');
+  }).catch(function(e){toast('❌ '+e.message);});
 }
 
 function baixarRelatorio(tipo){
