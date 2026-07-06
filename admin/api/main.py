@@ -808,6 +808,54 @@ async def criar_schema_manutencao():
               ADD COLUMN IF NOT EXISTS ot_proxima_id UUID,
               ADD COLUMN IF NOT EXISTS pedido_id UUID
         """, fetch="none")
+        # ══ ONDA 1+2 ManWinWin (06/07/2026) — domínios, peças, equipamentos ══
+        # Nomenclatura PT-BR: Órgãos→componentes, Artigos→peças, Fichas→planos.
+        await ajard_query("""
+            CREATE TABLE IF NOT EXISTS manutencao.tipos_equipamento (
+                sigla TEXT PRIMARY KEY, nome TEXT NOT NULL)""", fetch="none")
+        await ajard_query("""
+            CREATE TABLE IF NOT EXISTS manutencao.sistemas (
+                codigo TEXT PRIMARY KEY, nome TEXT NOT NULL)""", fetch="none")
+        await ajard_query("""
+            CREATE TABLE IF NOT EXISTS manutencao.familias (
+                codigo TEXT PRIMARY KEY, nome TEXT NOT NULL)""", fetch="none")
+        await ajard_query("""
+            CREATE TABLE IF NOT EXISTS manutencao.sintomas (
+                codigo TEXT PRIMARY KEY, nome TEXT NOT NULL)""", fetch="none")
+        await ajard_query("""
+            CREATE TABLE IF NOT EXISTS manutencao.causas (
+                codigo TEXT PRIMARY KEY, nome TEXT NOT NULL)""", fetch="none")
+        await ajard_query("""
+            CREATE TABLE IF NOT EXISTS manutencao.pecas (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                codigo TEXT UNIQUE NOT NULL,
+                descricao TEXT NOT NULL,
+                unidade TEXT,
+                familia_codigo TEXT,
+                classe TEXT,
+                custo_medio NUMERIC(12,2),
+                codigo_fabricante TEXT,
+                especificacao TEXT,
+                observacao TEXT,
+                ativo BOOLEAN DEFAULT TRUE,
+                criado_em TIMESTAMPTZ DEFAULT now())""", fetch="none")
+        await ajard_query("""
+            ALTER TABLE operacional.equipamentos
+              ADD COLUMN IF NOT EXISTS marca TEXT,
+              ADD COLUMN IF NOT EXISTS modelo TEXT,
+              ADD COLUMN IF NOT EXISTS ano_fabricacao TEXT,
+              ADD COLUMN IF NOT EXISTS num_serie TEXT,
+              ADD COLUMN IF NOT EXISTS cor TEXT,
+              ADD COLUMN IF NOT EXISTS tipo_sigla TEXT,
+              ADD COLUMN IF NOT EXISTS sistema_codigo TEXT,
+              ADD COLUMN IF NOT EXISTS centro_custo TEXT,
+              ADD COLUMN IF NOT EXISTS equipamento_pai UUID,
+              ADD COLUMN IF NOT EXISTS posicao TEXT,
+              ADD COLUMN IF NOT EXISTS valor_aquisicao NUMERIC(14,2)
+        """, fetch="none")
+        await ajard_query("""
+            CREATE UNIQUE INDEX IF NOT EXISTS ux_fornecedores_nome
+              ON public.fornecedores (upper(nome))""", fetch="none")
         print("[Startup] schema manutencao OK")
     except Exception as e:
         print(f"[Startup] manutencao: {e}")
