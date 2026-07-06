@@ -854,3 +854,76 @@ async def jard_health():
         return {"status":"ok","db":"conectado","modulo":"jardinagem"}
     except Exception as e:
         return {"status":"erro","db":str(e)}
+
+
+# ══════════════════════════════════════════════════════════════
+# RELATÓRIOS DO MÊS INTEIRO (06/07/2026)
+# Substitui o download semana-a-semana do topo do desktop: um clique
+# baixa Fotos ou KM do MÊS completo. Reutiliza os MESMOS geradores
+# das rotas semanais (fonte única) — muda só o recorte das queries.
+# ══════════════════════════════════════════════════════════════
+
+_MES_ABR = {1:"jan",2:"fev",3:"mar",4:"abr",5:"mai",6:"jun",7:"jul",8:"ago",9:"set",10:"out",11:"nov",12:"dez"}
+
+async def _mes_periodo(mes_id: int):
+    mes = await ajard_query("SELECT * FROM jardinagem.meses WHERE id=%s", (mes_id,), fetch="one")
+    if not mes:
+        raise HTTPException(status_code=404, detail="Mês não encontrado")
+    rng = await ajard_query(
+        "SELECT MIN(data_ini) AS ini, MAX(data_fim) AS fim FROM jardinagem.semanas WHERE mes_id=%s",
+        (mes_id,), fetch="one")
+    label = mes.get("label") or f"{_MES_ABR.get(mes.get('mes'),'')}/{mes.get('ano')}"
+    d = {"label": f"{label} — MÊS COMPLETO",
+         "data_ini": rng["ini"].strftime("%d/%m/%Y") if rng and rng["ini"] else "",
+         "data_fim": rng["fim"].strftime("%d/%m/%Y") if rng and rng["fim"] else ""}
+    arq = f"relatorio-{{tipo}}-{_MES_ABR.get(mes.get('mes'),'mes')}{mes.get('ano')}-MES-COMPLETO.xlsx"
+    return mes, d, arq
+
+
+@router.get("/jardinagem/api/relatorios/mes/{mes_id}/fotos")
+async def jard_excel_fotos_mes(mes_id: int, payload=Depends(verificar_token_jard)):
+    import sys; sys.path.insert(0, os.path.join(JARD_DIR))
+    from gerar_relatorio import gerar_relatorio_fotos
+    mes, mes_dict, arq = await _mes_periodo(mes_id)
+    pares_raw = await ajard_query(
+        """SELECT p.* FROM jardinagem.pares p
+           JOIN jardinagem.semanas s ON s.id = p.semana_id
+           WHERE s.mes_id=%s AND (p.ativo IS NULL OR p.ativo=true)
+           ORDER BY p.codigo_a""", (mes_id,))
+    fotos_raw = await ajard_query(
+        """SELECT f.* FROM jardinagem.fotos f
+           JOIN jardinagem.pares p ON p.id = f.par_id
+           JOIN jardinagem.semanas s ON s.id = p.semana_id
+           WHERE s.mes_id=%s AND (p.ativo IS NULL OR p.ativo=true)""", (mes_id,))
+    fotos_por_par = {}
+    for f in fotos_raw:
+        fotos_por_par.setdefault(f["par_id"], {})[f["tipo"]] = dict(f)
+    pares = [{"codigo_a": p["codigo_a"], "codigo_d": p["codigo_d"], "local_nome": p["local_nome"] or "",
+              "foto_antes": fotos_por_par.get(p["id"], {}).get("antes"),
+              "foto_depois": fotos_por_par.get(p["id"], {}).get("depois")} for p in pares_raw]
+    buf = gerar_relatorio_fotos(mes_dict, pares, SUPABASE_URL, SUPABASE_SERVICE_KEY)
+    return StreamingResponse(buf, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                             headers={"Content-Disposition": f'attachment; filename="{arq.format(tipo="fotos")}"'})
+
+
+@router.get("/jardinagem/api/relatorios/mes/{mes_id}/km")
+async def jard_excel_km_mes(mes_id: int, payload=Depends(verificar_token_jard)):
+    import sys; sys.path.insert(0, os.path.join(JARD_DIR))
+    from gerar_relatorio import gerar_relatorio_km
+    mes, mes_dict, arq = await _mes_periodo(mes_id)
+    kms_raw = await ajard_query(
+        """SELECT r.*, u.nome AS responsavel_nome
+           FROM jardinagem.relatorios_diarios r
+           JOIN jardinagem.semanas s ON s.id = r.semana_id
+           JOIN public.usuarios_garra u ON u.id = r.usuario_id
+           WHERE s.mes_id=%s
+           ORDER BY r.data, r.criado_em""", (mes_id,))
+    relatorios = [{"data": r["data"].strftime("%d/%m/%Y") if r["data"] else "",
+                   "local": r["local_nome"] or "",
+                   "km_ini": float(r["km_inicial"] or 0), "km_fin": float(r["km_final"] or 0),
+                   "hr_ini": str(r["hora_inicio"]) if r["hora_inicio"] else "",
+                   "hr_fim": str(r["hora_fim"]) if r["hora_fim"] else "",
+                   "obs": r["observacao"] or "", "responsavel": r["responsavel_nome"] or ""} for r in kms_raw]
+    buf = gerar_relatorio_km(mes_dict, relatorios)
+    return StreamingResponse(buf, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                             headers={"Content-Disposition": f'attachment; filename="{arq.format(tipo="km")}"'})
