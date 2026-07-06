@@ -312,18 +312,20 @@ input,select,textarea { font-family:inherit; font-size:13px; outline:none; }
     <div class="login-title">Admin Master</div>
     <div class="login-sub">Acesse com suas credenciais de administrador</div>
     <div id="login-err" class="login-error hidden"></div>
+    <form id="form-login" onsubmit="doLogin();return false" autocomplete="on">
     <div class="field">
       <label>Usuário</label>
-      <input type="text" id="l-user" placeholder="seu.login" autocomplete="username"/>
+      <input type="text" id="l-user" name="username" placeholder="seu e-mail" autocomplete="username" autocapitalize="none" spellcheck="false"/>
     </div>
     <div class="field">
       <label>Senha</label>
       <div class="pass-wrap">
-        <input type="password" id="l-pass" placeholder="••••••" autocomplete="current-password"/>
+        <input type="password" id="l-pass" name="password" placeholder="••••••" autocomplete="current-password"/>
         <button type="button" class="pass-toggle" onclick="togglePass('l-pass',this)">👁</button>
       </div>
     </div>
-    <button class="btn btn-primary" style="width:100%;margin-top:4px" id="btn-login" onclick="doLogin()">Entrar</button>
+    <button type="submit" class="btn btn-primary" style="width:100%;margin-top:4px" id="btn-login">Entrar</button>
+    </form>
   </div>
 </div>
 
