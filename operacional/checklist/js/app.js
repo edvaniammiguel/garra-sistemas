@@ -460,6 +460,36 @@ function renderSuperiorDashboard() {
 function renderSupChecklistCards() {
   const el = document.getElementById('sup-cl-cards');
   if (!el) return;
+  // ── Pontuação do colaborador (servidor) — 06/07/2026: o papel "superior"
+  // não tinha NENHUM lugar para pontos; injeta card + mini-pódio aqui.
+  (async () => {
+    try {
+      if (!PontosConfig.visivel()) { document.getElementById('sup-pts-card')?.remove(); return; }
+      const cfg = PontosConfig.get();
+      const ini = cfg.data_inicio || '', fim = cfg.data_fim || '';
+      const qs = [ini?('inicio='+ini):'', fim?('fim='+fim):''].filter(Boolean).join('&');
+      const token = localStorage.getItem('garra_token') || '';
+      const r = await fetch('/checklist/ranking' + (qs?'?'+qs:''), { headers: { 'Authorization': 'Bearer ' + token } });
+      if (!r.ok) return;
+      const rk = await r.json();
+      const eu = rk.find(x => x.login === currentUser?.login);
+      const medals = ['🥇','🥈','🥉'];
+      let card = document.getElementById('sup-pts-card');
+      if (!card) { card = document.createElement('div'); card.id = 'sup-pts-card';
+        card.style.cssText = 'background:linear-gradient(135deg,#1A2A5E,#2A3F7E);border-radius:12px;padding:16px 18px;margin:0 0 14px;color:#fff';
+        el.parentElement.insertBefore(card, el); }
+      card.innerHTML = `
+        <div style="display:flex;justify-content:space-between;align-items:baseline">
+          <div><div style="font-size:11px;opacity:.7;text-transform:uppercase;letter-spacing:.05em">Seus pontos</div>
+          <div style="font-size:30px;font-weight:800;color:#E8820C">${eu ? eu.pts : 0}</div>
+          <div style="font-size:12px;opacity:.8">🔥 ${eu ? eu.envios : 0} envios</div></div>
+          <div style="text-align:right;font-size:12px">
+            <div style="font-weight:800;font-size:11px;letter-spacing:.05em;opacity:.7;margin-bottom:4px">🏆 RANKING</div>
+            ${rk.slice(0,3).map((x,i)=>`<div style="${x.login===currentUser?.login?'font-weight:800;color:#E8820C':''}">${medals[i]} ${sanitize((x.nome||x.login).split(' ')[0])} — ${x.pts}</div>`).join('')}
+          </div>
+        </div>`;
+    } catch(e) { console.error('[sup-pts]', e); }
+  })();
   el.innerHTML = Object.values(DB.allCLs()).map(cl => `
     <div class="cl-card" onclick="startChecklist('${cl.id}')">
       <div class="clc-icon">${cl.icon}</div>
