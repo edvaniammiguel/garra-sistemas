@@ -57,7 +57,7 @@ async def listar_envios(usuario: Optional[str]=None, cl_id: Optional[str]=None, 
     where, params = "WHERE arquivado=FALSE", []
     # Menor privilégio (05/07/2026): operador/motorista só vê os PRÓPRIOS envios,
     # independente do parâmetro. Gestor/admin filtram livremente.
-    if _auth.get("perfil") not in ("admin", "gestor"):
+    if not _eh_gestor_ck(_auth):
         usuario = _auth.get("sub", "")
     if usuario: params.append(usuario); where += f" AND usuario_login=${len(params)}"
     if cl_id:   params.append(cl_id);   where += f" AND cl_id=${len(params)}"
@@ -204,6 +204,11 @@ async def checklist_manifest():
 # uma fonte única: agrega checklist.envios (com período opcional).
 # ══════════════════════════════════════════════════════════════
 
+def _eh_gestor_ck(payload) -> bool:
+    """Gestão do checklist: perfil global admin/gestor OU papel manager do módulo."""
+    return payload.get("perfil") in ("admin", "gestor") or payload.get("perfil_checklist") == "manager"
+
+
 @router.get("/checklist/ranking")
 async def checklist_ranking(inicio: str = None, fim: str = None,
                             _auth=Depends(verificar_token), db=Depends(get_db)):
@@ -252,7 +257,7 @@ async def checklist_ranking(inicio: str = None, fim: str = None,
     result = [dict(r) for r in rows]
     # Menor privilégio (06/07/2026): ranking COMPARATIVO é ferramenta de gestão.
     # Colaborador recebe apenas a PRÓPRIA linha (pontos/envios dele).
-    if _auth.get("perfil") not in ("admin", "gestor"):
+    if not _eh_gestor_ck(_auth):
         eu = _auth.get("sub", "")
         result = [r for r in result if r["login"] == eu]
     return result
@@ -261,7 +266,7 @@ async def checklist_ranking(inicio: str = None, fim: str = None,
 @router.post("/checklist/pontos-ajuste")
 async def checklist_ajustar_pontos(request: Request, _auth=Depends(verificar_token), db=Depends(get_db)):
     """Gestor aplica penalidade (pts negativo) ou bônus a um colaborador."""
-    if _auth.get("perfil") not in ("admin", "gestor"):
+    if not _eh_gestor_ck(_auth):
         raise HTTPException(status_code=403, detail="Apenas gestores podem ajustar pontos.")
     d = await request.json()
     login = (d.get("login") or "").strip()
@@ -298,7 +303,7 @@ async def checklist_get_pontos_config(_auth=Depends(verificar_token), db=Depends
 
 @router.put("/checklist/pontos-config")
 async def checklist_put_pontos_config(request: Request, _auth=Depends(verificar_token), db=Depends(get_db)):
-    if _auth.get("perfil") not in ("admin", "gestor"):
+    if not _eh_gestor_ck(_auth):
         raise HTTPException(status_code=403, detail="Apenas gestores.")
     d = await request.json()
     import json as _json
@@ -312,3 +317,18 @@ async def checklist_put_pontos_config(request: Request, _auth=Depends(verificar_
         _json.dumps(cfg)
     )
     return {"ok": True, **cfg}
+
+
+@router.get("/checklist/pontos-ajustes")
+async def checklist_listar_ajustes(_auth=Depends(verificar_token), db=Depends(get_db)):
+    """Extrato dos ajustes manuais de pontos — só gestão."""
+    if not _eh_gestor_ck(_auth):
+        raise HTTPException(status_code=403, detail="Apenas gestores.")
+    rows = await db.fetch(
+        """SELECT a.usuario_login AS login, COALESCE(u.nome, a.usuario_login) AS nome,
+                  a.pts, a.motivo, a.criado_por, a.criado_em
+           FROM checklist.ajustes_pontos a
+           LEFT JOIN public.usuarios_garra u ON u.login = a.usuario_login
+           ORDER BY a.criado_em DESC LIMIT 100"""
+    )
+    return [dict(r) for r in rows]
