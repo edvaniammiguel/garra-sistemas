@@ -513,6 +513,18 @@ function renderDriverDashboard() {
           const elS = document.getElementById('driver-streak');
           if (eu && elP) elP.textContent = eu.pts;
           if (eu && elS) elS.textContent = `🔥 ${eu.envios} envios`;
+          // Mini-pódio do colaborador (top 3 do servidor)
+          if (elP && rk.length) {
+            const card = elP.closest('div[class]') || elP.parentElement;
+            let pod = document.getElementById('driver-podium');
+            if (!pod) { pod = document.createElement('div'); pod.id = 'driver-podium';
+              pod.style.cssText = 'margin-top:10px;padding:10px 12px;background:rgba(255,255,255,.08);border-radius:10px;font-size:12px';
+              (card?.parentElement || document.body).insertBefore(pod, card?.nextSibling || null); }
+            const medals = ['🥇','🥈','🥉'];
+            pod.innerHTML = '<div style="font-weight:800;font-size:11px;letter-spacing:.05em;opacity:.7;margin-bottom:6px">🏆 RANKING</div>' +
+              rk.slice(0,3).map((x,i) => `<div style="display:flex;justify-content:space-between;padding:2px 0${x.login===u.login?';font-weight:800;color:#E8820C':''}">
+                <span>${medals[i]} ${sanitize((x.nome||x.login).split(' ')[0])}</span><span>${x.pts} pts</span></div>`).join('');
+          }
         }
       } catch(e) { /* offline: mantém local */ }
     })();
@@ -571,11 +583,36 @@ function renderDriverDashboard() {
       <div class="clc-arrow">›</div>
     </div>`).join('');
 
-  // Histórico
-  const subs   = DB.submissions().filter(s => s.user === u.login);
+  // Histórico — fonte: SERVIDOR (05/07/2026; localStorage só como fallback offline)
   const histEl = document.getElementById('driver-history');
-  if (!subs.length) { histEl.innerHTML = '<div class="empty-state"><div class="es-icon">📋</div>Nenhum check list enviado ainda!</div>'; return; }
-  histEl.innerHTML = subs.slice(0,15).map(s => {
+  histEl.innerHTML = '<div class="empty-state" style="opacity:.6">Carregando…</div>';
+  (async () => {
+    try {
+      const token = localStorage.getItem('garra_token') || '';
+      const r = await fetch('/checklist/envios?usuario=' + encodeURIComponent(u.login) + '&limit=15',
+                            { headers: { 'Authorization': 'Bearer ' + token } });
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      const envios = await r.json();
+      if (!envios.length) { histEl.innerHTML = '<div class="empty-state"><div class="es-icon">📋</div>Nenhum check list enviado ainda!</div>'; return; }
+      histEl.innerHTML = envios.map(e => {
+        const nc  = e.total_nc || 0;
+        const lbl = nc > 0 ? `⚠ ${nc} NC` : '✓ Conforme';
+        const st  = nc > 0 ? 'nc' : 'ok';
+        const veh = e.meta?.veiculo || e.meta?.equipamento || '';
+        return `<div class="history-item">
+          <div class="hi-icon">📋</div>
+          <div class="hi-body">
+            <div class="hi-title">${sanitize(e.cl_label || e.cl_id || 'Check list')}${veh ? ' – ' + sanitize(veh) : ''}</div>
+            <div class="hi-meta">${formatDateTime(e.enviado_em)}${e.meta?.local ? ' • ' + sanitize(e.meta.local) : ''}</div>
+          </div>
+          <div class="badge ${st}">${lbl}</div>
+        </div>`;
+      }).join('');
+      return;
+    } catch (err) { console.error('[historico driver] fallback local:', err); }
+    const subs = DB.submissions().filter(s => s.user === u.login);
+    if (!subs.length) { histEl.innerHTML = '<div class="empty-state"><div class="es-icon">📋</div>Nenhum check list enviado ainda!</div>'; return; }
+    histEl.innerHTML = subs.slice(0,15).map(s => {
     const cl  = allCLs[s.type] || {};
     const nc  = countNC(s);
     const st  = s.archived ? 'archived' : (s.synced===false ? 'pending' : nc>0 ? 'nc' : 'ok');
@@ -590,6 +627,7 @@ function renderDriverDashboard() {
       <div class="badge ${st}">${lbl}</div>
     </div>`;
   }).join('');
+  })();
 }
 
 // ─── CHECKLIST FORM ────────────────────────────────
@@ -1116,25 +1154,44 @@ function mgrTab(tab,btn) {
 }
 
 // ── OVERVIEW ──
-function renderOverview() {
-  const subs=DB.submissions(),weekAgo=new Date(Date.now()-7*86400000);
+async function renderOverview() {
+  const weekAgo = new Date(Date.now() - 7*86400000);
+  let subs = null;
+  try {
+    const token = localStorage.getItem('garra_token') || '';
+    const r = await fetch('/checklist/envios?limit=500', { headers: { 'Authorization': 'Bearer ' + token } });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const envios = await r.json();
+    // Adaptador: envio do servidor → formato usado pelas contas abaixo
+    subs = envios.map(e => ({
+      user: e.usuario_login, userName: e.usuario_nome, type: e.cl_id,
+      date: e.enviado_em, archived: false, _nc: (e.total_nc || 0)
+    }));
+  } catch (err) {
+    console.error('[visão geral] fallback local:', err);
+    subs = DB.submissions();
+  }
+  const _ncDe = s => (s._nc !== undefined ? s._nc : countNC(s));
   document.getElementById('kpi-total').textContent        = subs.length;
   document.getElementById('kpi-week').textContent         = subs.filter(s=>new Date(s.date)>weekAgo).length;
   document.getElementById('kpi-pending-sync').textContent = OfflineQueue.get().length + DB.pendingSync().length;
-  document.getElementById('kpi-nc').textContent           = subs.filter(s=>countNC(s)>0).length;
+  document.getElementById('kpi-nc').textContent           = subs.filter(s=>_ncDe(s)>0).length;
   const allCLs=DB.allCLs(),counts={};
   Object.keys(allCLs).forEach(k=>counts[k]=0);
   subs.forEach(s=>{if(counts[s.type]!==undefined)counts[s.type]++;});
   const maxC=Math.max(...Object.values(counts),1);
   document.getElementById('chart-types').innerHTML=Object.entries(counts).map(([k,v])=>{const cl=allCLs[k];return `<div class="bc-row"><div class="bc-label">${cl?.icon||'📋'} ${cl?.label||k}</div><div class="bc-bar-wrap"><div class="bc-bar-fill" style="width:${Math.round((v/maxC)*100)}%"></div></div><div class="bc-count">${v}</div></div>`;}).join('');
-  // Conformidade — só mostra quem tem envios, ordena por % desc
-  const drivers=DB.users().filter(u=>u.role==='driver'||u.role==='diarista');
-  const driversComEnvios = drivers.map(d => {
-    const ds=subs.filter(s=>s.user===d.login);
-    const total=ds.length, conf=ds.filter(s=>countNC(s)===0&&!s.archived).length;
-    const pct=total>0?Math.round((conf/total)*100):null;
-    return {d, total, conf, pct};
-  }).filter(x=>x.total>0).sort((a,b)=>(b.pct||0)-(a.pct||0));
+  // Conformidade — direto dos ENVIOS (independe do cadastro local de usuários)
+  const porUser = {};
+  subs.forEach(s => {
+    const k = s.user || '?';
+    porUser[k] = porUser[k] || { d: { login: k, name: s.userName || k }, total: 0, conf: 0 };
+    porUser[k].total++;
+    if (_ncDe(s) === 0 && !s.archived) porUser[k].conf++;
+  });
+  const driversComEnvios = Object.values(porUser)
+    .map(x => ({ ...x, pct: Math.round((x.conf/x.total)*100) }))
+    .sort((a,b) => (b.pct||0)-(a.pct||0));
 
   document.getElementById('compliance-list').innerHTML = driversComEnvios.map(({d,total,conf,pct})=>{
     const color=pct>=80?'var(--success)':pct>=60?'var(--warn)':'var(--danger)';
