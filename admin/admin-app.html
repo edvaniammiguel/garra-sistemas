@@ -1604,10 +1604,10 @@ const MODULOS = [
 ];
 
 const PERFIL_PADRAO = {
-  admin:     ['admin_master','jardinagem_desktop','jardinagem_mobile','operacional_mobile','checklist','checklist_logistica'],
-  gestor:    ['admin_master','jardinagem_desktop','operacional_mobile'],
+  admin:     ['admin_master','jardinagem_desktop','jardinagem_mobile','operacional_mobile','checklist','checklist_logistica','manutencao'],
+  gestor:    ['admin_master','jardinagem_desktop','operacional_mobile','manutencao'],
   luana:     ['admin_master','jardinagem_desktop','operacional_mobile'],
-  bruna:     ['admin_master','checklist'],
+  bruna:     ['admin_master','checklist','manutencao'],
   operador:  ['operacional_mobile','checklist'],
   motorista: ['operacional_mobile','checklist'],
   campo:     ['jardinagem_mobile'],
@@ -2403,7 +2403,7 @@ const MODULOS_DASHBOARD = [
   {
     id: 'checklist',
     icon: '📋', nome: 'Checklist', desc: 'Máquinas · Frota · Logística',
-    status: 'producao', badge: 'badge-green',
+    status: 'teste', badge: 'badge-orange',
     url: '/checklist',
     externo: false,
   },
@@ -2417,7 +2417,7 @@ const MODULOS_DASHBOARD = [
   {
     id: 'operacional_mobile',
     icon: '🚛', nome: 'Operacional', desc: 'OS · Partes diárias · Fechamento',
-    status: 'dev', badge: 'badge-orange',
+    status: 'teste', badge: 'badge-orange',
     url: '/mobile',
     externo: false,
   },
@@ -2428,10 +2428,11 @@ const MODULOS_DASHBOARD = [
     url: null,
   },
   {
-    id: null,
+    id: 'manutencao',
     icon: '🔧', nome: 'Manutenção', desc: 'OT · Preventiva · Pneus',
-    status: 'planejado', badge: 'badge-gray',
-    url: null,
+    status: 'dev', badge: 'badge-orange',
+    url: '/manutencao',
+    externo: true,
   },
   {
     id: null,
@@ -2444,6 +2445,7 @@ const MODULOS_DASHBOARD = [
 const STATUS_MODULO = {
   producao:  { label:'Produção',         badge:'badge-green'  },
   dev:       { label:'Em desenvolvimento',badge:'badge-orange' },
+  teste:     { label:'Em teste',          badge:'badge-orange' },
   planejado: { label:'Planejado',         badge:'badge-gray'   },
 };
 
