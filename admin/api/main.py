@@ -685,6 +685,8 @@ app.include_router(checklist_router)
 app.include_router(auth_router)
 app.include_router(sistema_router)
 app.include_router(pages_router)
+from routers.manutencao import router as manutencao_router  # v26
+app.include_router(manutencao_router)
 
 @app.on_event("startup")
 async def criar_tabela_checklist_config():
@@ -734,3 +736,55 @@ async def seed_equipamento_combinado():
         print("[Seed] Equipamento Combinado/Apoio (APOIO-01) garantido")
     except Exception as e:
         print(f"[Seed] equipamento combinado: {e}")
+
+@app.on_event("startup")
+async def criar_schema_manutencao():
+    """MÓDULO MANUTENÇÃO — fundação (v26, 06/07/2026).
+    Referência ManWinWin. fornecedores é cadastro novo único (public);
+    OTs referenciam operacional.equipamentos direto (categoria 'apoio'
+    é bloqueada na rota de abertura)."""
+    try:
+        await ajard_query("CREATE SCHEMA IF NOT EXISTS manutencao", fetch="none")
+        await ajard_query("""
+            CREATE TABLE IF NOT EXISTS public.fornecedores (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                nome TEXT NOT NULL,
+                cnpj TEXT, telefone TEXT, email TEXT,
+                tipo TEXT DEFAULT 'pecas',
+                observacao TEXT,
+                ativo BOOLEAN DEFAULT TRUE,
+                criado_em TIMESTAMPTZ DEFAULT now()
+            )""", fetch="none")
+        await ajard_query("""
+            CREATE TABLE IF NOT EXISTS manutencao.ordens_trabalho (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                numero TEXT UNIQUE,
+                ano INT, sequencia INT,
+                equipamento_id UUID NOT NULL,
+                tipo TEXT DEFAULT 'corretiva',
+                prioridade TEXT DEFAULT 'media',
+                status TEXT DEFAULT 'aberta',
+                descricao TEXT NOT NULL,
+                solicitante_id UUID, responsavel_id UUID,
+                fornecedor_id UUID,
+                horimetro_na_abertura NUMERIC,
+                custo_total NUMERIC(12,2),
+                data_abertura TIMESTAMPTZ DEFAULT now(),
+                data_conclusao TIMESTAMPTZ,
+                observacao_conclusao TEXT,
+                ativo BOOLEAN DEFAULT TRUE,
+                criado_em TIMESTAMPTZ DEFAULT now(),
+                atualizado_em TIMESTAMPTZ
+            )""", fetch="none")
+        await ajard_query("""
+            CREATE TABLE IF NOT EXISTS manutencao.ot_historico (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                ot_id UUID NOT NULL,
+                status_de TEXT, status_para TEXT,
+                observacao TEXT,
+                usuario_id UUID,
+                criado_em TIMESTAMPTZ DEFAULT now()
+            )""", fetch="none")
+        print("[Startup] schema manutencao OK")
+    except Exception as e:
+        print(f"[Startup] manutencao: {e}")
