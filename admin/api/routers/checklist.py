@@ -249,7 +249,13 @@ async def checklist_ranking(inicio: str = None, fim: str = None,
            ORDER BY pts DESC, envios DESC""",
         *args
     )
-    return [dict(r) for r in rows]
+    result = [dict(r) for r in rows]
+    # Menor privilégio (06/07/2026): ranking COMPARATIVO é ferramenta de gestão.
+    # Colaborador recebe apenas a PRÓPRIA linha (pontos/envios dele).
+    if _auth.get("perfil") not in ("admin", "gestor"):
+        eu = _auth.get("sub", "")
+        result = [r for r in result if r["login"] == eu]
+    return result
 
 
 @router.post("/checklist/pontos-ajuste")
