@@ -856,6 +856,38 @@ async def criar_schema_manutencao():
         await ajard_query("""
             CREATE UNIQUE INDEX IF NOT EXISTS ux_fornecedores_nome
               ON public.fornecedores (upper(nome))""", fetch="none")
+        # ══ ONDA 3 (06/07/2026): planos preventivos + pontos de controle ══
+        await ajard_query("""
+            CREATE TABLE IF NOT EXISTS manutencao.planos (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                equipamento_id UUID NOT NULL,
+                codigo TEXT NOT NULL,
+                descricao TEXT NOT NULL,
+                procedimento TEXT,
+                tipo_trabalho TEXT,
+                periodo_codigo TEXT,
+                periodo_qtd NUMERIC,
+                tempo_horas NUMERIC,
+                hh_previsto NUMERIC,
+                custo_previsto NUMERIC(12,2),
+                plano_proximo_codigo TEXT,
+                ativo BOOLEAN DEFAULT TRUE,
+                criado_em TIMESTAMPTZ DEFAULT now(),
+                UNIQUE (equipamento_id, codigo)
+            )""", fetch="none")
+        await ajard_query("""
+            CREATE TABLE IF NOT EXISTS manutencao.pontos_controle (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                equipamento_id UUID NOT NULL,
+                codigo TEXT NOT NULL,
+                leitura_atual NUMERIC(12,1),
+                data_leitura TIMESTAMPTZ,
+                limiar_atencao NUMERIC(12,1),
+                limiar_urgente NUMERIC(12,1),
+                limiar_maximo NUMERIC(12,1),
+                ativo BOOLEAN DEFAULT TRUE,
+                UNIQUE (equipamento_id, codigo)
+            )""", fetch="none")
         print("[Startup] schema manutencao OK")
     except Exception as e:
         print(f"[Startup] manutencao: {e}")
