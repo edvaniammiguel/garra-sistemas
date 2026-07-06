@@ -804,46 +804,20 @@ tr.sel td{background:#DBEAFE!important;color:#1A2A5E}
         <button class="btn o" onclick="openModal('modal-reposicao')">🔄 Reposição Stock</button>
         <button class="btn" onclick="mostrarToast('ℹ️ Histórico de movimentos disponível na produção','warn')">📊 Movimentos</button>
         <div class="bsep"></div>
-        <button class="btn" onclick="carregarOTsReais()">↻</button>
+        <button class="btn" onclick="carregarPecasReais()">↻</button>
         <div class="bsep"></div>
-        <select id="qa-equip" style="font-size:11px;padding:3px 6px;border:1px solid #CBD5E1;border-radius:4px;max-width:170px"><option value="">— equipamento —</option></select>
-        <input id="qa-desc" placeholder="Abertura rápida: descrição do serviço…" style="font-size:11px;padding:3px 8px;border:1px solid #CBD5E1;border-radius:4px;width:230px">
-        <button class="btn p" style="font-size:11px" onclick="abrirOTRapida()">Abrir OT</button>
-        <div class="bsep"></div>
-        <input class="bsrch" placeholder="🔍  Código ou descrição...">
+        <input class="bsrch" id="alm-busca" placeholder="🔍  Código ou descrição..." oninput="buscarPecas()">
         <div class="bfilt" style="font-size:10px;color:#374151">
           <span>Almoxarifado: <b>A1 — PRINCIPAL</b></span>
         </div>
       </div>
-      <div class="strip">📦 Almoxarifado — Lista Artigos <span>— Filtros · AU-020</span><span class="sc">4.114 artigos · 35 abaixo mínimo</span></div>
+      <div class="strip">📦 Almoxarifado — Peças <span class="sc" id="alm-strip">carregando…</span></div>
       <div class="split">
         <div class="llist wfull" id="alm-list">
           <div class="tw">
             <table>
               <thead><tr><th style="width:22px"></th><th style="width:100px">Código ↕</th><th>Descrição</th><th style="width:70px">Localização</th><th style="width:65px" class="r">Existência</th><th style="width:35px">UN</th><th style="width:100px" class="r">Custo Unitário</th></tr></thead>
-              <tbody>
-                <tr onclick="selectArtigo(this)" oncontextmenu="showCtxAlm(event)">
-                  <td><span class="dot r"></span></td><td class="bold">G.FILTROS.047</td><td>Filtro óleo motor EH-01 Mann W950</td><td>A1.B3.C2</td><td class="r mono">1,00</td><td>UN</td><td class="r mono">R$ 48,50</td>
-                </tr>
-                <tr onclick="selectArtigo(this)" oncontextmenu="showCtxAlm(event)">
-                  <td><span class="dot g"></span></td><td class="bold">G.FILTROS.001</td><td>Filtro combustível primário EH</td><td>A1.B3.C1</td><td class="r mono">12,00</td><td>UN</td><td class="r mono">R$ 32,00</td>
-                </tr>
-                <tr onclick="selectArtigo(this)" oncontextmenu="showCtxAlm(event)">
-                  <td><span class="dot o"></span></td><td class="bold">G.FILTROS.010</td><td>Elemento filtro de ar Donaldson P532966</td><td>A1.B3.C3</td><td class="r mono">2,00</td><td>UN</td><td class="r mono">R$ 187,00</td>
-                </tr>
-                <tr onclick="selectArtigo(this)" oncontextmenu="showCtxAlm(event)">
-                  <td><span class="dot g"></span></td><td class="bold">G.OLEOS.001</td><td>Óleo motor Petronas 15W40 — 5L</td><td>A1.D1.E1</td><td class="r mono">48,00</td><td>LT</td><td class="r mono">R$ 12,80</td>
-                </tr>
-                <tr onclick="selectArtigo(this)" oncontextmenu="showCtxAlm(event)">
-                  <td><span class="dot r"></span></td><td class="bold">G.DI.001</td><td>Broca 45mm rompedor</td><td>B2.C5</td><td class="r mono">0,00</td><td>UN</td><td class="r mono">R$ 280,00</td>
-                </tr>
-                <tr onclick="selectArtigo(this)" oncontextmenu="showCtxAlm(event)">
-                  <td><span class="dot g"></span></td><td class="bold">G.MC.080.001</td><td>Rolamento esferas 6205 2RS SKF</td><td>A1.A2.B1</td><td class="r mono">4,00</td><td>UN</td><td class="r mono">R$ 18,50</td>
-                </tr>
-                <tr onclick="selectArtigo(this)" oncontextmenu="showCtxAlm(event)">
-                  <td><span class="dot o"></span></td><td class="bold">G.PNEUS.001</td><td>Pneu 275/80R22,5 Bridgestone tração</td><td>B3.D1</td><td class="r mono">1,00</td><td>UN</td><td class="r mono">R$ 1.840,00</td>
-                </tr>
-              </tbody>
+              <tbody id="alm-tbody"></tbody>
             </table>
           </div>
           <div class="sbar">
@@ -3363,7 +3337,7 @@ async function carregarSemaforosReais(){
       const ots = e.ots_abertas > 0 ? `<span class="chip em">${e.ots_abertas} aberta${e.ots_abertas>1?'s':''}</span>`
                                     : '<span class="chip tm">Nenhuma</span>';
       const tip = (e.pontos||[]).map(p=>`${p.codigo}: ${p.leitura}${p.atencao?' (🟡'+p.atencao+')':''}`).join(' · ');
-      return `<tr onclick="selectEquip(this)" title="${_esc(tip)}">
+      return `<tr data-id="${e.id}" onclick="selectEquip(this);verEquipReal(this.dataset.id)" title="${_esc(tip)}">
         <td style="text-align:center"><span class="dot ${d}"></span></td>
         <td class="bold">${_esc(e.codigo)}</td>
         <td>${_esc(e.descricao||'')}</td>
@@ -3375,6 +3349,58 @@ async function carregarSemaforosReais(){
     }).join('');
   } catch(e) { console.error('[semaforos]', e); }
 }
+let _almT = null;
+function buscarPecas(){ clearTimeout(_almT); _almT = setTimeout(carregarPecasReais, 350); }
+async function carregarPecasReais(){
+  const tb = document.getElementById('alm-tbody'); if (!tb) return;
+  const q = (document.getElementById('alm-busca')?.value || '').trim();
+  try {
+    const r = await mntFetch('/manutencao/api/pecas' + (q ? '?busca=' + encodeURIComponent(q) : ''));
+    const st = document.getElementById('alm-strip');
+    if (st) st.textContent = r.itens.length + ' de ' + r.total + ' peças · dados reais';
+    tb.innerHTML = r.itens.map(p => `<tr>
+      <td><span class="dot g"></span></td>
+      <td class="bold">${_esc(p.codigo)}</td>
+      <td>${_esc(p.descricao)}</td>
+      <td>${_esc(p.familia_codigo || '—')}</td>
+      <td class="r mono">—</td>
+      <td>${_esc(p.unidade || '')}</td>
+      <td class="r mono">${p.custo_medio != null ? 'R$ ' + parseFloat(p.custo_medio).toFixed(2) : '—'}</td>
+    </tr>`).join('') || '<tr><td colspan="7" style="padding:14px;color:#64748B">Nada encontrado.</td></tr>';
+  } catch(e) { console.error('[pecas]', e); }
+}
+async function verEquipReal(id){
+  try {
+    const e = await mntFetch('/manutencao/api/equipamentos/' + id + '/detalhe');
+    const el = document.getElementById('rdetail-main'); if (!el) return;
+    const sem = p => { const l = parseFloat(p.leitura_atual||0);
+      if (p.limiar_maximo && l >= p.limiar_maximo) return '🔴';
+      if (p.limiar_urgente && l >= p.limiar_urgente) return '🟠';
+      if (p.limiar_atencao && l >= p.limiar_atencao) return '🟡'; return '🟢'; };
+    const dd = v => { if(!v) return '—'; try { return new Date(v).toLocaleDateString('pt-BR'); } catch(_){ return '—'; } };
+    el.innerHTML = `
+      <div class="dc" style="display:block;overflow:auto">
+        <div class="dhdr"><span class="dhdr-code">${_esc(e.codigo)}</span><span class="dhdr-desc">${_esc(e.descricao||'')}</span></div>
+        <div class="dsec">Identificação</div>
+        <div style="font-size:11px;line-height:1.9;padding:2px 8px">
+          <b>Marca/Modelo:</b> ${_esc(e.marca||'—')} ${_esc(e.modelo||'')} &nbsp; <b>Ano:</b> ${_esc(e.ano_fabricacao||'—')}<br>
+          <b>Nº Série:</b> ${_esc(e.num_serie||'—')} &nbsp; <b>Cor:</b> ${_esc(e.cor||'—')} &nbsp; <b>Tipo:</b> ${_esc(e.tipo_sigla||'—')}<br>
+          <b>Horímetro/KM:</b> ${e.horimetro_atual ?? '—'} &nbsp; <b>Centro custo:</b> ${_esc(e.centro_custo||'—')}
+          ${e.pai_codigo ? '<br><b>Instalado em:</b> ' + _esc(e.pai_codigo) + (e.posicao ? ' · ' + _esc(e.posicao) : '') : ''}
+        </div>
+        ${e.componentes?.length ? `<div class="dsec">Componentes (${e.componentes.length})</div>
+          <div style="font-size:11px;padding:2px 8px">${e.componentes.map(c=>`↳ <b>${_esc(c.codigo)}</b> ${_esc(c.posicao||'')}`).join('<br>')}</div>` : ''}
+        <div class="dsec">Semáforos (${e.pontos.length})</div>
+        <div style="font-size:11px;padding:2px 8px">${e.pontos.map(p=>`${sem(p)} <b>${_esc(p.codigo)}</b> = ${p.leitura_atual} <span class="muted">(🟡${p.limiar_atencao??'—'} 🟠${p.limiar_urgente??'—'} 🔴${p.limiar_maximo??'—'})</span>`).join('<br>') || '<span class="muted">Sem pontos de controle</span>'}</div>
+        <div class="dsec">Planos preventivos (${e.planos.length})</div>
+        <div style="font-size:11px;padding:2px 8px">${e.planos.map(p=>`📋 <b>${_esc(p.codigo)}</b> — ${_esc(p.descricao)}`).join('<br>') || '<span class="muted">Nenhum plano</span>'}</div>
+        <div class="dsec">Ordens de Trabalho (${e.ots.length})</div>
+        <div style="font-size:11px;padding:2px 8px">${e.ots.map(o=>`🔧 <b>${_esc(o.numero)}</b> [${_esc(o.status)}] ${_esc(o.descricao)} · ${dd(o.data_abertura)}`).join('<br>') || '<span class="muted">Nenhuma OT</span>'}</div>
+      </div>`;
+  } catch(e) { console.error('[detalhe]', e); }
+}
+const _origShowModule = showModule;
+showModule = function(id){ _origShowModule(id); if (id==='alm') carregarPecasReais(); };
 document.addEventListener('DOMContentLoaded', function(){ carregarOTsReais(); carregarEquipReais(); carregarSemaforosReais(); });
 </script>
 </body>
