@@ -5,6 +5,8 @@
 # Categoria 'apoio' (Combinado) é EXCLUÍDA de OT por decisão de projeto.
 # ══════════════════════════════════════════════════════════════
 from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import HTMLResponse
+import os
 
 from core.auth import verificar_token, verificar_gestor
 from core.db import ajard_query, ajard_query_id
@@ -90,7 +92,7 @@ async def abrir_ot(request: Request, payload=Depends(verificar_token)):
             detail="Equipamento de Apoio/Combinado não entra em manutenção (decisão de projeto).")
 
     seq = await ajard_query(
-        """SELECT COALESCE(MAX(sequencia),0)+1 AS n FROM manutencao.ordens_trabalho
+        """SELECT COALESCE(MAX(sequencia),0)+1 AS n FROM manutencao.ot
            WHERE ano = EXTRACT(YEAR FROM now())::int""", fetch="one")
     from datetime import date as _date
     ano = _date.today().year
@@ -98,7 +100,7 @@ async def abrir_ot(request: Request, payload=Depends(verificar_token)):
 
     uid = await _usuario_id(payload)
     row = await ajard_query_id(
-        """INSERT INTO manutencao.ordens_trabalho
+        """INSERT INTO manutencao.ot
               (numero, ano, sequencia, equipamento_id, tipo, prioridade,
                descricao, solicitante_id, responsavel_id, fornecedor_id,
                horimetro_na_abertura)
@@ -128,7 +130,7 @@ async def listar_ots(status: str = None, equipamento_id: str = None,
         f"""SELECT ot.*, eq.codigo AS equipamento_codigo, eq.descricao AS equipamento_desc,
                   us.nome AS solicitante_nome, ur.nome AS responsavel_nome,
                   fo.nome AS fornecedor_nome
-           FROM manutencao.ordens_trabalho ot
+           FROM manutencao.ot ot
            JOIN operacional.equipamentos eq ON eq.id = ot.equipamento_id
            LEFT JOIN public.usuarios_garra us ON us.id = ot.solicitante_id
            LEFT JOIN public.usuarios_garra ur ON ur.id = ot.responsavel_id
@@ -142,7 +144,7 @@ async def listar_ots(status: str = None, equipamento_id: str = None,
 async def detalhe_ot(ot_id: str, _auth=Depends(verificar_token)):
     ot = await ajard_query(
         """SELECT ot.*, eq.codigo AS equipamento_codigo, eq.descricao AS equipamento_desc
-           FROM manutencao.ordens_trabalho ot
+           FROM manutencao.ot ot
            JOIN operacional.equipamentos eq ON eq.id = ot.equipamento_id
            WHERE ot.id=%s AND ot.ativo=true""", (ot_id,), fetch="one")
     if not ot:
@@ -162,7 +164,7 @@ async def mudar_status_ot(ot_id: str, request: Request, payload=Depends(verifica
     d = await request.json()
     novo = (d.get("status") or "").strip()
     ot = await ajard_query(
-        "SELECT id, status FROM manutencao.ordens_trabalho WHERE id=%s AND ativo=true",
+        "SELECT id, status FROM manutencao.ot WHERE id=%s AND ativo=true",
         (ot_id,), fetch="one")
     if not ot:
         raise HTTPException(status_code=404, detail="OT não encontrada")
@@ -178,7 +180,7 @@ async def mudar_status_ot(ot_id: str, request: Request, payload=Depends(verifica
         params += [(d.get("observacao") or "").strip() or None, d.get("custo_total")]
     params.append(ot_id)
     await ajard_query(
-        f"UPDATE manutencao.ordens_trabalho SET status=%s, atualizado_em=now(){extras} WHERE id=%s",
+        f"UPDATE manutencao.ot SET status=%s, atualizado_em=now(){extras} WHERE id=%s",
         params, fetch="none")
     await ajard_query(
         """INSERT INTO manutencao.ot_historico (ot_id, status_de, status_para, observacao, usuario_id)
@@ -201,7 +203,7 @@ async def editar_ot(ot_id: str, request: Request, payload=Depends(verificar_gest
         return {"ok": True}
     params.append(ot_id)
     await ajard_query(
-        f"UPDATE manutencao.ordens_trabalho SET {', '.join(updates)}, atualizado_em=now() WHERE id=%s",
+        f"UPDATE manutencao.ot SET {', '.join(updates)}, atualizado_em=now() WHERE id=%s",
         params, fetch="none")
     return {"ok": True}
 
@@ -210,9 +212,17 @@ async def editar_ot(ot_id: str, request: Request, payload=Depends(verificar_gest
 async def resumo_manutencao(_auth=Depends(verificar_token)):
     rows = await ajard_query(
         """SELECT status, COUNT(*)::int AS n
-           FROM manutencao.ordens_trabalho WHERE ativo=true GROUP BY status""")
+           FROM manutencao.ot WHERE ativo=true GROUP BY status""")
     base = {"aberta": 0, "em_andamento": 0, "aguardando_peca": 0,
             "concluida": 0, "cancelada": 0}
     for r in rows:
         base[r["status"]] = r["n"]
     return base
+
+
+# ── PÁGINA DO MÓDULO (desktop, protótipo em ligação progressiva) ──
+@router.get("/manutencao", response_class=HTMLResponse)
+async def manutencao_desktop():
+    base = os.path.join(os.path.dirname(__file__), "..", "..", "..", "manutencao", "static")
+    path = os.path.abspath(os.path.join(base, "manutencao.html"))
+    return open(path, encoding="utf-8").read()
