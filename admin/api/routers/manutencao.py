@@ -328,3 +328,10 @@ async def detalhe_equipamento(eq_id: str, _auth=Depends(verificar_token)):
     d["ots"] = [dict(x) for x in ots]
     d["componentes"] = [dict(x) for x in filhos]
     return d
+
+
+@router.get("/manutencao/api/tipos")
+async def tipos_equipamento(_auth=Depends(verificar_token)):
+    rows = await ajard_query(
+        "SELECT sigla, nome FROM manutencao.tipos_equipamento ORDER BY nome")
+    return [dict(r) for r in rows]
