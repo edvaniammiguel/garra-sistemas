@@ -223,6 +223,55 @@ async def resumo_manutencao(_auth=Depends(verificar_token)):
 # ── PÁGINA DO MÓDULO (desktop, protótipo em ligação progressiva) ──
 @router.get("/manutencao", response_class=HTMLResponse)
 async def manutencao_desktop():
-    base = os.path.join(os.path.dirname(__file__), "..", "..", "..", "manutencao", "static")
-    path = os.path.abspath(os.path.join(base, "manutencao.html"))
-    return open(path, encoding="utf-8").read()
+    raiz = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", "manutencao"))
+    # Aceita os dois layouts de pasta (robustez a variações de upload)
+    candidatos = [
+        os.path.join(raiz, "static", "manutencao.html"),
+        os.path.join(raiz, "manutencao.html"),
+    ]
+    for p in candidatos:
+        if os.path.isfile(p):
+            return open(p, encoding="utf-8").read()
+    raise HTTPException(status_code=404, detail="manutencao.html não encontrado no repositório")
+
+
+# ── SEMÁFOROS DA FROTA (Onda 3 viva — 06/07/2026) ──
+# Junta equipamentos + pontos de controle + OTs abertas; status pelo pior
+# ponto de cada equipamento: 🔴 >= máximo · 🟠 >= urgente · 🟡 >= atenção · 🟢 ok
+
+@router.get("/manutencao/api/semaforos")
+async def semaforos_frota(_auth=Depends(verificar_token)):
+    rows = await ajard_query(
+        """SELECT e.id, e.codigo, e.descricao, e.horimetro_atual, e.medicao,
+                  p.codigo AS ponto, p.leitura_atual, p.limiar_atencao,
+                  p.limiar_urgente, p.limiar_maximo,
+                  (SELECT COUNT(*)::int FROM manutencao.ot o
+                    WHERE o.equipamento_id = e.id AND o.ativo = true
+                      AND o.status IN ('aberta','em_andamento','aguardando_peca')) AS ots_abertas
+           FROM operacional.equipamentos e
+           LEFT JOIN manutencao.pontos_controle p
+                  ON p.equipamento_id = e.id AND p.ativo = true
+           WHERE e.ativo = true AND COALESCE(e.categoria,'') <> 'apoio'
+           ORDER BY e.codigo, p.codigo""")
+    equipes = {}
+    ordem = {"vermelho": 0, "laranja": 1, "amarelo": 2, "verde": 3}
+    for r in rows:
+        eq = equipes.setdefault(str(r["id"]), {
+            "id": str(r["id"]), "codigo": r["codigo"], "descricao": r["descricao"],
+            "horimetro": float(r["horimetro_atual"] or 0), "medicao": r["medicao"],
+            "ots_abertas": r["ots_abertas"], "status": "verde", "pontos": []})
+        if r["ponto"]:
+            leit = float(r["leitura_atual"] or 0)
+            st = "verde"
+            if r["limiar_maximo"] is not None and leit >= float(r["limiar_maximo"]): st = "vermelho"
+            elif r["limiar_urgente"] is not None and leit >= float(r["limiar_urgente"]): st = "laranja"
+            elif r["limiar_atencao"] is not None and leit >= float(r["limiar_atencao"]): st = "amarelo"
+            eq["pontos"].append({"codigo": r["ponto"], "leitura": leit,
+                                 "atencao": float(r["limiar_atencao"] or 0) or None,
+                                 "urgente": float(r["limiar_urgente"] or 0) or None,
+                                 "maximo": float(r["limiar_maximo"] or 0) or None,
+                                 "status": st})
+            if ordem[st] < ordem[eq["status"]]:
+                eq["status"] = st
+    lista = sorted(equipes.values(), key=lambda x: (ordem[x["status"]], x["codigo"]))
+    return lista
