@@ -914,7 +914,7 @@ async function carregarListasNovaOS() {
   // Equipamentos, Tipos de serviço, Clientes, Regimes — online-first com fallback IDB
   // TTL 24h pois essas listas mudam pouco
   const [equipamentos, tipos, clientes, regimes] = await Promise.all([
-    fetchComCacheIDB('/operacional/api/equipamentos', 'lst_equipamentos', 86400),
+    fetchComCacheIDB('/operacional/api/equipamentos?uso=os', 'lst_equipamentos', 86400),
     fetchComCacheIDB('/operacional/api/tipos-servico',  'lst_tipos_servico', 86400),
     fetchComCacheIDB('/operacional/api/clientes',       'lst_clientes',      86400),
     fetchComCacheIDB('/operacional/api/regimes-cobranca','lst_regimes',       86400),
@@ -995,7 +995,7 @@ async function preCarregarListasOffline() {
   if (!navigator.onLine) return;
   try {
     await Promise.all([
-      fetchComCacheIDB('/operacional/api/equipamentos',      'lst_equipamentos',  86400),
+      fetchComCacheIDB('/operacional/api/equipamentos?uso=os',      'lst_equipamentos',  86400),
       fetchComCacheIDB('/operacional/api/tipos-servico',      'lst_tipos_servico', 86400),
       fetchComCacheIDB('/operacional/api/clientes',           'lst_clientes',      86400),
       fetchComCacheIDB('/operacional/api/operadores',         'lst_operadores',    86400),
@@ -1565,7 +1565,7 @@ async function abrirModalParte(osId) {
 
   // Carregar selects (equipamentos + operadores) com cache offline
   const [equipamentos, operadores] = await Promise.all([
-    fetchComCacheIDB('/operacional/api/equipamentos', 'lst_equipamentos',  86400),
+    fetchComCacheIDB('/operacional/api/equipamentos?uso=os', 'lst_equipamentos',  86400),
     fetchComCacheIDB('/operacional/api/operadores',   'lst_operadores',    86400),
   ]);
 
