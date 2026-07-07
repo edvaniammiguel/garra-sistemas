@@ -330,8 +330,132 @@ async def detalhe_equipamento(eq_id: str, _auth=Depends(verificar_token)):
     return d
 
 
-@router.get("/manutencao/api/tipos")
-async def tipos_equipamento(_auth=Depends(verificar_token)):
+# ── ALMOXARIFADOS + ESTOQUE (07/07/2026) ──
+# Movimentos: entrada (destino) · saida (origem, valida saldo) ·
+# transferencia (origem→destino, atômica) · ajuste (define saldo exato)
+
+@router.get("/manutencao/api/almoxarifados")
+async def listar_almoxarifados(_auth=Depends(verificar_token)):
     rows = await ajard_query(
-        "SELECT sigla, nome FROM manutencao.tipos_equipamento ORDER BY nome")
+        """SELECT a.id, a.codigo, a.nome,
+                  COALESCE((SELECT COUNT(*) FROM manutencao.estoque e
+                            WHERE e.almoxarifado_id=a.id AND e.quantidade>0),0)::int AS itens
+           FROM manutencao.almoxarifados a WHERE a.ativo=true ORDER BY a.codigo""")
     return [dict(r) for r in rows]
+
+
+@router.get("/manutencao/api/estoque/{peca_codigo}")
+async def saldo_peca(peca_codigo: str, _auth=Depends(verificar_token)):
+    rows = await ajard_query(
+        """SELECT a.codigo AS almox, a.nome, COALESCE(e.quantidade,0) AS quantidade, e.minimo
+           FROM manutencao.almoxarifados a
+           LEFT JOIN manutencao.estoque e ON e.almoxarifado_id=a.id
+             AND e.peca_id=(SELECT id FROM manutencao.pecas WHERE codigo=%s)
+           WHERE a.ativo=true ORDER BY a.codigo""", (peca_codigo,))
+    return [dict(r) for r in rows]
+
+
+@router.post("/manutencao/api/estoque/movimentar")
+async def movimentar_estoque(request: Request, payload=Depends(verificar_token)):
+    d = await request.json()
+    tipo = (d.get("tipo") or "").strip()
+    qtd = float(d.get("quantidade") or 0)
+    if tipo not in ("entrada", "saida", "transferencia", "ajuste"):
+        raise HTTPException(status_code=400, detail="Tipo inválido")
+    if qtd <= 0 and tipo != "ajuste":
+        raise HTTPException(status_code=400, detail="Quantidade deve ser positiva")
+    peca = await ajard_query("SELECT id FROM manutencao.pecas WHERE codigo=%s OR id::text=%s",
+                             (d.get("peca"), str(d.get("peca"))), fetch="one")
+    if not peca:
+        raise HTTPException(status_code=404, detail="Peça não encontrada")
+    pid = peca["id"]
+
+    async def _alm(cod):
+        if not cod: return None
+        a = await ajard_query("SELECT id FROM manutencao.almoxarifados WHERE codigo=%s OR id::text=%s",
+                              (cod, str(cod)), fetch="one")
+        if not a: raise HTTPException(status_code=404, detail=f"Almoxarifado {cod} não encontrado")
+        return a["id"]
+
+    origem = await _alm(d.get("origem"))
+    destino = await _alm(d.get("destino"))
+
+    async def _saldo(alm):
+        r = await ajard_query("SELECT quantidade FROM manutencao.estoque WHERE peca_id=%s AND almoxarifado_id=%s",
+                              (pid, alm), fetch="one")
+        return float(r["quantidade"]) if r else 0.0
+
+    async def _soma(alm, delta):
+        await ajard_query("""
+            INSERT INTO manutencao.estoque (peca_id, almoxarifado_id, quantidade)
+            VALUES (%s,%s,%s)
+            ON CONFLICT (peca_id, almoxarifado_id)
+            DO UPDATE SET quantidade = manutencao.estoque.quantidade + EXCLUDED.quantidade""",
+            (pid, alm, delta), fetch="none")
+
+    if tipo == "entrada":
+        if not destino: raise HTTPException(status_code=400, detail="Entrada exige destino")
+        await _soma(destino, qtd)
+    elif tipo == "saida":
+        if not origem: raise HTTPException(status_code=400, detail="Saída exige origem")
+        if await _saldo(origem) < qtd:
+            raise HTTPException(status_code=400, detail="Saldo insuficiente no almoxarifado de origem")
+        await _soma(origem, -qtd)
+    elif tipo == "transferencia":
+        if not origem or not destino: raise HTTPException(status_code=400, detail="Transferência exige origem e destino")
+        if await _saldo(origem) < qtd:
+            raise HTTPException(status_code=400, detail="Saldo insuficiente no almoxarifado de origem")
+        await _soma(origem, -qtd)
+        await _soma(destino, qtd)
+    elif tipo == "ajuste":
+        if not destino: raise HTTPException(status_code=400, detail="Ajuste exige destino")
+        atual = await _saldo(destino)
+        await _soma(destino, qtd - atual)
+
+    uid = await _usuario_id(payload)
+    await ajard_query("""
+        INSERT INTO manutencao.movimentacoes (tipo, peca_id, almox_origem, almox_destino, quantidade, ot_id, usuario_id, observacao)
+        VALUES (%s,%s,%s,%s,%s,%s,%s,%s)""",
+        (tipo, pid, origem, destino, qtd, d.get("ot_id"), uid, (d.get("observacao") or "").strip() or None), fetch="none")
+    return {"ok": True, "saldo_origem": (await _saldo(origem)) if origem else None,
+            "saldo_destino": (await _saldo(destino)) if destino else None}
+
+
+# ── PARAMETRIZAÇÃO (Regra 63): domínios editáveis ──
+_DOMINIOS_PARAM = {
+    "tipos-manutencao": "manutencao.tipos_manutencao",
+    "tipos-trabalho": "manutencao.tipos_trabalho",
+    "setores-interventor": "manutencao.setores_interventor",
+    "setores-atividade": "manutencao.setores_atividade",
+    "tipos-equipamento": "manutencao.tipos_equipamento",
+    "sistemas": "manutencao.sistemas",
+    "familias": "manutencao.familias",
+    "sintomas": "manutencao.sintomas",
+    "causas": "manutencao.causas",
+}
+
+@router.get("/manutencao/api/param/{dominio}")
+async def listar_dominio(dominio: str, _auth=Depends(verificar_token)):
+    tabela = _DOMINIOS_PARAM.get(dominio)
+    if not tabela:
+        raise HTTPException(status_code=404, detail="Domínio não parametrizável")
+    rows = await ajard_query(f"SELECT * FROM {tabela} ORDER BY 1")
+    return [dict(r) for r in rows]
+
+
+@router.post("/manutencao/api/param/{dominio}")
+async def upsert_dominio(dominio: str, request: Request, payload=Depends(verificar_gestor)):
+    tabela = _DOMINIOS_PARAM.get(dominio)
+    if not tabela:
+        raise HTTPException(status_code=404, detail="Domínio não parametrizável")
+    d = await request.json()
+    cod = (d.get("codigo") or "").strip()
+    nome = (d.get("nome") or "").strip()
+    if not cod or not nome:
+        raise HTTPException(status_code=400, detail="Código e nome são obrigatórios")
+    pk = "sigla" if "tipos_equipamento" in tabela else "codigo"
+    await ajard_query(
+        f"""INSERT INTO {tabela} ({pk}, nome) VALUES (%s,%s)
+            ON CONFLICT ({pk}) DO UPDATE SET nome=EXCLUDED.nome""",
+        (cod, nome), fetch="none")
+    return {"ok": True}
