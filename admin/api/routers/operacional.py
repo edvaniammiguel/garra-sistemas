@@ -8,7 +8,7 @@ import os, io, json, time, uuid, calendar, secrets
 from datetime import datetime, timedelta, date
 from typing import Optional
 from fastapi import APIRouter, Request, HTTPException, Depends, Header, UploadFile, File, Form, Body
-from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, JSONResponse, Response, StreamingResponse
+from fastapi.responses import RedirectResponse, FileResponse, HTMLResponse, RedirectResponse, JSONResponse, Response, StreamingResponse
 
 from core.config import OPERACIONAL_DIR
 from core.db import ajard_query, ajard_query_id, get_db
@@ -64,12 +64,11 @@ async def operacional_manifest():
         ]
     }
 
-@router.get("/operacional/mobile", response_class=HTMLResponse)
+@router.get("/operacional/mobile")
 async def operacional_mobile():
-    path = os.path.join(OPERACIONAL_DIR, "operacional-mobile.html")
-    if not os.path.exists(path):
-        raise HTTPException(status_code=404, detail="Mobile operacional não encontrado")
-    return open(path, encoding="utf-8").read()
+    # (07/07/2026) Protótipo antigo aposentado (operacional-mobile.html
+    # removido do repo) — link legado redireciona ao app oficial.
+    return RedirectResponse(url="/mobile", status_code=307)
 
 @router.get("/operacional/api/tipos-servico")
 async def op_listar_tipos_servico(_auth=Depends(verificar_token)):
@@ -214,17 +213,24 @@ async def op_remover_regime(reg_id: str, payload=Depends(verificar_gestor)):
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/operacional/api/equipamentos")
-async def op_listar_equipamentos(_auth=Depends(verificar_token)):
-    """Lista equipamentos ativos para popular select e tela de cadastro."""
+async def op_listar_equipamentos(uso: str = None, _auth=Depends(verificar_token)):
+    """Lista equipamentos ativos para popular select e tela de cadastro.
+    (07/07/2026) uso=os → apenas MOTORIZADOS (máquinas, caminhões e o
+    Apoio/Combinado): a Onda 2 do ManWinWin trouxe caçambas estacionárias,
+    pneus e componentes que não entram em OS — mas seguem visíveis para a
+    Manutenção (sem o parâmetro)."""
+    filtro_uso = ""
+    if (uso or "").lower() == "os":
+        filtro_uso = "AND (eq.categoria IS NULL OR eq.categoria NOT IN ('componente','suporte'))"
     rows = await ajard_query(
-        """SELECT eq.id, eq.codigo, eq.descricao, eq.categoria, eq.medicao,
+        f"""SELECT eq.id, eq.codigo, eq.descricao, eq.categoria, eq.medicao,
                   eq.marca, eq.modelo, eq.ano, eq.placa,
                   eq.horimetro_atual, eq.km_atual, eq.ativo,
                   eq.operador_responsavel_id,
                   resp.nome AS operador_responsavel_nome
            FROM operacional.equipamentos eq
            LEFT JOIN public.usuarios_garra resp ON resp.id = eq.operador_responsavel_id
-           WHERE eq.ativo=true
+           WHERE eq.ativo=true {filtro_uso}
            ORDER BY eq.categoria, eq.codigo"""
     )
     return [dict(r) for r in (rows or [])]
