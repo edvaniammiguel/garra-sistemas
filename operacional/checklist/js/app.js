@@ -39,6 +39,23 @@ async function apiFetch(url, options = {}) {
 
 // ─── ESTADO GLOBAL ─────────────────────────────────
 let currentUser  = null;
+
+// (07/07/2026) GUARD DE IDENTIDADE: o checklist roda dentro do /mobile.
+// Se o usuário do shell (token) mudou, o currentUser cacheado do usuário
+// anterior é descartado — mata a personificação (ex.: UI de gestor do
+// admin aparecendo para o Gilson na mesma máquina).
+(function(){
+  try {
+    const tok = sessionStorage.getItem('garra_ck_token') || localStorage.getItem('garra_token') || '';
+    if (!tok) return;
+    const pl = JSON.parse(atob(tok.split('.')[1].replace(/-/g,'+').replace(/_/g,'/')));
+    const cached = JSON.parse(localStorage.getItem('garra_current_user') || 'null');
+    if (cached && cached.login && pl.login && cached.login !== pl.login) {
+      localStorage.removeItem('garra_current_user');
+      console.warn('[Identidade] Sessão do shell mudou (' + pl.login + ') — cache do usuário anterior descartado');
+    }
+  } catch(e) {}
+})();
 let currentCLId  = null;
 let currentStep  = 0;
 let formAnswers  = {};
