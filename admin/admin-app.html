@@ -2652,7 +2652,7 @@ async function verPartesOS(osId, osNumero) {
   try {
     // Garantir listas para selects editáveis
     if (!_equipamentos || !_equipamentos.length) {
-      _equipamentos = await apiFetch('/operacional/api/equipamentos').catch(()=>[]);
+      _equipamentos = await apiFetch('/operacional/api/equipamentos?uso=os').catch(()=>[]);
     }
     if (!_operadoresPartes.length) {
       _operadoresPartes = await apiFetch('/operacional/api/operadores').catch(()=>[]);
@@ -3131,7 +3131,7 @@ async function _carregarSelectsOS() {
   const selEq = document.getElementById('os-equipamento');
   if (selEq && selEq.options.length <= 1) {
     try {
-      const eqs = await apiFetch('/operacional/api/equipamentos');
+      const eqs = await apiFetch('/operacional/api/equipamentos?uso=os');
       selEq.innerHTML = '<option value="">Equipamento...</option>' +
         eqs.map(e=>`<option value="${e.id}">${esc(e.codigo)} — ${esc(e.descricao)}</option>`).join('');
     } catch {}
@@ -3244,7 +3244,7 @@ async function abrirModalParte() {
   document.getElementById('mp-parte-id').value = '';
   document.getElementById('mp-data').value = new Date().toISOString().slice(0,10);
   // Popular selects
-  const eqs = await apiFetch('/operacional/api/equipamentos').catch(()=>[]);
+  const eqs = await apiFetch('/operacional/api/equipamentos?uso=os').catch(()=>[]);
   const ops = await apiFetch('/operacional/api/operadores').catch(()=>[]);
   document.getElementById('mp-equipamento').innerHTML = '<option value="">Selecione...</option>' +
     eqs.map(e=>`<option value="${e.id}" data-cat="${e.categoria}">${esc(e.codigo)} — ${esc(e.descricao)}</option>`).join('');
@@ -3524,7 +3524,7 @@ async function carregarEquipamentos() {
   const el = document.getElementById('eq-lista');
   el.innerHTML = '<div class="loading"><span class="spin"></span></div>';
   try {
-    _equipamentos = await apiFetch('/operacional/api/equipamentos');
+    _equipamentos = await apiFetch('/operacional/api/equipamentos?uso=os');
     const badge = document.getElementById('sb-equipamentos-count');
     if (badge) badge.textContent = (_equipamentos || []).filter(e => e.ativo !== false).length;
     renderTabelaEquipamentos();
@@ -3710,7 +3710,7 @@ async function salvarEquipamento(id) {
     if (id) {
       await apiFetch('/operacional/api/equipamentos/' + id, { method: 'PATCH', body: JSON.stringify(payload) });
     } else {
-      await apiFetch('/operacional/api/equipamentos', { method: 'POST', body: JSON.stringify(payload) });
+      await apiFetch('/operacional/api/equipamentos?uso=os', { method: 'POST', body: JSON.stringify(payload) });
     }
     fecharModalEq();
     await carregarEquipamentos();
