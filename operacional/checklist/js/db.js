@@ -224,7 +224,7 @@ const GarraDB = {
     return {
       login:       user.login,
       name:        user.nome || user.name || login,
-      role:        user.perfil || user.role || 'driver',
+      role:        user.role || user.perfil_checklist || ((user.perfil==='admin'||user.perfil==='gestor')?'manager':'driver'),
       pts:         user.pts || 0,
       submissions: user.total_envios || user.submissions || 0,
     };

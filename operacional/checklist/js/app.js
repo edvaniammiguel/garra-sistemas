@@ -45,15 +45,26 @@ let currentUser  = null;
 // anterior é descartado — mata a personificação (ex.: UI de gestor do
 // admin aparecendo para o Gilson na mesma máquina).
 (function(){
+  // (07/07/2026 v2) IDENTIDADE ÚNICA: quando há token (sso do gestor ou
+  // shell /mobile), o checklist ADOTA o usuário do token — papel vindo do
+  // servidor (perfil_checklist). Sem segundo login, sem personificação.
   try {
     const tok = sessionStorage.getItem('garra_ck_token') || localStorage.getItem('garra_token') || '';
     if (!tok) return;
     const pl = JSON.parse(atob(tok.split('.')[1].replace(/-/g,'+').replace(/_/g,'/')));
+    if (!pl.login) return;
+    let role = pl.perfil_checklist || '';
+    if (!role) role = (pl.perfil === 'admin' || pl.perfil === 'gestor') ? 'manager' : 'driver';
+    if (role === 'admin' || role === 'gestor') role = 'manager';
     const cached = JSON.parse(localStorage.getItem('garra_current_user') || 'null');
-    if (cached && cached.login && pl.login && cached.login !== pl.login) {
-      localStorage.removeItem('garra_current_user');
-      console.warn('[Identidade] Sessão do shell mudou (' + pl.login + ') — cache do usuário anterior descartado');
-    }
+    const adotado = {
+      login: pl.login, name: pl.nome || pl.login, role: role,
+      pts: (cached && cached.login === pl.login ? cached.pts : 0) || 0,
+      submissions: (cached && cached.login === pl.login ? cached.submissions : 0) || 0,
+    };
+    localStorage.setItem('garra_current_user', JSON.stringify(adotado));
+    if (cached && cached.login !== pl.login)
+      console.warn('[Identidade] Shell = ' + pl.login + ' (' + role + ') — usuário anterior descartado');
   } catch(e) {}
 })();
 let currentCLId  = null;
@@ -2423,12 +2434,12 @@ function renderPontosConfigPanel() {
           <div class="field-group" style="margin:0">
             <label style="font-size:11px;font-weight:700;color:var(--text-light);display:block;margin-bottom:4px">📅 Contar a partir de</label>
             <input type="date" id="pontos-inicio" value="${inicio}"
-              style="padding:8px 10px;border:1.5px solid var(--gray-light);border-radius:var(--radius-sm);font-size:13px;width:100%;background:var(--white)" />
+              style="padding:8px 10px;border:1.5px solid var(--gray-light);border-radius:var(--radius-sm);font-size:13px;width:100%;background:var(--white);color:var(--navy,#1A2A5E);color-scheme:light" />
           </div>
           <div class="field-group" style="margin:0">
             <label style="font-size:11px;font-weight:700;color:var(--text-light);display:block;margin-bottom:4px">📅 Até (opcional)</label>
             <input type="date" id="pontos-fim" value="${fim}"
-              style="padding:8px 10px;border:1.5px solid var(--gray-light);border-radius:var(--radius-sm);font-size:13px;width:100%;background:var(--white)" />
+              style="padding:8px 10px;border:1.5px solid var(--gray-light);border-radius:var(--radius-sm);font-size:13px;width:100%;background:var(--white);color:var(--navy,#1A2A5E);color-scheme:light" />
           </div>
         </div>
         <button onclick="salvarPontosConfig(false)"
