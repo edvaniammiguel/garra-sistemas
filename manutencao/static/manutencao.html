@@ -3245,7 +3245,64 @@ function toggleFilhos(id, tr){
 }
 
 // Parametrização — troca de aba
+// ══ PARAMETRIZAR VIVO (Regra 63): panes ligadas ao motor /param/{dominio} ══
+// Mapa pane → domínio + rótulos. Panes fora do mapa seguem como demo (fila).
+const PARAM_MAP = {
+  tipos:     { dom:'tipos-equipamento',      titulo:'Tipos de Equipamento',  pk:'sigla' },
+  familias:  { dom:'familias',               titulo:'Famílias',              pk:'codigo' },
+  grupos:    { dom:'sistemas',               titulo:'Sistemas (organização funcional)', pk:'codigo' },
+  setores:   { dom:'setores-atividade',      titulo:'Setores de Atividade',  pk:'codigo' },
+  centcusto: { dom:'centros-custo',          titulo:'Centros de Custo',      pk:'codigo' },
+  sintomas:  { dom:'sintomas',               titulo:'Sintomas',              pk:'codigo', extra:'causas' },
+  tipoOT:    { dom:'tipos-trabalho',         titulo:'Tipos de Ordem de Trabalho', pk:'codigo' },
+  motivos:   { dom:'motivos-reprogramacao',  titulo:'Motivos de Reprogramação', pk:'codigo' },
+  motpend:   { dom:'motivos-pendente',       titulo:'Motivos de OT Pendente', pk:'codigo' },
+};
+async function ligarParamPane(paneId){
+  const cfg = PARAM_MAP[paneId]; if (!cfg) return;
+  const pane = document.getElementById('pp-'+paneId); if (!pane) return;
+  const render = (rows, dom, pk, alvo) => rows.map(r => {
+    const cod = r[pk] ?? r.codigo ?? r.sigla;
+    return '<tr><td class="bold" style="width:90px">'+_esc(cod)+'</td><td>'+_esc(r.nome||'')+'</td>'
+      + (r.tipo_manutencao !== undefined ? '<td style="width:110px">'+_esc(r.tipo_manutencao||'')+'</td>' : '')
+      + '<td class="act" style="width:56px"><button class="btn" onclick="editarParam(\''+dom+'\',\''+_esc(cod)+'\',\''+_esc(r.nome||'').replace(/'/g,"\\'")+'\',\''+paneId+'\')">✏️</button></td></tr>';
+  }).join('') || '<tr><td colspan="4" style="padding:12px;color:#64748B">Nenhum registro.</td></tr>';
+  try {
+    const rows = await mntFetch('/manutencao/api/param/'+cfg.dom);
+    let extraHtml = '';
+    if (cfg.extra){
+      const rows2 = await mntFetch('/manutencao/api/param/'+cfg.extra);
+      extraHtml = '<div class="pp-title" style="margin-top:16px;font-size:13px">Causas '
+        + '<button class="btn o" style="margin-left:8px;font-size:11px" onclick="novoParam(\''+cfg.extra+'\',\''+paneId+'\')">＋ Nova</button></div>'
+        + '<div class="tw" style="margin-top:6px"><table><thead><tr><th style="width:90px">Código</th><th>Descrição</th><th style="width:56px"></th></tr></thead><tbody>'
+        + render(rows2, cfg.extra, 'codigo', paneId) + '</tbody></table></div>';
+    }
+    pane.innerHTML =
+      '<div class="pp-hdr"><div><div class="pp-title">'+cfg.titulo+'</div>'
+      + '<div class="pp-sub">Pré-cadastro editável — usado nos formulários, filtros e relatórios</div></div>'
+      + '<button class="btn o" onclick="novoParam(\''+cfg.dom+'\',\''+paneId+'\')">＋ Novo</button></div>'
+      + '<div class="tw" style="margin-top:10px"><table><thead><tr><th style="width:90px">Código</th><th>Descrição</th>'
+      + (rows[0] && rows[0].tipo_manutencao !== undefined ? '<th style="width:110px">Categoria</th>' : '')
+      + '<th style="width:56px"></th></tr></thead><tbody>'
+      + render(rows, cfg.dom, cfg.pk, paneId) + '</tbody></table></div>' + extraHtml;
+  } catch(e){ console.error('[param]', paneId, e); }
+}
+async function novoParam(dom, paneId){
+  const cod = prompt('Código:'); if (!cod) return;
+  const nome = prompt('Descrição:'); if (!nome) return;
+  try { await mntFetch('/manutencao/api/param/'+dom, {method:'POST', body: JSON.stringify({codigo:cod.trim(), nome:nome.trim()})});
+    mostrarToast('✅ Cadastrado','ok'); ligarParamPane(paneId);
+  } catch(e){ mostrarToast('❌ '+e.message,'warn'); }
+}
+async function editarParam(dom, cod, nomeAtual, paneId){
+  const nome = prompt('Descrição de '+cod+':', nomeAtual); if (nome===null) return;
+  try { await mntFetch('/manutencao/api/param/'+dom, {method:'POST', body: JSON.stringify({codigo:cod, nome:nome.trim()})});
+    mostrarToast('✅ Atualizado','ok'); ligarParamPane(paneId);
+  } catch(e){ mostrarToast('❌ '+e.message,'warn'); }
+}
+
 function showParam(id, el){
+  if (typeof PARAM_MAP !== 'undefined' && PARAM_MAP[id]) ligarParamPane(id);
   document.getElementById('pp-placeholder') && (document.getElementById('pp-placeholder').style.display='none');
   document.querySelectorAll('.ppane').forEach(p=>p.style.display='none');
   const pane = document.getElementById('pp-'+id);
@@ -3282,6 +3339,7 @@ async function mntFetch(path, opts){
     headers: Object.assign({'Content-Type':'application/json','Authorization':'Bearer '+mntToken()}, (opts&&opts.headers)||{})
   }));
   if (r.status === 401) { mostrarToast('Sessão expirada — abra pelo Admin', 'warn'); throw new Error('401'); }
+  if (r.status === 403) { alert('Seu usuário não tem permissão para o módulo Manutenção. Solicite acesso ao administrador.'); location.replace('/admin'); throw new Error('403'); }
   const j = await r.json().catch(()=> ({}));
   if (!r.ok) throw new Error(j.detail || ('Erro '+r.status));
   return j;
@@ -3456,6 +3514,7 @@ async function carregarPecasReais(){
   const q = (document.getElementById('alm-busca')?.value || '').trim();
   try {
     const r = await mntFetch('/manutencao/api/pecas' + (q ? '?busca=' + encodeURIComponent(q) : ''));
+    if (!r || !Array.isArray(r.itens)) throw new Error('Resposta inesperada — atualize o backend (routers/manutencao.py)');
     const st = document.getElementById('alm-strip');
     if (st) st.textContent = r.itens.length + ' de ' + r.total + ' peças · dados reais';
     tb.innerHTML = r.itens.map(p => `<tr>
