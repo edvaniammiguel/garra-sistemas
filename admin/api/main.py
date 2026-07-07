@@ -987,6 +987,29 @@ async def criar_schema_manutencao():
             ALTER TABLE manutencao.ot
               ADD COLUMN IF NOT EXISTS tipo_trabalho TEXT,
               ADD COLUMN IF NOT EXISTS interventor TEXT""", fetch="none")
+        # ══ Parametrizar completo (07/07/2026): centros de custo + motivos ══
+        await ajard_query("""
+            CREATE TABLE IF NOT EXISTS manutencao.centros_custo (
+                codigo TEXT PRIMARY KEY, nome TEXT NOT NULL, ativo BOOLEAN DEFAULT TRUE)""", fetch="none")
+        await ajard_query("""
+            CREATE TABLE IF NOT EXISTS manutencao.motivos_reprogramacao (
+                codigo TEXT PRIMARY KEY, nome TEXT NOT NULL, ativo BOOLEAN DEFAULT TRUE)""", fetch="none")
+        await ajard_query("""
+            CREATE TABLE IF NOT EXISTS manutencao.motivos_pendente (
+                codigo TEXT PRIMARY KEY, nome TEXT NOT NULL, ativo BOOLEAN DEFAULT TRUE)""", fetch="none")
+        for cod, nome in [("01","Centro Custo G"),("02","Centro Custo GM"),("9999","Centro custo Geral")]:
+            await ajard_query("""INSERT INTO manutencao.centros_custo (codigo,nome) VALUES (%s,%s)
+                ON CONFLICT (codigo) DO NOTHING""", (cod,nome), fetch="none")
+        for cod, nome in [("01","Mudança de planos"),("02","Possibilidade de parada do equipamento"),
+                          ("03","Alteração de KM"),("04","Alteração de horímetro"),("05","Peça em bom estado"),
+                          ("06","Teste"),("07","Equipamento trocado"),("08","Falta de alinhamento entre equipe"),
+                          ("09","Substituição do plano de manutenção"),("10","Equipamento não disponível"),
+                          ("11","Peça em péssimo estado"),("12","Equipamento ocioso"),("13","OT em duplicidade")]:
+            await ajard_query("""INSERT INTO manutencao.motivos_reprogramacao (codigo,nome) VALUES (%s,%s)
+                ON CONFLICT (codigo) DO NOTHING""", (cod,nome), fetch="none")
+        for cod, nome in [("01","Equipamento em atividade"),("02","Pressão por aquecimento")]:
+            await ajard_query("""INSERT INTO manutencao.motivos_pendente (codigo,nome) VALUES (%s,%s)
+                ON CONFLICT (codigo) DO NOTHING""", (cod,nome), fetch="none")
         print("[Startup] schema manutencao OK")
     except Exception as e:
         print(f"[Startup] manutencao: {e}")
