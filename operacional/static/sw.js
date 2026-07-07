@@ -14,7 +14,7 @@
  */
 
 const CACHE_NAME = 'garra-operacional-v15';
-const ASSETS_CACHE = 'garra-assets-v5';
+const ASSETS_CACHE = 'garra-assets-v6';
 const OFFLINE_PAGE = '/operacional/offline.html';
 
 // Assets que devem sempre estar em cache (shell)
@@ -101,6 +101,13 @@ self.addEventListener('fetch', (e) => {
   //    Sem isso, o SSO (/jardinagem/mobile?sso=) é capturado e o token se perde.
   if (url.pathname.startsWith('/jardinagem')) {
     return; // deixa o navegador buscar direto da rede
+  }
+
+  // 0c. (07/07/2026) Não interceptar o módulo MANUTENÇÃO — desktop, sempre
+  //     online. Sem isso, o GET pós-gravação do Parametrizar podia voltar do
+  //     cache/IndexedDB e parecer que o cadastro "não persistiu".
+  if (url.pathname.startsWith('/manutencao')) {
+    return; // rede direta, sem cache
   }
 
   // 1. HTML pages — network-first
