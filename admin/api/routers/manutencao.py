@@ -13,6 +13,26 @@ from core.db import ajard_query, ajard_query_id
 
 router = APIRouter()
 
+_PERFIS_MANUTENCAO = {"admin", "gestor", "luana", "bruna"}
+
+async def verificar_manutencao(payload=Depends(verificar_token)):
+    """Gate do módulo Manutenção: perfil liberado OU permissão 'manutencao'
+    concedida em public.permissoes_colaborador. Operador/motorista/campo
+    sem a permissão recebem 403 — em TODAS as rotas do módulo."""
+    if (payload.get("perfil") or "").lower() in _PERFIS_MANUTENCAO:
+        return payload
+    u = await ajard_query(
+        "SELECT id FROM public.usuarios_garra WHERE login=%s",
+        (payload.get("sub", ""),), fetch="one")
+    if u:
+        p = await ajard_query(
+            """SELECT permitido FROM public.permissoes_colaborador
+               WHERE usuario_id=%s AND modulo='manutencao'""",
+            (u["id"],), fetch="one")
+        if p and p.get("permitido"):
+            return payload
+    raise HTTPException(status_code=403, detail="Sem permissão para o módulo Manutenção")
+
 _TRANSICOES = {
     "aberta":          {"em_andamento", "cancelada"},
     "em_andamento":    {"aguardando_peca", "concluida", "cancelada"},
@@ -32,14 +52,14 @@ async def _usuario_id(payload):
 # ── FORNECEDORES (cadastro único, public) ─────────────────────
 
 @router.get("/manutencao/api/fornecedores")
-async def listar_fornecedores(_auth=Depends(verificar_token)):
+async def listar_fornecedores(_auth=Depends(verificar_manutencao)):
     rows = await ajard_query(
         "SELECT * FROM public.fornecedores WHERE ativo=true ORDER BY nome")
     return [dict(r) for r in rows]
 
 
 @router.post("/manutencao/api/fornecedores")
-async def criar_fornecedor(request: Request, payload=Depends(verificar_gestor)):
+async def criar_fornecedor(request: Request, payload=Depends(verificar_manutencao)):
     d = await request.json()
     nome = (d.get("nome") or "").strip()
     if not nome:
@@ -53,7 +73,7 @@ async def criar_fornecedor(request: Request, payload=Depends(verificar_gestor)):
 
 
 @router.patch("/manutencao/api/fornecedores/{fid}")
-async def editar_fornecedor(fid: str, request: Request, payload=Depends(verificar_gestor)):
+async def editar_fornecedor(fid: str, request: Request, payload=Depends(verificar_manutencao)):
     d = await request.json()
     campos = ["nome", "cnpj", "telefone", "email", "tipo", "observacao", "ativo"]
     updates, params = [], []
@@ -73,7 +93,7 @@ async def editar_fornecedor(fid: str, request: Request, payload=Depends(verifica
 # ── ORDENS DE TRABALHO (OT) ───────────────────────────────────
 
 @router.post("/manutencao/api/ots")
-async def abrir_ot(request: Request, payload=Depends(verificar_token)):
+async def abrir_ot(request: Request, payload=Depends(verificar_manutencao)):
     """Abre OT. Bloqueia categoria 'apoio' e captura o horímetro atual."""
     d = await request.json()
     eq_id = d.get("equipamento_id")
@@ -118,7 +138,7 @@ async def abrir_ot(request: Request, payload=Depends(verificar_token)):
 
 @router.get("/manutencao/api/ots")
 async def listar_ots(status: str = None, equipamento_id: str = None,
-                     _auth=Depends(verificar_token)):
+                     _auth=Depends(verificar_manutencao)):
     where, params = ["ot.ativo=true"], []
     if status:
         params.append(status)
@@ -141,7 +161,7 @@ async def listar_ots(status: str = None, equipamento_id: str = None,
 
 
 @router.get("/manutencao/api/ots/{ot_id}")
-async def detalhe_ot(ot_id: str, _auth=Depends(verificar_token)):
+async def detalhe_ot(ot_id: str, _auth=Depends(verificar_manutencao)):
     ot = await ajard_query(
         """SELECT ot.*, eq.codigo AS equipamento_codigo, eq.descricao AS equipamento_desc
            FROM manutencao.ot ot
@@ -160,7 +180,7 @@ async def detalhe_ot(ot_id: str, _auth=Depends(verificar_token)):
 
 
 @router.patch("/manutencao/api/ots/{ot_id}/status")
-async def mudar_status_ot(ot_id: str, request: Request, payload=Depends(verificar_token)):
+async def mudar_status_ot(ot_id: str, request: Request, payload=Depends(verificar_manutencao)):
     d = await request.json()
     novo = (d.get("status") or "").strip()
     ot = await ajard_query(
@@ -190,7 +210,7 @@ async def mudar_status_ot(ot_id: str, request: Request, payload=Depends(verifica
 
 
 @router.patch("/manutencao/api/ots/{ot_id}")
-async def editar_ot(ot_id: str, request: Request, payload=Depends(verificar_gestor)):
+async def editar_ot(ot_id: str, request: Request, payload=Depends(verificar_manutencao)):
     d = await request.json()
     campos = ["tipo", "prioridade", "descricao", "responsavel_id",
               "fornecedor_id", "custo_total"]
@@ -209,7 +229,7 @@ async def editar_ot(ot_id: str, request: Request, payload=Depends(verificar_gest
 
 
 @router.get("/manutencao/api/resumo")
-async def resumo_manutencao(_auth=Depends(verificar_token)):
+async def resumo_manutencao(_auth=Depends(verificar_manutencao)):
     rows = await ajard_query(
         """SELECT status, COUNT(*)::int AS n
            FROM manutencao.ot WHERE ativo=true GROUP BY status""")
@@ -240,7 +260,7 @@ async def manutencao_desktop():
 # ponto de cada equipamento: 🔴 >= máximo · 🟠 >= urgente · 🟡 >= atenção · 🟢 ok
 
 @router.get("/manutencao/api/semaforos")
-async def semaforos_frota(_auth=Depends(verificar_token)):
+async def semaforos_frota(_auth=Depends(verificar_manutencao)):
     rows = await ajard_query(
         """SELECT e.id, e.codigo, e.descricao, e.horimetro_atual, e.medicao,
                   p.codigo AS ponto, p.leitura_atual, p.limiar_atencao,
@@ -279,7 +299,7 @@ async def semaforos_frota(_auth=Depends(verificar_token)):
 
 # ── ALMOXARIFADO: peças reais (Onda 1) com busca ──
 @router.get("/manutencao/api/pecas")
-async def listar_pecas(busca: str = None, limit: int = 100, _auth=Depends(verificar_token)):
+async def listar_pecas(busca: str = None, limit: int = 100, _auth=Depends(verificar_manutencao)):
     limit = min(max(int(limit or 100), 1), 300)
     if busca and busca.strip():
         b = f"%{busca.strip()}%"
@@ -299,7 +319,7 @@ async def listar_pecas(busca: str = None, limit: int = 100, _auth=Depends(verifi
 
 # ── FICHA DO EQUIPAMENTO: Ondas 1+2+3 agregadas ──
 @router.get("/manutencao/api/equipamentos/{eq_id}/detalhe")
-async def detalhe_equipamento(eq_id: str, _auth=Depends(verificar_token)):
+async def detalhe_equipamento(eq_id: str, _auth=Depends(verificar_manutencao)):
     eq = await ajard_query(
         """SELECT e.*, p.codigo AS pai_codigo,
                   (SELECT COUNT(*)::int FROM operacional.equipamentos f
@@ -335,7 +355,7 @@ async def detalhe_equipamento(eq_id: str, _auth=Depends(verificar_token)):
 # transferencia (origem→destino, atômica) · ajuste (define saldo exato)
 
 @router.get("/manutencao/api/almoxarifados")
-async def listar_almoxarifados(_auth=Depends(verificar_token)):
+async def listar_almoxarifados(_auth=Depends(verificar_manutencao)):
     rows = await ajard_query(
         """SELECT a.id, a.codigo, a.nome,
                   COALESCE((SELECT COUNT(*) FROM manutencao.estoque e
@@ -345,7 +365,7 @@ async def listar_almoxarifados(_auth=Depends(verificar_token)):
 
 
 @router.get("/manutencao/api/estoque/{peca_codigo}")
-async def saldo_peca(peca_codigo: str, _auth=Depends(verificar_token)):
+async def saldo_peca(peca_codigo: str, _auth=Depends(verificar_manutencao)):
     rows = await ajard_query(
         """SELECT a.codigo AS almox, a.nome, COALESCE(e.quantidade,0) AS quantidade, e.minimo
            FROM manutencao.almoxarifados a
@@ -356,7 +376,7 @@ async def saldo_peca(peca_codigo: str, _auth=Depends(verificar_token)):
 
 
 @router.post("/manutencao/api/estoque/movimentar")
-async def movimentar_estoque(request: Request, payload=Depends(verificar_token)):
+async def movimentar_estoque(request: Request, payload=Depends(verificar_manutencao)):
     d = await request.json()
     tipo = (d.get("tipo") or "").strip()
     qtd = float(d.get("quantidade") or 0)
@@ -432,10 +452,13 @@ _DOMINIOS_PARAM = {
     "familias": "manutencao.familias",
     "sintomas": "manutencao.sintomas",
     "causas": "manutencao.causas",
+    "centros-custo": "manutencao.centros_custo",
+    "motivos-reprogramacao": "manutencao.motivos_reprogramacao",
+    "motivos-pendente": "manutencao.motivos_pendente",
 }
 
 @router.get("/manutencao/api/param/{dominio}")
-async def listar_dominio(dominio: str, _auth=Depends(verificar_token)):
+async def listar_dominio(dominio: str, _auth=Depends(verificar_manutencao)):
     tabela = _DOMINIOS_PARAM.get(dominio)
     if not tabela:
         raise HTTPException(status_code=404, detail="Domínio não parametrizável")
@@ -444,7 +467,7 @@ async def listar_dominio(dominio: str, _auth=Depends(verificar_token)):
 
 
 @router.post("/manutencao/api/param/{dominio}")
-async def upsert_dominio(dominio: str, request: Request, payload=Depends(verificar_gestor)):
+async def upsert_dominio(dominio: str, request: Request, payload=Depends(verificar_manutencao)):
     tabela = _DOMINIOS_PARAM.get(dominio)
     if not tabela:
         raise HTTPException(status_code=404, detail="Domínio não parametrizável")
