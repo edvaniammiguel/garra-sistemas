@@ -1101,11 +1101,13 @@ const Token = {
   // (06/07/2026) Sessão POR ABA: localStorage é por origem — um login no
   // /mobile no mesmo navegador sobrescrevia o token e derrubava o admin e
   // o SSO da Jardinagem. sessionStorage prende a sessão a esta aba.
-  get:  ()    => sessionStorage.getItem('garra_adm_token') || localStorage.getItem('garra_token'),
-  set:  (t)   => { sessionStorage.setItem('garra_adm_token', t); localStorage.setItem('garra_token', t); },
-  del:  ()    => { sessionStorage.removeItem('garra_adm_token'); localStorage.removeItem('garra_token'); },
-  user: ()    => { try { return JSON.parse(localStorage.getItem('garra_usuario') || 'null'); } catch { return null; } },
-  setUser:(u) => localStorage.setItem('garra_usuario', JSON.stringify(u)),
+  // (07/07/2026) Identidade SÓ da aba: sem fallback ao localStorage — token
+  // de outro app (ex: /mobile do operador) NUNCA vira sessão do admin.
+  get:  ()    => sessionStorage.getItem('garra_adm_token'),
+  set:  (t)   => { sessionStorage.setItem('garra_adm_token', t); },
+  del:  ()    => { sessionStorage.removeItem('garra_adm_token'); localStorage.removeItem('garra_token'); localStorage.removeItem('garra_usuario'); },
+  user: ()    => { try { return JSON.parse(sessionStorage.getItem('garra_adm_usuario') || 'null'); } catch { return null; } },
+  setUser:(u) => sessionStorage.setItem('garra_adm_usuario', JSON.stringify(u)),
   delUser:()  => localStorage.removeItem('garra_usuario'),
 };
 
