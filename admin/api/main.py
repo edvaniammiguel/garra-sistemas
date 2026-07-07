@@ -888,6 +888,105 @@ async def criar_schema_manutencao():
                 ativo BOOLEAN DEFAULT TRUE,
                 UNIQUE (equipamento_id, codigo)
             )""", fetch="none")
+        # ══ ALMOXARIFADOS + ESTOQUE (07/07/2026) — necessidade antiga da Garra ══
+        # 2 almoxarifados reais: Escritório e Galpão. Estoque por peça×almoxarifado
+        # com trilha completa de movimentações (entrada/saída/transferência/ajuste).
+        await ajard_query("""
+            CREATE TABLE IF NOT EXISTS manutencao.almoxarifados (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                codigo TEXT UNIQUE NOT NULL,
+                nome TEXT NOT NULL,
+                ativo BOOLEAN DEFAULT TRUE)""", fetch="none")
+        await ajard_query("""
+            INSERT INTO manutencao.almoxarifados (codigo, nome)
+            SELECT 'A1', 'Escritório' WHERE NOT EXISTS
+              (SELECT 1 FROM manutencao.almoxarifados WHERE codigo='A1')""", fetch="none")
+        await ajard_query("""
+            INSERT INTO manutencao.almoxarifados (codigo, nome)
+            SELECT 'A2', 'Galpão' WHERE NOT EXISTS
+              (SELECT 1 FROM manutencao.almoxarifados WHERE codigo='A2')""", fetch="none")
+        await ajard_query("""
+            CREATE TABLE IF NOT EXISTS manutencao.estoque (
+                peca_id UUID NOT NULL,
+                almoxarifado_id UUID NOT NULL,
+                quantidade NUMERIC(12,2) DEFAULT 0,
+                minimo NUMERIC(12,2),
+                PRIMARY KEY (peca_id, almoxarifado_id))""", fetch="none")
+        await ajard_query("""
+            CREATE TABLE IF NOT EXISTS manutencao.movimentacoes (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                tipo TEXT NOT NULL,
+                peca_id UUID NOT NULL,
+                almox_origem UUID,
+                almox_destino UUID,
+                quantidade NUMERIC(12,2) NOT NULL,
+                ot_id UUID,
+                usuario_id UUID,
+                observacao TEXT,
+                criado_em TIMESTAMPTZ DEFAULT now())""", fetch="none")
+        # ══ BIBLIOTECA DE PREPARAÇÕES PADRÃO (07/07/2026) ══
+        # Templates de manutenção POR TIPO de equipamento — a fábrica dos planos.
+        # planos ganham vínculo com a preparação de origem.
+        await ajard_query("""
+            CREATE TABLE IF NOT EXISTS manutencao.preparacoes (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                codigo TEXT UNIQUE NOT NULL,
+                descricao TEXT NOT NULL,
+                tipo_sigla TEXT,
+                tarefas TEXT,
+                tdm_horas NUMERIC(8,2),
+                criticidade INT DEFAULT 1,
+                ativo BOOLEAN DEFAULT TRUE,
+                criado_em TIMESTAMPTZ DEFAULT now())""", fetch="none")
+        await ajard_query("""
+            ALTER TABLE manutencao.planos
+              ADD COLUMN IF NOT EXISTS preparacao_codigo TEXT""", fetch="none")
+        # ══ PARAMETRIZAÇÃO-FIRST (Regra 63, 07/07/2026) ══
+        # Nenhum domínio hardcoded: tipos de manutenção/trabalho (árvore A/B/C/M
+        # com A1/B1/C1/C2/M1), setores interventor e setores de atividade —
+        # tudo tabela editável, seeds do ManWinWin real.
+        await ajard_query("""
+            CREATE TABLE IF NOT EXISTS manutencao.tipos_manutencao (
+                codigo TEXT PRIMARY KEY, nome TEXT NOT NULL,
+                planejavel BOOLEAN DEFAULT FALSE, sistematico BOOLEAN DEFAULT FALSE)""", fetch="none")
+        await ajard_query("""
+            CREATE TABLE IF NOT EXISTS manutencao.tipos_trabalho (
+                codigo TEXT PRIMARY KEY, nome TEXT NOT NULL,
+                tipo_manutencao TEXT, ativo BOOLEAN DEFAULT TRUE)""", fetch="none")
+        await ajard_query("""
+            CREATE TABLE IF NOT EXISTS manutencao.setores_interventor (
+                codigo TEXT PRIMARY KEY, nome TEXT NOT NULL, ativo BOOLEAN DEFAULT TRUE)""", fetch="none")
+        await ajard_query("""
+            CREATE TABLE IF NOT EXISTS manutencao.setores_atividade (
+                codigo TEXT PRIMARY KEY, nome TEXT NOT NULL, ativo BOOLEAN DEFAULT TRUE)""", fetch="none")
+        for cod, nome, pl, si in [("A","Preventivo Sistemático",True,True),
+                                  ("B","Preventivo Condicionado",True,False),
+                                  ("C","Corretivo",False,False),
+                                  ("M","Melhoria",True,False)]:
+            await ajard_query("""
+                INSERT INTO manutencao.tipos_manutencao (codigo,nome,planejavel,sistematico)
+                VALUES (%s,%s,%s,%s) ON CONFLICT (codigo) DO NOTHING""",
+                (cod,nome,pl,si), fetch="none")
+        for cod, nome, tm in [("A1","Sistemático","A"),("B1","Preventivo Condicional","B"),
+                              ("C1","Reparo de Avaria","C"),("C2","Corretiva Deferida","C"),
+                              ("M1","Melhoria","M"),("R1","Reforma CE","M")]:
+            await ajard_query("""
+                INSERT INTO manutencao.tipos_trabalho (codigo,nome,tipo_manutencao)
+                VALUES (%s,%s,%s) ON CONFLICT (codigo) DO NOTHING""",
+                (cod,nome,tm), fetch="none")
+        for cod, nome in [("MAN","Manutenção"),("PRD","Produção"),
+                          ("EXT","Externo"),("ADM","Administrativo")]:
+            await ajard_query("""
+                INSERT INTO manutencao.setores_interventor (codigo,nome)
+                VALUES (%s,%s) ON CONFLICT (codigo) DO NOTHING""", (cod,nome), fetch="none")
+        for cod, nome in [("MANUT","Manutenção"),("AQVEI","Aquisição de veículo"),("SERV","Serviço")]:
+            await ajard_query("""
+                INSERT INTO manutencao.setores_atividade (codigo,nome)
+                VALUES (%s,%s) ON CONFLICT (codigo) DO NOTHING""", (cod,nome), fetch="none")
+        await ajard_query("""
+            ALTER TABLE manutencao.ot
+              ADD COLUMN IF NOT EXISTS tipo_trabalho TEXT,
+              ADD COLUMN IF NOT EXISTS interventor TEXT""", fetch="none")
         print("[Startup] schema manutencao OK")
     except Exception as e:
         print(f"[Startup] manutencao: {e}")
