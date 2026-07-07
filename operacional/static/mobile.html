@@ -678,6 +678,15 @@ async function aplicarLoginSucesso(data) {
   const modalEsq = document.getElementById('modal-esqueci');
   if (modalEsq) modalEsq.style.display = 'none';
 
+  // (07/07/2026) TROCA LIMPA DE USUÁRIO: se o login mudou, descartar
+  // identidades derivadas do usuário anterior (checklist etc.) — a fila
+  // offline de registros NÃO é tocada.
+  try {
+    const antes = JSON.parse(localStorage.getItem('garra_usuario') || 'null');
+    if (antes && antes.login && antes.login !== data.login) {
+      localStorage.removeItem('garra_current_user');
+    }
+  } catch(e) {}
   localStorage.setItem('garra_token', data.token);
   localStorage.setItem('garra_usuario', JSON.stringify(data));
 
