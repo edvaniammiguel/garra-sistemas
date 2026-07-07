@@ -4617,8 +4617,12 @@ function cmExportExcelAnual() {
 function cmBaixarExcel(url, nomeArquivo) {
   const token = Token.get() || '';
   fetch(url, { headers: { 'Authorization': 'Bearer ' + token } })
-    .then(r => {
-      if (!r.ok) throw new Error('Erro ao gerar Excel');
+    .then(async r => {
+      if (r.status === 401) throw new Error('Sessão expirada — clique em Sair e entre novamente.');
+      if (!r.ok) {
+        let det = ''; try { det = (await r.json()).detail || ''; } catch(e) {}
+        throw new Error('Erro ' + r.status + ' ao gerar Excel' + (det ? ': ' + det : ''));
+      }
       return r.blob();
     })
     .then(blob => {
