@@ -576,6 +576,10 @@ function renderDriverDashboard() {
   // Pontos — exibe baseado na configuração do gestor
   const cfg         = PontosConfig.get();
   const ptsVisiveis = PontosConfig.visivel();
+  // (08/07/2026) Visibilidade OFF → o card de ranking some por completo:
+  // colaborador vê apenas a seleção de checklists e "Meus Últimos Envios".
+  const scoreCard = document.querySelector('#screen-driver .score-card');
+  if (scoreCard) scoreCard.style.display = ptsVisiveis ? '' : 'none';
   const ptsExibir   = ptsVisiveis ? PontosConfig.pontosNoPeriodo(u.login) : '–';
   const ptsMsg      = !ptsVisiveis ? (cfg.data_inicio ? 'Disponível em ' + formatDate(cfg.data_inicio) : 'Pontuação em breve') : '';
 
