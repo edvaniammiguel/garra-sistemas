@@ -1362,9 +1362,25 @@ async function salvarParte(adicionarMais) {
       } else {
         const errData = await r.json().catch(() => ({}));
         if (r.status >= 500 || !r.status) {
-          // erro de servidor → enfileira
+          // (08/07/2026) Erro de servidor → ENFILEIRA de verdade (o bloco era
+          // só um comentário: o fluxo seguia fechando o modal sem salvar nada).
+          if (typeof GarraDB !== 'undefined') {
+            await GarraDB.postWithQueue(
+              '/operacional/api/os/' + _osAtualId + '/partes',
+              payload,
+              { retries: 5, retryDelay: 30000, dedup: false }
+            );
+            salvouOffline = true;
+          } else {
+            throw new Error(errData.detail || `Erro HTTP ${r.status}`);
+          }
         } else {
-          throw new Error(errData.detail || `Erro HTTP ${r.status}`);
+          // (08/07/2026) 4xx = validação: mostrar o motivo e PARAR aqui.
+          // Antes caía no catch de rede e ia para a fila offline — request
+          // inválido re-tentando para sempre, tela fechava sem salvar.
+          err.textContent = errData.detail || ('Erro ' + r.status + ' ao salvar');
+          err.style.display = 'block';
+          return;
         }
       }
     } catch (netErr) {
@@ -1628,6 +1644,7 @@ async function abrirModalParte(osId) {
   // 1) regime da OS (definido pela Luana)  2) medição padrão do equipamento
   // Misto: sugere o bloco certo, mas todos os botões ficam disponíveis.
   const regime = (osData?.regime_cobranca || '').toLowerCase();
+  window._osRegimeCobranca = regime; // (08/07/2026) troca de equipamento usa a mesma prioridade
   let sugestao = null;
   if (regime === 'km') sugestao = 'km';
   else if (regime === 'metro') sugestao = 'metros';
@@ -1727,11 +1744,23 @@ function atualizarCamposMedicao() {
   const opt = sel && sel.options[sel.selectedIndex];
   const cat = opt ? (opt.getAttribute('data-cat') || '') : '';
   setTimeout(preencherUltimoHorimetro, 50);
-  const sugestao = _medicaoPorCategoria(cat);
+  // (08/07/2026) MESMA prioridade da abertura: 1) regime da OS (Luana)
+  // 2) categoria do equipamento como fallback. Antes, trocar de máquina
+  // deixava a categoria atropelar o regime (OS hora + Mini Carregadeira
+  // "metro" → exigia metros sem o operador ter selecionado nada).
+  const regime = (window._osRegimeCobranca || '').toLowerCase();
+  let sugestao = null;
+  if (regime === 'km') sugestao = 'km';
+  else if (regime === 'metro') sugestao = 'metros';
+  else if (regime === 'diaria') sugestao = 'diaria';
+  else if (regime === 'hora' || regime === 'empreito') sugestao = 'horimetro';
+  if (!sugestao) sugestao = _medicaoPorCategoria(cat);
   if (sugestao) {
     prepararMedicao(sugestao);
     const hint = document.getElementById('med-hint');
-    if (hint) hint.textContent = 'Sugerido para este equipamento: ' + _rotuloMedicao(sugestao) + ' (pode trocar)';
+    if (hint) hint.textContent = regime
+      ? 'Sugerido pelo regime da OS: ' + _rotuloMedicao(sugestao) + ' (pode trocar)'
+      : 'Sugerido para este equipamento: ' + _rotuloMedicao(sugestao) + ' (pode trocar)';
   }
   // Puxa o operador/motorista responsável do equipamento (operador pode alterar)
   const respId = opt ? (opt.getAttribute('data-resp') || '') : '';
