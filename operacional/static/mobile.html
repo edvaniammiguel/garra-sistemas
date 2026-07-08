@@ -1541,7 +1541,7 @@ async function abrirModalParte(osId) {
   const info = document.getElementById('m-os-info');
   window._osDataAtual = osData;
   if (osData) {
-    info.innerHTML = `<strong>${osData.numero}</strong> — ${osData.obra || osData.cliente_nome || '(sem obra)'} <span style="color:var(--orange)">· ${osData.regime_cobranca || 'diaria'}</span>`;
+    info.innerHTML = `<strong>${osData.numero}</strong> — ${osData.obra || osData.cliente_nome || '(sem obra)'} <span style="color:var(--orange)">· ${osData.regime_cobranca || '—'}</span>`;
   } else {
     info.innerHTML = `OS #${osId.substring(0,8)}…`;
   }
