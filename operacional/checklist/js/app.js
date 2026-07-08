@@ -1038,9 +1038,10 @@ function mesclarEnviosServidor(serverRows) {
     archived: false, // o GET só retorna arquivado=FALSE
   }));
   const idsServidor = new Set(doServidor.map(s => s.id));
-  // Preserva locais que o servidor não retornou: pendentes de sync (fila
-  // offline) e arquivados (excluídos do GET) — nunca perder pendências.
-  const soLocais = locais.filter(s => !idsServidor.has(s.id));
+  // (08/07/2026) Servidor é a fonte da verdade: preserva APENAS locais ainda
+  // não sincronizados (fila offline). Itens com synced=true que o servidor
+  // não retornou foram excluídos/arquivados no banco — não devem ressuscitar.
+  const soLocais = locais.filter(s => !idsServidor.has(s.id) && s.synced !== true);
   const lista = [...doServidor, ...soLocais]
     .sort((a, b) => new Date(b.date) - new Date(a.date));
   DB.set('garra_submissions', lista);
