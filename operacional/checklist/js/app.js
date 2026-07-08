@@ -446,7 +446,10 @@ function showSuperior() {
   // Aba Logística é controlada por permissão específica, não pelo role
   const tabLog  = document.querySelector('#screen-superior .tab[onclick*="logistics"]');
   const tabChk  = document.querySelector('#screen-superior .tab[onclick*="checklists"]');
+  const tabRep  = document.querySelector('#screen-superior .tab[onclick*="report"]');
   if (tabLog) tabLog.style.display = currentUser.temLogistica ? '' : 'none';
+  // Relatório é conteúdo de Logística — segue a MESMA permissão (checklist_logistica)
+  if (tabRep) tabRep.style.display = currentUser.temLogistica ? '' : 'none';
 
   // Aba inicial conforme de onde o usuário veio no app shell
   // (ícone Checklist → checklists; ícone Logística → logistics, só se tiver permissão)
@@ -549,6 +552,8 @@ function renderSupChecklistCards() {
     </div>`).join('');
 }
 function supTab(tab, btn) {
+  // Logística e Relatório exigem permissão checklist_logistica (defesa em profundidade)
+  if ((tab === 'logistics' || tab === 'report') && !(currentUser && currentUser.temLogistica)) return;
   document.querySelectorAll('#screen-superior .tab').forEach(t => t.classList.remove('active'));
   document.querySelectorAll('#screen-superior .tab-panel').forEach(p => p.classList.remove('active'));
   btn.classList.add('active');
