@@ -1188,7 +1188,10 @@ async def op_criar_os_avulsa(req: Request, payload=Depends(verificar_token)):
     cliente_nome    = (body.get("cliente_nome") or "").strip()
     equipamento_id  = body.get("equipamento_id")
     tipo_servico_id = body.get("tipo_servico_id")
-    regime_cobranca = (body.get("regime_cobranca") or "diaria").strip()
+    # (08/07/2026) OS avulsa nasce SEM regime — o operador não escolhe regime;
+    # a gestão define no complemento. Evita sugestão falsa de "diária" no
+    # Registrar Dia (bloco de diárias abrindo em toda OS avulsa).
+    regime_cobranca = (body.get("regime_cobranca") or "").strip()
     observacao      = (body.get("observacao") or "").strip()
     
     if not obra:
