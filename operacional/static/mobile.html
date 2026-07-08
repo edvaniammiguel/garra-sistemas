@@ -417,7 +417,7 @@ input,select,textarea{font-family:inherit;outline:none;border:none}
       <input id="m-fornecedor" type="text" placeholder="Nome do fornecedor / dono" style="width:100%;padding:11px;border:1.5px solid var(--border);border-radius:8px;font-size:14px">
     </div>
 
-    <div style="margin-bottom:12px">
+    <div id="bloco-operador" style="margin-bottom:12px">
       <label style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:5px">Operador / Motorista</label>
       <select id="m-operador" style="width:100%;padding:11px;border:1.5px solid var(--border);border-radius:8px;font-size:14px">
         <option value="">— selecionar —</option>
@@ -1793,6 +1793,12 @@ function atualizarVinculo() {
   // Fornecedor/de quem: terceiro, diarista e frete
   const precisaForn = (v === 'terceiro' || v === 'diarista' || v === 'frete');
   if (blocoForn) blocoForn.style.display = precisaForn ? 'block' : 'none';
+  // (08/07/2026) Operador/Motorista interno só quando é gente da Garra:
+  // terceiro/diarista/frete identificam a pessoa no campo Fornecedor/nome —
+  // o select some para as horas nunca caírem num colaborador interno.
+  const blocoOp = document.getElementById('bloco-operador');
+  if (blocoOp) blocoOp.style.display = precisaForn ? 'none' : 'block';
+  if (precisaForn) { const so = document.getElementById('m-operador'); if (so) so.value = ''; }
   if (blocoTraj) blocoTraj.style.display = (v === 'frete') ? 'block' : 'none';
   if (lbl) {
     lbl.textContent = (v === 'diarista') ? 'Nome do diarista'
