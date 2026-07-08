@@ -834,8 +834,10 @@
           const perfil = data.perfil || '';
           // Usar perfil_checklist do token se disponível (tem precedência)
           const perfilChecklist = data.perfil_checklist || '';
+          // Mapeamento ÚNICO perfil→role (igual ao guard de identidade do app.js):
+          // operador é colaborador (driver). Painel superior só via perfil_checklist.
           const roleMap = { admin:'manager', gestor:'manager', luana:'manager',
-                            bruna:'superior', operador:'superior', motorista:'driver', campo:'driver' };
+                            bruna:'superior', operador:'driver', motorista:'driver', campo:'driver' };
           const roleByChecklist = { superior:'superior', manager:'manager', driver:'driver' };
           const role = roleByChecklist[perfilChecklist] || roleMap[perfil] || 'driver';
 
