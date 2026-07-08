@@ -186,6 +186,33 @@ async def startup():
                 ALTER TABLE operacional.partes_diarias
                 ADD COLUMN IF NOT EXISTS equipamento_terceiro TEXT
             """)
+            # (08/07/2026) Blindagem de schema: TODAS as colunas usadas pelo
+            # INSERT de partes garantidas no startup (existiam só por criação
+            # manual — dev/prod sempre em paridade a partir daqui).
+            await conn.execute("""
+                ALTER TABLE operacional.partes_diarias
+                ADD COLUMN IF NOT EXISTS vinculo_operador TEXT DEFAULT 'proprio'
+            """)
+            await conn.execute("""
+                ALTER TABLE operacional.partes_diarias
+                ADD COLUMN IF NOT EXISTS operador_nome_avulso TEXT
+            """)
+            await conn.execute("""
+                ALTER TABLE operacional.partes_diarias
+                ADD COLUMN IF NOT EXISTS trajeto TEXT
+            """)
+            await conn.execute("""
+                ALTER TABLE operacional.partes_diarias
+                ADD COLUMN IF NOT EXISTS por_conta_de TEXT DEFAULT 'empresa'
+            """)
+            await conn.execute("""
+                ALTER TABLE operacional.partes_diarias
+                ADD COLUMN IF NOT EXISTS quantidade_diarias NUMERIC(8,1) DEFAULT 0
+            """)
+            await conn.execute("""
+                ALTER TABLE operacional.partes_diarias
+                ADD COLUMN IF NOT EXISTS qtd_viagens NUMERIC(8,1) DEFAULT 0
+            """)
             # Migration: criar tabela regimes_cobranca
             await conn.execute("""
                 CREATE TABLE IF NOT EXISTS operacional.regimes_cobranca (
