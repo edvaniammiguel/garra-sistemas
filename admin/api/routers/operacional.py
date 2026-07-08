@@ -714,8 +714,14 @@ async def op_criar_parte(os_id: str, request: Request, payload=Depends(verificar
     criado_por_id = user_row["id"] if user_row else None
 
     # operador_id: pode ser informado no payload (Gilson registrando pelo Emilson)
-    # ou default para quem está logado
-    operador_id = d.get("operador_id") or criado_por_id
+    # ou default para quem está logado.
+    # (08/07/2026) Terceiro/diarista/frete: quem opera NÃO é colaborador interno
+    # (identificado em fornecedor/nome) — operador_id fica NULL para as horas
+    # nunca somarem no resumo de nenhum colaborador.
+    if vinculo in ("terceiro", "diarista", "frete"):
+        operador_id = None
+    else:
+        operador_id = d.get("operador_id") or criado_por_id
 
     # Calcular KM percorrido
     km_ini = d.get("km_inicial")
@@ -1612,7 +1618,7 @@ async def op_resumo_mensal(payload=Depends(verificar_token)):
              COUNT(DISTINCT p.os_id) AS total_os
            FROM operacional.partes_diarias p
            JOIN operacional.ordens_servico os ON os.id = p.os_id
-           WHERE os.operador_id = %s
+           WHERE p.operador_id = %s
              AND p.ativo = true
              AND COALESCE(p.vinculo_operador, 'proprio') <> 'terceiro'
              AND p.data >= %s
