@@ -505,6 +505,9 @@ function renderSuperiorDashboard() {
 function renderSupChecklistCards() {
   const el = document.getElementById('sup-cl-cards');
   if (!el) return;
+  // (08/07/2026) Meus Últimos Envios também no painel superior — mesma
+  // função do driver (renderMeusEnvios), fonte servidor, sem duplicação.
+  if (currentUser?.login) renderMeusEnvios('sup-my-envios', currentUser.login);
   // ── Pontuação do colaborador (servidor) — 06/07/2026: o papel "superior"
   // não tinha NENHUM lugar para pontos; injeta card + mini-pódio aqui.
   (async () => {
@@ -664,12 +667,20 @@ function renderDriverDashboard() {
     </div>`).join('');
 
   // Histórico — fonte: SERVIDOR (05/07/2026; localStorage só como fallback offline)
-  const histEl = document.getElementById('driver-history');
+  // (08/07/2026) Extraído em renderMeusEnvios() — compartilhado com o painel superior.
+  renderMeusEnvios('driver-history', u.login);
+}
+
+// ─── MEUS ÚLTIMOS ENVIOS (compartilhado: driver + superior) ─────────────────
+function renderMeusEnvios(targetId, login) {
+  const allCLs = DB.allCLs();
+  const histEl = document.getElementById(targetId);
+  if (!histEl) return;
   histEl.innerHTML = '<div class="empty-state" style="opacity:.6">Carregando…</div>';
   (async () => {
     try {
       const token = ckToken();
-      const r = await fetch('/checklist/envios?usuario=' + encodeURIComponent(u.login) + '&limit=15',
+      const r = await fetch('/checklist/envios?usuario=' + encodeURIComponent(login) + '&limit=15',
                             { headers: { 'Authorization': 'Bearer ' + token } });
       if (!r.ok) throw new Error('HTTP ' + r.status);
       const envios = await r.json();
@@ -690,7 +701,7 @@ function renderDriverDashboard() {
       }).join('');
       return;
     } catch (err) { console.error('[historico driver] fallback local:', err); }
-    const subs = DB.submissions().filter(s => s.user === u.login);
+    const subs = DB.submissions().filter(s => s.user === login);
     if (!subs.length) { histEl.innerHTML = '<div class="empty-state"><div class="es-icon">📋</div>Nenhum check list enviado ainda!</div>'; return; }
     histEl.innerHTML = subs.slice(0,15).map(s => {
     const cl  = allCLs[s.type] || {};
