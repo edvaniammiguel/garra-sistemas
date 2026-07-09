@@ -55,6 +55,8 @@ class LogVeiculoCreate(BaseModel):
     modelo: Optional[str] = ""; ano: Optional[int] = None
     cor: Optional[str] = ""; status: str = "disponivel"
     extras: List[dict] = []; observacoes: Optional[str] = ""
+    # (09/07/2026) Trava otimista: versão que o cliente viu (atualizado_em)
+    visto_em: Optional[str] = None
 
 class LogRegistroCreate(BaseModel):
     registro_id: str; responsavel: str
