@@ -18,11 +18,14 @@ from core.models import MuralCreate, CartilhaBloco
 router = APIRouter()
 
 @router.get("/api/mural")
-async def listar_mural(payload=Depends(verificar_token)):
-    """Lista avisos ativos para o perfil/login do usuário."""
-    return await _avisos_visiveis(payload)
+async def listar_mural(todos: int = 0, payload=Depends(verificar_token)):
+    """Lista avisos ativos para o perfil/login do usuário.
+    (09/07/2026) todos=1 + admin/gestor → modo GESTÃO: lista completa sem
+    filtro de destinatário/perfil (histórico da tela de administração)."""
+    ignorar = bool(todos) and (payload.get("perfil", "") in ("admin", "gestor"))
+    return await _avisos_visiveis(payload, ignorar_filtros=ignorar)
 
-async def _avisos_visiveis(payload):
+async def _avisos_visiveis(payload, ignorar_filtros=False):
     """(09/07/2026) Filtro de visibilidade em FONTE ÚNICA — usado pela listagem
     e pelo contador de não-lidos (sem duplicar regra)."""
     perfil = payload.get("perfil", "")
@@ -49,14 +52,15 @@ async def _avisos_visiveis(payload):
         dest = (r.get("destinatario") or "").strip()
         perfis_str = (r.get("perfis") or "").strip()
         perfis_list = [p.strip() for p in perfis_str.split(",") if p.strip()]
-        # Destinatário individual → só ele vê
-        if dest:
-            if dest != login:
-                continue
-        # Filtro por perfil → só os listados
-        elif perfis_list:
-            if perfil not in perfis_list:
-                continue
+        if not ignorar_filtros:
+            # Destinatário individual → só ele vê
+            if dest:
+                if dest != login:
+                    continue
+            # Filtro por perfil → só os listados
+            elif perfis_list:
+                if perfil not in perfis_list:
+                    continue
         # Sem filtro → todos veem
         result.append({
             "id": r["id"],
