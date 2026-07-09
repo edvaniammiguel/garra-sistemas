@@ -104,6 +104,14 @@ async def listar_frota(db=Depends(get_db), _auth=Depends(verificar_token)):
 
 @router.post("/frota")
 async def salvar_frota(item: FrotaItem, db=Depends(get_db), _auth=Depends(verificar_token)):
+    # (09/07/2026) Identificação é ÚNICA na frota inteira: o mesmo veículo não
+    # pode existir em duas categorias (causa dos CAs duplicados em Caminhões).
+    outra_cat = await db.fetchval(
+        "SELECT categoria FROM checklist.frota WHERE identificacao=$1 AND categoria<>$2 AND ativo=TRUE",
+        item.identificacao, item.categoria)
+    if outra_cat:
+        raise HTTPException(status_code=400,
+            detail=f"{item.identificacao} já está cadastrado na categoria '{outra_cat}' — um veículo tem uma única categoria")
     existe = await db.fetchval("SELECT id FROM checklist.frota WHERE categoria=$1 AND identificacao=$2", item.categoria, item.identificacao)
     if existe:
         await db.execute("UPDATE checklist.frota SET descricao=$1,ativo=TRUE WHERE categoria=$2 AND identificacao=$3", item.descricao,item.categoria,item.identificacao)
@@ -150,6 +158,19 @@ async def remover_motorista(motor_id: str, db=Depends(get_db), _auth=Depends(ver
     await _exigir_logistica(db, _auth)
     await db.execute("DELETE FROM checklist.log_motoristas WHERE motor_id=$1", motor_id)
     return {"ok": True}
+
+@router.get("/logistica/frota-apoio")
+async def listar_frota_apoio(db=Depends(get_db), _auth=Depends(verificar_token)):
+    """(09/07/2026) FONTE ÚNICA da logística: carros de apoio e motos vêm do
+    Cadastros→Equipamentos do Admin (operacional.equipamentos). Cadastrou lá,
+    aparece aqui — fim do terceiro cadastro de veículos."""
+    rows = await db.fetch(
+        """SELECT codigo, descricao, categoria, placa, marca, modelo, ano
+           FROM operacional.equipamentos
+           WHERE ativo = true
+             AND (upper(codigo) LIKE 'CA-%' OR lower(categoria) LIKE '%moto%')
+           ORDER BY codigo""")
+    return [dict(r) for r in rows]
 
 @router.get("/logistica/veiculos")
 async def listar_veiculos(db=Depends(get_db), _auth=Depends(verificar_token)):
