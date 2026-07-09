@@ -21,7 +21,9 @@ const LogSync = {
       const h = { 'Authorization': this._hdr().Authorization };
       const [rs, vs, ms] = await Promise.all([
         fetch('/logistica/registros?limit=500', { headers: h }),
-        fetch('/logistica/veiculos',  { headers: h }),
+        // (09/07/2026) FONTE ÚNICA: carros de apoio + motos do
+        // Cadastros→Equipamentos do Admin (operacional.equipamentos)
+        fetch('/logistica/frota-apoio', { headers: h }),
         fetch('/logistica/motoristas',{ headers: h })
       ]);
       if (!rs.ok || !vs.ok || !ms.ok) return false;
@@ -32,18 +34,18 @@ const LogSync = {
         cars: r.carros || []
       })));
       DB.set('garra_log_cars', veics.map(v => ({
-        id: v.veiculo_id, carId: v.car_id, plate: v.placa || '', model: v.modelo || '',
-        year: v.ano || null, color: v.cor || '', status: v.status || 'disponivel',
-        extras: v.extras || [], obs: v.observacoes || '', _vistoEm: v.atualizado_em || null
+        id: v.codigo, carId: v.codigo, plate: v.placa || '',
+        model: v.modelo || v.descricao || '',
+        year: v.ano || null, color: '', status: 'disponivel',
+        extras: [], obs: (v.marca || ''), _vistoEm: null
       })));
       DB.set('garra_log_drivers', mots.map(m => ({
         id: m.motor_id, name: m.nome, cnh: m.cnh || '', tel: m.telefone || '',
         status: m.status || 'ativo', obs: m.observacoes || ''
       })));
-      // Semeadura única: servidor vazio de cadastro → sobe os padrões locais
-      if (!veics.length && !mots.length && !DB.get('garra_log_seeded')) {
+      // Semeadura única: só MOTORISTAS (carros vêm do Cadastros→Equipamentos)
+      if (!mots.length && !DB.get('garra_log_seeded')) {
         DB.set('garra_log_seeded', true);
-        for (const c of seedCarsPadrao())    await this.send('/logistica/veiculos',  'POST', LogSync._carPayload(c), true);
         for (const d of seedDriversPadrao()) await this.send('/logistica/motoristas','POST', LogSync._driverPayload(d), true);
         return this.pull();
       }
@@ -162,15 +164,11 @@ const LDB = {
   // Veículos de apoio
   logCars()  { return this.get('garra_log_cars') || seedCarsPadrao(); },
   saveLogCar(c) {
-    const list = this.logCars();
-    const idx = list.findIndex(x=>x.id===c.id);
-    if (idx>=0) list[idx]=c; else list.push(c);
-    this.set('garra_log_cars', list);
-    LogSync.send('/logistica/veiculos', 'POST', LogSync._carPayload(c));
+    // (09/07/2026) Fonte única: veículo se cadastra no Admin → Equipamentos
+    alert('🚗 O cadastro de veículos agora é único: Admin → Cadastros → Equipamentos.\nCadastrou lá, aparece aqui na Logística automaticamente.');
   },
   removeLogCar(id) {
-    this.set('garra_log_cars', this.logCars().filter(c=>c.id!==id));
-    LogSync.send('/logistica/veiculos/' + encodeURIComponent(id), 'DELETE', null);
+    alert('🚗 Para remover um veículo, desative-o no Admin → Cadastros → Equipamentos.');
   },
 
   currentStatus() {
