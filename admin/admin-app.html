@@ -416,7 +416,7 @@ input,select,textarea { font-family:inherit; font-size:13px; outline:none; }
           </div>
           <div class="users-bar">
             <div class="users-search">
-              <input type="text" id="user-search" placeholder="Buscar por nome ou login..." oninput="filtrarUsuarios()"/>
+              <input type="search" id="user-search" name="busca-colab-garra" autocomplete="off" placeholder="Buscar por nome ou login..." oninput="filtrarUsuarios()"/>
             </div>
             <div class="users-filter">
               <select id="user-filter-status" onchange="filtrarUsuarios()">
