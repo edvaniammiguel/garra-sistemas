@@ -9,7 +9,10 @@
   } catch(e) {}
 })();
 function ckToken() {
-  return sessionStorage.getItem('garra_ck_token') || ckToken();
+  // (09/07/2026) FIX CRÍTICO: a versão anterior chamava a si mesma no fallback
+  // (recursão infinita → stack overflow sempre que o sessionStorage estava
+  // vazio). Fallback correto: token persistente do mobile na mesma origem.
+  return sessionStorage.getItem('garra_ck_token') || localStorage.getItem('garra_token') || '';
 }
 
 /* ═══════════════════════════════════════════════════
