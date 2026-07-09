@@ -607,15 +607,15 @@ function buildReportHTML() {
       <div class="rskg"><div class="rskg-val">${entries.length}</div><div class="rskg-label">Total de Registros</div></div>
     </div>
     <div class="report-section-title">🚗 Situação Atual da Frota</div>
-    <table class="report-table">
+    <div class="rt-scroll"><table class="report-table">
       <thead><tr><th>Veículo</th><th>Modelo</th><th>Status</th><th>Destino</th><th>Motorista</th><th>Responsável</th><th>Última Atualização</th></tr></thead>
       <tbody>${currentRows}</tbody>
-    </table>
+    </table></div>
     <div class="report-section-title">📋 Histórico (últimos 30)</div>
-    <table class="report-table">
+    <div class="rt-scroll"><table class="report-table">
       <thead><tr><th>Data</th><th>Veículo</th><th>Status</th><th>Destino</th><th>Motorista</th><th>Responsável</th><th>Obs.</th></tr></thead>
       <tbody>${histRows}</tbody>
-    </table>
+    </table></div>
     <div class="report-sign-block">
       <div class="sign-line">Responsável – Logística</div>
       <div class="sign-line">Gestora de Frota</div>
