@@ -331,7 +331,7 @@ input,select,textarea{font-family:inherit;outline:none;border:none}
     <div class="app-header-right">
       <div id="net-badge" title="Status de conexão" style="font-size:11px;font-weight:700;padding:4px 10px;border-radius:99px;background:#16A34A;color:#fff;display:none">● Online</div>
       <button class="btn-sync" onclick="location.reload()" title="Sincronizar">⟳</button>
-      <div class="user-avatar" id="user-avatar" onclick="abrirPainelConta()" style="cursor:pointer" title="Minha conta">?</div>
+      <div style="position:relative;display:inline-block"><div class="user-avatar" id="user-avatar" onclick="abrirPainelConta()" style="cursor:pointer" title="Minha conta">?</div><span id="mural-badge" onclick="abrirPainelConta()" style="display:none;position:absolute;top:-4px;right:-4px;min-width:17px;height:17px;padding:0 4px;background:var(--red,#DC2626);color:#fff;border-radius:9px;font-size:10px;font-weight:800;line-height:17px;text-align:center;border:2px solid var(--navy,#001F4D);cursor:pointer"></span></div>
     </div>
   </div>
 
@@ -700,6 +700,7 @@ async function aplicarLoginSucesso(data) {
 
   USUARIO = data;
   document.getElementById('user-avatar').textContent = (data.nome || '?').charAt(0).toUpperCase();
+  atualizarBadgeMural();
 
   // Mostrar app
   document.getElementById('screen-login').style.display = 'none';
@@ -2200,10 +2201,33 @@ function abrirPainelConta() {
     </div>`;
   document.body.appendChild(modal);
   carregarMuralMobile();
+  marcarMuralLido();
   bioSuportada().then(ok => {
     const sec = document.getElementById('sec-bio-conta');
     if (sec && ok) { sec.style.display = 'block'; atualizarSwitchBio(); }
   });
+}
+
+// (09/07/2026) Badge de avisos não lidos — Fase 1 das notificações
+function atualizarBadgeMural() {
+  var token = Token.get(); if (!token) return;
+  fetch('/api/mural/nao-lidos', {headers:{'Authorization':'Bearer '+token}})
+    .then(function(r){ return r.ok ? r.json() : null; })
+    .then(function(d){
+      var b = document.getElementById('mural-badge');
+      if (!b || !d) return;
+      var n = d.nao_lidos || 0;
+      b.textContent = n > 9 ? '9+' : n;
+      b.style.display = n > 0 ? 'block' : 'none';
+    }).catch(function(){});
+}
+setInterval(atualizarBadgeMural, 300000); // revalida a cada 5 min
+
+function marcarMuralLido() {
+  var token = Token.get(); if (!token) return;
+  fetch('/api/mural/lido', {method:'POST', headers:{'Authorization':'Bearer '+token}})
+    .then(function(){ var b = document.getElementById('mural-badge'); if (b) b.style.display = 'none'; })
+    .catch(function(){});
 }
 
 function carregarMuralMobile() {
@@ -2611,6 +2635,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.getElementById('screen-login').style.display = 'none';
     document.getElementById('screen-app').style.display = 'flex';
     document.getElementById('user-avatar').textContent = (USUARIO.nome || '?').charAt(0).toUpperCase();
+    atualizarBadgeMural();
 
     // Renova o permsDB do servidor SEMPRE que possível (online), para refletir
     // as permissões atuais do painel — não confiar no permsDB salvo, que pode
