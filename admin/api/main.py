@@ -802,6 +802,24 @@ async def criar_tabela_ajustes_pontos():
             )""", fetch="none")
     except Exception as e:
         print(f"[Startup] mural_leituras: {e}")
+    # (09/07/2026) Unicidade da checklist.frota: sem o índice único, o
+    # ON CONFLICT do sync admin→checklist falhava silenciosamente na criação
+    # de equipamentos. Dedup idempotente + índice garantidos em todo ambiente.
+    try:
+        await ajard_query("""
+            DELETE FROM checklist.frota a
+             USING checklist.frota b
+             WHERE a.id > b.id
+               AND a.categoria = b.categoria
+               AND a.identificacao = b.identificacao
+        """, fetch="none")
+        await ajard_query("""
+            CREATE UNIQUE INDEX IF NOT EXISTS uq_frota_cat_ident
+                ON checklist.frota (categoria, identificacao)
+        """, fetch="none")
+        print("[Startup] unicidade frota OK")
+    except Exception as e:
+        print(f"[Startup] unicidade frota: {e}")
 
 @app.on_event("startup")
 async def seed_equipamento_combinado():
