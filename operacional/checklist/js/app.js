@@ -2064,25 +2064,28 @@ async function syncFrotaFromAPI() {
     // Mescla com dados locais para não perder equipamentos
     const localFleet = DB.fleet();
     const apiFleet   = { maquinas: [], carro: [], caminhao: [] };
-    const vistos     = { maquinas: new Set(), carro: new Set(), caminhao: new Set() };
-    data.forEach(item => {
-      if (!apiFleet[item.categoria]) return;
-      // Deduplica: ignora identificação já incluída na mesma categoria
-      if (vistos[item.categoria].has(item.identificacao)) return;
-      vistos[item.categoria].add(item.identificacao);
-      apiFleet[item.categoria].push({
-        id:     item.identificacao,
-        desc:   item.descricao || '',
-        active: item.ativo !== false,
+    // (09/07/2026) Dedup GLOBAL: a mesma identificação não entra em duas
+    // categorias (dados antigos tinham CAs também como caminhão).
+    const vistosGlobal = new Set();
+    const ordem = ['maquinas','carro','caminhao'];
+    ordem.forEach(cat => {
+      data.filter(item => item.categoria === cat).forEach(item => {
+        if (vistosGlobal.has(item.identificacao)) return;
+        vistosGlobal.add(item.identificacao);
+        apiFleet[cat].push({
+          id:     item.identificacao,
+          desc:   item.descricao || '',
+          active: item.ativo !== false,
+        });
       });
     });
     // Merge: API tem prioridade, mantém itens locais que não estão na API
     const merged = { maquinas: [], carro: [], caminhao: [] };
     ['maquinas','carro','caminhao'].forEach(cat => {
-      const apiIds = apiFleet[cat].map(v => v.id);
       merged[cat] = [
         ...apiFleet[cat],
-        ...(localFleet[cat]||[]).filter(v => !apiIds.includes(v.id)),
+        // Locais só entram se a identificação não existir em NENHUMA categoria
+        ...(localFleet[cat]||[]).filter(v => !vistosGlobal.has(v.id) && vistosGlobal.add(v.id)),
       ];
     });
     DB.set('garra_fleet', merged);
