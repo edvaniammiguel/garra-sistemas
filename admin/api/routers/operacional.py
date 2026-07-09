@@ -63,6 +63,22 @@ def _validar_horas_plausiveis(horas):
             status_code=400,
             detail=f"{horas}h num único registro — confira o horímetro (mais de 24h não é permitido)")
 
+def _cat_frota_checklist(codigo, categoria_op):
+    """(09/07/2026) Fronteira entre taxonomias: no OPERACIONAL a categoria é
+    funcional (CA mede KM como caminhão); no CHECKLIST é a categoria de
+    FORMULÁRIO (CA-% responde o checklist de Carro de Apoio). O sync usa este
+    mapa — sem ele, os CAs duplicavam no grupo Caminhões do seletor.
+    Retorna None para o que não entra no checklist (ex.: APOIO)."""
+    cod = (codigo or "").upper()
+    cat = (categoria_op or "").lower()
+    if cat == "apoio":
+        return None
+    if cod.startswith("CA-"):
+        return "carro"
+    if "caminh" in cat:
+        return "caminhao"
+    return "maquinas"
+
 def _calc_horas_parte(d):
     """Horas trabalhadas: horímetro (fim-ini); fallback relógio com desconto
     de 1h de almoço quando cruza 12h e não marcou dia corrido. Fonte única —
@@ -309,15 +325,23 @@ async def op_criar_equipamento(request: Request, payload=Depends(verificar_gesto
             (codigo, descricao, categoria, medicao, marca, modelo, ano, placa, operador_resp),
             fetch="one"
         )
-        # Sincronizar com checklist.frota (mesmo código = mesma identificação)
+        # Sincronizar com checklist.frota (mesmo código = mesma identificação;
+        # categoria MAPEADA para a taxonomia do checklist)
         try:
-            await ajard_query(
-                """INSERT INTO checklist.frota (categoria, identificacao, descricao, ativo)
-                   VALUES (%s, %s, %s, true)
-                   ON CONFLICT (categoria, identificacao) DO UPDATE
-                     SET descricao = EXCLUDED.descricao, ativo = true""",
-                (categoria, codigo, descricao), fetch="none"
-            )
+            cat_ck = _cat_frota_checklist(codigo, categoria)
+            if cat_ck:
+                await ajard_query(
+                    """INSERT INTO checklist.frota (categoria, identificacao, descricao, ativo)
+                       VALUES (%s, %s, %s, true)
+                       ON CONFLICT (categoria, identificacao) DO UPDATE
+                         SET descricao = EXCLUDED.descricao, ativo = true""",
+                    (cat_ck, codigo, descricao), fetch="none"
+                )
+                # Garante categoria única: desativa o mesmo código em outras
+                await ajard_query(
+                    "UPDATE checklist.frota SET ativo=false WHERE identificacao=%s AND categoria<>%s",
+                    (codigo, cat_ck), fetch="none"
+                )
         except Exception as sync_err:
             print(f"[Sync frota] aviso: {sync_err}")
         return dict(row) if row else {"codigo": codigo}
@@ -358,13 +382,21 @@ async def op_editar_equipamento(eq_id: str, request: Request, payload=Depends(ve
         )
         if not row:
             raise HTTPException(status_code=404, detail="Equipamento não encontrado")
-        # Sincronizar com checklist.frota
+        # Sincronizar com checklist.frota — categoria MAPEADA; move de categoria
+        # quando preciso (upsert na certa + desativa o código nas demais)
         try:
+            cat_ck = _cat_frota_checklist(row["codigo"], row["categoria"])
+            if cat_ck:
+                await ajard_query(
+                    """INSERT INTO checklist.frota (categoria, identificacao, descricao, ativo)
+                       VALUES (%s, %s, %s, true)
+                       ON CONFLICT (categoria, identificacao) DO UPDATE
+                         SET descricao = EXCLUDED.descricao, ativo = true""",
+                    (cat_ck, row["codigo"], row["descricao"]), fetch="none"
+                )
             await ajard_query(
-                """UPDATE checklist.frota
-                     SET descricao = %s, categoria = %s, ativo = true
-                   WHERE identificacao = %s""",
-                (row["descricao"], row["categoria"], row["codigo"]), fetch="none"
+                "UPDATE checklist.frota SET ativo=false WHERE identificacao=%s AND categoria<>%s",
+                (row["codigo"], cat_ck or ""), fetch="none"
             )
         except Exception as sync_err:
             print(f"[Sync frota] aviso: {sync_err}")
