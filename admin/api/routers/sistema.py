@@ -20,6 +20,11 @@ router = APIRouter()
 @router.get("/api/mural")
 async def listar_mural(payload=Depends(verificar_token)):
     """Lista avisos ativos para o perfil/login do usuário."""
+    return await _avisos_visiveis(payload)
+
+async def _avisos_visiveis(payload):
+    """(09/07/2026) Filtro de visibilidade em FONTE ÚNICA — usado pela listagem
+    e pelo contador de não-lidos (sem duplicar regra)."""
     perfil = payload.get("perfil", "")
     login = payload.get("login") or payload.get("sub", "")
     try:
@@ -63,6 +68,32 @@ async def listar_mural(payload=Depends(verificar_token)):
             "criado_por": r.get("criado_por") or "",
         })
     return result
+
+# ─── (09/07/2026) Badge de não-lidos do Mural — Fase 1 das notificações ──────
+@router.get("/api/mural/nao-lidos")
+async def mural_nao_lidos(payload=Depends(verificar_token)):
+    """Quantos avisos visíveis o usuário ainda não leu (nunca leu = todos)."""
+    login = payload.get("login") or payload.get("sub", "")
+    avisos = await _avisos_visiveis(payload)
+    lido_em = await ajard_query(
+        "SELECT lido_em FROM public.mural_leituras WHERE usuario_login=%s",
+        (login,), fetch="one")
+    marco = (lido_em or {}).get("lido_em")
+    if not marco:
+        return {"nao_lidos": len(avisos)}
+    marco_iso = marco.isoformat()
+    return {"nao_lidos": sum(1 for a in avisos if (a.get("criado_em") or "") > marco_iso)}
+
+@router.post("/api/mural/lido")
+async def mural_marcar_lido(payload=Depends(verificar_token)):
+    """Marca o mural como lido AGORA para o usuário (abriu o painel)."""
+    login = payload.get("login") or payload.get("sub", "")
+    await ajard_query(
+        """INSERT INTO public.mural_leituras (usuario_login, lido_em)
+           VALUES (%s, now())
+           ON CONFLICT (usuario_login) DO UPDATE SET lido_em = now()""",
+        (login,), fetch="none")
+    return {"ok": True}
 
 @router.post("/api/mural")
 async def criar_aviso_mural(dados: MuralCreate, payload=Depends(verificar_admin)):
