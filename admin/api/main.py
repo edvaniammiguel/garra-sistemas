@@ -820,6 +820,44 @@ async def criar_tabela_ajustes_pontos():
         print("[Startup] unicidade frota OK")
     except Exception as e:
         print(f"[Startup] unicidade frota: {e}")
+    # (09/07/2026) ESPELHO AUTOCURATIVO: reconstrói checklist.frota a partir do
+    # cadastro único (operacional.equipamentos) em TODO boot. Upsert com a
+    # categoria mapeada + desativação do que sobrou. Mata para sempre a classe
+    # de bug "sync falhou caladinho e o seletor ficou defasado".
+    try:
+        await ajard_query("""
+            INSERT INTO checklist.frota (categoria, identificacao, descricao, ativo)
+            SELECT CASE
+                     WHEN upper(e.codigo) LIKE 'CA-%%' THEN 'carro'
+                     WHEN lower(coalesce(e.categoria,'')) LIKE '%%caminh%%' THEN 'caminhao'
+                     ELSE 'maquinas'
+                   END,
+                   e.codigo, e.descricao, true
+              FROM operacional.equipamentos e
+             WHERE e.ativo = true
+               AND lower(coalesce(e.categoria,'')) <> 'apoio'
+               AND lower(coalesce(e.categoria,'')) NOT LIKE '%%moto%%'
+            ON CONFLICT (categoria, identificacao)
+            DO UPDATE SET descricao = EXCLUDED.descricao, ativo = true
+        """, fetch="none")
+        await ajard_query("""
+            UPDATE checklist.frota f SET ativo = false
+             WHERE f.ativo = true
+               AND NOT EXISTS (
+                   SELECT 1 FROM operacional.equipamentos e
+                    WHERE e.codigo = f.identificacao
+                      AND e.ativo = true
+                      AND lower(coalesce(e.categoria,'')) <> 'apoio'
+                      AND lower(coalesce(e.categoria,'')) NOT LIKE '%%moto%%'
+                      AND f.categoria = CASE
+                            WHEN upper(e.codigo) LIKE 'CA-%%' THEN 'carro'
+                            WHEN lower(coalesce(e.categoria,'')) LIKE '%%caminh%%' THEN 'caminhao'
+                            ELSE 'maquinas'
+                          END)
+        """, fetch="none")
+        print("[Startup] espelho frota reconciliado")
+    except Exception as e:
+        print(f"[Startup] espelho frota: {e}")
 
 @app.on_event("startup")
 async def seed_equipamento_combinado():
