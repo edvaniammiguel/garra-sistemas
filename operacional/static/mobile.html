@@ -2210,7 +2210,7 @@ function abrirPainelConta() {
 
 // (09/07/2026) Badge de avisos não lidos — Fase 1 das notificações
 function atualizarBadgeMural() {
-  var token = Token.get(); if (!token) return;
+  var token = localStorage.getItem('garra_token') || ''; if (!token) return;
   fetch('/api/mural/nao-lidos', {headers:{'Authorization':'Bearer '+token}})
     .then(function(r){ return r.ok ? r.json() : null; })
     .then(function(d){
@@ -2224,7 +2224,7 @@ function atualizarBadgeMural() {
 setInterval(atualizarBadgeMural, 300000); // revalida a cada 5 min
 
 function marcarMuralLido() {
-  var token = Token.get(); if (!token) return;
+  var token = localStorage.getItem('garra_token') || ''; if (!token) return;
   fetch('/api/mural/lido', {method:'POST', headers:{'Authorization':'Bearer '+token}})
     .then(function(){ var b = document.getElementById('mural-badge'); if (b) b.style.display = 'none'; })
     .catch(function(){});
