@@ -793,6 +793,15 @@ async def criar_tabela_ajustes_pontos():
         print("[Startup] tabelas logística OK")
     except Exception as e:
         print(f"[Startup] logística: {e}")
+    # (09/07/2026) Badge do Mural — marco de leitura por usuário
+    try:
+        await ajard_query("""
+            CREATE TABLE IF NOT EXISTS public.mural_leituras (
+                usuario_login TEXT PRIMARY KEY,
+                lido_em TIMESTAMPTZ DEFAULT now()
+            )""", fetch="none")
+    except Exception as e:
+        print(f"[Startup] mural_leituras: {e}")
 
 @app.on_event("startup")
 async def seed_equipamento_combinado():
