@@ -757,6 +757,42 @@ async def criar_tabela_ajustes_pontos():
             )""", fetch="none")
     except Exception as e:
         print(f"[Startup] ajustes_pontos: {e}")
+    # (09/07/2026) Logística servidor-first: tabelas garantidas em qualquer
+    # ambiente (existiam só por criação manual em produção).
+    try:
+        await ajard_query("""
+            CREATE TABLE IF NOT EXISTS checklist.log_motoristas (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                motor_id TEXT UNIQUE NOT NULL,
+                nome TEXT NOT NULL,
+                cpf TEXT, cnh TEXT, telefone TEXT,
+                status TEXT DEFAULT 'ativo',
+                observacoes TEXT,
+                atualizado_em TIMESTAMPTZ DEFAULT now()
+            )""", fetch="none")
+        await ajard_query("""
+            CREATE TABLE IF NOT EXISTS checklist.log_veiculos (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                veiculo_id TEXT UNIQUE NOT NULL,
+                car_id TEXT NOT NULL,
+                placa TEXT, modelo TEXT, ano INT, cor TEXT,
+                status TEXT DEFAULT 'disponivel',
+                extras JSONB DEFAULT '[]',
+                observacoes TEXT,
+                atualizado_em TIMESTAMPTZ DEFAULT now()
+            )""", fetch="none")
+        await ajard_query("""
+            CREATE TABLE IF NOT EXISTS checklist.log_registros (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                registro_id TEXT UNIQUE NOT NULL,
+                responsavel TEXT NOT NULL,
+                data_hora TIMESTAMPTZ NOT NULL,
+                carros JSONB DEFAULT '[]',
+                criado_em TIMESTAMPTZ DEFAULT now()
+            )""", fetch="none")
+        print("[Startup] tabelas logística OK")
+    except Exception as e:
+        print(f"[Startup] logística: {e}")
 
 @app.on_event("startup")
 async def seed_equipamento_combinado():
