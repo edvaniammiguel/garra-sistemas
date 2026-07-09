@@ -596,6 +596,14 @@ input,select,textarea{font-family:inherit;outline:none;border:none}
 // VARIÁVEIS GLOBAIS
 // ──────────────────────────────────────────────────────────────────────────────
 let USUARIO = null;
+// (08/07/2026) Escape de HTML para TODO dado digitado por usuário que entra
+// em template string (obra, cliente, fornecedor, observação, equipamento de
+// terceiro, nomes) — mata XSS armazenado no mobile e no desktop da gestão.
+function esc(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
 let _osAtualId = null;
 let _opTab = 'os';
 
@@ -875,7 +883,7 @@ async function carregarOSApp() {
     html += `
       <div class="os-card" ${aguardando ? 'style="opacity:0.7;border-left:4px solid #EA580C"' : ''}>
         <div class="os-numero">${os.numero} ${statusBadge}</div>
-        <div class="os-cliente">${os.cliente_nome || os.obra || '(Cliente avulso)'}</div>
+        <div class="os-cliente">${esc(os.cliente_nome || os.obra) || '(Cliente avulso)'}</div>
         <div class="os-info">
           <div class="os-info-item">
             <div class="os-info-label">Equipamento</div>
@@ -1315,6 +1323,9 @@ async function salvarParte(adicionarMais) {
   }
 
   const payload = {
+    // (08/07/2026) Idempotência: mesmo payload re-enviado pela fila offline
+    // carrega o mesmo client_id — o servidor nunca grava duas vezes.
+    client_id: (crypto.randomUUID ? crypto.randomUUID() : (Date.now() + '-' + Math.random().toString(36).slice(2))),
     data,
     equipamento_id: equipId || null,
     equipamento_terceiro: ehTerceiro ? equipTerceiro : null,
@@ -1557,7 +1568,7 @@ async function abrirModalParte(osId) {
   const info = document.getElementById('m-os-info');
   window._osDataAtual = osData;
   if (osData) {
-    info.innerHTML = `<strong>${osData.numero}</strong> — ${osData.obra || osData.cliente_nome || '(sem obra)'} <span style="color:var(--orange)">· ${osData.regime_cobranca || '—'}</span>`;
+    info.innerHTML = `<strong>${osData.numero}</strong> — ${esc(osData.obra || osData.cliente_nome) || '(sem obra)'} <span style="color:var(--orange)">· ${osData.regime_cobranca || '—'}</span>`;
   } else {
     info.innerHTML = `OS #${osId.substring(0,8)}…`;
   }
@@ -2090,7 +2101,7 @@ async function carregarHistoricoOS() {
           <div class="os-numero">${os.numero}
             <span style="display:inline-block;background:#DCFCE7;color:#16A34A;font-size:10px;font-weight:700;padding:3px 10px;border-radius:99px;margin-left:8px">${statusLabel}</span>
           </div>
-          <div class="os-cliente">${os.cliente_nome || os.obra || '(Cliente avulso)'}</div>
+          <div class="os-cliente">${esc(os.cliente_nome || os.obra) || '(Cliente avulso)'}</div>
           <div class="os-info">
             <div class="os-info-item">
               <div class="os-info-label">Equipamento</div>
@@ -2372,14 +2383,14 @@ async function verPartes(osId, osNum, editavel = true) {
       }
 
       // Linha secundária: equipamento + operador + marcador de terceiro
-      let equip = p.equipamento_codigo || '';
-      const oper  = p.operador_nome || '';
+      let equip = esc(p.equipamento_codigo || '');
+      const oper  = esc(p.operador_nome || '');
       const vinc = (p.vinculo_operador || 'proprio');
       let tag = '';
       if (vinc === 'terceiro') tag = ' 🔶 terceiro';
       else if (vinc === 'diarista') tag = ' 👷 diarista';
       else if (vinc === 'frete') tag = ' 🚚 frete';
-      const fornec = p.fornecedor ? ` (${p.fornecedor})` : '';
+      const fornec = p.fornecedor ? ` (${esc(p.fornecedor)})` : '';
       const metaLinha = [equip + tag, oper].filter(Boolean).join(' · ') + fornec;
 
       // Detalhe por baixo: horário e (quando km) horímetro como controle interno
@@ -2404,7 +2415,7 @@ async function verPartes(osId, osNum, editavel = true) {
             </div>
           </div>
           ${detalhes ? `<div style="font-size:11px;color:var(--muted);margin-top:5px">${detalhes}</div>` : ''}
-          ${p.observacao ? `<div style="font-size:12px;color:var(--text);margin-top:4px;background:var(--bg);padding:6px 8px;border-radius:6px">${p.observacao}</div>` : ''}
+          ${p.observacao ? `<div style="font-size:12px;color:var(--text);margin-top:4px;background:var(--bg);padding:6px 8px;border-radius:6px">${esc(p.observacao)}</div>` : ''}
         </div>`;
     });
   }
