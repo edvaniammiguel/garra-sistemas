@@ -2062,7 +2062,6 @@ async function syncFrotaFromAPI() {
     const data = await GarraDB.getFrota();
     if (!data?.length) return;
     // Mescla com dados locais para não perder equipamentos
-    const localFleet = DB.fleet();
     const apiFleet   = { maquinas: [], carro: [], caminhao: [] };
     // (09/07/2026) Dedup GLOBAL: a mesma identificação não entra em duas
     // categorias (dados antigos tinham CAs também como caminhão).
@@ -2079,16 +2078,10 @@ async function syncFrotaFromAPI() {
         });
       });
     });
-    // Merge: API tem prioridade, mantém itens locais que não estão na API
-    const merged = { maquinas: [], carro: [], caminhao: [] };
-    ['maquinas','carro','caminhao'].forEach(cat => {
-      merged[cat] = [
-        ...apiFleet[cat],
-        // Locais só entram se a identificação não existir em NENHUMA categoria
-        ...(localFleet[cat]||[]).filter(v => !vistosGlobal.has(v.id) && vistosGlobal.add(v.id)),
-      ];
-    });
-    DB.set('garra_fleet', merged);
+    // (09/07/2026) SERVIDOR É A FONTE: nada de mesclar sobras do localStorage
+    // — equipamento excluído no Admin ressuscitava do cache local (CB-030 etc.).
+    // O snapshot local serve só para leitura offline e é sobrescrito aqui.
+    DB.set('garra_fleet', apiFleet);
     console.log('✅ Frota sincronizada:', data.length, 'itens do banco');
   } catch(e) { console.warn('⚠️ Sync frota falhou (offline?):', e.message); }
 }
