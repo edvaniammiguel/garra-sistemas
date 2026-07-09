@@ -16,6 +16,53 @@ from core.auth import verificar_token, verificar_gestor, verificar_admin
 
 router = APIRouter()
 
+import re as _re_val
+
+def _validar_medicao_parte(m):
+    """(08/07/2026) Sanidade de medições — Regra 62 (paridade front/backend).
+    A API não pode aceitar o que o front bloqueia. Levanta 400 com motivo claro.
+    Fonte única: usada no POST (registro) e no PATCH (correção do operador)."""
+    def _num(v):
+        try:
+            return float(v) if v not in (None, "") else None
+        except (TypeError, ValueError):
+            return None
+    # Horas de relógio: formato HH:MM (00-23 / 00-59) — input type=time só protege o front
+    for campo, rotulo in (("hora_inicio", "hora início"), ("hora_fim", "hora fim")):
+        v = m.get(campo)
+        if v not in (None, "") and not _re_val.match(r"^([01]\d|2[0-3]):[0-5]\d(:[0-5]\d)?$", str(v)):
+            raise HTTPException(status_code=400, detail=f"Hora inválida em {rotulo}: {v}")
+    # Nada de valores negativos em medição
+    for campo, rotulo in (("horimetro_inicial", "horímetro inicial"), ("horimetro_final", "horímetro final"),
+                          ("km_inicial", "KM inicial"), ("km_final", "KM final"),
+                          ("qtd_metros", "metros"), ("qtd_viagens", "viagens"),
+                          ("quantidade_diarias", "diárias")):
+        v = _num(m.get(campo))
+        if v is not None and v < 0:
+            raise HTTPException(status_code=400, detail=f"Valor negativo em {rotulo}")
+    # KM coerente
+    k_ini, k_fin = _num(m.get("km_inicial")), _num(m.get("km_final"))
+    if k_ini is not None and k_fin is not None and k_fin < k_ini:
+        raise HTTPException(status_code=400, detail="KM final menor que o KM inicial")
+
+def _validar_data_parte(data_str, permitir_futuro_dias=1):
+    """Data ISO válida e não-futura (margem de 1 dia p/ fuso). Levanta 400."""
+    try:
+        dt = datetime.strptime(str(data_str), "%Y-%m-%d").date()
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail=f"Data inválida: {data_str}")
+    if dt > date.today() + timedelta(days=permitir_futuro_dias):
+        raise HTTPException(status_code=400, detail="Data no futuro — confira o dia do registro")
+    return dt
+
+def _validar_horas_plausiveis(horas):
+    """Teto de plausibilidade: um registro não pode ter mais de 24h.
+    Mata o typo de horímetro (10125 → 101250 = 91.131h no Controle Mensal)."""
+    if horas is not None and horas > 24:
+        raise HTTPException(
+            status_code=400,
+            detail=f"{horas}h num único registro — confira o horímetro (mais de 24h não é permitido)")
+
 def _calc_horas_parte(d):
     """Horas trabalhadas: horímetro (fim-ini); fallback relógio com desconto
     de 1h de almoço quando cruza 12h e não marcou dia corrido. Fonte única —
@@ -686,6 +733,9 @@ async def op_criar_parte(os_id: str, request: Request, payload=Depends(verificar
     )
     if not os_row:
         raise HTTPException(status_code=404, detail="OS não encontrada")
+    # (08/07/2026) OS concluída/cancelada não aceita novos registros
+    if os_row.get("status") in ("concluida_completa", "concluida_sem_erp", "cancelada"):
+        raise HTTPException(status_code=400, detail="OS concluída/cancelada — não aceita novos registros")
 
     # Campos obrigatórios
     data = d.get("data")
@@ -702,7 +752,10 @@ async def op_criar_parte(os_id: str, request: Request, payload=Depends(verificar
         if not data or not equipamento_id:
             raise HTTPException(status_code=400, detail="Data e equipamento são obrigatórios")
 
+    _validar_data_parte(data)
+    _validar_medicao_parte(d)
     horas = _calc_horas_parte(d)
+    _validar_horas_plausiveis(horas)
     h_ini = d.get("horimetro_inicial")
     h_fin = d.get("horimetro_final")
 
@@ -753,6 +806,10 @@ async def op_criar_parte(os_id: str, request: Request, payload=Depends(verificar
     except Exception:
         pass
 
+    # (08/07/2026) Idempotência: client_id gerado no celular. Se a resposta se
+    # perder e a fila offline re-enviar, o índice único barra e devolvemos o
+    # registro já salvo — fim da parte duplicada por rede instável.
+    client_id = (d.get("client_id") or "").strip() or None
     try:
         parte = await ajard_query_id(
             """INSERT INTO operacional.partes_diarias
@@ -762,8 +819,8 @@ async def op_criar_parte(os_id: str, request: Request, payload=Depends(verificar
                 km_inicial, km_final, km_percorrido,
                 quantidade_diarias, qtd_viagens, qtd_metros,
                 vinculo_operador, fornecedor, equipamento_terceiro, observacao, trajeto, por_conta_de, sem_almoco, criado_por,
-                horas_cobradas)
-               VALUES (%s,%s,%s,%s, %s,%s,%s, %s,%s,%s,%s, %s,%s,%s, %s,%s,%s, %s,%s,%s,%s,%s,%s,%s,%s, %s)""",
+                horas_cobradas, client_id)
+               VALUES (%s,%s,%s,%s, %s,%s,%s, %s,%s,%s,%s, %s,%s,%s, %s,%s,%s, %s,%s,%s,%s,%s,%s,%s,%s, %s,%s)""",
             (os_id, equipamento_id, operador_id, d.get("operador_nome_avulso"),
              data, d.get("hora_inicio"), d.get("hora_fim"),
              d.get("tipo_medicao","horimetro"), h_ini, h_fin, horas,
@@ -773,7 +830,7 @@ async def op_criar_parte(os_id: str, request: Request, payload=Depends(verificar
              d.get("observacao"),
              d.get("trajeto"), d.get("por_conta_de","empresa"), bool(d.get("sem_almoco")),
              criado_por_id,
-             horas_cobradas_padrao)
+             horas_cobradas_padrao, client_id)
         )
         # Atualizar horímetro atual do equipamento (só equipamento próprio da Garra)
         if h_fin is not None and equipamento_id:
@@ -782,7 +839,20 @@ async def op_criar_parte(os_id: str, request: Request, payload=Depends(verificar
                 (h_fin, equipamento_id), fetch="none"
             )
         return dict(parte)
+    except HTTPException:
+        raise
     except Exception as e:
+        # Retry da fila offline bateu no índice único do client_id → o registro
+        # JÁ está salvo. Devolver como sucesso (idempotente), nunca duplicar.
+        if client_id and ("client_id" in str(e).lower() or "uq_partes_client" in str(e).lower()):
+            existente = await ajard_query(
+                "SELECT * FROM operacional.partes_diarias WHERE client_id=%s",
+                (client_id,), fetch="one"
+            )
+            if existente:
+                r = dict(existente)
+                r["dedup"] = True
+                return r
         raise HTTPException(status_code=500, detail=f"Erro ao registrar parte: {str(e)}")
 
 @router.get("/operacional/api/os/{os_id}/partes")
@@ -1688,7 +1758,25 @@ async def op_editar_minha_parte(parte_id: str, request: Request, payload=Depends
     if not algum:
         return {"ok": True, "msg": "Nada a alterar."}
 
+    # (08/07/2026) Sanidade — mesma régua do registro (Regra 62)
+    _validar_medicao_parte(merged)
+    if "data" in d:
+        nova_dt = _validar_data_parte(merged.get("data"))
+        antiga = parte.get("data")
+        try:
+            antiga_dt = antiga if isinstance(antiga, date) else datetime.strptime(str(antiga), "%Y-%m-%d").date()
+            # Correção do operador é do dia (typo) — mudar de MÊS mexe com
+            # período/fechamento e é domínio da gestão.
+            if (nova_dt.year, nova_dt.month) != (antiga_dt.year, antiga_dt.month):
+                raise HTTPException(status_code=400,
+                    detail="Mudança de mês do registro é feita pela gestão — fale com a Edvania/Luana.")
+        except HTTPException:
+            raise
+        except Exception:
+            pass
+
     horas = _calc_horas_parte(merged)
+    _validar_horas_plausiveis(horas)
 
     def _num(v):
         try: return float(v) if v not in (None, "") else None
