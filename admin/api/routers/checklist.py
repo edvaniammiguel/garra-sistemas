@@ -121,8 +121,23 @@ async def listar_motoristas(db=Depends(get_db), _auth=Depends(verificar_token)):
     rows = await db.fetch("SELECT * FROM checklist.log_motoristas ORDER BY nome")
     return [dict(r) for r in rows]
 
+# ─── (09/07/2026) Menor privilégio: escrita na logística exige a permissão ───
+async def _exigir_logistica(db, payload):
+    perfil = (payload.get("perfil") or "").lower()
+    if perfil in ("admin", "gestor"):
+        return
+    ident = payload.get("sub") or payload.get("login") or ""
+    ok = await db.fetchval(
+        """SELECT p.permitido FROM public.permissoes_colaborador p
+           JOIN public.usuarios_garra u ON u.id = p.usuario_id
+           WHERE (u.id::text = $1 OR u.login = $1) AND p.modulo = 'checklist_logistica'""",
+        str(ident))
+    if not ok:
+        raise HTTPException(status_code=403, detail="Sem permissão de Logística")
+
 @router.post("/logistica/motoristas")
 async def salvar_motorista(m: LogMotoristaCreate, db=Depends(get_db), _auth=Depends(verificar_token)):
+    await _exigir_logistica(db, _auth)
     existe = await db.fetchval("SELECT id FROM checklist.log_motoristas WHERE motor_id=$1", m.motor_id)
     if existe:
         await db.execute("UPDATE checklist.log_motoristas SET nome=$1,cpf=$2,cnh=$3,telefone=$4,status=$5,observacoes=$6,atualizado_em=NOW() WHERE motor_id=$7", m.nome,m.cpf,m.cnh,m.telefone,m.status,m.observacoes,m.motor_id)
@@ -132,6 +147,7 @@ async def salvar_motorista(m: LogMotoristaCreate, db=Depends(get_db), _auth=Depe
 
 @router.delete("/logistica/motoristas/{motor_id}")
 async def remover_motorista(motor_id: str, db=Depends(get_db), _auth=Depends(verificar_token)):
+    await _exigir_logistica(db, _auth)
     await db.execute("DELETE FROM checklist.log_motoristas WHERE motor_id=$1", motor_id)
     return {"ok": True}
 
@@ -146,8 +162,15 @@ async def listar_veiculos(db=Depends(get_db), _auth=Depends(verificar_token)):
 
 @router.post("/logistica/veiculos")
 async def salvar_veiculo(v: LogVeiculoCreate, db=Depends(get_db), _auth=Depends(verificar_token)):
+    await _exigir_logistica(db, _auth)
     existe = await db.fetchval("SELECT id FROM checklist.log_veiculos WHERE veiculo_id=$1", v.veiculo_id)
     if existe:
+        # (09/07/2026) Trava otimista: se o cliente informou a versão que viu e
+        # o servidor está mais novo, alguém editou antes → 409 (recarregue).
+        if v.visto_em:
+            atual = await db.fetchval("SELECT atualizado_em FROM checklist.log_veiculos WHERE veiculo_id=$1", v.veiculo_id)
+            if atual and not str(atual).startswith(str(v.visto_em)[:19].replace("T", " ")):
+                raise HTTPException(status_code=409, detail="Este veículo foi alterado por outra pessoa — recarregue a tela")
         await db.execute("UPDATE checklist.log_veiculos SET car_id=$1,placa=$2,modelo=$3,ano=$4,cor=$5,status=$6,extras=$7,observacoes=$8,atualizado_em=NOW() WHERE veiculo_id=$9", v.car_id,v.placa,v.modelo,v.ano,v.cor,v.status,json.dumps(v.extras),v.observacoes,v.veiculo_id)
     else:
         await db.execute("INSERT INTO checklist.log_veiculos (veiculo_id,car_id,placa,modelo,ano,cor,status,extras,observacoes) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)", v.veiculo_id,v.car_id,v.placa,v.modelo,v.ano,v.cor,v.status,json.dumps(v.extras),v.observacoes)
@@ -155,6 +178,7 @@ async def salvar_veiculo(v: LogVeiculoCreate, db=Depends(get_db), _auth=Depends(
 
 @router.delete("/logistica/veiculos/{veiculo_id}")
 async def remover_veiculo(veiculo_id: str, db=Depends(get_db), _auth=Depends(verificar_token)):
+    await _exigir_logistica(db, _auth)
     await db.execute("DELETE FROM checklist.log_veiculos WHERE veiculo_id=$1", veiculo_id)
     return {"ok": True}
 
@@ -169,6 +193,7 @@ async def listar_registros(limit: int=50, db=Depends(get_db), _auth=Depends(veri
 
 @router.post("/logistica/registros")
 async def salvar_registro(r: LogRegistroCreate, db=Depends(get_db), _auth=Depends(verificar_token)):
+    await _exigir_logistica(db, _auth)
     existe = await db.fetchval("SELECT id FROM checklist.log_registros WHERE registro_id=$1", r.registro_id)
     if existe:
         await db.execute("UPDATE checklist.log_registros SET responsavel=$1,data_hora=$2,carros=$3 WHERE registro_id=$4", r.responsavel,datetime.fromisoformat(r.data_hora),json.dumps(r.carros),r.registro_id)
@@ -178,6 +203,7 @@ async def salvar_registro(r: LogRegistroCreate, db=Depends(get_db), _auth=Depend
 
 @router.delete("/logistica/registros/{registro_id}")
 async def remover_registro(registro_id: str, db=Depends(get_db), _auth=Depends(verificar_token)):
+    await _exigir_logistica(db, _auth)
     await db.execute("DELETE FROM checklist.log_registros WHERE registro_id=$1", registro_id)
     return {"ok": True}
 
