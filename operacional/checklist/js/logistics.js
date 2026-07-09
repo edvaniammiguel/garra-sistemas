@@ -9,39 +9,169 @@
 ═══════════════════════════════════════════════════════ */
 
 // ─── STORAGE ───────────────────────────────────────────
+// (09/07/2026) SERVIDOR-FIRST: o localStorage vira SNAPSHOT do servidor
+// (leitura offline). Toda escrita vai ao servidor; sem rede, entra na outbox
+// e é reenviada sozinha (registro_id/veiculo_id/motor_id = idempotência).
+const LogSync = {
+  _timer: null,
+  _hdr() { return { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + (typeof ckToken === 'function' ? ckToken() : '') }; },
+
+  async pull() {
+    try {
+      const h = { 'Authorization': this._hdr().Authorization };
+      const [rs, vs, ms] = await Promise.all([
+        fetch('/logistica/registros?limit=500', { headers: h }),
+        fetch('/logistica/veiculos',  { headers: h }),
+        fetch('/logistica/motoristas',{ headers: h })
+      ]);
+      if (!rs.ok || !vs.ok || !ms.ok) return false;
+      const [regs, veics, mots] = await Promise.all([rs.json(), vs.json(), ms.json()]);
+      DB.set('garra_logistics', regs.map(r => ({
+        id: r.registro_id, resp: r.responsavel,
+        date: String(r.data_hora || '').replace(' ', 'T'),
+        cars: r.carros || []
+      })));
+      DB.set('garra_log_cars', veics.map(v => ({
+        id: v.veiculo_id, carId: v.car_id, plate: v.placa || '', model: v.modelo || '',
+        year: v.ano || null, color: v.cor || '', status: v.status || 'disponivel',
+        extras: v.extras || [], obs: v.observacoes || '', _vistoEm: v.atualizado_em || null
+      })));
+      DB.set('garra_log_drivers', mots.map(m => ({
+        id: m.motor_id, name: m.nome, cnh: m.cnh || '', tel: m.telefone || '',
+        status: m.status || 'ativo', obs: m.observacoes || ''
+      })));
+      // Semeadura única: servidor vazio de cadastro → sobe os padrões locais
+      if (!veics.length && !mots.length && !DB.get('garra_log_seeded')) {
+        DB.set('garra_log_seeded', true);
+        for (const c of seedCarsPadrao())    await this.send('/logistica/veiculos',  'POST', LogSync._carPayload(c), true);
+        for (const d of seedDriversPadrao()) await this.send('/logistica/motoristas','POST', LogSync._driverPayload(d), true);
+        return this.pull();
+      }
+      return true;
+    } catch (e) { return false; }
+  },
+
+  _carPayload(c) {
+    return { veiculo_id: c.id, car_id: c.carId, placa: c.plate || '', modelo: c.model || '',
+             ano: c.year || null, cor: c.color || '', status: c.status || 'disponivel',
+             extras: c.extras || [], observacoes: c.obs || '', visto_em: c._vistoEm || null };
+  },
+  _driverPayload(d) {
+    return { motor_id: d.id, nome: d.name, cpf: '', cnh: d.cnh || '', telefone: d.tel || '',
+             status: d.status || 'ativo', observacoes: d.obs || '' };
+  },
+  _entryPayload(e) {
+    return { registro_id: e.id, responsavel: e.resp, data_hora: e.date, carros: e.cars || [] };
+  },
+
+  outbox() { return DB.get('garra_log_outbox') || []; },
+  async flush() {
+    const jobs = this.outbox();
+    if (!jobs.length) return;
+    const restantes = [];
+    for (const j of jobs) {
+      try {
+        const r = await fetch(j.path, { method: j.method, headers: this._hdr(),
+                                        body: j.body ? JSON.stringify(j.body) : undefined });
+        if (!r.ok && r.status >= 500) restantes.push(j); // 5xx: tenta de novo depois
+        // 4xx: descarta (inválido não se cura com retry)
+      } catch (e) { restantes.push(j); }
+    }
+    DB.set('garra_log_outbox', restantes);
+  },
+
+  async send(path, method, body, silencioso) {
+    try {
+      const r = await fetch(path, { method, headers: this._hdr(),
+                                    body: body ? JSON.stringify(body) : undefined });
+      if (r.status === 409) {
+        alert('⚠️ Este item foi alterado por outra pessoa — a tela será atualizada.');
+        await this.pull(); refreshLogUI();
+        return false;
+      }
+      if (!r.ok && r.status < 500) {
+        const d = await r.json().catch(() => ({}));
+        if (!silencioso) alert('Erro ao salvar: ' + (d.detail || r.status));
+        return false;
+      }
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return true;
+    } catch (e) {
+      // Sem rede / 5xx → outbox (idempotente pelos ids fixos)
+      const o = this.outbox(); o.push({ path, method, body }); DB.set('garra_log_outbox', o);
+      if (!silencioso && typeof alert === 'function') console.log('[Logística] offline — enfileirado');
+      return true;
+    }
+  },
+
+  ensure() {
+    this.flush().then(() => this.pull()).then(ok => { if (ok) refreshLogUI(); });
+    if (this._timer) clearInterval(this._timer);
+    // Auto-refresh: todos os dispositivos convergem em até 60s
+    this._timer = setInterval(() => {
+      this.flush().then(() => this.pull()).then(ok => { if (ok) refreshLogUI(); });
+    }, 60000);
+  }
+};
+window.addEventListener('online', () => LogSync.ensure());
+
+function refreshLogUI() {
+  const ativo = document.querySelector('.log-subpanel.active');
+  if (!ativo) return;
+  const sub = ativo.id.replace('log-sub-', '');
+  if (sub === 'motoristas') renderLogDrivers();
+  else if (sub === 'veiculos') renderLogCars();
+  else if (sub === 'registros') {
+    renderLogisticsKPIs('log-kpi-active','log-kpi-idle','log-kpi-drivers','log-kpi-total');
+    renderCurrentFleet('log-current-fleet'); populateLogFilters(); renderLogFiltered();
+  }
+}
+
 const LDB = {
   get: k => DB.get(k),
   set: (k,v) => DB.set(k,v),
 
   // Registros
-  entries()  { return this.get('garra_logistics') || seedLogDemos(); },
+  entries()  { return this.get('garra_logistics') || []; },
   saveEntry(e) {
     const list = this.entries();
     const idx = list.findIndex(x => x.id === e.id);
     if (idx>=0) list[idx]=e; else list.unshift(e);
     this.set('garra_logistics', list);
+    LogSync.send('/logistica/registros', 'POST', LogSync._entryPayload(e));
   },
-  removeEntry(id) { this.set('garra_logistics', this.entries().filter(e=>e.id!==id)); },
+  removeEntry(id) {
+    this.set('garra_logistics', this.entries().filter(e=>e.id!==id));
+    LogSync.send('/logistica/registros/' + encodeURIComponent(id), 'DELETE', null);
+  },
 
   // Motoristas
-  drivers()  { return this.get('garra_log_drivers') || seedDrivers(); },
+  drivers()  { return this.get('garra_log_drivers') || seedDriversPadrao(); },
   saveDriver(d) {
     const list = this.drivers();
     const idx = list.findIndex(x=>x.id===d.id);
     if (idx>=0) list[idx]=d; else list.push(d);
     this.set('garra_log_drivers', list);
+    LogSync.send('/logistica/motoristas', 'POST', LogSync._driverPayload(d));
   },
-  removeDriver(id) { this.set('garra_log_drivers', this.drivers().filter(d=>d.id!==id)); },
+  removeDriver(id) {
+    this.set('garra_log_drivers', this.drivers().filter(d=>d.id!==id));
+    LogSync.send('/logistica/motoristas/' + encodeURIComponent(id), 'DELETE', null);
+  },
 
   // Veículos de apoio
-  logCars()  { return this.get('garra_log_cars') || seedLogCars(); },
+  logCars()  { return this.get('garra_log_cars') || seedCarsPadrao(); },
   saveLogCar(c) {
     const list = this.logCars();
     const idx = list.findIndex(x=>x.id===c.id);
     if (idx>=0) list[idx]=c; else list.push(c);
     this.set('garra_log_cars', list);
+    LogSync.send('/logistica/veiculos', 'POST', LogSync._carPayload(c));
   },
-  removeLogCar(id) { this.set('garra_log_cars', this.logCars().filter(c=>c.id!==id)); },
+  removeLogCar(id) {
+    this.set('garra_log_cars', this.logCars().filter(c=>c.id!==id));
+    LogSync.send('/logistica/veiculos/' + encodeURIComponent(id), 'DELETE', null);
+  },
 
   currentStatus() {
     const map = {};
@@ -54,7 +184,7 @@ const LDB = {
 
 function ldid() { return 'ld_'+Date.now()+'_'+Math.random().toString(36).slice(2,5); }
 
-function seedDrivers() {
+function seedDriversPadrao() {
   const drivers = [
     {id:'ld_001', name:'ITALO AUGUSTO APARECIDO LINHARES', cnh:'B', tel:'', status:'ativo', obs:''},
     {id:'ld_002', name:'ELTON JOSE DE LIMA',               cnh:'B', tel:'', status:'ativo', obs:''},
@@ -64,11 +194,10 @@ function seedDrivers() {
     {id:'ld_006', name:'BRUNA BARBOSA DOS SANTOS',         cnh:'B', tel:'', status:'ativo', obs:''},
     {id:'ld_007', name:'GERALDO APARECIDO NUNES',          cnh:'B', tel:'', status:'ativo', obs:''},
   ];
-  DB.set('garra_log_drivers', drivers);
   return drivers;
 }
 
-function seedLogCars() {
+function seedCarsPadrao() {
   const cars = [
     {id:'lc_001', carId:'CA-12', plate:'', model:'Gol',    year:2018, color:'Branco',  status:'disponivel', extras:[], obs:''},
     {id:'lc_002', carId:'CA-21', plate:'', model:'Strada', year:2020, color:'Prata',   status:'disponivel', extras:[], obs:''},
@@ -79,35 +208,10 @@ function seedLogCars() {
     {id:'lc_007', carId:'CA-47', plate:'', model:'Strada', year:2022, color:'Cinza',   status:'disponivel', extras:[], obs:''},
     {id:'lc_008', carId:'CA-48', plate:'', model:'Strada', year:2023, color:'Branco',  status:'disponivel', extras:[], obs:''},
   ];
-  DB.set('garra_log_cars', cars);
   return cars;
 }
 
-function seedLogDemos() {
-  const demos = [
-    {
-      id:'log_demo_001', resp:'Gilson', date:'2026-05-14T07:30:00Z',
-      cars:[
-        {id:'CA-44', model:'Strada', dest:'OBRA FLORESTAL', driver:'ITALO AUGUSTO APARECIDO LINHARES', status:'em-campo'},
-        {id:'CA-47', model:'Strada', dest:'OBRA FLORESTAL', driver:'ELTON JOSE DE LIMA',               status:'em-campo'},
-        {id:'CA-48', model:'Strada', dest:'PROBASE',        driver:'EMERSON GONCALVES TEIXEIRA',       status:'em-campo'},
-        {id:'CA-12', model:'Gol',    dest:'',               driver:'OCIOSO / PARADO',                  status:'parado'},
-      ]
-    },
-    {
-      id:'log_demo_002', resp:'Marco Aurélio', date:'2026-05-13T08:00:00Z',
-      cars:[
-        {id:'CA-32', model:'D20',    dest:'OBRA',   driver:'JOAO PEDRO NUNES BARROS',     status:'em-campo'},
-        {id:'CA-44', model:'Strada', dest:'OBRA',   driver:'RICARDO DE OLIVEIRA SEVERINO',status:'em-campo'},
-        {id:'CA-47', model:'Strada', dest:'OBRA',   driver:'ELTON JOSE DE LIMA',          status:'em-campo'},
-        {id:'CA-48', model:'Strada', dest:'OBRA',   driver:'ITALO AUGUSTO APARECIDO LINHARES', status:'em-campo'},
-        {id:'CA-12', model:'Gol',    dest:'OBRA',   driver:'BRUNA BARBOSA DOS SANTOS',    status:'em-campo'},
-      ]
-    },
-  ];
-  DB.set('garra_logistics', demos);
-  return demos;
-}
+// (09/07/2026) seedLogDemos removido — registros nascem do servidor, zerados.
 
 // ─── SUB-TAB SWITCH ────────────────────────────────────
 function logSubTab(tab, btn) {

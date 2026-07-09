@@ -555,6 +555,7 @@ function renderSupChecklistCards() {
     </div>`).join('');
 }
 function supTab(tab, btn) {
+  if (tab === 'logistics' && typeof LogSync !== 'undefined') LogSync.ensure();
   // Logística e Relatório exigem permissão checklist_logistica (defesa em profundidade)
   if ((tab === 'logistics' || tab === 'report') && !(currentUser && currentUser.temLogistica)) return;
   document.querySelectorAll('#screen-superior .tab').forEach(t => t.classList.remove('active'));
@@ -1238,6 +1239,7 @@ function renderManagerDashboard() {
 }
 
 function mgrTab(tab,btn) {
+  if (tab === 'logistics' && typeof LogSync !== 'undefined') LogSync.ensure();
   document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
   document.querySelectorAll('.tab-panel').forEach(p=>p.classList.remove('active'));
   btn.classList.add('active');
