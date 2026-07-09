@@ -213,6 +213,18 @@ async def startup():
                 ALTER TABLE operacional.partes_diarias
                 ADD COLUMN IF NOT EXISTS qtd_viagens NUMERIC(8,1) DEFAULT 0
             """)
+            # (08/07/2026) Idempotência do registro de parte: client_id gerado
+            # no celular + índice único parcial. Retry da fila offline não
+            # duplica mais registro quando a resposta se perde na rede.
+            await conn.execute("""
+                ALTER TABLE operacional.partes_diarias
+                ADD COLUMN IF NOT EXISTS client_id TEXT
+            """)
+            await conn.execute("""
+                CREATE UNIQUE INDEX IF NOT EXISTS uq_partes_client_id
+                ON operacional.partes_diarias (client_id)
+                WHERE client_id IS NOT NULL
+            """)
             # Migration: criar tabela regimes_cobranca
             await conn.execute("""
                 CREATE TABLE IF NOT EXISTS operacional.regimes_cobranca (
