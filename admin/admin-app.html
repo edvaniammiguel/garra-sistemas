@@ -1936,7 +1936,7 @@ async function carregarMuralAvatarAdmin() {
   const el = document.getElementById('mural-avisos-admin');
   if (!el) return;
   try {
-    const avisos = await apiFetch('/api/mural');
+    const avisos = await apiFetch('/api/mural?todos=1');
     if (!avisos.length) { el.innerHTML = '<div style="font-size:12px;color:var(--muted);text-align:center">Nenhum aviso no momento.</div>'; return; }
     el.innerHTML = avisos.map(a =>
       '<div style="background:var(--bg);border-left:3px solid var(--orange);border-radius:0 6px 6px 0;padding:10px 12px;margin-bottom:8px">'
@@ -2233,7 +2233,7 @@ async function carregarMuralAdmin() {
   const el = document.getElementById('mural-lista');
   if (!el) return;
   try {
-    const avisos = await apiFetch('/api/mural');
+    const avisos = await apiFetch('/api/mural?todos=1');
     if (!avisos.length) {
       el.innerHTML = '<div style="color:var(--muted);font-size:13px;padding:20px;text-align:center">Nenhum aviso publicado.</div>';
       return;
