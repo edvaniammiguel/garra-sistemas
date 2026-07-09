@@ -284,12 +284,13 @@ async def op_listar_equipamentos(uso: str = None, _auth=Depends(verificar_token)
     Manutenção (sem o parâmetro)."""
     filtro_uso = ""
     if (uso or "").lower() == "os":
-        # (09/07/2026) OS = caminhões, máquinas e Apoio/Combinado. Fora:
-        # componentes/suporte (Onda 2), carros de apoio e motos (esses são
-        # da Logística — registram deslocamento, não parte de OS).
-        filtro_uso = ("AND (eq.categoria IS NULL OR eq.categoria NOT IN ('componente','suporte','carro')) "
-                      "AND lower(coalesce(eq.categoria,'')) NOT LIKE '%%moto%%' "
-                      "AND upper(eq.codigo) NOT LIKE 'CA-%%'")
+        # (09/07/2026) LISTA BRANCA — determinística: OS aceita apenas
+        # caminhões, máquinas motorizadas e Apoio/Combinado. Moto, carro de
+        # apoio, componentes, implementos e 'outro' ficam fora por definição.
+        # Máquina nova só entra em OS com a categoria certa no Admin.
+        filtro_uso = ("AND lower(coalesce(eq.categoria,'')) IN "
+                      "('caminhao','escavadeira','retroescavadeira','patrol',"
+                      "'carregadeira','compactador','apoio')")
     rows = await ajard_query(
         f"""SELECT eq.id, eq.codigo, eq.descricao, eq.categoria, eq.medicao,
                   eq.marca, eq.modelo, eq.ano, eq.placa,
