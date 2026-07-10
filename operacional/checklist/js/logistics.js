@@ -17,37 +17,39 @@ const LogSync = {
   _hdr() { return { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + (typeof ckToken === 'function' ? ckToken() : '') }; },
 
   async pull() {
-    try {
-      const h = { 'Authorization': this._hdr().Authorization };
-      const [rs, vs, ms] = await Promise.all([
-        fetch('/logistica/registros?limit=500', { headers: h }),
-        // (09/07/2026) FONTE ÚNICA: carros de apoio + motos do
-        // Cadastros→Equipamentos do Admin (operacional.equipamentos)
-        fetch('/logistica/frota-apoio', { headers: h }),
-        // (09/07/2026) FONTE ÚNICA: motoristas = usuários do Admin (motorista+operador)
-        fetch('/logistica/motoristas-disponiveis',{ headers: h })
-      ]);
-      if (!rs.ok || !vs.ok || !ms.ok) return false;
-      const [regs, veics, mots] = await Promise.all([rs.json(), vs.json(), ms.json()]);
-      DB.set('garra_logistics', regs.map(r => ({
+    // (09/07/2026) Resiliente POR RECURSO: um endpoint indisponível (ex.:
+    // janela de deploy) não derruba os outros nem apaga o snapshot anterior.
+    const h = { 'Authorization': this._hdr().Authorization };
+    let algum = false;
+    const tenta = async (url, mapear, chave) => {
+      try {
+        const r = await fetch(url, { headers: h });
+        if (!r.ok) return;
+        const dados = await r.json();
+        DB.set(chave, mapear(dados));
+        algum = true;
+      } catch (e) { /* mantém o snapshot anterior */ }
+    };
+    await Promise.all([
+      tenta('/logistica/registros?limit=500', regs => regs.map(r => ({
         id: r.registro_id, resp: r.responsavel,
         date: String(r.data_hora || '').replace(' ', 'T'),
         cars: r.carros || []
-      })));
-      DB.set('garra_log_cars', veics.map(v => ({
+      })), 'garra_logistics'),
+      // FONTE ÚNICA: carros de apoio + motos do Cadastros→Equipamentos
+      tenta('/logistica/frota-apoio', veics => veics.map(v => ({
         id: v.codigo, carId: v.codigo, plate: v.placa || '',
         model: v.modelo || v.descricao || '',
         year: v.ano || null, color: '', status: 'disponivel',
         extras: [], obs: (v.marca || ''), _vistoEm: null
-      })));
-      DB.set('garra_log_drivers', mots.map(m => ({
+      })), 'garra_log_cars'),
+      // FONTE ÚNICA: motoristas = usuários do Admin (motorista+operador)
+      tenta('/logistica/motoristas-disponiveis', mots => mots.map(m => ({
         id: m.login, name: m.nome, cnh: '', tel: '',
         status: 'ativo', obs: (m.perfil || '')
-      })));
-      // (09/07/2026) Sem semeadura: motoristas e carros nascem dos cadastros
-      // únicos do Admin (Usuários e Equipamentos).
-      return true;
-    } catch (e) { return false; }
+      })), 'garra_log_drivers')
+    ]);
+    return algum;
   },
 
   _carPayload(c) {

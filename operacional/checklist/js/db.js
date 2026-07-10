@@ -304,7 +304,8 @@ const GarraDB = {
   async getFrota() {
     const cached = Cache.get('frota');
     if (cached) return cached;
-    const data = await apiFetch('/frota');
+    // (09/07/2026) Leitura DIRETA do cadastro único — espelho aposentado
+    const data = await apiFetch('/frota-checklist');
     Cache.set('frota', data, 60000);
     return data;
   },

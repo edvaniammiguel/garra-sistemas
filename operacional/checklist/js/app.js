@@ -1444,26 +1444,16 @@ function openFleetEdit(cat,id) {
   openModal('fleet-modal');
 }
 async function saveFleetItem() {
-  const editKey=document.getElementById('fleet-edit-key').value,cat=document.getElementById('fleet-category').value,id=document.getElementById('fleet-id-input').value.trim().toUpperCase(),desc=document.getElementById('fleet-desc-input').value.trim();
-  if(!id){alert('Informe a identificação.');return;}
-  if(editKey){const[oldCat,oldId]=editKey.split('|');if(oldCat!==cat||oldId!==id){const f=DB.fleet();f[oldCat]=(f[oldCat]||[]).filter(v=>v.id!==oldId);DB.set('garra_fleet',f);}}
-  const frotaItem = {id, desc, active:true};
-  DB.saveFleetItem(cat, frotaItem);
-  // Salva no banco
-  try {
-    await GarraDB.salvarFrotaItem({ categoria: cat, identificacao: id, descricao: desc });
-    console.log('✅ Frota salva no banco:', id);
-  } catch(e) {
-    console.warn('⚠️ Frota salva localmente:', e.message);
-  }
-  closeModal('fleet-modal');renderFleet();populateUserModalFuncoes();
+  // (09/07/2026) Fonte única: equipamento se cadastra no Admin → Equipamentos
+  alert('🚜 O cadastro de equipamentos é único: Admin → Cadastros → Equipamentos.\nCadastrou lá, aparece aqui na hora.');
+  closeModal('fleet-modal');
 }
 function openFleetRemove(cat,id) {
   pendingRemoveFleetKey=cat+'|'+id;document.getElementById('fleet-remove-info').textContent=`Equipamento: ${id}`;openModal('fleet-remove-modal');
 }
 function confirmRemoveFleet() {
-  if(!pendingRemoveFleetKey)return;const[cat,id]=pendingRemoveFleetKey.split('|');
-  DB.deactivateFleetItem(cat,id);pendingRemoveFleetKey=null;closeModal('fleet-remove-modal');renderFleet();renderSubmissions();
+  alert('🚜 Para remover um equipamento, desative-o no Admin → Cadastros → Equipamentos.');
+  pendingRemoveFleetKey=null;closeModal('fleet-remove-modal');
 }
 
 // ── CHECK LISTS TAB ──
