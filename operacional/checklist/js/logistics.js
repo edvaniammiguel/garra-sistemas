@@ -24,7 +24,8 @@ const LogSync = {
         // (09/07/2026) FONTE ÚNICA: carros de apoio + motos do
         // Cadastros→Equipamentos do Admin (operacional.equipamentos)
         fetch('/logistica/frota-apoio', { headers: h }),
-        fetch('/logistica/motoristas',{ headers: h })
+        // (09/07/2026) FONTE ÚNICA: motoristas = usuários do Admin (motorista+operador)
+        fetch('/logistica/motoristas-disponiveis',{ headers: h })
       ]);
       if (!rs.ok || !vs.ok || !ms.ok) return false;
       const [regs, veics, mots] = await Promise.all([rs.json(), vs.json(), ms.json()]);
@@ -40,15 +41,11 @@ const LogSync = {
         extras: [], obs: (v.marca || ''), _vistoEm: null
       })));
       DB.set('garra_log_drivers', mots.map(m => ({
-        id: m.motor_id, name: m.nome, cnh: m.cnh || '', tel: m.telefone || '',
-        status: m.status || 'ativo', obs: m.observacoes || ''
+        id: m.login, name: m.nome, cnh: '', tel: '',
+        status: 'ativo', obs: (m.perfil || '')
       })));
-      // Semeadura única: só MOTORISTAS (carros vêm do Cadastros→Equipamentos)
-      if (!mots.length && !DB.get('garra_log_seeded')) {
-        DB.set('garra_log_seeded', true);
-        for (const d of seedDriversPadrao()) await this.send('/logistica/motoristas','POST', LogSync._driverPayload(d), true);
-        return this.pull();
-      }
+      // (09/07/2026) Sem semeadura: motoristas e carros nascem dos cadastros
+      // únicos do Admin (Usuários e Equipamentos).
       return true;
     } catch (e) { return false; }
   },
@@ -121,9 +118,7 @@ function refreshLogUI() {
   const ativo = document.querySelector('.log-subpanel.active');
   if (!ativo) return;
   const sub = ativo.id.replace('log-sub-', '');
-  if (sub === 'motoristas') renderLogDrivers();
-  else if (sub === 'veiculos') renderLogCars();
-  else if (sub === 'registros') {
+  if (sub === 'registros') {
     renderLogisticsKPIs('log-kpi-active','log-kpi-idle','log-kpi-drivers','log-kpi-total');
     renderCurrentFleet('log-current-fleet'); populateLogFilters(); renderLogFiltered();
   }
@@ -148,21 +143,17 @@ const LDB = {
   },
 
   // Motoristas
-  drivers()  { return this.get('garra_log_drivers') || seedDriversPadrao(); },
+  drivers()  { return this.get('garra_log_drivers') || []; },
   saveDriver(d) {
-    const list = this.drivers();
-    const idx = list.findIndex(x=>x.id===d.id);
-    if (idx>=0) list[idx]=d; else list.push(d);
-    this.set('garra_log_drivers', list);
-    LogSync.send('/logistica/motoristas', 'POST', LogSync._driverPayload(d));
+    // (09/07/2026) Fonte única: motorista se cadastra no Admin → Usuários
+    alert('👤 O cadastro de motoristas agora é único: Admin → Usuários (perfil Motorista ou Operador).');
   },
   removeDriver(id) {
-    this.set('garra_log_drivers', this.drivers().filter(d=>d.id!==id));
-    LogSync.send('/logistica/motoristas/' + encodeURIComponent(id), 'DELETE', null);
+    alert('👤 Para remover um motorista, desative o usuário no Admin → Usuários.');
   },
 
   // Veículos de apoio
-  logCars()  { return this.get('garra_log_cars') || seedCarsPadrao(); },
+  logCars()  { return this.get('garra_log_cars') || []; },
   saveLogCar(c) {
     // (09/07/2026) Fonte única: veículo se cadastra no Admin → Equipamentos
     alert('🚗 O cadastro de veículos agora é único: Admin → Cadastros → Equipamentos.\nCadastrou lá, aparece aqui na Logística automaticamente.');
