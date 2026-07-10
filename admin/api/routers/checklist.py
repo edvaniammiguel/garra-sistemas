@@ -159,6 +159,29 @@ async def remover_motorista(motor_id: str, db=Depends(get_db), _auth=Depends(ver
     await db.execute("DELETE FROM checklist.log_motoristas WHERE motor_id=$1", motor_id)
     return {"ok": True}
 
+@router.get("/frota-checklist")
+async def frota_checklist_direto(db=Depends(get_db), _auth=Depends(verificar_token)):
+    """(09/07/2026) FIM DO ESPELHO: o seletor do checklist lê DIRETO do
+    cadastro único (operacional.equipamentos), com a categoria mapeada na
+    hora. Zero sync, zero reconciliação, zero constraint, zero except mudo —
+    a família inteira de bugs do espelho morre aqui.
+    Mesmo formato do antigo /frota (o front não muda de lógica)."""
+    rows = await db.fetch(
+        """SELECT e.codigo AS identificacao, e.descricao, true AS ativo,
+                  CASE
+                    WHEN upper(e.codigo) LIKE 'CA-%' THEN 'carro'
+                    WHEN lower(coalesce(e.categoria,'')) LIKE '%caminh%' THEN 'caminhao'
+                    ELSE 'maquinas'
+                  END AS categoria
+             FROM operacional.equipamentos e
+            WHERE e.ativo = true
+              AND (upper(e.codigo) LIKE 'CA-%'
+                   OR lower(coalesce(e.categoria,'')) LIKE '%caminh%'
+                   OR lower(coalesce(e.categoria,'')) IN
+                      ('escavadeira','retroescavadeira','patrol','carregadeira','compactador'))
+            ORDER BY e.codigo""")
+    return [dict(r) for r in rows]
+
 @router.get("/logistica/motoristas-disponiveis")
 async def listar_motoristas_disponiveis(db=Depends(get_db), _auth=Depends(verificar_token)):
     """(09/07/2026) FONTE ÚNICA: motoristas da logística vêm do cadastro de

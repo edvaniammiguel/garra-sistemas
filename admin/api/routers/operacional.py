@@ -330,25 +330,8 @@ async def op_criar_equipamento(request: Request, payload=Depends(verificar_gesto
             (codigo, descricao, categoria, medicao, marca, modelo, ano, placa, operador_resp),
             fetch="one"
         )
-        # Sincronizar com checklist.frota (mesmo código = mesma identificação;
-        # categoria MAPEADA para a taxonomia do checklist)
-        try:
-            cat_ck = _cat_frota_checklist(codigo, categoria)
-            if cat_ck:
-                await ajard_query(
-                    """INSERT INTO checklist.frota (categoria, identificacao, descricao, ativo)
-                       VALUES (%s, %s, %s, true)
-                       ON CONFLICT (categoria, identificacao) DO UPDATE
-                         SET descricao = EXCLUDED.descricao, ativo = true""",
-                    (cat_ck, codigo, descricao), fetch="none"
-                )
-                # Garante categoria única: desativa o mesmo código em outras
-                await ajard_query(
-                    "UPDATE checklist.frota SET ativo=false WHERE identificacao=%s AND categoria<>%s",
-                    (codigo, cat_ck), fetch="none"
-                )
-        except Exception as sync_err:
-            print(f"[Sync frota] aviso: {sync_err}")
+        # (09/07/2026) Sync com checklist.frota REMOVIDO — o checklist lê
+        # direto do cadastro único via /frota-checklist. Espelho aposentado.
         return dict(row) if row else {"codigo": codigo}
     except Exception as e:
         if "duplicate" in str(e).lower():
@@ -387,24 +370,7 @@ async def op_editar_equipamento(eq_id: str, request: Request, payload=Depends(ve
         )
         if not row:
             raise HTTPException(status_code=404, detail="Equipamento não encontrado")
-        # Sincronizar com checklist.frota — categoria MAPEADA; move de categoria
-        # quando preciso (upsert na certa + desativa o código nas demais)
-        try:
-            cat_ck = _cat_frota_checklist(row["codigo"], row["categoria"])
-            if cat_ck:
-                await ajard_query(
-                    """INSERT INTO checklist.frota (categoria, identificacao, descricao, ativo)
-                       VALUES (%s, %s, %s, true)
-                       ON CONFLICT (categoria, identificacao) DO UPDATE
-                         SET descricao = EXCLUDED.descricao, ativo = true""",
-                    (cat_ck, row["codigo"], row["descricao"]), fetch="none"
-                )
-            await ajard_query(
-                "UPDATE checklist.frota SET ativo=false WHERE identificacao=%s AND categoria<>%s",
-                (row["codigo"], cat_ck or ""), fetch="none"
-            )
-        except Exception as sync_err:
-            print(f"[Sync frota] aviso: {sync_err}")
+        # (09/07/2026) Sync com espelho removido — leitura direta no checklist.
         return dict(row)
     except HTTPException:
         raise
@@ -419,14 +385,7 @@ async def op_remover_equipamento(eq_id: str, payload=Depends(verificar_gestor)):
             "UPDATE operacional.equipamentos SET ativo=false WHERE id=%s RETURNING codigo",
             (eq_id,), fetch="one"
         )
-        if row and row.get("codigo"):
-            try:
-                await ajard_query(
-                    "UPDATE checklist.frota SET ativo=false WHERE identificacao=%s",
-                    (row["codigo"],), fetch="none"
-                )
-            except Exception:
-                pass
+        # (09/07/2026) Espelho aposentado — nada a propagar.
         return {"ok": True}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
