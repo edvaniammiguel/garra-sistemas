@@ -820,48 +820,8 @@ async def criar_tabela_ajustes_pontos():
         print("[Startup] unicidade frota OK")
     except Exception as e:
         print(f"[Startup] unicidade frota: {e}")
-    # (09/07/2026) ESPELHO AUTOCURATIVO: reconstrói checklist.frota a partir do
-    # cadastro único em TODO boot — LISTA BRANCA: só o que tem checklist entra
-    # (CA→carro · caminh→caminhao · máquinas motorizadas→maquinas; caçambas
-    # estacionárias, gerador, componentes, moto, apoio e 'outro' ficam fora).
-    try:
-        await ajard_query("""
-            INSERT INTO checklist.frota (categoria, identificacao, descricao, ativo)
-            SELECT CASE
-                     WHEN upper(e.codigo) LIKE 'CA-%%' THEN 'carro'
-                     WHEN lower(coalesce(e.categoria,'')) LIKE '%%caminh%%' THEN 'caminhao'
-                     ELSE 'maquinas'
-                   END,
-                   e.codigo, e.descricao, true
-              FROM operacional.equipamentos e
-             WHERE e.ativo = true
-               AND (upper(e.codigo) LIKE 'CA-%%'
-                    OR lower(coalesce(e.categoria,'')) LIKE '%%caminh%%'
-                    OR lower(coalesce(e.categoria,'')) IN
-                       ('escavadeira','retroescavadeira','patrol','carregadeira','compactador'))
-            ON CONFLICT (categoria, identificacao)
-            DO UPDATE SET descricao = EXCLUDED.descricao, ativo = true
-        """, fetch="none")
-        await ajard_query("""
-            UPDATE checklist.frota f SET ativo = false
-             WHERE f.ativo = true
-               AND NOT EXISTS (
-                   SELECT 1 FROM operacional.equipamentos e
-                    WHERE e.codigo = f.identificacao
-                      AND e.ativo = true
-                      AND (upper(e.codigo) LIKE 'CA-%%'
-                           OR lower(coalesce(e.categoria,'')) LIKE '%%caminh%%'
-                           OR lower(coalesce(e.categoria,'')) IN
-                              ('escavadeira','retroescavadeira','patrol','carregadeira','compactador'))
-                      AND f.categoria = CASE
-                            WHEN upper(e.codigo) LIKE 'CA-%%' THEN 'carro'
-                            WHEN lower(coalesce(e.categoria,'')) LIKE '%%caminh%%' THEN 'caminhao'
-                            ELSE 'maquinas'
-                          END)
-        """, fetch="none")
-        print("[Startup] espelho frota reconciliado")
-    except Exception as e:
-        print(f"[Startup] espelho frota: {e}")
+    # (09/07/2026) Espelho autocurativo REMOVIDO: o checklist lê direto do
+    # cadastro único via /frota-checklist. checklist.frota fica dormente.
 
 @app.on_event("startup")
 async def seed_equipamento_combinado():
