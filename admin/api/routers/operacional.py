@@ -64,20 +64,19 @@ def _validar_horas_plausiveis(horas):
             detail=f"{horas}h num único registro — confira o horímetro (mais de 24h não é permitido)")
 
 def _cat_frota_checklist(codigo, categoria_op):
-    """(09/07/2026) Fronteira entre taxonomias: no OPERACIONAL a categoria é
-    funcional (CA mede KM como caminhão); no CHECKLIST é a categoria de
-    FORMULÁRIO (CA-% responde o checklist de Carro de Apoio). O sync usa este
-    mapa — sem ele, os CAs duplicavam no grupo Caminhões do seletor.
-    Retorna None para o que não entra no checklist (ex.: APOIO)."""
+    """(09/07/2026) Fronteira entre taxonomias — LISTA BRANCA: só entra no
+    espelho do checklist o que TEM checklist. CA-% → carro · caminhões →
+    caminhao · máquinas motorizadas → maquinas. Caçambas estacionárias,
+    gerador, componentes, moto, apoio e 'outro' ficam FORA (retorna None)."""
     cod = (codigo or "").upper()
     cat = (categoria_op or "").lower()
-    if cat == "apoio":
-        return None
     if cod.startswith("CA-"):
         return "carro"
     if "caminh" in cat:
         return "caminhao"
-    return "maquinas"
+    if cat in ("escavadeira", "retroescavadeira", "patrol", "carregadeira", "compactador"):
+        return "maquinas"
+    return None
 
 def _calc_horas_parte(d):
     """Horas trabalhadas: horímetro (fim-ini); fallback relógio com desconto

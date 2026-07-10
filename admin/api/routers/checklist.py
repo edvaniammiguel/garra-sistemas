@@ -159,6 +159,16 @@ async def remover_motorista(motor_id: str, db=Depends(get_db), _auth=Depends(ver
     await db.execute("DELETE FROM checklist.log_motoristas WHERE motor_id=$1", motor_id)
     return {"ok": True}
 
+@router.get("/logistica/motoristas-disponiveis")
+async def listar_motoristas_disponiveis(db=Depends(get_db), _auth=Depends(verificar_token)):
+    """(09/07/2026) FONTE ÚNICA: motoristas da logística vêm do cadastro de
+    usuários do Admin — perfis motorista e operador, ativos."""
+    rows = await db.fetch(
+        """SELECT login, nome, perfil FROM public.usuarios_garra
+           WHERE ativo = true AND perfil IN ('motorista','operador')
+           ORDER BY nome""")
+    return [dict(r) for r in rows]
+
 @router.get("/logistica/frota-apoio")
 async def listar_frota_apoio(db=Depends(get_db), _auth=Depends(verificar_token)):
     """(09/07/2026) FONTE ÚNICA da logística: carros de apoio e motos vêm do
