@@ -3524,7 +3524,7 @@ async function carregarEquipamentos() {
   const el = document.getElementById('eq-lista');
   el.innerHTML = '<div class="loading"><span class="spin"></span></div>';
   try {
-    _equipamentos = await apiFetch('/operacional/api/equipamentos?uso=os');
+    _equipamentos = await apiFetch('/operacional/api/equipamentos'); // CADASTRO vê tudo (uso=os é só p/ selects de OS)
     const badge = document.getElementById('sb-equipamentos-count');
     if (badge) badge.textContent = (_equipamentos || []).filter(e => e.ativo !== false).length;
     renderTabelaEquipamentos();
@@ -3612,7 +3612,6 @@ function abrirModalEquipamento(eq = null) {
               <option value="retroescavadeira" ${e.categoria==='retroescavadeira'?'selected':''}>Retroescavadeira</option>
               <option value="compactador" ${e.categoria==='compactador'?'selected':''}>Compactador</option>
               <option value="carro" ${e.categoria==='carro'?'selected':''}>Carro / Veículo</option>
-              <option value="moto" ${e.categoria==='moto'?'selected':''}>Moto</option>
               <option value="apoio" ${e.categoria==='apoio'?'selected':''}>Apoio / Combinado (não motorizado)</option>
               <option value="outro" ${e.categoria==='outro'?'selected':''}>Outro</option>
             </select>
