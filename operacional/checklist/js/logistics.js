@@ -30,6 +30,7 @@ const LogSync = {
         algum = true;
       } catch (e) { /* mantém o snapshot anterior */ }
     };
+    console.log('[LogSync] pull iniciando…');
     await Promise.all([
       tenta('/logistica/registros?limit=500', regs => regs.map(r => ({
         id: r.registro_id, resp: r.responsavel,
@@ -49,6 +50,10 @@ const LogSync = {
         status: 'ativo', obs: (m.perfil || '')
       })), 'garra_log_drivers')
     ]);
+    console.log('[LogSync] pull concluído:', algum ? 'OK' : 'FALHOU',
+      '· registros:', (DB.get('garra_logistics')||[]).length,
+      '· carros:', (DB.get('garra_log_cars')||[]).length,
+      '· motoristas:', (DB.get('garra_log_drivers')||[]).length);
     return algum;
   },
 
@@ -725,3 +730,18 @@ function buildReportHTML() {
 // ─── HELPERS ──────────────────────────────────────────
 function escJS(s)   { return (s||'').replace(/'/g,"\\'").replace(/"/g,'\\"'); }
 function escAttr(s) { return (s||'').replace(/"/g,'&quot;').replace(/</g,'&lt;'); }
+
+
+// ─── (09/07/2026) AUTO-BOOT DA LOGÍSTICA ────────────────────────────────────
+// O gatilho via troca de aba não dispara em todos os caminhos de boot
+// (ex.: shell mobile embutido com tab=logistica). A sincronização agora é
+// autônoma: roda ao carregar o app, garantindo snapshot pronto antes de
+// qualquer modal abrir. As trocas de aba continuam forçando refresh.
+setTimeout(function () {
+  try {
+    if (typeof LogSync !== 'undefined') {
+      console.log('[LogSync] auto-boot');
+      LogSync.ensure();
+    }
+  } catch (e) { console.log('[LogSync] auto-boot erro:', e && e.message); }
+}, 800);
