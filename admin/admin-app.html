@@ -909,6 +909,7 @@ input,select,textarea { font-family:inherit; font-size:13px; outline:none; }
         <div id="os-vm-wrap" style="flex:1;min-width:120px"><div class="field-hint">Valor/metro</div><input type="number" id="os-valor-metro" step="0.01" min="0" placeholder="R$"/></div>
         <div id="os-vd-wrap" style="flex:1;min-width:120px"><div class="field-hint">Valor/diária</div><input type="number" id="os-valor-diaria" step="0.01" min="0" placeholder="R$"/></div>
         <div id="os-vk-wrap" style="flex:1;min-width:120px"><div class="field-hint">Valor/km</div><input type="number" id="os-valor-km" step="0.01" min="0" placeholder="R$"/></div>
+        <div id="os-vv-wrap" style="flex:1;min-width:120px"><div class="field-hint">Valor/viagem (frete ida+volta)</div><input type="number" id="os-valor-viagem" step="0.01" min="0" placeholder="R$"/></div>
       </div>
       <div class="field-hint">O preço do regime principal vem do campo acima; preencha aqui só as medições EXTRAS que esta obra usa.</div>
       <div class="field">
@@ -2960,7 +2961,15 @@ function renderTabelaPartes(partes, statusOS) {
           // ── Linha registrada como METROS numa OS de outro regime:
           // fidelidade ao Controle Mensal — mostra metros, traça o resto.
           let horimetroCellFinal = horimetroCell;
-          if (medParte === 'metros' && regime !== 'metro') {
+          if ((medParte === 'viagem' || medParte === 'km') && regime !== 'km') {
+            const viag = parseFloat(p.qtd_viagens||0) || 1;
+            medicaoCell = fechada
+              ? `<span style="font-size:12px;color:var(--blue);font-weight:700">${viag} viag.</span>`
+              : `<div style="display:flex;align-items:center;gap:4px">
+                  <input type="number" step="1" min="0" value="${viag}" title="Quantidade de viagens (ida+volta)" style="width:60px;padding:4px 8px;border:1.5px solid var(--border);border-radius:6px;text-align:right;font-size:13px"
+                    onchange="salvarMedicaoParte('${esc(p.id)}','qtd_viagens',this.value)"/>
+                  <span style="font-size:12px;color:var(--muted)">viag.</span></div>`;
+          } else if (medParte === 'metros' && regime !== 'metro') {
             medicaoCell = fechada
               ? `<span style="font-size:12px;color:var(--blue);font-weight:700">${p.qtd_metros||0} m</span>`
               : `<div style="display:flex;align-items:center;gap:4px">
@@ -2975,9 +2984,13 @@ function renderTabelaPartes(partes, statusOS) {
           if (regime === 'metro') {
             // Subtotal pela MEDIÇÃO da parte (OS mista: horas de concha × valor/hora)
             const _v = _valorParte(p, P);
-            const _semPreco = (medParte !== 'metros' && !P.hora);
-            cel5 = _semPreco
-              ? `<span style="color:var(--red);font-size:12px" title="Defina o Valor/hora em Editar OS">⚠️ sem valor/hora</span>`
+            const _precoFaltante =
+              medParte === 'metros' ? (P.metro ? '' : 'Valor/metro') :
+              medParte === 'viagem' ? (P.viagem ? '' : 'Valor/viagem') :
+              medParte === 'km'     ? ((P.km || P.viagem) ? '' : 'Valor/km') :
+                                      (P.hora ? '' : 'Valor/hora');
+            cel5 = _precoFaltante
+              ? `<span style="color:var(--red);font-size:12px" title="Defina o ${_precoFaltante} em Editar OS">⚠️ sem ${_precoFaltante.toLowerCase()}</span>`
               : `<strong>R$ ${_v.toFixed(2)}</strong>`;
             cel6 = '';
           } else if (regime === 'diaria') {
@@ -3169,7 +3182,7 @@ async function abrirModalOS(osId=null) {
     document.getElementById('os-operador').value='';
     document.getElementById('os-regime').value='';
     document.getElementById('os-valor-combinado').value='';
-    ['os-valor-hora','os-valor-metro','os-valor-diaria','os-valor-km'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+    ['os-valor-hora','os-valor-metro','os-valor-diaria','os-valor-km','os-valor-viagem'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
     document.getElementById('os-horas-padrao').value='';
     document.getElementById('os-data-inicio').value=new Date().toISOString().slice(0,10);
     _atualizarLabelRegime();
@@ -3190,6 +3203,7 @@ async function abrirModalOS(osId=null) {
       document.getElementById('os-valor-metro').value  = os.valor_metro||'';
       document.getElementById('os-valor-diaria').value = os.valor_diaria||'';
       document.getElementById('os-valor-km').value     = os.valor_km||'';
+      document.getElementById('os-valor-viagem').value = os.valor_viagem||'';
       document.getElementById('os-horas-padrao').value = os.horas_padrao_dia||'';
       document.getElementById('os-data-inicio').value = os.data_inicio||'';
       document.getElementById('os-equipamento').value = os.equipamento_id||'';
@@ -3219,6 +3233,7 @@ function _precosOS(os) {
     metro:  g(os && os.valor_metro)  || (r.includes('metro') ? legado : 0),
     diaria: g(os && os.valor_diaria) || (r.includes('diari') ? legado : 0),
     km:     g(os && os.valor_km)     || (r.includes('km')    ? legado : 0),
+    viagem: g(os && os.valor_viagem) || (r.includes('viagem') ? legado : 0),
     empreito: r.includes('empreit') ? legado : 0,
   };
 }
@@ -3228,7 +3243,12 @@ function _valorParte(p, P) {
   const n = v => parseFloat(v||0)||0;
   if (med === 'metros') return n(p.qtd_metros) * P.metro;
   if (med === 'diaria') return (n(p.quantidade_diarias)||1) * P.diaria;
-  if (med === 'km')     return n(p.km_percorrido) * P.km;
+  if (med === 'viagem') return (n(p.qtd_viagens)||1) * P.viagem;
+  if (med === 'km') {
+    const kmPerc = n(p.km_percorrido) || Math.max(0, n(p.km_final) - n(p.km_inicial));
+    if (P.viagem && n(p.qtd_viagens) > 0) return n(p.qtd_viagens) * P.viagem;
+    return kmPerc * P.km;
+  }
   const horas = n(p.horas_cobradas) || n(p.horas_trabalhadas);
   return horas * P.hora;
 }
@@ -3326,6 +3346,7 @@ async function salvarOS() {
     valor_metro:  parseFloat(document.getElementById('os-valor-metro').value)||null,
     valor_diaria: parseFloat(document.getElementById('os-valor-diaria').value)||null,
     valor_km:     parseFloat(document.getElementById('os-valor-km').value)||null,
+    valor_viagem: parseFloat(document.getElementById('os-valor-viagem').value)||null,
     horas_padrao_dia:  parseFloat(document.getElementById('os-horas-padrao').value)||null,
     obra,
     endereco:          document.getElementById('os-endereco').value.trim()||null,
