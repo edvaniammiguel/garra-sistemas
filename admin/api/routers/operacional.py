@@ -1791,9 +1791,13 @@ async def op_editar_minha_parte(parte_id: str, request: Request, payload=Depends
         raise HTTPException(status_code=403, detail="Você só pode editar os seus próprios registros.")
 
     # Campos que o operador pode corrigir (medição + observação)
+    # (13/07/2026) + equipamento e operador (vínculo próprio) — corrigir
+    # máquina/pessoa errada é correção legítima do dia, com efeito direto na
+    # comissão (a atribuição segue o operador da parte).
     EDITAVEIS = ["data", "horimetro_inicial", "horimetro_final", "hora_inicio", "hora_fim",
                  "sem_almoco", "qtd_metros", "observacao",
-                 "km_inicial", "km_final", "qtd_viagens"]
+                 "km_inicial", "km_final", "qtd_viagens",
+                 "equipamento_id", "operador_id"]
     merged = dict(parte)
     algum = False
     for c in EDITAVEIS:
