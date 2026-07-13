@@ -611,6 +611,7 @@ async def op_listar_os(
             os.data_inicio, os.data_fim_prevista, os.data_fim_real,
             os.status, os.origem, os.criado_em,
             os.regime_cobranca, os.valor_combinado, os.horas_padrao_dia,
+            os.valor_hora, os.valor_metro, os.valor_diaria, os.valor_km,
             os.cliente_id, COALESCE(c.nome, os.cliente_nome_avulso) AS cliente_nome,
             os.cliente_nome_avulso,
             os.tipo_servico_id, ts.nome AS tipo_servico_nome,
@@ -706,14 +707,16 @@ async def op_atualizar_os(os_id: str, request: Request, payload=Depends(verifica
                         "data_fim_prevista", "data_fim_real", "status",
                         "tipo_servico_id", "cliente_id", "cliente_nome_avulso",
                         "equipamento_id", "operador_id",
-                        "regime_cobranca", "valor_combinado", "data_inicio", "horas_padrao_dia"]
+                        "regime_cobranca", "valor_combinado", "data_inicio", "horas_padrao_dia",
+                        "valor_hora", "valor_metro", "valor_diaria", "valor_km"]
     updates = []
     params = []
     for campo in campos_editaveis:
         if campo in d:
             val = d[campo]
             # valor_combinado: aceitar número, vazio vira NULL
-            if campo in ("valor_combinado", "horas_padrao_dia"):
+            if campo in ("valor_combinado", "horas_padrao_dia",
+                         "valor_hora", "valor_metro", "valor_diaria", "valor_km"):
                 val = float(val) if (val not in (None, "")) else None
             elif val == "":
                 val = None
