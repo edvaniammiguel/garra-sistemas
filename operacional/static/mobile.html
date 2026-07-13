@@ -880,13 +880,15 @@ async function carregarOSApp() {
     // Botão "Passar OS" — só quando em andamento (operador saiu p/ outra obra/máquina)
     const botaoLiberar = aguardando ? '' :
       `<button onclick="liberarOS('${os.id}', '${os.numero}')" style="width:100%;margin-top:6px;padding:8px;background:transparent;border:1.5px dashed var(--muted);color:var(--muted);border-radius:8px;font-size:12px;font-weight:600;cursor:pointer">🔄 Passar OS para outro operador</button>`;
-    // (13/07/2026) Excluir OS avulsa aberta criada no campo (caso do toque duplo)
+    // (13/07/2026) Excluir OS avulsa: lixeira DISCRETA no canto superior
+    // direito do card — evita toque por engano (o confirm segue como 2ª trava)
     const botaoExcluir = (!aguardando && os.origem === 'campo' && os.status === 'aberta_sem_erp')
-      ? `<button onclick="excluirOSMobile('${os.id}', '${os.numero}')" style="width:100%;margin-top:6px;padding:8px;background:transparent;border:1.5px dashed #DC2626;color:#DC2626;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer">🗑 Excluir esta OS</button>`
+      ? `<button onclick="excluirOSMobile('${os.id}', '${os.numero}')" title="Excluir esta OS" aria-label="Excluir OS" style="position:absolute;top:8px;right:8px;background:none;border:none;font-size:15px;color:#DC2626;opacity:.45;cursor:pointer;padding:6px;line-height:1">🗑</button>`
       : '';
 
     html += `
-      <div class="os-card" ${aguardando ? 'style="opacity:0.7;border-left:4px solid #EA580C"' : ''}>
+      <div class="os-card" style="position:relative${aguardando ? ';opacity:0.7;border-left:4px solid #EA580C' : ''}">
+        ${botaoExcluir}
         <div class="os-numero">${os.numero} ${statusBadge}</div>
         <div class="os-cliente">${esc(os.cliente_nome || os.obra) || '(Cliente avulso)'}</div>
         <div class="os-info">
@@ -901,7 +903,6 @@ async function carregarOSApp() {
         </div>
         <div class="os-btns">${botoes}</div>
         ${botaoLiberar}
-        ${botaoExcluir}
       </div>
     `;
   });
@@ -2491,10 +2492,30 @@ async function verPartes(osId, osNum, editavel = true) {
 }
 
 // ── EDITAR MINHA PARTE (conferir/corrigir horímetro, horários, metros, obs) ──
-function abrirEditarParte(idx) {
+async function abrirEditarParte(idx) {
   const p = (window._vpPartes || [])[idx];
   if (!p) return;
   const med = p.tipo_medicao || 'horimetro';
+  // (13/07/2026) Campos importantes na correção: equipamento e operador
+  // (vínculo próprio) — mesmas fontes únicas dos selects de registro.
+  let _eqs = [], _ops = [];
+  try {
+    [_eqs, _ops] = await Promise.all([
+      fetchComCacheIDB('/operacional/api/equipamentos?uso=os', 'lst_equipamentos', 86400),
+      fetchComCacheIDB('/operacional/api/operadores', 'lst_operadores', 86400)
+    ]);
+  } catch(e) { _eqs = _eqs || []; _ops = _ops || []; }
+  const ehProprio = (p.vinculo_operador || 'proprio') === 'proprio';
+  const selEquip = `
+    <label style="font-size:12px;font-weight:700;color:var(--muted)">Equipamento</label>
+    <select id="ep-equip" style="width:100%;padding:11px;border:1.5px solid var(--border);border-radius:8px;font-size:15px;box-sizing:border-box;margin:4px 0 12px">
+      ${(_eqs||[]).map(e => `<option value="${e.id}" ${String(e.id)===String(p.equipamento_id)?'selected':''}>${e.codigo} — ${e.descricao||''}</option>`).join('')}
+    </select>`;
+  const selOper = ehProprio ? `
+    <label style="font-size:12px;font-weight:700;color:var(--muted)">Operador / Motorista</label>
+    <select id="ep-oper" style="width:100%;padding:11px;border:1.5px solid var(--border);border-radius:8px;font-size:15px;box-sizing:border-box;margin:4px 0 12px">
+      ${(_ops||[]).map(o => `<option value="${o.id}" ${String(o.id)===String(p.operador_id)?'selected':''}>${o.nome}</option>`).join('')}
+    </select>` : '';
   const v = (x) => (x === null || x === undefined) ? '' : x;
   const hIni = p.hora_inicio ? String(p.hora_inicio).slice(0,5) : '';
   const hFim = p.hora_fim ? String(p.hora_fim).slice(0,5) : '';
@@ -2560,6 +2581,8 @@ function abrirEditarParte(idx) {
         <button onclick="document.getElementById('modal-editar-parte').remove()" style="background:none;border:none;font-size:24px;color:var(--muted);cursor:pointer">×</button>
       </div>
       <div id="ep-err" style="display:none;background:#FEE;color:#C00;padding:10px;border-radius:8px;font-size:13px;margin-bottom:12px"></div>
+      ${selEquip}
+      ${selOper}
       ${campos}
       <label style="font-size:12px;font-weight:700;color:var(--muted)">Observação</label>
       <textarea id="ep-obs" rows="2" style="width:100%;padding:11px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;box-sizing:border-box;margin:4px 0 16px">${v(p.observacao)}</textarea>
@@ -2595,6 +2618,10 @@ async function salvarEdicaoParte(parteId, med) {
   const body = { observacao: document.getElementById('ep-obs').value };
   const _d = document.getElementById('ep-data')?.value;
   if (_d) body.data = _d;
+  const _eq = document.getElementById('ep-equip')?.value;
+  if (_eq) body.equipamento_id = _eq;
+  const _op = document.getElementById('ep-oper')?.value;
+  if (_op) body.operador_id = _op;
   if (med === 'km') {
     body.km_inicial  = document.getElementById('ep-kmini').value || null;
     body.km_final    = document.getElementById('ep-kmfin').value || null;
