@@ -2566,6 +2566,7 @@ function mpMedicao(tipo, btn) {
   });
   const alvo = btn || document.querySelector(`.mp-med-btn[data-med="${tipo}"]`);
   if (alvo) alvo.style.cssText = 'padding:7px 12px;border:1.5px solid var(--orange);border-radius:8px;background:#FFF7ED;color:var(--orange);font-size:12px;font-weight:800;cursor:pointer';
+  document.getElementById('mp-bloco-hor').style.display    = 'block'; // controle interno, sempre
   document.getElementById('mp-bloco-km').style.display     = tipo === 'km'     ? 'block' : 'none';
   document.getElementById('mp-bloco-metros').style.display = tipo === 'metros' ? 'block' : 'none';
   document.getElementById('mp-bloco-diaria').style.display = tipo === 'diaria' ? 'block' : 'none';
@@ -2575,10 +2576,10 @@ function mpSugerirMedicao() {
   const sel = document.getElementById('mp-equipamento');
   const cat = sel.options[sel.selectedIndex]?.getAttribute('data-cat')||'';
   let tipo = null, origem = '';
-  if (regime === 'km') tipo = 'km';
-  else if (regime === 'metro') tipo = 'metros';
-  else if (regime === 'diaria') tipo = 'diaria';
-  else if (regime === 'hora' || regime === 'empreito') tipo = 'horimetro';
+  if (regime.includes('km')) tipo = 'km';
+  else if (regime.includes('metro')) tipo = 'metros';
+  else if (regime.includes('diari')) tipo = 'diaria';
+  else if (regime.includes('hora') || regime.includes('empreit')) tipo = 'horimetro';
   if (tipo) origem = 'regime da OS';
   if (!tipo && ['caminhao','pipa'].includes(cat)) { tipo = 'km'; origem = 'categoria do equipamento'; }
   if (!tipo) { tipo = 'horimetro'; origem = ''; }
@@ -3334,7 +3335,7 @@ async function abrirModalParte() {
   ['mp-h-ini','mp-h-fin','mp-km-ini','mp-km-fin','mp-obs'].forEach(id=>{
     const el=document.getElementById(id); if(el) el.value='';
   });
-  document.getElementById('mp-bloco-hor').style.display='none';
+  // (13/07/2026) Horímetro é controle interno SEMPRE visível — hider antigo removido
   document.getElementById('mp-bloco-km').style.display='none';
   document.getElementById('modal-parte').classList.remove('hidden');
   mpSugerirMedicao();
