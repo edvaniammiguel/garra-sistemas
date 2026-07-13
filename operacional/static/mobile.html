@@ -880,6 +880,10 @@ async function carregarOSApp() {
     // Botão "Passar OS" — só quando em andamento (operador saiu p/ outra obra/máquina)
     const botaoLiberar = aguardando ? '' :
       `<button onclick="liberarOS('${os.id}', '${os.numero}')" style="width:100%;margin-top:6px;padding:8px;background:transparent;border:1.5px dashed var(--muted);color:var(--muted);border-radius:8px;font-size:12px;font-weight:600;cursor:pointer">🔄 Passar OS para outro operador</button>`;
+    // (13/07/2026) Excluir OS avulsa aberta criada no campo (caso do toque duplo)
+    const botaoExcluir = (!aguardando && os.origem === 'campo' && os.status === 'aberta_sem_erp')
+      ? `<button onclick="excluirOSMobile('${os.id}', '${os.numero}')" style="width:100%;margin-top:6px;padding:8px;background:transparent;border:1.5px dashed #DC2626;color:#DC2626;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer">🗑 Excluir esta OS</button>`
+      : '';
 
     html += `
       <div class="os-card" ${aguardando ? 'style="opacity:0.7;border-left:4px solid #EA580C"' : ''}>
@@ -897,6 +901,7 @@ async function carregarOSApp() {
         </div>
         <div class="os-btns">${botoes}</div>
         ${botaoLiberar}
+        ${botaoExcluir}
       </div>
     `;
   });
@@ -1036,10 +1041,33 @@ function atualizarBadgeRede() {
   }
 }
 
+async function excluirOSMobile(osId, numero) {
+  if (!confirm('Excluir a ' + numero + '?\n\nSó é possível excluir OS avulsa SEM registros de trabalho. Esta ação não pode ser desfeita por você.')) return;
+  try {
+    const token = localStorage.getItem('garra_token') || '';
+    const r = await fetch('/operacional/api/os/' + osId, {
+      method: 'DELETE', headers: { 'Authorization': 'Bearer ' + token }
+    });
+    const d = await r.json().catch(() => ({}));
+    if (r.ok) {
+      if (typeof toast === 'function') toast('🗑 ' + numero + ' excluída', 'success');
+      await carregarOSApp();
+    } else {
+      alert(d.detail || ('Erro ' + r.status + ' ao excluir'));
+    }
+  } catch (e) {
+    alert('Sem conexão — tente novamente com internet.');
+  }
+}
+
 async function salvarNovaOSAvulsa() {
   const err = document.getElementById('novaos-error');
   err.style.display = 'none';
   const btn = document.getElementById('btn-salvar-novaos');
+  // (13/07/2026) Anti-duplo-toque: trava JÁ, antes de qualquer await —
+  // a janela da verificação de conflito deixava o botão vivo (2 OS de um toque).
+  if (btn.disabled) return;
+  btn.disabled = true;
 
   const obra        = document.getElementById('novaos-obra').value.trim();
   const cliente     = document.getElementById('novaos-cliente').value.trim();
@@ -1050,6 +1078,7 @@ async function salvarNovaOSAvulsa() {
   if (!obra) {
     err.textContent = 'Obra / Local é obrigatório';
     err.style.display = 'block';
+    btn.disabled = false;
     return;
   }
 
@@ -1067,7 +1096,7 @@ async function salvarNovaOSAvulsa() {
           const msg = `⚠️ Esta máquina já está ATIVA em outra OS:\n\n${o.numero} — ${o.obra || o.cliente_nome || ''}` +
             (o.operador_nome ? `\nOperador: ${o.operador_nome}` : '') +
             `\n\nConfirma usar nesta nova OS mesmo assim?`;
-          if (!confirm(msg)) return;
+          if (!confirm(msg)) { btn.disabled = false; btn.textContent = 'Criar OS'; return; }
         }
       }
     } catch(e) { /* offline → segue sem verificação */ }
@@ -1077,6 +1106,8 @@ async function salvarNovaOSAvulsa() {
   btn.textContent = 'Criando...';
 
   const payload = {
+    // (13/07/2026) Idempotência: retry da fila offline reusa o MESMO client_id
+    client_id: (crypto.randomUUID ? crypto.randomUUID() : (Date.now() + '-' + Math.random().toString(36).slice(2))),
     obra,
     cliente_nome: cliente || null,
     equipamento_id: equipId || null,
