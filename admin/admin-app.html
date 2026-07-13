@@ -3015,9 +3015,23 @@ function renderTabelaPartes(partes, statusOS) {
                   onchange="salvarHorasCobradas('${esc(p.id)}', this.value)"/>`;
           }
 
-          if (medParte === 'metros' && regime !== 'metro') {
-            cel5 = '<span style="color:var(--muted)">–</span>';
-            cel6 = '<span style="color:var(--muted)">–</span>';
+          // (13/07/2026) Medição da parte ≠ medição do regime → subtotal em R$
+          // pela medição DA PARTE, em qualquer regime (frete valorado em todas)
+          const _medDoRegime =
+            regime === 'metro' ? 'metros' : regime === 'km' ? 'km' :
+            regime === 'diaria' ? 'diaria' : 'horimetro';
+          const _medNorm = (medParte === 'hora') ? 'horimetro' : (medParte || 'horimetro');
+          if (regime !== 'metro' && _medNorm !== _medDoRegime) {
+            const _v2 = _valorParte(p, P);
+            const _falta2 =
+              _medNorm === 'metros' ? (P.metro ? '' : 'Valor/metro') :
+              _medNorm === 'viagem' ? (P.viagem ? '' : 'Valor do frete') :
+              _medNorm === 'km'     ? ((P.km || P.viagem) ? '' : 'Valor/km') :
+                                      (P.hora ? '' : 'Valor/hora');
+            cel5 = _falta2
+              ? `<span style="color:var(--red);font-size:12px" title="Defina o ${_falta2} em Editar OS">⚠️ sem ${_falta2.toLowerCase()}</span>`
+              : `<strong>R$ ${_v2.toFixed(2)}</strong>`;
+            cel6 = '';
           }
 
           // Data editável (operador pode ter digitado errado)
