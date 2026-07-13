@@ -2881,23 +2881,32 @@ function renderTabelaPartes(partes, statusOS) {
         ${partes.map(p => {
           const data = p.data ? new Date(p.data+'T00:00').toLocaleDateString('pt-BR') : '–';
           // Horas da máquina (horímetro) — controle interno, sempre mostrado
-          const horasMaq = (p.horimetro_inicial != null && p.horimetro_final != null)
+          // (13/07/2026) Fonte HONESTA das horas: horímetro completo → dele;
+          // senão, horas do relógio ganham o 🕐 (antes o fallback silencioso
+          // mostrava "9.0h" sob um horímetro em branco — parecia bug).
+          const temHorimetro = (p.horimetro_inicial != null && p.horimetro_final != null);
+          const horasMaq = temHorimetro
             ? (parseFloat(p.horimetro_final) - parseFloat(p.horimetro_inicial)).toFixed(1)
             : (p.horas_trabalhadas != null ? parseFloat(p.horas_trabalhadas).toFixed(1) : '0.0');
+          const horasRotulo = temHorimetro
+            ? `${horasMaq}h`
+            : (parseFloat(horasMaq) > 0
+                ? `<span title="Horas calculadas pelo relógio (horímetro em branco)">🕐 ${horasMaq}h</span>`
+                : '');
           // Sinaliza horímetro suspeito (>24h num dia = provável erro de digitação)
           const horasSuspeita = parseFloat(horasMaq) > 24;
           // Horímetro editável (inicial → final) — controle interno
           const horimetroCell = fechada
-            ? `<span style="font-size:12px;color:${horasSuspeita?'var(--red)':'var(--blue)'};font-weight:600">${horasMaq}h ${horasSuspeita?'⚠️':''}</span>
+            ? `<span style="font-size:12px;color:${horasSuspeita?'var(--red)':'var(--blue)'};font-weight:600">${horasRotulo} ${horasSuspeita?'⚠️':''}</span>
                <div style="font-size:10px;color:var(--muted)">${p.horimetro_inicial||0}→${p.horimetro_final||0}</div>`
             : `<div style="display:flex;align-items:center;gap:3px">
-                <input type="number" step="0.1" value="${p.horimetro_inicial||0}" title="Horímetro inicial" style="width:60px;padding:4px 6px;border:1.5px solid var(--border);border-radius:6px;text-align:right;font-size:12px"
+                <input type="number" step="0.1" value="${p.horimetro_inicial ?? ''}" title="Horímetro inicial" style="width:60px;padding:4px 6px;border:1.5px solid var(--border);border-radius:6px;text-align:right;font-size:12px"
                   onchange="salvarMedicaoParte('${esc(p.id)}','horimetro_inicial',this.value)"/>
                 <span style="font-size:11px;color:var(--muted)">→</span>
-                <input type="number" step="0.1" value="${p.horimetro_final||0}" title="Horímetro final" style="width:60px;padding:4px 6px;border:1.5px solid var(--border);border-radius:6px;text-align:right;font-size:12px"
+                <input type="number" step="0.1" value="${p.horimetro_final ?? ''}" title="Horímetro final" style="width:60px;padding:4px 6px;border:1.5px solid var(--border);border-radius:6px;text-align:right;font-size:12px"
                   onchange="salvarMedicaoParte('${esc(p.id)}','horimetro_final',this.value)"/>
                </div>
-               <div style="font-size:10px;color:${horasSuspeita?'var(--red)':'var(--muted)'};text-align:center">${horasMaq}h ${horasSuspeita?'⚠️':''}</div>`;
+               <div style="font-size:10px;color:${horasSuspeita?'var(--red)':'var(--muted)'};text-align:center">${horasRotulo} ${horasSuspeita?'⚠️':''}</div>`;
 
           // Equipamento editável (select)
           const equipCell = fechada
@@ -2941,10 +2950,10 @@ function renderTabelaPartes(partes, statusOS) {
           } else {
             // hora / empreito / diaria → horímetro (controle de horas do equipamento)
             medicaoCell = `<div style="display:flex;align-items:center;gap:3px">
-              <input type="number" step="0.1" value="${p.horimetro_inicial||0}" style="width:62px;padding:4px 6px;border:1.5px solid var(--border);border-radius:6px;text-align:right;font-size:12px"
+              <input type="number" step="0.1" value="${p.horimetro_inicial ?? ''}" style="width:62px;padding:4px 6px;border:1.5px solid var(--border);border-radius:6px;text-align:right;font-size:12px"
                 onchange="salvarMedicaoParte('${esc(p.id)}','horimetro_inicial',this.value)"/>
               <span style="font-size:11px;color:var(--muted)">→</span>
-              <input type="number" step="0.1" value="${p.horimetro_final||0}" style="width:62px;padding:4px 6px;border:1.5px solid var(--border);border-radius:6px;text-align:right;font-size:12px"
+              <input type="number" step="0.1" value="${p.horimetro_final ?? ''}" style="width:62px;padding:4px 6px;border:1.5px solid var(--border);border-radius:6px;text-align:right;font-size:12px"
                 onchange="salvarMedicaoParte('${esc(p.id)}','horimetro_final',this.value)"/></div>`;
           }
 
