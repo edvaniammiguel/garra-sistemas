@@ -225,6 +225,23 @@ async def startup():
                 ON operacional.partes_diarias (client_id)
                 WHERE client_id IS NOT NULL
             """)
+            # (13/07/2026) PREÇOS POR MEDIÇÃO na OS — prática real da Garra:
+            # OS mista (ex.: metros + horas de concha) precisa de um preço por
+            # tipo de medida. valor_combinado vira legado/espelho do regime.
+            for col in ("valor_hora", "valor_metro", "valor_diaria", "valor_km"):
+                await conn.execute(f"""
+                    ALTER TABLE operacional.ordens_servico
+                    ADD COLUMN IF NOT EXISTS {col} NUMERIC(12,2)
+                """)
+            # Migração única: copia o valor_combinado para a coluna do regime
+            await conn.execute("""
+                UPDATE operacional.ordens_servico SET
+                  valor_hora   = CASE WHEN lower(coalesce(regime_cobranca,'')) LIKE '%hora%'  AND valor_hora   IS NULL THEN valor_combinado ELSE valor_hora   END,
+                  valor_metro  = CASE WHEN lower(coalesce(regime_cobranca,'')) LIKE '%metro%' AND valor_metro  IS NULL THEN valor_combinado ELSE valor_metro  END,
+                  valor_diaria = CASE WHEN lower(coalesce(regime_cobranca,'')) LIKE '%diari%' AND valor_diaria IS NULL THEN valor_combinado ELSE valor_diaria END,
+                  valor_km     = CASE WHEN lower(coalesce(regime_cobranca,'')) LIKE '%km%'    AND valor_km     IS NULL THEN valor_combinado ELSE valor_km     END
+                WHERE valor_combinado IS NOT NULL
+            """)
             # (13/07/2026) Idempotência também na CRIAÇÃO de OS avulsa —
             # duplo toque/retry da fila nunca mais cria duas OS.
             await conn.execute("""
