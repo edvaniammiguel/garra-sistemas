@@ -1718,8 +1718,16 @@ async def op_resumo_mensal(payload=Depends(verificar_token)):
     resumo = await ajard_query(
         """SELECT
              COUNT(DISTINCT p.data) AS dias_trabalhados,
-             COALESCE(SUM(p.horas_trabalhadas), 0) AS total_horas,
-             COALESCE(SUM(p.horas_cobradas), 0) AS total_horas_cobradas,
+             -- (13/07/2026) COMISSÃO pelo CONTEÚDO do registro:
+             --   • registro que CONTÉM metros → comissiona pelos METROS
+             --     (as horas dele não somam);
+             --   • registro de horímetro/hora SEM metros → soma as HORAS.
+             COALESCE(SUM(CASE WHEN COALESCE(p.qtd_metros,0) > 0
+                                 OR COALESCE(p.tipo_medicao,'horimetro') = 'metros'
+                               THEN 0 ELSE p.horas_trabalhadas END), 0) AS total_horas,
+             COALESCE(SUM(CASE WHEN COALESCE(p.qtd_metros,0) > 0
+                                 OR COALESCE(p.tipo_medicao,'horimetro') = 'metros'
+                               THEN 0 ELSE p.horas_cobradas END), 0) AS total_horas_cobradas,
              COALESCE(SUM(p.qtd_metros), 0) AS total_metros,
              COUNT(p.id) AS total_apontamentos,
              COUNT(DISTINCT p.os_id) AS total_os
