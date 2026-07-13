@@ -55,6 +55,37 @@ def _validar_data_parte(data_str, permitir_futuro_dias=1):
         raise HTTPException(status_code=400, detail="Data no futuro — confira o dia do registro")
     return dt
 
+async def _validar_sobreposicao_horimetro(equipamento_id, h_ini, h_fin, ignorar_parte_id=None):
+    """(13/07/2026) Horímetro só anda para frente: dois registros do MESMO
+    equipamento com faixas que se cruzam é fisicamente impossível e dobra
+    horas no CM. Bloqueia com o registro conflitante identificado.
+    Faixas encostadas (final de um = inicial do outro) são o fluxo normal."""
+    if not equipamento_id:
+        return
+    try:
+        hi, hf = float(h_ini), float(h_fin)
+    except (TypeError, ValueError):
+        return
+    if hf <= hi:
+        return  # já barrado pela validação anterior
+    conflito = await ajard_query(
+        """SELECT p.data, p.horimetro_inicial, p.horimetro_final, os.numero
+             FROM operacional.partes_diarias p
+             JOIN operacional.ordens_servico os ON os.id = p.os_id
+            WHERE p.equipamento_id = %s AND p.ativo = true
+              AND p.horimetro_inicial IS NOT NULL AND p.horimetro_final IS NOT NULL
+              AND p.id::text <> %s
+              AND p.horimetro_inicial < %s AND p.horimetro_final > %s
+            ORDER BY p.data DESC LIMIT 1""",
+        (equipamento_id, str(ignorar_parte_id or ""), hf, hi), fetch="one")
+    if conflito:
+        d = conflito["data"]
+        d_fmt = d.strftime("%d/%m") if hasattr(d, "strftime") else str(d)
+        raise HTTPException(status_code=400,
+            detail=(f"Horímetro {hi}→{hf} sobrepõe registro já existente desta máquina "
+                    f"({conflito['numero']} em {d_fmt}: {conflito['horimetro_inicial']}→{conflito['horimetro_final']}). "
+                    f"Confira as leituras — o horímetro só anda para frente."))
+
 def _validar_horas_plausiveis(horas):
     """Teto de plausibilidade: um registro não pode ter mais de 24h.
     Mata o typo de horímetro (10125 → 101250 = 91.131h no Controle Mensal)."""
@@ -293,7 +324,14 @@ async def op_listar_equipamentos(uso: str = None, _auth=Depends(verificar_token)
     rows = await ajard_query(
         f"""SELECT eq.id, eq.codigo, eq.descricao, eq.categoria, eq.medicao,
                   eq.marca, eq.modelo, eq.ano, eq.placa,
-                  eq.horimetro_atual, eq.km_atual, eq.ativo,
+                  -- (13/07/2026) Horímetro atual VIVO: maior leitura registrada
+                  -- nas partes (a coluna estática ninguém atualizava — por isso
+                  -- a sugestão não aparecia para o operador conferir)
+                  COALESCE((SELECT MAX(p.horimetro_final)
+                              FROM operacional.partes_diarias p
+                             WHERE p.equipamento_id = eq.id AND p.ativo = true),
+                           eq.horimetro_atual) AS horimetro_atual,
+                  eq.km_atual, eq.ativo,
                   eq.operador_responsavel_id,
                   resp.nome AS operador_responsavel_nome
            FROM operacional.equipamentos eq
@@ -615,7 +653,10 @@ async def op_detalhe_os(os_id: str, _auth=Depends(verificar_token)):
         """SELECT os.*,
                   COALESCE(c.nome, os.cliente_nome_avulso) AS cliente_nome,
                   ts.nome AS tipo_servico_nome,
-                  eq.horimetro_atual AS equipamento_horimetro_atual,
+                  COALESCE((SELECT MAX(p2.horimetro_final)
+                              FROM operacional.partes_diarias p2
+                             WHERE p2.equipamento_id = eq.id AND p2.ativo = true),
+                           eq.horimetro_atual) AS equipamento_horimetro_atual,
                   u.nome AS criado_por_nome
            FROM operacional.ordens_servico os
            LEFT JOIN public.clientes_garra c       ON c.id = os.cliente_id
@@ -779,6 +820,8 @@ async def op_criar_parte(os_id: str, request: Request, payload=Depends(verificar
     _validar_medicao_parte(d)
     horas = _calc_horas_parte(d)
     _validar_horas_plausiveis(horas)
+    await _validar_sobreposicao_horimetro(
+        equipamento_id, d.get("horimetro_inicial"), d.get("horimetro_final"))
     h_ini = d.get("horimetro_inicial")
     h_fin = d.get("horimetro_final")
 
@@ -1826,6 +1869,10 @@ async def op_editar_minha_parte(parte_id: str, request: Request, payload=Depends
 
     horas = _calc_horas_parte(merged)
     _validar_horas_plausiveis(horas)
+    await _validar_sobreposicao_horimetro(
+        merged.get("equipamento_id"),
+        merged.get("horimetro_inicial"), merged.get("horimetro_final"),
+        ignorar_parte_id=parte_id)
 
     def _num(v):
         try: return float(v) if v not in (None, "") else None
