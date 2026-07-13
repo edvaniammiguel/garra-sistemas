@@ -900,6 +900,17 @@ input,select,textarea { font-family:inherit; font-size:13px; outline:none; }
         <input type="number" id="os-valor-combinado" placeholder="0.00" step="0.01" min="0"/>
         <div class="field-hint" id="os-valor-hint">Preço por hora combinado com o cliente</div>
       </div>
+    </div>
+    <!-- (13/07/2026) Preços por medição — OS mista (ex.: metros + horas de concha) -->
+    <div class="field" id="os-precos-extras">
+      <label>💰 Preços adicionais para OS mista (opcionais)</label>
+      <div style="display:flex;gap:10px;flex-wrap:wrap">
+        <div id="os-vh-wrap" style="flex:1;min-width:120px"><div class="field-hint">Valor/hora</div><input type="number" id="os-valor-hora" step="0.01" min="0" placeholder="R$"/></div>
+        <div id="os-vm-wrap" style="flex:1;min-width:120px"><div class="field-hint">Valor/metro</div><input type="number" id="os-valor-metro" step="0.01" min="0" placeholder="R$"/></div>
+        <div id="os-vd-wrap" style="flex:1;min-width:120px"><div class="field-hint">Valor/diária</div><input type="number" id="os-valor-diaria" step="0.01" min="0" placeholder="R$"/></div>
+        <div id="os-vk-wrap" style="flex:1;min-width:120px"><div class="field-hint">Valor/km</div><input type="number" id="os-valor-km" step="0.01" min="0" placeholder="R$"/></div>
+      </div>
+      <div class="field-hint">O preço do regime principal vem do campo acima; preencha aqui só as medições EXTRAS que esta obra usa.</div>
       <div class="field">
         <label>Considerar horas/dia (opcional)</label>
         <input type="number" id="os-horas-padrao" placeholder="ex: 9" step="0.5" min="0"/>
@@ -2784,6 +2795,8 @@ function renderTotaisPartes(t) {
 
   // Soma os metros de todas as partes (para regime metro)
   const totalMetros = (_partesAtual || []).reduce((s,p) => s + (parseFloat(p.qtd_metros)||0), 0);
+  const P = _precosOS(_osAtual);
+  const tot = _totalACobrarOS(_osAtual, _partesAtual, t);
 
   let cards;
   if (regime === 'metro') {
@@ -2791,16 +2804,17 @@ function renderTotaisPartes(t) {
       { label:'Dias trabalhados', valor: t.dias_trabalhados||0 },
       { label:'Sem apontamento', valor: (t.dias_parados||0)+' dias' },
       { label:'Total metros',     valor: totalMetros.toFixed(0)+' m' },
-      { label:'Valor/metro',      valor: 'R$ '+parseFloat(_osAtual.valor_combinado||0).toFixed(2) },
-      { label:'Total a cobrar',   valor: 'R$ '+(totalMetros*parseFloat(_osAtual.valor_combinado||0)).toFixed(2) },
+      { label:'Valor/metro',      valor: 'R$ '+P.metro.toFixed(2) },
+      ...(((t.total_horas_cobradas||0) > 0) ? [{ label:'Valor/hora', valor: P.hora ? 'R$ '+P.hora.toFixed(2) : '⚠️ definir' }] : []),
+      { label:'Total a cobrar',   valor: 'R$ '+tot.toFixed(2) },
     ];
   } else if (regime === 'diaria') {
     cards = [
       { label:'Dias trabalhados', valor: t.dias_trabalhados||0 },
       { label:'Sem apontamento', valor: (t.dias_parados||0)+' dias' },
       { label:'Total diárias',    valor: t.total_diarias||0 },
-      { label:'Valor/diária',     valor: 'R$ '+parseFloat(_osAtual.valor_combinado||0).toFixed(2) },
-      { label:'Total a cobrar',   valor: 'R$ '+((t.total_diarias||0)*parseFloat(_osAtual.valor_combinado||0)).toFixed(2) },
+      { label:'Valor/diária',     valor: 'R$ '+P.diaria.toFixed(2) },
+      { label:'Total a cobrar',   valor: 'R$ '+tot.toFixed(2) },
     ];
   } else if (regime === 'empreito') {
     cards = [
@@ -2816,8 +2830,9 @@ function renderTotaisPartes(t) {
       { label:'Sem apontamento', valor: (t.dias_parados||0)+' dias' },
       { label:'Total horas',      valor: (t.total_horas||0).toFixed(1)+'h' },
       { label:'Horas cobradas',   valor: (t.total_horas_cobradas||0).toFixed(1)+'h' },
-      { label:'Valor/hora',       valor: 'R$ '+parseFloat(_osAtual.valor_combinado||0).toFixed(2) },
-      { label:'Total a cobrar',   valor: 'R$ '+((t.total_horas_cobradas||0)*parseFloat(_osAtual.valor_combinado||0)).toFixed(2) },
+      { label:'Valor/hora',       valor: 'R$ '+P.hora.toFixed(2) },
+      ...((totalMetros > 0) ? [{ label:'Valor/metro', valor: P.metro ? 'R$ '+P.metro.toFixed(2) : '⚠️ definir' }] : []),
+      { label:'Total a cobrar',   valor: 'R$ '+tot.toFixed(2) },
     ];
   }
 
@@ -2839,7 +2854,7 @@ function renderTabelaPartes(partes, statusOS) {
   }
 
   const regime = (_osAtual && _osAtual.regime_cobranca) || 'hora';
-  const valorComb = parseFloat((_osAtual && _osAtual.valor_combinado) || 0);
+  const P = _precosOS(_osAtual); // preços por medição (fonte única)
 
   // Cabeçalho da 5ª/6ª coluna conforme regime
   let col5, col6;
@@ -2949,8 +2964,12 @@ function renderTabelaPartes(partes, statusOS) {
           // Colunas 5 e 6 conforme regime
           let cel5, cel6;
           if (regime === 'metro') {
-            const metros = parseFloat(p.qtd_metros||0);
-            cel5 = `<strong>R$ ${(metros*valorComb).toFixed(2)}</strong>`;
+            // Subtotal pela MEDIÇÃO da parte (OS mista: horas de concha × valor/hora)
+            const _v = _valorParte(p, P);
+            const _semPreco = (medParte !== 'metros' && !P.hora);
+            cel5 = _semPreco
+              ? `<span style="color:var(--red);font-size:12px" title="Defina o Valor/hora em Editar OS">⚠️ sem valor/hora</span>`
+              : `<strong>R$ ${_v.toFixed(2)}</strong>`;
             cel6 = '';
           } else if (regime === 'diaria') {
             const diarias = parseFloat(p.quantidade_diarias||0) || 1;
@@ -2958,7 +2977,7 @@ function renderTabelaPartes(partes, statusOS) {
               ? `${diarias}`
               : `<input type="number" step="0.5" value="${diarias}" style="width:60px;padding:4px 6px;border:1.5px solid var(--border);border-radius:6px;text-align:right;font-size:13px"
                   onchange="salvarMedicaoParte('${esc(p.id)}','quantidade_diarias',this.value)"/>`;
-            cel6 = `R$ ${(diarias*valorComb).toFixed(2)}`;
+            cel6 = `R$ ${(diarias*P.diaria).toFixed(2)}`;
           } else if (regime === 'empreito') {
             cel5 = `${horasMaq}h`;
             cel6 = '—';
@@ -3074,30 +3093,32 @@ async function confirmarFechamento() {
     const rev = await apiFetch('/operacional/api/os/'+_osAtual.id+'/revisao');
     const t = rev.totais || {};
     const regime = (_osAtual.regime_cobranca) || 'hora';
-    const valorComb = parseFloat(_osAtual.valor_combinado||0);
+    const P = _precosOS(_osAtual);
+    const totFechamento = _totalACobrarOS(_osAtual, _partesAtual, t);
 
     let resumo;
     if (regime === 'metro') {
       const totalMetros = (_partesAtual||[]).reduce((s,p)=>s+(parseFloat(p.qtd_metros)||0),0);
+      const horasCob = (t.total_horas_cobradas||0);
       resumo = `Dias trabalhados: ${t.dias_trabalhados||0}\n` +
-               `Total metros: ${totalMetros.toFixed(0)} m\n` +
-               `Valor/metro: R$ ${valorComb.toFixed(2)}\n` +
-               `Total a cobrar: R$ ${(totalMetros*valorComb).toFixed(2)}`;
+               `Total metros: ${totalMetros.toFixed(0)} m × R$ ${P.metro.toFixed(2)}\n` +
+               (horasCob > 0 ? `Horas cobradas: ${horasCob.toFixed(1)}h × R$ ${P.hora.toFixed(2)}${P.hora?'':' ⚠️ DEFINIR VALOR/HORA'}\n` : '') +
+               `Total a cobrar: R$ ${totFechamento.toFixed(2)}`;
     } else if (regime === 'diaria') {
       resumo = `Dias trabalhados: ${t.dias_trabalhados||0}\n` +
                `Total diárias: ${t.total_diarias||0}\n` +
-               `Valor/diária: R$ ${valorComb.toFixed(2)}\n` +
-               `Total a cobrar: R$ ${((t.total_diarias||0)*valorComb).toFixed(2)}`;
+               `Valor/diária: R$ ${P.diaria.toFixed(2)}\n` +
+               `Total a cobrar: R$ ${totFechamento.toFixed(2)}`;
     } else if (regime === 'empreito') {
       resumo = `Dias trabalhados: ${t.dias_trabalhados||0}\n` +
                `Total horas: ${(t.total_horas||0).toFixed(1)}h\n` +
-               `Valor fechado: R$ ${valorComb.toFixed(2)}`;
+               `Valor fechado: R$ ${P.empreito.toFixed(2)}`;
     } else {
       resumo = `Dias trabalhados: ${t.dias_trabalhados||0}\n` +
                `Total horas: ${(t.total_horas||0).toFixed(1)}h\n` +
                `Horas cobradas: ${(t.total_horas_cobradas||0).toFixed(1)}h\n` +
-               `Valor/hora: R$ ${valorComb.toFixed(2)}\n` +
-               `Total a cobrar: R$ ${((t.total_horas_cobradas||0)*valorComb).toFixed(2)}`;
+               `Valor/hora: R$ ${P.hora.toFixed(2)}\n` +
+               `Total a cobrar: R$ ${totFechamento.toFixed(2)}`;
     }
 
     const msg = `Fechar ${_osAtual.numero}?\n\n${resumo}\n\n` +
@@ -3139,6 +3160,7 @@ async function abrirModalOS(osId=null) {
     document.getElementById('os-operador').value='';
     document.getElementById('os-regime').value='';
     document.getElementById('os-valor-combinado').value='';
+    ['os-valor-hora','os-valor-metro','os-valor-diaria','os-valor-km'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
     document.getElementById('os-horas-padrao').value='';
     document.getElementById('os-data-inicio').value=new Date().toISOString().slice(0,10);
     _atualizarLabelRegime();
@@ -3155,6 +3177,10 @@ async function abrirModalOS(osId=null) {
       document.getElementById('os-descricao').value = os.descricao||'';
       document.getElementById('os-regime').value = os.regime_cobranca || '';
       document.getElementById('os-valor-combinado').value = os.valor_combinado||'';
+      document.getElementById('os-valor-hora').value   = os.valor_hora||'';
+      document.getElementById('os-valor-metro').value  = os.valor_metro||'';
+      document.getElementById('os-valor-diaria').value = os.valor_diaria||'';
+      document.getElementById('os-valor-km').value     = os.valor_km||'';
       document.getElementById('os-horas-padrao').value = os.horas_padrao_dia||'';
       document.getElementById('os-data-inicio').value = os.data_inicio||'';
       document.getElementById('os-equipamento').value = os.equipamento_id||'';
@@ -3172,6 +3198,38 @@ function fecharModalOS() {
   document.getElementById('modal-os').classList.add('hidden');
 }
 
+// ═══ (13/07/2026) MOTOR DE PREÇOS POR MEDIÇÃO — fonte única ═══
+// Preço de cada medição vem do campo próprio da OS; fallback legado:
+// valor_combinado vale para a medição do regime principal.
+function _precosOS(os) {
+  const g = v => parseFloat(v||0)||0;
+  const r = ((os && os.regime_cobranca)||'').toLowerCase();
+  const legado = g(os && os.valor_combinado);
+  return {
+    hora:   g(os && os.valor_hora)   || (r.includes('hora')  ? legado : 0),
+    metro:  g(os && os.valor_metro)  || (r.includes('metro') ? legado : 0),
+    diaria: g(os && os.valor_diaria) || (r.includes('diari') ? legado : 0),
+    km:     g(os && os.valor_km)     || (r.includes('km')    ? legado : 0),
+    empreito: r.includes('empreit') ? legado : 0,
+  };
+}
+// Valor de UMA parte pela SUA medição
+function _valorParte(p, P) {
+  const med = (p.tipo_medicao||'horimetro').toLowerCase();
+  const n = v => parseFloat(v||0)||0;
+  if (med === 'metros') return n(p.qtd_metros) * P.metro;
+  if (med === 'diaria') return (n(p.quantidade_diarias)||1) * P.diaria;
+  if (med === 'km')     return n(p.km_percorrido) * P.km;
+  const horas = n(p.horas_cobradas) || n(p.horas_trabalhadas);
+  return horas * P.hora;
+}
+// Total a cobrar da OS: empreito = valor fechado; demais = Σ partes
+function _totalACobrarOS(os, partes, t) {
+  const P = _precosOS(os);
+  if (P.empreito) return P.empreito;
+  return (partes||[]).reduce((s,p) => s + _valorParte(p, P), 0);
+}
+
 function _atualizarLabelRegime() {
   const regime = document.getElementById('os-regime')?.value||'';
   const label  = document.getElementById('os-valor-label');
@@ -3185,6 +3243,10 @@ function _atualizarLabelRegime() {
   };
   label.textContent = map[regime]?.label || 'Valor combinado (R$)';
   if (hint) hint.textContent = map[regime]?.hint||'';
+  // Esconde o preço adicional redundante (o da própria medição do regime)
+  const wraps = { hora:'os-vh-wrap', metro:'os-vm-wrap', diaria:'os-vd-wrap', km:'os-vk-wrap' };
+  Object.values(wraps).forEach(id => { const w=document.getElementById(id); if (w) w.style.display=''; });
+  const oculto = wraps[regime]; if (oculto) { const w=document.getElementById(oculto); if (w) w.style.display='none'; }
 }
 
 async function _carregarSelectsOS() {
@@ -3251,6 +3313,10 @@ async function salvarOS() {
     operador_id:       document.getElementById('os-operador').value||null,
     regime_cobranca:   document.getElementById('os-regime').value || undefined,
     valor_combinado:   parseFloat(document.getElementById('os-valor-combinado').value)||null,
+    valor_hora:   parseFloat(document.getElementById('os-valor-hora').value)||null,
+    valor_metro:  parseFloat(document.getElementById('os-valor-metro').value)||null,
+    valor_diaria: parseFloat(document.getElementById('os-valor-diaria').value)||null,
+    valor_km:     parseFloat(document.getElementById('os-valor-km').value)||null,
     horas_padrao_dia:  parseFloat(document.getElementById('os-horas-padrao').value)||null,
     obra,
     endereco:          document.getElementById('os-endereco').value.trim()||null,
