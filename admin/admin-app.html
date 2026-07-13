@@ -960,7 +960,32 @@ input,select,textarea { font-family:inherit; font-size:13px; outline:none; }
         </select>
       </div>
     </div>
-    <!-- Horímetro -->
+    <!-- (13/07/2026) Medição de cobrança — paridade com o mobile -->
+    <div class="field" style="margin-bottom:10px">
+      <label>💰 Medição de cobrança</label>
+      <div style="display:flex;gap:6px;flex-wrap:wrap">
+        <button type="button" class="mp-med-btn" data-med="horimetro" onclick="mpMedicao('horimetro',this)">⏱ Hora</button>
+        <button type="button" class="mp-med-btn" data-med="diaria" onclick="mpMedicao('diaria',this)">📅 Diária</button>
+        <button type="button" class="mp-med-btn" data-med="km" onclick="mpMedicao('km',this)">🚛 KM/Viagem</button>
+        <button type="button" class="mp-med-btn" data-med="metros" onclick="mpMedicao('metros',this)">📏 Metros</button>
+      </div>
+      <div id="mp-med-hint" class="field-hint"></div>
+    </div>
+    <!-- Metros -->
+    <div id="mp-bloco-metros" style="display:none">
+      <div class="field">
+        <label>Metros executados <span style="color:var(--red)">*</span></label>
+        <input type="number" id="mp-metros" step="0.1" min="0"/>
+      </div>
+    </div>
+    <!-- Diária -->
+    <div id="mp-bloco-diaria" style="display:none">
+      <div class="field">
+        <label>Quantidade de diárias</label>
+        <input type="number" id="mp-diarias" step="0.5" min="0" value="1"/>
+      </div>
+    </div>
+    <!-- Horímetro (controle interno — sempre visível) -->
     <div id="mp-bloco-hor">
       <div class="field-row">
         <div class="field">
@@ -2530,12 +2555,39 @@ function fecharModalParte() {
   document.getElementById('modal-parte').classList.add('hidden');
 }
 
-function onMpEquipChange() {
+// (13/07/2026) Medição de cobrança no desktop — MESMA semântica do mobile:
+// horímetro sempre visível (controle interno); blocos extras por medição;
+// sugestão pela prioridade regime da OS → categoria do equipamento.
+let _mpMed = 'horimetro';
+function mpMedicao(tipo, btn) {
+  _mpMed = tipo;
+  document.querySelectorAll('.mp-med-btn').forEach(b => {
+    b.style.cssText = 'padding:7px 12px;border:1.5px solid var(--border);border-radius:8px;background:#fff;font-size:12px;font-weight:700;cursor:pointer';
+  });
+  const alvo = btn || document.querySelector(`.mp-med-btn[data-med="${tipo}"]`);
+  if (alvo) alvo.style.cssText = 'padding:7px 12px;border:1.5px solid var(--orange);border-radius:8px;background:#FFF7ED;color:var(--orange);font-size:12px;font-weight:800;cursor:pointer';
+  document.getElementById('mp-bloco-km').style.display     = tipo === 'km'     ? 'block' : 'none';
+  document.getElementById('mp-bloco-metros').style.display = tipo === 'metros' ? 'block' : 'none';
+  document.getElementById('mp-bloco-diaria').style.display = tipo === 'diaria' ? 'block' : 'none';
+}
+function mpSugerirMedicao() {
+  const regime = ((_osAtual && _osAtual.regime_cobranca) || '').toLowerCase();
   const sel = document.getElementById('mp-equipamento');
   const cat = sel.options[sel.selectedIndex]?.getAttribute('data-cat')||'';
-  const isCam = ['caminhao','pipa','carro'].includes(cat);
-  document.getElementById('mp-bloco-hor').style.display = cat && !isCam ? 'block' : 'none';
-  document.getElementById('mp-bloco-km').style.display  = isCam ? 'block' : 'none';
+  let tipo = null, origem = '';
+  if (regime === 'km') tipo = 'km';
+  else if (regime === 'metro') tipo = 'metros';
+  else if (regime === 'diaria') tipo = 'diaria';
+  else if (regime === 'hora' || regime === 'empreito') tipo = 'horimetro';
+  if (tipo) origem = 'regime da OS';
+  if (!tipo && ['caminhao','pipa'].includes(cat)) { tipo = 'km'; origem = 'categoria do equipamento'; }
+  if (!tipo) { tipo = 'horimetro'; origem = ''; }
+  mpMedicao(tipo);
+  const hint = document.getElementById('mp-med-hint');
+  if (hint) hint.textContent = origem ? `Sugerido pelo ${origem} (pode trocar)` : '';
+}
+function onMpEquipChange() {
+  mpSugerirMedicao();
 }
 
 async function salvarParteLuana() {
@@ -2543,17 +2595,30 @@ async function salvarParteLuana() {
   const data  = document.getElementById('mp-data').value;
   const equip = document.getElementById('mp-equipamento').value;
   if (!data||!equip) { toast('Data e equipamento obrigatórios','error'); return; }
-  const sel = document.getElementById('mp-equipamento');
-  const cat = sel.options[sel.selectedIndex]?.getAttribute('data-cat')||'';
-  const isCam = ['caminhao','pipa','carro'].includes(cat);
+  if (_mpMed === 'metros') {
+    const _m = parseFloat(document.getElementById('mp-metros')?.value || 0);
+    if (!_m || _m <= 0) { toast('Informe a quantidade de metros executados','error'); return; }
+  }
+  const num = (id) => { const v = document.getElementById(id)?.value; return (v !== undefined && v !== '') ? parseFloat(v) : null; };
   const payload = {
+    // (13/07/2026) Paridade com o mobile: medição selecionada + TODOS os
+    // campos da tela (antes hora/horas cobradas/vínculo/viagens eram ignorados)
+    client_id: (crypto.randomUUID ? crypto.randomUUID() : (Date.now() + '-' + Math.random().toString(36).slice(2))),
     data, equipamento_id: equip,
     operador_id: document.getElementById('mp-operador').value||null,
-    tipo_medicao: isCam ? 'km' : 'horimetro',
-    horimetro_inicial: document.getElementById('mp-h-ini')?.value ? parseFloat(document.getElementById('mp-h-ini').value) : null,
-    horimetro_final:   document.getElementById('mp-h-fin')?.value ? parseFloat(document.getElementById('mp-h-fin').value) : null,
-    km_inicial:  document.getElementById('mp-km-ini')?.value ? parseFloat(document.getElementById('mp-km-ini').value) : null,
-    km_final:    document.getElementById('mp-km-fin')?.value ? parseFloat(document.getElementById('mp-km-fin').value) : null,
+    vinculo_operador: document.getElementById('mp-vinculo')?.value || 'proprio',
+    tipo_medicao: _mpMed,
+    horimetro_inicial: num('mp-h-ini'),
+    horimetro_final:   num('mp-h-fin'),
+    hora_inicio: document.getElementById('mp-h-inicio')?.value || null,
+    hora_fim:    document.getElementById('mp-h-fim')?.value || null,
+    horas_cobradas: num('mp-horas-cob'),
+    km_inicial:  num('mp-km-ini'),
+    km_final:    num('mp-km-fin'),
+    qtd_viagens: num('mp-viagens'),
+    qtd_metros:  _mpMed === 'metros' ? num('mp-metros') : null,
+    quantidade_diarias: _mpMed === 'diaria' ? (num('mp-diarias') ?? 1) : null,
+    por_conta_de: document.getElementById('mp-por-conta')?.value || 'empresa',
     observacao:  document.getElementById('mp-obs')?.value.trim()||null,
   };
   const btn = document.getElementById('btn-salvar-parte');
@@ -3256,6 +3321,9 @@ async function abrirModalParte() {
   document.getElementById('mp-os-id').value = _osAtual.id;
   document.getElementById('mp-parte-id').value = '';
   document.getElementById('mp-data').value = new Date().toISOString().slice(0,10);
+  ['mp-metros','mp-diarias','mp-h-ini','mp-h-fin','mp-horas-cob','mp-km-ini','mp-km-fin','mp-viagens'].forEach(id => {
+    const el = document.getElementById(id); if (el) el.value = (id === 'mp-diarias' ? '1' : '');
+  });
   // Popular selects
   const eqs = await apiFetch('/operacional/api/equipamentos?uso=os').catch(()=>[]);
   const ops = await apiFetch('/operacional/api/operadores').catch(()=>[]);
@@ -3269,6 +3337,7 @@ async function abrirModalParte() {
   document.getElementById('mp-bloco-hor').style.display='none';
   document.getElementById('mp-bloco-km').style.display='none';
   document.getElementById('modal-parte').classList.remove('hidden');
+  mpSugerirMedicao();
 }
 
 function renderTabelaOS(lista) {
