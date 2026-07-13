@@ -909,7 +909,7 @@ input,select,textarea { font-family:inherit; font-size:13px; outline:none; }
         <div id="os-vm-wrap" style="flex:1;min-width:120px"><div class="field-hint">Valor/metro</div><input type="number" id="os-valor-metro" step="0.01" min="0" placeholder="R$"/></div>
         <div id="os-vd-wrap" style="flex:1;min-width:120px"><div class="field-hint">Valor/diária</div><input type="number" id="os-valor-diaria" step="0.01" min="0" placeholder="R$"/></div>
         <div id="os-vk-wrap" style="flex:1;min-width:120px"><div class="field-hint">Valor/km</div><input type="number" id="os-valor-km" step="0.01" min="0" placeholder="R$"/></div>
-        <div id="os-vv-wrap" style="flex:1;min-width:120px"><div class="field-hint">Valor/viagem (frete ida+volta)</div><input type="number" id="os-valor-viagem" step="0.01" min="0" placeholder="R$"/></div>
+        <div id="os-vv-wrap" style="flex:1;min-width:120px"><div class="field-hint">Valor do frete</div><input type="number" id="os-valor-viagem" step="0.01" min="0" placeholder="R$"/></div>
       </div>
       <div class="field-hint">O preço do regime principal vem do campo acima; preencha aqui só as medições EXTRAS que esta obra usa.</div>
       <div class="field">
@@ -2966,7 +2966,7 @@ function renderTabelaPartes(partes, statusOS) {
             medicaoCell = fechada
               ? `<span style="font-size:12px;color:var(--blue);font-weight:700">${viag} viag.</span>`
               : `<div style="display:flex;align-items:center;gap:4px">
-                  <input type="number" step="1" min="0" value="${viag}" title="Quantidade de viagens (ida+volta)" style="width:60px;padding:4px 8px;border:1.5px solid var(--border);border-radius:6px;text-align:right;font-size:13px"
+                  <input type="number" step="1" min="0" value="${viag}" title="Quantidade de viagens (ida = 1; volta no fim da obra = +1)" style="width:60px;padding:4px 8px;border:1.5px solid var(--border);border-radius:6px;text-align:right;font-size:13px"
                     onchange="salvarMedicaoParte('${esc(p.id)}','qtd_viagens',this.value)"/>
                   <span style="font-size:12px;color:var(--muted)">viag.</span></div>`;
           } else if (medParte === 'metros' && regime !== 'metro') {
@@ -4636,7 +4636,14 @@ function renderControleMensal(dados) {
 
   let html = '';
   Object.values(grupos).forEach(grupo => {
-    let somaTrab = 0, somaCobr = 0, somaValor = 0, dias = new Set();
+    // (13/07/2026) Totais POR UNIDADE — OS mista não soma metros com horas
+    let somaT = {h:0, m:0, km:0, v:0}, somaC = {h:0, m:0, km:0, v:0};
+    let somaValor = 0, dias = new Set();
+    const _fmtSoma = (o) => {
+      const pares = [[o.h,'h'],[o.m,'m'],[o.km,'km'],[o.v,'viag.']]
+        .filter(([n]) => n > 0).map(([n,u]) => `${n.toFixed(1)} ${u}`);
+      return pares.length ? pares.join(' · ') : '0';
+    };
 
     html += `<div style="margin-bottom:24px">
       <div style="font-size:14px;font-weight:800;color:var(--blue);margin-bottom:8px;padding:8px 12px;background:#F0F4FF;border-radius:6px">${esc(grupo.label)}</div>
@@ -4698,6 +4705,10 @@ function renderControleMensal(dados) {
         ini = ''; fin = '';
         trab = parseFloat(p.qtd_metros || 0);
         cobr = trab;
+      } else if (med === 'viagem') {
+        ini = ''; fin = '';
+        trab = parseFloat(p.qtd_viagens || 0) || 1;
+        cobr = trab;
       } else if (med === 'km') {
         ini = parseFloat(p.km_inicial || 0);
         fin = parseFloat(p.km_final || 0);
@@ -4710,8 +4721,9 @@ function renderControleMensal(dados) {
         cobr = parseFloat(p.horas_cobradas || trab);
       }
 
-      somaTrab += trab;
-      somaCobr += cobr;
+      const _u = med === 'metros' ? 'm' : med === 'km' ? 'km' : med === 'viagem' ? 'v' : 'h';
+      somaT[_u] += trab;
+      somaC[_u] += cobr;
       somaValor += parseFloat(p.valor || 0);
       dias.add(p.data);
 
@@ -4722,7 +4734,7 @@ function renderControleMensal(dados) {
         : (_cmView === 'colaborador') ? esc(p.equipamento_codigo||'')
         : `${esc(p.operador_nome||'–')} · ${esc(p.equipamento_codigo||'–')}`;
       // Sinaliza horas absurdas (>24h num dia)
-      const trabSuspeito = (med !== 'metros' && med !== 'km') && trab > 24;
+      const trabSuspeito = (med !== 'metros' && med !== 'km' && med !== 'viagem') && trab > 24;
       const bgFechado = trabSuspeito ? 'background:#FEF2F2' : (p.fechado ? 'background:#F0FDF4' : '');
       const avisoTrab = trabSuspeito ? ' ⚠️' : '';
 
@@ -4746,10 +4758,10 @@ function renderControleMensal(dados) {
         <td style="padding:6px 8px;text-align:right;font-weight:700;color:var(--orange);${(!p.fechado&&med!=='km')?'cursor:pointer;text-decoration:underline dotted':''}"
             ${(!p.fechado&&med!=='km')?(med==='metros'
               ?`onclick="cmEditarMetros('${p.id}', this, ${cobr||0})" title="Clique para ajustar os metros"`
-              :`onclick="cmEditarCobr('${p.id}', this, ${cobr||0})" title="Clique para ajustar (considerar)"`):''} ${p.fechado?'title="Parte FECHADA — reabra a OS para editar"':''}>${cobr ? cobr.toFixed(1) : '0'}${med==='metros'?' <span style="font-size:9px">m</span>':''}${p.fechado?' <span style="font-size:10px" title="Fechada — não editável">🔒</span>':''}</td>
+              :`onclick="cmEditarCobr('${p.id}', this, ${cobr||0})" title="Clique para ajustar (considerar)"`):''} ${p.fechado?'title="Parte FECHADA — reabra a OS para editar"':''}>${cobr ? cobr.toFixed(1) : '0'}${med==='metros'?' <span style="font-size:9px">m</span>':med==='km'?' <span style="font-size:9px">km</span>':med==='viagem'?' <span style="font-size:9px">viag.</span>':''}${p.fechado?' <span style="font-size:10px" title="Fechada — não editável">🔒</span>':''}</td>
         <td style="padding:6px 8px;text-align:right;font-weight:700;color:var(--green);${!p.fechado?'cursor:pointer;text-decoration:underline dotted':''}"
             ${!p.fechado?`onclick="cmEditarValor('${p.id}', this, ${parseFloat(p.valor||0)})" title="Valor do dia (fechamento/comissão)"`:''}>${p.valor!=null&&p.valor!==''?('R$ '+parseFloat(p.valor).toFixed(2)):'–'}${p.fechado?' <span style="font-size:10px">🔒</span>':''}</td>
-        <td style="padding:6px 8px;text-align:center;font-size:10px">${med==='metros' ? '<span style="color:var(--blue);font-weight:700">metros</span>' : (med==='km' ? '<span style="color:var(--blue);font-weight:700">km</span>' : esc(p.regime_cobranca||''))}</td>
+        <td style="padding:6px 8px;text-align:center;font-size:10px">${med==='metros' ? '<span style="color:var(--blue);font-weight:700">metros</span>' : med==='km' ? '<span style="color:var(--blue);font-weight:700">km</span>' : med==='viagem' ? '<span style="color:var(--blue);font-weight:700">viagem</span>' : (String(p.regime_cobranca||'').toLowerCase().includes('hora') ? esc(p.regime_cobranca||'') : '<span style="color:var(--blue);font-weight:700">hora</span>')}</td>
         <td style="padding:6px 8px;text-align:center;font-size:10px;${!p.fechado?'cursor:pointer;text-decoration:underline dotted':''}"
             ${!p.fechado?`onclick="cmEditarSelect('${p.id}', 'por_conta_de', this, '${p.por_conta_de||'empresa'}')" title="Empresa ou cliente?"`:''}>${esc(p.por_conta_de||'')}</td>
       </tr>`;
@@ -4758,8 +4770,8 @@ function renderControleMensal(dados) {
     html += `</tbody>
         <tfoot><tr style="background:#FFF7ED;font-weight:700">
           <td style="padding:8px" colspan="7">TOTAL — ${dias.size} dia(s)</td>
-          <td style="padding:8px;text-align:right">${somaTrab.toFixed(1)}</td>
-          <td style="padding:8px;text-align:right;color:var(--orange)">${somaCobr.toFixed(1)}</td>
+          <td style="padding:8px;text-align:right;font-size:11px;white-space:nowrap">${_fmtSoma(somaT)}</td>
+          <td style="padding:8px;text-align:right;color:var(--orange);font-size:11px;white-space:nowrap">${_fmtSoma(somaC)}</td>
           <td style="padding:8px;text-align:right;color:var(--green)">${somaValor>0?'R$ '+somaValor.toFixed(2):''}</td>
           <td colspan="2"></td>
         </tr></tfoot>
