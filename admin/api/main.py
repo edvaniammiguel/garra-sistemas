@@ -225,6 +225,17 @@ async def startup():
                 ON operacional.partes_diarias (client_id)
                 WHERE client_id IS NOT NULL
             """)
+            # (13/07/2026) Idempotência também na CRIAÇÃO de OS avulsa —
+            # duplo toque/retry da fila nunca mais cria duas OS.
+            await conn.execute("""
+                ALTER TABLE operacional.ordens_servico
+                ADD COLUMN IF NOT EXISTS client_id TEXT
+            """)
+            await conn.execute("""
+                CREATE UNIQUE INDEX IF NOT EXISTS uq_os_client_id
+                ON operacional.ordens_servico (client_id)
+                WHERE client_id IS NOT NULL
+            """)
             # Migration: criar tabela regimes_cobranca
             await conn.execute("""
                 CREATE TABLE IF NOT EXISTS operacional.regimes_cobranca (
