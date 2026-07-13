@@ -228,7 +228,7 @@ async def startup():
             # (13/07/2026) PREÇOS POR MEDIÇÃO na OS — prática real da Garra:
             # OS mista (ex.: metros + horas de concha) precisa de um preço por
             # tipo de medida. valor_combinado vira legado/espelho do regime.
-            for col in ("valor_hora", "valor_metro", "valor_diaria", "valor_km"):
+            for col in ("valor_hora", "valor_metro", "valor_diaria", "valor_km", "valor_viagem"):
                 await conn.execute(f"""
                     ALTER TABLE operacional.ordens_servico
                     ADD COLUMN IF NOT EXISTS {col} NUMERIC(12,2)
