@@ -708,12 +708,39 @@ async def op_atualizar_os(os_id: str, request: Request, payload=Depends(verifica
     return await op_detalhe_os(os_id, _auth=payload)
 
 @router.delete("/operacional/api/os/{os_id}")
-async def op_remover_os(os_id: str, _auth=Depends(verificar_admin)):
-    """Soft delete da OS. Somente admin."""
+async def op_remover_os(os_id: str, payload=Depends(verificar_token)):
+    """(13/07/2026) Soft delete da OS, em camadas:
+    - QUALQUER perfil: bloqueado se houver partes ativas (integridade do CM —
+      trate os registros primeiro ou use Concluir).
+    - admin/gestor: podem excluir qualquer OS sem partes.
+    - operador/motorista: só a própria OS avulsa (origem=campo,
+      status=aberta_sem_erp, criada por ele ou dele) — caso do toque duplo."""
+    login = payload.get("sub", "")
+    perfil = (payload.get("perfil") or "").lower()
+    os_row = await ajard_query(
+        "SELECT * FROM operacional.ordens_servico WHERE id=%s AND ativo=true",
+        (os_id,), fetch="one")
+    if not os_row:
+        raise HTTPException(status_code=404, detail="OS não encontrada")
+    qtd = await ajard_query(
+        "SELECT count(*) AS n FROM operacional.partes_diarias WHERE os_id=%s AND ativo=true",
+        (os_id,), fetch="one")
+    if (qtd or {}).get("n", 0) > 0:
+        raise HTTPException(status_code=400,
+            detail=f"Esta OS tem {qtd['n']} registro(s) de trabalho — exclua os registros primeiro ou use Concluir.")
+    if perfil not in ("admin", "gestor"):
+        user = await ajard_query(
+            "SELECT id FROM public.usuarios_garra WHERE login=%s", (login,), fetch="one")
+        uid = str((user or {}).get("id") or "")
+        eh_dono = uid and (str(os_row.get("criado_por") or "") == uid or str(os_row.get("operador_id") or "") == uid)
+        if not (os_row.get("origem") == "campo"
+                and os_row.get("status") == "aberta_sem_erp"
+                and eh_dono):
+            raise HTTPException(status_code=403,
+                detail="Você só pode excluir OS avulsa aberta criada por você — para outras, fale com a gestão.")
     await ajard_query(
         "UPDATE operacional.ordens_servico SET ativo=false, atualizado_em=now() WHERE id=%s",
-        (os_id,), fetch="none"
-    )
+        (os_id,), fetch="none")
     return {"ok": True, "id": os_id}
 
 @router.post("/operacional/api/os/{os_id}/partes")
@@ -1184,7 +1211,7 @@ async def op_minhas_os(historico: int = 0, payload=Depends(verificar_token)):
         status_filter = "os.status NOT IN ('concluida_completa','concluida_sem_erp','cancelada')"
 
     rows = await ajard_query(
-        f"""SELECT os.id, os.numero, os.obra, os.regime_cobranca,
+        f"""SELECT os.id, os.numero, os.obra, os.regime_cobranca, os.origem,
                   os.data_inicio, os.data_fim_prevista, os.status,
                   os.equipamento_id, os.operador_id, os.tipo_servico_id, os.cliente_id,
                   COALESCE(c.nome, os.cliente_nome_avulso) AS cliente_nome,
@@ -1264,6 +1291,8 @@ async def op_criar_os_avulsa(req: Request, payload=Depends(verificar_token)):
     # a gestão define no complemento. Evita sugestão falsa de "diária" no
     # Registrar Dia (bloco de diárias abrindo em toda OS avulsa).
     regime_cobranca = (body.get("regime_cobranca") or "").strip()
+    # (13/07/2026) Idempotência da OS avulsa (mesmo padrão validado das partes)
+    client_id       = (body.get("client_id") or "").strip() or None
     observacao      = (body.get("observacao") or "").strip()
     
     if not obra:
@@ -1286,22 +1315,34 @@ async def op_criar_os_avulsa(req: Request, payload=Depends(verificar_token)):
         seq = 1
     numero = f"OS-{ano}-{seq:04d}"
     
-    nova = await ajard_query(
-        """INSERT INTO operacional.ordens_servico
-           (numero, ano, sequencia, obra, cliente_nome_avulso,
-            equipamento_id, tipo_servico_id, regime_cobranca,
-            operador_id, status, origem, descricao,
-            data_inicio, ativo, criado_por, criado_em)
-           VALUES (%s, %s, %s, %s, %s,
-                   %s, %s, %s,
-                   %s, 'aberta_sem_erp', 'campo', %s,
-                   CURRENT_DATE, true, %s, NOW())
-           RETURNING id, numero, obra, status""",
-        (numero, ano, seq, obra, cliente_nome or None,
-         equipamento_id, tipo_servico_id, regime_cobranca,
-         user["id"], observacao or None, user["id"]),
-        fetch="one"
-    )
+    nova = None
+    try:
+        nova = await ajard_query(
+            """INSERT INTO operacional.ordens_servico
+               (numero, ano, sequencia, obra, cliente_nome_avulso,
+                equipamento_id, tipo_servico_id, regime_cobranca,
+                operador_id, status, origem, descricao,
+                data_inicio, ativo, criado_por, criado_em, client_id)
+               VALUES (%s, %s, %s, %s, %s,
+                       %s, %s, %s,
+                       %s, 'aberta_sem_erp', 'campo', %s,
+                       CURRENT_DATE, true, %s, NOW(), %s)
+               RETURNING id, numero, obra, status""",
+            (numero, ano, seq, obra, cliente_nome or None,
+             equipamento_id, tipo_servico_id, regime_cobranca,
+             user["id"], observacao or None, user["id"], client_id),
+            fetch="one"
+        )
+    except Exception as e:
+        # (13/07/2026) Retry da fila bateu no índice único do client_id →
+        # a OS JÁ existe. Devolver como sucesso idempotente, nunca duplicar.
+        if client_id and "client_id" in str(e).lower():
+            existente = await ajard_query(
+                "SELECT id, numero, obra, status FROM operacional.ordens_servico WHERE client_id=%s",
+                (client_id,), fetch="one")
+            if existente:
+                return {"ok": True, "os": dict(existente), "dedup": True}
+        raise HTTPException(status_code=500, detail=f"Erro ao criar OS: {str(e)}")
     return {"ok": True, "os": dict(nova) if nova else {"numero": numero}}
 
 @router.get("/operacional/api/controle-mensal/periodos")
