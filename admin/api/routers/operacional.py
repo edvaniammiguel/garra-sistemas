@@ -897,7 +897,7 @@ async def op_criar_parte(os_id: str, request: Request, payload=Depends(verificar
              d.get("quantidade_diarias", 0), d.get("qtd_viagens", 0), qtd_metros,
              d.get("vinculo_operador","proprio"), d.get("fornecedor"), equipamento_terceiro,
              d.get("observacao"),
-             d.get("trajeto"), d.get("por_conta_de","empresa"), bool(d.get("sem_almoco")),
+             d.get("trajeto"), d.get("por_conta_de","cliente"), bool(d.get("sem_almoco")),
              criado_por_id,
              horas_cobradas_padrao, client_id)
         )
