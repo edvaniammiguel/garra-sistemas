@@ -1044,8 +1044,8 @@ input,select,textarea { font-family:inherit; font-size:13px; outline:none; }
         <div class="field">
           <label>Por conta de</label>
           <select id="mp-por-conta">
+            <option value="cliente" selected>Cliente</option>
             <option value="empresa">Empresa</option>
-            <option value="cliente">Cliente</option>
           </select>
         </div>
       </div>
@@ -2631,7 +2631,7 @@ async function salvarParteLuana() {
     qtd_viagens: num('mp-viagens'),
     qtd_metros:  _mpMed === 'metros' ? num('mp-metros') : null,
     quantidade_diarias: _mpMed === 'diaria' ? (num('mp-diarias') ?? 1) : null,
-    por_conta_de: document.getElementById('mp-por-conta')?.value || 'empresa',
+    por_conta_de: document.getElementById('mp-por-conta')?.value || 'cliente',
     observacao:  document.getElementById('mp-obs')?.value.trim()||null,
   };
   const btn = document.getElementById('btn-salvar-parte');
@@ -4777,7 +4777,7 @@ function renderControleMensal(dados) {
             ${!p.fechado?`onclick="cmEditarValor('${p.id}', this, ${parseFloat(p.valor||0)})" title="Valor do dia (fechamento/comissão)"`:''}>${p.valor!=null&&p.valor!==''?('R$ '+parseFloat(p.valor).toFixed(2)):'–'}${p.fechado?' <span style="font-size:10px">🔒</span>':''}</td>
         <td style="padding:6px 8px;text-align:center;font-size:10px">${med==='metros' ? '<span style="color:var(--blue);font-weight:700">metros</span>' : med==='km' ? '<span style="color:var(--blue);font-weight:700">km</span>' : med==='viagem' ? '<span style="color:var(--blue);font-weight:700">viagem</span>' : (String(p.regime_cobranca||'').toLowerCase().includes('hora') ? esc(p.regime_cobranca||'') : '<span style="color:var(--blue);font-weight:700">hora</span>')}</td>
         <td style="padding:6px 8px;text-align:center;font-size:10px;${!p.fechado?'cursor:pointer;text-decoration:underline dotted':''}"
-            ${!p.fechado?`onclick="cmEditarSelect('${p.id}', 'por_conta_de', this, '${p.por_conta_de||'empresa'}')" title="Empresa ou cliente?"`:''}>${esc(p.por_conta_de||'')}</td>
+            ${!p.fechado?`onclick="cmEditarSelect('${p.id}', 'por_conta_de', this, '${p.por_conta_de||'cliente'}')" title="Empresa ou cliente?"`:''}>${esc(p.por_conta_de||'')}</td>
       </tr>`;
     });
 
