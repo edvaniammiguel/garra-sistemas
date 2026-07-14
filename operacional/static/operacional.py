@@ -8,13 +8,106 @@ import os, io, json, time, uuid, calendar, secrets
 from datetime import datetime, timedelta, date
 from typing import Optional
 from fastapi import APIRouter, Request, HTTPException, Depends, Header, UploadFile, File, Form, Body
-from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, JSONResponse, Response, StreamingResponse
+from fastapi.responses import RedirectResponse, FileResponse, HTMLResponse, RedirectResponse, JSONResponse, Response, StreamingResponse
 
 from core.config import OPERACIONAL_DIR
 from core.db import ajard_query, ajard_query_id, get_db
 from core.auth import verificar_token, verificar_gestor, verificar_admin
 
 router = APIRouter()
+
+import re as _re_val
+
+def _validar_medicao_parte(m):
+    """(08/07/2026) Sanidade de medições — Regra 62 (paridade front/backend).
+    A API não pode aceitar o que o front bloqueia. Levanta 400 com motivo claro.
+    Fonte única: usada no POST (registro) e no PATCH (correção do operador)."""
+    def _num(v):
+        try:
+            return float(v) if v not in (None, "") else None
+        except (TypeError, ValueError):
+            return None
+    # Horas de relógio: formato HH:MM (00-23 / 00-59) — input type=time só protege o front
+    for campo, rotulo in (("hora_inicio", "hora início"), ("hora_fim", "hora fim")):
+        v = m.get(campo)
+        if v not in (None, "") and not _re_val.match(r"^([01]\d|2[0-3]):[0-5]\d(:[0-5]\d)?$", str(v)):
+            raise HTTPException(status_code=400, detail=f"Hora inválida em {rotulo}: {v}")
+    # Nada de valores negativos em medição
+    for campo, rotulo in (("horimetro_inicial", "horímetro inicial"), ("horimetro_final", "horímetro final"),
+                          ("km_inicial", "KM inicial"), ("km_final", "KM final"),
+                          ("qtd_metros", "metros"), ("qtd_viagens", "viagens"),
+                          ("quantidade_diarias", "diárias")):
+        v = _num(m.get(campo))
+        if v is not None and v < 0:
+            raise HTTPException(status_code=400, detail=f"Valor negativo em {rotulo}")
+    # KM coerente
+    k_ini, k_fin = _num(m.get("km_inicial")), _num(m.get("km_final"))
+    if k_ini is not None and k_fin is not None and k_fin < k_ini:
+        raise HTTPException(status_code=400, detail="KM final menor que o KM inicial")
+
+def _validar_data_parte(data_str, permitir_futuro_dias=1):
+    """Data ISO válida e não-futura (margem de 1 dia p/ fuso). Levanta 400."""
+    try:
+        dt = datetime.strptime(str(data_str), "%Y-%m-%d").date()
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail=f"Data inválida: {data_str}")
+    if dt > date.today() + timedelta(days=permitir_futuro_dias):
+        raise HTTPException(status_code=400, detail="Data no futuro — confira o dia do registro")
+    return dt
+
+async def _validar_sobreposicao_horimetro(equipamento_id, h_ini, h_fin, ignorar_parte_id=None):
+    """(13/07/2026) Horímetro só anda para frente: dois registros do MESMO
+    equipamento com faixas que se cruzam é fisicamente impossível e dobra
+    horas no CM. Bloqueia com o registro conflitante identificado.
+    Faixas encostadas (final de um = inicial do outro) são o fluxo normal."""
+    if not equipamento_id:
+        return
+    try:
+        hi, hf = float(h_ini), float(h_fin)
+    except (TypeError, ValueError):
+        return
+    if hf <= hi:
+        return  # já barrado pela validação anterior
+    conflito = await ajard_query(
+        """SELECT p.data, p.horimetro_inicial, p.horimetro_final, os.numero
+             FROM operacional.partes_diarias p
+             JOIN operacional.ordens_servico os ON os.id = p.os_id
+            WHERE p.equipamento_id = %s AND p.ativo = true
+              AND p.horimetro_inicial IS NOT NULL AND p.horimetro_final IS NOT NULL
+              AND p.id::text <> %s
+              AND p.horimetro_inicial < %s AND p.horimetro_final > %s
+            ORDER BY p.data DESC LIMIT 1""",
+        (equipamento_id, str(ignorar_parte_id or ""), hf, hi), fetch="one")
+    if conflito:
+        d = conflito["data"]
+        d_fmt = d.strftime("%d/%m") if hasattr(d, "strftime") else str(d)
+        raise HTTPException(status_code=400,
+            detail=(f"Horímetro {hi}→{hf} sobrepõe registro já existente desta máquina "
+                    f"({conflito['numero']} em {d_fmt}: {conflito['horimetro_inicial']}→{conflito['horimetro_final']}). "
+                    f"Confira as leituras — o horímetro só anda para frente."))
+
+def _validar_horas_plausiveis(horas):
+    """Teto de plausibilidade: um registro não pode ter mais de 24h.
+    Mata o typo de horímetro (10125 → 101250 = 91.131h no Controle Mensal)."""
+    if horas is not None and horas > 24:
+        raise HTTPException(
+            status_code=400,
+            detail=f"{horas}h num único registro — confira o horímetro (mais de 24h não é permitido)")
+
+def _cat_frota_checklist(codigo, categoria_op):
+    """(09/07/2026) Fronteira entre taxonomias — LISTA BRANCA: só entra no
+    espelho do checklist o que TEM checklist. CA-% → carro · caminhões →
+    caminhao · máquinas motorizadas → maquinas. Caçambas estacionárias,
+    gerador, componentes, moto, apoio e 'outro' ficam FORA (retorna None)."""
+    cod = (codigo or "").upper()
+    cat = (categoria_op or "").lower()
+    if cod.startswith("CA-"):
+        return "carro"
+    if "caminh" in cat:
+        return "caminhao"
+    if cat in ("escavadeira", "retroescavadeira", "patrol", "carregadeira", "compactador"):
+        return "maquinas"
+    return None
 
 def _calc_horas_parte(d):
     """Horas trabalhadas: horímetro (fim-ini); fallback relógio com desconto
@@ -64,12 +157,11 @@ async def operacional_manifest():
         ]
     }
 
-@router.get("/operacional/mobile", response_class=HTMLResponse)
+@router.get("/operacional/mobile")
 async def operacional_mobile():
-    path = os.path.join(OPERACIONAL_DIR, "operacional-mobile.html")
-    if not os.path.exists(path):
-        raise HTTPException(status_code=404, detail="Mobile operacional não encontrado")
-    return open(path, encoding="utf-8").read()
+    # (07/07/2026) Protótipo antigo aposentado (operacional-mobile.html
+    # removido do repo) — link legado redireciona ao app oficial.
+    return RedirectResponse(url="/mobile", status_code=307)
 
 @router.get("/operacional/api/tipos-servico")
 async def op_listar_tipos_servico(_auth=Depends(verificar_token)):
@@ -214,17 +306,37 @@ async def op_remover_regime(reg_id: str, payload=Depends(verificar_gestor)):
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/operacional/api/equipamentos")
-async def op_listar_equipamentos(_auth=Depends(verificar_token)):
-    """Lista equipamentos ativos para popular select e tela de cadastro."""
+async def op_listar_equipamentos(uso: str = None, _auth=Depends(verificar_token)):
+    """Lista equipamentos ativos para popular select e tela de cadastro.
+    (07/07/2026) uso=os → apenas MOTORIZADOS (máquinas, caminhões e o
+    Apoio/Combinado): a Onda 2 do ManWinWin trouxe caçambas estacionárias,
+    pneus e componentes que não entram em OS — mas seguem visíveis para a
+    Manutenção (sem o parâmetro)."""
+    filtro_uso = ""
+    if (uso or "").lower() == "os":
+        # (09/07/2026) LISTA BRANCA — determinística: OS aceita apenas
+        # caminhões, máquinas motorizadas e Apoio/Combinado. Moto, carro de
+        # apoio, componentes, implementos e 'outro' ficam fora por definição.
+        # Máquina nova só entra em OS com a categoria certa no Admin.
+        filtro_uso = ("AND lower(coalesce(eq.categoria,'')) IN "
+                      "('caminhao','escavadeira','retroescavadeira','patrol',"
+                      "'carregadeira','compactador','apoio')")
     rows = await ajard_query(
-        """SELECT eq.id, eq.codigo, eq.descricao, eq.categoria, eq.medicao,
+        f"""SELECT eq.id, eq.codigo, eq.descricao, eq.categoria, eq.medicao,
                   eq.marca, eq.modelo, eq.ano, eq.placa,
-                  eq.horimetro_atual, eq.km_atual, eq.ativo,
+                  -- (13/07/2026) Horímetro atual VIVO: maior leitura registrada
+                  -- nas partes (a coluna estática ninguém atualizava — por isso
+                  -- a sugestão não aparecia para o operador conferir)
+                  COALESCE((SELECT MAX(p.horimetro_final)
+                              FROM operacional.partes_diarias p
+                             WHERE p.equipamento_id = eq.id AND p.ativo = true),
+                           eq.horimetro_atual) AS horimetro_atual,
+                  eq.km_atual, eq.ativo,
                   eq.operador_responsavel_id,
                   resp.nome AS operador_responsavel_nome
            FROM operacional.equipamentos eq
            LEFT JOIN public.usuarios_garra resp ON resp.id = eq.operador_responsavel_id
-           WHERE eq.ativo=true
+           WHERE eq.ativo=true {filtro_uso}
            ORDER BY eq.categoria, eq.codigo"""
     )
     return [dict(r) for r in (rows or [])]
@@ -256,17 +368,8 @@ async def op_criar_equipamento(request: Request, payload=Depends(verificar_gesto
             (codigo, descricao, categoria, medicao, marca, modelo, ano, placa, operador_resp),
             fetch="one"
         )
-        # Sincronizar com checklist.frota (mesmo código = mesma identificação)
-        try:
-            await ajard_query(
-                """INSERT INTO checklist.frota (categoria, identificacao, descricao, ativo)
-                   VALUES (%s, %s, %s, true)
-                   ON CONFLICT (categoria, identificacao) DO UPDATE
-                     SET descricao = EXCLUDED.descricao, ativo = true""",
-                (categoria, codigo, descricao), fetch="none"
-            )
-        except Exception as sync_err:
-            print(f"[Sync frota] aviso: {sync_err}")
+        # (09/07/2026) Sync com checklist.frota REMOVIDO — o checklist lê
+        # direto do cadastro único via /frota-checklist. Espelho aposentado.
         return dict(row) if row else {"codigo": codigo}
     except Exception as e:
         if "duplicate" in str(e).lower():
@@ -305,16 +408,7 @@ async def op_editar_equipamento(eq_id: str, request: Request, payload=Depends(ve
         )
         if not row:
             raise HTTPException(status_code=404, detail="Equipamento não encontrado")
-        # Sincronizar com checklist.frota
-        try:
-            await ajard_query(
-                """UPDATE checklist.frota
-                     SET descricao = %s, categoria = %s, ativo = true
-                   WHERE identificacao = %s""",
-                (row["descricao"], row["categoria"], row["codigo"]), fetch="none"
-            )
-        except Exception as sync_err:
-            print(f"[Sync frota] aviso: {sync_err}")
+        # (09/07/2026) Sync com espelho removido — leitura direta no checklist.
         return dict(row)
     except HTTPException:
         raise
@@ -329,14 +423,7 @@ async def op_remover_equipamento(eq_id: str, payload=Depends(verificar_gestor)):
             "UPDATE operacional.equipamentos SET ativo=false WHERE id=%s RETURNING codigo",
             (eq_id,), fetch="one"
         )
-        if row and row.get("codigo"):
-            try:
-                await ajard_query(
-                    "UPDATE checklist.frota SET ativo=false WHERE identificacao=%s",
-                    (row["codigo"],), fetch="none"
-                )
-            except Exception:
-                pass
+        # (09/07/2026) Espelho aposentado — nada a propagar.
         return {"ok": True}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -523,6 +610,8 @@ async def op_listar_os(
             os.codigo_erp, os.obra, os.endereco, os.descricao,
             os.data_inicio, os.data_fim_prevista, os.data_fim_real,
             os.status, os.origem, os.criado_em,
+            os.regime_cobranca, os.valor_combinado, os.horas_padrao_dia,
+            os.valor_hora, os.valor_metro, os.valor_diaria, os.valor_km, os.valor_viagem,
             os.cliente_id, COALESCE(c.nome, os.cliente_nome_avulso) AS cliente_nome,
             os.cliente_nome_avulso,
             os.tipo_servico_id, ts.nome AS tipo_servico_nome,
@@ -565,6 +654,10 @@ async def op_detalhe_os(os_id: str, _auth=Depends(verificar_token)):
         """SELECT os.*,
                   COALESCE(c.nome, os.cliente_nome_avulso) AS cliente_nome,
                   ts.nome AS tipo_servico_nome,
+                  COALESCE((SELECT MAX(p2.horimetro_final)
+                              FROM operacional.partes_diarias p2
+                             WHERE p2.equipamento_id = eq.id AND p2.ativo = true),
+                           eq.horimetro_atual) AS equipamento_horimetro_atual,
                   u.nome AS criado_por_nome
            FROM operacional.ordens_servico os
            LEFT JOIN public.clientes_garra c       ON c.id = os.cliente_id
@@ -614,14 +707,16 @@ async def op_atualizar_os(os_id: str, request: Request, payload=Depends(verifica
                         "data_fim_prevista", "data_fim_real", "status",
                         "tipo_servico_id", "cliente_id", "cliente_nome_avulso",
                         "equipamento_id", "operador_id",
-                        "regime_cobranca", "valor_combinado", "data_inicio", "horas_padrao_dia"]
+                        "regime_cobranca", "valor_combinado", "data_inicio", "horas_padrao_dia",
+                        "valor_hora", "valor_metro", "valor_diaria", "valor_km", "valor_viagem"]
     updates = []
     params = []
     for campo in campos_editaveis:
         if campo in d:
             val = d[campo]
             # valor_combinado: aceitar número, vazio vira NULL
-            if campo in ("valor_combinado", "horas_padrao_dia"):
+            if campo in ("valor_combinado", "horas_padrao_dia",
+                         "valor_hora", "valor_metro", "valor_diaria", "valor_km", "valor_viagem"):
                 val = float(val) if (val not in (None, "")) else None
             elif val == "":
                 val = None
@@ -657,12 +752,39 @@ async def op_atualizar_os(os_id: str, request: Request, payload=Depends(verifica
     return await op_detalhe_os(os_id, _auth=payload)
 
 @router.delete("/operacional/api/os/{os_id}")
-async def op_remover_os(os_id: str, _auth=Depends(verificar_admin)):
-    """Soft delete da OS. Somente admin."""
+async def op_remover_os(os_id: str, payload=Depends(verificar_token)):
+    """(13/07/2026) Soft delete da OS, em camadas:
+    - QUALQUER perfil: bloqueado se houver partes ativas (integridade do CM —
+      trate os registros primeiro ou use Concluir).
+    - admin/gestor: podem excluir qualquer OS sem partes.
+    - operador/motorista: só a própria OS avulsa (origem=campo,
+      status=aberta_sem_erp, criada por ele ou dele) — caso do toque duplo."""
+    login = payload.get("sub", "")
+    perfil = (payload.get("perfil") or "").lower()
+    os_row = await ajard_query(
+        "SELECT * FROM operacional.ordens_servico WHERE id=%s AND ativo=true",
+        (os_id,), fetch="one")
+    if not os_row:
+        raise HTTPException(status_code=404, detail="OS não encontrada")
+    qtd = await ajard_query(
+        "SELECT count(*) AS n FROM operacional.partes_diarias WHERE os_id=%s AND ativo=true",
+        (os_id,), fetch="one")
+    if (qtd or {}).get("n", 0) > 0:
+        raise HTTPException(status_code=400,
+            detail=f"Esta OS tem {qtd['n']} registro(s) de trabalho — exclua os registros primeiro ou use Concluir.")
+    if perfil not in ("admin", "gestor"):
+        user = await ajard_query(
+            "SELECT id FROM public.usuarios_garra WHERE login=%s", (login,), fetch="one")
+        uid = str((user or {}).get("id") or "")
+        eh_dono = uid and (str(os_row.get("criado_por") or "") == uid or str(os_row.get("operador_id") or "") == uid)
+        if not (os_row.get("origem") == "campo"
+                and os_row.get("status") == "aberta_sem_erp"
+                and eh_dono):
+            raise HTTPException(status_code=403,
+                detail="Você só pode excluir OS avulsa aberta criada por você — para outras, fale com a gestão.")
     await ajard_query(
         "UPDATE operacional.ordens_servico SET ativo=false, atualizado_em=now() WHERE id=%s",
-        (os_id,), fetch="none"
-    )
+        (os_id,), fetch="none")
     return {"ok": True, "id": os_id}
 
 @router.post("/operacional/api/os/{os_id}/partes")
@@ -678,6 +800,9 @@ async def op_criar_parte(os_id: str, request: Request, payload=Depends(verificar
     )
     if not os_row:
         raise HTTPException(status_code=404, detail="OS não encontrada")
+    # (08/07/2026) OS concluída/cancelada não aceita novos registros
+    if os_row.get("status") in ("concluida_completa", "concluida_sem_erp", "cancelada"):
+        raise HTTPException(status_code=400, detail="OS concluída/cancelada — não aceita novos registros")
 
     # Campos obrigatórios
     data = d.get("data")
@@ -694,7 +819,12 @@ async def op_criar_parte(os_id: str, request: Request, payload=Depends(verificar
         if not data or not equipamento_id:
             raise HTTPException(status_code=400, detail="Data e equipamento são obrigatórios")
 
+    _validar_data_parte(data)
+    _validar_medicao_parte(d)
     horas = _calc_horas_parte(d)
+    _validar_horas_plausiveis(horas)
+    await _validar_sobreposicao_horimetro(
+        equipamento_id, d.get("horimetro_inicial"), d.get("horimetro_final"))
     h_ini = d.get("horimetro_inicial")
     h_fin = d.get("horimetro_final")
 
@@ -706,8 +836,14 @@ async def op_criar_parte(os_id: str, request: Request, payload=Depends(verificar
     criado_por_id = user_row["id"] if user_row else None
 
     # operador_id: pode ser informado no payload (Gilson registrando pelo Emilson)
-    # ou default para quem está logado
-    operador_id = d.get("operador_id") or criado_por_id
+    # ou default para quem está logado.
+    # (08/07/2026) Terceiro/diarista/frete: quem opera NÃO é colaborador interno
+    # (identificado em fornecedor/nome) — operador_id fica NULL para as horas
+    # nunca somarem no resumo de nenhum colaborador.
+    if vinculo in ("terceiro", "diarista", "frete"):
+        operador_id = None
+    else:
+        operador_id = d.get("operador_id") or criado_por_id
 
     # Calcular KM percorrido
     km_ini = d.get("km_inicial")
@@ -732,11 +868,17 @@ async def op_criar_parte(os_id: str, request: Request, payload=Depends(verificar
             "SELECT horas_padrao_dia FROM operacional.ordens_servico WHERE id=%s",
             (os_id,), fetch="one"
         )
-        if os_pad and os_pad.get("horas_padrao_dia") and horas and float(horas) > 0:
+        medicao_registro = (d.get("tipo_medicao") or "horimetro").lower()
+        if (os_pad and os_pad.get("horas_padrao_dia") and horas and float(horas) > 0
+                and medicao_registro not in ("metros", "km")):
             horas_cobradas_padrao = float(os_pad["horas_padrao_dia"])
     except Exception:
         pass
 
+    # (08/07/2026) Idempotência: client_id gerado no celular. Se a resposta se
+    # perder e a fila offline re-enviar, o índice único barra e devolvemos o
+    # registro já salvo — fim da parte duplicada por rede instável.
+    client_id = (d.get("client_id") or "").strip() or None
     try:
         parte = await ajard_query_id(
             """INSERT INTO operacional.partes_diarias
@@ -746,8 +888,8 @@ async def op_criar_parte(os_id: str, request: Request, payload=Depends(verificar
                 km_inicial, km_final, km_percorrido,
                 quantidade_diarias, qtd_viagens, qtd_metros,
                 vinculo_operador, fornecedor, equipamento_terceiro, observacao, trajeto, por_conta_de, sem_almoco, criado_por,
-                horas_cobradas)
-               VALUES (%s,%s,%s,%s, %s,%s,%s, %s,%s,%s,%s, %s,%s,%s, %s,%s,%s, %s,%s,%s,%s,%s,%s,%s,%s, %s)""",
+                horas_cobradas, client_id)
+               VALUES (%s,%s,%s,%s, %s,%s,%s, %s,%s,%s,%s, %s,%s,%s, %s,%s,%s, %s,%s,%s,%s,%s,%s,%s,%s, %s,%s)""",
             (os_id, equipamento_id, operador_id, d.get("operador_nome_avulso"),
              data, d.get("hora_inicio"), d.get("hora_fim"),
              d.get("tipo_medicao","horimetro"), h_ini, h_fin, horas,
@@ -757,7 +899,7 @@ async def op_criar_parte(os_id: str, request: Request, payload=Depends(verificar
              d.get("observacao"),
              d.get("trajeto"), d.get("por_conta_de","empresa"), bool(d.get("sem_almoco")),
              criado_por_id,
-             horas_cobradas_padrao)
+             horas_cobradas_padrao, client_id)
         )
         # Atualizar horímetro atual do equipamento (só equipamento próprio da Garra)
         if h_fin is not None and equipamento_id:
@@ -766,7 +908,20 @@ async def op_criar_parte(os_id: str, request: Request, payload=Depends(verificar
                 (h_fin, equipamento_id), fetch="none"
             )
         return dict(parte)
+    except HTTPException:
+        raise
     except Exception as e:
+        # Retry da fila offline bateu no índice único do client_id → o registro
+        # JÁ está salvo. Devolver como sucesso (idempotente), nunca duplicar.
+        if client_id and ("client_id" in str(e).lower() or "uq_partes_client" in str(e).lower()):
+            existente = await ajard_query(
+                "SELECT * FROM operacional.partes_diarias WHERE client_id=%s",
+                (client_id,), fetch="one"
+            )
+            if existente:
+                r = dict(existente)
+                r["dedup"] = True
+                return r
         raise HTTPException(status_code=500, detail=f"Erro ao registrar parte: {str(e)}")
 
 @router.get("/operacional/api/os/{os_id}/partes")
@@ -790,6 +945,20 @@ async def op_listar_partes(os_id: str, _auth=Depends(verificar_token)):
     # Perfil do solicitante — operador/motorista NÃO vê horas cobradas (valores)
     perfil = _auth.get("perfil", "")
     eh_gestor = perfil in ("admin", "gestor", "luana", "bruna")
+
+    if not eh_gestor:
+        # Menor privilégio (decisão 05/07/2026): operador vê SOMENTE os
+        # registros que ELE criou — horas do colega = comissão do colega.
+        # A continuidade do horímetro é garantida pelo horimetro_atual do
+        # equipamento (pré-preenchido no registro), não pela visão alheia.
+        login = _auth.get("sub", "")
+        eu = await ajard_query(
+            "SELECT id FROM public.usuarios_garra WHERE login=%s", (login,), fetch="one"
+        )
+        meu_id = str(eu["id"]) if eu else "?"
+        lista = [p for p in lista
+                 if str(p.get("criado_por") or "") == meu_id
+                 or str(p.get("operador_id") or "") == meu_id]
 
     if not eh_gestor:
         # Remover campos financeiros/cobrança da resposta para operador
@@ -834,7 +1003,7 @@ async def op_atualizar_parte(parte_id: str, request: Request, payload=Depends(ve
     if existente.get("fechado"):
         raise HTTPException(status_code=400, detail="Parte já fechada — não pode editar")
 
-    campos = ["data","horas_cobradas","quantidade_diarias","quantidade_diarias_cobradas",
+    campos = ["data","horas_cobradas","valor","quantidade_diarias","quantidade_diarias_cobradas",
               "qtd_viagens","qtd_metros","observacao","hora_inicio","hora_fim",
               "horimetro_inicial","horimetro_final","km_inicial","km_final",
               "equipamento_id","operador_id","operador_nome_avulso",
@@ -1078,12 +1247,17 @@ async def op_minhas_os(historico: int = 0, payload=Depends(verificar_token)):
 
     # Filtro de status conforme histórico ou ativas
     if historico == 1:
-        status_filter = "os.status IN ('concluida_completa','concluida_sem_erp','aguardando_fechamento')"
+        # Histórico: só OS concluídas COM registro no MÊS CORRENTE
+        # (decisão 05/07/2026 — operador não precisa ver OS antigas)
+        status_filter = """os.status IN ('concluida_completa','concluida_sem_erp','aguardando_fechamento')
+             AND EXISTS (SELECT 1 FROM operacional.partes_diarias p
+                         WHERE p.os_id = os.id AND p.ativo = true
+                           AND p.data >= date_trunc('month', CURRENT_DATE)::date)"""
     else:
         status_filter = "os.status NOT IN ('concluida_completa','concluida_sem_erp','cancelada')"
 
     rows = await ajard_query(
-        f"""SELECT os.id, os.numero, os.obra, os.regime_cobranca,
+        f"""SELECT os.id, os.numero, os.obra, os.regime_cobranca, os.origem,
                   os.data_inicio, os.data_fim_prevista, os.status,
                   os.equipamento_id, os.operador_id, os.tipo_servico_id, os.cliente_id,
                   COALESCE(c.nome, os.cliente_nome_avulso) AS cliente_nome,
@@ -1159,7 +1333,12 @@ async def op_criar_os_avulsa(req: Request, payload=Depends(verificar_token)):
     cliente_nome    = (body.get("cliente_nome") or "").strip()
     equipamento_id  = body.get("equipamento_id")
     tipo_servico_id = body.get("tipo_servico_id")
-    regime_cobranca = (body.get("regime_cobranca") or "diaria").strip()
+    # (08/07/2026) OS avulsa nasce SEM regime — o operador não escolhe regime;
+    # a gestão define no complemento. Evita sugestão falsa de "diária" no
+    # Registrar Dia (bloco de diárias abrindo em toda OS avulsa).
+    regime_cobranca = (body.get("regime_cobranca") or "").strip()
+    # (13/07/2026) Idempotência da OS avulsa (mesmo padrão validado das partes)
+    client_id       = (body.get("client_id") or "").strip() or None
     observacao      = (body.get("observacao") or "").strip()
     
     if not obra:
@@ -1182,22 +1361,34 @@ async def op_criar_os_avulsa(req: Request, payload=Depends(verificar_token)):
         seq = 1
     numero = f"OS-{ano}-{seq:04d}"
     
-    nova = await ajard_query(
-        """INSERT INTO operacional.ordens_servico
-           (numero, ano, sequencia, obra, cliente_nome_avulso,
-            equipamento_id, tipo_servico_id, regime_cobranca,
-            operador_id, status, origem, descricao,
-            data_inicio, ativo, criado_por, criado_em)
-           VALUES (%s, %s, %s, %s, %s,
-                   %s, %s, %s,
-                   %s, 'aberta_sem_erp', 'campo', %s,
-                   CURRENT_DATE, true, %s, NOW())
-           RETURNING id, numero, obra, status""",
-        (numero, ano, seq, obra, cliente_nome or None,
-         equipamento_id, tipo_servico_id, regime_cobranca,
-         user["id"], observacao or None, user["id"]),
-        fetch="one"
-    )
+    nova = None
+    try:
+        nova = await ajard_query(
+            """INSERT INTO operacional.ordens_servico
+               (numero, ano, sequencia, obra, cliente_nome_avulso,
+                equipamento_id, tipo_servico_id, regime_cobranca,
+                operador_id, status, origem, descricao,
+                data_inicio, ativo, criado_por, criado_em, client_id)
+               VALUES (%s, %s, %s, %s, %s,
+                       %s, %s, %s,
+                       %s, 'aberta_sem_erp', 'campo', %s,
+                       CURRENT_DATE, true, %s, NOW(), %s)
+               RETURNING id, numero, obra, status""",
+            (numero, ano, seq, obra, cliente_nome or None,
+             equipamento_id, tipo_servico_id, regime_cobranca,
+             user["id"], observacao or None, user["id"], client_id),
+            fetch="one"
+        )
+    except Exception as e:
+        # (13/07/2026) Retry da fila bateu no índice único do client_id →
+        # a OS JÁ existe. Devolver como sucesso idempotente, nunca duplicar.
+        if client_id and "client_id" in str(e).lower():
+            existente = await ajard_query(
+                "SELECT id, numero, obra, status FROM operacional.ordens_servico WHERE client_id=%s",
+                (client_id,), fetch="one")
+            if existente:
+                return {"ok": True, "os": dict(existente), "dedup": True}
+        raise HTTPException(status_code=500, detail=f"Erro ao criar OS: {str(e)}")
     return {"ok": True, "os": dict(nova) if nova else {"numero": numero}}
 
 @router.get("/operacional/api/controle-mensal/periodos")
@@ -1421,16 +1612,18 @@ async def op_controle_mensal_excel(
             ws = wb.create_sheet(nome_aba)
 
             # Título
-            ws.merge_cells('A1:K1')
+            ws.merge_cells('A1:M1')
             ws['A1'] = titulo_doc
             ws['A1'].font = Font(bold=True, size=14, color="1A2A5E")
-            ws.merge_cells('A2:K2')
+            ws.merge_cells('A2:M2')
             ws['A2'] = grupo["label"]
             ws['A2'].font = Font(bold=True, size=11, color="E8820C")
 
             # Headers
+            # (13/07/2026) ESPELHO da tabela do desktop: + Un., Valor (R$),
+            # medição real por linha e dias sem apontamento (NÃO RODOU etc.)
             headers = ['Data','Cód Interno','OS','Cliente','Operador' if view=='equipamento' else 'Equipamento',
-                       'H.Inicial','H.Final','Horas Trab.','Horas Cobr.','Regime','Por conta']
+                       'Inicial','Final','Trab.','Cobr.','Un.','Valor (R$)','Regime','Por conta']
             for col, h in enumerate(headers, 1):
                 cell = ws.cell(row=4, column=col, value=h)
                 cell.font = header_font
@@ -1439,75 +1632,135 @@ async def op_controle_mensal_excel(
                 cell.border = border
 
             row = 5
-            soma_trab = 0
-            soma_cobr = 0
+            soma_t = {"h": 0.0, "m": 0.0, "km": 0.0, "v": 0.0}
+            soma_c = {"h": 0.0, "m": 0.0, "km": 0.0, "v": 0.0}
+            soma_valor = 0.0
             dias_set = set()
 
-            for p in sorted(grupo["partes"], key=lambda x: x.get("data","")):
-                data_fmt = ""
-                if p.get("data"):
+            def _fmt_soma(o):
+                pares = [(o["h"], "h"), (o["m"], "m"), (o["km"], "km"), (o["v"], "viag.")]
+                itens = [f"{n:.1f} {u}" for n, u in pares if n > 0]
+                return " · ".join(itens) if itens else 0
+
+            # Partes agrupadas por dia (para intercalar os dias sem apontamento)
+            por_dia = {}
+            for p in grupo["partes"]:
+                por_dia.setdefault(str(p.get("data") or ""), []).append(p)
+
+            from datetime import date as dt_date, timedelta
+            gap_font_fds = Font(bold=True, size=10, color="DC2626")
+            gap_font = Font(bold=True, size=10, color="475569")
+            gap_fill = PatternFill(start_color="F8FAFC", end_color="F8FAFC", fill_type="solid")
+
+            if mes:
+                hoje = dt_date.today()
+                ultimo = calendar.monthrange(ano, mes)[1]
+                if ano == hoje.year and mes == hoje.month:
+                    ultimo = min(ultimo, hoje.day)
+                dias_iter = [dt_date(ano, mes, d).isoformat() for d in range(1, ultimo + 1)]
+            else:
+                dias_iter = sorted(por_dia.keys())  # anual: sem lacunas (ficaria imenso)
+
+            for dia_iso in dias_iter:
+                lista_dia = sorted(por_dia.get(dia_iso, []), key=lambda x: str(x.get("criado_em") or ""))
+                if not lista_dia:
+                    # ESPELHO: dia sem apontamento — NÃO RODOU / SÁBADO / DOMINGO
                     try:
-                        from datetime import date as dt_date
-                        d = dt_date.fromisoformat(p["data"])
-                        data_fmt = d.strftime("%d/%m/%Y")
+                        d_obj = dt_date.fromisoformat(dia_iso)
+                        rotulo = "SÁBADO" if d_obj.weekday() == 5 else ("DOMINGO" if d_obj.weekday() == 6 else "NÃO RODOU")
+                        c1 = ws.cell(row=row, column=1, value=d_obj.strftime("%d/%m/%Y"))
+                        c1.fill = gap_fill; c1.border = border
+                        c2 = ws.cell(row=row, column=2, value=rotulo)
+                        c2.font = gap_font_fds if rotulo != "NÃO RODOU" else gap_font
+                        c2.fill = gap_fill
+                        for col in range(2, 14):
+                            ws.cell(row=row, column=col).fill = gap_fill
+                            ws.cell(row=row, column=col).border = border
+                        row += 1
                     except Exception:
-                        data_fmt = p["data"]
+                        pass
+                    continue
+                for p in lista_dia:
+                    data_fmt = ""
+                    try:
+                        data_fmt = dt_date.fromisoformat(str(p.get("data"))).strftime("%d/%m/%Y")
+                    except Exception:
+                        data_fmt = p.get("data") or ""
 
-                med = p.get("tipo_medicao") or p.get("equipamento_medicao") or "horimetro"
-                if med == "metros":
-                    h_ini = ""
-                    h_fin = ""
-                    h_trab = float(p.get("qtd_metros") or 0)
-                    h_cobr = float(p.get("qtd_metros") or 0)
-                elif med == "km":
-                    h_ini = float(p.get("km_inicial") or 0)
-                    h_fin = float(p.get("km_final") or 0)
-                    h_trab = float(p.get("km_percorrido") or 0)
-                    h_cobr = float(p.get("km_percorrido") or 0)
-                else:
-                    h_ini = float(p.get("horimetro_inicial") or 0)
-                    h_fin = float(p.get("horimetro_final") or 0)
-                    h_trab = float(p.get("horas_trabalhadas") or 0)
-                    h_cobr = float(p.get("horas_cobradas") or h_trab)
+                    med = (p.get("tipo_medicao") or p.get("equipamento_medicao") or "horimetro").lower()
+                    if med == "metros":
+                        h_ini = ""; h_fin = ""
+                        h_trab = float(p.get("qtd_metros") or 0); h_cobr = h_trab
+                        unidade, chave = "m", "m"
+                        rotulo_med = "metros"
+                    elif med == "viagem":
+                        h_ini = ""; h_fin = ""
+                        h_trab = float(p.get("qtd_viagens") or 0) or 1.0; h_cobr = h_trab
+                        unidade, chave = "viag.", "v"
+                        rotulo_med = "viagem"
+                    elif med == "km":
+                        h_ini = float(p.get("km_inicial") or 0)
+                        h_fin = float(p.get("km_final") or 0)
+                        h_trab = float(p.get("km_percorrido") or 0); h_cobr = h_trab
+                        unidade, chave = "km", "km"
+                        rotulo_med = "km"
+                    else:
+                        h_ini = float(p.get("horimetro_inicial") or 0)
+                        h_fin = float(p.get("horimetro_final") or 0)
+                        h_trab = float(p.get("horas_trabalhadas") or 0)
+                        h_cobr = float(p.get("horas_cobradas") or h_trab)
+                        unidade, chave = "h", "h"
+                        reg = str(p.get("regime_cobranca") or "").lower()
+                        rotulo_med = p.get("regime_cobranca") if "hora" in reg else "hora"
 
-                soma_trab += h_trab
-                soma_cobr += h_cobr
-                dias_set.add(p.get("data"))
+                    soma_t[chave] += h_trab
+                    soma_c[chave] += h_cobr
+                    val = p.get("valor")
+                    try:
+                        soma_valor += float(val) if val not in (None, "") else 0.0
+                    except Exception:
+                        pass
+                    dias_set.add(p.get("data"))
 
-                col4 = p.get("operador_nome","") if view == "equipamento" else p.get("equipamento_codigo","")
-                valores = [
-                    data_fmt,
-                    p.get("os_numero",""),
-                    p.get("codigo_erp","") or "",
-                    p.get("cliente_nome",""),
-                    col4,
-                    h_ini, h_fin,
-                    round(h_trab, 2) if h_trab else 0,
-                    round(h_cobr, 2) if h_cobr else 0,
-                    p.get("regime_cobranca",""),
-                    p.get("por_conta_de","")
-                ]
-                for col, v in enumerate(valores, 1):
-                    cell = ws.cell(row=row, column=col, value=v)
-                    cell.alignment = cell_align
-                    cell.border = border
-                row += 1
+                    col4 = p.get("operador_nome", "") if view == "equipamento" else p.get("equipamento_codigo", "")
+                    valores = [
+                        data_fmt,
+                        p.get("os_numero", ""),
+                        p.get("codigo_erp", "") or "",
+                        p.get("cliente_nome", ""),
+                        col4,
+                        h_ini, h_fin,
+                        round(h_trab, 2) if h_trab else 0,
+                        round(h_cobr, 2) if h_cobr else 0,
+                        unidade,
+                        (round(float(val), 2) if val not in (None, "") else ""),
+                        rotulo_med,
+                        p.get("por_conta_de", "")
+                    ]
+                    for col, v in enumerate(valores, 1):
+                        cell = ws.cell(row=row, column=col, value=v)
+                        cell.alignment = cell_align
+                        cell.border = border
+                    row += 1
 
-            # Linha TOTAL
+            # Linha TOTAL — por unidade, como no desktop
             row += 1
             ws.cell(row=row, column=1, value="TOTAL").font = total_font
             ws.cell(row=row, column=1).fill = total_fill
-            ws.cell(row=row, column=8, value=round(soma_trab, 2)).font = total_font
+            ws.cell(row=row, column=8, value=_fmt_soma(soma_t)).font = total_font
             ws.cell(row=row, column=8).fill = total_fill
-            ws.cell(row=row, column=9, value=round(soma_cobr, 2)).font = total_font
+            ws.cell(row=row, column=9, value=_fmt_soma(soma_c)).font = total_font
             ws.cell(row=row, column=9).fill = total_fill
+            if soma_valor > 0:
+                ws.cell(row=row, column=11, value=round(soma_valor, 2)).font = total_font
+                ws.cell(row=row, column=11).fill = total_fill
 
             ws.cell(row=row+1, column=1, value=f"Dias trabalhados: {len(dias_set)}").font = Font(size=10, color="64748B")
             dias_no_mes = dados["dias_no_mes"]
             ws.cell(row=row+2, column=1, value=f"Dias parados: {dias_no_mes - len(dias_set)}").font = Font(size=10, color="64748B")
 
-            # Larguras (11 colunas: Data, Cód Interno, OS, Cliente, Op/Equip, H.Ini, H.Fin, Trab, Cobr, Regime, Conta)
-            widths = [12, 14, 14, 22, 16, 10, 10, 12, 12, 10, 12]
+            # Larguras (13 colunas — espelho do desktop)
+            widths = [12, 14, 10, 20, 16, 10, 10, 11, 11, 7, 12, 10, 12]
             for i, w in enumerate(widths, 1):
                 ws.column_dimensions[get_column_letter(i)].width = w
 
@@ -1573,15 +1826,24 @@ async def op_resumo_mensal(payload=Depends(verificar_token)):
     resumo = await ajard_query(
         """SELECT
              COUNT(DISTINCT p.data) AS dias_trabalhados,
-             COALESCE(SUM(p.horas_trabalhadas), 0) AS total_horas,
-             COALESCE(SUM(p.horas_cobradas), 0) AS total_horas_cobradas,
+             -- (13/07/2026) COMISSÃO pelo CONTEÚDO do registro:
+             --   • registro que CONTÉM metros → comissiona pelos METROS
+             --     (as horas dele não somam);
+             --   • registro de horímetro/hora SEM metros → soma as HORAS.
+             COALESCE(SUM(CASE WHEN COALESCE(p.qtd_metros,0) > 0
+                                 OR COALESCE(p.tipo_medicao,'horimetro') = 'metros'
+                               THEN 0 ELSE p.horas_trabalhadas END), 0) AS total_horas,
+             COALESCE(SUM(CASE WHEN COALESCE(p.qtd_metros,0) > 0
+                                 OR COALESCE(p.tipo_medicao,'horimetro') = 'metros'
+                               THEN 0 ELSE p.horas_cobradas END), 0) AS total_horas_cobradas,
              COALESCE(SUM(p.qtd_metros), 0) AS total_metros,
              COUNT(p.id) AS total_apontamentos,
              COUNT(DISTINCT p.os_id) AS total_os
            FROM operacional.partes_diarias p
            JOIN operacional.ordens_servico os ON os.id = p.os_id
-           WHERE os.operador_id = %s
+           WHERE p.operador_id = %s
              AND p.ativo = true
+             AND COALESCE(p.vinculo_operador, 'proprio') <> 'terceiro'
              AND p.data >= %s
              AND p.data <= %s""",
         (user["id"], primeiro_dia, hoje), fetch="one"
@@ -1637,8 +1899,13 @@ async def op_editar_minha_parte(parte_id: str, request: Request, payload=Depends
         raise HTTPException(status_code=403, detail="Você só pode editar os seus próprios registros.")
 
     # Campos que o operador pode corrigir (medição + observação)
-    EDITAVEIS = ["horimetro_inicial", "horimetro_final", "hora_inicio", "hora_fim",
-                 "sem_almoco", "qtd_metros", "observacao"]
+    # (13/07/2026) + equipamento e operador (vínculo próprio) — corrigir
+    # máquina/pessoa errada é correção legítima do dia, com efeito direto na
+    # comissão (a atribuição segue o operador da parte).
+    EDITAVEIS = ["data", "horimetro_inicial", "horimetro_final", "hora_inicio", "hora_fim",
+                 "sem_almoco", "qtd_metros", "observacao",
+                 "km_inicial", "km_final", "qtd_viagens", "quantidade_diarias",
+                 "equipamento_id", "operador_id"]
     merged = dict(parte)
     algum = False
     for c in EDITAVEIS:
@@ -1648,24 +1915,128 @@ async def op_editar_minha_parte(parte_id: str, request: Request, payload=Depends
     if not algum:
         return {"ok": True, "msg": "Nada a alterar."}
 
+    # (08/07/2026) Sanidade — mesma régua do registro (Regra 62)
+    _validar_medicao_parte(merged)
+    if "data" in d:
+        nova_dt = _validar_data_parte(merged.get("data"))
+        antiga = parte.get("data")
+        try:
+            antiga_dt = antiga if isinstance(antiga, date) else datetime.strptime(str(antiga), "%Y-%m-%d").date()
+            # Correção do operador é do dia (typo) — mudar de MÊS mexe com
+            # período/fechamento e é domínio da gestão.
+            if (nova_dt.year, nova_dt.month) != (antiga_dt.year, antiga_dt.month):
+                raise HTTPException(status_code=400,
+                    detail="Mudança de mês do registro é feita pela gestão — fale com a Edvania/Luana.")
+        except HTTPException:
+            raise
+        except Exception:
+            pass
+
     horas = _calc_horas_parte(merged)
+    _validar_horas_plausiveis(horas)
+    await _validar_sobreposicao_horimetro(
+        merged.get("equipamento_id"),
+        merged.get("horimetro_inicial"), merged.get("horimetro_final"),
+        ignorar_parte_id=parte_id)
 
     def _num(v):
         try: return float(v) if v not in (None, "") else None
         except (TypeError, ValueError): return None
 
+    k_ini = _num(merged.get("km_inicial")); k_fin = _num(merged.get("km_final"))
+    km_perc = round(k_fin - k_ini, 1) if (k_ini is not None and k_fin is not None) else None
+    try:
+        viagens = int(merged.get("qtd_viagens")) if merged.get("qtd_viagens") not in (None, "") else None
+    except (TypeError, ValueError):
+        viagens = None
     await ajard_query(
         """UPDATE operacional.partes_diarias
-           SET horimetro_inicial=%s, horimetro_final=%s,
+           SET data=%s, horimetro_inicial=%s, horimetro_final=%s,
                hora_inicio=%s, hora_fim=%s, sem_almoco=%s,
-               qtd_metros=%s, observacao=%s, horas_trabalhadas=%s
+               qtd_metros=%s, observacao=%s, horas_trabalhadas=%s,
+               km_inicial=%s, km_final=%s, km_percorrido=%s, qtd_viagens=%s
            WHERE id=%s""",
-        (_num(merged.get("horimetro_inicial")), _num(merged.get("horimetro_final")),
+        (merged.get("data"), _num(merged.get("horimetro_inicial")), _num(merged.get("horimetro_final")),
          merged.get("hora_inicio") or None, merged.get("hora_fim") or None,
          bool(merged.get("sem_almoco")),
          _num(merged.get("qtd_metros")),
          (merged.get("observacao") or "").strip() or None,
-         horas, parte_id),
+         horas,
+         k_ini, k_fin, km_perc, viagens,
+         parte_id),
         fetch="none"
     )
     return {"ok": True, "horas_trabalhadas": horas}
+
+
+# ══════════════════════════════════════════════════════════════
+# ALERTA DE CONFLITO DE EQUIPAMENTO (05/07/2026)
+# Caso real: pausar uma obra e levar a máquina para outra é legítimo —
+# mas precisa ser DECISÃO CONSCIENTE. Ao abrir/editar OS com máquina
+# que já está em OS ativa, o front consulta aqui e pede confirmação.
+# ══════════════════════════════════════════════════════════════
+
+@router.get("/operacional/api/equipamentos/{eq_id}/conflito")
+async def op_conflito_equipamento(eq_id: str, ignorar_os: str = None,
+                                  payload=Depends(verificar_token)):
+    """Retorna a OS ATIVA que já usa este equipamento (se houver),
+    ignorando a própria OS em edição."""
+    args = [eq_id]
+    filtro_ignorar = ""
+    if ignorar_os:
+        args.append(ignorar_os)
+        filtro_ignorar = "AND os.id <> %s"
+    row = await ajard_query(
+        f"""SELECT os.numero, os.obra,
+                  COALESCE(c.nome, os.cliente_nome_avulso) AS cliente_nome,
+                  op.nome AS operador_nome
+           FROM operacional.ordens_servico os
+           LEFT JOIN public.clientes_garra c  ON c.id = os.cliente_id
+           LEFT JOIN public.usuarios_garra op ON op.id = os.operador_id
+           WHERE os.equipamento_id = %s
+             AND os.ativo = true
+             AND os.status NOT IN ('concluida_completa','concluida_sem_erp','cancelada')
+             {filtro_ignorar}
+           ORDER BY os.criado_em DESC
+           LIMIT 1""",
+        args, fetch="one"
+    )
+    if not row:
+        return {"conflito": False}
+    return {"conflito": True, "os": dict(row)}
+
+
+# ══════════════════════════════════════════════════════════════
+# OPERADOR EXCLUI SUA PRÓPRIA PARTE (05/07/2026)
+# Caso real: registro duplicado por engano. Soft delete (ativo=false),
+# mesmas guardas da edição: só o criador/operador da OS, não fechada.
+# ══════════════════════════════════════════════════════════════
+
+@router.delete("/operacional/api/minhas-partes/{parte_id}")
+async def op_excluir_minha_parte(parte_id: str, payload=Depends(verificar_token)):
+    login = payload.get("sub", "")
+    user = await ajard_query(
+        "SELECT id FROM public.usuarios_garra WHERE login=%s", (login,), fetch="one"
+    )
+    if not user:
+        raise HTTPException(status_code=404, detail="Usuário não encontrado")
+    parte = await ajard_query(
+        """SELECT p.id, p.criado_por, p.fechado, os.operador_id AS os_operador_id
+           FROM operacional.partes_diarias p
+           JOIN operacional.ordens_servico os ON os.id = p.os_id
+           WHERE p.id=%s AND p.ativo=true""",
+        (parte_id,), fetch="one"
+    )
+    if not parte:
+        raise HTTPException(status_code=404, detail="Registro não encontrado")
+    if parte.get("fechado"):
+        raise HTTPException(status_code=403, detail="Registro fechado — fale com a gestão.")
+    dono = str(parte.get("criado_por") or "") == str(user["id"]) or \
+           str(parte.get("os_operador_id") or "") == str(user["id"])
+    if not dono:
+        raise HTTPException(status_code=403, detail="Você só pode excluir os seus próprios registros.")
+    await ajard_query(
+        "UPDATE operacional.partes_diarias SET ativo=false WHERE id=%s",
+        (parte_id,), fetch="none"
+    )
+    return {"ok": True}
