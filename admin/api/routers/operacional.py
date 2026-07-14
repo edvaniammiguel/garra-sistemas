@@ -1612,16 +1612,18 @@ async def op_controle_mensal_excel(
             ws = wb.create_sheet(nome_aba)
 
             # Título
-            ws.merge_cells('A1:K1')
+            ws.merge_cells('A1:M1')
             ws['A1'] = titulo_doc
             ws['A1'].font = Font(bold=True, size=14, color="1A2A5E")
-            ws.merge_cells('A2:K2')
+            ws.merge_cells('A2:M2')
             ws['A2'] = grupo["label"]
             ws['A2'].font = Font(bold=True, size=11, color="E8820C")
 
             # Headers
+            # (13/07/2026) ESPELHO da tabela do desktop: + Un., Valor (R$),
+            # medição real por linha e dias sem apontamento (NÃO RODOU etc.)
             headers = ['Data','Cód Interno','OS','Cliente','Operador' if view=='equipamento' else 'Equipamento',
-                       'H.Inicial','H.Final','Horas Trab.','Horas Cobr.','Regime','Por conta']
+                       'Inicial','Final','Trab.','Cobr.','Un.','Valor (R$)','Regime','Por conta']
             for col, h in enumerate(headers, 1):
                 cell = ws.cell(row=4, column=col, value=h)
                 cell.font = header_font
@@ -1630,75 +1632,135 @@ async def op_controle_mensal_excel(
                 cell.border = border
 
             row = 5
-            soma_trab = 0
-            soma_cobr = 0
+            soma_t = {"h": 0.0, "m": 0.0, "km": 0.0, "v": 0.0}
+            soma_c = {"h": 0.0, "m": 0.0, "km": 0.0, "v": 0.0}
+            soma_valor = 0.0
             dias_set = set()
 
-            for p in sorted(grupo["partes"], key=lambda x: x.get("data","")):
-                data_fmt = ""
-                if p.get("data"):
+            def _fmt_soma(o):
+                pares = [(o["h"], "h"), (o["m"], "m"), (o["km"], "km"), (o["v"], "viag.")]
+                itens = [f"{n:.1f} {u}" for n, u in pares if n > 0]
+                return " · ".join(itens) if itens else 0
+
+            # Partes agrupadas por dia (para intercalar os dias sem apontamento)
+            por_dia = {}
+            for p in grupo["partes"]:
+                por_dia.setdefault(str(p.get("data") or ""), []).append(p)
+
+            from datetime import date as dt_date, timedelta
+            gap_font_fds = Font(bold=True, size=10, color="DC2626")
+            gap_font = Font(bold=True, size=10, color="475569")
+            gap_fill = PatternFill(start_color="F8FAFC", end_color="F8FAFC", fill_type="solid")
+
+            if mes:
+                hoje = dt_date.today()
+                ultimo = calendar.monthrange(ano, mes)[1]
+                if ano == hoje.year and mes == hoje.month:
+                    ultimo = min(ultimo, hoje.day)
+                dias_iter = [dt_date(ano, mes, d).isoformat() for d in range(1, ultimo + 1)]
+            else:
+                dias_iter = sorted(por_dia.keys())  # anual: sem lacunas (ficaria imenso)
+
+            for dia_iso in dias_iter:
+                lista_dia = sorted(por_dia.get(dia_iso, []), key=lambda x: str(x.get("criado_em") or ""))
+                if not lista_dia:
+                    # ESPELHO: dia sem apontamento — NÃO RODOU / SÁBADO / DOMINGO
                     try:
-                        from datetime import date as dt_date
-                        d = dt_date.fromisoformat(p["data"])
-                        data_fmt = d.strftime("%d/%m/%Y")
+                        d_obj = dt_date.fromisoformat(dia_iso)
+                        rotulo = "SÁBADO" if d_obj.weekday() == 5 else ("DOMINGO" if d_obj.weekday() == 6 else "NÃO RODOU")
+                        c1 = ws.cell(row=row, column=1, value=d_obj.strftime("%d/%m/%Y"))
+                        c1.fill = gap_fill; c1.border = border
+                        c2 = ws.cell(row=row, column=2, value=rotulo)
+                        c2.font = gap_font_fds if rotulo != "NÃO RODOU" else gap_font
+                        c2.fill = gap_fill
+                        for col in range(2, 14):
+                            ws.cell(row=row, column=col).fill = gap_fill
+                            ws.cell(row=row, column=col).border = border
+                        row += 1
                     except Exception:
-                        data_fmt = p["data"]
+                        pass
+                    continue
+                for p in lista_dia:
+                    data_fmt = ""
+                    try:
+                        data_fmt = dt_date.fromisoformat(str(p.get("data"))).strftime("%d/%m/%Y")
+                    except Exception:
+                        data_fmt = p.get("data") or ""
 
-                med = p.get("tipo_medicao") or p.get("equipamento_medicao") or "horimetro"
-                if med == "metros":
-                    h_ini = ""
-                    h_fin = ""
-                    h_trab = float(p.get("qtd_metros") or 0)
-                    h_cobr = float(p.get("qtd_metros") or 0)
-                elif med == "km":
-                    h_ini = float(p.get("km_inicial") or 0)
-                    h_fin = float(p.get("km_final") or 0)
-                    h_trab = float(p.get("km_percorrido") or 0)
-                    h_cobr = float(p.get("km_percorrido") or 0)
-                else:
-                    h_ini = float(p.get("horimetro_inicial") or 0)
-                    h_fin = float(p.get("horimetro_final") or 0)
-                    h_trab = float(p.get("horas_trabalhadas") or 0)
-                    h_cobr = float(p.get("horas_cobradas") or h_trab)
+                    med = (p.get("tipo_medicao") or p.get("equipamento_medicao") or "horimetro").lower()
+                    if med == "metros":
+                        h_ini = ""; h_fin = ""
+                        h_trab = float(p.get("qtd_metros") or 0); h_cobr = h_trab
+                        unidade, chave = "m", "m"
+                        rotulo_med = "metros"
+                    elif med == "viagem":
+                        h_ini = ""; h_fin = ""
+                        h_trab = float(p.get("qtd_viagens") or 0) or 1.0; h_cobr = h_trab
+                        unidade, chave = "viag.", "v"
+                        rotulo_med = "viagem"
+                    elif med == "km":
+                        h_ini = float(p.get("km_inicial") or 0)
+                        h_fin = float(p.get("km_final") or 0)
+                        h_trab = float(p.get("km_percorrido") or 0); h_cobr = h_trab
+                        unidade, chave = "km", "km"
+                        rotulo_med = "km"
+                    else:
+                        h_ini = float(p.get("horimetro_inicial") or 0)
+                        h_fin = float(p.get("horimetro_final") or 0)
+                        h_trab = float(p.get("horas_trabalhadas") or 0)
+                        h_cobr = float(p.get("horas_cobradas") or h_trab)
+                        unidade, chave = "h", "h"
+                        reg = str(p.get("regime_cobranca") or "").lower()
+                        rotulo_med = p.get("regime_cobranca") if "hora" in reg else "hora"
 
-                soma_trab += h_trab
-                soma_cobr += h_cobr
-                dias_set.add(p.get("data"))
+                    soma_t[chave] += h_trab
+                    soma_c[chave] += h_cobr
+                    val = p.get("valor")
+                    try:
+                        soma_valor += float(val) if val not in (None, "") else 0.0
+                    except Exception:
+                        pass
+                    dias_set.add(p.get("data"))
 
-                col4 = p.get("operador_nome","") if view == "equipamento" else p.get("equipamento_codigo","")
-                valores = [
-                    data_fmt,
-                    p.get("os_numero",""),
-                    p.get("codigo_erp","") or "",
-                    p.get("cliente_nome",""),
-                    col4,
-                    h_ini, h_fin,
-                    round(h_trab, 2) if h_trab else 0,
-                    round(h_cobr, 2) if h_cobr else 0,
-                    p.get("regime_cobranca",""),
-                    p.get("por_conta_de","")
-                ]
-                for col, v in enumerate(valores, 1):
-                    cell = ws.cell(row=row, column=col, value=v)
-                    cell.alignment = cell_align
-                    cell.border = border
-                row += 1
+                    col4 = p.get("operador_nome", "") if view == "equipamento" else p.get("equipamento_codigo", "")
+                    valores = [
+                        data_fmt,
+                        p.get("os_numero", ""),
+                        p.get("codigo_erp", "") or "",
+                        p.get("cliente_nome", ""),
+                        col4,
+                        h_ini, h_fin,
+                        round(h_trab, 2) if h_trab else 0,
+                        round(h_cobr, 2) if h_cobr else 0,
+                        unidade,
+                        (round(float(val), 2) if val not in (None, "") else ""),
+                        rotulo_med,
+                        p.get("por_conta_de", "")
+                    ]
+                    for col, v in enumerate(valores, 1):
+                        cell = ws.cell(row=row, column=col, value=v)
+                        cell.alignment = cell_align
+                        cell.border = border
+                    row += 1
 
-            # Linha TOTAL
+            # Linha TOTAL — por unidade, como no desktop
             row += 1
             ws.cell(row=row, column=1, value="TOTAL").font = total_font
             ws.cell(row=row, column=1).fill = total_fill
-            ws.cell(row=row, column=8, value=round(soma_trab, 2)).font = total_font
+            ws.cell(row=row, column=8, value=_fmt_soma(soma_t)).font = total_font
             ws.cell(row=row, column=8).fill = total_fill
-            ws.cell(row=row, column=9, value=round(soma_cobr, 2)).font = total_font
+            ws.cell(row=row, column=9, value=_fmt_soma(soma_c)).font = total_font
             ws.cell(row=row, column=9).fill = total_fill
+            if soma_valor > 0:
+                ws.cell(row=row, column=11, value=round(soma_valor, 2)).font = total_font
+                ws.cell(row=row, column=11).fill = total_fill
 
             ws.cell(row=row+1, column=1, value=f"Dias trabalhados: {len(dias_set)}").font = Font(size=10, color="64748B")
             dias_no_mes = dados["dias_no_mes"]
             ws.cell(row=row+2, column=1, value=f"Dias parados: {dias_no_mes - len(dias_set)}").font = Font(size=10, color="64748B")
 
-            # Larguras (11 colunas: Data, Cód Interno, OS, Cliente, Op/Equip, H.Ini, H.Fin, Trab, Cobr, Regime, Conta)
-            widths = [12, 14, 14, 22, 16, 10, 10, 12, 12, 10, 12]
+            # Larguras (13 colunas — espelho do desktop)
+            widths = [12, 14, 10, 20, 16, 10, 10, 11, 11, 7, 12, 10, 12]
             for i, w in enumerate(widths, 1):
                 ws.column_dimensions[get_column_letter(i)].width = w
 
@@ -1842,7 +1904,7 @@ async def op_editar_minha_parte(parte_id: str, request: Request, payload=Depends
     # comissão (a atribuição segue o operador da parte).
     EDITAVEIS = ["data", "horimetro_inicial", "horimetro_final", "hora_inicio", "hora_fim",
                  "sem_almoco", "qtd_metros", "observacao",
-                 "km_inicial", "km_final", "qtd_viagens",
+                 "km_inicial", "km_final", "qtd_viagens", "quantidade_diarias",
                  "equipamento_id", "operador_id"]
     merged = dict(parte)
     algum = False
