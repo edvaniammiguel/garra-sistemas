@@ -156,7 +156,7 @@ const PontosConfig = {
     if (typeof currentUser !== 'undefined' && currentUser?.role === 'manager') return true;
     const cfg = this.get();
     if (!cfg.ativo) return false;
-    const hoje = new Date().toISOString().slice(0,10);
+    const hoje = new Date(Date.now() - new Date().getTimezoneOffset()*60000).toISOString().slice(0,10);
     if (cfg.data_inicio && hoje < cfg.data_inicio) return false;
     return true;
   },
@@ -758,7 +758,7 @@ function renderFormStep(manterScroll) {
     }
     content.innerHTML = `<div class="form-step"><div class="form-step-title">${step.title}</div><div class="form-step-sub">${step.sub}</div>${step.fields.map(f=>renderMetaField(f,vehicles)).join('')}</div>`;
     const dateEl = document.getElementById('meta-data');
-    if (dateEl && !formMeta.data) dateEl.value = new Date().toISOString().slice(0,10);
+    if (dateEl && !formMeta.data) dateEl.value = new Date(Date.now() - new Date().getTimezoneOffset()*60000).toISOString().slice(0,10);
     step.fields.forEach(f => { const el=document.getElementById('meta-'+f.id); if(el&&formMeta[f.id]) el.value=formMeta[f.id]; });
   } else if (step.type==='checklist'||step.type==='custom') {
     content.innerHTML = `<div class="form-step"><div class="form-step-title">${step.title}</div><div class="form-step-sub">${step.sub||''}</div>${step.items.map(item=>renderCheckItem(item)).join('')}</div>`;
@@ -1081,7 +1081,7 @@ function calculatePoints(s, cl) {
   if(nc===0) cl.steps?.filter(st=>st.type==='checklist').forEach(step=>step.items?.forEach(item=>{const ans=s.answers?.[item.id];if(ans?.val==='C')itemBonus+=(item.pts||1)-1;}));
   let pts=nc===0?rules.full:rules.nc; pts+=itemBonus;
   if(s.meta?.observacoes?.length>20)pts+=rules.obs;
-  if((s.date||'').slice(0,10)===new Date().toISOString().slice(0,10))pts+=rules.ontime;
+  if((s.date||'').slice(0,10)===new Date(Date.now() - new Date().getTimezoneOffset()*60000).toISOString().slice(0,10))pts+=rules.ontime;
   return Math.max(0,pts);
 }
 
@@ -2163,13 +2163,13 @@ function openNovoCiclo() {
     return;
   }
   document.getElementById('ciclo-nome').value = '';
-  document.getElementById('ciclo-inicio').value = new Date().toISOString().slice(0,10);
+  document.getElementById('ciclo-inicio').value = new Date(Date.now() - new Date().getTimezoneOffset()*60000).toISOString().slice(0,10);
   document.getElementById('ciclo-fim').value = '';
   document.getElementById('ciclo-descricao').value = '';
   // Sugestão de datas
   const hoje = new Date();
   const fim30 = new Date(hoje.getTime() + 30*86400000);
-  document.getElementById('ciclo-fim').value = fim30.toISOString().slice(0,10);
+  document.getElementById('ciclo-fim').value = new Date(fim30.getTime() - fim30.getTimezoneOffset()*60000).toISOString().slice(0,10);
   openModal('ciclo-modal');
 }
 
@@ -2382,8 +2382,8 @@ function toggleCicloDetalhes(id) {
 function preencherPeriodo(dias) {
   const hoje = new Date();
   const fim  = new Date(hoje.getTime() + dias*86400000);
-  document.getElementById('ciclo-inicio').value = hoje.toISOString().slice(0,10);
-  document.getElementById('ciclo-fim').value    = fim.toISOString().slice(0,10);
+  document.getElementById('ciclo-inicio').value = new Date(hoje.getTime() - hoje.getTimezoneOffset()*60000).toISOString().slice(0,10);
+  document.getElementById('ciclo-fim').value    = new Date(fim.getTime() - fim.getTimezoneOffset()*60000).toISOString().slice(0,10);
   const nomes = {15:'Quinzenal',30:'Mensal',60:'Bimestral',365:'Anual'};
   const mes   = hoje.toLocaleString('pt-BR',{month:'long',year:'numeric'});
   document.getElementById('ciclo-nome').value   = `${nomes[dias]||dias+'d'} — ${mes}`;
