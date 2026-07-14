@@ -2468,7 +2468,9 @@ async function verPartes(osId, osNum, editavel = true) {
         detalhes = `⚙️ ${p.horimetro_inicial} → ${p.horimetro_final}`;
       } else if (med === 'km' && (p.km_inicial || p.km_final)) {
         detalhes = `🛣 ${p.km_inicial||0} → ${p.km_final||0} km`;
-      } else if (hIni || hFim) {
+      } else if ((med === 'horimetro' || med === 'hora') && (hIni || hFim)) {
+        // Relógio só quando as horas SÃO a medida — em viagem/diária/metros
+        // os horários eram apenas o padrão do formulário (ruído enganoso)
         detalhes = `🕐 ${hIni||'--'} às ${hFim||'--'}`;
       }
 
