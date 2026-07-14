@@ -3198,7 +3198,7 @@ async function abrirModalOS(osId=null) {
     document.getElementById('os-valor-combinado').value='';
     ['os-valor-hora','os-valor-metro','os-valor-diaria','os-valor-km','os-valor-viagem'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
     document.getElementById('os-horas-padrao').value='';
-    document.getElementById('os-data-inicio').value=new Date().toISOString().slice(0,10);
+    document.getElementById('os-data-inicio').value=new Date(Date.now() - new Date().getTimezoneOffset()*60000).toISOString().slice(0,10);
     _atualizarLabelRegime();
   } else {
     // Carregar dados da OS existente
@@ -3431,7 +3431,7 @@ async function abrirModalParte() {
   if (!_osAtual) return;
   document.getElementById('mp-os-id').value = _osAtual.id;
   document.getElementById('mp-parte-id').value = '';
-  document.getElementById('mp-data').value = new Date().toISOString().slice(0,10);
+  document.getElementById('mp-data').value = new Date(Date.now() - new Date().getTimezoneOffset()*60000).toISOString().slice(0,10);
   ['mp-metros','mp-diarias','mp-h-ini','mp-h-fin','mp-horas-cob','mp-km-ini','mp-km-fin','mp-viagens'].forEach(id => {
     const el = document.getElementById(id); if (el) el.value = (id === 'mp-diarias' ? '1' : '');
   });
