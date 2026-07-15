@@ -847,7 +847,7 @@ input,select,textarea { font-family:inherit; font-size:13px; outline:none; }
       </div>
       <div class="field">
         <label>OS <span style="text-transform:none;font-weight:400;color:var(--muted)">(número do cliente)</span></label>
-        <input type="text" id="os-codigo-erp" placeholder="Ex.: 3504 (número da OS do cliente)"/>
+        <input type="text" id="os-codigo-erp" placeholder="Ex.: 3504 (número da OS do cliente)"/ autocomplete="off" readonly onfocus="this.removeAttribute('readonly')">
         <div class="field-hint">Pode preencher depois quando vier do Mais Soluções</div>
       </div>
     </div>
@@ -920,7 +920,7 @@ input,select,textarea { font-family:inherit; font-size:13px; outline:none; }
     </div>
     <div class="field">
       <label>Obra / Local <span style="color:var(--red)">*</span></label>
-      <input type="text" id="os-obra" placeholder="Ex.: OBRA NOVA SERRANA - PROBASE"/>
+      <input type="text" id="os-obra" placeholder="Ex.: OBRA NOVA SERRANA - PROBASE"/ autocomplete="off" readonly onfocus="this.removeAttribute('readonly')">
     </div>
     <div class="field">
       <label>Endereço</label>
