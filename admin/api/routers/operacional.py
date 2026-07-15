@@ -967,8 +967,17 @@ async def op_listar_partes(os_id: str, _auth=Depends(verificar_token)):
             p.pop("quantidade_diarias_cobradas", None)
             p.pop("valor_calculado", None)
 
-    # Totais acumulados
-    total_horas     = sum(float(p.get("horas_trabalhadas") or 0) for p in lista)
+    # Totais acumulados — horas APENAS de registros medidos em hora
+    # (mesma regra de conteúdo da comissão e do CM)
+    def _conta_horas(p):
+        med = (p.get("tipo_medicao") or "horimetro").lower()
+        if med in ("metros", "viagem", "diaria", "km"):
+            return False
+        if float(p.get("qtd_metros") or 0) > 0:
+            return False
+        return True
+    total_horas     = sum(float(p.get("horas_trabalhadas") or 0) for p in lista if _conta_horas(p))
+    total_metros    = sum(float(p.get("qtd_metros") or 0) for p in lista)
     total_diarias   = sum(float(p.get("quantidade_diarias") or 0) for p in lista)
     total_viagens   = sum(float(p.get("qtd_viagens")       or 0) for p in lista)
     dias_trabalhados= len(set(str(p.get("data",""))[:10] for p in lista if p.get("data")))
@@ -976,6 +985,7 @@ async def op_listar_partes(os_id: str, _auth=Depends(verificar_token)):
     totais = {
         "dias_trabalhados":  dias_trabalhados,
         "total_horas":       round(total_horas, 2),
+        "total_metros":      round(total_metros, 2),
         "total_diarias":     total_diarias,
         "total_viagens":     total_viagens,
     }
@@ -984,7 +994,7 @@ async def op_listar_partes(os_id: str, _auth=Depends(verificar_token)):
         total_horas_cob = sum(
             float(p.get("horas_cobradas") or 0) if float(p.get("horas_cobradas") or 0) > 0
             else float(p.get("horas_trabalhadas") or 0)
-            for p in lista
+            for p in lista if _conta_horas(p)
         )
         totais["total_horas_cobradas"] = round(total_horas_cob, 2)
 
