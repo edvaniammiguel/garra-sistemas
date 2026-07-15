@@ -228,6 +228,12 @@ async def startup():
             # (13/07/2026) PREÇOS POR MEDIÇÃO na OS — prática real da Garra:
             # OS mista (ex.: metros + horas de concha) precisa de um preço por
             # tipo de medida. valor_combinado vira legado/espelho do regime.
+            # (15/07/2026) Tabela de preços: valor padrão por regime — Nova OS
+            # nasce precificada (snapshot na OS; reajuste não retroage)
+            await conn.execute("""
+                ALTER TABLE operacional.regimes_cobranca
+                ADD COLUMN IF NOT EXISTS valor_padrao NUMERIC(12,2)
+            """)
             for col in ("valor_hora", "valor_metro", "valor_diaria", "valor_km", "valor_viagem"):
                 await conn.execute(f"""
                     ALTER TABLE operacional.ordens_servico
