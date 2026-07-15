@@ -891,7 +891,7 @@ input,select,textarea { font-family:inherit; font-size:13px; outline:none; }
     <div class="field-row">
       <div class="field">
         <label>Regime de cobrança <span style="color:var(--red)">*</span></label>
-        <select id="os-regime" onchange="_atualizarLabelRegime()">
+        <select id="os-regime" onchange="_atualizarLabelRegime();_prefillPrecosOS(false)">
           <option value="">— selecionar —</option>
         </select>
       </div>
@@ -3195,6 +3195,7 @@ async function abrirModalOS(osId=null) {
     document.getElementById('os-equipamento').value='';
     document.getElementById('os-operador').value='';
     document.getElementById('os-regime').value='';
+    setTimeout(() => _prefillPrecosOS(true), 150); // Nova OS nasce com a tabela
     document.getElementById('os-valor-combinado').value='';
     ['os-valor-hora','os-valor-metro','os-valor-diaria','os-valor-km','os-valor-viagem'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
     document.getElementById('os-horas-padrao').value='';
@@ -3273,6 +3274,30 @@ function _totalACobrarOS(os, partes, t) {
   return (partes||[]).reduce((s,p) => s + _valorParte(p, P), 0);
 }
 
+// (15/07/2026) PREFILL da tabela de preços — só em campos VAZIOS (nunca
+// sobrescreve o combinado de uma OS existente; snapshot fica na OS ao salvar)
+function _prefillPrecosOS(novaOS) {
+  const P = window._regimesPrecos || {};
+  const setSeVazio = (id, val) => {
+    const el = document.getElementById(id);
+    if (el && val != null && (el.value === '' || el.value == null)) el.value = val;
+  };
+  if (novaOS) {
+    setSeVazio('os-valor-hora',   P['hora']);
+    setSeVazio('os-valor-metro',  P['metro']);
+    setSeVazio('os-valor-diaria', P['diaria']);
+    setSeVazio('os-valor-km',     P['km']);
+    setSeVazio('os-valor-viagem', P['viagem'] ?? P['frete']);
+  }
+  const regime = (document.getElementById('os-regime')?.value || '').toLowerCase();
+  const chave = regime.includes('hora') && !regime.includes('empreit') ? 'hora'
+              : regime.includes('metro') ? 'metro'
+              : regime.includes('diari') ? 'diaria'
+              : regime.includes('km') ? 'km'
+              : regime.includes('viagem') || regime.includes('frete') ? 'viagem' : null;
+  if (chave) setSeVazio('os-valor-combinado', P[chave]);
+}
+
 function _atualizarLabelRegime() {
   const regime = document.getElementById('os-regime')?.value||'';
   const label  = document.getElementById('os-valor-label');
@@ -3334,6 +3359,9 @@ async function _carregarSelectsOS() {
   if (selReg && selReg.options.length <= 1) {
     try {
       const regs = await apiFetch('/operacional/api/regimes-cobranca');
+      // (15/07/2026) Tabela de preços: mapa nome→valor padrão para o prefill
+      window._regimesPrecos = {};
+      regs.forEach(r => { if (r.valor_padrao != null) window._regimesPrecos[(r.nome||'').toLowerCase()] = parseFloat(r.valor_padrao); });
       selReg.innerHTML = '<option value="">— selecionar —</option>' +
         regs.map(r=>`<option value="${r.nome}">${esc(r.descricao || r.nome)}</option>`).join('');
     } catch {}
@@ -4085,6 +4113,7 @@ function renderTabelaRegimes() {
       <thead><tr style="background:#F0F4FF;text-align:left">
         <th style="padding:10px">Nome</th>
         <th style="padding:10px">Descrição</th>
+        <th style="padding:10px;text-align:right">Valor padrão (R$)</th>
         <th style="padding:10px;text-align:right">Ações</th>
       </tr></thead>
       <tbody>
@@ -4092,6 +4121,7 @@ function renderTabelaRegimes() {
           <tr style="border-bottom:1px solid var(--border)">
             <td style="padding:10px;font-weight:700">${esc(r.nome || '')}</td>
             <td style="padding:10px">${esc(r.descricao || '–')}</td>
+            <td style="padding:10px;text-align:right;font-weight:700">${r.valor_padrao != null ? 'R$ ' + parseFloat(r.valor_padrao).toFixed(2) : '<span style="color:var(--muted)">–</span>'}</td>
             <td style="padding:10px;text-align:right;display:flex;gap:6px;justify-content:flex-end">
               <button class="btn-sm" onclick="editarRegime('${esc(r.id)}')">✎ Editar</button>
               <button class="btn-sm" style="color:var(--red)" onclick="removerRegime('${esc(r.id)}','${esc(r.nome)}')">🗑</button>
@@ -4122,6 +4152,10 @@ function abrirModalRegime(reg = null) {
           <label class="lbl">Descrição</label>
           <input id="reg-desc" type="text" value="${esc(r.descricao || '')}" class="fld" placeholder="Descrição opcional">
         </div>
+        <div style="margin-bottom:18px">
+          <label class="lbl">Valor padrão (R$)</label>
+          <input id="reg-valor" type="number" step="0.01" min="0" value="${r.valor_padrao != null ? r.valor_padrao : ''}" class="fld" placeholder="Preço de tabela — pré-preenche Nova OS (opcional)">
+        </div>
 
         <div style="display:flex;gap:8px">
           <button onclick="fecharModalReg()" class="btn btn-secondary" style="flex:1">Cancelar</button>
@@ -4146,6 +4180,7 @@ async function salvarRegime(id) {
   const payload = {
     nome:      document.getElementById('reg-nome').value.trim(),
     descricao: document.getElementById('reg-desc').value.trim() || null,
+    valor_padrao: document.getElementById('reg-valor').value || null,
   };
   if (!payload.nome) {
     err.textContent = 'Nome é obrigatório';
