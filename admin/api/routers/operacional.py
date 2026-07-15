@@ -246,7 +246,7 @@ async def op_remover_tipo_servico(tipo_id: str, payload=Depends(verificar_admin)
 @router.get("/operacional/api/regimes-cobranca")
 async def op_listar_regimes(_auth=Depends(verificar_token)):
     rows = await ajard_query(
-        "SELECT id, nome, descricao FROM operacional.regimes_cobranca WHERE ativo=true ORDER BY nome"
+        "SELECT id, nome, descricao, valor_padrao FROM operacional.regimes_cobranca WHERE ativo=true ORDER BY nome"
     )
     return [dict(r) for r in (rows or [])]
 
@@ -258,10 +258,12 @@ async def op_criar_regime(request: Request, payload=Depends(verificar_gestor)):
     if not nome:
         raise HTTPException(status_code=400, detail="Nome é obrigatório")
     try:
+        vp = d.get("valor_padrao")
+        vp = float(vp) if vp not in (None, "") else None
         row = await ajard_query(
-            """INSERT INTO operacional.regimes_cobranca (nome, descricao, ativo)
-               VALUES (%s, %s, true) RETURNING id, nome, descricao""",
-            (nome, descricao or None), fetch="one"
+            """INSERT INTO operacional.regimes_cobranca (nome, descricao, valor_padrao, ativo)
+               VALUES (%s, %s, %s, true) RETURNING id, nome, descricao, valor_padrao""",
+            (nome, descricao or None, vp), fetch="one"
         )
         return dict(row) if row else {"nome": nome}
     except Exception as e:
@@ -281,12 +283,15 @@ async def op_editar_regime(reg_id: str, request: Request, payload=Depends(verifi
         updates.append("nome=%s"); valores.append(nome)
     if "descricao" in d:
         updates.append("descricao=%s"); valores.append((d.get("descricao") or "").strip() or None)
+    if "valor_padrao" in d:
+        vp = d.get("valor_padrao")
+        updates.append("valor_padrao=%s"); valores.append(float(vp) if vp not in (None, "") else None)
     if not updates:
         raise HTTPException(status_code=400, detail="Nada a atualizar")
     valores.append(reg_id)
     try:
         row = await ajard_query(
-            f"UPDATE operacional.regimes_cobranca SET {', '.join(updates)} WHERE id=%s RETURNING id, nome, descricao",
+            f"UPDATE operacional.regimes_cobranca SET {', '.join(updates)} WHERE id=%s RETURNING id, nome, descricao, valor_padrao",
             tuple(valores), fetch="one"
         )
         if not row:
@@ -1371,6 +1376,18 @@ async def op_criar_os_avulsa(req: Request, payload=Depends(verificar_token)):
         seq = 1
     numero = f"OS-{ano}-{seq:04d}"
     
+    # (15/07/2026) SNAPSHOT da tabela de preços na criação — reajuste de
+    # tabela nunca retroage em OS existente
+    precos_padrao = {"hora": None, "metro": None, "diaria": None, "km": None, "viagem": None}
+    try:
+        regs = await ajard_query(
+            "SELECT nome, valor_padrao FROM operacional.regimes_cobranca WHERE ativo=true")
+        for r in (regs or []):
+            n = (r.get("nome") or "").lower()
+            if n in precos_padrao and r.get("valor_padrao") is not None:
+                precos_padrao[n] = float(r["valor_padrao"])
+    except Exception:
+        pass
     nova = None
     try:
         nova = await ajard_query(
@@ -1378,15 +1395,19 @@ async def op_criar_os_avulsa(req: Request, payload=Depends(verificar_token)):
                (numero, ano, sequencia, obra, cliente_nome_avulso,
                 equipamento_id, tipo_servico_id, regime_cobranca,
                 operador_id, status, origem, descricao,
-                data_inicio, ativo, criado_por, criado_em, client_id)
+                data_inicio, ativo, criado_por, criado_em, client_id,
+                valor_hora, valor_metro, valor_diaria, valor_km, valor_viagem)
                VALUES (%s, %s, %s, %s, %s,
                        %s, %s, %s,
                        %s, 'aberta_sem_erp', 'campo', %s,
-                       CURRENT_DATE, true, %s, NOW(), %s)
+                       CURRENT_DATE, true, %s, NOW(), %s,
+                       %s, %s, %s, %s, %s)
                RETURNING id, numero, obra, status""",
             (numero, ano, seq, obra, cliente_nome or None,
              equipamento_id, tipo_servico_id, regime_cobranca,
-             user["id"], observacao or None, user["id"], client_id),
+             user["id"], observacao or None, user["id"], client_id,
+             precos_padrao["hora"], precos_padrao["metro"], precos_padrao["diaria"],
+             precos_padrao["km"], precos_padrao["viagem"]),
             fetch="one"
         )
     except Exception as e:
