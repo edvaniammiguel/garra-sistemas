@@ -411,6 +411,11 @@ html,body { height:100%; overflow:hidden; font-family:var(--fb); background:var(
 .detail-section{background:var(--white);border-radius:var(--radius-sm);padding:14px;margin-bottom:10px;box-shadow:var(--shadow-sm);}
 .detail-section h4{font-family:var(--fd);font-size:15px;font-weight:700;color:var(--navy);margin-bottom:10px;text-transform:uppercase;letter-spacing:.5px;}
 .detail-row{display:flex;align-items:center;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--gray-light);}
+/* (16/07/2026) Desktop: conteúdo do detalhe com largura de leitura —
+   rótulo e valor lado a lado, sem atravessar a tela inteira */
+@media (min-width: 900px){
+  .detail-content{max-width:820px;margin:0 auto;}
+}
 .detail-row:last-child{border-bottom:none;}
 .dr-label{font-size:13px;color:var(--text-light);flex:1;}
 .dr-val{font-size:13px;font-weight:600;color:var(--text);}
