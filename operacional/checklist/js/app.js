@@ -1265,7 +1265,8 @@ async function renderOverview() {
     // Adaptador: envio do servidor → formato usado pelas contas abaixo
     subs = envios.map(e => ({
       user: e.usuario_login, userName: e.usuario_nome, type: e.cl_id,
-      date: e.enviado_em, archived: false, _nc: (e.total_nc || 0)
+      date: e.enviado_em, archived: false, _nc: (e.total_nc || 0),
+      answers: e.respostas || {}   // (16/07/2026) itens p/ conformidade por item
     }));
   } catch (err) {
     console.error('[visão geral] fallback local:', err);
