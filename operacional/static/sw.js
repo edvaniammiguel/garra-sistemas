@@ -14,7 +14,7 @@
  */
 
 const CACHE_NAME = 'garra-operacional-v15';
-const ASSETS_CACHE = 'garra-assets-v20';
+const ASSETS_CACHE = 'garra-assets-v21';
 const OFFLINE_PAGE = '/operacional/offline.html';
 
 // Assets que devem sempre estar em cache (shell)
