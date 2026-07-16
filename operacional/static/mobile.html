@@ -498,6 +498,9 @@ input,select,textarea{font-family:inherit;outline:none;border:none}
       </div>
     </div>
 
+    <!-- (15/07/2026) Relógio: SÓ na medição Hora — tela mínima nas demais
+         (o relógio-padrão em metros/viagem gerava horas fantasmas) -->
+    <div id="m-bloco-relogio" style="display:none">
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
       <div>
         <label style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:5px">Hora início</label>
@@ -515,6 +518,7 @@ input,select,textarea{font-family:inherit;outline:none;border:none}
       Dia corrido — sem intervalo de almoço
     </label>
     <div id="m-horas-jornada" style="display:none;font-size:13px;font-weight:700;color:var(--blue);background:#EEF2FF;padding:8px 10px;border-radius:6px;margin-bottom:12px;text-align:center"></div>
+    </div>
 
     <!-- Trajeto do frete (origem → destino) -->
     <div id="bloco-trajeto" style="margin-bottom:12px;display:none">
@@ -1371,9 +1375,13 @@ async function salvarParte(adicionarMais) {
     qtd_metros: metros ? parseFloat(metros) : null,
     qtd_viagens: parseFloat(document.getElementById('m-viagens').value || '0') || 0,
     quantidade_diarias: parseFloat(document.getElementById('m-diarias').value || '0') || 0,
-    hora_inicio: document.getElementById('m-h-inicio').value || null,
-    hora_fim: document.getElementById('m-h-fim').value || null,
-    sem_almoco: document.getElementById('m-sem-almoco').checked,
+    // (15/07/2026) Relógio só vale na medição hora — nas demais nem é enviado
+    hora_inicio: (window._medicaoAtual === 'horimetro' || window._medicaoAtual === 'hora')
+      ? (document.getElementById('m-h-inicio').value || null) : null,
+    hora_fim: (window._medicaoAtual === 'horimetro' || window._medicaoAtual === 'hora')
+      ? (document.getElementById('m-h-fim').value || null) : null,
+    sem_almoco: (window._medicaoAtual === 'horimetro' || window._medicaoAtual === 'hora')
+      ? document.getElementById('m-sem-almoco').checked : false,
     trajeto: document.getElementById('m-trajeto').value.trim() || null,
     por_conta_de: document.getElementById('m-por-conta').value || 'cliente',
     vinculo_operador: vinculo,
@@ -1754,6 +1762,9 @@ function selecionarMedicao(tipo) {
   if (btnAtivo) { btnAtivo.style.background='var(--orange)'; btnAtivo.style.color='#fff'; btnAtivo.style.borderColor='var(--orange)'; }
   // Mostra bloco correspondente (horímetro usa o bloco fixo sempre visível)
   _mostrarBloco(tipo);
+  // Relógio (hora início/fim + dia corrido) só na medição HORA — tela mínima
+  const rel = document.getElementById('m-bloco-relogio');
+  if (rel) rel.style.display = (tipo === 'horimetro' || tipo === 'hora') ? 'block' : 'none';
 }
 
 // Trocar equipamento: SUGERE a medição padrão do equipamento (sem acender botão),
