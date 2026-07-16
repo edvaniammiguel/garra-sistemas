@@ -1281,23 +1281,38 @@ async function renderOverview() {
   subs.forEach(s=>{if(counts[s.type]!==undefined)counts[s.type]++;});
   const maxC=Math.max(...Object.values(counts),1);
   document.getElementById('chart-types').innerHTML=Object.entries(counts).map(([k,v])=>{const cl=allCLs[k];return `<div class="bc-row"><div class="bc-label">${cl?.icon||'📋'} ${cl?.label||k}</div><div class="bc-bar-wrap"><div class="bc-bar-fill" style="width:${Math.round((v/maxC)*100)}%"></div></div><div class="bc-count">${v}</div></div>`;}).join('');
-  // Conformidade — direto dos ENVIOS (independe do cadastro local de usuários)
+  // (16/07/2026) Conformidade por ITENS verificados — um NC entre 20 ✓ não
+  // zera o colaborador (antes: "conformes" = envios com zero NC → 1 NC = 0%).
   const porUser = {};
   subs.forEach(s => {
     const k = s.user || '?';
-    porUser[k] = porUser[k] || { d: { login: k, name: s.userName || k }, total: 0, conf: 0 };
-    porUser[k].total++;
-    if (_ncDe(s) === 0 && !s.archived) porUser[k].conf++;
+    porUser[k] = porUser[k] || { d: { login: k, name: s.userName || k }, envios: 0, ncs: 0, itensC: 0, itensTot: 0 };
+    const u = porUser[k];
+    u.envios++;
+    const respostas = Object.values(s.answers || {});
+    const verificados = respostas.filter(a => a && (a.val === 'C' || a.val === 'NC'));
+    if (verificados.length) {
+      u.itensC   += verificados.filter(a => a.val === 'C').length;
+      u.itensTot += verificados.length;
+      u.ncs      += verificados.filter(a => a.val === 'NC').length;
+    } else {
+      // Envio compacto (sem respostas no snapshot): conta no nível do envio
+      const nc = _ncDe(s);
+      u.ncs += nc;
+      u.itensC += nc === 0 ? 1 : 0;
+      u.itensTot += 1;
+    }
   });
   const driversComEnvios = Object.values(porUser)
-    .map(x => ({ ...x, pct: Math.round((x.conf/x.total)*100) }))
+    .map(x => ({ ...x, pct: x.itensTot ? Math.round((x.itensC / x.itensTot) * 100) : 0 }))
     .sort((a,b) => (b.pct||0)-(a.pct||0));
 
-  document.getElementById('compliance-list').innerHTML = driversComEnvios.map(({d,total,conf,pct})=>{
+  document.getElementById('compliance-list').innerHTML = driversComEnvios.map(({d,envios,ncs,itensC,itensTot,pct})=>{
     const color=pct>=80?'var(--success)':pct>=60?'var(--warn)':'var(--danger)';
     const funcao=d.funcao?FuncaoDB.byId(d.funcao):null;
     const tagHtml=funcao?`<span class="funcao-tag ${funcao.cor}" style="margin-left:6px">${funcao.nome}</span>`:'';
-    return `<div class="compliance-item"><div class="ci-avatar">${d.name.charAt(0)}</div><div class="ci-info"><div class="ci-name">${d.name}${tagHtml}</div><div class="ci-pct">${total} envios • ${conf} conformes</div></div><div class="ci-pct-val" style="color:${color}">${pct}%</div></div>`;
+    const ncTxt = ncs > 0 ? ` • <span style="color:var(--danger);font-weight:700">${ncs} NC</span>` : ' • sem NC';
+    return `<div class="compliance-item"><div class="ci-avatar">${d.name.charAt(0)}</div><div class="ci-info"><div class="ci-name">${d.name}${tagHtml}</div><div class="ci-pct">${envios} envio${envios>1?'s':''} • ${itensC}/${itensTot} itens conformes${ncTxt}</div></div><div class="ci-pct-val" style="color:${color}">${pct}%</div></div>`;
   }).join('')||'<div class="empty-state" style="font-size:13px;color:var(--text-light);padding:12px">Nenhum envio registrado ainda.</div>';
 }
 
