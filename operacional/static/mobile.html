@@ -284,10 +284,10 @@ input,select,textarea{font-family:inherit;outline:none;border:none}
     <p class="login-sub">Acesso ao módulo de operações</p>
     <div id="login-err" class="login-err"></div>
     <label class="field-label">Email</label>
-    <input type="email" id="field-login" class="field-input" placeholder="seu.email@exemplo.com" autocomplete="username"/>
+    <input type="email" id="field-login" class="field-input" placeholder="seu.email@exemplo.com" autocomplete="off" readonly onfocus="this.removeAttribute('readonly')"/>
     <label class="field-label">Senha</label>
     <div class="field-pass-wrap">
-      <input type="password" id="field-pass" class="field-input" placeholder="●●●●●●" autocomplete="current-password"/>
+      <input type="password" id="field-pass" class="field-input" placeholder="●●●●●●" autocomplete="new-password" readonly onfocus="this.removeAttribute('readonly')"/>
       <button class="btn-eye" onclick="togglePass()">👁</button>
     </div>
     <button class="btn-login" onclick="fazerLogin()">🚀 Entrar</button>
@@ -392,7 +392,7 @@ input,select,textarea{font-family:inherit;outline:none;border:none}
       <select id="m-vinculo" onchange="atualizarVinculo()" style="width:100%;padding:11px;border:1.5px solid var(--border);border-radius:8px;font-size:14px">
         <option value="proprio" selected>Próprio (Garra)</option>
         <option value="terceiro">Equipamento de terceiro</option>
-        <option value="diarista">Operador diarista</option>
+        <option value="diarista">Diarista</option>
         <option value="frete">Frete de máquina (Garra)</option>
       </select>
     </div>
