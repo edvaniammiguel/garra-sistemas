@@ -4755,6 +4755,7 @@ function renderControleMensal(dados) {
       }
       const med = p.tipo_medicao || p.equipamento_medicao || 'horimetro';
       let ini='', fin='', trab=0, cobr=0;
+      let _fonteIco = '';
 
       if (med === 'metros') {
         ini = ''; fin = '';
@@ -4770,10 +4771,20 @@ function renderControleMensal(dados) {
         trab = parseFloat(p.km_percorrido || 0);
         cobr = trab;
       } else {
-        ini = parseFloat(p.horimetro_inicial || 0);
-        fin = parseFloat(p.horimetro_final || 0);
+        // (17/07/2026) Prioridade de Fontes no CM: relógio explícito →
+        // Inicial/Final mostram o RELÓGIO (a fonte das horas) 🕐;
+        // senão, o horímetro ⚙️. Coerente com registros, partes e mobile.
+        const _rel = !!(p.hora_inicio && p.hora_fim);
+        if (_rel) {
+          ini = String(p.hora_inicio).slice(0,5);
+          fin = String(p.hora_fim).slice(0,5);
+        } else {
+          ini = parseFloat(p.horimetro_inicial || 0);
+          fin = parseFloat(p.horimetro_final || 0);
+        }
         trab = parseFloat(p.horas_trabalhadas || 0);
         cobr = parseFloat(p.horas_cobradas || trab);
+        _fonteIco = _rel ? ' 🕐' : ((p.horimetro_inicial != null && p.horimetro_final != null) ? ' ⚙️' : '');
       }
 
       const _u = med === 'metros' ? 'm' : med === 'km' ? 'km' : med === 'viagem' ? 'v' : 'h';
@@ -4809,7 +4820,7 @@ function renderControleMensal(dados) {
             ${(!p.fechado&&med!=='metros')?`onclick="cmEditarCampo('${p.id}','${med==='km'?'km_inicial':'horimetro_inicial'}',this,${ini||0},'number')" title="Clique para corrigir"`:''}>${ini !== '' ? ini : '–'}</td>
         <td style="padding:6px 8px;text-align:right;${(!p.fechado&&med!=='metros')?'cursor:pointer;text-decoration:underline dotted':''}"
             ${(!p.fechado&&med!=='metros')?`onclick="cmEditarCampo('${p.id}','${med==='km'?'km_final':'horimetro_final'}',this,${fin||0},'number')" title="Clique para corrigir"`:''}>${fin !== '' ? fin : '–'}</td>
-        <td style="padding:6px 8px;text-align:right;font-weight:700;${trabSuspeito?'color:var(--red)':''}">${trab ? trab.toFixed(1) : '0'}${avisoTrab}</td>
+        <td style="padding:6px 8px;text-align:right;font-weight:700;${trabSuspeito?'color:var(--red)':''}">${trab ? trab.toFixed(1) : '0'}${_fonteIco}${avisoTrab}</td>
         <td style="padding:6px 8px;text-align:right;font-weight:700;color:var(--orange);${(!p.fechado&&med!=='km')?'cursor:pointer;text-decoration:underline dotted':''}"
             ${(!p.fechado&&med!=='km')?(med==='metros'
               ?`onclick="cmEditarMetros('${p.id}', this, ${cobr||0})" title="Clique para ajustar os metros"`
