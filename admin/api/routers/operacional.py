@@ -110,34 +110,39 @@ def _cat_frota_checklist(codigo, categoria_op):
     return None
 
 def _calc_horas_parte(d):
-    """Horas trabalhadas: horímetro (fim-ini); fallback relógio com desconto
-    de 1h de almoço quando cruza 12h e não marcou dia corrido. Fonte única —
-    usada no registro (operador) e na edição (operador corrige e recalcula)."""
-    h_ini = d.get("horimetro_inicial")
-    h_fin = d.get("horimetro_final")
+    """(17/07/2026) Horas trabalhadas/cobradas — prioridade:
+    1º RELÓGIO explícito (hora início+fim): é a janela de trabalho cobrada
+       do cliente. Só existe na medição Hora e agora nasce VAZIO no form —
+       preenchido = intenção do operador.
+    2º HORÍMETRO (fim-ini): quando não há relógio. Segue sempre registrado
+       como controle interno da máquina, independente da cobrança.
+    Fonte única — registro e correção."""
     horas = None
-    if h_ini is not None and h_fin is not None:
+    hi = d.get("hora_inicio"); hf = d.get("hora_fim")
+    if hi and hf:
         try:
-            horas = round(float(h_fin) - float(h_ini), 2)
-            if horas < 0:
-                raise HTTPException(status_code=400, detail="Horímetro final menor que inicial")
+            ph = lambda s: int(str(s)[:2]) * 60 + int(str(s)[3:5])
+            ini_m = ph(hi); fim_m = ph(hf)
+            diff = fim_m - ini_m
+            if diff < 0: diff += 24 * 60
+            bruto = diff / 60
+            cruza_almoco = (ini_m < 12*60) and (fim_m > 12*60 or fim_m < ini_m)
+            sem_almoco = bool(d.get("sem_almoco"))
+            almoco = 1 if (not sem_almoco and cruza_almoco and bruto > 6) else 0
+            horas = round(max(0, bruto - almoco), 2)
         except (TypeError, ValueError):
             pass
-    if (horas is None or horas == 0):
-        hi = d.get("hora_inicio"); hf = d.get("hora_fim")
-        if hi and hf:
-            try:
-                ph = lambda s: int(str(s)[:2]) * 60 + int(str(s)[3:5])
-                ini_m = ph(hi); fim_m = ph(hf)
-                diff = fim_m - ini_m
-                if diff < 0: diff += 24 * 60
-                bruto = diff / 60
-                cruza_almoco = (ini_m < 12*60) and (fim_m > 12*60 or fim_m < ini_m)
-                sem_almoco = bool(d.get("sem_almoco"))
-                almoco = 1 if (not sem_almoco and cruza_almoco and bruto > 6) else 0
-                horas = round(max(0, bruto - almoco), 2)
-            except (TypeError, ValueError):
-                pass
+    h_ini = d.get("horimetro_inicial")
+    h_fin = d.get("horimetro_final")
+    if h_ini is not None and h_fin is not None:
+        try:
+            h_maq = round(float(h_fin) - float(h_ini), 2)
+            if h_maq < 0:
+                raise HTTPException(status_code=400, detail="Horímetro final menor que inicial")
+            if horas is None or horas == 0:
+                horas = h_maq
+        except (TypeError, ValueError):
+            pass
     return horas
 
 
