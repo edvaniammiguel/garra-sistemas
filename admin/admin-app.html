@@ -3104,6 +3104,7 @@ async function salvarMedicaoParte(parteId, campo, valor) {
 }
 
 async function salvarHorasCobradas(parteId, valor) {
+  if (!_cobradasPlausivel(valor)) { verPartesOS(_osAtual.id, _osAtual.numero); return; }
   try {
     await apiFetch('/operacional/api/partes/'+parteId, {
       method:'PATCH',
@@ -4622,6 +4623,16 @@ function cmEditarMetros(parteId, td, atual) {
   inp.addEventListener('blur', salvar);
 }
 
+function _cobradasPlausivel(val) {
+  // (17/07/2026) 150 "horas" num dia = quase certamente o VALOR R$ digitado
+  // na coluna errada (foi o caso real da OS-0002). Acima de 24h/dia, exige
+  // confirmação explícita apontando a coluna certa.
+  const v = parseFloat(val);
+  if (v > 24) {
+    return confirm('⚠️ ' + v + ' HORAS cobradas em UM dia?\n\nSe você quis lançar o VALOR em R$, use a coluna "Valor (R$)".\n\nConfirmar ' + v + ' horas mesmo?');
+  }
+  return true;
+}
 function cmEditarCobr(parteId, td, atual) {
   if (td.querySelector('input')) return;
   const original = td.innerHTML;
@@ -4633,6 +4644,7 @@ function cmEditarCobr(parteId, td, atual) {
   const salvar = async () => {
     if (salvando) return; salvando = true;
     const val = parseFloat(inp.value);
+    if (!_cobradasPlausivel(val)) { renderizar(); return; }
     if (isNaN(val) || val < 0) { td.innerHTML = original; return; }
     try {
       await apiFetch(`/operacional/api/partes/${parteId}`, {
@@ -4771,20 +4783,27 @@ function renderControleMensal(dados) {
         trab = parseFloat(p.km_percorrido || 0);
         cobr = trab;
       } else {
-        // (17/07/2026) Prioridade de Fontes no CM: relógio explícito →
-        // Inicial/Final mostram o RELÓGIO (a fonte das horas) 🕐;
-        // senão, o horímetro ⚙️. Coerente com registros, partes e mobile.
+        // (17/07/2026) CM = espelho da tela de partes:
+        //   Inicial/Final e Trab. → HORÍMETRO sempre que informado
+        //     (patrimônio/controle da máquina);
+        //   Cobr. → horas do REGISTRO (relógio 🕐 quando o operador
+        //     registrou horas; senão as horas consideradas ⚙️).
         const _rel = !!(p.hora_inicio && p.hora_fim);
-        if (_rel) {
-          ini = String(p.hora_inicio).slice(0,5);
-          fin = String(p.hora_fim).slice(0,5);
-        } else {
+        const _temHor = (p.horimetro_inicial != null && p.horimetro_final != null);
+        if (_temHor) {
           ini = parseFloat(p.horimetro_inicial || 0);
           fin = parseFloat(p.horimetro_final || 0);
+          trab = +((fin - ini).toFixed(2));
+        } else if (_rel) {
+          ini = String(p.hora_inicio).slice(0,5);
+          fin = String(p.hora_fim).slice(0,5);
+          trab = parseFloat(p.horas_trabalhadas || 0);
+        } else {
+          ini = ''; fin = '';
+          trab = parseFloat(p.horas_trabalhadas || 0);
         }
-        trab = parseFloat(p.horas_trabalhadas || 0);
-        cobr = parseFloat(p.horas_cobradas || trab);
-        _fonteIco = _rel ? ' 🕐' : ((p.horimetro_inicial != null && p.horimetro_final != null) ? ' ⚙️' : '');
+        cobr = parseFloat(p.horas_cobradas || p.horas_trabalhadas || 0);
+        _fonteIco = _rel ? ' 🕐' : (_temHor ? ' ⚙️' : '');
       }
 
       const _u = med === 'metros' ? 'm' : med === 'km' ? 'km' : med === 'viagem' ? 'v' : 'h';
@@ -4820,11 +4839,11 @@ function renderControleMensal(dados) {
             ${(!p.fechado&&med!=='metros')?`onclick="cmEditarCampo('${p.id}','${med==='km'?'km_inicial':'horimetro_inicial'}',this,${ini||0},'number')" title="Clique para corrigir"`:''}>${ini !== '' ? ini : '–'}</td>
         <td style="padding:6px 8px;text-align:right;${(!p.fechado&&med!=='metros')?'cursor:pointer;text-decoration:underline dotted':''}"
             ${(!p.fechado&&med!=='metros')?`onclick="cmEditarCampo('${p.id}','${med==='km'?'km_final':'horimetro_final'}',this,${fin||0},'number')" title="Clique para corrigir"`:''}>${fin !== '' ? fin : '–'}</td>
-        <td style="padding:6px 8px;text-align:right;font-weight:700;${trabSuspeito?'color:var(--red)':''}">${trab ? trab.toFixed(1) : '0'}${_fonteIco}${avisoTrab}</td>
+        <td style="padding:6px 8px;text-align:right;font-weight:700;${trabSuspeito?'color:var(--red)':''}">${trab ? trab.toFixed(1) : '0'}${avisoTrab}</td>
         <td style="padding:6px 8px;text-align:right;font-weight:700;color:var(--orange);${(!p.fechado&&med!=='km')?'cursor:pointer;text-decoration:underline dotted':''}"
             ${(!p.fechado&&med!=='km')?(med==='metros'
               ?`onclick="cmEditarMetros('${p.id}', this, ${cobr||0})" title="Clique para ajustar os metros"`
-              :`onclick="cmEditarCobr('${p.id}', this, ${cobr||0})" title="Clique para ajustar (considerar)"`):''} ${p.fechado?'title="Parte FECHADA — reabra a OS para editar"':''}>${cobr ? cobr.toFixed(1) : '0'}${med==='metros'?' <span style="font-size:9px">m</span>':med==='km'?' <span style="font-size:9px">km</span>':med==='viagem'?' <span style="font-size:9px">viag.</span>':''}${p.fechado?' <span style="font-size:10px" title="Fechada — não editável">🔒</span>':''}</td>
+              :`onclick="cmEditarCobr('${p.id}', this, ${cobr||0})" title="Clique para ajustar (considerar)"`):''} ${p.fechado?'title="Parte FECHADA — reabra a OS para editar"':''}>${cobr ? cobr.toFixed(1) : '0'}${med==='metros'?' <span style="font-size:9px">m</span>':med==='km'?' <span style="font-size:9px">km</span>':med==='viagem'?' <span style="font-size:9px">viag.</span>':_fonteIco}${p.fechado?' <span style="font-size:10px" title="Fechada — não editável">🔒</span>':''}</td>
         <td style="padding:6px 8px;text-align:right;font-weight:700;color:var(--green);${!p.fechado?'cursor:pointer;text-decoration:underline dotted':''}"
             ${!p.fechado?`onclick="cmEditarValor('${p.id}', this, ${parseFloat(p.valor||0)})" title="Valor do dia (fechamento/comissão)"`:''}>${p.valor!=null&&p.valor!==''?('R$ '+parseFloat(p.valor).toFixed(2)):'–'}${p.fechado?' <span style="font-size:10px">🔒</span>':''}</td>
         <td style="padding:6px 8px;text-align:center;font-size:10px">${med==='metros' ? '<span style="color:var(--blue);font-weight:700">metros</span>' : med==='km' ? '<span style="color:var(--blue);font-weight:700">km</span>' : med==='viagem' ? '<span style="color:var(--blue);font-weight:700">viagem</span>' : (String(p.regime_cobranca||'').toLowerCase().includes('hora') ? esc(p.regime_cobranca||'') : '<span style="color:var(--blue);font-weight:700">hora</span>')}</td>
