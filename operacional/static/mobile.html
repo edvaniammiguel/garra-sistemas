@@ -2467,7 +2467,11 @@ async function verPartes(osId, osNum, editavel = true) {
         const viagTxt = p.qtd_viagens ? ` · ${p.qtd_viagens} viagem(ns)` : '';
         medInfo = kmTxt + viagTxt;
       } else {
-        medInfo = `${horas || 0}h`;
+        // (17/07/2026) Indica a FONTE considerada: 🕐 relógio · ⚙️ horímetro
+        const _fonteRelogio = !!(hIni && hFim);
+        const _fonteIcone = _fonteRelogio ? ' 🕐'
+          : ((p.horimetro_inicial != null && p.horimetro_final != null) ? ' ⚙️' : '');
+        medInfo = `${horas || 0}h${_fonteIcone}`;
       }
 
       // Linha secundária: equipamento + operador + marcador de terceiro
