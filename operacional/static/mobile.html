@@ -504,11 +504,11 @@ input,select,textarea{font-family:inherit;outline:none;border:none}
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
       <div>
         <label style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:5px">Hora início</label>
-        <input id="m-h-inicio" type="time" value="07:00" oninput="calcularHorasJornada()" style="width:100%;padding:10px;border:1.5px solid var(--border);border-radius:6px;font-size:14px">
+        <input id="m-h-inicio" type="time" oninput="calcularHorasJornada()" style="width:100%;padding:10px;border:1.5px solid var(--border);border-radius:6px;font-size:14px">
       </div>
       <div>
         <label style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:5px">Hora fim</label>
-        <input id="m-h-fim" type="time" value="17:00" oninput="calcularHorasJornada()" style="width:100%;padding:10px;border:1.5px solid var(--border);border-radius:6px;font-size:14px">
+        <input id="m-h-fim" type="time" oninput="calcularHorasJornada()" style="width:100%;padding:10px;border:1.5px solid var(--border);border-radius:6px;font-size:14px">
       </div>
     </div>
 
@@ -1351,6 +1351,20 @@ async function salvarParte(adicionarMais) {
   // Horas de relógio (início/fim) coerentes
   const hcIni = document.getElementById('m-h-inicio').value;
   const hcFim = document.getElementById('m-h-fim').value;
+  // (17/07/2026) Medição HORA precisa de uma fonte completa:
+  // relógio (janela cobrada — VENCE quando preenchido) OU horímetro (máquina)
+  if (window._medicaoAtual === 'horimetro' || window._medicaoAtual === 'hora') {
+    const _hIni = document.getElementById('m-h-ini')?.value;
+    const _hFin = document.getElementById('m-h-fin')?.value;
+    const temHorim = _hIni !== '' && _hFin !== '' && _hIni != null && _hFin != null;
+    const temRelogio = !!(hcIni && hcFim);
+    if (!temHorim && !temRelogio) {
+      err.textContent = '⏱ Informe as horas trabalhadas (início e fim) OU o horímetro completo';
+      err.style.display = 'block';
+      btn.disabled = false;
+      return;
+    }
+  }
   if (hcIni && hcFim && hcFim <= hcIni) {
     if (!confirm('A hora fim (' + hcFim + ') não é depois da hora início (' + hcIni + ').\n\nSalvar assim?')) {
       err.textContent = 'Confira hora início e fim';
@@ -1473,9 +1487,9 @@ async function salvarParte(adicionarMais) {
         const el = document.getElementById(id);
         if (el) el.value = '';
       });
-      // Horas voltam ao padrão (não zera, para o próximo dia)
-      document.getElementById('m-h-inicio').value = '07:00';
-      document.getElementById('m-h-fim').value = '17:00';
+      // (17/07/2026) Relógio nasce vazio: preencher = intenção de cobrar por janela
+      document.getElementById('m-h-inicio').value = '';
+      document.getElementById('m-h-fim').value = '';
       document.getElementById('m-sem-almoco').checked = false;
       calcularHorasJornada();
       document.getElementById('m-por-conta').value = 'cliente';
@@ -2475,7 +2489,11 @@ async function verPartes(osId, osNum, editavel = true) {
       const temHorimetro = (p.horimetro_inicial != null && p.horimetro_inicial !== '' &&
                             p.horimetro_final   != null && p.horimetro_final   !== '');
       let detalhes = '';
-      if (temHorimetro) {
+      // (17/07/2026) Na medição hora com RELÓGIO preenchido, é ele a fonte
+      // das horas cobradas — a linha mostra o relógio; horímetro na correção.
+      if ((med === 'horimetro' || med === 'hora') && hIni && hFim) {
+        detalhes = `🕐 ${hIni} às ${hFim}` + (temHorimetro ? `  ·  ⚙️ ${p.horimetro_inicial} → ${p.horimetro_final}` : '');
+      } else if (temHorimetro) {
         detalhes = `⚙️ ${p.horimetro_inicial} → ${p.horimetro_final}`;
       } else if (med === 'km' && (p.km_inicial || p.km_final)) {
         detalhes = `🛣 ${p.km_inicial||0} → ${p.km_final||0} km`;
