@@ -1741,8 +1741,15 @@ async def op_controle_mensal_excel(
                         unidade, chave = "km", "km"
                         rotulo_med = "km"
                     else:
-                        h_ini = float(p.get("horimetro_inicial") or 0)
-                        h_fin = float(p.get("horimetro_final") or 0)
+                        # (17/07/2026) Prioridade de Fontes: relógio explícito →
+                        # Inicial/Final da planilha mostram o RELÓGIO (fonte)
+                        _hi_rel = p.get("hora_inicio"); _hf_rel = p.get("hora_fim")
+                        if _hi_rel and _hf_rel:
+                            h_ini = str(_hi_rel)[:5]
+                            h_fin = str(_hf_rel)[:5]
+                        else:
+                            h_ini = float(p.get("horimetro_inicial") or 0)
+                            h_fin = float(p.get("horimetro_final") or 0)
                         h_trab = float(p.get("horas_trabalhadas") or 0)
                         h_cobr = float(p.get("horas_cobradas") or h_trab)
                         unidade, chave = "h", "h"
