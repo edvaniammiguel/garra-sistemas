@@ -3004,11 +3004,17 @@ function renderTabelaPartes(partes, statusOS) {
             cel5 = `${horasMaq}h`;
             cel6 = '—';
           } else {
-            // hora — cobra pelo horímetro
+            // (17/07/2026) Prioridade de Fontes: a coluna HORAS mostra o
+            // CONSIDERADO (horas gravadas — relógio quando explícito 🕐,
+            // senão horímetro ⚙️). O horímetro da máquina segue visível no
+            // rótulo pequeno da própria coluna Horímetro (controle interno).
+            const _temRel = !!(p.hora_inicio && p.hora_fim);
+            const horasReg = (p.horas_trabalhadas != null && p.horas_trabalhadas !== '')
+              ? parseFloat(p.horas_trabalhadas).toFixed(1) : horasMaq;
             const cobradas = parseFloat(p.horas_cobradas||0) > 0
               ? parseFloat(p.horas_cobradas).toFixed(1)
-              : horasMaq;
-            cel5 = `${horasMaq}h`;
+              : horasReg;
+            cel5 = `${horasReg}h ${_temRel ? '🕐' : (temHorimetro ? '⚙️' : '')}`;
             cel6 = fechada
               ? `<strong>${cobradas}h</strong>`
               : `<input type="number" step="0.1" value="${cobradas}" style="width:70px;padding:4px 8px;border:1.5px solid var(--border);border-radius:6px;text-align:right;font-size:13px"
