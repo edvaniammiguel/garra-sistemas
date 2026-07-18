@@ -2960,8 +2960,7 @@ function renderTabelaPartes(partes, statusOS) {
             const _relCell = !!(p.hora_inicio && p.hora_fim);
             const _horCell = (p.horimetro_inicial != null && p.horimetro_final != null);
             medicaoCell = _horCell
-              ? `<span style="font-size:12px;font-weight:700;color:var(--blue)">⚙️ máquina</span>` +
-                (_relCell ? `<div style="font-size:10px;color:var(--muted)">🕐 janela ${String(p.hora_inicio).slice(0,5)}–${String(p.hora_fim).slice(0,5)}</div>` : '')
+              ? `<span style="font-size:12px;font-weight:700;color:var(--blue)">⚙️ máquina</span>`
               : (_relCell
                   ? `<span style="font-size:12px;font-weight:700;color:var(--blue)">🕐 ${String(p.hora_inicio).slice(0,5)} às ${String(p.hora_fim).slice(0,5)}</span>`
                   : `<span style="font-size:12px;color:var(--muted)">—</span>`);
