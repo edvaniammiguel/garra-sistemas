@@ -1393,7 +1393,7 @@ async def op_minhas_os(historico: int = 0, payload=Depends(verificar_token)):
 
     rows = await ajard_query(
         f"""SELECT os.id, os.numero, os.obra, os.regime_cobranca, os.origem,
-                  os.observacao,
+                  os.descricao AS observacao,
                   os.data_inicio, os.data_fim_prevista, os.status,
                   os.equipamento_id, os.operador_id, os.tipo_servico_id, os.cliente_id,
                   COALESCE(c.nome, os.cliente_nome_avulso) AS cliente_nome,
