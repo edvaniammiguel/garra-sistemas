@@ -881,6 +881,12 @@ async function carregarOSApp() {
          <button class="os-btn" style="background:var(--blue)" onclick="verPartes('${os.id}', '${os.numero}')">👁 Ver</button>
          <button class="os-btn" style="background:#16A34A" onclick="concluirOS('${os.id}', '${os.numero}')">✅ Concluir</button>`;
 
+    // (18/07/2026) Observação da OS visível ao operador — instruções da
+    // gestão aparecem no card, acima do botão Passar
+    const obsOS = (os.observacao || '').trim();
+    const blocoObs = obsOS
+      ? `<div style="margin-top:8px;padding:8px 10px;background:#FFF7ED;border:1px solid #FDBA74;border-radius:8px;font-size:12px;color:#7C2D12;line-height:1.4">💬 <strong>Observação:</strong> ${esc(obsOS)}</div>`
+      : '';
     // Botão "Passar OS" — só quando em andamento (operador saiu p/ outra obra/máquina)
     const botaoLiberar = aguardando ? '' :
       `<button onclick="liberarOS('${os.id}', '${os.numero}')" style="width:100%;margin-top:6px;padding:8px;background:transparent;border:1.5px dashed var(--muted);color:var(--muted);border-radius:8px;font-size:12px;font-weight:600;cursor:pointer">🔄 Passar OS para outro operador</button>`;
@@ -906,7 +912,7 @@ async function carregarOSApp() {
           </div>
         </div>
         <div class="os-btns">${botoes}</div>
-        ${botaoLiberar}
+        ${blocoObs}${botaoLiberar}
       </div>
     `;
   });
