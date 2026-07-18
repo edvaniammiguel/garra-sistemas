@@ -284,10 +284,10 @@ input,select,textarea{font-family:inherit;outline:none;border:none}
     <p class="login-sub">Acesso ao módulo de operações</p>
     <div id="login-err" class="login-err"></div>
     <label class="field-label">Email</label>
-    <input type="email" id="field-login" class="field-input" placeholder="seu.email@exemplo.com" autocomplete="off" readonly onfocus="this.removeAttribute('readonly')"/>
+    <input type="email" id="field-login" class="field-input" placeholder="seu.email@exemplo.com" autocomplete="username" readonly onfocus="this.removeAttribute('readonly')"/>
     <label class="field-label">Senha</label>
     <div class="field-pass-wrap">
-      <input type="password" id="field-pass" class="field-input" placeholder="●●●●●●" autocomplete="new-password" readonly onfocus="this.removeAttribute('readonly')"/>
+      <input type="password" id="field-pass" class="field-input" placeholder="●●●●●●" autocomplete="current-password" readonly onfocus="this.removeAttribute('readonly')"/>
       <button class="btn-eye" onclick="togglePass()">👁</button>
     </div>
     <button class="btn-login" onclick="fazerLogin()">🚀 Entrar</button>
@@ -939,7 +939,7 @@ async function carregarListasNovaOS() {
   // Equipamentos, Tipos de serviço, Clientes, Regimes — online-first com fallback IDB
   // TTL 24h pois essas listas mudam pouco
   const [equipamentos, tipos, clientes, regimes] = await Promise.all([
-    fetchComCacheIDB('/operacional/api/equipamentos?uso=os', 'lst_equipamentos', 86400),
+    fetchComCacheIDB('/operacional/api/equipamentos?uso=os', 'lst_equipamentos', 3600),
     fetchComCacheIDB('/operacional/api/tipos-servico',  'lst_tipos_servico', 86400),
     fetchComCacheIDB('/operacional/api/clientes',       'lst_clientes',      86400),
     fetchComCacheIDB('/operacional/api/regimes-cobranca','lst_regimes',       86400),
@@ -1020,10 +1020,10 @@ async function preCarregarListasOffline() {
   if (!navigator.onLine) return;
   try {
     await Promise.all([
-      fetchComCacheIDB('/operacional/api/equipamentos?uso=os',      'lst_equipamentos',  86400),
+      fetchComCacheIDB('/operacional/api/equipamentos?uso=os',      'lst_equipamentos',  3600),
       fetchComCacheIDB('/operacional/api/tipos-servico',      'lst_tipos_servico', 86400),
       fetchComCacheIDB('/operacional/api/clientes',           'lst_clientes',      86400),
-      fetchComCacheIDB('/operacional/api/operadores',         'lst_operadores',    86400),
+      fetchComCacheIDB('/operacional/api/operadores',         'lst_operadores',    3600),
       fetchComCacheIDB('/operacional/api/regimes-cobranca',   'lst_regimes',       86400),
     ]);
     console.log('[Cache] Listas pré-carregadas para uso offline');
@@ -1653,8 +1653,8 @@ async function abrirModalParte(osId) {
 
   // Carregar selects (equipamentos + operadores) com cache offline
   const [equipamentos, operadores] = await Promise.all([
-    fetchComCacheIDB('/operacional/api/equipamentos?uso=os', 'lst_equipamentos',  86400),
-    fetchComCacheIDB('/operacional/api/operadores',   'lst_operadores',    86400),
+    fetchComCacheIDB('/operacional/api/equipamentos?uso=os', 'lst_equipamentos',  3600),
+    fetchComCacheIDB('/operacional/api/operadores',   'lst_operadores',    3600),
   ]);
 
   // Equipamentos com data-cat (categoria/medicao) e data-resp (operador responsável)
@@ -2563,20 +2563,30 @@ async function abrirEditarParte(idx) {
   let _eqs = [], _ops = [];
   try {
     [_eqs, _ops] = await Promise.all([
-      fetchComCacheIDB('/operacional/api/equipamentos?uso=os', 'lst_equipamentos', 86400),
-      fetchComCacheIDB('/operacional/api/operadores', 'lst_operadores', 86400)
+      fetchComCacheIDB('/operacional/api/equipamentos?uso=os', 'lst_equipamentos', 3600),
+      fetchComCacheIDB('/operacional/api/operadores', 'lst_operadores', 3600)
     ]);
   } catch(e) { _eqs = _eqs || []; _ops = _ops || []; }
   const ehProprio = (p.vinculo_operador || 'proprio') === 'proprio';
+  // (18/07/2026) BLINDAGEM: o equipamento/operador ATUAIS da parte são SEMPRE
+  // opção garantida e selecionada — mesmo se a lista (filtrada/cacheada) não
+  // os contiver. Antes, a ausência fazia o select "cair" na primeira opção
+  // (um apoio), simulando seleção errada e travando a troca.
+  const _eqTem = (_eqs||[]).some(e => String(e.id) === String(p.equipamento_id));
+  const _eqAtualOpt = (!_eqTem && p.equipamento_id)
+    ? `<option value="${p.equipamento_id}" selected>${esc(p.equipamento_codigo || 'Equipamento atual')} (atual)</option>` : '';
   const selEquip = `
     <label style="font-size:12px;font-weight:700;color:var(--muted)">Equipamento</label>
     <select id="ep-equip" style="width:100%;padding:11px;border:1.5px solid var(--border);border-radius:8px;font-size:15px;box-sizing:border-box;margin:4px 0 12px">
-      ${(_eqs||[]).map(e => `<option value="${e.id}" ${String(e.id)===String(p.equipamento_id)?'selected':''}>${e.codigo} — ${e.descricao||''}</option>`).join('')}
+      ${_eqAtualOpt}${(_eqs||[]).map(e => `<option value="${e.id}" ${String(e.id)===String(p.equipamento_id)?'selected':''}>${e.codigo} — ${e.descricao||''}</option>`).join('')}
     </select>`;
+  const _opTem = (_ops||[]).some(o => String(o.id) === String(p.operador_id));
+  const _opAtualOpt = (!_opTem && p.operador_id)
+    ? `<option value="${p.operador_id}" selected>${esc(p.operador_nome || 'Operador atual')} (atual)</option>` : '';
   const selOper = ehProprio ? `
     <label style="font-size:12px;font-weight:700;color:var(--muted)">Operador / Motorista</label>
     <select id="ep-oper" style="width:100%;padding:11px;border:1.5px solid var(--border);border-radius:8px;font-size:15px;box-sizing:border-box;margin:4px 0 12px">
-      ${(_ops||[]).map(o => `<option value="${o.id}" ${String(o.id)===String(p.operador_id)?'selected':''}>${o.nome}</option>`).join('')}
+      ${_opAtualOpt}${(_ops||[]).map(o => `<option value="${o.id}" ${String(o.id)===String(p.operador_id)?'selected':''}>${o.nome}</option>`).join('')}
     </select>` : '';
   const v = (x) => (x === null || x === undefined) ? '' : x;
   const hIni = p.hora_inicio ? String(p.hora_inicio).slice(0,5) : '';
