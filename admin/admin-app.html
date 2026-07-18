@@ -2831,6 +2831,8 @@ function renderTotaisPartes(t) {
       { label:'Sem apontamento', valor: (t.dias_parados||0)+' dias' },
       { label:'Total horas',      valor: (t.total_horas||0).toFixed(1)+'h' },
       { label:'Horas cobradas',   valor: (t.total_horas_cobradas||0).toFixed(1)+'h' },
+      ...(((t.total_diarias||0) > 0) ? [{ label:'Diárias', valor: (t.total_diarias||0) + ' × ' + (P.diaria ? 'R$ '+P.diaria.toFixed(2) : '⚠️ definir') }] : []),
+      ...(((t.total_viagens||0) > 0) ? [{ label:'Viagens (frete)', valor: (t.total_viagens||0) + ' × ' + (P.viagem ? 'R$ '+P.viagem.toFixed(2) : '⚠️ definir') }] : []),
       { label:'Valor/hora',       valor: 'R$ '+P.hora.toFixed(2) },
       ...((totalMetros > 0) ? [{ label:'Valor/metro', valor: P.metro ? 'R$ '+P.metro.toFixed(2) : '⚠️ definir' }] : []),
       { label:'Total a cobrar',   valor: 'R$ '+tot.toFixed(2) },
@@ -2961,7 +2963,15 @@ function renderTabelaPartes(partes, statusOS) {
           // ── Linha registrada como METROS numa OS de outro regime:
           // fidelidade ao Controle Mensal — mostra metros, traça o resto.
           let horimetroCellFinal = horimetroCell;
-          if ((medParte === 'viagem' || medParte === 'km') && regime !== 'km') {
+          if (medParte === 'diaria' && regime !== 'diaria') {
+            const nd = parseFloat(p.quantidade_diarias||0) || 1;
+            medicaoCell = fechada
+              ? `<span style="font-size:12px;color:var(--blue);font-weight:700">${nd} diária${nd>1?'s':''}</span>`
+              : `<div style="display:flex;align-items:center;gap:4px">
+                  <input type="number" step="0.5" min="0" value="${nd}" title="Quantidade de diárias" style="width:60px;padding:4px 8px;border:1.5px solid var(--border);border-radius:6px;text-align:right;font-size:13px"
+                    onchange="salvarMedicaoParte('${esc(p.id)}','quantidade_diarias',this.value)"/>
+                  <span style="font-size:12px;color:var(--muted)">diária(s)</span></div>`;
+          } else if ((medParte === 'viagem' || medParte === 'km') && regime !== 'km') {
             const viag = parseFloat(p.qtd_viagens||0) || 1;
             medicaoCell = fechada
               ? `<span style="font-size:12px;color:var(--blue);font-weight:700">${viag} viag.</span>`
@@ -2987,6 +2997,7 @@ function renderTabelaPartes(partes, statusOS) {
             const _precoFaltante =
               medParte === 'metros' ? (P.metro ? '' : 'Valor/metro') :
               medParte === 'viagem' ? (P.viagem ? '' : 'Valor/viagem') :
+              medParte === 'diaria' ? (P.diaria ? '' : 'Valor/diária') :
               medParte === 'km'     ? ((P.km || P.viagem) ? '' : 'Valor/km') :
                                       (P.hora ? '' : 'Valor/hora');
             cel5 = _precoFaltante
@@ -3032,6 +3043,7 @@ function renderTabelaPartes(partes, statusOS) {
             const _falta2 =
               _medNorm === 'metros' ? (P.metro ? '' : 'Valor/metro') :
               _medNorm === 'viagem' ? (P.viagem ? '' : 'Valor do frete') :
+              _medNorm === 'diaria' ? (P.diaria ? '' : 'Valor/diária') :
               _medNorm === 'km'     ? ((P.km || P.viagem) ? '' : 'Valor/km') :
                                       (P.hora ? '' : 'Valor/hora');
             cel5 = _falta2
