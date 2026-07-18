@@ -2873,7 +2873,7 @@ function renderTabelaPartes(partes, statusOS) {
           <th style="text-align:left;padding:8px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--muted)">Data</th>
           <th style="text-align:left;padding:8px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--muted)">Equip.</th>
           <th style="text-align:left;padding:8px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--muted)">Operador</th>
-          <th style="text-align:left;padding:8px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--muted)">${regime==='metro'?'Metros':(regime==='km'?'KM':'Hora equipamento')}</th>
+          <th style="text-align:left;padding:8px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--muted)">${regime==='metro'?'Metros':(regime==='km'?'KM':'Medição')}</th>
           <th style="text-align:left;padding:8px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--muted)">⚙️ Horímetro</th>
           <th style="text-align:right;padding:8px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--muted)">${col5}</th>
           ${col6 ? `<th style="text-align:right;padding:8px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--muted)">${col6}</th>` : ''}
@@ -2936,7 +2936,9 @@ function renderTabelaPartes(partes, statusOS) {
               ? `KM: ${p.km_inicial||0}→${p.km_final||0} (${p.qtd_viagens||0} viag.)`
               : regime === 'metro'
               ? `${p.qtd_metros||0} m`
-              : `${horasMaq}h`;
+              : ((p.hora_inicio && p.hora_fim)
+                  ? `🕐 ${String(p.hora_inicio).slice(0,5)} às ${String(p.hora_fim).slice(0,5)}`
+                  : `⚙️ ${horasMaq}h`);
             medicaoCell = `<span style="font-size:12px;color:var(--muted)">${medicaoCell}</span>`;
           } else if (regime === 'metro') {
             medicaoCell = `<div style="display:flex;align-items:center;gap:4px">
@@ -2951,13 +2953,13 @@ function renderTabelaPartes(partes, statusOS) {
               <input type="number" step="0.1" value="${p.km_final||0}" style="width:62px;padding:4px 6px;border:1.5px solid var(--border);border-radius:6px;text-align:right;font-size:12px"
                 onchange="salvarMedicaoParte('${esc(p.id)}','km_final',this.value)"/></div>`;
           } else {
-            // hora / empreito / diaria → horímetro (controle de horas do equipamento)
-            medicaoCell = `<div style="display:flex;align-items:center;gap:3px">
-              <input type="number" step="0.1" value="${p.horimetro_inicial ?? ''}" style="width:62px;padding:4px 6px;border:1.5px solid var(--border);border-radius:6px;text-align:right;font-size:12px"
-                onchange="salvarMedicaoParte('${esc(p.id)}','horimetro_inicial',this.value)"/>
-              <span style="font-size:11px;color:var(--muted)">→</span>
-              <input type="number" step="0.1" value="${p.horimetro_final ?? ''}" style="width:62px;padding:4px 6px;border:1.5px solid var(--border);border-radius:6px;text-align:right;font-size:12px"
-                onchange="salvarMedicaoParte('${esc(p.id)}','horimetro_final',this.value)"/></div>`;
+            // (17/07/2026) Parte de HORA: a medida é o RELÓGIO (quando o
+            // operador registrou horas) — o horímetro tem coluna própria ao
+            // lado (fim da duplicação de editores na mesma linha).
+            const _relCell = !!(p.hora_inicio && p.hora_fim);
+            medicaoCell = _relCell
+              ? `<span style="font-size:12px;font-weight:700;color:var(--blue)">🕐 ${String(p.hora_inicio).slice(0,5)} às ${String(p.hora_fim).slice(0,5)}</span>`
+              : `<span style="font-size:12px;color:var(--muted)">— pelo horímetro →</span>`;
           }
 
           // ── Linha registrada como METROS numa OS de outro regime:
