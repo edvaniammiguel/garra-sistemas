@@ -2495,10 +2495,14 @@ async function verPartes(osId, osNum, editavel = true) {
       let detalhes = '';
       // (17/07/2026) Na medição hora com RELÓGIO preenchido, é ele a fonte
       // das horas cobradas — a linha mostra o relógio; horímetro na correção.
+      const _hMaq = temHorimetro
+        ? (parseFloat(p.horimetro_final) - parseFloat(p.horimetro_inicial)).toFixed(1)
+        : null;
       if ((med === 'horimetro' || med === 'hora') && hIni && hFim) {
-        detalhes = `🕐 ${hIni} às ${hFim}` + (temHorimetro ? `  ·  ⚙️ ${p.horimetro_inicial} → ${p.horimetro_final}` : '');
+        // (18/07/2026) Operador vê a QUANTIDADE de horas de máquina, não só a faixa
+        detalhes = `🕐 ${hIni} às ${hFim}` + (temHorimetro ? `  ·  ⚙️ ${_hMaq}h máq. (${p.horimetro_inicial}→${p.horimetro_final})` : '');
       } else if (temHorimetro) {
-        detalhes = `⚙️ ${p.horimetro_inicial} → ${p.horimetro_final}`;
+        detalhes = `⚙️ ${p.horimetro_inicial} → ${p.horimetro_final} · ${_hMaq}h`;
       } else if (med === 'km' && (p.km_inicial || p.km_final)) {
         detalhes = `🛣 ${p.km_inicial||0} → ${p.km_final||0} km`;
       } else if ((med === 'horimetro' || med === 'hora') && (hIni || hFim)) {
@@ -2544,6 +2548,7 @@ async function verPartes(osId, osNum, editavel = true) {
 async function abrirEditarParte(idx) {
   const p = (window._vpPartes || [])[idx];
   if (!p) return;
+  window._epOriginal = p; // (18/07/2026) para enviar só campos ALTERADOS
   const med = p.tipo_medicao || 'horimetro';
   // (13/07/2026) Campos importantes na correção: equipamento e operador
   // (vínculo próprio) — mesmas fontes únicas dos selects de registro.
@@ -2681,9 +2686,15 @@ async function salvarEdicaoParte(parteId, med) {
   if (_eq) body.equipamento_id = _eq;
   const _op = document.getElementById('ep-oper')?.value;
   if (_op) body.operador_id = _op;
-  // (14/07/2026) Horímetro sempre editável (controle interno)
-  body.horimetro_inicial = document.getElementById('ep-hini')?.value || null;
-  body.horimetro_final   = document.getElementById('ep-hfin')?.value || null;
+  // (18/07/2026) FONTE EDITADA POR ÚLTIMO VENCE: enviamos SÓ o que o
+  // operador alterou — o backend recalcula pela fonte tocada (completar o
+  // horímetro à noite recalcula pelo horímetro; mexer no relógio, pelo relógio)
+  const _o = window._epOriginal || {};
+  const _mudou = (v, orig) => String(v ?? '') !== String(orig ?? '');
+  const _hiV = document.getElementById('ep-hini')?.value;
+  const _hfV = document.getElementById('ep-hfin')?.value;
+  if (_mudou(_hiV, _o.horimetro_inicial)) body.horimetro_inicial = _hiV || null;
+  if (_mudou(_hfV, _o.horimetro_final))   body.horimetro_final   = _hfV || null;
   if (med === 'km') {
     body.km_inicial  = document.getElementById('ep-kmini').value || null;
     body.km_final    = document.getElementById('ep-kmfin').value || null;
@@ -2695,9 +2706,13 @@ async function salvarEdicaoParte(parteId, med) {
   } else if (med === 'metros') {
     body.qtd_metros = document.getElementById('ep-metros').value || null;
   } else {
-    body.hora_inicio = document.getElementById('ep-horaini').value || null;
-    body.hora_fim    = document.getElementById('ep-horafim').value || null;
-    body.sem_almoco  = document.getElementById('ep-semalmoco').checked;
+    const _riV = document.getElementById('ep-horaini').value;
+    const _rfV = document.getElementById('ep-horafim').value;
+    const _saV = document.getElementById('ep-semalmoco').checked;
+    const _norm = t => String(t ?? '').slice(0,5);
+    if (_norm(_riV) !== _norm(_o.hora_inicio)) body.hora_inicio = _riV || null;
+    if (_norm(_rfV) !== _norm(_o.hora_fim))    body.hora_fim    = _rfV || null;
+    if (_saV !== !!_o.sem_almoco)              body.sem_almoco  = _saV;
   }
   try {
     const token = localStorage.getItem('garra_token') || '';
