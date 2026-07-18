@@ -1741,17 +1741,21 @@ async def op_controle_mensal_excel(
                         unidade, chave = "km", "km"
                         rotulo_med = "km"
                     else:
-                        # (17/07/2026) Prioridade de Fontes: relógio explícito →
-                        # Inicial/Final da planilha mostram o RELÓGIO (fonte)
+                        # (17/07/2026) Espelho da tela de partes: Inicial/Final e
+                        # Trab. = HORÍMETRO quando informado (máquina); Cobr. =
+                        # horas do registro (relógio quando o operador registrou)
+                        _hi_h = p.get("horimetro_inicial"); _hf_h = p.get("horimetro_final")
                         _hi_rel = p.get("hora_inicio"); _hf_rel = p.get("hora_fim")
-                        if _hi_rel and _hf_rel:
-                            h_ini = str(_hi_rel)[:5]
-                            h_fin = str(_hf_rel)[:5]
+                        if _hi_h is not None and _hf_h is not None:
+                            h_ini = float(_hi_h); h_fin = float(_hf_h)
+                            h_trab = round(h_fin - h_ini, 2)
+                        elif _hi_rel and _hf_rel:
+                            h_ini = str(_hi_rel)[:5]; h_fin = str(_hf_rel)[:5]
+                            h_trab = float(p.get("horas_trabalhadas") or 0)
                         else:
-                            h_ini = float(p.get("horimetro_inicial") or 0)
-                            h_fin = float(p.get("horimetro_final") or 0)
-                        h_trab = float(p.get("horas_trabalhadas") or 0)
-                        h_cobr = float(p.get("horas_cobradas") or h_trab)
+                            h_ini = ""; h_fin = ""
+                            h_trab = float(p.get("horas_trabalhadas") or 0)
+                        h_cobr = float(p.get("horas_cobradas") or p.get("horas_trabalhadas") or 0)
                         unidade, chave = "h", "h"
                         reg = str(p.get("regime_cobranca") or "").lower()
                         rotulo_med = p.get("regime_cobranca") if "hora" in reg else "hora"
@@ -1976,6 +1980,21 @@ async def op_editar_minha_parte(parte_id: str, request: Request, payload=Depends
             pass
 
     horas = _calc_horas_parte(merged)
+    # (18/07/2026) FONTE EDITADA POR ÚLTIMO VENCE — resolve o fluxo
+    # abre-manhã/fecha-noite: completar o horímetro na correção RECALCULA
+    # pelo horímetro (mesmo com relógio gravado); mexer no relógio mantém
+    # o relógio. O front envia apenas os campos que o operador alterou.
+    _tocou_hor = ("horimetro_inicial" in d) or ("horimetro_final" in d)
+    _tocou_rel = ("hora_inicio" in d) or ("hora_fim" in d) or ("sem_almoco" in d)
+    if _tocou_hor and not _tocou_rel:
+        _hi = merged.get("horimetro_inicial"); _hf = merged.get("horimetro_final")
+        if _hi is not None and _hf is not None:
+            try:
+                _hm = round(float(_hf) - float(_hi), 2)
+                if _hm >= 0:
+                    horas = _hm
+            except (TypeError, ValueError):
+                pass
     _validar_horas_plausiveis(horas)
     await _validar_sobreposicao_horimetro(
         merged.get("equipamento_id"),
