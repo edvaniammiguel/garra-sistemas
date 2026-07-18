@@ -2468,9 +2468,8 @@ async function verPartes(osId, osNum, editavel = true) {
         medInfo = kmTxt + viagTxt;
       } else {
         // (17/07/2026) Indica a FONTE considerada: 🕐 relógio · ⚙️ horímetro
-        const _fonteRelogio = !!(hIni && hFim);
-        const _fonteIcone = _fonteRelogio ? ' 🕐'
-          : ((p.horimetro_inicial != null && p.horimetro_final != null) ? ' ⚙️' : '');
+        const _temHorFonte = (p.horimetro_inicial != null && p.horimetro_final != null);
+        const _fonteIcone = _temHorFonte ? ' ⚙️' : ((hIni && hFim) ? ' 🕐' : '');
         medInfo = `${horas || 0}h${_fonteIcone}`;
       }
 
@@ -2498,9 +2497,13 @@ async function verPartes(osId, osNum, editavel = true) {
       const _hMaq = temHorimetro
         ? (parseFloat(p.horimetro_final) - parseFloat(p.horimetro_inicial)).toFixed(1)
         : null;
-      if ((med === 'horimetro' || med === 'hora') && hIni && hFim) {
-        // (18/07/2026) Operador vê a QUANTIDADE de horas de máquina, não só a faixa
-        detalhes = `🕐 ${hIni} às ${hFim}` + (temHorimetro ? `  ·  ⚙️ ${_hMaq}h máq. (${p.horimetro_inicial}→${p.horimetro_final})` : '');
+      if (temHorimetro) {
+        // (18/07/2026) REGRA FINAL: horímetro completo é a fonte → lidera a
+        // linha; a janela do relógio fica ao lado como informação
+        detalhes = `⚙️ ${_hMaq}h máq. (${p.horimetro_inicial}→${p.horimetro_final})` +
+          ((med === 'horimetro' || med === 'hora') && hIni && hFim ? `  ·  🕐 ${hIni} às ${hFim}` : '');
+      } else if ((med === 'horimetro' || med === 'hora') && hIni && hFim) {
+        detalhes = `🕐 ${hIni} às ${hFim}`;
       } else if (temHorimetro) {
         detalhes = `⚙️ ${p.horimetro_inicial} → ${p.horimetro_final} · ${_hMaq}h`;
       } else if (med === 'km' && (p.km_inicial || p.km_final)) {
