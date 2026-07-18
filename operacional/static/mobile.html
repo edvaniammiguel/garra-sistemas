@@ -2498,10 +2498,9 @@ async function verPartes(osId, osNum, editavel = true) {
         ? (parseFloat(p.horimetro_final) - parseFloat(p.horimetro_inicial)).toFixed(1)
         : null;
       if (temHorimetro) {
-        // (18/07/2026) REGRA FINAL: horímetro completo é a fonte → lidera a
-        // linha; a janela do relógio fica ao lado como informação
-        detalhes = `⚙️ ${_hMaq}h máq. (${p.horimetro_inicial}→${p.horimetro_final})` +
-          ((med === 'horimetro' || med === 'hora') && hIni && hFim ? `  ·  🕐 ${hIni} às ${hFim}` : '');
+        // (18/07/2026) REGRA FINAL: horímetro completo é a fonte — ponto.
+        // Relógio não aparece quando a máquina mediu o dia.
+        detalhes = `⚙️ ${_hMaq}h máq. (${p.horimetro_inicial}→${p.horimetro_final})`;
       } else if ((med === 'horimetro' || med === 'hora') && hIni && hFim) {
         detalhes = `🕐 ${hIni} às ${hFim}`;
       } else if (temHorimetro) {
