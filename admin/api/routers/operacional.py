@@ -1262,6 +1262,16 @@ async def op_concluir_os_operador(os_id: str, request: Request, payload=Depends(
     if os_row.get("status") in ("concluida_completa","concluida_sem_erp","cancelada","aguardando_fechamento"):
         raise HTTPException(status_code=400, detail="OS já está concluída ou aguardando fechamento")
 
+    # (18/07/2026) Caso Italo/OS-15: concluir OS SEM nenhum registro esconde a
+    # OS do operador e engole o trabalho do dia. Registra primeiro, conclui depois.
+    tem_parte = await ajard_query(
+        "SELECT 1 FROM operacional.partes_diarias WHERE os_id=%s AND ativo=true LIMIT 1",
+        (os_id,), fetch="one"
+    )
+    if not tem_parte:
+        raise HTTPException(status_code=400,
+            detail="Esta OS não tem nenhum registro. Registre o trabalho do dia antes de concluir.")
+
     agora = datetime.utcnow()
     await ajard_query(
         """UPDATE operacional.ordens_servico
