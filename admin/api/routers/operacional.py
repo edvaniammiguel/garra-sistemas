@@ -1264,6 +1264,39 @@ async def op_fechar_os(os_id: str, request: Request, payload=Depends(verificar_g
 
     return await op_detalhe_os(os_id, _auth=payload)
 
+@router.post("/operacional/api/os/{os_id}/reabrir")
+async def op_reabrir_os(os_id: str, payload=Depends(verificar_gestor)):
+    """(20/07/2026) Reabre OS concluída — caminho de volta sancionado.
+    O fechamento congela as partes (fechado=true) por integridade do
+    faturamento; antes desta rota, um registro errado numa OS fechada era
+    beco sem saída (sem editar, sem excluir). Reabrir descongela as partes,
+    devolve o status de aberta e limpa data_fim_real. Ao corrigir, a gestão
+    fecha de novo pelo fluxo normal (revisão → Fechar OS)."""
+    os_row = await ajard_query(
+        "SELECT id, status, codigo_erp FROM operacional.ordens_servico WHERE id=%s AND ativo=true",
+        (os_id,), fetch="one"
+    )
+    if not os_row:
+        raise HTTPException(status_code=404, detail="OS não encontrada")
+    if os_row.get("status") not in ("concluida_sem_erp", "concluida_completa"):
+        raise HTTPException(status_code=400, detail="Só OS concluída pode ser reaberta")
+    # Descongelar as partes desta OS
+    await ajard_query(
+        """UPDATE operacional.partes_diarias
+           SET fechado=false, fechado_em=NULL, fechado_por=NULL
+           WHERE os_id=%s AND ativo=true AND fechado=true""",
+        (os_id,), fetch="none"
+    )
+    # Status de volta conforme presença do código ERP
+    novo_status = "aberta_completa" if os_row.get("codigo_erp") else "aberta_sem_erp"
+    await ajard_query(
+        """UPDATE operacional.ordens_servico
+           SET status=%s, data_fim_real=NULL, atualizado_em=%s
+           WHERE id=%s""",
+        (novo_status, datetime.utcnow(), os_id), fetch="none"
+    )
+    return await op_detalhe_os(os_id, _auth=payload)
+
 @router.post("/operacional/api/os/{os_id}/concluir")
 async def op_concluir_os_operador(os_id: str, request: Request, payload=Depends(verificar_token)):
     """Operador marca OS como concluída do lado dele → aguarda fechamento pela Luana."""
