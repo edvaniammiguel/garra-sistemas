@@ -474,6 +474,33 @@ async def op_criar_equipamento(request: Request, payload=Depends(verificar_gesto
     placa  = (d.get("placa")  or "").strip() or None
     operador_resp = (d.get("operador_responsavel_id") or "").strip() or None
     try:
+        # (20/07/2026) BUG CPO-36: o soft delete mantém o registro no banco com
+        # ativo=false — o equipamento some da relação, mas o UNIQUE de codigo
+        # barra o recadastro com "Código já existe". Beco sem saída para o
+        # admin. Correção: se o código pertence a um equipamento INATIVO,
+        # reativa o MESMO registro (preserva id + todo o histórico de OS e
+        # partes vinculado) e atualiza os dados informados no formulário.
+        # Duplicado ATIVO segue retornando 409 normalmente.
+        inativo = await ajard_query(
+            "SELECT id FROM operacional.equipamentos WHERE codigo=%s AND ativo=false",
+            (codigo,), fetch="one"
+        )
+        if inativo:
+            row = await ajard_query(
+                """UPDATE operacional.equipamentos
+                   SET descricao=%s, categoria=%s, medicao=%s, marca=%s,
+                       modelo=%s, ano=%s, placa=%s, operador_responsavel_id=%s,
+                       ativo=true, atualizado_em=now()
+                   WHERE id=%s
+                   RETURNING id, codigo, descricao, categoria, medicao,
+                             marca, modelo, ano, placa, operador_responsavel_id""",
+                (descricao, categoria, medicao, marca, modelo, ano, placa,
+                 operador_resp, inativo["id"]),
+                fetch="one"
+            )
+            out = dict(row) if row else {"codigo": codigo}
+            out["reativado"] = True
+            return out
         row = await ajard_query(
             """INSERT INTO operacional.equipamentos
                (codigo, descricao, categoria, medicao, marca, modelo, ano, placa, operador_responsavel_id, ativo)
