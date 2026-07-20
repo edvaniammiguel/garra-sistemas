@@ -3201,6 +3201,16 @@ async function excluirParte(parteId) {
 
 /* ── REABRIR OS (20/07/2026) — OS fechada congela registros; este é o
    caminho de volta sancionado para corrigir/excluir e fechar de novo ── */
+async function reabrirOSLista(osId, numero) {
+  if (!confirm('Reabrir a ' + numero + '?\n\nOs registros voltam a ser editáveis e excluíveis.\nDepois de corrigir, feche a OS novamente pelo botão ✓ Fechar OS.')) return;
+  try {
+    await apiFetch('/operacional/api/os/'+osId+'/reabrir', { method:'POST' });
+    toast('OS reaberta — registros liberados para edição','success');
+    // Abre direto a tela de registros, já editável, pronta para corrigir
+    verPartesOS(osId, numero);
+  } catch(e) { toast('Erro: '+e.message,'error'); }
+}
+
 async function reabrirOS() {
   if (!_osAtual) return;
   if (!confirm('Reabrir a ' + (_osAtual.numero||'OS') + '?\n\nOs registros voltam a ser editáveis e excluíveis.\nDepois de corrigir, feche a OS novamente pelo botão ✓ Fechar OS.')) return;
@@ -3661,6 +3671,7 @@ function renderTabelaOS(lista) {
             <td style="padding:10px;font-size:12px;color:var(--muted)">${data}</td>
             <td style="padding:10px"><span class="badge ${st.badge}">${st.label}</span></td>
             <td style="padding:10px;text-align:right;display:flex;gap:6px;justify-content:flex-end">
+              ${['concluida_completa','concluida_sem_erp'].includes(os.status) && ['admin','gestor','luana'].includes(window._PERFIL) ? `<button class="btn-sm" title="Reabrir OS para corrigir ou excluir registros" onclick="reabrirOSLista('${esc(os.id)}','${esc(os.numero)}')">↺ Reabrir</button>` : ''}
               <button class="btn-sm" onclick="verPartesOS('${esc(os.id)}','${esc(os.numero)}')">📋 Partes</button>
               <button class="btn-sm ${semOperador ? '' : ''}" style="${semOperador ? 'background:var(--orange);color:#fff' : ''}" onclick="editarOS('${esc(os.id)}')">✎ ${semOperador ? 'Designar' : 'Editar'}</button>
               <button class="btn-sm" style="color:#DC2626;border-color:#FCA5A5" title="Excluir OS (só sem registros)" onclick="excluirOSAdmin('${esc(os.id)}','${esc(os.numero)}')">🗑</button>
