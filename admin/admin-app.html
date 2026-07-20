@@ -1500,6 +1500,7 @@ function renderTabelaUsuarios() {
             <div style="display:flex;gap:4px;justify-content:flex-end">
               <button class="btn-sm" onclick="editarUsuario('${esc(u.login)}')">✎ Editar</button>
               ${u.ativo && window._PERFIL==='admin' ? `<button class="btn-sm danger" onclick="pedirDesativar('${esc(u.login)}','${esc(u.nome||u.login)}')">✕ Desativar</button>` : ''}
+              ${!u.ativo && window._PERFIL==='admin' ? `<button class="btn-sm" onclick="reativarUsuario('${esc(u.login)}','${esc(u.nome||u.login)}')">↺ Reativar</button>` : ''}
             </div>
           </td>
         </tr>`).join('')}
@@ -1630,6 +1631,20 @@ async function confirmarDesativar() {
     const _kpiSB = document.getElementById('sb-user-count'); if(_kpiSB) _kpiSB.textContent = _usuarios.filter(u => u.ativo).length;
   } catch(e) { toast(e.message, 'error'); }
   finally { btn.textContent = 'Desativar'; btn.disabled = false; }
+}
+
+/* ── REATIVAR (20/07/2026) — desativado só sumia; agora tem caminho de volta ── */
+async function reativarUsuario(login, nome) {
+  if (!confirm('Reativar ' + nome + ' (' + login + ')?\n\nEle volta a aparecer nos selects de operador e pode fazer login novamente.')) return;
+  try {
+    await apiFetch(`/usuarios/${encodeURIComponent(login)}/editar`, { method: 'POST', body: JSON.stringify({ ativo: true }) });
+    toast('Colaborador reativado.', 'success');
+    _usuarios = await apiFetch('/usuarios');
+    renderListaDash();
+    if (secAtual === 'usuarios') renderTabelaUsuarios();
+    const _kpiU = document.getElementById('kpi-usuarios'); if(_kpiU) _kpiU.textContent = _usuarios.filter(u => u.ativo).length;
+    const _kpiSB = document.getElementById('sb-user-count'); if(_kpiSB) _kpiSB.textContent = _usuarios.filter(u => u.ativo).length;
+  } catch(e) { toast(e.message, 'error'); }
 }
 
 /* ══════════════════════════════════════════════
