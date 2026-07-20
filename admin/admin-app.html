@@ -642,6 +642,7 @@ input,select,textarea { font-family:inherit; font-size:13px; outline:none; }
             <div style="display:flex;gap:8px">
               <button class="btn btn-secondary" style="padding:6px 14px;font-size:12px" onclick="abrirModalParte()">+ Adicionar registro</button>
               <button class="btn btn-primary" id="btn-fechar-os" style="padding:6px 14px;font-size:12px;background:var(--green)" onclick="confirmarFechamento()">✓ Fechar OS</button>
+              <button class="btn btn-secondary" id="btn-reabrir-os" style="padding:6px 14px;font-size:12px;display:none" onclick="reabrirOS()">↺ Reabrir OS</button>
             </div>
           </div>
 
@@ -2785,6 +2786,14 @@ async function verPartesOS(osId, osNumero) {
       const fechada = ['concluida_sem_erp','concluida_completa','cancelada'].includes(os.status);
       btnFechar.style.display = fechada ? 'none' : '';
     }
+    // (20/07/2026) OS concluída → botão Reabrir (gestão): descongela as
+    // partes para corrigir/excluir registro errado e fechar de novo.
+    const btnReabrir = document.getElementById('btn-reabrir-os');
+    if (btnReabrir) {
+      const reabrivel = ['concluida_sem_erp','concluida_completa'].includes(os.status)
+        && ['admin','gestor','luana'].includes(window._PERFIL);
+      btnReabrir.style.display = reabrivel ? '' : 'none';
+    }
   } catch(e) {
     tbl.innerHTML = `<div style="color:var(--red);padding:20px">Erro: ${esc(e.message)}</div>`;
   }
@@ -3186,6 +3195,18 @@ async function excluirParte(parteId) {
   try {
     await apiFetch('/operacional/api/partes/'+parteId, { method:'DELETE' });
     toast('Registro excluído','success');
+    verPartesOS(_osAtual.id, _osAtual.numero);
+  } catch(e) { toast('Erro: '+e.message,'error'); }
+}
+
+/* ── REABRIR OS (20/07/2026) — OS fechada congela registros; este é o
+   caminho de volta sancionado para corrigir/excluir e fechar de novo ── */
+async function reabrirOS() {
+  if (!_osAtual) return;
+  if (!confirm('Reabrir a ' + (_osAtual.numero||'OS') + '?\n\nOs registros voltam a ser editáveis e excluíveis.\nDepois de corrigir, feche a OS novamente pelo botão ✓ Fechar OS.')) return;
+  try {
+    await apiFetch('/operacional/api/os/'+_osAtual.id+'/reabrir', { method:'POST' });
+    toast('OS reaberta — registros liberados para edição','success');
     verPartesOS(_osAtual.id, _osAtual.numero);
   } catch(e) { toast('Erro: '+e.message,'error'); }
 }
