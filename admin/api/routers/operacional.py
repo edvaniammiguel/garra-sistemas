@@ -437,7 +437,7 @@ async def op_listar_equipamentos(uso: str = None, _auth=Depends(verificar_token)
                       "('caminhao','escavadeira','retroescavadeira','patrol',"
                       "'carregadeira','compactador','apoio')")
     rows = await ajard_query(
-        f"""SELECT eq.id, eq.codigo, eq.descricao, eq.categoria, eq.medicao,
+        f"""SELECT eq.id, eq.codigo, eq.descricao, eq.categoria, eq.medicao, eq.agenda_ics_url,
                   eq.marca, eq.modelo, eq.ano, eq.placa,
                   -- (13/07/2026) Horímetro atual VIVO: maior leitura registrada
                   -- nas partes (a coluna estática ninguém atualizava — por isso
@@ -473,6 +473,7 @@ async def op_criar_equipamento(request: Request, payload=Depends(verificar_gesto
     ano    = d.get("ano")
     placa  = (d.get("placa")  or "").strip() or None
     operador_resp = (d.get("operador_responsavel_id") or "").strip() or None
+    agenda_ics_url = (d.get("agenda_ics_url") or "").strip() or None
     try:
         # (20/07/2026) BUG CPO-36: o soft delete mantém o registro no banco com
         # ativo=false — o equipamento some da relação, mas o UNIQUE de codigo
@@ -490,12 +491,12 @@ async def op_criar_equipamento(request: Request, payload=Depends(verificar_gesto
                 """UPDATE operacional.equipamentos
                    SET descricao=%s, categoria=%s, medicao=%s, marca=%s,
                        modelo=%s, ano=%s, placa=%s, operador_responsavel_id=%s,
-                       ativo=true, atualizado_em=now()
+                       agenda_ics_url=%s, ativo=true, atualizado_em=now()
                    WHERE id=%s
                    RETURNING id, codigo, descricao, categoria, medicao,
                              marca, modelo, ano, placa, operador_responsavel_id""",
                 (descricao, categoria, medicao, marca, modelo, ano, placa,
-                 operador_resp, inativo["id"]),
+                 operador_resp, agenda_ics_url, inativo["id"]),
                 fetch="one"
             )
             out = dict(row) if row else {"codigo": codigo}
@@ -503,11 +504,11 @@ async def op_criar_equipamento(request: Request, payload=Depends(verificar_gesto
             return out
         row = await ajard_query(
             """INSERT INTO operacional.equipamentos
-               (codigo, descricao, categoria, medicao, marca, modelo, ano, placa, operador_responsavel_id, ativo)
-               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s, true)
+               (codigo, descricao, categoria, medicao, marca, modelo, ano, placa, operador_responsavel_id, agenda_ics_url, ativo)
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s, true)
                RETURNING id, codigo, descricao, categoria, medicao,
                          marca, modelo, ano, placa, operador_responsavel_id""",
-            (codigo, descricao, categoria, medicao, marca, modelo, ano, placa, operador_resp),
+            (codigo, descricao, categoria, medicao, marca, modelo, ano, placa, operador_resp, agenda_ics_url),
             fetch="one"
         )
         # (09/07/2026) Sync com checklist.frota REMOVIDO — o checklist lê
@@ -528,7 +529,8 @@ async def op_editar_equipamento(eq_id: str, request: Request, payload=Depends(ve
                        ("categoria","categoria"),("medicao","medicao"),
                        ("marca","marca"),("modelo","modelo"),
                        ("ano","ano"),("placa","placa"),
-                       ("operador_responsavel_id","operador_responsavel_id")]:
+                       ("operador_responsavel_id","operador_responsavel_id"),
+                       ("agenda_ics_url","agenda_ics_url")]:
         if key in d:
             valor = d.get(key)
             if isinstance(valor, str):
@@ -695,6 +697,9 @@ async def op_criar_os(request: Request, payload=Depends(verificar_gestor)):
     data_fim_prevista   = d.get("data_fim_prevista") or None
     codigo_erp          = (d.get("codigo_erp") or "").strip() or None
     origem              = d.get("origem") or "escritorio"
+    # (21/07/2026) Observação da gestão — visível SÓ no admin (pode conter
+    # condições financeiras vindas da Agenda Google). Nunca vai ao mobile.
+    observacao_gestao   = (d.get("observacao_gestao") or "").strip() or None
 
     # Gerar número de OS
     ano = datetime.utcnow().year
@@ -720,14 +725,14 @@ async def op_criar_os(request: Request, payload=Depends(verificar_gestor)):
                (numero, ano, sequencia, codigo_erp, codigo_erp_em, codigo_erp_por,
                 cliente_id, cliente_nome_avulso, tipo_servico_id,
                 equipamento_id, operador_id,
-                obra, endereco, descricao,
+                obra, endereco, descricao, observacao_gestao,
                 data_inicio, data_fim_prevista,
                 status, origem, criado_por, horas_padrao_dia)
-               VALUES (%s,%s,%s,%s,%s,%s, %s,%s,%s, %s,%s, %s,%s,%s, %s,%s, %s,%s,%s, %s)""",
+               VALUES (%s,%s,%s,%s,%s,%s, %s,%s,%s, %s,%s, %s,%s,%s,%s, %s,%s, %s,%s,%s, %s)""",
             (numero, ano, sequencia, codigo_erp, codigo_erp_em, codigo_erp_por,
              cliente_id, cliente_nome_avulso, tipo_servico_id,
              equipamento_id, operador_id,
-             obra, endereco, descricao,
+             obra, endereco, descricao, observacao_gestao,
              data_inicio, data_fim_prevista,
              status, origem, criado_por_id,
              float(d.get("horas_padrao_dia")) if d.get("horas_padrao_dia") else None)
@@ -749,7 +754,7 @@ async def op_listar_os(
     sql = """
         SELECT
             os.id, os.numero, os.ano, os.sequencia,
-            os.codigo_erp, os.obra, os.endereco, os.descricao,
+            os.codigo_erp, os.obra, os.endereco, os.descricao, os.observacao_gestao,
             os.data_inicio, os.data_fim_prevista, os.data_fim_real,
             os.status, os.origem, os.criado_em,
             os.regime_cobranca, os.valor_combinado, os.horas_padrao_dia,
@@ -787,7 +792,13 @@ async def op_listar_os(
     params.append(limit)
 
     rows = await ajard_query(sql, tuple(params))
-    return [dict(r) for r in (rows or [])]
+    saida = [dict(r) for r in (rows or [])]
+    # (21/07/2026) observacao_gestao pode conter condições financeiras —
+    # menor privilégio: só admin/gestor/luana recebem o campo.
+    if (_auth.get("perfil") or "").lower() not in ("admin", "gestor", "luana"):
+        for r in saida:
+            r.pop("observacao_gestao", None)
+    return saida
 
 @router.get("/operacional/api/os/{os_id}")
 async def op_detalhe_os(os_id: str, _auth=Depends(verificar_token)):
@@ -828,6 +839,8 @@ async def op_detalhe_os(os_id: str, _auth=Depends(verificar_token)):
     )
 
     os_dict = dict(row)
+    if (_auth.get("perfil") or "").lower() not in ("admin", "gestor", "luana"):
+        os_dict.pop("observacao_gestao", None)
     os_dict["partes_diarias"] = [dict(p) for p in (partes or [])]
     return os_dict
 
@@ -845,7 +858,7 @@ async def op_atualizar_os(os_id: str, request: Request, payload=Depends(verifica
         raise HTTPException(status_code=404, detail="OS não encontrada")
 
     # Campos editáveis
-    campos_editaveis = ["codigo_erp", "obra", "endereco", "descricao",
+    campos_editaveis = ["codigo_erp", "obra", "endereco", "descricao", "observacao_gestao",
                         "data_fim_prevista", "data_fim_real", "status",
                         "tipo_servico_id", "cliente_id", "cliente_nome_avulso",
                         "equipamento_id", "operador_id",
@@ -2274,4 +2287,168 @@ async def op_excluir_minha_parte(parte_id: str, payload=Depends(verificar_token)
         "UPDATE operacional.partes_diarias SET ativo=false WHERE id=%s",
         (parte_id,), fetch="none"
     )
+    return {"ok": True}
+
+
+# ══════════════════════════════════════════════════════════════════
+# AGENDA GOOGLE → OS A CONFIRMAR  (21/07/2026)
+# Cada equipamento tem sua agenda Google; a URL ICS secreta fica no
+# cadastro do equipamento (agenda_ics_url — Regra 63, sem hardcode).
+# Sincronizar busca os eventos, fatia eventos longos em 1 segmento
+# por mês (regra: evento longo = 1 OS por mês) e grava em
+# operacional.agenda_eventos como PENDENTE. Nada vira OS sem
+# confirmação humana no Admin. Idempotente por (uid_google, mes_ref).
+# ══════════════════════════════════════════════════════════════════
+
+def _agenda_parse_ics(texto_ics: str):
+    """Extrai eventos (uid, titulo, descricao, data_ini, data_fim) de um ICS.
+    Usa a lib icalendar; DTEND de evento de dia inteiro é exclusivo → -1 dia.
+    RRULE (recorrência) fora do escopo v1: trata como ocorrência única."""
+    from icalendar import Calendar as _ICal
+    eventos = []
+    cal = _ICal.from_ical(texto_ics)
+    for comp in cal.walk("VEVENT"):
+        try:
+            uid = str(comp.get("UID") or "").strip()
+            titulo = str(comp.get("SUMMARY") or "").strip()
+            desc = str(comp.get("DESCRIPTION") or "").strip()
+            dtstart = comp.get("DTSTART")
+            if not uid or not dtstart:
+                continue
+            ini = dtstart.dt
+            fim_prop = comp.get("DTEND")
+            fim = fim_prop.dt if fim_prop else ini
+            all_day = not hasattr(ini, "hour")
+            d_ini = ini if all_day else ini.date()
+            d_fim = fim if not hasattr(fim, "hour") else fim.date()
+            if all_day and fim_prop is not None:
+                d_fim = d_fim - timedelta(days=1)  # DTEND exclusivo
+            if d_fim < d_ini:
+                d_fim = d_ini
+            eventos.append({"uid": uid, "titulo": titulo, "descricao": desc,
+                            "data_ini": d_ini, "data_fim": d_fim})
+        except Exception:
+            continue  # evento malformado não derruba a sincronização
+    return eventos
+
+
+def _agenda_segmentos_mensais(d_ini, d_fim):
+    """Fatia [d_ini, d_fim] em segmentos por mês civil.
+    Retorna lista de (mes_ref=1º dia do mês, seg_ini, seg_fim)."""
+    segs = []
+    cursor = d_ini
+    while cursor <= d_fim:
+        mes_ref = cursor.replace(day=1)
+        ultimo = date(cursor.year, cursor.month,
+                      calendar.monthrange(cursor.year, cursor.month)[1])
+        seg_fim = min(ultimo, d_fim)
+        segs.append((mes_ref, cursor, seg_fim))
+        cursor = ultimo + timedelta(days=1)
+    return segs
+
+
+@router.post("/operacional/api/agenda/sincronizar")
+async def op_agenda_sincronizar(payload=Depends(verificar_gestor)):
+    """Varre as agendas ICS cadastradas nos equipamentos e grava/atualiza
+    os eventos pendentes. Só meses do atual em diante entram."""
+    import asyncio, requests as _rq
+    equips = await ajard_query(
+        """SELECT id, codigo, agenda_ics_url FROM operacional.equipamentos
+           WHERE ativo=true AND agenda_ics_url IS NOT NULL AND agenda_ics_url <> ''"""
+    )
+    hoje_local = (datetime.utcnow() - timedelta(hours=3)).date()
+    corte = hoje_local.replace(day=1)
+    loop = asyncio.get_event_loop()
+    resumo = {"agendas": 0, "eventos_novos": 0, "eventos_atualizados": 0, "erros": []}
+    for eq in (equips or []):
+        url = (eq.get("agenda_ics_url") or "").strip()
+        try:
+            resp = await loop.run_in_executor(
+                None, lambda u=url: _rq.get(u, timeout=20))
+            if resp.status_code != 200:
+                resumo["erros"].append(f"{eq['codigo']}: HTTP {resp.status_code}")
+                continue
+            eventos = _agenda_parse_ics(resp.text)
+            resumo["agendas"] += 1
+        except Exception as e:
+            resumo["erros"].append(f"{eq['codigo']}: {str(e)[:120]}")
+            continue
+        for ev in eventos:
+            for mes_ref, seg_ini, seg_fim in _agenda_segmentos_mensais(ev["data_ini"], ev["data_fim"]):
+                if seg_fim < corte:
+                    continue  # mês já passado — não importa histórico
+                existente = await ajard_query(
+                    "SELECT id, status FROM operacional.agenda_eventos WHERE uid_google=%s AND mes_ref=%s",
+                    (ev["uid"], mes_ref), fetch="one"
+                )
+                if existente:
+                    if existente.get("status") == "pendente":
+                        await ajard_query(
+                            """UPDATE operacional.agenda_eventos
+                               SET titulo=%s, descricao=%s, data_inicio=%s, data_fim=%s,
+                                   equipamento_id=%s, atualizado_em=now()
+                               WHERE id=%s""",
+                            (ev["titulo"], ev["descricao"] or None, seg_ini, seg_fim,
+                             eq["id"], existente["id"]), fetch="none"
+                        )
+                        resumo["eventos_atualizados"] += 1
+                else:
+                    await ajard_query(
+                        """INSERT INTO operacional.agenda_eventos
+                           (uid_google, mes_ref, equipamento_id, titulo, descricao,
+                            data_inicio, data_fim, status)
+                           VALUES (%s,%s,%s,%s,%s,%s,%s,'pendente')""",
+                        (ev["uid"], mes_ref, eq["id"], ev["titulo"],
+                         ev["descricao"] or None, seg_ini, seg_fim), fetch="none"
+                    )
+                    resumo["eventos_novos"] += 1
+    return resumo
+
+
+@router.get("/operacional/api/agenda/eventos")
+async def op_agenda_listar(status: Optional[str] = "pendente",
+                           payload=Depends(verificar_gestor)):
+    rows = await ajard_query(
+        """SELECT ae.id, ae.uid_google, ae.mes_ref, ae.titulo, ae.descricao,
+                  ae.data_inicio, ae.data_fim, ae.status, ae.os_id,
+                  ae.equipamento_id, eq.codigo AS equipamento_codigo,
+                  eq.descricao AS equipamento_descricao
+           FROM operacional.agenda_eventos ae
+           LEFT JOIN operacional.equipamentos eq ON eq.id = ae.equipamento_id
+           WHERE ae.status = %s
+           ORDER BY ae.mes_ref, eq.codigo, ae.data_inicio""",
+        (status,)
+    )
+    return [dict(r) for r in (rows or [])]
+
+
+@router.post("/operacional/api/agenda/eventos/{ev_id}/ignorar")
+async def op_agenda_ignorar(ev_id: str, payload=Depends(verificar_gestor)):
+    row = await ajard_query(
+        """UPDATE operacional.agenda_eventos SET status='ignorado', atualizado_em=now()
+           WHERE id=%s AND status='pendente' RETURNING id""",
+        (ev_id,), fetch="one"
+    )
+    if not row:
+        raise HTTPException(status_code=404, detail="Evento não encontrado ou já tratado")
+    return {"ok": True}
+
+
+@router.post("/operacional/api/agenda/eventos/{ev_id}/confirmar")
+async def op_agenda_confirmar(ev_id: str, request: Request,
+                              payload=Depends(verificar_gestor)):
+    """Vincula o evento à OS criada pela gestão (fluxo: modal pré-preenchido
+    → salvarOS → esta rota marca o evento como confirmado)."""
+    d = await request.json()
+    os_id = d.get("os_id")
+    if not os_id:
+        raise HTTPException(status_code=400, detail="os_id é obrigatório")
+    row = await ajard_query(
+        """UPDATE operacional.agenda_eventos
+           SET status='confirmado', os_id=%s, atualizado_em=now()
+           WHERE id=%s AND status='pendente' RETURNING id""",
+        (os_id, ev_id), fetch="one"
+    )
+    if not row:
+        raise HTTPException(status_code=404, detail="Evento não encontrado ou já tratado")
     return {"ok": True}
