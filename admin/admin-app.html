@@ -658,6 +658,20 @@ input,select,textarea { font-family:inherit; font-size:13px; outline:none; }
       </section>
 
       <!-- ── SEÇÃO: CLIENTES ── -->
+      <!-- ── SEÇÃO: AGENDA GOOGLE — EVENTOS A CONFIRMAR (21/07/2026) ── -->
+      <section id="sec-agenda" class="hidden">
+        <div class="card">
+          <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:14px">
+            <div>
+              <div style="font-size:15px;font-weight:800">📅 Agenda — a confirmar</div>
+              <div style="font-size:12px;color:var(--muted)">Eventos das agendas Google dos equipamentos. Nada vira OS sem sua confirmação. Evento longo = 1 OS por mês.</div>
+            </div>
+            <button class="btn btn-primary" id="btn-sync-agenda" style="padding:6px 14px;font-size:12px" onclick="sincronizarAgenda()">⟳ Sincronizar agendas</button>
+          </div>
+          <div id="agenda-lista"><div style="padding:30px;text-align:center;color:var(--muted)">Clique em Sincronizar para buscar os eventos.</div></div>
+        </div>
+      </section>
+
       <section id="sec-clientes" class="hidden">
         <div class="card">
           <div class="card-title">
@@ -930,6 +944,11 @@ input,select,textarea { font-family:inherit; font-size:13px; outline:none; }
     <div class="field">
       <label>Descrição do serviço</label>
       <input type="text" id="os-descricao" placeholder="Detalhes do que será executado"/>
+    </div>
+    <div class="field">
+      <label>🔒 Observação da gestão</label>
+      <textarea id="os-obs-gestao" rows="3" style="width:100%;resize:vertical" placeholder="Condições comerciais, valores combinados, acordos — vindo da agenda ou preenchido aqui"></textarea>
+      <div class="field-hint">Visível SÓ para a gestão no Admin. NÃO aparece no mobile dos operadores.</div>
     </div>
     <div id="os-error" class="login-error hidden"></div>
     <div class="modal-actions">
@@ -1362,6 +1381,7 @@ function navTo(sec, elBtn) {
   if (sec === 'tipos-servico')   carregarTiposServico();
   if (sec === 'regimes')         carregarRegimes();
   if (sec === 'controle-mensal') initControleMensal();
+  if (sec === 'agenda')          carregarAgenda();
   if (sec === 'mural')           carregarMuralAdmin();
   if (sec === 'cartilha')        carregarCartilhaAdmin();
 }
@@ -2357,7 +2377,12 @@ function renderSidebar(perfil, perms) {
       <div class="sb-item" onclick="navTo('controle-mensal',this)">
         <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
         Controle Mensal
-      </div>
+      </div>` +
+      ((isAdmin || perfil === 'gestor' || perfil === 'luana') ? `
+      <div class="sb-item" onclick="navTo('agenda',this)">
+        <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><path d="M8 14l2 2 4-4"/></svg>
+        Agenda <span class="sb-badge" id="sb-agenda-count">–</span>
+      </div>` : '') + `
     </div><div class="sb-divider"></div>`;
 
   // Cadastros — admin/gestor/luana
@@ -3201,6 +3226,98 @@ async function excluirParte(parteId) {
 
 /* ── REABRIR OS (20/07/2026) — OS fechada congela registros; este é o
    caminho de volta sancionado para corrigir/excluir e fechar de novo ── */
+/* ══ AGENDA GOOGLE → OS A CONFIRMAR (21/07/2026) ══ */
+let _agendaEventos = [];
+
+async function carregarAgenda() {
+  const el = document.getElementById('agenda-lista');
+  el.innerHTML = '<div class="loading"><span class="spin"></span></div>';
+  try {
+    _agendaEventos = await apiFetch('/operacional/api/agenda/eventos?status=pendente');
+    renderAgenda();
+  } catch(e) {
+    el.innerHTML = `<div style="padding:20px;color:var(--red)">Erro: ${esc(e.message)}</div>`;
+  }
+}
+
+async function sincronizarAgenda() {
+  const btn = document.getElementById('btn-sync-agenda');
+  btn.textContent = 'Sincronizando...'; btn.disabled = true;
+  try {
+    const r = await apiFetch('/operacional/api/agenda/sincronizar', {method:'POST'});
+    let msg = `${r.agendas} agenda(s): ${r.eventos_novos} novo(s), ${r.eventos_atualizados} atualizado(s)`;
+    if (r.erros && r.erros.length) msg += ` — ${r.erros.length} erro(s)`;
+    toast(msg, (r.erros && r.erros.length) ? 'error' : 'success');
+    if (r.erros && r.erros.length) console.warn('Agenda erros:', r.erros);
+    await carregarAgenda();
+  } catch(e) { toast('Erro na sincronização: '+e.message,'error'); }
+  finally { btn.textContent = '⟳ Sincronizar agendas'; btn.disabled = false; }
+}
+
+function renderAgenda() {
+  const el = document.getElementById('agenda-lista');
+  const badge = document.getElementById('sb-agenda-count');
+  if (badge) badge.textContent = _agendaEventos.length;
+  if (!_agendaEventos.length) {
+    el.innerHTML = '<div style="padding:30px;text-align:center;color:var(--muted)">Nenhum evento pendente. ✓</div>';
+    return;
+  }
+  const fmtD = d => d ? new Date(d+'T00:00').toLocaleDateString('pt-BR') : '–';
+  const fmtM = m => { const dt = new Date(m+'T00:00'); return dt.toLocaleDateString('pt-BR',{month:'long',year:'numeric'}); };
+  el.innerHTML = `<table style="width:100%;border-collapse:collapse">
+    <thead><tr style="border-bottom:2px solid var(--border)">
+      <th style="text-align:left;padding:8px;font-size:11px;text-transform:uppercase;color:var(--muted)">Mês</th>
+      <th style="text-align:left;padding:8px;font-size:11px;text-transform:uppercase;color:var(--muted)">Equip.</th>
+      <th style="text-align:left;padding:8px;font-size:11px;text-transform:uppercase;color:var(--muted)">Cliente / Título</th>
+      <th style="text-align:left;padding:8px;font-size:11px;text-transform:uppercase;color:var(--muted)">Período</th>
+      <th style="text-align:left;padding:8px;font-size:11px;text-transform:uppercase;color:var(--muted)">Descrição (→ obs. gestão)</th>
+      <th style="padding:8px"></th>
+    </tr></thead><tbody>
+    ${_agendaEventos.map(ev => `<tr style="border-bottom:1px solid #F1F5F9">
+      <td style="padding:8px;font-size:12px;font-weight:600;text-transform:capitalize">${esc(fmtM(ev.mes_ref))}</td>
+      <td style="padding:8px;font-size:12px;font-weight:700;color:var(--blue)">${esc(ev.equipamento_codigo||'–')}</td>
+      <td style="padding:8px;font-size:13px;font-weight:600">${esc(ev.titulo||'(sem título)')}</td>
+      <td style="padding:8px;font-size:12px;color:var(--muted)">${fmtD(ev.data_inicio)} → ${fmtD(ev.data_fim)}</td>
+      <td style="padding:8px;font-size:11px;color:var(--muted);max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(ev.descricao||'')}">${esc(ev.descricao||'–')}</td>
+      <td style="padding:8px;text-align:right;white-space:nowrap">
+        <button class="btn-sm" style="background:var(--green);color:#fff;border-color:var(--green)" onclick="confirmarEventoAgenda('${esc(ev.id)}')">✓ Confirmar → OS</button>
+        <button class="btn-sm" onclick="ignorarEventoAgenda('${esc(ev.id)}')">✕ Ignorar</button>
+      </td>
+    </tr>`).join('')}
+  </tbody></table>
+  <div style="margin-top:8px;font-size:11px;color:var(--muted);text-align:right">${_agendaEventos.length} evento(s) pendente(s)</div>`;
+}
+
+async function confirmarEventoAgenda(evId) {
+  const ev = _agendaEventos.find(x => x.id === evId);
+  if (!ev) return;
+  window._agendaEventoConfirmando = evId;
+  window._agendaEventoDataFim = ev.data_fim || null;
+  await abrirModalOS();
+  // ── Pré-preencher com o evento (você revisa e completa antes de salvar) ──
+  const selCli = document.getElementById('os-cliente');
+  let casou = false;
+  const alvo = (ev.titulo||'').trim().toLowerCase();
+  for (const opt of selCli.options) {
+    if (opt.value && opt.textContent.trim().toLowerCase() === alvo) { selCli.value = opt.value; casou = true; break; }
+  }
+  if (!casou) document.getElementById('os-cliente-avulso').value = ev.titulo||'';
+  document.getElementById('os-obra').value = ev.titulo||'';
+  if (ev.equipamento_id) document.getElementById('os-equipamento').value = ev.equipamento_id;
+  if (ev.data_inicio) document.getElementById('os-data-inicio').value = ev.data_inicio;
+  document.getElementById('os-obs-gestao').value = ev.descricao||'';
+  toast('Revise os dados e salve — a OS será vinculada ao evento','success');
+}
+
+async function ignorarEventoAgenda(evId) {
+  if (!confirm('Ignorar este evento? Ele não vai virar OS e sai da lista.')) return;
+  try {
+    await apiFetch('/operacional/api/agenda/eventos/'+evId+'/ignorar', {method:'POST'});
+    toast('Evento ignorado','success');
+    carregarAgenda();
+  } catch(e) { toast('Erro: '+e.message,'error'); }
+}
+
 async function reabrirOSLista(osId, numero) {
   if (!confirm('Reabrir a ' + numero + '?\n\nOs registros voltam a ser editáveis e excluíveis.\nDepois de corrigir, feche a OS novamente pelo botão ✓ Fechar OS.')) return;
   try {
@@ -3289,7 +3406,7 @@ async function abrirModalOS(osId=null) {
       document.getElementById('os-numero').value = r.numero||'';
     } catch {}
     // Limpar campos
-    ['os-codigo-erp','os-cliente-avulso','os-obra','os-endereco','os-descricao'].forEach(id=>{
+    ['os-codigo-erp','os-cliente-avulso','os-obra','os-endereco','os-descricao','os-obs-gestao'].forEach(id=>{
       const el=document.getElementById(id); if(el) el.value='';
     });
     document.getElementById('os-cliente').value='';
@@ -3314,6 +3431,7 @@ async function abrirModalOS(osId=null) {
       document.getElementById('os-obra').value = os.obra||'';
       document.getElementById('os-endereco').value = os.endereco||'';
       document.getElementById('os-descricao').value = os.descricao||'';
+      document.getElementById('os-obs-gestao').value = os.observacao_gestao||'';
       document.getElementById('os-regime').value = os.regime_cobranca || '';
       document.getElementById('os-valor-combinado').value = os.valor_combinado||'';
       document.getElementById('os-valor-hora').value   = os.valor_hora||'';
@@ -3336,6 +3454,7 @@ function editarOS(osId) { abrirModalOS(osId); }
 
 function fecharModalOS() {
   document.getElementById('modal-os').classList.add('hidden');
+  window._agendaEventoConfirmando = null; window._agendaEventoDataFim = null;
 }
 
 // ═══ (13/07/2026) MOTOR DE PREÇOS POR MEDIÇÃO — fonte única ═══
@@ -3495,9 +3614,12 @@ async function salvarOS() {
     obra,
     endereco:          document.getElementById('os-endereco').value.trim()||null,
     descricao:         document.getElementById('os-descricao').value.trim()||null,
+    observacao_gestao: document.getElementById('os-obs-gestao').value.trim()||null,
     data_inicio:       document.getElementById('os-data-inicio').value||null,
     origem:            'escritorio',
   };
+  // Confirmação vinda da Agenda: período do segmento mensal vira previsão de fim
+  if (!osId && window._agendaEventoDataFim) payload.data_fim_prevista = window._agendaEventoDataFim;
 
   // ── Máquina já ativa em OUTRA OS? Pausar obra e mover é legítimo,
   // mas tem que ser decisão CONSCIENTE (alerta, não bloqueio).
@@ -3548,8 +3670,18 @@ async function salvarOS() {
       }
       window._osEquipAntes = null;
     } else {
-      await apiFetch('/operacional/api/os', {method:'POST', body:JSON.stringify(payload)});
+      const nova = await apiFetch('/operacional/api/os', {method:'POST', body:JSON.stringify(payload)});
       toast('OS criada!','success');
+      // ── Veio da Agenda? Vincular evento → confirmado (fecha o ciclo) ──
+      if (window._agendaEventoConfirmando && nova && nova.id) {
+        try {
+          await apiFetch('/operacional/api/agenda/eventos/'+window._agendaEventoConfirmando+'/confirmar',
+            {method:'POST', body: JSON.stringify({os_id: nova.id})});
+          toast('Evento da agenda vinculado à OS','success');
+        } catch(e2) { toast('OS criada, mas falhou vincular o evento: '+e2.message,'error'); }
+        window._agendaEventoConfirmando = null; window._agendaEventoDataFim = null;
+        if (typeof carregarAgenda === 'function' && secAtual === 'agenda') carregarAgenda();
+      }
     }
     fecharModalOS();
     await carregarOS();
@@ -3973,6 +4105,11 @@ function abrirModalEquipamento(eq = null) {
           <label class="lbl">Placa (carros/caminhões)</label>
           <input id="eq-placa" type="text" value="${esc(e.placa || '')}" class="fld" placeholder="ABC-1234">
         </div>
+        <div style="margin-bottom:12px">
+          <label style="display:block;font-size:12px;font-weight:600;margin-bottom:4px">📅 URL ICS da agenda Google (opcional)</label>
+          <input id="eq-agenda-ics" type="text" value="${esc(e.agenda_ics_url || '')}" class="fld" placeholder="https://calendar.google.com/calendar/ical/.../basic.ics">
+          <div style="font-size:10px;color:var(--muted);margin-top:3px">Config. da agenda → "Endereço secreto no formato iCal". Preenchido = eventos desta agenda entram em Agenda → a confirmar.</div>
+        </div>
 
         <div style="margin-bottom:18px">
           <label class="lbl">Operador / Motorista responsável</label>
@@ -4026,6 +4163,7 @@ async function salvarEquipamento(id) {
     ano:       parseInt(document.getElementById('eq-ano').value) || null,
     placa:     document.getElementById('eq-placa').value.trim() || null,
     operador_responsavel_id: document.getElementById('eq-responsavel').value || null,
+    agenda_ics_url: document.getElementById('eq-agenda-ics').value.trim() || null,
   };
   if (!payload.codigo || !payload.descricao || !payload.categoria) {
     err.textContent = 'Código, descrição e categoria são obrigatórios';
