@@ -3155,7 +3155,9 @@ function renderTabelaPartes(partes, statusOS) {
                 return Math.max(0, bruto - alm);
               } catch(e) { return null; }
             })();
-            const _fonteHor = temHorimetro;
+            // (23/07/2026) FONTE REAL: relógio presente → 🕐 (regra oficial:
+            // relógio prevalece); ⚙ apenas quando o horímetro é a fonte.
+            const _fonteHor = temHorimetro && !_temRel;
             const _divergente = _fonteHor && _janela != null &&
               parseFloat(horasReg) >= 0 && (_janela > parseFloat(horasReg) * 2 + 0.01);
             const _divBadge = _divergente
