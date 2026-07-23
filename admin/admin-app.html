@@ -970,9 +970,12 @@ input,select,textarea { font-family:inherit; font-size:13px; outline:none; }
         <input type="date" id="mp-data"/>
       </div>
       <div class="field">
-        <label>Equipamento <span style="color:var(--red)">*</span></label>
-        <select id="mp-equipamento" onchange="onMpEquipChange()">
-          <option value="">Selecione...</option>
+        <label>Vínculo</label>
+        <select id="mp-vinculo" onchange="mpVinculoChange()">
+          <option value="proprio">Próprio</option>
+          <option value="terceiro">Terceiro</option>
+          <option value="diarista">Diarista</option>
+          <option value="frete">Frete de máquina (Garra)</option>
         </select>
       </div>
     </div>
@@ -983,13 +986,10 @@ input,select,textarea { font-family:inherit; font-size:13px; outline:none; }
           <option value="">Selecione...</option>
         </select>
       </div>
-      <div class="field">
-        <label>Vínculo</label>
-        <select id="mp-vinculo" onchange="mpVinculoChange()">
-          <option value="proprio">Próprio</option>
-          <option value="terceiro">Terceiro</option>
-          <option value="diarista">Diarista</option>
-          <option value="frete">Frete de máquina (Garra)</option>
+      <div class="field" id="mp-campo-equip">
+        <label>Equipamento <span style="color:var(--red)">*</span></label>
+        <select id="mp-equipamento" onchange="onMpEquipChange()">
+          <option value="">Selecione...</option>
         </select>
       </div>
     </div>
@@ -2662,6 +2662,10 @@ function mpVinculoChange() {
   const v = document.getElementById('mp-vinculo')?.value || 'proprio';
   const bloco = document.getElementById('mp-bloco-terceiro');
   if (bloco) bloco.style.display = (v === 'proprio') ? 'none' : 'flex';
+  // Equipamento da Garra só se aplica a Próprio e Frete de máquina Garra
+  // (no frete, a máquina transportada é NOSSA). Terceiro/diarista: oculto.
+  const campoEq = document.getElementById('mp-campo-equip');
+  if (campoEq) campoEq.style.display = (v === 'terceiro' || v === 'diarista') ? 'none' : '';
 }
 
 async function salvarParteLuana() {
