@@ -110,13 +110,19 @@ def _cat_frota_checklist(codigo, categoria_op):
     return None
 
 def _calc_horas_parte(d):
-    """(18/07/2026) REGRA FINAL — Prioridade de Fontes de Horas:
-    1º HORÍMETRO completo (fim-ini): a verdade da máquina — prática da Garra.
-    2º RELÓGIO (início+fim): fallback quando não há horímetro completo
-       (máquina sem horímetro/quebrado) — com desconto de almoço.
-    Janela de disposição/deslocamento maior que as horas de máquina é
-    decisão da GESTÃO na coluna Cobradas (alerta de divergência aponta).
-    Na CORREÇÃO, a fonte editada por último vence (override no PATCH)."""
+    """(23/07/2026) REGRA OFICIAL DE HORAS — confirmada pela gestão:
+    1º RELÓGIO explícito (início+fim): nasce VAZIO no formulário, então
+       preenchido = intenção deliberada do operador (botão Hora). Carrega o
+       julgamento humano (ex.: descontar parada por quebra) — PREVALECE.
+       Com desconto de almoço quando a janela cruza o meio-dia.
+    2º HORÍMETRO completo (fim-ini): assume as horas apenas sem relógio.
+       É SEMPRE registrado como controle de máquina/manutenção.
+    Divergência relógio × máquina → ⚠ para a GESTÃO decidir na Cobradas.
+    O ÍCONE na tela segue a fonte real que determinou as horas.
+    Na CORREÇÃO, a fonte editada por último vence (override no PATCH).
+    Validação do horímetro roda mesmo quando o relógio prevalece."""
+    # Horímetro: valida sempre (final < inicial é erro em qualquer cenário)
+    h_maq = None
     h_ini = d.get("horimetro_inicial")
     h_fin = d.get("horimetro_final")
     if h_ini is not None and h_fin is not None:
@@ -124,9 +130,9 @@ def _calc_horas_parte(d):
             h_maq = round(float(h_fin) - float(h_ini), 2)
             if h_maq < 0:
                 raise HTTPException(status_code=400, detail="Horímetro final menor que inicial")
-            return h_maq
         except (TypeError, ValueError):
-            pass
+            h_maq = None
+    # 1º Relógio explícito
     hi = d.get("hora_inicio"); hf = d.get("hora_fim")
     if hi and hf:
         try:
@@ -141,7 +147,8 @@ def _calc_horas_parte(d):
             return round(max(0, bruto - almoco), 2)
         except (TypeError, ValueError):
             pass
-    return None
+    # 2º Horímetro (sem relógio)
+    return h_maq
 
 def _horas_relogio(d):
     """Janela do relógio (com almoço) — usada no override de edição."""
