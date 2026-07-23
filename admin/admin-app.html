@@ -2967,26 +2967,27 @@ function renderTabelaPartes(partes, statusOS) {
       <tbody>
         ${partes.map(p => {
           const data = p.data ? new Date(p.data+'T00:00').toLocaleDateString('pt-BR') : '–';
-          // (23/07/2026) REGRA OFICIAL: relógio explícito PREVALECE nas
-          // horas (preenchido = intenção do operador); horímetro é sempre
-          // controle de máquina e assume só sem relógio. O ícone segue a
-          // FONTE REAL — antes ⚙ aparecia junto do número do relógio.
+          // (23/07/2026) SEPARAÇÃO DE PAPÉIS na linha:
+          // • Rótulo pequeno SOB O HORÍMETRO = CONTROLE DA MÁQUINA — mostra
+          //   SEMPRE as horas do horímetro (ex.: 6.6h) quando completo, com
+          //   ⚠ se divergir do relógio. Sem horímetro, relógio de referência.
+          // • Coluna HORAS = valor considerado (regra oficial: relógio
+          //   prevalece) — já lê horas_trabalhadas do banco.
           const temHorimetro = (p.horimetro_inicial != null && p.horimetro_final != null);
           const temRelogio   = !!(p.hora_inicio && p.hora_fim);
           const hMaquina = temHorimetro
             ? (parseFloat(p.horimetro_final) - parseFloat(p.horimetro_inicial)).toFixed(1)
             : null;
-          const horasMaq = temRelogio
-            ? (p.horas_trabalhadas != null ? parseFloat(p.horas_trabalhadas).toFixed(1) : '0.0')
-            : (hMaquina != null ? hMaquina
-               : (p.horas_trabalhadas != null ? parseFloat(p.horas_trabalhadas).toFixed(1) : '0.0'));
-          const divergem = temRelogio && hMaquina != null
-            && Math.abs(parseFloat(horasMaq) - parseFloat(hMaquina)) > 0.1;
-          const horasRotulo = temRelogio
-            ? `<span title="Fonte: relógio ${String(p.hora_inicio).slice(0,5)} às ${String(p.hora_fim).slice(0,5)}${hMaquina!=null ? ' · máquina: '+hMaquina+'h' : ''}">🕐 ${horasMaq}h${divergem ? ' <span style=\'color:var(--orange)\' title=\'Máquina marcou '+hMaquina+'h — divergência para a gestão avaliar na Cobradas\'>⚠</span>' : ''}</span>`
-            : (hMaquina != null
-                ? `<span title="Fonte: horímetro (sem relógio informado)">⚙️ ${horasMaq}h</span>`
-                : (parseFloat(horasMaq) > 0 ? `${horasMaq}h` : ''));
+          const hConsideradas = (p.horas_trabalhadas != null && p.horas_trabalhadas !== '')
+            ? parseFloat(p.horas_trabalhadas).toFixed(1) : null;
+          const horasMaq = hMaquina != null ? hMaquina : (hConsideradas || '0.0');
+          const divergem = temRelogio && hMaquina != null && hConsideradas != null
+            && Math.abs(parseFloat(hConsideradas) - parseFloat(hMaquina)) > 0.1;
+          const horasRotulo = hMaquina != null
+            ? `<span title="Controle da máquina (horímetro ${p.horimetro_inicial}→${p.horimetro_final})">⚙️ ${hMaquina}h</span>${divergem ? ` <span style="color:var(--orange)" title="Relógio considerou ${hConsideradas}h — divergência para a gestão avaliar na Cobradas">⚠</span>` : ''}`
+            : (temRelogio && hConsideradas != null && parseFloat(hConsideradas) > 0
+                ? `<span title="Sem horímetro — horas do relógio">🕐 ${hConsideradas}h</span>`
+                : (hConsideradas && parseFloat(hConsideradas) > 0 ? `${hConsideradas}h` : ''));
           // Sinaliza horímetro suspeito (>24h num dia = provável erro de digitação)
           const horasSuspeita = parseFloat(horasMaq) > 24;
           // Horímetro editável (inicial → final) — controle interno
