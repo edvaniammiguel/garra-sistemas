@@ -2473,9 +2473,10 @@ async function verPartes(osId, osNum, editavel = true) {
         const viagTxt = p.qtd_viagens ? ` · ${p.qtd_viagens} viagem(ns)` : '';
         medInfo = kmTxt + viagTxt;
       } else {
-        // (17/07/2026) Indica a FONTE considerada: 🕐 relógio · ⚙️ horímetro
+        // (23/07/2026) FONTE real das horas — relógio explícito PREVALECE
+        // (regra oficial); horímetro assume só quando não há relógio.
         const _temHorFonte = (p.horimetro_inicial != null && p.horimetro_final != null);
-        const _fonteIcone = _temHorFonte ? ' ⚙️' : ((hIni && hFim) ? ' 🕐' : '');
+        const _fonteIcone = (hIni && hFim) ? ' 🕐' : (_temHorFonte ? ' ⚙️' : '');
         medInfo = `${horas || 0}h${_fonteIcone}`;
       }
 
