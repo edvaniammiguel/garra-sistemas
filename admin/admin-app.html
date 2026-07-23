@@ -2665,7 +2665,7 @@ function mpVinculoChange() {
   // Equipamento da Garra só se aplica a Próprio e Frete de máquina Garra
   // (no frete, a máquina transportada é NOSSA). Terceiro/diarista: oculto.
   const campoEq = document.getElementById('mp-campo-equip');
-  if (campoEq) campoEq.style.display = (v === 'terceiro' || v === 'diarista') ? 'none' : '';
+  if (campoEq) campoEq.style.display = (v === 'terceiro') ? 'none' : '';
 }
 
 async function salvarParteLuana() {
