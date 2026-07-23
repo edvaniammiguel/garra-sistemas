@@ -985,11 +985,25 @@ input,select,textarea { font-family:inherit; font-size:13px; outline:none; }
       </div>
       <div class="field">
         <label>Vínculo</label>
-        <select id="mp-vinculo">
+        <select id="mp-vinculo" onchange="mpVinculoChange()">
           <option value="proprio">Próprio</option>
           <option value="terceiro">Terceiro</option>
           <option value="diarista">Diarista</option>
+          <option value="frete">Frete de máquina (Garra)</option>
         </select>
+      </div>
+    </div>
+    <!-- (23/07/2026) Paridade com o mobile: terceiro/diarista/frete precisam
+         identificar quem é — sem isso o Admin não conseguia registrar frete
+         de caminhão de terceiro (equipamento Garra era obrigatório). -->
+    <div class="field-row" id="mp-bloco-terceiro" style="display:none">
+      <div class="field">
+        <label>Fornecedor / de quem</label>
+        <input type="text" id="mp-fornecedor" placeholder="Nome do dono / transportadora"/>
+      </div>
+      <div class="field">
+        <label>Equipamento do terceiro</label>
+        <input type="text" id="mp-equip-terceiro" placeholder="Ex.: Caminhão truck vermelho"/>
       </div>
     </div>
     <!-- (13/07/2026) Medição de cobrança — paridade com o mobile -->
@@ -2644,11 +2658,24 @@ function onMpEquipChange() {
   mpSugerirMedicao();
 }
 
+function mpVinculoChange() {
+  const v = document.getElementById('mp-vinculo')?.value || 'proprio';
+  const bloco = document.getElementById('mp-bloco-terceiro');
+  if (bloco) bloco.style.display = (v === 'proprio') ? 'none' : 'flex';
+}
+
 async function salvarParteLuana() {
   const osId  = document.getElementById('mp-os-id').value;
   const data  = document.getElementById('mp-data').value;
   const equip = document.getElementById('mp-equipamento').value;
-  if (!data||!equip) { toast('Data e equipamento obrigatórios','error'); return; }
+  const vinc  = document.getElementById('mp-vinculo')?.value || 'proprio';
+  const forn  = document.getElementById('mp-fornecedor')?.value.trim() || null;
+  const eqTer = document.getElementById('mp-equip-terceiro')?.value.trim() || null;
+  if (!data) { toast('Data é obrigatória','error'); return; }
+  // Próprio exige equipamento da Garra; terceiro/diarista/frete exigem
+  // identificar quem é (fornecedor ou equipamento do terceiro).
+  if (vinc === 'proprio' && !equip) { toast('Equipamento obrigatório para vínculo Próprio','error'); return; }
+  if (vinc !== 'proprio' && !forn && !eqTer) { toast('Identifique o terceiro: fornecedor ou equipamento','error'); return; }
   if (_mpMed === 'metros') {
     const _m = parseFloat(document.getElementById('mp-metros')?.value || 0);
     if (!_m || _m <= 0) { toast('Informe a quantidade de metros executados','error'); return; }
@@ -2658,9 +2685,12 @@ async function salvarParteLuana() {
     // (13/07/2026) Paridade com o mobile: medição selecionada + TODOS os
     // campos da tela (antes hora/horas cobradas/vínculo/viagens eram ignorados)
     client_id: (crypto.randomUUID ? crypto.randomUUID() : (Date.now() + '-' + Math.random().toString(36).slice(2))),
-    data, equipamento_id: equip,
+    data, equipamento_id: equip || null,
     operador_id: document.getElementById('mp-operador').value||null,
-    vinculo_operador: document.getElementById('mp-vinculo')?.value || 'proprio',
+    vinculo_operador: vinc,
+    fornecedor: forn,
+    equipamento_terceiro: eqTer,
+    trajeto: document.getElementById('mp-trajeto')?.value.trim()||null,
     tipo_medicao: _mpMed,
     horimetro_inicial: num('mp-h-ini'),
     horimetro_final:   num('mp-h-fin'),
@@ -3694,7 +3724,9 @@ async function abrirModalParte() {
   document.getElementById('mp-os-id').value = _osAtual.id;
   document.getElementById('mp-parte-id').value = '';
   document.getElementById('mp-data').value = new Date(Date.now() - new Date().getTimezoneOffset()*60000).toISOString().slice(0,10);
-  ['mp-metros','mp-diarias','mp-h-ini','mp-h-fin','mp-horas-cob','mp-km-ini','mp-km-fin','mp-viagens'].forEach(id => {
+  const _selVinc = document.getElementById('mp-vinculo'); if (_selVinc) _selVinc.value = 'proprio';
+  mpVinculoChange();
+  ['mp-metros','mp-diarias','mp-h-ini','mp-h-fin','mp-horas-cob','mp-km-ini','mp-km-fin','mp-viagens','mp-fornecedor','mp-equip-terceiro'].forEach(id => {
     const el = document.getElementById(id); if (el) el.value = (id === 'mp-diarias' ? '1' : '');
   });
   // Popular selects
