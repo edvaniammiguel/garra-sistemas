@@ -2967,19 +2967,26 @@ function renderTabelaPartes(partes, statusOS) {
       <tbody>
         ${partes.map(p => {
           const data = p.data ? new Date(p.data+'T00:00').toLocaleDateString('pt-BR') : '–';
-          // Horas da máquina (horímetro) — controle interno, sempre mostrado
-          // (13/07/2026) Fonte HONESTA das horas: horímetro completo → dele;
-          // senão, horas do relógio ganham o 🕐 (antes o fallback silencioso
-          // mostrava "9.0h" sob um horímetro em branco — parecia bug).
+          // (23/07/2026) REGRA OFICIAL: relógio explícito PREVALECE nas
+          // horas (preenchido = intenção do operador); horímetro é sempre
+          // controle de máquina e assume só sem relógio. O ícone segue a
+          // FONTE REAL — antes ⚙ aparecia junto do número do relógio.
           const temHorimetro = (p.horimetro_inicial != null && p.horimetro_final != null);
-          const horasMaq = temHorimetro
+          const temRelogio   = !!(p.hora_inicio && p.hora_fim);
+          const hMaquina = temHorimetro
             ? (parseFloat(p.horimetro_final) - parseFloat(p.horimetro_inicial)).toFixed(1)
-            : (p.horas_trabalhadas != null ? parseFloat(p.horas_trabalhadas).toFixed(1) : '0.0');
-          const horasRotulo = temHorimetro
-            ? `${horasMaq}h`
-            : (parseFloat(horasMaq) > 0
-                ? `<span title="Horas calculadas pelo relógio (horímetro em branco)">🕐 ${horasMaq}h</span>`
-                : '');
+            : null;
+          const horasMaq = temRelogio
+            ? (p.horas_trabalhadas != null ? parseFloat(p.horas_trabalhadas).toFixed(1) : '0.0')
+            : (hMaquina != null ? hMaquina
+               : (p.horas_trabalhadas != null ? parseFloat(p.horas_trabalhadas).toFixed(1) : '0.0'));
+          const divergem = temRelogio && hMaquina != null
+            && Math.abs(parseFloat(horasMaq) - parseFloat(hMaquina)) > 0.1;
+          const horasRotulo = temRelogio
+            ? `<span title="Fonte: relógio ${String(p.hora_inicio).slice(0,5)} às ${String(p.hora_fim).slice(0,5)}${hMaquina!=null ? ' · máquina: '+hMaquina+'h' : ''}">🕐 ${horasMaq}h${divergem ? ' <span style=\'color:var(--orange)\' title=\'Máquina marcou '+hMaquina+'h — divergência para a gestão avaliar na Cobradas\'>⚠</span>' : ''}</span>`
+            : (hMaquina != null
+                ? `<span title="Fonte: horímetro (sem relógio informado)">⚙️ ${horasMaq}h</span>`
+                : (parseFloat(horasMaq) > 0 ? `${horasMaq}h` : ''));
           // Sinaliza horímetro suspeito (>24h num dia = provável erro de digitação)
           const horasSuspeita = parseFloat(horasMaq) > 24;
           // Horímetro editável (inicial → final) — controle interno
@@ -3054,10 +3061,11 @@ function renderTabelaPartes(partes, statusOS) {
             // lado (fim da duplicação de editores na mesma linha).
             const _relCell = !!(p.hora_inicio && p.hora_fim);
             const _horCell = (p.horimetro_inicial != null && p.horimetro_final != null);
-            medicaoCell = _horCell
-              ? `<span style="font-size:12px;font-weight:700;color:var(--blue)">⚙️ máquina</span>`
-              : (_relCell
-                  ? `<span style="font-size:12px;font-weight:700;color:var(--blue)">🕐 ${String(p.hora_inicio).slice(0,5)} às ${String(p.hora_fim).slice(0,5)}</span>`
+            // (23/07/2026) Relógio prevalece — a janela informada é a medida
+            medicaoCell = _relCell
+              ? `<span style="font-size:12px;font-weight:700;color:var(--blue)">🕐 ${String(p.hora_inicio).slice(0,5)} às ${String(p.hora_fim).slice(0,5)}</span>`
+              : (_horCell
+                  ? `<span style="font-size:12px;font-weight:700;color:var(--blue)">⚙️ máquina</span>`
                   : `<span style="font-size:12px;color:var(--muted)">—</span>`);
           }
 
