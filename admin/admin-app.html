@@ -2991,8 +2991,18 @@ function renderTabelaPartes(partes, statusOS) {
                </div>
                <div style="font-size:10px;color:${horasSuspeita?'var(--red)':'var(--muted)'};text-align:center">${horasRotulo} ${horasSuspeita?'⚠️':''}</div>`;
 
+          // (23/07/2026) Terceiro/diarista/frete: equipamento e operador da
+          // Garra são NULL por design — a identificação vive em
+          // equipamento_terceiro/fornecedor. O select sem valor correspondente
+          // exibia a 1ª opção da lista (falsa) e um toque acidental gravaria
+          // equipamento/operador errados. Linha de terceiro = texto fixo.
+          const ehTerceiroRow = ['terceiro','diarista','frete'].includes((p.vinculo_operador||'').toLowerCase());
+          const tagVinc = {terceiro:'🚚 terceiro', diarista:'👷 diarista', frete:'🚛 frete'}[(p.vinculo_operador||'').toLowerCase()] || '';
           // Equipamento editável (select)
-          const equipCell = fechada
+          const equipCell = ehTerceiroRow
+            ? `<span style="font-size:12px;font-weight:700">${esc(p.equipamento_terceiro||p.equipamento_codigo||'–')}</span>
+               <div style="font-size:10px;color:var(--orange);font-weight:700">${tagVinc}</div>`
+            : fechada
             ? `<span style="font-size:13px">${esc(p.equipamento_codigo||'–')}</span>`
             : `<select onchange="salvarMedicaoParte('${esc(p.id)}','equipamento_id',this.value)" style="padding:4px 6px;border:1.5px solid var(--border);border-radius:6px;font-size:12px;max-width:110px">
                 ${(_equipamentos||[]).filter(e=>e.ativo!==false).map(e =>
@@ -3001,7 +3011,9 @@ function renderTabelaPartes(partes, statusOS) {
                </select>`;
 
           // Operador editável (select)
-          const operCell = fechada
+          const operCell = ehTerceiroRow
+            ? `<span style="font-size:12px">${esc(p.fornecedor||'–')}</span>`
+            : fechada
             ? `<span style="font-size:13px">${esc(p.operador_nome||'–')}</span>`
             : `<select onchange="salvarMedicaoParte('${esc(p.id)}','operador_id',this.value)" style="padding:4px 6px;border:1.5px solid var(--border);border-radius:6px;font-size:12px;max-width:120px">
                 ${(_operadoresPartes||[]).map(o =>
