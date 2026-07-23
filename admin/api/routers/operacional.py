@@ -160,96 +160,12 @@ def _horas_relogio(d):
     except (TypeError, ValueError):
         return None
 
-async def _validar_sobreposicao_horimetro(equipamento_id, h_ini, h_fin, ignorar_parte_id=None):
-    """(13/07/2026) Horímetro só anda para frente: dois registros do MESMO
-    equipamento com faixas que se cruzam é fisicamente impossível e dobra
-    horas no CM. Bloqueia com o registro conflitante identificado.
-    Faixas encostadas (final de um = inicial do outro) são o fluxo normal."""
-    if not equipamento_id:
-        return
-    try:
-        hi, hf = float(h_ini), float(h_fin)
-    except (TypeError, ValueError):
-        return
-    if hf <= hi:
-        return  # já barrado pela validação anterior
-    conflito = await ajard_query(
-        """SELECT p.data, p.horimetro_inicial, p.horimetro_final, os.numero
-             FROM operacional.partes_diarias p
-             JOIN operacional.ordens_servico os ON os.id = p.os_id
-            WHERE p.equipamento_id = %s AND p.ativo = true
-              AND p.horimetro_inicial IS NOT NULL AND p.horimetro_final IS NOT NULL
-              AND p.id::text <> %s
-              AND p.horimetro_inicial < %s AND p.horimetro_final > %s
-            ORDER BY p.data DESC LIMIT 1""",
-        (equipamento_id, str(ignorar_parte_id or ""), hf, hi), fetch="one")
-    if conflito:
-        d = conflito["data"]
-        d_fmt = d.strftime("%d/%m") if hasattr(d, "strftime") else str(d)
-        raise HTTPException(status_code=400,
-            detail=(f"Horímetro {hi}→{hf} sobrepõe registro já existente desta máquina "
-                    f"({conflito['numero']} em {d_fmt}: {conflito['horimetro_inicial']}→{conflito['horimetro_final']}). "
-                    f"Confira as leituras — o horímetro só anda para frente."))
-
-def _validar_horas_plausiveis(horas):
-    """Teto de plausibilidade: um registro não pode ter mais de 24h.
-    Mata o typo de horímetro (10125 → 101250 = 91.131h no Controle Mensal)."""
-    if horas is not None and horas > 24:
-        raise HTTPException(
-            status_code=400,
-            detail=f"{horas}h num único registro — confira o horímetro (mais de 24h não é permitido)")
-
-def _cat_frota_checklist(codigo, categoria_op):
-    """(09/07/2026) Fronteira entre taxonomias — LISTA BRANCA: só entra no
-    espelho do checklist o que TEM checklist. CA-% → carro · caminhões →
-    caminhao · máquinas motorizadas → maquinas. Caçambas estacionárias,
-    gerador, componentes, moto, apoio e 'outro' ficam FORA (retorna None)."""
-    cod = (codigo or "").upper()
-    cat = (categoria_op or "").lower()
-    if cod.startswith("CA-"):
-        return "carro"
-    if "caminh" in cat:
-        return "caminhao"
-    if cat in ("escavadeira", "retroescavadeira", "patrol", "carregadeira", "compactador"):
-        return "maquinas"
-    return None
-
-def _calc_horas_parte(d):
-    """(17/07/2026) Horas trabalhadas/cobradas — prioridade:
-    1º RELÓGIO explícito (hora início+fim): é a janela de trabalho cobrada
-       do cliente. Só existe na medição Hora e agora nasce VAZIO no form —
-       preenchido = intenção do operador.
-    2º HORÍMETRO (fim-ini): quando não há relógio. Segue sempre registrado
-       como controle interno da máquina, independente da cobrança.
-    Fonte única — registro e correção."""
-    horas = None
-    hi = d.get("hora_inicio"); hf = d.get("hora_fim")
-    if hi and hf:
-        try:
-            ph = lambda s: int(str(s)[:2]) * 60 + int(str(s)[3:5])
-            ini_m = ph(hi); fim_m = ph(hf)
-            diff = fim_m - ini_m
-            if diff < 0: diff += 24 * 60
-            bruto = diff / 60
-            cruza_almoco = (ini_m < 12*60) and (fim_m > 12*60 or fim_m < ini_m)
-            sem_almoco = bool(d.get("sem_almoco"))
-            almoco = 1 if (not sem_almoco and cruza_almoco and bruto > 6) else 0
-            horas = round(max(0, bruto - almoco), 2)
-        except (TypeError, ValueError):
-            pass
-    h_ini = d.get("horimetro_inicial")
-    h_fin = d.get("horimetro_final")
-    if h_ini is not None and h_fin is not None:
-        try:
-            h_maq = round(float(h_fin) - float(h_ini), 2)
-            if h_maq < 0:
-                raise HTTPException(status_code=400, detail="Horímetro final menor que inicial")
-            if horas is None or horas == 0:
-                horas = h_maq
-        except (TypeError, ValueError):
-            pass
-    return horas
-
+# (23/07/2026) AQUI EXISTIA um bloco duplicado dos helpers de parte
+# (sobreposição/plausíveis/calc_horas) — resíduo de refatoração. Como em
+# Python a última definição vence, a cópia ANTIGA de _calc_horas_parte
+# (17/07: relógio manda) sobrescrevia silenciosamente a REGRA FINAL de
+# 18/07 (horímetro completo manda; relógio fallback; divergência → gestão
+# decide na Cobradas). Bloco removido; a regra final voltou a valer.
 
 @router.get("/operacional/manifest.json")
 async def operacional_manifest():
