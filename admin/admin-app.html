@@ -2976,6 +2976,10 @@ function renderTabelaPartes(partes, statusOS) {
           //   prevalece) — já lê horas_trabalhadas do banco.
           const temHorimetro = (p.horimetro_inicial != null && p.horimetro_final != null);
           const temRelogio   = !!(p.hora_inicio && p.hora_fim);
+          // (24/07/2026) Unitário fixado NESTA linha (null = usa sugestão da OS).
+          // Declarado no topo: as células de Total abaixo dependem dele.
+          const _vuLinha = (p.valor_unitario != null && p.valor_unitario !== '')
+            ? parseFloat(p.valor_unitario) : null;
           const hMaquina = temHorimetro
             ? (parseFloat(p.horimetro_final) - parseFloat(p.horimetro_inicial)).toFixed(1)
             : null;
@@ -3169,9 +3173,14 @@ function renderTabelaPartes(partes, statusOS) {
               ? `<strong>${cobradas}h</strong>`
               : `<input type="number" step="0.1" value="${cobradas}" style="width:70px;padding:4px 8px;border:1.5px solid var(--border);border-radius:6px;text-align:right;font-size:13px"
                   onchange="salvarHorasCobradas('${esc(p.id)}', this.value)"/>`;
-            cel7 = P.hora
-              ? `<strong>R$ ${(parseFloat(cobradas) * P.hora).toFixed(2)}</strong>`
-              : `<span style="color:var(--red);font-size:12px" title="Defina o Valor/hora em Editar OS">⚠️ sem valor/hora</span>`;
+            // (24/07/2026) Total da linha: unitário definido NA LINHA vale
+            // antes do preço da OS — sem isso a linha exibia "sem valor/hora"
+            // mesmo com preço próprio (o card Total já somava certo).
+            cel7 = (_vuLinha > 0)
+              ? `<strong>R$ ${(parseFloat(cobradas) * _vuLinha).toFixed(2)}</strong>`
+              : (P.hora
+                ? `<strong>R$ ${(parseFloat(cobradas) * P.hora).toFixed(2)}</strong>`
+                : `<span style="color:var(--red);font-size:12px" title="Defina o Valor/hora em Editar OS ou o Vlr Unit. nesta linha">⚠️ sem valor/hora</span>`);
           }
 
           // (13/07/2026) Medição da parte ≠ medição do regime → subtotal em R$
@@ -3182,7 +3191,7 @@ function renderTabelaPartes(partes, statusOS) {
           const _medNorm = (medParte === 'hora') ? 'horimetro' : (medParte || 'horimetro');
           if (regime !== 'metro' && _medNorm !== _medDoRegime) {
             const _v2 = _valorParte(p, P);
-            const _falta2 =
+            const _falta2 = (_vuLinha > 0) ? '' :
               _medNorm === 'metros' ? (P.metro ? '' : 'Valor/metro') :
               _medNorm === 'viagem' ? (P.viagem ? '' : 'Valor do frete') :
               _medNorm === 'diaria' ? (P.diaria ? '' : 'Valor/diária') :
@@ -3198,8 +3207,6 @@ function renderTabelaPartes(partes, statusOS) {
           // (24/07/2026) Vlr unit. por linha: pré-preenchido com o valor da
           // linha ou, vazio, com a sugestão da OS pela medição (só exibição —
           // nada é gravado até a gestão editar ou fechar a OS, que congela).
-          const _vuLinha = (p.valor_unitario != null && p.valor_unitario !== '')
-            ? parseFloat(p.valor_unitario) : null;
           const _vuSugestao = _vuSugeridoOS(p, P);
           const _vuMostrar = _vuLinha != null ? _vuLinha : _vuSugestao;
           const celVU = fechada
