@@ -3112,7 +3112,7 @@ function renderTabelaPartes(partes, statusOS) {
           if (regime === 'metro') {
             // Subtotal pela MEDIÇÃO da parte (OS mista: horas de concha × valor/hora)
             const _v = _valorParte(p, P);
-            const _precoFaltante =
+            const _precoFaltante = (_vuLinha > 0) ? '' :
               medParte === 'metros' ? (P.metro ? '' : 'Valor/metro') :
               medParte === 'viagem' ? (P.viagem ? '' : 'Valor/viagem') :
               medParte === 'diaria' ? (P.diaria ? '' : 'Valor/diária') :
@@ -3128,7 +3128,10 @@ function renderTabelaPartes(partes, statusOS) {
               ? `${diarias}`
               : `<input type="number" step="0.5" value="${diarias}" style="width:60px;padding:4px 6px;border:1.5px solid var(--border);border-radius:6px;text-align:right;font-size:13px"
                   onchange="salvarMedicaoParte('${esc(p.id)}','quantidade_diarias',this.value)"/>`;
-            cel6 = `R$ ${(diarias*P.diaria).toFixed(2)}`;
+            cel6 = (_vuLinha > 0)
+              ? `R$ ${(diarias*_vuLinha).toFixed(2)}`
+              : (P.diaria ? `R$ ${(diarias*P.diaria).toFixed(2)}`
+                : `<span style="color:var(--red);font-size:12px" title="Defina o Valor/diária em Editar OS ou o Vlr Unit. nesta linha">⚠️ sem valor/diária</span>`);
           } else if (regime === 'empreito') {
             cel5 = `${horasMaq}h`;
             cel6 = '—';
