@@ -2960,7 +2960,8 @@ function renderTabelaPartes(partes, statusOS) {
           <th style="text-align:left;padding:8px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--muted)">${regime==='metro'?'Metros':(regime==='km'?'KM':'Medição')}</th>
           <th style="text-align:right;padding:8px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--muted)">${col5}</th>
           ${col6 ? `<th style="text-align:right;padding:8px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--muted)">${col6}</th>` : ''}
-          ${regime !== 'metro' ? `<th style="text-align:right;padding:8px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--muted)">Subtotal (R$)</th>` : ''}
+          ${regime !== 'metro' ? `<th style="text-align:right;padding:8px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--muted)">Vlr Unit.</th>` : ''}
+          ${regime !== 'metro' ? `<th style="text-align:right;padding:8px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--muted)">Total (R$)</th>` : ''}
           ${fechada ? '' : '<th style="padding:8px"></th>'}
         </tr>
       </thead>
@@ -3194,6 +3195,20 @@ function renderTabelaPartes(partes, statusOS) {
               : `<strong>R$ ${_v2.toFixed(2)}</strong>`;
           }
 
+          // (24/07/2026) Vlr unit. por linha: pré-preenchido com o valor da
+          // linha ou, vazio, com a sugestão da OS pela medição (só exibição —
+          // nada é gravado até a gestão editar ou fechar a OS, que congela).
+          const _vuLinha = (p.valor_unitario != null && p.valor_unitario !== '')
+            ? parseFloat(p.valor_unitario) : null;
+          const _vuSugestao = _vuSugeridoOS(p, P);
+          const _vuMostrar = _vuLinha != null ? _vuLinha : _vuSugestao;
+          const celVU = fechada
+            ? `<span style="font-size:13px">${_vuMostrar != null ? 'R$ '+_vuMostrar.toFixed(2) : '–'}</span>`
+            : `<input type="number" step="0.01" min="0" value="${_vuMostrar != null ? _vuMostrar : ''}" placeholder="R$"
+                title="${_vuLinha != null ? 'Valor definido nesta linha' : 'Sugestão do preço da OS — edite para fixar nesta linha'}"
+                style="width:80px;padding:4px 6px;border:1.5px solid ${_vuLinha != null ? 'var(--blue)' : 'var(--border)'};border-radius:6px;text-align:right;font-size:12px"
+                onchange="salvarVlrUnitario('${esc(p.id)}', this.value)"/>`;
+
           // Data editável (operador pode ter digitado errado)
           const dataISO = p.data ? String(p.data).slice(0,10) : '';
           const dataCell = fechada
@@ -3210,6 +3225,7 @@ function renderTabelaPartes(partes, statusOS) {
             <td style="padding:8px">${medicaoCell}${p.observacao ? `<div style="font-size:11px;color:var(--muted);max-width:220px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:help" title="${esc(p.observacao)}">💬 ${esc(p.observacao)}</div>` : ''}</td>
             <td style="padding:8px;font-size:13px;text-align:right">${cel5}</td>
             ${col6 ? `<td style="padding:8px;text-align:right;font-size:13px">${cel6}</td>` : ''}
+            ${regime !== 'metro' ? `<td style="padding:8px;text-align:right">${celVU}</td>` : ''}
             ${regime !== 'metro' ? `<td style="padding:8px;text-align:right;font-size:13px">${cel7 || ''}</td>` : ''}
             ${fechada ? '' : `<td style="padding:8px;text-align:right">
               <button class="btn-sm" style="color:var(--red)" onclick="excluirParte('${esc(p.id)}')">🗑</button>
@@ -3255,6 +3271,30 @@ async function salvarMedicaoParte(parteId, campo, valor) {
     _partesAtual = data.partes || [];
     renderTotaisPartes(data.totais || {});
     renderTabelaPartes(_partesAtual, _osAtual.status);
+  } catch(e) { toast('Erro: '+e.message,'error'); }
+}
+
+function _vuSugeridoOS(p, P) {
+  // Espelho do CASE do backend (congelamento no Fechar OS) — paridade
+  const med = (p.tipo_medicao||'horimetro').toLowerCase();
+  const v = med === 'metros' ? P.metro
+        : med === 'viagem' ? P.viagem
+        : med === 'diaria' ? P.diaria
+        : med === 'km' ? (P.viagem || P.km)
+        : P.hora;
+  return (v != null && parseFloat(v) > 0) ? parseFloat(v) : null;
+}
+
+async function salvarVlrUnitario(parteId, valor) {
+  const v = parseFloat(valor);
+  if (isNaN(v) || v < 0) { toast('Valor unitário inválido','error'); verPartesOS(_osAtual.id, _osAtual.numero); return; }
+  try {
+    await apiFetch('/operacional/api/partes/'+parteId, {
+      method:'PATCH',
+      body: JSON.stringify({ valor_unitario: v }),
+    });
+    toast('Valor unitário definido na linha','success');
+    verPartesOS(_osAtual.id, _osAtual.numero);
   } catch(e) { toast('Erro: '+e.message,'error'); }
 }
 
@@ -3531,7 +3571,23 @@ function _precosOS(os) {
   };
 }
 // Valor de UMA parte pela SUA medição
+function _qtdParte(p) {
+  const med = (p.tipo_medicao||'horimetro').toLowerCase();
+  const n = v => parseFloat(v||0)||0;
+  if (med === 'metros') return n(p.qtd_metros);
+  if (med === 'diaria') return n(p.quantidade_diarias_cobradas) || n(p.quantidade_diarias) || 1;
+  if (med === 'viagem') return n(p.qtd_viagens) || 1;
+  if (med === 'km') {
+    if (n(p.qtd_viagens) > 0) return n(p.qtd_viagens);
+    return n(p.km_percorrido) || Math.max(0, n(p.km_final) - n(p.km_inicial));
+  }
+  return n(p.horas_cobradas) || n(p.horas_trabalhadas);
+}
 function _valorParte(p, P) {
+  // (24/07/2026) Preço por LINHA: valor_unitario definido pela gestão
+  // prevalece sobre os preços da OS (caso entulho×terra na mesma obra).
+  const vu = parseFloat(p.valor_unitario);
+  if (vu > 0) return _qtdParte(p) * vu;
   const med = (p.tipo_medicao||'horimetro').toLowerCase();
   const n = v => parseFloat(v||0)||0;
   if (med === 'metros') return n(p.qtd_metros) * P.metro;
