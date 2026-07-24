@@ -1044,6 +1044,7 @@ async def op_listar_partes(os_id: str, _auth=Depends(verificar_token)):
             p.pop("horas_cobradas", None)
             p.pop("quantidade_diarias_cobradas", None)
             p.pop("valor_calculado", None)
+            p.pop("valor_unitario", None)
 
     # Totais acumulados — horas APENAS de registros medidos em hora
     # (mesma regra de conteúdo da comissão e do CM)
@@ -1091,7 +1092,7 @@ async def op_atualizar_parte(parte_id: str, request: Request, payload=Depends(ve
     if existente.get("fechado"):
         raise HTTPException(status_code=400, detail="Parte já fechada — não pode editar")
 
-    campos = ["data","horas_cobradas","valor","quantidade_diarias","quantidade_diarias_cobradas",
+    campos = ["data","horas_cobradas","valor","valor_unitario","quantidade_diarias","quantidade_diarias_cobradas",
               "qtd_viagens","qtd_metros","observacao","hora_inicio","hora_fim",
               "horimetro_inicial","horimetro_final","km_inicial","km_final",
               "equipamento_id","operador_id","operador_nome_avulso",
@@ -1177,6 +1178,26 @@ async def op_fechar_os(os_id: str, request: Request, payload=Depends(verificar_g
              AND pd.os_id=%s AND pd.ativo=true AND pd.fechado=false
              AND (pd.horas_cobradas IS NULL OR pd.horas_cobradas = 0)
              AND pd.horas_trabalhadas > 0""",
+        (os_id,), fetch="none"
+    )
+
+    # (24/07/2026) Preço por linha: congelar valor_unitario onde a gestão
+    # não definiu — herda o preço da OS pela medição da parte (snapshot;
+    # reajuste na OS nunca retroage em linha fechada).
+    await ajard_query(
+        """UPDATE operacional.partes_diarias pd
+           SET valor_unitario = CASE
+                 WHEN pd.tipo_medicao = 'metros' THEN os.valor_metro
+                 WHEN pd.tipo_medicao = 'viagem' THEN os.valor_viagem
+                 WHEN pd.tipo_medicao = 'diaria' THEN os.valor_diaria
+                 WHEN pd.tipo_medicao = 'km' THEN
+                   COALESCE(NULLIF(os.valor_viagem,0), os.valor_km)
+                 ELSE os.valor_hora
+               END
+           FROM operacional.ordens_servico os
+           WHERE os.id = pd.os_id
+             AND pd.os_id=%s AND pd.ativo=true AND pd.fechado=false
+             AND pd.valor_unitario IS NULL""",
         (os_id,), fetch="none"
     )
 
@@ -2099,11 +2120,25 @@ async def op_editar_minha_parte(parte_id: str, request: Request, payload=Depends
     _tocou_hor = ("horimetro_inicial" in d) or ("horimetro_final" in d)
     _tocou_rel = ("hora_inicio" in d) or ("hora_fim" in d) or ("sem_almoco" in d)
     if _tocou_rel and not _tocou_hor:
-        # Operador editou o RELÓGIO de propósito → relógio vale neste registro
+        # Editou o RELÓGIO de propósito → relógio vale (já é a base, explícito
+        # por clareza e à prova de mudanças futuras)
         _hr = _horas_relogio(merged)
         if _hr is not None:
             horas = _hr
-    # (horímetro tocado já é coberto pela regra base horímetro-primeiro)
+    elif _tocou_hor and not _tocou_rel:
+        # (23/07/2026) Espelho que faltava sob a base relógio-primeiro:
+        # editar o HORÍMETRO de propósito (ex.: gestor corrigindo a máquina,
+        # fluxo abre-manhã/fecha-noite) → horímetro vale NESTE registro,
+        # mesmo com relógio gravado. Sem isso a correção era ignorada.
+        _hi = merged.get("horimetro_inicial"); _hf = merged.get("horimetro_final")
+        if _hi is not None and _hf is not None:
+            try:
+                _hm = round(float(_hf) - float(_hi), 2)
+                if _hm >= 0:
+                    horas = _hm
+            except (TypeError, ValueError):
+                pass
+    # Tocou os dois na mesma edição → base oficial decide (relógio prevalece)
     _validar_horas_plausiveis(horas)
     await _validar_sobreposicao_horimetro(
         merged.get("equipamento_id"),
