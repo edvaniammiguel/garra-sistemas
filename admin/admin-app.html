@@ -643,6 +643,7 @@ input,select,textarea { font-family:inherit; font-size:13px; outline:none; }
               <button class="btn btn-secondary" style="padding:6px 14px;font-size:12px" onclick="abrirModalParte()">+ Adicionar registro</button>
               <button class="btn btn-primary" id="btn-fechar-os" style="padding:6px 14px;font-size:12px;background:var(--green)" onclick="confirmarFechamento()">✓ Fechar OS</button>
               <button class="btn btn-secondary" id="btn-reabrir-os" style="padding:6px 14px;font-size:12px;display:none" onclick="reabrirOS()">↺ Reabrir OS</button>
+              <button class="btn btn-secondary" id="btn-lote-diarias" style="padding:6px 14px;font-size:12px" onclick="abrirModalLote()">📅 Diárias em lote</button>
             </div>
           </div>
 
@@ -850,6 +851,48 @@ input,select,textarea { font-family:inherit; font-size:13px; outline:none; }
 
 <!-- ══ MODAL CONFIRMAR DESATIVAR ══ -->
 <!-- ══ MODAL CRIAR / EDITAR OS ══ -->
+<!-- ── MODAL: DIÁRIAS EM LOTE (24/07/2026) — locação seca ── -->
+<div id="modal-lote" class="modal-backdrop hidden">
+  <div class="modal-card" style="max-width:520px">
+    <div class="modal-title">📅 Lançar diárias em lote</div>
+    <div style="font-size:12px;color:var(--muted);margin:-6px 0 14px">Cria 1 diária por dia no período (máx. 62 dias). Dias já lançados do equipamento são pulados — prorrogar não duplica.</div>
+    <div class="field-row">
+      <div class="field">
+        <label>Equipamento <span style="color:var(--red)">*</span></label>
+        <select id="lote-equip"><option value="">Selecione...</option></select>
+      </div>
+      <div class="field">
+        <label>Operador (opcional)</label>
+        <select id="lote-operador"><option value="">— sem motorista (locação)</option></select>
+      </div>
+    </div>
+    <div class="field-row">
+      <div class="field">
+        <label>De <span style="color:var(--red)">*</span></label>
+        <input type="date" id="lote-de" onchange="lotePrevia()"/>
+      </div>
+      <div class="field">
+        <label>Até <span style="color:var(--red)">*</span></label>
+        <input type="date" id="lote-ate" onchange="lotePrevia()"/>
+      </div>
+      <div class="field">
+        <label>Vlr unit. (opcional)</label>
+        <input type="number" id="lote-vu" step="0.01" min="0" placeholder="da OS" oninput="lotePrevia()"/>
+      </div>
+    </div>
+    <label style="display:flex;align-items:center;gap:8px;font-size:13px;margin:6px 0 12px;cursor:pointer">
+      <input type="checkbox" id="lote-fds" onchange="lotePrevia()"/>
+      Incluir sábados e domingos
+    </label>
+    <div id="lote-previa" style="background:#F8FAFC;border:1px solid var(--border);border-radius:8px;padding:10px 12px;font-size:13px;margin-bottom:14px">–</div>
+    <div id="lote-error" class="login-error hidden"></div>
+    <div style="display:flex;gap:10px;justify-content:flex-end">
+      <button class="btn btn-secondary" onclick="fecharModalLote()">Cancelar</button>
+      <button class="btn btn-primary" id="btn-lote-salvar" onclick="salvarLoteDiarias()">Lançar diárias</button>
+    </div>
+  </div>
+</div>
+
 <div id="modal-os" class="modal-backdrop hidden">
   <div class="modal-card" style="max-width:640px">
     <div class="modal-title" id="modal-os-title">Nova Ordem de Serviço</div>
@@ -2844,6 +2887,8 @@ async function verPartesOS(osId, osNumero) {
     if (btnFechar) {
       const fechada = ['concluida_sem_erp','concluida_completa','cancelada'].includes(os.status);
       btnFechar.style.display = fechada ? 'none' : '';
+      const btnLote = document.getElementById('btn-lote-diarias');
+      if (btnLote) btnLote.style.display = fechada ? 'none' : '';
     }
     // (20/07/2026) OS concluída → botão Reabrir (gestão): descongela as
     // partes para corrigir/excluir registro errado e fechar de novo.
@@ -3452,6 +3497,94 @@ async function reabrirOSLista(osId, numero) {
     // Abre direto a tela de registros, já editável, pronta para corrigir
     verPartesOS(osId, numero);
   } catch(e) { toast('Erro: '+e.message,'error'); }
+}
+
+/* ══ DIÁRIAS EM LOTE (24/07/2026) — locação seca ══ */
+function abrirModalLote(prefill) {
+  const selE = document.getElementById('lote-equip');
+  selE.innerHTML = '<option value="">Selecione...</option>' +
+    (_equipamentos||[]).filter(e=>e.ativo!==false).map(e =>
+      `<option value="${esc(e.id)}">${esc(e.codigo)} — ${esc(e.descricao||'')}</option>`).join('');
+  const selO = document.getElementById('lote-operador');
+  selO.innerHTML = '<option value="">— sem motorista (locação)</option>' +
+    (_operadoresPartes||[]).map(o =>
+      `<option value="${esc(o.id)}">${esc(o.nome)}</option>`).join('');
+  if (prefill) {
+    selE.value = prefill.equipamento_id || '';
+    selO.value = prefill.operador_id || '';
+    document.getElementById('lote-de').value  = prefill.de || '';
+    document.getElementById('lote-ate').value = prefill.ate || '';
+    document.getElementById('lote-vu').value  = prefill.vu || '';
+    document.getElementById('lote-fds').checked = !!prefill.fds;
+  } else {
+    if (_osAtual && _osAtual.equipamento_id) selE.value = _osAtual.equipamento_id;
+    document.getElementById('lote-de').value = ''; document.getElementById('lote-ate').value = '';
+    document.getElementById('lote-vu').value = ''; document.getElementById('lote-fds').checked = false;
+  }
+  document.getElementById('lote-error').classList.add('hidden');
+  lotePrevia();
+  document.getElementById('modal-lote').classList.remove('hidden');
+}
+function fecharModalLote() { document.getElementById('modal-lote').classList.add('hidden'); }
+
+function lotePrevia() {
+  const de = document.getElementById('lote-de').value;
+  const ate = document.getElementById('lote-ate').value;
+  const fds = document.getElementById('lote-fds').checked;
+  const vu = parseFloat(document.getElementById('lote-vu').value);
+  const el = document.getElementById('lote-previa');
+  if (!de || !ate) { el.textContent = 'Escolha o período para ver a prévia.'; return; }
+  const a = new Date(de+'T00:00'), b = new Date(ate+'T00:00');
+  if (b < a) { el.innerHTML = '<span style="color:var(--red)">Data final antes da inicial.</span>'; return; }
+  const span = Math.round((b-a)/86400000)+1;
+  if (span > 62) { el.innerHTML = '<span style="color:var(--red)">Período de '+span+' dias — máximo 62 por lote. Use o encadeamento.</span>'; return; }
+  let n = 0; const c = new Date(a);
+  while (c <= b) { const dw = c.getDay(); if (fds || (dw!==0 && dw!==6)) n++; c.setDate(c.getDate()+1); }
+  let txt = `<b>Prévia: ${n} diária(s)</b> serão criadas`;
+  if (!isNaN(vu) && vu > 0) txt += ` · total R$ ${(n*vu).toFixed(2)}`;
+  else txt += ' · valor herdado do Valor/diária da OS';
+  if (!fds) txt += ' · fins de semana excluídos';
+  el.innerHTML = txt;
+}
+
+async function salvarLoteDiarias() {
+  const equip = document.getElementById('lote-equip').value;
+  const de = document.getElementById('lote-de').value;
+  const ate = document.getElementById('lote-ate').value;
+  const errEl = document.getElementById('lote-error');
+  errEl.classList.add('hidden');
+  if (!equip || !de || !ate) { errEl.textContent = 'Equipamento e período são obrigatórios.'; errEl.classList.remove('hidden'); return; }
+  const corpo = {
+    equipamento_id: equip,
+    operador_id: document.getElementById('lote-operador').value || null,
+    data_inicio: de, data_fim: ate,
+    incluir_fds: document.getElementById('lote-fds').checked,
+    valor_unitario: parseFloat(document.getElementById('lote-vu').value) || null,
+  };
+  const btn = document.getElementById('btn-lote-salvar');
+  btn.disabled = true; btn.textContent = 'Lançando...';
+  try {
+    const r = await apiFetch('/operacional/api/os/'+_osAtual.id+'/partes/lote',
+      { method:'POST', body: JSON.stringify(corpo) });
+    let msg = `${r.criadas} diária(s) criada(s)`;
+    if (r.puladas_existentes) msg += ` · ${r.puladas_existentes} já existiam (puladas)`;
+    if (r.puladas_fds) msg += ` · ${r.puladas_fds} fds excluído(s)`;
+    toast(msg, 'success');
+    fecharModalLote();
+    await verPartesOS(_osAtual.id, _osAtual.numero);
+    // ── Encadeamento: oferecer o próximo lote na sequência ──
+    if (r.criadas > 0 && confirm('Lote lançado ('+r.criadas+' diárias até '+ate.split('-').reverse().join('/')+').\n\nGerar o PRÓXIMO lote na sequência?')) {
+      const fim = new Date(ate+'T00:00');
+      const ini2 = new Date(fim); ini2.setDate(ini2.getDate()+1);
+      const dias = Math.round((fim - new Date(de+'T00:00'))/86400000);
+      const fim2 = new Date(ini2); fim2.setDate(fim2.getDate()+dias);
+      const iso = dt => dt.toISOString().slice(0,10);
+      abrirModalLote({ equipamento_id: equip,
+        operador_id: corpo.operador_id, vu: document.getElementById('lote-vu').value,
+        fds: corpo.incluir_fds, de: iso(ini2), ate: iso(fim2) });
+    }
+  } catch(e) { errEl.textContent = 'Erro: '+e.message; errEl.classList.remove('hidden'); }
+  finally { btn.disabled = false; btn.textContent = 'Lançar diárias'; }
 }
 
 async function reabrirOS() {
