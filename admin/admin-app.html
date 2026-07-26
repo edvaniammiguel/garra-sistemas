@@ -3610,7 +3610,11 @@ function _qtdParte(p) {
     if (n(p.qtd_viagens) > 0) return n(p.qtd_viagens);
     return n(p.km_percorrido) || Math.max(0, n(p.km_final) - n(p.km_inicial));
   }
-  return n(p.horas_cobradas) || n(p.horas_trabalhadas);
+  // (24/07/2026) Horas para VALOR = mesmo número exibido (arredondado a 1
+  // casa). Sem isso a tela mostrava 6,2h mas o motor multiplicava 6,17,
+  // gerando divergência de centavos entre a linha e o card.
+  const _h = n(p.horas_cobradas) || n(p.horas_trabalhadas);
+  return Math.round(_h * 10) / 10;
 }
 function _valorParte(p, P) {
   // (24/07/2026) Preço por LINHA: valor_unitario definido pela gestão
