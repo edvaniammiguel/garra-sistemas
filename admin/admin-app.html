@@ -3315,7 +3315,10 @@ async function salvarVlrUnitario(parteId, valor) {
       body: JSON.stringify({ valor_unitario: v }),
     });
     toast('Valor unitário definido na linha','success');
-    verPartesOS(_osAtual.id, _osAtual.numero);
+    const data = await apiFetch('/operacional/api/os/'+_osAtual.id+'/partes');
+    _partesAtual = data.partes || [];
+    renderTotaisPartes(data.totais || {});
+    renderTabelaPartes(_partesAtual, _osAtual.status);
   } catch(e) { toast('Erro: '+e.message,'error'); }
 }
 
@@ -3327,9 +3330,14 @@ async function salvarHorasCobradas(parteId, valor) {
       body: JSON.stringify({ horas_cobradas: parseFloat(valor)||0 }),
     });
     toast('Horas cobradas atualizadas','success');
-    // Recarregar totais
+    // (24/07/2026) Recarregar totais — ATUALIZAR _partesAtual antes de
+    // renderTotaisPartes: o card Total a Cobrar é calculado a partir dessa
+    // cópia local, e sem isso ele recalculava com os valores ANTIGOS
+    // (linha mostrava um total, card mostrava outro).
     const data = await apiFetch('/operacional/api/os/'+_osAtual.id+'/partes');
+    _partesAtual = data.partes || [];
     renderTotaisPartes(data.totais || {});
+    renderTabelaPartes(_partesAtual, _osAtual.status);
   } catch(e) { toast('Erro: '+e.message,'error'); }
 }
 
