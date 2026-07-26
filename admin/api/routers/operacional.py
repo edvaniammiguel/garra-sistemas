@@ -1221,6 +1221,90 @@ async def op_fechar_os(os_id: str, request: Request, payload=Depends(verificar_g
 
     return await op_detalhe_os(os_id, _auth=payload)
 
+@router.post("/operacional/api/os/{os_id}/partes/lote")
+async def op_lancar_diarias_lote(os_id: str, request: Request,
+                                 payload=Depends(verificar_gestor)):
+    """(24/07/2026) Diárias em LOTE — locação seca (equipamento sem
+    motorista, ninguém no campo para registrar). Cria 1 diária por dia no
+    período (máx. 30 dias). Idempotente: dias que já têm diária ATIVA do
+    mesmo equipamento nesta OS são pulados — rodar de novo não duplica e
+    prorrogação só cria os dias novos. Operador é OPCIONAL: vazio grava
+    operador_id NULL + rótulo "— locação" (nunca contamina resumo nem
+    comissão de colaborador)."""
+    d = await request.json()
+    os_row = await ajard_query(
+        "SELECT id, status FROM operacional.ordens_servico WHERE id=%s AND ativo=true",
+        (os_id,), fetch="one"
+    )
+    if not os_row:
+        raise HTTPException(status_code=404, detail="OS não encontrada")
+    if os_row.get("status") in ("concluida_sem_erp", "concluida_completa", "cancelada"):
+        raise HTTPException(status_code=400, detail="OS concluída — reabra para lançar diárias")
+
+    equipamento_id = (d.get("equipamento_id") or "").strip() or None
+    if not equipamento_id:
+        raise HTTPException(status_code=400, detail="Equipamento é obrigatório no lote")
+    try:
+        dt_ini = datetime.strptime(str(d.get("data_inicio")), "%Y-%m-%d").date()
+        dt_fim = datetime.strptime(str(d.get("data_fim")), "%Y-%m-%d").date()
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="Período inválido")
+    if dt_fim < dt_ini:
+        raise HTTPException(status_code=400, detail="Data final antes da inicial")
+    if (dt_fim - dt_ini).days + 1 > 62:
+        raise HTTPException(status_code=400, detail="Lote máximo: 62 dias por vez")
+
+    incluir_fds = bool(d.get("incluir_fds", False))
+    operador_id = (d.get("operador_id") or "").strip() or None
+    vu = d.get("valor_unitario")
+    try:
+        vu = round(float(vu), 2) if vu not in (None, "",) else None
+        if vu is not None and vu < 0: vu = None
+    except (TypeError, ValueError):
+        vu = None
+
+    login = payload.get("sub")
+    criador = await ajard_query(
+        "SELECT id FROM public.usuarios_garra WHERE login=%s", (login,), fetch="one"
+    )
+    criado_por_id = criador["id"] if criador else None
+
+    # Dias já ocupados por diária ativa deste equipamento nesta OS
+    existentes = await ajard_query(
+        """SELECT data FROM operacional.partes_diarias
+           WHERE os_id=%s AND equipamento_id=%s AND ativo=true
+             AND tipo_medicao='diaria'""",
+        (os_id, equipamento_id)
+    )
+    ocupados = {r["data"] for r in (existentes or [])}
+
+    criadas, puladas_exist, puladas_fds = 0, 0, 0
+    cursor = dt_ini
+    while cursor <= dt_fim:
+        if not incluir_fds and cursor.weekday() >= 5:
+            puladas_fds += 1
+        elif cursor in ocupados:
+            puladas_exist += 1
+        else:
+            await ajard_query(
+                """INSERT INTO operacional.partes_diarias
+                   (os_id, equipamento_id, operador_id, operador_nome_avulso,
+                    data, tipo_medicao, quantidade_diarias, qtd_viagens,
+                    vinculo_operador, observacao, por_conta_de, sem_almoco,
+                    criado_por, valor_unitario)
+                   VALUES (%s,%s,%s,%s, %s,'diaria',1,0, 'proprio',%s,'cliente',false, %s,%s)""",
+                (os_id, equipamento_id, operador_id,
+                 None if operador_id else "— locação",
+                 cursor, "Diária de locação (lote)", criado_por_id, vu),
+                fetch="none"
+            )
+            criadas += 1
+        cursor += timedelta(days=1)
+
+    return {"criadas": criadas, "puladas_existentes": puladas_exist,
+            "puladas_fds": puladas_fds,
+            "de": dt_ini.isoformat(), "ate": dt_fim.isoformat()}
+
 @router.post("/operacional/api/os/{os_id}/reabrir")
 async def op_reabrir_os(os_id: str, payload=Depends(verificar_gestor)):
     """(20/07/2026) Reabre OS concluída — caminho de volta sancionado.
