@@ -1166,7 +1166,25 @@ async function salvarNovaOSAvulsa() {
       throw new Error(errData.detail || `Erro HTTP ${r.status}`);
     }
   } catch (e) {
-    err.textContent = e.message || 'Erro ao criar OS';
+    // (27/07/2026) VÃO CORRIGIDO: sem rede o fetch LANÇA ("Failed to
+    // fetch") e caía aqui direto, sem passar pelo fallback offline que
+    // só cobria 5xx. Agora falha de REDE também enfileira — a OS é
+    // criada sozinha quando a conexão voltar (e aparece na lista após).
+    const ehRede = (e instanceof TypeError) || /failed to fetch|network/i.test(e.message || '');
+    if (ehRede && typeof GarraDB !== 'undefined') {
+      try {
+        await GarraDB.postWithQueue(
+          '/operacional/api/os/avulsa',
+          payload,
+          { retries: 5, retryDelay: 30000, dedup: false }
+        );
+        if (typeof toast === 'function') toast('⚠️ Sem conexão — a OS será criada quando o sinal voltar', 'info');
+        else alert('Sem conexão — a OS será criada quando o sinal voltar.');
+        fecharModalNovaOS();
+        return;
+      } catch (qe) { /* fila indisponível — mostra o erro abaixo */ }
+    }
+    err.textContent = ehRede ? 'Sem conexão e fila indisponível — tente novamente' : (e.message || 'Erro ao criar OS');
     err.style.display = 'block';
   } finally {
     btn.disabled = false;
@@ -1443,6 +1461,11 @@ async function salvarParte(adicionarMais) {
               { retries: 5, retryDelay: 30000, dedup: false }
             );
             salvouOffline = true;
+            // (24/07/2026) Falha de SERVIDOR (5xx) ≠ falta de conexão.
+            // Guardar o motivo real: o toast diferencia e o console registra
+            // — o "Offline sem estar offline" escondia bug do backend.
+            window._falhaServidor = 'HTTP ' + r.status + (errData.detail ? ' — ' + errData.detail : '');
+            console.error('[Registro] Servidor recusou (enfileirado):', window._falhaServidor);
           } else {
             throw new Error(errData.detail || `Erro HTTP ${r.status}`);
           }
@@ -1476,7 +1499,12 @@ async function salvarParte(adicionarMais) {
     if (salvouOnline) {
       toast('✓ Registro salvo!', 'success');
     } else if (salvouOffline) {
-      toast('⚠️ Offline — será enviado ao voltar online', 'info');
+      if (window._falhaServidor) {
+        toast('⚠️ Servidor indisponível — guardado para reenvio automático', 'info');
+        window._falhaServidor = null;
+      } else {
+        toast('⚠️ Sem conexão — será enviado ao voltar online', 'info');
+      }
     }
 
     // Registrar a parte salva no cache local (alerta duplicidade no "salvar e novo")
