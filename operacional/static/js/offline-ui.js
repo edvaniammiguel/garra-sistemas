@@ -265,3 +265,68 @@ window.DEBUG_OFFLINE = {
 };
 
 console.log('[OfflineUI] Debug: window.DEBUG_OFFLINE.fila() / status() / sync() / limpar()');
+
+/* ══════════════════════════════════════════════════════════════
+   PAINEL DE FALHAS DE ENVIO (24/07/2026)
+   Nada morre em silêncio: ao abrir o app, itens com falha permanente
+   aparecem num banner com Reenviar / Descartar por item. Reenvio é
+   seguro (client_id idempotente no servidor); Descartar é para quando
+   o registro já foi lançado manualmente pelo Admin (evita duplicar).
+   ══════════════════════════════════════════════════════════════ */
+function _falhaResumo(item) {
+  try {
+    const b = JSON.parse(item.body || '{}');
+    const partes = [];
+    if (b.obra) partes.push('Nova OS: ' + b.obra);
+    if (b.data) partes.push(b.data.split('-').reverse().join('/'));
+    if (b.tipo_medicao) partes.push(b.tipo_medicao);
+    if (b.qtd_viagens > 0) partes.push(b.qtd_viagens + ' viag.');
+    if (b.qtd_metros > 0) partes.push(b.qtd_metros + ' m');
+    if (b.equipamento_terceiro) partes.push('🚚 ' + b.equipamento_terceiro);
+    if (b.hora_inicio && b.hora_fim) partes.push(b.hora_inicio.slice(0,5) + '–' + b.hora_fim.slice(0,5));
+    return partes.join(' · ') || (item.method + ' ' + (item.url||'').split('/').slice(-2).join('/'));
+  } catch (e) {
+    return item.method + ' ' + (item.url||'').split('/').slice(-2).join('/');
+  }
+}
+
+async function renderPainelFalhas() {
+  if (!window.GarraDB || !GarraDB.listarFalhas) return;
+  let falhas = [];
+  try { falhas = await GarraDB.listarFalhas(); } catch (e) { return; }
+  let el = document.getElementById('painel-falhas-envio');
+  if (!falhas.length) { if (el) el.remove(); return; }
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'painel-falhas-envio';
+    el.style.cssText = 'position:fixed;left:12px;right:12px;bottom:70px;z-index:9500;background:#FFF7ED;border:2px solid #FB923C;border-radius:12px;padding:12px;box-shadow:0 8px 24px rgba(0,0,0,.18);max-height:45vh;overflow:auto';
+    document.body.appendChild(el);
+  }
+  el.innerHTML = `
+    <div style="font-weight:800;font-size:14px;color:#9A3412;margin-bottom:2px">⚠️ ${falhas.length} registro(s) não enviado(s)</div>
+    <div style="font-size:11px;color:#9A3412;margin-bottom:10px">Falharam após várias tentativas. Reenvie — ou descarte se já foi lançado pelo escritório (evita duplicar).</div>
+    ${falhas.map(f => `
+      <div style="display:flex;align-items:center;gap:8px;background:#fff;border:1px solid #FED7AA;border-radius:8px;padding:8px 10px;margin-bottom:6px">
+        <div style="flex:1;font-size:12px;font-weight:600;color:#1A2A5E">${_falhaResumo(f)}</div>
+        <button onclick="_falhaReenviar(${f.id})" style="background:#16A34A;color:#fff;border:none;border-radius:6px;padding:6px 10px;font-size:12px;font-weight:700">↻ Reenviar</button>
+        <button onclick="_falhaDescartar(${f.id})" style="background:#fff;color:#DC2626;border:1.5px solid #DC2626;border-radius:6px;padding:6px 10px;font-size:12px;font-weight:700">✕</button>
+      </div>`).join('')}`;
+}
+
+async function _falhaReenviar(id) {
+  await GarraDB.reenviarFalha(id);
+  toast('Reenviando registro...', 'info', 3000);
+  setTimeout(renderPainelFalhas, 4000);
+}
+
+async function _falhaDescartar(id) {
+  if (!confirm('Descartar este registro?\n\nUse apenas se ele JÁ foi lançado pelo escritório — descartar apaga do aparelho sem enviar.')) return;
+  await GarraDB.descartarFalha(id);
+  toast('Registro descartado', 'info', 2500);
+  renderPainelFalhas();
+}
+
+// Ao abrir o app e após cada ciclo de sync, reavaliar o painel
+window.addEventListener('load', () => setTimeout(renderPainelFalhas, 1500));
+window.addEventListener('garradb:synced', () => setTimeout(renderPainelFalhas, 500));
+window.addEventListener('garradb:failed', () => setTimeout(renderPainelFalhas, 500));
