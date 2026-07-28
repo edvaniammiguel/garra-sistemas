@@ -278,6 +278,36 @@ class GarraDB {
    * getQueue()
    * Retorna lista de requisições pendentes (para debug/UI)
    */
+  /* ══ FALHAS PERMANENTES (24/07/2026) ══
+     Antes: item que esgotava as tentativas virava 'failed' e era enterrado
+     para sempre (syncPendentes só processa 'pending') — beco sem saída que
+     perdeu o frete de terceiro do operador em 22/07. Agora falha é VISÍVEL
+     e tem caminho de volta: listar → Reenviar (revive com fôlego novo; o
+     client_id idempotente garante que reenvio do MESMO registro nunca
+     duplica no servidor) ou Descartar (remoção consciente, ex.: registro
+     já lançado manualmente pelo Admin). */
+  static async listarFalhas() {
+    return await GarraDB._getQueueByStatus('failed');
+  }
+
+  static async reenviarFalha(id) {
+    const itens = await GarraDB._getQueueByStatus('failed');
+    const item = itens.find(i => i.id === id);
+    if (!item) return { ok: false, motivo: 'não encontrado' };
+    item.status = 'pending';
+    item.attempts = 0;
+    item.nextRetryAt = Date.now();
+    await GarraDB._queueUpdate(item);
+    GarraDB.syncPendentes();
+    return { ok: true };
+  }
+
+  static async descartarFalha(id) {
+    await GarraDB._queueRemove(id);
+    window.dispatchEvent(new CustomEvent('garradb:falha-descartada', { detail: { id } }));
+    return { ok: true };
+  }
+
   static async getQueue() {
     return await GarraDB._safeTransaction([GarraDB.STORES.QUEUE], 'readonly', (tx) => {
       return new Promise((resolve, reject) => {
