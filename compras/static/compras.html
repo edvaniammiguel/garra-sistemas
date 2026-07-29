@@ -235,6 +235,19 @@ function fmtData(d){ if(!d) return ''; const x=new Date(d); return isNaN(x)?'':x
 const ST_LABEL={rascunho:'Rascunho',solicitada:'Solicitada',aprovada:'Aprovada',enviada:'Enviada',
   recebida_parcial:'Recebida parcial',recebida:'Recebida',rejeitada:'Rejeitada',cancelada:'Cancelada'};
 
+/* ══ TRAVA GLOBAL ANTI-DUPLO-CLIQUE ══
+   Qualquer ação de escrita passa por guard(): enquanto uma requisição
+   está no ar, cliques repetidos são ignorados e o botão fica cinza. */
+let _busy=false;
+async function guard(fn, ev){
+  if (_busy) return;
+  _busy=true;
+  const btn = ev && ev.target && ev.target.closest ? ev.target.closest('button') : null;
+  if (btn) btn.disabled=true;
+  try{ await fn(); }
+  finally{ _busy=false; if (btn) btn.disabled=false; }
+}
+
 /* ══ ESTADO ══ */
 let SETORES=[], FORNECEDORES=[], OTS=[], PODE_APROVAR=false, PODE_CONFIG=false;
 let _setorSel=null, _editandoOC=null;
@@ -410,7 +423,8 @@ function calcTotal(){
   document.getElementById('n-total').textContent=fmt(tot);
 }
 
-async function salvarOC(solicitar){
+async function salvarOC(solicitar){ return guard(()=>_salvarOC(solicitar), window.event); }
+async function _salvarOC(solicitar){
   if(!_setorSel){ toast('Escolha o setor da compra','warn'); return; }
   const itens=lerItens();
   if(!itens.length){ toast('Adicione ao menos 1 item com descrição','warn'); return; }
@@ -518,7 +532,8 @@ async function abrirDetalhe(id){
       <div class="trilha">${trilhaHtml||'<div class="ev">—</div>'}</div></div>`;
 }
 
-async function acao(id, verbo){
+async function acao(id, verbo){ return guard(()=>_acao(id,verbo), window.event); }
+async function _acao(id, verbo){
   try{
     const r=await api('/compras/api/ocs/'+id+'/'+verbo,{method:'POST',body:JSON.stringify({})});
     if (verbo==='solicitar' && r.auto_aprovada) toast('✅ Aprovada em 1 passo (dentro da sua alçada)','ok');
@@ -529,7 +544,8 @@ async function acao(id, verbo){
   }catch(e){ toast(e.message,'err'); }
 }
 
-async function rejeitar(id){
+async function rejeitar(id){ return guard(()=>_rejeitar(id), window.event); }
+async function _rejeitar(id){
   const motivo=prompt('Motivo da rejeição (obrigatório):');
   if (motivo===null) return;
   if (!motivo.trim()){ toast('Motivo é obrigatório','warn'); return; }
@@ -541,7 +557,8 @@ async function rejeitar(id){
   }catch(e){ toast(e.message,'err'); }
 }
 
-async function cancelar(id){
+async function cancelar(id){ return guard(()=>_cancelar(id), window.event); }
+async function _cancelar(id){
   const motivo=prompt('Motivo do cancelamento (opcional):')||'';
   if (!confirm('Cancelar esta OC? A ação não pode ser desfeita.')) return;
   try{
@@ -607,7 +624,8 @@ async function abrirReceber(id){
     </div>`;
 }
 
-async function confirmarReceber(id){
+async function confirmarReceber(id){ return guard(()=>_confirmarReceber(id), window.event); }
+async function _confirmarReceber(id){
   let o;
   try{ o=await api('/compras/api/ocs/'+id); }catch(e){ toast(e.message,'err'); return; }
   const itens=[];
@@ -679,7 +697,8 @@ async function carregarConfig(){
   }catch(e){}
 }
 
-async function salvarAlcadas(){
+async function salvarAlcadas(){ return guard(_salvarAlcadas, window.event); }
+async function _salvarAlcadas(){
   const rows=document.querySelectorAll('#alc-lista .alc-row[data-uid]');
   let n=0;
   for (const r of rows){
@@ -694,7 +713,8 @@ async function salvarAlcadas(){
   toast('💾 '+n+' alçada(s) salvas','ok');
 }
 
-async function criarSetor(){
+async function criarSetor(){ return guard(_criarSetor, window.event); }
+async function _criarSetor(){
   const cod=document.getElementById('set-cod').value.trim().toUpperCase();
   const nome=document.getElementById('set-nome').value.trim();
   if(!cod||!nome){ toast('Código e nome do setor','warn'); return; }
