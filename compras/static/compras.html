@@ -105,7 +105,7 @@ header .badge-fila{background:var(--red);border-radius:99px;padding:1px 8px;font
   <span class="badge-fila" id="badge-fila">0</span>
   <span style="flex:1"></span>
   <span id="hdr-user" style="font-size:12px;opacity:.85"></span>
-  <span style="font-size:10px;opacity:.6;margin-left:8px">v1.5</span>
+  <span style="font-size:10px;opacity:.6;margin-left:8px">v1.6</span>
 </header>
 
 <div class="wrap">
@@ -159,6 +159,10 @@ header .badge-fila{background:var(--red);border-radius:99px;padding:1px 8px;font
         <button class="btn btn-sec" style="width:100%" onclick="addItem()">＋ Adicionar item</button>
       </div>
       <div class="tot-geral"><span>Total da OC</span><b id="n-total">R$ 0,00</b></div>
+      <div class="fld"><label>📎 Orçamentos do fornecedor (opcional)</label>
+        <input type="file" id="n-anexos" multiple accept="application/pdf,image/*" style="padding:9px;border:1.5px dashed var(--border);border-radius:8px;width:100%;background:#fff;font-size:13px">
+        <div class="hint">Foto ou PDF da cotação — vira evidência com data. Quem aprova vê o orçamento real.</div>
+      </div>
       <div class="fld"><label>Observação</label><textarea id="n-obs" rows="2" placeholder="Entrega, referência, detalhes..."></textarea></div>
       <div class="acoes">
         <button class="btn btn-sec" onclick="salvarOC(false)">💾 Salvar cotação (rascunho)</button>
@@ -234,6 +238,14 @@ async function api(path, opts){
   if (r.status===401){ toast('Sessão expirada — faça login novamente','warn'); setTimeout(()=>location.replace('/mobile'),1200); throw new Error('401'); }
   const j = await r.json().catch(()=>({}));
   if (!r.ok){ const e=new Error(j.detail||('Erro '+r.status)); e.status=r.status; throw e; }
+  return j;
+}
+
+async function apiUpload(path, file){
+  const fd=new FormData(); fd.append('arquivo', file, file.name);
+  const r=await fetch(path,{method:'POST',headers:{'Authorization':'Bearer '+ocToken()},body:fd});
+  const j=await r.json().catch(()=>({}));
+  if(!r.ok){ const e=new Error(j.detail||('Erro '+r.status)); e.status=r.status; throw e; }
   return j;
 }
 
@@ -481,6 +493,12 @@ async function _salvarOC(solicitar){
     } else {
       oc = await api('/compras/api/ocs',{method:'POST',body:JSON.stringify(body)});
     }
+    const ocId = _editandoOC || oc.id;
+    const fs=document.getElementById('n-anexos').files;
+    for (const f of fs){
+      try{ await apiUpload('/compras/api/ocs/'+ocId+'/anexos', f); }
+      catch(e){ toast('Anexo "'+f.name+'": '+e.message,'warn'); }
+    }
     if (solicitar){
       const r=await api('/compras/api/ocs/'+oc.id+'/solicitar',{method:'POST'});
       if (r.auto_aprovada) toast('✅ '+(oc.numero||'OC')+' aprovada em 1 passo (dentro da sua alçada)','ok');
@@ -509,6 +527,7 @@ function limparNova(){
   document.getElementById('n-forn-avulso').style.display='none';
   document.getElementById('n-prio').value='normal';
   document.getElementById('n-obs').value='';
+  document.getElementById('n-anexos').value='';
   document.getElementById('n-itens').innerHTML='';
   addItem();
 }
@@ -560,6 +579,17 @@ async function abrirDetalhe(id){
     ${o.observacao?('<div class="oc-meta">Obs: '+o.observacao+'</div>'):''}
     <div style="margin-top:10px">${itensHtml}</div>
     <div class="tot-geral"><span>Total</span><b>${fmt(o.valor_total)}</b></div>
+    <div style="margin:6px 0 2px;font-size:11px;font-weight:800;color:var(--muted);text-transform:uppercase">📎 Anexos</div>
+    <div id="det-anexos">${(o.anexos&&o.anexos.length)?o.anexos.map(a=>`
+      <div class="item-view"><div><a href="${a.url}" target="_blank" style="color:var(--blue);font-weight:700;text-decoration:none">${a.content_type==='application/pdf'?'📄':'🖼'} ${a.nome}</a>
+        <div class="rec">${a.enviado_por_nome||''} · ${fmtData(a.criado_em)}</div></div>
+        ${o.status!=='recebida'?`<button class="del" onclick="removerAnexo('${o.id}','${a.id}','${a.nome.replace(/'/g,'')}')">✕</button>`:''}</div>`).join('')
+      :'<div class="hint">Nenhum orçamento anexado.</div>'}</div>
+    ${!['rejeitada','cancelada'].includes(o.status)?`
+    <div style="margin-top:8px">
+      <input type="file" id="det-anexo-file" accept="application/pdf,image/*" style="display:none" onchange="enviarAnexoDetalhe('${o.id}',this)">
+      <button class="btn btn-sec" style="width:100%" onclick="document.getElementById('det-anexo-file').click()">📎 Anexar orçamento (PDF ou foto)</button>
+    </div>`:''}
     ${o.motivo_rejeicao?('<div class="oc-meta" style="color:var(--red)">Motivo da rejeição: '+o.motivo_rejeicao+'</div>'):''}
     <div class="acoes">${acoes}</div>
     <div style="margin-top:14px"><div style="font-size:11px;font-weight:800;color:var(--muted);text-transform:uppercase;margin-bottom:6px">Trilha</div>
@@ -634,6 +664,27 @@ async function editarOC(id){
   (o.itens||[]).forEach(i=>addItem(i));
   if(!(o.itens||[]).length) addItem();
 }
+
+async function enviarAnexoDetalhe(ocId, input){ return guard(async ()=>{
+  const f=input.files && input.files[0];
+  if(!f) return;
+  try{
+    toast('Enviando '+f.name+'...','');
+    await apiUpload('/compras/api/ocs/'+ocId+'/anexos', f);
+    toast('📎 Anexo enviado','ok');
+    abrirDetalhe(ocId);
+  }catch(e){ toast(e.message,'err'); }
+  finally{ input.value=''; }
+}, window.event); }
+
+async function removerAnexo(ocId, anexoId, nome){ return guard(async ()=>{
+  if(!confirm('Remover o anexo "'+nome+'"?')) return;
+  try{
+    await api('/compras/api/ocs/'+ocId+'/anexos/'+anexoId,{method:'DELETE'});
+    toast('Anexo removido','ok');
+    abrirDetalhe(ocId);
+  }catch(e){ toast(e.message,'err'); }
+}, window.event); }
 
 function imprimirOC(id){
   api('/compras/api/ocs/'+id).then(o=>{
