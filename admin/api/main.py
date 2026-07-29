@@ -714,22 +714,68 @@ from fastapi.responses import RedirectResponse
 
 
 
+# Prefixos de API: erro sempre em JSON (os apps consomem {detail}/{error}).
+# Qualquer outra rota (páginas) recebe página de erro amigável no padrão Garra.
+_PREFIXOS_API = ("/jardinagem/api/", "/api/", "/auth/", "/usuarios",
+                 "/checklist/", "/frota", "/logistica/", "/operacional/",
+                 "/manutencao/api/", "/compras/api/")
+
+def _eh_api(path: str) -> bool:
+    return any(path.startswith(p) for p in _PREFIXOS_API)
+
+def _pagina_erro(codigo: int, titulo: str, msg: str) -> str:
+    return f"""<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{codigo} · Garra Sistemas</title><style>
+body{{margin:0;font-family:system-ui,-apple-system,sans-serif;background:#F0F4FF;color:#1E293B;
+display:flex;align-items:center;justify-content:center;min-height:100dvh;padding:20px}}
+.box{{background:#fff;border:1px solid #CBD5E1;border-top:4px solid #E8820C;border-radius:14px;
+padding:34px 28px;max-width:420px;width:100%;text-align:center}}
+.cod{{font-size:44px;font-weight:800;color:#1A2A5E}}
+h1{{font-size:17px;color:#1A2A5E;margin:6px 0 8px}}
+p{{font-size:13px;color:#64748B;line-height:1.5;margin:0 0 20px}}
+.btns{{display:flex;gap:10px;justify-content:center;flex-wrap:wrap}}
+a,button{{text-decoration:none;border:none;border-radius:8px;padding:11px 18px;font-size:14px;
+font-weight:700;cursor:pointer}}
+.b1{{background:#E8820C;color:#fff}}
+.b2{{background:#fff;color:#1A2A5E;border:1px solid #CBD5E1}}
+.rodape{{margin-top:18px;font-size:11px;color:#94A3B8}}
+</style></head><body><div class="box">
+<div class="cod">{codigo}</div>
+<h1>{titulo}</h1>
+<p>{msg}</p>
+<div class="btns">
+  <button class="b2" onclick="history.back()">← Voltar</button>
+  <a class="b1" href="/mobile">Ir para o app</a>
+  <a class="b2" href="/admin">Painel Admin</a>
+</div>
+<div class="rodape">Garra Sistemas · Se o problema continuar, avise a gestão.</div>
+</div></body></html>"""
+
 @app.exception_handler(404)
 async def not_found_handler(request: Request, exc):
-    from fastapi.responses import JSONResponse, Response
+    from fastapi.responses import JSONResponse
     path = request.url.path
-    if path.startswith("/jardinagem/api/") or path.startswith("/api/") or path.startswith("/auth/") or path.startswith("/usuarios") or path.startswith("/checklist/") or path.startswith("/frota") or path.startswith("/logistica/") or path.startswith("/operacional/"):
-        return JSONResponse({"ok": False, "error": "Rota não encontrada", "path": path}, status_code=404)
-    return Response(status_code=404)
+    if _eh_api(path):
+        return JSONResponse({"ok": False, "error": "Rota não encontrada",
+                             "detail": "Rota não encontrada", "path": path}, status_code=404)
+    return HTMLResponse(_pagina_erro(
+        404, "Página não encontrada",
+        "O endereço que você tentou abrir não existe ou mudou de lugar. "
+        "Use os botões abaixo para voltar ao sistema."), status_code=404)
 
 @app.exception_handler(500)
 async def server_error_handler(request: Request, exc):
-    from fastapi.responses import JSONResponse, Response
+    from fastapi.responses import JSONResponse
     path = request.url.path
-    if path.startswith("/jardinagem/api/") or path.startswith("/api/") or path.startswith("/auth/") or path.startswith("/usuarios") or path.startswith("/checklist/") or path.startswith("/frota") or path.startswith("/logistica/") or path.startswith("/operacional/"):
-        return JSONResponse({"ok": False, "error": "Erro interno do servidor"}, status_code=500)
-    return Response(status_code=500)
-    raise exc
+    print(f"[ERRO 500] {path}: {exc}")
+    if _eh_api(path):
+        return JSONResponse({"ok": False, "error": "Erro interno do servidor",
+                             "detail": "Erro interno do servidor"}, status_code=500)
+    return HTMLResponse(_pagina_erro(
+        500, "Algo deu errado no servidor",
+        "Ocorreu um erro inesperado ao processar sua solicitação. "
+        "Tente novamente em instantes — o registro do problema já ficou salvo para análise."), status_code=500)
 
 # ── HEALTH CHECK — mantém banco Neon acordado ──────────────────
 
@@ -1175,8 +1221,7 @@ async def criar_schema_compras():
                                ("OPER","Operacional","#1E3A8A"),
                                ("JARD","Jardinagem","#16A34A"),
                                ("ADM","Administrativo","#64748B"),
-                               ("COMB","Combustível","#DC2626"),
-                               ("EPI","EPI","#7C3AED")]:
+                               ("COMB","Combustível","#DC2626")]:
             await ajard_query("""
                 INSERT INTO compras.setores (codigo,nome,cor)
                 VALUES (%s,%s,%s) ON CONFLICT (codigo) DO NOTHING""",
@@ -1237,6 +1282,11 @@ async def criar_schema_compras():
                 usuario_id UUID,
                 criado_em TIMESTAMPTZ DEFAULT now()
             )""", fetch="none")
+        await ajard_query("""
+            ALTER TABLE compras.ordens_compra
+              ADD COLUMN IF NOT EXISTS fornecedor_avulso TEXT""", fetch="none")
+        await ajard_query("""
+            UPDATE compras.setores SET ativo=false WHERE codigo='EPI'""", fetch="none")
         await ajard_query("""
             CREATE INDEX IF NOT EXISTS ix_oc_status
               ON compras.ordens_compra (status)""", fetch="none")
