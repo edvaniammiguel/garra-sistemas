@@ -339,18 +339,22 @@ class GarraDB {
   static async _attemptPost(queueItem) {
     try {
       const token = localStorage.getItem('garra_token') || '';
+      // (27/07/2026) DELETE não leva corpo; PATCH/POST levam JSON.
+      // data null/undefined → sem body (evita mandar a string "null").
+      const _m = queueItem.method || 'POST';
+      const _temCorpo = queueItem.data !== null && queueItem.data !== undefined && _m !== 'DELETE';
       const response = await fetch(queueItem.url, {
-        method: queueItem.method || 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(queueItem.data)
+        method: _m,
+        headers: _temCorpo
+          ? { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }
+          : { 'Authorization': `Bearer ${token}` },
+        body: _temCorpo ? JSON.stringify(queueItem.data) : undefined
       });
 
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
 
-      const data = await response.json();
+      // Resposta pode ser vazia (204) — não estourar no .json()
+      const data = await response.json().catch(() => ({}));
       return { success: true, data };
     } catch (err) {
       console.warn(`[GarraDB] Tentativa falhou (${queueItem.attempts}/${queueItem.maxRetries}):`, err.message);
