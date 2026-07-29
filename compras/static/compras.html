@@ -105,7 +105,7 @@ header .badge-fila{background:var(--red);border-radius:99px;padding:1px 8px;font
   <span class="badge-fila" id="badge-fila">0</span>
   <span style="flex:1"></span>
   <span id="hdr-user" style="font-size:12px;opacity:.85"></span>
-  <span style="font-size:10px;opacity:.6;margin-left:8px">v1.4</span>
+  <span style="font-size:10px;opacity:.6;margin-left:8px">v1.5</span>
 </header>
 
 <div class="wrap">
@@ -540,7 +540,7 @@ async function abrirDetalhe(id){
     acoes+=`<button class="btn btn-no" onclick="rejeitar('${o.id}')">✕ Rejeitar</button>
       <button class="btn btn-ok" onclick="acao('${o.id}','aprovar')">✓ Aprovar</button>`;
   }
-  if (st==='aprovada') acoes+=`<button class="btn btn-sec" onclick="window.print()">🖨 Imprimir/PDF</button>
+  if (st==='aprovada') acoes+=`<button class="btn btn-sec" onclick="imprimirOC('${o.id}')">🖨 Imprimir/PDF</button>
     ${o.fornecedor_telefone?`<button class="btn btn-sec" onclick="whats('${o.id}')">📲 WhatsApp</button>`:''}
     <button class="btn btn-cta" onclick="acao('${o.id}','enviar')">Marcar como enviada</button>`;
   if (st==='enviada'||st==='recebida_parcial') acoes+=`<button class="btn btn-cta" onclick="abrirReceber('${o.id}')">📦 Registrar recebimento</button>`;
@@ -633,6 +633,53 @@ async function editarOC(id){
   document.getElementById('n-itens').innerHTML='';
   (o.itens||[]).forEach(i=>addItem(i));
   if(!(o.itens||[]).length) addItem();
+}
+
+function imprimirOC(id){
+  api('/compras/api/ocs/'+id).then(o=>{
+    const linhas=o.itens.map((i,n)=>`<tr><td>${n+1}</td><td>${i.descricao}</td><td>${Number(i.quantidade)}</td><td>${i.unidade}</td><td>${fmt(i.valor_unit)}</td><td>${fmt(i.quantidade*i.valor_unit)}</td></tr>`).join('');
+    const aprov=o.aprovador_nome?`<div class="box"><b>${o.aprovador_nome}</b>Aprovação · ${fmtData(o.data_aprovacao)}<br>Assinatura digital registrada no sistema</div>`:`<div class="box"><b>&nbsp;</b>Aprovação pendente</div>`;
+    const doc=`<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><title>${o.numero} · Garra</title><style>
+      *{margin:0;padding:0;box-sizing:border-box;font-family:system-ui,sans-serif}
+      body{padding:34px 40px;font-size:13px;color:#1E293B}
+      .hdr{display:flex;justify-content:space-between;border-bottom:3px solid #E8820C;padding-bottom:14px;margin-bottom:18px}
+      .emp b{color:#1A2A5E;font-size:15px;display:block}
+      .emp{font-size:11px;color:#64748B;line-height:1.5}
+      .oc .t{background:#1A2A5E;color:#fff;padding:6px 16px;border-radius:6px;font-weight:800;font-size:15px}
+      .oc{text-align:right}.oc .n{font-size:12px;color:#64748B;margin-top:6px}
+      h3{font-size:11px;color:#64748B;text-transform:uppercase;letter-spacing:.06em;border-bottom:1px solid #E2E8F0;padding-bottom:3px;margin:14px 0 6px}
+      table{width:100%;border-collapse:collapse;font-size:12px;border:1px solid #CBD5E1}
+      th{background:#1A2A5E;color:#fff;text-align:left;padding:7px 9px;font-size:11px}
+      td{padding:7px 9px;border-top:1px solid #E2E8F0}
+      .tot td{font-weight:800;background:#EFF2FA;color:#1A2A5E}
+      .ass{display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-top:30px}
+      .box{border-top:1px solid #1E293B;padding-top:6px;text-align:center;font-size:11px;color:#64748B}
+      .box b{display:block;color:#1E293B;font-size:12px}
+      .foot{margin-top:20px;padding-top:10px;border-top:1px solid #E2E8F0;font-size:10px;color:#64748B;text-align:center}
+    </style></head><body>
+      <div class="hdr">
+        <div class="emp"><b>GARRA TERRAPLENAGEM E CAÇAMBAS</b>Pará de Minas – MG<br>contato@garraterraplenagem.com.br</div>
+        <div class="oc"><span class="t">ORDEM DE COMPRA</span>
+          <div class="n"><b>${o.numero}</b> · ${fmtData(o.data_aprovacao||o.criado_em)}<br>Setor: ${o.setor_nome}${o.prioridade==='urgente'?' · Prioridade: URGENTE':''}</div></div>
+      </div>
+      <h3>Fornecedor</h3>
+      <div><b>${o.fornecedor_nome||'A definir'}</b>${o.fornecedor_telefone?(' · '+o.fornecedor_telefone):''} · Condição: ${o.condicao_pagamento||'-'}</div>
+      <h3>Itens</h3>
+      <table><tr><th>#</th><th>Descrição</th><th>Qtd</th><th>Un</th><th>Vlr Unit.</th><th>Total</th></tr>
+        ${linhas}
+        <tr class="tot"><td colspan="5" style="text-align:right">TOTAL</td><td>${fmt(o.valor_total)}</td></tr></table>
+      ${(o.observacao||o.ot_numero)?('<h3>Observações</h3><div>'+(o.observacao||'')+(o.ot_numero?(' · Referência interna: '+o.ot_numero+(o.equipamento_codigo?(' · '+o.equipamento_codigo):'')):'')+'</div>'):''}
+      <div class="ass">
+        <div class="box"><b>${o.solicitante_nome||'&nbsp;'}</b>Solicitante</div>
+        ${aprov}
+      </div>
+      <div class="foot">Documento gerado pelo Garra Sistemas · Válido como pedido de compra · Faturar somente conforme itens acima e citar o nº da OC na Nota Fiscal</div>
+      <script>window.onload=function(){setTimeout(function(){window.print()},250)}<\/script>
+    </body></html>`;
+    const w=window.open('','_blank');
+    if(!w){ toast('Habilite pop-ups para imprimir a OC','warn'); return; }
+    w.document.write(doc); w.document.close();
+  }).catch(e=>toast(e.message,'err'));
 }
 
 function whats(id){
