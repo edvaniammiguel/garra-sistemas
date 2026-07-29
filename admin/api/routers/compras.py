@@ -15,12 +15,13 @@
 #   'compras_solicitar' → criar/editar/enviar/receber OC
 #   'compras_aprovar'   → aprovar/rejeitar (limitado pela alçada)
 # ══════════════════════════════════════════════════════════════
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File
 from fastapi.responses import HTMLResponse
 import os
 
 from core.auth import verificar_token
 from core.db import ajard_query, ajard_query_id
+from core.storage import storage_upload, storage_url
 
 router = APIRouter()
 
@@ -434,9 +435,19 @@ async def detalhe_oc(oc_id: str, _auth=Depends(verificar_compras)):
            FROM compras.oc_historico h
            LEFT JOIN public.usuarios_garra u ON u.id = h.usuario_id
            WHERE h.oc_id=%s ORDER BY h.criado_em""", (oc_id,))
+    anexos = await ajard_query(
+        """SELECT a.*, u.nome AS enviado_por_nome
+           FROM compras.oc_anexos a
+           LEFT JOIN public.usuarios_garra u ON u.id = a.enviado_por
+           WHERE a.oc_id=%s AND a.ativo=true ORDER BY a.criado_em""", (oc_id,))
     d = dict(oc)
     d["itens"] = [dict(i) for i in itens]
     d["historico"] = [dict(h) for h in hist]
+    d["anexos"] = []
+    for a in anexos:
+        ax = dict(a)
+        ax["url"] = storage_url(ax.get("caminho") or "")
+        d["anexos"].append(ax)
     uid = await _usuario_id(_auth)
     eh_dono = bool(uid) and str(oc.get("solicitante_id") or "") == str(uid)
     eh_gestor = await _tem_permissao(_auth, "compras_aprovar")
@@ -716,6 +727,89 @@ async def excluir_oc(oc_id: str, payload=Depends(verificar_compras)):
         "UPDATE compras.ordens_compra SET ativo=false, atualizado_em=now() WHERE id=%s",
         (oc_id,), fetch="none")
     await _trilha(oc_id, oc["status"], "excluida", "OC excluída pelo solicitante/gestão", uid)
+    return {"ok": True}
+
+
+# ── ANEXOS (orçamentos de fornecedores, fotos, PDFs) ──────────
+# Cotação anexada à OC vira evidência com data: quem aprova vê o orçamento
+# real; divergência de faturamento se resolve com documento na mão.
+
+_ANEXO_TIPOS = {"application/pdf", "image/jpeg", "image/png", "image/webp"}
+_ANEXO_MAX = 10 * 1024 * 1024  # 10 MB
+
+
+async def _pode_mexer_na_oc(payload, oc):
+    uid = await _usuario_id(payload)
+    if bool(uid) and str(oc.get("solicitante_id") or "") == str(uid):
+        return True
+    return await _ve_todas(payload)
+
+
+@router.post("/compras/api/ocs/{oc_id}/anexos")
+async def anexar_arquivo(oc_id: str, arquivo: UploadFile = File(...),
+                         payload=Depends(verificar_compras)):
+    oc = await ajard_query(
+        "SELECT id, status, solicitante_id FROM compras.ordens_compra WHERE id=%s AND ativo=true",
+        (oc_id,), fetch="one")
+    if not oc:
+        raise HTTPException(status_code=404, detail="OC não encontrada")
+    if oc["status"] in ("rejeitada", "cancelada"):
+        raise HTTPException(status_code=400, detail="OC encerrada não recebe anexos")
+    if not await _pode_mexer_na_oc(payload, oc):
+        raise HTTPException(status_code=403, detail="Só quem solicitou (ou a gestão) anexa nesta OC")
+
+    ctype = (arquivo.content_type or "").lower()
+    if ctype not in _ANEXO_TIPOS:
+        raise HTTPException(status_code=400,
+                            detail="Tipo não aceito — envie PDF ou imagem (JPG/PNG/WebP)")
+    dados = await arquivo.read()
+    if len(dados) > _ANEXO_MAX:
+        raise HTTPException(status_code=400, detail="Arquivo acima de 10 MB")
+    if not dados:
+        raise HTTPException(status_code=400, detail="Arquivo vazio")
+
+    import re as _re, uuid as _uuid
+    nome = (arquivo.filename or "anexo").strip()
+    nome_seguro = _re.sub(r"[^A-Za-z0-9._-]", "_", nome)[:80]
+    caminho = f"compras/{oc_id}/{_uuid.uuid4().hex[:8]}-{nome_seguro}"
+    try:
+        caminho_salvo = storage_upload(dados, caminho, content_type=ctype)
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Falha no upload do anexo: {e}")
+
+    uid = await _usuario_id(payload)
+    row = await ajard_query_id(
+        """INSERT INTO compras.oc_anexos (oc_id, nome, caminho, content_type, tamanho, enviado_por)
+           VALUES (%s,%s,%s,%s,%s,%s)""",
+        (oc_id, nome, caminho_salvo, ctype, len(dados), uid))
+    await _trilha(oc_id, oc["status"], oc["status"], f"Anexo adicionado: {nome}", uid)
+    out = dict(row)
+    out["url"] = storage_url(caminho_salvo)
+    return out
+
+
+@router.delete("/compras/api/ocs/{oc_id}/anexos/{anexo_id}")
+async def excluir_anexo(oc_id: str, anexo_id: str, payload=Depends(verificar_compras)):
+    oc = await ajard_query(
+        "SELECT id, status, solicitante_id FROM compras.ordens_compra WHERE id=%s AND ativo=true",
+        (oc_id,), fetch="one")
+    if not oc:
+        raise HTTPException(status_code=404, detail="OC não encontrada")
+    if oc["status"] == "recebida":
+        raise HTTPException(status_code=400,
+                            detail="OC recebida está congelada — anexos não podem ser removidos")
+    ax = await ajard_query(
+        "SELECT id, enviado_por, nome FROM compras.oc_anexos WHERE id=%s AND oc_id=%s AND ativo=true",
+        (anexo_id, oc_id), fetch="one")
+    if not ax:
+        raise HTTPException(status_code=404, detail="Anexo não encontrado")
+    uid = await _usuario_id(payload)
+    eh_autor = bool(uid) and str(ax.get("enviado_por") or "") == str(uid)
+    if not eh_autor and not await _tem_permissao(payload, "compras_aprovar"):
+        raise HTTPException(status_code=403, detail="Só quem enviou (ou a gestão) remove o anexo")
+    await ajard_query(
+        "UPDATE compras.oc_anexos SET ativo=false WHERE id=%s", (anexo_id,), fetch="none")
+    await _trilha(oc_id, oc["status"], oc["status"], f"Anexo removido: {ax['nome']}", uid)
     return {"ok": True}
 
 
