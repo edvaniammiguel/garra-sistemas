@@ -148,7 +148,7 @@ header .badge-fila{background:var(--red);border-radius:99px;padding:1px 8px;font
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
         <div class="fld"><label>Condição de pagamento</label>
-          <select id="n-cond"><option>30D</option><option>AV</option><option>30/60D</option><option>PIX à vista</option><option>Boleto</option></select>
+          <select id="n-cond"></select>
         </div>
         <div class="fld"><label>Prioridade</label>
           <select id="n-prio"><option value="normal">Normal</option><option value="urgente">🔥 Urgente</option></select>
@@ -182,11 +182,22 @@ header .badge-fila{background:var(--red);border-radius:99px;padding:1px 8px;font
     </div>
     <div class="panel">
       <h3>🏷 Setores de compra</h3>
+      <div class="hint" style="margin-bottom:8px">É aqui que se cadastram as opções do select de Setor. ✕ desativa (some dos selects, histórico preservado).</div>
       <div id="set-lista"></div>
       <div style="display:grid;grid-template-columns:90px 1fr auto;gap:8px;margin-top:10px">
         <input id="set-cod" placeholder="CÓDIGO" style="padding:9px;border:1.5px solid var(--border);border-radius:8px;text-transform:uppercase">
         <input id="set-nome" placeholder="Nome do setor" style="padding:9px;border:1.5px solid var(--border);border-radius:8px">
         <button class="btn btn-sec" onclick="criarSetor()">＋</button>
+      </div>
+    </div>
+    <div class="panel">
+      <h3>💳 Condições de pagamento</h3>
+      <div class="hint" style="margin-bottom:8px">Opções do select de Condição de pagamento da OC.</div>
+      <div id="cond-lista"></div>
+      <div style="display:grid;grid-template-columns:90px 1fr auto;gap:8px;margin-top:10px">
+        <input id="cond-cod" placeholder="CÓDIGO" style="padding:9px;border:1.5px solid var(--border);border-radius:8px;text-transform:uppercase">
+        <input id="cond-nome" placeholder="Nome (ex.: 45 dias)" style="padding:9px;border:1.5px solid var(--border);border-radius:8px">
+        <button class="btn btn-sec" onclick="criarCondicao()">＋</button>
       </div>
     </div>
   </div>
@@ -280,19 +291,35 @@ window.addEventListener('load', async ()=>{
   renderSetorChips();
   addItem();
 
-  // Gate aprovador: a fila responde 403 para quem não tem compras_aprovar
-  try{
-    const fila = await api('/compras/api/pendentes-aprovacao');
-    PODE_APROVAR=true;
-    document.getElementById('tab-aprovar').style.display='';
-    atualizarBadge(fila.length);
-  }catch(e){ PODE_APROVAR=false; }
-  // Gate config: alçadas exigem compras_aprovar
-  try{ await api('/compras/api/alcadas'); PODE_CONFIG=true; document.getElementById('tab-config').style.display=''; }
-  catch(e){ PODE_CONFIG=false; }
-
+  await revalidarGates();
   carregarResumo(); carregarLista(); carregarApoios();
 });
+
+/* Permissões sempre renovadas do servidor (mesmo princípio do permsDB do
+   mobile): no load E sempre que a página volta ao foco. Se a gestão
+   desmarcar Aprovar/Alçadas no painel, as abas somem sem precisar
+   fechar e reabrir o app. */
+async function revalidarGates(){
+  const tA=document.getElementById('tab-aprovar');
+  const tC=document.getElementById('tab-config');
+  try{
+    const fila = await api('/compras/api/pendentes-aprovacao');
+    PODE_APROVAR=true; tA.style.display='';
+    atualizarBadge(fila.length);
+  }catch(e){
+    PODE_APROVAR=false; tA.style.display='none'; atualizarBadge(0);
+    if (document.getElementById('tela-aprovar').classList.contains('on')) irTab('lista');
+  }
+  try{
+    await api('/compras/api/alcadas');
+    PODE_CONFIG=true; tC.style.display='';
+  }catch(e){
+    PODE_CONFIG=false; tC.style.display='none';
+    if (document.getElementById('tela-config').classList.contains('on')) irTab('lista');
+  }
+}
+document.addEventListener('visibilitychange', ()=>{ if(!document.hidden) revalidarGates(); });
+window.addEventListener('focus', ()=>revalidarGates());
 
 function atualizarBadge(n){
   const b=document.getElementById('badge-fila'), t=document.getElementById('tab-aprovar-n');
@@ -300,7 +327,13 @@ function atualizarBadge(n){
   t.textContent = n>0?('('+n+')'):'';
 }
 
+let CONDICOES=[];
 async function carregarApoios(){
+  try{ CONDICOES = await api('/compras/api/condicoes'); }catch(e){ CONDICOES=[]; }
+  const nc=document.getElementById('n-cond');
+  nc.innerHTML = CONDICOES.length
+    ? CONDICOES.map(c=>`<option value="${c.codigo}">${c.nome}</option>`).join('')
+    : '<option value="30D">30 dias</option>';
   try{ FORNECEDORES = await api('/manutencao/api/fornecedores'); }catch(e){ FORNECEDORES=[]; }
   const nf=document.getElementById('n-fornecedor');
   nf.innerHTML='<option value="">Selecionar / gestão decide</option><option value="__avulso__">✎ Avulso — digitar (site, loja não cadastrada)</option>';
@@ -499,11 +532,11 @@ async function abrirDetalhe(id){
 
   let acoes='';
   const st=o.status;
-  if (st==='rascunho') acoes+=`<button class="btn btn-sec" onclick="editarOC('${o.id}')">✏️ Editar</button>
-    <button class="btn btn-cta" onclick="acao('${o.id}','solicitar')">Solicitar aprovação →</button>`;
-  if (st==='solicitada'){
-    acoes+=`<button class="btn btn-sec" onclick="editarOC('${o.id}')">✏️ Editar</button>`;
-    if (PODE_APROVAR) acoes+=`<button class="btn btn-no" onclick="rejeitar('${o.id}')">✕ Rejeitar</button>
+  if (o.pode_editar) acoes+=`<button class="btn btn-sec" onclick="editarOC('${o.id}')">✏️ Editar</button>`;
+  if (o.pode_excluir) acoes+=`<button class="btn btn-no" onclick="excluirOC('${o.id}','${o.numero}')">🗑 Excluir</button>`;
+  if (st==='rascunho') acoes+=`<button class="btn btn-cta" onclick="acao('${o.id}','solicitar')">Solicitar aprovação →</button>`;
+  if (st==='solicitada' && PODE_APROVAR){
+    acoes+=`<button class="btn btn-no" onclick="rejeitar('${o.id}')">✕ Rejeitar</button>
       <button class="btn btn-ok" onclick="acao('${o.id}','aprovar')">✓ Aprovar</button>`;
   }
   if (st==='aprovada') acoes+=`<button class="btn btn-sec" onclick="window.print()">🖨 Imprimir/PDF</button>
@@ -569,6 +602,18 @@ async function _cancelar(id){
   }catch(e){ toast(e.message,'err'); }
 }
 
+async function excluirOC(id, numero){ return guard(()=>_excluirOC(id, numero), window.event); }
+async function _excluirOC(id, numero){
+  if (!confirm('Excluir a '+numero+'?\n\nEla some das listas (fica registrada no banco com trilha). Só é possível antes da aprovação.')) return;
+  try{
+    await api('/compras/api/ocs/'+id,{method:'DELETE'});
+    toast('🗑 '+numero+' excluída','ok');
+    document.getElementById('modal-det').classList.remove('on');
+    carregarLista(); carregarResumo();
+    if (PODE_APROVAR){ try{ const f=await api('/compras/api/pendentes-aprovacao'); atualizarBadge(f.length);}catch(e){} }
+  }catch(e){ toast(e.message,'err'); }
+}
+
 async function editarOC(id){
   let o;
   try{ o=await api('/compras/api/ocs/'+id); }catch(e){ toast(e.message,'err'); return; }
@@ -582,7 +627,7 @@ async function editarOC(id){
   toggleAvulso();
   document.getElementById('n-ot').value=o.ot_id||'';
   document.getElementById('n-prio').value=o.prioridade||'normal';
-  document.getElementById('n-cond').value=o.condicao_pagamento||'30D';
+  document.getElementById('n-cond').value=o.condicao_pagamento||(CONDICOES[0]&&CONDICOES[0].codigo)||'30D';
   document.getElementById('n-obs').value=o.observacao||'';
   document.getElementById('n-itens').innerHTML='';
   (o.itens||[]).forEach(i=>addItem(i));
@@ -693,9 +738,39 @@ async function carregarConfig(){
   try{
     const sets=await api('/compras/api/setores');
     document.getElementById('set-lista').innerHTML=sets.map(s=>
-      `<div class="alc-row" style="grid-template-columns:80px 1fr"><b>${s.codigo}</b><span><span class="dot" style="background:${s.cor||'#64748B'};display:inline-block;margin-right:6px"></span>${s.nome}</span></div>`).join('');
+      `<div class="alc-row" style="grid-template-columns:80px 1fr auto"><b>${s.codigo}</b><span><span class="dot" style="background:${s.cor||'#64748B'};display:inline-block;margin-right:6px"></span>${s.nome}</span><button class="del" title="Desativar" onclick="desativarSetor('${s.codigo}','${s.nome}')">✕</button></div>`).join('');
+  }catch(e){}
+  try{
+    const conds=await api('/compras/api/condicoes');
+    document.getElementById('cond-lista').innerHTML=conds.map(c=>
+      `<div class="alc-row" style="grid-template-columns:90px 1fr auto"><b>${c.codigo}</b><span>${c.nome}</span><button class="del" title="Desativar" onclick="desativarCondicao('${c.codigo}','${c.nome}')">✕</button></div>`).join('');
   }catch(e){}
 }
+
+async function desativarSetor(cod, nome){ return guard(async ()=>{
+  if(!confirm('Desativar o setor '+nome+'? Some dos selects; OCs antigas continuam no histórico.')) return;
+  try{ await api('/compras/api/setores/'+cod,{method:'PATCH',body:JSON.stringify({ativo:false})});
+    toast('Setor desativado','ok'); SETORES=await api('/compras/api/setores'); renderSetorChips(); carregarConfig();
+  }catch(e){ toast(e.message,'err'); }
+}, window.event); }
+
+async function desativarCondicao(cod, nome){ return guard(async ()=>{
+  if(!confirm('Desativar a condição '+nome+'?')) return;
+  try{ await api('/compras/api/condicoes/'+cod,{method:'PATCH',body:JSON.stringify({ativo:false})});
+    toast('Condição desativada','ok'); carregarApoios(); carregarConfig();
+  }catch(e){ toast(e.message,'err'); }
+}, window.event); }
+
+async function criarCondicao(){ return guard(async ()=>{
+  const cod=document.getElementById('cond-cod').value.trim().toUpperCase();
+  const nome=document.getElementById('cond-nome').value.trim();
+  if(!cod||!nome){ toast('Código e nome da condição','warn'); return; }
+  try{ await api('/compras/api/condicoes',{method:'POST',body:JSON.stringify({codigo:cod,nome})});
+    toast('Condição criada','ok');
+    document.getElementById('cond-cod').value=''; document.getElementById('cond-nome').value='';
+    carregarApoios(); carregarConfig();
+  }catch(e){ toast(e.message,'err'); }
+}, window.event); }
 
 async function salvarAlcadas(){ return guard(_salvarAlcadas, window.event); }
 async function _salvarAlcadas(){
