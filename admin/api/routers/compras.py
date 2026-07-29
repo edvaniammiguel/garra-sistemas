@@ -93,6 +93,16 @@ async def _ve_todas(payload):
     return await _tem_permissao(payload, "compras_aprovar")
 
 
+async def _alcada_efetiva(payload):
+    """Alçada usada nos gates de aprovação. Perfil ADMIN (Master) aprova
+    livre, sem exigir cadastro (decisão 29/07/2026). Demais usuários:
+    somente com linha ativa em compras.alcadas."""
+    if (payload.get("perfil") or "").lower() == "admin":
+        return (True, None)
+    uid = await _usuario_id(payload)
+    return await _alcada_do_usuario(uid)
+
+
 async def _alcada_do_usuario(uid):
     """Retorna (tem_alcada, valor_limite). valor_limite None = sem limite.
     Sem linha em compras.alcadas = sem alçada nenhuma."""
@@ -366,11 +376,15 @@ async def resumo_compras(_auth=Depends(verificar_compras)):
 
 @router.get("/compras/api/pendentes-aprovacao")
 async def fila_aprovacao(payload=Depends(verificar_compras_aprovador)):
-    """Fila do aprovador: OCs solicitadas dentro da alçada dele."""
-    uid = await _usuario_id(payload)
-    tem, limite = await _alcada_do_usuario(uid)
+    """Fila do aprovador: OCs solicitadas dentro da alçada dele.
+    Permissão de aprovar SEM alçada cadastrada = não aprova nada, então o
+    gate nega (403) e a aba Aprovar nem aparece no app — em vez de exibir
+    uma fila eternamente vazia (incoerência apontada em produção)."""
+    tem, limite = await _alcada_efetiva(payload)
     if not tem:
-        return []
+        raise HTTPException(
+            status_code=403,
+            detail="Você tem permissão de aprovar, mas ainda não tem alçada cadastrada — peça à gestão em Compras → Alçadas")
     where, params = ["oc.ativo=true", "oc.status='solicitada'"], []
     if limite is not None:
         params.append(limite)
@@ -500,7 +514,7 @@ async def solicitar_aprovacao(oc_id: str, payload=Depends(verificar_compras)):
         (oc_id,), fetch="none")
     await _trilha(oc_id, oc["status"], "solicitada", "Aprovação solicitada", uid)
 
-    tem, limite = await _alcada_do_usuario(uid)
+    tem, limite = await _alcada_efetiva(payload)
     if _valor_dentro_alcada(oc["valor_total"], tem, limite):
         await ajard_query(
             """UPDATE compras.ordens_compra
@@ -530,11 +544,15 @@ async def aprovar_oc(oc_id: str, request: Request,
         raise HTTPException(status_code=400,
                             detail=f"Transição inválida: {oc['status']} → aprovada")
     uid = await _usuario_id(payload)
-    tem, limite = await _alcada_do_usuario(uid)
+    tem, limite = await _alcada_efetiva(payload)
+    if not tem:
+        raise HTTPException(
+            status_code=403,
+            detail="Você ainda não tem alçada cadastrada — cadastre em ⚙️ Alçadas (gestão)")
     if not _valor_dentro_alcada(oc["valor_total"], tem, limite):
         raise HTTPException(
             status_code=403,
-            detail="Valor acima da sua alçada de aprovação")
+            detail=f"Valor acima da sua alçada de aprovação (limite R$ {float(limite):,.2f})")
     await ajard_query(
         """UPDATE compras.ordens_compra
            SET status='aprovada', aprovador_id=%s, data_aprovacao=now(),
