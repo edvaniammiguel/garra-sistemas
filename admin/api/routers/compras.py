@@ -68,10 +68,27 @@ async def verificar_compras(payload=Depends(verificar_token)):
     raise HTTPException(status_code=403, detail="Sem permissão para o módulo Compras")
 
 
+async def verificar_compras_gestor(payload=Depends(verificar_token)):
+    """Parametrização do módulo (alçadas, setores, condições): SOMENTE gestão
+    (perfis admin/gestor/luana). Quem aprova OC não configura alçada — inclusive
+    a própria."""
+    if (payload.get("perfil") or "").lower() in _PERFIS_COMPRAS:
+        return payload
+    raise HTTPException(status_code=403, detail="Somente a gestão configura o módulo Compras")
+
+
 async def verificar_compras_aprovador(payload=Depends(verificar_token)):
     if await _tem_permissao(payload, "compras_aprovar"):
         return payload
     raise HTTPException(status_code=403, detail="Sem permissão para aprovar compras")
+
+
+async def _ve_todas(payload):
+    """Gestão ou aprovador enxergam todas as OCs; solicitante comum,
+    apenas as que ele mesmo criou (em qualquer tela — mobile ou desktop)."""
+    if (payload.get("perfil") or "").lower() in _PERFIS_COMPRAS:
+        return True
+    return await _tem_permissao(payload, "compras_aprovar")
 
 
 async def _alcada_do_usuario(uid):
@@ -125,7 +142,7 @@ async def listar_setores(_auth=Depends(verificar_compras)):
 
 
 @router.post("/compras/api/setores")
-async def criar_setor(request: Request, _auth=Depends(verificar_compras_aprovador)):
+async def criar_setor(request: Request, _auth=Depends(verificar_compras_gestor)):
     d = await request.json()
     codigo = (d.get("codigo") or "").strip().upper()
     nome = (d.get("nome") or "").strip()
@@ -140,7 +157,7 @@ async def criar_setor(request: Request, _auth=Depends(verificar_compras_aprovado
 
 @router.patch("/compras/api/setores/{codigo}")
 async def editar_setor(codigo: str, request: Request,
-                       _auth=Depends(verificar_compras_aprovador)):
+                       _auth=Depends(verificar_compras_gestor)):
     d = await request.json()
     updates, params = [], []
     for c in ("nome", "cor", "ativo"):
@@ -156,10 +173,51 @@ async def editar_setor(codigo: str, request: Request,
     return {"ok": True}
 
 
+# ── CONDIÇÕES DE PAGAMENTO (parametrização — Regra 63) ───────
+
+@router.get("/compras/api/condicoes")
+async def listar_condicoes(_auth=Depends(verificar_compras)):
+    rows = await ajard_query(
+        "SELECT * FROM compras.condicoes_pagamento WHERE ativo=true ORDER BY nome")
+    return [dict(r) for r in rows]
+
+
+@router.post("/compras/api/condicoes")
+async def criar_condicao(request: Request, _auth=Depends(verificar_compras_gestor)):
+    d = await request.json()
+    codigo = (d.get("codigo") or "").strip().upper().replace(" ", "_")
+    nome = (d.get("nome") or "").strip()
+    if not codigo or not nome:
+        raise HTTPException(status_code=400, detail="Código e nome são obrigatórios")
+    await ajard_query(
+        """INSERT INTO compras.condicoes_pagamento (codigo, nome)
+           VALUES (%s,%s) ON CONFLICT (codigo) DO UPDATE SET nome=EXCLUDED.nome, ativo=true""",
+        (codigo, nome), fetch="none")
+    return {"ok": True, "codigo": codigo}
+
+
+@router.patch("/compras/api/condicoes/{codigo}")
+async def editar_condicao(codigo: str, request: Request,
+                          _auth=Depends(verificar_compras_gestor)):
+    d = await request.json()
+    updates, params = [], []
+    for c in ("nome", "ativo"):
+        if c in d:
+            updates.append(f"{c}=%s")
+            params.append(d[c])
+    if not updates:
+        return {"ok": True}
+    params.append(codigo)
+    await ajard_query(
+        f"UPDATE compras.condicoes_pagamento SET {', '.join(updates)} WHERE codigo=%s",
+        params, fetch="none")
+    return {"ok": True}
+
+
 # ── ALÇADAS (parametrização) ──────────────────────────────────
 
 @router.get("/compras/api/alcadas")
-async def listar_alcadas(_auth=Depends(verificar_compras_aprovador)):
+async def listar_alcadas(_auth=Depends(verificar_compras_gestor)):
     rows = await ajard_query(
         """SELECT a.*, u.nome AS usuario_nome, u.login AS usuario_login, u.perfil
            FROM compras.alcadas a
@@ -169,7 +227,7 @@ async def listar_alcadas(_auth=Depends(verificar_compras_aprovador)):
 
 
 @router.post("/compras/api/alcadas")
-async def salvar_alcada(request: Request, _auth=Depends(verificar_compras_aprovador)):
+async def salvar_alcada(request: Request, _auth=Depends(verificar_compras_gestor)):
     """Cria/atualiza a alçada de um usuário.
     valor_limite null no body = sem limite; ativo=false desativa."""
     d = await request.json()
@@ -250,6 +308,10 @@ async def listar_ocs(status: str = None, setor: str = None,
                      fornecedor_id: str = None, mes: str = None,
                      _auth=Depends(verificar_compras)):
     where, params = ["oc.ativo=true"], []
+    if not await _ve_todas(_auth):
+        uid = await _usuario_id(_auth)
+        params.append(uid)
+        where.append("oc.solicitante_id=%s")
     if status:
         params.append(status)
         where.append("oc.status=%s")
@@ -282,7 +344,12 @@ async def listar_ocs(status: str = None, setor: str = None,
 
 @router.get("/compras/api/resumo")
 async def resumo_compras(_auth=Depends(verificar_compras)):
-    r = await ajard_query("""
+    filtro, params = "", []
+    if not await _ve_todas(_auth):
+        uid = await _usuario_id(_auth)
+        filtro = " AND solicitante_id=%s"
+        params = [uid]
+    r = await ajard_query(f"""
         SELECT
           COUNT(*) FILTER (WHERE status='solicitada')                    AS aguardando_aprovacao,
           COUNT(*) FILTER (WHERE status='aprovada')                      AS aprovadas,
@@ -291,7 +358,7 @@ async def resumo_compras(_auth=Depends(verificar_compras)):
                            AND date_trunc('month',criado_em)=date_trunc('month',now())) AS recebidas_mes,
           COALESCE(SUM(valor_total) FILTER (WHERE status IN ('aprovada','enviada','recebida_parcial','recebida')
                            AND date_trunc('month',criado_em)=date_trunc('month',now())),0) AS valor_mes
-        FROM compras.ordens_compra WHERE ativo=true""", fetch="one")
+        FROM compras.ordens_compra WHERE ativo=true{filtro}""", params, fetch="one")
     return dict(r)
 
 
@@ -339,6 +406,10 @@ async def detalhe_oc(oc_id: str, _auth=Depends(verificar_compras)):
            WHERE oc.id=%s AND oc.ativo=true""", (oc_id,), fetch="one")
     if not oc:
         raise HTTPException(status_code=404, detail="OC não encontrada")
+    if not await _ve_todas(_auth):
+        uid = await _usuario_id(_auth)
+        if str(oc.get("solicitante_id") or "") != str(uid):
+            raise HTTPException(status_code=404, detail="OC não encontrada")
     itens = await ajard_query(
         """SELECT * FROM compras.oc_itens
            WHERE oc_id=%s AND ativo=true ORDER BY ordem""", (oc_id,))
@@ -350,6 +421,12 @@ async def detalhe_oc(oc_id: str, _auth=Depends(verificar_compras)):
     d = dict(oc)
     d["itens"] = [dict(i) for i in itens]
     d["historico"] = [dict(h) for h in hist]
+    uid = await _usuario_id(_auth)
+    eh_dono = bool(uid) and str(oc.get("solicitante_id") or "") == str(uid)
+    eh_gestor = await _tem_permissao(_auth, "compras_aprovar")
+    editavel = oc["status"] in ("rascunho", "solicitada")
+    d["pode_editar"] = editavel and (eh_dono or eh_gestor)
+    d["pode_excluir"] = editavel and (eh_dono or eh_gestor)
     return d
 
 
@@ -358,13 +435,18 @@ async def editar_oc(oc_id: str, request: Request, payload=Depends(verificar_comp
     """Edição só em rascunho ou solicitada. Se vier 'itens', substitui a lista."""
     d = await request.json()
     oc = await ajard_query(
-        "SELECT id, status FROM compras.ordens_compra WHERE id=%s AND ativo=true",
+        "SELECT id, status, solicitante_id FROM compras.ordens_compra WHERE id=%s AND ativo=true",
         (oc_id,), fetch="one")
     if not oc:
         raise HTTPException(status_code=404, detail="OC não encontrada")
     if oc["status"] not in ("rascunho", "solicitada"):
         raise HTTPException(status_code=400,
                             detail=f"OC em '{oc['status']}' não pode mais ser editada")
+    uid = await _usuario_id(payload)
+    eh_dono = bool(uid) and str(oc.get("solicitante_id") or "") == str(uid)
+    if not eh_dono and not await _tem_permissao(payload, "compras_aprovar"):
+        raise HTTPException(status_code=403,
+                            detail="Só quem solicitou (ou a gestão) pode editar esta OC")
 
     campos = ["setor_codigo", "fornecedor_id", "fornecedor_avulso", "ot_id",
               "equipamento_id", "prioridade", "condicao_pagamento", "observacao"]
@@ -590,6 +672,31 @@ async def cancelar_oc(oc_id: str, request: Request,
     await _trilha(oc_id, oc["status"], "cancelada",
                   (d.get("motivo") or "").strip() or "OC cancelada", uid)
     return {"ok": True, "status": "cancelada"}
+
+
+@router.delete("/compras/api/ocs/{oc_id}")
+async def excluir_oc(oc_id: str, payload=Depends(verificar_compras)):
+    """Exclusão (soft delete) pelo próprio solicitante enquanto a OC ainda
+    não foi aprovada (rascunho/solicitada), ou pela gestão (compras_aprovar).
+    A OC some das listas mas permanece no banco com trilha."""
+    oc = await ajard_query(
+        "SELECT id, numero, status, solicitante_id FROM compras.ordens_compra WHERE id=%s AND ativo=true",
+        (oc_id,), fetch="one")
+    if not oc:
+        raise HTTPException(status_code=404, detail="OC não encontrada")
+    if oc["status"] not in ("rascunho", "solicitada"):
+        raise HTTPException(status_code=400,
+                            detail=f"OC em '{oc['status']}' não pode ser excluída — use Cancelar")
+    uid = await _usuario_id(payload)
+    eh_dono = bool(uid) and str(oc.get("solicitante_id") or "") == str(uid)
+    if not eh_dono and not await _tem_permissao(payload, "compras_aprovar"):
+        raise HTTPException(status_code=403,
+                            detail="Só quem solicitou (ou a gestão) pode excluir esta OC")
+    await ajard_query(
+        "UPDATE compras.ordens_compra SET ativo=false, atualizado_em=now() WHERE id=%s",
+        (oc_id,), fetch="none")
+    await _trilha(oc_id, oc["status"], "excluida", "OC excluída pelo solicitante/gestão", uid)
+    return {"ok": True}
 
 
 # ── INTELIGÊNCIA: último preço pago ───────────────────────────
