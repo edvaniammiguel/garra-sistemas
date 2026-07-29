@@ -6,7 +6,9 @@ import requests as req_lib
 from .config import SUPABASE_URL, SUPABASE_SERVICE_KEY, BUCKET_ATUAL, BUCKET_NAME
 
 # ── SUPABASE STORAGE ──────────────────────────────────────────
-def storage_upload(dados: bytes, path: str) -> str:
+def storage_upload(dados: bytes, path: str, content_type: str = "image/jpeg") -> str:
+    """content_type opcional (default image/jpeg — retrocompatível com todas as
+    chamadas existentes). Anexos de OC usam application/pdf ou image/*."""
     if not SUPABASE_URL or not SUPABASE_SERVICE_KEY:
         raise ValueError("Supabase não configurado")
     # Fotos novas vão para o bucket unificado 'garra-fotos'
@@ -14,7 +16,7 @@ def storage_upload(dados: bytes, path: str) -> str:
     headers = {
         "Authorization": f"Bearer {SUPABASE_SERVICE_KEY}",
         "apikey": SUPABASE_SERVICE_KEY,
-        "Content-Type": "image/jpeg",
+        "Content-Type": content_type or "image/jpeg",
         "x-upsert": "true"
     }
     r = req_lib.post(url, headers=headers, data=dados, timeout=30)
