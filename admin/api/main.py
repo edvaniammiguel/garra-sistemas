@@ -1286,6 +1286,18 @@ async def criar_schema_compras():
             ALTER TABLE compras.ordens_compra
               ADD COLUMN IF NOT EXISTS fornecedor_avulso TEXT""", fetch="none")
         await ajard_query("""
+            CREATE TABLE IF NOT EXISTS compras.condicoes_pagamento (
+                codigo TEXT PRIMARY KEY,
+                nome TEXT NOT NULL,
+                ativo BOOLEAN DEFAULT TRUE
+            )""", fetch="none")
+        for cod, nome in [("AV","À vista"),("PIX","PIX à vista"),("30D","30 dias"),
+                          ("30_60D","30/60 dias"),("BOL","Boleto")]:
+            await ajard_query("""
+                INSERT INTO compras.condicoes_pagamento (codigo,nome)
+                VALUES (%s,%s) ON CONFLICT (codigo) DO NOTHING""",
+                (cod,nome), fetch="none")
+        await ajard_query("""
             UPDATE compras.setores SET ativo=false WHERE codigo='EPI'""", fetch="none")
         await ajard_query("""
             CREATE INDEX IF NOT EXISTS ix_oc_status
