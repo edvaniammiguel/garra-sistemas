@@ -1737,12 +1737,13 @@ const MODULOS = [
   { id:'checklist_logistica', label:'Logística (Checklist)', desc:'Aba de carros de apoio dentro do Checklist' },
   { id:'compras_solicitar',   label:'Compras — Solicitar', desc:'Criar cotações e OCs, enviar e receber' },
   { id:'compras_aprovar',     label:'Compras — Aprovar',   desc:'Aprovar/rejeitar OCs (limitado pela alçada)' },
+  { id:'compras_alcadas',     label:'Compras — Alçadas',   desc:'Configurar alçadas, setores e condições (gestão)' },
 ];
 
 const PERFIL_PADRAO = {
-  admin:     ['admin_master','jardinagem_desktop','jardinagem_mobile','operacional_mobile','checklist','checklist_logistica','manutencao','compras_solicitar','compras_aprovar'],
-  gestor:    ['admin_master','jardinagem_desktop','operacional_mobile','manutencao','compras_solicitar','compras_aprovar'],
-  luana:     ['admin_master','jardinagem_desktop','operacional_mobile','compras_solicitar','compras_aprovar'],
+  admin:     ['admin_master','jardinagem_desktop','jardinagem_mobile','operacional_mobile','checklist','checklist_logistica','manutencao','compras_solicitar','compras_aprovar','compras_alcadas'],
+  gestor:    ['admin_master','jardinagem_desktop','operacional_mobile','manutencao','compras_solicitar','compras_aprovar','compras_alcadas'],
+  luana:     ['admin_master','jardinagem_desktop','operacional_mobile','compras_solicitar','compras_aprovar','compras_alcadas'],
   bruna:     ['admin_master','checklist','manutencao','compras_solicitar','compras_aprovar'],
   operador:  ['operacional_mobile','checklist'],
   motorista: ['operacional_mobile','checklist'],
