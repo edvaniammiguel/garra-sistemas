@@ -1303,6 +1303,21 @@ async def criar_schema_compras():
             CREATE INDEX IF NOT EXISTS ix_oc_status
               ON compras.ordens_compra (status)""", fetch="none")
         await ajard_query("""
+            CREATE TABLE IF NOT EXISTS compras.oc_anexos (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                oc_id UUID NOT NULL,
+                nome TEXT NOT NULL,
+                caminho TEXT NOT NULL,
+                content_type TEXT,
+                tamanho INT,
+                enviado_por UUID,
+                ativo BOOLEAN DEFAULT TRUE,
+                criado_em TIMESTAMPTZ DEFAULT now()
+            )""", fetch="none")
+        await ajard_query("""
+            CREATE INDEX IF NOT EXISTS ix_oc_anexos_oc
+              ON compras.oc_anexos (oc_id)""", fetch="none")
+        await ajard_query("""
             CREATE INDEX IF NOT EXISTS ix_oc_itens_oc
               ON compras.oc_itens (oc_id)""", fetch="none")
         print("[Startup] schema compras OK")
