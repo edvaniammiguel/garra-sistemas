@@ -753,5 +753,11 @@ async def pagina_compras():
     ]
     for p in candidatos:
         if os.path.isfile(p):
-            return open(p, encoding="utf-8").read()
+            # no-store: navegador NUNCA cacheia o HTML da página — atualização
+            # de permissão/gates chega ao aparelho na hora (lição do PWA:
+            # "fix não chega ao aparelho" por cache heurístico do Chrome).
+            return HTMLResponse(
+                open(p, encoding="utf-8").read(),
+                headers={"Cache-Control": "no-store, no-cache, must-revalidate",
+                         "Pragma": "no-cache"})
     raise HTTPException(status_code=404, detail="Página do módulo Compras não encontrada")
