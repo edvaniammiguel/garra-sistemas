@@ -2718,6 +2718,18 @@ async function excluirMinhaParte(parteId) {
     if (typeof toast === 'function') toast('🗑️ Registro excluído', 'success');
     verPartes(window._vpOsId, window._vpOsNum);
   } catch (e) {
+    // (27/07/2026) Sem rede: exclusão vai para a fila e executa ao conectar
+    const ehRede = (e instanceof TypeError) || /failed to fetch|network/i.test(e.message || '');
+    if (ehRede && typeof GarraDB !== 'undefined') {
+      try {
+        await GarraDB.postWithQueue('/operacional/api/minhas-partes/' + parteId,
+          null, { method: 'DELETE', retries: 5, retryDelay: 30000, dedup: false });
+        document.getElementById('modal-editar-parte')?.remove();
+        document.getElementById('modal-ver-partes')?.remove();
+        toast('⚠️ Sem conexão — exclusão será feita quando o sinal voltar', 'info');
+        return;
+      } catch (qe) { /* fila indisponível — mostra erro abaixo */ }
+    }
     const err = document.getElementById('ep-err');
     if (err) { err.textContent = e.message; err.style.display = 'block'; }
   }
@@ -2775,6 +2787,18 @@ async function salvarEdicaoParte(parteId, med) {
     if (typeof toast === 'function') toast('✅ Registro corrigido' + (resp.horas_trabalhadas != null ? ` — ${resp.horas_trabalhadas}h` : ''), 'success');
     verPartes(window._vpOsId, window._vpOsNum);
   } catch (e) {
+    // (27/07/2026) Sem rede: correção vai para a fila e aplica ao conectar
+    const ehRede = (e instanceof TypeError) || /failed to fetch|network/i.test(e.message || '');
+    if (ehRede && typeof GarraDB !== 'undefined') {
+      try {
+        await GarraDB.postWithQueue('/operacional/api/minhas-partes/' + parteId,
+          body, { method: 'PATCH', retries: 5, retryDelay: 30000, dedup: false });
+        document.getElementById('modal-editar-parte')?.remove();
+        document.getElementById('modal-ver-partes')?.remove();
+        toast('⚠️ Sem conexão — correção será aplicada quando o sinal voltar', 'info');
+        return;
+      } catch (qe) { /* fila indisponível — mostra erro abaixo */ }
+    }
     err.textContent = e.message;
     err.style.display = 'block';
   }
