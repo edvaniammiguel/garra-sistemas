@@ -1,0 +1,694 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Compras · Garra Sistemas</title>
+<style>
+:root{
+  --blue:#1A2A5E; --blue2:#001F4D; --orange:#E8820C; --orange2:#D4700A;
+  --bg:#F0F4FF; --white:#fff; --border:#CBD5E1; --text:#1E293B;
+  --muted:#64748B; --green:#16A34A; --red:#DC2626; --amber:#D97706;
+}
+*{margin:0;padding:0;box-sizing:border-box;font-family:system-ui,-apple-system,sans-serif}
+body{background:var(--bg);color:var(--text);padding-bottom:70px}
+header{background:var(--blue);border-bottom:3px solid var(--orange);color:#fff;padding:12px 16px;display:flex;align-items:center;gap:10px;position:sticky;top:0;z-index:40}
+header .voltar{background:rgba(255,255,255,.15);border:none;color:#fff;border-radius:8px;padding:7px 11px;font-size:15px;cursor:pointer}
+header b{font-size:16px}
+header .badge-fila{background:var(--red);border-radius:99px;padding:1px 8px;font-size:12px;font-weight:800;margin-left:4px;display:none}
+.wrap{max-width:1100px;margin:0 auto;padding:14px}
+.tabs{display:flex;gap:6px;margin-bottom:14px;overflow-x:auto;-webkit-overflow-scrolling:touch}
+.tabs button{flex-shrink:0;background:#fff;border:1.5px solid var(--border);color:var(--muted);border-radius:99px;padding:8px 16px;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap}
+.tabs button.on{background:var(--orange);border-color:var(--orange);color:#fff}
+.tela{display:none}.tela.on{display:block}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:14px}
+.kcard{background:#fff;border:1px solid var(--border);border-radius:10px;padding:12px}
+.kcard .n{font-size:20px;font-weight:800;color:var(--blue)}
+.kcard .l{font-size:11px;color:var(--muted);margin-top:2px}
+.kcard.warn .n{color:var(--amber)}.kcard.money .n{color:var(--green)}
+.filtros{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+.filtros select,.filtros input{padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:#fff}
+.btn{border:none;border-radius:8px;padding:10px 16px;font-weight:700;font-size:14px;cursor:pointer}
+.btn-cta{background:var(--orange);color:#fff}
+.btn-sec{background:#fff;color:var(--blue);border:1px solid var(--border)}
+.btn-ok{background:var(--green);color:#fff}
+.btn-no{background:#fff;color:var(--red);border:1px solid var(--red)}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+.oc-card{background:#fff;border:1px solid var(--border);border-radius:12px;padding:13px;margin-bottom:10px;cursor:pointer}
+.oc-card:hover{border-color:var(--orange)}
+.oc-card .top{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap}
+.oc-num{font-weight:800;color:var(--blue);font-size:14px}
+.tag{display:inline-block;padding:3px 10px;border-radius:99px;font-size:11px;font-weight:700}
+.st-rascunho{background:#F1F5F9;color:#475569}.st-solicitada{background:#FEF3C7;color:#92400E}
+.st-aprovada{background:#DBEAFE;color:#1E40AF}.st-enviada{background:#EDE9FE;color:#5B21B6}
+.st-recebida_parcial{background:#FFEDD5;color:#9A3412}.st-recebida{background:#DCFCE7;color:#166534}
+.st-rejeitada{background:#FEE2E2;color:#991B1B}.st-cancelada{background:#F1F5F9;color:#64748B}
+.setor{display:inline-flex;align-items:center;gap:5px;font-weight:700;font-size:12px}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--muted)}
+.badge-urg{background:var(--red);color:#fff;border-radius:6px;padding:2px 7px;font-size:10px;font-weight:800}
+.oc-meta{font-size:12px;color:var(--muted);margin-top:5px}
+.oc-val{font-size:16px;font-weight:800;color:var(--blue);margin-top:4px}
+.fld{margin-bottom:12px}
+.fld label{display:block;font-size:11px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:5px}
+.fld input,.fld select,.fld textarea{width:100%;padding:11px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;background:#fff}
+.chip-row{display:flex;gap:7px;flex-wrap:wrap}
+.chip{padding:9px 14px;border:2px solid var(--border);border-radius:10px;font-size:13px;font-weight:700;background:#fff;color:var(--muted);cursor:pointer}
+.chip.sel{border-color:var(--orange);color:var(--orange2);background:#FFF7ED}
+.item-row{background:#fff;border:1px solid var(--border);border-radius:10px;padding:10px;margin-bottom:8px;display:grid;grid-template-columns:1fr;gap:8px;position:relative}
+.item-row .lin2{display:grid;grid-template-columns:70px 64px 1fr auto;gap:8px;align-items:center}
+.item-row input{padding:10px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;width:100%}
+.item-row .tot{font-weight:800;color:var(--blue);font-size:13px;text-align:right;min-width:82px}
+.item-row .del{background:none;border:none;color:var(--red);font-size:18px;cursor:pointer;padding:0 4px}
+.hint{font-size:11px;color:var(--muted);margin-top:3px}
+.hint b{color:var(--green)}
+.tot-geral{display:flex;justify-content:space-between;align-items:center;background:#fff;border:1px solid var(--border);border-radius:10px;padding:12px 14px;margin:12px 0;font-size:14px}
+.tot-geral b{font-size:19px;color:var(--blue)}
+.panel{background:#fff;border:1px solid var(--border);border-radius:12px;padding:16px;margin-bottom:14px}
+.panel h3{font-size:14px;color:var(--blue);border-bottom:2px solid var(--orange);padding-bottom:8px;margin-bottom:12px}
+.modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.5);display:none;z-index:100;align-items:flex-end;justify-content:center}
+.modal-bg.on{display:flex}
+.modal{background:#fff;width:100%;max-width:640px;border-radius:14px 14px 0 0;padding:18px;max-height:92dvh;overflow-y:auto}
+@media(min-width:700px){.modal-bg.on{align-items:center}.modal{border-radius:14px}}
+.modal .mh{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
+.modal .mh h2{font-size:16px;color:var(--blue)}
+.modal .fechar{background:none;border:none;font-size:26px;color:var(--muted);cursor:pointer;line-height:1}
+.trilha{border-left:3px solid #E2E8F0;padding-left:12px;margin-top:8px}
+.trilha .ev{font-size:12px;margin-bottom:8px}
+.trilha .ev b{color:var(--blue)}
+.trilha .ev .quando{color:var(--muted)}
+.item-view{display:flex;justify-content:space-between;gap:8px;padding:8px 0;border-bottom:1px solid #F1F5F9;font-size:13px}
+.item-view .rec{font-size:11px;color:var(--muted)}
+.acoes{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}
+.acoes .btn{flex:1;min-width:120px}
+#toast{position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:var(--blue);color:#fff;padding:11px 18px;border-radius:10px;font-size:13px;font-weight:600;display:none;z-index:200;max-width:92vw;text-align:center}
+#toast.warn{background:var(--amber)}#toast.err{background:var(--red)}#toast.ok{background:var(--green)}
+.vazio{text-align:center;color:var(--muted);padding:30px 10px;font-size:13px}
+.rec-grid{display:grid;grid-template-columns:1fr 90px;gap:8px;align-items:center;margin-bottom:8px}
+.rec-grid input{padding:9px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;width:100%}
+.alc-row{display:grid;grid-template-columns:1fr 130px 60px;gap:8px;align-items:center;padding:8px 0;border-bottom:1px solid #F1F5F9;font-size:13px}
+.alc-row input[type=number]{padding:8px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;width:100%;text-align:right}
+.spin{display:inline-block;width:14px;height:14px;border:2px solid #cbd5e1;border-top-color:var(--orange);border-radius:50%;animation:sp .7s linear infinite;vertical-align:middle}
+@keyframes sp{to{transform:rotate(360deg)}}
+@media print{
+  header,.tabs,.acoes,.filtros,.cards,.btn{display:none!important}
+  body{background:#fff;padding:0}
+  .modal-bg{position:static;background:#fff;display:block!important}
+  .modal{max-width:100%;max-height:none;box-shadow:none}
+}
+</style>
+</head>
+<body>
+
+<header>
+  <button class="voltar" onclick="voltar()">←</button>
+  <b>🛒 Compras</b>
+  <span class="badge-fila" id="badge-fila">0</span>
+  <span style="flex:1"></span>
+  <span id="hdr-user" style="font-size:12px;opacity:.85"></span>
+</header>
+
+<div class="wrap">
+  <div class="tabs">
+    <button class="on" id="tab-lista" onclick="irTab('lista')">📋 OCs</button>
+    <button id="tab-nova" onclick="irTab('nova')">＋ Nova OC</button>
+    <button id="tab-aprovar" onclick="irTab('aprovar')" style="display:none">✅ Aprovar <span id="tab-aprovar-n"></span></button>
+    <button id="tab-config" onclick="irTab('config')" style="display:none">⚙️ Alçadas</button>
+  </div>
+
+  <!-- ═══ LISTA ═══ -->
+  <div class="tela on" id="tela-lista">
+    <div class="cards" id="resumo-cards"></div>
+    <div class="filtros">
+      <select id="f-setor" onchange="carregarLista()"><option value="">Setor: Todos</option></select>
+      <select id="f-status" onchange="carregarLista()">
+        <option value="">Status: Todos</option>
+        <option value="rascunho">Rascunho</option><option value="solicitada">Solicitada</option>
+        <option value="aprovada">Aprovada</option><option value="enviada">Enviada</option>
+        <option value="recebida_parcial">Recebida parcial</option><option value="recebida">Recebida</option>
+        <option value="rejeitada">Rejeitada</option><option value="cancelada">Cancelada</option>
+      </select>
+      <input type="month" id="f-mes" onchange="carregarLista()">
+    </div>
+    <div id="lista-ocs"><div class="vazio"><span class="spin"></span> Carregando...</div></div>
+  </div>
+
+  <!-- ═══ NOVA OC ═══ -->
+  <div class="tela" id="tela-nova">
+    <div class="panel">
+      <h3 id="nova-titulo">＋ Nova Ordem de Compra</h3>
+      <div class="fld"><label>Setor *</label><div class="chip-row" id="n-setores"></div></div>
+      <div class="fld" id="n-ot-wrap" style="display:none"><label>Vincular à OT (Manutenção)</label>
+        <select id="n-ot"><option value="">Sem vínculo</option></select>
+        <div class="hint">Ao receber, o custo entra automaticamente no total da OT.</div>
+      </div>
+      <div class="fld"><label>Fornecedor</label>
+        <select id="n-fornecedor"><option value="">Selecionar / gestão decide</option></select>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <div class="fld"><label>Condição de pagamento</label>
+          <select id="n-cond"><option>30D</option><option>AV</option><option>30/60D</option><option>PIX à vista</option><option>Boleto</option></select>
+        </div>
+        <div class="fld"><label>Prioridade</label>
+          <select id="n-prio"><option value="normal">Normal</option><option value="urgente">🔥 Urgente</option></select>
+        </div>
+      </div>
+      <div class="fld"><label>Itens *</label><div id="n-itens"></div>
+        <button class="btn btn-sec" style="width:100%" onclick="addItem()">＋ Adicionar item</button>
+      </div>
+      <div class="tot-geral"><span>Total da OC</span><b id="n-total">R$ 0,00</b></div>
+      <div class="fld"><label>Observação</label><textarea id="n-obs" rows="2" placeholder="Entrega, referência, detalhes..."></textarea></div>
+      <div class="acoes">
+        <button class="btn btn-sec" onclick="salvarOC(false)">💾 Salvar cotação (rascunho)</button>
+        <button class="btn btn-cta" onclick="salvarOC(true)">Solicitar aprovação →</button>
+      </div>
+      <div class="hint" style="margin-top:8px">Rascunho = cotação, não autoriza compra. Dentro da sua alçada, "Solicitar" aprova e emite em 1 passo.</div>
+    </div>
+  </div>
+
+  <!-- ═══ APROVAR ═══ -->
+  <div class="tela" id="tela-aprovar">
+    <div id="fila-aprovar"><div class="vazio"><span class="spin"></span> Carregando fila...</div></div>
+  </div>
+
+  <!-- ═══ CONFIG (Alçadas + Setores) ═══ -->
+  <div class="tela" id="tela-config">
+    <div class="panel">
+      <h3>⚙️ Alçadas de aprovação</h3>
+      <div class="hint" style="margin-bottom:10px">Valor até o qual cada pessoa aprova sozinha. Vazio = sem alçada (não aprova). Marque "∞" para sem limite. OC dentro da alçada do criador é aprovada em 1 passo.</div>
+      <div id="alc-lista"><div class="vazio"><span class="spin"></span></div></div>
+      <button class="btn btn-cta" style="width:100%;margin-top:10px" onclick="salvarAlcadas()">💾 Salvar alçadas</button>
+    </div>
+    <div class="panel">
+      <h3>🏷 Setores de compra</h3>
+      <div id="set-lista"></div>
+      <div style="display:grid;grid-template-columns:90px 1fr auto;gap:8px;margin-top:10px">
+        <input id="set-cod" placeholder="CÓDIGO" style="padding:9px;border:1.5px solid var(--border);border-radius:8px;text-transform:uppercase">
+        <input id="set-nome" placeholder="Nome do setor" style="padding:9px;border:1.5px solid var(--border);border-radius:8px">
+        <button class="btn btn-sec" onclick="criarSetor()">＋</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ MODAL DETALHE ═══ -->
+<div class="modal-bg" id="modal-det">
+  <div class="modal" id="modal-det-body"></div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+/* ══ SSO (Regra 60, padrão módulo Manutenção) ══ */
+(function(){
+  try{
+    const sso = new URLSearchParams(location.search).get('sso');
+    if (sso && sso.length > 10) {
+      sessionStorage.setItem('garra_oc_token', sso);
+      history.replaceState(null,'',location.pathname);
+    }
+  }catch(e){}
+})();
+function ocToken(){
+  return sessionStorage.getItem('garra_oc_token') || localStorage.getItem('garra_token') || '';
+}
+if (!ocToken()) location.replace('/mobile');
+
+async function api(path, opts){
+  const r = await fetch(path, Object.assign({}, opts, {
+    headers: Object.assign({'Content-Type':'application/json','Authorization':'Bearer '+ocToken()}, (opts&&opts.headers)||{})
+  }));
+  if (r.status===401){ toast('Sessão expirada — faça login novamente','warn'); setTimeout(()=>location.replace('/mobile'),1200); throw new Error('401'); }
+  const j = await r.json().catch(()=>({}));
+  if (!r.ok){ const e=new Error(j.detail||('Erro '+r.status)); e.status=r.status; throw e; }
+  return j;
+}
+
+function toast(msg, tipo){
+  const t=document.getElementById('toast');
+  t.textContent=msg; t.className=tipo||''; t.style.display='block';
+  clearTimeout(t._h); t._h=setTimeout(()=>t.style.display='none',3200);
+}
+function fmt(v){ return 'R$ '+Number(v||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2}); }
+function fmtData(d){ if(!d) return ''; const x=new Date(d); return isNaN(x)?'':x.toLocaleDateString('pt-BR')+' '+x.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}); }
+const ST_LABEL={rascunho:'Rascunho',solicitada:'Solicitada',aprovada:'Aprovada',enviada:'Enviada',
+  recebida_parcial:'Recebida parcial',recebida:'Recebida',rejeitada:'Rejeitada',cancelada:'Cancelada'};
+
+/* ══ ESTADO ══ */
+let SETORES=[], FORNECEDORES=[], OTS=[], PODE_APROVAR=false, PODE_CONFIG=false;
+let _setorSel=null, _editandoOC=null;
+
+function voltar(){
+  if (sessionStorage.getItem('garra_oc_token') && !localStorage.getItem('garra_token')) location.href='/admin';
+  else location.href='/mobile';
+}
+
+function irTab(nome){
+  document.querySelectorAll('.tela').forEach(t=>t.classList.remove('on'));
+  document.querySelectorAll('.tabs button').forEach(b=>b.classList.remove('on'));
+  document.getElementById('tela-'+nome).classList.add('on');
+  document.getElementById('tab-'+nome).classList.add('on');
+  if (nome==='lista') carregarLista();
+  if (nome==='aprovar') carregarFila();
+  if (nome==='config') carregarConfig();
+}
+
+/* ══ BOOT ══ */
+window.addEventListener('load', async ()=>{
+  try{ SETORES = await api('/compras/api/setores'); }
+  catch(e){
+    if (e.status===403){ alert('Seu usuário não tem permissão para o módulo Compras. Solicite acesso ao administrador.'); voltar(); return; }
+    toast('Falha ao carregar — verifique a conexão','err'); return;
+  }
+  const fs=document.getElementById('f-setor');
+  SETORES.forEach(s=>{ const o=document.createElement('option'); o.value=s.codigo; o.textContent=s.nome; fs.appendChild(o); });
+  document.getElementById('f-mes').value = new Date().toISOString().slice(0,7);
+  renderSetorChips();
+  addItem();
+
+  // Gate aprovador: a fila responde 403 para quem não tem compras_aprovar
+  try{
+    const fila = await api('/compras/api/pendentes-aprovacao');
+    PODE_APROVAR=true;
+    document.getElementById('tab-aprovar').style.display='';
+    atualizarBadge(fila.length);
+  }catch(e){ PODE_APROVAR=false; }
+  // Gate config: alçadas exigem compras_aprovar
+  try{ await api('/compras/api/alcadas'); PODE_CONFIG=true; document.getElementById('tab-config').style.display=''; }
+  catch(e){ PODE_CONFIG=false; }
+
+  carregarResumo(); carregarLista(); carregarApoios();
+});
+
+function atualizarBadge(n){
+  const b=document.getElementById('badge-fila'), t=document.getElementById('tab-aprovar-n');
+  b.textContent=n; b.style.display = n>0?'inline-block':'none';
+  t.textContent = n>0?('('+n+')'):'';
+}
+
+async function carregarApoios(){
+  try{ FORNECEDORES = await api('/manutencao/api/fornecedores'); }catch(e){ FORNECEDORES=[]; }
+  const nf=document.getElementById('n-fornecedor');
+  nf.innerHTML='<option value="">Selecionar / gestão decide</option>';
+  FORNECEDORES.forEach(f=>{ const o=document.createElement('option'); o.value=f.id; o.textContent=f.nome; nf.appendChild(o); });
+  try{ OTS = await api('/manutencao/api/ots?status=aberta'); }catch(e){ OTS=[]; }
+  try{ const o2 = await api('/manutencao/api/ots?status=em_andamento'); OTS=OTS.concat(o2); }catch(e){}
+  try{ const o3 = await api('/manutencao/api/ots?status=aguardando_peca'); OTS=OTS.concat(o3); }catch(e){}
+  const no=document.getElementById('n-ot');
+  no.innerHTML='<option value="">Sem vínculo</option>';
+  OTS.forEach(t=>{ const o=document.createElement('option'); o.value=t.id;
+    o.textContent=t.numero+' · '+(t.equipamento_codigo||'')+' · '+(t.descricao||'').slice(0,40); no.appendChild(o); });
+}
+
+/* ══ RESUMO + LISTA ══ */
+async function carregarResumo(){
+  try{
+    const r = await api('/compras/api/resumo');
+    document.getElementById('resumo-cards').innerHTML = `
+      <div class="kcard warn"><div class="n">${r.aguardando_aprovacao}</div><div class="l">Aguardando aprovação</div></div>
+      <div class="kcard"><div class="n">${r.aprovadas}</div><div class="l">Aprovadas p/ enviar</div></div>
+      <div class="kcard"><div class="n">${r.aguardando_entrega}</div><div class="l">Aguardando entrega</div></div>
+      <div class="kcard money"><div class="n">${fmt(r.valor_mes)}</div><div class="l">Comprado no mês</div></div>`;
+  }catch(e){}
+}
+
+async function carregarLista(){
+  const el=document.getElementById('lista-ocs');
+  el.innerHTML='<div class="vazio"><span class="spin"></span> Carregando...</div>';
+  const p=new URLSearchParams();
+  const s=document.getElementById('f-setor').value; if(s) p.set('setor',s);
+  const st=document.getElementById('f-status').value; if(st) p.set('status',st);
+  const m=document.getElementById('f-mes').value; if(m) p.set('mes',m);
+  try{
+    const ocs = await api('/compras/api/ocs?'+p.toString());
+    if(!ocs.length){ el.innerHTML='<div class="vazio">Nenhuma OC no filtro. Toque em ＋ Nova OC para criar.</div>'; return; }
+    el.innerHTML = ocs.map(cardOC).join('');
+  }catch(e){ el.innerHTML='<div class="vazio">Erro ao carregar: '+e.message+'</div>'; }
+}
+
+function cardOC(o){
+  return `<div class="oc-card" onclick="abrirDetalhe('${o.id}')">
+    <div class="top">
+      <span class="oc-num">${o.numero}${o.prioridade==='urgente'?' <span class="badge-urg">URGENTE</span>':''}</span>
+      <span class="tag st-${o.status}">${ST_LABEL[o.status]||o.status}</span>
+    </div>
+    <div class="top" style="margin-top:6px">
+      <span class="setor"><span class="dot" style="background:${o.setor_cor||'#64748B'}"></span>${o.setor_nome}</span>
+      <span style="font-size:12px;color:var(--muted)">${o.fornecedor_nome||'— fornecedor a definir'}</span>
+    </div>
+    <div class="oc-meta">${o.solicitante_nome||''}${o.ot_numero?(' · '+o.ot_numero):''}${o.equipamento_codigo?(' · '+o.equipamento_codigo):''}${o.nf_numero?(' · NF '+o.nf_numero):''}</div>
+    <div class="oc-val">${fmt(o.valor_total)}</div>
+  </div>`;
+}
+
+/* ══ NOVA OC ══ */
+function renderSetorChips(){
+  const el=document.getElementById('n-setores');
+  el.innerHTML = SETORES.map(s=>`<div class="chip${_setorSel===s.codigo?' sel':''}" onclick="selSetor('${s.codigo}')">${s.nome}</div>`).join('');
+}
+function selSetor(cod){
+  _setorSel=cod; renderSetorChips();
+  document.getElementById('n-ot-wrap').style.display = (cod==='MANUT')?'':'none';
+}
+
+let _itemSeq=0;
+function addItem(dados){
+  _itemSeq++;
+  const id='it'+_itemSeq;
+  const div=document.createElement('div');
+  div.className='item-row'; div.id=id;
+  div.innerHTML=`
+    <div><input placeholder="Descrição do item" class="i-desc" value="${(dados&&dados.descricao)||''}" oninput="dicaPreco(this,'${id}')"><div class="hint" id="${id}-hint"></div></div>
+    <div class="lin2">
+      <input placeholder="Qtd" class="i-qtd" type="number" step="any" value="${(dados&&dados.quantidade)||1}" oninput="calcTotal()">
+      <input placeholder="Un" class="i-un" value="${(dados&&dados.unidade)||'UN'}">
+      <input placeholder="Vlr unit. R$" class="i-vlr" type="number" step="0.01" value="${(dados&&dados.valor_unit)||''}" oninput="calcTotal()">
+      <span class="tot" id="${id}-tot">R$ 0,00</span>
+    </div>
+    <button class="del" style="position:absolute;top:6px;right:8px" onclick="document.getElementById('${id}').remove();calcTotal()">✕</button>`;
+  document.getElementById('n-itens').appendChild(div);
+  calcTotal();
+}
+
+let _dicaTimer=null;
+function dicaPreco(inp, id){
+  clearTimeout(_dicaTimer);
+  const q=inp.value.trim();
+  const h=document.getElementById(id+'-hint');
+  if(q.length<3){ h.innerHTML=''; return; }
+  _dicaTimer=setTimeout(async ()=>{
+    try{
+      const r=await api('/compras/api/ultimo-preco?q='+encodeURIComponent(q));
+      if(r.length){ const u=r[0];
+        h.innerHTML=`Último preço: <b>${fmt(u.valor_unit)}</b> · ${u.fornecedor_nome||'—'} · ${new Date(u.data_compra).toLocaleDateString('pt-BR')}`;
+      } else h.innerHTML='';
+    }catch(e){ h.innerHTML=''; }
+  }, 450);
+}
+
+function lerItens(){
+  const itens=[];
+  document.querySelectorAll('#n-itens .item-row').forEach(r=>{
+    const desc=r.querySelector('.i-desc').value.trim();
+    if(!desc) return;
+    itens.push({descricao:desc,
+      quantidade:parseFloat(r.querySelector('.i-qtd').value)||1,
+      unidade:r.querySelector('.i-un').value.trim()||'UN',
+      valor_unit:parseFloat(r.querySelector('.i-vlr').value)||0});
+  });
+  return itens;
+}
+function calcTotal(){
+  let tot=0;
+  document.querySelectorAll('#n-itens .item-row').forEach(r=>{
+    const q=parseFloat(r.querySelector('.i-qtd').value)||0;
+    const v=parseFloat(r.querySelector('.i-vlr').value)||0;
+    r.querySelector('.tot').textContent=fmt(q*v);
+    tot+=q*v;
+  });
+  document.getElementById('n-total').textContent=fmt(tot);
+}
+
+async function salvarOC(solicitar){
+  if(!_setorSel){ toast('Escolha o setor da compra','warn'); return; }
+  const itens=lerItens();
+  if(!itens.length){ toast('Adicione ao menos 1 item com descrição','warn'); return; }
+  const body={ setor_codigo:_setorSel,
+    fornecedor_id: document.getElementById('n-fornecedor').value||null,
+    ot_id: (_setorSel==='MANUT'? (document.getElementById('n-ot').value||null):null),
+    prioridade: document.getElementById('n-prio').value,
+    condicao_pagamento: document.getElementById('n-cond').value,
+    observacao: document.getElementById('n-obs').value.trim()||null,
+    itens };
+  try{
+    let oc;
+    if (_editandoOC){
+      await api('/compras/api/ocs/'+_editandoOC,{method:'PATCH',body:JSON.stringify(body)});
+      oc={id:_editandoOC, numero:''};
+    } else {
+      oc = await api('/compras/api/ocs',{method:'POST',body:JSON.stringify(body)});
+    }
+    if (solicitar){
+      const r=await api('/compras/api/ocs/'+oc.id+'/solicitar',{method:'POST'});
+      if (r.auto_aprovada) toast('✅ '+(oc.numero||'OC')+' aprovada em 1 passo (dentro da sua alçada)','ok');
+      else toast('📨 '+(oc.numero||'OC')+' enviada para aprovação','ok');
+    } else {
+      toast('💾 Cotação salva como rascunho — não autoriza compra','ok');
+    }
+    limparNova(); irTab('lista'); carregarResumo();
+    if (PODE_APROVAR) { try{ const f=await api('/compras/api/pendentes-aprovacao'); atualizarBadge(f.length);}catch(e){} }
+  }catch(e){ toast(e.message,'err'); }
+}
+
+function limparNova(){
+  _editandoOC=null; _setorSel=null; renderSetorChips();
+  document.getElementById('nova-titulo').textContent='＋ Nova Ordem de Compra';
+  document.getElementById('n-ot-wrap').style.display='none';
+  document.getElementById('n-ot').value='';
+  document.getElementById('n-fornecedor').value='';
+  document.getElementById('n-prio').value='normal';
+  document.getElementById('n-obs').value='';
+  document.getElementById('n-itens').innerHTML='';
+  addItem();
+}
+
+/* ══ DETALHE + AÇÕES ══ */
+async function abrirDetalhe(id){
+  const bg=document.getElementById('modal-det');
+  const body=document.getElementById('modal-det-body');
+  body.innerHTML='<div class="vazio"><span class="spin"></span></div>';
+  bg.classList.add('on');
+  let o;
+  try{ o=await api('/compras/api/ocs/'+id); }
+  catch(e){ body.innerHTML='<div class="vazio">'+e.message+'</div>'; return; }
+
+  const itensHtml = o.itens.map(i=>`
+    <div class="item-view">
+      <div>${i.descricao}<div class="rec">${Number(i.quantidade)} ${i.unidade} × ${fmt(i.valor_unit)}${Number(i.qtd_recebida)>0?(' · recebido: '+Number(i.qtd_recebida)):''}</div></div>
+      <b>${fmt(i.quantidade*i.valor_unit)}</b>
+    </div>`).join('');
+  const trilhaHtml = (o.historico||[]).map(h=>`
+    <div class="ev"><b>${ST_LABEL[h.status_para]||h.status_para}</b> — ${h.usuario_nome||'sistema'} <span class="quando">· ${fmtData(h.criado_em)}</span>${h.observacao?('<br>'+h.observacao):''}</div>`).join('');
+
+  let acoes='';
+  const st=o.status;
+  if (st==='rascunho') acoes+=`<button class="btn btn-sec" onclick="editarOC('${o.id}')">✏️ Editar</button>
+    <button class="btn btn-cta" onclick="acao('${o.id}','solicitar')">Solicitar aprovação →</button>`;
+  if (st==='solicitada'){
+    acoes+=`<button class="btn btn-sec" onclick="editarOC('${o.id}')">✏️ Editar</button>`;
+    if (PODE_APROVAR) acoes+=`<button class="btn btn-no" onclick="rejeitar('${o.id}')">✕ Rejeitar</button>
+      <button class="btn btn-ok" onclick="acao('${o.id}','aprovar')">✓ Aprovar</button>`;
+  }
+  if (st==='aprovada') acoes+=`<button class="btn btn-sec" onclick="window.print()">🖨 Imprimir/PDF</button>
+    ${o.fornecedor_telefone?`<button class="btn btn-sec" onclick="whats('${o.id}')">📲 WhatsApp</button>`:''}
+    <button class="btn btn-cta" onclick="acao('${o.id}','enviar')">Marcar como enviada</button>`;
+  if (st==='enviada'||st==='recebida_parcial') acoes+=`<button class="btn btn-cta" onclick="abrirReceber('${o.id}')">📦 Registrar recebimento</button>`;
+  if (PODE_APROVAR && !['recebida','rejeitada','cancelada'].includes(st))
+    acoes+=`<button class="btn btn-no" onclick="cancelar('${o.id}')">Cancelar OC</button>`;
+
+  body.innerHTML=`
+    <div class="mh"><h2>${o.numero} <span class="tag st-${o.status}">${ST_LABEL[o.status]}</span></h2>
+      <button class="fechar" onclick="document.getElementById('modal-det').classList.remove('on')">×</button></div>
+    <div class="oc-meta" style="margin-bottom:4px">
+      <span class="setor"><span class="dot" style="background:${o.setor_cor||'#64748B'}"></span>${o.setor_nome}</span>
+      ${o.prioridade==='urgente'?' <span class="badge-urg">URGENTE</span>':''}
+    </div>
+    <div class="oc-meta">Fornecedor: <b>${o.fornecedor_nome||'a definir'}</b> · ${o.condicao_pagamento||''}${o.nf_numero?(' · NF '+o.nf_numero):''}</div>
+    <div class="oc-meta">Solicitante: ${o.solicitante_nome||'—'}${o.aprovador_nome?(' · Aprovou: '+o.aprovador_nome+' em '+fmtData(o.data_aprovacao)):''}</div>
+    ${o.ot_numero?('<div class="oc-meta">Vínculo: '+o.ot_numero+(o.equipamento_codigo?(' · '+o.equipamento_codigo):'')+'</div>'):''}
+    ${o.observacao?('<div class="oc-meta">Obs: '+o.observacao+'</div>'):''}
+    <div style="margin-top:10px">${itensHtml}</div>
+    <div class="tot-geral"><span>Total</span><b>${fmt(o.valor_total)}</b></div>
+    ${o.motivo_rejeicao?('<div class="oc-meta" style="color:var(--red)">Motivo da rejeição: '+o.motivo_rejeicao+'</div>'):''}
+    <div class="acoes">${acoes}</div>
+    <div style="margin-top:14px"><div style="font-size:11px;font-weight:800;color:var(--muted);text-transform:uppercase;margin-bottom:6px">Trilha</div>
+      <div class="trilha">${trilhaHtml||'<div class="ev">—</div>'}</div></div>`;
+}
+
+async function acao(id, verbo){
+  try{
+    const r=await api('/compras/api/ocs/'+id+'/'+verbo,{method:'POST',body:JSON.stringify({})});
+    if (verbo==='solicitar' && r.auto_aprovada) toast('✅ Aprovada em 1 passo (dentro da sua alçada)','ok');
+    else toast('✅ OK — '+(ST_LABEL[r.status]||r.status),'ok');
+    document.getElementById('modal-det').classList.remove('on');
+    carregarLista(); carregarResumo();
+    if (PODE_APROVAR){ try{ const f=await api('/compras/api/pendentes-aprovacao'); atualizarBadge(f.length);}catch(e){} }
+  }catch(e){ toast(e.message,'err'); }
+}
+
+async function rejeitar(id){
+  const motivo=prompt('Motivo da rejeição (obrigatório):');
+  if (motivo===null) return;
+  if (!motivo.trim()){ toast('Motivo é obrigatório','warn'); return; }
+  try{
+    await api('/compras/api/ocs/'+id+'/rejeitar',{method:'POST',body:JSON.stringify({motivo:motivo.trim()})});
+    toast('OC rejeitada com motivo registrado','ok');
+    document.getElementById('modal-det').classList.remove('on');
+    carregarLista(); carregarResumo(); carregarFila();
+  }catch(e){ toast(e.message,'err'); }
+}
+
+async function cancelar(id){
+  const motivo=prompt('Motivo do cancelamento (opcional):')||'';
+  if (!confirm('Cancelar esta OC? A ação não pode ser desfeita.')) return;
+  try{
+    await api('/compras/api/ocs/'+id+'/cancelar',{method:'POST',body:JSON.stringify({motivo})});
+    toast('OC cancelada','ok');
+    document.getElementById('modal-det').classList.remove('on');
+    carregarLista(); carregarResumo();
+  }catch(e){ toast(e.message,'err'); }
+}
+
+async function editarOC(id){
+  let o;
+  try{ o=await api('/compras/api/ocs/'+id); }catch(e){ toast(e.message,'err'); return; }
+  _editandoOC=id;
+  document.getElementById('modal-det').classList.remove('on');
+  irTab('nova');
+  document.getElementById('nova-titulo').textContent='✏️ Editar '+o.numero;
+  selSetor(o.setor_codigo);
+  document.getElementById('n-fornecedor').value=o.fornecedor_id||'';
+  document.getElementById('n-ot').value=o.ot_id||'';
+  document.getElementById('n-prio').value=o.prioridade||'normal';
+  document.getElementById('n-cond').value=o.condicao_pagamento||'30D';
+  document.getElementById('n-obs').value=o.observacao||'';
+  document.getElementById('n-itens').innerHTML='';
+  (o.itens||[]).forEach(i=>addItem(i));
+  if(!(o.itens||[]).length) addItem();
+}
+
+function whats(id){
+  api('/compras/api/ocs/'+id).then(o=>{
+    const linhas=o.itens.map(i=>`- ${Number(i.quantidade)} ${i.unidade} ${i.descricao} (${fmt(i.valor_unit)})`).join('\n');
+    const txt=`*ORDEM DE COMPRA ${o.numero} — Garra Terraplenagem*\nSetor: ${o.setor_nome}\n\n${linhas}\n\n*Total: ${fmt(o.valor_total)}*\nPagamento: ${o.condicao_pagamento||'-'}\n\nFavor citar o nº da OC na Nota Fiscal. Faturar somente conforme itens acima.`;
+    const fone=(o.fornecedor_telefone||'').replace(/\D/g,'');
+    const url='https://wa.me/'+(fone.length>=10?('55'+fone):'')+'?text='+encodeURIComponent(txt);
+    window.open(url,'_blank');
+  }).catch(e=>toast(e.message,'err'));
+}
+
+/* ══ RECEBIMENTO ══ */
+async function abrirReceber(id){
+  let o;
+  try{ o=await api('/compras/api/ocs/'+id); }catch(e){ toast(e.message,'err'); return; }
+  const body=document.getElementById('modal-det-body');
+  const linhas=o.itens.map(i=>{
+    const falta=Math.max(0, Number(i.quantidade)-Number(i.qtd_recebida||0));
+    return `<div class="rec-grid">
+      <div style="font-size:13px">${i.descricao}<div class="rec" style="font-size:11px;color:var(--muted)">pedido ${Number(i.quantidade)} ${i.unidade} · já recebido ${Number(i.qtd_recebida||0)} · falta ${falta}</div></div>
+      <input type="number" step="any" min="0" id="rec-${i.id}" value="${falta}" placeholder="Qtd">
+    </div>`;
+  }).join('');
+  body.innerHTML=`
+    <div class="mh"><h2>📦 Receber ${o.numero}</h2>
+      <button class="fechar" onclick="document.getElementById('modal-det').classList.remove('on')">×</button></div>
+    <div class="hint" style="margin-bottom:10px">Confira o que chegou. Item que não está na OC → NÃO receber. Quantidade informada é o recebido AGORA.</div>
+    ${linhas}
+    <div class="fld" style="margin-top:10px"><label>Nº da Nota Fiscal</label>
+      <input id="rec-nf" placeholder="NF do fornecedor" value="${o.nf_numero||''}"></div>
+    <div class="acoes">
+      <button class="btn btn-sec" onclick="abrirDetalhe('${o.id}')">← Voltar</button>
+      <button class="btn btn-cta" onclick="confirmarReceber('${o.id}')">Confirmar recebimento</button>
+    </div>`;
+}
+
+async function confirmarReceber(id){
+  let o;
+  try{ o=await api('/compras/api/ocs/'+id); }catch(e){ toast(e.message,'err'); return; }
+  const itens=[];
+  o.itens.forEach(i=>{
+    const el=document.getElementById('rec-'+i.id);
+    const q=parseFloat(el&&el.value)||0;
+    if(q>0) itens.push({item_id:i.id, qtd_recebida:q});
+  });
+  const nf=(document.getElementById('rec-nf').value||'').trim();
+  if(!itens.length && !nf){ toast('Informe quantidades recebidas ou a NF','warn'); return; }
+  try{
+    const r=await api('/compras/api/ocs/'+id+'/receber',{method:'POST',
+      body:JSON.stringify({nf_numero:nf||null, itens})});
+    toast(r.status==='recebida'?'✅ OC totalmente recebida':'📦 Recebimento parcial registrado','ok');
+    document.getElementById('modal-det').classList.remove('on');
+    carregarLista(); carregarResumo();
+  }catch(e){ toast(e.message,'err'); }
+}
+
+/* ══ FILA DE APROVAÇÃO ══ */
+async function carregarFila(){
+  const el=document.getElementById('fila-aprovar');
+  el.innerHTML='<div class="vazio"><span class="spin"></span></div>';
+  try{
+    const fila=await api('/compras/api/pendentes-aprovacao');
+    atualizarBadge(fila.length);
+    if(!fila.length){ el.innerHTML='<div class="vazio">Nenhuma OC aguardando sua aprovação 🎉</div>'; return; }
+    el.innerHTML=fila.map(o=>`
+      <div class="oc-card" onclick="abrirDetalhe('${o.id}')">
+        <div class="top"><span class="oc-num">${o.numero}${o.prioridade==='urgente'?' <span class="badge-urg">URGENTE</span>':''}</span>
+          <span class="setor"><span class="dot" style="background:${o.setor_cor||'#64748B'}"></span>${o.setor_nome}</span></div>
+        <div class="oc-meta">${o.solicitante_nome||''} · ${o.fornecedor_nome||'fornecedor a definir'}${o.ot_numero?(' · '+o.ot_numero):''}</div>
+        <div class="oc-val">${fmt(o.valor_total)}</div>
+        <div class="acoes" onclick="event.stopPropagation()">
+          <button class="btn btn-no" onclick="rejeitar('${o.id}')">✕ Rejeitar</button>
+          <button class="btn btn-ok" onclick="acao('${o.id}','aprovar')">✓ Aprovar</button>
+        </div>
+      </div>`).join('');
+  }catch(e){ el.innerHTML='<div class="vazio">'+e.message+'</div>'; }
+}
+
+/* ══ CONFIG: ALÇADAS + SETORES ══ */
+let _USUARIOS=[];
+async function carregarConfig(){
+  const el=document.getElementById('alc-lista');
+  el.innerHTML='<div class="vazio"><span class="spin"></span></div>';
+  try{
+    const alc=await api('/compras/api/alcadas');
+    try{ _USUARIOS=await api('/usuarios'); }catch(e){ _USUARIOS=[]; }
+    const mapa={}; alc.forEach(a=>mapa[a.usuario_id]=a);
+    const base=_USUARIOS.filter(u=>u.ativo!==false);
+    const lista=base.length?base:alc.map(a=>({id:a.usuario_id,nome:a.usuario_nome,perfil:a.perfil,ativo:true}));
+    el.innerHTML=`<div class="alc-row" style="font-weight:800;font-size:11px;color:var(--muted);text-transform:uppercase"><span>Usuário</span><span>Aprova até (R$)</span><span>∞</span></div>`+
+      lista.map(u=>{
+        const a=mapa[u.id]||{};
+        const semLimite=(u.id in mapa)&&a.ativo&&a.valor_limite==null;
+        return `<div class="alc-row" data-uid="${u.id}">
+          <span>${u.nome||u.login}<span style="color:var(--muted);font-size:11px"> · ${u.perfil||''}</span></span>
+          <input type="number" step="0.01" class="alc-vlr" value="${a.valor_limite!=null?a.valor_limite:''}" ${semLimite?'disabled':''} placeholder="—">
+          <input type="checkbox" class="alc-inf" ${semLimite?'checked':''} onchange="this.closest('.alc-row').querySelector('.alc-vlr').disabled=this.checked">
+        </div>`;
+      }).join('');
+  }catch(e){ el.innerHTML='<div class="vazio">'+e.message+'</div>'; }
+
+  try{
+    const sets=await api('/compras/api/setores');
+    document.getElementById('set-lista').innerHTML=sets.map(s=>
+      `<div class="alc-row" style="grid-template-columns:80px 1fr"><b>${s.codigo}</b><span><span class="dot" style="background:${s.cor||'#64748B'};display:inline-block;margin-right:6px"></span>${s.nome}</span></div>`).join('');
+  }catch(e){}
+}
+
+async function salvarAlcadas(){
+  const rows=document.querySelectorAll('#alc-lista .alc-row[data-uid]');
+  let n=0;
+  for (const r of rows){
+    const uid=r.getAttribute('data-uid');
+    const inf=r.querySelector('.alc-inf').checked;
+    const vlrTxt=r.querySelector('.alc-vlr').value;
+    if (!inf && vlrTxt==='') continue; // sem alçada — não grava
+    const body={usuario_id:uid, valor_limite: inf?null:parseFloat(vlrTxt), ativo:true};
+    try{ await api('/compras/api/alcadas',{method:'POST',body:JSON.stringify(body)}); n++; }
+    catch(e){ toast('Falha em uma alçada: '+e.message,'err'); }
+  }
+  toast('💾 '+n+' alçada(s) salvas','ok');
+}
+
+async function criarSetor(){
+  const cod=document.getElementById('set-cod').value.trim().toUpperCase();
+  const nome=document.getElementById('set-nome').value.trim();
+  if(!cod||!nome){ toast('Código e nome do setor','warn'); return; }
+  try{
+    await api('/compras/api/setores',{method:'POST',body:JSON.stringify({codigo:cod,nome})});
+    toast('Setor criado','ok');
+    document.getElementById('set-cod').value=''; document.getElementById('set-nome').value='';
+    SETORES=await api('/compras/api/setores'); renderSetorChips(); carregarConfig();
+  }catch(e){ toast(e.message,'err'); }
+}
+</script>
+</body>
+</html>
