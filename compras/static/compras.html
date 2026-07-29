@@ -142,7 +142,9 @@ header .badge-fila{background:var(--red);border-radius:99px;padding:1px 8px;font
         <div class="hint">Ao receber, o custo entra automaticamente no total da OT.</div>
       </div>
       <div class="fld"><label>Fornecedor</label>
-        <select id="n-fornecedor"><option value="">Selecionar / gestão decide</option></select>
+        <select id="n-fornecedor" onchange="toggleAvulso()"><option value="">Selecionar / gestão decide</option><option value="__avulso__">✎ Avulso — digitar (site, loja não cadastrada)</option></select>
+        <input id="n-forn-avulso" placeholder="Nome do fornecedor / site (ex.: Mercado Livre, Loja X)" style="display:none;margin-top:8px">
+        <div class="hint">Fornecedor recorrente? Cadastre no módulo pra ter histórico de preço e WhatsApp direto.</div>
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
         <div class="fld"><label>Condição de pagamento</label>
@@ -288,7 +290,7 @@ function atualizarBadge(n){
 async function carregarApoios(){
   try{ FORNECEDORES = await api('/manutencao/api/fornecedores'); }catch(e){ FORNECEDORES=[]; }
   const nf=document.getElementById('n-fornecedor');
-  nf.innerHTML='<option value="">Selecionar / gestão decide</option>';
+  nf.innerHTML='<option value="">Selecionar / gestão decide</option><option value="__avulso__">✎ Avulso — digitar (site, loja não cadastrada)</option>';
   FORNECEDORES.forEach(f=>{ const o=document.createElement('option'); o.value=f.id; o.textContent=f.nome; nf.appendChild(o); });
   try{ OTS = await api('/manutencao/api/ots?status=aberta'); }catch(e){ OTS=[]; }
   try{ const o2 = await api('/manutencao/api/ots?status=em_andamento'); OTS=OTS.concat(o2); }catch(e){}
@@ -412,13 +414,17 @@ async function salvarOC(solicitar){
   if(!_setorSel){ toast('Escolha o setor da compra','warn'); return; }
   const itens=lerItens();
   if(!itens.length){ toast('Adicione ao menos 1 item com descrição','warn'); return; }
+  const fsel=document.getElementById('n-fornecedor').value;
   const body={ setor_codigo:_setorSel,
-    fornecedor_id: document.getElementById('n-fornecedor').value||null,
+    fornecedor_id: (fsel && fsel!=='__avulso__') ? fsel : null,
+    fornecedor_avulso: (fsel==='__avulso__') ? (document.getElementById('n-forn-avulso').value.trim()||null) : null,
     ot_id: (_setorSel==='MANUT'? (document.getElementById('n-ot').value||null):null),
     prioridade: document.getElementById('n-prio').value,
     condicao_pagamento: document.getElementById('n-cond').value,
     observacao: document.getElementById('n-obs').value.trim()||null,
     itens };
+  const _btns=document.querySelectorAll('#tela-nova .acoes .btn');
+  _btns.forEach(b=>b.disabled=true);
   try{
     let oc;
     if (_editandoOC){
@@ -437,6 +443,12 @@ async function salvarOC(solicitar){
     limparNova(); irTab('lista'); carregarResumo();
     if (PODE_APROVAR) { try{ const f=await api('/compras/api/pendentes-aprovacao'); atualizarBadge(f.length);}catch(e){} }
   }catch(e){ toast(e.message,'err'); }
+  finally{ _btns.forEach(b=>b.disabled=false); }
+}
+
+function toggleAvulso(){
+  const av=document.getElementById('n-forn-avulso');
+  av.style.display = (document.getElementById('n-fornecedor').value==='__avulso__') ? '' : 'none';
 }
 
 function limparNova(){
@@ -445,6 +457,8 @@ function limparNova(){
   document.getElementById('n-ot-wrap').style.display='none';
   document.getElementById('n-ot').value='';
   document.getElementById('n-fornecedor').value='';
+  document.getElementById('n-forn-avulso').value='';
+  document.getElementById('n-forn-avulso').style.display='none';
   document.getElementById('n-prio').value='normal';
   document.getElementById('n-obs').value='';
   document.getElementById('n-itens').innerHTML='';
@@ -546,7 +560,9 @@ async function editarOC(id){
   irTab('nova');
   document.getElementById('nova-titulo').textContent='✏️ Editar '+o.numero;
   selSetor(o.setor_codigo);
-  document.getElementById('n-fornecedor').value=o.fornecedor_id||'';
+  document.getElementById('n-fornecedor').value = o.fornecedor_id || (o.fornecedor_avulso ? '__avulso__' : '');
+  document.getElementById('n-forn-avulso').value = o.fornecedor_avulso || '';
+  toggleAvulso();
   document.getElementById('n-ot').value=o.ot_id||'';
   document.getElementById('n-prio').value=o.prioridade||'normal';
   document.getElementById('n-cond').value=o.condicao_pagamento||'30D';
