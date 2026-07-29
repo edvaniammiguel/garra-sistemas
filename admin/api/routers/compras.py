@@ -216,11 +216,12 @@ async def criar_oc(request: Request, payload=Depends(verificar_compras)):
     uid = await _usuario_id(payload)
     row = await ajard_query_id(
         """INSERT INTO compras.ordens_compra
-              (numero, ano, sequencia, setor_codigo, fornecedor_id, ot_id,
-               equipamento_id, prioridade, condicao_pagamento, observacao,
+              (numero, ano, sequencia, setor_codigo, fornecedor_id, fornecedor_avulso,
+               ot_id, equipamento_id, prioridade, condicao_pagamento, observacao,
                solicitante_id)
-           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
         (numero, ano, int(seq["n"]), setor, d.get("fornecedor_id"),
+         (d.get("fornecedor_avulso") or "").strip() or None,
          d.get("ot_id"), d.get("equipamento_id"),
          d.get("prioridade", "normal"), d.get("condicao_pagamento"),
          d.get("observacao"), uid))
@@ -263,7 +264,7 @@ async def listar_ocs(status: str = None, setor: str = None,
         where.append("to_char(oc.criado_em,'YYYY-MM')=%s")
     rows = await ajard_query(
         f"""SELECT oc.*, se.nome AS setor_nome, se.cor AS setor_cor,
-                  fo.nome AS fornecedor_nome,
+                  COALESCE(fo.nome, oc.fornecedor_avulso) AS fornecedor_nome,
                   us.nome AS solicitante_nome, ua.nome AS aprovador_nome,
                   ot.numero AS ot_numero,
                   eq.codigo AS equipamento_codigo
@@ -307,7 +308,7 @@ async def fila_aprovacao(payload=Depends(verificar_compras_aprovador)):
         where.append("oc.valor_total<=%s")
     rows = await ajard_query(
         f"""SELECT oc.*, se.nome AS setor_nome, se.cor AS setor_cor,
-                  fo.nome AS fornecedor_nome, us.nome AS solicitante_nome,
+                  COALESCE(fo.nome, oc.fornecedor_avulso) AS fornecedor_nome, us.nome AS solicitante_nome,
                   ot.numero AS ot_numero, eq.codigo AS equipamento_codigo
            FROM compras.ordens_compra oc
            JOIN compras.setores se ON se.codigo = oc.setor_codigo
@@ -325,7 +326,7 @@ async def fila_aprovacao(payload=Depends(verificar_compras_aprovador)):
 async def detalhe_oc(oc_id: str, _auth=Depends(verificar_compras)):
     oc = await ajard_query(
         """SELECT oc.*, se.nome AS setor_nome, se.cor AS setor_cor,
-                  fo.nome AS fornecedor_nome, fo.telefone AS fornecedor_telefone,
+                  COALESCE(fo.nome, oc.fornecedor_avulso) AS fornecedor_nome, fo.telefone AS fornecedor_telefone,
                   us.nome AS solicitante_nome, ua.nome AS aprovador_nome,
                   ot.numero AS ot_numero, eq.codigo AS equipamento_codigo
            FROM compras.ordens_compra oc
@@ -365,8 +366,8 @@ async def editar_oc(oc_id: str, request: Request, payload=Depends(verificar_comp
         raise HTTPException(status_code=400,
                             detail=f"OC em '{oc['status']}' não pode mais ser editada")
 
-    campos = ["setor_codigo", "fornecedor_id", "ot_id", "equipamento_id",
-              "prioridade", "condicao_pagamento", "observacao"]
+    campos = ["setor_codigo", "fornecedor_id", "fornecedor_avulso", "ot_id",
+              "equipamento_id", "prioridade", "condicao_pagamento", "observacao"]
     updates, params = [], []
     for c in campos:
         if c in d:
@@ -602,7 +603,7 @@ async def ultimo_preco(q: str = "", _auth=Depends(verificar_compras)):
         return []
     rows = await ajard_query(
         """SELECT i.descricao, i.valor_unit, i.unidade,
-                  fo.nome AS fornecedor_nome, oc.criado_em::date AS data_compra
+                  COALESCE(fo.nome, oc.fornecedor_avulso) AS fornecedor_nome, oc.criado_em::date AS data_compra
            FROM compras.oc_itens i
            JOIN compras.ordens_compra oc ON oc.id = i.oc_id
            LEFT JOIN public.fornecedores fo ON fo.id = oc.fornecedor_id
