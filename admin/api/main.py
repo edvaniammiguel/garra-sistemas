@@ -760,6 +760,8 @@ app.include_router(sistema_router)
 app.include_router(pages_router)
 from routers.manutencao import router as manutencao_router  # v26
 app.include_router(manutencao_router)
+from routers.compras import router as compras_router  # v28 — Ordens de Compra
+app.include_router(compras_router)
 
 @app.on_event("startup")
 async def criar_tabela_checklist_config():
@@ -1151,3 +1153,96 @@ async def criar_schema_manutencao():
         print("[Startup] schema manutencao OK")
     except Exception as e:
         print(f"[Startup] manutencao: {e}")
+
+
+@app.on_event("startup")
+async def criar_schema_compras():
+    """MÓDULO COMPRAS — Ordens de Compra (v28).
+    OC abrange todo o negócio: cada OC tem SETOR (parametrizável).
+    Alçadas por usuário; aprovação = assinatura digital; recebimento
+    item a item; vínculo opcional com OT (soma custo) e, na fase 2,
+    com manutencao.pecas/estoque (peca_id já previsto em oc_itens)."""
+    try:
+        await ajard_query("CREATE SCHEMA IF NOT EXISTS compras", fetch="none")
+        await ajard_query("""
+            CREATE TABLE IF NOT EXISTS compras.setores (
+                codigo TEXT PRIMARY KEY,
+                nome TEXT NOT NULL,
+                cor TEXT,
+                ativo BOOLEAN DEFAULT TRUE
+            )""", fetch="none")
+        for cod, nome, cor in [("MANUT","Manutenção","#E8820C"),
+                               ("OPER","Operacional","#1E3A8A"),
+                               ("JARD","Jardinagem","#16A34A"),
+                               ("ADM","Administrativo","#64748B"),
+                               ("COMB","Combustível","#DC2626"),
+                               ("EPI","EPI","#7C3AED")]:
+            await ajard_query("""
+                INSERT INTO compras.setores (codigo,nome,cor)
+                VALUES (%s,%s,%s) ON CONFLICT (codigo) DO NOTHING""",
+                (cod,nome,cor), fetch="none")
+        await ajard_query("""
+            CREATE TABLE IF NOT EXISTS compras.alcadas (
+                usuario_id UUID PRIMARY KEY,
+                valor_limite NUMERIC(12,2),
+                ativo BOOLEAN DEFAULT TRUE,
+                criado_em TIMESTAMPTZ DEFAULT now(),
+                atualizado_em TIMESTAMPTZ
+            )""", fetch="none")
+        await ajard_query("""
+            CREATE TABLE IF NOT EXISTS compras.ordens_compra (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                numero TEXT UNIQUE,
+                ano INT, sequencia INT,
+                setor_codigo TEXT NOT NULL,
+                fornecedor_id UUID,
+                ot_id UUID,
+                equipamento_id UUID,
+                status TEXT DEFAULT 'rascunho',
+                prioridade TEXT DEFAULT 'normal',
+                condicao_pagamento TEXT,
+                observacao TEXT,
+                valor_total NUMERIC(12,2) DEFAULT 0,
+                nf_numero TEXT,
+                solicitante_id UUID,
+                aprovador_id UUID,
+                data_aprovacao TIMESTAMPTZ,
+                motivo_rejeicao TEXT,
+                enviado_por UUID,
+                enviado_em TIMESTAMPTZ,
+                link_pdf TEXT,
+                ativo BOOLEAN DEFAULT TRUE,
+                criado_em TIMESTAMPTZ DEFAULT now(),
+                atualizado_em TIMESTAMPTZ
+            )""", fetch="none")
+        await ajard_query("""
+            CREATE TABLE IF NOT EXISTS compras.oc_itens (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                oc_id UUID NOT NULL,
+                peca_id UUID,
+                descricao TEXT NOT NULL,
+                quantidade NUMERIC(12,3) DEFAULT 1,
+                unidade TEXT DEFAULT 'UN',
+                valor_unit NUMERIC(12,2) DEFAULT 0,
+                qtd_recebida NUMERIC(12,3) DEFAULT 0,
+                ordem INT DEFAULT 0,
+                ativo BOOLEAN DEFAULT TRUE
+            )""", fetch="none")
+        await ajard_query("""
+            CREATE TABLE IF NOT EXISTS compras.oc_historico (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                oc_id UUID NOT NULL,
+                status_de TEXT, status_para TEXT,
+                observacao TEXT,
+                usuario_id UUID,
+                criado_em TIMESTAMPTZ DEFAULT now()
+            )""", fetch="none")
+        await ajard_query("""
+            CREATE INDEX IF NOT EXISTS ix_oc_status
+              ON compras.ordens_compra (status)""", fetch="none")
+        await ajard_query("""
+            CREATE INDEX IF NOT EXISTS ix_oc_itens_oc
+              ON compras.oc_itens (oc_id)""", fetch="none")
+        print("[Startup] schema compras OK")
+    except Exception as e:
+        print(f"[Startup] compras: {e}")
