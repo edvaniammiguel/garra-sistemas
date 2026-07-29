@@ -16,6 +16,8 @@
 #   'compras_aprovar'   → aprovar/rejeitar (limitado pela alçada)
 # ══════════════════════════════════════════════════════════════
 from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import HTMLResponse
+import os
 
 from core.auth import verificar_token
 from core.db import ajard_query, ajard_query_id
@@ -610,3 +612,18 @@ async def ultimo_preco(q: str = "", _auth=Depends(verificar_compras)):
            ORDER BY oc.criado_em DESC LIMIT 5""",
         (f"%{q}%",))
     return [dict(r) for r in rows]
+
+
+# ── PÁGINA DO MÓDULO (desktop + mobile, SSO — Regra 60) ───────
+
+@router.get("/compras", response_class=HTMLResponse)
+async def pagina_compras():
+    raiz = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", "compras"))
+    candidatos = [
+        os.path.join(raiz, "static", "compras.html"),
+        os.path.join(raiz, "compras.html"),
+    ]
+    for p in candidatos:
+        if os.path.isfile(p):
+            return open(p, encoding="utf-8").read()
+    raise HTTPException(status_code=404, detail="Página do módulo Compras não encontrada")
