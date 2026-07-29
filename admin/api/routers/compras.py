@@ -69,10 +69,12 @@ async def verificar_compras(payload=Depends(verificar_token)):
 
 
 async def verificar_compras_gestor(payload=Depends(verificar_token)):
-    """Parametrização do módulo (alçadas, setores, condições): SOMENTE gestão
-    (perfis admin/gestor/luana). Quem aprova OC não configura alçada — inclusive
-    a própria."""
-    if (payload.get("perfil") or "").lower() in _PERFIS_COMPRAS:
+    """Parametrização do módulo (alçadas, setores, condições).
+    Permissão controla o acesso, não o perfil (princípio do sistema):
+    perfil de gestão passa por padrão, e o checkbox 'Compras — Alçadas'
+    no painel de Permissões concede/nega por exceção. Quem só aprova OC
+    não configura alçada — inclusive a própria."""
+    if await _tem_permissao(payload, "compras_alcadas"):
         return payload
     raise HTTPException(status_code=403, detail="Somente a gestão configura o módulo Compras")
 
