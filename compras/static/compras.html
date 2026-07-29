@@ -105,7 +105,7 @@ header .badge-fila{background:var(--red);border-radius:99px;padding:1px 8px;font
   <span class="badge-fila" id="badge-fila">0</span>
   <span style="flex:1"></span>
   <span id="hdr-user" style="font-size:12px;opacity:.85"></span>
-  <span style="font-size:10px;opacity:.6;margin-left:8px">v1.7</span>
+  <span style="font-size:10px;opacity:.6;margin-left:8px">v1.8</span>
 </header>
 
 <div class="wrap">
@@ -559,9 +559,11 @@ async function abrirDetalhe(id){
     acoes+=`<button class="btn btn-no" onclick="rejeitar('${o.id}')">✕ Rejeitar</button>
       <button class="btn btn-ok" onclick="acao('${o.id}','aprovar')">✓ Aprovar</button>`;
   }
-  if (st==='aprovada') acoes+=`<button class="btn btn-sec" onclick="imprimirOC('${o.id}')">🖨 Imprimir/PDF</button>
-    <button class="btn btn-cta" onclick="whats('${o.id}')">📲 Enviar por WhatsApp</button>
-    <button class="btn btn-sec" onclick="acao('${o.id}','enviar')">✔ Marcar enviada (outro canal)</button>`;
+  if (['aprovada','enviada','recebida_parcial','recebida'].includes(st)){
+    acoes+=`<button class="btn btn-sec" onclick="imprimirOC('${o.id}')">🖨 Imprimir/PDF</button>
+      <button class="btn ${st==='aprovada'?'btn-cta':'btn-sec'}" onclick="whats('${o.id}')">📲 ${st==='aprovada'?'Enviar':'Reenviar'} por WhatsApp</button>`;
+  }
+  if (st==='aprovada') acoes+=`<button class="btn btn-sec" onclick="acao('${o.id}','enviar')">✔ Marcar enviada (outro canal)</button>`;
   if (st==='enviada'||st==='recebida_parcial') acoes+=`<button class="btn btn-cta" onclick="abrirReceber('${o.id}')">📦 Registrar recebimento</button>`;
   if (PODE_APROVAR && !['recebida','rejeitada','cancelada'].includes(st))
     acoes+=`<button class="btn btn-no" onclick="cancelar('${o.id}')">Cancelar OC</button>`;
@@ -711,7 +713,7 @@ function imprimirOC(id){
       <div class="hdr">
         <div class="emp"><b>GARRA TERRAPLENAGEM E CAÇAMBAS</b>Pará de Minas – MG<br>contato@garraterraplenagem.com.br</div>
         <div class="oc"><span class="t">ORDEM DE COMPRA</span>
-          <div class="n"><b>${o.numero}</b> · ${fmtData(o.data_aprovacao||o.criado_em)}<br>Setor: ${o.setor_nome}${o.prioridade==='urgente'?' · Prioridade: URGENTE':''}</div></div>
+          <div class="n"><b>${o.numero}</b> · ${fmtData(o.data_aprovacao||o.criado_em)}<br>Setor: ${o.setor_nome}${o.prioridade==='urgente'?' · Prioridade: URGENTE':''}${o.nf_numero?('<br><b>NF '+o.nf_numero+'</b> · '+(ST_LABEL[o.status]||'')):''}</div></div>
       </div>
       <h3>Fornecedor</h3>
       <div><b>${o.fornecedor_nome||'A definir'}</b>${o.fornecedor_telefone?(' · '+o.fornecedor_telefone):''} · Condição: ${o.condicao_pagamento||'-'}</div>
