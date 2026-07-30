@@ -16,7 +16,7 @@
 #   'compras_aprovar'   → aprovar/rejeitar (limitado pela alçada)
 # ══════════════════════════════════════════════════════════════
 from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, StreamingResponse
 import os
 
 from core.auth import verificar_token
@@ -834,6 +834,140 @@ async def ultimo_preco(q: str = "", _auth=Depends(verificar_compras)):
            ORDER BY oc.criado_em DESC LIMIT 5""",
         (f"%{q}%",))
     return [dict(r) for r in rows]
+
+
+# ── RELATÓRIOS (período flexível × status × setor → Excel/JSON) ─
+# PDF é gerado no cliente pela janela de impressão (mesmo motor do
+# documento da OC) — sem dependência nova no deploy.
+
+async def _dados_relatorio(payload, inicio, fim, status, setor):
+    from datetime import date as _date
+    hoje = _date.today()
+    if not inicio:
+        inicio = hoje.replace(day=1).isoformat()
+    if not fim:
+        fim = hoje.isoformat()
+    where, params = ["oc.ativo=true", "oc.criado_em::date BETWEEN %s AND %s"], [inicio, fim]
+    if status:
+        params.append(status)
+        where.append("oc.status=%s")
+    if setor:
+        params.append(setor.upper())
+        where.append("oc.setor_codigo=%s")
+    if not await _ve_todas(payload):
+        uid = await _usuario_id(payload)
+        params.append(uid)
+        where.append("oc.solicitante_id=%s")
+    linhas = await ajard_query(
+        f"""SELECT oc.numero, oc.criado_em::date AS data, se.nome AS setor,
+                  oc.status, oc.prioridade,
+                  COALESCE(fo.nome, oc.fornecedor_avulso, '-') AS fornecedor,
+                  us.nome AS solicitante, ua.nome AS aprovador,
+                  oc.nf_numero, ot.numero AS ot_numero, oc.valor_total
+           FROM compras.ordens_compra oc
+           JOIN compras.setores se ON se.codigo = oc.setor_codigo
+           LEFT JOIN public.fornecedores fo ON fo.id = oc.fornecedor_id
+           LEFT JOIN public.usuarios_garra us ON us.id = oc.solicitante_id
+           LEFT JOIN public.usuarios_garra ua ON ua.id = oc.aprovador_id
+           LEFT JOIN manutencao.ot ot ON ot.id = oc.ot_id
+           WHERE {' AND '.join(where)}
+           ORDER BY oc.criado_em""", params)
+    linhas = [dict(l) for l in linhas]
+    por_setor, por_status = {}, {}
+    total = 0.0
+    for l in linhas:
+        v = float(l.get("valor_total") or 0)
+        total += v
+        por_setor[l["setor"]] = por_setor.get(l["setor"], 0) + v
+        por_status[l["status"]] = por_status.get(l["status"], 0) + v
+    return {"inicio": inicio, "fim": fim, "linhas": linhas, "total": total,
+            "por_setor": por_setor, "por_status": por_status}
+
+
+@router.get("/compras/api/relatorio")
+async def relatorio_compras(inicio: str = None, fim: str = None,
+                            status: str = None, setor: str = None,
+                            formato: str = "json",
+                            payload=Depends(verificar_compras)):
+    d = await _dados_relatorio(payload, inicio, fim, status, setor)
+    if formato != "excel":
+        return d
+
+    import io
+    import openpyxl
+    from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
+    from openpyxl.utils import get_column_letter
+
+    NAVY = "1A2A5E"
+    fino = Side(style="thin", color="CBD5E1")
+    borda = Border(left=fino, right=fino, top=fino, bottom=fino)
+    hfill = PatternFill("solid", fgColor=NAVY)
+    hfont = Font(bold=True, color="FFFFFF", size=10)
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "OCs"
+    ws.append([f"ORDENS DE COMPRA — {d['inicio']} a {d['fim']}"
+               + (f" · Status: {status}" if status else "")
+               + (f" · Setor: {setor}" if setor else "")])
+    ws["A1"].font = Font(bold=True, size=12, color=NAVY)
+    cab = ["Nº OC", "Data", "Setor", "Status", "Prioridade", "Fornecedor",
+           "Solicitante", "Aprovador", "NF", "OT", "Valor (R$)"]
+    ws.append(cab)
+    for i in range(1, len(cab) + 1):
+        c = ws.cell(row=2, column=i)
+        c.fill = hfill; c.font = hfont; c.border = borda
+        c.alignment = Alignment(horizontal="center")
+    for l in d["linhas"]:
+        ws.append([l["numero"], str(l["data"]), l["setor"], l["status"],
+                   l["prioridade"], l["fornecedor"], l["solicitante"],
+                   l["aprovador"] or "", l["nf_numero"] or "", l["ot_numero"] or "",
+                   float(l["valor_total"] or 0)])
+    ult = ws.max_row + 1
+    ws.cell(row=ult, column=10, value="TOTAL").font = Font(bold=True, color=NAVY)
+    tc = ws.cell(row=ult, column=11, value=d["total"])
+    tc.font = Font(bold=True, color=NAVY)
+    for row in ws.iter_rows(min_row=3, max_row=ult, max_col=11):
+        for c in row:
+            c.border = borda
+            if c.column == 11:
+                c.number_format = '#,##0.00'
+    larguras = [15, 11, 14, 15, 11, 24, 16, 16, 12, 14, 13]
+    for i, w in enumerate(larguras, start=1):
+        ws.column_dimensions[get_column_letter(i)].width = w
+
+    ws2 = wb.create_sheet("Resumo")
+    ws2.append(["RESUMO POR SETOR"]); ws2["A1"].font = Font(bold=True, color=NAVY)
+    ws2.append(["Setor", "Valor (R$)"])
+    for i in (1, 2):
+        c = ws2.cell(row=2, column=i); c.fill = hfill; c.font = hfont; c.border = borda
+    for s, v in sorted(d["por_setor"].items()):
+        ws2.append([s, v])
+    ws2.append([])
+    ini = ws2.max_row + 1
+    ws2.append(["RESUMO POR STATUS"]); ws2.cell(row=ini, column=1).font = Font(bold=True, color=NAVY)
+    ws2.append(["Status", "Valor (R$)"])
+    for i in (1, 2):
+        c = ws2.cell(row=ini + 1, column=i); c.fill = hfill; c.font = hfont; c.border = borda
+    for s, v in sorted(d["por_status"].items()):
+        ws2.append([s, v])
+    for row in ws2.iter_rows(min_row=2, max_col=2):
+        for c in row:
+            if c.value is not None:
+                c.border = borda
+                if c.column == 2 and isinstance(c.value, (int, float)):
+                    c.number_format = '#,##0.00'
+    ws2.column_dimensions["A"].width = 22
+    ws2.column_dimensions["B"].width = 15
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    nome = f"relatorio-compras-{d['inicio']}-a-{d['fim']}.xlsx"
+    return StreamingResponse(
+        buf,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{nome}"'})
 
 
 # ── PÁGINA DO MÓDULO (desktop + mobile, SSO — Regra 60) ───────
