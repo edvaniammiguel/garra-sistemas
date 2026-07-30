@@ -1019,13 +1019,16 @@ input,select,textarea { font-family:inherit; font-size:13px; outline:none; }
           <option value="proprio">Próprio</option>
           <option value="terceiro">Terceiro</option>
           <option value="diarista">Diarista</option>
-          <option value="frete">Frete de máquina (Garra)</option>
+          <!-- (30/07/2026) "Frete de máquina (Garra)" removido do select por
+               decisão da gestão — na prática o caso é registrado como
+               Terceiro. Registros antigos com vinculo='frete' continuam
+               válidos e renderizados (tag 🚛). -->
         </select>
       </div>
     </div>
     <div class="field-row">
       <div class="field">
-        <label>Operador</label>
+        <label id="mp-label-operador">Operador</label>
         <select id="mp-operador">
           <option value="">Selecione...</option>
         </select>
@@ -2719,6 +2722,9 @@ function onMpEquipChange() {
 
 function mpVinculoChange() {
   const v = document.getElementById('mp-vinculo')?.value || 'proprio';
+  // (30/07/2026) Terceiro: quem opera é o motorista do fornecedor
+  const lbl = document.getElementById('mp-label-operador');
+  if (lbl) lbl.textContent = (v === 'terceiro') ? 'Operador / Motorista' : 'Operador';
   const bloco = document.getElementById('mp-bloco-terceiro');
   if (bloco) bloco.style.display = (v === 'proprio') ? 'none' : 'flex';
   // Equipamento da Garra só se aplica a Próprio e Frete de máquina Garra
