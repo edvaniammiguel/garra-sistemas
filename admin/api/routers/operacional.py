@@ -59,7 +59,12 @@ async def _validar_sobreposicao_horimetro(equipamento_id, h_ini, h_fin, ignorar_
     """(13/07/2026) Horímetro só anda para frente: dois registros do MESMO
     equipamento com faixas que se cruzam é fisicamente impossível e dobra
     horas no CM. Bloqueia com o registro conflitante identificado.
-    Faixas encostadas (final de um = inicial do outro) são o fluxo normal."""
+    Faixas encostadas (final de um = inicial do outro) são o fluxo normal.
+    (29/07/2026) Comparação com ROUND(,1) — precisão real das leituras:
+    poeira de ponto flutuante gravada no banco (3612.6000000004) fazia
+    faixa ENCOSTADA parecer sobreposta e barrava registro legítimo do
+    campo (caso EH-39, Ítalo). Arredondar os DOIS lados mata a poeira
+    de qualquer origem sem afrouxar a proteção real."""
     if not equipamento_id:
         return
     try:
@@ -75,7 +80,8 @@ async def _validar_sobreposicao_horimetro(equipamento_id, h_ini, h_fin, ignorar_
             WHERE p.equipamento_id = %s AND p.ativo = true
               AND p.horimetro_inicial IS NOT NULL AND p.horimetro_final IS NOT NULL
               AND p.id::text <> %s
-              AND p.horimetro_inicial < %s AND p.horimetro_final > %s
+              AND ROUND(p.horimetro_inicial::numeric, 1) < ROUND(%s::numeric, 1)
+              AND ROUND(p.horimetro_final::numeric, 1)   > ROUND(%s::numeric, 1)
             ORDER BY p.data DESC LIMIT 1""",
         (equipamento_id, str(ignorar_parte_id or ""), hf, hi), fetch="one")
     if conflito:
