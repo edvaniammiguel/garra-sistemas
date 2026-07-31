@@ -798,7 +798,7 @@ function ir(nome) {
 
 function abrirComprasSSO() {
   const token = localStorage.getItem('garra_token') || '';
-  window.location.href = '/compras?sso=' + encodeURIComponent(token);
+  window.location.href = '/compras?sso=' + encodeURIComponent(token) + '&origem=mobile';
 }
 
 // Carrega o iframe do checklist com SSO e aba alvo
