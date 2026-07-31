@@ -87,6 +87,20 @@ async def _validar_sobreposicao_horimetro(equipamento_id, h_ini, h_fin, ignorar_
     if conflito:
         d = conflito["data"]
         d_fmt = d.strftime("%d/%m") if hasattr(d, "strftime") else str(d)
+        # (31/07/2026) Duplicata EXATA (mesma faixa, arredondada a 1 casa):
+        # quase sempre é o operador reenviando um dia que a fila offline já
+        # subiu, ou que o escritório já lançou (caso Eliton 30/07). Mensagem
+        # técnica de "sobreposição" confundia — dizer a verdade simples.
+        try:
+            _mesma_faixa = (round(float(conflito["horimetro_inicial"]), 1) == round(float(hi), 1)
+                            and round(float(conflito["horimetro_final"]), 1) == round(float(hf), 1))
+        except (TypeError, ValueError):
+            _mesma_faixa = False
+        if _mesma_faixa:
+            raise HTTPException(status_code=400,
+                detail=(f"Este dia já está registrado para esta máquina "
+                        f"({conflito['numero']} em {d_fmt}, {conflito['horimetro_inicial']}→{conflito['horimetro_final']}) — "
+                        f"por você ou pelo escritório. Confira no Histórico; não é preciso reenviar."))
         raise HTTPException(status_code=400,
             detail=(f"Horímetro {hi}→{hf} sobrepõe registro já existente desta máquina "
                     f"({conflito['numero']} em {d_fmt}: {conflito['horimetro_inicial']}→{conflito['horimetro_final']}). "
