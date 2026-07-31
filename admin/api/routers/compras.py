@@ -730,6 +730,87 @@ async def excluir_oc(oc_id: str, payload=Depends(verificar_compras)):
     return {"ok": True}
 
 
+# ── DEVOLUÇÃO (parte do ciclo da compra, não sai do âmbito da OC) ─
+# "Pedi X, recebi X, devolvi Y, fiquei com Z" — a OC responde tudo.
+# O crédito/estorno financeiro é assunto de contas a pagar; aqui fica
+# o registro: itens devolvidos, motivo obrigatório, NF de devolução,
+# e o estorno automático do custo na OT vinculada.
+
+@router.post("/compras/api/ocs/{oc_id}/devolver")
+async def devolver_itens(oc_id: str, request: Request, payload=Depends(verificar_compras)):
+    d = await request.json()
+    motivo = (d.get("motivo") or "").strip()
+    if not motivo:
+        raise HTTPException(status_code=400, detail="Motivo da devolução é obrigatório")
+    oc = await ajard_query(
+        """SELECT id, numero, status, ot_id, solicitante_id
+           FROM compras.ordens_compra WHERE id=%s AND ativo=true""",
+        (oc_id,), fetch="one")
+    if not oc:
+        raise HTTPException(status_code=404, detail="OC não encontrada")
+    if oc["status"] not in ("recebida", "recebida_parcial"):
+        raise HTTPException(status_code=400,
+                            detail="Devolução só se registra em OC recebida — antes disso, basta não receber o item")
+    if not await _pode_mexer_na_oc(payload, oc):
+        raise HTTPException(status_code=403, detail="Só quem solicitou (ou a gestão) registra devolução")
+
+    uid = await _usuario_id(payload)
+    valor_devolvido = 0.0
+    alguma = False
+    for it in d.get("itens") or []:
+        item = await ajard_query(
+            """SELECT id, qtd_recebida, qtd_devolvida, valor_unit
+               FROM compras.oc_itens WHERE id=%s AND oc_id=%s AND ativo=true""",
+            (it.get("item_id"), oc_id), fetch="one")
+        if not item:
+            continue
+        qtd = float(it.get("qtd_devolvida") or 0)
+        if qtd <= 0:
+            continue
+        disponivel = float(item.get("qtd_recebida") or 0) - float(item.get("qtd_devolvida") or 0)
+        if qtd > disponivel + 1e-9:
+            raise HTTPException(status_code=400,
+                                detail=f"Devolução maior que o recebido disponível ({disponivel:g})")
+        await ajard_query(
+            """UPDATE compras.oc_itens
+               SET qtd_devolvida = COALESCE(qtd_devolvida,0)+%s WHERE id=%s""",
+            (qtd, item["id"]), fetch="none")
+        valor_devolvido += qtd * float(item.get("valor_unit") or 0)
+        alguma = True
+    if not alguma:
+        raise HTTPException(status_code=400, detail="Informe ao menos 1 item com quantidade devolvida")
+
+    nf_dev = (d.get("nf_devolucao") or "").strip() or None
+    if nf_dev:
+        await ajard_query(
+            "UPDATE compras.ordens_compra SET nf_devolucao=%s WHERE id=%s",
+            (nf_dev, oc_id), fetch="none")
+
+    # Tudo que foi recebido foi devolvido? → status final 'devolvida'
+    resto = await ajard_query(
+        """SELECT COUNT(*) AS n FROM compras.oc_itens
+           WHERE oc_id=%s AND ativo=true
+             AND COALESCE(qtd_recebida,0) - COALESCE(qtd_devolvida,0) > 0""",
+        (oc_id,), fetch="one")
+    novo = "devolvida" if int(resto["n"]) == 0 else oc["status"]
+    await ajard_query(
+        "UPDATE compras.ordens_compra SET status=%s, atualizado_em=now() WHERE id=%s",
+        (novo, oc_id), fetch="none")
+    await _trilha(oc_id, oc["status"], novo,
+                  f"Devolução registrada (R$ {valor_devolvido:.2f}): {motivo}"
+                  + (f" · NF dev. {nf_dev}" if nf_dev else ""), uid)
+
+    # Estorno automático do custo na OT vinculada
+    if oc.get("ot_id") and valor_devolvido > 0:
+        await ajard_query(
+            """UPDATE manutencao.ot
+               SET custo_total = GREATEST(COALESCE(custo_total,0)-%s, 0), atualizado_em=now()
+               WHERE id=%s""",
+            (valor_devolvido, oc["ot_id"]), fetch="none")
+
+    return {"ok": True, "status": novo, "valor_devolvido": valor_devolvido}
+
+
 # ── ANEXOS (orçamentos de fornecedores, fotos, PDFs) ──────────
 # Cotação anexada à OC vira evidência com data: quem aprova vê o orçamento
 # real; divergência de faturamento se resolve com documento na mão.
