@@ -1454,6 +1454,10 @@ function abrirModuloUrl(url, novaAba) {
   const token = Token.get() || '';
   const params = [];
   if (token) params.push('sso=' + encodeURIComponent(token));
+  // (31/07/2026) Origem explícita: no celular, o botão voltar do módulo
+  // levava ao /mobile quando o mesmo aparelho já tinha logado no app do
+  // operador (localStorage compartilhado enganava a heurística).
+  params.push('origem=admin');
   // nocache para módulos internos: evita que SW antigo sirva cache e perca o SSO
   if (url.startsWith('/')) params.push('nc=' + Date.now());
   const sep = url.includes('?') ? '&' : '?';
