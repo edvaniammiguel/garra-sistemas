@@ -255,6 +255,9 @@ header .badge-fila{background:var(--red);border-radius:99px;padding:1px 8px;font
 (function(){
   try{
     const sso = new URLSearchParams(location.search).get('sso');
+    // (31/07/2026) Origem explícita vence a heurística de tokens
+    const _orig = new URLSearchParams(location.search).get('origem');
+    if (_orig) sessionStorage.setItem('garra_oc_origem', _orig);
     if (sso && sso.length > 10) {
       sessionStorage.setItem('garra_oc_token', sso);
       history.replaceState(null,'',location.pathname);
@@ -312,6 +315,10 @@ let SETORES=[], FORNECEDORES=[], OTS=[], PODE_APROVAR=false, PODE_CONFIG=false;
 let _setorSel=null, _editandoOC=null, _editandoOCStatus=null;
 
 function voltar(){
+  // (31/07/2026) Origem explícita (passada pelo Admin/mobile) decide primeiro
+  const _o = sessionStorage.getItem('garra_oc_origem');
+  if (_o === 'admin') { location.href='/admin'; return; }
+  if (_o === 'mobile') { location.href='/mobile'; return; }
   if (sessionStorage.getItem('garra_oc_token') && !localStorage.getItem('garra_token')) location.href='/admin';
   else location.href='/mobile';
 }
