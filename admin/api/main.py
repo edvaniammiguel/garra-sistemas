@@ -1286,6 +1286,12 @@ async def criar_schema_compras():
             ALTER TABLE compras.ordens_compra
               ADD COLUMN IF NOT EXISTS fornecedor_avulso TEXT""", fetch="none")
         await ajard_query("""
+            ALTER TABLE compras.oc_itens
+              ADD COLUMN IF NOT EXISTS qtd_devolvida NUMERIC(12,3) DEFAULT 0""", fetch="none")
+        await ajard_query("""
+            ALTER TABLE compras.ordens_compra
+              ADD COLUMN IF NOT EXISTS nf_devolucao TEXT""", fetch="none")
+        await ajard_query("""
             CREATE TABLE IF NOT EXISTS compras.condicoes_pagamento (
                 codigo TEXT PRIMARY KEY,
                 nome TEXT NOT NULL,
