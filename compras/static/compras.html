@@ -42,7 +42,8 @@ header .badge-fila{background:var(--red);border-radius:99px;padding:1px 8px;font
 .st-rascunho{background:#F1F5F9;color:#475569}.st-solicitada{background:#FEF3C7;color:#92400E}
 .st-aprovada{background:#DBEAFE;color:#1E40AF}.st-enviada{background:#EDE9FE;color:#5B21B6}
 .st-recebida_parcial{background:#FFEDD5;color:#9A3412}.st-recebida{background:#DCFCE7;color:#166534}
-.st-rejeitada{background:#FEE2E2;color:#991B1B}.st-cancelada{background:#F1F5F9;color:#64748B}
+.st-rejeitada{background:#FEE2E2;color:#991B1B}
+.st-devolvida{background:#FFEDD5;color:#9A3412}.st-cancelada{background:#F1F5F9;color:#64748B}
 .setor{display:inline-flex;align-items:center;gap:5px;font-weight:700;font-size:12px}
 .dot{width:8px;height:8px;border-radius:50%;background:var(--muted)}
 .badge-urg{background:var(--red);color:#fff;border-radius:6px;padding:2px 7px;font-size:10px;font-weight:800}
@@ -105,7 +106,7 @@ header .badge-fila{background:var(--red);border-radius:99px;padding:1px 8px;font
   <span class="badge-fila" id="badge-fila">0</span>
   <span style="flex:1"></span>
   <span id="hdr-user" style="font-size:12px;opacity:.85"></span>
-  <span style="font-size:10px;opacity:.6;margin-left:8px">v1.11</span>
+  <span style="font-size:10px;opacity:.6;margin-left:8px">v1.12</span>
 </header>
 
 <div class="wrap">
@@ -127,6 +128,7 @@ header .badge-fila{background:var(--red);border-radius:99px;padding:1px 8px;font
         <option value="rascunho">Rascunho</option><option value="solicitada">Solicitada</option>
         <option value="aprovada">Aprovada</option><option value="enviada">Enviada</option>
         <option value="recebida_parcial">Recebida parcial</option><option value="recebida">Recebida</option>
+        <option value="devolvida">Devolvida</option>
         <option value="rejeitada">Rejeitada</option><option value="cancelada">Cancelada</option>
       </select>
       <input type="month" id="f-mes" onchange="carregarLista()">
@@ -227,6 +229,7 @@ header .badge-fila{background:var(--red);border-radius:99px;padding:1px 8px;font
             <option value="rascunho">Rascunho</option><option value="solicitada">Solicitada</option>
             <option value="aprovada">Aprovada</option><option value="enviada">Enviada</option>
             <option value="recebida_parcial">Recebida parcial</option><option value="recebida">Recebida</option>
+            <option value="devolvida">Devolvida</option>
             <option value="rejeitada">Rejeitada</option><option value="cancelada">Cancelada</option>
           </select></div>
         <div class="fld"><label>Setor</label><select id="rel-setor"><option value="">Todos</option></select></div>
@@ -289,7 +292,7 @@ function toast(msg, tipo){
 function fmt(v){ return 'R$ '+Number(v||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2}); }
 function fmtData(d){ if(!d) return ''; const x=new Date(d); return isNaN(x)?'':x.toLocaleDateString('pt-BR')+' '+x.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}); }
 const ST_LABEL={rascunho:'Rascunho',solicitada:'Solicitada',aprovada:'Aprovada',enviada:'Enviada',
-  recebida_parcial:'Recebida parcial',recebida:'Recebida',rejeitada:'Rejeitada',cancelada:'Cancelada'};
+  recebida_parcial:'Recebida parcial',recebida:'Recebida',rejeitada:'Rejeitada',cancelada:'Cancelada',devolvida:'Devolvida'};
 
 /* ══ TRAVA GLOBAL ANTI-DUPLO-CLIQUE ══
    Qualquer ação de escrita passa por guard(): enquanto uma requisição
@@ -429,7 +432,7 @@ function cardOC(o){
       <span class="setor"><span class="dot" style="background:${o.setor_cor||'#64748B'}"></span>${o.setor_nome}</span>
       <span style="font-size:12px;color:var(--muted)">${o.fornecedor_nome||'— fornecedor a definir'}</span>
     </div>
-    <div class="oc-meta">${o.solicitante_nome||''}${o.ot_numero?(' · '+o.ot_numero):''}${o.equipamento_codigo?(' · '+o.equipamento_codigo):''}${o.nf_numero?(' · NF '+o.nf_numero):''}</div>
+    <div class="oc-meta">${o.solicitante_nome||''}${o.ot_numero?(' · '+o.ot_numero):''}${o.equipamento_codigo?(' · '+o.equipamento_codigo):''}${o.nf_numero?(' · NF '+o.nf_numero):''}${o.nf_devolucao?(' · NF dev. '+o.nf_devolucao):''}</div>
     <div class="oc-val">${fmt(o.valor_total)}</div>
   </div>`;
 }
@@ -598,7 +601,7 @@ async function abrirDetalhe(id){
 
   const itensHtml = o.itens.map(i=>`
     <div class="item-view">
-      <div>${i.descricao}<div class="rec">${Number(i.quantidade)} ${i.unidade} × ${fmt(i.valor_unit)}${Number(i.qtd_recebida)>0?(' · recebido: '+Number(i.qtd_recebida)):''}</div></div>
+      <div>${i.descricao}<div class="rec">${Number(i.quantidade)} ${i.unidade} × ${fmt(i.valor_unit)}${Number(i.qtd_recebida)>0?(' · recebido: '+Number(i.qtd_recebida)):''}${Number(i.qtd_devolvida)>0?(' · devolvido: '+Number(i.qtd_devolvida)):''}</div></div>
       <b>${fmt(i.quantidade*i.valor_unit)}</b>
     </div>`).join('');
   const trilhaHtml = (o.historico||[]).map(h=>`
@@ -619,6 +622,7 @@ async function abrirDetalhe(id){
   }
   if (st==='aprovada') acoes+=`<button class="btn btn-sec" onclick="acao('${o.id}','enviar')">✔ Marcar enviada (outro canal)</button>`;
   if (st==='enviada'||st==='recebida_parcial') acoes+=`<button class="btn btn-cta" onclick="abrirReceber('${o.id}')">📦 Registrar recebimento</button>`;
+  if (st==='recebida'||st==='recebida_parcial') acoes+=`<button class="btn btn-no" onclick="abrirDevolucao('${o.id}')">↩ Registrar devolução</button>`;
   if (PODE_APROVAR && !['recebida','rejeitada','cancelada'].includes(st))
     acoes+=`<button class="btn btn-no" onclick="cancelar('${o.id}')">Cancelar OC</button>`;
 
@@ -944,6 +948,55 @@ async function _confirmarReceber(id){
     carregarLista(); carregarResumo();
   }catch(e){ toast(e.message,'err'); }
 }
+
+/* ══ DEVOLUÇÃO ══ */
+async function abrirDevolucao(id){
+  let o;
+  try{ o=await api('/compras/api/ocs/'+id); }catch(e){ toast(e.message,'err'); return; }
+  const body=document.getElementById('modal-det-body');
+  const linhas=o.itens.map(i=>{
+    const disp=Math.max(0, Number(i.qtd_recebida||0)-Number(i.qtd_devolvida||0));
+    if (disp<=0) return '';
+    return `<div class="rec-grid">
+      <div style="font-size:13px">${i.descricao}<div class="rec" style="font-size:11px;color:var(--muted)">recebido ${Number(i.qtd_recebida||0)} · já devolvido ${Number(i.qtd_devolvida||0)} · pode devolver ${disp}</div></div>
+      <input type="number" step="any" min="0" max="${disp}" id="dev-${i.id}" value="0" placeholder="Qtd">
+    </div>`;
+  }).join('');
+  body.innerHTML=`
+    <div class="mh"><h2>↩ Devolução · ${o.numero}</h2>
+      <button class="fechar" onclick="document.getElementById('modal-det').classList.remove('on')">×</button></div>
+    <div class="hint" style="margin-bottom:10px">Informe a quantidade que está sendo DEVOLVIDA ao fornecedor. O custo é estornado da OT vinculada automaticamente. O crédito/reembolso financeiro segue por fora (contas a pagar).</div>
+    ${linhas||'<div class="vazio">Nada disponível para devolver.</div>'}
+    <div class="fld" style="margin-top:10px"><label>Motivo da devolução *</label>
+      <input id="dev-motivo" placeholder="Ex.: peça errada, defeito, fora da OC"></div>
+    <div class="fld"><label>NF de devolução (se houver)</label>
+      <input id="dev-nf" placeholder="Número da nota de devolução"></div>
+    <div class="acoes">
+      <button class="btn btn-sec" onclick="abrirDetalhe('${o.id}')">← Voltar</button>
+      <button class="btn btn-no" onclick="confirmarDevolucao('${o.id}')">↩ Confirmar devolução</button>
+    </div>`;
+}
+
+async function confirmarDevolucao(id){ return guard(async ()=>{
+  let o;
+  try{ o=await api('/compras/api/ocs/'+id); }catch(e){ toast(e.message,'err'); return; }
+  const itens=[];
+  o.itens.forEach(i=>{
+    const el=document.getElementById('dev-'+i.id);
+    const q=parseFloat(el&&el.value)||0;
+    if(q>0) itens.push({item_id:i.id, qtd_devolvida:q});
+  });
+  const motivo=(document.getElementById('dev-motivo').value||'').trim();
+  if(!motivo){ toast('Motivo da devolução é obrigatório','warn'); return; }
+  if(!itens.length){ toast('Informe a quantidade devolvida de ao menos 1 item','warn'); return; }
+  try{
+    const r=await api('/compras/api/ocs/'+id+'/devolver',{method:'POST',
+      body:JSON.stringify({motivo, nf_devolucao:(document.getElementById('dev-nf').value||'').trim()||null, itens})});
+    toast(r.status==='devolvida'?'↩ Devolução total registrada':'↩ Devolução registrada — '+fmt(r.valor_devolvido),'ok');
+    document.getElementById('modal-det').classList.remove('on');
+    carregarLista(); carregarResumo();
+  }catch(e){ toast(e.message,'err'); }
+}, window.event); }
 
 /* ══ FILA DE APROVAÇÃO ══ */
 async function carregarFila(){
