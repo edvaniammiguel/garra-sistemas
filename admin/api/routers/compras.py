@@ -602,10 +602,12 @@ async def rejeitar_oc(oc_id: str, request: Request,
 async def marcar_enviada(oc_id: str, payload=Depends(verificar_compras)):
     """Marca a OC como enviada ao fornecedor (após gerar PDF / link WhatsApp)."""
     oc = await ajard_query(
-        "SELECT id, status FROM compras.ordens_compra WHERE id=%s AND ativo=true",
+        "SELECT id, status, solicitante_id FROM compras.ordens_compra WHERE id=%s AND ativo=true",
         (oc_id,), fetch="one")
     if not oc:
         raise HTTPException(status_code=404, detail="OC não encontrada")
+    if not await _pode_mexer_na_oc(payload, oc):
+        raise HTTPException(status_code=403, detail="Só quem solicitou (ou a gestão) envia esta OC")
     if "enviada" not in _TRANSICOES.get(oc["status"], set()):
         raise HTTPException(status_code=400,
                             detail=f"Transição inválida: {oc['status']} → enviada")
@@ -627,10 +629,12 @@ async def receber_oc(oc_id: str, request: Request, payload=Depends(verificar_com
     OC com ot_id: o valor recebido agora soma no custo_total da OT."""
     d = await request.json()
     oc = await ajard_query(
-        "SELECT id, status, ot_id FROM compras.ordens_compra WHERE id=%s AND ativo=true",
+        "SELECT id, status, ot_id, solicitante_id FROM compras.ordens_compra WHERE id=%s AND ativo=true",
         (oc_id,), fetch="one")
     if not oc:
         raise HTTPException(status_code=404, detail="OC não encontrada")
+    if not await _pode_mexer_na_oc(payload, oc):
+        raise HTTPException(status_code=403, detail="Só quem solicitou (ou a gestão) registra o recebimento")
     if oc["status"] not in ("enviada", "recebida_parcial"):
         raise HTTPException(status_code=400,
                             detail=f"OC em '{oc['status']}' não está aguardando entrega")
