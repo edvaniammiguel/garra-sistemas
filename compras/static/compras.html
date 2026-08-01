@@ -106,7 +106,7 @@ header .badge-fila{background:var(--red);border-radius:99px;padding:1px 8px;font
   <span class="badge-fila" id="badge-fila">0</span>
   <span style="flex:1"></span>
   <span id="hdr-user" style="font-size:12px;opacity:.85"></span>
-  <span style="font-size:10px;opacity:.6;margin-left:8px">v1.12</span>
+  <span style="font-size:10px;opacity:.6;margin-left:8px">v1.13</span>
 </header>
 
 <div class="wrap">
@@ -255,9 +255,6 @@ header .badge-fila{background:var(--red);border-radius:99px;padding:1px 8px;font
 (function(){
   try{
     const sso = new URLSearchParams(location.search).get('sso');
-    // (31/07/2026) Origem explícita vence a heurística de tokens
-    const _orig = new URLSearchParams(location.search).get('origem');
-    if (_orig) sessionStorage.setItem('garra_oc_origem', _orig);
     if (sso && sso.length > 10) {
       sessionStorage.setItem('garra_oc_token', sso);
       history.replaceState(null,'',location.pathname);
@@ -315,10 +312,6 @@ let SETORES=[], FORNECEDORES=[], OTS=[], PODE_APROVAR=false, PODE_CONFIG=false;
 let _setorSel=null, _editandoOC=null, _editandoOCStatus=null;
 
 function voltar(){
-  // (31/07/2026) Origem explícita (passada pelo Admin/mobile) decide primeiro
-  const _o = sessionStorage.getItem('garra_oc_origem');
-  if (_o === 'admin') { location.href='/admin'; return; }
-  if (_o === 'mobile') { location.href='/mobile'; return; }
   if (sessionStorage.getItem('garra_oc_token') && !localStorage.getItem('garra_token')) location.href='/admin';
   else location.href='/mobile';
 }
@@ -623,10 +616,13 @@ async function abrirDetalhe(id){
     acoes+=`<button class="btn btn-no" onclick="rejeitar('${o.id}')">✕ Rejeitar</button>
       <button class="btn btn-ok" onclick="acao('${o.id}','aprovar')">✓ Aprovar</button>`;
   }
-  if (['aprovada','enviada','recebida_parcial','recebida'].includes(st)){
-    acoes+=`<button class="btn btn-sec" onclick="imprimirOC('${o.id}')">🖨 Imprimir/PDF</button>
-      <button class="btn ${st==='aprovada'?'btn-cta':'btn-sec'}" onclick="whats('${o.id}')">📲 ${st==='aprovada'?'Enviar':'Reenviar'} por WhatsApp</button>`;
+  if (['aprovada','enviada','recebida_parcial','recebida','devolvida'].includes(st)){
+    acoes+=`<button class="btn btn-sec" onclick="imprimirOC('${o.id}')">🖨 Imprimir/PDF</button>`;
   }
+  if (st==='aprovada') acoes+=`<button class="btn btn-cta" onclick="whats('${o.id}')">📲 Enviar por WhatsApp</button>`;
+  if (st==='enviada'||st==='recebida_parcial') acoes+=`<button class="btn btn-sec" onclick="whats('${o.id}')">📲 Reenviar por WhatsApp</button>`;
+  const _houveDevolucao = (o.itens||[]).some(i=>Number(i.qtd_devolvida)>0);
+  if (_houveDevolucao) acoes+=`<button class="btn btn-sec" onclick="whatsDevolucao('${o.id}')">📲 Comunicar devolução</button>`;
   if (st==='aprovada') acoes+=`<button class="btn btn-sec" onclick="acao('${o.id}','enviar')">✔ Marcar enviada (outro canal)</button>`;
   if (st==='enviada'||st==='recebida_parcial') acoes+=`<button class="btn btn-cta" onclick="abrirReceber('${o.id}')">📦 Registrar recebimento</button>`;
   if (st==='recebida'||st==='recebida_parcial') acoes+=`<button class="btn btn-no" onclick="abrirDevolucao('${o.id}')">↩ Registrar devolução</button>`;
@@ -957,6 +953,20 @@ async function _confirmarReceber(id){
 }
 
 /* ══ DEVOLUÇÃO ══ */
+function whatsDevolucao(id){
+  api('/compras/api/ocs/'+id).then(o=>{
+    const dev=(o.itens||[]).filter(i=>Number(i.qtd_devolvida)>0);
+    if(!dev.length){ toast('Nenhum item devolvido nesta OC','warn'); return; }
+    const linhas=dev.map(i=>`- ${Number(i.qtd_devolvida)} ${i.unidade} ${i.descricao} (${fmt(i.valor_unit)} un.)`).join('\n');
+    const total=dev.reduce((s,i)=>s+Number(i.qtd_devolvida)*Number(i.valor_unit||0),0);
+    const ult=(o.historico||[]).filter(hh=>String(hh.observacao||'').includes('Devolução registrada')).pop();
+    const motivo=ult? String(ult.observacao).split(': ').slice(1).join(': ') : '';
+    const txt=`*DEVOLUÇÃO — ${o.numero} — Garra Terraplenagem*\nFornecedor: ${o.fornecedor_nome||'-'}\n\nItens devolvidos:\n${linhas}\n\n*Valor devolvido: ${fmt(total)}*${o.nf_devolucao?('\nNF de devolução: '+o.nf_devolucao):''}${motivo?('\nMotivo: '+motivo):''}\n\nFavor providenciar o crédito/estorno referente e confirmar o recebimento das peças.`;
+    const fone=(o.fornecedor_telefone||'').replace(/\D/g,'');
+    window.open('https://wa.me/'+(fone.length>=10?('55'+fone):'')+'?text='+encodeURIComponent(txt),'_blank');
+  }).catch(e=>toast(e.message,'err'));
+}
+
 async function abrirDevolucao(id){
   let o;
   try{ o=await api('/compras/api/ocs/'+id); }catch(e){ toast(e.message,'err'); return; }
@@ -1002,6 +1012,9 @@ async function confirmarDevolucao(id){ return guard(async ()=>{
     toast(r.status==='devolvida'?'↩ Devolução total registrada':'↩ Devolução registrada — '+fmt(r.valor_devolvido),'ok');
     document.getElementById('modal-det').classList.remove('on');
     carregarLista(); carregarResumo();
+    setTimeout(()=>{
+      if (confirm('Comunicar a devolução ao fornecedor pelo WhatsApp agora?')) whatsDevolucao(id);
+    }, 600);
   }catch(e){ toast(e.message,'err'); }
 }, window.event); }
 
