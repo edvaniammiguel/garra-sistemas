@@ -1295,6 +1295,9 @@ async def criar_schema_compras():
             ALTER TABLE compras.alcadas
               ADD COLUMN IF NOT EXISTS limite_mensal NUMERIC(12,2)""", fetch="none")
         await ajard_query("""
+            ALTER TABLE compras.ordens_compra
+              ADD COLUMN IF NOT EXISTS fornecedor_avulso_contato TEXT""", fetch="none")
+        await ajard_query("""
             CREATE TABLE IF NOT EXISTS compras.condicoes_pagamento (
                 codigo TEXT PRIMARY KEY,
                 nome TEXT NOT NULL,
