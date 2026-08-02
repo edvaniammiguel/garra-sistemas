@@ -118,25 +118,42 @@ async def _ve_todas(payload):
 async def _alcada_efetiva(payload):
     """Alçada usada nos gates de aprovação. Perfil ADMIN (Master) aprova
     livre, sem exigir cadastro (decisão 29/07/2026). Demais usuários:
-    somente com linha ativa em compras.alcadas."""
+    somente com linha ativa em compras.alcadas.
+    Retorna (tem, limite_por_compra, limite_mensal)."""
     if (payload.get("perfil") or "").lower() == "admin":
-        return (True, None)
+        return (True, None, None)
     uid = await _usuario_id(payload)
     return await _alcada_do_usuario(uid)
 
 
 async def _alcada_do_usuario(uid):
-    """Retorna (tem_alcada, valor_limite). valor_limite None = sem limite.
+    """(tem_alcada, valor_limite, limite_mensal). None = sem limite.
     Sem linha em compras.alcadas = sem alçada nenhuma."""
     a = await ajard_query(
-        "SELECT valor_limite FROM compras.alcadas WHERE usuario_id=%s AND ativo=true",
+        """SELECT valor_limite, limite_mensal
+           FROM compras.alcadas WHERE usuario_id=%s AND ativo=true""",
         (uid,), fetch="one")
     if not a:
-        return (False, None)
-    return (True, a.get("valor_limite"))
+        return (False, None, None)
+    return (True, a.get("valor_limite"), a.get("limite_mensal"))
+
+
+async def _aprovado_no_mes(uid):
+    """Soma do que o aprovador já comprometeu no mês corrente (OCs aprovadas
+    por ele, não rejeitadas/canceladas). Base do teto mensal: crédito que
+    renova a cada mês — aprovou R$ 50 de um teto de R$ 300, restam R$ 250."""
+    row = await ajard_query(
+        """SELECT COALESCE(SUM(valor_total),0) AS total
+           FROM compras.ordens_compra
+           WHERE aprovador_id=%s AND ativo=true
+             AND status NOT IN ('rejeitada','cancelada')
+             AND date_trunc('month', data_aprovacao) = date_trunc('month', now())""",
+        (uid,), fetch="one")
+    return float(row["total"] or 0)
 
 
 def _valor_dentro_alcada(valor, tem_alcada, limite):
+    """Checagem POR COMPRA (limite individual de cada OC)."""
     if not tem_alcada:
         return False
     if limite is None:
@@ -145,6 +162,16 @@ def _valor_dentro_alcada(valor, tem_alcada, limite):
         return float(valor or 0) <= float(limite)
     except (TypeError, ValueError):
         return False
+
+
+async def _cabe_no_teto_mensal(uid, valor, limite_mensal):
+    """Checagem MENSAL ACUMULADA. limite_mensal None = sem teto (padrão,
+    comportamento anterior). Retorna (cabe, ja_aprovado, saldo)."""
+    if limite_mensal is None:
+        return (True, None, None)
+    ja = await _aprovado_no_mes(uid)
+    saldo = float(limite_mensal) - ja
+    return (float(valor or 0) <= saldo + 1e-9, ja, saldo)
 
 
 async def _trilha(oc_id, status_de, status_para, observacao, uid):
@@ -253,7 +280,12 @@ async def editar_condicao(codigo: str, request: Request,
 @router.get("/compras/api/alcadas")
 async def listar_alcadas(_auth=Depends(verificar_compras_gestor)):
     rows = await ajard_query(
-        """SELECT a.*, u.nome AS usuario_nome, u.login AS usuario_login, u.perfil
+        """SELECT a.*, u.nome AS usuario_nome, u.login AS usuario_login, u.perfil,
+                  COALESCE((SELECT SUM(oc.valor_total) FROM compras.ordens_compra oc
+                            WHERE oc.aprovador_id=a.usuario_id AND oc.ativo=true
+                              AND oc.status NOT IN ('rejeitada','cancelada')
+                              AND date_trunc('month', oc.data_aprovacao)=date_trunc('month', now())),0)
+                    AS aprovado_mes
            FROM compras.alcadas a
            JOIN public.usuarios_garra u ON u.id = a.usuario_id
            ORDER BY u.nome""")
@@ -269,12 +301,13 @@ async def salvar_alcada(request: Request, _auth=Depends(verificar_compras_gestor
     if not uid:
         raise HTTPException(status_code=400, detail="usuario_id é obrigatório")
     await ajard_query(
-        """INSERT INTO compras.alcadas (usuario_id, valor_limite, ativo)
-           VALUES (%s,%s,%s)
+        """INSERT INTO compras.alcadas (usuario_id, valor_limite, limite_mensal, ativo)
+           VALUES (%s,%s,%s,%s)
            ON CONFLICT (usuario_id)
            DO UPDATE SET valor_limite=EXCLUDED.valor_limite,
+                         limite_mensal=EXCLUDED.limite_mensal,
                          ativo=EXCLUDED.ativo, atualizado_em=now()""",
-        (uid, d.get("valor_limite"), d.get("ativo", True)), fetch="none")
+        (uid, d.get("valor_limite"), d.get("limite_mensal"), d.get("ativo", True)), fetch="none")
     return {"ok": True}
 
 
@@ -402,7 +435,7 @@ async def fila_aprovacao(payload=Depends(verificar_compras_aprovador)):
     Permissão de aprovar SEM alçada cadastrada = não aprova nada, então o
     gate nega (403) e a aba Aprovar nem aparece no app — em vez de exibir
     uma fila eternamente vazia (incoerência apontada em produção)."""
-    tem, limite = await _alcada_efetiva(payload)
+    tem, limite, limite_mensal = await _alcada_efetiva(payload)
     if not tem:
         raise HTTPException(
             status_code=403,
@@ -546,16 +579,21 @@ async def solicitar_aprovacao(oc_id: str, payload=Depends(verificar_compras)):
         (oc_id,), fetch="none")
     await _trilha(oc_id, oc["status"], "solicitada", "Aprovação solicitada", uid)
 
-    tem, limite = await _alcada_efetiva(payload)
+    tem, limite, limite_mensal = await _alcada_efetiva(payload)
     if _valor_dentro_alcada(oc["valor_total"], tem, limite):
-        await ajard_query(
-            """UPDATE compras.ordens_compra
-               SET status='aprovada', aprovador_id=%s, data_aprovacao=now(),
-                   atualizado_em=now() WHERE id=%s""",
-            (uid, oc_id), fetch="none")
-        await _trilha(oc_id, "solicitada", "aprovada",
-                      "Aprovada em 1 passo (dentro da alçada)", uid)
-        return {"ok": True, "status": "aprovada", "auto_aprovada": True}
+        cabe, _ja, _saldo = await _cabe_no_teto_mensal(uid, oc["valor_total"], limite_mensal)
+        if cabe:
+            await ajard_query(
+                """UPDATE compras.ordens_compra
+                   SET status='aprovada', aprovador_id=%s, data_aprovacao=now(),
+                       atualizado_em=now() WHERE id=%s""",
+                (uid, oc_id), fetch="none")
+            await _trilha(oc_id, "solicitada", "aprovada",
+                          "Aprovada em 1 passo (dentro da alçada)", uid)
+            return {"ok": True, "status": "aprovada", "auto_aprovada": True}
+        # Teto mensal esgotado → segue pra fila de quem pode (sem erro)
+        await _trilha(oc_id, "solicitada", "solicitada",
+                      "Teto mensal do solicitante atingido — encaminhada para aprovação", uid)
     return {"ok": True, "status": "solicitada", "auto_aprovada": False}
 
 
@@ -576,7 +614,7 @@ async def aprovar_oc(oc_id: str, request: Request,
         raise HTTPException(status_code=400,
                             detail=f"Transição inválida: {oc['status']} → aprovada")
     uid = await _usuario_id(payload)
-    tem, limite = await _alcada_efetiva(payload)
+    tem, limite, limite_mensal = await _alcada_efetiva(payload)
     if not tem:
         raise HTTPException(
             status_code=403,
@@ -584,7 +622,14 @@ async def aprovar_oc(oc_id: str, request: Request,
     if not _valor_dentro_alcada(oc["valor_total"], tem, limite):
         raise HTTPException(
             status_code=403,
-            detail=f"Valor acima da sua alçada de aprovação (limite R$ {float(limite):,.2f})")
+            detail=f"Valor acima da sua alçada de aprovação (limite R$ {float(limite):,.2f} por compra)")
+    cabe, ja, saldo = await _cabe_no_teto_mensal(uid, oc["valor_total"], limite_mensal)
+    if not cabe:
+        raise HTTPException(
+            status_code=403,
+            detail=(f"Teto mensal atingido: seu limite é R$ {float(limite_mensal):,.2f}/mês, "
+                    f"já aprovado R$ {ja:,.2f} — saldo R$ {max(saldo,0):,.2f}. "
+                    "Esta OC segue para aprovação da gestão."))
     await ajard_query(
         """UPDATE compras.ordens_compra
            SET status='aprovada', aprovador_id=%s, data_aprovacao=now(),
