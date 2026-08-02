@@ -86,7 +86,7 @@ header .badge-fila{background:var(--red);border-radius:99px;padding:1px 8px;font
 .vazio{text-align:center;color:var(--muted);padding:30px 10px;font-size:13px}
 .rec-grid{display:grid;grid-template-columns:1fr 90px;gap:8px;align-items:center;margin-bottom:8px}
 .rec-grid input{padding:9px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;width:100%}
-.alc-row{display:grid;grid-template-columns:1fr 130px 60px;gap:8px;align-items:center;padding:8px 0;border-bottom:1px solid #F1F5F9;font-size:13px}
+.alc-row{display:grid;grid-template-columns:1fr 105px 105px 44px;gap:7px;align-items:center;padding:8px 0;border-bottom:1px solid #F1F5F9;font-size:13px}
 .alc-row input[type=number]{padding:8px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;width:100%;text-align:right}
 .spin{display:inline-block;width:14px;height:14px;border:2px solid #cbd5e1;border-top-color:var(--orange);border-radius:50%;animation:sp .7s linear infinite;vertical-align:middle}
 @keyframes sp{to{transform:rotate(360deg)}}
@@ -106,7 +106,7 @@ header .badge-fila{background:var(--red);border-radius:99px;padding:1px 8px;font
   <span class="badge-fila" id="badge-fila">0</span>
   <span style="flex:1"></span>
   <span id="hdr-user" style="font-size:12px;opacity:.85"></span>
-  <span style="font-size:10px;opacity:.6;margin-left:8px">v1.13</span>
+  <span style="font-size:10px;opacity:.6;margin-left:8px">v1.14</span>
 </header>
 
 <div class="wrap">
@@ -1051,14 +1051,17 @@ async function carregarConfig(){
     const mapa={}; alc.forEach(a=>mapa[a.usuario_id]=a);
     const base=_USUARIOS.filter(u=>u.ativo!==false);
     const lista=base.length?base:alc.map(a=>({id:a.usuario_id,nome:a.usuario_nome,perfil:a.perfil,ativo:true}));
-    el.innerHTML=`<div class="alc-row" style="font-weight:800;font-size:11px;color:var(--muted);text-transform:uppercase"><span>Usuário</span><span>Aprova até (R$)</span><span>∞</span></div>`+
+    el.innerHTML=`<div class="alc-row" style="font-weight:800;font-size:11px;color:var(--muted);text-transform:uppercase"><span>Usuário</span><span>Por compra (R$)</span><span>Teto mensal (R$)</span><span>∞</span></div>`+
       lista.map(u=>{
         const a=mapa[u.id]||{};
         const semLimite=(u.id in mapa)&&a.ativo&&a.valor_limite==null;
+        const usado=Number(a.aprovado_mes||0);
+        const saldoTxt=(a.limite_mensal!=null&&a.ativo)?`<div style="font-size:10px;color:${usado>Number(a.limite_mensal)?'var(--red)':'var(--muted)'}">usado no mês: ${fmt(usado)} · saldo: ${fmt(Math.max(Number(a.limite_mensal)-usado,0))}</div>`:'';
         return `<div class="alc-row" data-uid="${u.id}">
-          <span>${u.nome||u.login}<span style="color:var(--muted);font-size:11px"> · ${u.perfil||''}</span></span>
+          <span>${u.nome||u.login}<span style="color:var(--muted);font-size:11px"> · ${u.perfil||''}</span>${saldoTxt}</span>
           <input type="number" step="0.01" class="alc-vlr" value="${a.valor_limite!=null?a.valor_limite:''}" ${semLimite?'disabled':''} placeholder="—">
-          <input type="checkbox" class="alc-inf" ${semLimite?'checked':''} onchange="this.closest('.alc-row').querySelector('.alc-vlr').disabled=this.checked">
+          <input type="number" step="0.01" class="alc-mes" value="${a.limite_mensal!=null?a.limite_mensal:''}" placeholder="sem teto">
+          <input type="checkbox" class="alc-inf" ${semLimite?'checked':''} onchange="this.closest('.alc-row').querySelector('.alc-vlr').disabled=this.checked" title="Sem limite por compra">
         </div>`;
       }).join('');
   }catch(e){ el.innerHTML='<div class="vazio">'+e.message+'</div>'; }
@@ -1108,8 +1111,10 @@ async function _salvarAlcadas(){
     const uid=r.getAttribute('data-uid');
     const inf=r.querySelector('.alc-inf').checked;
     const vlrTxt=r.querySelector('.alc-vlr').value;
-    if (!inf && vlrTxt==='') continue; // sem alçada — não grava
-    const body={usuario_id:uid, valor_limite: inf?null:parseFloat(vlrTxt), ativo:true};
+    const mesTxt=r.querySelector('.alc-mes').value;
+    if (!inf && vlrTxt==='' && mesTxt==='') continue; // sem alçada — não grava
+    const body={usuario_id:uid, valor_limite: inf?null:(vlrTxt===''?null:parseFloat(vlrTxt)),
+                limite_mensal: mesTxt===''?null:parseFloat(mesTxt), ativo:true};
     try{ await api('/compras/api/alcadas',{method:'POST',body:JSON.stringify(body)}); n++; }
     catch(e){ toast('Falha em uma alçada: '+e.message,'err'); }
   }
