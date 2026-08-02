@@ -2898,7 +2898,7 @@ function aplicarPermissoesPerfil() {
     { aba: 1, id: 'operacional_mobile' },
     { aba: 2, id: 'checklist' },
     { aba: 3, id: 'checklist_logistica' },
-    { aba: 4, id: 'compras_solicitar' },
+    { aba: 4, id: 'compras_solicitar', ids: ['compras_solicitar','compras_aprovar','compras_ver_todas'] },
   ];
 
   // Padrão por perfil (usado quando permsDB não define o módulo)
@@ -2919,13 +2919,13 @@ function aplicarPermissoesPerfil() {
 
   // Aplicar: permsDB tem prioridade sobre padrão
   modulos.forEach(m => {
-    let permitido;
-    if (m.id in perms) {
-      // Permissão explícita no banco (admin marcou/desmarcou)
-      permitido = !!perms[m.id];
-    } else {
-      // Sem permissão explícita → usa padrão do perfil
-      permitido = meuPadrao.includes(m.id);
+    // Módulo pode ser liberado por mais de uma permissão (ex.: Compras
+    // abre por solicitar, aprovar OU visão geral — caso recebedor/financeiro)
+    const ids = m.ids || [m.id];
+    let permitido = false;
+    for (const pid of ids) {
+      if (pid in perms) { if (perms[pid]) { permitido = true; break; } }
+      else if (meuPadrao.includes(pid)) { permitido = true; break; }
     }
     if (permitido && navs[m.aba]) {
       navs[m.aba].style.display = '';
