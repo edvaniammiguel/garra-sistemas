@@ -174,6 +174,27 @@ async def _cabe_no_teto_mensal(uid, valor, limite_mensal):
     return (float(valor or 0) <= saldo + 1e-9, ja, saldo)
 
 
+def _validar_itens(itens):
+    """Sanidade dos itens: quantidade > 0 e valor >= 0. Sem isso, um item
+    negativo derruba o total e burla alçada/teto (achado da auditoria)."""
+    if not itens:
+        raise HTTPException(status_code=400, detail="Informe ao menos 1 item")
+    for i in itens:
+        try:
+            q = float(i.get("quantidade") or 0)
+            v = float(i.get("valor_unit") or 0)
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=400, detail="Quantidade/valor inválidos")
+        if q <= 0:
+            raise HTTPException(status_code=400,
+                                detail=f"Quantidade deve ser maior que zero ({i.get('descricao','item')})")
+        if v < 0:
+            raise HTTPException(status_code=400,
+                                detail=f"Valor não pode ser negativo ({i.get('descricao','item')})")
+        if not (i.get("descricao") or "").strip():
+            raise HTTPException(status_code=400, detail="Item sem descrição")
+
+
 async def _trilha(oc_id, status_de, status_para, observacao, uid):
     await ajard_query(
         """INSERT INTO compras.oc_historico (oc_id, status_de, status_para, observacao, usuario_id)
@@ -328,8 +349,7 @@ async def criar_oc(request: Request, payload=Depends(verificar_compras_solicitan
         raise HTTPException(status_code=404, detail="Setor não encontrado")
 
     itens = d.get("itens") or []
-    if not itens:
-        raise HTTPException(status_code=400, detail="A OC precisa de ao menos 1 item")
+    _validar_itens(itens)
 
     seq = await ajard_query(
         """SELECT COALESCE(MAX(sequencia),0)+1 AS n FROM compras.ordens_compra
@@ -341,12 +361,13 @@ async def criar_oc(request: Request, payload=Depends(verificar_compras_solicitan
     uid = await _usuario_id(payload)
     row = await ajard_query_id(
         """INSERT INTO compras.ordens_compra
-              (numero, ano, sequencia, setor_codigo, fornecedor_id, fornecedor_avulso,
+              (numero, ano, sequencia, setor_codigo, fornecedor_id, fornecedor_avulso, fornecedor_avulso_contato,
                ot_id, equipamento_id, prioridade, condicao_pagamento, observacao,
                solicitante_id)
-           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
         (numero, ano, int(seq["n"]), setor, d.get("fornecedor_id"),
          (d.get("fornecedor_avulso") or "").strip() or None,
+         (d.get("fornecedor_avulso_contato") or "").strip() or None,
          d.get("ot_id"), d.get("equipamento_id"),
          d.get("prioridade", "normal"), d.get("condicao_pagamento"),
          d.get("observacao"), uid))
@@ -497,6 +518,9 @@ async def detalhe_oc(oc_id: str, _auth=Depends(verificar_compras)):
     d = dict(oc)
     d["itens"] = [dict(i) for i in itens]
     d["historico"] = [dict(h) for h in hist]
+    # telefone para WhatsApp: cadastrado usa o do fornecedor; avulso usa o contato digitado
+    if not d.get("fornecedor_telefone") and d.get("fornecedor_avulso_contato"):
+        d["fornecedor_telefone"] = d["fornecedor_avulso_contato"]
     d["anexos"] = []
     for a in anexos:
         ax = dict(a)
@@ -543,6 +567,7 @@ async def editar_oc(oc_id: str, request: Request, payload=Depends(verificar_comp
             params, fetch="none")
 
     if "itens" in d:
+        _validar_itens([i for i in (d["itens"] or []) if (i.get("descricao") or "").strip()])
         await ajard_query(
             "UPDATE compras.oc_itens SET ativo=false WHERE oc_id=%s",
             (oc_id,), fetch="none")
