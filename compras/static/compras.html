@@ -106,7 +106,7 @@ header .badge-fila{background:var(--red);border-radius:99px;padding:1px 8px;font
   <span class="badge-fila" id="badge-fila">0</span>
   <span style="flex:1"></span>
   <span id="hdr-user" style="font-size:12px;opacity:.85"></span>
-  <span style="font-size:10px;opacity:.6;margin-left:8px">v1.14</span>
+  <span style="font-size:10px;opacity:.6;margin-left:8px">v1.15</span>
 </header>
 
 <div class="wrap">
@@ -152,6 +152,7 @@ header .badge-fila{background:var(--red);border-radius:99px;padding:1px 8px;font
         </div>
         <select id="n-fornecedor"><option value="">Selecionar / gestão decide</option></select>
         <input id="n-forn-avulso" placeholder="Nome do fornecedor / site (ex.: Mercado Livre, Loja X)" style="display:none">
+        <input id="n-forn-avulso-contato" placeholder="WhatsApp/telefone do fornecedor (opcional — com DDD)" style="display:none;margin-top:6px" inputmode="tel">
         <div class="hint">Fornecedor recorrente? Cadastre no módulo pra ter histórico de preço e WhatsApp direto.</div>
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
@@ -289,6 +290,7 @@ function toast(msg, tipo){
   t.textContent=msg; t.className=tipo||''; t.style.display='block';
   clearTimeout(t._h); t._h=setTimeout(()=>t.style.display='none',3200);
 }
+function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g, ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch])); }
 function fmt(v){ return 'R$ '+Number(v||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2}); }
 function fmtData(d){ if(!d) return ''; const x=new Date(d); return isNaN(x)?'':x.toLocaleDateString('pt-BR')+' '+x.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}); }
 const ST_LABEL={rascunho:'Rascunho',solicitada:'Solicitada',aprovada:'Aprovada',enviada:'Enviada',
@@ -430,7 +432,7 @@ function cardOC(o){
     </div>
     <div class="top" style="margin-top:6px">
       <span class="setor"><span class="dot" style="background:${o.setor_cor||'#64748B'}"></span>${o.setor_nome}</span>
-      <span style="font-size:12px;color:var(--muted)">${o.fornecedor_nome||'— fornecedor a definir'}</span>
+      <span style="font-size:12px;color:var(--muted)">${esc(o.fornecedor_nome)||'— fornecedor a definir'}</span>
     </div>
     <div class="oc-meta">${o.solicitante_nome||''}${o.ot_numero?(' · '+o.ot_numero):''}${o.equipamento_codigo?(' · '+o.equipamento_codigo):''}${o.nf_numero?(' · NF '+o.nf_numero):''}${o.nf_devolucao?(' · NF dev. '+o.nf_devolucao):''}</div>
     <div class="oc-val">${fmt(o.valor_total)}</div>
@@ -515,6 +517,7 @@ async function _salvarOC(solicitar){
   const body={ setor_codigo:_setorSel,
     fornecedor_id: (!modoAv && fsel) ? fsel : null,
     fornecedor_avulso: modoAv ? (document.getElementById('n-forn-avulso').value.trim()||null) : null,
+    fornecedor_avulso_contato: modoAv ? (document.getElementById('n-forn-avulso-contato').value.trim()||null) : null,
     ot_id: (_setorSel==='MANUT'? (document.getElementById('n-ot').value||null):null),
     prioridade: document.getElementById('n-prio').value,
     condicao_pagamento: document.getElementById('n-cond').value,
@@ -555,8 +558,9 @@ function modoFornecedor(modo){
   const av=document.getElementById('n-forn-avulso'), sel=document.getElementById('n-fornecedor');
   document.getElementById('chip-forn-cad').classList.toggle('sel', modo==='cad');
   document.getElementById('chip-forn-av').classList.toggle('sel', modo==='avulso');
-  if (modo==='avulso'){ sel.style.display='none'; sel.value=''; av.style.display=''; }
-  else { sel.style.display=''; av.style.display='none'; av.value=''; }
+  const avc=document.getElementById('n-forn-avulso-contato');
+  if (modo==='avulso'){ sel.style.display='none'; sel.value=''; av.style.display=''; avc.style.display=''; }
+  else { sel.style.display=''; av.style.display='none'; av.value=''; avc.style.display='none'; avc.value=''; }
 }
 
 function ajustarAcoesNova(){
@@ -580,6 +584,7 @@ function limparNova(){
   modoFornecedor('cad');
   document.getElementById('n-fornecedor').value='';
   document.getElementById('n-forn-avulso').value='';
+  document.getElementById('n-forn-avulso-contato').value='';
   document.getElementById('n-prio').value='normal';
   document.getElementById('n-obs').value='';
   document.getElementById('n-anexos').value='';
@@ -601,11 +606,11 @@ async function abrirDetalhe(id){
 
   const itensHtml = o.itens.map(i=>`
     <div class="item-view">
-      <div>${i.descricao}<div class="rec">${Number(i.quantidade)} ${i.unidade} × ${fmt(i.valor_unit)}${Number(i.qtd_recebida)>0?(' · recebido: '+Number(i.qtd_recebida)):''}${Number(i.qtd_devolvida)>0?(' · devolvido: '+Number(i.qtd_devolvida)):''}</div></div>
+      <div>${esc(i.descricao)}<div class="rec">${Number(i.quantidade)} ${i.unidade} × ${fmt(i.valor_unit)}${Number(i.qtd_recebida)>0?(' · recebido: '+Number(i.qtd_recebida)):''}${Number(i.qtd_devolvida)>0?(' · devolvido: '+Number(i.qtd_devolvida)):''}</div></div>
       <b>${fmt(i.quantidade*i.valor_unit)}</b>
     </div>`).join('');
   const trilhaHtml = (o.historico||[]).map(h=>`
-    <div class="ev"><b>${ST_LABEL[h.status_para]||h.status_para}</b> — ${h.usuario_nome||'sistema'} <span class="quando">· ${fmtData(h.criado_em)}</span>${h.observacao?('<br>'+h.observacao):''}</div>`).join('');
+    <div class="ev"><b>${ST_LABEL[h.status_para]||h.status_para}</b> — ${esc(h.usuario_nome||'sistema')} <span class="quando">· ${fmtData(h.criado_em)}</span>${h.observacao?('<br>'+esc(h.observacao)):''}</div>`).join('');
 
   let acoes='';
   const st=o.status;
@@ -639,13 +644,13 @@ async function abrirDetalhe(id){
     <div class="oc-meta">Fornecedor: <b>${o.fornecedor_nome||'a definir'}</b> · ${o.condicao_pagamento||''}${o.nf_numero?(' · NF '+o.nf_numero):''}</div>
     <div class="oc-meta">Solicitante: ${o.solicitante_nome||'—'}${o.aprovador_nome?(' · Aprovou: '+o.aprovador_nome+' em '+fmtData(o.data_aprovacao)):''}</div>
     ${o.ot_numero?('<div class="oc-meta">Vínculo: '+o.ot_numero+(o.equipamento_codigo?(' · '+o.equipamento_codigo):'')+'</div>'):''}
-    ${o.observacao?('<div class="oc-meta">Obs: '+o.observacao+'</div>'):''}
+    ${o.observacao?('<div class="oc-meta">Obs: '+esc(o.observacao)+'</div>'):''}
     <div style="margin-top:10px">${itensHtml}</div>
     <div class="tot-geral"><span>Total</span><b>${fmt(o.valor_total)}</b></div>
     <div style="margin:6px 0 2px;font-size:11px;font-weight:800;color:var(--muted);text-transform:uppercase">📎 Anexos</div>
     <div id="det-anexos">${(o.anexos&&o.anexos.length)?o.anexos.map(a=>`
-      <div class="item-view"><div><a href="${a.url}" target="_blank" style="color:var(--blue);font-weight:700;text-decoration:none">${a.content_type==='application/pdf'?'📄':'🖼'} ${a.nome}</a>
-        <div class="rec">${a.enviado_por_nome||''} · ${fmtData(a.criado_em)}</div></div>
+      <div class="item-view"><div><a href="${a.url}" target="_blank" style="color:var(--blue);font-weight:700;text-decoration:none">${a.content_type==='application/pdf'?'📄':'🖼'} ${esc(a.nome)}</a>
+        <div class="rec">${esc(a.enviado_por_nome||'')} · ${fmtData(a.criado_em)}</div></div>
         ${o.status!=='recebida'?`<button class="del" onclick="removerAnexo('${o.id}','${a.id}','${a.nome.replace(/'/g,'')}')">✕</button>`:''}</div>`).join('')
       :'<div class="hint">Nenhum orçamento anexado.</div>'}</div>
     ${!['rejeitada','cancelada'].includes(o.status)?`
@@ -653,7 +658,7 @@ async function abrirDetalhe(id){
       <input type="file" id="det-anexo-file" accept="application/pdf,image/*" style="display:none" onchange="enviarAnexoDetalhe('${o.id}',this)">
       <button class="btn btn-sec" style="width:100%" onclick="document.getElementById('det-anexo-file').click()">📎 Anexar orçamento (PDF ou foto)</button>
     </div>`:''}
-    ${o.motivo_rejeicao?('<div class="oc-meta" style="color:var(--red)">Motivo da rejeição: '+o.motivo_rejeicao+'</div>'):''}
+    ${o.motivo_rejeicao?('<div class="oc-meta" style="color:var(--red)">Motivo da rejeição: '+esc(o.motivo_rejeicao)+'</div>'):''}
     <div class="acoes">${acoes}</div>
     <div style="margin-top:14px"><div style="font-size:11px;font-weight:800;color:var(--muted);text-transform:uppercase;margin-bottom:6px">Trilha</div>
       <div class="trilha">${trilhaHtml||'<div class="ev">—</div>'}</div></div>`;
@@ -721,6 +726,7 @@ async function editarOC(id){
   modoFornecedor(o.fornecedor_avulso ? 'avulso' : 'cad');
   document.getElementById('n-fornecedor').value = o.fornecedor_id || '';
   document.getElementById('n-forn-avulso').value = o.fornecedor_avulso || '';
+  document.getElementById('n-forn-avulso-contato').value = o.fornecedor_avulso_contato || '';
   document.getElementById('n-ot').value=o.ot_id||'';
   document.getElementById('n-prio').value=o.prioridade||'normal';
   document.getElementById('n-cond').value=o.condicao_pagamento||(CONDICOES[0]&&CONDICOES[0].codigo)||'30D';
@@ -757,7 +763,7 @@ async function verRelatorio(){ return guard(async ()=>{
     if(!_REL.linhas.length){ out.innerHTML='<div class="vazio">Nenhuma OC no período/filtros.</div>'; return; }
     const rows=_REL.linhas.map(l=>`<div class="oc-card" style="cursor:default">
       <div class="top"><span class="oc-num">${l.numero}</span><span class="tag st-${l.status}">${ST_LABEL[l.status]||l.status}</span></div>
-      <div class="oc-meta">${new Date(l.data+'T00:00').toLocaleDateString('pt-BR')} · ${l.setor} · ${l.fornecedor} · ${l.solicitante||''}${l.nf_numero?(' · NF '+l.nf_numero):''}</div>
+      <div class="oc-meta">${new Date(l.data+'T00:00').toLocaleDateString('pt-BR')} · ${l.setor} · ${esc(l.fornecedor)} · ${esc(l.solicitante||'')}${l.nf_numero?(' · NF '+l.nf_numero):''}</div>
       <div class="oc-val">${fmt(l.valor_total)}</div></div>`).join('');
     const setores=Object.entries(_REL.por_setor).map(([s,v])=>`<div class="alc-row" style="grid-template-columns:1fr auto"><span>${s}</span><b>${fmt(v)}</b></div>`).join('');
     out.innerHTML=`<div class="tot-geral"><span>${_REL.linhas.length} OC(s) · ${new Date(_REL.inicio+'T00:00').toLocaleDateString('pt-BR')} a ${new Date(_REL.fim+'T00:00').toLocaleDateString('pt-BR')}</span><b>${fmt(_REL.total)}</b></div>
@@ -785,7 +791,7 @@ async function pdfRelatorio(){ return guard(async ()=>{
   try{
     if(!_REL) _REL=await api('/compras/api/relatorio?'+relFiltros().toString());
     const d=_REL;
-    const linhas=d.linhas.map(l=>`<tr><td>${l.numero}</td><td>${new Date(l.data+'T00:00').toLocaleDateString('pt-BR')}</td><td>${l.setor}</td><td>${ST_LABEL[l.status]||l.status}</td><td>${l.fornecedor}</td><td>${l.solicitante||''}</td><td>${l.nf_numero||''}</td><td style="text-align:right">${fmt(l.valor_total)}</td></tr>`).join('');
+    const linhas=d.linhas.map(l=>`<tr><td>${l.numero}</td><td>${new Date(l.data+'T00:00').toLocaleDateString('pt-BR')}</td><td>${l.setor}</td><td>${ST_LABEL[l.status]||l.status}</td><td>${esc(l.fornecedor)}</td><td>${esc(l.solicitante||'')}</td><td>${l.nf_numero||''}</td><td style="text-align:right">${fmt(l.valor_total)}</td></tr>`).join('');
     const set=Object.entries(d.por_setor).map(([s,v])=>`<tr><td>${s}</td><td style="text-align:right">${fmt(v)}</td></tr>`).join('');
     const doc=`<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><title>Relatório de Compras · Garra</title><style>
       *{margin:0;padding:0;box-sizing:border-box;font-family:system-ui,sans-serif}
@@ -842,7 +848,7 @@ async function removerAnexo(ocId, anexoId, nome){ return guard(async ()=>{
 
 function imprimirOC(id){
   api('/compras/api/ocs/'+id).then(o=>{
-    const linhas=o.itens.map((i,n)=>`<tr><td>${n+1}</td><td>${i.descricao}</td><td>${Number(i.quantidade)}</td><td>${i.unidade}</td><td>${fmt(i.valor_unit)}</td><td>${fmt(i.quantidade*i.valor_unit)}</td></tr>`).join('');
+    const linhas=o.itens.map((i,n)=>`<tr><td>${n+1}</td><td>${esc(i.descricao)}</td><td>${Number(i.quantidade)}</td><td>${i.unidade}</td><td>${fmt(i.valor_unit)}</td><td>${fmt(i.quantidade*i.valor_unit)}</td></tr>`).join('');
     const aprov=o.aprovador_nome?`<div class="box"><b>${o.aprovador_nome}</b>Aprovação · ${fmtData(o.data_aprovacao)}<br>Assinatura digital registrada no sistema</div>`:`<div class="box"><b>&nbsp;</b>Aprovação pendente</div>`;
     const doc=`<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><title>${o.numero} · Garra</title><style>
       *{margin:0;padding:0;box-sizing:border-box;font-family:system-ui,sans-serif}
@@ -868,14 +874,14 @@ function imprimirOC(id){
           <div class="n"><b>${o.numero}</b> · ${fmtData(o.data_aprovacao||o.criado_em)}<br>Setor: ${o.setor_nome}${o.prioridade==='urgente'?' · Prioridade: URGENTE':''}${o.nf_numero?('<br><b>NF '+o.nf_numero+'</b> · '+(ST_LABEL[o.status]||'')):''}</div></div>
       </div>
       <h3>Fornecedor</h3>
-      <div><b>${o.fornecedor_nome||'A definir'}</b>${o.fornecedor_telefone?(' · '+o.fornecedor_telefone):''} · Condição: ${o.condicao_pagamento||'-'}</div>
+      <div><b>${esc(o.fornecedor_nome||'A definir')}</b>${o.fornecedor_telefone?(' · '+o.fornecedor_telefone):''} · Condição: ${o.condicao_pagamento||'-'}</div>
       <h3>Itens</h3>
       <table><tr><th>#</th><th>Descrição</th><th>Qtd</th><th>Un</th><th>Vlr Unit.</th><th>Total</th></tr>
         ${linhas}
         <tr class="tot"><td colspan="5" style="text-align:right">TOTAL</td><td>${fmt(o.valor_total)}</td></tr></table>
       ${(o.observacao||o.ot_numero)?('<h3>Observações</h3><div>'+(o.observacao||'')+(o.ot_numero?(' · Referência interna: '+o.ot_numero+(o.equipamento_codigo?(' · '+o.equipamento_codigo):'')):'')+'</div>'):''}
       <div class="ass">
-        <div class="box"><b>${o.solicitante_nome||'&nbsp;'}</b>Solicitante</div>
+        <div class="box"><b>${esc(o.solicitante_nome)||'&nbsp;'}</b>Solicitante</div>
         ${aprov}
       </div>
       <div class="foot">Documento gerado pelo Garra Sistemas · Válido como pedido de compra · Faturar somente conforme itens acima e citar o nº da OC na Nota Fiscal</div>
@@ -889,13 +895,19 @@ function imprimirOC(id){
 
 function whats(id){
   api('/compras/api/ocs/'+id).then(o=>{
-    const linhas=o.itens.map(i=>`- ${Number(i.quantidade)} ${i.unidade} ${i.descricao} (${fmt(i.valor_unit)})`).join('\n');
+    const linhas=o.itens.map(i=>`- ${Number(i.quantidade)} ${i.unidade} ${esc(i.descricao)} (${fmt(i.valor_unit)})`).join('\n');
     const txt=`*ORDEM DE COMPRA ${o.numero} — Garra Terraplenagem*\nSetor: ${o.setor_nome}\nFornecedor: ${o.fornecedor_nome||'-'}\n\n${linhas}\n\n*Total: ${fmt(o.valor_total)}*\nPagamento: ${o.condicao_pagamento||'-'}\n\nFavor citar o nº da OC na Nota Fiscal. Faturar somente conforme itens acima.`;
     const fone=(o.fornecedor_telefone||'').replace(/\D/g,'');
-    // Com telefone cadastrado: conversa direta. Sem (fornecedor avulso):
-    // o WhatsApp abre com a mensagem pronta para escolher o contato.
-    const url='https://wa.me/'+(fone.length>=10?('55'+fone):'')+'?text='+encodeURIComponent(txt);
-    window.open(url,'_blank');
+    if (fone.length>=10){
+      // Número conhecido (cadastrado ou avulso com contato) → conversa direta
+      window.open('https://wa.me/55'+fone+'?text='+encodeURIComponent(txt),'_blank');
+    } else {
+      // Sem número → copia a mensagem e abre o WhatsApp p/ escolher o contato
+      const segue=confirm('Este fornecedor não tem número salvo.\n\nA mensagem será copiada e o WhatsApp abre para você escolher o contato. Continuar?');
+      if(!segue) return;
+      if(navigator.clipboard) navigator.clipboard.writeText(txt).catch(()=>{});
+      window.open('https://wa.me/?text='+encodeURIComponent(txt),'_blank');
+    }
     if (o.status==='aprovada'){
       setTimeout(()=>{
         if (confirm('Mensagem disparada no WhatsApp.\n\nMarcar a '+o.numero+' como ENVIADA? (libera o recebimento)')){
@@ -914,7 +926,7 @@ async function abrirReceber(id){
   const linhas=o.itens.map(i=>{
     const falta=Math.max(0, Number(i.quantidade)-Number(i.qtd_recebida||0));
     return `<div class="rec-grid">
-      <div style="font-size:13px">${i.descricao}<div class="rec" style="font-size:11px;color:var(--muted)">pedido ${Number(i.quantidade)} ${i.unidade} · já recebido ${Number(i.qtd_recebida||0)} · falta ${falta}</div></div>
+      <div style="font-size:13px">${esc(i.descricao)}<div class="rec" style="font-size:11px;color:var(--muted)">pedido ${Number(i.quantidade)} ${i.unidade} · já recebido ${Number(i.qtd_recebida||0)} · falta ${falta}</div></div>
       <input type="number" step="any" min="0" id="rec-${i.id}" value="${falta}" placeholder="Qtd">
     </div>`;
   }).join('');
@@ -957,13 +969,14 @@ function whatsDevolucao(id){
   api('/compras/api/ocs/'+id).then(o=>{
     const dev=(o.itens||[]).filter(i=>Number(i.qtd_devolvida)>0);
     if(!dev.length){ toast('Nenhum item devolvido nesta OC','warn'); return; }
-    const linhas=dev.map(i=>`- ${Number(i.qtd_devolvida)} ${i.unidade} ${i.descricao} (${fmt(i.valor_unit)} un.)`).join('\n');
+    const linhas=dev.map(i=>`- ${Number(i.qtd_devolvida)} ${i.unidade} ${esc(i.descricao)} (${fmt(i.valor_unit)} un.)`).join('\n');
     const total=dev.reduce((s,i)=>s+Number(i.qtd_devolvida)*Number(i.valor_unit||0),0);
     const ult=(o.historico||[]).filter(hh=>String(hh.observacao||'').includes('Devolução registrada')).pop();
     const motivo=ult? String(ult.observacao).split(': ').slice(1).join(': ') : '';
     const txt=`*DEVOLUÇÃO — ${o.numero} — Garra Terraplenagem*\nFornecedor: ${o.fornecedor_nome||'-'}\n\nItens devolvidos:\n${linhas}\n\n*Valor devolvido: ${fmt(total)}*${o.nf_devolucao?('\nNF de devolução: '+o.nf_devolucao):''}${motivo?('\nMotivo: '+motivo):''}\n\nFavor providenciar o crédito/estorno referente e confirmar o recebimento das peças.`;
     const fone=(o.fornecedor_telefone||'').replace(/\D/g,'');
-    window.open('https://wa.me/'+(fone.length>=10?('55'+fone):'')+'?text='+encodeURIComponent(txt),'_blank');
+    if (fone.length>=10){ window.open('https://wa.me/55'+fone+'?text='+encodeURIComponent(txt),'_blank'); }
+    else { if(navigator.clipboard) navigator.clipboard.writeText(txt).catch(()=>{}); window.open('https://wa.me/?text='+encodeURIComponent(txt),'_blank'); }
   }).catch(e=>toast(e.message,'err'));
 }
 
@@ -975,7 +988,7 @@ async function abrirDevolucao(id){
     const disp=Math.max(0, Number(i.qtd_recebida||0)-Number(i.qtd_devolvida||0));
     if (disp<=0) return '';
     return `<div class="rec-grid">
-      <div style="font-size:13px">${i.descricao}<div class="rec" style="font-size:11px;color:var(--muted)">recebido ${Number(i.qtd_recebida||0)} · já devolvido ${Number(i.qtd_devolvida||0)} · pode devolver ${disp}</div></div>
+      <div style="font-size:13px">${esc(i.descricao)}<div class="rec" style="font-size:11px;color:var(--muted)">recebido ${Number(i.qtd_recebida||0)} · já devolvido ${Number(i.qtd_devolvida||0)} · pode devolver ${disp}</div></div>
       <input type="number" step="any" min="0" max="${disp}" id="dev-${i.id}" value="0" placeholder="Qtd">
     </div>`;
   }).join('');
@@ -1030,7 +1043,7 @@ async function carregarFila(){
       <div class="oc-card" onclick="abrirDetalhe('${o.id}')">
         <div class="top"><span class="oc-num">${o.numero}${o.prioridade==='urgente'?' <span class="badge-urg">URGENTE</span>':''}</span>
           <span class="setor"><span class="dot" style="background:${o.setor_cor||'#64748B'}"></span>${o.setor_nome}</span></div>
-        <div class="oc-meta">${o.solicitante_nome||''} · ${o.fornecedor_nome||'fornecedor a definir'}${o.ot_numero?(' · '+o.ot_numero):''}</div>
+        <div class="oc-meta">${esc(o.solicitante_nome||'')} · ${esc(o.fornecedor_nome)||'fornecedor a definir'}${o.ot_numero?(' · '+esc(o.ot_numero)):''}</div>
         <div class="oc-val">${fmt(o.valor_total)}</div>
         <div class="acoes" onclick="event.stopPropagation()">
           <button class="btn btn-no" onclick="rejeitar('${o.id}')">✕ Rejeitar</button>
