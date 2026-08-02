@@ -61,12 +61,26 @@ async def _tem_permissao(payload, modulo):
 
 
 async def verificar_compras(payload=Depends(verificar_token)):
-    """Gate geral do módulo: solicitar OU aprovar dá acesso de leitura."""
+    """Gate geral do módulo: solicitar, aprovar OU visão geral dão acesso.
+    'compras_ver_todas' sozinha atende o perfil recebedor/financeiro
+    (ex.: atendimento que confere mercadoria sem abrir OCs)."""
     if await _tem_permissao(payload, "compras_solicitar"):
         return payload
     if await _tem_permissao(payload, "compras_aprovar"):
         return payload
+    if await _tem_permissao(payload, "compras_ver_todas"):
+        return payload
     raise HTTPException(status_code=403, detail="Sem permissão para o módulo Compras")
+
+
+async def verificar_compras_solicitante(payload=Depends(verificar_token)):
+    """Criar OC exige a permissão de Solicitar (ou perfil de gestão).
+    'Visão geral' sozinha vê e confere — não abre OCs."""
+    if (payload.get("perfil") or "").lower() in _PERFIS_COMPRAS:
+        return payload
+    if await _tem_permissao(payload, "compras_solicitar"):
+        return payload
+    raise HTTPException(status_code=403, detail="Sem permissão para criar OCs — peça à central de cotações")
 
 
 async def verificar_compras_gestor(payload=Depends(verificar_token)):
@@ -87,11 +101,18 @@ async def verificar_compras_aprovador(payload=Depends(verificar_token)):
 
 
 async def _ve_todas(payload):
-    """Gestão ou aprovador enxergam todas as OCs; solicitante comum,
-    apenas as que ele mesmo criou (em qualquer tela — mobile ou desktop)."""
+    """Quem enxerga TODAS as OCs (e pode conferir recebimento/devolução delas):
+    - perfil de gestão;
+    - quem aprova (compras_aprovar) — precisa ver para decidir;
+    - quem tem 'compras_ver_todas' (Visão geral): recebedor de entregas e
+      financeiro — vê e confere tudo, SEM poder aprovar (alçada continua
+      mandando) e sem editar/excluir OC alheia.
+    Solicitante comum segue vendo apenas as próprias."""
     if (payload.get("perfil") or "").lower() in _PERFIS_COMPRAS:
         return True
-    return await _tem_permissao(payload, "compras_aprovar")
+    if await _tem_permissao(payload, "compras_aprovar"):
+        return True
+    return await _tem_permissao(payload, "compras_ver_todas")
 
 
 async def _alcada_efetiva(payload):
@@ -260,7 +281,7 @@ async def salvar_alcada(request: Request, _auth=Depends(verificar_compras_gestor
 # ── ORDENS DE COMPRA ──────────────────────────────────────────
 
 @router.post("/compras/api/ocs")
-async def criar_oc(request: Request, payload=Depends(verificar_compras)):
+async def criar_oc(request: Request, payload=Depends(verificar_compras_solicitante)):
     """Cria OC em rascunho (cotação). Itens no body: lista de
     {descricao, quantidade, unidade, valor_unit, peca_id?}."""
     d = await request.json()
