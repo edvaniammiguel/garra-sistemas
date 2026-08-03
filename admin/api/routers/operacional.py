@@ -635,6 +635,7 @@ async def op_criar_os(request: Request, payload=Depends(verificar_gestor)):
     equipamento_id      = d.get("equipamento_id") or None
     operador_id         = d.get("operador_id") or None
     endereco            = (d.get("endereco") or "").strip() or None
+    gps                 = (d.get("gps") or "").strip() or None
     descricao           = (d.get("descricao") or "").strip() or None
     data_inicio         = d.get("data_inicio") or datetime.utcnow().date()
     data_fim_prevista   = d.get("data_fim_prevista") or None
@@ -668,14 +669,14 @@ async def op_criar_os(request: Request, payload=Depends(verificar_gestor)):
                (numero, ano, sequencia, codigo_erp, codigo_erp_em, codigo_erp_por,
                 cliente_id, cliente_nome_avulso, tipo_servico_id,
                 equipamento_id, operador_id,
-                obra, endereco, descricao, observacao_gestao,
+                obra, endereco, gps, descricao, observacao_gestao,
                 data_inicio, data_fim_prevista,
                 status, origem, criado_por, horas_padrao_dia)
-               VALUES (%s,%s,%s,%s,%s,%s, %s,%s,%s, %s,%s, %s,%s,%s,%s, %s,%s, %s,%s,%s, %s)""",
+               VALUES (%s,%s,%s,%s,%s,%s, %s,%s,%s, %s,%s, %s,%s,%s,%s,%s, %s,%s, %s,%s,%s, %s)""",
             (numero, ano, sequencia, codigo_erp, codigo_erp_em, codigo_erp_por,
              cliente_id, cliente_nome_avulso, tipo_servico_id,
              equipamento_id, operador_id,
-             obra, endereco, descricao, observacao_gestao,
+             obra, endereco, gps, descricao, observacao_gestao,
              data_inicio, data_fim_prevista,
              status, origem, criado_por_id,
              float(d.get("horas_padrao_dia")) if d.get("horas_padrao_dia") else None)
@@ -697,7 +698,7 @@ async def op_listar_os(
     sql = """
         SELECT
             os.id, os.numero, os.ano, os.sequencia,
-            os.codigo_erp, os.obra, os.endereco, os.descricao, os.observacao_gestao,
+            os.codigo_erp, os.obra, os.endereco, os.gps, os.descricao, os.observacao_gestao,
             os.data_inicio, os.data_fim_prevista, os.data_fim_real,
             os.status, os.origem, os.criado_em,
             os.regime_cobranca, os.valor_combinado, os.horas_padrao_dia,
@@ -801,7 +802,7 @@ async def op_atualizar_os(os_id: str, request: Request, payload=Depends(verifica
         raise HTTPException(status_code=404, detail="OS não encontrada")
 
     # Campos editáveis
-    campos_editaveis = ["codigo_erp", "obra", "endereco", "descricao", "observacao_gestao",
+    campos_editaveis = ["codigo_erp", "obra", "endereco", "gps", "descricao", "observacao_gestao",
                         "data_fim_prevista", "data_fim_real", "status",
                         "tipo_servico_id", "cliente_id", "cliente_nome_avulso",
                         "equipamento_id", "operador_id",
@@ -1513,7 +1514,8 @@ async def op_minhas_os(historico: int = 0, payload=Depends(verificar_token)):
         status_filter = "os.status NOT IN ('concluida_completa','concluida_sem_erp','cancelada')"
 
     rows = await ajard_query(
-        f"""SELECT os.id, os.numero, os.obra, os.regime_cobranca, os.origem,
+        f"""SELECT os.id, os.numero, os.obra, os.endereco, os.gps,
+                  os.regime_cobranca, os.origem,
                   os.descricao AS observacao,
                   os.data_inicio, os.data_fim_prevista, os.status,
                   os.equipamento_id, os.operador_id, os.tipo_servico_id, os.cliente_id,
