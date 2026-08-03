@@ -106,7 +106,7 @@ header .badge-fila{background:var(--red);border-radius:99px;padding:1px 8px;font
   <span class="badge-fila" id="badge-fila">0</span>
   <span style="flex:1"></span>
   <span id="hdr-user" style="font-size:12px;opacity:.85"></span>
-  <span style="font-size:10px;opacity:.6;margin-left:8px">v1.15</span>
+  <span style="font-size:10px;opacity:.6;margin-left:8px">v1.16</span>
 </header>
 
 <div class="wrap">
@@ -893,20 +893,41 @@ function imprimirOC(id){
   }).catch(e=>toast(e.message,'err'));
 }
 
+function abrirWhatsApp(foneDigits, texto){
+  // Fora da webview do PWA, wa.me às vezes cai na tela "instale o WhatsApp".
+  // Estratégia: api.whatsapp.com (respeita o app instalado) e, no Android,
+  // tentativa via intent:// que força abrir o aplicativo nativo.
+  const msg = encodeURIComponent(texto);
+  const temFone = foneDigits && foneDigits.length >= 10;
+  const alvo = temFone
+    ? 'https://api.whatsapp.com/send?phone=55'+foneDigits+'&text='+msg
+    : 'https://api.whatsapp.com/send?text='+msg;
+  const ua = navigator.userAgent || '';
+  const androide = /Android/i.test(ua);
+  if (androide) {
+    // intent:// abre direto o app WhatsApp; se falhar, o browser_fallback_url usa a web
+    const intent = temFone
+      ? 'intent://send?phone=55'+foneDigits+'&text='+msg+'#Intent;scheme=whatsapp;package=com.whatsapp;S.browser_fallback_url='+encodeURIComponent(alvo)+';end'
+      : 'intent://send?text='+msg+'#Intent;scheme=whatsapp;package=com.whatsapp;S.browser_fallback_url='+encodeURIComponent(alvo)+';end';
+    // navega na própria aba para o intent ser tratado pelo Android (window.open costuma ser bloqueado)
+    window.location.href = intent;
+    return;
+  }
+  window.open(alvo, '_blank');
+}
+
 function whats(id){
   api('/compras/api/ocs/'+id).then(o=>{
     const linhas=o.itens.map(i=>`- ${Number(i.quantidade)} ${i.unidade} ${esc(i.descricao)} (${fmt(i.valor_unit)})`).join('\n');
     const txt=`*ORDEM DE COMPRA ${o.numero} — Garra Terraplenagem*\nSetor: ${o.setor_nome}\nFornecedor: ${o.fornecedor_nome||'-'}\n\n${linhas}\n\n*Total: ${fmt(o.valor_total)}*\nPagamento: ${o.condicao_pagamento||'-'}\n\nFavor citar o nº da OC na Nota Fiscal. Faturar somente conforme itens acima.`;
     const fone=(o.fornecedor_telefone||'').replace(/\D/g,'');
     if (fone.length>=10){
-      // Número conhecido (cadastrado ou avulso com contato) → conversa direta
-      window.open('https://wa.me/55'+fone+'?text='+encodeURIComponent(txt),'_blank');
+      abrirWhatsApp(fone, txt);
     } else {
-      // Sem número → copia a mensagem e abre o WhatsApp p/ escolher o contato
       const segue=confirm('Este fornecedor não tem número salvo.\n\nA mensagem será copiada e o WhatsApp abre para você escolher o contato. Continuar?');
       if(!segue) return;
       if(navigator.clipboard) navigator.clipboard.writeText(txt).catch(()=>{});
-      window.open('https://wa.me/?text='+encodeURIComponent(txt),'_blank');
+      abrirWhatsApp('', txt);
     }
     if (o.status==='aprovada'){
       setTimeout(()=>{
@@ -975,8 +996,8 @@ function whatsDevolucao(id){
     const motivo=ult? String(ult.observacao).split(': ').slice(1).join(': ') : '';
     const txt=`*DEVOLUÇÃO — ${o.numero} — Garra Terraplenagem*\nFornecedor: ${o.fornecedor_nome||'-'}\n\nItens devolvidos:\n${linhas}\n\n*Valor devolvido: ${fmt(total)}*${o.nf_devolucao?('\nNF de devolução: '+o.nf_devolucao):''}${motivo?('\nMotivo: '+motivo):''}\n\nFavor providenciar o crédito/estorno referente e confirmar o recebimento das peças.`;
     const fone=(o.fornecedor_telefone||'').replace(/\D/g,'');
-    if (fone.length>=10){ window.open('https://wa.me/55'+fone+'?text='+encodeURIComponent(txt),'_blank'); }
-    else { if(navigator.clipboard) navigator.clipboard.writeText(txt).catch(()=>{}); window.open('https://wa.me/?text='+encodeURIComponent(txt),'_blank'); }
+    if (fone.length<10 && navigator.clipboard) navigator.clipboard.writeText(txt).catch(()=>{});
+    abrirWhatsApp(fone.length>=10?fone:'', txt);
   }).catch(e=>toast(e.message,'err'));
 }
 
