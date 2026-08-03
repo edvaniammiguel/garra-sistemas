@@ -823,6 +823,19 @@ function carregarIframeChecklist(tab) {
 // ──────────────────────────────────────────────────────────────────────────────
 // OPERACIONAL — CARREGAROSAPP — Online-first com fallback IDB
 // ──────────────────────────────────────────────────────────────────────────────
+function _linkNavegacao(os) {
+  // Só http(s) explícito passa como link direto; qualquer outro texto vira
+  // busca no Google Maps (coordenadas ou endereço) — nunca javascript: etc.
+  const gps = (os.gps || '').trim();
+  if (gps) {
+    if (/^https?:\/\//i.test(gps)) return gps.replace(/"/g, '%22');
+    return 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(gps);
+  }
+  const end = (os.endereco || '').trim();
+  if (end) return 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(end);
+  return '';
+}
+
 async function carregarOSApp() {
   const el = document.getElementById('os-lista');
   el.innerHTML = '<div class="loading"><span class="spin"></span></div>';
@@ -891,6 +904,18 @@ async function carregarOSApp() {
          <button class="os-btn" style="background:var(--blue)" onclick="verPartes('${os.id}', '${os.numero}')">👁 Ver</button>
          <button class="os-btn" style="background:#16A34A" onclick="concluirOS('${os.id}', '${os.numero}')">✅ Concluir</button>`;
 
+    // (03/08/2026) Endereço da obra com GPS — bloco 📍 no card com botão
+    // 🧭 Navegar (link do Maps colado pela gestão OU busca por coordenadas/
+    // endereço). Sem dependência externa, sem custo.
+    const endTxt  = (os.endereco || '').trim();
+    const gpsLink = _linkNavegacao(os);
+    const blocoLocal = (endTxt || gpsLink)
+      ? `<div style="margin-top:8px;padding:8px 10px;background:#EFF6FF;border:1px solid #93C5FD;border-radius:8px;font-size:12px;color:#1E3A8A;line-height:1.4;display:flex;align-items:center;gap:8px">
+           <span style="flex:1">📍 ${esc(endTxt || 'Local da obra')}</span>
+           ${gpsLink ? `<a href="${gpsLink}" target="_blank" rel="noopener" style="flex-shrink:0;background:var(--orange);color:#fff;text-decoration:none;padding:7px 12px;border-radius:8px;font-size:12px;font-weight:700">🧭 Navegar</a>` : ''}
+         </div>`
+      : '';
+
     // (18/07/2026) Observação da OS visível ao operador — instruções da
     // gestão aparecem no card, acima do botão Passar
     const obsOS = (os.observacao || '').trim();
@@ -922,7 +947,7 @@ async function carregarOSApp() {
           </div>
         </div>
         <div class="os-btns">${botoes}</div>
-        ${blocoObs}${botaoLiberar}
+        ${blocoLocal}${blocoObs}${botaoLiberar}
       </div>
     `;
   });
