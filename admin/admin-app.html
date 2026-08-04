@@ -605,7 +605,8 @@ input,select,textarea { font-family:inherit; font-size:13px; outline:none; }
             <div class="users-filter">
               <select id="os-filter-status" onchange="filtrarOS()">
                 <option value="">Todos os status</option>
-                <option value="_abertas">🔓 Todas abertas</option>
+                <option value="_abertas">🟢 Todas abertas</option>
+                <option value="_concluidas">✅ Todas concluídas</option>
                 <option value="aguardando_fechamento">⏳ Aguardando fechamento</option>
                 <option value="aberta_sem_erp">Aberta (sem cod ERP)</option>
                 <option value="aberta_completa">Aberta (com cod ERP)</option>
@@ -4042,6 +4043,8 @@ function renderTabelaOS(lista) {
   const filtrada = lista.filter(os => {
     if (status === '_abertas') {
       if (['concluida_completa','concluida_sem_erp','cancelada'].includes(os.status)) return false;
+    } else if (status === '_concluidas') {
+      if (!['concluida_completa','concluida_sem_erp'].includes(os.status)) return false;
     } else if (status && os.status !== status) return false;
     if (cli    && os.cliente_id !== cli) return false;
     if (origem && os.origem !== origem) return false;
