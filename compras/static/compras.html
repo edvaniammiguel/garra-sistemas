@@ -106,7 +106,7 @@ header .badge-fila{background:var(--red);border-radius:99px;padding:1px 8px;font
   <span class="badge-fila" id="badge-fila">0</span>
   <span style="flex:1"></span>
   <span id="hdr-user" style="font-size:12px;opacity:.85"></span>
-  <span style="font-size:10px;opacity:.6;margin-left:8px">v1.16</span>
+  <span style="font-size:10px;opacity:.6;margin-left:8px">v1.18</span>
 </header>
 
 <div class="wrap">
@@ -141,7 +141,11 @@ header .badge-fila{background:var(--red);border-radius:99px;padding:1px 8px;font
     <div class="panel">
       <h3 id="nova-titulo">＋ Nova Ordem de Compra</h3>
       <div class="fld"><label>Setor *</label><div class="chip-row" id="n-setores"></div></div>
-      <div class="fld" id="n-ot-wrap" style="display:none"><label>Vincular à OT (Manutenção)</label>
+      <div class="fld" id="n-eq-wrap" style="display:none"><label>Equipamento (Manutenção)</label>
+        <select id="n-eq"><option value="">Selecionar equipamento…</option></select>
+        <div class="hint">A sigla do equipamento aparece na lista e no relatório.</div>
+      </div>
+      <div class="fld" id="n-ot-wrap" style="display:none"><label>Vincular à OT (opcional)</label>
         <select id="n-ot"><option value="">Sem vínculo</option></select>
         <div class="hint">Ao receber, o custo entra automaticamente no total da OT.</div>
       </div>
@@ -392,6 +396,12 @@ async function carregarApoios(){
   try{ OTS = await api('/manutencao/api/ots?status=aberta'); }catch(e){ OTS=[]; }
   try{ const o2 = await api('/manutencao/api/ots?status=em_andamento'); OTS=OTS.concat(o2); }catch(e){}
   try{ const o3 = await api('/manutencao/api/ots?status=aguardando_peca'); OTS=OTS.concat(o3); }catch(e){}
+  try{ EQUIPAMENTOS = await api('/operacional/api/equipamentos?uso=os'); }catch(e){ EQUIPAMENTOS=[]; }
+  const ne=document.getElementById('n-eq');
+  if(ne){
+    ne.innerHTML='<option value="">Selecionar equipamento…</option>'+
+      (EQUIPAMENTOS||[]).map(eq=>`<option value="${eq.id}">${esc(eq.codigo)}${eq.descricao?(' · '+esc(eq.descricao).slice(0,32)):''}</option>`).join('');
+  }
   const no=document.getElementById('n-ot');
   no.innerHTML='<option value="">Sem vínculo</option>';
   OTS.forEach(t=>{ const o=document.createElement('option'); o.value=t.id;
@@ -434,7 +444,7 @@ function cardOC(o){
       <span class="setor"><span class="dot" style="background:${o.setor_cor||'#64748B'}"></span>${o.setor_nome}</span>
       <span style="font-size:12px;color:var(--muted)">${esc(o.fornecedor_nome)||'— fornecedor a definir'}</span>
     </div>
-    <div class="oc-meta">${o.solicitante_nome||''}${o.ot_numero?(' · '+o.ot_numero):''}${o.equipamento_codigo?(' · '+o.equipamento_codigo):''}${o.nf_numero?(' · NF '+o.nf_numero):''}${o.nf_devolucao?(' · NF dev. '+o.nf_devolucao):''}</div>
+    <div class="oc-meta">${o.setor_nome||''}${o.equipamento_codigo?(' · '+o.equipamento_codigo):''}${o.solicitante_nome?(' · '+o.solicitante_nome):''}${o.ot_numero?(' · '+o.ot_numero):''}${o.nf_numero?(' · NF '+o.nf_numero):''}${o.nf_devolucao?(' · NF dev. '+o.nf_devolucao):''}</div>
     <div class="oc-val">${fmt(o.valor_total)}</div>
   </div>`;
 }
@@ -447,6 +457,7 @@ function renderSetorChips(){
 function selSetor(cod){
   _setorSel=cod; renderSetorChips();
   document.getElementById('n-ot-wrap').style.display = (cod==='MANUT')?'':'none';
+  document.getElementById('n-eq-wrap').style.display = (cod==='MANUT')?'':'none';
 }
 
 let _itemSeq=0;
@@ -519,6 +530,7 @@ async function _salvarOC(solicitar){
     fornecedor_avulso: modoAv ? (document.getElementById('n-forn-avulso').value.trim()||null) : null,
     fornecedor_avulso_contato: modoAv ? (document.getElementById('n-forn-avulso-contato').value.trim()||null) : null,
     ot_id: (_setorSel==='MANUT'? (document.getElementById('n-ot').value||null):null),
+    equipamento_id: (_setorSel==='MANUT'? (document.getElementById('n-eq').value||null):null),
     prioridade: document.getElementById('n-prio').value,
     condicao_pagamento: document.getElementById('n-cond').value,
     observacao: document.getElementById('n-obs').value.trim()||null,
@@ -581,6 +593,7 @@ function limparNova(){
   document.getElementById('nova-titulo').textContent='＋ Nova Ordem de Compra';
   document.getElementById('n-ot-wrap').style.display='none';
   document.getElementById('n-ot').value='';
+  const _ne=document.getElementById('n-eq'); if(_ne) _ne.value='';
   modoFornecedor('cad');
   document.getElementById('n-fornecedor').value='';
   document.getElementById('n-forn-avulso').value='';
@@ -728,6 +741,7 @@ async function editarOC(id){
   document.getElementById('n-forn-avulso').value = o.fornecedor_avulso || '';
   document.getElementById('n-forn-avulso-contato').value = o.fornecedor_avulso_contato || '';
   document.getElementById('n-ot').value=o.ot_id||'';
+  const _neE=document.getElementById('n-eq'); if(_neE) _neE.value=o.equipamento_id||'';
   document.getElementById('n-prio').value=o.prioridade||'normal';
   document.getElementById('n-cond').value=o.condicao_pagamento||(CONDICOES[0]&&CONDICOES[0].codigo)||'30D';
   document.getElementById('n-obs').value=o.observacao||'';
@@ -918,8 +932,7 @@ function abrirWhatsApp(foneDigits, texto){
 
 function whats(id){
   api('/compras/api/ocs/'+id).then(o=>{
-    const linhas=o.itens.map(i=>`- ${Number(i.quantidade)} ${i.unidade} ${esc(i.descricao)} (${fmt(i.valor_unit)})`).join('\n');
-    const txt=`*ORDEM DE COMPRA ${o.numero} — Garra Terraplenagem*\nSetor: ${o.setor_nome}\nFornecedor: ${o.fornecedor_nome||'-'}\n\n${linhas}\n\n*Total: ${fmt(o.valor_total)}*\nPagamento: ${o.condicao_pagamento||'-'}\n\nFavor citar o nº da OC na Nota Fiscal. Faturar somente conforme itens acima.`;
+    const txt=`*GARRA TERRAPLENAGEM E CAÇAMBAS*\nPedido de Compra *${o.numero}*\n\nFornecedor: ${o.fornecedor_nome||'-'}\nCondição: ${o.condicao_pagamento||'-'}\n\nPor favor, informe o número *${o.numero}* no documento de cobrança.`;
     const fone=(o.fornecedor_telefone||'').replace(/\D/g,'');
     if (fone.length>=10){
       abrirWhatsApp(fone, txt);
