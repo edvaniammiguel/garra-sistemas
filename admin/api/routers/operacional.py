@@ -1863,7 +1863,8 @@ async def op_controle_mensal_excel(
         grupos = {}
         for p in partes:
             key = p.get("equipamento_id") or "sem_equipamento"
-            label = f"{p.get('equipamento_codigo','?')} — {p.get('equipamento_descricao','')}"
+            label = (f"{p.get('equipamento_codigo') or 'Equip'} — {p.get('equipamento_descricao') or ''}"
+                     if p.get("equipamento_id") else "Sem equipamento")
             if key not in grupos:
                 grupos[key] = {"label": label, "partes": []}
             grupos[key]["partes"].append(p)
@@ -1883,7 +1884,13 @@ async def op_controle_mensal_excel(
         ws["A1"] = f"Nenhum registro encontrado para {titulo_mes}"
     else:
         for key, grupo in grupos.items():
-            nome_aba = grupo["label"][:31]  # Excel limita 31 chars
+            nome_bruto = str(grupo["label"] or "Sem nome")
+            nome_aba = "".join(c if c not in "[]:*?/\\" else "-" for c in nome_bruto)[:31].strip() or "Aba"
+            _base_aba, _n_aba = nome_aba, 2
+            while nome_aba in wb.sheetnames:
+                _suf = f" ({_n_aba})"
+                nome_aba = _base_aba[:31 - len(_suf)] + _suf
+                _n_aba += 1
             ws = wb.create_sheet(nome_aba)
 
             # Título
