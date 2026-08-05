@@ -1697,15 +1697,16 @@ async function abrirModalParte(osId) {
     info.innerHTML = `OS #${osId.substring(0,8)}…`;
   }
 
-  // Resetar campos (hora início/fim NÃO entram aqui — mantêm padrão 07:00/17:00)
+  // Resetar campos — relógio SEMPRE nasce vazio (regra oficial): preenchido
+  // só quando o operador digitar. O padrão 07:00/17:00 era a causa raiz das
+  // horas-fantasma (relógio prevalece e atropelava o horímetro da máquina).
   ['m-h-ini','m-h-fin','m-km-ini','m-km-fin','m-viagens','m-metros','m-diarias','m-fornecedor','m-equip-terceiro','m-trajeto','m-obs'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.value = '';
   });
   const horasCalc = document.getElementById('m-horas-calc'); if (horasCalc) horasCalc.style.display = 'none';
-  // Horário de funcionamento padrão
-  const hIni = document.getElementById('m-h-inicio'); if (hIni) hIni.value = '07:00';
-  const hFim = document.getElementById('m-h-fim');    if (hFim) hFim.value = '17:00';
+  const hIni = document.getElementById('m-h-inicio'); if (hIni) hIni.value = '';
+  const hFim = document.getElementById('m-h-fim');    if (hFim) hFim.value = '';
   const semAlm = document.getElementById('m-sem-almoco'); if (semAlm) semAlm.checked = false;
   calcularHorasJornada();
   // Por conta de: default CLIENTE
