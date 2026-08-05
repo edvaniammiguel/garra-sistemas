@@ -106,7 +106,7 @@ header .badge-fila{background:var(--red);border-radius:99px;padding:1px 8px;font
   <span class="badge-fila" id="badge-fila">0</span>
   <span style="flex:1"></span>
   <span id="hdr-user" style="font-size:12px;opacity:.85"></span>
-  <span style="font-size:10px;opacity:.6;margin-left:8px">v1.18</span>
+  <span style="font-size:10px;opacity:.6;margin-left:8px">v1.20</span>
 </header>
 
 <div class="wrap">
@@ -969,12 +969,34 @@ async function abrirReceber(id){
       <button class="fechar" onclick="document.getElementById('modal-det').classList.remove('on')">×</button></div>
     <div class="hint" style="margin-bottom:10px">Confira o que chegou. Item que não está na OC → NÃO receber. Quantidade informada é o recebido AGORA.</div>
     ${linhas}
+    <div style="margin:12px 0 4px;font-size:11px;font-weight:800;color:var(--muted);text-transform:uppercase">➕ Veio algo fora da OC? (complemento)</div>
+    <div id="rec-extras"></div>
+    <button class="btn btn-sec" style="width:100%" onclick="addExtraReceb()">＋ Adicionar item complementar</button>
+    <div class="hint">Complemento pequeno (até R$ 100 ou 20% da OC) entra aqui. Acima disso, abra uma OC nova.</div>
     <div class="fld" style="margin-top:10px"><label>Nº da Nota Fiscal</label>
       <input id="rec-nf" placeholder="NF do fornecedor" value="${o.nf_numero||''}"></div>
+    <div class="fld"><label>Observação do recebimento (opcional)</label>
+      <input id="rec-obs" placeholder="Ex.: desconto de R$ 50 no fechamento; veio 1 a mais de brinde"></div>
+    <div class="hint">Use para registrar desconto, diferença de preço ou qualquer observação da entrega — fica na trilha.</div>
     <div class="acoes">
       <button class="btn btn-sec" onclick="abrirDetalhe('${o.id}')">← Voltar</button>
       <button class="btn btn-cta" onclick="confirmarReceber('${o.id}')">Confirmar recebimento</button>
     </div>`;
+}
+
+function addExtraReceb(){
+  const box=document.getElementById('rec-extras');
+  const row=document.createElement('div');
+  row.className='item';
+  row.innerHTML=`<button class="del" onclick="this.parentElement.remove()">✕</button>
+    <input class="ex-desc" placeholder="Descrição do item que veio a mais" style="width:92%;margin-bottom:6px">
+    <div style="display:grid;grid-template-columns:70px 60px 90px 1fr;gap:6px;align-items:center">
+      <input class="ex-qtd" type="number" step="any" min="0" placeholder="Qtd" value="1">
+      <input class="ex-un" placeholder="UN" value="UN">
+      <input class="ex-vlr" type="number" step="0.01" min="0" placeholder="Valor un.">
+      <span style="font-size:11px;color:var(--muted)">valor unitário</span>
+    </div>`;
+  box.appendChild(row);
 }
 
 async function confirmarReceber(id){ return guard(()=>_confirmarReceber(id), window.event); }
@@ -988,10 +1010,19 @@ async function _confirmarReceber(id){
     if(q>0) itens.push({item_id:i.id, qtd_recebida:q});
   });
   const nf=(document.getElementById('rec-nf').value||'').trim();
-  if(!itens.length && !nf){ toast('Informe quantidades recebidas ou a NF','warn'); return; }
+  const obs=(document.getElementById('rec-obs').value||'').trim();
+  const extras=[];
+  document.querySelectorAll('#rec-extras .item').forEach(rw=>{
+    const desc=(rw.querySelector('.ex-desc').value||'').trim();
+    const qtd=parseFloat(rw.querySelector('.ex-qtd').value)||0;
+    const vu=parseFloat(rw.querySelector('.ex-vlr').value)||0;
+    const un=(rw.querySelector('.ex-un').value||'UN').trim();
+    if(desc && qtd>0) extras.push({descricao:desc, quantidade:qtd, unidade:un, valor_unit:vu});
+  });
+  if(!itens.length && !nf && !extras.length){ toast('Informe quantidades recebidas ou a NF','warn'); return; }
   try{
     const r=await api('/compras/api/ocs/'+id+'/receber',{method:'POST',
-      body:JSON.stringify({nf_numero:nf||null, itens})});
+      body:JSON.stringify({nf_numero:nf||null, observacao:obs||null, itens, itens_extras:extras})});
     toast(r.status==='recebida'?'✅ OC totalmente recebida':'📦 Recebimento parcial registrado','ok');
     document.getElementById('modal-det').classList.remove('on');
     carregarLista(); carregarResumo();
