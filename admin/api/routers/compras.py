@@ -731,6 +731,31 @@ async def receber_oc(oc_id: str, request: Request, payload=Depends(verificar_com
                             detail=f"OC em '{oc['status']}' não está aguardando entrega")
 
     uid = await _usuario_id(payload)
+
+    # ── Itens complementares (vieram fora da OC) — régua do limite ──
+    extras = d.get("itens_extras") or []
+    valor_extras = 0.0
+    extras_validos = []
+    for ex in extras:
+        desc = (ex.get("descricao") or "").strip()
+        qtd = float(ex.get("quantidade") or 0)
+        vu = float(ex.get("valor_unit") or 0)
+        if not desc or qtd <= 0:
+            continue
+        valor_extras += qtd * vu
+        extras_validos.append((desc, qtd, (ex.get("unidade") or "UN").strip() or "UN", vu))
+    if extras_validos:
+        oc_val = await ajard_query(
+            "SELECT COALESCE(valor_total,0) AS v FROM compras.ordens_compra WHERE id=%s",
+            (oc_id,), fetch="one")
+        limite = max(_COMPLEMENTO_MIN, float(oc_val["v"]) * _COMPLEMENTO_PCT)
+        if valor_extras > limite + 1e-9:
+            raise HTTPException(
+                status_code=400,
+                detail=(f"Complemento de R$ {valor_extras:,.2f} acima do limite "
+                        f"(R$ {limite:,.2f} = maior entre R$ {_COMPLEMENTO_MIN:,.0f} "
+                        f"e {int(_COMPLEMENTO_PCT*100)}% da OC) — abra uma OC nova para estes itens"))
+
     valor_recebido_agora = 0.0
     for it in d.get("itens") or []:
         item = await ajard_query(
@@ -748,6 +773,30 @@ async def receber_oc(oc_id: str, request: Request, payload=Depends(verificar_com
             (qtd_agora, item["id"]), fetch="none")
         valor_recebido_agora += qtd_agora * float(item.get("valor_unit") or 0)
 
+    if extras_validos:
+        maxo = await ajard_query(
+            "SELECT COALESCE(MAX(ordem),0) AS m FROM compras.oc_itens WHERE oc_id=%s",
+            (oc_id,), fetch="one")
+        ordem = int(maxo["m"])
+        for desc, qtd, un, vu in extras_validos:
+            ordem += 1
+            await ajard_query(
+                """INSERT INTO compras.oc_itens
+                     (oc_id, descricao, quantidade, unidade, valor_unit, qtd_recebida, ordem)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s)""",
+                (oc_id, desc, qtd, un, vu, qtd, ordem), fetch="none")
+            valor_recebido_agora += qtd * vu
+        # valor_total da OC recalculado com os complementos
+        await ajard_query(
+            """UPDATE compras.ordens_compra
+               SET valor_total = (SELECT COALESCE(SUM(quantidade*valor_unit),0)
+                                    FROM compras.oc_itens
+                                   WHERE oc_id=%s AND ativo=true)
+             WHERE id=%s""", (oc_id, oc_id), fetch="none")
+        detalhe_ext = "; ".join(f"{q:g} {u} {dsc} (R$ {q*v:,.2f})" for dsc, q, u, v in extras_validos)
+        await _trilha(oc_id, oc["status"], oc["status"],
+                      f"Complemento no recebimento (R$ {valor_extras:,.2f}): {detalhe_ext}", uid)
+
     if d.get("nf_numero"):
         await ajard_query(
             "UPDATE compras.ordens_compra SET nf_numero=%s WHERE id=%s",
@@ -762,8 +811,11 @@ async def receber_oc(oc_id: str, request: Request, payload=Depends(verificar_com
     await ajard_query(
         "UPDATE compras.ordens_compra SET status=%s, atualizado_em=now() WHERE id=%s",
         (novo, oc_id), fetch="none")
-    await _trilha(oc_id, oc["status"], novo,
-                  f"Recebimento registrado (R$ {valor_recebido_agora:.2f})", uid)
+    obs_receb = (d.get("observacao") or "").strip()
+    msg_trilha = f"Recebimento registrado (R$ {valor_recebido_agora:.2f})"
+    if obs_receb:
+        msg_trilha += f" — {obs_receb}"
+    await _trilha(oc_id, oc["status"], novo, msg_trilha, uid)
 
     if oc.get("ot_id") and valor_recebido_agora > 0:
         await ajard_query(
@@ -909,6 +961,13 @@ async def devolver_itens(oc_id: str, request: Request, payload=Depends(verificar
 # ── ANEXOS (orçamentos de fornecedores, fotos, PDFs) ──────────
 # Cotação anexada à OC vira evidência com data: quem aprova vê o orçamento
 # real; divergência de faturamento se resolve com documento na mão.
+
+# ── RÉGUA DO COMPLEMENTO NO RECEBIMENTO (decisão gestão 03/08/2026) ──
+# Item que veio fora da OC pode entrar no recebimento como COMPLEMENTO
+# até um limite: R$ 100 OU 20% do valor da OC (o que for MAIOR).
+# Acima disso → OC nova (é outra decisão de compra, não complemento).
+_COMPLEMENTO_MIN = 100.0    # piso em reais (dá folga em OCs pequenas)
+_COMPLEMENTO_PCT = 0.20     # percentual do valor da OC (folga em OCs grandes)
 
 _ANEXO_TIPOS = {"application/pdf", "image/jpeg", "image/png", "image/webp"}
 _ANEXO_MAX = 10 * 1024 * 1024  # 10 MB
