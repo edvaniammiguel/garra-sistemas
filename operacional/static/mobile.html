@@ -1973,9 +1973,8 @@ function atualizarVinculo() {
                     : (v === 'frete') ? 'Transportadora / dono'
                     : 'Fornecedor / dono do equipamento';
   }
-  // Por conta de: terceiro/frete normalmente é custo da empresa
-  const porConta = document.getElementById('m-por-conta');
-  if (porConta && (v === 'terceiro' || v === 'frete')) porConta.value = 'empresa';
+  // (05/08/2026) Por conta de: CLIENTE é o padrão universal (decisão da
+  // gestão) — sem virada automática em terceiro/frete; operador troca se for.
 }
 
 // Calcula horas da máquina automaticamente (final - inicial)
@@ -2690,11 +2689,11 @@ async function abrirEditarParte(idx) {
   } else if (med === 'viagem') {
     campos += `
       <label style="font-size:12px;font-weight:700;color:var(--muted)">Quantidade de viagens</label>
-      <input id="ep-viagens" type="number" step="1" min="0" value="${v(p.qtd_viagens) || 1}" style="width:100%;padding:11px;border:1.5px solid var(--border);border-radius:8px;font-size:15px;box-sizing:border-box;margin:4px 0 12px">`;
+      <input id="ep-viagens" type="number" step="1" min="0" value="${v(p.qtd_viagens)}" placeholder="1" style="width:100%;padding:11px;border:1.5px solid var(--border);border-radius:8px;font-size:15px;box-sizing:border-box;margin:4px 0 12px">`;
   } else if (med === 'diaria') {
     campos += `
       <label style="font-size:12px;font-weight:700;color:var(--muted)">Quantidade de diárias</label>
-      <input id="ep-diarias" type="number" step="0.5" min="0" value="${v(p.quantidade_diarias) || 1}" style="width:100%;padding:11px;border:1.5px solid var(--border);border-radius:8px;font-size:15px;box-sizing:border-box;margin:4px 0 12px">`;
+      <input id="ep-diarias" type="number" step="0.5" min="0" value="${v(p.quantidade_diarias)}" placeholder="1" style="width:100%;padding:11px;border:1.5px solid var(--border);border-radius:8px;font-size:15px;box-sizing:border-box;margin:4px 0 12px">`;
   } else if (med === 'metros') {
     campos += `
       <label style="font-size:12px;font-weight:700;color:var(--muted)">Metros executados</label>
