@@ -3173,6 +3173,8 @@ async function ativarDigital() {
       bioMostrarMsg('✅ Este aparelho já tinha a digital cadastrada — biometria ativada.', true);
     }
     else if (e.name === 'NotAllowedError') bioMostrarMsg('Cadastro cancelado.', false);
+    else if (e.name === 'UnknownError' || e.name === 'NotReadableError' || /credential manager/i.test(e.message || ''))
+      bioMostrarMsg('O celular não conseguiu acessar o leitor de digital. Confira nas configurações do aparelho: 1) digital (ou bloqueio de tela) cadastrada; 2) conta Google ativa e Google Play Services atualizado; 3) Chrome atualizado. Depois tente de novo. A senha continua funcionando normalmente.', false);
     else bioMostrarMsg('Erro: ' + e.message, false);
   } finally {
     bioEmAndamento = false;
@@ -3233,6 +3235,8 @@ async function entrarComDigital(automatico) {
         errDiv.textContent = 'Leitura da digital cancelada — use a senha.';
       } else if ((e.message || '').includes('não cadastrada')) {
         errDiv.textContent = 'Biometria não cadastrada — entre com a senha e ative pelo menu da conta (avatar).';
+      } else if (e.name === 'UnknownError' || e.name === 'NotReadableError' || /credential manager/i.test(e.message || '')) {
+        errDiv.textContent = 'O celular não conseguiu acessar o leitor de digital — entre com a senha. Confira digital cadastrada, conta Google ativa e Chrome atualizado.';
       } else {
         errDiv.textContent = e.message;
       }
