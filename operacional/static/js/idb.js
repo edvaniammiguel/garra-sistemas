@@ -242,6 +242,16 @@ class GarraDB {
         item.attempts += 1;
         const result = await GarraDB._attemptPost(item);
 
+        if (result.auth) {
+          item.attempts -= 1;
+          await GarraDB._queueUpdate(item);
+          console.warn('[GarraDB] Sessão expirada - fila pausada até novo login');
+          window.dispatchEvent(new CustomEvent('garradb:authfail', {
+            detail: { pendentes: pending.length }
+          }));
+          break;
+        }
+
         if (result.success) {
           await GarraDB._queueRemove(item.id);
           console.log(`[GarraDB] ✓ Sincronizado: ${item.method} ${item.url}`);
@@ -336,7 +346,25 @@ class GarraDB {
 
   // ==================== PRIVADOS ====================
 
-  static async _attemptPost(queueItem) {
+  // (06/08/2026) Sessão expirada não pode matar registro de campo: em 401/403
+  // tenta renovar o token 1x e repete; sem renovação, item fica 'pending'
+  // (sem consumir tentativa) e sincroniza sozinho após o próximo login.
+  static async _renovarToken() {
+    try {
+      const tk = localStorage.getItem('garra_token') || '';
+      if (!tk) return false;
+      const r = await fetch('/auth/renovar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + tk }
+      });
+      if (!r.ok) return false;
+      const d = await r.json().catch(() => ({}));
+      if (d && d.token) { localStorage.setItem('garra_token', d.token); return true; }
+      return false;
+    } catch { return false; }
+  }
+
+  static async _attemptPost(queueItem, _jaRenovou) {
     try {
       const token = localStorage.getItem('garra_token') || '';
       // (27/07/2026) DELETE não leva corpo; PATCH/POST levam JSON.
@@ -351,6 +379,12 @@ class GarraDB {
         body: _temCorpo ? JSON.stringify(queueItem.data) : undefined
       });
 
+      if (response.status === 401 || response.status === 403) {
+        if (!_jaRenovou && await GarraDB._renovarToken()) {
+          return await GarraDB._attemptPost(queueItem, true);
+        }
+        return { success: false, auth: true, error: `HTTP ${response.status}` };
+      }
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
 
       // Resposta pode ser vazia (204) — não estourar no .json()
