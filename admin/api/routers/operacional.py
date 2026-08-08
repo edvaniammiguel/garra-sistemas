@@ -2199,7 +2199,7 @@ async def op_editar_minha_parte(parte_id: str, request: Request, payload=Depends
     EDITAVEIS = ["data", "horimetro_inicial", "horimetro_final", "hora_inicio", "hora_fim",
                  "sem_almoco", "qtd_metros", "observacao",
                  "km_inicial", "km_final", "qtd_viagens", "quantidade_diarias",
-                 "equipamento_id", "operador_id"]
+                 "equipamento_id", "operador_id", "tipo_medicao"]
     merged = dict(parte)
     algum = False
     for c in EDITAVEIS:
