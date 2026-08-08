@@ -2274,7 +2274,9 @@ async def op_editar_minha_parte(parte_id: str, request: Request, payload=Depends
            SET data=%s, horimetro_inicial=%s, horimetro_final=%s,
                hora_inicio=%s, hora_fim=%s, sem_almoco=%s,
                qtd_metros=%s, observacao=%s, horas_trabalhadas=%s,
-               km_inicial=%s, km_final=%s, km_percorrido=%s, qtd_viagens=%s
+               km_inicial=%s, km_final=%s, km_percorrido=%s, qtd_viagens=%s,
+               quantidade_diarias=%s, tipo_medicao=%s,
+               equipamento_id=%s, operador_id=%s
            WHERE id=%s""",
         (merged.get("data"), _num(merged.get("horimetro_inicial")), _num(merged.get("horimetro_final")),
          merged.get("hora_inicio") or None, merged.get("hora_fim") or None,
@@ -2283,6 +2285,10 @@ async def op_editar_minha_parte(parte_id: str, request: Request, payload=Depends
          (merged.get("observacao") or "").strip() or None,
          horas,
          k_ini, k_fin, km_perc, viagens,
+         _num(merged.get("quantidade_diarias")),
+         (merged.get("tipo_medicao") or "horimetro"),
+         merged.get("equipamento_id") or None,
+         merged.get("operador_id") or None,
          parte_id),
         fetch="none"
     )
