@@ -1117,7 +1117,8 @@ async def op_atualizar_parte(parte_id: str, request: Request, payload=Depends(ve
               "qtd_viagens","qtd_metros","observacao","hora_inicio","hora_fim",
               "horimetro_inicial","horimetro_final","km_inicial","km_final",
               "equipamento_id","operador_id","operador_nome_avulso",
-              "vinculo_operador","fornecedor","por_conta_de","trajeto","sem_almoco"]
+              "vinculo_operador","fornecedor","por_conta_de","trajeto","sem_almoco",
+              "tipo_medicao"]
     updates, params = [], []
     for c in campos:
         if c in d:
