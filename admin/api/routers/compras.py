@@ -958,6 +958,20 @@ async def devolver_itens(oc_id: str, request: Request, payload=Depends(verificar
     return {"ok": True, "status": novo, "valor_devolvido": valor_devolvido}
 
 
+# ── FORNECEDORES (leitura para o módulo Compras) ──────────────
+# O cadastro mora em public.fornecedores (fonte única, gerido na Manutenção),
+# mas quem usa o Compras precisa LISTAR para escolher — inclusive operador
+# sem acesso à Manutenção. Gate do próprio Compras + campos mínimos
+# (menor privilégio: sem CNPJ, e-mail ou observações aqui).
+
+@router.get("/compras/api/fornecedores")
+async def listar_fornecedores_compras(payload=Depends(verificar_compras)):
+    rows = await ajard_query(
+        """SELECT id, nome, telefone
+           FROM public.fornecedores WHERE ativo=true ORDER BY nome""")
+    return [dict(r) for r in rows]
+
+
 # ── ANEXOS (orçamentos de fornecedores, fotos, PDFs) ──────────
 # Cotação anexada à OC vira evidência com data: quem aprova vê o orçamento
 # real; divergência de faturamento se resolve com documento na mão.
