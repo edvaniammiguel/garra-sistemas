@@ -626,6 +626,8 @@ input,select,textarea { font-family:inherit; font-size:13px; outline:none; }
             <div class="users-filter">
               <select id="os-filter-cliente" onchange="filtrarOS()">
                 <option value="">Todos os clientes</option>
+                <option value="_cadastrados">Só cadastrados</option>
+                <option value="_avulsos">Só avulsos</option>
               </select>
             </div>
             <div class="users-filter">
@@ -4101,9 +4103,6 @@ function popularFiltrosOS() {
     sel.value = atual;
     if (sel.selectedIndex === -1) sel.value = '';
   };
-  preencher('os-filter-cliente',
-    lista.map(o => [o.cliente_id, o.cliente_nome]),
-    '<option value="_cadastrados">📇 Só cadastrados</option><option value="_avulsos">✍️ Só avulsos</option>');
   preencher('os-filter-equip',
     lista.map(o => [o.equipamento_id, o.equipamento_codigo]));
   preencher('os-filter-colab',
@@ -4148,7 +4147,7 @@ function renderTabelaOS(lista) {
       if (os.cliente_id) return false;
     } else if (cli === '_cadastrados') {
       if (!os.cliente_id) return false;
-    } else if (cli && os.cliente_id !== cli) return false;
+    }
     const _fEq = document.getElementById('os-filter-equip')?.value || '';
     if (_fEq && os.equipamento_id !== _fEq) return false;
     const _fCo = document.getElementById('os-filter-colab')?.value || '';
