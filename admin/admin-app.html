@@ -628,6 +628,33 @@ input,select,textarea { font-family:inherit; font-size:13px; outline:none; }
                 <option value="">Todos os clientes</option>
               </select>
             </div>
+            <div class="users-filter">
+              <select id="os-filter-equip" onchange="filtrarOS()">
+                <option value="">Todos os equipamentos</option>
+              </select>
+            </div>
+            <div class="users-filter">
+              <select id="os-filter-colab" onchange="filtrarOS()">
+                <option value="">Todos os colaboradores</option>
+              </select>
+            </div>
+            <div class="users-filter">
+              <select id="os-filter-mes" onchange="filtrarOS()">
+                <option value="">Todos os meses</option>
+              </select>
+            </div>
+            <div class="users-filter">
+              <select id="os-filter-regime" onchange="filtrarOS()">
+                <option value="">Todos os regimes</option>
+              </select>
+            </div>
+            <div class="users-filter">
+              <select id="os-filter-flag" onchange="filtrarOS()">
+                <option value="">Todas as situações</option>
+                <option value="_diverg">⚠ Com divergência (horas paradas)</option>
+                <option value="_aberto">⚙️ Com horímetro em aberto</option>
+              </select>
+            </div>
           </div>
           <div id="os-table"><div class="loading"><span class="spin"></span>Carregando...</div></div>
         </div>
@@ -2839,6 +2866,7 @@ async function carregarOS() {
   el.innerHTML = '<div class="loading"><span class="spin"></span></div>';
   try {
     _osListaCompleta = await apiFetch('/operacional/api/os');
+    popularFiltrosOS();
     // Badge sidebar: prioridade 1) sem responsável  2) aguardando fechamento
     const semResp = (_osListaCompleta || []).filter(o =>
       !o.operador_id && !['concluida_completa','concluida_sem_erp','cancelada'].includes(o.status)
@@ -4054,6 +4082,52 @@ async function abrirModalParte() {
   mpSugerirMedicao();
 }
 
+// (08/08/2026) Filtros da lista de OS populados pela PRÓPRIA lista —
+// só aparecem clientes/equipamentos/colaboradores que têm OS (auto-
+// sustentável, sem chamadas extras). Seleção atual é preservada.
+function popularFiltrosOS() {
+  const lista = _osListaCompleta || [];
+  const preencher = (id, pares, extras) => {
+    const sel = document.getElementById(id);
+    if (!sel || !sel.options.length) return;
+    const atual = sel.value;
+    const base = sel.options[0].outerHTML;
+    const vistos = new Map();
+    pares.forEach(([vv, ll]) => { if (vv && !vistos.has(vv)) vistos.set(vv, ll || '—'); });
+    const opts = [...vistos.entries()]
+      .sort((x, y) => String(x[1]).localeCompare(String(y[1])))
+      .map(([vv, ll]) => `<option value="${esc(vv)}">${esc(ll)}</option>`).join('');
+    sel.innerHTML = base + (extras || '') + opts;
+    sel.value = atual;
+    if (sel.selectedIndex === -1) sel.value = '';
+  };
+  preencher('os-filter-cliente',
+    lista.map(o => [o.cliente_id, o.cliente_nome]),
+    '<option value="_cadastrados">📇 Só cadastrados</option><option value="_avulsos">✍️ Só avulsos</option>');
+  preencher('os-filter-equip',
+    lista.map(o => [o.equipamento_id, o.equipamento_codigo]));
+  preencher('os-filter-colab',
+    lista.map(o => [o.operador_id, o.operador_nome]),
+    '<option value="_sem">🚨 Sem responsável</option>');
+  const _MESES_PT = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+  const _rotMes = (ym) => {
+    const [aa, mm] = ym.split('-');
+    return `${_MESES_PT[parseInt(mm,10)-1] || mm}/${aa}`;
+  };
+  const _mesSel = document.getElementById('os-filter-mes');
+  if (_mesSel && _mesSel.options.length) {
+    const atualM = _mesSel.value;
+    const meses = [...new Set(lista.map(o => (o.data_inicio || '').slice(0, 7)).filter(Boolean))]
+      .sort().reverse();
+    _mesSel.innerHTML = _mesSel.options[0].outerHTML +
+      meses.map(m => `<option value="${m}">📅 ${_rotMes(m)}</option>`).join('');
+    _mesSel.value = atualM;
+    if (_mesSel.selectedIndex === -1) _mesSel.value = '';
+  }
+  preencher('os-filter-regime',
+    lista.map(o => [o.regime_cobranca, o.regime_cobranca ? ('💰 ' + o.regime_cobranca) : null]));
+}
+
 function renderTabelaOS(lista) {
   const el = document.getElementById('os-table');
   if (!el) return;
@@ -4070,7 +4144,24 @@ function renderTabelaOS(lista) {
     } else if (status === '_concluidas') {
       if (!['concluida_completa','concluida_sem_erp'].includes(os.status)) return false;
     } else if (status && os.status !== status) return false;
-    if (cli    && os.cliente_id !== cli) return false;
+    if (cli === '_avulsos') {
+      if (os.cliente_id) return false;
+    } else if (cli === '_cadastrados') {
+      if (!os.cliente_id) return false;
+    } else if (cli && os.cliente_id !== cli) return false;
+    const _fEq = document.getElementById('os-filter-equip')?.value || '';
+    if (_fEq && os.equipamento_id !== _fEq) return false;
+    const _fCo = document.getElementById('os-filter-colab')?.value || '';
+    if (_fCo === '_sem') {
+      if (os.operador_id) return false;
+    } else if (_fCo && os.operador_id !== _fCo) return false;
+    const _fMes = document.getElementById('os-filter-mes')?.value || '';
+    if (_fMes && (os.data_inicio || '').slice(0, 7) !== _fMes) return false;
+    const _fReg = document.getElementById('os-filter-regime')?.value || '';
+    if (_fReg && os.regime_cobranca !== _fReg) return false;
+    const _fFlag = document.getElementById('os-filter-flag')?.value || '';
+    if (_fFlag === '_diverg' && !os.tem_divergencia) return false;
+    if (_fFlag === '_aberto' && !os.tem_aberto) return false;
     if (origem && os.origem !== origem) return false;
     if (busca) {
       const hay = ((os.numero||'')+(os.obra||'')+(os.codigo_erp||'')+(os.cliente_nome||'')).toLowerCase();
