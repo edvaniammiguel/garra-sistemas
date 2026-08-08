@@ -1417,11 +1417,23 @@ async function salvarParte(adicionarMais) {
     const _hFin = document.getElementById('m-h-fin')?.value;
     const temHorim = _hIni !== '' && _hFin !== '' && _hIni != null && _hFin != null;
     const temRelogio = !!(hcIni && hcFim);
+    const soInicial = (_hIni !== '' && _hIni != null) && (_hFin === '' || _hFin == null);
     if (!temHorim && !temRelogio) {
-      err.textContent = '⏱ Informe as horas trabalhadas (início e fim) OU o horímetro completo';
-      err.style.display = 'block';
-      btn.disabled = false;
-      return;
+      if (soInicial) {
+        // (06/08/2026) Fluxo real do dia: operador lança o horímetro inicial
+        // de manhã e completa o final no fim do dia pelo ✎ Corrigir.
+        if (!confirm('⚙️ Início do dia registrado: só o horímetro inicial.\n\nO registro fica EM ABERTO (0h) até você lançar o horímetro final no fim do dia — toque no ✎ do registro para completar.\n\nSalvar assim?')) {
+          err.textContent = 'Complete o horímetro ou o horário para salvar fechado';
+          err.style.display = 'block';
+          btn.disabled = false;
+          return;
+        }
+      } else {
+        err.textContent = '⏱ Informe o horímetro inicial (início do dia), o horímetro completo OU as horas trabalhadas (início e fim)';
+        err.style.display = 'block';
+        btn.disabled = false;
+        return;
+      }
     }
   }
   if (hcIni && hcFim && hcFim <= hcIni) {
@@ -1455,10 +1467,14 @@ async function salvarParte(adicionarMais) {
       ? (document.getElementById('m-h-fim').value || null) : null,
     sem_almoco: (window._medicaoAtual === 'horimetro' || window._medicaoAtual === 'hora')
       ? document.getElementById('m-sem-almoco').checked : false,
-    trajeto: document.getElementById('m-trajeto').value.trim() || null,
+    // (06/08/2026) Portão por vínculo: campo oculto na tela não viaja no
+    // payload — valor digitado num vínculo anterior não vaza no registro.
+    trajeto: (vinculo === 'frete')
+      ? (document.getElementById('m-trajeto').value.trim() || null) : null,
     por_conta_de: document.getElementById('m-por-conta').value || 'cliente',
     vinculo_operador: vinculo,
-    fornecedor: document.getElementById('m-fornecedor').value.trim() || null,
+    fornecedor: (vinculo !== 'proprio')
+      ? (document.getElementById('m-fornecedor').value.trim() || null) : null,
     observacao: document.getElementById('m-obs').value.trim() || null,
   };
 
@@ -1882,6 +1898,18 @@ function atualizarCamposMedicao() {
   const sel = document.getElementById('m-equipamento');
   const opt = sel && sel.options[sel.selectedIndex];
   const cat = opt ? (opt.getAttribute('data-cat') || '') : '';
+  // (06/08/2026) Horímetro e KM pertencem ao EQUIPAMENTO: trocou de
+  // equipamento, os valores do anterior não valem — limpa e deixa o
+  // preencherUltimoHorimetro puxar a leitura do novo (se houver).
+  const _eqAtual = opt ? opt.value : '';
+  if (window._equipHorimAnterior !== undefined && window._equipHorimAnterior !== _eqAtual) {
+    ['m-h-ini','m-h-fin','m-km-ini','m-km-fin'].forEach(id => {
+      const c = document.getElementById(id); if (c) c.value = '';
+    });
+    const _hc = document.getElementById('m-horas-calc');
+    if (_hc) _hc.style.display = 'none';
+  }
+  window._equipHorimAnterior = _eqAtual;
   setTimeout(preencherUltimoHorimetro, 50);
   // (08/07/2026) MESMA prioridade da abertura: 1) regime da OS (Luana)
   // 2) categoria do equipamento como fallback. Antes, trocar de máquina
@@ -2573,6 +2601,8 @@ async function verPartes(osId, osNum, editavel = true) {
         detalhes = `⚙️ ${_hMaq}h máq. (${p.horimetro_inicial}→${p.horimetro_final})`;
       } else if ((med === 'horimetro' || med === 'hora') && hIni && hFim) {
         detalhes = `🕐 ${hIni} às ${hFim}`;
+      } else if ((med === 'horimetro' || med === 'hora') && p.horimetro_inicial != null && p.horimetro_inicial !== '') {
+        detalhes = `⚙️ ${p.horimetro_inicial} → … <b style="color:#B45309">em aberto — complete no ✎</b>`;
       } else if (temHorimetro) {
         detalhes = `⚙️ ${p.horimetro_inicial} → ${p.horimetro_final} · ${_hMaq}h`;
       } else if (med === 'km' && (p.km_inicial || p.km_final)) {
