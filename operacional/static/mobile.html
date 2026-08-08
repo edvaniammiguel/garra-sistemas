@@ -1854,6 +1854,16 @@ window._medicaoAtual = 'horimetro';
 // Clique do operador — acende o botão e mostra o bloco
 function selecionarMedicao(tipo) {
   if (!MEDICOES.includes(tipo)) return;
+  // (07/08/2026) Toque no botão JÁ ATIVO desativa — viu o engano na hora,
+  // volta ao neutro sem precisar escolher outra medição.
+  if (window._medicaoAtual === tipo) {
+    window._medicaoAtual = null;
+    _ocultarBlocosMedicao();
+    _resetBotoesMedicao();
+    const rel0 = document.getElementById('m-bloco-relogio');
+    if (rel0) rel0.style.display = 'none';
+    return;
+  }
   window._medicaoAtual = tipo;
   _ocultarBlocosMedicao();
   _resetBotoesMedicao();
@@ -2647,6 +2657,15 @@ async function verPartes(osId, osNum, editavel = true) {
 }
 
 // ── EDITAR MINHA PARTE (conferir/corrigir horímetro, horários, metros, obs) ──
+function epTrocarMed(vv) {
+  const mostra = (id, cond) => { const el = document.getElementById(id); if (el) el.style.display = cond ? 'block' : 'none'; };
+  mostra('ep-bloco-relogio', vv === 'horimetro');
+  mostra('ep-bloco-km', vv === 'km');
+  mostra('ep-bloco-viagem', vv === 'km' || vv === 'viagem');
+  mostra('ep-bloco-diaria', vv === 'diaria');
+  mostra('ep-bloco-metros', vv === 'metros');
+}
+
 async function abrirEditarParte(idx) {
   const p = (window._vpPartes || [])[idx];
   if (!p) return;
@@ -2701,49 +2720,57 @@ async function abrirEditarParte(idx) {
           </div>
         </div>
       </div>`;
-  // (14/07/2026) Campos por MEDIÇÃO — as 5 cobertas (viagem e diária incluídas)
-  if (med === 'km') {
-    campos += `
-      <div style="display:flex;gap:10px">
-        <div style="flex:1">
-          <label style="font-size:12px;font-weight:700;color:var(--muted)">KM inicial</label>
-          <input id="ep-kmini" type="number" step="0.1" value="${v(p.km_inicial)}" style="width:100%;padding:11px;border:1.5px solid var(--border);border-radius:8px;font-size:15px;box-sizing:border-box;margin:4px 0 12px">
+  // (07/08/2026) TODOS os blocos de medição presentes no editor, com o
+  // seletor ep-med no topo: operador marcou o botão errado no registro →
+  // troca a medição aqui e os campos certos aparecem. Nada gravado se perde.
+  const _medNorm = (med === 'hora') ? 'horimetro' : med;
+  const _medOptsEp = [['horimetro','⚙️🕐 Hora / Horímetro'],['viagem','🚛 Viagem'],['diaria','📅 Diária'],['km','🛣 KM'],['metros','📏 Metros']];
+  campos = `
+      <label style="font-size:12px;font-weight:700;color:var(--muted)">Medição do registro</label>
+      <select id="ep-med" onchange="epTrocarMed(this.value)" style="width:100%;padding:11px;border:1.5px dashed var(--orange);border-radius:8px;font-size:15px;box-sizing:border-box;margin:4px 0 12px;background:#FFF7ED">
+        ${_medOptsEp.map(o => `<option value="${o[0]}" ${_medNorm===o[0]?'selected':''}>${o[1]}</option>`).join('')}
+      </select>` + campos;
+  campos += `
+      <div id="ep-bloco-relogio" style="display:${_medNorm==='horimetro'?'block':'none'}">
+        <div style="display:flex;gap:10px">
+          <div style="flex:1">
+            <label style="font-size:12px;font-weight:700;color:var(--muted)">Hora início</label>
+            <input id="ep-horaini" type="time" value="${hIni}" style="width:100%;padding:11px;border:1.5px solid var(--border);border-radius:8px;font-size:15px;box-sizing:border-box;margin:4px 0 12px">
+          </div>
+          <div style="flex:1">
+            <label style="font-size:12px;font-weight:700;color:var(--muted)">Hora fim</label>
+            <input id="ep-horafim" type="time" value="${hFim}" style="width:100%;padding:11px;border:1.5px solid var(--border);border-radius:8px;font-size:15px;box-sizing:border-box;margin:4px 0 12px">
+          </div>
         </div>
-        <div style="flex:1">
-          <label style="font-size:12px;font-weight:700;color:var(--muted)">KM final</label>
-          <input id="ep-kmfin" type="number" step="0.1" value="${v(p.km_final)}" style="width:100%;padding:11px;border:1.5px solid var(--border);border-radius:8px;font-size:15px;box-sizing:border-box;margin:4px 0 12px">
+        <label style="display:flex;align-items:center;gap:8px;font-size:13px;margin-bottom:6px">
+          <input id="ep-semalmoco" type="checkbox" ${p.sem_almoco ? 'checked' : ''}> Dia corrido (sem desconto de almoço)
+        </label>
+        <div style="font-size:11px;color:var(--muted);margin:0 0 12px">Para valer só a máquina: apague os dois horários — as horas recalculam pelo horímetro.</div>
+      </div>
+      <div id="ep-bloco-km" style="display:${_medNorm==='km'?'block':'none'}">
+        <div style="display:flex;gap:10px">
+          <div style="flex:1">
+            <label style="font-size:12px;font-weight:700;color:var(--muted)">KM inicial</label>
+            <input id="ep-kmini" type="number" step="0.1" value="${v(p.km_inicial)}" style="width:100%;padding:11px;border:1.5px solid var(--border);border-radius:8px;font-size:15px;box-sizing:border-box;margin:4px 0 12px">
+          </div>
+          <div style="flex:1">
+            <label style="font-size:12px;font-weight:700;color:var(--muted)">KM final</label>
+            <input id="ep-kmfin" type="number" step="0.1" value="${v(p.km_final)}" style="width:100%;padding:11px;border:1.5px solid var(--border);border-radius:8px;font-size:15px;box-sizing:border-box;margin:4px 0 12px">
+          </div>
         </div>
       </div>
-      <label style="font-size:12px;font-weight:700;color:var(--muted)">Viagens</label>
-      <input id="ep-viagens" type="number" step="1" min="0" value="${v(p.qtd_viagens)}" style="width:100%;padding:11px;border:1.5px solid var(--border);border-radius:8px;font-size:15px;box-sizing:border-box;margin:4px 0 12px">`;
-  } else if (med === 'viagem') {
-    campos += `
-      <label style="font-size:12px;font-weight:700;color:var(--muted)">Quantidade de viagens</label>
-      <input id="ep-viagens" type="number" step="1" min="0" value="${v(p.qtd_viagens)}" placeholder="1" style="width:100%;padding:11px;border:1.5px solid var(--border);border-radius:8px;font-size:15px;box-sizing:border-box;margin:4px 0 12px">`;
-  } else if (med === 'diaria') {
-    campos += `
-      <label style="font-size:12px;font-weight:700;color:var(--muted)">Quantidade de diárias</label>
-      <input id="ep-diarias" type="number" step="0.5" min="0" value="${v(p.quantidade_diarias)}" placeholder="1" style="width:100%;padding:11px;border:1.5px solid var(--border);border-radius:8px;font-size:15px;box-sizing:border-box;margin:4px 0 12px">`;
-  } else if (med === 'metros') {
-    campos += `
-      <label style="font-size:12px;font-weight:700;color:var(--muted)">Metros executados</label>
-      <input id="ep-metros" type="number" step="0.1" min="0" value="${v(p.qtd_metros)}" style="width:100%;padding:11px;border:1.5px solid var(--border);border-radius:8px;font-size:15px;box-sizing:border-box;margin:4px 0 12px">`;
-  } else {
-    campos += `
-      <div style="display:flex;gap:10px">
-        <div style="flex:1">
-          <label style="font-size:12px;font-weight:700;color:var(--muted)">Hora início</label>
-          <input id="ep-horaini" type="time" value="${hIni}" style="width:100%;padding:11px;border:1.5px solid var(--border);border-radius:8px;font-size:15px;box-sizing:border-box;margin:4px 0 12px">
-        </div>
-        <div style="flex:1">
-          <label style="font-size:12px;font-weight:700;color:var(--muted)">Hora fim</label>
-          <input id="ep-horafim" type="time" value="${hFim}" style="width:100%;padding:11px;border:1.5px solid var(--border);border-radius:8px;font-size:15px;box-sizing:border-box;margin:4px 0 12px">
-        </div>
+      <div id="ep-bloco-viagem" style="display:${(_medNorm==='km'||_medNorm==='viagem')?'block':'none'}">
+        <label style="font-size:12px;font-weight:700;color:var(--muted)">Quantidade de viagens</label>
+        <input id="ep-viagens" type="number" step="1" min="0" value="${v(p.qtd_viagens)}" placeholder="1" style="width:100%;padding:11px;border:1.5px solid var(--border);border-radius:8px;font-size:15px;box-sizing:border-box;margin:4px 0 12px">
       </div>
-      <label style="display:flex;align-items:center;gap:8px;font-size:13px;margin-bottom:12px">
-        <input id="ep-semalmoco" type="checkbox" ${p.sem_almoco ? 'checked' : ''}> Dia corrido (sem desconto de almoço)
-      </label>`;
-  }
+      <div id="ep-bloco-diaria" style="display:${_medNorm==='diaria'?'block':'none'}">
+        <label style="font-size:12px;font-weight:700;color:var(--muted)">Quantidade de diárias</label>
+        <input id="ep-diarias" type="number" step="0.5" min="0" value="${v(p.quantidade_diarias)}" placeholder="1" style="width:100%;padding:11px;border:1.5px solid var(--border);border-radius:8px;font-size:15px;box-sizing:border-box;margin:4px 0 12px">
+      </div>
+      <div id="ep-bloco-metros" style="display:${_medNorm==='metros'?'block':'none'}">
+        <label style="font-size:12px;font-weight:700;color:var(--muted)">Metros executados</label>
+        <input id="ep-metros" type="number" step="0.1" min="0" value="${v(p.qtd_metros)}" style="width:100%;padding:11px;border:1.5px solid var(--border);border-radius:8px;font-size:15px;box-sizing:border-box;margin:4px 0 12px">
+      </div>`;
   let dataFmt = p.data || '';
   try { dataFmt = new Date(p.data + 'T00:00').toLocaleDateString('pt-BR'); } catch(e){}
   const m = document.createElement('div');
@@ -2819,15 +2846,20 @@ async function salvarEdicaoParte(parteId, med) {
   const _hfV = document.getElementById('ep-hfin')?.value;
   if (_mudou(_hiV, _o.horimetro_inicial)) body.horimetro_inicial = _hiV || null;
   if (_mudou(_hfV, _o.horimetro_final))   body.horimetro_final   = _hfV || null;
-  if (med === 'km') {
+  // (07/08/2026) A medição ESCOLHIDA no seletor manda — trocou, envia
+  // tipo_medicao e lê os campos da medição nova (todos existem no modal).
+  const _medOrigN = ((_o.tipo_medicao === 'hora') ? 'horimetro' : _o.tipo_medicao) || 'horimetro';
+  const medSel = document.getElementById('ep-med')?.value || _medOrigN;
+  if (medSel !== _medOrigN) body.tipo_medicao = medSel;
+  if (medSel === 'km') {
     body.km_inicial  = document.getElementById('ep-kmini').value || null;
     body.km_final    = document.getElementById('ep-kmfin').value || null;
     body.qtd_viagens = document.getElementById('ep-viagens').value || null;
-  } else if (med === 'viagem') {
+  } else if (medSel === 'viagem') {
     body.qtd_viagens = document.getElementById('ep-viagens').value || null;
-  } else if (med === 'diaria') {
+  } else if (medSel === 'diaria') {
     body.quantidade_diarias = document.getElementById('ep-diarias').value || null;
-  } else if (med === 'metros') {
+  } else if (medSel === 'metros') {
     body.qtd_metros = document.getElementById('ep-metros').value || null;
   } else {
     const _riV = document.getElementById('ep-horaini').value;
