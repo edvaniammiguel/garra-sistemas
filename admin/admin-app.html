@@ -3180,6 +3180,16 @@ function renderTabelaPartes(partes, statusOS) {
             // horímetro do campo — antes forçava um traço aqui)
           }
 
+          // (07/08/2026) Medição da linha EDITÁVEL: operador marcou o botão
+          // errado no mobile → gestão corrige aqui, sem excluir/recriar.
+          // Valores e totais recalculam na hora pela medição nova.
+          if (!fechada) {
+            const _medOpts = [['horimetro','⚙️ Hora/Horímetro'],['viagem','🚛 Viagem'],['diaria','📅 Diária'],['km','🛣 KM'],['metros','📏 Metros']];
+            const _medSel = ((p.tipo_medicao||'horimetro').toLowerCase() === 'hora') ? 'horimetro' : (p.tipo_medicao||'horimetro').toLowerCase();
+            const _selMed = `<select title="Tipo de medição desta linha — corrige registro marcado errado" onchange="salvarTipoMedicao('${esc(p.id)}',this.value)" style="width:100%;max-width:122px;padding:3px 4px;border:1px dashed var(--border);border-radius:6px;font-size:11px;color:var(--muted);background:transparent;margin-bottom:3px;cursor:pointer">${_medOpts.map(o=>`<option value="${o[0]}" ${_medSel===o[0]?'selected':''}>${o[1]}</option>`).join('')}</select>`;
+            medicaoCell = _selMed + medicaoCell;
+          }
+
           // Colunas 5 e 6 conforme regime
           let cel5, cel6;
           let cel7 = '';
@@ -3386,6 +3396,20 @@ async function salvarVlrUnitario(parteId, valor) {
       body: JSON.stringify({ valor_unitario: v }),
     });
     toast('Valor unitário definido na linha','success');
+    const data = await apiFetch('/operacional/api/os/'+_osAtual.id+'/partes');
+    _partesAtual = data.partes || [];
+    renderTotaisPartes(data.totais || {});
+    renderTabelaPartes(_partesAtual, _osAtual.status);
+  } catch(e) { toast('Erro: '+e.message,'error'); }
+}
+
+async function salvarTipoMedicao(parteId, valor) {
+  try {
+    await apiFetch('/operacional/api/partes/'+parteId, {
+      method:'PATCH',
+      body: JSON.stringify({ tipo_medicao: valor }),
+    });
+    toast('Medição da linha corrigida','success');
     const data = await apiFetch('/operacional/api/os/'+_osAtual.id+'/partes');
     _partesAtual = data.partes || [];
     renderTotaisPartes(data.totais || {});
