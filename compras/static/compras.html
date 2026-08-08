@@ -106,7 +106,7 @@ header .badge-fila{background:var(--red);border-radius:99px;padding:1px 8px;font
   <span class="badge-fila" id="badge-fila">0</span>
   <span style="flex:1"></span>
   <span id="hdr-user" style="font-size:12px;opacity:.85"></span>
-  <span style="font-size:10px;opacity:.6;margin-left:8px">v1.20</span>
+  <span style="font-size:10px;opacity:.6;margin-left:8px">v1.21</span>
 </header>
 
 <div class="wrap">
@@ -389,7 +389,9 @@ async function carregarApoios(){
   nc.innerHTML = CONDICOES.length
     ? CONDICOES.map(c=>`<option value="${c.codigo}">${c.nome}</option>`).join('')
     : '<option value="30D">30 dias</option>';
-  try{ FORNECEDORES = await api('/manutencao/api/fornecedores'); }catch(e){ FORNECEDORES=[]; }
+  // Endpoint do próprio Compras (o da Manutenção barra operador/financeiro)
+  try{ FORNECEDORES = await api('/compras/api/fornecedores'); }
+  catch(e){ try{ FORNECEDORES = await api('/manutencao/api/fornecedores'); }catch(e2){ FORNECEDORES=[]; } }
   const nf=document.getElementById('n-fornecedor');
   nf.innerHTML='<option value="">Selecionar / gestão decide</option>';
   FORNECEDORES.forEach(f=>{ const o=document.createElement('option'); o.value=f.id; o.textContent=f.nome; nf.appendChild(o); });
