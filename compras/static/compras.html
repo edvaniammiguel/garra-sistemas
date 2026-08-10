@@ -106,7 +106,7 @@ header .badge-fila{background:var(--red);border-radius:99px;padding:1px 8px;font
   <span class="badge-fila" id="badge-fila">0</span>
   <span style="flex:1"></span>
   <span id="hdr-user" style="font-size:12px;opacity:.85"></span>
-  <span style="font-size:10px;opacity:.6;margin-left:8px">v1.24</span>
+  <span style="font-size:10px;opacity:.6;margin-left:8px">v1.25</span>
 </header>
 
 <div class="wrap">
@@ -151,8 +151,8 @@ header .badge-fila{background:var(--red);border-radius:99px;padding:1px 8px;font
       </div>
       <div class="fld"><label>Fornecedor</label>
         <div class="chip-row" style="margin-bottom:8px">
-          <div class="chip sel" id="chip-forn-cad" onclick="modoFornecedor('cad')">📋 Cadastrado</div>
-          <div class="chip" id="chip-forn-av" onclick="modoFornecedor('avulso')">✎ Avulso — digitar</div>
+          <div class="chip sel" id="chip-forn-cad" onclick="modoFornecedor('cad', true)">📋 Cadastrado</div>
+          <div class="chip" id="chip-forn-av" onclick="modoFornecedor('avulso', true)">✎ Avulso — digitar</div>
         </div>
         <select id="n-fornecedor"><option value="">Selecionar / gestão decide</option></select>
         <input id="n-forn-avulso" placeholder="Nome do fornecedor / site (ex.: Mercado Livre, Loja X)" style="display:none">
@@ -581,13 +581,19 @@ async function _salvarOC(solicitar){
   finally{ _btns.forEach(b=>b.disabled=false); }
 }
 
-function modoFornecedor(modo){
+function modoFornecedor(modo, interacao){
   const av=document.getElementById('n-forn-avulso'), sel=document.getElementById('n-fornecedor');
   document.getElementById('chip-forn-cad').classList.toggle('sel', modo==='cad');
   document.getElementById('chip-forn-av').classList.toggle('sel', modo==='avulso');
   const avc=document.getElementById('n-forn-avulso-contato');
   if (modo==='avulso'){ sel.style.display='none'; sel.value=''; av.style.display=''; avc.style.display=''; }
   else { sel.style.display=''; av.style.display='none'; av.value=''; avc.style.display='none'; avc.value=''; }
+  // Toque do usuário no chip → leva direto à ação esperada:
+  // Cadastrado abre a lista; Avulso já foca o campo do nome.
+  if (interacao){
+    if (modo==='avulso'){ try{ av.focus(); }catch(e){} }
+    else { try{ if (sel.showPicker) sel.showPicker(); else sel.focus(); }catch(e){ try{ sel.focus(); }catch(_){} } }
+  }
 }
 
 function ajustarAcoesNova(){
