@@ -106,7 +106,7 @@ header .badge-fila{background:var(--red);border-radius:99px;padding:1px 8px;font
   <span class="badge-fila" id="badge-fila">0</span>
   <span style="flex:1"></span>
   <span id="hdr-user" style="font-size:12px;opacity:.85"></span>
-  <span style="font-size:10px;opacity:.6;margin-left:8px">v1.22</span>
+  <span style="font-size:10px;opacity:.6;margin-left:8px">v1.24</span>
 </header>
 
 <div class="wrap">
@@ -397,7 +397,8 @@ async function carregarApoios(){
     catch(e2){ FORNECEDORES=[]; _fornErro=(e2&&e2.message)||(e&&e.message)||'erro de rede'; }
   }
   const nf=document.getElementById('n-fornecedor');
-  nf.innerHTML='<option value="">Selecionar / gestão decide</option>';
+  // Primeira linha mostra a CONTAGEM — evidência imediata de que a lista carregou
+  nf.innerHTML='<option value="">'+(FORNECEDORES.length?('Selecionar — '+FORNECEDORES.length+' cadastrados'):'Selecionar / gestão decide')+'</option>';
   if (FORNECEDORES.length){
     FORNECEDORES.forEach(f=>{ const o=document.createElement('option'); o.value=f.id; o.textContent=f.nome; nf.appendChild(o); });
   } else {
@@ -921,49 +922,50 @@ function imprimirOC(id){
   }).catch(e=>toast(e.message,'err'));
 }
 
-function abrirWhatsApp(foneDigits, texto){
-  // Fora da webview do PWA, wa.me às vezes cai na tela "instale o WhatsApp".
-  // Estratégia: api.whatsapp.com (respeita o app instalado) e, no Android,
-  // tentativa via intent:// que força abrir o aplicativo nativo.
+function abrirWhatsApp(win, foneDigits, texto){
+  // win = janela aberta NO CLIQUE (antes de await/confirm) — senão o bloqueador
+  // de pop-ups (Firefox/Chrome) impede a abertura ("impediu 2 janelas").
   const msg = encodeURIComponent(texto);
   const temFone = foneDigits && foneDigits.length >= 10;
-  const alvo = temFone
-    ? 'https://api.whatsapp.com/send?phone=55'+foneDigits+'&text='+msg
-    : 'https://api.whatsapp.com/send?text='+msg;
   const ua = navigator.userAgent || '';
   const androide = /Android/i.test(ua);
+  const mobile = /Android|iPhone|iPad|Mobi/i.test(ua);
   if (androide) {
-    // intent:// abre direto o app WhatsApp; se falhar, o browser_fallback_url usa a web
-    const intent = temFone
-      ? 'intent://send?phone=55'+foneDigits+'&text='+msg+'#Intent;scheme=whatsapp;package=com.whatsapp;S.browser_fallback_url='+encodeURIComponent(alvo)+';end'
-      : 'intent://send?text='+msg+'#Intent;scheme=whatsapp;package=com.whatsapp;S.browser_fallback_url='+encodeURIComponent(alvo)+';end';
-    // navega na própria aba para o intent ser tratado pelo Android (window.open costuma ser bloqueado)
+    const alvo = temFone
+      ? 'https://api.whatsapp.com/send?phone=55'+foneDigits+'&text='+msg
+      : 'https://api.whatsapp.com/send?text='+msg;
+    const intent = (temFone
+      ? 'intent://send?phone=55'+foneDigits+'&text='+msg
+      : 'intent://send?text='+msg)
+      + '#Intent;scheme=whatsapp;package=com.whatsapp;S.browser_fallback_url='+encodeURIComponent(alvo)+';end';
+    if (win) try{ win.close(); }catch(e){}
     window.location.href = intent;
     return;
   }
-  window.open(alvo, '_blank');
+  // Desktop → WhatsApp Web direto; iPhone/outros mobiles → api.whatsapp.com
+  const alvo = mobile
+    ? (temFone ? 'https://api.whatsapp.com/send?phone=55'+foneDigits+'&text='+msg
+               : 'https://api.whatsapp.com/send?text='+msg)
+    : (temFone ? 'https://web.whatsapp.com/send?phone=55'+foneDigits+'&text='+msg
+               : 'https://web.whatsapp.com/send?text='+msg);
+  if (win && !win.closed) { win.location = alvo; }
+  else window.open(alvo, '_blank');
 }
 
 function whats(id){
+  const win = window.open('', '_blank');
   api('/compras/api/ocs/'+id).then(o=>{
     const txt=`*GARRA TERRAPLENAGEM E CAÇAMBAS*\nPedido de Compra *${o.numero}*\n\nFornecedor: ${o.fornecedor_nome||'-'}\nCondição: ${o.condicao_pagamento||'-'}\n\nPor favor, informe o número *${o.numero}* no documento de cobrança.`;
     const fone=(o.fornecedor_telefone||'').replace(/\D/g,'');
     if (fone.length>=10){
-      abrirWhatsApp(fone, txt);
+      abrirWhatsApp(win, fone, txt);
     } else {
       const segue=confirm('Este fornecedor não tem número salvo.\n\nA mensagem será copiada e o WhatsApp abre para você escolher o contato. Continuar?');
-      if(!segue) return;
+      if(!segue){ if(win) try{ win.close(); }catch(e){} return; }
       if(navigator.clipboard) navigator.clipboard.writeText(txt).catch(()=>{});
-      abrirWhatsApp('', txt);
+      abrirWhatsApp(win, '', txt);
     }
-    if (o.status==='aprovada'){
-      setTimeout(()=>{
-        if (confirm('Mensagem disparada no WhatsApp.\n\nMarcar a '+o.numero+' como ENVIADA? (libera o recebimento)')){
-          acao(o.id,'enviar');
-        }
-      }, 800);
-    }
-  }).catch(e=>toast(e.message,'err'));
+  }).catch(e=>{ if(win) try{ win.close(); }catch(_){} toast(e.message,'err'); });
 }
 
 /* ══ RECEBIMENTO ══ */
@@ -1045,9 +1047,10 @@ async function _confirmarReceber(id){
 
 /* ══ DEVOLUÇÃO ══ */
 function whatsDevolucao(id){
+  const win = window.open('', '_blank');
   api('/compras/api/ocs/'+id).then(o=>{
     const dev=(o.itens||[]).filter(i=>Number(i.qtd_devolvida)>0);
-    if(!dev.length){ toast('Nenhum item devolvido nesta OC','warn'); return; }
+    if(!dev.length){ if(win) try{ win.close(); }catch(_){} toast('Nenhum item devolvido nesta OC','warn'); return; }
     const linhas=dev.map(i=>`- ${Number(i.qtd_devolvida)} ${i.unidade} ${esc(i.descricao)} (${fmt(i.valor_unit)} un.)`).join('\n');
     const total=dev.reduce((s,i)=>s+Number(i.qtd_devolvida)*Number(i.valor_unit||0),0);
     const ult=(o.historico||[]).filter(hh=>String(hh.observacao||'').includes('Devolução registrada')).pop();
@@ -1055,8 +1058,8 @@ function whatsDevolucao(id){
     const txt=`*DEVOLUÇÃO — ${o.numero} — Garra Terraplenagem*\nFornecedor: ${o.fornecedor_nome||'-'}\n\nItens devolvidos:\n${linhas}\n\n*Valor devolvido: ${fmt(total)}*${o.nf_devolucao?('\nNF de devolução: '+o.nf_devolucao):''}${motivo?('\nMotivo: '+motivo):''}\n\nFavor providenciar o crédito/estorno referente e confirmar o recebimento das peças.`;
     const fone=(o.fornecedor_telefone||'').replace(/\D/g,'');
     if (fone.length<10 && navigator.clipboard) navigator.clipboard.writeText(txt).catch(()=>{});
-    abrirWhatsApp(fone.length>=10?fone:'', txt);
-  }).catch(e=>toast(e.message,'err'));
+    abrirWhatsApp(win, fone.length>=10?fone:'', txt);
+  }).catch(e=>{ if(win) try{ win.close(); }catch(_){} toast(e.message,'err'); });
 }
 
 async function abrirDevolucao(id){
