@@ -33,9 +33,10 @@ router = APIRouter()
 @router.post("/auth/login")
 async def login(req: LoginRequest, request: Request, db=Depends(get_db)):
     check_rate_limit(request.client.host)
+    ident = (req.login or "").strip().lower()
     user = await db.fetchrow(
-        "SELECT * FROM public.usuarios_garra WHERE (login=$1 OR email=$1) AND ativo=TRUE",
-        req.login
+        "SELECT * FROM public.usuarios_garra WHERE (LOWER(login)=$1 OR LOWER(email)=$1) AND ativo=TRUE",
+        ident
     )
     if not user or not bcrypt.checkpw(req.senha.encode(), user["senha_hash"].encode()):
         raise HTTPException(status_code=401, detail="Usuário ou senha incorretos")
