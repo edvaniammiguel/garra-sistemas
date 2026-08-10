@@ -106,7 +106,7 @@ header .badge-fila{background:var(--red);border-radius:99px;padding:1px 8px;font
   <span class="badge-fila" id="badge-fila">0</span>
   <span style="flex:1"></span>
   <span id="hdr-user" style="font-size:12px;opacity:.85"></span>
-  <span style="font-size:10px;opacity:.6;margin-left:8px">v1.21</span>
+  <span style="font-size:10px;opacity:.6;margin-left:8px">v1.22</span>
 </header>
 
 <div class="wrap">
@@ -390,11 +390,23 @@ async function carregarApoios(){
     ? CONDICOES.map(c=>`<option value="${c.codigo}">${c.nome}</option>`).join('')
     : '<option value="30D">30 dias</option>';
   // Endpoint do próprio Compras (o da Manutenção barra operador/financeiro)
+  let _fornErro='';
   try{ FORNECEDORES = await api('/compras/api/fornecedores'); }
-  catch(e){ try{ FORNECEDORES = await api('/manutencao/api/fornecedores'); }catch(e2){ FORNECEDORES=[]; } }
+  catch(e){
+    try{ FORNECEDORES = await api('/manutencao/api/fornecedores'); }
+    catch(e2){ FORNECEDORES=[]; _fornErro=(e2&&e2.message)||(e&&e.message)||'erro de rede'; }
+  }
   const nf=document.getElementById('n-fornecedor');
   nf.innerHTML='<option value="">Selecionar / gestão decide</option>';
-  FORNECEDORES.forEach(f=>{ const o=document.createElement('option'); o.value=f.id; o.textContent=f.nome; nf.appendChild(o); });
+  if (FORNECEDORES.length){
+    FORNECEDORES.forEach(f=>{ const o=document.createElement('option'); o.value=f.id; o.textContent=f.nome; nf.appendChild(o); });
+  } else {
+    // Diagnóstico visível: sem lista, o select DIZ o porquê (em vez de parecer quebrado)
+    const o=document.createElement('option');
+    o.disabled=true;
+    o.textContent = _fornErro ? ('⚠ lista indisponível: '+_fornErro.slice(0,40)) : '⚠ nenhum fornecedor cadastrado';
+    nf.appendChild(o);
+  }
   try{ OTS = await api('/manutencao/api/ots?status=aberta'); }catch(e){ OTS=[]; }
   try{ const o2 = await api('/manutencao/api/ots?status=em_andamento'); OTS=OTS.concat(o2); }catch(e){}
   try{ const o3 = await api('/manutencao/api/ots?status=aguardando_peca'); OTS=OTS.concat(o3); }catch(e){}
