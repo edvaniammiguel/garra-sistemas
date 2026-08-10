@@ -80,7 +80,7 @@ async def exigir_acesso_jardinagem(payload=Depends(verificar_token_jard)):
         permitido = None
     # 2. Sem registro no banco → usa padrão do perfil
     if permitido is None:
-        padrao = perfil_modulos_padrao(perfil)
+        padrao = await perfil_modulos_padrao(perfil)
         permitido = ("jardinagem_mobile" in padrao) or ("jardinagem_desktop" in padrao)
     if not permitido:
         raise HTTPException(status_code=403, detail="Sem acesso ao módulo de Jardinagem")
