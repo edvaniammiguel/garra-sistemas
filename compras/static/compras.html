@@ -55,6 +55,14 @@ header .badge-fila{background:var(--red);border-radius:99px;padding:1px 8px;font
 .chip-row{display:flex;gap:7px;flex-wrap:wrap}
 .chip{padding:9px 14px;border:2px solid var(--border);border-radius:10px;font-size:13px;font-weight:700;background:#fff;color:var(--muted);cursor:pointer}
 .chip.sel{border-color:var(--orange);color:var(--orange2);background:#FFF7ED}
+.combo{position:relative}
+.combo-lista{position:absolute;left:0;right:0;top:calc(100% + 4px);background:#fff;border:1.5px solid var(--line);border-radius:10px;max-height:240px;overflow-y:auto;z-index:60;display:none;box-shadow:0 8px 24px rgba(2,6,23,.12)}
+.combo-lista.on{display:block}
+.combo-it{padding:10px 12px;font-size:14px;color:var(--ink);cursor:pointer;border-bottom:1px solid #F1F5F9}
+.combo-it:last-child{border-bottom:none}
+.combo-it:active,.combo-it:hover{background:#FFF7ED}
+.combo-it .tel{font-size:11px;color:var(--muted)}
+.combo-vazio{padding:10px 12px;font-size:12.5px;color:var(--muted)}
 .item-row{background:#fff;border:1px solid var(--border);border-radius:10px;padding:10px;margin-bottom:8px;display:grid;grid-template-columns:1fr;gap:8px;position:relative}
 .item-row .lin2{display:grid;grid-template-columns:70px 64px 1fr auto;gap:8px;align-items:center}
 .item-row input{padding:10px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;width:100%}
@@ -106,7 +114,7 @@ header .badge-fila{background:var(--red);border-radius:99px;padding:1px 8px;font
   <span class="badge-fila" id="badge-fila">0</span>
   <span style="flex:1"></span>
   <span id="hdr-user" style="font-size:12px;opacity:.85"></span>
-  <span style="font-size:10px;opacity:.6;margin-left:8px">v1.25</span>
+  <span style="font-size:10px;opacity:.6;margin-left:8px">v1.27</span>
 </header>
 
 <div class="wrap">
@@ -154,7 +162,11 @@ header .badge-fila{background:var(--red);border-radius:99px;padding:1px 8px;font
           <div class="chip sel" id="chip-forn-cad" onclick="modoFornecedor('cad', true)">📋 Cadastrado</div>
           <div class="chip" id="chip-forn-av" onclick="modoFornecedor('avulso', true)">✎ Avulso — digitar</div>
         </div>
-        <select id="n-fornecedor"><option value="">Selecionar / gestão decide</option></select>
+        <div class="combo" id="forn-combo">
+          <input id="n-forn-busca" placeholder="Digite para buscar o fornecedor…" autocomplete="off" oninput="fornFiltrar()" onfocus="fornFiltrar()">
+          <input type="hidden" id="n-fornecedor" value="">
+          <div class="combo-lista" id="forn-lista"></div>
+        </div>
         <input id="n-forn-avulso" placeholder="Nome do fornecedor / site (ex.: Mercado Livre, Loja X)" style="display:none">
         <input id="n-forn-avulso-contato" placeholder="WhatsApp/telefone do fornecedor (opcional — com DDD)" style="display:none;margin-top:6px" inputmode="tel">
         <div class="hint">Fornecedor recorrente? Cadastre no módulo pra ter histórico de preço e WhatsApp direto.</div>
@@ -396,17 +408,11 @@ async function carregarApoios(){
     try{ FORNECEDORES = await api('/manutencao/api/fornecedores'); }
     catch(e2){ FORNECEDORES=[]; _fornErro=(e2&&e2.message)||(e&&e.message)||'erro de rede'; }
   }
-  const nf=document.getElementById('n-fornecedor');
-  // Primeira linha mostra a CONTAGEM — evidência imediata de que a lista carregou
-  nf.innerHTML='<option value="">'+(FORNECEDORES.length?('Selecionar — '+FORNECEDORES.length+' cadastrados'):'Selecionar / gestão decide')+'</option>';
+  const busca=document.getElementById('n-forn-busca');
   if (FORNECEDORES.length){
-    FORNECEDORES.forEach(f=>{ const o=document.createElement('option'); o.value=f.id; o.textContent=f.nome; nf.appendChild(o); });
+    busca.placeholder='Buscar entre '+FORNECEDORES.length+' fornecedores…';
   } else {
-    // Diagnóstico visível: sem lista, o select DIZ o porquê (em vez de parecer quebrado)
-    const o=document.createElement('option');
-    o.disabled=true;
-    o.textContent = _fornErro ? ('⚠ lista indisponível: '+_fornErro.slice(0,40)) : '⚠ nenhum fornecedor cadastrado';
-    nf.appendChild(o);
+    busca.placeholder=(typeof _fornErro!=='undefined'&&_fornErro)?('⚠ lista indisponível: '+String(_fornErro).slice(0,32)):'⚠ nenhum fornecedor cadastrado';
   }
   try{ OTS = await api('/manutencao/api/ots?status=aberta'); }catch(e){ OTS=[]; }
   try{ const o2 = await api('/manutencao/api/ots?status=em_andamento'); OTS=OTS.concat(o2); }catch(e){}
@@ -581,18 +587,42 @@ async function _salvarOC(solicitar){
   finally{ _btns.forEach(b=>b.disabled=false); }
 }
 
+function fornFiltrar(){
+  const q=(document.getElementById('n-forn-busca').value||'').trim().toLowerCase();
+  const lista=document.getElementById('forn-lista');
+  const hid=document.getElementById('n-fornecedor');
+  if (hid.value){ hid.value=''; }
+  const achados = q ? FORNECEDORES.filter(f=>(f.nome||'').toLowerCase().includes(q)).slice(0,30)
+                    : FORNECEDORES.slice(0,30);
+  lista.innerHTML = achados.length
+    ? achados.map(f=>`<div class="combo-it" onclick="fornEscolher('${f.id}')">${esc(f.nome)}${f.telefone?(' <span class=&quot;tel&quot;>· '+esc(f.telefone)+'</span>'):''}</div>`).join('')
+    : '<div class="combo-vazio">Nenhum fornecedor com esse nome — confira a grafia ou use ✎ Avulso.</div>';
+  lista.classList.add('on');
+}
+function fornEscolher(id){
+  const f=FORNECEDORES.find(x=>String(x.id)===String(id));
+  if(!f) return;
+  document.getElementById('n-fornecedor').value=f.id;
+  document.getElementById('n-forn-busca').value=f.nome;
+  document.getElementById('forn-lista').classList.remove('on');
+}
+document.addEventListener('click', function(ev){
+  const c=document.getElementById('forn-combo');
+  if (c && !c.contains(ev.target)){ const l=document.getElementById('forn-lista'); if(l) l.classList.remove('on'); }
+});
+
 function modoFornecedor(modo, interacao){
   const av=document.getElementById('n-forn-avulso'), sel=document.getElementById('n-fornecedor');
   document.getElementById('chip-forn-cad').classList.toggle('sel', modo==='cad');
   document.getElementById('chip-forn-av').classList.toggle('sel', modo==='avulso');
   const avc=document.getElementById('n-forn-avulso-contato');
-  if (modo==='avulso'){ sel.style.display='none'; sel.value=''; av.style.display=''; avc.style.display=''; }
-  else { sel.style.display=''; av.style.display='none'; av.value=''; avc.style.display='none'; avc.value=''; }
-  // Toque do usuário no chip → leva direto à ação esperada:
-  // Cadastrado abre a lista; Avulso já foca o campo do nome.
+  const combo=document.getElementById('forn-combo');
+  const buscaEl=document.getElementById('n-forn-busca');
+  if (modo==='avulso'){ combo.style.display='none'; sel.value=''; buscaEl.value=''; av.style.display=''; avc.style.display=''; }
+  else { combo.style.display=''; av.style.display='none'; av.value=''; avc.style.display='none'; avc.value=''; }
   if (interacao){
     if (modo==='avulso'){ try{ av.focus(); }catch(e){} }
-    else { try{ if (sel.showPicker) sel.showPicker(); else sel.focus(); }catch(e){ try{ sel.focus(); }catch(_){} } }
+    else { try{ buscaEl.focus(); }catch(e){} }
   }
 }
 
@@ -617,6 +647,8 @@ function limparNova(){
   const _ne=document.getElementById('n-eq'); if(_ne) _ne.value='';
   modoFornecedor('cad');
   document.getElementById('n-fornecedor').value='';
+  document.getElementById('n-forn-busca').value='';
+  var _fl=document.getElementById('forn-lista'); if(_fl) _fl.classList.remove('on');
   document.getElementById('n-forn-avulso').value='';
   document.getElementById('n-forn-avulso-contato').value='';
   document.getElementById('n-prio').value='normal';
@@ -759,6 +791,7 @@ async function editarOC(id){
   selSetor(o.setor_codigo);
   modoFornecedor(o.fornecedor_avulso ? 'avulso' : 'cad');
   document.getElementById('n-fornecedor').value = o.fornecedor_id || '';
+  document.getElementById('n-forn-busca').value = (!o.fornecedor_avulso && o.fornecedor_nome) ? o.fornecedor_nome : '';
   document.getElementById('n-forn-avulso').value = o.fornecedor_avulso || '';
   document.getElementById('n-forn-avulso-contato').value = o.fornecedor_avulso_contato || '';
   document.getElementById('n-ot').value=o.ot_id||'';
@@ -929,33 +962,35 @@ function imprimirOC(id){
 }
 
 function abrirWhatsApp(win, foneDigits, texto){
-  // win = janela aberta NO CLIQUE (antes de await/confirm) — senão o bloqueador
-  // de pop-ups (Firefox/Chrome) impede a abertura ("impediu 2 janelas").
+  // Janela web = rede de segurança SEMPRE presente; no Android, o app
+  // nativo via intent:// entra por cima — se não houver handler
+  // (ex.: emulação mobile no desktop), o intent falha silencioso e a
+  // janela web já está aberta com a mensagem pronta.
   const msg = encodeURIComponent(texto);
   const temFone = foneDigits && foneDigits.length >= 10;
   const ua = navigator.userAgent || '';
   const androide = /Android/i.test(ua);
   const mobile = /Android|iPhone|iPad|Mobi/i.test(ua);
-  if (androide) {
-    const alvo = temFone
-      ? 'https://api.whatsapp.com/send?phone=55'+foneDigits+'&text='+msg
-      : 'https://api.whatsapp.com/send?text='+msg;
-    const intent = (temFone
-      ? 'intent://send?phone=55'+foneDigits+'&text='+msg
-      : 'intent://send?text='+msg)
-      + '#Intent;scheme=whatsapp;package=com.whatsapp;S.browser_fallback_url='+encodeURIComponent(alvo)+';end';
-    if (win) try{ win.close(); }catch(e){}
-    window.location.href = intent;
-    return;
-  }
-  // Desktop → WhatsApp Web direto; iPhone/outros mobiles → api.whatsapp.com
-  const alvo = mobile
+  const alvoWeb = mobile
     ? (temFone ? 'https://api.whatsapp.com/send?phone=55'+foneDigits+'&text='+msg
                : 'https://api.whatsapp.com/send?text='+msg)
     : (temFone ? 'https://web.whatsapp.com/send?phone=55'+foneDigits+'&text='+msg
                : 'https://web.whatsapp.com/send?text='+msg);
-  if (win && !win.closed) { win.location = alvo; }
-  else window.open(alvo, '_blank');
+  if (androide) {
+    const intent = (temFone
+      ? 'intent://send?phone=55'+foneDigits+'&text='+msg
+      : 'intent://send?text='+msg)
+      + '#Intent;scheme=whatsapp;package=com.whatsapp;S.browser_fallback_url='+encodeURIComponent(alvoWeb)+';end';
+    if (win && !win.closed) {
+      win.location = alvoWeb;
+      try { window.location.href = intent; } catch(e){}
+    } else {
+      window.location.href = intent;
+    }
+    return;
+  }
+  if (win && !win.closed) { win.location = alvoWeb; }
+  else window.open(alvoWeb, '_blank');
 }
 
 function whats(id){
