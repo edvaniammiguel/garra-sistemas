@@ -1130,14 +1130,16 @@ async def op_atualizar_parte(parte_id: str, request: Request, payload=Depends(ve
             updates.append(f"{c} = %s")
             params.append(d[c] if d[c] != "" else None)
 
-    # Recalcular horas se horímetro foi atualizado
-    if "horimetro_inicial" in d or "horimetro_final" in d:
-        h_ini = d.get("horimetro_inicial", existente.get("horimetro_inicial"))
-        h_fin = d.get("horimetro_final",   existente.get("horimetro_final"))
-        if h_ini is not None and h_fin is not None:
-            horas = round(float(h_fin) - float(h_ini), 2)
-            updates.append("horas_trabalhadas = %s")
-            params.append(horas)
+    # (12/08/2026) Recalcular horas SEMPRE pelo MOTOR OFICIAL sobre o estado
+    # mesclado — regra completa: relógio digitado prevalece, janela-zero é
+    # ignorada, horímetro assume sem relógio. Qualquer edição na linha
+    # (inclusive trocar a medição no select) revalida as horas.
+    merged = dict(existente)
+    for c in campos:
+        if c in d:
+            merged[c] = d[c] if d[c] != "" else None
+    updates.append("horas_trabalhadas = %s")
+    params.append(_calc_horas_parte(merged))
 
     # Recalcular km_percorrido se km foi atualizado
     if "km_inicial" in d or "km_final" in d:
