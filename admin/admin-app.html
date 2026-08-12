@@ -3243,7 +3243,7 @@ function renderTabelaPartes(partes, statusOS) {
             const _horCell = (p.horimetro_inicial != null && p.horimetro_final != null);
             // (23/07/2026) Relógio prevalece — a janela informada é a medida
             medicaoCell = _relCell
-              ? `<span style="font-size:12px;font-weight:700;color:var(--blue)">🕐 ${String(p.hora_inicio).slice(0,5)} às ${String(p.hora_fim).slice(0,5)}</span>`
+              ? `<span style="font-size:12px;font-weight:700;color:var(--blue)">🕐 ${String(p.hora_inicio).slice(0,5)} às ${String(p.hora_fim).slice(0,5)}</span>${!fechada ? ` <button type="button" title="Apagar o relógio desta linha — as horas passam a valer pelo horímetro da máquina" onclick="limparRelogioParte('${esc(p.id)}')" style="border:none;background:none;color:var(--red);font-weight:800;cursor:pointer;font-size:13px;padding:0 3px">×</button>` : ''}`
               : (_horCell
                   ? `<span style="font-size:12px;font-weight:700;color:var(--blue)">⚙️ máquina</span>`
                   : `<span style="font-size:12px;color:var(--muted)">—</span>`);
@@ -3496,6 +3496,21 @@ async function salvarVlrUnitario(parteId, valor) {
       body: JSON.stringify({ valor_unitario: v }),
     });
     toast('Valor unitário definido na linha','success');
+    const data = await apiFetch('/operacional/api/os/'+_osAtual.id+'/partes');
+    _partesAtual = data.partes || [];
+    renderTotaisPartes(data.totais || {});
+    renderTabelaPartes(_partesAtual, _osAtual.status);
+  } catch(e) { toast('Erro: '+e.message,'error'); }
+}
+
+async function limparRelogioParte(parteId) {
+  if (!confirm('Apagar o horário (relógio) desta linha?\n\nAs horas passam a valer pelo horímetro da máquina.')) return;
+  try {
+    await apiFetch('/operacional/api/partes/'+parteId, {
+      method:'PATCH',
+      body: JSON.stringify({ hora_inicio: null, hora_fim: null }),
+    });
+    toast('Relógio da linha apagado — máquina assumiu','success');
     const data = await apiFetch('/operacional/api/os/'+_osAtual.id+'/partes');
     _partesAtual = data.partes || [];
     renderTotaisPartes(data.totais || {});
