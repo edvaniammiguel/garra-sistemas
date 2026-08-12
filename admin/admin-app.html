@@ -289,6 +289,30 @@ input,select,textarea { font-family:inherit; font-size:13px; outline:none; }
 .users-filter select { padding:7px 10px; border:1.5px solid var(--border); border-radius:var(--r2); font-size:13px; }
 
 /* IMPRESSÃO — Controle Mensal */
+@media (max-width: 860px) {
+  #btn-menu-mobile { display:block !important; }
+  #sidebar {
+    position:fixed; top:0; left:-240px; bottom:0; width:230px; z-index:900;
+    transition:left .22s ease; box-shadow:4px 0 18px rgba(0,0,0,.35);
+    padding-top:8px;
+  }
+  #sidebar.sb-aberta { left:0; }
+  #sb-backdrop.sb-ativo {
+    display:block !important; position:fixed; inset:0;
+    background:rgba(0,0,0,.45); z-index:850;
+  }
+  #content { padding:10px; gap:12px; }
+  .card { overflow-x:auto; -webkit-overflow-scrolling:touch; }
+  .card table { min-width:640px; }
+  #header { flex-wrap:wrap; gap:6px; padding:8px 10px; }
+  .hd-sub { display:none; }
+  .hd-status { display:none; }
+  .users-bar, .users-filter { flex-wrap:wrap; }
+  .users-filter select, .users-bar select, .users-bar input { max-width:100%; }
+  .modal, .modal-content { width:96vw !important; max-width:96vw !important; }
+  .field-row { flex-direction:column; }
+}
+
 @media print {
   #sidebar, .app-header, .sb-footer, .btn, .btn-sm, .btn-primary, .btn-secondary,
   #cm-exportar, .users-bar, .card-title button { display: none !important; }
@@ -334,6 +358,7 @@ input,select,textarea { font-family:inherit; font-size:13px; outline:none; }
 
   <!-- HEADER -->
   <header id="header">
+    <button id="btn-menu-mobile" onclick="toggleSidebarMobile()" aria-label="Menu" style="display:none;background:none;border:none;color:#fff;font-size:24px;padding:4px 10px 4px 0;cursor:pointer">☰</button>
     <div class="hd-brand">
       <img src="/static/icons/logo.png" alt="Garra Terraplenagem" style="height:40px;object-fit:contain;filter:brightness(0) invert(1)" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"/>
       <div style="display:none;align-items:center" id="hd-logo-fallback">
@@ -360,6 +385,7 @@ input,select,textarea { font-family:inherit; font-size:13px; outline:none; }
   <div id="body">
 
     <!-- SIDEBAR -->
+    <div id="sb-backdrop" onclick="toggleSidebarMobile(false)" style="display:none"></div>
     <nav id="sidebar">
       <div id="sb-nav-content">
         <!-- populado dinamicamente pelo JS após login -->
@@ -845,7 +871,7 @@ input,select,textarea { font-family:inherit; font-size:13px; outline:none; }
       </div>
       <div class="field">
         <label>Senha <span id="m-pass-hint" style="text-transform:none;font-weight:400;color:var(--muted)">(mín. 6 caracteres)</span></label>
-        <input type="password" id="m-senha" placeholder="Digite sua senha"/>
+        <input type="password" id="m-senha" placeholder="Digite sua senha" autocomplete="new-password" readonly onfocus="this.removeAttribute('readonly')"/>
         <div class="field-hint" id="m-pass-edit-hint"></div>
       </div>
     </div>
@@ -1080,10 +1106,10 @@ input,select,textarea { font-family:inherit; font-size:13px; outline:none; }
          de caminhão de terceiro (equipamento Garra era obrigatório). -->
     <div class="field-row" id="mp-bloco-terceiro" style="display:none">
       <div class="field">
-        <label>Fornecedor / de quem</label>
+        <label id="mp-lbl-fornecedor">Fornecedor / de quem</label>
         <input type="text" id="mp-fornecedor" placeholder="Nome do dono / transportadora"/>
       </div>
-      <div class="field">
+      <div class="field" id="mp-campo-equip-terceiro">
         <label>Equipamento do terceiro</label>
         <input type="text" id="mp-equip-terceiro" placeholder="Ex.: Caminhão truck vermelho"/>
       </div>
@@ -1131,7 +1157,7 @@ input,select,textarea { font-family:inherit; font-size:13px; outline:none; }
           <label>Horas cobradas</label>
           <input type="number" id="mp-horas-cob" step="0.1" placeholder="Ajuste se diferente"/>
         </div>
-        <div class="field">
+        <div class="field" id="mp-bloco-relogio" style="display:none">
           <label>Hora início / fim</label>
           <div style="display:flex;gap:6px">
             <input type="time" id="mp-h-inicio" style="flex:1"/>
@@ -1792,6 +1818,19 @@ const PERFIL_PADRAO = {
 
 let _permTab = 'perfis';
 let _todosUsuariosExcecao = [];
+
+function toggleSidebarMobile(forcar) {
+  const sb = document.getElementById('sidebar');
+  const bd = document.getElementById('sb-backdrop');
+  const abrir = (forcar !== undefined) ? forcar : !sb.classList.contains('sb-aberta');
+  sb.classList.toggle('sb-aberta', abrir);
+  bd.classList.toggle('sb-ativo', abrir);
+}
+document.addEventListener('click', (ev) => {
+  if (window.innerWidth > 860) return;
+  const item = ev.target.closest('#sidebar .sb-item');
+  if (item) toggleSidebarMobile(false);
+});
 
 function switchPermTab(tab) {
   _permTab = tab;
@@ -2725,13 +2764,27 @@ function fecharModalParte() {
 // sugestão pela prioridade regime da OS → categoria do equipamento.
 let _mpMed = 'horimetro';
 function mpMedicao(tipo, btn) {
+  // (12/08/2026) Toggle-off (paridade mobile): clicar no botão ativo desliga
+  // e volta ao neutro. Relógio só aparece com ⏱ Hora explicitamente ativa —
+  // registro de máquina nasce sem campos de horário (mata a sujeira e o 00:00).
+  if (tipo !== null && _mpMed === tipo) tipo = null;
   _mpMed = tipo;
   document.querySelectorAll('.mp-med-btn').forEach(b => {
     b.style.cssText = 'padding:7px 12px;border:1.5px solid var(--border);border-radius:8px;background:#fff;font-size:12px;font-weight:700;cursor:pointer';
   });
-  const alvo = btn || document.querySelector(`.mp-med-btn[data-med="${tipo}"]`);
-  if (alvo) alvo.style.cssText = 'padding:7px 12px;border:1.5px solid var(--orange);border-radius:8px;background:#FFF7ED;color:var(--orange);font-size:12px;font-weight:800;cursor:pointer';
+  if (tipo) {
+    const alvo = btn || document.querySelector(`.mp-med-btn[data-med="${tipo}"]`);
+    if (alvo) alvo.style.cssText = 'padding:7px 12px;border:1.5px solid var(--orange);border-radius:8px;background:#FFF7ED;color:var(--orange);font-size:12px;font-weight:800;cursor:pointer';
+  }
   document.getElementById('mp-bloco-hor').style.display    = 'block'; // controle interno, sempre
+  const rel = document.getElementById('mp-bloco-relogio');
+  if (rel) {
+    rel.style.display = tipo === 'horimetro' ? '' : 'none';
+    if (tipo !== 'horimetro') {
+      const i1 = document.getElementById('mp-h-inicio'); if (i1) i1.value = '';
+      const i2 = document.getElementById('mp-h-fim');    if (i2) i2.value = '';
+    }
+  }
   document.getElementById('mp-bloco-km').style.display     = tipo === 'km'     ? 'block' : 'none';
   document.getElementById('mp-bloco-metros').style.display = tipo === 'metros' ? 'block' : 'none';
   document.getElementById('mp-bloco-diaria').style.display = tipo === 'diaria' ? 'block' : 'none';
@@ -2748,9 +2801,12 @@ function mpSugerirMedicao() {
   if (tipo) origem = 'regime da OS';
   if (!tipo && ['caminhao','pipa'].includes(cat)) { tipo = 'km'; origem = 'categoria do equipamento'; }
   if (!tipo) { tipo = 'horimetro'; origem = ''; }
-  mpMedicao(tipo);
+  // (12/08/2026) Sugestão NÃO pré-acende mais botão — abre neutro; só o
+  // texto orienta. Máquina só-horímetro salva sem clicar em nada.
+  mpMedicao(null);
+  const _rotSug = { horimetro:'⏱ Hora', diaria:'📅 Diária', km:'🚛 KM/Viagem', metros:'📏 Metros' };
   const hint = document.getElementById('mp-med-hint');
-  if (hint) hint.textContent = origem ? `Sugerido pelo ${origem} (pode trocar)` : '';
+  if (hint) hint.textContent = origem ? `Sugestão: ${_rotSug[tipo] || tipo} (${origem}) — clique no botão para usar` : '';
 }
 function onMpEquipChange() {
   mpSugerirMedicao();
@@ -2764,6 +2820,20 @@ function mpVinculoChange() {
   // (no frete, a máquina transportada é NOSSA). Terceiro/diarista: oculto.
   const campoEq = document.getElementById('mp-campo-equip');
   if (campoEq) campoEq.style.display = (v === 'terceiro') ? 'none' : '';
+  const lbl = document.getElementById('mp-lbl-fornecedor');
+  const inp = document.getElementById('mp-fornecedor');
+  if (lbl) {
+    lbl.textContent = (v === 'diarista') ? 'Nome do diarista'
+                    : (v === 'frete') ? 'Transportadora / dono'
+                    : 'Fornecedor / dono do equipamento';
+  }
+  if (inp) {
+    inp.placeholder = (v === 'diarista') ? 'Ex.: João da Silva'
+                    : (v === 'frete') ? 'Ex.: Transportes Silva'
+                    : 'Nome do dono / transportadora';
+  }
+  const cEqT = document.getElementById('mp-campo-equip-terceiro');
+  if (cEqT) cEqT.style.display = (v === 'diarista') ? 'none' : '';
 }
 
 async function salvarParteLuana() {
@@ -2793,7 +2863,7 @@ async function salvarParteLuana() {
     fornecedor: forn,
     equipamento_terceiro: eqTer,
     trajeto: document.getElementById('mp-trajeto')?.value.trim()||null,
-    tipo_medicao: _mpMed,
+    tipo_medicao: _mpMed || 'horimetro',
     horimetro_inicial: num('mp-h-ini'),
     horimetro_final:   num('mp-h-fin'),
     hora_inicio: document.getElementById('mp-h-inicio')?.value || null,
@@ -4065,7 +4135,7 @@ async function abrirModalParte() {
   document.getElementById('mp-data').value = new Date(Date.now() - new Date().getTimezoneOffset()*60000).toISOString().slice(0,10);
   const _selVinc = document.getElementById('mp-vinculo'); if (_selVinc) _selVinc.value = 'proprio';
   mpVinculoChange();
-  ['mp-metros','mp-diarias','mp-h-ini','mp-h-fin','mp-horas-cob','mp-km-ini','mp-km-fin','mp-viagens','mp-fornecedor','mp-equip-terceiro'].forEach(id => {
+  ['mp-metros','mp-diarias','mp-h-ini','mp-h-fin','mp-horas-cob','mp-km-ini','mp-km-fin','mp-viagens','mp-fornecedor','mp-equip-terceiro','mp-h-inicio','mp-h-fim'].forEach(id => {
     const el = document.getElementById(id); if (el) el.value = (id === 'mp-diarias' ? '1' : '');
   });
   // Popular selects
