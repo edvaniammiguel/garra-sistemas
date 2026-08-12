@@ -114,7 +114,7 @@ header .badge-fila{background:var(--red);border-radius:99px;padding:1px 8px;font
   <span class="badge-fila" id="badge-fila">0</span>
   <span style="flex:1"></span>
   <span id="hdr-user" style="font-size:12px;opacity:.85"></span>
-  <span style="font-size:10px;opacity:.6;margin-left:8px">v1.27</span>
+  <span style="font-size:10px;opacity:.6;margin-left:8px">v1.28</span>
 </header>
 
 <div class="wrap">
@@ -995,16 +995,22 @@ function abrirWhatsApp(win, foneDigits, texto){
 
 function whats(id){
   const win = window.open('', '_blank');
-  api('/compras/api/ocs/'+id).then(o=>{
+  api('/compras/api/ocs/'+id).then(async o=>{
     const txt=`*GARRA TERRAPLENAGEM E CAÇAMBAS*\nPedido de Compra *${o.numero}*\n\nFornecedor: ${o.fornecedor_nome||'-'}\nCondição: ${o.condicao_pagamento||'-'}\n\nPor favor, informe o número *${o.numero}* no documento de cobrança.`;
     const fone=(o.fornecedor_telefone||'').replace(/\D/g,'');
-    if (fone.length>=10){
-      abrirWhatsApp(win, fone, txt);
-    } else {
-      const segue=confirm('Este fornecedor não tem número salvo.\n\nA mensagem será copiada e o WhatsApp abre para você escolher o contato. Continuar?');
-      if(!segue){ if(win) try{ win.close(); }catch(e){} return; }
-      if(navigator.clipboard) navigator.clipboard.writeText(txt).catch(()=>{});
-      abrirWhatsApp(win, '', txt);
+    // Sem confirm no meio do caminho: a janela é navegada NA HORA
+    // (nada de aba em branco esperando resposta) e a orientação vira toast.
+    if (fone.length<10 && navigator.clipboard) navigator.clipboard.writeText(txt).catch(()=>{});
+    abrirWhatsApp(win, fone.length>=10?fone:'', txt);
+    if (fone.length<10) toast('📋 Mensagem copiada — escolha o contato no WhatsApp e cole','ok');
+    // Gerou a mensagem = intenção de envio: marca a OC como Enviada sozinho
+    if (o.status==='aprovada'){
+      try{
+        await api('/compras/api/ocs/'+id+'/enviar',{method:'POST'});
+        toast('📤 '+o.numero+' marcada como Enviada','ok');
+        carregarLista(); carregarResumo();
+        try{ abrirDetalhe(id); }catch(_){}
+      }catch(e){ toast('Não marcou como enviada: '+e.message+' — use "Marcar enviada"','warn'); }
     }
   }).catch(e=>{ if(win) try{ win.close(); }catch(_){} toast(e.message,'err'); });
 }
