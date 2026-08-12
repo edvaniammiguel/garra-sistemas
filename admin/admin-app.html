@@ -3286,7 +3286,7 @@ function renderTabelaPartes(partes, statusOS) {
           if (!fechada) {
             const _medOpts = [['horimetro','⚙️ Hora/Horímetro'],['viagem','🚛 Viagem'],['diaria','📅 Diária'],['km','🛣 KM'],['metros','📏 Metros']];
             const _medSel = ((p.tipo_medicao||'horimetro').toLowerCase() === 'hora') ? 'horimetro' : (p.tipo_medicao||'horimetro').toLowerCase();
-            const _selMed = `<select title="Tipo de medição desta linha — corrige registro marcado errado" onchange="salvarTipoMedicao('${esc(p.id)}',this.value)" style="width:100%;max-width:122px;padding:3px 4px;border:1px dashed var(--border);border-radius:6px;font-size:11px;color:var(--muted);background:transparent;margin-bottom:3px;cursor:pointer">${_medOpts.map(o=>`<option value="${o[0]}" ${_medSel===o[0]?'selected':''}>${o[1]}</option>`).join('')}</select>`;
+            const _selMed = `<select title="Corrigir a medição desta linha (o ícone ao lado mostra a fonte que está cobrando)" onchange="salvarTipoMedicao('${esc(p.id)}',this.value)" style="width:42px;padding:3px 2px;border:1px dashed var(--border);border-radius:6px;font-size:12px;color:var(--muted);background:transparent;margin-bottom:3px;cursor:pointer">${_medOpts.map(o=>`<option value="${o[0]}" ${_medSel===o[0]?'selected':''}>${o[1]}</option>`).join('')}</select>`;
             medicaoCell = _selMed + medicaoCell;
           }
 
