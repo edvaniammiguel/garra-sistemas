@@ -158,6 +158,11 @@ def _calc_horas_parte(d):
         try:
             ph = lambda s: int(str(s)[:2]) * 60 + int(str(s)[3:5])
             ini_m = ph(hi); fim_m = ph(hf)
+            # (11/08/2026) Janela ZERO (ini == fim, ex.: 00:00→00:00 digitado
+            # para "zerar" o campo) é fisicamente sem sentido — trata como
+            # relógio VAZIO: cai para o horímetro em vez de cobrar 0h.
+            if ini_m == fim_m:
+                raise ValueError("janela zero")
             diff = fim_m - ini_m
             if diff < 0: diff += 24 * 60
             bruto = diff / 60
