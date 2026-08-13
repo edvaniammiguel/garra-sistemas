@@ -1082,6 +1082,14 @@ async def op_listar_partes(os_id: str, _auth=Depends(verificar_token)):
             return False
         return True
     total_horas     = sum(float(p.get("horas_trabalhadas") or 0) for p in lista if _conta_horas(p))
+    # (12/08/2026) Controle interno universal: horas-MÁQUINA de TODAS as
+    # linhas com horímetro completo, qualquer medição — espelho do Trab.
+    # do Excel. Não entra em cobrança nem comissão; é leitura de gestão.
+    total_horas_maquina = sum(
+        round(float(p["horimetro_final"]) - float(p["horimetro_inicial"]), 2)
+        for p in lista
+        if p.get("horimetro_inicial") is not None and p.get("horimetro_final") is not None
+    )
     total_metros    = sum(float(p.get("qtd_metros") or 0) for p in lista)
     total_diarias   = sum(float(p.get("quantidade_diarias") or 0) for p in lista)
     total_viagens   = sum(float(p.get("qtd_viagens")       or 0) for p in lista)
@@ -1090,6 +1098,7 @@ async def op_listar_partes(os_id: str, _auth=Depends(verificar_token)):
     totais = {
         "dias_trabalhados":  dias_trabalhados,
         "total_horas":       round(total_horas, 2),
+        "total_horas_maquina": round(total_horas_maquina, 2),
         "total_metros":      round(total_metros, 2),
         "total_diarias":     total_diarias,
         "total_viagens":     total_viagens,
@@ -1978,6 +1987,7 @@ async def op_controle_mensal_excel(
                         data_fmt = p.get("data") or ""
 
                     med = (p.get("tipo_medicao") or p.get("equipamento_medicao") or "horimetro").lower()
+                    chave_t = None  # soma de Trab. quando difere da unidade de Cobr.
                     if med == "metros":
                         h_ini = ""; h_fin = ""
                         h_trab = float(p.get("qtd_metros") or 0); h_cobr = h_trab
@@ -1995,14 +2005,18 @@ async def op_controle_mensal_excel(
                         unidade, chave = "km", "km"
                         rotulo_med = "km"
                     elif med == "diaria":
-                        # (12/08/2026) Linha DIÁRIA no Excel — antes caía no ramo
-                        # de hora e saía como "9 h" mesmo convertida para diária.
-                        # Horímetro segue exibido como controle interno da máquina.
+                        # (12/08/2026) Linha DIÁRIA: Cobr. = diárias; Trab. =
+                        # HORAS-MÁQUINA (horímetro é controle interno universal
+                        # — espelho da tela de partes). Somas separadas.
                         _hi_h = p.get("horimetro_inicial"); _hf_h = p.get("horimetro_final")
-                        h_ini = float(_hi_h) if _hi_h is not None else ""
-                        h_fin = float(_hf_h) if _hf_h is not None else ""
-                        h_trab = float(p.get("quantidade_diarias") or 0) or 1.0
-                        h_cobr = float(p.get("quantidade_diarias_cobradas") or 0) or h_trab
+                        if _hi_h is not None and _hf_h is not None:
+                            h_ini = float(_hi_h); h_fin = float(_hf_h)
+                            h_trab = round(h_fin - h_ini, 2)
+                            chave_t = "h"
+                        else:
+                            h_ini = ""; h_fin = ""
+                            h_trab = 0.0
+                        h_cobr = float(p.get("quantidade_diarias_cobradas") or 0) or (float(p.get("quantidade_diarias") or 0) or 1.0)
                         unidade, chave = "diária", "d"
                         rotulo_med = "diaria"
                     else:
@@ -2025,7 +2039,7 @@ async def op_controle_mensal_excel(
                         reg = str(p.get("regime_cobranca") or "").lower()
                         rotulo_med = p.get("regime_cobranca") if "hora" in reg else "hora"
 
-                    soma_t[chave] += h_trab
+                    soma_t[chave_t or chave] += h_trab
                     soma_c[chave] += h_cobr
                     val = p.get("valor")
                     try:
