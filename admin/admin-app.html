@@ -3284,7 +3284,7 @@ function renderTabelaPartes(partes, statusOS) {
           // errado no mobile → gestão corrige aqui, sem excluir/recriar.
           // Valores e totais recalculam na hora pela medição nova.
           if (!fechada) {
-            const _medOpts = [['horimetro','⚙️ Hora/Horímetro'],['viagem','🚛 Viagem'],['diaria','📅 Diária'],['km','🛣 KM'],['metros','📏 Metros']];
+            const _medOpts = [['horimetro','⚙️ Hora/Horímetro'],['viagem','🚛 Viagem'],['diaria','📅 Diária'],['km','🛣 KM'],['metros','📏 Metros'],['_relogio','🕐 Definir hora de relógio…']];
             const _medSel = ((p.tipo_medicao||'horimetro').toLowerCase() === 'hora') ? 'horimetro' : (p.tipo_medicao||'horimetro').toLowerCase();
             const _selMed = `<select title="Corrigir a medição desta linha (o ícone ao lado mostra a fonte que está cobrando)" onchange="salvarTipoMedicao('${esc(p.id)}',this.value)" style="width:42px;padding:3px 2px;border:1px dashed var(--border);border-radius:6px;font-size:12px;color:var(--muted);background:transparent;margin-bottom:3px;cursor:pointer">${_medOpts.map(o=>`<option value="${o[0]}" ${_medSel===o[0]?'selected':''}>${o[1]}</option>`).join('')}</select>`;
             medicaoCell = _selMed + medicaoCell;
@@ -3519,6 +3519,28 @@ async function limparRelogioParte(parteId) {
 }
 
 async function salvarTipoMedicao(parteId, valor) {
+  // (12/08/2026) Ação "Definir hora de relógio": pergunta a janela e grava —
+  // relógio digitado prevalece (motor oficial). NADA é pré-sugerido: a
+  // jornada real do dia (sexta 8h, feriado, meia-jornada) é quem manda.
+  if (valor === '_relogio') {
+    const hi = (prompt('Hora INÍCIO (formato HH:MM — ex.: 07:00):') || '').trim();
+    if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(hi)) { if (hi) toast('Formato inválido — use HH:MM','error'); renderTabelaPartes(_partesAtual, _osAtual.status); return; }
+    const hf = (prompt('Hora FIM (formato HH:MM — ex.: 17:00):') || '').trim();
+    if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(hf)) { if (hf) toast('Formato inválido — use HH:MM','error'); renderTabelaPartes(_partesAtual, _osAtual.status); return; }
+    if (hi === hf) { toast('Início e fim iguais não formam janela','error'); renderTabelaPartes(_partesAtual, _osAtual.status); return; }
+    try {
+      await apiFetch('/operacional/api/partes/'+parteId, {
+        method:'PATCH',
+        body: JSON.stringify({ hora_inicio: hi, hora_fim: hf, tipo_medicao: 'horimetro' }),
+      });
+      toast('Relógio definido — janela passou a valer','success');
+      const data = await apiFetch('/operacional/api/os/'+_osAtual.id+'/partes');
+      _partesAtual = data.partes || [];
+      renderTotaisPartes(data.totais || {});
+      renderTabelaPartes(_partesAtual, _osAtual.status);
+    } catch(e) { toast('Erro: '+e.message,'error'); }
+    return;
+  }
   try {
     await apiFetch('/operacional/api/partes/'+parteId, {
       method:'PATCH',
