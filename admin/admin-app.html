@@ -3075,7 +3075,7 @@ function renderTotaisPartes(t) {
     cards = [
       { label:'Dias trabalhados', valor: t.dias_trabalhados||0 },
       { label:'Sem apontamento', valor: (t.dias_parados||0)+' dias' },
-      { label:'Total horas',      valor: (t.total_horas||0).toFixed(1)+'h' },
+      { label:'Total horas',      valor: (t.total_horas||0).toFixed(1)+'h' + (((t.total_horas_maquina||0) > 0 && Math.abs((t.total_horas_maquina||0)-(t.total_horas||0)) > 0.05) ? ` <span style="font-size:12px;font-weight:600;color:var(--muted)">· ⚙️ ${(t.total_horas_maquina||0).toFixed(1)}h máq.</span>` : '') },
       { label:'Valor fechado',    valor: 'R$ '+parseFloat(_osAtual.valor_combinado||0).toFixed(2) },
       // (24/07/2026) Extras: linhas com Vlr Unit. próprio somam por cima
       ...((tot - parseFloat(_osAtual.valor_combinado||0)) > 0.009
@@ -3086,7 +3086,7 @@ function renderTotaisPartes(t) {
     cards = [
       { label:'Dias trabalhados', valor: t.dias_trabalhados||0 },
       { label:'Sem apontamento', valor: (t.dias_parados||0)+' dias' },
-      { label:'Total horas',      valor: (t.total_horas||0).toFixed(1)+'h' },
+      { label:'Total horas',      valor: (t.total_horas||0).toFixed(1)+'h' + (((t.total_horas_maquina||0) > 0 && Math.abs((t.total_horas_maquina||0)-(t.total_horas||0)) > 0.05) ? ` <span style="font-size:12px;font-weight:600;color:var(--muted)">· ⚙️ ${(t.total_horas_maquina||0).toFixed(1)}h máq.</span>` : '') },
       { label:'Horas cobradas',   valor: (t.total_horas_cobradas||0).toFixed(1)+'h' },
       ...(((t.total_diarias||0) > 0) ? [{ label:'Diárias', valor: (t.total_diarias||0) + ' × ' + (P.diaria ? 'R$ '+P.diaria.toFixed(2) : '⚠️ definir') }] : []),
       ...(((t.total_viagens||0) > 0) ? [{ label:'Viagens (frete)', valor: (t.total_viagens||0) + ' × ' + (P.viagem ? 'R$ '+P.viagem.toFixed(2) : '⚠️ definir') }] : []),
