@@ -1922,13 +1922,13 @@ async def op_controle_mensal_excel(
                 cell.border = border
 
             row = 5
-            soma_t = {"h": 0.0, "m": 0.0, "km": 0.0, "v": 0.0}
-            soma_c = {"h": 0.0, "m": 0.0, "km": 0.0, "v": 0.0}
+            soma_t = {"h": 0.0, "m": 0.0, "km": 0.0, "v": 0.0, "d": 0.0}
+            soma_c = {"h": 0.0, "m": 0.0, "km": 0.0, "v": 0.0, "d": 0.0}
             soma_valor = 0.0
             dias_set = set()
 
             def _fmt_soma(o):
-                pares = [(o["h"], "h"), (o["m"], "m"), (o["km"], "km"), (o["v"], "viag.")]
+                pares = [(o["h"], "h"), (o["m"], "m"), (o["km"], "km"), (o["v"], "viag."), (o.get("d", 0), "diária(s)")]
                 itens = [f"{n:.1f} {u}" for n, u in pares if n > 0]
                 return " · ".join(itens) if itens else 0
 
@@ -1994,6 +1994,17 @@ async def op_controle_mensal_excel(
                         h_trab = float(p.get("km_percorrido") or 0); h_cobr = h_trab
                         unidade, chave = "km", "km"
                         rotulo_med = "km"
+                    elif med == "diaria":
+                        # (12/08/2026) Linha DIÁRIA no Excel — antes caía no ramo
+                        # de hora e saía como "9 h" mesmo convertida para diária.
+                        # Horímetro segue exibido como controle interno da máquina.
+                        _hi_h = p.get("horimetro_inicial"); _hf_h = p.get("horimetro_final")
+                        h_ini = float(_hi_h) if _hi_h is not None else ""
+                        h_fin = float(_hf_h) if _hf_h is not None else ""
+                        h_trab = float(p.get("quantidade_diarias") or 0) or 1.0
+                        h_cobr = float(p.get("quantidade_diarias_cobradas") or 0) or h_trab
+                        unidade, chave = "diária", "d"
+                        rotulo_med = "diaria"
                     else:
                         # (17/07/2026) Espelho da tela de partes: Inicial/Final e
                         # Trab. = HORÍMETRO quando informado (máquina); Cobr. =
