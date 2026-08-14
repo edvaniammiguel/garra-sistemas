@@ -51,10 +51,18 @@ def make_logo(w=160):
 # ── Download foto do Supabase Storage ────────────────────────
 def baixar_foto(storage_path, supabase_url, service_key,
                 max_px=800, qualidade=80):
-    """Baixa foto via signed URL do Supabase Storage."""
+    """Baixa foto via signed URL do Supabase Storage.
+    Resolve o bucket pelo prefixo 'bucket:path' gravado no storage_path
+    (fotos novas = garra-fotos). Fotos antigas sem prefixo continuam
+    sendo lidas do bucket legado jardinagem-fotos — mesma regra do
+    core/storage.py (storage_url)."""
     try:
+        if ":" in storage_path:
+            bucket, real_path = storage_path.split(":", 1)
+        else:
+            bucket, real_path = "jardinagem-fotos", storage_path
         # Gerar URL assinada (1 hora)
-        sign_url = f"{supabase_url}/storage/v1/object/sign/jardinagem-fotos/{storage_path}"
+        sign_url = f"{supabase_url}/storage/v1/object/sign/{bucket}/{real_path}"
         headers = {
             "Authorization": f"Bearer {service_key}",
             "apikey": service_key
@@ -76,7 +84,7 @@ def baixar_foto(storage_path, supabase_url, service_key,
                     buf.seek(0)
                     return buf
         # Fallback: acesso direto com apikey
-        url = f"{supabase_url}/storage/v1/object/jardinagem-fotos/{storage_path}"
+        url = f"{supabase_url}/storage/v1/object/{bucket}/{real_path}"
         r = requests.get(url, headers=headers, timeout=30)
         if r.status_code != 200:
             return None
