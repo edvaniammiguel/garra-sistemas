@@ -553,7 +553,12 @@ async def editar_oc(oc_id: str, request: Request, payload=Depends(verificar_comp
         raise HTTPException(status_code=403,
                             detail="Só quem solicitou (ou a gestão) pode editar esta OC")
 
-    campos = ["setor_codigo", "fornecedor_id", "fornecedor_avulso", "ot_id",
+    # PARIDADE EDITAVEIS × UPDATE (13/08/2026): todo campo que o formulário
+    # envia PRECISA estar aqui — campo aceito na tela e descartado no UPDATE
+    # é a pior classe de bug (dado "some" em silêncio; caso real: o WhatsApp
+    # do fornecedor avulso sumia ao editar o rascunho).
+    campos = ["setor_codigo", "fornecedor_id", "fornecedor_avulso",
+              "fornecedor_avulso_contato", "ot_id",
               "equipamento_id", "prioridade", "condicao_pagamento", "observacao"]
     updates, params = [], []
     for c in campos:
