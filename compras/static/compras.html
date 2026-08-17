@@ -121,7 +121,7 @@ header .badge-fila{background:var(--red);border-radius:99px;padding:1px 8px;font
   <span class="badge-fila" id="badge-fila">0</span>
   <span style="flex:1"></span>
   <span id="hdr-user" style="font-size:12px;opacity:.85"></span>
-  <span style="font-size:10px;opacity:.6;margin-left:8px">v1.29</span>
+  <span style="font-size:10px;opacity:.6;margin-left:8px">v1.30</span>
 </header>
 
 <div class="wrap">
@@ -170,7 +170,7 @@ header .badge-fila{background:var(--red);border-radius:99px;padding:1px 8px;font
           <div class="chip" id="chip-forn-av" onclick="modoFornecedor('avulso', true)">✎ Avulso — digitar</div>
         </div>
         <div class="combo" id="forn-combo">
-          <input id="n-forn-busca" placeholder="Digite para buscar o fornecedor…" autocomplete="off" oninput="fornFiltrar()" onfocus="fornFiltrar()">
+          <input id="n-forn-busca" placeholder="Digite para buscar o fornecedor…" autocomplete="off" oninput="fornFiltrar()" onfocus="fornFiltrar()" onblur="setTimeout(fornResolver,150)">
           <input type="hidden" id="n-fornecedor" value="">
           <div class="combo-lista" id="forn-lista"></div>
         </div>
@@ -566,6 +566,10 @@ async function _salvarOC(solicitar){
   const itens=lerItens();
   if(!itens.length){ toast('Adicione ao menos 1 item com descrição','warn'); return; }
   const modoAv = document.getElementById('chip-forn-av').classList.contains('sel');
+  if (!modoAv && !fornResolver()){
+    toast('Fornecedor "'+document.getElementById('n-forn-busca').value.trim()+'" não localizado no cadastro — salvando como "gestão decide". Escolha na lista ou use ✎ Avulso.','warn');
+    document.getElementById('n-forn-busca').value='';
+  }
   const fsel=document.getElementById('n-fornecedor').value;
   const body={ setor_codigo:_setorSel,
     fornecedor_id: (!modoAv && fsel) ? fsel : null,
@@ -1039,6 +1043,22 @@ function waMostrar(){
     document.getElementById('wa-hint').textContent='A mensagem será copiada — é só colar na conversa do fornecedor.';
   }
   document.getElementById('wa-overlay').classList.add('on');
+}
+
+function fornResolver(){
+  // Rede de segurança da busca: digitou o nome mas não tocou na sugestão?
+  // Se o texto casar com UM fornecedor (exato, ou parcial único), vincula
+  // sozinho. Evita rascunho salvo sem fornecedor "sumindo" na edição.
+  const hid=document.getElementById('n-fornecedor');
+  const busca=document.getElementById('n-forn-busca');
+  if (hid.value) return true;                    // já vinculado
+  const q=(busca.value||'').trim().toLowerCase();
+  if (!q) return true;                           // vazio = gestão decide (ok)
+  const exato=FORNECEDORES.filter(f=>(f.nome||'').toLowerCase()===q);
+  const parcial=FORNECEDORES.filter(f=>(f.nome||'').toLowerCase().includes(q));
+  const alvo = exato.length===1 ? exato[0] : (parcial.length===1 ? parcial[0] : null);
+  if (alvo){ hid.value=alvo.id; busca.value=alvo.nome; return true; }
+  return false;                                  // ambíguo/inexistente
 }
 
 function waCopiar(){
