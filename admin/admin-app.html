@@ -1047,6 +1047,12 @@ input,select,textarea { font-family:inherit; font-size:13px; outline:none; }
         <div id="os-vv-wrap" style="flex:1;min-width:120px"><div class="field-hint">Valor do frete</div><input type="number" id="os-valor-viagem" step="0.01" min="0" placeholder="R$"/></div>
       </div>
       <div class="field-hint">O preço do regime principal vem do campo acima; preencha aqui só as medições EXTRAS que esta obra usa.</div>
+      <div style="margin-top:12px;padding-top:10px;border-top:1.5px dashed var(--orange)">
+        <label>💰 Tabela de preços da obra — apoios (por tipo de equipamento)</label>
+        <div class="field-hint" style="margin-bottom:8px">Uma linha por tipo que vai à obra. Todo registro daquele tipo (vínculo próprio) nasce com esta medição e valor sugeridos e FECHA por eles se a linha não for fixada. Diarista/terceiro/frete nunca herdam daqui.</div>
+        <div id="os-pc-linhas"></div>
+        <button type="button" class="btn btn-secondary" style="padding:5px 14px;font-size:12px;border-style:dashed" onclick="pcAddLinha()">+ Adicionar tipo de apoio</button>
+      </div>
       <div class="field">
         <label>Considerar horas/dia (opcional)</label>
         <input type="number" id="os-horas-padrao" placeholder="ex: 9" step="0.5" min="0"/>
@@ -2995,6 +3001,7 @@ async function verPartesOS(osId, osNumero) {
     // Buscar partes E detalhe da OS (fresco do backend, não cache obsoleto)
     const data = await apiFetch('/operacional/api/os/'+osId+'/partes');
     _partesAtual = data.partes || [];
+    if (data.precos_categoria !== undefined) window._precosCatOS = data.precos_categoria || [];
 
     // OS fresca: tenta detalhe do backend, fallback para cache
     let os;
@@ -3471,6 +3478,7 @@ async function salvarMedicaoParte(parteId, campo, valor) {
     // Recarregar tabela e totais (recalcula horas/km)
     const data = await apiFetch('/operacional/api/os/'+_osAtual.id+'/partes');
     _partesAtual = data.partes || [];
+    if (data.precos_categoria !== undefined) window._precosCatOS = data.precos_categoria || [];
     renderTotaisPartes(data.totais || {});
     renderTabelaPartes(_partesAtual, _osAtual.status);
   } catch(e) { toast('Erro: '+e.message,'error'); }
@@ -3478,9 +3486,17 @@ async function salvarMedicaoParte(parteId, campo, valor) {
 
 function _vuSugeridoOS(p, P) {
   // Espelho do CASE do backend (congelamento no Fechar OS) — paridade.
-  // (17/08/2026) VALOR/HORA da OS pertence ao EQUIPAMENTO PRINCIPAL.
+  // Cascata: 1) fixado na linha (fora daqui)  2) TABELA DA OBRA por
+  // categoria × medição (só vínculo próprio)  3) principal → valor_hora
+  // 4) preços globais da obra  5) nada → ⚠ sem valor.
   const med = (p.tipo_medicao||'horimetro').toLowerCase();
   if (med === 'metros') return _vuNum(P.metro);
+  const vinc = (p.vinculo_operador || 'proprio').toLowerCase();
+  if (vinc === 'proprio' && p.equipamento_categoria) {
+    const hit = (window._precosCatOS || []).find(x =>
+      x.categoria === p.equipamento_categoria && x.tipo_medicao === med);
+    if (hit) return _vuNum(hit.valor_unitario);
+  }
   if (med === 'viagem') return _vuNum(P.viagem);
   if (med === 'diaria') return _vuNum(P.diaria);
   if (med === 'km')     return _vuNum(P.viagem || P.km);
@@ -3500,6 +3516,7 @@ async function salvarVlrUnitario(parteId, valor) {
     toast('Valor unitário definido na linha','success');
     const data = await apiFetch('/operacional/api/os/'+_osAtual.id+'/partes');
     _partesAtual = data.partes || [];
+    if (data.precos_categoria !== undefined) window._precosCatOS = data.precos_categoria || [];
     renderTotaisPartes(data.totais || {});
     renderTabelaPartes(_partesAtual, _osAtual.status);
   } catch(e) { toast('Erro: '+e.message,'error'); }
@@ -3515,6 +3532,7 @@ async function limparRelogioParte(parteId) {
     toast('Relógio da linha apagado — máquina assumiu','success');
     const data = await apiFetch('/operacional/api/os/'+_osAtual.id+'/partes');
     _partesAtual = data.partes || [];
+    if (data.precos_categoria !== undefined) window._precosCatOS = data.precos_categoria || [];
     renderTotaisPartes(data.totais || {});
     renderTabelaPartes(_partesAtual, _osAtual.status);
   } catch(e) { toast('Erro: '+e.message,'error'); }
@@ -3538,6 +3556,7 @@ async function salvarTipoMedicao(parteId, valor) {
       toast('Relógio definido — janela passou a valer','success');
       const data = await apiFetch('/operacional/api/os/'+_osAtual.id+'/partes');
       _partesAtual = data.partes || [];
+    if (data.precos_categoria !== undefined) window._precosCatOS = data.precos_categoria || [];
       renderTotaisPartes(data.totais || {});
       renderTabelaPartes(_partesAtual, _osAtual.status);
     } catch(e) { toast('Erro: '+e.message,'error'); }
@@ -3551,6 +3570,7 @@ async function salvarTipoMedicao(parteId, valor) {
     toast('Medição da linha corrigida','success');
     const data = await apiFetch('/operacional/api/os/'+_osAtual.id+'/partes');
     _partesAtual = data.partes || [];
+    if (data.precos_categoria !== undefined) window._precosCatOS = data.precos_categoria || [];
     renderTotaisPartes(data.totais || {});
     renderTabelaPartes(_partesAtual, _osAtual.status);
   } catch(e) { toast('Erro: '+e.message,'error'); }
@@ -3570,6 +3590,7 @@ async function salvarHorasCobradas(parteId, valor) {
     // (linha mostrava um total, card mostrava outro).
     const data = await apiFetch('/operacional/api/os/'+_osAtual.id+'/partes');
     _partesAtual = data.partes || [];
+    if (data.precos_categoria !== undefined) window._precosCatOS = data.precos_categoria || [];
     renderTotaisPartes(data.totais || {});
     renderTabelaPartes(_partesAtual, _osAtual.status);
   } catch(e) { toast('Erro: '+e.message,'error'); }
@@ -3847,6 +3868,14 @@ async function abrirModalOS(osId=null) {
   if (!document.getElementById('os-cliente').options.length > 1) await _carregarSelectsOS();
   await _carregarSelectsOS();
 
+  pcRender([]);
+  if (osId) {
+    try {
+      const _det = await apiFetch('/operacional/api/os/' + osId);
+      pcRender(_det.precos_categoria || []);
+    } catch {}
+  }
+
   // Número automático
   if (!osId) {
     try {
@@ -4066,6 +4095,38 @@ async function _carregarSelectsOS() {
   }
 }
 
+const _PC_MEDS = [['horimetro','Hora'],['diaria','Diária'],['viagem','Viagem'],['km','KM']];
+function pcAddLinha(cat, med, val) {
+  const wrap = document.getElementById('os-pc-linhas');
+  if (!wrap) return;
+  const cats = [...new Set((_equipamentos||[]).filter(e=>e.ativo!==false).map(e=>e.categoria).filter(Boolean))].sort();
+  const row = document.createElement('div');
+  row.style.cssText = 'display:flex;gap:8px;align-items:center;margin-bottom:8px';
+  row.className = 'os-pc-row';
+  row.innerHTML = `
+    <select class="pc-cat" style="flex:1;padding:7px 8px;border:1.5px solid var(--border);border-radius:8px;font-size:13px">
+      ${cats.map(cc=>`<option value="${esc(cc)}" ${cc===cat?'selected':''}>${esc(cc)}</option>`).join('')}
+    </select>
+    <select class="pc-med" style="width:110px;padding:7px 8px;border:1.5px solid var(--border);border-radius:8px;font-size:13px">
+      ${_PC_MEDS.map(m=>`<option value="${m[0]}" ${m[0]===med?'selected':''}>${m[1]}</option>`).join('')}
+    </select>
+    <input class="pc-val" type="number" step="0.01" min="0" placeholder="R$" value="${val!=null?val:''}" style="width:100px;padding:7px 8px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;text-align:right"/>
+    <button type="button" onclick="this.parentElement.remove()" title="Remover" style="border:none;background:none;color:var(--red);font-weight:800;font-size:15px;cursor:pointer">×</button>`;
+  wrap.appendChild(row);
+}
+function pcColetar() {
+  return [...document.querySelectorAll('#os-pc-linhas .os-pc-row')].map(r => ({
+    categoria: r.querySelector('.pc-cat').value,
+    tipo_medicao: r.querySelector('.pc-med').value,
+    valor_unitario: parseFloat(r.querySelector('.pc-val').value) || null,
+  })).filter(x => x.categoria && x.valor_unitario != null);
+}
+function pcRender(lista) {
+  const wrap = document.getElementById('os-pc-linhas');
+  if (wrap) wrap.innerHTML = '';
+  (lista || []).forEach(pc => pcAddLinha(pc.categoria, pc.tipo_medicao, pc.valor_unitario));
+}
+
 async function salvarOS() {
   const err = document.getElementById('os-error');
   err.classList.add('hidden');
@@ -4120,6 +4181,7 @@ async function salvarOS() {
   btn.textContent='Salvando...'; btn.disabled=true;
   try {
     if (osId) {
+      payload.precos_categoria = pcColetar();
       await apiFetch('/operacional/api/os/'+osId, {method:'PATCH', body:JSON.stringify(payload)});
       toast('OS atualizada!','success');
 
@@ -4149,6 +4211,11 @@ async function salvarOS() {
       window._osEquipAntes = null;
     } else {
       const nova = await apiFetch('/operacional/api/os', {method:'POST', body:JSON.stringify(payload)});
+      const _pcs = pcColetar();
+      if (_pcs.length) {
+        const _novaId = (nova && (nova.id || (nova.os && nova.os.id))) || null;
+        if (_novaId) await apiFetch('/operacional/api/os/'+_novaId, {method:'PATCH', body:JSON.stringify({precos_categoria:_pcs})});
+      }
       toast('OS criada!','success');
       // ── Veio da Agenda? Vincular evento → confirmado (fecha o ciclo) ──
       if (window._agendaEventoConfirmando && nova && nova.id) {
