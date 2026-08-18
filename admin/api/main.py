@@ -900,6 +900,17 @@ async def criar_tabela_ajustes_pontos():
                 ON checklist.frota (categoria, identificacao)
         """, fetch="none")
         print("[Startup] unicidade frota OK")
+        await ajard_query("""
+            CREATE TABLE IF NOT EXISTS operacional.os_precos_categoria (
+              id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+              os_id uuid NOT NULL REFERENCES operacional.ordens_servico(id),
+              categoria text NOT NULL,
+              tipo_medicao text NOT NULL,
+              valor_unitario numeric NOT NULL,
+              criado_em timestamptz DEFAULT now(),
+              UNIQUE (os_id, categoria, tipo_medicao)
+            )""", fetch="none")
+        print("[Startup] os_precos_categoria OK")
     except Exception as e:
         print(f"[Startup] unicidade frota: {e}")
     # (09/07/2026) Espelho autocurativo REMOVIDO: o checklist lê direto do
