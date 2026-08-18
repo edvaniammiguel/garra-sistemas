@@ -3868,6 +3868,14 @@ async function abrirModalOS(osId=null) {
   if (!document.getElementById('os-cliente').options.length > 1) await _carregarSelectsOS();
   await _carregarSelectsOS();
 
+  if (!window._catsEquip || !window._catsEquip.length) {
+    try {
+      const _eqs = await apiFetch('/operacional/api/equipamentos');
+      const _leq = Array.isArray(_eqs) ? _eqs : (_eqs.equipamentos || []);
+      window._catsEquip = [...new Set(_leq.filter(e => e.ativo !== false)
+        .map(e => e.categoria).filter(Boolean))].sort();
+    } catch { window._catsEquip = []; }
+  }
   pcRender([]);
   if (osId) {
     try {
@@ -4099,13 +4107,17 @@ const _PC_MEDS = [['horimetro','Hora'],['diaria','Diária'],['viagem','Viagem'],
 function pcAddLinha(cat, med, val) {
   const wrap = document.getElementById('os-pc-linhas');
   if (!wrap) return;
-  const cats = [...new Set((_equipamentos||[]).filter(e=>e.ativo!==false).map(e=>e.categoria).filter(Boolean))].sort();
+  const cats = (window._catsEquip && window._catsEquip.length)
+    ? window._catsEquip
+    : [...new Set((typeof _equipamentos !== 'undefined' && _equipamentos || []).filter(e=>e.ativo!==false).map(e=>e.categoria).filter(Boolean))].sort();
+  const _rotCat = (cc) => cc.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
   const row = document.createElement('div');
   row.style.cssText = 'display:flex;gap:8px;align-items:center;margin-bottom:8px';
   row.className = 'os-pc-row';
   row.innerHTML = `
     <select class="pc-cat" style="flex:1;padding:7px 8px;border:1.5px solid var(--border);border-radius:8px;font-size:13px">
-      ${cats.map(cc=>`<option value="${esc(cc)}" ${cc===cat?'selected':''}>${esc(cc)}</option>`).join('')}
+      <option value="">— tipo de equipamento —</option>
+      ${cats.map(cc=>`<option value="${esc(cc)}" ${cc===cat?'selected':''}>${esc(_rotCat(cc))}</option>`).join('')}
     </select>
     <select class="pc-med" style="width:110px;padding:7px 8px;border:1.5px solid var(--border);border-radius:8px;font-size:13px">
       ${_PC_MEDS.map(m=>`<option value="${m[0]}" ${m[0]===med?'selected':''}>${m[1]}</option>`).join('')}
