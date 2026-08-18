@@ -3477,15 +3477,17 @@ async function salvarMedicaoParte(parteId, campo, valor) {
 }
 
 function _vuSugeridoOS(p, P) {
-  // Espelho do CASE do backend (congelamento no Fechar OS) — paridade
+  // Espelho do CASE do backend (congelamento no Fechar OS) — paridade.
+  // (17/08/2026) VALOR/HORA da OS pertence ao EQUIPAMENTO PRINCIPAL.
   const med = (p.tipo_medicao||'horimetro').toLowerCase();
-  const v = med === 'metros' ? P.metro
-        : med === 'viagem' ? P.viagem
-        : med === 'diaria' ? P.diaria
-        : med === 'km' ? (P.viagem || P.km)
-        : P.hora;
-  return (v != null && parseFloat(v) > 0) ? parseFloat(v) : null;
+  if (med === 'metros') return _vuNum(P.metro);
+  if (med === 'viagem') return _vuNum(P.viagem);
+  if (med === 'diaria') return _vuNum(P.diaria);
+  if (med === 'km')     return _vuNum(P.viagem || P.km);
+  const ehPrincipal = p.equipamento_id && _osAtual && String(p.equipamento_id) === String(_osAtual.equipamento_id || '');
+  return ehPrincipal ? _vuNum(P.hora) : null;
 }
+function _vuNum(v) { return (v != null && parseFloat(v) > 0) ? parseFloat(v) : null; }
 
 async function salvarVlrUnitario(parteId, valor) {
   const v = parseFloat(valor);
