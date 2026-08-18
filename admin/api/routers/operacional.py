@@ -381,9 +381,13 @@ async def op_listar_equipamentos(uso: str = None, _auth=Depends(verificar_token)
         # caminhões, máquinas motorizadas e Apoio/Combinado. Moto, carro de
         # apoio, componentes, implementos e 'outro' ficam fora por definição.
         # Máquina nova só entra em OS com a categoria certa no Admin.
-        filtro_uso = ("AND lower(coalesce(eq.categoria,'')) IN "
-                      "('caminhao','escavadeira','retroescavadeira','patrol',"
-                      "'carregadeira','compactador','apoio')")
+        # (17/08/2026) Categorias de caminhão refinadas em tipos comerciais
+        # (caminhao_basculante/pipa/bruck/reboque) — o caminhão entra por
+        # PREFIXO; caminhão novo de qualquer tipo já nasce dentro da lista.
+        filtro_uso = ("AND (lower(coalesce(eq.categoria,'')) LIKE 'caminhao%' "
+                      "OR lower(coalesce(eq.categoria,'')) IN "
+                      "('escavadeira','retroescavadeira','patrol',"
+                      "'carregadeira','compactador','apoio'))")
     rows = await ajard_query(
         f"""SELECT eq.id, eq.codigo, eq.descricao, eq.categoria, eq.medicao, eq.agenda_ics_url,
                   eq.marca, eq.modelo, eq.ano, eq.placa,
