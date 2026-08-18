@@ -3303,12 +3303,7 @@ function renderTabelaPartes(partes, statusOS) {
           if (regime === 'metro') {
             // Subtotal pela MEDIÇÃO da parte (OS mista: horas de concha × valor/hora)
             const _v = _valorParte(p, P);
-            const _precoFaltante = (_vuLinha > 0) ? '' :
-              medParte === 'metros' ? (P.metro ? '' : 'Valor/metro') :
-              medParte === 'viagem' ? (P.viagem ? '' : 'Valor/viagem') :
-              medParte === 'diaria' ? (P.diaria ? '' : 'Valor/diária') :
-              medParte === 'km'     ? ((P.km || P.viagem) ? '' : 'Valor/km') :
-                                      (P.hora ? '' : 'Valor/hora');
+            const _precoFaltante = (_vuLinhaOuCascata(p, P) != null) ? '' : _rotuloFaltaPreco(medParte);
             cel5 = _precoFaltante
               ? `<span style="color:var(--red);font-size:12px" title="Defina o ${_precoFaltante} em Editar OS">⚠️ sem ${_precoFaltante.toLowerCase()}</span>`
               : `<strong>R$ ${_v.toFixed(2)}</strong>`;
@@ -3319,10 +3314,10 @@ function renderTabelaPartes(partes, statusOS) {
               ? `${diarias}`
               : `<input type="number" step="0.5" value="${diarias}" style="width:60px;padding:4px 6px;border:1.5px solid var(--border);border-radius:6px;text-align:right;font-size:13px"
                   onchange="salvarMedicaoParte('${esc(p.id)}','quantidade_diarias',this.value)"/>`;
-            cel6 = (_vuLinha > 0)
-              ? `R$ ${(diarias*_vuLinha).toFixed(2)}`
-              : (P.diaria ? `R$ ${(diarias*P.diaria).toFixed(2)}`
-                : `<span style="color:var(--red);font-size:12px" title="Defina o Valor/diária em Editar OS ou o Vlr Unit. nesta linha">⚠️ sem valor/diária</span>`);
+            const _uD = _vuLinhaOuCascata(p, P);
+            cel6 = (_uD != null)
+              ? `R$ ${(diarias*_uD).toFixed(2)}`
+              : `<span style="color:var(--red);font-size:12px" title="Defina o Valor/diária na tabela da obra, em Editar OS ou o Vlr Unit. nesta linha">⚠️ sem valor/diária</span>`;
           } else if (regime === 'empreito') {
             cel5 = `${horasMaq}h`;
             cel6 = '—';
@@ -3370,11 +3365,10 @@ function renderTabelaPartes(partes, statusOS) {
             // (24/07/2026) Total da linha: unitário definido NA LINHA vale
             // antes do preço da OS — sem isso a linha exibia "sem valor/hora"
             // mesmo com preço próprio (o card Total já somava certo).
-            cel7 = (_vuLinha > 0)
-              ? `<strong>R$ ${(parseFloat(cobradas) * _vuLinha).toFixed(2)}</strong>`
-              : (P.hora
-                ? `<strong>R$ ${(parseFloat(cobradas) * P.hora).toFixed(2)}</strong>`
-                : `<span style="color:var(--red);font-size:12px" title="Defina o Valor/hora em Editar OS ou o Vlr Unit. nesta linha">⚠️ sem valor/hora</span>`);
+            const _uH = _vuLinhaOuCascata(p, P);
+            cel7 = (_uH != null)
+              ? `<strong>R$ ${(parseFloat(cobradas) * _uH).toFixed(2)}</strong>`
+              : `<span style="color:var(--red);font-size:12px" title="Defina o Valor/hora na tabela da obra, em Editar OS ou o Vlr Unit. nesta linha">⚠️ sem valor/hora</span>`;
           }
 
           // (13/07/2026) Medição da parte ≠ medição do regime → subtotal em R$
@@ -3393,12 +3387,7 @@ function renderTabelaPartes(partes, statusOS) {
               : `<span style="color:var(--muted);font-size:12px" title="Coberto pelo valor fechado da empreitada">—</span>`;
           } else if (regime !== 'metro' && _medNorm !== _medDoRegime) {
             const _v2 = _valorParte(p, P);
-            const _falta2 = (_vuLinha > 0) ? '' :
-              _medNorm === 'metros' ? (P.metro ? '' : 'Valor/metro') :
-              _medNorm === 'viagem' ? (P.viagem ? '' : 'Valor do frete') :
-              _medNorm === 'diaria' ? (P.diaria ? '' : 'Valor/diária') :
-              _medNorm === 'km'     ? ((P.km || P.viagem) ? '' : 'Valor/km') :
-                                      (P.hora ? '' : 'Valor/hora');
+            const _falta2 = (_vuLinhaOuCascata(p, P) != null) ? '' : _rotuloFaltaPreco(_medNorm);
             cel5 = `<span style="color:var(--muted)">—</span>`;
             cel6 = '';
             cel7 = _falta2
@@ -3977,22 +3966,24 @@ function _qtdParte(p) {
   return Math.round(_h * 10) / 10;
 }
 function _valorParte(p, P) {
-  // (24/07/2026) Preço por LINHA: valor_unitario definido pela gestão
-  // prevalece sobre os preços da OS (caso entulho×terra na mesma obra).
+  // (18/08/2026) Preço da linha pela CASCATA OFICIAL, num lugar só:
+  // fixado na linha > tabela da obra (categoria×medição, vínculo próprio)
+  // > principal (hora) > preços globais > null (⚠ sem valor).
+  const unit = _vuLinhaOuCascata(p, P);
+  if (unit == null) return 0;
+  return _qtdParte(p) * unit;
+}
+function _vuLinhaOuCascata(p, P) {
   const vu = parseFloat(p.valor_unitario);
-  if (vu > 0) return _qtdParte(p) * vu;
-  const med = (p.tipo_medicao||'horimetro').toLowerCase();
-  const n = v => parseFloat(v||0)||0;
-  if (med === 'metros') return n(p.qtd_metros) * P.metro;
-  if (med === 'diaria') return (n(p.quantidade_diarias)||1) * P.diaria;
-  if (med === 'viagem') return (n(p.qtd_viagens)||1) * P.viagem;
-  if (med === 'km') {
-    const kmPerc = n(p.km_percorrido) || Math.max(0, n(p.km_final) - n(p.km_inicial));
-    if (P.viagem && n(p.qtd_viagens) > 0) return n(p.qtd_viagens) * P.viagem;
-    return kmPerc * P.km;
-  }
-  const horas = n(p.horas_cobradas) || n(p.horas_trabalhadas);
-  return horas * P.hora;
+  if (vu > 0) return vu;
+  return _vuSugeridoOS(p, P);
+}
+function _rotuloFaltaPreco(med) {
+  return med === 'metros' ? 'Valor/metro'
+       : med === 'viagem' ? 'Valor do frete'
+       : med === 'diaria' ? 'Valor/diária'
+       : med === 'km' ? 'Valor/km'
+       : 'Valor/hora';
 }
 // Total a cobrar da OS: empreito = valor fechado; demais = Σ partes
 function _totalACobrarOS(os, partes, t) {
