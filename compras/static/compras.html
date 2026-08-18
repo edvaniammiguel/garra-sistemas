@@ -121,7 +121,7 @@ header .badge-fila{background:var(--red);border-radius:99px;padding:1px 8px;font
   <span class="badge-fila" id="badge-fila">0</span>
   <span style="flex:1"></span>
   <span id="hdr-user" style="font-size:12px;opacity:.85"></span>
-  <span style="font-size:10px;opacity:.6;margin-left:8px">v1.31</span>
+  <span style="font-size:10px;opacity:.6;margin-left:8px">v1.32</span>
 </header>
 
 <div class="wrap">
@@ -565,15 +565,18 @@ async function _salvarOC(solicitar){
   if(!_setorSel){ toast('Escolha o setor da compra','warn'); return; }
   const itens=lerItens();
   if(!itens.length){ toast('Adicione ao menos 1 item com descrição','warn'); return; }
-  const modoAv = document.getElementById('chip-forn-av').classList.contains('sel');
+  let modoAv = document.getElementById('chip-forn-av').classList.contains('sel');
+  let _avulsoAuto = null;
   if (!modoAv && !fornResolver()){
-    toast('Fornecedor "'+document.getElementById('n-forn-busca').value.trim()+'" não localizado no cadastro — salvando como "gestão decide". Escolha na lista ou use ✎ Avulso.','warn');
-    document.getElementById('n-forn-busca').value='';
+    // Digitou um nome que NÃO está no cadastro (caso balcão: loja nova).
+    // O nome digitado NUNCA se perde: vira fornecedor avulso automaticamente.
+    _avulsoAuto = document.getElementById('n-forn-busca').value.trim();
+    toast('"'+_avulsoAuto+'" não está no cadastro — salvo como fornecedor avulso','ok');
   }
   const fsel=document.getElementById('n-fornecedor').value;
   const body={ setor_codigo:_setorSel,
     fornecedor_id: (!modoAv && fsel) ? fsel : null,
-    fornecedor_avulso: modoAv ? (document.getElementById('n-forn-avulso').value.trim()||null) : null,
+    fornecedor_avulso: modoAv ? (document.getElementById('n-forn-avulso').value.trim()||null) : (_avulsoAuto||null),
     fornecedor_avulso_contato: modoAv ? (document.getElementById('n-forn-avulso-contato').value.trim()||null) : null,
     ot_id: (_setorSel==='MANUT'? (document.getElementById('n-ot').value||null):null),
     equipamento_id: (_setorSel==='MANUT'? (document.getElementById('n-eq').value||null):null),
