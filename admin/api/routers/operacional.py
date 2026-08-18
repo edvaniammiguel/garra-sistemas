@@ -803,6 +803,10 @@ async def op_detalhe_os(os_id: str, _auth=Depends(verificar_token)):
     if (_auth.get("perfil") or "").lower() not in ("admin", "gestor", "luana"):
         os_dict.pop("observacao_gestao", None)
     os_dict["partes_diarias"] = [dict(p) for p in (partes or [])]
+    precos_cat = await ajard_query(
+        "SELECT categoria, tipo_medicao, valor_unitario FROM operacional.os_precos_categoria WHERE os_id=%s ORDER BY categoria",
+        (os_id,), fetch="all")
+    os_dict["precos_categoria"] = [dict(r) for r in (precos_cat or [])]
     return os_dict
 
 @router.patch("/operacional/api/os/{os_id}")
@@ -838,6 +842,21 @@ async def op_atualizar_os(os_id: str, request: Request, payload=Depends(verifica
                 val = None
             updates.append(f"{campo} = %s")
             params.append(val)
+
+    # (17/08/2026) Tabela de Preços da Obra: substituição total quando enviada
+    if isinstance(d.get("precos_categoria"), list):
+        await ajard_query("DELETE FROM operacional.os_precos_categoria WHERE os_id=%s", (os_id,), fetch="none")
+        for pc in d["precos_categoria"]:
+            cat = (pc.get("categoria") or "").strip()
+            med = (pc.get("tipo_medicao") or "").strip().lower()
+            val = pc.get("valor_unitario")
+            if cat and med in ("horimetro", "hora", "diaria", "viagem", "km") and val is not None:
+                if med == "hora": med = "horimetro"
+                await ajard_query(
+                    """INSERT INTO operacional.os_precos_categoria (os_id, categoria, tipo_medicao, valor_unitario)
+                       VALUES (%s,%s,%s,%s)
+                       ON CONFLICT (os_id, categoria, tipo_medicao) DO UPDATE SET valor_unitario=EXCLUDED.valor_unitario""",
+                    (os_id, cat, med, float(val)), fetch="none")
 
     if not updates:
         return dict(existente)
@@ -1124,7 +1143,11 @@ async def op_listar_partes(os_id: str, _auth=Depends(verificar_token)):
         )
         totais["total_horas_cobradas"] = round(total_horas_cob, 2)
 
-    return {"partes": lista, "totais": totais}
+    _pc = await ajard_query(
+        "SELECT categoria, tipo_medicao, valor_unitario FROM operacional.os_precos_categoria WHERE os_id=%s",
+        (os_id,), fetch="all")
+    return {"partes": lista, "totais": totais,
+            "precos_categoria": [dict(r) for r in (_pc or [])]}
 
 @router.patch("/operacional/api/partes/{parte_id}")
 async def op_atualizar_parte(parte_id: str, request: Request, payload=Depends(verificar_gestor)):
@@ -1242,6 +1265,12 @@ async def op_fechar_os(os_id: str, request: Request, payload=Depends(verificar_g
              AND pd.valor_unitario IS NULL
              AND COALESCE(pd.tipo_medicao,'horimetro') NOT IN ('metros','viagem','diaria','km')
              AND (pd.equipamento_id IS NULL OR pd.equipamento_id <> os.equipamento_id)
+             AND NOT EXISTS (
+                   SELECT 1 FROM operacional.os_precos_categoria pc
+                   JOIN operacional.equipamentos ee ON ee.id = pd.equipamento_id
+                   WHERE pc.os_id = os.id AND pc.categoria = ee.categoria
+                     AND pc.tipo_medicao = 'horimetro'
+                     AND COALESCE(pd.vinculo_operador,'proprio') = 'proprio')
            GROUP BY e.codigo""",
         (os_id,), fetch="all"
     )
@@ -1258,12 +1287,36 @@ async def op_fechar_os(os_id: str, request: Request, payload=Depends(verificar_g
         """UPDATE operacional.partes_diarias pd
            SET valor_unitario = CASE
                  WHEN pd.tipo_medicao = 'metros' THEN os.valor_metro
-                 WHEN pd.tipo_medicao = 'viagem' THEN os.valor_viagem
-                 WHEN pd.tipo_medicao = 'diaria' THEN os.valor_diaria
+                 WHEN pd.tipo_medicao = 'viagem' THEN
+                   COALESCE((SELECT pc.valor_unitario FROM operacional.os_precos_categoria pc
+                             JOIN operacional.equipamentos ee ON ee.id = pd.equipamento_id
+                             WHERE pc.os_id = os.id AND pc.categoria = ee.categoria
+                               AND pc.tipo_medicao = 'viagem'
+                               AND COALESCE(pd.vinculo_operador,'proprio') = 'proprio'
+                             LIMIT 1), os.valor_viagem)
+                 WHEN pd.tipo_medicao = 'diaria' THEN
+                   COALESCE((SELECT pc.valor_unitario FROM operacional.os_precos_categoria pc
+                             JOIN operacional.equipamentos ee ON ee.id = pd.equipamento_id
+                             WHERE pc.os_id = os.id AND pc.categoria = ee.categoria
+                               AND pc.tipo_medicao = 'diaria'
+                               AND COALESCE(pd.vinculo_operador,'proprio') = 'proprio'
+                             LIMIT 1), os.valor_diaria)
                  WHEN pd.tipo_medicao = 'km' THEN
-                   COALESCE(NULLIF(os.valor_viagem,0), os.valor_km)
-                 ELSE CASE WHEN pd.equipamento_id = os.equipamento_id
-                           THEN os.valor_hora ELSE NULL END
+                   COALESCE((SELECT pc.valor_unitario FROM operacional.os_precos_categoria pc
+                             JOIN operacional.equipamentos ee ON ee.id = pd.equipamento_id
+                             WHERE pc.os_id = os.id AND pc.categoria = ee.categoria
+                               AND pc.tipo_medicao = 'km'
+                               AND COALESCE(pd.vinculo_operador,'proprio') = 'proprio'
+                             LIMIT 1), NULLIF(os.valor_viagem,0), os.valor_km)
+                 ELSE
+                   COALESCE((SELECT pc.valor_unitario FROM operacional.os_precos_categoria pc
+                             JOIN operacional.equipamentos ee ON ee.id = pd.equipamento_id
+                             WHERE pc.os_id = os.id AND pc.categoria = ee.categoria
+                               AND pc.tipo_medicao = 'horimetro'
+                               AND COALESCE(pd.vinculo_operador,'proprio') = 'proprio'
+                             LIMIT 1),
+                            CASE WHEN pd.equipamento_id = os.equipamento_id
+                                 THEN os.valor_hora ELSE NULL END)
                END
            FROM operacional.ordens_servico os
            WHERE os.id = pd.os_id
