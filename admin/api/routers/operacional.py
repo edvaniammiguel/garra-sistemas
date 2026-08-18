@@ -1384,6 +1384,11 @@ async def op_lancar_diarias_lote(os_id: str, request: Request,
 
     incluir_fds = bool(d.get("incluir_fds", False))
     operador_id = (d.get("operador_id") or "").strip() or None
+    # (18/08/2026) Diarista no lote: nome livre, sem usuário — vínculo e
+    # fornecedor gravados linha a linha, igual ao registro individual.
+    diarista_nome = (d.get("diarista_nome") or "").strip() or None
+    if diarista_nome:
+        operador_id = None
     vu = d.get("valor_unitario")
     try:
         vu = round(float(vu), 2) if vu not in (None, "",) else None
@@ -1419,11 +1424,14 @@ async def op_lancar_diarias_lote(os_id: str, request: Request,
                    (os_id, equipamento_id, operador_id, operador_nome_avulso,
                     data, tipo_medicao, quantidade_diarias, qtd_viagens,
                     vinculo_operador, observacao, por_conta_de, sem_almoco,
-                    criado_por, valor_unitario)
-                   VALUES (%s,%s,%s,%s, %s,'diaria',1,0, 'proprio',%s,'cliente',false, %s,%s)""",
+                    criado_por, valor_unitario, fornecedor)
+                   VALUES (%s,%s,%s,%s, %s,'diaria',1,0, %s,%s,'cliente',false, %s,%s,%s)""",
                 (os_id, equipamento_id, operador_id,
-                 None if operador_id else "— locação",
-                 cursor, "Diária de locação (lote)", criado_por_id, vu),
+                 None if (operador_id or diarista_nome) else "— locação",
+                 cursor,
+                 "diarista" if diarista_nome else "proprio",
+                 "Diária de diarista (lote)" if diarista_nome else "Diária de locação (lote)",
+                 criado_por_id, vu, diarista_nome),
                 fetch="none"
             )
             criadas += 1
