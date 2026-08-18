@@ -716,7 +716,19 @@ async def op_listar_os(
             eq.operador_responsavel_id AS equipamento_responsavel_id,
             resp.nome AS equipamento_responsavel_nome,
             os.operador_id, op.nome AS operador_nome,
-            u.nome AS criado_por_nome
+            u.nome AS criado_por_nome,
+            EXISTS (SELECT 1 FROM operacional.partes_diarias pdx
+                    WHERE pdx.os_id = os.id AND pdx.ativo = true
+                      AND pdx.hora_inicio IS NOT NULL AND pdx.hora_fim IS NOT NULL
+                      AND pdx.horimetro_inicial IS NOT NULL AND pdx.horimetro_final IS NOT NULL
+                      AND ABS(COALESCE(pdx.horas_trabalhadas, 0)
+                              - (pdx.horimetro_final - pdx.horimetro_inicial)) > 0.1
+                   ) AS tem_divergencia,
+            EXISTS (SELECT 1 FROM operacional.partes_diarias pdy
+                    WHERE pdy.os_id = os.id AND pdy.ativo = true
+                      AND pdy.horimetro_inicial IS NOT NULL
+                      AND pdy.horimetro_final IS NULL
+                   ) AS tem_aberto
         FROM operacional.ordens_servico os
         LEFT JOIN public.clientes_garra c       ON c.id = os.cliente_id
         LEFT JOIN operacional.tipos_servico ts  ON ts.id = os.tipo_servico_id
@@ -1219,6 +1231,26 @@ async def op_fechar_os(os_id: str, request: Request, payload=Depends(verificar_g
         (os_id,), fetch="none"
     )
 
+    # (13/08/2026) VALOR/HORA da OS é do equipamento PRINCIPAL. Linha de
+    # hora de outro equipamento sem preço definido BLOQUEIA o fechamento.
+    _pendentes = await ajard_query(
+        """SELECT e.codigo, count(*) AS n
+           FROM operacional.partes_diarias pd
+           JOIN operacional.ordens_servico os ON os.id = pd.os_id
+           LEFT JOIN operacional.equipamentos e ON e.id = pd.equipamento_id
+           WHERE pd.os_id=%s AND pd.ativo=true AND pd.fechado=false
+             AND pd.valor_unitario IS NULL
+             AND COALESCE(pd.tipo_medicao,'horimetro') NOT IN ('metros','viagem','diaria','km')
+             AND (pd.equipamento_id IS NULL OR pd.equipamento_id <> os.equipamento_id)
+           GROUP BY e.codigo""",
+        (os_id,), fetch="all"
+    )
+    if _pendentes:
+        _lista = ", ".join(f"{r['codigo'] or 'sem equipamento'} ({r['n']} linha(s))" for r in _pendentes)
+        raise HTTPException(status_code=400, detail=(
+            f"Defina o Vlr Unit. das linhas de hora fora do equipamento principal antes de fechar: {_lista}. "
+            "O valor/hora da OS vale só para o equipamento principal."))
+
     # (24/07/2026) Preço por linha: congelar valor_unitario onde a gestão
     # não definiu — herda o preço da OS pela medição da parte (snapshot;
     # reajuste na OS nunca retroage em linha fechada).
@@ -1230,7 +1262,8 @@ async def op_fechar_os(os_id: str, request: Request, payload=Depends(verificar_g
                  WHEN pd.tipo_medicao = 'diaria' THEN os.valor_diaria
                  WHEN pd.tipo_medicao = 'km' THEN
                    COALESCE(NULLIF(os.valor_viagem,0), os.valor_km)
-                 ELSE os.valor_hora
+                 ELSE CASE WHEN pd.equipamento_id = os.equipamento_id
+                           THEN os.valor_hora ELSE NULL END
                END
            FROM operacional.ordens_servico os
            WHERE os.id = pd.os_id
