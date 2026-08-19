@@ -3267,6 +3267,13 @@ function renderTabelaPartes(partes, statusOS) {
               : (_horCell
                   ? `<span style="font-size:12px;font-weight:700;color:var(--blue)">⚙️ máquina</span>`
                   : `<span style="font-size:12px;color:var(--muted)">—</span>`);
+            // (18/08/2026) A MEDIÇÃO escolhida é a identidade da linha e a
+            // célula mostra SÓ ela: linha de DIÁRIA exibe "📅 diária" — sem
+            // janela nem máquina (fontes de tempo são irrelevantes para a
+            // cobrança por diária; o horímetro tem coluna própria ao lado).
+            if (medParte === 'diaria') {
+              medicaoCell = `<span style="font-size:12px;font-weight:700;color:var(--blue)">📅 diária</span>`;
+            }
           }
 
           // ── Linha registrada como METROS numa OS de outro regime:
