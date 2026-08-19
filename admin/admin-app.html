@@ -3209,23 +3209,26 @@ function renderTabelaPartes(partes, statusOS) {
           // equipamento/operador errados. Linha de terceiro = texto fixo.
           const ehTerceiroRow = ['terceiro','diarista','frete'].includes((p.vinculo_operador||'').toLowerCase());
           const tagVinc = {terceiro:'🚚 terceiro', diarista:'👷 diarista', frete:'🚛 frete'}[(p.vinculo_operador||'').toLowerCase()] || '';
-          // Equipamento editável (select)
-          const equipCell = ehTerceiroRow
-            ? `<span style="font-size:12px;font-weight:700">${esc(p.equipamento_terceiro||p.equipamento_codigo||'–')}</span>
-               <div style="font-size:10px;color:var(--orange);font-weight:700">${tagVinc}</div>`
-            : fechada
-            ? `<span style="font-size:13px">${esc(p.equipamento_codigo||'–')}</span>`
+          // (18/08/2026) PADRÃO ÚNICO DE EDIÇÃO — inclusive linhas do LOTE e
+          // de diarista: todo campo editável quando necessário. Equipamento
+          // volta a select sempre que a linha TEM equipamento_id real (a
+          // proteção de 23/07 segue só para terceiro/frete SEM máquina nossa,
+          // onde o select sem valor exibiria a 1ª opção falsa). Nome do
+          // diarista/fornecedor é campo de texto editável na linha.
+          const _eqBadge = ehTerceiroRow
+            ? `<div style="font-size:10px;color:var(--orange);font-weight:700">${tagVinc}</div>` : '';
+          const equipCell = (fechada || (ehTerceiroRow && !p.equipamento_id))
+            ? `<span style="font-size:${ehTerceiroRow ? '12px;font-weight:700' : '13px'}">${esc(p.equipamento_terceiro||p.equipamento_codigo||'–')}</span>${_eqBadge}`
             : `<select onchange="salvarMedicaoParte('${esc(p.id)}','equipamento_id',this.value)" style="padding:4px 6px;border:1.5px solid var(--border);border-radius:6px;font-size:12px;max-width:110px">
                 ${(_equipamentos||[]).filter(e=>e.ativo!==false).map(e =>
                   `<option value="${esc(e.id)}" ${String(e.id)===String(p.equipamento_id)?'selected':''}>${esc(e.codigo)}</option>`
                 ).join('')}
-               </select>`;
+               </select>${_eqBadge}`;
 
-          // Operador editável (select)
-          const operCell = ehTerceiroRow
-            ? `<span style="font-size:12px">${esc(p.fornecedor||'–')}</span>`
-            : fechada
-            ? `<span style="font-size:13px">${esc(p.operador_nome||'–')}</span>`
+          const operCell = fechada
+            ? `<span style="font-size:13px">${esc(ehTerceiroRow ? (p.fornecedor||'–') : (p.operador_nome||'–'))}</span>`
+            : ehTerceiroRow
+            ? `<input type="text" value="${esc(p.fornecedor||'')}" placeholder="Nome" onchange="salvarMedicaoParte('${esc(p.id)}','fornecedor',this.value)" style="padding:4px 6px;border:1.5px solid var(--border);border-radius:6px;font-size:12px;max-width:120px;box-sizing:border-box"/>`
             : `<select onchange="salvarMedicaoParte('${esc(p.id)}','operador_id',this.value)" style="padding:4px 6px;border:1.5px solid var(--border);border-radius:6px;font-size:12px;max-width:120px">
                 ${(_operadoresPartes||[]).map(o =>
                   `<option value="${esc(o.id)}" ${String(o.id)===String(p.operador_id)?'selected':''}>${esc(o.nome)}</option>`
