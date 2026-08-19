@@ -915,15 +915,25 @@ input,select,textarea { font-family:inherit; font-size:13px; outline:none; }
     <div style="font-size:12px;color:var(--muted);margin:-6px 0 14px">Cria 1 diária por dia no período (máx. 62 dias). Dias já lançados do equipamento são pulados — prorrogar não duplica.</div>
     <div class="field-row">
       <div class="field">
+        <label>Vínculo</label>
+        <select id="lote-vinculo" onchange="loteVinculoChange()">
+          <option value="proprio">Próprio</option>
+          <option value="diarista">Diarista</option>
+        </select>
+      </div>
+      <div class="field">
         <label>Equipamento <span style="color:var(--red)">*</span></label>
         <select id="lote-equip"><option value="">Selecione...</option></select>
       </div>
-      <div class="field">
+    </div>
+    <div class="field-row">
+      <div class="field" id="lote-campo-operador">
         <label>Operador (opcional)</label>
         <select id="lote-operador"><option value="">— sem motorista (locação)</option></select>
-        <div id="lote-diarista-nome-wrap" style="display:none;margin-top:6px">
-          <input type="text" id="lote-diarista-nome" placeholder="Nome do diarista — ex.: João da Silva" style="width:100%;padding:8px 10px;border:1.5px solid var(--orange);border-radius:8px;font-size:13px;box-sizing:border-box"/>
-        </div>
+      </div>
+      <div class="field" id="lote-campo-diarista" style="display:none">
+        <label>Nome do diarista</label>
+        <input type="text" id="lote-diarista-nome" placeholder="Ex.: João da Silva" style="width:100%;padding:8px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;box-sizing:border-box"/>
       </div>
     </div>
     <div class="field-row">
@@ -3708,9 +3718,7 @@ function abrirModalLote(prefill) {
     (_equipamentos||[]).filter(e=>e.ativo!==false).map(e =>
       `<option value="${esc(e.id)}">${esc(e.codigo)} — ${esc(e.descricao||'')}</option>`).join('');
   const selO = document.getElementById('lote-operador');
-  selO.onchange = () => { const w = document.getElementById('lote-diarista-nome-wrap'); if (w) w.style.display = selO.value === '_diarista' ? 'block' : 'none'; };
   selO.innerHTML = '<option value="">— sem motorista (locação)</option>' +
-    '<option value="_diarista">✍️ Diarista (informar nome)</option>' +
     (_operadoresPartes||[]).map(o =>
       `<option value="${esc(o.id)}">${esc(o.nome)}</option>`).join('');
   if (prefill) {
@@ -3724,14 +3732,27 @@ function abrirModalLote(prefill) {
     if (_osAtual && _osAtual.equipamento_id) selE.value = _osAtual.equipamento_id;
     document.getElementById('lote-de').value = ''; document.getElementById('lote-ate').value = '';
     document.getElementById('lote-vu').value = ''; document.getElementById('lote-fds').checked = false;
-    const _dw = document.getElementById('lote-diarista-nome-wrap');
-    if (_dw) { _dw.style.display = 'none'; document.getElementById('lote-diarista-nome').value = ''; }
+    const _lv = document.getElementById('lote-vinculo');
+    if (_lv) { _lv.value = 'proprio'; loteVinculoChange(); }
+    const _dn = document.getElementById('lote-diarista-nome');
+    if (_dn) _dn.value = '';
   }
   document.getElementById('lote-error').classList.add('hidden');
   lotePrevia();
   document.getElementById('modal-lote').classList.remove('hidden');
 }
 function fecharModalLote() { document.getElementById('modal-lote').classList.add('hidden'); }
+
+function loteVinculoChange() {
+  const v = document.getElementById('lote-vinculo')?.value || 'proprio';
+  const cO = document.getElementById('lote-campo-operador');
+  const cD = document.getElementById('lote-campo-diarista');
+  if (cO) cO.style.display = v === 'proprio' ? '' : 'none';
+  if (cD) cD.style.display = v === 'diarista' ? '' : 'none';
+  // Portão de contexto: campo oculto não guarda valor
+  if (v === 'proprio') { const i = document.getElementById('lote-diarista-nome'); if (i) i.value = ''; }
+  else { const s = document.getElementById('lote-operador'); if (s) s.value = ''; }
+}
 
 function lotePrevia() {
   const de = document.getElementById('lote-de').value;
@@ -3762,9 +3783,9 @@ async function salvarLoteDiarias() {
   if (!equip || !de || !ate) { errEl.textContent = 'Equipamento e período são obrigatórios.'; errEl.classList.remove('hidden'); return; }
   const corpo = {
     equipamento_id: equip,
-    operador_id: (document.getElementById('lote-operador').value === '_diarista'
-      ? null : document.getElementById('lote-operador').value) || null,
-    diarista_nome: document.getElementById('lote-operador').value === '_diarista'
+    operador_id: (document.getElementById('lote-vinculo').value === 'proprio'
+      ? document.getElementById('lote-operador').value : null) || null,
+    diarista_nome: document.getElementById('lote-vinculo').value === 'diarista'
       ? (document.getElementById('lote-diarista-nome').value.trim() || null) : null,
     data_inicio: de, data_fim: ate,
     incluir_fds: document.getElementById('lote-fds').checked,
