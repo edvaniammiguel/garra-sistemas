@@ -3480,8 +3480,15 @@ async function salvarMedicaoParte(parteId, campo, valor) {
       if (campo === 'qtd_metros' && v > 5000 && !confirm('⚠️ ' + v + ' metros é um valor alto.\n\nSalvar mesmo assim?')) { verPartesOS(_osAtual.id, _osAtual.numero); return; }
     }
     const body = {};
-    const camposTexto = ['data','equipamento_id','operador_id','operador_nome_avulso','observacao'];
-    body[campo] = camposTexto.includes(campo) ? valor : v;
+    // (19/08/2026) Só campo NUMÉRICO recebe parseFloat — o resto vai como
+    // texto. A lista antiga era de texto e "fornecedor" ficou fora: editar
+    // o nome do diarista virava parseFloat("Paulo")||0 → 0 numérico numa
+    // coluna de texto → 500 no servidor. Whitelist invertida é à prova de
+    // campos futuros.
+    const camposNumericos = ['horimetro_inicial','horimetro_final','km_inicial','km_final',
+      'qtd_metros','qtd_viagens','quantidade_diarias','quantidade_diarias_cobradas',
+      'horas_cobradas','valor_unitario','valor'];
+    body[campo] = camposNumericos.includes(campo) ? v : valor;
     await apiFetch('/operacional/api/partes/'+parteId, {
       method:'PATCH',
       body: JSON.stringify(body),
