@@ -1126,7 +1126,14 @@ async def op_listar_partes(os_id: str, _auth=Depends(verificar_token)):
         if p.get("horimetro_inicial") is not None and p.get("horimetro_final") is not None
     )
     total_metros    = sum(float(p.get("qtd_metros") or 0) for p in lista)
-    total_diarias   = sum(float(p.get("quantidade_diarias") or 0) for p in lista)
+    # (18/08/2026) Linha de medição DIÁRIA sem quantidade explícita conta 1
+    # (mesma regra do valor/fechamento) — o card batia 0 com 12 diárias na
+    # tela quando as linhas nasciam da conversão pelo seletor de medição.
+    total_diarias   = sum(
+        (float(p.get("quantidade_diarias_cobradas") or 0)
+         or float(p.get("quantidade_diarias") or 0)
+         or (1.0 if (p.get("tipo_medicao") or "").lower() == "diaria" else 0.0))
+        for p in lista)
     total_viagens   = sum(float(p.get("qtd_viagens")       or 0) for p in lista)
     dias_trabalhados= len(set(str(p.get("data",""))[:10] for p in lista if p.get("data")))
 
@@ -1177,6 +1184,15 @@ async def op_atualizar_parte(parte_id: str, request: Request, payload=Depends(ve
         if c in d:
             updates.append(f"{c} = %s")
             params.append(d[c] if d[c] != "" else None)
+
+    # (18/08/2026) Preço fixado pertence à MEDIÇÃO em que foi fixado:
+    # trocou a medição da linha, o valor_unitario zera (⚠ sem valor) e a
+    # gestão precifica de novo — nada de diária×horas por herança.
+    if ("tipo_medicao" in d and "valor_unitario" not in d
+            and (d.get("tipo_medicao") or "horimetro").lower()
+                != (existente.get("tipo_medicao") or "horimetro").lower()):
+        updates.append("valor_unitario = %s")
+        params.append(None)
 
     # (12/08/2026) Recalcular horas SEMPRE pelo MOTOR OFICIAL sobre o estado
     # mesclado — regra completa: relógio digitado prevalece, janela-zero é
@@ -1988,7 +2004,8 @@ async def op_controle_mensal_excel(
         grupos = {}
         for p in partes:
             key = p.get("operador_id") or "sem_operador"
-            label = p.get("operador_nome") or "Sem operador"
+            label = (p.get("operador_nome") or p.get("operador_nome_avulso")
+                     or p.get("fornecedor") or "Sem operador")
             if key not in grupos:
                 grupos[key] = {"label": label, "partes": []}
             grupos[key]["partes"].append(p)
@@ -2146,7 +2163,12 @@ async def op_controle_mensal_excel(
                         pass
                     dias_set.add(p.get("data"))
 
-                    col4 = p.get("operador_nome", "") if view == "equipamento" else p.get("equipamento_codigo", "")
+                    # (18/08/2026) Operador da linha no padrão de vínculo:
+                    # usuário > nome avulso > fornecedor (diarista/terceiro/frete)
+                    _op_nome = (p.get("operador_nome")
+                                or p.get("operador_nome_avulso")
+                                or p.get("fornecedor") or "")
+                    col4 = _op_nome if view == "equipamento" else p.get("equipamento_codigo", "")
                     valores = [
                         data_fmt,
                         p.get("os_numero", ""),
@@ -2406,7 +2428,8 @@ async def op_editar_minha_parte(parte_id: str, request: Request, payload=Depends
                qtd_metros=%s, observacao=%s, horas_trabalhadas=%s,
                km_inicial=%s, km_final=%s, km_percorrido=%s, qtd_viagens=%s,
                quantidade_diarias=%s, tipo_medicao=%s,
-               equipamento_id=%s, operador_id=%s
+               equipamento_id=%s, operador_id=%s,
+               valor_unitario=%s
            WHERE id=%s""",
         (merged.get("data"), _num(merged.get("horimetro_inicial")), _num(merged.get("horimetro_final")),
          merged.get("hora_inicio") or None, merged.get("hora_fim") or None,
@@ -2419,6 +2442,10 @@ async def op_editar_minha_parte(parte_id: str, request: Request, payload=Depends
          (merged.get("tipo_medicao") or "horimetro"),
          merged.get("equipamento_id") or None,
          merged.get("operador_id") or None,
+         (None if ("tipo_medicao" in d
+                   and (d.get("tipo_medicao") or "horimetro").lower()
+                       != (parte.get("tipo_medicao") or "horimetro").lower())
+          else parte.get("valor_unitario")),
          parte_id),
         fetch="none"
     )
