@@ -12,6 +12,8 @@ from fastapi.responses import RedirectResponse, FileResponse, HTMLResponse, Redi
 
 from core.config import OPERACIONAL_DIR
 from core.db import ajard_query, ajard_query_id, get_db
+from core.storage import storage_upload
+from core.helpers import enviar_email_smtp
 from core.auth import verificar_token, verificar_gestor, verificar_admin
 
 router = APIRouter()
@@ -1943,6 +1945,70 @@ async def op_controle_mensal(
         "operadores": list(operadores.values()),
         "partes": partes
     }
+
+@router.get("/operacional/api/backup-relatorios")
+async def op_backup_relatorios(request: Request):
+    """(19/08/2026) Backup automático diário dos relatórios Excel.
+
+    Chamado por agendador externo com ?token= (env BACKUP_TOKEN). Gera o
+    Controle MENSAL do mês corrente nas 2 vistas + o ANUAL, grava no
+    Supabase Storage (backups/AAAA-MM-DD/) e envia por e-mail com anexos.
+    Cada etapa é resiliente: falha em uma não derruba as outras — o resumo
+    devolve o que aconteceu. O backup PRIMÁRIO continua sendo o banco Neon
+    (point-in-time); este é o espelho diário legível pela gestão.
+    """
+    import os as _os
+    token_cfg = _os.environ.get("BACKUP_TOKEN", "")
+    if not token_cfg or request.query_params.get("token") != token_cfg:
+        raise HTTPException(status_code=401, detail="Token inválido")
+
+    hoje = datetime.now().date()
+    resumo = {"data": str(hoje), "gerados": [], "storage": [], "email": None, "erros": []}
+    arquivos = []  # (nome, bytes)
+
+    async def _gerar(ano, mes, view):
+        resp = await op_controle_mensal_excel(ano=ano, mes=mes, view=view, _auth=None)
+        nome = resp.headers.get("content-disposition", "").split("filename=")[-1].strip('"')                or f"controle-{view}-{ano}{'-'+str(mes) if mes else ''}.xlsx"
+        pedacos = []
+        async for chunk in resp.body_iterator:
+            pedacos.append(chunk if isinstance(chunk, bytes) else chunk.encode())
+        return nome, b"".join(pedacos)
+
+    for (mes_p, view) in [(hoje.month, "equipamento"), (hoje.month, "colaborador"), (None, "equipamento")]:
+        try:
+            nome, dados = await _gerar(hoje.year, mes_p, view)
+            arquivos.append((nome, dados))
+            resumo["gerados"].append(nome)
+        except Exception as e:
+            resumo["erros"].append(f"gerar {view}/{mes_p or 'anual'}: {e}")
+
+    # Storage (Supabase) — pasta do dia
+    for nome, dados in arquivos:
+        try:
+            path = f"backups/{hoje}/{nome}"
+            storage_upload(dados, path,
+                content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+            resumo["storage"].append(path)
+        except Exception as e:
+            resumo["erros"].append(f"storage {nome}: {e}")
+
+    # E-mail com anexos
+    try:
+        destino = _os.environ.get("BACKUP_EMAIL", "contato@garraterraplenagem.com.br")
+        if arquivos:
+            enviar_email_smtp(
+                destino,
+                f"[Garra] Backup diário dos relatórios — {hoje.strftime('%d/%m/%Y')}",
+                f"<p>Backup automático dos relatórios do Garra Sistemas.</p>"
+                f"<p><b>{len(arquivos)}</b> arquivo(s): mensal (equipamento e colaborador) e anual.</p>"
+                f"<p>Cópia também no Storage: backups/{hoje}/</p>",
+                anexos=[(n, d) for n, d in arquivos], incluir_cc=False)
+            resumo["email"] = destino
+    except Exception as e:
+        resumo["erros"].append(f"email: {e}")
+
+    return resumo
+
 
 @router.get("/operacional/api/controle-mensal/excel")
 async def op_controle_mensal_excel(
