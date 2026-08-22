@@ -1068,6 +1068,9 @@ async function sincronizarEnviosDoServidor() {
     const rows = await GarraDB.getEnvios({ limit: 200 });
     mesclarEnviosServidor(rows);
     console.log('[Envios] Hidratado do servidor:', (rows || []).length, 'envio(s)');
+    // (22/08/2026) Repopula o filtro de colaborador AQUI — a hidratação é o
+    // único ponto garantido nos dois painéis (Superior e Gestor).
+    try { populateSubmissionFilters(); } catch(_) {}
     return true;
   } catch (e) {
     console.warn('[Envios] Falha ao buscar do servidor:', e.message);
@@ -1406,6 +1409,11 @@ async function renderRanking() {
 
 // ── SUBMISSIONS ──
 function renderSubmissions() {
+  // (22/08/2026) Os envios do servidor chegam DEPOIS da abertura (async):
+  // se o filtro de colaborador ainda está vazio quando a lista renderiza,
+  // repopula agora — o momento em que os dados existem de fato.
+  const _fu = document.getElementById('filter-user');
+  if (_fu && _fu.options.length <= 1 && (DB.submissions()||[]).length) populateSubmissionFilters();
   const typeF=document.getElementById('filter-type')?.value||'',userF=document.getElementById('filter-user')?.value||'',statusF=document.getElementById('filter-status')?.value||'';
   let subs=DB.submissions();
   if(typeF)subs=subs.filter(s=>s.type===typeF);
@@ -1436,8 +1444,21 @@ function populateSubmissionFilters() {
   const allCLs=DB.allCLs();
   const ft=document.getElementById('filter-type');
   if(ft)ft.innerHTML='<option value="">Todos os tipos</option>'+Object.values(allCLs).map(cl=>`<option value="${cl.id}">${cl.icon} ${cl.label}</option>`).join('');
+  // (22/08/2026) Filtro de colaborador populado DOS ENVIOS DO SERVIDOR —
+  // DB.users() era cache local do aparelho: vazio no desktop da gestão
+  // (dívida do localStorage). Quem tem envio aparece no filtro; união com
+  // o cache local quando existir, sem depender dele.
   const fu=document.getElementById('filter-user');
-  if(fu)fu.innerHTML='<option value="">Todos</option>'+DB.users().filter(u=>u.role==='driver').map(u=>`<option value="${u.login}">${sanitize(u.name)}</option>`).join('');
+  if(fu){
+    const vistos = new Map();
+    (DB.submissions()||[]).forEach(s => { if (s.user && !vistos.has(s.user)) vistos.set(s.user, s.userName || s.user); });
+    (DB.users()||[]).filter(u=>u.role==='driver').forEach(u => { if (!vistos.has(u.login)) vistos.set(u.login, u.name); });
+    const atual = fu.value;
+    fu.innerHTML='<option value="">Todos os colaboradores</option>'+[...vistos.entries()]
+      .sort((a,b)=>String(a[1]).localeCompare(String(b[1]),'pt-BR'))
+      .map(([login,nome])=>`<option value="${login}">${sanitize(nome)}</option>`).join('');
+    if (atual) fu.value = atual;
+  }
 }
 
 // ── FLEET ──
