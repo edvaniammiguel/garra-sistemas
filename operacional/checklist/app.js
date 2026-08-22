@@ -1406,6 +1406,11 @@ async function renderRanking() {
 
 // ── SUBMISSIONS ──
 function renderSubmissions() {
+  // (22/08/2026) Os envios do servidor chegam DEPOIS da abertura (async):
+  // se o filtro de colaborador ainda está vazio quando a lista renderiza,
+  // repopula agora — o momento em que os dados existem de fato.
+  const _fu = document.getElementById('filter-user');
+  if (_fu && _fu.options.length <= 1 && (DB.submissions()||[]).length) populateSubmissionFilters();
   const typeF=document.getElementById('filter-type')?.value||'',userF=document.getElementById('filter-user')?.value||'',statusF=document.getElementById('filter-status')?.value||'';
   let subs=DB.submissions();
   if(typeF)subs=subs.filter(s=>s.type===typeF);
