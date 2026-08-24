@@ -438,7 +438,10 @@ async function carregarApoios(){
   try{ OTS = await api('/manutencao/api/ots?status=aberta'); }catch(e){ OTS=[]; }
   try{ const o2 = await api('/manutencao/api/ots?status=em_andamento'); OTS=OTS.concat(o2); }catch(e){}
   try{ const o3 = await api('/manutencao/api/ots?status=aguardando_peca'); OTS=OTS.concat(o3); }catch(e){}
-  try{ EQUIPAMENTOS = await api('/operacional/api/equipamentos?uso=os'); }catch(e){ EQUIPAMENTOS=[]; }
+  // (24/08/2026) FROTA COMPLETA — sem ?uso=os: a whitelist de OS exclui
+  // CA/MA (veículos de apoio) por definição, mas OC de Manutenção cobre
+  // qualquer equipamento ativo da frota.
+  try{ EQUIPAMENTOS = await api('/operacional/api/equipamentos'); }catch(e){ EQUIPAMENTOS=[]; }
   const ne=document.getElementById('n-eq');
   if(ne){
     ne.innerHTML='<option value="">Selecionar equipamento…</option>'+
