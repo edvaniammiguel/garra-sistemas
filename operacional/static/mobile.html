@@ -573,13 +573,6 @@ input,select,textarea{font-family:inherit;outline:none;border:none}
       </select>
     </div>
 
-    <div style="margin-bottom:14px">
-      <label style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:6px">Tipo de serviço</label>
-      <select id="novaos-tipo" style="width:100%;padding:12px;border:1.5px solid var(--border);border-radius:8px;font-size:14px">
-        <option value="">— selecionar —</option>
-      </select>
-    </div>
-
     <div style="margin-bottom:20px">
       <label style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:6px">Observação</label>
       <textarea id="novaos-obs" rows="2" placeholder="Detalhes adicionais" style="width:100%;padding:12px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;resize:vertical"></textarea>
@@ -1118,7 +1111,7 @@ async function salvarNovaOSAvulsa() {
   const obra        = document.getElementById('novaos-obra').value.trim();
   const cliente     = document.getElementById('novaos-cliente').value.trim();
   const equipId     = document.getElementById('novaos-equipamento').value;
-  const tipoId      = document.getElementById('novaos-tipo').value;
+  const tipoId      = null; // (24/08/2026) campo Tipo de serviço removido da abertura mobile — gestão define no desktop
   const observacao  = document.getElementById('novaos-obs').value.trim();
 
   if (!obra) {
