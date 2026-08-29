@@ -12,13 +12,15 @@ MODULOS_DISPONIVEIS = [
     {"id": "operacional_mobile",  "label": "Operacional Mobile",    "desc": "OS e horímetro"},
     {"id": "checklist",           "label": "Checklist",             "desc": "Checklist de máquinas"},
     {"id": "checklist_logistica", "label": "Logística (Checklist)", "desc": "Aba de carros de apoio dentro do Checklist"},
+    {"id": "manutencao",          "label": "Manutenção Desktop",    "desc": "Módulo completo — frota, OTs, materiais (gestão)"},
+    {"id": "pedir_ot",            "label": "Manutenção — Pedir OT", "desc": "Solicitar OT pelo mobile e acompanhar (mecânicos)"},
 ]
 
 PERFIL_MODULOS_PADRAO = {
     "admin":     ["admin_master","jardinagem_desktop","jardinagem_mobile","operacional_mobile","checklist","checklist_logistica"],
     "gestor":    ["admin_master","jardinagem_desktop","operacional_mobile"],
     "luana":     ["admin_master","jardinagem_desktop","operacional_mobile"],
-    "bruna":     ["admin_master","checklist"],
+    "bruna":     ["admin_master","checklist","manutencao","pedir_ot"],
     "operador":  ["operacional_mobile","checklist"],
     "motorista": ["operacional_mobile","checklist"],
     "campo":     ["jardinagem_mobile"],
