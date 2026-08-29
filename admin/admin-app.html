@@ -1862,7 +1862,25 @@ function switchPermTab(tab) {
   if (tab==='excecoes') iniciarAbaExcecoes();
 }
 
-async function renderPermissoes() { renderPermPerfis(); }
+let _permHidratado = false;
+async function hidratarPermissoes(force) {
+  if (_permHidratado && !force) return;
+  try {
+    const mods = await apiFetch('/permissoes/modulos');
+    if (Array.isArray(mods) && mods.length) { MODULOS.length = 0; mods.forEach(m => MODULOS.push(m)); }
+    const perfis = await apiFetch('/permissoes/perfis');
+    if (Array.isArray(perfis) && perfis.length) {
+      Object.keys(PERFIL_PADRAO).forEach(k => delete PERFIL_PADRAO[k]);
+      perfis.forEach(p => {
+        PERFIL_PADRAO[p.nome] = p.modulos || [];
+        if (p.label) PERFIL_LABEL[p.nome] = p.label;
+      });
+    }
+    _permHidratado = true;
+  } catch (e) { console.warn('hidratarPermissoes — usando fallback local:', e.message); }
+}
+
+async function renderPermissoes() { await hidratarPermissoes(); renderPermPerfis(); }
 
 function renderPermPerfis() {
   const perfis = Object.keys(PERFIL_PADRAO);
@@ -1908,15 +1926,16 @@ async function salvarPermPerfil(perfil, modulo, permitido) {
   if (permitido) { if (!PERFIL_PADRAO[perfil].includes(modulo)) PERFIL_PADRAO[perfil].push(modulo); }
   else { PERFIL_PADRAO[perfil]=PERFIL_PADRAO[perfil].filter(m=>m!==modulo); }
   try {
-    const usuarios=(_usuarios||[]).filter(u=>u.perfil===perfil&&u.ativo&&u.id);
-    for (const u of usuarios) await apiFetch('/permissoes/usuario/'+u.id,{method:'POST',body:JSON.stringify({[modulo]:permitido})});
+    await apiFetch('/permissoes/perfis/'+perfil,{method:'PUT',body:JSON.stringify({modulos:PERFIL_PADRAO[perfil]||[]})});
     toast(`${PERFIL_LABEL[perfil]||perfil} — ${permitido?'✅':'❌'} ${MODULOS.find(m=>m.id===modulo)?.label}`,'success');
-  } catch(e) { toast('Erro: '+e.message,'error'); }
+  } catch(e) { toast('Erro: '+e.message,'error'); renderPermPerfis(); }
 }
 
-function excluirPerfil(perfil, label, count) {
+async function excluirPerfil(perfil, label, count) {
   if (count>0) { toast(`Impossível — ${count} colaborador(es) com este perfil`,'error'); return; }
   if (!confirm(`Excluir perfil "${label}"?`)) return;
+  try { await apiFetch('/permissoes/perfis/'+perfil,{method:'DELETE'}); }
+  catch(e) { toast('Erro: '+e.message,'error'); return; }
   delete PERFIL_PADRAO[perfil]; delete PERFIL_LABEL[perfil];
   renderPermPerfis(); toast(`Perfil "${label}" excluído`,'success');
 }
@@ -1940,8 +1959,11 @@ async function salvarNovoPerfil() {
   if (PERFIL_PADRAO[nome]) { errEl.textContent='Perfil já existe'; errEl.classList.remove('hidden'); return; }
   if (!/^[a-z_]+$/.test(nome)) { errEl.textContent='Use apenas letras minúsculas e _'; errEl.classList.remove('hidden'); return; }
   const modulos=MODULOS.filter(m=>document.getElementById('pm-'+m.id)?.checked).map(m=>m.id);
+  const label=nome.charAt(0).toUpperCase()+nome.slice(1);
+  try { await apiFetch('/permissoes/perfis',{method:'POST',body:JSON.stringify({nome,label,modulos})}); }
+  catch(e) { errEl.textContent='Erro: '+e.message; errEl.classList.remove('hidden'); return; }
   PERFIL_PADRAO[nome]=modulos;
-  PERFIL_LABEL[nome]=nome.charAt(0).toUpperCase()+nome.slice(1);
+  PERFIL_LABEL[nome]=label;
   document.getElementById('modal-perfil').classList.add('hidden');
   renderPermPerfis();
   toast(`Perfil "${PERFIL_LABEL[nome]}" criado com ${modulos.length} módulo(s)`,'success');
