@@ -675,6 +675,9 @@ async def semaforos_frota(_auth=Depends(verificar_manutencao)):
             "id": str(r["id"]), "codigo": r["codigo"], "descricao": r["descricao"],
             "horimetro": vivo, "medicao": r["medicao"],
             "sistema_codigo": r.get("sistema_codigo"), "tipo_sigla": r.get("tipo_sigla"),
+            "categoria": r.get("categoria"),
+            "equipamento_pai": str(r["equipamento_pai"]) if r.get("equipamento_pai") else None,
+            "posicao": r.get("posicao"), "n_filhos": int(r.get("n_filhos") or 0),
             "ots_abertas": r["ots_abertas"], "ots_programadas": 0,
             "status": "verde", "motivo": None, "proxima": None, "pontos": []})
         if r["ponto"]:
