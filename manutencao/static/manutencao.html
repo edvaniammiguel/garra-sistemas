@@ -329,7 +329,8 @@ function showModule(id){
 
 /* ══ FROTA — SEMÁFOROS REAIS ══ */
 const SEM_DOT = { vermelho:'r', laranja:'o', amarelo:'y', verde:'g' };
-let _semCache = [], _arvAbertos = null, _arvSel = null, _ftAbertos = new Set();
+let _semCache = [], _arvAbertos = null, _arvSel = null, _ftAbertos = new Set(), _ftModo = 'arvore';
+function ftModo(m){ _ftModo = m; renderCentroEquip(); }
 async function carregarSemaforosReais(){
   try {
     _semCache = await mntFetch('/manutencao/api/semaforos');
@@ -413,7 +414,7 @@ function renderCentroEquip(){
   const ordem = {vermelho:0, laranja:1, amarelo:2, verde:3};
   const todos = _eqsDoNo(cod);
   const filhosDe = id => _semCache.filter(f => String(f.equipamento_pai) === String(id));
-  const eqs = todos.filter(e => !e.equipamento_pai)
+  const eqs = (_ftModo === 'lista' ? todos.slice() : todos.filter(e => !e.equipamento_pai))
       .sort((a,b)=> (ordem[a.status]-ordem[b.status]) || a.codigo.localeCompare(b.codigo));
   const linhas = eqs.map(e => {
     const d = ({vermelho:'r',laranja:'o',amarelo:'y',verde:'g'})[e.status] || 'g';
@@ -423,7 +424,7 @@ function renderCentroEquip(){
     const situ = e.proxima ? '<span style="font-size:10px;color:'+(e.status==='vermelho'?'#DC2626':'#B45309')+'">'+_esc(e.proxima)+'</span>'
                : (e.motivo ? '<span style="font-size:10px;color:#B45309">'+_esc(e.motivo)+'</span>' : '<span class="chip em">Em dia</span>');
     const aberto = _ftAbertos.has(String(e.id));
-    const chev = (e.n_filhos > 0)
+    const chev = (_ftModo === 'arvore' && e.n_filhos > 0)
       ? '<span style="cursor:pointer;font-weight:800;color:#1A2A5E" data-i="'+e.id+'" '
         + 'onclick="event.stopPropagation();ftToggle(this.dataset.i)">'+(aberto?'▾':'▸')+'</span> '
       : (e.categoria === 'componente' ? '🛞 ' : '');
@@ -433,12 +434,14 @@ function renderCentroEquip(){
       + 'oncontextmenu="showCtxReal(event,this.dataset.id,\'equip\',this.dataset.cod)">'
       + '<td style="text-align:center"><span class="dot '+d+'"></span></td>'
       + '<td class="bold">'+chev+_esc(e.codigo)
-      + (e.n_filhos > 0 ? ' <span class="muted" style="font-size:9px">('+e.n_filhos+')</span>' : '')
-      + (e.categoria === 'componente' ? ' <span class="muted" style="font-size:9px">solto</span>' : '')
+      + (_ftModo === 'arvore' && e.n_filhos > 0 ? ' <span class="muted" style="font-size:9px">('+e.n_filhos+')</span>' : '')
+      + (e.categoria === 'componente' ? (e.equipamento_pai
+          ? ' <span class="muted" style="font-size:9px">\u2192 '+_esc(((_semCache.find(x=>String(x.id)===String(e.equipamento_pai))||{}).codigo)||'?')+(e.posicao?' \u00b7 '+_esc(e.posicao):'')+'</span>'
+          : ' <span class="muted" style="font-size:9px">solto</span>') : '')
       + '</td><td>'+_esc(e.descricao||'')+'</td>'
       + '<td class="mono r">'+hor+'</td><td>'+((abertas+' '+progrs).trim()||'<span class="chip tm">Nenhuma</span>')+'</td>'
       + '<td>'+situ+'</td></tr>';
-    if (aberto) linha += filhosDe(e.id).map(f => {
+    if (_ftModo === 'arvore' && aberto) linha += filhosDe(e.id).map(f => {
       const fd = ({vermelho:'r',laranja:'o',amarelo:'y',verde:'g'})[f.status] || 'g';
       const fab = f.ots_abertas > 0 ? '<span class="chip em">'+f.ots_abertas+'</span>' : '';
       return '<tr data-id="'+f.id+'" data-cod="'+_esc(f.codigo)+'" style="background:#F8FAFC" '
@@ -452,8 +455,11 @@ function renderCentroEquip(){
     }).join('');
     return linha;
   }).join('');
+  const selModo = '<span style="float:right;display:inline-flex;gap:4px">'
+    + '<button class="btn" onclick="ftModo(\'arvore\')" title="Componentes aninhados no pai" style="font-size:11px;padding:2px 8px'+(_ftModo==='arvore'?';background:#1A2A5E;color:#fff':'')+'">\ud83c\udf33 \u00c1rvore</button>'
+    + '<button class="btn" onclick="ftModo(\'lista\')" title="Todos os equipamentos, chapado" style="font-size:11px;padding:2px 8px'+(_ftModo==='lista'?';background:#1A2A5E;color:#fff':'')+'">\u2630 Lista</button></span>';
   centro.innerHTML =
-    '<div class="pp-title">'+_esc(rot)+' <span class="muted" style="font-weight:400;font-size:11px">'+eqs.length+' equipamento(s) · botão direito = serviços · duplo clique = ficha</span></div>'
+    '<div class="pp-title">'+_esc(rot)+' <span class="muted" style="font-weight:400;font-size:11px">'+eqs.length+' equipamento(s) · botão direito = serviços · duplo clique = ficha</span>'+selModo+'</div>'
     + '<div style="margin-top:8px;background:#fff;border:1px solid #E2E8F0;border-radius:6px;overflow:hidden"><table><thead><tr>'
     + '<th style="width:26px"></th><th style="width:80px">Equip.</th><th>Descrição</th>'
     + '<th class="r" style="width:82px">Horímetro</th><th style="width:120px">OTs</th>'
