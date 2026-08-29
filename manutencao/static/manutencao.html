@@ -329,7 +329,7 @@ function showModule(id){
 
 /* ══ FROTA — SEMÁFOROS REAIS ══ */
 const SEM_DOT = { vermelho:'r', laranja:'o', amarelo:'y', verde:'g' };
-let _semCache = [], _arvAbertos = null, _arvSel = null;
+let _semCache = [], _arvAbertos = null, _arvSel = null, _ftAbertos = new Set();
 async function carregarSemaforosReais(){
   try {
     _semCache = await mntFetch('/manutencao/api/semaforos');
@@ -394,6 +394,11 @@ function arvNoClique(cod){
   if (_arvAbertos.has(cod)) _arvAbertos.delete(cod); else _arvAbertos.add(cod);
   arvCarregar(cod);
 }
+function ftToggle(id){
+  id = String(id);
+  if (_ftAbertos.has(id)) _ftAbertos.delete(id); else _ftAbertos.add(id);
+  renderCentroEquip();
+}
 function arvCarregar(cod){
   _arvNoAtivo = cod;
   renderArvore();
@@ -406,7 +411,10 @@ function renderCentroEquip(){
             : cod === '_sem' ? '❔ Sem grupo definido'
             : ((_arvSistemas.find(s=>s.codigo===cod)||{}).nome ? cod+' — '+(_arvSistemas.find(s=>s.codigo===cod)||{}).nome : cod);
   const ordem = {vermelho:0, laranja:1, amarelo:2, verde:3};
-  const eqs = _eqsDoNo(cod).sort((a,b)=> (ordem[a.status]-ordem[b.status]) || a.codigo.localeCompare(b.codigo));
+  const todos = _eqsDoNo(cod);
+  const filhosDe = id => _semCache.filter(f => String(f.equipamento_pai) === String(id));
+  const eqs = todos.filter(e => !e.equipamento_pai)
+      .sort((a,b)=> (ordem[a.status]-ordem[b.status]) || a.codigo.localeCompare(b.codigo));
   const linhas = eqs.map(e => {
     const d = ({vermelho:'r',laranja:'o',amarelo:'y',verde:'g'})[e.status] || 'g';
     const hor = e.horimetro ? Math.round(e.horimetro).toLocaleString('pt-BR') + (e.medicao==='km'?' km':' h') : '—';
@@ -414,14 +422,35 @@ function renderCentroEquip(){
     const progrs = e.ots_programadas > 0 ? '<span class="chip pr">'+e.ots_programadas+' progr.</span>' : '';
     const situ = e.proxima ? '<span style="font-size:10px;color:'+(e.status==='vermelho'?'#DC2626':'#B45309')+'">'+_esc(e.proxima)+'</span>'
                : (e.motivo ? '<span style="font-size:10px;color:#B45309">'+_esc(e.motivo)+'</span>' : '<span class="chip em">Em dia</span>');
-    return '<tr data-id="'+e.id+'" data-cod="'+_esc(e.codigo)+'" '
+    const aberto = _ftAbertos.has(String(e.id));
+    const chev = (e.n_filhos > 0)
+      ? '<span style="cursor:pointer;font-weight:800;color:#1A2A5E" data-i="'+e.id+'" '
+        + 'onclick="event.stopPropagation();ftToggle(this.dataset.i)">'+(aberto?'▾':'▸')+'</span> '
+      : (e.categoria === 'componente' ? '🛞 ' : '');
+    let linha = '<tr data-id="'+e.id+'" data-cod="'+_esc(e.codigo)+'" '
       + 'onclick="this.parentNode.querySelectorAll(\'tr\').forEach(r=>r.classList.remove(\'sel\'));this.classList.add(\'sel\')" '
       + 'ondblclick="verEquipReal(this.dataset.id)" '
       + 'oncontextmenu="showCtxReal(event,this.dataset.id,\'equip\',this.dataset.cod)">'
       + '<td style="text-align:center"><span class="dot '+d+'"></span></td>'
-      + '<td class="bold">'+_esc(e.codigo)+'</td><td>'+_esc(e.descricao||'')+'</td>'
+      + '<td class="bold">'+chev+_esc(e.codigo)
+      + (e.n_filhos > 0 ? ' <span class="muted" style="font-size:9px">('+e.n_filhos+')</span>' : '')
+      + (e.categoria === 'componente' ? ' <span class="muted" style="font-size:9px">solto</span>' : '')
+      + '</td><td>'+_esc(e.descricao||'')+'</td>'
       + '<td class="mono r">'+hor+'</td><td>'+((abertas+' '+progrs).trim()||'<span class="chip tm">Nenhuma</span>')+'</td>'
       + '<td>'+situ+'</td></tr>';
+    if (aberto) linha += filhosDe(e.id).map(f => {
+      const fd = ({vermelho:'r',laranja:'o',amarelo:'y',verde:'g'})[f.status] || 'g';
+      const fab = f.ots_abertas > 0 ? '<span class="chip em">'+f.ots_abertas+'</span>' : '';
+      return '<tr data-id="'+f.id+'" data-cod="'+_esc(f.codigo)+'" style="background:#F8FAFC" '
+        + 'ondblclick="verEquipReal(this.dataset.id)" '
+        + 'oncontextmenu="showCtxReal(event,this.dataset.id,\'equip\',this.dataset.cod)">'
+        + '<td style="text-align:center"><span class="dot '+fd+'" style="width:7px;height:7px"></span></td>'
+        + '<td style="padding-left:26px">🛞 <b>'+_esc(f.codigo)+'</b></td>'
+        + '<td>'+_esc(f.descricao||'')+(f.posicao?' · <b style="color:#1A2A5E">'+_esc(f.posicao)+'</b>':'')+'</td>'
+        + '<td class="mono r muted">—</td><td>'+(fab||'<span class="chip tm" style="font-size:9px">—</span>')+'</td>'
+        + '<td class="muted" style="font-size:10px">subsistema</td></tr>';
+    }).join('');
+    return linha;
   }).join('');
   centro.innerHTML =
     '<div class="pp-title">'+_esc(rot)+' <span class="muted" style="font-weight:400;font-size:11px">'+eqs.length+' equipamento(s) · botão direito = serviços · duplo clique = ficha</span></div>'
@@ -1091,6 +1120,7 @@ function showCtxReal(ev, id, tipo, rotulo){
       + it('🔧','Ordens de Trabalho', "otsDoEquip('"+id+"',false)")
       + it('📅','Planos de manutenção', "abrirPlanosEquip('"+id+"')")
       + it('🚦','Pontos de leitura', "verEquipReal('"+id+"')")
+      + it('🛞','Subsistemas / Montagem', "equipSubsistemas('"+id+"')")
       + it('📈','Registo Funcionamento', "equipFuncionamento('"+id+"')")
       + it('🔩','Artigos aplicados', "equipArtigos('"+id+"')")
       + it('📜','Histórico de OTs', "otsDoEquip('"+id+"',true)");
@@ -1105,6 +1135,74 @@ function showCtxReal(ev, id, tipo, rotulo){
   m.style.left = Math.min(ev.clientX, window.innerWidth-230)+'px';
   m.style.top  = Math.min(ev.clientY, window.innerHeight-220)+'px';
   m.style.display = 'block';
+}
+async function equipSubsistemas(id){
+  let r;
+  try { r = await mntFetch('/manutencao/api/equipamentos/'+id+'/subsistemas'); }
+  catch(e){ mostrarToast('\u274c '+e.message,'warn'); return; }
+  const dd = v => { if(!v) return '\u2014'; try{ return new Date(v).toLocaleDateString('pt-BR'); }catch(e){ return '\u2014'; } };
+  const eu = r.eu;
+  let corpo = '';
+  if (eu.categoria === 'componente'){
+    corpo += '<div class="dsec">Montado em</div>'
+      + (eu.pai
+        ? '<div style="padding:6px 4px;font-size:13px">\ud83d\ude9b <b>'+_esc(eu.pai.codigo)+'</b> \u2014 '+_esc(eu.pai.descricao||'')
+          + (eu.posicao ? ' \u00b7 posi\u00e7\u00e3o: <b>'+_esc(eu.posicao)+'</b>' : '')
+          + ' <button class="btn" style="margin-left:8px" data-c="'+eu.id+'" onclick="subDesmontar(this.dataset.c)">\u2934 Desmontar</button></div>'
+        : '<div class="muted" style="padding:6px 4px">Solto (n\u00e3o montado). Use a janela do equipamento-pai para montar.</div>')
+      + '<div class="dsec" style="margin-top:8px">Vida acumulada (soma dos per\u00edodos montado)</div>'
+      + '<div style="padding:4px;font-weight:800;color:#1A2A5E;font-size:15px">'+(r.vida_acumulada||0).toLocaleString('pt-BR')+' h/km rodados</div>'
+      + '<div class="dsec" style="margin-top:8px">Hist\u00f3rico de montagens</div>'
+      + (r.historico.length
+        ? '<table><thead><tr><th>Pai</th><th>Posi\u00e7\u00e3o</th><th>Montou</th><th>Desmontou</th><th class="r">Rodou</th></tr></thead><tbody>'
+          + r.historico.map(h=>'<tr><td><b>'+_esc(h.pai)+'</b></td><td>'+_esc(h.posicao||'\u2014')+'</td><td>'+dd(h.montagem)+'</td><td>'+(h.desmontagem?dd(h.desmontagem):'<span class="chip em" style="font-size:9px">montado</span>')+'</td><td class="r mono">'+(h.rodado!=null?h.rodado.toLocaleString('pt-BR'):'\u2014')+'</td></tr>').join('')
+          + '</tbody></table>'
+        : '<div class="muted" style="padding:6px 4px;font-size:11px">Sem registros ainda \u2014 o hist\u00f3rico nasce nas pr\u00f3ximas montagens/trocas.</div>');
+  } else {
+    corpo += '<div class="dsec">Subsistemas montados</div>'
+      + (r.filhos.length
+        ? '<table><thead><tr><th>Posi\u00e7\u00e3o</th><th>C\u00f3digo</th><th>Descri\u00e7\u00e3o</th><th>Sistema</th><th>OTs</th><th></th></tr></thead><tbody>'
+          + r.filhos.map(f=>'<tr><td><b>'+_esc(f.posicao||'\u2014')+'</b></td><td class="bold">'+_esc(f.codigo)+'</td><td>'+_esc(f.descricao||'')+'</td><td class="muted">'+_esc(f.sistema_nome||'')+'</td>'
+            + '<td>'+(f.ots_abertas?'<span class="chip nr">'+f.ots_abertas+'</span>':'\u2014')+'</td>'
+            + '<td><button class="btn" data-c="'+f.id+'" onclick="equipSubsistemas(this.dataset.c)">\ud83d\udd0d</button> '
+            + '<button class="btn" data-c="'+f.id+'" onclick="subDesmontar(this.dataset.c,\''+eu.id+'\')">\u2934</button></td></tr>').join('')
+          + '</tbody></table>'
+        : '<div class="muted" style="padding:6px 4px">Nenhum componente montado.</div>')
+      + '<div class="dsec" style="margin-top:10px">\u2795 Montar componente</div>'
+      + '<div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;padding:4px 0">'
+      + '<div class="mfield" style="flex:1;min-width:220px">Componente<select id="sub-comp">'
+      + r.componentes_livres.map(c=>'<option value="'+c.id+'">'+_esc(c.codigo)+' \u2014 '+_esc((c.descricao||'').slice(0,40))+'</option>').join('')
+      + '</select></div>'
+      + '<div class="mfield" style="width:200px">Posi\u00e7\u00e3o<input id="sub-pos" placeholder="ex.: traseiro interno dir"></div>'
+      + '<button class="btn p" data-p="'+eu.id+'" onclick="subMontar(this.dataset.p)">Montar</button></div>'
+      + '<div class="muted" style="font-size:10px">Montar em cima de quem j\u00e1 est\u00e1 montado = troca: o hist\u00f3rico do anterior fecha sozinho com a leitura do pai antigo.</div>';
+  }
+  document.querySelector('#eq-ficha .modal').classList.add('larga');
+  document.getElementById('eq-ficha-corpo').innerHTML =
+    '<div style="display:flex;justify-content:space-between;align-items:center">'
+    + '<b style="font-size:14px;color:#1A2A5E">\ud83d\udede Subsistemas \u2014 '+_esc(eu.codigo)+' <span class="muted" style="font-weight:400;font-size:11px">'+_esc(eu.descricao||'')+'</span></b>'
+    + '<span style="cursor:pointer;font-size:18px" onclick="document.getElementById(\'eq-ficha\').classList.remove(\'show\')">\u2715</span></div>'
+    + corpo;
+  document.getElementById('eq-ficha').classList.add('show');
+}
+async function subMontar(paiId){
+  const comp = (document.getElementById('sub-comp')||{}).value;
+  const pos = (document.getElementById('sub-pos')||{}).value || '';
+  if (!comp){ mostrarToast('Escolha o componente','warn'); return; }
+  try {
+    const r = await mntFetch('/manutencao/api/equipamentos/'+paiId+'/montar',
+      { method:'POST', body: JSON.stringify({ componente_id: comp, posicao: pos }) });
+    mostrarToast('\ud83d\udede '+r.componente+' montado em '+r.pai, 'ok');
+    equipSubsistemas(paiId);
+  } catch(e){ mostrarToast('\u274c '+e.message,'warn'); }
+}
+async function subDesmontar(compId, voltarPara){
+  if (!confirm('Desmontar o componente? O hist\u00f3rico fecha com a leitura atual do pai.')) return;
+  try {
+    const r = await mntFetch('/manutencao/api/equipamentos/'+compId+'/desmontar', { method:'POST', body:'{}' });
+    mostrarToast('\u2934 '+r.componente+' desmontado', 'ok');
+    equipSubsistemas(voltarPara || compId);
+  } catch(e){ mostrarToast('\u274c '+e.message,'warn'); }
 }
 async function equipFuncionamento(id){
   let r;

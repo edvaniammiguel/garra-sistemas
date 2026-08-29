@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Garra — Pedido de Manutenção</title>
+<style>
+  :root{--azul:#1A2A5E;--laranja:#E8730C;--cinza:#64748B;--fundo:#F1F5F9}
+  *{box-sizing:border-box;font-family:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif}
+  body{margin:0;background:var(--fundo);color:#0F172A}
+  header{background:var(--azul);color:#fff;padding:14px 16px;display:flex;align-items:center;gap:10px}
+  header b{font-size:16px}
+  header .l{color:var(--laranja);font-weight:800}
+  main{padding:14px;max-width:520px;margin:0 auto}
+  .card{background:#fff;border-radius:12px;box-shadow:0 2px 10px rgba(15,23,42,.08);padding:16px;margin-bottom:12px}
+  label{display:block;font-size:12px;font-weight:700;color:var(--cinza);margin:10px 0 4px}
+  input,select,textarea{width:100%;padding:12px;border:1px solid #CBD5E1;border-radius:8px;font-size:15px;background:#fff}
+  textarea{min-height:110px;resize:vertical}
+  .urg{display:flex;gap:8px;margin-top:4px}
+  .urg button{flex:1;padding:12px 4px;border:2px solid #CBD5E1;border-radius:8px;background:#fff;font-weight:700;font-size:13px}
+  .urg button.on-normal{border-color:#15803D;background:#15803D;color:#fff}
+  .urg button.on-alta{border-color:#B45309;background:#B45309;color:#fff}
+  .urg button.on-urgente{border-color:#B91C1C;background:#B91C1C;color:#fff}
+  .btn{width:100%;padding:14px;border:none;border-radius:10px;font-size:16px;font-weight:800;margin-top:14px;cursor:pointer}
+  .btn.p{background:var(--laranja);color:#fff}
+  .btn.s{background:var(--azul);color:#fff}
+  .muted{font-size:11px;color:var(--cinza)}
+  .toast{position:fixed;left:12px;right:12px;bottom:16px;padding:14px;border-radius:10px;font-weight:700;
+         color:#fff;display:none;z-index:99;text-align:center}
+  .toast.ok{background:#15803D}.toast.erro{background:#B91C1C}
+  .ok-box{text-align:center;padding:26px 10px}
+  .ok-box .num{font-size:26px;font-weight:900;color:var(--azul);margin:8px 0}
+  #tela-pedido,#tela-ok{display:none}
+</style>
+</head>
+<body>
+<header><span style="font-size:20px">🔧</span><span><b class="l">GARRA</b> <b>· Pedido de Manutenção</b></span></header>
+<main>
+
+  <!-- LOGIN -->
+  <div class="card" id="tela-login">
+    <b>Entrar</b>
+    <div class="muted">Use o mesmo login dos aplicativos Garra.</div>
+    <label>Login</label>
+    <input id="lg-user" autocomplete="username" autocapitalize="none">
+    <label>Senha</label>
+    <input id="lg-pass" type="password" autocomplete="current-password">
+    <button class="btn s" onclick="entrar()">Entrar</button>
+  </div>
+
+  <!-- ABAS -->
+  <div id="abas" style="display:none;gap:8px;margin-bottom:10px">
+    <button class="btn s" id="aba-novo" style="margin-top:0" onclick="verAba('novo')">＋ Pedido</button>
+    <button class="btn" id="aba-minhas" style="margin-top:0;background:#fff;border:2px solid #CBD5E1" onclick="verAba('minhas')">📋 Minhas</button>
+  </div>
+
+  <!-- PEDIDO -->
+  <div class="card" id="tela-pedido">
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <b>Novo pedido</b>
+      <span class="muted" id="quem"></span>
+    </div>
+    <label>Máquina / veículo</label>
+    <select id="pd-eq"><option value="">— escolher —</option></select>
+    <label>O que está acontecendo? *</label>
+    <textarea id="pd-desc" placeholder="ex.: vazamento de óleo no comando; freio baixo; barulho na esteira…"></textarea>
+    <label>Urgência</label>
+    <div class="urg">
+      <button id="u-normal" onclick="urg('normal')">🟢 Normal</button>
+      <button id="u-alta" onclick="urg('alta')">🟠 Alta</button>
+      <button id="u-urgente" onclick="urg('urgente')">🔴 Urgente<br><span style="font-weight:400;font-size:10px">máquina parada</span></button>
+    </div>
+    <button class="btn p" onclick="enviar()">📨 Enviar pedido</button>
+    <div class="muted" style="margin-top:8px;text-align:center">O pedido cai na triagem da manutenção, que abre a OT.</div>
+  </div>
+
+  <!-- CONFIRMAÇÃO -->
+  <div class="card" id="tela-ok">
+    <div class="ok-box">
+      <div style="font-size:42px">✅</div>
+      <div>Pedido registrado</div>
+      <div class="num" id="ok-num"></div>
+      <div class="muted">A equipe de manutenção recebeu e vai triar.</div>
+      <button class="btn s" onclick="novo()">＋ Fazer outro pedido</button>
+    </div>
+  </div>
+
+  <!-- MINHAS SOLICITAÇÕES -->
+  <div class="card" id="tela-minhas" style="display:none">
+    <b>Minhas solicitações</b>
+    <div id="minhas-lista" class="muted" style="margin-top:8px">Carregando…</div>
+  </div>
+
+  <!-- APONTAMENTO -->
+  <div class="card" id="tela-apont" style="display:none">
+    <b>Registrar execução</b>
+    <div class="muted" id="ap-ot"></div>
+    <label>O que foi feito? *</label>
+    <textarea id="ap-relato" placeholder="ex.: trocado filtro e óleo do comando; testado sem vazamento"></textarea>
+    <label>Horímetro/KM no serviço (opcional)</label>
+    <input id="ap-hor" type="number" step="0.1" inputmode="decimal">
+    <label style="display:flex;align-items:center;gap:8px;margin-top:12px;font-size:14px;color:#0F172A">
+      <input type="checkbox" id="ap-fim" style="width:22px;height:22px"> ✅ Serviço concluído — pronto para a gestão encerrar
+    </label>
+    <button class="btn p" onclick="apEnviar()">💾 Registrar na OT</button>
+    <button class="btn" style="background:#fff;border:2px solid #CBD5E1" onclick="verAba('minhas')">Voltar</button>
+  </div>
+
+</main>
+<div class="toast" id="toast"></div>
+<script>
+const API = '';
+let TOK = localStorage.getItem('garra_tok_pedido') || '';
+let URG = 'normal';
+
+function toast(msg, tipo){
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.className = 'toast ' + (tipo || 'ok');
+  t.style.display = 'block';
+  setTimeout(() => { t.style.display = 'none'; }, 3500);
+}
+function tela(id){
+  ['tela-login','tela-pedido','tela-ok','tela-minhas','tela-apont'].forEach(x =>
+    document.getElementById(x).style.display = (x === id) ? 'block' : 'none');
+}
+function urg(u){
+  URG = u;
+  ['normal','alta','urgente'].forEach(x => {
+    const b = document.getElementById('u-' + x);
+    b.className = (x === u) ? ('on-' + x) : '';
+  });
+}
+async function api(caminho, opts){
+  opts = opts || {};
+  opts.headers = Object.assign({ 'Content-Type': 'application/json' }, opts.headers || {});
+  if (TOK) opts.headers['Authorization'] = 'Bearer ' + TOK;
+  const r = await fetch(API + caminho, opts);
+  if (r.status === 401) { TOK = ''; localStorage.removeItem('garra_tok_pedido'); tela('tela-login'); throw new Error('Sessão expirada — entre de novo'); }
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.detail || ('Erro ' + r.status));
+  return j;
+}
+async function entrar(){
+  const login = document.getElementById('lg-user').value.trim();
+  const senha = document.getElementById('lg-pass').value;
+  if (!login || !senha){ toast('Preencha login e senha', 'erro'); return; }
+  try {
+    const r = await fetch(API + '/auth/login', { method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ login, senha }) });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || !j.token) throw new Error(j.detail || 'Login inválido');
+    TOK = j.token;
+    localStorage.setItem('garra_tok_pedido', TOK);
+    document.getElementById('quem').textContent = j.nome || login;
+    await carregarFrota();
+    urg('normal');
+    verAba('novo');
+  } catch(e){ toast('❌ ' + e.message, 'erro'); }
+}
+async function carregarFrota(){
+  try {
+    const eqs = await api('/manutencao/api/equipamentos-basico');
+    document.getElementById('pd-eq').innerHTML = '<option value="">— escolher —</option>'
+      + eqs.map(e => '<option value="' + e.id + '">' + e.codigo + ' — ' + (e.descricao || '') + '</option>').join('');
+  } catch(e){ toast('❌ ' + e.message, 'erro'); }
+}
+async function enviar(){
+  const desc = document.getElementById('pd-desc').value.trim();
+  if (!desc){ toast('Descreva o problema', 'erro'); return; }
+  try {
+    const r = await api('/manutencao/api/pedidos/externo', { method: 'POST',
+      body: JSON.stringify({ equipamento_id: document.getElementById('pd-eq').value || null,
+                             descricao: desc, grau_urgencia: URG }) });
+    document.getElementById('ok-num').textContent = r.numero;
+    tela('tela-ok');
+  } catch(e){ toast('❌ ' + e.message, 'erro'); }
+}
+function novo(){
+  document.getElementById('pd-desc').value = '';
+  urg('normal');
+  verAba('novo');
+}
+let AP_OT = null;
+function verAba(a){
+  document.getElementById('abas').style.display = 'flex';
+  document.getElementById('aba-novo').className = 'btn ' + (a === 'novo' ? 's' : '');
+  document.getElementById('aba-novo').style.cssText = 'margin-top:0' + (a === 'novo' ? '' : ';background:#fff;border:2px solid #CBD5E1;color:#0F172A');
+  document.getElementById('aba-minhas').className = 'btn ' + (a === 'minhas' ? 's' : '');
+  document.getElementById('aba-minhas').style.cssText = 'margin-top:0' + (a === 'minhas' ? '' : ';background:#fff;border:2px solid #CBD5E1;color:#0F172A');
+  tela(a === 'novo' ? 'tela-pedido' : 'tela-minhas');
+  if (a === 'minhas') carregarMinhas();
+}
+const ST_PED = { aberto:['#64748B','⏳ Na triagem'], convertido:['#1D4ED8','🔧 Virou OT'], recusado:['#B91C1C','✖ Recusado'] };
+const ST_OT = { programada:'📅 Programada', aberta:'📂 Aberta', em_andamento:'▶️ Em execução',
+                aguardando_peca:'⏸️ Aguardando peça', concluida:'✅ Concluída', cancelada:'✖ Cancelada' };
+async function carregarMinhas(){
+  const el = document.getElementById('minhas-lista');
+  try {
+    const ps = await api('/manutencao/api/meus-pedidos');
+    if (!ps.length){ el.innerHTML = 'Nenhum pedido seu ainda.'; return; }
+    el.innerHTML = ps.map(p => {
+      const st = ST_PED[p.status] || ['#64748B', p.status];
+      const dt = p.data_pedido ? new Date(p.data_pedido).toLocaleDateString('pt-BR') : '';
+      let ot = '';
+      if (p.ot_numero){
+        ot = '<div style="margin-top:4px;font-size:13px"><b>' + p.ot_numero + '</b> — ' + (ST_OT[p.ot_status] || p.ot_status);
+        if (['em_andamento','aguardando_peca','aberta'].includes(p.ot_status))
+          ot += ' <button style="margin-left:6px;padding:6px 10px;border:none;border-radius:8px;background:#E8730C;color:#fff;font-weight:700" '
+             + 'onclick="apAbrir(\'' + p.ot_id + '\',\'' + p.ot_numero + '\')">🔧 Registrar execução</button>';
+        ot += '</div>';
+      }
+      if (p.status === 'recusado' && p.motivo_recusa)
+        ot += '<div class="muted" style="margin-top:2px">Motivo: ' + p.motivo_recusa + '</div>';
+      return '<div style="border-bottom:1px solid #E2E8F0;padding:10px 0">'
+        + '<div style="display:flex;justify-content:space-between;align-items:center">'
+        + '<b style="color:#1A2A5E">' + p.numero + '</b>'
+        + '<span style="font-size:12px;font-weight:700;color:' + st[0] + '">' + st[1] + '</span></div>'
+        + '<div style="font-size:13px;margin-top:2px">' + (p.equipamento_codigo ? '<b>' + p.equipamento_codigo + '</b> · ' : '') + p.descricao + '</div>'
+        + '<div class="muted" style="margin-top:2px">' + dt + '</div>' + ot + '</div>';
+    }).join('');
+  } catch(e){ el.innerHTML = '❌ ' + e.message; }
+}
+function apAbrir(otId, otNum){
+  AP_OT = otId;
+  document.getElementById('ap-ot').textContent = otNum + ' — o relato vai para o histórico; o encerramento é da gestão.';
+  document.getElementById('ap-relato').value = '';
+  document.getElementById('ap-hor').value = '';
+  document.getElementById('ap-fim').checked = false;
+  tela('tela-apont');
+}
+async function apEnviar(){
+  const relato = document.getElementById('ap-relato').value.trim();
+  if (!relato){ toast('Descreva o que foi feito', 'erro'); return; }
+  try {
+    await api('/manutencao/api/ots/' + AP_OT + '/apontamento', { method: 'POST',
+      body: JSON.stringify({ relato,
+        horimetro: document.getElementById('ap-hor').value || null,
+        concluido: document.getElementById('ap-fim').checked }) });
+    toast('✅ Registrado na OT');
+    verAba('minhas');
+  } catch(e){ toast('❌ ' + e.message, 'erro'); }
+}
+(async () => {
+  if (TOK){
+    try { await carregarFrota(); urg('normal'); verAba('novo'); return; }
+    catch(e){}
+  }
+  tela('tela-login');
+})();
+</script>
+</body>
+</html>
