@@ -1166,6 +1166,73 @@ function showCtxReal(ev, id, tipo, rotulo){
   m.style.top  = Math.min(ev.clientY, window.innerHeight-220)+'px';
   m.style.display = 'block';
 }
+/* ══ DIAGRAMA DE PNEUS — gabaritos por categoria (portado do protótipo v5.0) ══ */
+const _PNEU_EIXOS = {
+  dian:  {rot:'Eixo dianteiro', slots:[{k:'dian-esq',l:'Dianteiro esquerdo'},{k:'dian-dir',l:'Dianteiro direito'}]},
+  tras2: {rot:'Eixo traseiro (rodado duplo)', slots:[{k:'tras-esq-ext',l:'Traseiro esquerdo externo'},{k:'tras-esq-int',l:'Traseiro esquerdo interno'},{k:'tras-dir-int',l:'Traseiro direito interno'},{k:'tras-dir-ext',l:'Traseiro direito externo'}]},
+  tras1: {rot:'Eixo traseiro', slots:[{k:'tras-esq',l:'Traseiro esquerdo'},{k:'tras-dir',l:'Traseiro direito'}]},
+  reb2:  {rot:'Eixo reboque (rodado duplo)', slots:[{k:'reb-esq-ext',l:'Reboque esquerdo externo'},{k:'reb-esq-int',l:'Reboque esquerdo interno'},{k:'reb-dir-int',l:'Reboque direito interno'},{k:'reb-dir-ext',l:'Reboque direito externo'}]}
+};
+const _PNEU_GAB = {
+  caminhao:['dian','tras2'], caminhao_basculante:['dian','tras2'],
+  caminhao_pipa:['dian','tras2'], caminhao_bruck:['dian','tras2'],
+  caminhao_cacamba:['dian','tras2'], caminhao_reboque:['dian','tras2','reb2'],
+  carro:['dian','tras1'], veiculo_leve:['dian','tras1']
+};
+function _pneuSlotDe(pos){
+  const t = (pos||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+  const tem = w => t.indexOf(w) >= 0;
+  const lado = tem('esq') ? 'esq' : (tem('dir') ? 'dir' : null);
+  const eixo = tem('reboque') ? 'reb' : (tem('dian')||tem('frente') ? 'dian' : (tem('tras') ? 'tras' : null));
+  const anel = tem('ext') ? 'ext' : (tem('int') ? 'int' : null);
+  if (!lado || !eixo) return null;
+  return eixo+'-'+lado+(anel ? '-'+anel : '');
+}
+function _pneuDiagrama(eu, filhos){
+  const cat = (eu.categoria||'').toLowerCase();
+  const eixos = _PNEU_GAB[cat]; if (!eixos) return '';
+  const all = []; eixos.forEach(e => _PNEU_EIXOS[e].slots.forEach(sl => all.push(sl.k)));
+  const ocup = {}; const fora = [];
+  (filhos||[]).forEach(f => {
+    let k = _pneuSlotDe(f.posicao);
+    if (k && all.indexOf(k) < 0){ const k2 = k.split('-').slice(0,2).join('-'); k = all.indexOf(k2) >= 0 ? k2 : null; }
+    if (k && !ocup[k]) ocup[k] = f; else fora.push(f);
+  });
+  const tire = sl => {
+    const f = ocup[sl.k];
+    if (f){
+      const ot = f.ots_abertas ? '<div class="chip nr" style="font-size:8px;padding:0 4px">'+f.ots_abertas+' OT</div>' : '';
+      return '<div data-c="'+f.id+'" onclick="equipSubsistemas(this.dataset.c)" title="'+_esc(sl.l)+' — '+_esc(f.codigo)+' · clique: ficha do componente" '
+        + 'style="width:52px;height:64px;border:2px solid #1A7A45;background:rgba(26,122,69,.08);border-radius:8px;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;font-size:9px;font-weight:700;color:#1A7A45;text-align:center;gap:1px;padding:2px">'
+        + '🛞<div>'+_esc(f.codigo.replace('PNEU-',''))+'</div>'+ot+'</div>';
+    }
+    return '<div data-l="'+_esc(sl.l)+'" onclick="_pneuAlocar(this.dataset.l)" title="'+_esc(sl.l)+' — vago · clique para alocar um pneu aqui" '
+      + 'style="width:52px;height:64px;border:2px dashed #B83030;background:rgba(184,48,48,.05);border-radius:8px;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;font-size:8px;font-weight:600;color:#B83030;text-align:center;gap:2px;padding:2px">➕<div>'+_esc(sl.l)+'</div></div>';
+  };
+  let html = '<div class="dsec" style="margin-top:10px">🚚 Diagrama de pneus <span class="muted" style="font-weight:400;font-size:10px">vago = clique para alocar · montado = clique para abrir</span></div>'
+    + '<div style="display:flex;flex-direction:column;align-items:center;gap:6px;padding:8px 0;background:#F8FAFC;border:1px solid #E2E8F0;border-radius:8px">'
+    + '<div style="background:#E6EDF7;border:1px solid #A8BDDA;border-radius:8px;padding:5px 22px;font-size:11px;font-weight:700;color:#3D5A80">CABINE — '+_esc(eu.codigo)+'</div>';
+  eixos.forEach(ek => {
+    const e = _PNEU_EIXOS[ek];
+    const met = e.slots.length/2;
+    html += '<div style="display:flex;align-items:center;gap:5px" title="'+_esc(e.rot)+'">'
+      + e.slots.slice(0,met).map(tire).join('')
+      + '<div style="width:44px;height:5px;background:#A8BDDA;border-radius:2px"></div>'
+      + e.slots.slice(met).map(tire).join('')
+      + '</div>';
+  });
+  html += '</div>';
+  if (fora.length) html += '<div class="muted" style="font-size:10px;padding:3px 4px">Fora do gabarito: '
+    + fora.map(f=>_esc(f.codigo)+' ('+_esc(f.posicao||'—')+')').join(' · ')
+    + ' — desmonte e remonte clicando no slot certo para normalizar.</div>';
+  return html;
+}
+function _pneuAlocar(rotulo){
+  const inp = document.getElementById('sub-pos');
+  if (inp){ inp.value = rotulo; inp.style.borderColor = '#E8820C'; }
+  const sel = document.getElementById('sub-comp'); if (sel) sel.focus();
+  mostrarToast('📍 Posição "'+rotulo+'" selecionada — escolha o pneu e clique Montar','ok');
+}
 async function equipSubsistemas(id){
   let r;
   try { r = await mntFetch('/manutencao/api/equipamentos/'+id+'/subsistemas'); }
@@ -1198,6 +1265,7 @@ async function equipSubsistemas(id){
             + '<button class="btn" data-c="'+f.id+'" onclick="subDesmontar(this.dataset.c,\''+eu.id+'\')">\u2934</button></td></tr>').join('')
           + '</tbody></table>'
         : '<div class="muted" style="padding:6px 4px">Nenhum componente montado.</div>')
+      + _pneuDiagrama(eu, r.filhos)
       + '<div class="dsec" style="margin-top:10px">\u2795 Montar componente</div>'
       + '<div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;padding:4px 0">'
       + '<div class="mfield" style="flex:1;min-width:220px">Componente<select id="sub-comp">'
