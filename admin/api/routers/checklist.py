@@ -86,6 +86,56 @@ async def salvar_envio(e: EnvioCreate, db=Depends(get_db), _auth=Depends(verific
         "UPDATE public.usuarios_garra SET pts=pts+$1, total_envios=total_envios+1, atualizado_em=NOW() WHERE login=$2",
         e.pts, e.usuario_login
     )
+    # ── (28/08/2026) NC → PEDIDO DE MANUTENÇÃO automático ──────────────
+    # Checklist reprovou → nasce um Pedido na triagem da Bruna (via
+    # 'checklist', nc_ref = envio). O envio é sagrado: qualquer falha aqui
+    # é engolida — pontuação e registro do checklist nunca dependem disto.
+    # INSERT local via asyncpg (decisão do arquivo: zero jard_query aqui);
+    # numeração espelha o núcleo PED-AAAA-NNNN do módulo Manutenção.
+    if e.tem_nc:
+        try:
+            ja = await db.fetchval(
+                "SELECT numero FROM manutencao.pedidos WHERE nc_ref=$1 AND ativo=TRUE",
+                e.envio_id)
+            if not ja:
+                meta = e.meta if isinstance(e.meta, dict) else {}
+                ident = str(meta.get("veiculo") or meta.get("identificacao")
+                            or meta.get("equipamento") or "").strip()
+                eq_id = None
+                if ident:
+                    eq_id = await db.fetchval(
+                        "SELECT id FROM operacional.equipamentos WHERE codigo=$1 AND ativo=TRUE",
+                        ident)
+                itens_nc = []
+                resp = respostas_processadas if isinstance(respostas_processadas, dict) else {}
+                for chave, val in resp.items():
+                    st = ""
+                    if isinstance(val, dict):
+                        st = str(val.get("status") or val.get("resposta") or val.get("valor") or "")
+                    else:
+                        st = str(val)
+                    if "nc" in st.lower() or "não conforme" in st.lower() or "nao conforme" in st.lower():
+                        itens_nc.append(str(chave))
+                desc = (f"NC no checklist {e.cl_label or e.cl_id}"
+                        + (f" — {ident}" if ident else "")
+                        + f": {e.total_nc} não conformidade(s)."
+                        + (f" Itens: {', '.join(itens_nc[:8])}." if itens_nc else "")
+                        + f" (envio {e.envio_id} de {e.usuario_nome or e.usuario_login})")
+                sol_id = await db.fetchval(
+                    "SELECT id FROM public.usuarios_garra WHERE login=$1", e.usuario_login)
+                seq = await db.fetchval(
+                    "SELECT COALESCE(MAX(sequencia),0)+1 FROM manutencao.pedidos "
+                    "WHERE ano = EXTRACT(YEAR FROM now())::int")
+                ano = datetime.now().year
+                numero = f"PED-{ano}-{int(seq):04d}"
+                await db.execute(
+                    "INSERT INTO manutencao.pedidos "
+                    "  (ano, sequencia, numero, via, grau_urgencia, descricao, "
+                    "   equipamento_id, solicitante_id, origem, nc_ref, criado_por) "
+                    "VALUES ($1,$2,$3,'checklist','alta',$4,$5,$6,'checklist-nc',$7,$6)",
+                    ano, int(seq), numero, desc, eq_id, sol_id, e.envio_id)
+        except Exception:
+            pass  # envio nunca falha por causa do pedido
     return {"ok": True}
 
 @router.patch("/checklist/envios/{envio_id}/arquivar")

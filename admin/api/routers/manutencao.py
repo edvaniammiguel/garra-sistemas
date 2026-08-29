@@ -12,28 +12,56 @@ from core.auth import verificar_token, verificar_gestor
 from core.db import ajard_query, ajard_query_id
 from core.storage import storage_upload, storage_url, storage_delete
 from core.helpers import comprimir_imagem
+from core.permissions import perfil_modulos_padrao
 
 router = APIRouter()
 
 _PERFIS_MANUTENCAO = {"admin", "gestor", "luana", "bruna"}
 
+async def _tem_modulo(payload, modulos: set) -> bool:
+    """(29/08/2026) Resolução OFICIAL de permissão, igual ao Admin Master:
+    exceção individual (permissoes_colaborador) SOBREPÕE o padrão do perfil
+    (perfis_customizados via matriz Por Perfil). Qualquer módulo do conjunto
+    libera; negativa individual explícita bloqueia aquele módulo."""
+    u = await ajard_query(
+        "SELECT id, perfil FROM public.usuarios_garra WHERE login=%s AND ativo=true",
+        (payload.get("sub", ""),), fetch="one")
+    if not u:
+        return False
+    rows = await ajard_query(
+        "SELECT modulo, permitido FROM public.permissoes_colaborador WHERE usuario_id=%s",
+        (u["id"],))
+    individuais = {r["modulo"]: r["permitido"] for r in (rows or [])}
+    padrao = set(await perfil_modulos_padrao(u["perfil"] or (payload.get("perfil") or "").lower()))
+    for m in modulos:
+        if m in individuais:
+            if individuais[m]:
+                return True
+        elif m in padrao:
+            return True
+    return False
+
+
 async def verificar_manutencao(payload=Depends(verificar_token)):
-    """Gate do módulo Manutenção: perfil liberado OU permissão 'manutencao'
-    concedida em public.permissoes_colaborador. Operador/motorista/campo
-    sem a permissão recebem 403 — em TODAS as rotas do módulo."""
+    """Gate do módulo Manutenção: perfil liberado OU módulo 'manutencao'
+    (matriz Por Perfil do Admin Master + exceções individuais)."""
     if (payload.get("perfil") or "").lower() in _PERFIS_MANUTENCAO:
         return payload
-    u = await ajard_query(
-        "SELECT id FROM public.usuarios_garra WHERE login=%s",
-        (payload.get("sub", ""),), fetch="one")
-    if u:
-        p = await ajard_query(
-            """SELECT permitido FROM public.permissoes_colaborador
-               WHERE usuario_id=%s AND modulo='manutencao'""",
-            (u["id"],), fetch="one")
-        if p and p.get("permitido"):
-            return payload
+    if await _tem_modulo(payload, {"manutencao"}):
+        return payload
     raise HTTPException(status_code=403, detail="Sem permissão para o módulo Manutenção")
+
+async def verificar_pedir_ot(payload=Depends(verificar_token)):
+    """(28/08/2026) Gate do CANAL EXTERNO (mobile do mecânico): perfil da
+    manutenção OU permissão 'pedir_ot' (ou 'manutencao') na
+    permissoes_colaborador. Regra do cadastro: função MECÂNICO nasce com
+    pedir_ot + checklist marcados (auto-default aplicado no Admin Master)."""
+    if (payload.get("perfil") or "").lower() in _PERFIS_MANUTENCAO:
+        return payload
+    if await _tem_modulo(payload, {"pedir_ot", "manutencao"}):
+        return payload
+    raise HTTPException(status_code=403,
+                        detail="Sem permissão para pedir OT — marque o módulo na matriz de Permissões (perfil Mecânica já vem com ele)")
 
 _TRANSICOES = {
     "programada":      {"aberta", "em_andamento", "cancelada"},
@@ -178,17 +206,10 @@ async def editar_fornecedor(fid: str, request: Request, payload=Depends(verifica
 
 # ── ORDENS DE TRABALHO (OT) ───────────────────────────────────
 
-@router.post("/manutencao/api/pedidos")
-async def criar_pedido(request: Request, payload=Depends(verificar_manutencao)):
-    """Pedido manual (janela Pedido do ManWinWin): nº automático, via,
-    urgência, solicitante interno OU cliente externo. Avisa duplicados
-    (pedidos abertos do mesmo equipamento) sem bloquear — triagem decide."""
-    await _garantir_pedidos()
-    d = await request.json()
-    descricao = (d.get("descricao") or "").strip()
-    if not descricao:
-        raise HTTPException(status_code=400, detail="Descreva o pedido")
-    uid = await _usuario_id(payload)
+async def _inserir_pedido(d: dict, descricao: str, uid):
+    """(28/08/2026) Núcleo único de criação de Pedido — usado pela janela
+    do desktop, pelo canal MOBILE do mecânico e pela NC do Checklist.
+    Numeração PED-AAAA-NNNN à prova de duplicação de lógica."""
     seq = await ajard_query(
         """SELECT COALESCE(MAX(sequencia),0)+1 AS n FROM manutencao.pedidos
            WHERE ano = EXTRACT(YEAR FROM now())::int""", fetch="one")
@@ -205,6 +226,21 @@ async def criar_pedido(request: Request, payload=Depends(verificar_manutencao)):
          d.get("equipamento_id"), d.get("solicitante_id"),
          (d.get("cliente_nome") or "").strip() or None, (d.get("contato") or "").strip() or None,
          (d.get("origem") or "manual"), d.get("nc_ref"), uid))
+    return row, numero
+
+
+@router.post("/manutencao/api/pedidos")
+async def criar_pedido(request: Request, payload=Depends(verificar_manutencao)):
+    """Pedido manual (janela Pedido do ManWinWin): nº automático, via,
+    urgência, solicitante interno OU cliente externo. Avisa duplicados
+    (pedidos abertos do mesmo equipamento) sem bloquear — triagem decide."""
+    await _garantir_pedidos()
+    d = await request.json()
+    descricao = (d.get("descricao") or "").strip()
+    if not descricao:
+        raise HTTPException(status_code=400, detail="Descreva o pedido")
+    uid = await _usuario_id(payload)
+    row, numero = await _inserir_pedido(d, descricao, uid)
     dup = 0
     if d.get("equipamento_id"):
         r = await ajard_query(
@@ -617,6 +653,9 @@ async def semaforos_frota(_auth=Depends(verificar_manutencao)):
     await _garantir_colunas_ot()
     rows = await ajard_query(
         """SELECT e.id, e.codigo, e.descricao, e.horimetro_atual, e.medicao,
+                  e.categoria, e.equipamento_pai, e.posicao,
+                  (SELECT COUNT(*)::int FROM operacional.equipamentos f
+                    WHERE f.equipamento_pai = e.id AND f.ativo = true) AS n_filhos,
                   e.sistema_codigo, e.tipo_sigla,
                   p.codigo AS ponto, p.leitura_atual, p.limiar_atencao,
                   p.limiar_urgente, p.limiar_maximo,
@@ -2118,3 +2157,247 @@ async def equip_artigos(eq_id: str, _auth=Depends(verificar_manutencao)):
                       "unidade": r["unidade"] or "UN", "quantidade": qtd,
                       "custo_unitario": custo, "total": linha, "ot": r["ot_numero"]})
     return {"itens": itens, "total": round(total, 2)}
+
+
+@router.get("/manutencao/api/equipamentos-basico")
+async def equipamentos_basico(_auth=Depends(verificar_pedir_ot)):
+    """Frota enxuta para o mobile do mecânico (qualquer logado): só o
+    necessário para escolher a máquina do pedido."""
+    rows = await ajard_query(
+        """SELECT id, codigo, descricao FROM operacional.equipamentos
+           WHERE ativo=true AND COALESCE(categoria,'') <> 'apoio'
+           ORDER BY codigo""")
+    return [dict(r) for r in rows]
+
+
+@router.post("/manutencao/api/pedidos/externo")
+async def pedido_externo(request: Request, payload=Depends(verificar_pedir_ot)):
+    """(28/08/2026) CANAL EXTERNO de Pedido de OT — mecânico/operador pelo
+    mobile. Gate leve (verificar_token): quem pede não precisa do módulo;
+    quem TRIA (Bruna) continua atrás do gate. Solicitante = o próprio
+    usuário do token."""
+    await _garantir_pedidos()
+    d = await request.json()
+    descricao = (d.get("descricao") or "").strip()
+    if not descricao:
+        raise HTTPException(status_code=400, detail="Descreva o problema")
+    uid = await _usuario_id(payload)
+    dados = {"via": "mobile", "origem": "mobile-mecanico",
+             "grau_urgencia": (d.get("grau_urgencia") or "normal"),
+             "equipamento_id": d.get("equipamento_id") or None,
+             "solicitante_id": uid}
+    row, numero = await _inserir_pedido(dados, descricao, uid)
+    return {"ok": True, "numero": numero, "id": str(row["id"])}
+
+
+@router.get("/manutencao/pedido", response_class=HTMLResponse)
+async def pagina_pedido_mobile():
+    """Página mobile do mecânico (canal externo de pedidos)."""
+    raiz = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", "manutencao"))
+    p = os.path.join(raiz, "static", "pedido-mobile.html")
+    if os.path.isfile(p):
+        return open(p, encoding="utf-8").read()
+    raise HTTPException(status_code=404, detail="pedido-mobile.html não encontrado")
+
+
+@router.get("/manutencao/api/meus-pedidos")
+async def meus_pedidos(payload=Depends(verificar_pedir_ot)):
+    """Acompanhamento do mecânico: os pedidos DELE, com o destino de cada
+    um — aberto na triagem, virou OT (nº + estado) ou recusado (motivo)."""
+    await _garantir_pedidos()
+    uid = await _usuario_id(payload)
+    rows = await ajard_query(
+        """SELECT p.numero, p.data_pedido, p.grau_urgencia, p.descricao, p.status,
+                  p.motivo_recusa, p.via,
+                  eq.codigo AS equipamento_codigo,
+                  o.id AS ot_id, o.numero AS ot_numero, o.status AS ot_status
+           FROM manutencao.pedidos p
+           LEFT JOIN operacional.equipamentos eq ON eq.id = p.equipamento_id
+           LEFT JOIN manutencao.ot o ON o.id = p.ot_id
+           WHERE p.solicitante_id = %s AND p.ativo = true
+           ORDER BY p.data_pedido DESC LIMIT 60""", (uid,))
+    return [dict(r) for r in rows]
+
+
+@router.post("/manutencao/api/ots/{ot_id}/apontamento")
+async def ot_apontamento(ot_id: str, request: Request, payload=Depends(verificar_pedir_ot)):
+    """(28/08/2026) Mecânico alimenta o FECHAMENTO sem fechar: relato do
+    serviço + horímetro + sinal de concluído vão para o HISTÓRICO da OT.
+    Quem pode: o solicitante do pedido de origem ou o responsável da OT.
+    O estado NÃO muda — o fechamento real é do admin/gestão."""
+    d = await request.json()
+    relato = (d.get("relato") or "").strip()
+    if not relato:
+        raise HTTPException(status_code=400, detail="Descreva o que foi feito")
+    uid = await _usuario_id(payload)
+    o = await ajard_query(
+        """SELECT o.numero, o.status, o.responsavel_id, p.solicitante_id
+           FROM manutencao.ot o
+           LEFT JOIN manutencao.pedidos p ON p.id = o.pedido_id
+           WHERE o.id=%s AND o.ativo=true""", (ot_id,), fetch="one")
+    if not o:
+        raise HTTPException(status_code=404, detail="OT não encontrada")
+    perfil_gestor = (payload.get("perfil") or "").lower() in _PERFIS_MANUTENCAO
+    if not perfil_gestor and str(uid) not in (str(o["responsavel_id"]), str(o["solicitante_id"])):
+        raise HTTPException(status_code=403,
+                            detail="Só o solicitante do pedido ou o responsável da OT apontam nela")
+    if o["status"] not in ("em_andamento", "aguardando_peca", "aberta", "programada"):
+        raise HTTPException(status_code=400, detail="OT já encerrada — apontamento indisponível")
+    partes = [f"🔧 Execução (mecânico): {relato}"]
+    if d.get("horimetro") not in (None, ""):
+        partes.append(f"Horímetro/KM no serviço: {d.get('horimetro')}")
+    if d.get("concluido"):
+        partes.append("✅ SINALIZOU SERVIÇO CONCLUÍDO — pronto para encerramento pela gestão")
+    await ajard_query(
+        """INSERT INTO manutencao.ot_historico (ot_id, status_de, status_para, observacao, usuario_id)
+           VALUES (%s,%s,%s,%s,%s)""",
+        (ot_id, o["status"], o["status"], " · ".join(partes), uid), fetch="none")
+    return {"ok": True, "numero": o["numero"]}
+
+
+async def _garantir_montagens():
+    """(28/08/2026) Subsistemas/rotáveis (padrão ManWinWin): o vínculo VIVO
+    mora em operacional.equipamentos (equipamento_pai + posicao — Onda 2);
+    esta tabela guarda o HISTÓRICO que viaja com o componente entre pais."""
+    await ajard_query("""
+        CREATE TABLE IF NOT EXISTS manutencao.montagens (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          equipamento_id UUID NOT NULL,
+          pai_id UUID NOT NULL,
+          posicao TEXT,
+          data_montagem TIMESTAMPTZ NOT NULL DEFAULT now(),
+          data_desmontagem TIMESTAMPTZ,
+          leitura_pai_montagem NUMERIC,
+          leitura_pai_desmontagem NUMERIC,
+          usuario_id UUID,
+          observacao TEXT
+        )""", fetch="none")
+
+
+def _leitura_de(eq):
+    v = eq.get("km_atual") if (eq.get("medicao") == "km") else eq.get("horimetro_atual")
+    if v is None:
+        v = eq.get("horimetro_atual") if eq.get("horimetro_atual") is not None else eq.get("km_atual")
+    return float(v) if v is not None else None
+
+
+@router.get("/manutencao/api/equipamentos/{eq_id}/subsistemas")
+async def subsistemas(eq_id: str, _auth=Depends(verificar_manutencao)):
+    """Janela de duas faces: PAI → filhos montados (posição, sistema, OTs
+    abertas); COMPONENTE → onde está montado + vida acumulada."""
+    await _garantir_montagens()
+    eu = await ajard_query(
+        """SELECT e.id, e.codigo, e.descricao, e.categoria, e.medicao,
+                  e.horimetro_atual, e.km_atual, e.posicao,
+                  p.id AS pai_id, p.codigo AS pai_codigo, p.descricao AS pai_desc
+           FROM operacional.equipamentos e
+           LEFT JOIN operacional.equipamentos p ON p.id = e.equipamento_pai
+           WHERE e.id=%s""", (eq_id,), fetch="one")
+    if not eu:
+        raise HTTPException(status_code=404, detail="Equipamento não encontrado")
+    filhos = await ajard_query(
+        """SELECT f.id, f.codigo, f.descricao, f.posicao, f.categoria,
+                  s.nome AS sistema_nome,
+                  (SELECT COUNT(*) FROM manutencao.ot o
+                    WHERE o.equipamento_id=f.id AND o.ativo=true
+                      AND o.status NOT IN ('concluida','cancelada'))::int AS ots_abertas
+           FROM operacional.equipamentos f
+           LEFT JOIN manutencao.sistemas s ON s.codigo = f.sistema_codigo
+           WHERE f.equipamento_pai=%s AND f.ativo=true
+           ORDER BY f.posicao NULLS LAST, f.codigo""", (eq_id,))
+    hist = await ajard_query(
+        """SELECT m.posicao, m.data_montagem, m.data_desmontagem,
+                  m.leitura_pai_montagem, m.leitura_pai_desmontagem,
+                  p.codigo AS pai_codigo
+           FROM manutencao.montagens m
+           JOIN operacional.equipamentos p ON p.id = m.pai_id
+           WHERE m.equipamento_id=%s
+           ORDER BY m.data_montagem DESC LIMIT 30""", (eq_id,))
+    vida = 0.0
+    historico = []
+    for h in hist:
+        rodado = None
+        if h["leitura_pai_montagem"] is not None and h["leitura_pai_desmontagem"] is not None:
+            rodado = float(h["leitura_pai_desmontagem"]) - float(h["leitura_pai_montagem"])
+            if rodado > 0:
+                vida += rodado
+        historico.append({
+            "pai": h["pai_codigo"], "posicao": h["posicao"],
+            "montagem": h["data_montagem"].isoformat() if h["data_montagem"] else None,
+            "desmontagem": h["data_desmontagem"].isoformat() if h["data_desmontagem"] else None,
+            "rodado": rodado})
+    livres = await ajard_query(
+        """SELECT id, codigo, descricao FROM operacional.equipamentos
+           WHERE categoria='componente' AND ativo=true
+             AND (equipamento_pai IS NULL OR equipamento_pai <> %s)
+           ORDER BY codigo LIMIT 200""", (eq_id,))
+    return {"eu": {"id": str(eu["id"]), "codigo": eu["codigo"], "descricao": eu["descricao"],
+                   "categoria": eu["categoria"], "posicao": eu["posicao"],
+                   "pai": ({"id": str(eu["pai_id"]), "codigo": eu["pai_codigo"],
+                            "descricao": eu["pai_desc"]} if eu["pai_id"] else None)},
+            "filhos": [dict(f, id=str(f["id"])) for f in filhos],
+            "historico": historico, "vida_acumulada": round(vida, 1),
+            "componentes_livres": [dict(c, id=str(c["id"])) for c in livres]}
+
+
+@router.post("/manutencao/api/equipamentos/{pai_id}/montar")
+async def montar(pai_id: str, request: Request, payload=Depends(verificar_manutencao)):
+    """Monta um componente no pai: fecha a montagem anterior (carimbando a
+    leitura do pai antigo), grava o vínculo vivo e abre o novo registro."""
+    await _garantir_montagens()
+    d = await request.json()
+    comp_id = d.get("componente_id")
+    posicao = (d.get("posicao") or "").strip() or None
+    pai = await ajard_query(
+        "SELECT id, codigo, medicao, horimetro_atual, km_atual FROM operacional.equipamentos WHERE id=%s AND ativo=true",
+        (pai_id,), fetch="one")
+    comp = await ajard_query(
+        "SELECT id, codigo, equipamento_pai FROM operacional.equipamentos WHERE id=%s AND ativo=true",
+        (comp_id,), fetch="one")
+    if not pai or not comp:
+        raise HTTPException(status_code=404, detail="Pai ou componente não encontrado")
+    if str(pai["id"]) == str(comp["id"]):
+        raise HTTPException(status_code=400, detail="Um equipamento não monta nele mesmo")
+    uid = await _usuario_id(payload)
+    if comp["equipamento_pai"]:
+        antigo = await ajard_query(
+            "SELECT medicao, horimetro_atual, km_atual FROM operacional.equipamentos WHERE id=%s",
+            (comp["equipamento_pai"],), fetch="one")
+        await ajard_query(
+            """UPDATE manutencao.montagens
+               SET data_desmontagem=now(), leitura_pai_desmontagem=%s
+               WHERE equipamento_id=%s AND data_desmontagem IS NULL""",
+            (_leitura_de(dict(antigo)) if antigo else None, comp_id), fetch="none")
+    await ajard_query(
+        "UPDATE operacional.equipamentos SET equipamento_pai=%s, posicao=%s, atualizado_em=now() WHERE id=%s",
+        (pai_id, posicao, comp_id), fetch="none")
+    await ajard_query(
+        """INSERT INTO manutencao.montagens
+             (equipamento_id, pai_id, posicao, leitura_pai_montagem, usuario_id, observacao)
+           VALUES (%s,%s,%s,%s,%s,%s)""",
+        (comp_id, pai_id, posicao, _leitura_de(dict(pai)), uid,
+         (d.get("observacao") or "").strip() or None), fetch="none")
+    return {"ok": True, "componente": comp["codigo"], "pai": pai["codigo"]}
+
+
+@router.post("/manutencao/api/equipamentos/{comp_id}/desmontar")
+async def desmontar(comp_id: str, request: Request, payload=Depends(verificar_manutencao)):
+    """Desmonta: fecha o registro com a leitura do pai e solta o vínculo."""
+    await _garantir_montagens()
+    comp = await ajard_query(
+        "SELECT id, codigo, equipamento_pai FROM operacional.equipamentos WHERE id=%s",
+        (comp_id,), fetch="one")
+    if not comp or not comp["equipamento_pai"]:
+        raise HTTPException(status_code=400, detail="Componente não está montado em ninguém")
+    pai = await ajard_query(
+        "SELECT medicao, horimetro_atual, km_atual FROM operacional.equipamentos WHERE id=%s",
+        (comp["equipamento_pai"],), fetch="one")
+    await ajard_query(
+        """UPDATE manutencao.montagens
+           SET data_desmontagem=now(), leitura_pai_desmontagem=%s
+           WHERE equipamento_id=%s AND data_desmontagem IS NULL""",
+        (_leitura_de(dict(pai)) if pai else None, comp_id), fetch="none")
+    await ajard_query(
+        "UPDATE operacional.equipamentos SET equipamento_pai=NULL, posicao=NULL, atualizado_em=now() WHERE id=%s",
+        (comp_id,), fetch="none")
+    return {"ok": True, "componente": comp["codigo"]}
