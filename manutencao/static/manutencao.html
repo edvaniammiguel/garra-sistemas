@@ -1194,6 +1194,7 @@ async function subMontar(paiId){
       { method:'POST', body: JSON.stringify({ componente_id: comp, posicao: pos }) });
     mostrarToast('\ud83d\udede '+r.componente+' montado em '+r.pai, 'ok');
     equipSubsistemas(paiId);
+    carregarSemaforosReais();
   } catch(e){ mostrarToast('\u274c '+e.message,'warn'); }
 }
 async function subDesmontar(compId, voltarPara){
@@ -1202,6 +1203,7 @@ async function subDesmontar(compId, voltarPara){
     const r = await mntFetch('/manutencao/api/equipamentos/'+compId+'/desmontar', { method:'POST', body:'{}' });
     mostrarToast('\u2934 '+r.componente+' desmontado', 'ok');
     equipSubsistemas(voltarPara || compId);
+    carregarSemaforosReais();
   } catch(e){ mostrarToast('\u274c '+e.message,'warn'); }
 }
 async function equipFuncionamento(id){
