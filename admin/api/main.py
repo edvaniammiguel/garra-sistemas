@@ -808,6 +808,8 @@ from routers.manutencao import router as manutencao_router  # v26
 app.include_router(manutencao_router)
 from routers.compras import router as compras_router  # v28 — Ordens de Compra
 app.include_router(compras_router)
+from routers.abastecimentos import router as abastecimentos_router  # 29/08 — reconstruído
+app.include_router(abastecimentos_router)
 
 @app.on_event("startup")
 async def criar_tabela_checklist_config():
