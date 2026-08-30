@@ -1048,6 +1048,13 @@ async def op_criar_parte(os_id: str, request: Request, payload=Depends(verificar
                 "UPDATE operacional.equipamentos SET horimetro_atual=%s, atualizado_em=now() WHERE id=%s",
                 (h_fin, equipamento_id), fetch="none"
             )
+        # (29/08/2026) Espelho para medição por KM: alimenta km_atual — leitura
+        # que a Manutenção carimba nas montagens de componentes (vida do pneu).
+        if km_fin is not None and equipamento_id:
+            await ajard_query(
+                "UPDATE operacional.equipamentos SET km_atual=%s, atualizado_em=now() WHERE id=%s",
+                (km_fin, equipamento_id), fetch="none"
+            )
         return dict(parte)
     except HTTPException:
         raise
