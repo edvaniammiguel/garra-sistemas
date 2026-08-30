@@ -172,6 +172,12 @@ tr.sel td{background:#DBEAFE!important;color:#1A2A5E}
     <button class="btn o" onclick="abrirPedidos()">📨 Pedidos <span id="ped-badge"></span></button>
     <button class="btn" onclick="limparFiltroOTs()">↻</button>
     <input id="ots-busca" placeholder="🔍 OT, equipamento ou descrição…" style="width:200px" oninput="renderOTs()">
+    <select id="ots-origem" onchange="renderOTs()" title="Canal onde a OT nasceu" style="width:158px">
+      <option value="">Origem: todas</option>
+      <option value="desktop">🖥 Desktop (gestão)</option>
+      <option value="mobile">📱 Mobile (mecânico)</option>
+      <option value="checklist">📋 Checklist (NC)</option>
+    </select>
     <div class="bfilt" id="ots-filtros">
       <label><input type="checkbox" value="programada" checked onchange="renderOTs()"> Programadas</label>
       <label><input type="checkbox" value="aberta" checked onchange="renderOTs()"> Abertas</label>
@@ -570,6 +576,14 @@ function renderOTs(){
   const ativos = Array.from(document.querySelectorAll('#ots-filtros input:checked')).map(c=>c.value);
   const q = (document.getElementById('ots-busca').value || '').trim().toLowerCase();
   let ots = _otsCache.filter(o => ativos.includes(o.status));
+  const canalDe = o => {
+    const org = (o.origem || '').toLowerCase(), via = (o.pedido_via || '').toLowerCase();
+    if (via === 'checklist' || org.indexOf('checklist') >= 0) return 'checklist';
+    if (via === 'mobile' || org.indexOf('mobile') >= 0) return 'mobile';
+    return 'desktop';
+  };
+  const canalSel = (document.getElementById('ots-origem') || {}).value || '';
+  if (canalSel) ots = ots.filter(o => canalDe(o) === canalSel);
   if (_filtroTT !== null) ots = ots.filter(o => _filtroTT === '_sem' ? !o.tipo_trabalho : (_filtroTT.length === 1 ? (o.tipo_trabalho||'').charAt(0) === _filtroTT : o.tipo_trabalho === _filtroTT));
   if (_filtroEquipId) ots = ots.filter(o => String(o.equipamento_id) === String(_filtroEquipId));
   if (q) ots = ots.filter(o =>
@@ -606,6 +620,7 @@ function renderOTs(){
 function limparFiltroOTs(){
   _filtroEquipId = null;
   document.getElementById('ots-busca').value = '';
+  const so = document.getElementById('ots-origem'); if (so) so.value = '';
   carregarOTsReais();
 }
 async function carregarEquipReais(){
