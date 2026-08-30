@@ -330,6 +330,8 @@ async def converter_pedido(pid: str, request: Request, payload=Depends(verificar
         "data_prevista": d.get("data_prevista"),
         "horimetro_previsto": d.get("horimetro_previsto"),
         "pedido_id": str(pid),
+        "origem": {"mobile": "mobile-mecanico", "checklist": "checklist-nc"}.get(
+            (ped.get("via") or "").lower(), "pedido-desktop"),
         "_obs_criacao": f"OT criada do pedido {ped['numero']}",
     }
     uid = await _usuario_id(payload)
@@ -425,12 +427,13 @@ async def listar_ots(status: str = None, equipamento_id: str = None,
         f"""SELECT ot.*, eq.codigo AS equipamento_codigo, eq.descricao AS equipamento_desc,
                   eq.horimetro_atual AS equipamento_horimetro, eq.medicao AS equipamento_medicao,
                   us.nome AS solicitante_nome, ur.nome AS responsavel_nome,
-                  fo.nome AS fornecedor_nome
+                  fo.nome AS fornecedor_nome, pd.via AS pedido_via
            FROM manutencao.ot ot
            JOIN operacional.equipamentos eq ON eq.id = ot.equipamento_id
            LEFT JOIN public.usuarios_garra us ON us.id = ot.solicitante_id
            LEFT JOIN public.usuarios_garra ur ON ur.id = ot.responsavel_id
            LEFT JOIN public.fornecedores fo ON fo.id = ot.fornecedor_id
+           LEFT JOIN manutencao.pedidos pd ON pd.id = ot.pedido_id
            WHERE {' AND '.join(where)}
            ORDER BY ot.data_abertura DESC""", params)
     from datetime import date as _date
