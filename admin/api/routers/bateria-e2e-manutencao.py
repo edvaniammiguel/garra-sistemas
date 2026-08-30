@@ -125,9 +125,9 @@ def e07():
     s = chamada("GET", f"/manutencao/api/equipamentos/{CTX['pneu']}/subsistemas").json()
     assert s["eu"].get("pai"), "componente sem pai após montar"
     h = s["historico"][0]
-    assert float(h.get("montagem_leitura") or h.get("leitura_pai_montagem") or 0) == 50100 \
-        or any(str(v) == "50100.0" or v == 50100 for v in h.values()), \
-        f"leitura do pai não carimbada (esperado 50100): {h}"
+    assert h.get("montagem") and h.get("desmontagem") is None, \
+        f"registro de montagem aberto não encontrado: {h}"
+    # o carimbo da leitura (50100) é provado pelo E09: rodado = 50600 - 50100 = 500
 
 
 # ── E08 · Pai roda (abastecimento avança km) ─────────────────────────
@@ -140,8 +140,8 @@ def e08():
 
 # ── E09 · Desmontar → rodado = 500 ───────────────────────────────────
 def e09():
-    r = chamada("POST", f"/manutencao/api/equipamentos/{CTX['cam']}/desmontar",
-                corpo={"componente_id": CTX["pneu"]})
+    r = chamada("POST", f"/manutencao/api/equipamentos/{CTX['pneu']}/desmontar",
+                corpo={})
     assert r.status_code == 200, f"{r.status_code}: {r.text[:200]}"
     s = chamada("GET", f"/manutencao/api/equipamentos/{CTX['pneu']}/subsistemas").json()
     assert s.get("vida_acumulada") == 500, f"vida esperada 500, veio {s.get('vida_acumulada')}"
@@ -172,16 +172,26 @@ def e12():
     r = chamada("POST", "/manutencao/api/pecas", corpo={
         "codigo": f"E2EM-PC-{SUF}", "descricao": "Peça E2E teste", "unidade": "UN"})
     assert r.status_code in (200, 201), f"{r.status_code}: {r.text[:150]}"
+    alms = chamada("GET", "/manutencao/api/almoxarifados").json()
+    alms = alms if isinstance(alms, list) else alms.get("almoxarifados") or []
+    if alms:
+        CTX["alm"] = alms[0].get("codigo") or alms[0].get("id")
+    else:
+        r = chamada("POST", "/manutencao/api/almoxarifados", corpo={
+            "codigo": f"E2EM-ALM", "nome": "Almoxarifado E2E teste"})
+        assert r.status_code in (200, 201), f"criar almox: {r.status_code}: {r.text[:150]}"
+        CTX["alm"] = "E2EM-ALM"
     r = chamada("POST", "/manutencao/api/estoque/movimentar", corpo={
         "peca": f"E2EM-PC-{SUF}", "tipo": "entrada", "quantidade": 4,
-        "custo_unitario": 25})
+        "custo_unitario": 25, "destino": CTX["alm"]})
     assert r.status_code == 200, f"movimentar: {r.status_code}: {r.text[:200]}"
 
 
 # ── E13 · Saída além do saldo → 400 (validação de saldo) ─────────────
 def e13():
     r = chamada("POST", "/manutencao/api/estoque/movimentar", corpo={
-        "peca": f"E2EM-PC-{SUF}", "tipo": "saida", "quantidade": 999})
+        "peca": f"E2EM-PC-{SUF}", "tipo": "saida", "quantidade": 999,
+        "origem": CTX.get("alm")})
     assert r.status_code == 400, f"saída sem saldo devia dar 400, deu {r.status_code}"
 
 
