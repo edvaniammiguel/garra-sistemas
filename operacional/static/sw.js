@@ -13,8 +13,8 @@
  * 4. Imagens/ícones: cache-first com limite de tamanho
  */
 
-const CACHE_NAME = 'garra-operacional-v16';
-const ASSETS_CACHE = 'garra-assets-v65';
+const CACHE_NAME = 'garra-operacional-v17';
+const ASSETS_CACHE = 'garra-assets-v66';
 const OFFLINE_PAGE = '/operacional/offline.html';
 
 // Assets que devem sempre estar em cache (shell)

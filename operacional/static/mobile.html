@@ -369,6 +369,7 @@ input,select,textarea{font-family:inherit;outline:none;border:none}
     <button class="nav-btn" onclick="ir('Check')" style="display:none"><span class="nav-icon">✓</span><span class="nav-label">Checklist</span></button>
     <button class="nav-btn" onclick="ir('Log')" style="display:none"><span class="nav-icon">🚗</span><span class="nav-label">Logística</span></button>
     <button class="nav-btn" onclick="ir('OC')" style="display:none"><span class="nav-icon">🛒</span><span class="nav-label">Compras</span></button>
+    <button class="nav-btn" onclick="ir('OT')" style="display:none"><span class="nav-icon">📨</span><span class="nav-label">Pedir OT</span></button>
   </div>
 </div>
 
@@ -786,7 +787,16 @@ function ir(nome) {
     // Compras tem página própria — abre com SSO (mesma janela, botão ← volta pro app)
     abrirComprasSSO();
     return;
+  } else if (nome === 'OT') {
+    // Pedido de manutenção (mecânico) — página própria com SSO, ← volta pro app
+    abrirPedirOTSSO();
+    return;
   }
+}
+
+function abrirPedirOTSSO() {
+  const token = localStorage.getItem('garra_token') || '';
+  window.location.href = '/manutencao/pedido?sso=' + encodeURIComponent(token) + '&origem=mobile';
 }
 
 function abrirComprasSSO() {
@@ -2979,6 +2989,7 @@ function aplicarPermissoesPerfil() {
     { aba: 2, id: 'checklist' },
     { aba: 3, id: 'checklist_logistica' },
     { aba: 4, id: 'compras_solicitar', ids: ['compras_solicitar','compras_aprovar','compras_ver_todas'] },
+    { aba: 5, id: 'pedir_ot' },
   ];
 
   // Padrão por perfil (usado quando permsDB não define o módulo)
@@ -2986,7 +2997,7 @@ function aplicarPermissoesPerfil() {
     admin:     ['jardinagem_mobile','operacional_mobile','checklist','checklist_logistica','compras_solicitar'],
     gestor:    ['jardinagem_mobile','operacional_mobile','checklist','checklist_logistica','compras_solicitar'],
     luana:     ['jardinagem_mobile','operacional_mobile','checklist','compras_solicitar'],
-    bruna:     ['operacional_mobile','checklist','compras_solicitar'],
+    bruna:     ['operacional_mobile','checklist','compras_solicitar','pedir_ot'],
     operador:  ['operacional_mobile','checklist'],
     motorista: ['operacional_mobile','checklist'],
     campo:     ['jardinagem_mobile'],
@@ -3016,7 +3027,7 @@ function aplicarPermissoesPerfil() {
 function abrirAbaInicial() {
   if (!USUARIO) return;
   const navs = document.querySelectorAll('.bottom-nav .nav-btn');
-  const abas = ['Jard', 'Op', 'Check', 'Log', 'OC'];
+  const abas = ['Jard', 'Op', 'Check', 'Log', 'OC', 'OT'];
 
   // Veio do botão "Módulos" da jardinagem → NÃO reabrir jardinagem (evita loop)
   const veioDaJardinagem = new URLSearchParams(location.search).get('from') === 'jardinagem';
