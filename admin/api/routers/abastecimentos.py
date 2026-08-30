@@ -22,7 +22,7 @@ Autocontido: página mobile em GET /abastecimento; montar no main.py com 2 linha
 Env: ANTHROPIC_API_KEY (obrigatória p/ fotos; sem ela o módulo funciona manual).
 """
 
-import os, re, json, base64, asyncio
+import os, re, json, base64, asyncio, uuid as uuid_lib
 from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File
 from fastapi.responses import HTMLResponse
 
@@ -80,6 +80,18 @@ async def _ddl():
 
 
 # ── Helpers ──────────────────────────────────────────────────────────
+def _uid(payload):
+    """usuario_id só se for UUID válido — o sub do JWT pode ser o login (texto)."""
+    for chave in ("usuario_id", "sub", "id"):
+        v = payload.get(chave)
+        if v:
+            try:
+                return str(uuid_lib.UUID(str(v)))
+            except (ValueError, AttributeError, TypeError):
+                continue
+    return None
+
+
 def _norm_placa(p):
     """Normalização de placa: maiúsculas, só A-Z0-9 (GVP-8969 ≡ gvp 8969)."""
     v = re.sub(r"[^A-Z0-9]", "", (p or "").upper())
@@ -261,8 +273,8 @@ async def registrar_abastecimento(request: Request, payload=Depends(verificar_to
          digitada, foto, _num(d.get("litros_foto")), _num(d.get("valor_foto")),
          placa_foto, div_leitura, div_placa,
          d.get("foto_painel"), d.get("foto_bomba"),
-         payload.get("usuario_id") or payload.get("sub"),
-         payload.get("nome"), (d.get("observacao") or "").strip() or None))
+         _uid(payload), payload.get("nome") or payload.get("login"),
+         (d.get("observacao") or "").strip() or None))
 
     # Alimenta a leitura viva do equipamento (FMD, montagens) — só avança, nunca recua
     if leitura is not None and not div_leitura:
