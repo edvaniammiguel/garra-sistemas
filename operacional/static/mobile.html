@@ -112,13 +112,16 @@ input,select,textarea{font-family:inherit;outline:none;border:none}
 .bottom-nav{
   position:fixed;bottom:0;left:0;right:0;height:var(--nav-h);
   background:#fff;border-top:1.5px solid var(--border);
-  display:flex;align-items:center;justify-content:space-around;
+  display:flex;align-items:center;justify-content:flex-start;
+  overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;
   z-index:100;box-shadow:0 -2px 12px rgba(26,42,94,.06);
 }
+.bottom-nav::-webkit-scrollbar{display:none}
 .nav-btn{
   display:flex;flex-direction:column;align-items:center;gap:3px;
-  padding:6px 16px;background:none;color:var(--muted);
-  font-size:10px;font-weight:600;border-radius:8px;transition:.15s;flex:1;
+  padding:6px 10px;background:none;color:var(--muted);
+  font-size:10px;font-weight:600;border-radius:8px;transition:.15s;
+  flex:0 0 auto;min-width:calc(100vw / 5.5);
 }
 .nav-btn.active{color:var(--orange)}
 .nav-btn.active .nav-icon{transform:scale(1.15)}
@@ -761,6 +764,9 @@ function ir(nome) {
   document.querySelectorAll('.mod-section').forEach(s => s.classList.remove('active'));
   const bottomNavs = document.querySelectorAll('.bottom-nav .nav-btn');
   bottomNavs.forEach(b => b.classList.remove('active'));
+  // aba ativa sempre visível na barra rolável
+  try { const ix = ['Jard','Op','Check','Log','OC','OT','AB'].indexOf(nome);
+        if (bottomNavs[ix]) bottomNavs[ix].scrollIntoView({behavior:'smooth', block:'nearest', inline:'center'}); } catch(e){}
 
   // FAB de Nova OS visível só na aba Operacional
   const fab = document.getElementById('btn-nova-os-fab');
@@ -1620,56 +1626,6 @@ async function salvarParte(adicionarMais) {
 // ──────────────────────────────────────────────────────────────────────────────
 // OPERACIONAL — SALVARNOVA OS COM OFFLINE
 // ──────────────────────────────────────────────────────────────────────────────
-async function salvarNovaOS() {
-  const err = document.getElementById('nos-err');
-  err.style.display = 'none';
-  const obra = document.getElementById('nos-obra').value.trim();
-
-  if (!obra) {
-    err.textContent = 'Informe a obra / local';
-    err.style.display = 'block';
-    return;
-  }
-
-  const payload = {
-    obra,
-    cliente_nome_avulso: document.getElementById('nos-cliente').value.trim() || null,
-    regime_cobranca: document.getElementById('nos-regime').value,
-    origem: 'campo',
-  };
-
-  const btn = document.getElementById('nos-btn');
-  btn.textContent = 'Salvando...';
-  btn.disabled = true;
-
-  try {
-    // ✅ OFFLINE-FIRST
-    const result = await GarraDB.postWithQueue(
-      '/operacional/api/os',
-      payload,
-      { retries: 5, retryDelay: 30000 }
-    );
-
-    if (result.success) {
-      toast('✓ OS aberta!', 'success');
-      fecharSheetNovaOS();
-      carregarOSApp();
-    } else if (result.queued) {
-      toast('⚠️ OS será criada ao conectar', 'info');
-      fecharSheetNovaOS();
-    } else {
-      err.textContent = result.error || 'Erro ao salvar';
-      err.style.display = 'block';
-    }
-  } catch (e) {
-    err.textContent = e.message;
-    err.style.display = 'block';
-  } finally {
-    btn.textContent = '✅ Abrir OS';
-    btn.disabled = false;
-  }
-}
-
 // ──────────────────────────────────────────────────────────────────────────────
 // UTILIDADES
 // ──────────────────────────────────────────────────────────────────────────────
@@ -1863,12 +1819,6 @@ function prepararMedicao(tipo) {
   _ocultarBlocosMedicao();
   _mostrarBloco(tipo);
   _resetBotoesMedicao(); // nenhum destaque até clicar
-}
-
-function resetMedicaoCobranca() {
-  window._medicaoAtual = null;
-  _ocultarBlocosMedicao();
-  _resetBotoesMedicao();
 }
 
 // _medicaoAtual guarda o que será registrado
@@ -2193,14 +2143,6 @@ async function concluirOS(osId, numero) {
   } catch (e) {
     toast('❌ Erro: ' + e.message, 'error');
   }
-}
-
-function abrirSheetNovaOS() {
-  alert('Sheet para nova OS (simplificado)');
-}
-
-function fecharSheetNovaOS() {
-  // Implementar
 }
 
 function opTab(tab) {
