@@ -486,7 +486,9 @@ async def _resolver(extr):
 
     itens, nao_casados = [], []
     for it in (extr.get("itens") or []):
-        ident = (it or {}).get("identificador") or ""
+        ident = str((it or {}).get("identificador") or "").strip()
+        if not re.search(r"[A-Za-z0-9]", ident):
+            continue  # item fantasma ('.', '-', vazio) — nem linha, nem aviso
         e = por_chave.get(_chave_cod(ident)) or por_placa.get(_norm_placa(ident) or "")
         row = {"identificador_lido": ident, "litros": _num((it or {}).get("litros")),
                "leitura": _num((it or {}).get("leitura")),
@@ -506,6 +508,21 @@ async def _resolver(extr):
                       "leitura": _num(painel.get("valor")), "tipo_leitura": painel.get("tipo"),
                       "equipamento_id": e["id"], "codigo": e["codigo"], "descricao": e.get("descricao"),
                       "medicao": e.get("medicao"), "galao": False, "via_placa": True})
+    # nota de UM equipamento (fora galões): completa o item com o que a nota
+    # inteira já disse — litros do total; leitura da anotação ("KM 441545")
+    # quando o modelo a deixou fora do item. Regra do único: sem ambiguidade.
+    unicos = [i for i in itens if i.get("equipamento_id") and not i.get("galao")]
+    if len(unicos) == 1:
+        alvo = unicos[0]
+        if alvo.get("litros") is None:
+            alvo["litros"] = _num(extr.get("litros"))
+        if alvo.get("leitura") is None:
+            fonte_txt = " ".join(str(extr.get(k) or "") for k in ("anotacoes",))
+            m = re.search(r"(?:KM|HR|HORIMETRO|HORÍMETRO)\D{0,3}([\d\.\,]{3,12})", fonte_txt, re.I)
+            if m:
+                alvo["leitura"] = _num(m.group(1))
+                alvo["leitura_via"] = "anotacao"
+
     # trava de plausibilidade: caminhão (km) com "leitura" < 1000 é quase sempre
     # consumo (11,9 KM/L) lido por engano — não preenche, o humano decide
     for i in itens:
