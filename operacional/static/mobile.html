@@ -149,15 +149,15 @@ input,select,textarea{font-family:inherit;outline:none;border:none}
 .empty-sub{font-size:12px;margin-top:4px}
 
 /* Checklist iframe */
-#sec-check {
+#sec-check, #sec-ext {
   height: calc(100dvh - 120px);
   padding: 0 !important;
 }
-#sec-check.active {
+#sec-check.active, #sec-ext.active {
   display: flex !important;
   flex-direction: column;
 }
-#sec-check iframe {
+#sec-check iframe, #sec-ext iframe {
   width: 100%;
   flex: 1;
   height: 100%;
@@ -360,6 +360,7 @@ input,select,textarea{font-family:inherit;outline:none;border:none}
 
     <!-- CHECKLIST -->
     <div id="sec-check" class="mod-section" style="padding:0"></div>
+    <div id="sec-ext" class="mod-section" style="padding:0"></div>
   </div>
 
   <!-- BOTTOM NAV -->
@@ -784,24 +785,37 @@ function ir(nome) {
     document.getElementById('app-modulo').textContent = 'Logística';
     carregarIframeChecklist('logistica');
   } else if (nome === 'OC') {
-    // Compras tem página própria — abre com SSO (mesma janela, botão ← volta pro app)
-    abrirComprasSSO();
-    return;
+    // Compras embutido no shell (cabeçalho e navegação do app permanecem)
+    document.getElementById('sec-ext').classList.add('active');
+    bottomNavs[4].classList.add('active');
+    document.getElementById('app-modulo').textContent = 'Compras';
+    carregarIframeExterno('oc', '/compras');
   } else if (nome === 'OT') {
-    // Pedido de manutenção (mecânico) — página própria com SSO, ← volta pro app
-    abrirPedirOTSSO();
-    return;
+    // Pedido de manutenção embutido no shell
+    document.getElementById('sec-ext').classList.add('active');
+    bottomNavs[5].classList.add('active');
+    document.getElementById('app-modulo').textContent = 'Pedir OT';
+    carregarIframeExterno('ot', '/manutencao/pedido');
   }
 }
 
-function abrirPedirOTSSO() {
+// Páginas próprias (Compras, Pedir OT) dentro do shell: iframe com SSO +
+// embedded=1 (a página esconde o cabeçalho dela; o do app manda)
+function carregarIframeExterno(chave, path) {
+  const sec = document.getElementById('sec-ext');
   const token = localStorage.getItem('garra_token') || '';
-  window.location.href = '/manutencao/pedido?sso=' + encodeURIComponent(token) + '&origem=mobile';
-}
-
-function abrirComprasSSO() {
-  const token = localStorage.getItem('garra_token') || '';
-  window.location.href = '/compras?sso=' + encodeURIComponent(token) + '&origem=mobile';
+  const url = path + '?sso=' + encodeURIComponent(token) + '&origem=mobile&embedded=1';
+  let iframe = sec.querySelector('iframe');
+  if (!iframe) {
+    iframe = document.createElement('iframe');
+    iframe.id = 'iframe-ext';
+    sec.innerHTML = '';
+    sec.appendChild(iframe);
+  }
+  if (iframe.dataset.chave !== chave) {
+    iframe.src = url;
+    iframe.dataset.chave = chave;
+  }
 }
 
 // Carrega o iframe do checklist com SSO e aba alvo
