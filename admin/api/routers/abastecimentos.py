@@ -32,6 +32,18 @@ from core.storage import storage_upload
 
 router = APIRouter()
 
+_PERFIS_LIVRES = {"admin", "gestor", "bruna", "luana"}
+
+async def verificar_abastecimento(payload=Depends(verificar_token)):
+    """Gate do módulo 'abastecimento' — matriz Por Perfil + exceções
+    individuais (mesmo resolvedor oficial do Manutenção)."""
+    if (payload.get("perfil") or "").lower() in _PERFIS_LIVRES:
+        return payload
+    from routers.manutencao import _tem_modulo
+    if await _tem_modulo(payload, {"abastecimento"}):
+        return payload
+    raise HTTPException(status_code=403, detail="Sem permissão para Abastecimento")
+
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 MODELO_VISAO = os.environ.get("ABASTECIMENTO_MODELO", "claude-haiku-4-5-20251001")
 
@@ -196,7 +208,7 @@ async def pagina_abastecimento():
 @router.post("/operacional/api/abastecimentos/extrair")
 async def extrair_fotos(foto_painel: UploadFile = File(None),
                         foto_bomba: UploadFile = File(None),
-                        payload=Depends(verificar_token)):
+                        payload=Depends(verificar_abastecimento)):
     """Sobe as fotos ao Storage e extrai leituras via Claude, em paralelo."""
     await _ddl()
     if not foto_painel and not foto_bomba:
@@ -233,7 +245,7 @@ async def extrair_fotos(foto_painel: UploadFile = File(None),
 
 
 @router.post("/operacional/api/abastecimentos")
-async def registrar_abastecimento(request: Request, payload=Depends(verificar_token)):
+async def registrar_abastecimento(request: Request, payload=Depends(verificar_abastecimento)):
     await _ddl()
     d = await request.json()
     eq_id = d.get("equipamento_id")
