@@ -985,12 +985,12 @@ input.ruim{border-color:#DC2626;background:#FEF2F2}
 <div class="hide" id="tela-form">
   <div class="card">
     <label class="foto" id="box-nota">
-      <input type="file" id="f-nota" accept="image/*" capture="environment" onchange="fotoEscolhida('nota')">
+      <input type="file" id="f-nota" accept="image/*" onchange="fotoEscolhida('nota')">
       <span class="ic" id="ic-nota">🧾</span>
       <span class="tx"><b>Foto da notinha do posto</b><span class="muted" id="tx-nota">Toque para fotografar · obrigatória</span></span>
     </label>
     <label class="foto" id="box-leitura" style="margin-top:8px">
-      <input type="file" id="f-leitura" accept="image/*" capture="environment" onchange="fotoEscolhida('leitura')">
+      <input type="file" id="f-leitura" accept="image/*" onchange="fotoEscolhida('leitura')">
       <span class="ic" id="ic-leitura">🕐</span>
       <span class="tx"><b>Foto do horímetro / KM</b><span class="muted" id="tx-leitura">Opcional — se não está anotado na nota</span></span>
     </label>
@@ -1001,6 +1001,9 @@ input.ruim{border-color:#DC2626;background:#FEF2F2}
     <div id="leitura-flags"></div>
   </div>
 
+  <div class="muted" style="text-align:center;margin:2px 0 8px" id="lk-manual"><a href="#" onclick="mostrarDados();return false">✍️ Preencher sem foto →</a></div>
+
+  <div class="hide" id="sec-dados">
   <div class="card" id="card-nota">
     <b style="color:#1A2A5E">Nota</b> <span class="muted" id="confianca"></span>
     <div class="row">
@@ -1031,6 +1034,8 @@ input.ruim{border-color:#DC2626;background:#FEF2F2}
     <button class="btn btn-c" onclick="addItem()">➕ Adicionar equipamento ou galão</button>
     <div class="soma" id="soma"><span>Soma dos itens</span><b id="soma-v">0,00 L</b></div>
   </div>
+
+  </div><!-- /sec-dados -->
 
   <div class="card hide" id="card-galao">
     <b style="color:#1A2A5E">⛽ Do galão para a máquina</b>
@@ -1064,6 +1069,7 @@ let BRUTO = null;
 let LENDO = false, LIDO_HASH = '';
 let ULTIMAS = {};                        // eq_id -> {ultima_conhecida, medicao}
 
+function mostrarDados(){ mostrar('sec-dados',true); mostrar('rodape',true); const l=$('lk-manual'); if(l) l.style.display='none'; }
 function toast(m){ const t=document.getElementById('toast'); t.textContent=m; t.style.display='block'; setTimeout(()=>t.style.display='none',3400); }
 function mostrar(id,on){ document.getElementById(id).classList[on?'remove':'add']('hide'); }
 function $(id){ return document.getElementById(id); }
@@ -1093,7 +1099,7 @@ async function entrar(){
 }
 
 async function iniciar(){
-  mostrar('tela-login',false); mostrar('tela-form',true); mostrar('rodape',true);
+  mostrar('tela-login',false); mostrar('tela-form',true); mostrar('rodape',false);
   try{
     CTX = await api('/operacional/api/abastecimentos/contexto');
     $('n-comb').innerHTML = '<option value="">— escolha —</option>'+CTX.combustiveis.map(c=>'<option value="'+c.codigo+'">'+esc(c.nome)+'</option>').join('');
@@ -1164,6 +1170,7 @@ async function ler(){
 }
 function setLido(id,v){ const el=$(id); if(v==null||v==='') return; el.value=(typeof v==='number')?String(v).replace('.',','):v; el.classList.add('lido'); }
 function aplicarSugestao(s){
+  mostrarDados();
   $('confianca').textContent = s.confianca?('· leitura '+s.confianca):'';
   if(s.posto){
     if(s.posto.fornecedor_id){ $('n-posto').value=s.posto.fornecedor_id; $('n-posto').classList.add('lido'); mostrar('posto-novo',false); }
@@ -1284,6 +1291,7 @@ function limpar(){
   ['n-posto','n-comb'].forEach(id=>{ $(id).value=''; $(id).classList.remove('lido'); }); mostrar('posto-novo',false);
   $('confianca').textContent=''; $('leitura-flags').innerHTML=''; $('prog-tx').textContent='';
   $('itens').innerHTML=''; addItem(localStorage.getItem('garra_abast_ultimo_eq')||''); recalcSoma();
+  mostrar('sec-dados',false); mostrar('rodape',false); const lk=$('lk-manual'); if(lk) lk.style.display='';
 }
 
 // ── do galão ──
