@@ -107,6 +107,34 @@ async def _garantir_pedidos():
 
 
 _OT_COLS_OK = False
+_LEITURAS_OK = False
+
+async def _garantir_leituras():
+    """(30/08/2026) Fonte ÚNICA de leituras do equipamento: partes diárias do
+    Operacional + abastecimentos sadios (sem divergência). Consumida pelo FMD
+    e pelo Registo Funcionamento — a leitura da bomba passa a mover a
+    preventiva, como no ManWinWin. View idempotente; viaja no código."""
+    global _LEITURAS_OK
+    if _LEITURAS_OK:
+        return
+    from routers.abastecimentos import _ddl as _ddl_abast
+    await _ddl_abast()
+    await ajard_query("""
+        CREATE OR REPLACE VIEW operacional.v_leituras AS
+        SELECT equipamento_id, data,
+               GREATEST(COALESCE(horimetro_final,0), COALESCE(km_final,0)) AS leitura,
+               'parte'::text AS fonte
+          FROM operacional.partes_diarias
+         WHERE COALESCE(ativo, true) = true
+        UNION ALL
+        SELECT equipamento_id, data, leitura, 'abastecimento'::text AS fonte
+          FROM operacional.abastecimentos
+         WHERE ativo = true AND leitura IS NOT NULL
+           AND COALESCE(divergencia_leitura, false) = false
+    """, fetch="none")
+    _LEITURAS_OK = True
+
+
 async def _garantir_colunas_ot():
     """(24/08/2026) Pacote 2 — fluxo da OT com semáforo real. Colunas da OT
     programada garantidas por ALTER idempotente que viaja no código (Ciclo
@@ -1637,10 +1665,10 @@ async def _fmd_por_equipamento():
     """FMD-R por equipamento a partir das partes diárias (últimos 120 dias).
     Regra ManWinWin: só vale com >= 4 registros; senão None (sem projeção
     de data — o vencimento por leitura continua funcionando)."""
+    await _garantir_leituras()
     rows = await ajard_query(
-        """SELECT equipamento_id, data::date AS d,
-                  MAX(GREATEST(COALESCE(horimetro_final, 0), COALESCE(km_final, 0))) AS leitura
-           FROM operacional.partes_diarias
+        """SELECT equipamento_id, data::date AS d, MAX(leitura) AS leitura
+           FROM operacional.v_leituras
            WHERE data >= now() - interval '120 days'
            GROUP BY equipamento_id, data::date
            ORDER BY equipamento_id, d""")
@@ -2103,19 +2131,20 @@ async def equip_funcionamento(eq_id: str, _auth=Depends(verificar_manutencao)):
     diárias (90 dias), último registo, FMD-R (regra dos ≥4 registos) e as
     projeções da calculadora — 'terá X em 30 dias' e alvo de próximo ponto."""
     from datetime import date as _date, timedelta as _td
+    await _garantir_leituras()
     eq = await ajard_query(
-        "SELECT codigo, descricao, horimetro_atual, medicao FROM operacional.equipamentos WHERE id=%s",
+        "SELECT codigo, descricao, horimetro_atual, km_atual, medicao FROM operacional.equipamentos WHERE id=%s",
         (eq_id,), fetch="one")
     if not eq:
         raise HTTPException(status_code=404, detail="Equipamento não encontrado")
     rows = await ajard_query(
-        """SELECT data::date AS d,
-                  MAX(GREATEST(COALESCE(horimetro_final,0), COALESCE(km_final,0))) AS leitura
-           FROM operacional.partes_diarias
+        """SELECT data::date AS d, MAX(leitura) AS leitura,
+                  string_agg(DISTINCT fonte, '+') AS fonte
+           FROM operacional.v_leituras
            WHERE equipamento_id=%s AND data >= now() - interval '90 days'
            GROUP BY data::date ORDER BY d DESC LIMIT 40""", (eq_id,))
-    regs = [{"data": r["d"].isoformat(), "leitura": float(r["leitura"] or 0)} for r in rows
-            if float(r["leitura"] or 0) > 0]
+    regs = [{"data": r["d"].isoformat(), "leitura": float(r["leitura"] or 0), "fonte": r["fonte"]}
+            for r in rows if float(r["leitura"] or 0) > 0]
     fmd = None
     if len(regs) >= 4:
         d1, l1 = regs[0]["data"], regs[0]["leitura"]
@@ -2124,7 +2153,8 @@ async def equip_funcionamento(eq_id: str, _auth=Depends(verificar_manutencao)):
         if l1 > l0:
             fmd = round((l1 - l0) / dias, 2)
     proj_30 = None
-    atual = float(eq["horimetro_atual"] or (regs[0]["leitura"] if regs else 0) or 0)
+    vivo = eq["km_atual"] if eq.get("medicao") == "km" else eq["horimetro_atual"]
+    atual = float(vivo or (regs[0]["leitura"] if regs else 0) or 0)
     if fmd:
         proj_30 = round(atual + fmd * 30, 1)
     return {"equipamento": eq["codigo"], "descricao": eq["descricao"],
