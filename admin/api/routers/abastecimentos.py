@@ -953,6 +953,7 @@ input.ruim{border-color:#DC2626;background:#FEF2F2}
 .foto .ic{width:64px;height:64px;border-radius:8px;background:#E2E8F0;display:flex;align-items:center;justify-content:center;font-size:28px}
 .foto .tx{flex:1;font-size:14px}.foto .tx b{display:block;color:#1A2A5E}
 .foto input{display:none}
+.foto .gal{display:inline-block;margin-top:4px;font-size:12px;color:#1A2A5E;text-decoration:underline}
 .prog{height:6px;background:#E2E8F0;border-radius:3px;overflow:hidden;margin-top:8px}.prog i{display:block;height:100%;width:0;background:#E8820C;transition:width .4s}
 .item{border:1px solid #E2E8F0;border-radius:10px;padding:10px;margin-top:8px;background:#FAFAFA}
 .item .top{display:flex;gap:8px;align-items:center}.item .top select{flex:1}
@@ -985,15 +986,19 @@ input.ruim{border-color:#DC2626;background:#FEF2F2}
 <div class="hide" id="tela-form">
   <div class="card">
     <label class="foto" id="box-nota">
-      <input type="file" id="f-nota" accept="image/*" onchange="fotoEscolhida('nota')">
+      <input type="file" id="f-nota" accept="image/*" capture="environment" onchange="fotoEscolhida('nota',this)">
       <span class="ic" id="ic-nota">🧾</span>
-      <span class="tx"><b>Foto da notinha do posto</b><span class="muted" id="tx-nota">Toque para fotografar · obrigatória</span></span>
+      <span class="tx"><b>Foto da notinha do posto</b><span class="muted" id="tx-nota">Toque para fotografar · obrigatória</span>
+      <a href="#" class="gal" onclick="event.preventDefault();event.stopPropagation();$('g-f-nota').click()">🖼 escolher da galeria</a></span>
     </label>
+    <input type="file" id="g-f-nota" accept="image/*" style="display:none" onchange="fotoEscolhida('nota',this)">
     <label class="foto" id="box-leitura" style="margin-top:8px">
-      <input type="file" id="f-leitura" accept="image/*" onchange="fotoEscolhida('leitura')">
+      <input type="file" id="f-leitura" accept="image/*" capture="environment" onchange="fotoEscolhida('leitura',this)">
       <span class="ic" id="ic-leitura">🕐</span>
-      <span class="tx"><b>Foto do horímetro / KM</b><span class="muted" id="tx-leitura">Opcional — se não está anotado na nota</span></span>
+      <span class="tx"><b>Foto do horímetro / KM</b><span class="muted" id="tx-leitura">Opcional — se não está anotado na nota</span>
+      <a href="#" class="gal" onclick="event.preventDefault();event.stopPropagation();$('g-f-leitura').click()">🖼 escolher da galeria</a></span>
     </label>
+    <input type="file" id="g-f-leitura" accept="image/*" style="display:none" onchange="fotoEscolhida('leitura',this)">
     <label>Escreva como mandaria no grupo <span class="muted">(opcional)</span></label>
     <input id="f-texto" placeholder="ex.: EH-50 4520h, resto no galão da obra" onblur="talvezLer()">
     <div class="prog hide" id="prog"><i id="prog-i"></i></div>
@@ -1133,8 +1138,8 @@ function comprimir(file, max){
     img.src=url;
   });
 }
-async function fotoEscolhida(qual){
-  const inp=$('f-'+qual); const f=inp.files&&inp.files[0]; if(!f) return;
+async function fotoEscolhida(qual,origem){
+  const inp=origem||$('f-'+qual); const f=inp.files&&inp.files[0]; if(!f) return;
   $('tx-'+qual).textContent='Comprimindo…';
   const c=await comprimir(f,1600); FOTOS[qual]=c;
   const box=$('box-'+qual); box.classList.add('ok');
@@ -1285,7 +1290,7 @@ function mostrarResultado(r){
 }
 function limpar(){
   FOTOS={nota:null,leitura:null}; PATHS={}; BRUTO=null; LIDO_HASH='';
-  ['f-nota','f-leitura'].forEach(id=>{ $(id).value=''; });
+  ['f-nota','f-leitura','g-f-nota','g-f-leitura'].forEach(id=>{ $(id).value=''; });
   ['nota','leitura'].forEach(q=>{ const b=$('box-'+q); b.classList.remove('ok'); const cur=$('ic-'+q); const s=document.createElement('span'); s.className='ic'; s.id='ic-'+q; s.textContent=q==='nota'?'🧾':'🕐'; cur.replaceWith(s); $('tx-'+q).textContent=q==='nota'?'Toque para fotografar · obrigatória':'Opcional — se não está anotado na nota'; });
   ['f-texto','n-cupom','n-data','n-litros','n-preco','n-valor','n-posto-nome','n-cnpj'].forEach(id=>{ $(id).value=''; $(id).classList.remove('lido'); });
   ['n-posto','n-comb'].forEach(id=>{ $(id).value=''; $(id).classList.remove('lido'); }); mostrar('posto-novo',false);
