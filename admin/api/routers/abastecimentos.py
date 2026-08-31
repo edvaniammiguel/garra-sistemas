@@ -334,7 +334,9 @@ def _match_combustivel(texto, lista):
     if "S500" in t or "S-500" in t:
         return next((c["codigo"] for c in lista if "S500" in c["codigo"]), None)
     if "DIESEL" in t:
-        return next((c["codigo"] for c in lista if c["codigo"].startswith("DIESEL")), None)
+        dieseis = [c["codigo"] for c in lista if c["codigo"].startswith("DIESEL")
+                   and c.get("ativo") is not False]
+        return dieseis[0] if len(dieseis) == 1 else None  # ambíguo = humano escolhe
     if "ETANOL" in t or "ALCOOL" in t or "ÁLCOOL" in t:
         return next((c["codigo"] for c in lista if "ETANOL" in c["codigo"]), None)
     if "GASOL" in t:
@@ -398,7 +400,14 @@ _PROMPT_NOTA = (
     "galão'). Extraia o máximo possível. Um cupom pode abastecer MAIS DE UM equipamento "
     "(ex.: galão de 200 L dividido) — liste cada um em 'itens' com seus litros quando "
     "indicado; se só há um identificador, um item com litros null (o sistema assume o "
-    "total). Números no padrão brasileiro (1.234,56). Responda SOMENTE JSON válido, sem "
+    "total). REGRAS CRÍTICAS: (1) 'leitura' é o número do ODÔMETRO/HORÍMETRO — na nota "
+    "impressa costuma aparecer como 'KM: 441545' no rodapé, e à caneta como 'KM 441545' "
+    "ou 'HR 4520'; tem tipicamente 3 a 7 dígitos. NUNCA use valores acompanhados de "
+    "KM/L ou L/KM ou a palavra MEDIA — isso é consumo, não leitura. (2) 'combustivel' é "
+    "a descrição LITERAL impressa do produto (ex.: 'OLEO DIESEL B S-500'), nunca resuma "
+    "para 'Diesel'. (3) O rodapé impresso pode trazer PLACA e identificador do veículo "
+    "(ex.: 'PLACA: GYC-9741 CB-05') — use-os como item se não houver outro. Números no "
+    "padrão brasileiro (1.234,56). Responda SOMENTE JSON válido, sem "
     "markdown, exatamente com este formato: "
     '{"posto":{"nome":str|null,"cnpj":str|null},"cupom":str|null,'
     '"data_hora":"dd/mm/aaaa hh:mm"|null,"combustivel":str|null,'
@@ -497,6 +506,13 @@ async def _resolver(extr):
                       "leitura": _num(painel.get("valor")), "tipo_leitura": painel.get("tipo"),
                       "equipamento_id": e["id"], "codigo": e["codigo"], "descricao": e.get("descricao"),
                       "medicao": e.get("medicao"), "galao": False, "via_placa": True})
+    # trava de plausibilidade: caminhão (km) com "leitura" < 1000 é quase sempre
+    # consumo (11,9 KM/L) lido por engano — não preenche, o humano decide
+    for i in itens:
+        if i.get("leitura") is not None and (i.get("medicao") == "km") and i["leitura"] < 1000:
+            i["leitura_suspeita"] = i["leitura"]
+            i["leitura"] = None
+
     # leitura do painel cai no item único sem leitura
     if _num(painel.get("valor")) is not None and len([i for i in itens if not i.get("galao")]) == 1:
         alvo = next(i for i in itens if not i.get("galao"))
@@ -512,14 +528,9 @@ async def _resolver(extr):
                 WHERE regexp_replace(COALESCE(cnpj,''),'\\D','','g')=%s AND ativo=true LIMIT 1""", (cnpj,))
         if r:
             fornecedor = dict(r[0])
-    if not fornecedor and (posto.get("nome") or "").strip():
-        primeira = posto["nome"].strip().split()[0]
-        if len(primeira) >= 4:
-            r = await ajard_query(
-                """SELECT id, nome, cnpj FROM public.fornecedores
-                    WHERE ativo=true AND nome ILIKE %s LIMIT 1""", ("%" + primeira + "%",))
-            if r:
-                fornecedor = dict(r[0])
+    # (31/08) SEM fallback por nome: "AUTO POSTO MR" casou com "AUTO MECANICA
+    # LUCIANO" no teste real. CNPJ é a identidade do posto; sem CNPJ casado,
+    # a sugestão é posto NOVO — nunca chute.
 
     return {
         "posto": {"nome_lido": posto.get("nome"), "cnpj_lido": cnpj or posto.get("cnpj"),
@@ -1162,6 +1173,7 @@ function aplicarSugestao(s){
   if(s.combustivel){ $('n-comb').value=s.combustivel; $('n-comb').classList.add('lido'); }
   setLido('n-litros',s.litros); setLido('n-preco',s.preco_litro); setLido('n-valor',s.valor_total);
   const its=(s.itens||[]).filter(i=>i.equipamento_id);
+  its.forEach(i=>{ if(i.leitura!=null && i.medicao==='km' && i.leitura<1000){ i.leitura=null; } });
   if(its.length){
     $('itens').innerHTML='';
     its.forEach(i=>addItem(i.equipamento_id,i.litros,i.leitura,true));
@@ -1169,6 +1181,8 @@ function aplicarSugestao(s){
   }
   const flags=[];
   if(s.nao_casados&&s.nao_casados.length) flags.push('<div class="flag flag-warn">Não achei na frota: <b>'+s.nao_casados.map(esc).join(', ')+'</b>. Escolha o equipamento na lista.</div>');
+  const susp=(s.itens||[]).find(i=>i.leitura_suspeita!=null);
+  if(susp) flags.push('<div class="flag flag-warn">O número '+susp.leitura_suspeita+' parece consumo (KM/L), não leitura — digite o KM do odômetro.</div>');
   if(s.anotacoes) flags.push('<div class="flag flag-info">Anotação lida: '+esc(s.anotacoes)+'</div>');
   $('leitura-flags').innerHTML=flags.join('');
   recalcSoma(); its.forEach(i=>checarLeitura(i.equipamento_id));
