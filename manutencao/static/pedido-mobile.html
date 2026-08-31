@@ -34,7 +34,9 @@
 </style>
 </head>
 <body>
-<header><span style="font-size:20px">🔧</span><span><b class="l">GARRA</b> <b>· Pedido de Manutenção</b></span></header>
+<script>(function(){ if (new URLSearchParams(location.search).get('embedded')==='1') document.documentElement.classList.add('embedded'); })();</script>
+<style>.embedded header{display:none !important}</style>
+<header><span style="font-size:20px">🔧</span><span><b class="l">GARRA</b> <b>· Pedido de Manutenção</b></span><a href="/mobile?from=pedido" style="margin-left:auto;color:#fff;text-decoration:none;font-size:13px;opacity:.9">← Apps</a></header>
 <main>
 
   <!-- LOGIN -->
@@ -110,6 +112,15 @@
 <div class="toast" id="toast"></div>
 <script>
 const API = '';
+(function(){
+  try {
+    const sso = new URLSearchParams(location.search).get('sso');
+    if (sso && sso.length > 10) {
+      localStorage.setItem('garra_tok_pedido', sso);
+      history.replaceState(null, '', location.pathname);
+    }
+  } catch(e) {}
+})();
 let TOK = localStorage.getItem('garra_tok_pedido') || '';
 let URG = 'normal';
 
