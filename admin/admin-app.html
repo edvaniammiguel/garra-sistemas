@@ -1163,11 +1163,11 @@ input,select,textarea { font-family:inherit; font-size:13px; outline:none; }
       <div class="field-row">
         <div class="field">
           <label>Horímetro inicial</label>
-          <input type="number" id="mp-h-ini" step="0.1" oninput="calcMpHoras()"/>
+          <input type="number" id="mp-h-ini" step="0.1"/>
         </div>
         <div class="field">
           <label>Horímetro final</label>
-          <input type="number" id="mp-h-fin" step="0.1" oninput="calcMpHoras()"/>
+          <input type="number" id="mp-h-fin" step="0.1"/>
         </div>
       </div>
       <div id="mp-horas-calc" class="field-hint" style="color:var(--green);font-weight:700"></div>
@@ -1228,23 +1228,6 @@ input,select,textarea { font-family:inherit; font-size:13px; outline:none; }
 </div>
 
 <!-- ══ MODAL FECHAR OS ══ -->
-<div id="modal-fechar" class="modal-backdrop hidden">
-  <div class="modal-card" style="max-width:500px">
-    <div class="modal-title">Fechar Ordem de Serviço</div>
-    <div id="modal-fechar-resumo" style="margin-bottom:16px"></div>
-    <div style="background:#FFF7ED;border:1.5px solid #FED7AA;border-radius:8px;padding:12px;font-size:13px;color:#92400E;margin-bottom:16px">
-      ⚠️ Ao fechar a OS, todas as partes diárias serão <strong>congeladas</strong> e não poderão mais ser editadas.
-    </div>
-    <div class="field">
-      <label>Observação final (opcional)</label>
-      <input type="text" id="fechar-obs" placeholder="Observações sobre o encerramento..."/>
-    </div>
-    <div class="modal-actions">
-      <button class="btn btn-secondary" onclick="document.getElementById('modal-fechar').classList.add('hidden')">Cancelar</button>
-      <button class="btn btn-primary" style="background:var(--green)" onclick="executarFechamento()">✓ Confirmar fechamento</button>
-    </div>
-  </div>
-</div>
 
 <!-- ══ MODAL CRIAR PERFIL ══ -->
 <div id="modal-perfil" class="modal-backdrop hidden">
