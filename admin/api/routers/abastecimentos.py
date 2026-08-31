@@ -969,8 +969,10 @@ input.ruim{border-color:#DC2626;background:#FEF2F2}
 .foto img{width:64px;height:64px;object-fit:cover;border-radius:8px;background:#E2E8F0}
 .foto .ic{width:64px;height:64px;border-radius:8px;background:#E2E8F0;display:flex;align-items:center;justify-content:center;font-size:28px}
 .foto .tx{flex:1;font-size:14px}.foto .tx b{display:block;color:#1A2A5E}
-.foto input{display:none}
-.foto .gal{display:inline-block;margin-top:4px;font-size:12px;color:#1A2A5E;text-decoration:underline}
+.foto{cursor:default}
+.btn-ditar{display:none;margin-top:6px;padding:9px 12px;border:1px solid #CBD5E1;border-radius:8px;background:#F8FAFC;color:#1A2A5E;font-size:13px;font-weight:700;cursor:pointer}.btn-ditar.gravando{background:#FEE2E2;border-color:#DC2626;color:#991B1B}
+.fbtn{margin-top:6px}
+.fbtn .btn{margin-top:0;padding:11px;font-size:14px}
 .prog{height:6px;background:#E2E8F0;border-radius:3px;overflow:hidden;margin-top:8px}.prog i{display:block;height:100%;width:0;background:#E8820C;transition:width .4s}
 .item{border:1px solid #E2E8F0;border-radius:10px;padding:10px;margin-top:8px;background:#FAFAFA}
 .item .top{display:flex;gap:8px;align-items:center}.item .top select{flex:1}
@@ -1002,22 +1004,29 @@ input.ruim{border-color:#DC2626;background:#FEF2F2}
 
 <div class="hide" id="tela-form">
   <div class="card">
-    <label class="foto" id="box-nota">
-      <input type="file" id="f-nota" accept="image/*" capture="environment" onchange="fotoEscolhida('nota',this)">
+    <div class="foto" id="box-nota">
       <span class="ic" id="ic-nota">🧾</span>
-      <span class="tx"><b>Foto da notinha do posto</b><span class="muted" id="tx-nota">Toque para fotografar · obrigatória</span>
-      <a href="#" class="gal" onclick="event.preventDefault();event.stopPropagation();$('g-f-nota').click()">🖼 escolher da galeria</a></span>
-    </label>
+      <span class="tx"><b>Foto da notinha do posto</b><span class="muted" id="tx-nota">Obrigatória</span></span>
+    </div>
+    <div class="row fbtn">
+      <button type="button" class="btn btn-o" onclick="$('f-nota').click()">📷 Tirar foto</button>
+      <button type="button" class="btn btn-c" onclick="$('g-f-nota').click()">🖼 Galeria</button>
+    </div>
+    <input type="file" id="f-nota" accept="image/*" capture="environment" style="display:none" onchange="fotoEscolhida('nota',this)">
     <input type="file" id="g-f-nota" accept="image/*" style="display:none" onchange="fotoEscolhida('nota',this)">
-    <label class="foto" id="box-leitura" style="margin-top:8px">
-      <input type="file" id="f-leitura" accept="image/*" capture="environment" onchange="fotoEscolhida('leitura',this)">
+    <div class="foto" id="box-leitura" style="margin-top:12px">
       <span class="ic" id="ic-leitura">🕐</span>
-      <span class="tx"><b>Foto do horímetro / KM</b><span class="muted" id="tx-leitura">Opcional — se não está anotado na nota</span>
-      <a href="#" class="gal" onclick="event.preventDefault();event.stopPropagation();$('g-f-leitura').click()">🖼 escolher da galeria</a></span>
-    </label>
+      <span class="tx"><b>Foto do horímetro / KM</b><span class="muted" id="tx-leitura">Opcional — se não está anotado na nota</span></span>
+    </div>
+    <div class="row fbtn">
+      <button type="button" class="btn btn-o" onclick="$('f-leitura').click()">📷 Tirar foto</button>
+      <button type="button" class="btn btn-c" onclick="$('g-f-leitura').click()">🖼 Galeria</button>
+    </div>
+    <input type="file" id="f-leitura" accept="image/*" capture="environment" style="display:none" onchange="fotoEscolhida('leitura',this)">
     <input type="file" id="g-f-leitura" accept="image/*" style="display:none" onchange="fotoEscolhida('leitura',this)">
     <label>Escreva como mandaria no grupo <span class="muted">(opcional)</span></label>
-    <input id="f-texto" placeholder="ex.: EH-50 4520h, resto no galão da obra" onblur="talvezLer()">
+    <input id="f-texto" placeholder="ex.: CB-05 441545 km · EH-50 120 L" onblur="talvezLer()">
+    <button type="button" class="btn-ditar" data-ditar="f-texto" style="display:none">🎤 Ditar</button>
     <div class="prog hide" id="prog"><i id="prog-i"></i></div>
     <div class="muted" id="prog-tx" style="margin-top:6px"></div>
     <div id="leitura-flags"></div>
@@ -1058,21 +1067,6 @@ input.ruim{border-color:#DC2626;background:#FEF2F2}
   </div>
 
   </div><!-- /sec-dados -->
-
-  <div class="card hide" id="card-galao">
-    <b style="color:#1A2A5E">⛽ Do galão para a máquina</b>
-    <div class="muted">Sem nota: abasteceu a máquina com diesel que já estava no galão.</div>
-    <div class="row">
-      <div><label>Galão</label><select id="g-galao"></select></div>
-      <div><label>Equipamento</label><select id="g-eq"></select></div>
-    </div>
-    <div class="row">
-      <div><label>Litros</label><input id="g-litros" inputmode="decimal" placeholder="0,0"></div>
-      <div><label>Horímetro / KM</label><input id="g-leitura" inputmode="decimal" placeholder="opcional"></div>
-    </div>
-    <button class="btn btn-o" onclick="salvarDoGalao()">💾 Registrar saída do galão</button>
-  </div>
-  <div class="muted" style="text-align:center;margin:6px 0"><a href="#" onclick="toggleGalao();return false" id="lk-galao">Abasteci do galão, sem nota →</a></div>
 
   <div id="f-resultado"></div>
 
@@ -1126,8 +1120,6 @@ async function iniciar(){
     CTX = await api('/operacional/api/abastecimentos/contexto');
     $('n-comb').innerHTML = '<option value="">— escolha —</option>'+CTX.combustiveis.map(c=>'<option value="'+c.codigo+'">'+esc(c.nome)+'</option>').join('');
     $('n-posto').innerHTML = '<option value="">— escolha o posto —</option>'+CTX.postos.map(p=>'<option value="'+p.id+'">'+esc(p.nome)+'</option>').join('')+'<option value="__novo">＋ Posto novo (não está na lista)</option>';
-    $('g-galao').innerHTML = CTX.galoes.map(g=>'<option value="'+g.id+'">'+esc(g.codigo)+' · '+fmt(g.saldo,1)+' L</option>').join('') || '<option value="">nenhum galão cadastrado</option>';
-    $('g-eq').innerHTML = '<option value="">— escolha —</option>'+CTX.frota.filter(e=>!ehGalao(e)).map(e=>'<option value="'+e.id+'">'+esc(e.codigo)+' — '+esc(e.descricao||'')+'</option>').join('');
     if(!$('itens').children.length){ addItem(localStorage.getItem('garra_abast_ultimo_eq')||''); }
     carregarHist();
   }catch(e){ toast('❌ '+e.message); }
@@ -1135,10 +1127,9 @@ async function iniciar(){
 
 function ehGalao(e){ return ((e.categoria||'').toLowerCase().indexOf('gal')===0) || e.galao===true; }
 function opcoesEquip(sel){
-  const g=CTX.frota.filter(ehGalao), m=CTX.frota.filter(e=>!ehGalao(e));
+  const m=CTX.frota.filter(e=>!ehGalao(e));
   let h='<option value="">— escolha —</option>';
   h+=m.map(e=>'<option value="'+e.id+'"'+(e.id===sel?' selected':'')+'>'+esc(e.codigo)+' — '+esc(e.descricao||'')+'</option>').join('');
-  if(g.length) h+='<optgroup label="Galões">'+g.map(e=>'<option value="'+e.id+'"'+(e.id===sel?' selected':'')+'>🛢 '+esc(e.codigo)+' — '+esc(e.descricao||'')+'</option>').join('')+'</optgroup>';
   return h;
 }
 
@@ -1316,22 +1307,6 @@ function limpar(){
   mostrar('sec-dados',false); mostrar('rodape',false); const lk=$('lk-manual'); if(lk) lk.style.display='';
 }
 
-// ── do galão ──
-function toggleGalao(){ const c=$('card-galao'); const on=c.classList.contains('hide'); mostrar('card-galao',on); $('lk-galao').textContent=on?'← Voltar para nota do posto':'Abasteci do galão, sem nota →'; }
-async function salvarDoGalao(){
-  const body={galao_id:$('g-galao').value, equipamento_id:$('g-eq').value, litros:num($('g-litros').value), leitura:num($('g-leitura').value)};
-  if(!body.galao_id||!body.equipamento_id||!body.litros){ toast('Galão, equipamento e litros são obrigatórios'); return; }
-  try{
-    const r=await api('/operacional/api/abastecimentos/do-galao',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
-    mostrarResultado({itens:[r],litros_total:r.litros});
-    toast('Saída registrada · galão '+esc(r.galao_codigo)+' com '+fmt(r.saldo_galao,1)+' L');
-    $('g-litros').value=''; $('g-leitura').value=''; ULTIMAS={};
-    CTX=await api('/operacional/api/abastecimentos/contexto');
-    $('g-galao').innerHTML=CTX.galoes.map(g=>'<option value="'+g.id+'"'+(g.id===body.galao_id?' selected':'')+'>'+esc(g.codigo)+' · '+fmt(g.saldo,1)+' L</option>').join('');
-    carregarHist();
-  }catch(e){ toast('❌ '+e.message); }
-}
-
 async function carregarHist(){
   try{
     const l=await api('/operacional/api/abastecimentos?limite=10');
@@ -1346,6 +1321,36 @@ async function carregarHist(){
     }).join(''):'<div class="muted">Nenhum registro ainda.</div>';
   }catch(e){}
 }
+
+
+// ── Ditado por voz (Web Speech, reconhecimento do próprio Android/Chrome) ──
+// Toca no 🎤, fala, o texto SOMA no campo (falar de novo completa, não apaga).
+// Sem suporte no navegador → botão nem aparece. Sem custo, sem chave.
+(function(){
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) return;
+  document.querySelectorAll('[data-ditar]').forEach(function(btn){
+    btn.style.display = '';
+    let rec = null, ouvindo = false;
+    btn.addEventListener('click', function(ev){
+      ev.preventDefault();
+      const alvo = document.getElementById(btn.dataset.ditar);
+      if (ouvindo) { try { rec.stop(); } catch(e){} return; }
+      rec = new SR(); rec.lang = 'pt-BR'; rec.interimResults = false; rec.continuous = true;
+      let base = alvo.value ? alvo.value.replace(/\s+$/, '') + ' ' : '';
+      rec.onresult = function(e){
+        let txt = '';
+        for (let i = e.resultIndex; i < e.results.length; i++)
+          if (e.results[i].isFinal) txt += e.results[i][0].transcript;
+        if (txt) { base = (base + txt).replace(/\s+/g, ' ') + ' '; alvo.value = base; alvo.dispatchEvent(new Event('input')); }
+      };
+      rec.onstart = function(){ ouvindo = true; btn.textContent = '🔴 Falando… tocar para parar'; btn.classList.add('gravando'); };
+      const parar = function(){ ouvindo = false; btn.textContent = '🎤 Ditar'; btn.classList.remove('gravando'); if (alvo.id === 'f-texto') talvezLer(); };
+      rec.onend = parar; rec.onerror = parar;
+      try { rec.start(); } catch(e){ parar(); }
+    });
+  });
+})();
 
 if (TOK) iniciar();
 </script></body></html>
