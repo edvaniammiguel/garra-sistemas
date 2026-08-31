@@ -371,6 +371,7 @@ input,select,textarea{font-family:inherit;outline:none;border:none}
     <button class="nav-btn" onclick="ir('Log')" style="display:none"><span class="nav-icon">🚗</span><span class="nav-label">Logística</span></button>
     <button class="nav-btn" onclick="ir('OC')" style="display:none"><span class="nav-icon">🛒</span><span class="nav-label">Compras</span></button>
     <button class="nav-btn" onclick="ir('OT')" style="display:none"><span class="nav-icon">📨</span><span class="nav-label">Pedir OT</span></button>
+    <button class="nav-btn" onclick="ir('AB')" style="display:none"><span class="nav-icon">⛽</span><span class="nav-label">Abastecer</span></button>
   </div>
 </div>
 
@@ -796,6 +797,11 @@ function ir(nome) {
     bottomNavs[5].classList.add('active');
     document.getElementById('app-modulo').textContent = 'Pedir OT';
     carregarIframeExterno('ot', '/manutencao/pedido');
+  } else if (nome === 'AB') {
+    document.getElementById('sec-ext').classList.add('active');
+    bottomNavs[6].classList.add('active');
+    document.getElementById('app-modulo').textContent = 'Abastecimento';
+    carregarIframeExterno('ab', '/abastecimento');
   }
 }
 
@@ -3004,6 +3010,7 @@ function aplicarPermissoesPerfil() {
     { aba: 3, id: 'checklist_logistica' },
     { aba: 4, id: 'compras_solicitar', ids: ['compras_solicitar','compras_aprovar','compras_ver_todas'] },
     { aba: 5, id: 'pedir_ot' },
+    { aba: 6, id: 'operacional_mobile' },
   ];
 
   // Padrão por perfil (usado quando permsDB não define o módulo)
@@ -3041,7 +3048,7 @@ function aplicarPermissoesPerfil() {
 function abrirAbaInicial() {
   if (!USUARIO) return;
   const navs = document.querySelectorAll('.bottom-nav .nav-btn');
-  const abas = ['Jard', 'Op', 'Check', 'Log', 'OC', 'OT'];
+  const abas = ['Jard', 'Op', 'Check', 'Log', 'OC', 'OT', 'AB'];
 
   // Veio do botão "Módulos" da jardinagem → NÃO reabrir jardinagem (evita loop)
   const veioDaJardinagem = new URLSearchParams(location.search).get('from') === 'jardinagem';
