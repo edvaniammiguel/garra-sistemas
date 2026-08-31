@@ -14,15 +14,16 @@ MODULOS_DISPONIVEIS = [
     {"id": "checklist_logistica", "label": "Logística (Checklist)", "desc": "Aba de carros de apoio dentro do Checklist"},
     {"id": "manutencao",          "label": "Manutenção Desktop",    "desc": "Módulo completo — frota, OTs, materiais (gestão)"},
     {"id": "pedir_ot",            "label": "Manutenção — Pedir OT", "desc": "Solicitar OT pelo mobile e acompanhar (mecânicos)"},
+    {"id": "abastecimento",       "label": "Abastecimento (mobile)", "desc": "Registrar abastecimento com fotos — leitura alimenta FMD/preventivas"},
 ]
 
 PERFIL_MODULOS_PADRAO = {
-    "admin":     ["admin_master","jardinagem_desktop","jardinagem_mobile","operacional_mobile","checklist","checklist_logistica"],
-    "gestor":    ["admin_master","jardinagem_desktop","operacional_mobile"],
+    "admin":     ["admin_master","jardinagem_desktop","jardinagem_mobile","operacional_mobile","checklist","checklist_logistica","abastecimento"],
+    "gestor":    ["admin_master","jardinagem_desktop","operacional_mobile","abastecimento"],
     "luana":     ["admin_master","jardinagem_desktop","operacional_mobile"],
-    "bruna":     ["admin_master","checklist","manutencao","pedir_ot"],
-    "operador":  ["operacional_mobile","checklist"],
-    "motorista": ["operacional_mobile","checklist"],
+    "bruna":     ["admin_master","checklist","manutencao","pedir_ot","abastecimento"],
+    "operador":  ["operacional_mobile","checklist","abastecimento"],
+    "motorista": ["operacional_mobile","checklist","abastecimento"],
     "campo":     ["jardinagem_mobile"],
 }
 
