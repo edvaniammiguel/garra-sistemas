@@ -409,6 +409,24 @@ _PROMPT_NOTA = (
     '"anotacoes":str|null,"confianca":"alta"|"media"|"baixa"}')
 
 
+def _json_tolerante(texto):
+    """O modelo às vezes devolve JSON com vírgula sobrando ou chave sem aspas.
+    Conserta o que dá antes de desistir — a leitura da nota não pode morrer
+    por uma vírgula."""
+    t = (texto or "").replace("```json", "").replace("```", "").strip()
+    a, b = t.find("{"), t.rfind("}")
+    if a >= 0 and b > a:
+        t = t[a:b + 1]
+    try:
+        return json.loads(t)
+    except json.JSONDecodeError:
+        pass
+    t2 = re.sub(r",\s*([}\]])", r"\1", t)                       # vírgula antes de } ou ]
+    t2 = re.sub(r'([{,]\s*)([A-Za-z_][A-Za-z0-9_]*)\s*:', r'\1"\2":', t2)  # chave sem aspas
+    t2 = t2.replace("\u201c", '"').replace("\u201d", '"')       # aspas tipográficas
+    return json.loads(t2)
+
+
 def _claude_ler(imagens, texto_livre):
     import requests as req_lib
     if not ANTHROPIC_API_KEY:
@@ -433,8 +451,7 @@ def _claude_ler(imagens, texto_livre):
         r.raise_for_status()
         texto = "".join(b.get("text", "") for b in r.json().get("content", [])
                         if b.get("type") == "text")
-        texto = texto.replace("```json", "").replace("```", "").strip()
-        return json.loads(texto)
+        return _json_tolerante(texto)
     except Exception as e:  # extração nunca derruba o registro manual
         return {"_erro": str(e)[:200]}
 
