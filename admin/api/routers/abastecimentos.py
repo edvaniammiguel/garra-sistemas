@@ -364,6 +364,14 @@ input.lido{border-color:#E8820C;background:#FFF7ED}
 #toast{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:#0F172A;color:#fff;padding:9px 16px;border-radius:8px;font-size:13px;display:none;z-index:99;max-width:92%}
 .hide{display:none}
 </style></head><body>
+<script>(function(){ try {
+  const q = new URLSearchParams(location.search);
+  const sso = q.get('sso');
+  if (sso && sso.length > 10) { localStorage.setItem('garra_tok_abast', sso); }
+  if (q.get('embedded') === '1') document.documentElement.classList.add('embedded');
+  if (sso || q.get('embedded')) history.replaceState(null, '', location.pathname);
+} catch(e) {} })();</script>
+<style>.embedded h1{display:none !important}.embedded body{padding-top:6px}</style>
 <h1>⛽ Abastecimento <span>Garra</span></h1>
 
 <div class="card" id="tela-login">
