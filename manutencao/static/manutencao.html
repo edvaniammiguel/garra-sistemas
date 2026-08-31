@@ -109,6 +109,12 @@ tr.sel td{background:#DBEAFE!important;color:#1A2A5E}
        max-height:86vh;overflow:auto;padding:18px 20px;font-size:12px}
 .mtab.off{opacity:.45;cursor:default}
 .modal.larga{max-width:1020px;width:92%;height:620px;max-height:88vh;display:flex;flex-direction:column}
+.mwtop{display:flex;align-items:center;gap:4px;flex-wrap:wrap;margin:6px 0 4px}
+.mwtop .sep{width:8px}.mwtop .cnt{font-family:ui-monospace,monospace;font-size:10px;padding:0 4px;color:#334155}
+.mwtop input{width:150px;padding:4px 6px;border:1px solid #CBD5E1;border-radius:6px;font-size:11px}
+.mwobj{display:flex;align-items:center;gap:8px;margin:2px 0 8px}
+.mwobj .lb{border:1px solid #CBD5E1;border-radius:6px;padding:3px 10px;font-size:11px;font-weight:700;color:#334155;background:#F8FAFC}
+.mwobj .vl{flex:1;border:1px solid #CBD5E1;border-radius:6px;padding:4px 8px;font-size:12px;color:#0F172A;background:#fff;font-weight:600}
 .modal.larga .otw-corpo{flex:1;overflow:auto;background:#fff;border:1px solid #E2E8F0;border-radius:6px}
 #otw-de,#otw-dt{display:none;position:absolute;top:30px;background:#fff;border:1px solid #CBD5E1;border-radius:6px;box-shadow:0 8px 24px rgba(0,0,0,.15);z-index:50;min-width:220px;max-height:260px;overflow:auto}
 #otw-de{left:118px}
@@ -1258,6 +1264,69 @@ function _pneuAlocar(rotulo){
   const sel = document.getElementById('sub-comp'); if (sel) sel.focus();
   mostrarToast('📍 Posição "'+rotulo+'" selecionada — escolha o pneu e clique Montar','ok');
 }
+// ── (31/08/2026) TOPO PADRÃO DAS JANELAS — réplica ManWinWin ─────────────
+// Barra: ➕ Novo · 🖨 Imprimir · ✕ Fechar | ⏮ ◀ n/N ▶ ⏭ | Procurar | Limpar.
+// Navega pelo MESMO conjunto que a lista de trás (equipamentos da Frota ou
+// artigos do Almoxarifado) sem fechar a janela — a função dona reabre com o
+// vizinho. Um só renderizador para todas as fichas: mudou aqui, mudou em todas.
+let _fichaNav = {lista:[], fn:null, i:-1, tipo:'equip'};
+let _pcNav = [];
+function _navEquipObjs(){ return (_mntEquipList && _mntEquipList.length) ? _mntEquipList : _semCache; }
+function fichaTopo(o){
+  const tipo = o.tipo || 'equip';
+  const objs = tipo === 'peca' ? _pcNav : _navEquipObjs();
+  const chave = tipo === 'peca' ? 'codigo' : 'id';
+  const lista = objs.map(x => String(x[chave]));
+  const i = lista.indexOf(String(o.id));
+  _fichaNav = {lista:lista, fn:o.fn, i:i, tipo:tipo};
+  const cnt = (i >= 0 ? (i+1) : '\u2013') + ' / ' + lista.length;
+  const fechar = "fichaFechar()";
+  return '<div style="display:flex;justify-content:space-between;align-items:center">'
+    + '<b style="font-size:14px;color:#1A2A5E">'+(o.icone||'')+' '+_esc(o.titulo||'')+'</b>'
+    + '<span style="cursor:pointer;font-size:18px" onclick="'+fechar+'">\u2715</span></div>'
+    + '<div class="mwtop">'
+    + (o.novo ? '<button class="btn" title="'+_esc(o.novoTitulo||'Novo')+'" onclick="'+o.novo+'">\u2795</button>' : '')
+    + (o.extra || '')
+    + '<button class="btn" title="Imprimir" onclick="fichaImprimir()">\ud83d\udda8</button>'
+    + '<button class="btn" title="Fechar" onclick="'+fechar+'">\u2715</button>'
+    + '<span class="sep"></span>'
+    + '<button class="btn" title="Primeiro" onclick="fichaIr(\'first\')">\u23ee</button>'
+    + '<button class="btn" title="Anterior" onclick="fichaIr(\'prev\')">\u25c0</button>'
+    + '<span class="cnt">'+cnt+'</span>'
+    + '<button class="btn" title="Pr\u00f3ximo" onclick="fichaIr(\'next\')">\u25b6</button>'
+    + '<button class="btn" title="\u00daltimo" onclick="fichaIr(\'last\')">\u23ed</button>'
+    + '<span class="sep"></span>'
+    + '<input id="mw-busca" placeholder="Procurar '+(tipo==='peca'?'artigo':'objecto')+'\u2026" onkeydown="fichaBuscar(event)">'
+    + '<button class="btn" title="Procurar" onclick="fichaBuscar()">\ud83d\udd0d</button>'
+    + '<button class="btn" style="margin-left:auto" onclick="fichaLimpar()">Limpar Filtro</button></div>'
+    + '<div class="mwobj"><span class="lb">'+(tipo==='peca'?'Artigo':'Objecto')+'</span>'
+    + '<span class="vl">'+_esc(o.codigo||'')+(o.descricao?' - '+_esc(o.descricao):'')+'</span></div>';
+}
+function fichaFechar(){ document.getElementById('eq-ficha').classList.remove('show'); document.querySelector('#eq-ficha .modal').classList.remove('larga'); }
+function fichaIr(onde){
+  const n = _fichaNav.lista.length; if (!_fichaNav.fn || !n) return;
+  const i = _fichaNav.i;
+  const j = onde === 'first' ? 0 : onde === 'last' ? n-1 : onde === 'prev' ? Math.max(0, i-1) : Math.min(n-1, i+1);
+  if (j === i) return;
+  const fn = window[_fichaNav.fn]; if (typeof fn === 'function') fn(_fichaNav.lista[j]);
+}
+function fichaBuscar(ev){
+  if (ev && ev.key && ev.key !== 'Enter') return;
+  const q = ((document.getElementById('mw-busca')||{}).value || '').trim().toLowerCase();
+  if (!q) return;
+  const objs = _fichaNav.tipo === 'peca' ? _pcNav : _navEquipObjs();
+  const hit = objs.find(x => (x.codigo||'').toLowerCase().indexOf(q) >= 0 || (x.descricao||'').toLowerCase().indexOf(q) >= 0);
+  if (!hit){ mostrarToast('Nada encontrado para "'+q+'"','warn'); return; }
+  const fn = window[_fichaNav.fn]; if (typeof fn === 'function') fn(_fichaNav.tipo === 'peca' ? hit.codigo : hit.id);
+}
+function fichaLimpar(){ const b = document.getElementById('mw-busca'); if (b) b.value = ''; }
+function fichaImprimir(){
+  const c = document.getElementById('eq-ficha-corpo'); if (!c) return;
+  const w = window.open('', '_blank'); if (!w){ mostrarToast('Bloqueador de pop-up impediu a impress\u00e3o','warn'); return; }
+  w.document.write('<html><head><meta charset="UTF-8"><title>Garra Sistemas</title><style>body{font-family:system-ui,sans-serif;font-size:11px;padding:16px;color:#0F172A}table{border-collapse:collapse;width:100%}th,td{border:1px solid #CBD5E1;padding:3px 5px;text-align:left}.r{text-align:right}.mono{font-family:ui-monospace,monospace}.mwtop,.btn,button,input,select,textarea{display:none!important}.mwobj{margin:4px 0 10px;font-weight:700}.muted{color:#64748B}</style></head><body>'+c.innerHTML+'</body></html>');
+  w.document.close(); w.focus(); setTimeout(()=>w.print(), 250);
+}
+
 async function equipSubsistemas(id){
   let r;
   try { r = await mntFetch('/manutencao/api/equipamentos/'+id+'/subsistemas'); }
@@ -1302,9 +1371,7 @@ async function equipSubsistemas(id){
   }
   document.querySelector('#eq-ficha .modal').classList.add('larga');
   document.getElementById('eq-ficha-corpo').innerHTML =
-    '<div style="display:flex;justify-content:space-between;align-items:center">'
-    + '<b style="font-size:14px;color:#1A2A5E">\ud83d\udede Subsistemas \u2014 '+_esc(eu.codigo)+' <span class="muted" style="font-weight:400;font-size:11px">'+_esc(eu.descricao||'')+'</span></b>'
-    + '<span style="cursor:pointer;font-size:18px" onclick="document.getElementById(\'eq-ficha\').classList.remove(\'show\')">\u2715</span></div>'
+    fichaTopo({icone:'\ud83d\udede', titulo:'Subsistemas / Montagem', codigo:eu.codigo, descricao:eu.descricao, id:id, fn:'equipSubsistemas'})
     + corpo;
   document.getElementById('eq-ficha').classList.add('show');
 }
@@ -1377,9 +1444,8 @@ async function equipAbastecimentos(id){
     + box('Janela', (res.n||0)+' abast.', res.janela_dias+' dias') + '</div>';
   document.querySelector('#eq-ficha .modal').classList.add('larga');
   document.getElementById('eq-ficha-corpo').innerHTML =
-    '<div style="display:flex;justify-content:space-between;align-items:center">'
-    + '<b style="font-size:14px;color:#1A2A5E">\u26fd Registo Abastecimentos \u2014 '+_esc(eq.codigo||'')+' <span class="muted" style="font-weight:400;font-size:11px">'+_esc(eq.descricao||'')+'</span></b>'
-    + '<span style="cursor:pointer;font-size:18px" onclick="document.getElementById(\'eq-ficha\').classList.remove(\'show\');document.querySelector(\'#eq-ficha .modal\').classList.remove(\'larga\')">\u2715</span></div>'
+    fichaTopo({icone:'\u26fd', titulo:'Registo Abastecimentos', codigo:eq.codigo, descricao:eq.descricao, id:id, fn:'equipAbastecimentos',
+               novo: galao ? null : "(document.getElementById('ab-litros')||{}).focus&&document.getElementById('ab-litros').focus()", novoTitulo:'Nova nota'})
     + '<div class="muted" style="font-size:10px;margin:4px 0 8px">A leitura do abastecimento entra no Registo de Funcionamento e no FMD \u2014 move a preventiva. Leitura divergente \u00e9 registrada mas n\u00e3o atualiza o equipamento. Rubrica herdada do combust\u00edvel (6.04.xx).</div>'
     + rodape
     + (galao ? '<div class="dsec">\ud83d\udee2 Gal\u00e3o \u2014 saldo '+fmtN((ctx.galoes.find(g=>String(g.id)===String(id))||{}).saldo,1)+' L</div>'
@@ -1449,11 +1515,10 @@ async function equipFuncionamento(id){
   catch(e){ mostrarToast('\u274c '+e.message,'warn'); return; }
   const un = (r.medicao === 'km') ? 'km' : 'h';
   const dd = s => s ? s.split('-').reverse().join('/') : '\u2014';
+  const eqF = _navEquipObjs().find(e => String(e.id) === String(id)) || {codigo:r.equipamento};
   document.querySelector('#eq-ficha .modal').classList.remove('larga');
   document.getElementById('eq-ficha-corpo').innerHTML =
-    '<div style="display:flex;justify-content:space-between;align-items:center">'
-    + '<b style="font-size:14px;color:#1A2A5E">\ud83d\udcc8 Registo Funcionamento \u2014 '+_esc(r.equipamento)+'</b>'
-    + '<span style="cursor:pointer;font-size:18px" onclick="document.getElementById(\'eq-ficha\').classList.remove(\'show\')">\u2715</span></div>'
+    fichaTopo({icone:'\ud83d\udcc8', titulo:'Registo Funcionamento', codigo:eqF.codigo||r.equipamento, descricao:eqF.descricao, id:id, fn:'equipFuncionamento'})
     + '<div style="display:flex;gap:14px;margin:8px 0;flex-wrap:wrap">'
     + '<div class="mfield" style="min-width:150px">\u00daltimo registo<div style="font-weight:800;color:#1A2A5E">'+(r.registos[0]?dd(r.registos[0].data)+' \u00b7 '+r.registos[0].leitura.toLocaleString('pt-BR')+' '+un:'\u2014')+'</div></div>'
     + '<div class="mfield" style="min-width:120px">FMD-R<div style="font-weight:800;color:'+(r.fmd_valido?'#1A2A5E':'#B45309')+'">'+(r.fmd_valido?r.fmd+' '+un+'/d':'\u2014 (m\u00edn. 4 registos)')+'</div></div>'
@@ -1473,9 +1538,7 @@ async function equipArtigos(id){
   const T = { saida:'\ud83d\udce4', aplicacao_direta:'\u26a1', entrada:'\u21a9' };
   document.querySelector('#eq-ficha .modal').classList.add('larga');
   document.getElementById('eq-ficha-corpo').innerHTML =
-    '<div style="display:flex;justify-content:space-between;align-items:center">'
-    + '<b style="font-size:14px;color:#1A2A5E">\ud83d\udd29 Artigos aplicados</b>'
-    + '<span style="cursor:pointer;font-size:18px" onclick="document.getElementById(\'eq-ficha\').classList.remove(\'show\')">\u2715</span></div>'
+    fichaTopo({icone:'\ud83d\udd29', titulo:'Artigos aplicados', codigo:(_navEquipObjs().find(e => String(e.id) === String(id))||{}).codigo, descricao:(_navEquipObjs().find(e => String(e.id) === String(id))||{}).descricao, id:id, fn:'equipArtigos'})
     + (r.itens.length
       ? '<div style="max-height:340px;overflow:auto;margin-top:6px"><table><thead><tr><th>Data</th><th></th><th>Pe\u00e7a</th><th>Descri\u00e7\u00e3o</th><th class="r">Qtd</th><th class="r">Custo un.</th><th class="r">Total</th><th>OT</th></tr></thead><tbody>'
         + r.itens.map(x=>'<tr><td>'+dd(x.data)+'</td><td>'+(T[x.tipo]||'')+'</td><td class="bold">'+_esc(x.peca_codigo)+'</td><td>'+_esc(x.peca_descricao||'')+'</td>'
@@ -2809,6 +2872,7 @@ async function carregarPecasReais(){
     if (q) qs.push('busca=' + encodeURIComponent(q));
     if (fam) qs.push('familia=' + encodeURIComponent(fam));
     const r = await mntFetch('/manutencao/api/pecas' + (qs.length ? '?' + qs.join('&') : ''));
+    _pcNav = (r.itens||[]).map(x => ({codigo:x.codigo, descricao:x.descricao||x.nome||''}));
     if (!r || !Array.isArray(r.itens)) throw new Error('Resposta inesperada do servidor');
     tb.innerHTML = r.itens.map(p => `<tr data-cod="${_esc(p.codigo)}" style="cursor:pointer" onclick="abrirPeca(this.dataset.cod)">
       <td class="bold">${_esc(p.codigo)}</td>
@@ -2868,10 +2932,8 @@ async function pecaAba(aba){
   const ABAS = [['ident','Identificação'],['carac','Características'],['arm','Armazéns'],['obs','Observações']];
   document.querySelector('#eq-ficha .modal').classList.remove('larga');
   document.getElementById('eq-ficha-corpo').innerHTML =
-    '<div style="display:flex;justify-content:space-between;align-items:center">'
-    + '<b style="font-size:14px;color:#1A2A5E">🔩 '+_esc(p.codigo)+' — '+_esc(p.descricao||'')+'</b>'
-    + '<span><button class="btn" style="margin-right:10px" data-c='+'"'+_esc(p.codigo)+'"'+' onclick="artJanela(this.dataset.c)">✏️ Editar cadastro</button>'
-    + '<span style="cursor:pointer;font-size:18px" onclick="document.getElementById(\'eq-ficha\').classList.remove(\'show\')">✕</span></span></div>'
+    fichaTopo({icone:'🔩', titulo:'Ficha do Artigo', codigo:p.codigo, descricao:p.descricao, id:p.codigo, fn:'abrirPeca', tipo:'peca',
+               extra:'<button class="btn" title="Editar cadastro" data-c="'+_esc(p.codigo)+'" onclick="artJanela(this.dataset.c)">✏️</button>'})
     + '<div class="pp-sub">Código do fabricante é a identidade — não se edita · custo médio: referência até o recebimento de OC alimentar sozinho</div>'
     + '<div class="mtabs" style="margin-top:6px">'
     + ABAS.map(([k,t]) => '<div class="mtab'+(k===aba?' on':'')+'" onclick="pecaAba(\''+k+'\')">'+t+'</div>').join('')
