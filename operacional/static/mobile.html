@@ -3010,17 +3010,17 @@ function aplicarPermissoesPerfil() {
     { aba: 3, id: 'checklist_logistica' },
     { aba: 4, id: 'compras_solicitar', ids: ['compras_solicitar','compras_aprovar','compras_ver_todas'] },
     { aba: 5, id: 'pedir_ot' },
-    { aba: 6, id: 'operacional_mobile' },
+    { aba: 6, id: 'abastecimento' },
   ];
 
   // Padrão por perfil (usado quando permsDB não define o módulo)
   const padrao = {
-    admin:     ['jardinagem_mobile','operacional_mobile','checklist','checklist_logistica','compras_solicitar'],
-    gestor:    ['jardinagem_mobile','operacional_mobile','checklist','checklist_logistica','compras_solicitar'],
+    admin:     ['jardinagem_mobile','operacional_mobile','checklist','checklist_logistica','compras_solicitar','abastecimento'],
+    gestor:    ['jardinagem_mobile','operacional_mobile','checklist','checklist_logistica','compras_solicitar','abastecimento'],
     luana:     ['jardinagem_mobile','operacional_mobile','checklist','compras_solicitar'],
-    bruna:     ['operacional_mobile','checklist','compras_solicitar','pedir_ot'],
-    operador:  ['operacional_mobile','checklist'],
-    motorista: ['operacional_mobile','checklist'],
+    bruna:     ['operacional_mobile','checklist','compras_solicitar','pedir_ot','abastecimento'],
+    operador:  ['operacional_mobile','checklist','abastecimento'],
+    motorista: ['operacional_mobile','checklist','abastecimento'],
     campo:     ['jardinagem_mobile'],
   };
 
