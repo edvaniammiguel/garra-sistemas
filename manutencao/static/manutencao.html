@@ -1331,88 +1331,118 @@ async function subDesmontar(compId, voltarPara){
 }
 /* ══ ABASTECIMENTOS do equipamento — lista + registro com fotos (30/08) ══ */
 let _abExtr = {};
+let _abCtx = null;
+async function _abContexto(){
+  if (_abCtx) return _abCtx;
+  try { _abCtx = await mntFetch('/operacional/api/abastecimentos/contexto'); } catch(e){ _abCtx = {frota:[],galoes:[],combustiveis:[],postos:[]}; }
+  return _abCtx;
+}
 async function equipAbastecimentos(id){
   const eq = _mntEquipList.find(e => String(e.id) === String(id)) || (_semCache.find(e => String(e.id) === String(id))) || {};
-  let lista = [];
-  try { lista = await mntFetch('/operacional/api/abastecimentos?equipamento_id='+id+'&limite=60'); }
-  catch(e){ mostrarToast('\u274c '+e.message,'warn'); return; }
+  let lista = [], res = {};
+  try {
+    const ctx = await _abContexto();
+    [lista, res] = await Promise.all([
+      mntFetch('/operacional/api/abastecimentos?equipamento_id='+id+'&limite=120'),
+      mntFetch('/operacional/api/abastecimentos/resumo/'+id)]);
+    _abCtx = ctx;
+  } catch(e){ mostrarToast('\u274c '+e.message,'warn'); return; }
   _abExtr = {};
-  const un = eq.medicao === 'km' ? 'km' : 'h';
+  const galao = (eq.categoria||'').toLowerCase().indexOf('gal') === 0;
+  const un = eq.medicao === 'km' ? 'KM' : 'H';
   const dd = v => { try { return new Date(v).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',year:'2-digit',hour:'2-digit',minute:'2-digit'}); } catch(e){ return '\u2014'; } };
-  const fmtN = v => v == null ? '\u2014' : Number(v).toLocaleString('pt-BR');
+  const fmtN = (v,d) => v == null ? '\u2014' : Number(v).toLocaleString('pt-BR',{minimumFractionDigits:d==null?0:d,maximumFractionDigits:d==null?2:d});
   const FONTE = {digitada:'digitada', foto:'\ud83d\udcf7 foto', ultima:'\u00faltima conhecida', equipamento:'cadastro'};
   const linhas = lista.map(a =>
-    '<tr><td>'+dd(a.data)+'</td><td class="r mono">'+fmtN(a.litros)+'</td><td class="r mono">'+(a.valor_total!=null?'R$ '+fmtN(a.valor_total):'\u2014')+'</td>'
-    + '<td class="r mono">'+fmtN(a.leitura)+' '+un+'</td><td class="muted" style="font-size:10px">'+_esc(FONTE[a.leitura_fonte]||a.leitura_fonte||'\u2014')+'</td>'
-    + '<td>'+(a.divergencia_leitura?'<span class="chip pr" title="Leitura menor que a \u00faltima conhecida \u2014 cadastro n\u00e3o atualizado">\u26a0 leitura</span> ':'')+(a.divergencia_placa?'<span class="chip nr" title="Placa da foto \u2260 equipamento">\u26a0 placa</span>':'')+'</td>'
+    '<tr><td class="mono" style="font-size:10px">'+_esc(a.numero_cupom||(a.origem==='galao'?'do '+(a.galao_codigo||'gal\u00e3o'):'\u2014'))+'</td>'
+    + '<td>'+_esc(a.combustivel_nome||a.combustivel||'\u2014')+'</td><td>'+dd(a.data)+'</td>'
+    + '<td class="r mono">'+(a.destino_tipo==='galao'?'\u2014':fmtN(a.leitura))+'</td><td class="muted" style="font-size:10px">'+(a.destino_tipo==='galao'?'':un)+'</td>'
+    + '<td class="r mono">'+fmtN(a.litros,2)+'</td><td class="muted" style="font-size:10px">LT</td>'
+    + '<td class="r mono">'+(a.valor_total!=null?fmtN(a.valor_total,2):'\u2014')+'</td>'
+    + '<td class="muted" style="font-size:10px">'+_esc(a.posto||'')+'</td><td class="muted" style="font-size:10px">'+_esc(a.centro_custo||'')+'</td><td class="mono" style="font-size:10px">'+_esc(a.rubrica||'')+'</td>'
+    + '<td class="r mono" style="font-size:10px">'+(a.consumo_medio!=null?fmtN(a.consumo_medio,eq.medicao==='km'?1:2):'')+'</td>'
+    + '<td style="font-size:10px">'+(a.divergencia_leitura?'<span class="chip pr" title="Leitura menor que a \u00faltima conhecida \u2014 cadastro n\u00e3o atualizado">\u26a0 leitura</span> ':'')
+      +(a.alerta_consumo?'<span class="chip nr" title="Consumo acima da pr\u00f3pria m\u00e9dia">\ud83d\udd25 consumo</span> ':'')
+      +(a.sem_funcionamento?'<span class="chip pr" title="Sem parte di\u00e1ria/checklist desde o abastecimento anterior">\u26a0 sem funcionamento</span> ':'')
+      +(a.divergencia_placa?'<span class="chip nr">\u26a0 placa</span>':'')+'<span class="muted"> '+_esc(FONTE[a.leitura_fonte]||'')+'</span></td>'
     + '<td class="muted" style="font-size:10px">'+_esc(a.usuario_nome||'')+'</td></tr>').join('');
   const litrosTot = lista.reduce((t,a)=>t+(a.litros||0),0);
+  const ctx = _abCtx;
+  const optPostos = '<option value="">\u2014 posto \u2014</option>'+(ctx.postos||[]).map(p=>'<option value="'+p.id+'">'+_esc(p.nome)+'</option>').join('');
+  const optComb = '<option value="">\u2014 combust\u00edvel \u2014</option>'+(ctx.combustiveis||[]).map(c=>'<option value="'+c.codigo+'">'+_esc(c.nome)+'</option>').join('');
+  const box = (t,v,u) => '<div style="flex:1;min-width:120px;border:1px solid #E2E8F0;border-radius:8px;padding:6px 10px"><div class="muted" style="font-size:10px;font-weight:700">'+t+'</div><div class="mono" style="font-size:14px;color:#1A2A5E">'+v+' <span class="muted" style="font-size:10px">'+(u||'')+'</span></div></div>';
+  const rodape = galao ? '' : '<div style="display:flex;gap:8px;flex-wrap:wrap;margin:8px 0">'
+    + box('\u00daltimo Registo', res.ultimo_registo?dd(res.ultimo_registo.data)+' \u00b7 '+fmtN(res.ultimo_registo.leitura):'\u2014', un)
+    + box('FMD-R', fmtN(res.fmd_r,2), res.unidade_fmd) + box('CMD-R', fmtN(res.cmd_r,2), res.unidade_cmd) + box('Dist\u00e2ncia', fmtN(res.distancia,2), res.unidade_dist)
+    + box('Janela', (res.n||0)+' abast.', res.janela_dias+' dias') + '</div>';
   document.querySelector('#eq-ficha .modal').classList.add('larga');
   document.getElementById('eq-ficha-corpo').innerHTML =
     '<div style="display:flex;justify-content:space-between;align-items:center">'
-    + '<b style="font-size:14px;color:#1A2A5E">\u26fd Abastecimentos \u2014 '+_esc(eq.codigo||'')+' <span class="muted" style="font-weight:400;font-size:11px">'+_esc(eq.descricao||'')+'</span></b>'
+    + '<b style="font-size:14px;color:#1A2A5E">\u26fd Registo Abastecimentos \u2014 '+_esc(eq.codigo||'')+' <span class="muted" style="font-weight:400;font-size:11px">'+_esc(eq.descricao||'')+'</span></b>'
     + '<span style="cursor:pointer;font-size:18px" onclick="document.getElementById(\'eq-ficha\').classList.remove(\'show\');document.querySelector(\'#eq-ficha .modal\').classList.remove(\'larga\')">\u2715</span></div>'
-    + '<div class="muted" style="font-size:10px;margin:4px 0 8px">A leitura do abastecimento entra no Registo de Funcionamento e no FMD \u2014 move a preventiva. Leitura divergente \u00e9 registrada mas n\u00e3o atualiza o equipamento.</div>'
-    + '<div class="dsec">\u2795 Registrar abastecimento</div>'
+    + '<div class="muted" style="font-size:10px;margin:4px 0 8px">A leitura do abastecimento entra no Registo de Funcionamento e no FMD \u2014 move a preventiva. Leitura divergente \u00e9 registrada mas n\u00e3o atualiza o equipamento. Rubrica herdada do combust\u00edvel (6.04.xx).</div>'
+    + rodape
+    + (galao ? '<div class="dsec">\ud83d\udee2 Gal\u00e3o \u2014 saldo '+fmtN((ctx.galoes.find(g=>String(g.id)===String(id))||{}).saldo,1)+' L</div>'
+      : '<div class="dsec">\u2795 Registrar nota (um equipamento) <span class="muted" style="font-weight:400;font-size:10px">\u2014 rateio entre v\u00e1rios: app de campo \u26fd</span></div>'
     + '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;padding:6px 0">'
-    + '<div class="mfield" style="min-width:150px">\ud83d\udcf7 Painel (hor\u00edmetro/KM)<input type="file" id="ab-f-painel" accept="image/*" style="font-size:10px"></div>'
-    + '<div class="mfield" style="min-width:150px">\ud83d\udcf7 Bomba (litros/valor)<input type="file" id="ab-f-bomba" accept="image/*" style="font-size:10px"></div>'
-    + '<button class="btn" onclick="abLerFotos()">\ud83d\udd0d Ler fotos</button>'
-    + '<div class="mfield" style="width:90px">Litros<input id="ab-litros" inputmode="decimal" placeholder="ex.: 180,5"></div>'
-    + '<div class="mfield" style="width:110px">Valor total (R$)<input id="ab-valor" inputmode="decimal" placeholder="ex.: 1080,00"></div>'
-    + '<div class="mfield" style="width:130px">Leitura ('+un+')<input id="ab-leitura" inputmode="decimal" placeholder="vazio = foto/\u00faltima"></div>'
-    + '<div class="mfield" style="min-width:160px;flex:1">Observa\u00e7\u00e3o<input id="ab-obs" placeholder="opcional"></div>'
-    + '<button class="btn p" onclick="abSalvar(\''+id+'\')">\ud83d\udcbe Registrar</button></div>'
-    + '<div class="dsec" style="margin-top:8px">Hist\u00f3rico <span class="muted" style="font-weight:400;font-size:10px">'+lista.length+' registro(s) \u00b7 '+fmtN(Math.round(litrosTot))+' L</span></div>'
-    + '<div style="max-height:320px;overflow:auto"><table><thead><tr><th>Data</th><th class="r">Litros</th><th class="r">Valor</th><th class="r">Leitura</th><th>Fonte</th><th>Alertas</th><th>Quem</th></tr></thead><tbody>'
-    + (linhas || '<tr><td colspan="7" class="muted" style="padding:10px">Nenhum abastecimento registrado ainda.</td></tr>')
+    + '<div class="mfield" style="min-width:150px">\ud83e\uddfe Foto da nota<input type="file" id="ab-f-nota" accept="image/*" style="font-size:10px"></div>'
+    + '<button class="btn" onclick="abLerFotos()">\ud83d\udd0d Ler nota</button>'
+    + '<div class="mfield" style="min-width:150px">Posto<select id="ab-posto">'+optPostos+'</select></div>'
+    + '<div class="mfield" style="width:90px">Cupom<input id="ab-cupom" placeholder="Doc."></div>'
+    + '<div class="mfield" style="width:120px">Data/hora<input id="ab-data" placeholder="dd/mm/aaaa hh:mm"></div>'
+    + '<div class="mfield" style="min-width:130px">Combust\u00edvel<select id="ab-comb">'+optComb+'</select></div>'
+    + '<div class="mfield" style="width:80px">Litros<input id="ab-litros" inputmode="decimal" placeholder="0,00"></div>'
+    + '<div class="mfield" style="width:80px">R$/L<input id="ab-preco" inputmode="decimal" placeholder="0,000"></div>'
+    + '<div class="mfield" style="width:90px">Valor<input id="ab-valor" inputmode="decimal" placeholder="0,00"></div>'
+    + '<div class="mfield" style="width:110px">Leitura ('+un+')<input id="ab-leitura" inputmode="decimal" placeholder="vazio = \u00faltima"></div>'
+    + '<button class="btn p" onclick="abSalvar(\''+id+'\')">\ud83d\udcbe Registrar</button></div>')
+    + '<div class="dsec" style="margin-top:8px">Registos <span class="muted" style="font-weight:400;font-size:10px">'+lista.length+' \u00b7 '+fmtN(Math.round(litrosTot))+' L</span></div>'
+    + '<div style="max-height:320px;overflow:auto"><table><thead><tr><th>Doc.</th><th>Produto</th><th>Data</th><th class="r">Registo</th><th>UN</th><th class="r">Quant.</th><th>UN</th><th class="r">Custo</th><th>Posto</th><th>Entidade</th><th>Rubrica</th><th class="r">'+(eq.medicao==='km'?'L/100km':'L/h')+'</th><th>Alertas</th><th>Quem</th></tr></thead><tbody>'
+    + (linhas || '<tr><td colspan="14" class="muted" style="padding:10px">Nenhum abastecimento registrado ainda.</td></tr>')
     + '</tbody></table></div>';
   document.getElementById('eq-ficha').classList.add('show');
 }
 async function abLerFotos(){
-  const fp = document.getElementById('ab-f-painel').files[0];
-  const fb = document.getElementById('ab-f-bomba').files[0];
-  if (!fp && !fb){ mostrarToast('Escolha ao menos uma foto','warn'); return; }
-  mostrarToast('\ud83d\udd0d Lendo fotos\u2026','ok');
-  const fd = new FormData();
-  if (fp) fd.append('foto_painel', fp);
-  if (fb) fd.append('foto_bomba', fb);
+  const fn = document.getElementById('ab-f-nota').files[0];
+  if (!fn){ mostrarToast('Escolha a foto da nota','warn'); return; }
+  mostrarToast('\ud83d\udd0d Lendo nota\u2026','ok');
+  const fd = new FormData(); fd.append('foto_nota', fn);
   try {
     const r = await mntUpload('/operacional/api/abastecimentos/extrair', fd);
     _abExtr = r || {};
-    const lido = [];
-    const marca = (idc, v) => { const c = document.getElementById(idc); if (c && v != null){ c.value = v; c.style.borderColor = '#E8820C'; c.style.background = '#FFF7ED'; } };
-    if (r.painel && r.painel.leitura != null){ marca('ab-leitura', r.painel.leitura); lido.push('leitura '+r.painel.leitura); }
-    if (r.painel && r.painel._erro) lido.push('painel: '+r.painel._erro);
-    if (r.bomba && r.bomba.litros != null){ marca('ab-litros', r.bomba.litros); lido.push(r.bomba.litros+' L'); }
-    if (r.bomba && r.bomba.valor != null){ marca('ab-valor', r.bomba.valor); lido.push('R$ '+r.bomba.valor); }
-    if (r.bomba && r.bomba._erro) lido.push('bomba: '+r.bomba._erro);
-    mostrarToast(lido.length ? '\ud83d\udcd6 Lido: '+lido.join(' \u00b7 ')+' \u2014 confira antes de registrar' : 'Nada leg\u00edvel \u2014 preencha manual','ok');
+    const marca = (idc, v) => { const c = document.getElementById(idc); if (c && v != null && v !== ''){ c.value = (typeof v === 'number') ? String(v).replace('.',',') : v; c.style.borderColor = '#E8820C'; c.style.background = '#FFF7ED'; } };
+    if (r.posto && r.posto.fornecedor_id) marca('ab-posto', r.posto.fornecedor_id);
+    marca('ab-cupom', r.cupom); marca('ab-data', r.data_hora); marca('ab-comb', r.combustivel);
+    marca('ab-litros', r.litros); marca('ab-preco', r.preco_litro); marca('ab-valor', r.valor_total);
+    const it = (r.itens||[]).find(i => i.leitura != null); if (it) marca('ab-leitura', it.leitura);
+    const avisos = [];
+    if (r.posto && !r.posto.fornecedor_id && r.posto.nome_lido) avisos.push('posto "'+r.posto.nome_lido+'" n\u00e3o est\u00e1 no cadastro \u2014 cadastre em Fornecedores ou use o app de campo');
+    if (r.nao_casados && r.nao_casados.length) avisos.push('identificador(es) n\u00e3o achado(s): '+r.nao_casados.join(', '));
+    if (r.erro) avisos.push('leitura autom\u00e1tica indispon\u00edvel: '+r.erro);
+    mostrarToast(avisos.length ? '\u26a0 '+avisos.join(' \u00b7 ') : '\ud83d\udcd6 Lido \u2014 confira os campos em laranja', avisos.length?'warn':'ok');
   } catch(e){ mostrarToast('\u274c '+e.message,'warn'); }
 }
 async function abSalvar(id){
   const v = i => (document.getElementById(i)||{}).value || null;
-  const corpo = {
-    equipamento_id: id, litros: v('ab-litros'), valor_total: v('ab-valor'),
-    leitura_digitada: v('ab-leitura'), observacao: v('ab-obs'),
-    leitura_foto: _abExtr.painel ? _abExtr.painel.leitura : null,
-    litros_foto: _abExtr.bomba ? _abExtr.bomba.litros : null,
-    valor_foto: _abExtr.bomba ? _abExtr.bomba.valor : null,
-    placa_foto: _abExtr.painel ? _abExtr.painel.placa : null,
-    foto_painel: _abExtr.paths ? _abExtr.paths.painel : null,
-    foto_bomba: _abExtr.paths ? _abExtr.paths.bomba : null
-  };
-  if (_abExtr.painel && _abExtr.painel.leitura != null && String(corpo.leitura_digitada) === String(_abExtr.painel.leitura))
-    corpo.leitura_digitada = null;   // valor lido da foto n\u00e3o vira "digitado" por baixo dos panos
-  if (!corpo.litros && !corpo.leitura_digitada && corpo.leitura_foto == null){ mostrarToast('Informe litros ou leitura','warn'); return; }
+  const numBR = s => { if (s==null||s==='') return null; s=String(s).replace(/[^0-9,\.\-]/g,''); if (s.indexOf(',')>=0) s=s.replace(/\./g,'').replace(',','.'); else if (/^\d{1,3}(\.\d{3})+$/.test(s)) s=s.replace(/\./g,''); const n=parseFloat(s); return isNaN(n)?null:n; };
+  const litros = numBR(v('ab-litros'));
+  if (!v('ab-comb')){ mostrarToast('Escolha o combust\u00edvel','warn'); return; }
+  if (!litros){ mostrarToast('Informe os litros','warn'); return; }
+  const corpo = { nota: { numero_cupom: v('ab-cupom'), data_hora: v('ab-data'), combustivel: v('ab-comb'), fornecedor_id: v('ab-posto'),
+      litros_total: litros, preco_litro: numBR(v('ab-preco')), valor_total: numBR(v('ab-valor')),
+      foto_nota: _abExtr.paths ? _abExtr.paths.nota : null, bruto: _abExtr.bruto || null },
+    itens: [{ equipamento_id: id, litros: litros, leitura: numBR(v('ab-leitura')) }] };
   try {
-    const r = await mntFetch('/operacional/api/abastecimentos', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(corpo)});
-    mostrarToast('\u2705 Abastecimento registrado'+(r.leitura!=null?' \u00b7 leitura '+Number(r.leitura).toLocaleString('pt-BR'):'')+(r.divergencia_leitura?' \u26a0 leitura divergente':'')+(r.divergencia_placa?' \u26a0 placa':''),'ok');
+    const r = await mntFetch('/operacional/api/abastecimentos/nota', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(corpo)});
+    const it = (r.itens||[])[0] || {};
+    mostrarToast('\u2705 Registrado'+(r.cupom?' \u00b7 cupom '+r.cupom:'')+(it.leitura!=null?' \u00b7 leitura '+Number(it.leitura).toLocaleString('pt-BR'):'')
+      +(it.consumo_medio!=null?' \u00b7 '+Number(it.consumo_medio).toLocaleString('pt-BR')+(it.medicao==='km'?' L/100km':' L/h'):'')
+      +(it.divergencia_leitura?' \u26a0 leitura divergente':'')+(it.alerta_consumo?' \ud83d\udd25 consumo acima da m\u00e9dia':'')+(it.sem_funcionamento?' \u26a0 sem funcionamento no per\u00edodo':''),'ok');
+    _abCtx = null;
     equipAbastecimentos(id);
     carregarSemaforosReais();
   } catch(e){ mostrarToast('\u274c '+e.message,'warn'); }
 }
-
 async function equipFuncionamento(id){
   let r;
   try { r = await mntFetch('/manutencao/api/equipamentos/'+id+'/funcionamento'); }
@@ -1678,9 +1708,6 @@ function pickerEscolhe(id){
   const item = _pickerItens.find(x => String(x.id) === String(id));
   document.getElementById('picker').classList.remove('show');
   if (_pickerCb && item) _pickerCb(item);
-}
-function pickerLimpaCampo(cb){
-  if (cb) cb({id:'', label:''});
 }
 async function abrirNovaOT(equipId, modelo){
   if (!_mntEquipList.length) await carregarEquipReais();
