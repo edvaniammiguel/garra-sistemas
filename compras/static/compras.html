@@ -115,6 +115,8 @@ header .badge-fila{background:var(--red);border-radius:99px;padding:1px 8px;font
 </head>
 <body>
 
+<script>(function(){ if (new URLSearchParams(location.search).get('embedded')==='1') document.documentElement.classList.add('embedded'); })();</script>
+<style>.embedded header{display:none !important}</style>
 <header>
   <button class="voltar" onclick="voltar()">←</button>
   <b>🛒 Compras</b>
