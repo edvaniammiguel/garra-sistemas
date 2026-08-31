@@ -110,8 +110,10 @@ _OT_COLS_OK = False
 _LEITURAS_OK = False
 
 async def _garantir_leituras():
-    """(30/08/2026) Fonte ÚNICA de leituras do equipamento: partes diárias do
-    Operacional + abastecimentos sadios (sem divergência). Consumida pelo FMD
+    """(30/08→31/08/2026) Fonte ÚNICA de leituras do equipamento: partes
+    diárias do Operacional + abastecimentos sadios (sem divergência, destino
+    equipamento) + checklist (meta.km/horimetro casado pelo código da frota;
+    depende de operacional.f_num_br criada no DDL do abastecimento). Consumida pelo FMD
     e pelo Registo Funcionamento — a leitura da bomba passa a mover a
     preventiva, como no ManWinWin. View idempotente; viaja no código."""
     global _LEITURAS_OK
@@ -119,7 +121,7 @@ async def _garantir_leituras():
         return
     from routers.abastecimentos import _ddl as _ddl_abast
     await _ddl_abast()
-    await ajard_query("""
+    _sql_completa = """
         CREATE OR REPLACE VIEW operacional.v_leituras AS
         SELECT equipamento_id, data,
                GREATEST(COALESCE(horimetro_final,0), COALESCE(km_final,0)) AS leitura,
@@ -131,7 +133,37 @@ async def _garantir_leituras():
           FROM operacional.abastecimentos
          WHERE ativo = true AND leitura IS NOT NULL
            AND COALESCE(divergencia_leitura, false) = false
-    """, fetch="none")
+           AND COALESCE(destino_tipo,'equipamento') = 'equipamento'
+        UNION ALL
+        SELECT e.id AS equipamento_id, c.enviado_em AS data,
+               operacional.f_num_br(COALESCE(m.j->>'km', m.j->>'horimetro')) AS leitura,
+               'checklist'::text AS fonte
+          FROM checklist.envios c
+          CROSS JOIN LATERAL (SELECT c.meta::jsonb AS j) m
+          JOIN operacional.equipamentos e
+            ON upper(trim(e.codigo)) = upper(trim(COALESCE(m.j->>'veiculo', m.j->>'identificacao', m.j->>'equipamento')))
+         WHERE operacional.f_num_br(COALESCE(m.j->>'km', m.j->>'horimetro')) > 0
+    """
+    _sql_base = """
+        CREATE OR REPLACE VIEW operacional.v_leituras AS
+        SELECT equipamento_id, data,
+               GREATEST(COALESCE(horimetro_final,0), COALESCE(km_final,0)) AS leitura,
+               'parte'::text AS fonte
+          FROM operacional.partes_diarias
+         WHERE COALESCE(ativo, true) = true
+        UNION ALL
+        SELECT equipamento_id, data, leitura, 'abastecimento'::text AS fonte
+          FROM operacional.abastecimentos
+         WHERE ativo = true AND leitura IS NOT NULL
+           AND COALESCE(divergencia_leitura, false) = false
+           AND COALESCE(destino_tipo,'equipamento') = 'equipamento'
+    """
+    try:
+        await ajard_query(_sql_completa, fetch="none")
+    except Exception:
+        # checklist.envios ausente/ilegível neste ambiente: a fonte única não pode
+        # cair por causa de uma das fontes — nasce com partes + abastecimentos.
+        await ajard_query(_sql_base, fetch="none")
     _LEITURAS_OK = True
 
 
@@ -1278,6 +1310,7 @@ _DOMINIOS_PARAM = {
     "periodos": "manutencao.periodos",
     "tipos-ferramenta": "manutencao.tipos_ferramenta",
     "rubricas": "manutencao.rubricas",
+    "combustiveis": "manutencao.combustiveis",
 }
 
 _DOM_OK = False
@@ -1313,10 +1346,21 @@ async def _garantir_biblioteca():
             codigo TEXT PRIMARY KEY, nome TEXT, ativo BOOLEAN DEFAULT true)""", fetch="none")
     await ajard_query("""
         INSERT INTO manutencao.rubricas (codigo, nome) VALUES
-          ('1','Mão de Obra'), ('1.01','Pessoal interno'), ('1.03','Pessoal externo'),
-          ('2','Peças e consumíveis aplicados'), ('2.01','Saída armazém - consumo'),
-          ('2.02','Saída armazém - sobressalentes'), ('2.03','Saída armazém - lubrificantes'),
-          ('3','Serviços aplicados'), ('3.01','Aquisição de serviços')
+          ('1','Mão de Obra'), ('1.01','Pessoal interno'), ('1.02','Pessoal produção'), ('1.03','Pessoal externo'),
+          ('2','Peças e consumíveis aplicados'),
+          ('2.01','Saída armazém - mater.consumo'), ('2.02','Saída armazém - sobressalentes'), ('2.03','Saída armazém - lubrificantes'),
+          ('2.04','Aplicação directa - mat.consumo'), ('2.05','Aplica.directa - sobressalente'), ('2.06','Aplica.directa - lubrificantes'),
+          ('3','Serviços aplicados'), ('3.01','Aquisição serviços'), ('3.02','Contratos manutenção'),
+          ('4','Estrutura depart. manutenção'),
+          ('4.01','Salá. + encargos pess.directo'), ('4.02','Salá. + encarg. pess.indirecto'), ('4.03','Ferramentas'),
+          ('4.04','Energia e fluídos p/ depto.'), ('4.05','Funcionamento (geral)'),
+          ('5','Aquisição materiais p/ armazém'),
+          ('5.01','Entradas armazém mat.consumo'), ('5.02','Entradas armaz.sobressalentes'), ('5.03','Entradas armz. lubrificantes'),
+          ('6','Combustível, energia e fluídos'),
+          ('6.01','Electricidade'), ('6.02','Gás'), ('6.03','Água'), ('6.04','Combustíveis'),
+          ('6.04.01','Óleo Diesel'), ('6.04.02','Gasolina'), ('6.04.03','Etanol'),
+          ('7','Custo padrão de referência'), ('7.01','Custos indisponibilidade'),
+          ('8','Funcionário'), ('8.01','Funcionário ativo'), ('8.02','Funcionário inativo')
         ON CONFLICT DO NOTHING""", fetch="none")
     await ajard_query("""
         CREATE TABLE IF NOT EXISTS manutencao.biblioteca_preparacoes (
@@ -1523,6 +1567,8 @@ async def editar_dominio(dominio: str, codigo: str, request: Request, payload=De
         sets.append("nome=%s"); params.append(d["nome"].strip())
     if "ativo" in d:
         sets.append("ativo=%s"); params.append(bool(d["ativo"]))
+    if "rubrica" in d and "combustiveis" in tabela:
+        sets.append("rubrica=%s"); params.append((d.get("rubrica") or "").strip() or None)
     if not sets:
         raise HTTPException(status_code=400, detail="Nada a alterar")
     params.append(codigo)

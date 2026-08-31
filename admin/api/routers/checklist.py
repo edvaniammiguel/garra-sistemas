@@ -86,6 +86,34 @@ async def salvar_envio(e: EnvioCreate, db=Depends(get_db), _auth=Depends(verific
         "UPDATE public.usuarios_garra SET pts=pts+$1, total_envios=total_envios+1, atualizado_em=NOW() WHERE login=$2",
         e.pts, e.usuario_login
     )
+    # ── (31/08/2026) LEITURA DO CHECKLIST → CADASTRO DA FROTA ──────────
+    # Caminhão só manda KM na hora do checklist: é a fonte principal de
+    # leitura dele. Atualiza km_atual/horimetro_atual do equipamento (casado
+    # pelo código), só avança — nunca recua. A v_leituras já lê o meta
+    # direto; isto mantém o cadastro (semáforo/preventiva) em dia na hora.
+    # Falha aqui é engolida: o envio é sagrado.
+    try:
+        _m = e.meta if isinstance(e.meta, dict) else {}
+        _ident = str(_m.get("veiculo") or _m.get("identificacao") or _m.get("equipamento") or "").strip()
+        _bruto = _m.get("km") if _m.get("km") not in (None, "") else _m.get("horimetro")
+        if _ident and _bruto not in (None, ""):
+            _txt = str(_bruto).strip()
+            _txt = "".join(ch for ch in _txt if ch.isdigit() or ch in ",.")
+            if "," in _txt:
+                _txt = _txt.replace(".", "").replace(",", ".")
+            elif _txt.count(".") >= 1 and all(len(p) == 3 for p in _txt.split(".")[1:]):
+                _txt = _txt.replace(".", "")
+            _val = float(_txt) if _txt else None
+            if _val and _val > 0:
+                await db.execute(
+                    "UPDATE operacional.equipamentos "
+                    "   SET km_atual = CASE WHEN medicao='km' AND COALESCE(km_atual,0) < $1 THEN $1 ELSE km_atual END, "
+                    "       horimetro_atual = CASE WHEN COALESCE(medicao,'') <> 'km' AND COALESCE(horimetro_atual,0) < $1 THEN $1 ELSE horimetro_atual END, "
+                    "       atualizado_em = now() "
+                    " WHERE upper(trim(codigo)) = upper($2) AND ativo=TRUE",
+                    _val, _ident)
+    except Exception:
+        pass
     # ── (28/08/2026) NC → PEDIDO DE MANUTENÇÃO automático ──────────────
     # Checklist reprovou → nasce um Pedido na triagem da Bruna (via
     # 'checklist', nc_ref = envio). O envio é sagrado: qualquer falha aqui
