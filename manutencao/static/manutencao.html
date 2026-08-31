@@ -1469,6 +1469,7 @@ async function equipAbastecimentos(id){
   document.getElementById('eq-ficha').classList.add('show');
 }
 async function abLerFotos(){
+  const eqSel = _navEquipObjs().find(e => String(e.id) === String((_fichaNav.lista||[])[_fichaNav.i])) || {};
   const fn = document.getElementById('ab-f-nota').files[0];
   if (!fn){ mostrarToast('Escolha a foto da nota','warn'); return; }
   mostrarToast('\ud83d\udd0d Lendo nota\u2026','ok');
@@ -1480,10 +1481,13 @@ async function abLerFotos(){
     if (r.posto && r.posto.fornecedor_id) marca('ab-posto', r.posto.fornecedor_id);
     marca('ab-cupom', r.cupom); marca('ab-data', r.data_hora); marca('ab-comb', r.combustivel);
     marca('ab-litros', r.litros); marca('ab-preco', r.preco_litro); marca('ab-valor', r.valor_total);
-    const it = (r.itens||[]).find(i => i.leitura != null); if (it) marca('ab-leitura', it.leitura);
+    const it = (r.itens||[]).find(i => i.leitura != null);
+    if (it && !(eqSel.medicao === 'km' && it.leitura < 1000)) marca('ab-leitura', it.leitura);
     const avisos = [];
     if (r.posto && !r.posto.fornecedor_id && r.posto.nome_lido) avisos.push('posto "'+r.posto.nome_lido+'" n\u00e3o est\u00e1 no cadastro \u2014 cadastre em Fornecedores ou use o app de campo');
     if (r.nao_casados && r.nao_casados.length) avisos.push('identificador(es) n\u00e3o achado(s): '+r.nao_casados.join(', '));
+    const susp = (r.itens||[]).find(i => i.leitura_suspeita != null);
+    if (susp) avisos.push('n\u00famero '+susp.leitura_suspeita+' parece consumo (KM/L), n\u00e3o leitura \u2014 digite o KM do od\u00f4metro');
     if (r.erro) avisos.push('leitura autom\u00e1tica indispon\u00edvel: '+r.erro);
     mostrarToast(avisos.length ? '\u26a0 '+avisos.join(' \u00b7 ') : '\ud83d\udcd6 Lido \u2014 confira os campos em laranja', avisos.length?'warn':'ok');
   } catch(e){ mostrarToast('\u274c '+e.message,'warn'); }
