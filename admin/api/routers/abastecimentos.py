@@ -318,6 +318,26 @@ def _cascata(digitada, foto, ultima, cadastro):
     return None, None
 
 
+async def _postos():
+    """Só quem é posto: tipo='posto' OU já tem nota de abastecimento. Ordem =
+    uso mais recente primeiro (os parceiros de sempre ficam no topo do campo)."""
+    r = await ajard_query(
+        """SELECT f.id, f.nome, f.cnpj, MAX(n.data) AS ultimo_uso
+             FROM public.fornecedores f
+             LEFT JOIN operacional.abastecimento_notas n ON n.fornecedor_id=f.id AND n.ativo=true
+            WHERE f.ativo=true AND (lower(COALESCE(f.tipo,'')) LIKE 'posto%%' OR n.id IS NOT NULL)
+            GROUP BY f.id, f.nome, f.cnpj
+            ORDER BY MAX(n.data) DESC NULLS LAST, f.nome""")
+    return [{"id": x["id"], "nome": x["nome"], "cnpj": x["cnpj"]} for x in (r or [])]
+
+
+_PALAVRAS_VAZIAS = {"POSTO", "AUTO", "LTDA", "ME", "EPP", "EIRELI", "COMBUSTIVEIS", "COMBUSTÍVEIS", "DE", "DO", "DA", "E", "SA", "S/A"}
+
+def _tokens_nome(n):
+    t = re.sub(r"[^A-Z0-9 ]", " ", (n or "").upper())
+    return {w for w in t.split() if len(w) >= 2 and w not in _PALAVRAS_VAZIAS}
+
+
 async def _combustiveis():
     r = await ajard_query(
         "SELECT codigo, nome, rubrica, ativo FROM manutencao.combustiveis ORDER BY nome")
@@ -406,7 +426,9 @@ _PROMPT_NOTA = (
     "KM/L ou L/KM ou a palavra MEDIA — isso é consumo, não leitura. (2) 'combustivel' é "
     "a descrição LITERAL impressa do produto (ex.: 'OLEO DIESEL B S-500'), nunca resuma "
     "para 'Diesel'. (3) O rodapé impresso pode trazer PLACA e identificador do veículo "
-    "(ex.: 'PLACA: GYC-9741 CB-05') — use-os como item se não houver outro. Números no "
+    "(ex.: 'PLACA: GYC-9741 CB-05') — use-os como item se não houver outro. (4) 'itens' "
+    "NUNCA fica vazio quando existe identificador em qualquer lugar (caneta, impresso ou "
+    "texto): o que você escreveria em 'anotacoes' como identificador vai em 'itens'. Números no "
     "padrão brasileiro (1.234,56). Responda SOMENTE JSON válido, sem "
     "markdown, exatamente com este formato: "
     '{"posto":{"nome":str|null,"cnpj":str|null},"cupom":str|null,'
@@ -500,6 +522,21 @@ async def _resolver(extr):
             nao_casados.append(ident)
         itens.append(row)
 
+    # o modelo às vezes acha o equipamento e o escreve só na anotação
+    # ("Identificador na placa: CB-05") — pesca tokens que CASEM com a frota
+    # (o que não casar, como um rabisco "CQ.J3", é ignorado em silêncio)
+    if not any(i.get("equipamento_id") for i in itens):
+        fonte_txt = " ".join(str(extr.get(k) or "") for k in ("anotacoes",))
+        vistos = set()
+        for tok in re.findall(r"\b[A-Za-z]{1,4}[-. ]?0*\d{1,5}\b", fonte_txt):
+            k = _chave_cod(tok)
+            e = k and por_chave.get(k)
+            if e and e["id"] not in vistos:
+                vistos.add(e["id"])
+                itens.append({"identificador_lido": tok, "litros": None, "leitura": None, "tipo_leitura": None,
+                              "equipamento_id": e["id"], "codigo": e["codigo"], "descricao": e.get("descricao"),
+                              "medicao": e.get("medicao"), "galao": _is_galao(e), "via_anotacao": True})
+
     painel = extr.get("leitura_painel") or {}
     placa = _norm_placa(painel.get("placa"))
     if placa and placa in por_placa and not any(i.get("equipamento_id") == por_placa[placa]["id"] for i in itens):
@@ -545,9 +582,20 @@ async def _resolver(extr):
                 WHERE regexp_replace(COALESCE(cnpj,''),'\\D','','g')=%s AND ativo=true LIMIT 1""", (cnpj,))
         if r:
             fornecedor = dict(r[0])
-    # (31/08) SEM fallback por nome: "AUTO POSTO MR" casou com "AUTO MECANICA
-    # LUCIANO" no teste real. CNPJ é a identidade do posto; sem CNPJ casado,
-    # a sugestão é posto NOVO — nunca chute.
+    # (31/08) Sem CNPJ casado, o nome é comparado SÓ entre postos (nunca contra
+    # a oficina do Luciano): precisa de todos os tokens fortes do nome mais
+    # curto (MR, IPIRANGA…) presentes no outro. Vem como sugestão laranja.
+    if not fornecedor and (posto.get("nome") or "").strip():
+        meus = _tokens_nome(posto["nome"])
+        if meus:
+            cands = []
+            for pz in await _postos():
+                seus = _tokens_nome(pz["nome"])
+                menor, maior = (meus, seus) if len(meus) <= len(seus) else (seus, meus)
+                if menor and menor <= maior:
+                    cands.append(pz)
+            if len(cands) == 1:
+                fornecedor = cands[0]
 
     return {
         "posto": {"nome_lido": posto.get("nome"), "cnpj_lido": cnpj or posto.get("cnpj"),
@@ -587,8 +635,7 @@ async def contexto(payload=Depends(verificar_token)):
             galoes.append({"id": e["id"], "codigo": e["codigo"], "descricao": e.get("descricao"),
                            "capacidade_l": _f(e.get("capacidade_l")), "saldo": await _saldo_galao(e["id"])})
     combs = [c for c in await _combustiveis() if c.get("ativo") is not False]
-    postos = await ajard_query(
-        "SELECT id, nome, cnpj FROM public.fornecedores WHERE ativo=true ORDER BY nome")
+    postos = await _postos()
     return {"frota": [{k: (_f(v) if k == "capacidade_l" else v) for k, v in e.items()} for e in frota],
             "galoes": galoes, "combustiveis": combs,
             "postos": [dict(p) for p in (postos or [])]}
@@ -1052,7 +1099,7 @@ input.ruim{border-color:#DC2626;background:#FEF2F2}
       <div><label>Combustível *</label><select id="n-comb"></select></div>
     </div>
     <div class="row">
-      <div><label>Litros da nota *</label><input id="n-litros" inputmode="decimal" placeholder="0,00" oninput="recalcSoma()"></div>
+      <div><label>Litros da nota *</label><input id="n-litros" inputmode="decimal" placeholder="0,00" oninput="herdarLitrosUnico();recalcSoma()"></div>
       <div><label>Preço / L</label><input id="n-preco" inputmode="decimal" placeholder="0,000" oninput="recalcValor('preco')"></div>
       <div><label>Valor total</label><input id="n-valor" inputmode="decimal" placeholder="0,00" oninput="recalcValor('valor')"></div>
     </div>
@@ -1227,8 +1274,15 @@ function addItem(eqId,litros,leitura,lido){
   if(eqId) itemMudou(id,true);
 }
 function rmItem(id){ const el=$(id); if(el) el.remove(); recalcSoma(); }
+function herdarLitrosUnico(){
+  const rows=Array.from(document.querySelectorAll('.item')).filter(d=>d.querySelector('.it-eq').value);
+  if(rows.length!==1) return;
+  const li=rows[0].querySelector('.it-litros'), tot=$('n-litros').value;
+  if(!li.value && num(tot)!=null){ li.value=tot; li.classList.add('lido'); }
+}
 function itemMudou(id,semSoma){
   const d=$(id), sel=d.querySelector('.it-eq'), eqId=sel.value;
+  herdarLitrosUnico();
   const e=CTX.frota.find(x=>x.id===eqId); const lei=d.querySelector('.it-leitura'), lb=d.querySelector('.it-lb-leitura'), sub=d.querySelector('.sub');
   if(e && ehGalao(e)){ lei.value=''; lei.disabled=true; lei.placeholder='galão não tem leitura'; lb.textContent='Leitura'; const g=CTX.galoes.find(x=>x.id===eqId); sub.textContent='Galão · saldo atual '+fmt(g?g.saldo:0,1)+' L'+(g&&g.capacidade_l?' de '+fmt(g.capacidade_l,0):''); }
   else { lei.disabled=false; lei.placeholder='anotado na nota'; lb.textContent=(e&&e.medicao==='km')?'KM':'Horímetro (h)'; sub.textContent=''; if(eqId) checarLeitura(eqId); }
@@ -1328,7 +1382,13 @@ async function carregarHist(){
 // Sem suporte no navegador → botão nem aparece. Sem custo, sem chave.
 (function(){
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!SR) return;
+  if (!SR) {
+    document.querySelectorAll('[data-ditar]').forEach(function(btn){
+      const d = document.createElement('div'); d.className = 'muted'; d.style.cssText = 'font-size:11px;margin-top:4px';
+      d.textContent = 'Para ditar, use o 🎤 do teclado do celular.'; btn.replaceWith(d);
+    });
+    return;
+  }
   document.querySelectorAll('[data-ditar]').forEach(function(btn){
     btn.style.display = '';
     let rec = null, ouvindo = false;
