@@ -611,7 +611,7 @@ function renderOTs(){
     const prog = v ? `<span style="color:${v.nivel===0?'#DC2626':v.nivel===1?'#B45309':'#16A34A'};font-size:10px">${_esc(v.texto)}</span>` : dp;
     return `<tr oncontextmenu="showCtxReal(event,'${o.id}','ot','${_esc(o.numero)}')" onclick="verOTReal('${o.id}')">
       <td style="text-align:center"><span class="dot ${dot}"></span></td>
-      <td class="bold">${_esc(o.numero)}</td>
+      <td class="bold" style="white-space:nowrap">${_esc(o.numero)}</td>
       <td>${_esc(o.descricao)}</td>
       <td>${_esc(o.equipamento_codigo||'')}</td>
       <td class="mono">${_esc(o.tipo_trabalho||'')}</td>
@@ -1042,7 +1042,7 @@ async function abrirPedidos(){
   const linhas = lista.map(p => {
     const [uc, ul] = URG[p.grau_urgencia] || ['em', p.grau_urgencia];
     const quem = p.solicitante_nome ? '👷 '+_esc(p.solicitante_nome) : (p.cliente_nome ? '🏢 '+_esc(p.cliente_nome) : '—');
-    return '<tr><td class="bold">'+_esc(p.numero)+'</td><td>'+dd(p.data_pedido)+'</td>'
+    return '<tr><td class="bold" style="white-space:nowrap">'+_esc(p.numero)+'</td><td style="white-space:nowrap">'+dd(p.data_pedido)+'</td>'
       + '<td>'+viaChip(p.via)+(p.nc_ref ? ' <span class="muted" style="font-size:9px" title="NC do checklist · envio '+_esc(p.nc_ref)+'">NC</span>' : '')+'</td><td><span class="chip '+uc+'">'+ul+'</span></td>'
       + '<td class="bold">'+_esc(p.equipamento_codigo||'—')+'</td><td>'+quem+'</td>'
       + '<td>'+_esc(p.descricao)+'</td>'
@@ -1648,7 +1648,7 @@ function renderJanelaOTs(){
     const sel = String(_otwin.sel) === String(o.id);
     return '<tr'+(sel?' class="sel"':'')+' onclick="otwSel(\''+o.id+'\')" ondblclick="verOTReal(\''+o.id+'\')" style="cursor:pointer">'
       + '<td style="text-align:center"><span class="dot '+dot+'"></span></td>'
-      + '<td class="bold">'+_esc(o.numero)+'</td><td>'+_esc(o.descricao)+'</td>'
+      + '<td class="bold" style="white-space:nowrap">'+_esc(o.numero)+'</td><td>'+_esc(o.descricao)+'</td>'
       + '<td class="mono">'+_esc(o.tipo_trabalho || '')+'</td>'
       + '<td><span class="chip '+cc+'">'+cl+'</span></td><td>'+prog+'</td>'
       + '<td>'+d(o.data_abertura)+'</td><td>'+d(o.data_conclusao)+'</td></tr>';
