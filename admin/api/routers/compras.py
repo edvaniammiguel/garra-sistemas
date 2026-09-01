@@ -334,6 +334,31 @@ async def salvar_alcada(request: Request, _auth=Depends(verificar_compras_gestor
 
 # ── ORDENS DE COMPRA ──────────────────────────────────────────
 
+_ELO_OK = False
+async def _garantir_elo_estoque():
+    """(01/09/2026) Elo Compras ↔ Estoque da Manutenção: OC ganha origem
+    ('manual' | 'estoque_minimo' | 'ot') e almoxarifado de destino; o
+    recebimento gera entradas PENDENTES DE CONFERÊNCIA em
+    manutencao.entradas_pendentes — o saldo só sobe quando a Luana confere."""
+    global _ELO_OK
+    if _ELO_OK:
+        return
+    await ajard_query("ALTER TABLE compras.ordens_compra ADD COLUMN IF NOT EXISTS origem TEXT DEFAULT 'manual'", fetch="none")
+    await ajard_query("ALTER TABLE compras.ordens_compra ADD COLUMN IF NOT EXISTS almoxarifado_codigo TEXT", fetch="none")
+    await ajard_query("""
+        CREATE TABLE IF NOT EXISTS manutencao.entradas_pendentes (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            oc_id UUID, oc_numero TEXT, oc_item_id UUID,
+            peca_id UUID NOT NULL, quantidade NUMERIC(12,3) NOT NULL,
+            custo_unitario NUMERIC(14,4), almoxarifado_codigo TEXT,
+            nf_numero TEXT, fornecedor_id UUID, ot_id UUID,
+            status TEXT DEFAULT 'pendente',
+            quantidade_conferida NUMERIC(12,3), observacao TEXT,
+            conferido_por UUID, conferido_em TIMESTAMPTZ,
+            criado_em TIMESTAMPTZ DEFAULT now())""", fetch="none")
+    _ELO_OK = True
+
+
 @router.post("/compras/api/ocs")
 async def criar_oc(request: Request, payload=Depends(verificar_compras_solicitante)):
     """Cria OC em rascunho (cotação). Itens no body: lista de
@@ -359,18 +384,20 @@ async def criar_oc(request: Request, payload=Depends(verificar_compras_solicitan
     numero = f"OC-{ano}-{int(seq['n']):04d}"
 
     uid = await _usuario_id(payload)
+    await _garantir_elo_estoque()
     row = await ajard_query_id(
         """INSERT INTO compras.ordens_compra
               (numero, ano, sequencia, setor_codigo, fornecedor_id, fornecedor_avulso, fornecedor_avulso_contato,
                ot_id, equipamento_id, prioridade, condicao_pagamento, observacao,
-               solicitante_id)
-           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+               solicitante_id, origem, almoxarifado_codigo)
+           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
         (numero, ano, int(seq["n"]), setor, d.get("fornecedor_id"),
          (d.get("fornecedor_avulso") or "").strip() or None,
          (d.get("fornecedor_avulso_contato") or "").strip() or None,
          d.get("ot_id"), d.get("equipamento_id"),
          d.get("prioridade", "normal"), d.get("condicao_pagamento"),
-         d.get("observacao"), uid))
+         d.get("observacao"), uid,
+         (d.get("origem") or "manual").strip(), (d.get("almoxarifado_codigo") or "").strip() or None))
 
     for i, it in enumerate(itens):
         desc = (it.get("descricao") or "").strip()
@@ -761,10 +788,15 @@ async def receber_oc(oc_id: str, request: Request, payload=Depends(verificar_com
                         f"(R$ {limite:,.2f} = maior entre R$ {_COMPLEMENTO_MIN:,.0f} "
                         f"e {int(_COMPLEMENTO_PCT*100)}% da OC) — abra uma OC nova para estes itens"))
 
+    await _garantir_elo_estoque()
+    oc_full = await ajard_query(
+        "SELECT numero, fornecedor_id, almoxarifado_codigo FROM compras.ordens_compra WHERE id=%s", (oc_id,), fetch="one") or {}
+    nf_agora = (d.get("nf_numero") or "").strip() or None
     valor_recebido_agora = 0.0
+    pendentes_geradas = 0
     for it in d.get("itens") or []:
         item = await ajard_query(
-            """SELECT id, quantidade, qtd_recebida, valor_unit
+            """SELECT id, quantidade, qtd_recebida, valor_unit, peca_id
                FROM compras.oc_itens WHERE id=%s AND oc_id=%s AND ativo=true""",
             (it.get("item_id"), oc_id), fetch="one")
         if not item:
@@ -777,6 +809,16 @@ async def receber_oc(oc_id: str, request: Request, payload=Depends(verificar_com
                SET qtd_recebida = COALESCE(qtd_recebida,0)+%s WHERE id=%s""",
             (qtd_agora, item["id"]), fetch="none")
         valor_recebido_agora += qtd_agora * float(item.get("valor_unit") or 0)
+        if item.get("peca_id"):
+            # peça de estoque: entra PENDENTE de conferência no almoxarifado
+            await ajard_query(
+                """INSERT INTO manutencao.entradas_pendentes
+                     (oc_id, oc_numero, oc_item_id, peca_id, quantidade, custo_unitario, almoxarifado_codigo, nf_numero, fornecedor_id, ot_id)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+                (oc_id, oc_full.get("numero"), item["id"], item["peca_id"], qtd_agora,
+                 float(item.get("valor_unit") or 0), oc_full.get("almoxarifado_codigo"), nf_agora,
+                 oc_full.get("fornecedor_id"), oc.get("ot_id")), fetch="none")
+            pendentes_geradas += 1
 
     if extras_validos:
         maxo = await ajard_query(
@@ -818,6 +860,8 @@ async def receber_oc(oc_id: str, request: Request, payload=Depends(verificar_com
         (novo, oc_id), fetch="none")
     obs_receb = (d.get("observacao") or "").strip()
     msg_trilha = f"Recebimento registrado (R$ {valor_recebido_agora:.2f})"
+    if pendentes_geradas:
+        msg_trilha += f" · {pendentes_geradas} item(ns) de estoque aguardando conferência no almoxarifado"
     if obs_receb:
         msg_trilha += f" — {obs_receb}"
     await _trilha(oc_id, oc["status"], novo, msg_trilha, uid)
@@ -828,8 +872,17 @@ async def receber_oc(oc_id: str, request: Request, payload=Depends(verificar_com
                SET custo_total = COALESCE(custo_total,0)+%s, atualizado_em=now()
                WHERE id=%s""",
             (valor_recebido_agora, oc["ot_id"]), fetch="none")
+        # a OT fica sabendo que a peça chegou — status NÃO muda sozinho (decisão da manutenção)
+        try:
+            await ajard_query(
+                """INSERT INTO manutencao.ot_historico (ot_id, status_de, status_para, observacao, usuario_id)
+                   SELECT id, status, status, %s, %s FROM manutencao.ot WHERE id=%s""",
+                (f"📦 OC {oc_full.get('numero') or ''} recebida (R$ {valor_recebido_agora:.2f})"
+                 + (" — peças aguardam conferência no almoxarifado" if pendentes_geradas else ""), uid, oc["ot_id"]), fetch="none")
+        except Exception:
+            pass
 
-    return {"ok": True, "status": novo, "valor_recebido": valor_recebido_agora}
+    return {"ok": True, "status": novo, "valor_recebido": valor_recebido_agora, "a_conferir": pendentes_geradas}
 
 
 @router.post("/compras/api/ocs/{oc_id}/cancelar")

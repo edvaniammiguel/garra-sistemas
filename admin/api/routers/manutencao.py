@@ -1890,6 +1890,7 @@ async def _garantir_estoque_cols():
     if _ESTQ_COLS_OK:
         return
     await ajard_query("ALTER TABLE manutencao.estoque ADD COLUMN IF NOT EXISTS localizacao TEXT", fetch="none")
+    await ajard_query("ALTER TABLE manutencao.estoque ADD COLUMN IF NOT EXISTS maximo NUMERIC", fetch="none")
     _ESTQ_COLS_OK = True
 
 
@@ -2037,7 +2038,7 @@ async def saldo_peca(peca_codigo: str, _auth=Depends(verificar_manutencao)):
     await _garantir_estoque_cols()
     rows = await ajard_query(
         """SELECT a.codigo AS almox, a.nome, COALESCE(e.quantidade,0) AS quantidade,
-                  e.minimo, e.localizacao
+                  e.minimo, e.maximo, e.localizacao
            FROM manutencao.almoxarifados a
            LEFT JOIN manutencao.estoque e ON e.almoxarifado_id=a.id
              AND e.peca_id=(SELECT id FROM manutencao.pecas WHERE codigo=%s)
@@ -2066,12 +2067,13 @@ async def meta_estoque(request: Request, payload=Depends(verificar_manutencao)):
     sets, params = [], []
     if "localizacao" in d:
         sets.append("localizacao=%s"); params.append((d["localizacao"] or "").strip().upper() or None)
-    if "minimo" in d:
-        try:
-            sets.append("minimo=%s")
-            params.append(float(str(d["minimo"]).replace(",", ".")) if d["minimo"] not in (None, "") else None)
-        except ValueError:
-            sets.pop()
+    for campo in ("minimo", "maximo"):
+        if campo in d:
+            try:
+                sets.append(f"{campo}=%s")
+                params.append(float(str(d[campo]).replace(",", ".")) if d[campo] not in (None, "") else None)
+            except ValueError:
+                sets.pop()
     if not sets:
         raise HTTPException(status_code=400, detail="Nada a alterar")
     params += [peca["id"], alm["id"]]
@@ -2081,19 +2083,205 @@ async def meta_estoque(request: Request, payload=Depends(verificar_manutencao)):
     return {"ok": True}
 
 
+_REC_OK = False
+async def _garantir_recebimentos():
+    """(01/09/2026) Elo Compras → Estoque com conferência física (decisão da
+    Luana): o recebimento da OC no Compras gera uma ENTRADA PENDENTE; o saldo
+    só sobe quando o almoxarifado confere. Uma linha por item recebido."""
+    global _REC_OK
+    if _REC_OK:
+        return
+    await ajard_query("""
+        CREATE TABLE IF NOT EXISTS manutencao.entradas_pendentes (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            oc_id UUID, oc_numero TEXT, oc_item_id UUID,
+            peca_id UUID NOT NULL, quantidade NUMERIC(12,3) NOT NULL,
+            custo_unitario NUMERIC(14,4), almoxarifado_codigo TEXT,
+            nf_numero TEXT, fornecedor_id UUID, ot_id UUID,
+            status TEXT DEFAULT 'pendente',
+            quantidade_conferida NUMERIC(12,3), observacao TEXT,
+            conferido_por UUID, conferido_em TIMESTAMPTZ,
+            criado_em TIMESTAMPTZ DEFAULT now())""", fetch="none")
+    await ajard_query("CREATE INDEX IF NOT EXISTS ix_entradas_pend_status ON manutencao.entradas_pendentes (status)", fetch="none")
+    _REC_OK = True
+
+
+async def _em_pedido_por_peca():
+    """Quantidade ainda por chegar em OCs vivas (aprovada/enviada/parcial) e
+    quantidade recebida aguardando conferência, por peca_id."""
+    pedido, pend, ocs = {}, {}, {}
+    try:
+        rows = await ajard_query(
+            """SELECT i.peca_id, oc.numero, oc.status,
+                      SUM(i.quantidade - COALESCE(i.qtd_recebida,0)) AS falta
+               FROM compras.oc_itens i JOIN compras.ordens_compra oc ON oc.id = i.oc_id
+               WHERE i.ativo=true AND oc.ativo=true AND i.peca_id IS NOT NULL
+                 AND oc.status IN ('rascunho','solicitada','aprovada','enviada','recebida_parcial')
+               GROUP BY i.peca_id, oc.numero, oc.status""") or []
+        for r in rows:
+            k = str(r["peca_id"])
+            pedido[k] = pedido.get(k, 0.0) + max(0.0, float(r["falta"] or 0))
+            ocs.setdefault(k, []).append(f"{r['numero']} ({r['status']})")
+    except Exception:
+        pass
+    await _garantir_recebimentos()
+    rows = await ajard_query(
+        """SELECT peca_id, SUM(quantidade) AS q FROM manutencao.entradas_pendentes
+           WHERE status='pendente' GROUP BY peca_id""") or []
+    for r in rows:
+        pend[str(r["peca_id"])] = float(r["q"] or 0)
+    return pedido, pend, ocs
+
+
 @router.get("/manutencao/api/estoque-baixo")
 async def estoque_baixo(_auth=Depends(verificar_manutencao)):
-    """Peças com saldo abaixo do mínimo — semente do pedido de compra sugerido."""
+    """Peças abaixo do mínimo — com o que já está a caminho (OCs vivas +
+    recebimentos a conferir) e a SUGESTÃO de compra:
+    sugestão = máximo − saldo − em pedido − a conferir (sem máximo: repõe até 2× o mínimo).
+    Traz o fornecedor de referência (menor preço cadastrado) para a OC sugerida."""
     await _garantir_estoque_cols()
+    await _garantir_tabela("referencias-fornecedor")
     rows = await ajard_query(
-        """SELECT p.codigo, p.descricao, p.unidade, a.codigo AS almox,
-                  e.quantidade, e.minimo, e.localizacao
+        """SELECT p.id AS peca_id, p.codigo, p.descricao, p.unidade, p.custo_medio, a.codigo AS almox,
+                  e.quantidade, e.minimo, e.maximo, e.localizacao,
+                  (SELECT COALESCE(SUM(quantidade),0) FROM manutencao.estoque x WHERE x.peca_id = p.id) AS saldo_total,
+                  rf.fornecedor_id AS ref_fornecedor_id, rf.preco AS ref_preco, rf.prazo_dias AS ref_prazo, rf.referencia AS ref_codigo,
+                  (SELECT nome FROM public.fornecedores f WHERE f.id = rf.fornecedor_id) AS ref_fornecedor_nome
            FROM manutencao.estoque e
            JOIN manutencao.pecas p ON p.id = e.peca_id AND p.ativo=true
            JOIN manutencao.almoxarifados a ON a.id = e.almoxarifado_id AND a.ativo=true
+           LEFT JOIN LATERAL (SELECT fornecedor_id, preco, prazo_dias, referencia FROM manutencao.peca_fornecedores r
+                              WHERE r.peca_codigo = p.codigo AND r.ativo=true AND r.fornecedor_id IS NOT NULL
+                              ORDER BY r.preco NULLS LAST, r.atualizado_em DESC LIMIT 1) rf ON true
            WHERE e.minimo IS NOT NULL AND e.quantidade < e.minimo
-           ORDER BY (e.minimo - e.quantidade) DESC""")
-    return [dict(r) for r in rows]
+           ORDER BY (e.minimo - e.quantidade) DESC""") or []
+    pedido, pend, ocs = await _em_pedido_por_peca()
+    out = []
+    for r in rows:
+        d = _tab_row(r)
+        k = str(r["peca_id"])
+        d["em_pedido"] = round(pedido.get(k, 0.0), 3)
+        d["a_conferir"] = round(pend.get(k, 0.0), 3)
+        d["ocs_abertas"] = ocs.get(k, [])
+        saldo = float(r["quantidade"] or 0); mn = float(r["minimo"] or 0)
+        alvo = float(r["maximo"]) if r.get("maximo") is not None else mn * 2
+        d["alvo"] = alvo
+        d["sugestao"] = round(max(0.0, alvo - saldo - d["em_pedido"] - d["a_conferir"]), 3)
+        d["preco_sugerido"] = float(r["ref_preco"]) if r.get("ref_preco") is not None else (float(r["custo_medio"]) if r.get("custo_medio") is not None else None)
+        out.append(d)
+    return out
+
+
+@router.get("/manutencao/api/oc-existe")
+async def oc_existe(numero: str, _auth=Depends(verificar_manutencao)):
+    oc = await _oc_por_numero((numero or "").strip())
+    return {"existe": bool(oc), "status": oc["status"] if oc else None}
+
+
+@router.get("/manutencao/api/ots/{ot_id}/faltantes")
+async def ot_faltantes(ot_id: str, _auth=Depends(verificar_manutencao)):
+    """Peças previstas na FMP da OT que o estoque não cobre → itens da OC.
+    faltante = previsto − saldo total − em pedido − a conferir."""
+    o = await ajard_query("SELECT plano_id, equipamento_id, numero FROM manutencao.ot WHERE id=%s", (ot_id,), fetch="one")
+    if not o:
+        raise HTTPException(status_code=404, detail="OT não encontrada")
+    import json as _json
+    prev = []
+    if o.get("plano_id"):
+        pl = await ajard_query("SELECT pecas FROM manutencao.planos WHERE id=%s", (o["plano_id"],), fetch="one")
+        raw = (pl or {}).get("pecas")
+        try:
+            prev = raw if isinstance(raw, list) else (_json.loads(raw) if raw else [])
+        except Exception:
+            prev = []
+    pedido, pend, ocs = await _em_pedido_por_peca()
+    itens = []
+    for x in prev:
+        cod = (x.get("peca") or "").strip()
+        if not cod: continue
+        p = await ajard_query(
+            """SELECT p.id, p.codigo, p.descricao, p.unidade, p.custo_medio,
+                      (SELECT COALESCE(SUM(quantidade),0) FROM manutencao.estoque e WHERE e.peca_id=p.id) AS saldo
+               FROM manutencao.pecas p WHERE p.codigo=%s""", (cod,), fetch="one")
+        if not p:
+            itens.append({"peca_id": None, "codigo": cod, "descricao": x.get("descricao") or cod, "unidade": x.get("un") or "UN",
+                          "previsto": _mo_num(x.get("qtd")) or 0, "saldo": 0, "em_pedido": 0, "faltante": _mo_num(x.get("qtd")) or 0,
+                          "preco": _mo_num(x.get("custo")), "sem_cadastro": True})
+            continue
+        k = str(p["id"]); q = _mo_num(x.get("qtd")) or 0
+        falta = max(0.0, q - float(p["saldo"] or 0) - pedido.get(k, 0.0) - pend.get(k, 0.0))
+        itens.append({"peca_id": k, "codigo": p["codigo"], "descricao": p["descricao"], "unidade": p["unidade"] or "UN",
+                      "previsto": q, "saldo": float(p["saldo"] or 0), "em_pedido": pedido.get(k, 0.0) + pend.get(k, 0.0),
+                      "faltante": round(falta, 3), "preco": float(p["custo_medio"]) if p["custo_medio"] is not None else _mo_num(x.get("custo")),
+                      "ocs": ocs.get(k, [])})
+    return {"ot": o["numero"], "equipamento_id": str(o["equipamento_id"]) if o.get("equipamento_id") else None, "itens": itens}
+
+
+@router.get("/manutencao/api/recebimentos")
+async def recebimentos_listar(status: str = "pendente", _auth=Depends(verificar_manutencao)):
+    await _garantir_recebimentos()
+    rows = await ajard_query(
+        """SELECT r.*, p.codigo AS peca_codigo, p.descricao AS peca_descricao, p.unidade,
+                  (SELECT nome FROM public.fornecedores f WHERE f.id = r.fornecedor_id) AS fornecedor_nome,
+                  (SELECT numero FROM manutencao.ot o WHERE o.id = r.ot_id) AS ot_numero,
+                  (SELECT nome FROM public.usuarios_garra u WHERE u.id = r.conferido_por) AS conferido_por_nome
+           FROM manutencao.entradas_pendentes r JOIN manutencao.pecas p ON p.id = r.peca_id
+           WHERE r.status = %s ORDER BY r.criado_em DESC LIMIT 300""", (status,)) or []
+    return [_tab_row(r) for r in rows]
+
+
+@router.post("/manutencao/api/recebimentos/{rid}/conferir")
+async def recebimento_conferir(rid: str, request: Request, payload=Depends(verificar_manutencao)):
+    """Conferência física: o saldo sobe AGORA, pela mesma entrada por
+    documento (custo médio ponderado, NF, oc_numero, fornecedor). Quantidade
+    conferida pode ser menor (falta na caixa) — a diferença fica na trilha."""
+    await _garantir_recebimentos()
+    d = await request.json()
+    r = await ajard_query("SELECT r.*, p.codigo FROM manutencao.entradas_pendentes r JOIN manutencao.pecas p ON p.id=r.peca_id WHERE r.id=%s", (rid,), fetch="one")
+    if not r:
+        raise HTTPException(status_code=404, detail="Recebimento não encontrado")
+    if r["status"] != "pendente":
+        raise HTTPException(status_code=400, detail=f"Recebimento já {r['status']}")
+    qtd = _mo_num(d.get("quantidade")) if d.get("quantidade") not in (None, "") else float(r["quantidade"])
+    if not qtd or qtd <= 0:
+        raise HTTPException(status_code=400, detail="Quantidade conferida deve ser positiva")
+    alm = (d.get("almox") or r.get("almoxarifado_codigo") or "").strip()
+    if not alm:
+        a = await ajard_query("SELECT codigo FROM manutencao.almoxarifados WHERE ativo=true ORDER BY codigo LIMIT 1", fetch="one")
+        alm = a["codigo"] if a else ""
+    obs = (d.get("observacao") or "").strip()
+    corpo = {"documento_tipo": "nf", "documento_numero": r.get("nf_numero") or r.get("oc_numero") or "OC",
+             "fornecedor_id": str(r["fornecedor_id"]) if r.get("fornecedor_id") else None,
+             "oc_numero": r.get("oc_numero"), "destino": alm,
+             "observacao": ("Conferência do recebimento " + (r.get("oc_numero") or "") + (" · " + obs if obs else "")).strip(),
+             "itens": [{"peca": r["codigo"], "quantidade": qtd,
+                        "custo_unitario": float(r["custo_unitario"]) if r.get("custo_unitario") is not None else None}]}
+    res = await _entrada_core(corpo, payload)
+    uid = await _usuario_id(payload)
+    await ajard_query(
+        """UPDATE manutencao.entradas_pendentes SET status='conferida', quantidade_conferida=%s, almoxarifado_codigo=%s,
+           observacao=%s, conferido_por=%s, conferido_em=now() WHERE id=%s""",
+        (qtd, alm, obs or None, uid, rid), fetch="none")
+    if r.get("ot_id"):
+        await ajard_query(
+            """INSERT INTO manutencao.ot_historico (ot_id, status_de, status_para, observacao, usuario_id)
+               SELECT id, status, status, %s, %s FROM manutencao.ot WHERE id=%s""",
+            (f"📦 Peça {r['codigo']} conferida no almoxarifado {alm} ({qtd:g}) — OC {r.get('oc_numero') or ''}", uid, r["ot_id"]), fetch="none")
+    return {"ok": True, "entrada": res, "diferenca": round(qtd - float(r["quantidade"]), 3)}
+
+
+@router.post("/manutencao/api/recebimentos/{rid}/rejeitar")
+async def recebimento_rejeitar(rid: str, request: Request, payload=Depends(verificar_manutencao)):
+    await _garantir_recebimentos()
+    d = await request.json()
+    motivo = (d.get("motivo") or "").strip()
+    if not motivo:
+        raise HTTPException(status_code=400, detail="Informe o motivo da rejeição")
+    uid = await _usuario_id(payload)
+    await ajard_query(
+        """UPDATE manutencao.entradas_pendentes SET status='rejeitada', observacao=%s, conferido_por=%s, conferido_em=now()
+           WHERE id=%s AND status='pendente'""", (motivo, uid, rid), fetch="none")
+    return {"ok": True}
 
 
 @router.post("/manutencao/api/estoque/movimentar")
@@ -2953,6 +3141,28 @@ async def listar_movimentacoes(almox: str = None, limit: int = 120,
 
 @router.post("/manutencao/api/entradas")
 async def entrada_documento(request: Request, payload=Depends(verificar_manutencao)):
+    """Rota HTTP da entrada por documento — o trabalho vive em _entrada_core
+    (reutilizado pela conferência de recebimento de OC)."""
+    d = await request.json()
+    if (d.get("oc_numero") or "").strip():
+        # (01/09/2026) entrada manual com OC: se a OC existe no Compras, a entrada
+        # vem pela conferência do recebimento — avisa antes de duplicar saldo
+        oc = await _oc_por_numero((d.get("oc_numero") or "").strip())
+        if oc and not d.get("forcar"):
+            raise HTTPException(status_code=409, detail=f"A OC {oc['numero']} existe no Compras ({oc['status']}) — "
+                                "o saldo entra pela conferência do recebimento (Materiais ▸ Recebimentos a conferir). "
+                                "Para lançar mesmo assim, confirme na tela.")
+    return await _entrada_core(d, payload)
+
+
+async def _oc_por_numero(numero):
+    try:
+        return await ajard_query("SELECT id, numero, status FROM compras.ordens_compra WHERE numero=%s AND ativo=true", (numero,), fetch="one")
+    except Exception:
+        return None
+
+
+async def _entrada_core(d, payload):
     """(28/08/2026) ENTRADA POR DOCUMENTO — multi-itens, três caminhos:
     · 'nf' / 'notinha': entrada normal → soma saldo no destino e recalcula
       custo médio ponderado da peça;
@@ -2962,7 +3172,6 @@ async def entrada_documento(request: Request, payload=Depends(verificar_manutenc
     · elo com Ordem de Compra por oc_numero (amarração forte na
       unificação Compras↔OT).
     Peça inexistente com descrição no item → cadastrada na hora."""
-    d = await request.json()
     doc_tipo = (d.get("documento_tipo") or "").strip()
     if doc_tipo not in ("nf", "notinha", "aplicacao_direta"):
         raise HTTPException(status_code=400, detail="Tipo de documento inválido")
