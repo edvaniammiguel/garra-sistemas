@@ -937,8 +937,13 @@ async def _garantir_mao_obra():
 
 
 def _mo_num(v):
+    if v in (None, ""):
+        return None
+    txt = str(v).strip().replace("R$", "").replace(" ", "")
+    if "," in txt:
+        txt = txt.replace(".", "").replace(",", ".")
     try:
-        return float(str(v).replace(",", ".")) if v not in (None, "") else None
+        return float(txt)
     except ValueError:
         return None
 
@@ -1171,8 +1176,11 @@ def _tab_val(t, v):
     if v in (None, ""):
         return None
     if t.startswith("NUMERIC") or t == "INT":
+        txt = str(v).strip().replace("R$", "").replace(" ", "")
+        if "," in txt:                      # pt-BR: 1.500,50 → 1500.50
+            txt = txt.replace(".", "").replace(",", ".")
         try:
-            return float(str(v).replace(",", ".")) if t.startswith("NUMERIC") else int(float(str(v).replace(",", ".")))
+            return float(txt) if t.startswith("NUMERIC") else int(float(txt))
         except ValueError:
             return None
     if t == "BOOLEAN":
@@ -1530,6 +1538,7 @@ async def equipamentos_ficha(_auth=Depends(verificar_manutencao)):
 @router.get("/manutencao/api/planos-todos")
 async def planos_todos(_auth=Depends(verificar_manutencao)):
     """Parametrização ▸ Planos preventivos: todas as FMPs da frota."""
+    await ajard_query("ALTER TABLE manutencao.planos ADD COLUMN IF NOT EXISTS ativo BOOLEAN DEFAULT true", fetch="none")
     rows = await ajard_query(
         """SELECT p.id, p.codigo, p.descricao, p.periodo_codigo, p.tdm_horas, p.ativo, p.equipamento_id,
                   e.codigo AS equipamento_codigo, e.descricao AS equipamento_desc
@@ -2136,6 +2145,13 @@ async def movimentar_estoque(request: Request, payload=Depends(verificar_manuten
 
     if tipo == "entrada":
         if not destino: raise HTTPException(status_code=400, detail="Entrada exige destino")
+        if custo_unit is not None and d.get("custo_unitario") not in (None, "") and not d.get("ot_id"):
+            # (01/09/2026) custo médio ponderado: (saldo × médio atual + qtd × custo da entrada) / (saldo + qtd)
+            tot = await ajard_query("SELECT COALESCE(SUM(quantidade),0) AS q FROM manutencao.estoque WHERE peca_id=%s", (pid,), fetch="one")
+            saldo_total = float(tot["q"] or 0) if tot else 0.0
+            medio_atual = float(peca["custo_medio"]) if peca["custo_medio"] is not None else None
+            novo = custo_unit if (saldo_total <= 0 or medio_atual is None) else (saldo_total * medio_atual + qtd * custo_unit) / (saldo_total + qtd)
+            await ajard_query("UPDATE manutencao.pecas SET custo_medio=%s WHERE id=%s", (round(novo, 4), pid), fetch="none")
         await _soma(destino, qtd)
     elif tipo == "saida":
         if not origem: raise HTTPException(status_code=400, detail="Saída exige origem")
