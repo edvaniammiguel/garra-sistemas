@@ -269,7 +269,13 @@ async function apEnviar(){
 // Sem suporte no navegador → botão nem aparece. Sem custo, sem chave.
 (function(){
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!SR) return;
+  if (!SR) {
+    document.querySelectorAll('[data-ditar]').forEach(function(btn){
+      const d = document.createElement('div'); d.className = 'muted'; d.style.cssText = 'font-size:11px;margin-top:4px';
+      d.textContent = 'Para ditar, use o 🎤 do teclado do celular.'; btn.replaceWith(d);
+    });
+    return;
+  }
   document.querySelectorAll('[data-ditar]').forEach(function(btn){
     btn.style.display = '';
     let rec = null, ouvindo = false;
