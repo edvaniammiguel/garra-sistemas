@@ -115,6 +115,18 @@ tr.sel td{background:#DBEAFE!important;color:#1A2A5E}
 .mwobj{display:flex;align-items:center;gap:8px;margin:2px 0 8px}
 .mwobj .lb{border:1px solid #CBD5E1;border-radius:6px;padding:3px 10px;font-size:11px;font-weight:700;color:#334155;background:#F8FAFC}
 .mwobj .vl{flex:1;border:1px solid #CBD5E1;border-radius:6px;padding:4px 8px;font-size:12px;color:#0F172A;background:#fff;font-weight:600}
+.mwbar{display:flex;align-items:stretch;gap:2px;padding:4px 8px;background:#F8FAFC;border-bottom:1px solid #CBD5E1;flex-wrap:wrap}
+.mwbar .mwb{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;min-width:58px;padding:4px 6px;border:1px solid transparent;border-radius:6px;background:transparent;color:#1A2A5E;font-size:10px;font-weight:600;cursor:pointer}
+.mwbar .mwb .i{font-size:17px;line-height:1}
+.mwbar .mwb:hover{background:#fff;border-color:#CBD5E1}
+.mwbar .sep{width:1px;background:#CBD5E1;margin:4px 6px}
+.mwbar input{align-self:center;width:190px;padding:5px 8px;border:1px solid #CBD5E1;border-radius:6px;font-size:11px}
+.mwdd{position:relative}
+.mwm{display:none;position:absolute;top:100%;left:0;z-index:60;background:#fff;border:1px solid #CBD5E1;border-radius:6px;box-shadow:0 6px 18px rgba(15,23,42,.14);min-width:230px;padding:4px 0}
+.mwm.on{display:block}
+.mwm div{padding:7px 14px;font-size:12px;cursor:pointer;white-space:nowrap;border-bottom:1px solid #F1F5F9}
+.mwm div:last-child{border-bottom:none}.mwm div:hover{background:#F0F4FF}
+tr.sel td{background:#FFF7ED !important}
 .modal.larga .otw-corpo{flex:1;overflow:auto;background:#fff;border:1px solid #E2E8F0;border-radius:6px}
 #otw-de,#otw-dt{display:none;position:absolute;top:30px;background:#fff;border:1px solid #CBD5E1;border-radius:6px;box-shadow:0 8px 24px rgba(0,0,0,.15);z-index:50;min-width:220px;max-height:260px;overflow:auto}
 #otw-de{left:118px}
@@ -152,6 +164,7 @@ tr.sel td{background:#DBEAFE!important;color:#1A2A5E}
 
 <!-- ══ FROTA — Árvore de Objetos (esquerda) + centro sob demanda ══ -->
 <div class="mod on" id="mod-frota">
+  <div id="mwslot-frota"></div>
   <div class="strip">🚦 Frota — <span id="ft-md-rot">árvore de objetos</span>&nbsp;<span class="sc" id="frota-strip">carregando…</span><span style="display:inline-flex;gap:4px;margin-left:8px"><button class="btn" id="ft-md-arv" onclick="ftModo('arvore')" title="Estrutura dos subsistemas — visual limpo" style="border-radius:3px;border:1px solid #E8820C;background:#E8820C;color:#1A2A5E;font-weight:700">🌳 Árvore</button><button class="btn" id="ft-md-lst" onclick="ftModo('lista')" title="Todos os equipamentos com detalhes" style="border-radius:3px;border:1px solid #CBD5E1;background:transparent;color:#CBD5E1">☰ Lista</button></span></div>
   <div class="param-wrap">
     <div class="param-nav" style="width:250px;display:flex;flex-direction:column">
@@ -173,6 +186,7 @@ tr.sel td{background:#DBEAFE!important;color:#1A2A5E}
 
 <!-- ══ ORDENS DE TRABALHO ══ -->
 <div class="mod" id="mod-ots">
+  <div id="mwslot-ots"></div>
   <div class="bar">
     <button class="btn p" onclick="abrirNovaOT()">＋ Nova OT</button>
     <button class="btn o" onclick="abrirPedidos()">📨 Pedidos <span id="ped-badge"></span></button>
@@ -215,6 +229,7 @@ tr.sel td{background:#DBEAFE!important;color:#1A2A5E}
 <!-- ══ ALMOXARIFADO — locais parametrizáveis + acervo com endereçamento ══ -->
 <!-- ══ PARAMETRIZAR (motor real /param — Regra 63) ══ -->
 <div class="mod" id="mod-alm">
+  <div id="mwslot-alm"></div>
   <div class="strip">🧰 Materiais <span class="sc" id="alm-strip">carregando…</span></div>
   <div class="param-wrap">
     <div class="param-nav" style="width:230px;display:flex;flex-direction:column">
@@ -440,7 +455,7 @@ function renderCentroEquip(){
   const situDe = e => e.proxima ? '<span style="font-size:10px;color:'+(e.status==='vermelho'?'#DC2626':'#B45309')+'">'+_esc(e.proxima)+'</span>'
              : (e.motivo ? '<span style="font-size:10px;color:#B45309">'+_esc(e.motivo)+'</span>' : '<span class="chip em">Em dia</span>');
   const tr0 = e => '<tr data-id="'+e.id+'" data-cod="'+_esc(e.codigo)+'" '
-      + 'onclick="this.parentNode.querySelectorAll(\'tr\').forEach(r=>r.classList.remove(\'sel\'));this.classList.add(\'sel\')" '
+      + 'onclick="mwSel(\'frota\',this.dataset.id);this.parentNode.querySelectorAll(\'tr\').forEach(r=>r.classList.remove(\'sel\'));this.classList.add(\'sel\')" '
       + 'ondblclick="verEquipReal(this.dataset.id)" '
       + 'oncontextmenu="showCtxReal(event,this.dataset.id,\'equip\',this.dataset.cod)">';
   const eqs = (_ftModo === 'lista' ? todos.slice() : todos.filter(e => !e.equipamento_pai))
@@ -488,6 +503,7 @@ function renderCentroEquip(){
         + '<td>'+situDe(e)+'</td></tr>';
       if (aberto) linha += filhosDe(e.id).map(f => {
         return '<tr data-id="'+f.id+'" data-cod="'+_esc(f.codigo)+'" style="background:#F8FAFC" '
+          + 'onclick="mwSel(\'frota\',this.dataset.id);this.parentNode.querySelectorAll(\'tr\').forEach(r=>r.classList.remove(\'sel\'));this.classList.add(\'sel\')" '
           + 'ondblclick="verEquipReal(this.dataset.id)" '
           + 'oncontextmenu="showCtxReal(event,this.dataset.id,\'equip\',this.dataset.cod)">'
           + '<td style="text-align:center"><span class="dot '+dotOf(f.status)+'" style="width:7px;height:7px"></span></td>'
@@ -609,7 +625,7 @@ function renderOTs(){
     const dot = v ? (v.nivel===0 ? 'r' : v.nivel===1 ? 'y' : 'g') : (MNT_DOT[o.prioridade] || 'y');
     const dp = o.data_prevista ? d(o.data_prevista) : (o.horimetro_previsto != null ? o.horimetro_previsto + ' h·km' : '—');
     const prog = v ? `<span style="color:${v.nivel===0?'#DC2626':v.nivel===1?'#B45309':'#16A34A'};font-size:10px">${_esc(v.texto)}</span>` : dp;
-    return `<tr oncontextmenu="showCtxReal(event,'${o.id}','ot','${_esc(o.numero)}')" onclick="verOTReal('${o.id}')">
+    return `<tr oncontextmenu="showCtxReal(event,'${o.id}','ot','${_esc(o.numero)}')" onclick="mwSel('ots','${o.id}');verOTReal('${o.id}')">
       <td style="text-align:center"><span class="dot ${dot}"></span></td>
       <td class="bold" style="white-space:nowrap">${_esc(o.numero)}</td>
       <td>${_esc(o.descricao)}</td>
@@ -1264,6 +1280,175 @@ function _pneuAlocar(rotulo){
   const sel = document.getElementById('sub-comp'); if (sel) sel.focus();
   mostrarToast('📍 Posição "'+rotulo+'" selecionada — escolha o pneu e clique Montar','ok');
 }
+// ── (01/09/2026) BARRA DE TOPO PADRÃO — réplica ManWinWin nas três abas ─────
+// Novo · Imprimir · Abrir · Repetir · Excluir │ Ver ▾ · Registos ▾ · Análises ▾ ·
+// Ferramentas ▾ │ Procurar. Um renderizador, três mapas de ações. A seleção
+// (clique simples na linha) alimenta Abrir/Repetir/Excluir/Registos.
+let _mwSel = { frota:null, ots:null, alm:null };
+function mwSel(aba, id){ _mwSel[aba] = id; }
+function _mwPrecisa(aba, rotulo){
+  const id = _mwSel[aba];
+  if (!id){ mostrarToast('Selecione um '+rotulo+' na lista (clique simples) e tente de novo','warn'); return null; }
+  return id;
+}
+function _mwBreve(o){ mostrarToast('\ud83d\udee0 '+o+' \u2014 em breve','warn'); }
+
+const _MW = {
+  frota: {
+    rotulo:'objecto',
+    novo:'novoEquipMW()', abrir:"(function(){const i=_mwPrecisa('frota','objecto'); if(i) verEquipReal(i);})()",
+    repetir:"(function(){const i=_mwPrecisa('frota','objecto'); if(i) novoEquipMW(i);})()",
+    excluir:"excluirEquipMW()", imprimir:"mwImprimir('frota-centro','Frota')",
+    ver:[['\ud83c\udf33 \u00c1rvore',"ftModo('arv')"],['\u2630 Lista',"ftModo('lista')"],['\u21bb Atualizar sem\u00e1foros',"carregarSemaforosReais()"]],
+    registos:[['\u26fd Abastecimentos','equipAbastecimentos'],['\ud83d\udcc8 Registo Funcionamento','equipFuncionamento'],
+              ['\ud83d\udede Subsistemas / Montagem','equipSubsistemas'],['\ud83d\udd29 Artigos aplicados','equipArtigos'],
+              ['\ud83d\udcc5 Planos de manuten\u00e7\u00e3o','abrirPlanosEquip'],['\ud83d\udd27 Ordens de Trabalho','otsDoEquip']],
+    analises:[['\ud83d\udea6 Sem\u00e1foros da frota',"carregarSemaforosReais()"],['\ud83d\udcca An\u00e1lise ABC',"_mwBreve('An\u00e1lise ABC')"]],
+    ferramentas:[['\ud83c\udf33 \u00c1rvore Objectos',"ftModo('arv')"],['\ud83d\udcc5 Plano Trabalhos',"(function(){const i=_mwPrecisa('frota','objecto'); if(i) abrirPlanosEquip(i);})()"],
+                 ['\ud83d\udcdc Hist\u00f3rico Completo OTs',"(function(){const i=_mwPrecisa('frota','objecto'); if(i) otsDoEquip(i,true);})()"],
+                 ['\u270f\ufe0f M\u00faltipla Edi\u00e7\u00e3o Objectos',"_mwBreve('M\u00faltipla edi\u00e7\u00e3o')"],['\ud83d\ude9a Guias Transporte',"_mwBreve('Guias de transporte')"]],
+    busca:'arv-busca'
+  },
+  ots: {
+    rotulo:'OT',
+    novo:'abrirNovaOT()', abrir:"(function(){const i=_mwPrecisa('ots','OT'); if(i) verOTReal(i);})()",
+    repetir:"repetirOTMW()", excluir:"(function(){const i=_mwPrecisa('ots','OT'); if(i) mntStatusReal(i,'cancelada');})()",
+    imprimir:"mwImprimir('mod-ots','Ordens de Trabalho')",
+    ver:[['\u2705 Todas (limpar filtro)',"limparFiltroOTs()"]],
+    registos:[['\ud83d\udce8 Pedidos (triagem)',"abrirPedidos()"],
+              ['\u25b6\ufe0f Iniciar (Em curso)',"(function(){const i=_mwPrecisa('ots','OT'); if(i) mntStatusReal(i,'em_andamento');})()"],
+              ['\u23f8\ufe0f Aguardando pe\u00e7a',"(function(){const i=_mwPrecisa('ots','OT'); if(i) mntStatusReal(i,'aguardando_peca');})()"],
+              ['\u2714\ufe0f Concluir\u2026',"(function(){const i=_mwPrecisa('ots','OT'); if(i) mntStatusReal(i,'concluida');})()"]],
+    analises:[['\ud83d\udea6 Sem\u00e1foros da frota',"showModule('frota');carregarSemaforosReais()"]],
+    ferramentas:[['\ud83d\udcdc Hist\u00f3rico Completo OTs',"limparFiltroOTs()"],['\ud83d\udcc5 Plano Trabalhos',"_mwBreve('Plano de trabalhos consolidado')"]],
+    busca:'ots-busca'
+  },
+  alm: {
+    rotulo:'artigo',
+    novo:"artJanela('')", abrir:"(function(){const i=_mwPrecisa('alm','artigo'); if(i) abrirPeca(i);})()",
+    repetir:"(function(){const i=_mwPrecisa('alm','artigo'); if(i) artJanela(i);})()",
+    excluir:"_mwBreve('Desativar artigo')", imprimir:"mwImprimir('mod-alm','Materiais')",
+    ver:[['\ud83d\uddc2 Cat\u00e1logo de Pe\u00e7as',"almLente('mestre')"],['\ud83d\udce6 Almoxarifado',"almLente('armazem')"]],
+    registos:[['\ud83d\udce5 Entrada',"almMovAbrir('entrada')"],['\ud83d\udce4 Sa\u00edda',"almMovAbrir('saida')"],
+              ['\u21c4 Transfer\u00eancia',"almMovAbrir('transferencia')"],['\ud83e\uddee Ajuste de saldo',"almMovAbrir('ajuste')"]],
+    analises:[['\ud83d\udcca An\u00e1lise ABC',"_mwBreve('An\u00e1lise ABC')"],['\u26a0 Estoque baixo',"carregarPecasReais()"]],
+    ferramentas:[['\ud83d\udccb Invent\u00e1rio',"_mwBreve('Invent\u00e1rio')"],['\ud83d\udd01 Substitutos',"_mwBreve('Substitutos')"]],
+    busca:'alm-busca'
+  }
+};
+
+function mwBar(aba){
+  const c = _MW[aba];
+  const b = (ico, rot, fn) => '<button class="mwb" onclick="'+fn.replace(/"/g,'&quot;')+'"><span class="i">'+ico+'</span>'+rot+'</button>';
+  const dd = (ico, rot, itens, tipoSel) => '<div class="mwdd"><button class="mwb" onclick="mwMenu(this)"><span class="i">'+ico+'</span>'+rot+' \u25be</button><div class="mwm">'
+      + itens.map(([t,f]) => '<div onclick="'+(tipoSel ? "(function(){const i=_mwPrecisa('"+aba+"','"+c.rotulo+"'); if(i) "+f+"(i);})()" : f).replace(/"/g,'&quot;')+'">'+t+'</div>').join('')+'</div></div>';
+  return '<div class="mwbar" id="mwbar-'+aba+'">'
+    + b('\u2795','Novo',c.novo) + b('\ud83d\udda8','Imprimir',c.imprimir) + b('\ud83d\udcc2','Abrir',c.abrir)
+    + b('\ud83d\udccb','Repetir',c.repetir) + b('\u2715','Excluir',c.excluir)
+    + '<span class="sep"></span>'
+    + dd('\ud83d\udc41','Ver',c.ver,false) + dd('\ud83d\udcd2','Registos',c.registos, aba==='frota') + dd('\ud83d\udcca','An\u00e1lises',c.analises,false) + dd('\ud83d\udd27','Ferramentas',c.ferramentas,false)
+    + '<span class="sep"></span>'
+    + '<input placeholder="Procurar\u2026" onkeydown="if(event.key===\'Enter\'){mwProcurar(\''+aba+'\',this.value)}">'
+    + '<button class="mwb" onclick="mwProcurar(\''+aba+'\',this.previousElementSibling.value)"><span class="i">\ud83d\udd0d</span>Procurar</button>'
+    + '</div>';
+}
+function mwMenu(btn){
+  const m = btn.nextElementSibling; const aberto = m.classList.contains('on');
+  document.querySelectorAll('.mwm.on').forEach(x => x.classList.remove('on'));
+  if (!aberto) m.classList.add('on');
+  event.stopPropagation();
+}
+document.addEventListener('click', () => document.querySelectorAll('.mwm.on').forEach(x => x.classList.remove('on')));
+['frota','ots','alm'].forEach(a => { const sl = document.getElementById('mwslot-'+a); if (sl) sl.innerHTML = mwBar(a); });
+function mwProcurar(aba, txt){
+  const alvo = document.getElementById(_MW[aba].busca);
+  if (!alvo) return;
+  alvo.value = txt || '';
+  alvo.dispatchEvent(new Event('input'));
+}
+function mwImprimir(idArea, titulo){
+  const c = document.getElementById(idArea); if (!c) return;
+  const w = window.open('', '_blank'); if (!w){ mostrarToast('Bloqueador de pop-up impediu a impress\u00e3o','warn'); return; }
+  w.document.write('<html><head><meta charset="UTF-8"><title>Garra Sistemas \u2014 '+_esc(titulo)+'</title><style>body{font-family:system-ui,sans-serif;font-size:11px;padding:16px;color:#0F172A}table{border-collapse:collapse;width:100%}th,td{border:1px solid #CBD5E1;padding:3px 5px;text-align:left}.r{text-align:right}.mwbar,.bar,.strip,.btn,button,input,select,.param-nav{display:none!important}h2{font-size:14px;color:#1A2A5E}</style></head><body><h2>'+_esc(titulo)+' \u2014 '+new Date().toLocaleString('pt-BR')+'</h2>'+c.innerHTML+'</body></html>');
+  w.document.close(); w.focus(); setTimeout(()=>w.print(), 300);
+}
+async function excluirEquipMW(){
+  const id = _mwPrecisa('frota','objecto'); if (!id) return;
+  const e = _navEquipObjs().find(x => String(x.id) === String(id)) || {};
+  if (!confirm('Desativar o objecto '+(e.codigo||'')+'? Ele sai das listas, mas o hist\u00f3rico (OTs, leituras, montagens) permanece.')) return;
+  try {
+    await mntFetch('/operacional/api/equipamentos/'+id, {method:'DELETE'});
+    mostrarToast('\u2705 '+(e.codigo||'Objecto')+' desativado','ok');
+    _mwSel.frota = null; carregarSemaforosReais();
+  } catch(err){ mostrarToast('\u274c '+err.message,'warn'); }
+}
+async function repetirOTMW(){
+  const id = _mwPrecisa('ots','OT'); if (!id) return;
+  const o = (_otsCache || []).find(x => String(x.id) === String(id));
+  if (!o){ verOTReal(id); return; }
+  abrirNovaOT(o.equipamento_id, o);
+}
+
+// ── NOVO OBJECTO (cadastro de equipamento na Frota) ────────────────────────
+// Nasce na frota única (operacional) e recebe os campos de manutenção na
+// ficha. copiarDe = id de um objecto existente → "Repetir".
+let _mwDom = null;
+async function novoEquipMW(copiarDe){
+  if (!_mwDom){
+    const g = async d => { try { return (await mntFetch('/manutencao/api/param/'+d)).filter(x => x.ativo !== false); } catch(e){ return []; } };
+    _mwDom = { tipos: await g('tipos-equipamento'), sistemas: await g('sistemas'), ccs: await g('centros-custo') };
+  }
+  let base = {};
+  if (copiarDe){
+    try { const d = await mntFetch('/manutencao/api/equipamentos/'+copiarDe+'/detalhe'); base = d.equipamento || d || {}; } catch(e){ base = _navEquipObjs().find(x => String(x.id) === String(copiarDe)) || {}; }
+  }
+  const cats = Array.from(new Set(_semCache.map(e => e.categoria).filter(Boolean))).sort();
+  const opt = (lista, val, chave, rot) => '<option value="">\u2014</option>' + lista.map(x => '<option value="'+_esc(x[chave])+'"'+(x[chave]===val?' selected':'')+'>'+_esc(x[chave])+' \u2014 '+_esc(x[rot]||'')+'</option>').join('');
+  const f = (id, rot, html) => '<div class="mfield" style="flex:1;min-width:140px">'+rot+html+'</div>';
+  const inp = (id, val, ph) => '<input id="'+id+'" value="'+_esc(val||'')+'" placeholder="'+(ph||'')+'">';
+  document.querySelector('#eq-ficha .modal').classList.remove('larga');
+  document.getElementById('eq-ficha-corpo').innerHTML =
+    '<div style="display:flex;justify-content:space-between;align-items:center"><b style="font-size:14px;color:#1A2A5E">\u2795 Novo Objecto'+(copiarDe?' <span class="muted" style="font-weight:400;font-size:11px">(repetindo '+_esc(base.codigo||'')+')</span>':'')+'</b>'
+    + '<span style="cursor:pointer;font-size:18px" onclick="fichaFechar()">\u2715</span></div>'
+    + '<div class="muted" style="font-size:10px;margin:4px 0 8px">Entra na frota \u00fanica (Operacional + Manuten\u00e7\u00e3o). C\u00f3digo, descri\u00e7\u00e3o e categoria s\u00e3o obrigat\u00f3rios; o resto pode ser completado na ficha.</div>'
+    + '<div style="display:flex;gap:8px;flex-wrap:wrap">'
+    + f('ne-cod','C\u00f3digo *', inp('ne-cod','', 'ex.: EH-52')) + f('ne-desc','Descri\u00e7\u00e3o *', inp('ne-desc', base.descricao, 'ex.: Escavadeira hidr\u00e1ulica 20t'))
+    + f('ne-cat','Categoria *','<input id="ne-cat" list="ne-cat-l" value="'+_esc(base.categoria||'')+'" placeholder="caminhao, maquina, apoio\u2026"><datalist id="ne-cat-l">'+cats.map(c=>'<option value="'+_esc(c)+'">').join('')+'</datalist>')
+    + f('ne-med','Medi\u00e7\u00e3o','<select id="ne-med">'+['horimetro','km','hora','diaria','viagem','metros'].map(m=>'<option value="'+m+'"'+((base.medicao||'horimetro')===m?' selected':'')+'>'+m+'</option>').join('')+'</select>')
+    + '</div><div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px">'
+    + f('ne-tipo','Tipo (ManWinWin)','<select id="ne-tipo">'+opt(_mwDom.tipos, base.tipo_sigla, 'sigla','nome')+'</select>')
+    + f('ne-sis','Sistema','<select id="ne-sis">'+opt(_mwDom.sistemas, base.sistema_codigo, 'codigo','nome')+'</select>')
+    + f('ne-cc','Centro de custo','<select id="ne-cc">'+opt(_mwDom.ccs, base.centro_custo, 'codigo','nome')+'</select>')
+    + '</div><div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px">'
+    + f('ne-marca','Marca', inp('ne-marca', base.marca)) + f('ne-modelo','Modelo', inp('ne-modelo', base.modelo))
+    + f('ne-ano','Ano', inp('ne-ano', base.ano_fabricacao || base.ano)) + f('ne-placa','Placa', inp('ne-placa', '', 'ABC-1D23'))
+    + f('ne-serie','N\u00ba de s\u00e9rie', inp('ne-serie','')) + f('ne-loc','Localiza\u00e7\u00e3o', inp('ne-loc', base.localizacao))
+    + '</div>'
+    + '<div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px"><button class="btn" onclick="fichaFechar()">Cancelar</button><button class="btn p" onclick="salvarNovoEquipMW()">\ud83d\udcbe Criar objecto</button></div>';
+  document.getElementById('eq-ficha').classList.add('show');
+  setTimeout(() => { const c = document.getElementById('ne-cod'); if (c) c.focus(); }, 50);
+}
+async function salvarNovoEquipMW(){
+  const v = i => ((document.getElementById(i)||{}).value || '').trim();
+  const codigo = v('ne-cod').toUpperCase(), descricao = v('ne-desc'), categoria = v('ne-cat').toLowerCase();
+  if (!codigo || !descricao || !categoria){ mostrarToast('C\u00f3digo, descri\u00e7\u00e3o e categoria s\u00e3o obrigat\u00f3rios','warn'); return; }
+  try {
+    const r = await mntFetch('/operacional/api/equipamentos', {method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({codigo, descricao, categoria, medicao: v('ne-med'), marca: v('ne-marca')||null, modelo: v('ne-modelo')||null,
+                            ano: v('ne-ano')||null, placa: v('ne-placa')||null})});
+    const id = r.id || (r.equipamento && r.equipamento.id);
+    if (id){
+      const ficha = { tipo_sigla: v('ne-tipo')||null, sistema_codigo: v('ne-sis')||null, centro_custo: v('ne-cc')||null,
+                      num_serie: v('ne-serie')||null, localizacao: v('ne-loc')||null, ano_fabricacao: v('ne-ano')||null };
+      try { await mntFetch('/manutencao/api/equipamentos/'+id+'/ficha', {method:'PATCH', headers:{'Content-Type':'application/json'}, body: JSON.stringify(ficha)}); } catch(e){}
+    }
+    mostrarToast('\u2705 '+codigo+' criado','ok');
+    fichaFechar();
+    await carregarSemaforosReais();
+    if (id){ _mwSel.frota = id; verEquipReal(id); }
+  } catch(e){ mostrarToast('\u274c '+e.message,'warn'); }
+}
+
 // ── (31/08/2026) TOPO PADRÃO DAS JANELAS — réplica ManWinWin ─────────────
 // Barra: ➕ Novo · 🖨 Imprimir · ✕ Fechar | ⏮ ◀ n/N ▶ ⏭ | Procurar | Limpar.
 // Navega pelo MESMO conjunto que a lista de trás (equipamentos da Frota ou
@@ -2880,7 +3065,7 @@ async function carregarPecasReais(){
     const r = await mntFetch('/manutencao/api/pecas' + (qs.length ? '?' + qs.join('&') : ''));
     _pcNav = (r.itens||[]).map(x => ({codigo:x.codigo, descricao:x.descricao||x.nome||''}));
     if (!r || !Array.isArray(r.itens)) throw new Error('Resposta inesperada do servidor');
-    tb.innerHTML = r.itens.map(p => `<tr data-cod="${_esc(p.codigo)}" style="cursor:pointer" onclick="abrirPeca(this.dataset.cod)">
+    tb.innerHTML = r.itens.map(p => `<tr data-cod="${_esc(p.codigo)}" style="cursor:pointer" onclick="mwSel('alm',this.dataset.cod);abrirPeca(this.dataset.cod)">
       <td class="bold">${_esc(p.codigo)}</td>
       <td>${_esc(p.descricao)}</td>
       <td>${_esc(p.familia_codigo || '—')}</td>
@@ -2894,7 +3079,7 @@ async function renderEstoqueBaixo(){
   try {
     const rows = await mntFetch('/manutencao/api/estoque-baixo');
     tb.innerHTML = rows.map(b =>
-      '<tr data-cod="'+_esc(b.codigo)+'" style="cursor:pointer" onclick="abrirPeca(this.dataset.cod)">'
+      '<tr data-cod="'+_esc(b.codigo)+'" style="cursor:pointer" onclick="mwSel(\'alm\',this.dataset.cod);abrirPeca(this.dataset.cod)">'
       + '<td class="bold">'+_esc(b.codigo)+'</td><td>'+_esc(b.descricao)
       + ' <span class="chip nr">'+b.almox+': '+b.quantidade+' / mín '+b.minimo+'</span></td>'
       + '<td>'+_esc(b.localizacao||'—')+'</td><td>'+_esc(b.unidade||'')+'</td><td class="r muted">repor</td></tr>'
@@ -2912,7 +3097,7 @@ async function carregarArmazem(q){
     if ((document.getElementById('alm-zerados')||{}).checked) qs.push('incluir_zerados=1');
     const r = await mntFetch('/manutencao/api/armazem' + (qs.length ? '?' + qs.join('&') : ''));
     const abaixo = x => x.minimo != null && parseFloat(x.quantidade) < parseFloat(x.minimo);
-    tb.innerHTML = (r.itens || []).map(x => `<tr data-cod="${_esc(x.codigo)}" style="cursor:pointer" onclick="abrirPeca(this.dataset.cod)">
+    tb.innerHTML = (r.itens || []).map(x => `<tr data-cod="${_esc(x.codigo)}" style="cursor:pointer" onclick="mwSel('alm',this.dataset.cod);abrirPeca(this.dataset.cod)">
       <td class="bold">${_esc(x.codigo)}</td>
       <td>${_esc(x.descricao)}</td>
       <td><span class="chip pe" style="font-size:9px">${_esc(x.almox)}</span></td>
