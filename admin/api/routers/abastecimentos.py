@@ -38,7 +38,16 @@ from fastapi.responses import HTMLResponse
 
 from core.db import ajard_query
 from core.auth import verificar_token
-from core.storage import storage_upload, storage_url
+from core.storage import storage_upload, storage_url as _storage_url_core
+
+
+def storage_url(path):
+    """Compatibilidade: notas gravadas entre a virada e 01/09/2026 têm o caminho
+    sem o prefixo do bucket ('abastecimentos/2026-08/nota-x.jpg'). Elas estão no
+    bucket unificado — prefixa antes de assinar."""
+    if path and ":" not in path and not path.startswith("http"):
+        path = "garra-fotos:" + path
+    return _storage_url_core(path)
 
 router = APIRouter()
 
@@ -677,7 +686,7 @@ async def extrair(foto_nota: UploadFile = File(None),
                   payload=Depends(verificar_abastecimento)):
     """Sobe fotos ao Storage e lê nota + painel + texto numa chamada só."""
     await _ddl()
-    imagens, paths = [], {}
+    imagens, paths, erros_foto = [], {}, []
     pasta = "abastecimentos/" + datetime.now().strftime("%Y-%m")
     for chave, up in (("nota", foto_nota), ("leitura", foto_leitura)):
         if not up:
@@ -688,10 +697,14 @@ async def extrair(foto_nota: UploadFile = File(None),
         mime = up.content_type or "image/jpeg"
         path = f"{pasta}/{chave}-{os.urandom(6).hex()}.jpg"
         try:
-            storage_upload(dados, path, mime)
-            paths[chave] = path
-        except Exception:
+            # (01/09/2026) guardar o caminho DEVOLVIDO — vem com o prefixo do bucket
+            # ("garra-fotos:…"); sem ele, storage_url procurava no bucket legado e o
+            # link da foto nunca nascia (bug que escondia o 🧾 no desktop)
+            paths[chave] = storage_upload(dados, path, mime)
+        except Exception as e:
             paths[chave] = None
+            erros_foto.append(f"{chave}: {e}")
+            print(f"[abastecimento] upload da foto {chave} falhou: {e!r}")
         imagens.append(("foto da nota" if chave == "nota" else "foto do painel/horímetro", dados, mime))
     if not imagens and not (texto_livre or "").strip():
         raise HTTPException(status_code=400, detail="Envie a foto da nota ou um texto")
@@ -699,6 +712,8 @@ async def extrair(foto_nota: UploadFile = File(None),
     sug = await _resolver(bruto if isinstance(bruto, dict) else {})
     sug["paths"] = paths
     sug["bruto"] = bruto
+    if erros_foto:
+        sug["erro_foto"] = "; ".join(erros_foto)
     return sug
 
 
@@ -988,6 +1003,29 @@ async def listar(equipamento_id: str = None, limite: int = 30, meus: int = 0, pa
     return out
 
 
+@router.post("/operacional/api/abastecimentos/{item_id}/foto")
+async def anexar_foto(item_id: str, foto: UploadFile = File(...), tipo: str = Form("nota"),
+                      payload=Depends(verificar_abastecimento)):
+    """(01/09/2026) Operador esqueceu a foto? Anexa depois, sem recriar a nota.
+    tipo = nota | leitura. Vai para a nota-mãe (vale para todos os itens dela)."""
+    await _ddl()
+    if tipo not in ("nota", "leitura"):
+        raise HTTPException(status_code=400, detail="tipo deve ser nota ou leitura")
+    it = await ajard_query("SELECT id, nota_id, usuario_id FROM operacional.abastecimentos WHERE id=%s AND ativo=true", (item_id,), fetch="one")
+    if not it:
+        raise HTTPException(status_code=404, detail="Abastecimento não encontrado")
+    if not it.get("nota_id"):
+        raise HTTPException(status_code=400, detail="Registro sem nota-mãe (galão) — foto não se aplica")
+    dados = await foto.read()
+    if not dados:
+        raise HTTPException(status_code=400, detail="Arquivo vazio")
+    pasta = "abastecimentos/" + datetime.now().strftime("%Y-%m")
+    caminho = storage_upload(dados, f"{pasta}/{tipo}-{os.urandom(6).hex()}.jpg", foto.content_type or "image/jpeg")
+    col = "foto_nota" if tipo == "nota" else "foto_leitura"
+    await ajard_query(f"UPDATE operacional.abastecimento_notas SET {col}=%s WHERE id=%s", (caminho, it["nota_id"]), fetch="none")
+    return {"ok": True, "url": storage_url(caminho)}
+
+
 @router.get("/operacional/api/abastecimentos/resumo/{eq_id}")
 async def resumo(eq_id: str, dias: int = None, payload=Depends(verificar_token)):
     await _ddl()
@@ -1272,6 +1310,7 @@ async function ler(){
     if($('f-texto').value.trim()) fd.append('texto_livre',$('f-texto').value.trim());
     const r=await api('/operacional/api/abastecimentos/extrair',{method:'POST',body:fd});
     PATHS=r.paths||{}; BRUTO=r.bruto||null;
+    if(r.erro_foto) toast('⚠ A foto NÃO ficou guardada ('+r.erro_foto+'). O registro segue, mas anexe a foto depois em "Meus últimos registros".');
     aplicarSugestao(r);
     progresso(false,r.erro?'Leitura automática indisponível — preencha à mão.':'Lido. Confira os campos em laranja.');
     if(r.erro) $('leitura-flags').innerHTML='<div class="flag flag-warn">Leitura automática indisponível ('+esc(r.erro)+'). Preencha à mão — a foto ficou guardada.</div>';
@@ -1411,6 +1450,14 @@ function limpar(){
   mostrar('sec-dados',false); mostrar('rodape',false); const lk=$('lk-manual'); if(lk) lk.style.display='';
 }
 
+async function anexarFoto(id, inp){
+  const f=inp.files&&inp.files[0]; if(!f) return;
+  try{
+    const b=await comprimir(f); const fd=new FormData(); fd.append('foto',b,'nota.jpg'); fd.append('tipo','nota');
+    await api('/operacional/api/abastecimentos/'+id+'/foto',{method:'POST',body:fd});
+    toast('✅ Foto anexada à nota'); carregarHist();
+  }catch(e){ toast('❌ '+e.message); }
+}
 async function carregarHist(){
   try{
     const l=await api('/operacional/api/abastecimentos?limite=5&meus=1');
@@ -1421,7 +1468,9 @@ async function carregarHist(){
         +(x.origem==='galao'?' <span class="chip">do '+esc(x.galao_codigo||'galão')+'</span>':'')
         +(x.posto?' · '+esc(x.posto):'')+(x.numero_cupom?' <span class="chip">'+esc(x.numero_cupom)+'</span>':'')
         +(x.divergencia_leitura?' <span class="chip w">divergente</span>':'')+(x.alerta_consumo?' <span class="chip r">consumo</span>':'')
-        +'<div class="muted">'+esc(x.usuario_nome||'')+(x.combustivel_nome?' · '+esc(x.combustivel_nome):'')+'</div></div>';
+        +'<div class="muted">'+esc(x.usuario_nome||'')+(x.combustivel_nome?' · '+esc(x.combustivel_nome):'')
+        +(x.nota_id?(x.foto_nota_url?' · 🧾 foto ok':' · <span class="chip w">sem foto</span> <label style="color:#1A2A5E;font-weight:700;cursor:pointer">📎 anexar<input type="file" accept="image/*" capture="environment" style="display:none" onchange="anexarFoto(\''+x.id+'\',this)"></label>'):'')
+        +'</div></div>';
     }).join(''):'<div class="muted">Nenhum registro ainda.</div>';
   }catch(e){}
 }
