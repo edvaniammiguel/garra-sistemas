@@ -38,7 +38,7 @@ from fastapi.responses import HTMLResponse
 
 from core.db import ajard_query
 from core.auth import verificar_token
-from core.storage import storage_upload
+from core.storage import storage_upload, storage_url
 
 router = APIRouter()
 
@@ -821,6 +821,17 @@ async def _gravar_item(nota_id, eq, litros, it, comb, rubrica, preco_litro, data
 
 @router.post("/operacional/api/abastecimentos/nota")
 async def registrar_nota(request: Request, payload=Depends(verificar_abastecimento)):
+    try:
+        return await _registrar_nota(request, payload)
+    except HTTPException:
+        raise
+    except Exception as e:  # nunca "Erro interno" mudo: causa na tela e traceback no log
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Falha ao registrar: {type(e).__name__}: {str(e)[:180]}")
+
+
+async def _registrar_nota(request, payload):
     """Nota mãe + itens. Body:
     {nota:{numero_cupom, fornecedor_id|posto_nome+cnpj, data_hora, combustivel,
            litros_total, preco_litro, valor_total, foto_nota, foto_leitura, texto_livre, bruto},
@@ -930,15 +941,21 @@ async def registrar_do_galao(request: Request, payload=Depends(verificar_abastec
 
 
 @router.get("/operacional/api/abastecimentos")
-async def listar(equipamento_id: str = None, limite: int = 30, payload=Depends(verificar_token)):
+async def listar(equipamento_id: str = None, limite: int = 30, meus: int = 0, payload=Depends(verificar_token)):
     """Lista no formato da tela ManWinWin (Doc. Custo, produto, data, leitura,
     litros, custo, objeto, entidade, rubrica) + fonte/flags."""
     await _ddl()
     limite = max(1, min(int(limite or 30), 300))
     filtro, params = "", []
     if equipamento_id:
-        filtro = "AND a.equipamento_id=%s"
+        filtro += " AND a.equipamento_id=%s"
         params.append(equipamento_id)
+    if meus:
+        uid = _uid(payload)
+        if uid:
+            filtro += " AND a.usuario_id=%s"; params.append(uid)
+        else:
+            filtro += " AND a.usuario_nome=%s"; params.append(payload.get("nome") or payload.get("login"))
     r = await ajard_query(
         f"""SELECT a.id, a.nota_id, a.data, a.litros, a.valor_total, a.leitura, a.leitura_fonte,
                    a.medicao, a.divergencia_leitura, a.divergencia_placa, a.usuario_nome,
@@ -964,6 +981,9 @@ async def listar(equipamento_id: str = None, limite: int = 30, payload=Depends(v
         x["data"] = x["data"].isoformat() if x.get("data") else None
         for k in ("id", "nota_id"):
             x[k] = str(x[k]) if x.get(k) else None
+        # links assinados (1 h) para conferência da foto no desktop
+        x["foto_nota_url"] = storage_url(x["foto_nota"]) if x.get("foto_nota") else None
+        x["foto_leitura_url"] = storage_url(x["foto_leitura"]) if x.get("foto_leitura") else None
         out.append(x)
     return out
 
@@ -1147,7 +1167,7 @@ input.ruim{border-color:#DC2626;background:#FEF2F2}
 
   <div id="f-resultado"></div>
 
-  <div class="card" id="tela-hist"><b>Últimos registros</b><div id="hist"></div></div>
+  <div class="card" id="tela-hist"><b>Meus últimos registros</b><div class="muted">Confirmação do que você já enviou — evita mandar a mesma nota duas vezes.</div><div id="hist"></div></div>
 </div>
 
 <div id="rodape" class="hide"><button class="btn btn-p" id="btn-salvar" onclick="salvar()">💾 Registrar abastecimento</button></div>
@@ -1393,7 +1413,7 @@ function limpar(){
 
 async function carregarHist(){
   try{
-    const l=await api('/operacional/api/abastecimentos?limite=10');
+    const l=await api('/operacional/api/abastecimentos?limite=5&meus=1');
     $('hist').innerHTML=l.length?l.map(x=>{
       const d=new Date(x.data); const un=x.medicao==='km'?' km':' h';
       return '<div class="hist"><b>'+esc(x.equipamento)+'</b> · '+d.toLocaleDateString('pt-BR')+' · '+fmt(x.litros,1)+' L'
