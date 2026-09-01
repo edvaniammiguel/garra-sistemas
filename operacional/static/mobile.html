@@ -821,6 +821,7 @@ function carregarIframeExterno(chave, path) {
   if (!iframe) {
     iframe = document.createElement('iframe');
     iframe.id = 'iframe-ext';
+    iframe.setAttribute('allow', 'microphone; camera');   // ditado por voz e câmera nas páginas embutidas
     sec.innerHTML = '';
     sec.appendChild(iframe);
   }
@@ -840,6 +841,7 @@ function carregarIframeChecklist(tab) {
   if (!iframe) {
     iframe = document.createElement('iframe');
     iframe.id = 'iframe-check';
+    iframe.setAttribute('allow', 'microphone; camera');
     sec.innerHTML = '';
     sec.appendChild(iframe);
   }
