@@ -978,7 +978,8 @@ async def listar(equipamento_id: str = None, limite: int = 30, meus: int = 0, pa
                    a.centro_custo, a.preco_litro, a.consumo_medio, a.alerta_consumo,
                    a.sem_funcionamento,
                    e.codigo AS equipamento, e.descricao AS equipamento_desc,
-                   n.numero_cupom, n.foto_nota, n.foto_leitura, fo.nome AS posto,
+                   n.numero_cupom, n.foto_nota, n.foto_leitura, fo.nome AS posto, n.fornecedor_id,
+                   (SELECT COUNT(*) FROM operacional.abastecimentos b WHERE b.nota_id=a.nota_id AND b.ativo=true) AS n_itens,
                    g.codigo AS galao_codigo, c.nome AS combustivel_nome
             FROM operacional.abastecimentos a
             LEFT JOIN operacional.equipamentos e ON e.id=a.equipamento_id
@@ -994,13 +995,100 @@ async def listar(equipamento_id: str = None, limite: int = 30, meus: int = 0, pa
         for k in ("litros", "valor_total", "leitura", "preco_litro", "consumo_medio"):
             x[k] = _f(x.get(k))
         x["data"] = x["data"].isoformat() if x.get("data") else None
-        for k in ("id", "nota_id"):
+        for k in ("id", "nota_id", "fornecedor_id"):
             x[k] = str(x[k]) if x.get(k) else None
+        x["n_itens"] = int(x.get("n_itens") or 1)
         # links assinados (1 h) para conferência da foto no desktop
         x["foto_nota_url"] = storage_url(x["foto_nota"]) if x.get("foto_nota") else None
         x["foto_leitura_url"] = storage_url(x["foto_leitura"]) if x.get("foto_leitura") else None
         out.append(x)
     return out
+
+
+@router.patch("/operacional/api/abastecimentos/{item_id}")
+async def editar_abastecimento(item_id: str, request: Request, payload=Depends(verificar_abastecimento)):
+    """(01/09/2026) Edição de um registro já efetivado (duplo clique no desktop).
+    Item: data, litros, preco_litro, valor_total, leitura, combustivel, observacao.
+    Nota-mãe (se a nota tem UM item): posto, cupom, data, combustível, litros,
+    preço, valor. Com mais de um item, o cabeçalho da nota não muda por aqui
+    (rateio é decisão humana no app). Regras mantidas: rubrica herdada do
+    combustível, cupom único por posto, leitura nunca recua no cadastro,
+    divergência recalculada contra as outras leituras. Trilha em observacao."""
+    await _ddl()
+    d = await request.json()
+    it = await ajard_query(
+        """SELECT a.*, (SELECT COUNT(*) FROM operacional.abastecimentos b WHERE b.nota_id=a.nota_id AND b.ativo=true) AS n_itens
+           FROM operacional.abastecimentos a WHERE a.id=%s AND a.ativo=true""", (item_id,))
+    if not it:
+        raise HTTPException(status_code=404, detail="Abastecimento não encontrado")
+    it = it[0]
+    if it.get("destino_tipo") == "galao" or it.get("origem") == "galao":
+        raise HTTPException(status_code=400, detail="Registro de galão — edite pelo app de campo")
+    eq = await _equip(str(it["equipamento_id"]))
+    combs = await _combustiveis()
+    comb = (d.get("combustivel") or it.get("combustivel") or None)
+    cd = next((c for c in combs if c["codigo"] == comb), None) if comb else None
+    if comb and (not cd or cd.get("ativo") is False):
+        raise HTTPException(status_code=400, detail="Combustível não cadastrado")
+    rubrica = cd.get("rubrica") if cd else it.get("rubrica")
+    litros = _num(d.get("litros")) if d.get("litros") not in (None, "") else float(it["litros"] or 0)
+    if not litros or litros <= 0:
+        raise HTTPException(status_code=400, detail="Litros deve ser positivo")
+    preco = _num(d.get("preco_litro")) if d.get("preco_litro") not in (None, "") else (float(it["preco_litro"]) if it.get("preco_litro") is not None else None)
+    valor = _num(d.get("valor_total")) if d.get("valor_total") not in (None, "") else None
+    if valor is None and preco:
+        valor = round(litros * preco, 2)
+    if preco is None and valor:
+        preco = round(valor / litros, 4)
+    data = _dt(d.get("data_hora")) if d.get("data_hora") else it["data"]
+    # leitura: digitada → recalcula divergência contra as OUTRAS leituras
+    leitura = it.get("leitura"); fonte = it.get("leitura_fonte"); div = bool(it.get("divergencia_leitura"))
+    if "leitura" in d:
+        nova = _num(d.get("leitura"))
+        if nova is not None:
+            outras = await ajard_query(
+                """SELECT COALESCE(MAX(leitura),0) AS m FROM operacional.abastecimentos
+                   WHERE equipamento_id=%s AND ativo=true AND id<>%s AND data < %s
+                     AND COALESCE(divergencia_leitura,false)=false AND destino_tipo='equipamento'""",
+                (eq["id"], item_id, data))
+            ant = float(outras[0]["m"] or 0) if outras else 0.0
+            leitura, fonte, div = nova, "digitada", bool(ant and nova < ant)
+    quem = payload.get("nome") or payload.get("login") or ""
+    trilha = f"editado por {quem} em {datetime.now().strftime('%d/%m/%Y %H:%M')}"
+    obs = (d.get("observacao") if "observacao" in d else it.get("observacao")) or ""
+    obs = (obs + (" · " if obs else "") + trilha)[:500]
+    await ajard_query(
+        """UPDATE operacional.abastecimentos SET data=%s, litros=%s, preco_litro=%s, valor_total=%s,
+             leitura=%s, leitura_fonte=%s, divergencia_leitura=%s, combustivel=%s, rubrica=%s, observacao=%s
+           WHERE id=%s""",
+        (data, litros, preco, valor, leitura, fonte, div, comb, rubrica, obs, item_id), fetch="none")
+    if leitura is not None and not div:
+        campo = "km_atual" if eq.get("medicao") == "km" else "horimetro_atual"
+        await ajard_query(
+            f"""UPDATE operacional.equipamentos SET {campo}=%s, atualizado_em=now()
+                WHERE id=%s AND COALESCE({campo},0) < %s""", (leitura, eq["id"], leitura), fetch="none")
+    nota_alterada = False
+    if it.get("nota_id") and int(it["n_itens"] or 1) == 1:
+        forn = (d.get("fornecedor_id") or "").strip() or None
+        cupom = (str(d.get("numero_cupom") or "").strip() or None) if "numero_cupom" in d else None
+        n = await ajard_query("SELECT fornecedor_id, numero_cupom FROM operacional.abastecimento_notas WHERE id=%s", (it["nota_id"],))
+        n = n[0] if n else {}
+        forn_final = forn or n.get("fornecedor_id")
+        cupom_final = cupom if "numero_cupom" in d else n.get("numero_cupom")
+        if cupom_final and forn_final:
+            dup = await ajard_query(
+                """SELECT id FROM operacional.abastecimento_notas
+                   WHERE ativo=true AND fornecedor_id=%s AND numero_cupom=%s AND id<>%s LIMIT 1""",
+                (forn_final, cupom_final, it["nota_id"]))
+            if dup:
+                raise HTTPException(status_code=409, detail=f"Cupom {cupom_final} deste posto já existe em outra nota")
+        await ajard_query(
+            """UPDATE operacional.abastecimento_notas SET fornecedor_id=%s, numero_cupom=%s, data=%s, combustivel=%s,
+                 rubrica=%s, litros_total=%s, preco_litro=%s, valor_total=%s WHERE id=%s""",
+            (forn_final, cupom_final, data, comb, rubrica, litros, preco, valor, it["nota_id"]), fetch="none")
+        nota_alterada = True
+    return {"ok": True, "id": item_id, "leitura": leitura, "divergencia_leitura": div, "nota_alterada": nota_alterada,
+            "valor_total": valor, "preco_litro": preco}
 
 
 @router.post("/operacional/api/abastecimentos/{item_id}/foto")
