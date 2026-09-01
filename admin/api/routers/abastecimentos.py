@@ -1017,7 +1017,7 @@ input.ruim{border-color:#DC2626;background:#FEF2F2}
 .foto .ic{width:64px;height:64px;border-radius:8px;background:#E2E8F0;display:flex;align-items:center;justify-content:center;font-size:28px}
 .foto .tx{flex:1;font-size:14px}.foto .tx b{display:block;color:#1A2A5E}
 .foto{cursor:default}
-.btn-ditar{display:none;margin-top:6px;padding:9px 12px;border:1px solid #CBD5E1;border-radius:8px;background:#F8FAFC;color:#1A2A5E;font-size:13px;font-weight:700;cursor:pointer}.btn-ditar.gravando{background:#FEE2E2;border-color:#DC2626;color:#991B1B}
+.btn-ditar{display:inline-block;margin-top:6px;padding:9px 12px;border:1px solid #CBD5E1;border-radius:8px;background:#F8FAFC;color:#1A2A5E;font-size:13px;font-weight:700;cursor:pointer}.btn-ditar.gravando{background:#FEE2E2;border-color:#DC2626;color:#991B1B}
 .fbtn{margin-top:6px}
 .fbtn .btn{margin-top:0;padding:11px;font-size:14px}
 .prog{height:6px;background:#E2E8F0;border-radius:3px;overflow:hidden;margin-top:8px}.prog i{display:block;height:100%;width:0;background:#E8820C;transition:width .4s}
@@ -1073,7 +1073,7 @@ input.ruim{border-color:#DC2626;background:#FEF2F2}
     <input type="file" id="g-f-leitura" accept="image/*" style="display:none" onchange="fotoEscolhida('leitura',this)">
     <label>Escreva como mandaria no grupo <span class="muted">(opcional)</span></label>
     <input id="f-texto" placeholder="ex.: CB-05 441545 km · EH-50 120 L" onblur="talvezLer()">
-    <button type="button" class="btn-ditar" data-ditar="f-texto" style="display:none">🎤 Ditar</button>
+    <button type="button" class="btn-ditar" data-ditar="f-texto">🎤 Ditar</button>
     <div class="prog hide" id="prog"><i id="prog-i"></i></div>
     <div class="muted" id="prog-tx" style="margin-top:6px"></div>
     <div id="leitura-flags"></div>
@@ -1390,7 +1390,6 @@ async function carregarHist(){
     return;
   }
   document.querySelectorAll('[data-ditar]').forEach(function(btn){
-    btn.style.display = '';
     let rec = null, ouvindo = false;
     btn.addEventListener('click', function(ev){
       ev.preventDefault();
