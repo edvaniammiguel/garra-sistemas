@@ -182,6 +182,7 @@ async def _garantir_colunas_ot():
         "ALTER TABLE manutencao.ot ADD COLUMN IF NOT EXISTS origem TEXT DEFAULT 'garra'",
         "ALTER TABLE manutencao.ot ADD COLUMN IF NOT EXISTS sintoma_codigo TEXT",
         "ALTER TABLE manutencao.ot ADD COLUMN IF NOT EXISTS causa_codigo TEXT",
+        "ALTER TABLE manutencao.ot ADD COLUMN IF NOT EXISTS projecto_id UUID",
     ):
         await ajard_query(ddl, fetch="none")
     _OT_COLS_OK = True
@@ -654,7 +655,9 @@ async def editar_ot(ot_id: str, request: Request, payload=Depends(verificar_manu
             d[c] = None
     campos = ["tipo", "prioridade", "descricao", "responsavel_id",
               "fornecedor_id", "custo_total", "data_prevista", "horimetro_previsto",
-              "sintoma_codigo", "causa_codigo", "tipo_trabalho"]
+              "sintoma_codigo", "causa_codigo", "tipo_trabalho", "projecto_id"]
+    if "projecto_id" in d and d["projecto_id"] == "":
+        d["projecto_id"] = None
     updates, params = [], []
     for c in campos:
         if c in d:
@@ -714,12 +717,14 @@ async def semaforos_frota(_auth=Depends(verificar_manutencao)):
        mesma régua absoluta) → 🔴; a vencer (≤7 d / ≤50 h·km) → 🟡.
     Semáforo é estado real, nunca enfeite (decisão 24/08)."""
     await _garantir_colunas_ot()
+    await _garantir_ficha_cols()
     rows = await ajard_query(
         """SELECT e.id, e.codigo, e.descricao, e.horimetro_atual, e.medicao,
                   e.categoria, e.equipamento_pai, e.posicao,
                   (SELECT COUNT(*)::int FROM operacional.equipamentos f
                     WHERE f.equipamento_pai = e.id AND f.ativo = true) AS n_filhos,
                   e.sistema_codigo, e.tipo_sigla,
+                  (SELECT u.nome FROM public.usuarios_garra u WHERE u.id = e.operador_responsavel_id) AS operador_nome,
                   p.codigo AS ponto, p.leitura_atual, p.limiar_atencao,
                   p.limiar_urgente, p.limiar_maximo,
                   (SELECT COUNT(*)::int FROM manutencao.ot o
@@ -738,6 +743,7 @@ async def semaforos_frota(_auth=Depends(verificar_manutencao)):
             "id": str(r["id"]), "codigo": r["codigo"], "descricao": r["descricao"],
             "horimetro": vivo, "medicao": r["medicao"],
             "sistema_codigo": r.get("sistema_codigo"), "tipo_sigla": r.get("tipo_sigla"),
+            "operador_nome": r.get("operador_nome"),
             "categoria": r.get("categoria"),
             "equipamento_pai": str(r["equipamento_pai"]) if r.get("equipamento_pai") else None,
             "posicao": r.get("posicao"), "n_filhos": int(r.get("n_filhos") or 0),
@@ -798,7 +804,7 @@ async def listar_pecas(busca: str = None, familia: str = None, limit: int = 100,
     where, params = ["ativo=true"], []
     if busca and busca.strip():
         b = f"%{busca.strip()}%"
-        where.append("(codigo ILIKE %s OR descricao ILIKE %s OR codigo_externo ILIKE %s)"); params += [b, b, b]
+        where.append("(codigo ILIKE %s OR descricao ILIKE %s OR codigo_externo ILIKE %s OR codigo_fabricante ILIKE %s)"); params += [b, b, b, b]
     if familia and familia.strip():
         # subfamílias por pontuação (MC pega MC e MC.010…)
         where.append("(familia_codigo = %s OR familia_codigo LIKE %s)")
@@ -838,6 +844,31 @@ async def editar_ficha(eq_id: str, request: Request, payload=Depends(verificar_m
             params.append(float(str(d["valor_aquisicao"]).replace(",", ".")) if d["valor_aquisicao"] not in (None, "") else None)
         except ValueError:
             sets.pop()
+    # (01/09/2026) Novo Objecto — réplica ManWinWin: fornecedor, vida útil,
+    # valor atual, operador desde, notas
+    if "fornecedor_id" in d:
+        sets.append("fornecedor_id=%s"); params.append(d["fornecedor_id"] or None)
+    if "operador_desde" in d:
+        sets.append("operador_desde=%s"); params.append((str(d["operador_desde"] or "")).strip() or None)
+    if "notas" in d:
+        sets.append("notas=%s"); params.append((str(d["notas"] or "")).strip() or None)
+    for c_num in ("vida_util_h", "valor_atual"):
+        if c_num in d:
+            try:
+                sets.append(f"{c_num}=%s")
+                params.append(float(str(d[c_num]).replace(".", "").replace(",", ".")) if d[c_num] not in (None, "") else None)
+            except ValueError:
+                sets.pop()
+    # leitura inicial ("Registo (H)"): só preenche se o cadastro ainda está zerado —
+    # leitura nunca recua, nem no nascimento
+    if "leitura_inicial" in d and d["leitura_inicial"] not in (None, ""):
+        try:
+            li = float(str(d["leitura_inicial"]).replace(".", "").replace(",", "."))
+            med = await ajard_query("SELECT medicao FROM operacional.equipamentos WHERE id=%s", (eq_id,), fetch="one")
+            campo = "km_atual" if (med and med["medicao"] == "km") else "horimetro_atual"
+            sets.append(f"{campo}=CASE WHEN COALESCE({campo},0)=0 THEN %s ELSE {campo} END"); params.append(li)
+        except ValueError:
+            pass
     if "caracteristicas" in d:
         sets.append("caracteristicas=%s"); params.append(_json.dumps(d["caracteristicas"] or []))
     if "garantia" in d:
@@ -851,6 +882,793 @@ async def editar_ficha(eq_id: str, request: Request, payload=Depends(verificar_m
     if not r:
         raise HTTPException(status_code=404, detail="Equipamento não encontrado")
     return {"ok": True, "codigo": r["codigo"]}
+
+
+_MO_OK = False
+async def _garantir_mao_obra():
+    """(01/09/2026) Registo de Mão de Obra por OT (HH) — padrão ManWinWin:
+    uma linha por colaborador × dia × horas, custo/hora na linha (o último
+    custo usado pelo colaborador é a sugestão). Alimenta HHT/HHMC/HHMP/CLM
+    das Análises. Também: Parâmetros Manuais por objecto/ano/mês e
+    Documentos do objecto (anexo Ficheiro → Supabase Storage)."""
+    global _MO_OK
+    if _MO_OK:
+        return
+    await ajard_query("""
+        CREATE TABLE IF NOT EXISTS manutencao.ot_mao_obra (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            ot_id UUID NOT NULL,
+            usuario_id UUID,
+            nome TEXT,
+            data DATE NOT NULL DEFAULT now()::date,
+            horas NUMERIC(8,2) NOT NULL,
+            custo_hora NUMERIC(12,2),
+            observacao TEXT,
+            origem TEXT DEFAULT 'desktop',
+            ativo BOOLEAN DEFAULT true,
+            criado_por UUID,
+            criado_em TIMESTAMPTZ DEFAULT now())""", fetch="none")
+    await ajard_query("CREATE INDEX IF NOT EXISTS ix_ot_mao_obra_ot ON manutencao.ot_mao_obra (ot_id)", fetch="none")
+    await ajard_query("""
+        CREATE TABLE IF NOT EXISTS manutencao.parametros_manuais (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            equipamento_id UUID NOT NULL,
+            ano INT NOT NULL,
+            mes INT NOT NULL,
+            codigo TEXT NOT NULL,
+            nome TEXT,
+            valor NUMERIC(14,2),
+            usuario_id UUID,
+            atualizado_em TIMESTAMPTZ DEFAULT now(),
+            UNIQUE (equipamento_id, ano, mes, codigo))""", fetch="none")
+    await ajard_query("""
+        CREATE TABLE IF NOT EXISTS manutencao.equipamento_documentos (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            equipamento_id UUID NOT NULL,
+            nome TEXT NOT NULL,
+            path TEXT NOT NULL,
+            content_type TEXT,
+            tamanho INT,
+            descricao TEXT,
+            usuario_id UUID,
+            ativo BOOLEAN DEFAULT true,
+            criado_em TIMESTAMPTZ DEFAULT now())""", fetch="none")
+    _MO_OK = True
+
+
+def _mo_num(v):
+    try:
+        return float(str(v).replace(",", ".")) if v not in (None, "") else None
+    except ValueError:
+        return None
+
+
+@router.get("/manutencao/api/ots/{ot_id}/mao-obra")
+async def ot_mao_obra_listar(ot_id: str, _auth=Depends(verificar_manutencao)):
+    await _garantir_mao_obra()
+    rows = await ajard_query(
+        """SELECT m.id, m.usuario_id, COALESCE(u.nome, m.nome) AS nome, m.data, m.horas,
+                  m.custo_hora, m.observacao, m.origem, m.criado_em
+           FROM manutencao.ot_mao_obra m
+           LEFT JOIN public.usuarios_garra u ON u.id = m.usuario_id
+           WHERE m.ot_id=%s AND m.ativo=true
+           ORDER BY m.data DESC, m.criado_em DESC""", (ot_id,)) or []
+    itens, th, tc = [], 0.0, 0.0
+    for r in rows:
+        h = float(r["horas"] or 0); ch = float(r["custo_hora"]) if r["custo_hora"] is not None else None
+        v = round(h * ch, 2) if ch is not None else None
+        th += h; tc += (v or 0)
+        itens.append({"id": str(r["id"]), "usuario_id": str(r["usuario_id"]) if r["usuario_id"] else None,
+                      "nome": r["nome"], "data": r["data"].isoformat() if r["data"] else None,
+                      "horas": h, "custo_hora": ch, "valor": v, "observacao": r["observacao"],
+                      "origem": r["origem"]})
+    # sugestão de custo/hora por colaborador = último usado
+    sug = await ajard_query(
+        """SELECT DISTINCT ON (usuario_id) usuario_id, custo_hora
+           FROM manutencao.ot_mao_obra
+           WHERE ativo=true AND usuario_id IS NOT NULL AND custo_hora IS NOT NULL
+           ORDER BY usuario_id, criado_em DESC""") or []
+    return {"itens": itens, "total_horas": round(th, 2), "total_custo": round(tc, 2),
+            "custo_hora_sugerido": {str(x["usuario_id"]): float(x["custo_hora"]) for x in sug}}
+
+
+@router.post("/manutencao/api/ots/{ot_id}/mao-obra")
+async def ot_mao_obra_criar(ot_id: str, request: Request, payload=Depends(verificar_manutencao)):
+    await _garantir_mao_obra()
+    d = await request.json()
+    horas = _mo_num(d.get("horas"))
+    if not horas or horas <= 0:
+        raise HTTPException(status_code=400, detail="Informe as horas trabalhadas")
+    o = await ajard_query("SELECT status FROM manutencao.ot WHERE id=%s AND ativo=true", (ot_id,), fetch="one")
+    if not o:
+        raise HTTPException(status_code=404, detail="OT não encontrada")
+    uid = await _usuario_id(payload)
+    usuario_id = (d.get("usuario_id") or "").strip() or None
+    nome = (d.get("nome") or "").strip() or None
+    if not usuario_id and not nome:
+        raise HTTPException(status_code=400, detail="Informe o colaborador")
+    data = (d.get("data") or "").strip() or None
+    row = await ajard_query_id(
+        """INSERT INTO manutencao.ot_mao_obra (ot_id, usuario_id, nome, data, horas, custo_hora, observacao, origem, criado_por)
+           VALUES (%s,%s,%s,COALESCE(%s::date, now()::date),%s,%s,%s,%s,%s)""",
+        (ot_id, usuario_id, nome, data, horas, _mo_num(d.get("custo_hora")),
+         (d.get("observacao") or "").strip() or None, (d.get("origem") or "desktop"), uid))
+    return {"ok": True, "id": str(row["id"]) if row else None}
+
+
+@router.delete("/manutencao/api/mao-obra/{mo_id}")
+async def ot_mao_obra_excluir(mo_id: str, _auth=Depends(verificar_manutencao)):
+    await _garantir_mao_obra()
+    await ajard_query("UPDATE manutencao.ot_mao_obra SET ativo=false WHERE id=%s", (mo_id,), fetch="none")
+    return {"ok": True}
+
+
+@router.get("/manutencao/api/equipamentos/{eq_id}/parametros-manuais")
+async def param_manuais_listar(eq_id: str, ano: int, _auth=Depends(verificar_manutencao)):
+    await _garantir_mao_obra()
+    rows = await ajard_query(
+        """SELECT codigo, MAX(nome) AS nome, mes, SUM(valor) AS valor
+           FROM manutencao.parametros_manuais WHERE equipamento_id=%s AND ano=%s
+           GROUP BY codigo, mes ORDER BY codigo, mes""", (eq_id, ano)) or []
+    out = {}
+    for r in rows:
+        p = out.setdefault(r["codigo"], {"codigo": r["codigo"], "nome": r["nome"], "meses": [None] * 12})
+        if r["nome"] and not p["nome"]: p["nome"] = r["nome"]
+        m = int(r["mes"])
+        if 1 <= m <= 12 and r["valor"] is not None:
+            p["meses"][m - 1] = float(r["valor"])
+    for p in out.values():
+        p["total"] = round(sum(x for x in p["meses"] if x is not None), 2)
+    return list(out.values())
+
+
+@router.put("/manutencao/api/equipamentos/{eq_id}/parametros-manuais")
+async def param_manuais_gravar(eq_id: str, request: Request, payload=Depends(verificar_manutencao)):
+    """Grava um parâmetro manual: {ano, codigo, nome, meses:[12 valores|null]}.
+    Mês vazio apaga a célula. Código em maiúsculas, sem espaços."""
+    await _garantir_mao_obra()
+    d = await request.json()
+    cod = (d.get("codigo") or "").strip().upper().replace(" ", "_")
+    ano = int(d.get("ano") or 0)
+    if not cod or not ano:
+        raise HTTPException(status_code=400, detail="Informe código e ano")
+    meses = d.get("meses") or []
+    if len(meses) != 12:
+        raise HTTPException(status_code=400, detail="Envie 12 valores (Jan..Dez)")
+    uid = await _usuario_id(payload)
+    nome = (d.get("nome") or "").strip() or None
+    for i, v in enumerate(meses):
+        val = _mo_num(v)
+        if val is None:
+            await ajard_query("DELETE FROM manutencao.parametros_manuais WHERE equipamento_id=%s AND ano=%s AND mes=%s AND codigo=%s",
+                              (eq_id, ano, i + 1, cod), fetch="none")
+        else:
+            await ajard_query(
+                """INSERT INTO manutencao.parametros_manuais (equipamento_id, ano, mes, codigo, nome, valor, usuario_id, atualizado_em)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,now())
+                   ON CONFLICT (equipamento_id, ano, mes, codigo)
+                   DO UPDATE SET valor=EXCLUDED.valor, nome=COALESCE(EXCLUDED.nome, manutencao.parametros_manuais.nome),
+                                 usuario_id=EXCLUDED.usuario_id, atualizado_em=now()""",
+                (eq_id, ano, i + 1, cod, nome, val, uid), fetch="none")
+    return {"ok": True, "codigo": cod}
+
+
+@router.delete("/manutencao/api/equipamentos/{eq_id}/parametros-manuais/{codigo}")
+async def param_manuais_excluir(eq_id: str, codigo: str, ano: int, _auth=Depends(verificar_manutencao)):
+    await _garantir_mao_obra()
+    await ajard_query("DELETE FROM manutencao.parametros_manuais WHERE equipamento_id=%s AND ano=%s AND codigo=%s",
+                      (eq_id, ano, codigo.upper()), fetch="none")
+    return {"ok": True}
+
+
+@router.get("/manutencao/api/equipamentos/{eq_id}/documentos")
+async def docs_listar(eq_id: str, _auth=Depends(verificar_manutencao)):
+    await _garantir_mao_obra()
+    rows = await ajard_query(
+        """SELECT d.id, d.nome, d.path, d.content_type, d.tamanho, d.descricao, d.criado_em, u.nome AS usuario_nome
+           FROM manutencao.equipamento_documentos d
+           LEFT JOIN public.usuarios_garra u ON u.id = d.usuario_id
+           WHERE d.equipamento_id=%s AND d.ativo=true ORDER BY d.criado_em DESC""", (eq_id,)) or []
+    out = []
+    for r in rows:
+        out.append({"id": str(r["id"]), "nome": r["nome"], "content_type": r["content_type"],
+                    "tamanho": r["tamanho"], "descricao": r["descricao"],
+                    "criado_em": r["criado_em"].isoformat() if r["criado_em"] else None,
+                    "usuario_nome": r["usuario_nome"], "url": storage_url(r["path"])})
+    return out
+
+
+@router.post("/manutencao/api/equipamentos/{eq_id}/documentos")
+async def docs_enviar(eq_id: str, ficheiro: UploadFile = File(...), descricao: str = None,
+                      payload=Depends(verificar_manutencao)):
+    """Anexo 'Ficheiro' do objecto: manual, nota fiscal, laudo, CRLV… (PDF,
+    imagem, planilha — até 15 MB). Vai ao bucket garra-fotos em
+    manutencao/equipamentos/{id}/docs/."""
+    await _garantir_mao_obra()
+    eq = await ajard_query("SELECT id FROM operacional.equipamentos WHERE id=%s", (eq_id,), fetch="one")
+    if not eq:
+        raise HTTPException(status_code=404, detail="Equipamento não encontrado")
+    conteudo = await ficheiro.read()
+    if not conteudo:
+        raise HTTPException(status_code=400, detail="Arquivo vazio")
+    if len(conteudo) > 15 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="Arquivo acima de 15 MB")
+    import uuid as _uuid, re as _re
+    nome = (ficheiro.filename or "ficheiro").strip()
+    seguro = _re.sub(r"[^A-Za-z0-9._-]+", "_", nome)[:80]
+    ctype = ficheiro.content_type or "application/octet-stream"
+    path = storage_upload(conteudo, f"manutencao/equipamentos/{eq_id}/docs/{_uuid.uuid4().hex}_{seguro}", content_type=ctype)
+    uid = await _usuario_id(payload)
+    row = await ajard_query_id(
+        """INSERT INTO manutencao.equipamento_documentos (equipamento_id, nome, path, content_type, tamanho, descricao, usuario_id)
+           VALUES (%s,%s,%s,%s,%s,%s,%s)""",
+        (eq_id, nome, path, ctype, len(conteudo), (descricao or "").strip() or None, uid))
+    return {"ok": True, "id": str(row["id"]) if row else None, "url": storage_url(path)}
+
+
+@router.delete("/manutencao/api/documentos/{doc_id}")
+async def docs_excluir(doc_id: str, _auth=Depends(verificar_manutencao)):
+    await _garantir_mao_obra()
+    await ajard_query("UPDATE manutencao.equipamento_documentos SET ativo=false WHERE id=%s", (doc_id,), fetch="none")
+    return {"ok": True}
+
+
+# ── MOTOR GENÉRICO DE TABELAS (01/09/2026) ─────────────────────────────
+# Um CRUD só para os cadastros "de apoio" do ManWinWin que faltavam:
+# contratos, projectos, guias de transporte, substitutos, referências de
+# fornecedor, empresa, config, e os registos da OT (outros, tarefas,
+# ferramentas, leituras, documentos). Colunas em whitelist (paridade
+# EDITÁVEIS × UPDATE por construção), soft delete, DDL idempotente.
+_TABELAS = {
+    "contratos": ("manutencao.contratos", {
+        "numero": "TEXT", "fornecedor_id": "UUID", "objeto": "TEXT", "data_inicio": "DATE", "data_fim": "DATE",
+        "valor": "NUMERIC(14,2)", "condicao_pagamento": "TEXT", "observacao": "TEXT", "status": "TEXT"}),
+    "projectos": ("manutencao.projectos", {
+        "codigo": "TEXT", "nome": "TEXT", "descricao": "TEXT", "data_inicio": "DATE", "data_fim": "DATE",
+        "status": "TEXT", "responsavel_id": "UUID"}),
+    "guias-transporte": ("manutencao.guias_transporte", {
+        "numero": "TEXT", "equipamento_id": "UUID", "peca_codigo": "TEXT", "fornecedor_id": "UUID", "ot_id": "UUID",
+        "data_saida": "DATE", "data_retorno_prevista": "DATE", "data_retorno": "DATE", "motivo": "TEXT",
+        "transportadora": "TEXT", "status": "TEXT", "observacao": "TEXT"}),
+    "substitutos": ("manutencao.peca_substitutos", {
+        "peca_codigo": "TEXT", "substituto_codigo": "TEXT", "observacao": "TEXT"}),
+    "referencias-fornecedor": ("manutencao.peca_fornecedores", {
+        "peca_codigo": "TEXT", "fornecedor_id": "UUID", "referencia": "TEXT", "preco": "NUMERIC(14,2)",
+        "prazo_dias": "INT", "observacao": "TEXT"}),
+    "empresa": ("manutencao.empresa", {
+        "razao_social": "TEXT", "nome_fantasia": "TEXT", "cnpj": "TEXT", "endereco": "TEXT", "cidade": "TEXT",
+        "uf": "TEXT", "telefone": "TEXT", "email": "TEXT", "responsavel_manutencao": "TEXT"}),
+    "config": ("manutencao.config", {"chave": "TEXT", "valor": "TEXT", "descricao": "TEXT"}),
+    "ot-outros": ("manutencao.ot_outros", {
+        "ot_id": "UUID", "data": "DATE", "descricao": "TEXT", "fornecedor_id": "UUID", "documento": "TEXT",
+        "rubrica": "TEXT", "valor": "NUMERIC(14,2)"}),
+    "ot-tarefas": ("manutencao.ot_tarefas", {
+        "ot_id": "UUID", "ordem": "INT", "descricao": "TEXT", "feita": "BOOLEAN", "feita_por": "UUID",
+        "feita_em": "TIMESTAMPTZ", "observacao": "TEXT"}),
+    "ot-ferramentas": ("manutencao.ot_ferramentas", {
+        "ot_id": "UUID", "tipo_codigo": "TEXT", "descricao": "TEXT", "quantidade": "NUMERIC(10,2)", "observacao": "TEXT"}),
+    "ot-leituras": ("manutencao.ot_leituras", {
+        "ot_id": "UUID", "data": "DATE", "leitura": "NUMERIC(12,1)", "momento": "TEXT", "observacao": "TEXT"}),
+}
+_TAB_OK = set()
+
+
+async def _garantir_tabela(nome):
+    if nome in _TAB_OK:
+        return _TABELAS[nome]
+    tab, cols = _TABELAS[nome]
+    await ajard_query(f"""CREATE TABLE IF NOT EXISTS {tab} (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        ativo BOOLEAN DEFAULT true, criado_por UUID, criado_em TIMESTAMPTZ DEFAULT now(),
+        atualizado_em TIMESTAMPTZ DEFAULT now())""", fetch="none")
+    for c, t in cols.items():
+        await ajard_query(f"ALTER TABLE {tab} ADD COLUMN IF NOT EXISTS {c} {t}", fetch="none")
+    _TAB_OK.add(nome)
+    return _TABELAS[nome]
+
+
+def _tab_val(t, v):
+    if v in (None, ""):
+        return None
+    if t.startswith("NUMERIC") or t == "INT":
+        try:
+            return float(str(v).replace(",", ".")) if t.startswith("NUMERIC") else int(float(str(v).replace(",", ".")))
+        except ValueError:
+            return None
+    if t == "BOOLEAN":
+        return bool(v) and str(v).lower() not in ("false", "0", "nao", "não")
+    return str(v).strip() or None
+
+
+def _tab_row(r):
+    d = {}
+    for k, v in dict(r).items():
+        if hasattr(v, "isoformat"):
+            v = v.isoformat()
+        elif hasattr(v, "hex") and not isinstance(v, (str, bytes)):
+            v = str(v)
+        elif type(v).__name__ == "Decimal":
+            v = float(v)
+        d[k] = v
+    return d
+
+
+@router.get("/manutencao/api/tab/{nome}")
+async def tab_listar(nome: str, request: Request, _auth=Depends(verificar_manutencao)):
+    """Filtros por query: qualquer coluna da whitelist (igualdade) + busca=
+    (ILIKE nas colunas TEXT) + inativos=1."""
+    if nome not in _TABELAS:
+        raise HTTPException(status_code=404, detail="Tabela desconhecida")
+    tab, cols = await _garantir_tabela(nome)
+    q = dict(request.query_params)
+    where, params = [], []
+    if not q.get("inativos"):
+        where.append("t.ativo=true")
+    for c, t in cols.items():
+        if c in q and q[c] != "":
+            where.append(f"t.{c}=%s"); params.append(_tab_val(t, q[c]))
+    if q.get("busca"):
+        txt = [c for c, t in cols.items() if t == "TEXT"]
+        if txt:
+            where.append("(" + " OR ".join(f"t.{c} ILIKE %s" for c in txt) + ")")
+            params += [f"%{q['busca']}%"] * len(txt)
+    extra = ""
+    if "fornecedor_id" in cols:
+        extra += ", (SELECT nome FROM public.fornecedores f WHERE f.id=t.fornecedor_id) AS fornecedor_nome"
+    if "equipamento_id" in cols:
+        extra += ", (SELECT codigo FROM operacional.equipamentos e WHERE e.id=t.equipamento_id) AS equipamento_codigo"
+    if "responsavel_id" in cols:
+        extra += ", (SELECT nome FROM public.usuarios_garra u WHERE u.id=t.responsavel_id) AS responsavel_nome"
+    if "feita_por" in cols:
+        extra += ", (SELECT nome FROM public.usuarios_garra u WHERE u.id=t.feita_por) AS feita_por_nome"
+    if "ot_id" in cols and nome == "guias-transporte":
+        extra += ", (SELECT numero FROM manutencao.ot o WHERE o.id=t.ot_id) AS ot_numero"
+    ordem = "t.ordem, t.criado_em" if "ordem" in cols else ("t.data DESC, t.criado_em DESC" if "data" in cols else "t.criado_em DESC")
+    rows = await ajard_query(
+        f"SELECT t.*{extra} FROM {tab} t" + (" WHERE " + " AND ".join(where) if where else "") + f" ORDER BY {ordem} LIMIT 500",
+        tuple(params)) or []
+    return [_tab_row(r) for r in rows]
+
+
+@router.post("/manutencao/api/tab/{nome}")
+async def tab_criar(nome: str, request: Request, payload=Depends(verificar_manutencao)):
+    if nome not in _TABELAS:
+        raise HTTPException(status_code=404, detail="Tabela desconhecida")
+    tab, cols = await _garantir_tabela(nome)
+    d = await request.json()
+    campos, vals = [], []
+    for c, t in cols.items():
+        if c in d:
+            campos.append(c); vals.append(_tab_val(t, d[c]))
+    if not campos:
+        raise HTTPException(status_code=400, detail="Nada para gravar")
+    # unicidades naturais
+    for chave in ("numero", "codigo", "chave"):
+        if chave in cols and d.get(chave):
+            ex = await ajard_query(f"SELECT 1 FROM {tab} WHERE {chave}=%s AND ativo=true", (str(d[chave]).strip(),), fetch="one")
+            if ex:
+                raise HTTPException(status_code=409, detail=f"Já existe {chave} {d[chave]}")
+    if nome == "empresa":
+        ex = await ajard_query(f"SELECT id FROM {tab} WHERE ativo=true LIMIT 1", fetch="one")
+        if ex:  # empresa é linha única: POST vira PATCH
+            sets = ", ".join(f"{c}=%s" for c in campos)
+            await ajard_query(f"UPDATE {tab} SET {sets}, atualizado_em=now() WHERE id=%s", tuple(vals) + (ex["id"],), fetch="none")
+            return {"ok": True, "id": str(ex["id"])}
+    uid = await _usuario_id(payload)
+    campos.append("criado_por"); vals.append(uid)
+    row = await ajard_query_id(
+        f"INSERT INTO {tab} ({', '.join(campos)}) VALUES ({', '.join(['%s'] * len(campos))})", tuple(vals))
+    if nome == "ot-leituras" and (d.get("momento") or "") == "fim" and _tab_val("NUMERIC", d.get("leitura")):
+        # leitura de fim de serviço atualiza o contador do objecto — nunca recua
+        leit = _tab_val("NUMERIC", d.get("leitura"))
+        await ajard_query(
+            """UPDATE operacional.equipamentos e SET
+                 horimetro_atual = CASE WHEN COALESCE(e.medicao,'horimetro') <> 'km' THEN GREATEST(COALESCE(e.horimetro_atual,0), %s) ELSE e.horimetro_atual END,
+                 km_atual = CASE WHEN e.medicao = 'km' THEN GREATEST(COALESCE(e.km_atual,0), %s) ELSE e.km_atual END
+               WHERE e.id = (SELECT equipamento_id FROM manutencao.ot WHERE id=%s)""",
+            (leit, leit, d.get("ot_id")), fetch="none")
+    return {"ok": True, "id": str(row["id"]) if row else None}
+
+
+@router.patch("/manutencao/api/tab/{nome}/{rid}")
+async def tab_editar(nome: str, rid: str, request: Request, _auth=Depends(verificar_manutencao)):
+    if nome not in _TABELAS:
+        raise HTTPException(status_code=404, detail="Tabela desconhecida")
+    tab, cols = await _garantir_tabela(nome)
+    d = await request.json()
+    if nome == "ot-tarefas" and "feita" in d:
+        # quem marcou e quando vêm do token, nunca do cliente
+        import datetime as _dtm
+        d["feita_por"] = await _usuario_id(_auth) if d["feita"] else None
+        d["feita_em"] = _dtm.datetime.now().isoformat() if d["feita"] else None
+    sets, vals = [], []
+    for c, t in cols.items():
+        if c in d:
+            sets.append(f"{c}=%s"); vals.append(_tab_val(t, d[c]))
+    if "ativo" in d:
+        sets.append("ativo=%s"); vals.append(bool(d["ativo"]))
+    if not sets:
+        raise HTTPException(status_code=400, detail="Nada para alterar")
+    await ajard_query(f"UPDATE {tab} SET {', '.join(sets)}, atualizado_em=now() WHERE id=%s", tuple(vals) + (rid,), fetch="none")
+    return {"ok": True}
+
+
+@router.delete("/manutencao/api/tab/{nome}/{rid}")
+async def tab_excluir(nome: str, rid: str, _auth=Depends(verificar_manutencao)):
+    if nome not in _TABELAS:
+        raise HTTPException(status_code=404, detail="Tabela desconhecida")
+    tab, _ = await _garantir_tabela(nome)
+    await ajard_query(f"UPDATE {tab} SET ativo=false, atualizado_em=now() WHERE id=%s", (rid,), fetch="none")
+    return {"ok": True}
+
+
+@router.post("/manutencao/api/ots/{ot_id}/tarefas/da-fmp")
+async def ot_tarefas_da_fmp(ot_id: str, _auth=Depends(verificar_manutencao)):
+    """Copia as tarefas do plano (FMP) da OT para o checklist da OT — uma
+    linha por linha de texto do plano. Só se a OT ainda não tem tarefas."""
+    await _garantir_tabela("ot-tarefas")
+    o = await ajard_query("SELECT plano_id, descricao FROM manutencao.ot WHERE id=%s", (ot_id,), fetch="one")
+    if not o:
+        raise HTTPException(status_code=404, detail="OT não encontrada")
+    ja = await ajard_query("SELECT COUNT(*)::int AS n FROM manutencao.ot_tarefas WHERE ot_id=%s AND ativo=true", (ot_id,), fetch="one")
+    if ja and ja["n"]:
+        raise HTTPException(status_code=409, detail="A OT já tem tarefas")
+    texto = ""
+    if o.get("plano_id"):
+        pl = await ajard_query("SELECT tarefas FROM manutencao.planos WHERE id=%s", (o["plano_id"],), fetch="one")
+        texto = (pl or {}).get("tarefas") or ""
+    linhas = [l.strip(" -•*\t") for l in (texto or "").splitlines() if l.strip(" -•*\t")]
+    if not linhas:
+        linhas = [o.get("descricao") or "Executar o serviço descrito na OT"]
+    for i, l in enumerate(linhas, 1):
+        await ajard_query("INSERT INTO manutencao.ot_tarefas (ot_id, ordem, descricao) VALUES (%s,%s,%s)", (ot_id, i, l[:300]), fetch="none")
+    return {"ok": True, "n": len(linhas)}
+
+
+@router.get("/manutencao/api/ots/{ot_id}/preparacao")
+async def ot_preparacao(ot_id: str, _auth=Depends(verificar_manutencao)):
+    """Preparação da OT = o plano (FMP) de origem com tudo que ele previa."""
+    o = await ajard_query("SELECT plano_id FROM manutencao.ot WHERE id=%s", (ot_id,), fetch="one")
+    if not o:
+        raise HTTPException(status_code=404, detail="OT não encontrada")
+    if not o.get("plano_id"):
+        return {"plano": None}
+    pl = await ajard_query("SELECT * FROM manutencao.planos WHERE id=%s", (o["plano_id"],), fetch="one")
+    return {"plano": _tab_row(pl) if pl else None}
+
+
+@router.get("/manutencao/api/ots/{ot_id}/documentos")
+async def ot_docs_listar(ot_id: str, _auth=Depends(verificar_manutencao)):
+    await _garantir_mao_obra()
+    await ajard_query("ALTER TABLE manutencao.equipamento_documentos ADD COLUMN IF NOT EXISTS ot_id UUID", fetch="none")
+    rows = await ajard_query(
+        """SELECT d.id, d.nome, d.path, d.content_type, d.tamanho, d.descricao, d.criado_em, u.nome AS usuario_nome
+           FROM manutencao.equipamento_documentos d LEFT JOIN public.usuarios_garra u ON u.id = d.usuario_id
+           WHERE d.ot_id=%s AND d.ativo=true ORDER BY d.criado_em DESC""", (ot_id,)) or []
+    return [{"id": str(r["id"]), "nome": r["nome"], "content_type": r["content_type"], "tamanho": r["tamanho"],
+             "descricao": r["descricao"], "criado_em": r["criado_em"].isoformat() if r["criado_em"] else None,
+             "usuario_nome": r["usuario_nome"], "url": storage_url(r["path"])} for r in rows]
+
+
+@router.post("/manutencao/api/ots/{ot_id}/documentos")
+async def ot_docs_enviar(ot_id: str, ficheiro: UploadFile = File(...), descricao: str = None,
+                         payload=Depends(verificar_manutencao)):
+    await _garantir_mao_obra()
+    await ajard_query("ALTER TABLE manutencao.equipamento_documentos ADD COLUMN IF NOT EXISTS ot_id UUID", fetch="none")
+    o = await ajard_query("SELECT equipamento_id FROM manutencao.ot WHERE id=%s", (ot_id,), fetch="one")
+    if not o:
+        raise HTTPException(status_code=404, detail="OT não encontrada")
+    conteudo = await ficheiro.read()
+    if not conteudo:
+        raise HTTPException(status_code=400, detail="Arquivo vazio")
+    if len(conteudo) > 15 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="Arquivo acima de 15 MB")
+    import uuid as _uuid, re as _re
+    nome = (ficheiro.filename or "ficheiro").strip()
+    seguro = _re.sub(r"[^A-Za-z0-9._-]+", "_", nome)[:80]
+    ctype = ficheiro.content_type or "application/octet-stream"
+    path = storage_upload(conteudo, f"manutencao/ots/{ot_id}/{_uuid.uuid4().hex}_{seguro}", content_type=ctype)
+    uid = await _usuario_id(payload)
+    row = await ajard_query_id(
+        """INSERT INTO manutencao.equipamento_documentos (equipamento_id, ot_id, nome, path, content_type, tamanho, descricao, usuario_id)
+           VALUES (%s,%s,%s,%s,%s,%s,%s,%s)""",
+        (o["equipamento_id"], ot_id, nome, path, ctype, len(conteudo), (descricao or "").strip() or None, uid))
+    return {"ok": True, "id": str(row["id"]) if row else None, "url": storage_url(path)}
+
+
+@router.get("/manutencao/api/documentos")
+async def docs_todos(busca: str = None, _auth=Depends(verificar_manutencao)):
+    """Parametrização ▸ Documentos de equipamentos — acervo inteiro."""
+    await _garantir_mao_obra()
+    await ajard_query("ALTER TABLE manutencao.equipamento_documentos ADD COLUMN IF NOT EXISTS ot_id UUID", fetch="none")
+    where, params = ["d.ativo=true"], []
+    if busca:
+        where.append("(d.nome ILIKE %s OR d.descricao ILIKE %s OR e.codigo ILIKE %s)"); params += [f"%{busca}%"] * 3
+    rows = await ajard_query(
+        f"""SELECT d.id, d.nome, d.path, d.content_type, d.tamanho, d.descricao, d.criado_em, d.ot_id,
+                   e.codigo AS equipamento_codigo, u.nome AS usuario_nome
+            FROM manutencao.equipamento_documentos d
+            LEFT JOIN operacional.equipamentos e ON e.id = d.equipamento_id
+            LEFT JOIN public.usuarios_garra u ON u.id = d.usuario_id
+            WHERE {' AND '.join(where)} ORDER BY d.criado_em DESC LIMIT 300""", tuple(params)) or []
+    return [{"id": str(r["id"]), "nome": r["nome"], "content_type": r["content_type"], "tamanho": r["tamanho"],
+             "descricao": r["descricao"], "criado_em": r["criado_em"].isoformat() if r["criado_em"] else None,
+             "equipamento_codigo": r["equipamento_codigo"], "ot": bool(r["ot_id"]),
+             "usuario_nome": r["usuario_nome"], "url": storage_url(r["path"])} for r in rows]
+
+
+@router.patch("/manutencao/api/pecas/ativo")
+async def peca_ativo(request: Request, _auth=Depends(verificar_manutencao)):
+    """Desativar/reativar artigo (soft). Código no corpo (códigos com barra)."""
+    d = await request.json()
+    cod = (d.get("peca") or "").strip()
+    p = await ajard_query("SELECT id FROM manutencao.pecas WHERE codigo=%s", (cod,), fetch="one")
+    if not p:
+        raise HTTPException(status_code=404, detail="Peça não encontrada")
+    ativar = bool(d.get("ativo"))
+    if not ativar:
+        saldo = await ajard_query("SELECT COALESCE(SUM(quantidade),0) AS q FROM manutencao.estoque WHERE peca_id=%s", (p["id"],), fetch="one")
+        if saldo and float(saldo["q"] or 0) > 0:
+            raise HTTPException(status_code=400, detail=f"Peça com saldo em estoque ({float(saldo['q']):g}) — dê saída/ajuste antes de desativar")
+    await ajard_query("UPDATE manutencao.pecas SET ativo=%s WHERE id=%s", (ativar, p["id"]), fetch="none")
+    return {"ok": True, "ativo": ativar}
+
+
+@router.get("/manutencao/api/analises/abc")
+async def analise_abc(dias: int = 365, _auth=Depends(verificar_manutencao)):
+    """Curva ABC de consumo (valor das saídas/aplicações diretas − devoluções
+    no período): A = até 80 % do valor acumulado, B = até 95 %, C = resto."""
+    rows = await ajard_query(
+        """SELECT p.codigo, p.descricao, p.unidade, p.familia_codigo,
+                  SUM(CASE WHEN m.tipo='entrada' AND m.ot_id IS NOT NULL THEN -1 ELSE 1 END
+                      * m.quantidade * COALESCE(m.custo_unitario, p.custo_medio, 0)) AS valor,
+                  SUM(CASE WHEN m.tipo='entrada' AND m.ot_id IS NOT NULL THEN -m.quantidade ELSE m.quantidade END) AS qtd,
+                  COUNT(*)::int AS movimentos
+           FROM manutencao.movimentacoes m JOIN manutencao.pecas p ON p.id = m.peca_id
+           WHERE (m.tipo IN ('saida','aplicacao_direta') OR (m.tipo='entrada' AND m.ot_id IS NOT NULL))
+             AND m.criado_em >= now() - (%s || ' days')::interval
+           GROUP BY p.codigo, p.descricao, p.unidade, p.familia_codigo
+           HAVING SUM(CASE WHEN m.tipo='entrada' AND m.ot_id IS NOT NULL THEN -1 ELSE 1 END
+                      * m.quantidade * COALESCE(m.custo_unitario, p.custo_medio, 0)) > 0
+           ORDER BY valor DESC""", (str(int(dias)),)) or []
+    total = sum(float(r["valor"] or 0) for r in rows) or 0.0
+    acum, out = 0.0, []
+    for r in rows:
+        v = float(r["valor"] or 0); acum += v
+        pct = (acum / total * 100) if total else 0
+        out.append({"codigo": r["codigo"], "descricao": r["descricao"], "unidade": r["unidade"],
+                    "familia": r["familia_codigo"], "valor": round(v, 2), "qtd": float(r["qtd"] or 0),
+                    "movimentos": r["movimentos"], "pct": round(v / total * 100, 2) if total else 0,
+                    "acumulado": round(pct, 2), "classe": "A" if pct <= 80 else ("B" if pct <= 95 else "C")})
+    res = {"A": 0, "B": 0, "C": 0}
+    for x in out: res[x["classe"]] += 1
+    return {"dias": dias, "total": round(total, 2), "n": len(out), "classes": res, "itens": out}
+
+
+@router.get("/manutencao/api/analises/carga")
+async def carga_trabalhos(dias: int = 30, _auth=Depends(verificar_manutencao)):
+    """Carga de trabalhos por responsável: OTs em carteira (por estado) e
+    HH lançadas no período."""
+    await _garantir_mao_obra()
+    ots = await ajard_query(
+        """SELECT COALESCE(u.nome, '(sem responsável)') AS nome, o.responsavel_id, o.status, COUNT(*)::int AS n,
+                  SUM(CASE WHEN o.data_prevista IS NOT NULL AND o.data_prevista < now()::date
+                            AND o.status IN ('programada','aberta') THEN 1 ELSE 0 END)::int AS vencidas
+           FROM manutencao.ot o LEFT JOIN public.usuarios_garra u ON u.id = o.responsavel_id
+           WHERE o.ativo=true AND o.status IN ('programada','aberta','em_andamento','aguardando_peca')
+           GROUP BY 1, 2, 3""") or []
+    hh = await ajard_query(
+        """SELECT COALESCE(u.nome, m.nome, '(sem nome)') AS nome, m.usuario_id, SUM(m.horas) AS horas,
+                  SUM(m.horas * COALESCE(m.custo_hora,0)) AS custo, COUNT(DISTINCT m.ot_id)::int AS ots
+           FROM manutencao.ot_mao_obra m LEFT JOIN public.usuarios_garra u ON u.id = m.usuario_id
+           WHERE m.ativo=true AND m.data >= now()::date - %s
+           GROUP BY 1, 2""", (int(dias),)) or []
+    pess = {}
+    for r in ots:
+        p = pess.setdefault(r["nome"], {"nome": r["nome"], "programada": 0, "aberta": 0, "em_andamento": 0,
+                                        "aguardando_peca": 0, "vencidas": 0, "horas": 0.0, "custo": 0.0, "ots_hh": 0})
+        p[r["status"]] = p.get(r["status"], 0) + int(r["n"]); p["vencidas"] += int(r["vencidas"] or 0)
+    for r in hh:
+        p = pess.setdefault(r["nome"], {"nome": r["nome"], "programada": 0, "aberta": 0, "em_andamento": 0,
+                                        "aguardando_peca": 0, "vencidas": 0, "horas": 0.0, "custo": 0.0, "ots_hh": 0})
+        p["horas"] += float(r["horas"] or 0); p["custo"] += float(r["custo"] or 0); p["ots_hh"] += int(r["ots"] or 0)
+    for p in pess.values():
+        p["carteira"] = p["programada"] + p["aberta"] + p["em_andamento"] + p["aguardando_peca"]
+        p["horas"] = round(p["horas"], 2); p["custo"] = round(p["custo"], 2)
+    return {"dias": dias, "pessoas": sorted(pess.values(), key=lambda x: (-x["carteira"], x["nome"]))}
+
+
+@router.post("/manutencao/api/estoque/inventario")
+async def inventario(request: Request, payload=Depends(verificar_manutencao)):
+    """Inventário (contagem física) de um almoxarifado: recebe
+    {almox, itens:[{peca, contagem}], observacao}; cada diferença vira um
+    movimento 'ajuste' (saldo passa a ser a contagem). Devolve o resumo."""
+    d = await request.json()
+    alm = (d.get("almox") or "").strip()
+    a = await ajard_query("SELECT id, codigo FROM manutencao.almoxarifados WHERE codigo=%s OR id::text=%s", (alm, alm), fetch="one")
+    if not a:
+        raise HTTPException(status_code=404, detail="Almoxarifado não encontrado")
+    uid = await _usuario_id(payload)
+    obs = (d.get("observacao") or "").strip() or "Inventário"
+    ajustados, iguais, erros = [], 0, []
+    for it in d.get("itens") or []:
+        cod = (it.get("peca") or "").strip()
+        if it.get("contagem") in (None, ""):
+            continue
+        try:
+            cont = float(str(it["contagem"]).replace(",", "."))
+        except ValueError:
+            erros.append(f"{cod}: contagem inválida"); continue
+        p = await ajard_query("SELECT id, custo_medio FROM manutencao.pecas WHERE codigo=%s", (cod,), fetch="one")
+        if not p:
+            erros.append(f"{cod}: peça não encontrada"); continue
+        s = await ajard_query("SELECT quantidade FROM manutencao.estoque WHERE peca_id=%s AND almoxarifado_id=%s", (p["id"], a["id"]), fetch="one")
+        atual = float(s["quantidade"]) if s else 0.0
+        if abs(cont - atual) < 1e-9:
+            iguais += 1; continue
+        await ajard_query("""INSERT INTO manutencao.estoque (peca_id, almoxarifado_id, quantidade) VALUES (%s,%s,%s)
+                             ON CONFLICT (peca_id, almoxarifado_id) DO UPDATE SET quantidade = EXCLUDED.quantidade""",
+                          (p["id"], a["id"], cont), fetch="none")
+        await ajard_query("""INSERT INTO manutencao.movimentacoes (tipo, peca_id, almox_destino, quantidade, usuario_id, observacao, custo_unitario)
+                             VALUES ('ajuste',%s,%s,%s,%s,%s,%s)""",
+                          (p["id"], a["id"], cont, uid, f"{obs} · de {atual:g} para {cont:g}",
+                           float(p["custo_medio"]) if p.get("custo_medio") is not None else None), fetch="none")
+        ajustados.append({"peca": cod, "de": atual, "para": cont, "delta": round(cont - atual, 3)})
+    return {"ok": True, "almox": a["codigo"], "ajustados": ajustados, "iguais": iguais, "erros": erros}
+
+
+@router.get("/manutencao/api/equipamentos-ficha")
+async def equipamentos_ficha(_auth=Depends(verificar_manutencao)):
+    """Vínculos vivos da frota única para a Parametrização (operador, fornecedor)."""
+    await _garantir_ficha_cols()
+    rows = await ajard_query(
+        """SELECT id, codigo, descricao, categoria, operador_responsavel_id, fornecedor_id, sistema_codigo, tipo_sigla, centro_custo, localizacao
+           FROM operacional.equipamentos WHERE ativo=true AND COALESCE(categoria,'') <> 'apoio' ORDER BY codigo""") or []
+    return [_tab_row(r) for r in rows]
+
+
+@router.get("/manutencao/api/planos-todos")
+async def planos_todos(_auth=Depends(verificar_manutencao)):
+    """Parametrização ▸ Planos preventivos: todas as FMPs da frota."""
+    rows = await ajard_query(
+        """SELECT p.id, p.codigo, p.descricao, p.periodo_codigo, p.tdm_horas, p.ativo, p.equipamento_id,
+                  e.codigo AS equipamento_codigo, e.descricao AS equipamento_desc
+           FROM manutencao.planos p JOIN operacional.equipamentos e ON e.id = p.equipamento_id
+           WHERE COALESCE(p.ativo,true)=true ORDER BY e.codigo, p.codigo""") or []
+    return [_tab_row(r) for r in rows]
+
+
+@router.get("/manutencao/api/equipamentos/{eq_id}/analises")
+async def analises_equipamento(eq_id: str, ano: int = None, _auth=Depends(verificar_manutencao)):
+    """(01/09/2026) Réplica da janela Análises do ManWinWin — Parâmetros
+    Automáticos por mês. Cada parâmetro nasce de dados reais (OTs, peças
+    baixadas, leituras, abastecimentos); nada é enfeite. Custo entra no mês
+    da CONCLUSÃO da OT; contagem de OTs no mês da ABERTURA."""
+    from datetime import date as _date
+    await _garantir_colunas_ot()
+    await _garantir_mao_obra()
+    ano = int(ano or _date.today().year)
+    eq = await ajard_query("SELECT id, codigo, descricao, medicao FROM operacional.equipamentos WHERE id=%s", (eq_id,), fetch="one")
+    if not eq:
+        raise HTTPException(status_code=404, detail="Equipamento não encontrado")
+    un = "km" if (eq.get("medicao") == "km") else "h"
+    P = [
+        ("NOT",   "Número de OTs abertas", "n"),
+        ("NOTP",  "Número de OTs preventivas", "n"),
+        ("NAV",   "Número de avarias (OTs corretivas)", "n"),
+        ("NOTCD", "Número de OTs concluídas", "n"),
+        ("CM",    "Custo total de manutenção (R$)", "r"),
+        ("CMC",   "Custo manutenção corretiva (R$)", "r"),
+        ("CMP",   "Custo manutenção preventiva (R$)", "r"),
+        ("CSE",   "Custo serviços externos (R$)", "r"),
+        ("CPI",   "Custo peças de stock aplicadas (R$)", "r"),
+        ("COU",   "Outros custos lançados na OT (R$)", "r"),
+        ("TDR",   "Tempo de reparação (dias)", "d"),
+        ("PDI",   "Período de indisponibilidade (dias)", "d"),
+        ("RF",    f"Registo de funcionamento ({un})", "u"),
+        ("HHT",   "Total HH de mão de obra (h)", "u"),
+        ("HHMC",  "HH em manutenção corretiva (h)", "u"),
+        ("HHMP",  "HH em manutenção preventiva (h)", "u"),
+        ("CLM",   "Custo de mão de obra (R$)", "r"),
+        ("CMB",   "Combustível (litros)", "u"),
+        ("CCB",   "Custo combustível (R$)", "r"),
+    ]
+    vals = {c: [0.0] * 12 for c, _, _ in P}
+
+    def _mes(dt):
+        return (dt.month - 1) if dt and getattr(dt, "year", None) == ano else None
+
+    ots = await ajard_query(
+        """SELECT tipo, status, data_abertura, data_conclusao, data_retorno_operacao,
+                  custo_total, fornecedor_id
+           FROM manutencao.ot
+           WHERE equipamento_id=%s AND ativo=true
+             AND (EXTRACT(YEAR FROM data_abertura)=%s OR EXTRACT(YEAR FROM data_conclusao)=%s)""",
+        (eq_id, ano, ano)) or []
+    for o in ots:
+        ma = _mes(o.get("data_abertura")); mc = _mes(o.get("data_conclusao"))
+        tipo = (o.get("tipo") or "").lower()
+        if ma is not None:
+            vals["NOT"][ma] += 1
+            if tipo == "preventiva": vals["NOTP"][ma] += 1
+            if tipo == "corretiva": vals["NAV"][ma] += 1
+        if mc is not None and (o.get("status") or "") == "concluida":
+            vals["NOTCD"][mc] += 1
+            c = float(o.get("custo_total") or 0)
+            vals["CM"][mc] += c
+            if tipo == "corretiva": vals["CMC"][mc] += c
+            if tipo == "preventiva": vals["CMP"][mc] += c
+            if o.get("fornecedor_id"): vals["CSE"][mc] += c
+            da, dc = o.get("data_abertura"), o.get("data_conclusao")
+            if da and dc:
+                vals["TDR"][mc] += max(0.0, (dc - da).total_seconds() / 86400.0)
+            dr = o.get("data_retorno_operacao")
+            if tipo == "corretiva" and da and dr:
+                vals["PDI"][mc] += max(0.0, (dr - da.date()).days)
+    pecas = await ajard_query(
+        """SELECT m.criado_em, m.tipo, m.quantidade, COALESCE(m.custo_unitario, p.custo_medio) AS custo
+           FROM manutencao.movimentacoes m
+           JOIN manutencao.pecas p ON p.id = m.peca_id
+           JOIN manutencao.ot o ON o.id = m.ot_id
+           WHERE o.equipamento_id=%s AND m.tipo IN ('saida','entrada','aplicacao_direta')
+             AND EXTRACT(YEAR FROM m.criado_em)=%s""", (eq_id, ano)) or []
+    for m in pecas:
+        mm = _mes(m.get("criado_em"))
+        if mm is None: continue
+        sinal = -1 if m.get("tipo") == "entrada" else 1
+        vals["CPI"][mm] += sinal * float(m.get("quantidade") or 0) * float(m.get("custo") or 0)
+    await _garantir_tabela("ot-outros")
+    ou = await ajard_query(
+        """SELECT x.data, x.valor FROM manutencao.ot_outros x JOIN manutencao.ot o ON o.id = x.ot_id
+           WHERE o.equipamento_id=%s AND x.ativo=true AND EXTRACT(YEAR FROM x.data)=%s""", (eq_id, ano)) or []
+    for x in ou:
+        mm = _mes(x.get("data"))
+        if mm is not None: vals["COU"][mm] += float(x.get("valor") or 0)
+    mo = await ajard_query(
+        """SELECT m.data, m.horas, m.custo_hora, o.tipo
+           FROM manutencao.ot_mao_obra m JOIN manutencao.ot o ON o.id = m.ot_id
+           WHERE o.equipamento_id=%s AND m.ativo=true AND EXTRACT(YEAR FROM m.data)=%s""", (eq_id, ano)) or []
+    for m in mo:
+        mm = _mes(m.get("data"))
+        if mm is None: continue
+        h = float(m.get("horas") or 0); tipo = (m.get("tipo") or "").lower()
+        vals["HHT"][mm] += h
+        if tipo == "corretiva": vals["HHMC"][mm] += h
+        if tipo == "preventiva": vals["HHMP"][mm] += h
+        if m.get("custo_hora") is not None: vals["CLM"][mm] += h * float(m["custo_hora"])
+    try:
+        leit = await ajard_query(
+            """SELECT EXTRACT(MONTH FROM data)::int AS m, MAX(leitura) AS mx, MIN(leitura) AS mn, COUNT(*)::int AS n
+               FROM operacional.v_leituras
+               WHERE equipamento_id=%s AND EXTRACT(YEAR FROM data)=%s AND leitura > 0
+               GROUP BY 1""", (eq_id, ano)) or []
+        for r in leit:
+            if int(r["n"]) >= 2:
+                vals["RF"][int(r["m"]) - 1] = float(r["mx"]) - float(r["mn"])
+    except Exception:
+        pass
+    try:
+        ab = await ajard_query(
+            """SELECT EXTRACT(MONTH FROM data)::int AS m, SUM(litros) AS l, SUM(valor_total) AS v
+               FROM operacional.abastecimentos
+               WHERE equipamento_id=%s AND ativo=true AND COALESCE(destino_tipo,'equipamento')='equipamento'
+                 AND EXTRACT(YEAR FROM data)=%s
+               GROUP BY 1""", (eq_id, ano)) or []
+        for r in ab:
+            vals["CMB"][int(r["m"]) - 1] = float(r["l"] or 0)
+            vals["CCB"][int(r["m"]) - 1] = float(r["v"] or 0)
+    except Exception:
+        pass
+    anos = await ajard_query(
+        """SELECT DISTINCT EXTRACT(YEAR FROM data_abertura)::int AS a FROM manutencao.ot
+           WHERE equipamento_id=%s AND ativo=true ORDER BY 1 DESC""", (eq_id,)) or []
+    lista_anos = sorted({int(r["a"]) for r in anos if r.get("a")} | {ano, _date.today().year}, reverse=True)
+    manuais = await param_manuais_listar(eq_id, ano, _auth)
+    return {"equipamento": eq["codigo"], "descricao": eq.get("descricao"), "ano": ano, "anos": lista_anos,
+            "medicao": un,
+            "parametros": [{"codigo": c, "nome": n, "fmt": f, "meses": [round(x, 2) for x in vals[c]],
+                            "total": round(sum(vals[c]), 2)} for c, n, f in P],
+            "manuais": manuais}
 
 
 @router.post("/manutencao/api/equipamentos/{eq_id}/foto")
@@ -1035,7 +1853,13 @@ async def _garantir_ficha_cols():
           ADD COLUMN IF NOT EXISTS localizacao TEXT,
           ADD COLUMN IF NOT EXISTS data_aquisicao DATE,
           ADD COLUMN IF NOT EXISTS garantia JSONB,
-          ADD COLUMN IF NOT EXISTS foto_path TEXT""", fetch="none")
+          ADD COLUMN IF NOT EXISTS foto_path TEXT,
+          ADD COLUMN IF NOT EXISTS fornecedor_id UUID,
+          ADD COLUMN IF NOT EXISTS vida_util_h NUMERIC(12,1),
+          ADD COLUMN IF NOT EXISTS valor_atual NUMERIC(14,2),
+          ADD COLUMN IF NOT EXISTS operador_desde DATE,
+          ADD COLUMN IF NOT EXISTS operador_responsavel_id UUID,
+          ADD COLUMN IF NOT EXISTS notas TEXT""", fetch="none")
     await ajard_query("""
         CREATE TABLE IF NOT EXISTS manutencao.equipamento_notas (
             id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -1075,8 +1899,52 @@ async def _garantir_peca_cols():
           ADD COLUMN IF NOT EXISTS observacoes TEXT,
           ADD COLUMN IF NOT EXISTS codigo_externo TEXT,
           ADD COLUMN IF NOT EXISTS classe TEXT,
-          ADD COLUMN IF NOT EXISTS espec_compra TEXT""", fetch="none")
+          ADD COLUMN IF NOT EXISTS espec_compra TEXT,
+          ADD COLUMN IF NOT EXISTS codigo_fabricante TEXT""", fetch="none")
     _PECA_COLS_OK = True
+
+
+_CODIGO_DOMINIOS = {
+    "peca": "manutencao.pecas",
+    "equipamento": "operacional.equipamentos",
+    "almoxarifado": "manutencao.almoxarifados",
+}
+
+
+@router.get("/manutencao/api/proximo-codigo")
+async def proximo_codigo(dominio: str, prefixo: str = "", sep: str = ".", largura: int = 4,
+                         verificar: str = None, _auth=Depends(verificar_manutencao)):
+    """(01/09/2026) Regra Garra para TODO cadastro com código: a estrutura é o
+    gatilho — dado o prefixo (sigla do tipo, sub-família, código pai) devolve o
+    próximo número livre; o usuário pode alterar; `verificar` diz se um código
+    já existe. Largura segue a dos códigos já cadastrados no mesmo prefixo."""
+    import re as _re
+    tabela = _CODIGO_DOMINIOS.get(dominio) or _DOMINIOS_PARAM.get(dominio)
+    if not tabela:
+        raise HTTPException(status_code=400, detail="Domínio desconhecido")
+    if sep not in (".", "-", ""):
+        sep = "."
+    pref = (prefixo or "").strip().upper()
+    out = {"dominio": dominio, "prefixo": pref, "sep": sep}
+    if verificar is not None:
+        ex = await ajard_query(f"SELECT 1 FROM {tabela} WHERE upper(codigo)=%s", (verificar.strip().upper(),), fetch="one")
+        out["existe"] = bool(ex)
+        out["codigo"] = verificar.strip().upper()
+        return out
+    rows = await ajard_query(f"SELECT codigo FROM {tabela} WHERE upper(codigo) LIKE %s",
+                             (pref + "%",), fetch="all")
+    rx = _re.compile("^" + _re.escape(pref) + ("[.-]?" if pref else "") + r"(\d+)$", _re.I)
+    maior, larg = 0, 0
+    for r in rows or []:
+        m = rx.match(str(r.get("codigo") or "").strip())
+        if m:
+            maior = max(maior, int(m.group(1)))
+            larg = max(larg, len(m.group(1)))
+    larg = larg or max(1, min(int(largura), 6))
+    num = str(maior + 1).zfill(larg)
+    out["numero"] = num
+    out["codigo"] = (pref + sep + num) if pref else num
+    return out
 
 
 @router.post("/manutencao/api/pecas")
@@ -1086,7 +1954,7 @@ async def criar_peca(request: Request, payload=Depends(verificar_manutencao)):
     cod = (d.get("codigo") or "").strip()
     desc = (d.get("descricao") or "").strip()
     if not cod or not desc:
-        raise HTTPException(status_code=400, detail="Informe código (do fabricante) e descrição")
+        raise HTTPException(status_code=400, detail="Informe código e descrição")
     existe = await ajard_query("SELECT 1 FROM manutencao.pecas WHERE codigo=%s", (cod,), fetch="one")
     if existe:
         raise HTTPException(status_code=409, detail=f"Peça {cod} já cadastrada")
@@ -1099,15 +1967,16 @@ async def criar_peca(request: Request, payload=Depends(verificar_manutencao)):
     row = await ajard_query_id(
         """INSERT INTO manutencao.pecas
              (codigo, descricao, unidade, familia_codigo, custo_medio,
-              codigo_externo, classe, espec_compra, caracteristicas, observacoes)
-           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+              codigo_externo, classe, espec_compra, caracteristicas, observacoes, codigo_fabricante)
+           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
         (cod, desc, (d.get("unidade") or "UN").strip().upper(),
          (d.get("familia_codigo") or "").strip() or None, custo,
          (d.get("codigo_externo") or "").strip() or None,
          (d.get("classe") or "").strip() or None,
          (d.get("espec_compra") or "").strip() or None,
          _json.dumps(d.get("caracteristicas") or []),
-         (d.get("observacoes") or "").strip() or None))
+         (d.get("observacoes") or "").strip() or None,
+         (d.get("codigo_fabricante") or "").strip() or None))
     return dict(row)
 
 
@@ -1130,7 +1999,7 @@ async def editar_peca(request: Request, payload=Depends(verificar_manutencao)):
         raise HTTPException(status_code=404, detail="Peça não encontrada")
     import json as _json
     sets, params = [], []
-    for c in ["descricao", "unidade", "familia_codigo", "codigo_externo", "observacoes", "classe", "espec_compra"]:
+    for c in ["descricao", "unidade", "familia_codigo", "codigo_externo", "observacoes", "classe", "espec_compra", "codigo_fabricante"]:
         if c in d:
             v = (str(d[c]).strip() or None) if d[c] is not None else None
             if c == "unidade" and v:
@@ -1311,6 +2180,9 @@ _DOMINIOS_PARAM = {
     "tipos-ferramenta": "manutencao.tipos_ferramenta",
     "rubricas": "manutencao.rubricas",
     "combustiveis": "manutencao.combustiveis",
+    "tipos-documento": "manutencao.tipos_documento",
+    "condicoes-pagamento": "manutencao.condicoes_pagamento",
+    "horarios-trabalho": "manutencao.horarios_trabalho",
 }
 
 _DOM_OK = False
@@ -1989,8 +2861,8 @@ async def lente_armazem(almox: str = None, busca: str = None, familia: str = Non
     if almox:
         cond.append("a.codigo = %s"); params.append(almox)
     if busca:
-        cond.append("(p.codigo ILIKE %s OR p.descricao ILIKE %s OR p.codigo_externo ILIKE %s)")
-        params += [f"%{busca}%", f"%{busca}%", f"%{busca}%"]
+        cond.append("(p.codigo ILIKE %s OR p.descricao ILIKE %s OR p.codigo_externo ILIKE %s OR p.codigo_fabricante ILIKE %s)")
+        params += [f"%{busca}%", f"%{busca}%", f"%{busca}%", f"%{busca}%"]
     if familia:
         cond.append("p.familia_codigo = %s"); params.append(familia)
     if incluir_zerados:
@@ -2328,6 +3200,18 @@ async def ot_apontamento(ot_id: str, request: Request, payload=Depends(verificar
     partes = [f"🔧 Execução (mecânico): {relato}"]
     if d.get("horimetro") not in (None, ""):
         partes.append(f"Horímetro/KM no serviço: {d.get('horimetro')}")
+    horas = _mo_num(d.get("horas"))
+    if horas and horas > 0:
+        await _garantir_mao_obra()
+        sug = await ajard_query(
+            """SELECT custo_hora FROM manutencao.ot_mao_obra
+               WHERE usuario_id=%s AND ativo=true AND custo_hora IS NOT NULL
+               ORDER BY criado_em DESC LIMIT 1""", (uid,), fetch="one")
+        await ajard_query(
+            """INSERT INTO manutencao.ot_mao_obra (ot_id, usuario_id, data, horas, custo_hora, observacao, origem, criado_por)
+               VALUES (%s,%s,now()::date,%s,%s,%s,'mobile',%s)""",
+            (ot_id, uid, horas, (sug or {}).get("custo_hora"), relato[:200], uid), fetch="none")
+        partes.append(f"⏱ Mão de obra: {horas:g} h")
     if d.get("concluido"):
         partes.append("✅ SINALIZOU SERVIÇO CONCLUÍDO — pronto para encerramento pela gestão")
     await ajard_query(
