@@ -1372,7 +1372,8 @@ const _MW = {
     excluir:"desativarArtigoMW()", imprimir:"mwImprimir('mod-alm','Materiais')",
     botoes:[
       ['\ud83d\udc41','Ver',[['\ud83d\uddc2 Cat\u00e1logo de Pe\u00e7as',"almLente('mestre')"],['\ud83d\udce6 Almoxarifado',"almLente('armazem')"]]],
-      ['\ud83d\udcca','An\u00e1lises',[['\ud83d\udcca An\u00e1lise ABC',"anABC()"],['\u26a0 Estoque baixo',"carregarPecasReais()"]]],
+      ['\ud83d\udcca','An\u00e1lises',[['\ud83d\udcca An\u00e1lise ABC',"anABC()"],['\u26a0 Estoque baixo',"almVistaBaixo()"]]],
+      ['\ud83d\udce5','Receber',"recebimentosJanela()"],
       ['\u22ef','Mais',[['\u2699\ufe0f Parametrizar',"showModule('param')"]]],
       ['\ud83d\udd27','Ferramentas',[
         {sub:'\ud83d\udcd2 Registos', itens:[['\ud83d\udce5 Entrada',"almMovAbrir('entrada')"],['\ud83d\udce4 Sa\u00edda',"almMovAbrir('saida')"],['\u21c4 Transfer\u00eancia',"almMovAbrir('transferencia')"],['\ud83e\uddee Ajuste de saldo',"almMovAbrir('ajuste')"]]},
@@ -2645,6 +2646,7 @@ async function otPecasRender(){
         ? '<div style="margin-top:8px;display:flex;gap:8px">'
           + '<button class="btn p" onclick="otSaidaAbrir()">＋ Saída (baixa do estoque)</button>'
           + '<button class="btn" title="Peça do cadastro consumida sem passar pelo estoque (compra/oficina direto na máquina)" onclick="otAplicDireta()">⚡ Aplicação direta</button>'
+          + '<button class="btn" title="Peças previstas na FMP que o estoque e as OCs abertas não cobrem → OC em rascunho no Compras, amarrada a esta OT" onclick="ocDaOT()">🛒 Gerar OC (faltantes)</button>'
           + '</div>'
         : '');
 }
@@ -3247,7 +3249,7 @@ async function almVistaBaixo(){
   _almVista = 'baixo';
   montarNavAlm();
   const th = document.getElementById('alm-thead');
-  if (th) th.innerHTML = '<th style="width:100px">Código</th><th>Descrição</th><th style="width:90px">Endereço</th><th style="width:56px">UN</th><th class="r" style="width:90px">Situação</th>';
+  if (th) th.innerHTML = '<th style="width:26px"><input type="checkbox" title="marcar todos" onchange="document.querySelectorAll(\'#alm-tbody .eb-ck\').forEach(c=>c.checked=this.checked)"></th><th style="width:100px">Código</th><th>Descrição</th><th style="width:60px">Local</th><th class="r" style="width:56px">Saldo</th><th class="r" style="width:56px">Mín</th><th class="r" style="width:56px">Máx</th><th class="r" style="width:70px">Em pedido</th><th class="r" style="width:70px">A conferir</th><th class="r" style="width:70px">Sugestão</th><th style="width:150px">Fornecedor ref.</th>';
   renderEstoqueBaixo();
 }
 async function almVistaMov(){
@@ -3373,6 +3375,11 @@ async function entradaOK(){
   } else {
     body.destino = g('ent-dest').value;
   }
+  if (body.oc_numero){
+    try { const ex = await mntFetch('/manutencao/api/oc-existe?numero='+encodeURIComponent(body.oc_numero));
+      if (ex.existe && !confirm('A OC '+body.oc_numero+' existe no Compras ('+ex.status+').\n\nO saldo dela entra pela CONFERÊNCIA do recebimento (Materiais ▸ Receber). Lançar esta entrada manual mesmo assim pode DUPLICAR o saldo.\n\nLançar assim mesmo?')) return;
+      if (ex.existe) body.forcar = true; } catch(e){}
+  }
   try {
     const r = await mntFetch('/manutencao/api/entradas', { method:'POST', body: JSON.stringify(body) });
     mostrarToast('✅ '+r.itens+' item(ns) lançado(s)'+(r.total?' · R$ '+r.total.toFixed(2):''), 'ok');
@@ -3479,17 +3486,83 @@ async function carregarPecasReais(){
     </tr>`).join('') || '<tr><td colspan="5" style="padding:14px;color:#64748B">Nada encontrado.</td></tr>';
   } catch(e) { mostrarToast('❌ '+e.message,'warn'); }
 }
+let _ebRows = [];
 async function renderEstoqueBaixo(){
   const tb = document.getElementById('alm-tbody'); if (!tb) return;
   try {
-    const rows = await mntFetch('/manutencao/api/estoque-baixo');
-    tb.innerHTML = rows.map(b =>
-      '<tr data-cod="'+_esc(b.codigo)+'" style="cursor:pointer" onclick="mwSel(\'alm\',this.dataset.cod);abrirPeca(this.dataset.cod)">'
-      + '<td class="bold">'+_esc(b.codigo)+'</td><td>'+_esc(b.descricao)
-      + ' <span class="chip nr">'+b.almox+': '+b.quantidade+' / mín '+b.minimo+'</span></td>'
-      + '<td>'+_esc(b.localizacao||'—')+'</td><td>'+_esc(b.unidade||'')+'</td><td class="r muted">repor</td></tr>'
-    ).join('') || '<tr><td colspan="5" style="padding:14px;color:#16A34A">✔ Nenhuma peça abaixo do mínimo.</td></tr>';
+    const rows = await mntFetch('/manutencao/api/estoque-baixo'); _ebRows = rows;
+    const n = v => (parseFloat(v)||0).toLocaleString('pt-BR');
+    tb.innerHTML = rows.map((b,i) =>
+      '<tr data-cod="'+_esc(b.codigo)+'">'
+      + '<td><input type="checkbox" class="eb-ck" value="'+i+'"'+(b.sugestao>0?' checked':'')+'></td>'
+      + '<td class="bold" style="cursor:pointer" onclick="mwSel(\'alm\',\''+_esc(b.codigo).replace(/'/g,'&#39;')+'\');abrirPeca(\''+_esc(b.codigo).replace(/'/g,'&#39;')+'\')">'+_esc(b.codigo)+'</td>'
+      + '<td>'+_esc(b.descricao)+(b.ocs_abertas&&b.ocs_abertas.length?' <span class="chip pr" title="'+_esc(b.ocs_abertas.join(', '))+'">já em OC</span>':'')+'</td>'
+      + '<td class="muted">'+_esc(b.almox)+(b.localizacao?' · '+_esc(b.localizacao):'')+'</td>'
+      + '<td class="r mono" style="color:#B91C1C">'+n(b.quantidade)+'</td><td class="r mono">'+n(b.minimo)+'</td><td class="r mono">'+(b.maximo!=null?n(b.maximo):'<span class="muted" title="sem máximo: alvo = 2× mínimo">'+n(b.alvo)+'*</span>')+'</td>'
+      + '<td class="r mono">'+(b.em_pedido?n(b.em_pedido):'<span class="muted">—</span>')+'</td><td class="r mono">'+(b.a_conferir?n(b.a_conferir):'<span class="muted">—</span>')+'</td>'
+      + '<td class="r mono"><b>'+n(b.sugestao)+'</b> '+_esc(b.unidade||'')+'</td>'
+      + '<td style="font-size:10px">'+(b.ref_fornecedor_nome?_esc(b.ref_fornecedor_nome)+(b.preco_sugerido!=null?' · R$ '+n(b.preco_sugerido):''):'<span class="muted">sem referência'+(b.preco_sugerido!=null?' · médio R$ '+n(b.preco_sugerido):'')+'</span>')+'</td></tr>'
+    ).join('') || '<tr><td colspan="11" style="padding:14px;color:#16A34A">✔ Nenhuma peça abaixo do mínimo.</td></tr>';
+    if (rows.length) tb.innerHTML += '<tr><td colspan="11" style="padding:8px"><div style="display:flex;justify-content:space-between;align-items:center"><span class="muted" style="font-size:10px">Sugestão = máximo − saldo − em pedido − a conferir. Itens com sugestão &gt; 0 já vêm marcados. A OC nasce em <b>rascunho</b> no Compras, uma por fornecedor de referência (sem referência → OC sem fornecedor, para cotar).</span><button class="btn p" onclick="ocSugerida()">🛒 Gerar OC sugerida</button></div></td></tr>';
   } catch(e){ mostrarToast('❌ '+e.message,'warn'); }
+}
+let _setorCompras = null;
+async function _fxCompras(path, opts){
+  // chamada ao módulo Compras: 403 aqui é permissão de COMPRAS, não de Manutenção — sem redirecionar
+  const r = await fetch(path, Object.assign({}, opts, { headers: Object.assign({'Content-Type':'application/json','Authorization':'Bearer '+mntToken()}, (opts&&opts.headers)||{}) }));
+  const j = await r.json().catch(()=> ({}));
+  if (r.status === 403) throw new Error('Sem permissão no módulo Compras (Solicitar OC) — peça ao administrador ou à central de cotações');
+  if (!r.ok) throw new Error(j.detail || ('Erro '+r.status));
+  return j;
+}
+async function _setorManutencao(){
+  if (_setorCompras) return _setorCompras;
+  try {
+    const st = await _fxCompras('/compras/api/setores');
+    const lst = Array.isArray(st) ? st : (st.setores||[]);
+    const pref = lst.find(x => /MANUT|OFIC/i.test((x.codigo||'')+' '+(x.nome||''))) || lst[0];
+    _setorCompras = pref ? pref.codigo : null;
+  } catch(e){ _setorCompras = null; }
+  return _setorCompras;
+}
+async function _criarOCs(grupos, extra, origem){
+  // grupos: {fornecedor_id|'' : [{peca_id, descricao, quantidade, unidade, valor_unit}]}
+  const setor = await _setorManutencao();
+  if (!setor){ mostrarToast('Compras sem setor cadastrado — cadastre em Compras ▸ Parametrização','warn'); return []; }
+  const alms = await mntFetch('/manutencao/api/almoxarifados').catch(()=>[]);
+  const almDef = ((Array.isArray(alms)?alms:(alms.almoxarifados||[]))[0]||{}).codigo || null;
+  const criadas = [], erros = [];
+  for (const forn of Object.keys(grupos)){
+    const body = Object.assign({ setor_codigo: setor, fornecedor_id: forn || null, itens: grupos[forn], origem, almoxarifado_codigo: almDef,
+      observacao: origem === 'estoque_minimo' ? 'Gerada automaticamente pelo estoque mínimo (Manutenção ▸ Materiais)' : 'Gerada pela OT (peças previstas na FMP não cobertas pelo estoque)' }, extra||{});
+    try { const r = await _fxCompras('/compras/api/ocs', {method:'POST', body: JSON.stringify(body)}); criadas.push(r.numero || r.id); }
+    catch(e){ erros.push(e.message); }
+  }
+  if (criadas.length) mostrarToast('🛒 OC(s) criada(s) em rascunho no Compras: '+criadas.join(', '),'ok');
+  if (erros.length) alert('Não foi possível criar:\n'+erros.join('\n'));
+  return criadas;
+}
+async function ocSugerida(){
+  const marcados = Array.from(document.querySelectorAll('#alm-tbody .eb-ck:checked')).map(c => _ebRows[parseInt(c.value)]).filter(b => b && b.sugestao > 0);
+  if (!marcados.length){ mostrarToast('Marque ao menos um item com sugestão > 0','warn'); return; }
+  const grupos = {};
+  marcados.forEach(b => { (grupos[b.ref_fornecedor_id||''] = grupos[b.ref_fornecedor_id||''] || []).push({ peca_id: b.peca_id, descricao: b.codigo+' — '+(b.descricao||''), quantidade: b.sugestao, unidade: b.unidade||'UN', valor_unit: b.preco_sugerido||0 }); });
+  const nForn = Object.keys(grupos).length;
+  if (!confirm(marcados.length+' item(ns) em '+nForn+' OC(s) (uma por fornecedor de referência).\n\nCriar em rascunho no Compras?')) return;
+  const ok = await _criarOCs(grupos, null, 'estoque_minimo');
+  if (ok.length) renderEstoqueBaixo();
+}
+async function ocDaOT(){
+  const o = _otAberta; if (!o) return;
+  let f;
+  try { f = await mntFetch('/manutencao/api/ots/'+o.id+'/faltantes'); } catch(e){ mostrarToast('❌ '+e.message,'warn'); return; }
+  const falt = (f.itens||[]).filter(x => x.faltante > 0);
+  if (!falt.length){ mostrarToast(f.itens && f.itens.length ? 'Estoque + OCs abertas cobrem tudo que a FMP prevê' : 'OT sem FMP com peças previstas — use o Compras direto (OC com esta OT)','warn'); return; }
+  const semCad = falt.filter(x => x.sem_cadastro).map(x => x.codigo);
+  const lista = falt.map(x => '• '+x.codigo+' — falta '+x.faltante+' '+x.unidade+(x.ocs&&x.ocs.length?' (já em '+x.ocs.join(', ')+')':'')).join('\n');
+  if (!confirm('Peças previstas na FMP não cobertas:\n\n'+lista+(semCad.length?'\n\n⚠ Sem cadastro (entram só por descrição): '+semCad.join(', '):'')+'\n\nCriar OC em rascunho no Compras amarrada à '+_esc(o.numero)+'?')) return;
+  const itens = falt.map(x => ({ peca_id: x.peca_id, descricao: x.codigo+' — '+(x.descricao||''), quantidade: x.faltante, unidade: x.unidade||'UN', valor_unit: x.preco||0 }));
+  await _criarOCs({'': itens}, { ot_id: o.id, equipamento_id: f.equipamento_id, prioridade: (o.prioridade==='urgente'||o.prioridade==='alta') ? 'urgente' : 'normal' }, 'ot');
 }
 async function carregarArmazem(q){
   const tb = document.getElementById('alm-tbody'); if (!tb) return;
@@ -3567,16 +3640,18 @@ async function pecaAba(aba){
       c.innerHTML = '<div class="dsec">Armazéns — existência, endereço C-P-N e mínimo por local</div>'
         + '<div style="background:#fff;border:1px solid #E2E8F0;border-radius:6px;overflow:hidden"><table><thead><tr>'
         + '<th style="width:56px">Local</th><th>Nome</th><th class="r" style="width:70px">Saldo</th>'
-        + '<th style="width:90px">Endereço</th><th class="r" style="width:60px">Mínimo</th><th style="width:70px"></th>'
+        + '<th style="width:90px">Endereço</th><th class="r" style="width:60px">Mínimo</th><th class="r" style="width:60px">Máximo</th><th style="width:100px"></th>'
         + '</tr></thead><tbody>'
         + saldos.map(s =>
           '<tr><td class="bold">'+_esc(s.almox)+'</td><td>'+_esc(s.nome)+'</td>'
           + '<td class="r mono">'+parseFloat(s.quantidade).toLocaleString('pt-BR')+'</td>'
           + '<td class="mono">'+_esc(s.localizacao||'—')+'</td>'
           + '<td class="r mono">'+(s.minimo!=null?s.minimo:'—')+'</td>'
+          + '<td class="r mono">'+(s.maximo!=null?s.maximo:'—')+'</td>'
           + '<td class="act">'
           + '<button class="btn" title="Endereço" onclick="pecaEndereco(\''+_esc(s.almox)+'\',\''+_esc(s.localizacao||'')+'\')">📍</button>'
           + '<button class="btn" title="Mínimo" onclick="pecaMinimo(\''+_esc(s.almox)+'\',\''+(s.minimo!=null?s.minimo:'')+'\')">🔢</button>'
+          + '<button class="btn" title="Máximo (alvo de reposição)" onclick="pecaMaximo(\''+_esc(s.almox)+'\',\''+(s.maximo!=null?s.maximo:'')+'\')">🔝</button>'
           + '</td></tr>').join('')
         + '</tbody></table></div>'
         + '<div style="display:flex;justify-content:flex-end;margin-top:10px"><button class="btn p" onclick="pecaMovimentar()">↔ Movimentar</button></div>';
@@ -3777,6 +3852,15 @@ async function pecaMinimo(almox, atual){
     await mntFetch('/manutencao/api/estoque-meta',
       {method:'PATCH', body: JSON.stringify({peca: _pecaAberta, almoxarifado: almox, minimo: min})});
     mostrarToast('🔢 Mínimo salvo','ok'); abrirPeca(_pecaAberta); montarNavAlm();
+  } catch(e){ mostrarToast('❌ '+e.message,'warn'); }
+}
+async function pecaMaximo(almox, atual){
+  const mx = prompt('Estoque MÁXIMO de '+_pecaAberta+' no '+almox+' (alvo da reposição; vazio = repor até 2× o mínimo):', atual);
+  if (mx === null) return;
+  try {
+    await mntFetch('/manutencao/api/estoque-meta',
+      {method:'PATCH', body: JSON.stringify({peca: _pecaAberta, almoxarifado: almox, maximo: mx})});
+    mostrarToast('🔝 Máximo salvo','ok'); abrirPeca(_pecaAberta);
   } catch(e){ mostrarToast('❌ '+e.message,'warn'); }
 }
 async function pecaMovimentar(){
@@ -4582,6 +4666,44 @@ async function otDocEnviar(){
 }
 async function equipDocExcluirOT(docId){ if (!confirm('Remover este documento?')) return; try { await mntFetch('/manutencao/api/documentos/'+docId, {method:'DELETE'}); otDocsRender(); } catch(e){ mostrarToast('\u274c '+e.message,'warn'); } }
 
+/* ══ RECEBIMENTOS A CONFERIR (OC recebida no Compras → saldo sobe só na conferência) ══ */
+async function recebimentosJanela(st){
+  st = st || 'pendente';
+  let rows, alms;
+  try { [rows, alms] = await Promise.all([mntFetch('/manutencao/api/recebimentos?status='+st), mntFetch('/manutencao/api/almoxarifados')]); }
+  catch(e){ mostrarToast('\u274c '+e.message,'warn'); return; }
+  alms = Array.isArray(alms) ? alms : (alms.almoxarifados||[]);
+  const dd = v => v ? new Date(v).toLocaleDateString('pt-BR') : '\u2014';
+  const n = v => (parseFloat(v)||0).toLocaleString('pt-BR');
+  document.querySelector('#eq-ficha .modal').classList.add('larga');
+  document.getElementById('eq-ficha-corpo').innerHTML =
+    '<div style="display:flex;justify-content:space-between;align-items:center"><b style="font-size:14px;color:#1A2A5E">\ud83d\udce5 Recebimentos de OC \u2014 confer\u00eancia f\u00edsica</b><span style="cursor:pointer;font-size:18px" onclick="document.getElementById(\'eq-ficha\').classList.remove(\'show\')">\u2715</span></div>'
+    + '<div style="display:flex;gap:8px;margin:8px 0;align-items:center;font-size:11px"><label>Situa\u00e7\u00e3o <select onchange="recebimentosJanela(this.value)">'+['pendente','conferida','rejeitada'].map(x=>'<option value="'+x+'"'+(x===st?' selected':'')+'>'+x+'</option>').join('')+'</select></label>'
+    + '<span class="muted">O Compras registra o recebimento; o saldo do almoxarifado s\u00f3 sobe quando voc\u00ea confere aqui (quantidade real na caixa, local de guarda). Custo m\u00e9dio, NF e OC entram na entrada automaticamente.</span></div>'
+    + '<div style="max-height:420px;overflow:auto"><table style="font-size:11px"><thead><tr><th>OC</th><th>Recebido em</th><th>Artigo</th><th>Fornecedor</th><th>NF</th><th class="r">Qtd</th><th class="r">Custo</th><th>OT</th>'+(st==='pendente'?'<th class="r" style="width:80px">Conferido</th><th style="width:110px">Local</th><th>Obs.</th><th></th>':'<th>Quem/quando</th><th>Obs.</th>')+'</tr></thead><tbody>'
+    + (rows.length ? rows.map(r => '<tr><td class="bold">'+_esc(r.oc_numero||'')+'</td><td>'+dd(r.criado_em)+'</td><td><b>'+_esc(r.peca_codigo)+'</b> <span class="muted">'+_esc(r.peca_descricao||'')+'</span></td><td>'+_esc(r.fornecedor_nome||'')+'</td><td>'+_esc(r.nf_numero||'')+'</td><td class="r mono">'+n(r.quantidade)+' '+_esc(r.unidade||'')+'</td><td class="r mono">'+(r.custo_unitario!=null?n(r.custo_unitario):'')+'</td><td>'+_esc(r.ot_numero||'')+'</td>'
+        + (st==='pendente'
+           ? '<td class="r"><input id="rc-q-'+r.id+'" type="number" step="0.01" value="'+(parseFloat(r.quantidade)||0)+'" style="width:70px;text-align:right"></td>'
+             + '<td><select id="rc-a-'+r.id+'">'+alms.map(a=>'<option value="'+_esc(a.codigo)+'"'+(a.codigo===r.almoxarifado_codigo?' selected':'')+'>'+_esc(a.codigo)+'</option>').join('')+'</select></td>'
+             + '<td><input id="rc-o-'+r.id+'" placeholder="ex.: 1 avariada" style="width:120px"></td>'
+             + '<td style="white-space:nowrap"><button class="btn p" onclick="recebimentoConferir(\''+r.id+'\')">\u2705 Conferir</button> <button class="btn" onclick="recebimentoRejeitar(\''+r.id+'\')">\u2715</button></td>'
+           : '<td>'+_esc(r.conferido_por_nome||'')+' \u00b7 '+dd(r.conferido_em)+(r.quantidade_conferida!=null&&parseFloat(r.quantidade_conferida)!==parseFloat(r.quantidade)?' <span class="chip em">conferido '+n(r.quantidade_conferida)+'</span>':'')+'</td><td>'+_esc(r.observacao||'')+'</td>')
+        + '</tr>').join('')
+      : '<tr><td colspan="12" class="muted" style="padding:10px">Nenhum recebimento '+st+'.</td></tr>') + '</tbody></table></div>';
+  document.getElementById('eq-ficha').classList.add('show');
+}
+async function recebimentoConferir(id){
+  const g = k => (document.getElementById('rc-'+k+'-'+id)||{}).value || '';
+  try {
+    const r = await mntFetch('/manutencao/api/recebimentos/'+id+'/conferir', {method:'POST', body: JSON.stringify({quantidade: g('q'), almox: g('a'), observacao: g('o')})});
+    mostrarToast('\u2705 Conferido \u2014 saldo atualizado'+(r.diferenca?' (diferen\u00e7a '+r.diferenca+')':''),'ok'); recebimentosJanela('pendente'); carregarPecasReais();
+  } catch(e){ mostrarToast('\u274c '+e.message,'warn'); }
+}
+async function recebimentoRejeitar(id){
+  const m = prompt('Motivo da rejei\u00e7\u00e3o (peça errada, avariada, n\u00e3o chegou):'); if (!m) return;
+  try { await mntFetch('/manutencao/api/recebimentos/'+id+'/rejeitar', {method:'POST', body: JSON.stringify({motivo: m})}); recebimentosJanela('pendente'); }
+  catch(e){ mostrarToast('\u274c '+e.message,'warn'); }
+}
 /* ══ ANÁLISE ABC ══ */
 async function anABC(dias){
   dias = dias || 365;
