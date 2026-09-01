@@ -102,6 +102,8 @@
     <label>O que foi feito? *</label>
     <textarea id="ap-relato" placeholder="ex.: trocado filtro e óleo do comando; testado sem vazamento"></textarea>
     <button type="button" class="btn-ditar" data-ditar="ap-relato">🎤 Ditar</button>
+    <label>Horas trabalhadas neste serviço (mão de obra)</label>
+    <input id="ap-horas" type="number" step="0.25" min="0" inputmode="decimal" placeholder="ex.: 2,5">
     <label>Horímetro/KM no serviço (opcional)</label>
     <input id="ap-hor" type="number" step="0.1" inputmode="decimal">
     <label style="display:flex;align-items:center;gap:8px;margin-top:12px;font-size:14px;color:#0F172A">
@@ -240,6 +242,7 @@ function apAbrir(otId, otNum){
   document.getElementById('ap-ot').textContent = otNum + ' — o relato vai para o histórico; o encerramento é da gestão.';
   document.getElementById('ap-relato').value = '';
   document.getElementById('ap-hor').value = '';
+  document.getElementById('ap-horas').value = '';
   document.getElementById('ap-fim').checked = false;
   tela('tela-apont');
 }
@@ -249,6 +252,7 @@ async function apEnviar(){
   try {
     await api('/manutencao/api/ots/' + AP_OT + '/apontamento', { method: 'POST',
       body: JSON.stringify({ relato,
+        horas: document.getElementById('ap-horas').value || null,
         horimetro: document.getElementById('ap-hor').value || null,
         concluido: document.getElementById('ap-fim').checked }) });
     toast('✅ Registrado na OT');

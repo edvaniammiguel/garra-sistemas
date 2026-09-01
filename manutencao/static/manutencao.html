@@ -159,6 +159,11 @@ tr.sel td{background:#FFF7ED !important}
        background:#1A2A5E;color:#fff;padding:8px 18px;border-radius:6px;
        font-size:12px;display:none;z-index:10000;box-shadow:0 6px 20px rgba(0,0,0,.3)}
 #toast.warn{background:#B45309}
+.cal-h{display:grid;grid-template-columns:repeat(7,1fr);font-size:10px;font-weight:700;color:#475569;text-align:center}
+.cal-g{display:grid;grid-template-columns:repeat(7,1fr);gap:2px}
+.cal-c{min-height:78px;border:1px solid #E2E8F0;border-radius:4px;padding:2px 4px;font-size:10px;background:#fff}
+.cal-c.off{background:#F8FAFC;border-color:transparent}.cal-c.hoje{border-color:#F97316;background:#FFF7ED}
+.cal-d{font-weight:800;color:#1A2A5E;margin-bottom:2px}.cal-ot{padding:1px 3px;margin:1px 0;background:#F1F5F9;border-radius:2px;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 </style>
 </head>
 <body>
@@ -473,9 +478,10 @@ function renderCentroEquip(){
       .sort((a,b)=> (ordem[a.status]-ordem[b.status]) || a.codigo.localeCompare(b.codigo));
   let thead, linhas, colspan;
   if (_ftModo === 'lista'){
-    colspan = 8;
+    colspan = 9;
     thead = '<th style="width:26px"></th><th style="width:96px">Equip.</th><th>Descrição</th>'
       + '<th style="width:52px">Tipo</th><th style="width:86px">Sistema</th>'
+      + '<th style="width:150px">Responsável</th>'
       + '<th class="r" style="width:82px">Horímetro</th><th style="width:110px">OTs</th>'
       + '<th>Próxima manutenção</th>';
     linhas = eqs.map(e => {
@@ -491,6 +497,7 @@ function renderCentroEquip(){
         + '<td>'+_esc(e.descricao||'')+'</td>'
         + '<td class="muted" style="font-size:10px">'+_esc(e.tipo_sigla||'—')+'</td>'
         + '<td class="mono muted" style="font-size:10px">'+_esc(e.sistema_codigo||'—')+'</td>'
+        + '<td style="font-size:10px">'+(e.operador_nome?_esc(e.operador_nome):'<span class="muted">—</span>')+'</td>'
         + '<td class="mono r">'+hor+'</td>'
         + '<td>'+((abertas+' '+progrs).trim()||'<span class="chip tm">Nenhuma</span>')+'</td>'
         + '<td>'+situDe(e)+'</td></tr>';
@@ -1302,7 +1309,6 @@ function _mwPrecisa(aba, rotulo){
   if (!id){ mostrarToast('Selecione um '+rotulo+' na lista (clique simples) e tente de novo','warn'); return null; }
   return id;
 }
-function _mwBreve(o){ mostrarToast('\ud83d\udee0 '+o+' \u2014 em breve','warn'); }
 
 const _MW = {
   frota: {
@@ -1312,18 +1318,27 @@ const _MW = {
     excluir:"excluirEquipMW()", imprimir:"mwImprimir('frota-centro','Frota')",
     botoes:[
       ['\ud83d\udc41','Ver',[['\ud83c\udf33 \u00c1rvore',"ftModo('arv')"],['\u2630 Lista',"ftModo('lista')"],['\u21bb Atualizar sem\u00e1foros',"carregarSemaforosReais()"]]],
-      ['\ud83d\udcca','An\u00e1lises',[['\ud83d\udea6 Sem\u00e1foros da frota',"carregarSemaforosReais()"],['\ud83d\udcca An\u00e1lise ABC',"_mwBreve('An\u00e1lise ABC')"]]],
-      ['\u22ef','Mais',[['\ud83d\udd27 Ordens de Trabalho do objecto',"(function(){const i=_mwPrecisa('frota','objecto'); if(i) otsDoEquip(i,false);})()"],['\u2699\ufe0f Parametrizar',"showModule('param')"]]],
+      ['\ud83d\udcca','An\u00e1lises',[['\ud83d\udcca Par\u00e2metros do objecto (m\u00eas a m\u00eas)',"(function(){const i=_mwPrecisa('frota','objecto'); if(i) equipAnalises(i);})()"],['\ud83d\udea6 Sem\u00e1foros da frota',"carregarSemaforosReais()"],['\ud83d\udcca An\u00e1lise ABC',"anABC()"]]],
+      ['\u22ef','Mais',[
+        ['\ud83d\udcc5 Planos Manuten\u00e7\u00e3o',"(function(){const i=_mwPrecisa('frota','objecto'); if(i) abrirPlanosEquip(i);})()"],
+        ['\ud83d\udd27 Ordens Trabalho',"(function(){const i=_mwPrecisa('frota','objecto'); if(i) otsDoEquip(i,true);})()"],
+        ['\u23f3 Tarefas Pendentes',"(function(){const i=_mwPrecisa('frota','objecto'); if(i) otsDoEquip(i,false);})()"],
+        ['\ud83d\udcce Documentos',"(function(){const i=_mwPrecisa('frota','objecto'); if(i) equipDocumentos(i);})()"],
+        ['\ud83d\udd29 Artigos Aplicados',"(function(){const i=_mwPrecisa('frota','objecto'); if(i) equipArtigos(i);})()"],
+        {sub:'\u23f1 Tempos', itens:[['\ud83d\udcc8 Registo Funcionamento','equipFuncionamento'],['\u26fd Abastecimentos','equipAbastecimentos']], sel:true},
+        ['\ud83d\udcd0 Pontos Leitura',"(function(){const i=_mwPrecisa('frota','objecto'); if(i) verEquipReal(i,'pontos');})()"],
+        ['\ud83d\udcda Hist\u00f3rico Utiliza\u00e7\u00e3o',"(function(){const i=_mwPrecisa('frota','objecto'); if(i) equipFuncionamento(i);})()"],
+        ['\u2699\ufe0f Parametrizar',"showModule('param')"]]],
       ['\ud83d\udd27','Ferramentas',[
         {sub:'\ud83d\udcd2 Registos', itens:[['\u26fd Abastecimentos','equipAbastecimentos'],['\ud83d\udcc8 Registo Funcionamento','equipFuncionamento'],
                                           ['\ud83d\udede Subsistemas / Montagem','equipSubsistemas'],['\ud83d\udd29 Artigos aplicados','equipArtigos'],
                                           ['\ud83d\udcc5 Planos de manuten\u00e7\u00e3o','abrirPlanosEquip']], sel:true},
-        ['\ud83d\udcca An\u00e1lise ABC',"_mwBreve('An\u00e1lise ABC')"],
+        ['\ud83d\udcca An\u00e1lise ABC',"anABC()"],
         ['\ud83c\udf33 \u00c1rvore Objectos',"ftModo('arv')"],
         ['\ud83d\udcc5 Plano Trabalhos',"(function(){const i=_mwPrecisa('frota','objecto'); if(i) abrirPlanosEquip(i);})()"],
         ['\ud83d\udcdc Hist\u00f3rico Completo OTs',"(function(){const i=_mwPrecisa('frota','objecto'); if(i) otsDoEquip(i,true);})()"],
-        ['\u270f\ufe0f M\u00faltipla Edi\u00e7\u00e3o Objectos',"_mwBreve('M\u00faltipla edi\u00e7\u00e3o')"],
-        ['\ud83d\ude9a Guias Transporte',"_mwBreve('Guias de transporte')"]]]
+        ['\u270f\ufe0f M\u00faltipla Edi\u00e7\u00e3o Objectos',"multiEdicao('frota')"],
+        ['\ud83d\ude9a Guias Transporte',"guiasJanela(_mwSel.frota)"]]]
     ],
     busca:'arv-busca'
   },
@@ -1337,16 +1352,16 @@ const _MW = {
                               ['\u23f8\ufe0f Aguardando pe\u00e7a',"(function(){const i=_mwPrecisa('ots','OT'); if(i) mntStatusReal(i,'aguardando_peca');})()"],
                               ['\u2714\ufe0f Concluir\u2026',"(function(){const i=_mwPrecisa('ots','OT'); if(i) mntStatusReal(i,'concluida');})()"]]],
       ['\ud83d\udce8','Pedidos',"abrirPedidos()"],
-      ['\ud83d\udcc5','Calend\u00e1rio',"_mwBreve('Calend\u00e1rio de trabalhos')"],
-      ['\ud83d\uddc2','Projectos',"_mwBreve('Projectos')"],
+      ['\ud83d\udcc5','Calend\u00e1rio',"calTrabalhos()"],
+      ['\ud83d\uddc2','Projectos',"projectosJanela()"],
       ['\u22ef','Mais',[['\ud83d\udea6 Sem\u00e1foros da frota',"showModule('frota');carregarSemaforosReais()"],['\u2699\ufe0f Parametrizar',"showModule('param')"]]],
       ['\ud83d\udd27','Ferramentas',[
-        {sub:'\ud83d\udcd2 Registos', itens:[['\ud83d\udc65 Registo M\u00e3o de Obra',"_mwBreve('Registo de m\u00e3o de obra')"],['\ud83d\udd29 Registo Artigos',"(function(){const i=_mwPrecisa('ots','OT'); if(i) verOTReal(i);})()"],['\ud83d\udcc4 Registo Outros',"_mwBreve('Registo outros')"]]},
-        ['\u270f\ufe0f M\u00faltipla Edi\u00e7\u00e3o OTs',"_mwBreve('M\u00faltipla edi\u00e7\u00e3o de OTs')"],
+        {sub:'\ud83d\udcd2 Registos', itens:[['\ud83d\udc65 Registo M\u00e3o de Obra',"(function(){const i=_mwPrecisa('ots','OT'); if(i) otAbrirEm(i,'mo');})()"],['\ud83d\udd29 Registo Artigos',"(function(){const i=_mwPrecisa('ots','OT'); if(i) verOTReal(i);})()"],['\ud83d\udcc4 Registo Outros',"(function(){const i=_mwPrecisa('ots','OT'); if(i) otAbrirEm(i,'ou');})()"]]},
+        ['\u270f\ufe0f M\u00faltipla Edi\u00e7\u00e3o OTs',"multiEdicao('ots')"],
         ['\u26a0\ufe0f Modos Falha',"showModule('param')"],
-        ['\ud83d\udcca Carga Trabalhos',"_mwBreve('Carga de trabalhos')"],
-        ['\ud83e\udd1d Contratos',"_mwBreve('Contratos')"],
-        ['\ud83d\ude9a Guias Transporte',"_mwBreve('Guias de transporte')"]]]
+        ['\ud83d\udcca Carga Trabalhos',"cargaTrabalhos()"],
+        ['\ud83e\udd1d Contratos',"contratosJanela()"],
+        ['\ud83d\ude9a Guias Transporte',"guiasJanela()"]]]
     ],
     busca:'ots-busca'
   },
@@ -1354,15 +1369,15 @@ const _MW = {
     rotulo:'artigo',
     novo:"artJanela('')", abrir:"(function(){const i=_mwPrecisa('alm','artigo'); if(i) abrirPeca(i);})()",
     repetir:"(function(){const i=_mwPrecisa('alm','artigo'); if(i) artJanela(i);})()",
-    excluir:"_mwBreve('Desativar artigo')", imprimir:"mwImprimir('mod-alm','Materiais')",
+    excluir:"desativarArtigoMW()", imprimir:"mwImprimir('mod-alm','Materiais')",
     botoes:[
       ['\ud83d\udc41','Ver',[['\ud83d\uddc2 Cat\u00e1logo de Pe\u00e7as',"almLente('mestre')"],['\ud83d\udce6 Almoxarifado',"almLente('armazem')"]]],
-      ['\ud83d\udcca','An\u00e1lises',[['\ud83d\udcca An\u00e1lise ABC',"_mwBreve('An\u00e1lise ABC')"],['\u26a0 Estoque baixo',"carregarPecasReais()"]]],
+      ['\ud83d\udcca','An\u00e1lises',[['\ud83d\udcca An\u00e1lise ABC',"anABC()"],['\u26a0 Estoque baixo',"carregarPecasReais()"]]],
       ['\u22ef','Mais',[['\u2699\ufe0f Parametrizar',"showModule('param')"]]],
       ['\ud83d\udd27','Ferramentas',[
         {sub:'\ud83d\udcd2 Registos', itens:[['\ud83d\udce5 Entrada',"almMovAbrir('entrada')"],['\ud83d\udce4 Sa\u00edda',"almMovAbrir('saida')"],['\u21c4 Transfer\u00eancia',"almMovAbrir('transferencia')"],['\ud83e\uddee Ajuste de saldo',"almMovAbrir('ajuste')"]]},
-        ['\ud83d\udccb Invent\u00e1rio',"_mwBreve('Invent\u00e1rio')"],
-        ['\ud83d\udd01 Substitutos',"_mwBreve('Substitutos')"]]]
+        ['\ud83d\udccb Invent\u00e1rio',"inventarioJanela()"],
+        ['\ud83d\udd01 Substitutos',"substitutosJanela()"]]]
     ],
     busca:'alm-busca'
   }
@@ -1534,10 +1549,18 @@ function nePrevia(inp){
   box.innerHTML = '<img src="'+url+'" style="max-width:100%;max-height:100%;object-fit:contain">';
 }
 async function neEnviarFoto(id){
-  const inp = document.getElementById('ne-figura'); const f = inp && inp.files && inp.files[0]; if (!f || !id) return;
-  const fd = new FormData(); fd.append('foto', f, f.name || 'foto.jpg');
-  try { await mntUpload('/manutencao/api/equipamentos/'+id+'/foto', fd); inp.value = ''; }
-  catch(e){ mostrarToast('\u26a0 Foto n\u00e3o enviada: '+e.message,'warn'); }
+  const inp = document.getElementById('ne-figura'); const f = inp && inp.files && inp.files[0];
+  if (f && id){
+    const fd = new FormData(); fd.append('foto', f, f.name || 'foto.jpg');
+    try { await mntUpload('/manutencao/api/equipamentos/'+id+'/foto', fd); inp.value = ''; }
+    catch(e){ mostrarToast('\u26a0 Foto n\u00e3o enviada: '+e.message,'warn'); }
+  }
+  const fi = document.getElementById('ne-fich'); const d = fi && fi.files && fi.files[0];
+  if (d && id){
+    const fd2 = new FormData(); fd2.append('ficheiro', d, d.name);
+    try { await mntUpload('/manutencao/api/equipamentos/'+id+'/documentos', fd2); fi.value = ''; }
+    catch(e){ mostrarToast('\u26a0 Ficheiro n\u00e3o enviado: '+e.message,'warn'); }
+  }
 }
 function neCarLinha(n, v){
   return '<div class="ne-car" style="display:flex;gap:6px;margin-bottom:4px"><input class="c-n" placeholder="nome" value="'+_esc(n)+'" style="flex:1"><input class="c-v" placeholder="valor" value="'+_esc(v)+'" style="flex:1"><button class="btn" onclick="this.parentNode.remove()">\u2715</button></div>';
@@ -1878,6 +1901,110 @@ async function abSalvar(id){
     equipAbastecimentos(id);
     carregarSemaforosReais();
   } catch(e){ mostrarToast('\u274c '+e.message,'warn'); }
+}
+/* ── Documentos do objecto (anexo Ficheiro → Storage) ── */
+async function equipDocumentos(id){
+  let docs;
+  try { docs = await mntFetch('/manutencao/api/equipamentos/'+id+'/documentos'); }
+  catch(e){ mostrarToast('\u274c '+e.message,'warn'); return; }
+  const eqF = _navEquipObjs().find(e => String(e.id) === String(id)) || {};
+  const dd = v => { if(!v) return '\u2014'; try{ return new Date(v).toLocaleDateString('pt-BR'); }catch(e){ return '\u2014'; } };
+  const kb = n => n ? (n > 1048576 ? (n/1048576).toFixed(1)+' MB' : Math.max(1,Math.round(n/1024))+' KB') : '';
+  const ico = t => /pdf/.test(t||'') ? '\ud83d\udcc4' : /image/.test(t||'') ? '\ud83d\uddbc' : /sheet|excel|csv/.test(t||'') ? '\ud83d\udcca' : '\ud83d\udcce';
+  document.querySelector('#eq-ficha .modal').classList.remove('larga');
+  document.getElementById('eq-ficha-corpo').innerHTML =
+    fichaTopo({icone:'\ud83d\udcce', titulo:'Documentos', codigo:eqF.codigo, descricao:eqF.descricao, id:id, fn:'equipDocumentos'})
+    + '<div class="dsec">Anexar ficheiro (manual, NF, laudo, CRLV\u2026 at\u00e9 15 MB)</div>'
+    + '<div style="display:flex;gap:6px;align-items:flex-end;flex-wrap:wrap">'
+    + '<div class="mfield" style="flex:1;min-width:200px">Ficheiro<input type="file" id="doc-file" style="font-size:11px"></div>'
+    + '<div class="mfield" style="flex:1;min-width:180px">Descri\u00e7\u00e3o<input id="doc-desc" placeholder="ex.: manual do operador"></div>'
+    + '<button class="btn p" onclick="equipDocEnviar(\''+id+'\')">\u2b06 Enviar</button></div>'
+    + '<div class="dsec" style="margin-top:10px">'+docs.length+' documento(s)</div>'
+    + (docs.length ? '<div style="max-height:300px;overflow:auto">' + docs.map(d =>
+        '<div style="display:flex;gap:8px;align-items:center;padding:5px 6px;border-bottom:1px solid #F1F5F9;font-size:11px">'
+        + '<span>'+ico(d.content_type)+'</span><a href="'+_esc(d.url)+'" target="_blank" style="flex:1;font-weight:700;color:#1A2A5E">'+_esc(d.nome)+'</a>'
+        + '<span class="muted" style="flex:1">'+_esc(d.descricao||'')+'</span>'
+        + '<span class="muted">'+kb(d.tamanho)+'</span><span class="muted">'+dd(d.criado_em)+' \u00b7 '+_esc(d.usuario_nome||'')+'</span>'
+        + '<span style="cursor:pointer;color:#B91C1C" title="Remover" onclick="equipDocExcluir(\''+d.id+'\',\''+id+'\')">\u2715</span></div>').join('') + '</div>'
+      : '<div class="muted" style="padding:8px 6px;font-size:11px">Nenhum documento anexado.</div>')
+    + '<div class="muted" style="font-size:10px;margin-top:6px">Links v\u00e1lidos por 1 h (reabra a janela para renovar).</div>';
+  document.getElementById('eq-ficha').classList.add('show');
+}
+async function equipDocEnviar(id){
+  const inp = document.getElementById('doc-file'); const f = inp && inp.files && inp.files[0];
+  if (!f){ mostrarToast('Escolha um ficheiro','warn'); return; }
+  const fd = new FormData(); fd.append('ficheiro', f, f.name); fd.append('descricao', (document.getElementById('doc-desc')||{}).value || '');
+  try { await mntUpload('/manutencao/api/equipamentos/'+id+'/documentos', fd); mostrarToast('\u2705 Documento anexado','ok'); equipDocumentos(id); }
+  catch(e){ mostrarToast('\u274c '+e.message,'warn'); }
+}
+async function equipDocExcluir(docId, id){
+  if (!confirm('Remover este documento?')) return;
+  try { await mntFetch('/manutencao/api/documentos/'+docId, {method:'DELETE'}); equipDocumentos(id); }
+  catch(e){ mostrarToast('\u274c '+e.message,'warn'); }
+}
+let _anAno = null;
+async function equipAnalises(id, ano){
+  let r;
+  ano = ano || _anAno;   // setas ◀ ▶ mantêm o ano escolhido
+  try { r = await mntFetch('/manutencao/api/equipamentos/'+id+'/analises'+(ano?'?ano='+ano:'')); }
+  catch(e){ mostrarToast('\u274c '+e.message,'warn'); return; }
+  _anAno = r.ano; _anEq = id;
+  const eqF = _navEquipObjs().find(e => String(e.id) === String(id)) || {codigo:r.equipamento, descricao:r.descricao};
+  const M = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+  const f = (v, fmt) => fmt === 'n' ? (v ? String(Math.round(v)) : '0')
+                      : fmt === 'r' ? v.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})
+                      : v.toLocaleString('pt-BR',{minimumFractionDigits:0,maximumFractionDigits:2});
+  const anos = (r.anos||[r.ano]).map(a => '<option value="'+a+'"'+(a===r.ano?' selected':'')+'>'+a+'</option>').join('');
+  document.querySelector('#eq-ficha .modal').classList.add('larga');
+  document.getElementById('eq-ficha-corpo').innerHTML =
+    fichaTopo({icone:'\ud83d\udcca', titulo:'An\u00e1lises', codigo:eqF.codigo, descricao:eqF.descricao, id:id, fn:'equipAnalises',
+               extra:'<span class="sep"></span><label style="font-size:11px">Ano <select id="an-ano" onchange="equipAnalises(\''+id+'\', this.value)">'+anos+'</select></label>'})
+    + '<div style="display:flex;justify-content:space-between;align-items:center;margin:8px 0 4px"><div class="dsec" style="margin:0">Par\u00e2metros Autom\u00e1ticos</div>'
+    + '<button class="btn" onclick="anManuaisToggle()">Par\u00e2metros Manuais</button></div>'
+    + '<div style="max-height:360px;overflow:auto"><table style="font-size:11px"><thead><tr><th style="min-width:230px">Par\u00e2metro</th>'
+    + M.map(m=>'<th class="r">'+m+'</th>').join('') + '<th class="r" style="min-width:80px">Total</th></tr></thead><tbody>'
+    + r.parametros.map(p => '<tr title="'+_esc(p.nome)+'"><td><b>'+p.codigo+'</b> \u2014 <span class="muted">'+_esc(p.nome)+'</span></td>'
+        + p.meses.map(v => '<td class="r mono'+(v?'':' muted')+'">'+f(v,p.fmt)+'</td>').join('')
+        + '<td class="r mono bold">'+f(p.total,p.fmt)+'</td></tr>').join('')
+    + '</tbody></table></div>'
+    + '<div id="an-manuais" style="display:'+((r.manuais||[]).length?'':'none')+'">'
+    + '<div class="dsec" style="margin-top:10px">Par\u00e2metros Manuais <span class="muted" style="font-weight:400;font-size:10px">\u2014 valores digitados (ex.: dias parados por chuva, custo de seguro), editar a c\u00e9lula e gravar</span></div>'
+    + '<div style="overflow:auto"><table style="font-size:11px"><thead><tr><th style="min-width:110px">C\u00f3digo</th><th style="min-width:160px">Nome</th>'
+    + M.map(m=>'<th class="r">'+m+'</th>').join('') + '<th class="r">Total</th><th></th></tr></thead><tbody id="an-man-body">'
+    + (r.manuais||[]).map(p => anManLinha(p)).join('')
+    + '</tbody></table></div>'
+    + '<div style="display:flex;gap:8px;margin-top:6px"><button class="btn" onclick="anManNova()">\uff0b Novo par\u00e2metro</button></div></div>'
+    + '<div class="muted" style="font-size:10px;margin-top:6px">'+r.parametros.length+' par\u00e2metros \u00b7 custos no m\u00eas da conclus\u00e3o da OT; contagens no m\u00eas da abertura; RF = leituras do m\u00eas (partes di\u00e1rias, abastecimentos, checklist); combust\u00edvel das notas de posto.</div>';
+  document.getElementById('eq-ficha').classList.add('show');
+}
+let _anEq = null;
+function anManLinha(p){
+  const meses = (p && p.meses) || Array(12).fill(null);
+  return '<tr data-cod="'+_esc((p&&p.codigo)||'')+'">'
+    + '<td><input class="an-cod" value="'+_esc((p&&p.codigo)||'')+'" placeholder="EX_PARAM" style="width:100px;text-transform:uppercase"'+(p&&p.codigo?' readonly':'')+'></td>'
+    + '<td><input class="an-nome" value="'+_esc((p&&p.nome)||'')+'" placeholder="descri\u00e7\u00e3o" style="width:150px"></td>'
+    + meses.map(v => '<td><input class="an-m" type="number" step="0.01" value="'+(v==null?'':v)+'" style="width:58px;text-align:right"></td>').join('')
+    + '<td class="r mono bold">'+((p&&p.total!=null)?p.total.toLocaleString('pt-BR'):'')+'</td>'
+    + '<td style="white-space:nowrap"><button class="btn" title="Gravar" onclick="anManGravar(this)">\ud83d\udcbe</button> <span style="cursor:pointer;color:#B91C1C" title="Excluir" onclick="anManExcluir(this)">\u2715</span></td></tr>';
+}
+function anManuaisToggle(){ const b = document.getElementById('an-manuais'); if (b) b.style.display = b.style.display === 'none' ? '' : 'none'; }
+function anManNova(){ const b = document.getElementById('an-man-body'); if (b) b.insertAdjacentHTML('beforeend', anManLinha(null)); }
+async function anManGravar(btn){
+  const tr = btn.closest('tr');
+  const cod = tr.querySelector('.an-cod').value.trim().toUpperCase();
+  if (!cod){ mostrarToast('Informe o c\u00f3digo do par\u00e2metro','warn'); return; }
+  const meses = Array.from(tr.querySelectorAll('.an-m')).map(i => i.value === '' ? null : i.value);
+  try {
+    await mntFetch('/manutencao/api/equipamentos/'+_anEq+'/parametros-manuais', {method:'PUT', body: JSON.stringify({ano:_anAno, codigo:cod, nome:tr.querySelector('.an-nome').value.trim(), meses})});
+    mostrarToast('\u2705 '+cod+' gravado','ok'); equipAnalises(_anEq, _anAno);
+  } catch(e){ mostrarToast('\u274c '+e.message,'warn'); }
+}
+async function anManExcluir(el){
+  const tr = el.closest('tr'); const cod = tr.querySelector('.an-cod').value.trim().toUpperCase();
+  if (!cod){ tr.remove(); return; }
+  if (!confirm('Excluir o par\u00e2metro '+cod+' de '+_anAno+'?')) return;
+  try { await mntFetch('/manutencao/api/equipamentos/'+_anEq+'/parametros-manuais/'+encodeURIComponent(cod)+'?ano='+_anAno, {method:'DELETE'}); equipAnalises(_anEq, _anAno); }
+  catch(e){ mostrarToast('\u274c '+e.message,'warn'); }
 }
 async function equipFuncionamento(id){
   let r;
@@ -2331,6 +2458,7 @@ async function verOTReal(id){
     await _tiposTrab();
     const o = await mntFetch('/manutencao/api/ots/'+id);
     _otAberta = o;
+    if (_projList === null){ try { _projList = (await mntFetch('/manutencao/api/tab/projectos')).map(p=>({id:p.id,nome:p.codigo+' — '+(p.nome||'')})); } catch(e){ _projList = []; } }
     const [, cl] = MNT_CHIP[o.status] || ['nr', o.status];
     document.getElementById('eq-ficha-corpo').innerHTML =
       '<div style="display:flex;justify-content:space-between;align-items:center"><div>'
@@ -2343,8 +2471,14 @@ async function verOTReal(id){
       + '<div class="mtab" id="mt-diag" onclick="otAba(\'diag\')">Diagnóstico</div>'
       + '<div class="mtab" id="mt-ped" onclick="otAba(\'ped\')">Pedidos</div>'
       + '<div class="mtab" id="mt-pc" onclick="otAba(\'pc\')">Peças</div>'
-      + ['Tarefas','Preparações','Mão de Obra','Custos','Leituras','Ferramentas','Documentos'].map(t =>
-          '<div class="mtab off" title="Entra nas próximas etapas (apontamento de peças, mão de obra e leituras) — sem tela de demonstração" onclick="mostrarToast(\'ℹ️ '+t+': entra na próxima etapa do módulo\',\'warn\')">'+t+'</div>').join('')
+      + '<div class="mtab" id="mt-mo" onclick="otAba(\'mo\')">Mão de Obra</div>'
+      + '<div class="mtab" id="mt-ou" onclick="otAba(\'ou\')">Outros</div>'
+      + '<div class="mtab" id="mt-cu" onclick="otAba(\'cu\')">Custos</div>'
+      + '<div class="mtab" id="mt-tar" onclick="otAba(\'tar\')">Tarefas</div>'
+      + '<div class="mtab" id="mt-prep" onclick="otAba(\'prep\')">Preparação</div>'
+      + '<div class="mtab" id="mt-lei" onclick="otAba(\'lei\')">Leituras</div>'
+      + '<div class="mtab" id="mt-fer" onclick="otAba(\'fer\')">Ferramentas</div>'
+      + '<div class="mtab" id="mt-doc" onclick="otAba(\'doc\')">Documentos</div>'
       + '<div class="mtab" id="mt-hist" onclick="otAba(\'hist\')">Histórico</div>'
       + '</div><div id="ot-aba-corpo"></div>'
       + (function(){
@@ -2376,6 +2510,87 @@ async function verOTReal(id){
 }
 /* ══ OT · PEÇAS — Planeado (FMP) × Realizado (Almoxarifado) — fatia 1 ══ */
 let _otPc = { plano: null, cons: null, alms: null };
+/* ── Mão de Obra da OT (HH) — padrão ManWinWin ── */
+let _otMo = null;
+async function otMaoObraRender(){
+  const o = _otAberta, c = document.getElementById('ot-aba-corpo');
+  c.innerHTML = '<div class="muted" style="padding:12px">Carregando mão de obra…</div>';
+  if (_mntUserList === null) { try { _mntUserList = (await mntFetch('/usuarios')).filter(u => u.ativo !== false); } catch(e){ _mntUserList = []; } }
+  try { _otMo = await mntFetch('/manutencao/api/ots/'+o.id+'/mao-obra'); }
+  catch(e){ c.innerHTML = '<div class="muted" style="padding:12px">❌ '+_esc(e.message)+'</div>'; return; }
+  const dd2 = v => { if(!v) return '—'; try{ return v.split('-').reverse().join('/'); }catch(e){ return '—'; } };
+  const money = v => v == null ? '—' : 'R$ ' + v.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
+  const podeLancar = ['programada','aberta','em_andamento','aguardando_peca','concluida'].includes(o.status);
+  const opts = '<option value="">— colaborador —</option>' + (_mntUserList||[]).map(u => '<option value="'+u.id+'">'+_esc(u.nome||u.login)+'</option>').join('');
+  const hoje = new Date().toISOString().slice(0,10);
+  const linha = x =>
+    '<div style="display:flex;gap:6px;padding:4px 6px;border-bottom:1px solid #F1F5F9;font-size:11px;align-items:center">'
+    + '<span style="width:62px" class="muted">'+dd2(x.data)+'</span>'
+    + '<b style="flex:1">'+_esc(x.nome||'—')+'</b>'
+    + '<span class="chip '+(x.origem==='mobile'?'em':'tm')+'" style="font-size:9px">'+(x.origem==='mobile'?'📱 app':'🖥 desktop')+'</span>'
+    + '<span style="width:55px;text-align:right">'+x.horas.toLocaleString('pt-BR')+' h</span>'
+    + '<span style="width:75px;text-align:right">'+(x.custo_hora!=null?x.custo_hora.toFixed(2)+'/h':'<span class="muted">sem custo</span>')+'</span>'
+    + '<b style="width:90px;text-align:right;color:#1A2A5E">'+money(x.valor)+'</b>'
+    + '<span style="flex:1" class="muted">'+_esc(x.observacao||'')+'</span>'
+    + '<span style="cursor:pointer;color:#B91C1C" title="Remover" onclick="otMoExcluir(\''+x.id+'\')">✕</span></div>';
+  c.innerHTML =
+    '<div class="dsec">Registo de Mão de Obra — '+_otMo.itens.length+' linha(s) · '+_otMo.total_horas.toLocaleString('pt-BR')+' h · '+money(_otMo.total_custo)+'</div>'
+    + (_otMo.itens.length ? _otMo.itens.map(linha).join('') : '<div class="muted" style="padding:8px 6px;font-size:11px">Nenhuma hora lançada. O mecânico lança pelo app (Registrar execução → Horas) ou aqui.</div>')
+    + (podeLancar ? '<div class="dsec" style="margin-top:10px">Lançar horas</div>'
+      + '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:flex-end">'
+      + '<div class="mfield" style="width:190px">Colaborador<select id="mo-user" onchange="otMoSugerir()">'+opts+'</select></div>'
+      + '<div class="mfield" style="width:150px">ou nome (externo)<input id="mo-nome" placeholder="terceiro / autônomo"></div>'
+      + '<div class="mfield" style="width:120px">Data<input id="mo-data" type="date" value="'+hoje+'"></div>'
+      + '<div class="mfield" style="width:80px">Horas<input id="mo-horas" type="number" step="0.25" min="0.25" placeholder="0,00"></div>'
+      + '<div class="mfield" style="width:100px">Custo/h (R$)<input id="mo-custo" type="number" step="0.01" placeholder="0,00"></div>'
+      + '<div class="mfield" style="flex:1;min-width:160px">Observação<input id="mo-obs" placeholder="opcional"></div>'
+      + '<button class="btn p" onclick="otMoLancar()">＋ Lançar</button></div>' : '');
+}
+function otMoSugerir(){
+  const u = document.getElementById('mo-user').value, c = document.getElementById('mo-custo');
+  const sug = _otMo && _otMo.custo_hora_sugerido ? _otMo.custo_hora_sugerido[u] : null;
+  if (c && sug != null && !c.value) c.placeholder = sug.toFixed(2) + ' (último usado)';   // sugestão em cinza, nunca valor (fantasma Classe 1)
+}
+async function otMoLancar(){
+  const g = id => (document.getElementById(id)||{}).value || '';
+  const custo = g('mo-custo') || ((_otMo && _otMo.custo_hora_sugerido && _otMo.custo_hora_sugerido[g('mo-user')]) ?? '');
+  try {
+    await mntFetch('/manutencao/api/ots/'+_otAberta.id+'/mao-obra', {method:'POST', body: JSON.stringify({
+      usuario_id: g('mo-user') || null, nome: g('mo-nome').trim(), data: g('mo-data') || null,
+      horas: g('mo-horas'), custo_hora: custo === '' ? null : custo, observacao: g('mo-obs') })});
+    mostrarToast('✅ Horas lançadas','ok'); otMaoObraRender();
+  } catch(e){ mostrarToast('❌ '+e.message,'warn'); }
+}
+async function otMoExcluir(id){
+  if (!confirm('Remover esta linha de mão de obra?')) return;
+  try { await mntFetch('/manutencao/api/mao-obra/'+id, {method:'DELETE'}); otMaoObraRender(); }
+  catch(e){ mostrarToast('❌ '+e.message,'warn'); }
+}
+/* ── Custos consolidados da OT ── */
+async function otCustosRender(){
+  const o = _otAberta, c = document.getElementById('ot-aba-corpo');
+  c.innerHTML = '<div class="muted" style="padding:12px">Consolidando custos…</div>';
+  let cons = {itens:[], total:0}, mo = {itens:[], total_horas:0, total_custo:0}, outros = [];
+  try { [cons, mo, outros] = await Promise.all([mntFetch('/manutencao/api/ots/'+o.id+'/consumos'), mntFetch('/manutencao/api/ots/'+o.id+'/mao-obra'), mntFetch('/manutencao/api/tab/ot-outros?ot_id='+o.id)]); }
+  catch(e){ c.innerHTML = '<div class="muted" style="padding:12px">❌ '+_esc(e.message)+'</div>'; return; }
+  const money = v => 'R$ ' + (parseFloat(v)||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
+  const forn = (_mntFornList||[]).find(f => String(f.id) === String(o.fornecedor_id||''));
+  const totOutros = (outros||[]).reduce((a,x)=>a+(parseFloat(x.valor)||0),0);
+  const apurado = (cons.total||0) + (mo.total_custo||0) + totOutros;
+  const fech = o.custo_total != null ? parseFloat(o.custo_total) : null;
+  const row = (r, v, n) => '<div style="display:flex;justify-content:space-between;padding:5px 6px;border-bottom:1px solid #F1F5F9;font-size:12px"><span>'+r+(n?' <span class="muted" style="font-size:10px">'+n+'</span>':'')+'</span><b style="color:#1A2A5E">'+v+'</b></div>';
+  c.innerHTML =
+    '<div class="dsec">Custos apurados nos registos</div>'
+    + row('🔩 Peças (baixas do almoxarifado)', money(cons.total||0), cons.itens.length+' linha(s)')
+    + row('👥 Mão de obra', money(mo.total_custo||0), mo.total_horas.toLocaleString('pt-BR')+' h')
+    + row('📄 Outros custos lançados', money(totOutros), (outros||[]).length+' linha(s)')
+    + row('🏭 Serviço externo', forn ? '<span class="muted" style="font-weight:400">'+_esc(forn.nome)+'</span>' : '<span class="muted" style="font-weight:400">sem fornecedor</span>', forn ? 'valor entra no custo do fechamento' : '')
+    + row('<b>Σ Apurado</b>', money(apurado))
+    + '<div class="dsec" style="margin-top:10px">Fechamento</div>'
+    + row('💰 Custo total informado no fechamento', fech != null ? money(fech) : '<span class="muted" style="font-weight:400">OT ainda não fechada</span>')
+    + (fech != null ? row('Δ fechamento − apurado', '<span style="color:'+(fech-apurado>=0?'#1A2A5E':'#B91C1C')+'">'+money(fech-apurado)+'</span>', 'diferença = itens sem registo') : '')
+    + '<div class="muted" style="font-size:10px;margin-top:8px">Nas Análises: CM usa o custo do fechamento; CPI = peças; CLM = mão de obra; COU = outros; CSE = OTs com fornecedor.</div>';
+}
 async function otPecasRender(){
   const o = _otAberta, c = document.getElementById('ot-aba-corpo');
   c.innerHTML = '<div class="muted" style="padding:12px">Carregando peças…</div>';
@@ -2518,12 +2733,21 @@ async function otSaidaOK(){
     otPecasRender();
   } catch(e){ mostrarToast('❌ '+e.message, 'warn'); }
 }
+async function otAbrirEm(id, aba){ await verOTReal(id); otAba(aba); }
 function otAba(aba){
   document.querySelectorAll('.mtab').forEach(t=>t.classList.remove('on'));
   const tabEl = document.getElementById('mt-'+(aba==='hist'?'hist':aba));
   if (tabEl) tabEl.classList.add('on');
   const o = _otAberta, c = document.getElementById('ot-aba-corpo');
   if (aba === 'pc'){ otPecasRender(); return; }
+  if (aba === 'mo'){ otMaoObraRender(); return; }
+  if (aba === 'cu'){ otCustosRender(); return; }
+  if (aba === 'ou'){ otOutrosRender(); return; }
+  if (aba === 'tar'){ otTarefasRender(); return; }
+  if (aba === 'prep'){ otPreparacaoRender(); return; }
+  if (aba === 'lei'){ otLeiturasRender(); return; }
+  if (aba === 'fer'){ otFerramentasRender(); return; }
+  if (aba === 'doc'){ otDocsRender(); return; }
   const dd = v => { if(!v) return '—'; try{ return new Date(v).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',year:'2-digit',hour:'2-digit',minute:'2-digit'}); }catch(e){ return '—'; } };
   if (aba === 'origem'){
     const foOpts = '<option value="">— nenhum —</option>' + (_mntFornList||[]).map(f =>
@@ -2533,6 +2757,7 @@ function otAba(aba){
       '<div class="mgrid">'
       + '<div class="mfield">Equipamento<input value="'+_esc(o.equipamento_codigo||'')+' — '+_esc(o.equipamento_desc||'')+'" disabled></div>'
       + '<div class="mfield">Fornecedor<select id="oe-forn">'+foOpts+'</select></div>'
+      + '<div class="mfield">Projecto<select id="oe-proj">'+_tabOpts(_projList||[],'id','nome',o.projecto_id,'— nenhum —')+'</select></div>'
       + '<div class="mfield">Tipo<select id="oe-tipo">'
         + ['corretiva','preventiva','reforma','melhoria'].map(t=>'<option value="'+t+'"'+(o.tipo===t?' selected':'')+'>'+t.charAt(0).toUpperCase()+t.slice(1)+'</option>').join('')
         + '</select></div>'
@@ -2700,6 +2925,7 @@ async function salvarOrigem(){
     ...(_mntTiposTrab.length ? {tipo_trabalho: document.getElementById('oe-tipo').value} : {tipo: document.getElementById('oe-tipo').value}),
     prioridade: document.getElementById('oe-prior').value,
     fornecedor_id: document.getElementById('oe-forn').value || null,
+    projecto_id: document.getElementById('oe-proj').value || '',
     data_prevista: document.getElementById('oe-data').value || '',
     horimetro_previsto: document.getElementById('oe-horim').value.trim()
   };
@@ -3322,6 +3548,7 @@ async function pecaAba(aba){
       + fld('Unidade','<input id="pc-un" value="'+_esc(p.unidade||'UN')+'" style="text-transform:uppercase">')
       + fld('Custo médio (R$)','<input id="pc-custo" type="number" step="0.01" value="'+(p.custo_medio ?? '')+'">')
       + fld('Cód. externo / conversão','<input id="pc-ext" value="'+_esc(p.codigo_externo||'')+'" placeholder="código antigo, do fornecedor…">')
+      + fld('Cód. Fabricante','<input id="pc-fab" value="'+_esc(p.codigo_fabricante||'')+'" placeholder="part number">')
       + '</div><div style="display:flex;justify-content:flex-end;margin-top:10px"><button class="btn p" onclick="pecaSalvarIdent()">💾 Salvar</button></div>';
   }
   if (aba === 'carac'){
@@ -3374,7 +3601,7 @@ async function _pecaPatch(body, aba){
 function pecaSalvarIdent(){
   const g = id => document.getElementById(id).value;
   _pecaPatch({ descricao: g('pc-desc'), familia_codigo: g('pc-fam'), unidade: g('pc-un'),
-    custo_medio: g('pc-custo'), codigo_externo: g('pc-ext') }, 'ident');
+    custo_medio: g('pc-custo'), codigo_externo: g('pc-ext'), codigo_fabricante: g('pc-fab') }, 'ident');
 }
 function pecaSalvarCarac(){
   const rs = [...document.querySelectorAll('#pc-carac .pcc-r')];
@@ -3394,7 +3621,7 @@ async function artJanela(codigo){
     catch(e){ _artFams = []; }
   }
   let p = { unidade:'UN', caracteristicas:[] };
-  _artEdit = null;
+  _artEdit = null; _artCodAuto = true;
   if (codigo){
     try { p = await mntFetch('/manutencao/api/peca-ficha?peca_codigo=' + encodeURIComponent(codigo)); _artEdit = codigo; }
     catch(e){ mostrarToast('❌ '+e.message,'warn'); return; }
@@ -3416,9 +3643,10 @@ async function artJanela(codigo){
   b.innerHTML = '<div style="background:#fff;border-radius:10px;box-shadow:0 12px 32px rgba(15,23,42,.3);padding:16px;width:680px;max-width:96vh;max-height:92vh;overflow:auto">'
     + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><b style="color:#1A2A5E">'+(_artEdit?'🏷 Artigo — '+_esc(_artEdit):'🏷 Novo Artigo')+'</b><span style="cursor:pointer;font-size:16px" onclick="document.getElementById(\'art-jan\').style.display=\'none\'">✕</span></div>'
     + '<div style="display:flex;gap:8px;flex-wrap:wrap">'
-    + '<div class="mfield" style="width:150px">Família (Norma)<select id="art-raiz" onchange="artSubs()">'+optsRaiz+'</select></div>'
-    + '<div class="mfield" style="width:170px">Sub-Família<select id="art-sub"></select></div>'
-    + '<div class="mfield" style="width:140px">Código *'+(_artEdit?' (fixo)':'')+'<input id="art-cod" value="'+_esc(p.codigo||'')+'"'+(_artEdit?' readonly style="background:#F8FAFC"':' placeholder="do fabricante"')+'></div>'
+    + '<div class="mfield" style="width:150px">Família (Norma)<select id="art-raiz" onchange="artSubs();artProximo()">'+optsRaiz+'</select></div>'
+    + '<div class="mfield" style="width:170px">Sub-Família<select id="art-sub" onchange="artProximo()"></select></div>'
+    + '<div class="mfield" style="width:140px">Código *'+(_artEdit?' (fixo)':'')+'<input id="art-cod" value="'+_esc(p.codigo||'')+'"'+(_artEdit?' readonly style="background:#F8FAFC"':' placeholder="escolha a família" oninput="_artCodAuto=false;artCodCheck()" style="font-weight:800;color:#1A2A5E"')+'></div>'
+    + '<div class="mfield" style="width:150px">Cód. Fabricante<input id="art-fab" value="'+_esc(p.codigo_fabricante||'')+'" placeholder="part number"></div>'
     + '<div class="mfield" style="width:70px">UN<input id="art-un" list="art-uns" value="'+_esc(p.unidade||'UN')+'"><datalist id="art-uns"><option>UN</option><option>LT</option><option>KG</option><option>CJ</option><option>M</option><option>PC</option><option>PAR</option></datalist></div>'
     + '<div class="mfield" style="width:110px">Custo Unitário<input id="art-custo" type="number" step="0.01" value="'+(p.custo_medio!=null?parseFloat(p.custo_medio):'')+'"></div>'
     + '</div>'
@@ -3430,10 +3658,10 @@ async function artJanela(codigo){
       + '<div class="mfield" style="width:220px">Classe<input id="art-classe" value="'+_esc(p.classe||'')+'" placeholder="ex.: Consumível, Rotável…"></div>'
       + '<div class="muted" style="font-size:10px;margin-top:4px">Família e Sub-Família definidas acima (a Norma pontuada faz o papel Classe→Família→Sub do ManWinWin).</div></div>'
     + '<div id="art-p-cod" style="display:none;padding:8px 2px">'
-      + '<div class="mfield">Cód. Fabricante (identidade — é o Código acima)<input value="'+_esc(p.codigo||'—')+'" readonly style="background:#F8FAFC"></div>'
+      + '<div class="mfield">Código Garra (estrutura Família.Sub.Sequência — proposto ao escolher a família, editável antes de gravar)<input value="'+_esc(p.codigo||'—')+'" readonly style="background:#F8FAFC"></div>'
       + '<div class="mfield" style="margin-top:6px">Cód. Externo (nota do fornecedor / de-para)<input id="art-ext" value="'+_esc(p.codigo_externo||'')+'"></div>'
       + '<div class="mfield" style="margin-top:6px">Especificação Complementar de Compra<input id="art-espec" value="'+_esc(p.espec_compra||'')+'" placeholder="ex.: original CNH · não aceitar paralelo"></div>'
-      + '<div class="muted" style="font-size:10px;margin-top:4px">Decisão Garra: o Cód. Estruturado do ManWinWin não é replicado — Família + Código já estruturam. A busca encontra por fabricante, externo ou descrição.</div></div>'
+      + '<div class="muted" style="font-size:10px;margin-top:4px">Código Garra nasce da estrutura; Cód. Fabricante (acima, no cabeçalho) guarda o part number. A busca encontra por qualquer um deles, pelo externo ou pela descrição.</div></div>'
     + '<div id="art-p-car" style="display:none;padding:8px 2px">'
       + Array.from({length:10},(_,i)=>{
           const c = car[i]||{};
@@ -3457,6 +3685,36 @@ async function artJanela(codigo){
         + '</tbody></table><div class="muted" style="font-size:10px;margin-top:4px">Endereço C-P-N e mínimo editam-se na ficha da peça (clique nela na lista).</div>';
     } catch(e){}
   }
+}
+let _artCodAuto = true;
+async function mwProximoCodigo(dominio, prefixo, sep, largura){
+  // gatilho universal dos cadastros: estrutura → próximo número livre (servidor)
+  const q = 'dominio='+encodeURIComponent(dominio)+'&prefixo='+encodeURIComponent(prefixo||'')+'&sep='+encodeURIComponent(sep||'.')+'&largura='+(largura||4);
+  try { return await mntFetch('/manutencao/api/proximo-codigo?'+q); } catch(e){ return null; }
+}
+async function mwCodigoExiste(dominio, codigo){
+  try { const r = await mntFetch('/manutencao/api/proximo-codigo?dominio='+encodeURIComponent(dominio)+'&verificar='+encodeURIComponent(codigo)); return !!(r && r.existe); }
+  catch(e){ return false; }
+}
+async function artProximo(){
+  if (_artEdit) return;
+  const el = document.getElementById('art-cod'); if (!el) return;
+  const pref = (document.getElementById('art-sub')||{}).value || (document.getElementById('art-raiz')||{}).value || '';
+  if (!pref){ if (_artCodAuto) el.value = ''; return; }
+  if (!_artCodAuto && el.value.trim()) return;   // o usuário já escreveu o dele — não sobrescreve
+  const r = await mwProximoCodigo('peca', pref, '.', 4);
+  if (r && r.codigo){ el.value = r.codigo; _artCodAuto = true; artCodCheck(); }
+}
+let _artCodTimer = null;
+function artCodCheck(){
+  const el = document.getElementById('art-cod'); if (!el || _artEdit) return;
+  clearTimeout(_artCodTimer);
+  _artCodTimer = setTimeout(async () => {
+    const cod = el.value.trim(); if (!cod){ el.style.color = '#1A2A5E'; el.title = ''; return; }
+    const dup = await mwCodigoExiste('peca', cod);
+    el.style.color = dup ? '#DC2626' : '#1A2A5E';
+    el.title = dup ? 'Já existe um artigo com este código' : '';
+  }, 250);
 }
 function artSubs(atual){
   const raiz = (document.getElementById('art-raiz')||{}).value || '';
@@ -3485,6 +3743,7 @@ async function artOK(){
   const body = { descricao: desc, unidade: g('art-un').trim() || 'UN',
                  familia_codigo: fam || null, custo_medio: g('art-custo'),
                  codigo_externo: g('art-ext').trim(), classe: g('art-classe').trim(),
+                 codigo_fabricante: g('art-fab').trim(),
                  espec_compra: g('art-espec').trim(), caracteristicas: car,
                  observacoes: g('art-obs') };
   try {
@@ -3553,6 +3812,9 @@ const PARAM_MAP = {
   familias:  { dom:'familias',               titulo:'Famílias de materiais', pk:'codigo' },
   periodos:  { dom:'periodos',               titulo:'Períodos',              pk:'codigo' },
   tipofer:   { dom:'tipos-ferramenta',       titulo:'Tipos de ferramenta',   pk:'codigo' },
+  tipodoc: { dom:'tipos-documento', titulo:'Tipos de documento', pk:'codigo' },
+  condpag: { dom:'condicoes-pagamento', titulo:'Condições de pagamento', pk:'codigo' },
+  horarios: { dom:'horarios-trabalho', titulo:'Horários de trabalho', pk:'codigo' },
   rubricas:  { dom:'rubricas',               titulo:'Rubricas de custo (hierarquia por pontuação)', pk:'codigo' },
   tipoOT:    { dom:'tipos-trabalho',         titulo:'Tipos de OT',           pk:'codigo' },
   tiposman:  { dom:'tipos-manutencao',       titulo:'Tipos de Manutenção',   pk:'codigo' },
@@ -3572,14 +3834,14 @@ const PARAM_GRUPOS = [
     ['clientes','fila','Clientes'],
     ['setores','dom','Setores de Atividade'],
     ['usuarios','admin','Usuários e perfis'],
-    ['horarios','fila','Horários de trabalho'] ]},
+    ['horarios','dom','Horários de trabalho'] ]},
   { t:'🏗 Equipamentos', itens:[
     ['tipos','dom','Tipos de equipamento'],
     ['grupos','dom','Grupos / Sistemas (árvore)'],
     ['equipList','equip','Equipamentos (frota)'] ]},
   { t:'🏭 Fornecedores', itens:[
     ['fornec','forn','Fornecedores'],
-    ['condpag','fila','Condições de pagamento'] ]},
+    ['condpag','dom','Condições de pagamento'] ]},
   { t:'🔧 Trabalhos (OTs)', itens:[
     ['tipoOT','dom','Tipos de OT'],
     ['tiposman','dom','Tipos de Manutenção'],
@@ -3600,7 +3862,7 @@ const PARAM_GRUPOS = [
     ['refforn','fila','Referências de fornecedor'] ]},
   { t:'💰 Custos', itens:[
     ['rubricas','dom','Rubricas de custo'],
-    ['tipodoc','fila','Tipos de documento'] ]},
+    ['tipodoc','dom','Tipos de documento'] ]},
   { t:'👤 Operacional', itens:[
     ['usuarios2','admin','Usuários e perfis'],
     ['opereq','fila','Operador ↔ Equipamento'],
@@ -3639,7 +3901,11 @@ function abrirParamPane(paneId, tipo, titulo){
   if (tipo === 'pontos') { panePontos(); return; }
   if (tipo === 'alm')    { showModule('alm'); return; }
   if (tipo === 'admin')  { paneAviso(titulo, 'Usuários, perfis e permissões são gerenciados no <b>Admin Master</b> — cadastro único (usuarios_garra), sem duplicação aqui.'); return; }
-  paneAviso(titulo, 'Este cadastro entra na próxima etapa do módulo. A tela existe na estrutura (réplica ManWinWin) e será ligada ao banco sem dados de demonstração.');
+  const fila = { empresa: empresaPane, clientes: clientesPane, planos: planosTodosPane, refforn: referenciasPane,
+                 opereq: () => vinculosPane('operador_responsavel_id'), eqforn: () => vinculosPane('fornecedor_id'),
+                 docs: () => docsTodosPane(''), config: configPane };
+  if (fila[paneId]) { fila[paneId](); return; }
+  paneAviso(titulo, 'Cadastro sem tela pr\u00f3pria ainda.');
 }
 function paneAviso(titulo, msg){
   document.getElementById('pp-pane').innerHTML =
@@ -3834,7 +4100,9 @@ async function paneAlmoxarifados(){
   } catch(e){ mostrarToast('❌ '+e.message,'warn'); }
 }
 async function paramNovoAlmox(){
-  const cod = prompt('Código (curto, ex.: A3):'); if (!cod) return;
+  const r = await mwProximoCodigo('almoxarifado', 'A', '', 1);
+  const cod = prompt('Código (curto' + (r && r.codigo ? ' — próximo livre: '+r.codigo : ', ex.: A3') + '):', r && r.codigo ? r.codigo : ''); if (!cod) return;
+  if (await mwCodigoExiste('almoxarifado', cod.trim())){ mostrarToast('❌ Já existe o almoxarifado '+cod.trim(),'warn'); return; }
   const nome = prompt('Nome:'); if (!nome) return;
   try {
     await mntFetch('/manutencao/api/almoxarifados', {method:'POST', body: JSON.stringify({codigo:cod.trim(), nome:nome.trim()})});
@@ -3971,8 +4239,14 @@ async function ligarParamPane(paneId){
   } catch(e){ mostrarToast('❌ '+e.message,'warn'); }
 }
 async function novoParam(dom, paneId){
-  const cod = prompt('Código:'); if (!cod) return;
-  const nome = prompt('Descrição:'); if (!nome) return;
+  // estrutura é o gatilho: informa o código pai (vazio = raiz) e o sistema propõe o próximo filho; pode alterar
+  const arvore = ['sistemas','familias','rubricas','centros-custo'].includes(dom);
+  let pai = '';
+  if (arvore){ pai = prompt('Código pai (vazio = nível raiz):', ''); if (pai === null) return; pai = pai.trim(); }
+  const r = await mwProximoCodigo(dom, pai, pai ? '.' : '', 2);
+  const cod = prompt('Código' + (r && r.codigo ? ' (próximo livre: '+r.codigo+')' : '') + ':', r && r.codigo ? r.codigo : ''); if (!cod) return;
+  if (await mwCodigoExiste(dom, cod.trim())){ mostrarToast('❌ Já existe '+cod.trim()+' neste cadastro','warn'); return; }
+  const nome = prompt('Descrição de '+cod.trim()+':'); if (!nome) return;
   try { await mntFetch('/manutencao/api/param/'+dom, {method:'POST', body: JSON.stringify({codigo:cod.trim(), nome:nome.trim()})});
     mostrarToast('✅ Cadastrado','ok'); ligarParamPane(paneId);
   } catch(e){ mostrarToast('❌ '+e.message,'warn'); }
@@ -3994,6 +4268,473 @@ async function excluirParam(dom, cod, paneId){
   try { await mntFetch('/manutencao/api/param/'+dom+'/'+encodeURIComponent(cod), {method:'DELETE'});
     mostrarToast('🗑️ '+cod+' excluído','ok'); ligarParamPane(paneId);
   } catch(e){ mostrarToast('❌ '+e.message,'warn'); }
+}
+
+/* ══ MOTOR DE JANELA GENÉRICO (01/09/2026) — lista + formulário inline sobre /manutencao/api/tab/{nome} ══ */
+let _tabCfg = null;
+function _tabOpts(list, idK, labK, sel, vazio){
+  return '<option value="">'+(vazio||'\u2014')+'</option>' + (list||[]).map(x => '<option value="'+_esc(x[idK])+'"'+(String(x[idK])===String(sel??'')?' selected':'')+'>'+_esc(x[labK]||x[idK])+'</option>').join('');
+}
+async function _tabDom(){
+  if (_mntFornList === null) { try { _mntFornList = await mntFetch('/manutencao/api/fornecedores'); } catch(e){ _mntFornList = []; } }
+  if (_mntUserList === null) { try { _mntUserList = (await mntFetch('/usuarios')).filter(u => u.ativo !== false); } catch(e){ _mntUserList = []; } }
+  if (!_mntEquipList.length) { try { await carregarEquipReais(); } catch(e){} }
+}
+function _tabCampo(f, v){
+  const w = f.w ? 'width:'+f.w : 'flex:1;min-width:120px';
+  let inp;
+  if (f.type === 'select') inp = '<select id="tf-'+f.k+'">'+_tabOpts(f.opts(), f.idK||'id', f.labK||'nome', v, f.vazio)+'</select>';
+  else if (f.type === 'textarea') inp = '<textarea id="tf-'+f.k+'" rows="2">'+_esc(v??'')+'</textarea>';
+  else if (f.type === 'check') inp = '<input id="tf-'+f.k+'" type="checkbox"'+(v?' checked':'')+' style="width:18px;height:18px">';
+  else inp = '<input id="tf-'+f.k+'" type="'+(f.type||'text')+'"'+(f.step?' step="'+f.step+'"':'')+' value="'+_esc(v??'')+'"'+(f.ph?' placeholder="'+_esc(f.ph)+'"':'')+'>';
+  return '<div class="mfield" style="'+w+'">'+_esc(f.label)+inp+'</div>';
+}
+async function tabJanela(cfg, editId){
+  _tabCfg = cfg; await _tabDom();
+  let rows;
+  try { rows = await mntFetch('/manutencao/api/tab/'+cfg.tab + (cfg.filtro ? '?'+cfg.filtro : '')); }
+  catch(e){ mostrarToast('\u274c '+e.message,'warn'); return; }
+  const edit = editId ? rows.find(r => r.id === editId) : null;
+  const dd = v => v ? String(v).slice(0,10).split('-').reverse().join('/') : '\u2014';
+  const cell = (c, r) => c.fmt ? c.fmt(r) : (c.date ? dd(r[c.k]) : (c.money && r[c.k]!=null ? 'R$ '+parseFloat(r[c.k]).toLocaleString('pt-BR',{minimumFractionDigits:2}) : _esc(r[c.k]??'')));
+  const alvo = cfg.inline ? document.getElementById(cfg.inline) : null;
+  const html =
+    (alvo ? '' : '<div style="display:flex;justify-content:space-between;align-items:center"><b style="font-size:14px;color:#1A2A5E">'+cfg.icone+' '+_esc(cfg.titulo)+'</b><span style="cursor:pointer;font-size:18px" onclick="document.getElementById(\'eq-ficha\').classList.remove(\'show\')">\u2715</span></div>')
+    + (cfg.nota ? '<div class="muted" style="font-size:10px;margin:2px 0 6px">'+cfg.nota+'</div>' : '')
+    + '<div class="dsec">'+(edit ? '\u270f\ufe0f Editar' : '\uff0b Novo')+' '+_esc(cfg.singular)+'</div>'
+    + '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:flex-end">'
+    + cfg.campos.map(f => _tabCampo(f, edit ? edit[f.k] : (f.def!==undefined ? (typeof f.def==='function'?f.def():f.def) : ''))).join('')
+    + '<button class="btn p" onclick="tabGravar(\''+(edit?edit.id:'')+'\')">\ud83d\udcbe '+(edit?'Gravar':'Adicionar')+'</button>'
+    + (edit ? '<button class="btn" onclick="tabJanela(_tabCfg)">Cancelar</button>' : '') + '</div>'
+    + '<div class="dsec" style="margin-top:10px">'+rows.length+' registo(s)</div>'
+    + '<div style="max-height:'+(alvo?'260':'340')+'px;overflow:auto"><table style="font-size:11px"><thead><tr>'
+    + cfg.colunas.map(c => '<th'+(c.r?' class="r"':'')+'>'+_esc(c.t)+'</th>').join('') + '<th></th></tr></thead><tbody>'
+    + (rows.length ? rows.map(r => '<tr>' + cfg.colunas.map(c => '<td'+(c.r?' class="r mono"':'')+'>'+cell(c, r)+'</td>').join('')
+        + '<td style="white-space:nowrap"><span style="cursor:pointer" title="Editar" onclick="tabJanela(_tabCfg,\''+r.id+'\')">\u270f\ufe0f</span> <span style="cursor:pointer;color:#B91C1C" title="Remover" onclick="tabExcluir(\''+r.id+'\')">\u2715</span>'
+        + (cfg.acoes ? cfg.acoes(r) : '') + '</td></tr>').join('')
+      : '<tr><td colspan="'+(cfg.colunas.length+1)+'" class="muted" style="padding:10px">Nenhum registo.</td></tr>')
+    + '</tbody></table></div>' + (cfg.rodape ? cfg.rodape(rows) : '');
+  if (alvo) { alvo.innerHTML = html; return; }
+  document.querySelector('#eq-ficha .modal').classList.add('larga');
+  document.getElementById('eq-ficha-corpo').innerHTML = html;
+  document.getElementById('eq-ficha').classList.add('show');
+}
+async function tabGravar(id){
+  const cfg = _tabCfg, body = {};
+  for (const f of cfg.campos){
+    const el = document.getElementById('tf-'+f.k); if (!el) continue;
+    body[f.k] = f.type === 'check' ? el.checked : el.value;
+    if (f.req && !body[f.k]){ mostrarToast('Informe '+f.label,'warn'); return; }
+  }
+  if (cfg.fixo) Object.assign(body, cfg.fixo);
+  try {
+    await mntFetch('/manutencao/api/tab/'+cfg.tab+(id?'/'+id:''), {method: id?'PATCH':'POST', body: JSON.stringify(body)});
+    mostrarToast('\u2705 '+cfg.singular+' '+(id?'atualizado':'criado'),'ok');
+    if (cfg.depois) cfg.depois(); tabJanela(cfg);
+  } catch(e){ mostrarToast('\u274c '+e.message,'warn'); }
+}
+async function tabExcluir(id){
+  if (!confirm('Remover este registo? (fica no hist\u00f3rico, s\u00f3 sai das listas)')) return;
+  try { await mntFetch('/manutencao/api/tab/'+_tabCfg.tab+'/'+id, {method:'DELETE'}); if (_tabCfg.depois) _tabCfg.depois(); tabJanela(_tabCfg); }
+  catch(e){ mostrarToast('\u274c '+e.message,'warn'); }
+}
+const _F = {
+  forn: (k,label,w) => ({k, label: label||'Fornecedor', type:'select', opts:()=>_mntFornList||[], w}),
+  user: (k,label,w) => ({k, label: label||'Respons\u00e1vel', type:'select', opts:()=>(_mntUserList||[]).map(u=>({id:u.id,nome:u.nome||u.login})), w}),
+  equip:(k,label,w) => ({k, label: label||'Equipamento', type:'select', opts:()=>_mntEquipList||[], labK:'codigo', w}),
+  status:(k,lista,def) => ({k, label:'Status', type:'select', opts:()=>lista.map(x=>({id:x,nome:x})), def, w:'120px'}),
+  hoje: () => new Date().toISOString().slice(0,10)
+};
+const _nomeForn = id => ((_mntFornList||[]).find(f => String(f.id)===String(id))||{}).nome || '';
+
+/* ── Contratos ── */
+function contratosJanela(){
+  tabJanela({ tab:'contratos', icone:'\ud83e\udd1d', titulo:'Contratos de manuten\u00e7\u00e3o', singular:'contrato',
+    nota:'Contratos com fornecedores (manuten\u00e7\u00e3o contratada, loca\u00e7\u00e3o de oficina, assist\u00eancia). O custo entra nas OTs pelo fornecedor.',
+    campos:[{k:'numero',label:'N\u00famero',req:true,w:'110px'}, _F.forn('fornecedor_id'), {k:'objeto',label:'Objeto',req:true},
+            {k:'data_inicio',label:'In\u00edcio',type:'date',w:'130px'}, {k:'data_fim',label:'Fim',type:'date',w:'130px'},
+            {k:'valor',label:'Valor (R$)',type:'number',step:'0.01',w:'110px'}, {k:'condicao_pagamento',label:'Cond. pagamento',w:'130px'},
+            _F.status('status',['vigente','encerrado','suspenso'],'vigente'), {k:'observacao',label:'Observa\u00e7\u00e3o'}],
+    colunas:[{t:'N\u00famero',k:'numero'},{t:'Fornecedor',fmt:r=>_esc(r.fornecedor_nome||'')},{t:'Objeto',k:'objeto'},{t:'In\u00edcio',k:'data_inicio',date:true},{t:'Fim',k:'data_fim',date:true},{t:'Valor',k:'valor',money:true,r:true},{t:'Status',k:'status'}] });
+}
+/* ── Projectos ── */
+function projectosJanela(){
+  tabJanela({ tab:'projectos', icone:'\ud83d\uddc2', titulo:'Projectos', singular:'projecto',
+    nota:'Agrupador de OTs (ex.: reforma geral da EH-03, parada de f\u00e9rias). A OT escolhe o projecto na aba Origem.',
+    campos:[{k:'codigo',label:'C\u00f3digo',req:true,w:'110px',ph:'PRJ-2026-01'}, {k:'nome',label:'Nome',req:true}, _F.user('responsavel_id'),
+            {k:'data_inicio',label:'In\u00edcio',type:'date',w:'130px'}, {k:'data_fim',label:'Fim',type:'date',w:'130px'},
+            _F.status('status',['planeado','em curso','conclu\u00eddo','cancelado'],'planeado'), {k:'descricao',label:'Descri\u00e7\u00e3o',type:'textarea'}],
+    colunas:[{t:'C\u00f3digo',k:'codigo'},{t:'Nome',k:'nome'},{t:'Respons\u00e1vel',fmt:r=>_esc(r.responsavel_nome||'')},{t:'In\u00edcio',k:'data_inicio',date:true},{t:'Fim',k:'data_fim',date:true},{t:'Status',k:'status'},
+             {t:'OTs',fmt:r=>{ const n=(_otsCache||[]).filter(o=>String(o.projecto_id)===String(r.id)).length; return n? '<span class="chip pr">'+n+'</span>' : '<span class="muted">0</span>'; }}],
+    depois: () => { _projList = null; } });
+}
+let _projList = null;
+/* ── Guias de transporte ── */
+function guiasJanela(equipId){
+  tabJanela({ tab:'guias-transporte', icone:'\ud83d\ude9a', titulo:'Guias de Transporte', singular:'guia',
+    nota:'Sa\u00edda de equipamento/componente/pe\u00e7a para servi\u00e7o externo (recapagem, retífica, oficina). Registar o retorno fecha a guia.',
+    campos:[{k:'numero',label:'N\u00famero',req:true,w:'110px',def:()=>'GT-'+new Date().getFullYear()+'-'}, Object.assign(_F.equip('equipamento_id'),{def:equipId||''}),
+            {k:'peca_codigo',label:'ou pe\u00e7a (c\u00f3digo)',w:'130px'}, _F.forn('fornecedor_id','Destino (fornecedor)'), {k:'transportadora',label:'Transportadora',w:'140px'},
+            {k:'data_saida',label:'Sa\u00edda',type:'date',w:'130px',def:_F.hoje}, {k:'data_retorno_prevista',label:'Retorno previsto',type:'date',w:'130px'}, {k:'data_retorno',label:'Retorno real',type:'date',w:'130px'},
+            {k:'motivo',label:'Motivo',req:true}, _F.status('status',['em tr\u00e2nsito','no fornecedor','devolvido'],'em tr\u00e2nsito'), {k:'observacao',label:'Observa\u00e7\u00e3o'}],
+    colunas:[{t:'N\u00famero',k:'numero'},{t:'Objecto',fmt:r=>_esc(r.equipamento_codigo||r.peca_codigo||'')},{t:'Destino',fmt:r=>_esc(r.fornecedor_nome||'')},{t:'Sa\u00edda',k:'data_saida',date:true},{t:'Prev.',k:'data_retorno_prevista',date:true},{t:'Retorno',k:'data_retorno',date:true},{t:'Motivo',k:'motivo'},
+             {t:'Status',fmt:r=>{ const atr = !r.data_retorno && r.data_retorno_prevista && r.data_retorno_prevista < new Date().toISOString().slice(0,10); return '<span class="chip '+(r.data_retorno?'tm':(atr?'em':'pr'))+'">'+_esc(r.status||'')+(atr?' \u00b7 atrasada':'')+'</span>'; }}] });
+}
+/* ── Substitutos (artigo equivalente) ── */
+function substitutosJanela(peca){
+  const cod = peca || _mwSel.alm || '';
+  tabJanela({ tab:'substitutos', icone:'\ud83d\udd01', titulo:'Artigos substitutos'+(cod?' \u2014 '+cod:''), singular:'substituto',
+    filtro: cod ? 'peca_codigo='+encodeURIComponent(cod) : '',
+    nota:'Equival\u00eancias: quando falta o artigo, a OT pode baixar o substituto. Sem artigo selecionado a lista mostra todas as equival\u00eancias.',
+    campos:[{k:'peca_codigo',label:'Artigo',req:true,w:'150px',def:cod}, {k:'substituto_codigo',label:'Substituto (c\u00f3digo)',req:true,w:'150px'}, {k:'observacao',label:'Observa\u00e7\u00e3o'}],
+    colunas:[{t:'Artigo',k:'peca_codigo'},{t:'Substituto',k:'substituto_codigo'},{t:'Observa\u00e7\u00e3o',k:'observacao'}] });
+}
+/* ── Referências de fornecedor (Parametrização) ── */
+function referenciasPane(){
+  tabJanela({ tab:'referencias-fornecedor', inline:'pp-pane', icone:'\ud83c\udff7', titulo:'Refer\u00eancias de fornecedor', singular:'refer\u00eancia',
+    nota:'<div class="pp-title">Refer\u00eancias de fornecedor</div>C\u00f3digo do artigo em cada fornecedor + pre\u00e7o e prazo (alimenta a OC e o de-para da nota).',
+    campos:[{k:'peca_codigo',label:'Artigo (c\u00f3digo)',req:true,w:'150px'}, _F.forn('fornecedor_id'), {k:'referencia',label:'Ref. no fornecedor',req:true,w:'150px'},
+            {k:'preco',label:'Pre\u00e7o (R$)',type:'number',step:'0.01',w:'100px'}, {k:'prazo_dias',label:'Prazo (dias)',type:'number',w:'90px'}, {k:'observacao',label:'Observa\u00e7\u00e3o'}],
+    colunas:[{t:'Artigo',k:'peca_codigo'},{t:'Fornecedor',fmt:r=>_esc(r.fornecedor_nome||'')},{t:'Refer\u00eancia',k:'referencia'},{t:'Pre\u00e7o',k:'preco',money:true,r:true},{t:'Prazo',k:'prazo_dias',r:true}] });
+}
+/* ── Empresa (linha única) e Config (chave/valor) ── */
+async function empresaPane(){
+  await _tabDom();
+  let e = {};
+  try { e = (await mntFetch('/manutencao/api/tab/empresa'))[0] || {}; } catch(err){}
+  const campos = [['razao_social','Raz\u00e3o social'],['nome_fantasia','Nome fantasia'],['cnpj','CNPJ'],['endereco','Endere\u00e7o'],['cidade','Cidade'],['uf','UF'],['telefone','Telefone'],['email','E-mail'],['responsavel_manutencao','Respons\u00e1vel pela manuten\u00e7\u00e3o']];
+  document.getElementById('pp-pane').innerHTML = '<div class="pp-title">Dados da empresa</div><div class="pp-sub">Cabe\u00e7alho das impress\u00f5es (OT, guias, relat\u00f3rios). Linha \u00fanica.</div>'
+    + '<div class="mgrid" style="margin-top:8px">' + campos.map(([k,l]) => '<div class="mfield">'+l+'<input id="emp-'+k+'" value="'+_esc(e[k]||'')+'"></div>').join('') + '</div>'
+    + '<div style="margin-top:10px"><button class="btn p" onclick="empresaGravar()">\ud83d\udcbe Gravar</button></div>';
+}
+async function empresaGravar(){
+  const body = {}; document.querySelectorAll('[id^="emp-"]').forEach(i => body[i.id.slice(4)] = i.value.trim());
+  try { await mntFetch('/manutencao/api/tab/empresa', {method:'POST', body: JSON.stringify(body)}); mostrarToast('\u2705 Empresa gravada','ok'); }
+  catch(e){ mostrarToast('\u274c '+e.message,'warn'); }
+}
+function configPane(){
+  tabJanela({ tab:'config', inline:'pp-pane', icone:'\u2699\ufe0f', titulo:'Configura\u00e7\u00f5es gerais', singular:'par\u00e2metro',
+    nota:'<div class="pp-title">Configura\u00e7\u00f5es gerais</div>Chave/valor lidos pelo sistema. Chaves conhecidas: <b>custo_hora_padrao</b> (R$/h sugerido na m\u00e3o de obra), <b>abastecimento_janela_dias</b>, <b>estoque_alerta_dias</b>, <b>abc_dias</b>.',
+    campos:[{k:'chave',label:'Chave',req:true,w:'200px',ph:'custo_hora_padrao'}, {k:'valor',label:'Valor',req:true,w:'160px'}, {k:'descricao',label:'Descri\u00e7\u00e3o'}],
+    colunas:[{t:'Chave',k:'chave'},{t:'Valor',k:'valor'},{t:'Descri\u00e7\u00e3o',k:'descricao'}] });
+}
+/* ── Operador ↔ Equipamento · Equipamento ↔ Fornecedor (vínculos vivos da frota única) ── */
+async function vinculosPane(campo){
+  await _tabDom();
+  const ehOp = campo === 'operador_responsavel_id';
+  const lista = ehOp ? (_mntUserList||[]).map(u=>({id:u.id,nome:u.nome||u.login})) : (_mntFornList||[]);
+  let eqs = [];
+  try { eqs = await mntFetch('/manutencao/api/equipamentos-ficha'); } catch(e){ eqs = (_mntEquipList||[]); }
+  document.getElementById('pp-pane').innerHTML = '<div class="pp-title">'+(ehOp?'Operador \u2194 Equipamento':'Equipamento \u2194 Fornecedor')+'</div>'
+    + '<div class="pp-sub">'+(ehOp?'Respons\u00e1vel de cada objecto (aparece na coluna Respons\u00e1vel da Frota e no Novo Objecto).':'Fornecedor principal do objecto (assist\u00eancia / concession\u00e1ria).')+' Mudar e gravar linha a linha.</div>'
+    + '<div style="max-height:420px;overflow:auto;margin-top:8px"><table style="font-size:11px"><thead><tr><th>Objecto</th><th>Descri\u00e7\u00e3o</th><th>'+(ehOp?'Operador':'Fornecedor')+'</th><th></th></tr></thead><tbody>'
+    + (eqs||[]).map(e => '<tr><td class="bold">'+_esc(e.codigo)+'</td><td>'+_esc(e.descricao||'')+'</td><td><select id="vc-'+e.id+'">'+_tabOpts(lista,'id','nome',e[campo],'\u2014 nenhum \u2014')+'</select></td>'
+        + '<td><button class="btn" onclick="vinculoGravar(\''+e.id+'\',\''+campo+'\')">\ud83d\udcbe</button></td></tr>').join('') + '</tbody></table></div>';
+}
+async function vinculoGravar(id, campo){
+  const v = document.getElementById('vc-'+id).value || null; const body = {}; body[campo] = v;
+  try { await mntFetch('/manutencao/api/equipamentos/'+id+'/ficha', {method:'PATCH', body: JSON.stringify(body)}); mostrarToast('\u2705 Gravado','ok'); carregarSemaforosReais(); }
+  catch(e){ mostrarToast('\u274c '+e.message,'warn'); }
+}
+/* ── Documentos de equipamentos (acervo) · Planos preventivos (todas as FMPs) · Clientes (Operacional) ── */
+async function docsTodosPane(q){
+  let docs = [];
+  try { docs = await mntFetch('/manutencao/api/documentos'+(q?'?busca='+encodeURIComponent(q):'')); } catch(e){ mostrarToast('\u274c '+e.message,'warn'); return; }
+  const dd = v => v ? new Date(v).toLocaleDateString('pt-BR') : '\u2014';
+  document.getElementById('pp-pane').innerHTML = '<div class="pp-title">Documentos de equipamentos</div><div class="pp-sub">Tudo que foi anexado a objectos e OTs. Para anexar: Frota \u25b8 Mais \u25b8 Documentos, ou a aba Documentos da OT.</div>'
+    + '<div style="margin:8px 0"><input placeholder="Procurar por nome, descri\u00e7\u00e3o ou objecto\u2026" onkeydown="if(event.key===\'Enter\') docsTodosPane(this.value)" style="width:300px"></div>'
+    + '<div style="max-height:400px;overflow:auto"><table style="font-size:11px"><thead><tr><th>Objecto</th><th>Documento</th><th>Descri\u00e7\u00e3o</th><th>Origem</th><th>Data</th><th>Quem</th></tr></thead><tbody>'
+    + (docs.length ? docs.map(d => '<tr><td class="bold">'+_esc(d.equipamento_codigo||'')+'</td><td><a href="'+_esc(d.url)+'" target="_blank" style="color:#1A2A5E;font-weight:700">'+_esc(d.nome)+'</a></td><td>'+_esc(d.descricao||'')+'</td><td>'+(d.ot?'OT':'objecto')+'</td><td>'+dd(d.criado_em)+'</td><td>'+_esc(d.usuario_nome||'')+'</td></tr>').join('')
+      : '<tr><td colspan="6" class="muted" style="padding:10px">Nenhum documento anexado ainda.</td></tr>') + '</tbody></table></div>';
+}
+async function planosTodosPane(){
+  let pl = [];
+  try { pl = await mntFetch('/manutencao/api/planos-todos'); } catch(e){ mostrarToast('\u274c '+e.message,'warn'); return; }
+  document.getElementById('pp-pane').innerHTML = '<div class="pp-title">Planos preventivos (FMPs)</div><div class="pp-sub">Todas as FMPs da frota. Duplo clique abre os planos do objecto. Modelos reutiliz\u00e1veis ficam na Biblioteca de Prepara\u00e7\u00f5es.</div>'
+    + '<div style="max-height:420px;overflow:auto;margin-top:8px"><table style="font-size:11px"><thead><tr><th>Objecto</th><th>FMP</th><th>Descri\u00e7\u00e3o</th><th>Per\u00edodo</th><th class="r">TDM (h)</th></tr></thead><tbody>'
+    + (pl.length ? pl.map(p => '<tr style="cursor:pointer" ondblclick="abrirPlanosEquip(\''+p.equipamento_id+'\')"><td class="bold">'+_esc(p.equipamento_codigo)+'</td><td>'+_esc(p.codigo)+'</td><td>'+_esc(p.descricao||'')+'</td><td>'+_esc(p.periodo_codigo||'')+'</td><td class="r mono">'+(p.tdm_horas??'')+'</td></tr>').join('')
+      : '<tr><td colspan="5" class="muted" style="padding:10px">Nenhuma FMP cadastrada. Crie pela Frota \u25b8 Mais \u25b8 Planos Manuten\u00e7\u00e3o.</td></tr>') + '</tbody></table></div>';
+}
+async function clientesPane(){
+  let cl = [];
+  try { cl = await mntFetch('/operacional/api/clientes'); } catch(e){ mostrarToast('\u274c '+e.message,'warn'); return; }
+  cl = Array.isArray(cl) ? cl : (cl.clientes || cl.itens || []);
+  document.getElementById('pp-pane').innerHTML = '<div class="pp-title">Clientes (Entidades)</div><div class="pp-sub">Cadastro \u00fanico do Operacional \u2014 aqui s\u00f3 consulta. Para criar/editar: Admin Master \u25b8 Cadastros \u25b8 Clientes.</div>'
+    + '<div style="max-height:420px;overflow:auto;margin-top:8px"><table style="font-size:11px"><thead><tr><th>Nome</th><th>CNPJ/CPF</th><th>Cidade</th><th>Telefone</th></tr></thead><tbody>'
+    + (cl.length ? cl.map(c => '<tr><td class="bold">'+_esc(c.nome||c.razao_social||'')+'</td><td class="mono">'+_esc(c.cnpj||c.cpf||c.documento||'')+'</td><td>'+_esc(c.cidade||'')+'</td><td>'+_esc(c.telefone||'')+'</td></tr>').join('')
+      : '<tr><td colspan="4" class="muted" style="padding:10px">Nenhum cliente.</td></tr>') + '</tbody></table></div>';
+}
+
+/* ══ ABAS DA OT: Outros · Tarefas · Preparação · Leituras · Ferramentas · Documentos ══ */
+function otOutrosRender(){
+  const o = _otAberta;
+  tabJanela({ tab:'ot-outros', inline:'ot-aba-corpo', icone:'\ud83d\udcc4', titulo:'Outros', singular:'custo',
+    filtro:'ot_id='+o.id, fixo:{ot_id:o.id},
+    nota:'Custos avulsos da OT que n\u00e3o s\u00e3o pe\u00e7a de stock nem HH: servi\u00e7o externo, frete, guincho, aluguer de ferramenta. Entram no COU das An\u00e1lises e na aba Custos.',
+    campos:[{k:'data',label:'Data',type:'date',w:'130px',def:_F.hoje}, {k:'descricao',label:'Descri\u00e7\u00e3o',req:true}, _F.forn('fornecedor_id'),
+            {k:'documento',label:'Documento (NF/recibo)',w:'130px'}, {k:'rubrica',label:'Rubrica',w:'90px',ph:'3.01'}, {k:'valor',label:'Valor (R$)',type:'number',step:'0.01',req:true,w:'110px'}],
+    colunas:[{t:'Data',k:'data',date:true},{t:'Descri\u00e7\u00e3o',k:'descricao'},{t:'Fornecedor',fmt:r=>_esc(r.fornecedor_nome||'')},{t:'Doc.',k:'documento'},{t:'Rubrica',k:'rubrica'},{t:'Valor',k:'valor',money:true,r:true}],
+    rodape: rows => '<div style="text-align:right;font-weight:700;padding:4px 6px;color:#1A2A5E">Total outros: R$ '+rows.reduce((s,r)=>s+(parseFloat(r.valor)||0),0).toLocaleString('pt-BR',{minimumFractionDigits:2})+'</div>' });
+}
+async function otTarefasRender(){
+  const o = _otAberta, c = document.getElementById('ot-aba-corpo');
+  let t = [];
+  try { t = await mntFetch('/manutencao/api/tab/ot-tarefas?ot_id='+o.id); } catch(e){ c.innerHTML = '\u274c '+_esc(e.message); return; }
+  const feitas = t.filter(x => x.feita).length;
+  const pct = t.length ? Math.round(feitas / t.length * 100) : 0;
+  c.innerHTML = '<div class="dsec">Tarefas \u2014 '+feitas+'/'+t.length+' conclu\u00eddas ('+pct+' %)</div>'
+    + '<div style="height:6px;background:#E2E8F0;border-radius:3px;margin:4px 0 8px"><div style="height:6px;width:'+pct+'%;background:#15803D;border-radius:3px"></div></div>'
+    + (t.length ? t.map(x => '<div style="display:flex;gap:8px;align-items:center;padding:4px 6px;border-bottom:1px solid #F1F5F9;font-size:11px">'
+        + '<input type="checkbox"'+(x.feita?' checked':'')+' onchange="otTarefaMarcar(\''+x.id+'\',this.checked)" style="width:16px;height:16px">'
+        + '<span class="muted" style="width:22px">'+(x.ordem||'')+'</span><span style="flex:1;'+(x.feita?'text-decoration:line-through;color:#64748B':'')+'">'+_esc(x.descricao)+'</span>'
+        + (x.feita ? '<span class="muted">'+_esc(x.feita_por_nome||'')+' \u00b7 '+(x.feita_em?new Date(x.feita_em).toLocaleDateString('pt-BR'):'')+'</span>' : '')
+        + '<span style="cursor:pointer;color:#B91C1C" onclick="otTarefaExcluir(\''+x.id+'\')">\u2715</span></div>').join('')
+      : '<div class="muted" style="padding:8px 6px;font-size:11px">Sem tarefas. Importe da FMP ou adicione abaixo.</div>')
+    + '<div style="display:flex;gap:6px;margin-top:8px;align-items:flex-end"><div class="mfield" style="flex:1">Nova tarefa<input id="tar-desc" placeholder="ex.: verificar folga do material rodante"></div>'
+    + '<button class="btn p" onclick="otTarefaAdd()">\uff0b Adicionar</button>'
+    + (!t.length ? '<button class="btn" onclick="otTarefasDaFmp()">\ud83d\udcc5 Importar da FMP</button>' : '') + '</div>';
+}
+async function otTarefaAdd(){
+  const d = (document.getElementById('tar-desc')||{}).value || ''; if (!d.trim()){ mostrarToast('Descreva a tarefa','warn'); return; }
+  const n = document.querySelectorAll('#ot-aba-corpo input[type=checkbox]').length + 1;
+  try { await mntFetch('/manutencao/api/tab/ot-tarefas', {method:'POST', body: JSON.stringify({ot_id:_otAberta.id, ordem:n, descricao:d.trim()})}); otTarefasRender(); }
+  catch(e){ mostrarToast('\u274c '+e.message,'warn'); }
+}
+async function otTarefaMarcar(id, feita){
+  try { await mntFetch('/manutencao/api/tab/ot-tarefas/'+id, {method:'PATCH', body: JSON.stringify({feita})}); otTarefasRender(); }
+  catch(e){ mostrarToast('\u274c '+e.message,'warn'); }
+}
+async function otTarefaExcluir(id){ try { await mntFetch('/manutencao/api/tab/ot-tarefas/'+id, {method:'DELETE'}); otTarefasRender(); } catch(e){ mostrarToast('\u274c '+e.message,'warn'); } }
+async function otTarefasDaFmp(){
+  try { const r = await mntFetch('/manutencao/api/ots/'+_otAberta.id+'/tarefas/da-fmp', {method:'POST'}); mostrarToast('\u2705 '+r.n+' tarefa(s) importada(s)','ok'); otTarefasRender(); }
+  catch(e){ mostrarToast('\u274c '+e.message,'warn'); }
+}
+async function otPreparacaoRender(){
+  const o = _otAberta, c = document.getElementById('ot-aba-corpo');
+  let r;
+  try { r = await mntFetch('/manutencao/api/ots/'+o.id+'/preparacao'); } catch(e){ c.innerHTML = '\u274c '+_esc(e.message); return; }
+  const jj = v => { if (!v) return []; if (Array.isArray(v)) return v; try { const a = JSON.parse(v); return Array.isArray(a)?a:[]; } catch(e){ return []; } };
+  if (!r.plano){ c.innerHTML = '<div class="muted" style="padding:12px;font-size:11px">OT sem FMP de origem \u2014 n\u00e3o h\u00e1 prepara\u00e7\u00e3o prevista. (Corretivas nascem de pedido; a prepara\u00e7\u00e3o vale para preventivas geradas de plano.)</div>'; return; }
+  const pl = r.plano, bloco = (t, lista, cols) => '<div class="dsec" style="margin-top:8px">'+t+' ('+lista.length+')</div>' + (lista.length
+    ? lista.map(x => '<div style="display:flex;gap:8px;padding:3px 6px;border-bottom:1px solid #F1F5F9;font-size:11px">'+cols.map(k=>'<span style="flex:1">'+_esc(x[k]??'')+'</span>').join('')+'</div>').join('')
+    : '<div class="muted" style="padding:4px 6px;font-size:11px">\u2014</div>');
+  c.innerHTML = '<div class="dsec">FMP '+_esc(pl.codigo)+' \u2014 '+_esc(pl.descricao||'')+'</div>'
+    + '<div style="display:flex;gap:16px;font-size:11px;padding:4px 6px"><span>Per\u00edodo: <b>'+_esc(pl.periodo_codigo||'\u2014')+'</b></span><span>TDM previsto: <b>'+(pl.tdm_horas??'\u2014')+' h</b></span><span>Criticidade: <b>'+_esc(pl.criticidade||'\u2014')+'</b></span></div>'
+    + '<div class="dsec" style="margin-top:8px">Tarefas previstas</div><pre style="white-space:pre-wrap;font-size:11px;padding:4px 6px;margin:0">'+_esc(pl.tarefas||'\u2014')+'</pre>'
+    + bloco('M\u00e3o de obra prevista', jj(pl.mao_obra), ['funcao','qtd','horas']) + bloco('Pe\u00e7as previstas', jj(pl.pecas), ['peca','descricao','qtd','un'])
+    + bloco('Outros previstos', jj(pl.outros), ['descricao','valor']) + bloco('Ferramentas previstas', jj(pl.ferramentas), ['tipo','descricao','qtd']);
+}
+async function otLeiturasRender(){
+  const o = _otAberta, c = document.getElementById('ot-aba-corpo');
+  let l = [];
+  try { l = await mntFetch('/manutencao/api/tab/ot-leituras?ot_id='+o.id); } catch(e){}
+  const apont = (o.historico||[]).filter(h => /Hor\u00edmetro\/KM no servi\u00e7o:/.test(h.observacao||'')).map(h => ({data: h.criado_em, txt: (h.observacao.match(/Hor\u00edmetro\/KM no servi\u00e7o:\s*([\d.,]+)/)||[])[1]}));
+  const dd = v => v ? String(v).slice(0,10).split('-').reverse().join('/') : '\u2014';
+  c.innerHTML = '<div class="dsec">Leituras da OT</div>'
+    + '<div style="display:flex;gap:16px;font-size:11px;padding:4px 6px"><span>Na abertura: <b>'+(o.horimetro_na_abertura??'\u2014')+'</b></span><span>Prevista: <b>'+(o.horimetro_previsto??'\u2014')+'</b></span>'
+    + (apont.length ? '<span>Apontadas pelo mec\u00e2nico: <b>'+apont.map(a=>a.txt).join(' \u00b7 ')+'</b></span>' : '') + '</div>'
+    + (l.length ? l.map(x => '<div style="display:flex;gap:8px;padding:3px 6px;border-bottom:1px solid #F1F5F9;font-size:11px"><span style="width:70px" class="muted">'+dd(x.data)+'</span><span class="chip tm">'+_esc(x.momento||'')+'</span><b class="mono">'+(x.leitura??'')+'</b><span style="flex:1" class="muted">'+_esc(x.observacao||'')+'</span><span style="cursor:pointer;color:#B91C1C" onclick="otLeituraExcluir(\''+x.id+'\')">\u2715</span></div>').join('')
+      : '<div class="muted" style="padding:8px 6px;font-size:11px">Nenhuma leitura registada na OT.</div>')
+    + '<div style="display:flex;gap:6px;margin-top:8px;align-items:flex-end;flex-wrap:wrap"><div class="mfield" style="width:130px">Data<input id="lei-data" type="date" value="'+_F.hoje()+'"></div>'
+    + '<div class="mfield" style="width:120px">Momento<select id="lei-mom"><option value="in\u00edcio">in\u00edcio</option><option value="fim">fim</option><option value="teste">teste</option></select></div>'
+    + '<div class="mfield" style="width:120px">Leitura (h/km)<input id="lei-val" type="number" step="0.1"></div><div class="mfield" style="flex:1">Observa\u00e7\u00e3o<input id="lei-obs"></div>'
+    + '<button class="btn p" onclick="otLeituraAdd()">\uff0b Registar</button></div>'
+    + '<div class="muted" style="font-size:10px;margin-top:6px">A leitura de <b>fim</b> tamb\u00e9m atualiza o contador do objecto (nunca recua).</div>';
+}
+async function otLeituraAdd(){
+  const g = id => (document.getElementById(id)||{}).value || '';
+  if (!g('lei-val')){ mostrarToast('Informe a leitura','warn'); return; }
+  try {
+    await mntFetch('/manutencao/api/tab/ot-leituras', {method:'POST', body: JSON.stringify({ot_id:_otAberta.id, data:g('lei-data'), momento:g('lei-mom'), leitura:g('lei-val'), observacao:g('lei-obs')})});
+    otLeiturasRender();
+  } catch(e){ mostrarToast('\u274c '+e.message,'warn'); }
+}
+async function otLeituraExcluir(id){ try { await mntFetch('/manutencao/api/tab/ot-leituras/'+id, {method:'DELETE'}); otLeiturasRender(); } catch(e){ mostrarToast('\u274c '+e.message,'warn'); } }
+let _tiposFerr = null;
+async function otFerramentasRender(){
+  const o = _otAberta;
+  if (_tiposFerr === null){ try { _tiposFerr = (await mntFetch('/manutencao/api/param/tipos-ferramenta')).filter(x=>x.ativo!==false); } catch(e){ _tiposFerr = []; } }
+  tabJanela({ tab:'ot-ferramentas', inline:'ot-aba-corpo', icone:'\ud83d\udee0', titulo:'Ferramentas', singular:'ferramenta',
+    filtro:'ot_id='+o.id, fixo:{ot_id:o.id},
+    nota:'Ferramentas/equipamentos de apoio usados na OT (tipos em Parametriza\u00e7\u00e3o \u25b8 Tipos de ferramenta).',
+    campos:[{k:'tipo_codigo',label:'Tipo',type:'select',opts:()=>_tiposFerr.map(t=>({id:t.codigo,nome:t.codigo+' \u2014 '+(t.nome||'')})),w:'200px'}, {k:'descricao',label:'Descri\u00e7\u00e3o',req:true}, {k:'quantidade',label:'Qtd',type:'number',step:'0.5',w:'70px',def:1}, {k:'observacao',label:'Observa\u00e7\u00e3o'}],
+    colunas:[{t:'Tipo',k:'tipo_codigo'},{t:'Descri\u00e7\u00e3o',k:'descricao'},{t:'Qtd',k:'quantidade',r:true},{t:'Observa\u00e7\u00e3o',k:'observacao'}] });
+}
+async function otDocsRender(){
+  const o = _otAberta, c = document.getElementById('ot-aba-corpo');
+  let docs = [];
+  try { docs = await mntFetch('/manutencao/api/ots/'+o.id+'/documentos'); } catch(e){ c.innerHTML = '\u274c '+_esc(e.message); return; }
+  const dd = v => v ? new Date(v).toLocaleDateString('pt-BR') : '\u2014';
+  const kb = n => n ? (n > 1048576 ? (n/1048576).toFixed(1)+' MB' : Math.max(1,Math.round(n/1024))+' KB') : '';
+  c.innerHTML = '<div class="dsec">Anexar (foto do servi\u00e7o, NF do fornecedor, laudo \u2014 at\u00e9 15 MB)</div>'
+    + '<div style="display:flex;gap:6px;align-items:flex-end;flex-wrap:wrap"><div class="mfield" style="flex:1;min-width:200px">Ficheiro<input type="file" id="otdoc-file" style="font-size:11px"></div>'
+    + '<div class="mfield" style="flex:1;min-width:180px">Descri\u00e7\u00e3o<input id="otdoc-desc"></div><button class="btn p" onclick="otDocEnviar()">\u2b06 Enviar</button></div>'
+    + '<div class="dsec" style="margin-top:10px">'+docs.length+' documento(s)</div>'
+    + (docs.length ? docs.map(d => '<div style="display:flex;gap:8px;align-items:center;padding:5px 6px;border-bottom:1px solid #F1F5F9;font-size:11px"><a href="'+_esc(d.url)+'" target="_blank" style="flex:1;font-weight:700;color:#1A2A5E">'+_esc(d.nome)+'</a><span class="muted" style="flex:1">'+_esc(d.descricao||'')+'</span><span class="muted">'+kb(d.tamanho)+'</span><span class="muted">'+dd(d.criado_em)+' \u00b7 '+_esc(d.usuario_nome||'')+'</span><span style="cursor:pointer;color:#B91C1C" onclick="equipDocExcluirOT(\''+d.id+'\')">\u2715</span></div>').join('')
+      : '<div class="muted" style="padding:8px 6px;font-size:11px">Nenhum documento anexado.</div>');
+}
+async function otDocEnviar(){
+  const inp = document.getElementById('otdoc-file'); const f = inp && inp.files && inp.files[0];
+  if (!f){ mostrarToast('Escolha um ficheiro','warn'); return; }
+  const fd = new FormData(); fd.append('ficheiro', f, f.name); fd.append('descricao', (document.getElementById('otdoc-desc')||{}).value || '');
+  try { await mntUpload('/manutencao/api/ots/'+_otAberta.id+'/documentos', fd); mostrarToast('\u2705 Anexado','ok'); otDocsRender(); }
+  catch(e){ mostrarToast('\u274c '+e.message,'warn'); }
+}
+async function equipDocExcluirOT(docId){ if (!confirm('Remover este documento?')) return; try { await mntFetch('/manutencao/api/documentos/'+docId, {method:'DELETE'}); otDocsRender(); } catch(e){ mostrarToast('\u274c '+e.message,'warn'); } }
+
+/* ══ ANÁLISE ABC ══ */
+async function anABC(dias){
+  dias = dias || 365;
+  let r;
+  try { r = await mntFetch('/manutencao/api/analises/abc?dias='+dias); } catch(e){ mostrarToast('\u274c '+e.message,'warn'); return; }
+  const money = v => 'R$ '+(v||0).toLocaleString('pt-BR',{minimumFractionDigits:2});
+  const cor = k => k==='A' ? '#B91C1C' : (k==='B' ? '#B45309' : '#15803D');
+  document.querySelector('#eq-ficha .modal').classList.add('larga');
+  document.getElementById('eq-ficha-corpo').innerHTML =
+    '<div style="display:flex;justify-content:space-between;align-items:center"><b style="font-size:14px;color:#1A2A5E">\ud83d\udcca An\u00e1lise ABC de consumo</b><span style="cursor:pointer;font-size:18px" onclick="document.getElementById(\'eq-ficha\').classList.remove(\'show\')">\u2715</span></div>'
+    + '<div style="display:flex;gap:14px;align-items:center;margin:8px 0;font-size:11px"><label>Per\u00edodo <select onchange="anABC(this.value)">'+[90,180,365,730].map(d=>'<option value="'+d+'"'+(d==dias?' selected':'')+'>'+d+' dias</option>').join('')+'</select></label>'
+    + '<span>Total consumido: <b>'+money(r.total)+'</b></span><span>'+r.n+' artigos</span>'
+    + ['A','B','C'].map(k=>'<span style="color:'+cor(k)+';font-weight:800">'+k+': '+r.classes[k]+'</span>').join('') + '</div>'
+    + '<div class="muted" style="font-size:10px">A = artigos que somam 80 % do valor \u00b7 B = at\u00e9 95 % \u00b7 C = resto. Sa\u00eddas e aplica\u00e7\u00f5es diretas menos devolu\u00e7\u00f5es, valorizadas ao custo da baixa.</div>'
+    + '<div style="max-height:420px;overflow:auto;margin-top:6px"><table style="font-size:11px"><thead><tr><th>#</th><th>Classe</th><th>Artigo</th><th>Descri\u00e7\u00e3o</th><th>Fam.</th><th class="r">Qtd</th><th class="r">Valor</th><th class="r">%</th><th class="r">Acum.</th><th class="r">Mov.</th></tr></thead><tbody>'
+    + (r.itens.length ? r.itens.map((x,i) => '<tr style="cursor:pointer" onclick="abrirPeca(\''+_esc(x.codigo).replace(/'/g,'&#39;')+'\')"><td class="muted">'+(i+1)+'</td><td><b style="color:'+cor(x.classe)+'">'+x.classe+'</b></td><td class="bold">'+_esc(x.codigo)+'</td><td>'+_esc(x.descricao||'')+'</td><td class="mono muted">'+_esc(x.familia||'')+'</td><td class="r mono">'+x.qtd+' '+_esc(x.unidade||'')+'</td><td class="r mono">'+money(x.valor)+'</td><td class="r mono">'+x.pct+'</td><td class="r mono">'+x.acumulado+'</td><td class="r mono">'+x.movimentos+'</td></tr>').join('')
+      : '<tr><td colspan="10" class="muted" style="padding:10px">Sem consumo valorizado no per\u00edodo.</td></tr>') + '</tbody></table></div>';
+  document.getElementById('eq-ficha').classList.add('show');
+}
+/* ══ CARGA DE TRABALHOS ══ */
+async function cargaTrabalhos(dias){
+  dias = dias || 30;
+  let r;
+  try { r = await mntFetch('/manutencao/api/analises/carga?dias='+dias); } catch(e){ mostrarToast('\u274c '+e.message,'warn'); return; }
+  const money = v => 'R$ '+(v||0).toLocaleString('pt-BR',{minimumFractionDigits:2});
+  document.querySelector('#eq-ficha .modal').classList.add('larga');
+  document.getElementById('eq-ficha-corpo').innerHTML =
+    '<div style="display:flex;justify-content:space-between;align-items:center"><b style="font-size:14px;color:#1A2A5E">\ud83d\udcca Carga de trabalhos por respons\u00e1vel</b><span style="cursor:pointer;font-size:18px" onclick="document.getElementById(\'eq-ficha\').classList.remove(\'show\')">\u2715</span></div>'
+    + '<div style="margin:8px 0;font-size:11px"><label>HH dos \u00faltimos <select onchange="cargaTrabalhos(this.value)">'+[7,30,90].map(d=>'<option value="'+d+'"'+(d==dias?' selected':'')+'>'+d+' dias</option>').join('')+'</select></label></div>'
+    + '<div style="max-height:420px;overflow:auto"><table style="font-size:11px"><thead><tr><th>Respons\u00e1vel</th><th class="r">Carteira</th><th class="r">Programadas</th><th class="r">Abertas</th><th class="r">Em curso</th><th class="r">Aguard. pe\u00e7a</th><th class="r">Vencidas</th><th class="r">HH ('+dias+' d)</th><th class="r">Custo HH</th><th class="r">OTs c/ HH</th></tr></thead><tbody>'
+    + (r.pessoas.length ? r.pessoas.map(p => '<tr><td class="bold">'+_esc(p.nome)+'</td><td class="r mono"><b>'+p.carteira+'</b></td><td class="r mono">'+p.programada+'</td><td class="r mono">'+p.aberta+'</td><td class="r mono">'+p.em_andamento+'</td><td class="r mono">'+p.aguardando_peca+'</td><td class="r mono" style="color:'+(p.vencidas?'#B91C1C':'inherit')+'">'+p.vencidas+'</td><td class="r mono">'+p.horas.toLocaleString('pt-BR')+'</td><td class="r mono">'+money(p.custo)+'</td><td class="r mono">'+p.ots_hh+'</td></tr>').join('')
+      : '<tr><td colspan="10" class="muted" style="padding:10px">Sem OTs em carteira nem HH no per\u00edodo.</td></tr>') + '</tbody></table></div>';
+  document.getElementById('eq-ficha').classList.add('show');
+}
+/* ══ CALENDÁRIO DE TRABALHOS ══ */
+let _calRef = null;
+function calTrabalhos(delta){
+  if (!_calRef) _calRef = new Date(); if (delta) _calRef.setMonth(_calRef.getMonth() + delta);
+  const y = _calRef.getFullYear(), m = _calRef.getMonth();
+  const first = new Date(y, m, 1), nDias = new Date(y, m+1, 0).getDate(), ini = (first.getDay()+6)%7;
+  const porDia = {};
+  (_otsCache||[]).forEach(o => {
+    const d = o.status==='concluida' ? o.data_conclusao : (o.data_prevista || o.data_abertura);
+    if (!d) return; const k = String(d).slice(0,10); if (!k.startsWith(y+'-'+String(m+1).padStart(2,'0'))) return;
+    (porDia[k] = porDia[k] || []).push(o);
+  });
+  const hoje = new Date().toISOString().slice(0,10);
+  const cor = o => o.status==='concluida' ? '#15803D' : (o.status==='programada' ? '#B45309' : (o.status==='em_andamento' ? '#1D4ED8' : '#B91C1C'));
+  let cells = ''; for (let i=0;i<ini;i++) cells += '<div class="cal-c off"></div>';
+  for (let d=1; d<=nDias; d++){
+    const k = y+'-'+String(m+1).padStart(2,'0')+'-'+String(d).padStart(2,'0'); const ots = porDia[k]||[];
+    cells += '<div class="cal-c'+(k===hoje?' hoje':'')+'"><div class="cal-d">'+d+'</div>'+ots.slice(0,4).map(o=>'<div class="cal-ot" style="border-left:3px solid '+cor(o)+'" title="'+_esc(o.descricao||'')+'" onclick="verOTReal(\''+o.id+'\')">'+_esc(o.numero)+' '+_esc(o.equipamento_codigo||'')+'</div>').join('')+(ots.length>4?'<div class="muted" style="font-size:9px">+'+(ots.length-4)+'</div>':'')+'</div>';
+  }
+  const M = ['Janeiro','Fevereiro','Mar\u00e7o','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+  document.querySelector('#eq-ficha .modal').classList.add('larga');
+  document.getElementById('eq-ficha-corpo').innerHTML =
+    '<div style="display:flex;justify-content:space-between;align-items:center"><b style="font-size:14px;color:#1A2A5E">\ud83d\udcc5 Calend\u00e1rio de trabalhos</b><span style="cursor:pointer;font-size:18px" onclick="document.getElementById(\'eq-ficha\').classList.remove(\'show\')">\u2715</span></div>'
+    + '<div style="display:flex;justify-content:center;align-items:center;gap:14px;margin:8px 0"><button class="btn" onclick="calTrabalhos(-1)">\u25c0</button><b style="min-width:160px;text-align:center">'+M[m]+' '+y+'</b><button class="btn" onclick="calTrabalhos(1)">\u25b6</button><button class="btn" onclick="_calRef=null;calTrabalhos()">Hoje</button></div>'
+    + '<div class="muted" style="font-size:10px;margin-bottom:4px">Programada = data prevista \u00b7 aberta/em curso = data prevista ou abertura \u00b7 conclu\u00edda = data de conclus\u00e3o. Clique na OT para abrir.</div>'
+    + '<div class="cal-h">'+['Seg','Ter','Qua','Qui','Sex','S\u00e1b','Dom'].map(d=>'<div>'+d+'</div>').join('')+'</div><div class="cal-g">'+cells+'</div>';
+  document.getElementById('eq-ficha').classList.add('show');
+}
+/* ══ INVENTÁRIO (contagem física) ══ */
+async function inventarioJanela(almox){
+  let alms = [];
+  try { alms = await mntFetch('/manutencao/api/almoxarifados'); } catch(e){ mostrarToast('\u274c '+e.message,'warn'); return; }
+  alms = Array.isArray(alms) ? alms : (alms.almoxarifados||[]);
+  const alm = almox || (alms[0]||{}).codigo || '';
+  let r = {itens:[]};
+  if (alm){ try { r = await mntFetch('/manutencao/api/armazem?almox='+encodeURIComponent(alm)+'&incluir_zerados=1&limit=2000'); } catch(e){ mostrarToast('\u274c '+e.message,'warn'); return; } }
+  document.querySelector('#eq-ficha .modal').classList.add('larga');
+  document.getElementById('eq-ficha-corpo').innerHTML =
+    '<div style="display:flex;justify-content:space-between;align-items:center"><b style="font-size:14px;color:#1A2A5E">\ud83d\udccb Invent\u00e1rio \u2014 contagem f\u00edsica</b><span style="cursor:pointer;font-size:18px" onclick="document.getElementById(\'eq-ficha\').classList.remove(\'show\')">\u2715</span></div>'
+    + '<div style="display:flex;gap:10px;align-items:flex-end;margin:8px 0;flex-wrap:wrap"><div class="mfield" style="width:220px">Almoxarifado<select id="inv-alm" onchange="inventarioJanela(this.value)">'+alms.map(a=>'<option value="'+_esc(a.codigo)+'"'+(a.codigo===alm?' selected':'')+'>'+_esc(a.codigo)+' \u2014 '+_esc(a.nome||'')+'</option>').join('')+'</select></div>'
+    + '<div class="mfield" style="flex:1;min-width:200px">Observa\u00e7\u00e3o<input id="inv-obs" placeholder="ex.: invent\u00e1rio trimestral setembro"></div>'
+    + '<div class="mfield" style="width:200px">Filtrar<input id="inv-q" placeholder="c\u00f3digo ou descri\u00e7\u00e3o" oninput="inventarioFiltrar(this.value)"></div>'
+    + '<label style="font-size:11px"><input type="checkbox" id="inv-so-dif" onchange="inventarioFiltrar()"> s\u00f3 diferen\u00e7as</label></div>'
+    + '<div class="muted" style="font-size:10px">Digite a contagem s\u00f3 nas linhas contadas; linhas em branco n\u00e3o s\u00e3o tocadas. Cada diferen\u00e7a vira um movimento <b>ajuste</b> (saldo passa a ser a contagem) com trilha de quem/quando.</div>'
+    + '<div style="max-height:400px;overflow:auto;margin-top:6px"><table style="font-size:11px"><thead><tr><th>Artigo</th><th>Descri\u00e7\u00e3o</th><th>Local</th><th class="r">Sistema</th><th class="r" style="width:90px">Contagem</th><th class="r">Diferen\u00e7a</th></tr></thead><tbody id="inv-body">'
+    + (r.itens||[]).map(x => '<tr class="inv-l" data-cod="'+_esc(x.codigo)+'" data-txt="'+_esc((x.codigo+' '+(x.descricao||'')).toLowerCase())+'" data-sis="'+(parseFloat(x.quantidade)||0)+'"><td class="bold">'+_esc(x.codigo)+'</td><td>'+_esc(x.descricao||'')+'</td><td class="muted">'+_esc(x.localizacao||'')+'</td><td class="r mono">'+(parseFloat(x.quantidade)||0)+'</td><td class="r"><input class="inv-c" type="number" step="0.01" style="width:80px;text-align:right" oninput="inventarioDif(this)"></td><td class="r mono inv-d"></td></tr>').join('')
+    + '</tbody></table></div>'
+    + '<div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px"><span id="inv-res" class="muted" style="font-size:11px">'+(r.itens||[]).length+' artigo(s) neste local</span><button class="btn p" onclick="inventarioAplicar()">\u2705 Aplicar ajustes</button></div>';
+  document.getElementById('eq-ficha').classList.add('show');
+}
+function inventarioDif(inp){
+  const tr = inp.closest('tr'), sis = parseFloat(tr.dataset.sis)||0, d = tr.querySelector('.inv-d');
+  if (inp.value === ''){ d.textContent = ''; d.style.color = ''; return; }
+  const dif = (parseFloat(inp.value)||0) - sis; d.textContent = (dif>0?'+':'')+dif.toLocaleString('pt-BR'); d.style.color = dif===0 ? '#15803D' : (dif>0 ? '#1D4ED8' : '#B91C1C');
+}
+function inventarioFiltrar(q){
+  q = (q ?? (document.getElementById('inv-q')||{}).value ?? '').toLowerCase(); const soDif = (document.getElementById('inv-so-dif')||{}).checked;
+  document.querySelectorAll('#inv-body .inv-l').forEach(tr => { const c = tr.querySelector('.inv-c').value; const dif = c !== '' && (parseFloat(c)||0) !== (parseFloat(tr.dataset.sis)||0); tr.style.display = ((!q || tr.dataset.txt.includes(q)) && (!soDif || dif)) ? '' : 'none'; });
+}
+async function inventarioAplicar(){
+  const itens = []; document.querySelectorAll('#inv-body .inv-l').forEach(tr => { const c = tr.querySelector('.inv-c').value; if (c !== '') itens.push({peca: tr.dataset.cod, contagem: c}); });
+  if (!itens.length){ mostrarToast('Nenhuma contagem digitada','warn'); return; }
+  const dif = itens.filter(i => { const tr = document.querySelector('#inv-body .inv-l[data-cod="'+CSS.escape(i.peca)+'"]'); return tr && (parseFloat(i.contagem)||0) !== (parseFloat(tr.dataset.sis)||0); }).length;
+  if (!confirm(itens.length+' linha(s) contada(s), '+dif+' com diferen\u00e7a.\n\nAplicar os ajustes de saldo agora?')) return;
+  try {
+    const r = await mntFetch('/manutencao/api/estoque/inventario', {method:'POST', body: JSON.stringify({almox: document.getElementById('inv-alm').value, observacao: (document.getElementById('inv-obs')||{}).value || '', itens})});
+    mostrarToast('\u2705 Invent\u00e1rio: '+r.ajustados.length+' ajuste(s), '+r.iguais+' confer\u00eancia(s) iguais'+(r.erros.length?' \u00b7 '+r.erros.length+' erro(s)':''), r.erros.length?'warn':'ok');
+    if (r.erros.length) alert('Erros:\n'+r.erros.join('\n'));
+    inventarioJanela(document.getElementById('inv-alm').value); carregarPecasReais();
+  } catch(e){ mostrarToast('\u274c '+e.message,'warn'); }
+}
+/* ══ MÚLTIPLA EDIÇÃO (objectos e OTs) ══ */
+async function multiEdicao(alvo){
+  await _tabDom();
+  const ehOT = alvo === 'ots';
+  const lista = ehOT ? (_otsCache||[]).filter(o => ['programada','aberta','em_andamento','aguardando_peca'].includes(o.status)) : (_semCache||[]);
+  const campos = ehOT
+    ? [['responsavel_id','Respons\u00e1vel','select',()=>(_mntUserList||[]).map(u=>({id:u.id,nome:u.nome||u.login}))],['prioridade','Prioridade','select',()=>['baixa','media','alta','urgente'].map(x=>({id:x,nome:x}))],['data_prevista','Data prevista','date'],['fornecedor_id','Fornecedor','select',()=>_mntFornList||[]],['projecto_id','Projecto','select',()=>_projList||[]]]
+    : [['sistema_codigo','Sistema','select',()=>(_arvSistemas||[]).map(s=>({id:s.codigo,nome:s.codigo+' \u2014 '+(s.nome||'')}))],['centro_custo','Centro de custo','text'],['localizacao','Localiza\u00e7\u00e3o','text'],['operador_responsavel_id','Operador','select',()=>(_mntUserList||[]).map(u=>({id:u.id,nome:u.nome||u.login}))],['fornecedor_id','Fornecedor','select',()=>_mntFornList||[]]];
+  if (ehOT && _projList === null){ try { _projList = (await mntFetch('/manutencao/api/tab/projectos')).map(p=>({id:p.id,nome:p.codigo+' \u2014 '+(p.nome||'')})); } catch(e){ _projList = []; } }
+  window._meCampos = campos; window._meAlvo = alvo;
+  document.querySelector('#eq-ficha .modal').classList.add('larga');
+  document.getElementById('eq-ficha-corpo').innerHTML =
+    '<div style="display:flex;justify-content:space-between;align-items:center"><b style="font-size:14px;color:#1A2A5E">\u270f\ufe0f M\u00faltipla edi\u00e7\u00e3o de '+(ehOT?'OTs':'objectos')+'</b><span style="cursor:pointer;font-size:18px" onclick="document.getElementById(\'eq-ficha\').classList.remove(\'show\')">\u2715</span></div>'
+    + '<div style="display:flex;gap:8px;align-items:flex-end;margin:8px 0;flex-wrap:wrap"><div class="mfield" style="width:200px">Campo<select id="me-campo" onchange="multiCampo()">'+campos.map((c,i)=>'<option value="'+i+'">'+c[1]+'</option>').join('')+'</select></div><div class="mfield" style="width:260px" id="me-valor-box">Novo valor<input id="me-valor"></div>'
+    + '<div class="mfield" style="flex:1;min-width:160px">Filtrar lista<input id="me-q" oninput="multiFiltrar(this.value)" placeholder="c\u00f3digo / descri\u00e7\u00e3o"></div><label style="font-size:11px"><input type="checkbox" onchange="document.querySelectorAll(\'#me-body .me-ck\').forEach(c=>{ if(c.closest(\'tr\').style.display!==\'none\') c.checked=this.checked; })"> marcar vis\u00edveis</label></div>'
+    + '<div style="max-height:360px;overflow:auto"><table style="font-size:11px"><thead><tr><th style="width:26px"></th><th>C\u00f3digo</th><th>Descri\u00e7\u00e3o</th><th>'+(ehOT?'Status':'Sistema')+'</th></tr></thead><tbody id="me-body">'
+    + lista.map(x => '<tr data-txt="'+_esc(((x.codigo||x.numero)+' '+(x.descricao||'')+' '+(x.equipamento_codigo||'')).toLowerCase())+'"><td><input type="checkbox" class="me-ck" value="'+x.id+'"></td><td class="bold">'+_esc(x.codigo||x.numero)+(ehOT?' <span class="muted">'+_esc(x.equipamento_codigo||'')+'</span>':'')+'</td><td>'+_esc(x.descricao||'')+'</td><td class="muted">'+_esc(ehOT?x.status:(x.sistema_codigo||''))+'</td></tr>').join('')
+    + '</tbody></table></div><div style="display:flex;justify-content:flex-end;margin-top:8px"><button class="btn p" onclick="multiAplicar()">\u2705 Aplicar aos marcados</button></div>';
+  multiCampo();
+  document.getElementById('eq-ficha').classList.add('show');
+}
+function multiCampo(){
+  const c = window._meCampos[parseInt(document.getElementById('me-campo').value)]; const box = document.getElementById('me-valor-box');
+  box.innerHTML = 'Novo valor' + (c[2]==='select' ? '<select id="me-valor">'+_tabOpts(c[3](),'id','nome','','\u2014 limpar \u2014')+'</select>' : '<input id="me-valor" type="'+(c[2]==='date'?'date':'text')+'">');
+}
+function multiFiltrar(q){ q = (q||'').toLowerCase(); document.querySelectorAll('#me-body tr').forEach(tr => tr.style.display = (!q || tr.dataset.txt.includes(q)) ? '' : 'none'); }
+async function multiAplicar(){
+  const ids = Array.from(document.querySelectorAll('#me-body .me-ck:checked')).map(c => c.value);
+  if (!ids.length){ mostrarToast('Marque ao menos um registo','warn'); return; }
+  const c = window._meCampos[parseInt(document.getElementById('me-campo').value)]; const v = document.getElementById('me-valor').value;
+  if (!confirm('Aplicar '+c[1]+' = "'+(v||'(vazio)')+'" em '+ids.length+' registo(s)?')) return;
+  const ehOT = window._meAlvo === 'ots'; let ok = 0, err = [];
+  for (const id of ids){
+    const body = {}; body[c[0]] = v || (c[2]==='date' ? '' : null);
+    try { await mntFetch(ehOT ? '/manutencao/api/ots/'+id : '/manutencao/api/equipamentos/'+id+'/ficha', {method:'PATCH', body: JSON.stringify(body)}); ok++; }
+    catch(e){ err.push(id.slice(0,8)+': '+e.message); }
+  }
+  mostrarToast('\u2705 '+ok+' atualizado(s)'+(err.length?' \u00b7 '+err.length+' erro(s)':''), err.length?'warn':'ok');
+  if (err.length) alert(err.join('\n'));
+  document.getElementById('eq-ficha').classList.remove('show');
+  if (ehOT) carregarOTsReais(); else carregarSemaforosReais();
+}
+/* ══ DESATIVAR / REATIVAR ARTIGO ══ */
+async function desativarArtigoMW(){
+  const cod = _mwPrecisa('alm','artigo'); if (!cod) return;
+  if (!confirm('Desativar o artigo '+cod+'?\n\nSome do cat\u00e1logo e dos formul\u00e1rios; hist\u00f3rico e OTs antigas ficam \u00edntegros. Peça com saldo n\u00e3o pode ser desativada.')) return;
+  try { await mntFetch('/manutencao/api/pecas/ativo', {method:'PATCH', body: JSON.stringify({peca: cod, ativo: false})}); mostrarToast('\ud83d\udeab '+cod+' desativado','ok'); _mwSel.alm = null; carregarPecasReais(); }
+  catch(e){ mostrarToast('\u274c '+e.message,'warn'); }
 }
 
 /* ══ INICIALIZAÇÃO ══ */
