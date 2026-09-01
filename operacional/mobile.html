@@ -1,0 +1,3287 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"/>
+<meta name="theme-color" content="#1A2A5E"/>
+<meta name="mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+<title>Garra — Mobile</title>
+<link rel="manifest" href="/mobile/manifest.json"/>
+<link rel="icon" href="/static/icons/favicon.ico"/>
+<script src="/operacional/static/js/idb.js"></script>
+<style>
+/* ── RESET & BASE ── */
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+body{font-family:system-ui,-apple-system,sans-serif;background:#F0F4FF;color:#1E293B;
+     min-height:100dvh;display:flex;flex-direction:column;overflow-x:hidden}
+button{cursor:pointer;border:none;outline:none;font-family:inherit}
+input,select,textarea{font-family:inherit;outline:none;border:none}
+
+/* ── CSS VARS ── */
+:root{
+  --blue:    #1A2A5E;
+  --blue2:   #1E3A8A;
+  --orange:  #E8820C;
+  --bg:      #F0F4FF;
+  --card:    #FFFFFF;
+  --border:  #CBD5E1;
+  --text:    #1E293B;
+  --muted:   #64748B;
+  --green:   #16A34A;
+  --red:     #DC2626;
+  --radius:  12px;
+  --shadow:  0 2px 12px rgba(26,42,94,.08);
+  --nav-h:   64px;
+}
+
+/* ── TELA LOGIN ── */
+#screen-login{
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  min-height:100dvh;padding:24px;background:#F0F4FF;
+}
+.login-card{
+  background:#fff;border-radius:16px;padding:32px 28px;width:100%;max-width:360px;
+  box-shadow:0 4px 24px rgba(26,42,94,.10);border:1.5px solid var(--border);
+}
+.login-logo{text-align:center;margin-bottom:24px}
+.login-logo img{height:56px;object-fit:contain}
+.login-logo-fallback{
+  width:56px;height:56px;border-radius:50%;background:var(--blue);
+  display:flex;align-items:center;justify-content:center;
+  font-size:24px;font-weight:900;color:var(--orange);margin:0 auto 8px;
+}
+.login-title{font-size:20px;font-weight:800;color:var(--blue);text-align:center;margin-bottom:4px}
+.login-sub{font-size:13px;color:var(--muted);text-align:center;margin-bottom:24px}
+.field-label{font-size:11px;font-weight:700;text-transform:uppercase;
+             letter-spacing:.06em;color:var(--muted);margin-bottom:6px;display:block}
+.field-input{
+  width:100%;padding:12px 14px;border:1.5px solid var(--border);
+  border-radius:8px;font-size:15px;color:var(--text);background:#fff;
+  transition:.15s;margin-bottom:14px;
+}
+.field-input:focus{border-color:var(--blue)}
+.field-pass-wrap{position:relative;margin-bottom:20px}
+.field-pass-wrap .field-input{margin-bottom:0;padding-right:44px}
+.btn-eye{
+  position:absolute;right:12px;top:50%;transform:translateY(-50%);
+  background:none;font-size:18px;color:var(--muted);padding:4px;
+}
+.btn-login{
+  width:100%;padding:14px;background:var(--blue);color:#fff;
+  border-radius:8px;font-size:15px;font-weight:700;letter-spacing:.02em;
+}
+.btn-login:active{opacity:.85}
+.login-err{
+  background:#FEE2E2;color:var(--red);border-radius:8px;
+  padding:10px 14px;font-size:13px;font-weight:600;margin-bottom:14px;
+  display:none;
+}
+
+/* ── APP SHELL ── */
+#screen-app{display:none;flex-direction:column;min-height:100dvh}
+
+/* Header */
+.app-header{
+  background:var(--blue);border-bottom:3px solid var(--orange);
+  padding:10px 16px;display:flex;align-items:center;justify-content:space-between;
+  position:sticky;top:0;z-index:100;
+}
+.app-header-left{display:flex;align-items:center;gap:10px}
+.app-logo-wordmark{height:34px;object-fit:contain;filter:brightness(0) invert(1);}
+.app-modulo{font-size:11px;color:#93C5FD;font-weight:500}
+.app-header-right{display:flex;align-items:center;gap:10px}
+.user-avatar{
+  width:30px;height:30px;border-radius:50%;background:var(--orange);
+  display:flex;align-items:center;justify-content:center;
+  font-size:13px;font-weight:800;color:#fff;
+}
+.btn-sync{
+  background:rgba(255,255,255,.15);color:#fff;border:none;border-radius:50%;
+  width:32px;height:32px;font-size:16px;font-weight:700;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;
+}
+
+/* Conteúdo principal */
+.app-content{
+  flex:1;overflow-y:auto;padding-bottom:calc(var(--nav-h) + 8px);
+}
+
+/* Bottom nav */
+.bottom-nav{
+  position:fixed;bottom:0;left:0;right:0;height:var(--nav-h);
+  background:#fff;border-top:1.5px solid var(--border);
+  display:flex;align-items:center;justify-content:flex-start;
+  overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;
+  z-index:100;box-shadow:0 -2px 12px rgba(26,42,94,.06);
+}
+.bottom-nav::-webkit-scrollbar{display:none}
+.nav-btn{
+  display:flex;flex-direction:column;align-items:center;gap:3px;
+  padding:6px 10px;background:none;color:var(--muted);
+  font-size:10px;font-weight:600;border-radius:8px;transition:.15s;
+  flex:0 0 auto;min-width:calc(100vw / 5.5);
+}
+.nav-btn.active{color:var(--orange)}
+.nav-btn.active .nav-icon{transform:scale(1.15)}
+.nav-icon{font-size:22px;line-height:1;transition:.15s}
+.nav-label{font-size:10px;font-weight:700;letter-spacing:.02em}
+
+/* Seções */
+.mod-section{display:none;min-height:calc(100dvh - 120px)}
+.mod-section.active{display:block}
+
+/* ── COMPONENTES COMUNS ── */
+.card{
+  background:#fff;border:1.5px solid var(--border);border-radius:var(--radius);
+  padding:16px;box-shadow:var(--shadow);margin:12px 12px 0;
+}
+.page-title{
+  font-size:13px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;
+  color:var(--muted);padding:16px 16px 8px;
+}
+.loading{display:flex;align-items:center;justify-content:center;padding:40px;
+         flex-direction:column;gap:10px;color:var(--muted);font-size:13px}
+.spin{width:24px;height:24px;border:3px solid var(--border);
+      border-top-color:var(--orange);border-radius:50%;animation:spin .7s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.empty{text-align:center;padding:40px 20px;color:var(--muted)}
+.empty-icon{font-size:40px;margin-bottom:12px}
+.empty-txt{font-size:14px;font-weight:600}
+.empty-sub{font-size:12px;margin-top:4px}
+
+/* Checklist iframe */
+#sec-check, #sec-ext {
+  height: calc(100dvh - 120px);
+  padding: 0 !important;
+}
+#sec-check.active, #sec-ext.active {
+  display: flex !important;
+  flex-direction: column;
+}
+#sec-check iframe, #sec-ext iframe {
+  width: 100%;
+  flex: 1;
+  height: 100%;
+  min-height: calc(100dvh - 120px);
+  border: none;
+  display: block;
+  border-radius: 0;
+}
+
+/* Toast */
+.toast-wrap{position:fixed;bottom:80px;left:50%;transform:translateX(-50%);
+            z-index:9999;pointer-events:none;width:90%;max-width:320px;text-align:center}
+.toast{
+  display:inline-block;padding:10px 20px;border-radius:99px;
+  font-size:13px;font-weight:700;color:#fff;
+  box-shadow:0 4px 16px rgba(0,0,0,.15);animation:toastIn .2s ease;
+  margin-bottom:8px;
+}
+@keyframes toastIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+.toast.success{background:var(--green)}
+.toast.error{background:var(--red)}
+.toast.info{background:var(--blue)}
+
+/* Botões */
+.btn-primary{
+  background:var(--orange);color:#fff;border-radius:8px;
+  padding:12px 20px;font-size:14px;font-weight:700;width:100%;
+  box-shadow:0 4px 12px rgba(232,130,12,.3);
+}
+.btn-primary:active{opacity:.85}
+.btn-secondary{
+  background:#F0F4FF;color:var(--blue);border-radius:8px;
+  padding:12px 20px;font-size:14px;font-weight:700;border:1.5px solid var(--border);
+}
+
+/* ── SEÇÃO: JARDINAGEM ── */
+#sec-jard .jard-tabs{
+  display:flex;border-bottom:2px solid var(--border);
+  background:#fff;position:sticky;top:63px;z-index:10;
+}
+#sec-jard .tab{
+  flex:1;padding:12px;font-size:12px;font-weight:700;
+  color:var(--muted);background:none;border-bottom:3px solid transparent;
+  margin-bottom:-2px;text-align:center;
+}
+#sec-jard .tab.active{color:var(--orange);border-bottom-color:var(--orange)}
+
+/* ── SEÇÃO: OPERACIONAL ── */
+.os-card{
+  margin:0 12px 10px;padding:16px;background:#fff;
+  border-radius:12px;border:1.5px solid var(--border);
+  border-left:4px solid var(--orange);box-shadow:var(--shadow);
+}
+.os-numero{font-size:13px;font-weight:800;color:var(--blue);margin-bottom:8px}
+.os-cliente{font-size:11px;color:var(--muted);margin-bottom:6px}
+.os-info{
+  display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:12px;margin-top:10px;
+}
+.os-info-item{background:#F0F4FF;padding:6px;border-radius:6px;text-align:center}
+.os-info-label{font-size:10px;color:var(--muted);margin-bottom:2px}
+.os-info-value{font-size:14px;font-weight:800;color:var(--blue)}
+.os-btns{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}
+.os-btn{flex:1;min-width:80px;padding:8px 12px;font-size:12px;font-weight:700;
+        border-radius:6px;background:var(--orange);color:#fff}
+
+/* Histórico */
+.hist-item{
+  display:flex;gap:12px;padding:12px;border-bottom:1px solid var(--border);align-items:center;
+}
+.hist-date{
+  text-align:center;font-size:11px;font-weight:800;color:var(--orange);
+  min-width:32px;
+}
+.hist-body{flex:1}
+.hist-equip{font-size:12px;font-weight:700;color:var(--text);margin-bottom:2px}
+.hist-horas{font-size:11px;color:var(--muted)}
+
+/* Modal */
+.modal-wrap{
+  position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.5);
+  display:flex;align-items:flex-end;z-index:200;animation:fadeIn .2s;
+}
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+.modal-inner{
+  background:#fff;width:100%;border-radius:12px 12px 0 0;
+  padding:24px;max-height:90dvh;overflow-y:auto;
+}
+.modal-title{font-size:16px;font-weight:800;color:var(--blue);margin-bottom:16px}
+.modal-close{position:absolute;top:12px;right:12px;background:none;color:var(--muted);
+             font-size:24px;cursor:pointer}
+
+/* Badge sincronização */
+#badge-sincronizando{
+  display:none;position:fixed;top:12px;right:12px;
+  background:#FFF7ED;border:1px solid #EA580C;border-radius:20px;
+  padding:8px 16px;font-size:12px;font-weight:700;color:#EA580C;
+  z-index:1000;gap:8px;align-items:center;
+  box-shadow:0 2px 8px rgba(0,0,0,.12);
+  animation:pulse 2s infinite;
+}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.8}}
+
+</style>
+</head>
+<body>
+
+<!-- BADGE SINCRONIZAÇÃO -->
+<div id="badge-sincronizando" style="display:none;position:fixed;top:12px;right:12px;background:#FFF7ED;border:1px solid #EA580C;border-radius:20px;padding:8px 16px;font-size:12px;font-weight:700;color:#EA580C;z-index:1000;gap:8px;align-items:center;box-shadow:0 2px 8px rgba(0,0,0,.12);">
+  ⏳ Sincronizando...
+</div>
+
+<!-- TELA LOGIN -->
+<div id="screen-login">
+  <div class="login-card">
+    <div class="login-logo">
+      <img src="/static/icons/logo.png" alt="Garra Terraplenagem" style="height:56px;object-fit:contain" onerror="this.style.display='none';this.nextElementSibling.style.display='block'" />
+      <div style="display:none">
+        <div class="login-logo-fallback">G</div>
+        <div style="font-size:13px;font-weight:700;color:var(--blue)">GARRA</div>
+        <div style="font-size:9px;color:var(--muted);letter-spacing:.05em">SISTEMAS</div>
+      </div>
+    </div>
+    <h2 class="login-title">Operacional</h2>
+    <p class="login-sub">Acesso ao módulo de operações</p>
+    <div id="login-err" class="login-err"></div>
+    <label class="field-label">Email</label>
+    <input type="email" id="field-login" class="field-input" placeholder="seu.email@exemplo.com" autocomplete="username" readonly onfocus="this.removeAttribute('readonly')"/>
+    <label class="field-label">Senha</label>
+    <div class="field-pass-wrap">
+      <input type="password" id="field-pass" class="field-input" placeholder="Digite sua senha" autocomplete="current-password" readonly onfocus="this.removeAttribute('readonly')"/>
+      <button class="btn-eye" onclick="togglePass()">👁</button>
+    </div>
+    <button class="btn-login" onclick="fazerLogin()">🚀 Entrar</button>
+    <div style="display:flex;justify-content:center;margin-top:14px">
+      <button id="btn-bio-login" onclick="entrarComDigital()" title="Entrar com a digital" aria-label="Entrar com a digital" style="display:none;width:54px;height:54px;border-radius:50%;background:#fff;border:1.5px solid var(--border);cursor:pointer;align-items:center;justify-content:center;padding:0">
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#1A2A5E" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 10a2 2 0 0 0-2 2c0 1.02-.1 2.51-.26 4"/><path d="M14 13.12c0 2.38 0 6.38-1 8.88"/><path d="M17.29 21.02c.12-.6.43-2.3.5-3.02"/><path d="M2 12a10 10 0 0 1 18-6"/><path d="M2 16h.01"/><path d="M21.8 16c.2-2 .131-5.354 0-6"/><path d="M5 19.5C5.5 18 6 15 6 12a6 6 0 0 1 .34-2"/><path d="M8.65 22c.21-.66.45-1.32.57-2"/><path d="M9 6.8a6 6 0 0 1 9 5.2v2"/></svg>
+      </button>
+    </div>
+    <div style="text-align:center;margin-top:16px">
+      <a href="#" onclick="abrirEsqueciSenha();return false" style="color:var(--muted);font-size:13px;text-decoration:none">Esqueci minha senha</a>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL ESQUECI SENHA -->
+<div id="modal-esqueci" style="position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:500;display:none;align-items:center;justify-content:center;padding:20px" onclick="if(event.target===this)fecharEsqueciSenha()">
+  <div style="background:#fff;width:100%;max-width:380px;border-radius:12px;padding:24px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+      <h2 style="font-size:16px;font-weight:800;color:var(--blue)">🔑 Redefinir senha</h2>
+      <button onclick="fecharEsqueciSenha()" style="background:none;border:none;font-size:24px;color:var(--muted);cursor:pointer">×</button>
+    </div>
+    <div id="esq-err" style="background:#FEE2E2;color:var(--red);border-radius:6px;padding:10px;margin-bottom:14px;font-size:13px;display:none"></div>
+    <div id="esq-ok" style="background:#DCFCE7;color:#16A34A;border-radius:6px;padding:10px;margin-bottom:14px;font-size:13px;display:none"></div>
+    <p style="font-size:13px;color:var(--muted);margin-bottom:16px">Informe seu e-mail cadastrado. Você receberá um link para criar uma nova senha.</p>
+    <input id="esq-email" type="email" placeholder="seu.email@exemplo.com" style="width:100%;padding:11px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;box-sizing:border-box;margin-bottom:16px">
+    <button onclick="enviarEsqueciSenha()" style="width:100%;padding:14px;border:none;background:var(--orange);color:#fff;border-radius:8px;font-weight:700;font-size:15px;cursor:pointer">Enviar link de redefinição</button>
+  </div>
+</div>
+
+<!-- APP SHELL -->
+<div id="screen-app">
+  <!-- HEADER -->
+  <div class="app-header">
+    <div class="app-header-left">
+      <img src="/static/icons/logo.png" alt="Garra Terraplenagem"
+           class="app-logo-wordmark" onerror="this.style.display='none'" />
+      <div>
+        <div class="app-modulo" id="app-modulo" style="color:#fff;font-size:12px;font-weight:700">Operacional</div>
+      </div>
+    </div>
+    <div class="app-header-right">
+      <div id="net-badge" title="Status de conexão" style="font-size:11px;font-weight:700;padding:4px 10px;border-radius:99px;background:#16A34A;color:#fff;display:none">● Online</div>
+      <button class="btn-sync" onclick="location.reload()" title="Sincronizar">⟳</button>
+      <div style="position:relative;display:inline-block"><div class="user-avatar" id="user-avatar" onclick="abrirPainelConta()" style="cursor:pointer" title="Minha conta">?</div><span id="mural-badge" onclick="abrirPainelConta()" style="display:none;position:absolute;top:-4px;right:-4px;min-width:17px;height:17px;padding:0 4px;background:var(--red,#DC2626);color:#fff;border-radius:9px;font-size:10px;font-weight:800;line-height:17px;text-align:center;border:2px solid var(--navy,#001F4D);cursor:pointer"></span></div>
+    </div>
+  </div>
+
+  <!-- CONTEÚDO -->
+  <div class="app-content">
+    <!-- JARDINAGEM -->
+    <div id="sec-jard" class="mod-section">
+      <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:60px 20px;text-align:center">
+        <div style="font-size:48px;margin-bottom:16px">🌿</div>
+        <div style="font-size:16px;font-weight:800;color:var(--blue);margin-bottom:8px">Jardinagem</div>
+        <div style="font-size:13px;color:var(--muted);margin-bottom:24px">Toque abaixo para abrir o módulo de fotos e KM.</div>
+        <button onclick="abrirJardinagemSSO()" style="display:inline-block;padding:14px 28px;background:var(--orange);color:#fff;border:none;border-radius:8px;font-weight:700;font-size:14px;cursor:pointer;box-shadow:0 4px 14px rgba(232,130,12,.3)">Abrir Jardinagem →</button>
+      </div>
+    </div>
+
+    <!-- OPERACIONAL -->
+    <div id="sec-op" class="mod-section">
+      <div style="display:flex;border-bottom:2px solid var(--border);background:#fff;position:sticky;top:0;z-index:10">
+        <button id="op-tab-os" class="nav-btn" style="border-bottom:3px solid var(--orange);color:var(--orange);flex:1;padding:12px" onclick="opTab('os')">📋 Minhas OS</button>
+        <button id="op-tab-hist" class="nav-btn" style="border-bottom:3px solid transparent;color:var(--muted);flex:1;padding:12px" onclick="opTab('hist')">🕐 Histórico</button>
+      </div>
+      <div id="os-lista"></div>
+      <!-- Botão flutuante + Nova OS -->
+      <button id="btn-nova-os-fab" onclick="abrirModalNovaOS()" style="position:fixed;bottom:90px;right:16px;width:56px;height:56px;border-radius:50%;background:var(--orange);color:#fff;border:none;font-size:28px;font-weight:bold;box-shadow:0 4px 14px rgba(232,130,12,.4);cursor:pointer;z-index:50;display:none">+</button>
+    </div>
+
+    <!-- CHECKLIST -->
+    <div id="sec-check" class="mod-section" style="padding:0"></div>
+    <div id="sec-ext" class="mod-section" style="padding:0"></div>
+  </div>
+
+  <!-- BOTTOM NAV -->
+  <div class="bottom-nav">
+    <button class="nav-btn" onclick="ir('Jard')" style="display:none"><span class="nav-icon">🌿</span><span class="nav-label">Jardinagem</span></button>
+    <button class="nav-btn" onclick="ir('Op')" style="display:none"><span class="nav-icon">⚙️</span><span class="nav-label">OS</span></button>
+    <button class="nav-btn" onclick="ir('Check')" style="display:none"><span class="nav-icon">✓</span><span class="nav-label">Checklist</span></button>
+    <button class="nav-btn" onclick="ir('Log')" style="display:none"><span class="nav-icon">🚗</span><span class="nav-label">Logística</span></button>
+    <button class="nav-btn" onclick="ir('OC')" style="display:none"><span class="nav-icon">🛒</span><span class="nav-label">Compras</span></button>
+    <button class="nav-btn" onclick="ir('OT')" style="display:none"><span class="nav-icon">📨</span><span class="nav-label">Pedir OT</span></button>
+    <button class="nav-btn" onclick="ir('AB')" style="display:none"><span class="nav-icon">⛽</span><span class="nav-label">Abastecer</span></button>
+  </div>
+</div>
+
+<!-- MODAIS -->
+<div id="modal-parte" style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.5);display:none;z-index:300;align-items:flex-end" onclick="fecharModalOp(event)">
+  <div style="background:#fff;width:100%;border-radius:12px 12px 0 0;padding:20px;max-height:92dvh;overflow-y:auto">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+      <h2 style="font-size:16px;font-weight:800;color:var(--blue)">📝 Registrar Dia</h2>
+      <button onclick="fecharModalDireto()" style="background:none;border:none;font-size:24px;color:var(--muted);cursor:pointer;line-height:1">×</button>
+    </div>
+    <div id="m-os-info" style="font-size:12px;color:var(--muted);margin-bottom:14px;padding:8px 10px;background:#F0F4FF;border-radius:6px"></div>
+    <div id="m-error" style="background:#FEE2E2;color:var(--red);border-radius:6px;padding:10px;margin-bottom:14px;font-size:13px;display:none"></div>
+
+    <div style="margin-bottom:12px">
+      <label style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:5px">Data *</label>
+      <input id="m-data" type="date" style="width:100%;padding:11px;border:1.5px solid var(--border);border-radius:8px;font-size:14px">
+    </div>
+
+    <!-- VÍNCULO — define toda a lógica do registro -->
+    <div style="margin-bottom:12px">
+      <label style="font-size:11px;font-weight:700;color:var(--orange);text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:5px">Vínculo *</label>
+      <select id="m-vinculo" onchange="atualizarVinculo()" style="width:100%;padding:11px;border:1.5px solid var(--border);border-radius:8px;font-size:14px">
+        <option value="proprio" selected>Próprio (Garra)</option>
+        <option value="terceiro">Equipamento de terceiro</option>
+        <option value="diarista">Diarista</option>
+        <!-- (30/07/2026) opção frete removida — caso registrado como Terceiro -->
+      </select>
+    </div>
+
+    <!-- EQUIPAMENTO PRÓPRIO (Garra) — some quando é terceiro -->
+    <div id="bloco-equip-proprio" style="margin-bottom:12px">
+      <label style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:5px">Equipamento *</label>
+      <select id="m-equipamento" onchange="atualizarCamposMedicao()" style="width:100%;padding:11px;border:1.5px solid var(--border);border-radius:8px;font-size:14px">
+        <option value="">— selecionar —</option>
+      </select>
+    </div>
+
+    <!-- EQUIPAMENTO DE TERCEIRO (texto livre) — aparece só quando é terceiro -->
+    <div id="bloco-equip-terceiro" style="margin-bottom:12px;display:none">
+      <label style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:5px">Equipamento de terceiro</label>
+      <input id="m-equip-terceiro" type="text" placeholder="ex: Escavadeira CAT 320 (de terceiro)" style="width:100%;padding:11px;border:1.5px solid var(--border);border-radius:8px;font-size:14px">
+    </div>
+
+    <!-- Campo "de quem" (terceiro/diarista/frete) — logo após equipamento -->
+    <div id="bloco-fornecedor" style="margin-bottom:12px;display:none">
+      <label style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:5px" id="lbl-fornecedor">De quem</label>
+      <input id="m-fornecedor" type="text" placeholder="Nome do fornecedor / dono" style="width:100%;padding:11px;border:1.5px solid var(--border);border-radius:8px;font-size:14px">
+    </div>
+
+    <div id="bloco-operador" style="margin-bottom:12px">
+      <label style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:5px">Operador / Motorista</label>
+      <select id="m-operador" style="width:100%;padding:11px;border:1.5px solid var(--border);border-radius:8px;font-size:14px">
+        <option value="">— selecionar —</option>
+      </select>
+      <div id="m-resp-aviso" style="display:none;font-size:11px;color:var(--blue);margin-top:5px;background:#EEF2FF;padding:6px 8px;border-radius:6px"></div>
+    </div>
+
+    <!-- HORÍMETRO — SEMPRE visível (controle interno da máquina) -->
+    <div id="bloco-horimetro" style="background:#F0F4FF;border-radius:8px;padding:12px;margin-bottom:12px;border:1.5px solid #C7D2FE">
+      <div style="font-size:11px;font-weight:700;color:var(--blue);margin-bottom:8px">⚙️ HORÍMETRO DA MÁQUINA <span style="font-weight:500;color:var(--muted)">(controle interno)</span></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+        <div>
+          <label style="font-size:10px;color:var(--muted);display:block;margin-bottom:4px">Inicial</label>
+          <input id="m-h-ini" type="number" step="0.1" placeholder="0.0" oninput="calcularHorasMaquina()" style="width:100%;padding:10px;border:1.5px solid var(--border);border-radius:6px;font-size:14px">
+        </div>
+        <div>
+          <label style="font-size:10px;color:var(--muted);display:block;margin-bottom:4px">Final</label>
+          <input id="m-h-fin" type="number" step="0.1" placeholder="0.0" oninput="calcularHorasMaquina()" style="width:100%;padding:10px;border:1.5px solid var(--border);border-radius:6px;font-size:14px">
+        </div>
+      </div>
+      <div id="m-horas-calc" style="display:none;margin-top:8px;font-size:13px;font-weight:700;color:var(--blue);text-align:center"></div>
+    </div>
+
+    <!-- MEDIÇÃO DE COBRANÇA — sugere pelo equipamento, todos visíveis -->
+    <div style="margin-bottom:8px">
+      <label style="font-size:11px;font-weight:700;color:var(--orange);text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:5px">💰 Medição de cobrança</label>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:6px">
+        <button type="button" id="btn-med-horimetro" onclick="selecionarMedicao('horimetro')" style="padding:9px 4px;border:1.5px solid var(--border);background:#fff;border-radius:8px;font-size:11px;font-weight:700;cursor:pointer">⏱️ Hora</button>
+        <button type="button" id="btn-med-diaria" onclick="selecionarMedicao('diaria')" style="padding:9px 4px;border:1.5px solid var(--border);background:#fff;border-radius:8px;font-size:11px;font-weight:700;cursor:pointer">📅 Diária</button>
+        <button type="button" id="btn-med-viagem" onclick="selecionarMedicao('viagem')" style="padding:9px 4px;border:1.5px solid var(--border);background:#fff;border-radius:8px;font-size:11px;font-weight:700;cursor:pointer">🚛 Viagem</button>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+        <button type="button" id="btn-med-metros" onclick="selecionarMedicao('metros')" style="padding:9px 4px;border:1.5px solid var(--border);background:#fff;border-radius:8px;font-size:11px;font-weight:700;cursor:pointer">📏 Metros</button>
+        <button type="button" id="btn-med-km" onclick="selecionarMedicao('km')" style="padding:9px 4px;border:1.5px solid var(--border);background:#fff;border-radius:8px;font-size:11px;font-weight:700;cursor:pointer">🛣️ KM</button>
+      </div>
+      <div id="med-hint" style="font-size:10px;color:var(--muted);margin-top:4px">Como esse dia é cobrado do cliente</div>
+    </div>
+
+    <!-- Bloco DIÁRIA (rolo, pipa) -->
+    <div id="bloco-diaria" style="background:#EEF2FF;border-radius:8px;padding:12px;margin-bottom:12px;display:none">
+      <div style="font-size:11px;font-weight:700;color:var(--blue);margin-bottom:8px">📅 DIÁRIAS</div>
+      <div>
+        <label style="font-size:10px;color:var(--muted);display:block;margin-bottom:4px">Quantidade de diárias</label>
+        <input id="m-diarias" type="number" step="0.5" min="0" placeholder="1" style="width:100%;padding:10px;border:1.5px solid var(--border);border-radius:6px;font-size:14px">
+      </div>
+    </div>
+
+    <!-- Bloco VIAGEM (caçamba, pipa) -->
+    <div id="bloco-viagem" style="background:#FFF7ED;border-radius:8px;padding:12px;margin-bottom:12px;display:none">
+      <div style="font-size:11px;font-weight:700;color:var(--orange);margin-bottom:8px">🚛 VIAGENS</div>
+      <div>
+        <label style="font-size:10px;color:var(--muted);display:block;margin-bottom:4px">Quantidade de viagens</label>
+        <input id="m-viagens" type="number" step="1" min="0" placeholder="0" style="width:100%;padding:10px;border:1.5px solid var(--border);border-radius:6px;font-size:14px">
+      </div>
+    </div>
+
+    <!-- Bloco CAMINHÃO (KM) -->
+    <div id="bloco-km" style="background:#FEF3C7;border-radius:8px;padding:12px;margin-bottom:12px;display:none">
+      <div style="font-size:11px;font-weight:700;color:#B45309;margin-bottom:8px">🛣️ KM PERCORRIDO</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+        <div>
+          <label style="font-size:10px;color:var(--muted);display:block;margin-bottom:4px">Inicial</label>
+          <input id="m-km-ini" type="number" step="0.1" placeholder="0" style="width:100%;padding:10px;border:1.5px solid var(--border);border-radius:6px;font-size:14px">
+        </div>
+        <div>
+          <label style="font-size:10px;color:var(--muted);display:block;margin-bottom:4px">Final</label>
+          <input id="m-km-fin" type="number" step="0.1" placeholder="0" style="width:100%;padding:10px;border:1.5px solid var(--border);border-radius:6px;font-size:14px">
+        </div>
+      </div>
+    </div>
+
+    <!-- Bloco METROS (serviços por metragem) -->
+    <div id="bloco-metros" style="background:#ECFDF5;border-radius:8px;padding:12px;margin-bottom:12px;display:none">
+      <div style="font-size:11px;font-weight:700;color:var(--green);margin-bottom:8px">📏 METROS EXECUTADOS</div>
+      <div>
+        <label style="font-size:10px;color:var(--muted);display:block;margin-bottom:4px">Quantidade de metros executados</label>
+        <input id="m-metros" type="number" step="0.01" min="0" placeholder="0.00" style="width:100%;padding:10px;border:1.5px solid var(--border);border-radius:6px;font-size:14px">
+      </div>
+    </div>
+
+    <!-- (15/07/2026) Relógio: SÓ na medição Hora — tela mínima nas demais
+         (o relógio-padrão em metros/viagem gerava horas fantasmas) -->
+    <div id="m-bloco-relogio" style="display:none">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
+      <div>
+        <label style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:5px">Hora início</label>
+        <input id="m-h-inicio" type="time" oninput="calcularHorasJornada()" style="width:100%;padding:10px;border:1.5px solid var(--border);border-radius:6px;font-size:14px">
+      </div>
+      <div>
+        <label style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:5px">Hora fim</label>
+        <input id="m-h-fim" type="time" oninput="calcularHorasJornada()" style="width:100%;padding:10px;border:1.5px solid var(--border);border-radius:6px;font-size:14px">
+      </div>
+    </div>
+
+    <!-- Almoço + resumo de horas -->
+    <label style="display:flex;align-items:center;gap:8px;margin-bottom:8px;cursor:pointer;font-size:13px;color:var(--text)">
+      <input id="m-sem-almoco" type="checkbox" onchange="calcularHorasJornada()" style="width:18px;height:18px;cursor:pointer">
+      Dia corrido — sem intervalo de almoço
+    </label>
+    <div id="m-horas-jornada" style="display:none;font-size:13px;font-weight:700;color:var(--blue);background:#EEF2FF;padding:8px 10px;border-radius:6px;margin-bottom:12px;text-align:center"></div>
+    </div>
+
+    <!-- Trajeto do frete (origem → destino) -->
+    <div id="bloco-trajeto" style="margin-bottom:12px;display:none">
+      <label style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:5px">Trajeto</label>
+      <input id="m-trajeto" type="text" placeholder="ex: Garagem → Obra" style="width:100%;padding:11px;border:1.5px solid var(--border);border-radius:8px;font-size:14px">
+    </div>
+
+    <div style="margin-bottom:12px">
+      <label style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:5px">Por conta de</label>
+      <select id="m-por-conta" style="width:100%;padding:11px;border:1.5px solid var(--border);border-radius:8px;font-size:14px">
+        <option value="cliente" selected>Cliente</option>
+        <option value="empresa">Empresa (Garra)</option>
+      </select>
+    </div>
+
+    <div style="margin-bottom:18px">
+      <label style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:5px">Observação</label>
+      <textarea id="m-obs" rows="2" placeholder="Detalhes do dia" style="width:100%;padding:11px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;resize:vertical"></textarea>
+    </div>
+
+    <div style="display:flex;gap:8px">
+      <button id="btn-salvar-parte" onclick="salvarParte(false)" style="flex:2;padding:14px;border:none;background:var(--orange);color:#fff;border-radius:8px;font-weight:700;cursor:pointer;font-size:15px">✅ Salvar registro</button>
+      <button id="btn-salvar-mais" onclick="salvarParte(true)" style="flex:1;padding:14px;border:1.5px solid var(--orange);background:#fff;color:var(--orange);border-radius:8px;font-weight:700;cursor:pointer;font-size:13px">+ Salvar e novo</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL NOVA OS AVULSA -->
+<div id="modal-nova-os" style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.5);display:none;z-index:300;align-items:flex-end" onclick="if(event.target===this)fecharModalNovaOS()">
+  <div style="background:#fff;width:100%;border-radius:12px 12px 0 0;padding:24px;max-height:90dvh;overflow-y:auto">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+      <h2 style="font-size:16px;font-weight:800;color:var(--blue)">+ Nova OS avulsa</h2>
+      <button onclick="fecharModalNovaOS()" style="background:none;border:none;font-size:24px;color:var(--muted);cursor:pointer">×</button>
+    </div>
+    <div id="novaos-error" style="background:#FEE2E2;color:var(--red);border-radius:6px;padding:10px;margin-bottom:16px;font-size:13px;display:none"></div>
+
+    <div style="margin-bottom:14px">
+      <label style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:6px">Obra / Local *</label>
+      <input id="novaos-obra" type="text" placeholder="ex: Canteiro de obra Centro" style="width:100%;padding:12px;border:1.5px solid var(--border);border-radius:8px;font-size:14px">
+    </div>
+
+    <div style="margin-bottom:14px">
+      <label style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:6px">Cliente (opcional)</label>
+      <input id="novaos-cliente" type="text" placeholder="Nome do cliente" style="width:100%;padding:12px;border:1.5px solid var(--border);border-radius:8px;font-size:14px">
+    </div>
+
+    <div style="margin-bottom:14px">
+      <label style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:6px">Equipamento</label>
+      <select id="novaos-equipamento" style="width:100%;padding:12px;border:1.5px solid var(--border);border-radius:8px;font-size:14px">
+        <option value="">— selecionar —</option>
+      </select>
+    </div>
+
+    <div style="margin-bottom:20px">
+      <label style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:6px">Observação</label>
+      <textarea id="novaos-obs" rows="2" placeholder="Detalhes adicionais" style="width:100%;padding:12px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;resize:vertical"></textarea>
+    </div>
+
+    <div style="display:flex;gap:8px">
+      <button onclick="fecharModalNovaOS()" style="flex:1;padding:14px;border:1.5px solid var(--border);background:#fff;color:var(--text);border-radius:8px;font-weight:700;cursor:pointer">Cancelar</button>
+      <button id="btn-salvar-novaos" onclick="salvarNovaOSAvulsa()" style="flex:2;padding:14px;border:none;background:var(--orange);color:#fff;border-radius:8px;font-weight:700;cursor:pointer">Criar OS</button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ══════════════════════════════════════════════════════════════════════════════
+   GARRA OPERACIONAL — OFFLINE-FIRST COM GARRADB v2
+   ══════════════════════════════════════════════════════════════════════════════ */
+
+// ──────────────────────────────────────────────────────────────────────────────
+// VARIÁVEIS GLOBAIS
+// ──────────────────────────────────────────────────────────────────────────────
+let USUARIO = null;
+// (08/07/2026) Escape de HTML para TODO dado digitado por usuário que entra
+// em template string (obra, cliente, fornecedor, observação, equipamento de
+// terceiro, nomes) — mata XSS armazenado no mobile e no desktop da gestão.
+function esc(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+let _osAtualId = null;
+let _opTab = 'os';
+
+// ──────────────────────────────────────────────────────────────────────────────
+// LOGIN
+// ──────────────────────────────────────────────────────────────────────────────
+function abrirEsqueciSenha() {
+  document.getElementById('modal-esqueci').style.display = 'flex';
+  document.getElementById('esq-err').style.display = 'none';
+  document.getElementById('esq-ok').style.display = 'none';
+}
+function fecharEsqueciSenha() {
+  document.getElementById('modal-esqueci').style.display = 'none';
+}
+async function enviarEsqueciSenha() {
+  const err = document.getElementById('esq-err');
+  const ok = document.getElementById('esq-ok');
+  err.style.display = 'none';
+  ok.style.display = 'none';
+  const email = document.getElementById('esq-email').value.trim();
+  if (!email) {
+    err.textContent = 'Informe seu e-mail';
+    err.style.display = 'block';
+    return;
+  }
+  try {
+    const r = await fetch('/auth/solicitar-reset', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ login: email })
+    });
+    if (!r.ok) throw new Error('Falha ao solicitar redefinição');
+    // Sempre mostra sucesso (não revela se email existe — segurança)
+    ok.textContent = '✓ Se o e-mail estiver cadastrado, você receberá o link em instantes.';
+    ok.style.display = 'block';
+    document.getElementById('esq-email').value = '';
+  } catch (e) {
+    err.textContent = 'Erro ao enviar. Tente novamente.';
+    err.style.display = 'block';
+  }
+}
+
+async function fazerLogin() {
+  const login = document.getElementById('field-login').value.trim();
+  const pass = document.getElementById('field-pass').value;
+  const errDiv = document.getElementById('login-err');
+
+  if (!login || !pass) {
+    errDiv.textContent = 'Preencha login e senha';
+    errDiv.style.display = 'block';
+    return;
+  }
+
+  try {
+    const r = await fetch('/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ login, senha: pass })
+    });
+
+    if (!r.ok) {
+      const data = await r.json();
+      throw new Error(data.detail || 'Erro ao fazer login');
+    }
+
+    const data = await r.json();
+    localStorage.setItem('garra_ultimo_login', login); // pré-preenche p/ digital
+    await aplicarLoginSucesso(data);
+  } catch (e) {
+    errDiv.textContent = e.message;
+    errDiv.style.display = 'block';
+  }
+}
+
+// Pós-login compartilhado — senha e biometria entregam o MESMO payload
+async function aplicarLoginSucesso(data) {
+  // Fecha modais que podem ter ficado abertos por cima do login (ex: o
+  // usuário abriu "Esqueci senha" e a biometria autocompletou o login
+  // enquanto o modal estava na tela) — mesma causa do bug do modal-conta.
+  const modalEsq = document.getElementById('modal-esqueci');
+  if (modalEsq) modalEsq.style.display = 'none';
+
+  // (07/07/2026) TROCA LIMPA DE USUÁRIO: se o login mudou, descartar
+  // identidades derivadas do usuário anterior (checklist etc.) — a fila
+  // offline de registros NÃO é tocada.
+  try {
+    const antes = JSON.parse(localStorage.getItem('garra_usuario') || 'null');
+    if (antes && antes.login && antes.login !== data.login) {
+      localStorage.removeItem('garra_current_user');
+    }
+  } catch(e) {}
+  localStorage.setItem('garra_token', data.token);
+  localStorage.setItem('garra_usuario', JSON.stringify(data));
+
+  USUARIO = data;
+  document.getElementById('user-avatar').textContent = (data.nome || '?').charAt(0).toUpperCase();
+  atualizarBadgeMural();
+
+  // Mostrar app
+  document.getElementById('screen-login').style.display = 'none';
+  document.getElementById('screen-app').style.display = 'flex';
+
+  // Aplicar permissões e abrir aba correta
+  aplicarPermissoesPerfil();
+  abrirAbaInicial();
+
+  // Carregar módulos
+  await carregarOSApp();
+
+  // Pré-carregar listas para uso offline (background, não bloqueia)
+  preCarregarListasOffline();
+}
+
+function fazerLogout() {
+  // Remove o painel do avatar (Minha conta), se estiver aberto — senão fica
+  // flutuando por cima da tela de login mesmo depois do logout.
+  const painelConta = document.getElementById('modal-conta');
+  if (painelConta) painelConta.remove();
+  localStorage.removeItem('garra_token');
+  localStorage.removeItem('garra_usuario');
+  USUARIO = null;
+  document.getElementById('screen-app').style.display = 'none';
+  document.getElementById('screen-login').style.display = 'flex';
+  document.getElementById('login-err').textContent = '';
+  document.getElementById('login-err').style.display = 'none';
+  document.getElementById('field-login').value = '';
+  document.getElementById('field-pass').value = '';
+  prepararLoginBiometrico(true); // tela de login voltou → leitor abre direto
+  // Esconder FAB
+  const fab = document.getElementById('btn-nova-os-fab');
+  if (fab) fab.style.display = 'none';
+  // Resetar visibilidade de todas as abas (esconder — login reaplicará permissões)
+  document.querySelectorAll('.bottom-nav .nav-btn').forEach(b => b.style.display = 'none');
+}
+
+function togglePass() {
+  const field = document.getElementById('field-pass');
+  field.type = field.type === 'password' ? 'text' : 'password';
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// NAVEGAÇÃO
+// ──────────────────────────────────────────────────────────────────────────────
+
+// Abre a jardinagem já logado, passando o token do mobile via SSO
+// (a jardinagem valida o token e entra direto, sem pedir login de novo)
+function abrirJardinagemSSO() {
+  const token = localStorage.getItem('garra_token') || '';
+  if (!token) return; // sem token → fica no mobile (login unificado)
+  window.location.href = '/jardinagem/pwa-app.html?sso=' + encodeURIComponent(token);
+}
+
+function ir(nome) {
+  document.querySelectorAll('.mod-section').forEach(s => s.classList.remove('active'));
+  const bottomNavs = document.querySelectorAll('.bottom-nav .nav-btn');
+  bottomNavs.forEach(b => b.classList.remove('active'));
+  // aba ativa sempre visível na barra rolável
+  try { const ix = ['Jard','Op','Check','Log','OC','OT','AB'].indexOf(nome);
+        if (bottomNavs[ix]) bottomNavs[ix].scrollIntoView({behavior:'smooth', block:'nearest', inline:'center'}); } catch(e){}
+
+  // FAB de Nova OS visível só na aba Operacional
+  const fab = document.getElementById('btn-nova-os-fab');
+  if (fab) fab.style.display = (nome === 'Op') ? 'block' : 'none';
+
+  if (nome === 'Jard') {
+    // Jardinagem tem app próprio — abre direto, sem tela intermediária
+    abrirJardinagemSSO();
+    return;
+  } else if (nome === 'Op') {
+    document.getElementById('sec-op').classList.add('active');
+    bottomNavs[1].classList.add('active');
+    document.getElementById('app-modulo').textContent = 'Operacional';
+    carregarOSApp();
+  } else if (nome === 'Check') {
+    document.getElementById('sec-check').classList.add('active');
+    bottomNavs[2].classList.add('active');
+    document.getElementById('app-modulo').textContent = 'Checklist';
+    carregarIframeChecklist('checklist');
+  } else if (nome === 'Log') {
+    document.getElementById('sec-check').classList.add('active');
+    bottomNavs[3].classList.add('active');
+    document.getElementById('app-modulo').textContent = 'Logística';
+    carregarIframeChecklist('logistica');
+  } else if (nome === 'OC') {
+    // Compras embutido no shell (cabeçalho e navegação do app permanecem)
+    document.getElementById('sec-ext').classList.add('active');
+    bottomNavs[4].classList.add('active');
+    document.getElementById('app-modulo').textContent = 'Compras';
+    carregarIframeExterno('oc', '/compras');
+  } else if (nome === 'OT') {
+    // Pedido de manutenção embutido no shell
+    document.getElementById('sec-ext').classList.add('active');
+    bottomNavs[5].classList.add('active');
+    document.getElementById('app-modulo').textContent = 'Pedir OT';
+    carregarIframeExterno('ot', '/manutencao/pedido');
+  } else if (nome === 'AB') {
+    document.getElementById('sec-ext').classList.add('active');
+    bottomNavs[6].classList.add('active');
+    document.getElementById('app-modulo').textContent = 'Abastecimento';
+    carregarIframeExterno('ab', '/abastecimento');
+  }
+}
+
+// Páginas próprias (Compras, Pedir OT) dentro do shell: iframe com SSO +
+// embedded=1 (a página esconde o cabeçalho dela; o do app manda)
+function carregarIframeExterno(chave, path) {
+  const sec = document.getElementById('sec-ext');
+  const token = localStorage.getItem('garra_token') || '';
+  const url = path + '?sso=' + encodeURIComponent(token) + '&origem=mobile&embedded=1';
+  let iframe = sec.querySelector('iframe');
+  if (!iframe) {
+    iframe = document.createElement('iframe');
+    iframe.id = 'iframe-ext';
+    iframe.setAttribute('allow', 'microphone; camera');   // ditado por voz e câmera nas páginas embutidas
+    sec.innerHTML = '';
+    sec.appendChild(iframe);
+  }
+  if (iframe.dataset.chave !== chave) {
+    iframe.src = url;
+    iframe.dataset.chave = chave;
+  }
+}
+
+// Carrega o iframe do checklist com SSO e aba alvo
+function carregarIframeChecklist(tab) {
+  const sec = document.getElementById('sec-check');
+  const token = localStorage.getItem('garra_token') || '';
+  const url = `/checklist?sso=${encodeURIComponent(token)}&tab=${tab}&embedded=1`;
+  // Recria iframe só se aba mudou ou ainda não existe
+  let iframe = sec.querySelector('iframe');
+  if (!iframe) {
+    iframe = document.createElement('iframe');
+    iframe.id = 'iframe-check';
+    iframe.setAttribute('allow', 'microphone; camera');
+    sec.innerHTML = '';
+    sec.appendChild(iframe);
+  }
+  if (iframe.dataset.tab !== tab) {
+    iframe.src = url;
+    iframe.dataset.tab = tab;
+  }
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// OPERACIONAL — CARREGAROSAPP — Online-first com fallback IDB
+// ──────────────────────────────────────────────────────────────────────────────
+function _linkNavegacao(os) {
+  // Só http(s) explícito passa como link direto; qualquer outro texto vira
+  // busca no Google Maps (coordenadas ou endereço) — nunca javascript: etc.
+  const gps = (os.gps || '').trim();
+  if (gps) {
+    if (/^https?:\/\//i.test(gps)) return gps.replace(/"/g, '%22');
+    return 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(gps);
+  }
+  const end = (os.endereco || '').trim();
+  if (end) return 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(end);
+  return '';
+}
+
+async function carregarOSApp() {
+  const el = document.getElementById('os-lista');
+  el.innerHTML = '<div class="loading"><span class="spin"></span></div>';
+
+  let dados = null;
+  let viaCache = false;
+
+  // 1. Tentar via fetch direto (online-first)
+  try {
+    const token = localStorage.getItem('garra_token') || '';
+    const r = await fetch('/operacional/api/minhas-os', {
+      headers: { 'Authorization': 'Bearer ' + token }
+    });
+    if (r.ok) {
+      dados = await r.json();
+      // Cachear em background (não bloqueia se falhar)
+      if (typeof GarraDB !== 'undefined') {
+        GarraDB._cacheSet('os_minhas_' + (USUARIO?.id || 'anonimo'), dados, 1800).catch(() => {});
+      }
+    } else if (r.status === 401) {
+      el.innerHTML = '<div class="empty"><div class="empty-icon">🔒</div><div class="empty-txt">Sessão expirada</div><div class="empty-sub">Faça login novamente</div></div>';
+      return;
+    }
+  } catch (err) {
+    console.warn('[OS] Rede falhou, tentando cache:', err.message);
+  }
+
+  // 2. Fallback para cache do IDB se rede falhou
+  if (!dados && typeof GarraDB !== 'undefined') {
+    try {
+      dados = await GarraDB._cacheGet('os_minhas_' + (USUARIO?.id || 'anonimo'));
+      if (dados) viaCache = true;
+    } catch (e) {
+      console.warn('[OS] Cache também falhou:', e.message);
+    }
+  }
+
+  if (!dados) {
+    el.innerHTML = '<div class="empty"><div class="empty-icon">📡</div><div class="empty-txt">Sem conexão</div><div class="empty-sub">Nenhum cache disponível</div></div>';
+    return;
+  }
+
+  // API retorna ARRAY direto de OS, ou objeto com .os (fallback)
+  const osLista = Array.isArray(dados) ? dados : (dados.os || []);
+  if (osLista.length === 0) {
+    el.innerHTML = `
+      <div class="empty">
+        <div class="empty-icon">📋</div>
+        <div class="empty-txt">Nenhuma OS aberta</div>
+        <div class="empty-sub">Clique no botão + abaixo para abrir uma nova</div>
+      </div>
+    `;
+    return;
+  }
+
+  let html = viaCache ? '<div style="background:#FFF7ED;color:#EA580C;padding:8px;text-align:center;font-size:12px;font-weight:700">⚠️ Modo offline — exibindo dados em cache</div>' : '';
+  osLista.forEach(os => {
+    const aguardando = os.status === 'aguardando_fechamento';
+    const statusBadge = aguardando
+      ? '<span style="display:inline-block;background:#FFF7ED;color:#EA580C;font-size:10px;font-weight:700;padding:3px 10px;border-radius:99px;margin-left:8px">⏳ Aguardando fechamento</span>'
+      : '<span style="display:inline-block;background:#DCFCE7;color:#16A34A;font-size:10px;font-weight:700;padding:3px 10px;border-radius:99px;margin-left:8px">● Em andamento</span>';
+
+    const botoes = aguardando
+      ? `<button class="os-btn" style="background:var(--blue)" onclick="verPartes('${os.id}', '${os.numero}')">👁 Ver partes</button>`
+      : `<button class="os-btn" onclick="abrirModalParte('${os.id}')">📝 Registrar</button>
+         <button class="os-btn" style="background:var(--blue)" onclick="verPartes('${os.id}', '${os.numero}')">👁 Ver</button>
+         <button class="os-btn" style="background:#16A34A" onclick="concluirOS('${os.id}', '${os.numero}')">✅ Concluir</button>`;
+
+    // (03/08/2026) Endereço da obra com GPS — bloco 📍 no card com botão
+    // 🧭 Navegar (link do Maps colado pela gestão OU busca por coordenadas/
+    // endereço). Sem dependência externa, sem custo.
+    const endTxt  = (os.endereco || '').trim();
+    const gpsLink = _linkNavegacao(os);
+    const blocoLocal = (endTxt || gpsLink)
+      ? `<div style="margin-top:8px;padding:8px 10px;background:#EFF6FF;border:1px solid #93C5FD;border-radius:8px;font-size:12px;color:#1E3A8A;line-height:1.4;display:flex;align-items:center;gap:8px">
+           <span style="flex:1">📍 ${esc(endTxt || 'Local da obra')}</span>
+           ${gpsLink ? `<a href="${gpsLink}" target="_blank" rel="noopener" style="flex-shrink:0;background:var(--orange);color:#fff;text-decoration:none;padding:7px 12px;border-radius:8px;font-size:12px;font-weight:700">🧭 Navegar</a>` : ''}
+         </div>`
+      : '';
+
+    // (18/07/2026) Observação da OS visível ao operador — instruções da
+    // gestão aparecem no card, acima do botão Passar
+    const obsOS = (os.observacao || '').trim();
+    const blocoObs = obsOS
+      ? `<div style="margin-top:8px;padding:8px 10px;background:#FFF7ED;border:1px solid #FDBA74;border-radius:8px;font-size:12px;color:#7C2D12;line-height:1.4">💬 <strong>Observação:</strong> ${esc(obsOS)}</div>`
+      : '';
+    // Botão "Passar OS" — só quando em andamento (operador saiu p/ outra obra/máquina)
+    const botaoLiberar = aguardando ? '' :
+      `<button onclick="liberarOS('${os.id}', '${os.numero}')" style="width:100%;margin-top:6px;padding:8px;background:transparent;border:1.5px dashed var(--muted);color:var(--muted);border-radius:8px;font-size:12px;font-weight:600;cursor:pointer">🔄 Passar OS para outro operador</button>`;
+    // (13/07/2026) Excluir OS avulsa: lixeira DISCRETA no canto superior
+    // direito do card — evita toque por engano (o confirm segue como 2ª trava)
+    const botaoExcluir = (!aguardando && os.origem === 'campo' && os.status === 'aberta_sem_erp')
+      ? `<button onclick="excluirOSMobile('${os.id}', '${os.numero}')" title="Excluir esta OS" aria-label="Excluir OS" style="position:absolute;top:8px;right:8px;background:none;border:none;font-size:15px;color:#DC2626;opacity:.45;cursor:pointer;padding:6px;line-height:1">🗑</button>`
+      : '';
+
+    html += `
+      <div class="os-card" style="position:relative${aguardando ? ';opacity:0.7;border-left:4px solid #EA580C' : ''}">
+        ${botaoExcluir}
+        <div class="os-numero">${os.numero} ${statusBadge}</div>
+        <div class="os-cliente">${esc(os.cliente_nome || os.obra) || '(Cliente avulso)'}</div>
+        <div class="os-info">
+          <div class="os-info-item">
+            <div class="os-info-label">Equipamento</div>
+            <div class="os-info-value" style="font-size:12px">${os.equipamento_codigo || '–'}</div>
+          </div>
+          <div class="os-info-item">
+            <div class="os-info-label">Regime</div>
+            <div class="os-info-value" style="font-size:12px">${os.regime_cobranca || '–'}</div>
+          </div>
+        </div>
+        <div class="os-btns">${botoes}</div>
+        ${blocoLocal}${blocoObs}${botaoLiberar}
+      </div>
+    `;
+  });
+  el.innerHTML = html;
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// NOVA OS AVULSA (operador cria do campo)
+// ──────────────────────────────────────────────────────────────────────────────
+async function abrirModalNovaOS() {
+  document.getElementById('novaos-error').style.display = 'none';
+  document.getElementById('novaos-obra').value = '';
+  document.getElementById('novaos-cliente').value = '';
+  document.getElementById('novaos-obs').value = '';
+  await carregarListasNovaOS();
+  document.getElementById('modal-nova-os').style.display = 'flex';
+}
+
+function fecharModalNovaOS() {
+  document.getElementById('modal-nova-os').style.display = 'none';
+}
+
+async function carregarListasNovaOS() {
+  // Equipamentos, Tipos de serviço, Clientes, Regimes — online-first com fallback IDB
+  // TTL 24h pois essas listas mudam pouco
+  const [equipamentos, tipos, clientes, regimes] = await Promise.all([
+    fetchComCacheIDB('/operacional/api/equipamentos?uso=os', 'lst_equipamentos', 3600),
+    fetchComCacheIDB('/operacional/api/tipos-servico',  'lst_tipos_servico', 86400),
+    fetchComCacheIDB('/operacional/api/clientes',       'lst_clientes',      86400),
+    fetchComCacheIDB('/operacional/api/regimes-cobranca','lst_regimes',       86400),
+  ]);
+
+  // Equipamentos
+  const selEq = document.getElementById('novaos-equipamento');
+  if (selEq) {
+    selEq.innerHTML = '<option value="">— selecionar —</option>';
+    (equipamentos || []).forEach(e => {
+      selEq.innerHTML += `<option value="${e.id}">${e.codigo} — ${e.descricao || ''}</option>`;
+    });
+  }
+
+  // Tipos de serviço
+  const selTs = document.getElementById('novaos-tipo');
+  if (selTs) {
+    selTs.innerHTML = '<option value="">— selecionar —</option>';
+    (tipos || []).forEach(t => {
+      selTs.innerHTML += `<option value="${t.id}">${t.nome}</option>`;
+    });
+  }
+
+  // Clientes (se houver select)
+  const selCli = document.getElementById('novaos-cliente-select');
+  if (selCli) {
+    selCli.innerHTML = '<option value="">— selecionar —</option>';
+    (clientes || []).forEach(c => {
+      selCli.innerHTML += `<option value="${c.id}">${c.nome}</option>`;
+    });
+  }
+}
+
+/**
+ * fetchComCacheIDB(url, cacheKey, ttlSeconds)
+ * Online-first: tenta rede e cacheia. Se rede falha, retorna cache.
+ * Retorna [] se ambos falharem (UI não quebra).
+ */
+async function fetchComCacheIDB(url, cacheKey, ttlSeconds) {
+  const token = localStorage.getItem('garra_token') || '';
+  // 1. Rede primeiro
+  try {
+    const r = await fetch(url, {
+      headers: { 'Authorization': 'Bearer ' + token }
+    });
+    if (r.ok) {
+      const data = await r.json();
+      // Cachear em background, não bloqueia
+      if (typeof GarraDB !== 'undefined') {
+        GarraDB._cacheSet(cacheKey, data, ttlSeconds).catch(() => {});
+      }
+      return data || [];
+    }
+  } catch (err) {
+    console.warn(`[Cache] Rede falhou para ${url}:`, err.message);
+  }
+  // 2. Cache IDB como fallback
+  if (typeof GarraDB !== 'undefined') {
+    try {
+      const cached = await GarraDB._cacheGet(cacheKey);
+      if (cached) {
+        console.log(`[Cache] Hit offline: ${cacheKey}`);
+        return cached;
+      }
+    } catch (e) {
+      console.warn(`[Cache] Falha leitura cache ${cacheKey}:`, e.message);
+    }
+  }
+  return [];
+}
+
+/**
+ * preCarregarListasOffline()
+ * Chama uma vez ao login: baixa listas e armazena em cache IDB.
+ * Garante que selects funcionem offline mesmo na 1ª abertura sem rede.
+ */
+async function preCarregarListasOffline() {
+  if (!navigator.onLine) return;
+  try {
+    await Promise.all([
+      fetchComCacheIDB('/operacional/api/equipamentos?uso=os',      'lst_equipamentos',  3600),
+      fetchComCacheIDB('/operacional/api/tipos-servico',      'lst_tipos_servico', 86400),
+      fetchComCacheIDB('/operacional/api/clientes',           'lst_clientes',      86400),
+      fetchComCacheIDB('/operacional/api/operadores',         'lst_operadores',    3600),
+      fetchComCacheIDB('/operacional/api/regimes-cobranca',   'lst_regimes',       86400),
+    ]);
+    console.log('[Cache] Listas pré-carregadas para uso offline');
+  } catch (e) {
+    console.warn('[Cache] Falha ao pré-carregar listas:', e.message);
+  }
+}
+
+/**
+ * atualizarBadgeRede()
+ * Mostra ● Online (verde) / ● Offline (laranja) no header
+ */
+function atualizarBadgeRede() {
+  const badge = document.getElementById('net-badge');
+  if (!badge) return;
+  if (navigator.onLine) {
+    badge.textContent = '● Online';
+    badge.style.background = '#16A34A';
+    badge.style.display = 'inline-block';
+    // some após 3s quando online (não polui visual)
+    setTimeout(() => { if (navigator.onLine && badge) badge.style.display = 'none'; }, 3000);
+  } else {
+    badge.textContent = '● Offline';
+    badge.style.background = '#EA580C';
+    badge.style.display = 'inline-block';
+  }
+}
+
+async function excluirOSMobile(osId, numero) {
+  if (!confirm('Excluir a ' + numero + '?\n\nSó é possível excluir OS avulsa SEM registros de trabalho. Esta ação não pode ser desfeita por você.')) return;
+  try {
+    const token = localStorage.getItem('garra_token') || '';
+    const r = await fetch('/operacional/api/os/' + osId, {
+      method: 'DELETE', headers: { 'Authorization': 'Bearer ' + token }
+    });
+    const d = await r.json().catch(() => ({}));
+    if (r.ok) {
+      if (typeof toast === 'function') toast('🗑 ' + numero + ' excluída', 'success');
+      await carregarOSApp();
+    } else {
+      alert(d.detail || ('Erro ' + r.status + ' ao excluir'));
+    }
+  } catch (e) {
+    alert('Sem conexão — tente novamente com internet.');
+  }
+}
+
+async function salvarNovaOSAvulsa() {
+  const err = document.getElementById('novaos-error');
+  err.style.display = 'none';
+  const btn = document.getElementById('btn-salvar-novaos');
+  // (13/07/2026) Anti-duplo-toque: trava JÁ, antes de qualquer await —
+  // a janela da verificação de conflito deixava o botão vivo (2 OS de um toque).
+  if (btn.disabled) return;
+  btn.disabled = true;
+
+  const obra        = document.getElementById('novaos-obra').value.trim();
+  const cliente     = document.getElementById('novaos-cliente').value.trim();
+  const equipId     = document.getElementById('novaos-equipamento').value;
+  const tipoId      = null; // (24/08/2026) campo Tipo de serviço removido da abertura mobile — gestão define no desktop
+  const observacao  = document.getElementById('novaos-obs').value.trim();
+
+  if (!obra) {
+    err.textContent = 'Obra / Local é obrigatório';
+    err.style.display = 'block';
+    btn.disabled = false;
+    return;
+  }
+
+  // ── Máquina já ativa em outra OS? Alerta consciente (pausa de obra é legítima)
+  if (equipId) {
+    try {
+      const token = localStorage.getItem('garra_token') || '';
+      const rc = await fetch('/operacional/api/equipamentos/' + equipId + '/conflito', {
+        headers: { 'Authorization': 'Bearer ' + token }
+      });
+      if (rc.ok) {
+        const cf = await rc.json();
+        if (cf?.conflito) {
+          const o = cf.os;
+          const msg = `⚠️ Esta máquina já está ATIVA em outra OS:\n\n${o.numero} — ${o.obra || o.cliente_nome || ''}` +
+            (o.operador_nome ? `\nOperador: ${o.operador_nome}` : '') +
+            `\n\nConfirma usar nesta nova OS mesmo assim?`;
+          if (!confirm(msg)) { btn.disabled = false; btn.textContent = 'Criar OS'; return; }
+        }
+      }
+    } catch(e) { /* offline → segue sem verificação */ }
+  }
+
+  btn.disabled = true;
+  btn.textContent = 'Criando...';
+
+  const payload = {
+    // (13/07/2026) Idempotência: retry da fila offline reusa o MESMO client_id
+    client_id: (crypto.randomUUID ? crypto.randomUUID() : (Date.now() + '-' + Math.random().toString(36).slice(2))),
+    obra,
+    cliente_nome: cliente || null,
+    equipamento_id: equipId || null,
+    tipo_servico_id: tipoId || null,
+    regime_cobranca: null,
+    observacao: observacao || null
+  };
+
+  try {
+    const token = localStorage.getItem('garra_token') || '';
+    const r = await fetch('/operacional/api/os/avulsa', {
+      method: 'POST',
+      headers: {
+        'Authorization': 'Bearer ' + token,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(payload)
+    });
+
+    if (r.ok) {
+      const data = await r.json();
+      if (typeof toast === 'function') toast('✓ OS criada: ' + (data?.os?.numero || ''), 'success');
+      else alert('OS criada: ' + (data?.os?.numero || 'sucesso'));
+      fecharModalNovaOS();
+      await carregarOSApp();
+    } else {
+      const errData = await r.json().catch(() => ({}));
+      // Se offline ou erro de rede, tentar enfileirar
+      if (r.status >= 500 || !r.status) {
+        // tentativa de fallback offline
+        if (typeof GarraDB !== 'undefined') {
+          try {
+            await GarraDB.postWithQueue(
+              '/operacional/api/os/avulsa',
+              payload,
+              { retries: 5, retryDelay: 30000, dedup: false }
+            );
+            if (typeof toast === 'function') toast('⚠️ Salvo offline — enviará quando voltar', 'info');
+            else alert('Sem conexão — OS será enviada quando voltar online.');
+            fecharModalNovaOS();
+            return;
+          } catch (qe) { /* prossegue para erro */ }
+        }
+      }
+      throw new Error(errData.detail || `Erro HTTP ${r.status}`);
+    }
+  } catch (e) {
+    // (27/07/2026) VÃO CORRIGIDO: sem rede o fetch LANÇA ("Failed to
+    // fetch") e caía aqui direto, sem passar pelo fallback offline que
+    // só cobria 5xx. Agora falha de REDE também enfileira — a OS é
+    // criada sozinha quando a conexão voltar (e aparece na lista após).
+    const ehRede = (e instanceof TypeError) || /failed to fetch|network/i.test(e.message || '');
+    if (ehRede && typeof GarraDB !== 'undefined') {
+      try {
+        await GarraDB.postWithQueue(
+          '/operacional/api/os/avulsa',
+          payload,
+          { retries: 5, retryDelay: 30000, dedup: false }
+        );
+        if (typeof toast === 'function') toast('⚠️ Sem conexão — a OS será criada quando o sinal voltar', 'info');
+        else alert('Sem conexão — a OS será criada quando o sinal voltar.');
+        fecharModalNovaOS();
+        return;
+      } catch (qe) { /* fila indisponível — mostra o erro abaixo */ }
+    }
+    err.textContent = ehRede ? 'Sem conexão e fila indisponível — tente novamente' : (e.message || 'Erro ao criar OS');
+    err.style.display = 'block';
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Criar OS';
+  }
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// OPERACIONAL — SALVARPARTE COM OFFLINE (GarraDB.postWithQueue)
+// ──────────────────────────────────────────────────────────────────────────────
+async function salvarParte(adicionarMais) {
+  const err = document.getElementById('m-error');
+  err.style.display = 'none';
+
+  const data = document.getElementById('m-data').value;
+  const vinculo = document.getElementById('m-vinculo').value || 'proprio';
+  const ehTerceiro = (vinculo === 'terceiro');
+  const equipId = ehTerceiro ? '' : document.getElementById('m-equipamento').value;
+  const equipTerceiro = document.getElementById('m-equip-terceiro')?.value.trim() || '';
+  const operadorId = document.getElementById('m-operador').value;
+
+  if (!data) {
+    err.textContent = 'Informe a data';
+    err.style.display = 'block';
+    return;
+  }
+  if (ehTerceiro) {
+    // Terceiro: exige o nome do equipamento livre (não usa equipamento da Garra)
+    if (!equipTerceiro) {
+      err.textContent = 'Informe qual é o equipamento de terceiro';
+      err.style.display = 'block';
+      return;
+    }
+  } else {
+    if (!equipId) {
+      err.textContent = 'Selecione o equipamento';
+      err.style.display = 'block';
+      return;
+    }
+  }
+
+  // Tipo de medição = o que está selecionado (pré-vem pelo regime da OS).
+  // Não é obrigatório escolher — se por algum motivo vier vazio, usa horímetro.
+  const tipoMedicao = window._medicaoAtual || 'horimetro';
+  const isMetros   = tipoMedicao === 'metros';
+  const isCaminhao = tipoMedicao === 'km';
+
+  const hIni = document.getElementById('m-h-ini').value;
+  const hFin = document.getElementById('m-h-fin').value;
+  const kmIni = document.getElementById('m-km-ini').value;
+  const kmFin = document.getElementById('m-km-fin').value;
+  const metros = document.getElementById('m-metros')?.value || '';
+
+  // Horímetro é SEMPRE visível agora — validar sempre que ambos preenchidos
+  if (hIni && hFin && parseFloat(hFin) < parseFloat(hIni)) {
+    err.textContent = 'Horímetro final menor que o inicial';
+    err.style.display = 'block';
+    return;
+  }
+  if (isCaminhao && kmIni && kmFin && parseFloat(kmFin) < parseFloat(kmIni)) {
+    err.textContent = 'KM final menor que o inicial';
+    err.style.display = 'block';
+    return;
+  }
+  if (isMetros && (!metros || parseFloat(metros) <= 0)) {
+    err.textContent = 'Informe a quantidade de metros executados';
+    err.style.display = 'block';
+    return;
+  }
+
+  // ───── VALIDAÇÕES ANTI-ERRO DE DIGITAÇÃO ─────
+  // BLOQUEIOS (impossíveis — não deixa salvar)
+  const hojeStr = new Date(Date.now() - new Date().getTimezoneOffset()*60000).toISOString().slice(0,10); // fuso local — 21h da noite não é 'amanhã'
+  if (data > hojeStr) {
+    err.textContent = '❌ A data não pode ser no futuro';
+    err.style.display = 'block';
+    return;
+  }
+
+  // ALERTA: equipamento já registrado nesta OS na mesma data.
+  // Protege contra esquecer de trocar o equipamento ao registrar vários dias.
+  // Não bloqueia (pode haver 2 turnos com a mesma máquina), só confirma.
+  if (Array.isArray(_partesExistentesOS) && _partesExistentesOS.length) {
+    const idEquip = ehTerceiro ? null : equipId;
+    const dup = _partesExistentesOS.find(p => {
+      const mesmaData = String(p.data).slice(0,10) === data;
+      if (!mesmaData) return false;
+      if (ehTerceiro) {
+        return (p.vinculo_operador === 'terceiro') &&
+               ((p.equipamento_terceiro || '').toLowerCase() === equipTerceiro.toLowerCase());
+      }
+      return String(p.equipamento_id) === String(idEquip);
+    });
+    if (dup) {
+      const nomeEquip = ehTerceiro ? equipTerceiro
+        : (document.getElementById('m-equipamento').options[document.getElementById('m-equipamento').selectedIndex]?.text || 'este equipamento');
+      const dataFmt = new Date(data + 'T00:00').toLocaleDateString('pt-BR');
+      if (!confirm('⚠️ ' + nomeEquip + ' já tem registro em ' + dataFmt + '.\n\nVocê esqueceu de trocar o equipamento?\n\nSe for outro turno/serviço com a mesma máquina, pode salvar.\nDeseja salvar mesmo assim?')) {
+        err.textContent = 'Selecione o equipamento correto deste dia';
+        err.style.display = 'block';
+        return;
+      }
+    }
+  }
+
+  // ALERTA: equipamento cadastrado com medição = HORÍMETRO ficou sem registro.
+  // A medição do cadastro é o indicador confiável — se é horímetro, exige.
+  // Rolo, caminhão, caçamba (diária/km/viagem) não disparam. Não bloqueia:
+  // o operador pode persistir para máquinas que excepcionalmente não marcam.
+  const selEqAlert = document.getElementById('m-equipamento');
+  const optEqAlert = selEqAlert && selEqAlert.options[selEqAlert.selectedIndex];
+  const medEqAlert = optEqAlert ? (optEqAlert.getAttribute('data-med') || optEqAlert.getAttribute('data-cat') || '').toLowerCase() : '';
+  // Considera "usa horímetro" quando a medição cadastrada é exatamente horímetro
+  const usaHorimetro = (medEqAlert === 'horimetro') && !ehTerceiro;
+  const semHorimetro = !hIni && !hFin;
+  if (usaHorimetro && semHorimetro) {
+    if (!confirm('⚠️ Horímetro não preenchido.\n\nEste equipamento usa horímetro — é a base do controle de manutenção.\n\nDeseja salvar mesmo assim sem o horímetro?')) {
+      err.textContent = 'Preencha o horímetro (inicial e final)';
+      err.style.display = 'block';
+      const campoH = document.getElementById('m-h-ini');
+      if (campoH) {
+        campoH.focus();
+        campoH.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+      return;
+    }
+  }
+
+  // data muito antiga (mais de 60 dias) provavelmente é erro de ano/mês
+  const diffDias = (new Date(hojeStr) - new Date(data)) / 86400000;
+  if (diffDias > 60) {
+    if (!confirm('⚠️ Essa data tem mais de 2 meses (' + new Date(data+'T00:00').toLocaleDateString('pt-BR') + ').\n\nConfere se está certa?')) {
+      err.textContent = 'Verifique a data';
+      err.style.display = 'block';
+      return;
+    }
+  }
+
+  // Horímetro: variação de horas no dia
+  if (hIni && hFin) {
+    const horas = parseFloat(hFin) - parseFloat(hIni);
+    if (horas > 24) {
+      // mais de 24h num dia é impossível → quase certo erro de digitação
+      if (!confirm('⚠️ O horímetro indica ' + horas.toFixed(1) + ' horas em um dia.\n\nIsso passa de 24h — provável erro de digitação.\n\nDeseja salvar mesmo assim?')) {
+        err.textContent = 'Confira o horímetro inicial e final';
+        err.style.display = 'block';
+        return;
+      }
+    }
+    if (horas === 0 && parseFloat(hIni) > 0) {
+      if (!confirm('O horímetro inicial e final são iguais (' + hIni + ').\n\nA máquina ficou parada? Salvar assim?')) {
+        err.textContent = 'Confira o horímetro';
+        err.style.display = 'block';
+        return;
+      }
+    }
+    // salto absurdo no horímetro (final muito acima do inicial — digitou um dígito a mais)
+    if (parseFloat(hIni) > 0 && parseFloat(hFin) > parseFloat(hIni) * 3 && horas > 50) {
+      if (!confirm('⚠️ O horímetro final (' + hFin + ') é muito maior que o inicial (' + hIni + ').\n\nConfere se não digitou um número a mais?')) {
+        err.textContent = 'Confira o horímetro final';
+        err.style.display = 'block';
+        return;
+      }
+    }
+  }
+
+  // KM: variação de km no dia
+  if (isCaminhao && kmIni && kmFin) {
+    const kmDia = parseFloat(kmFin) - parseFloat(kmIni);
+    if (kmDia > 1500) {
+      if (!confirm('⚠️ ' + kmDia.toFixed(0) + ' km em um dia é muito alto.\n\nConfere os valores de KM?')) {
+        err.textContent = 'Confira o KM inicial e final';
+        err.style.display = 'block';
+        return;
+      }
+    }
+  }
+
+  // Metros: valor muito alto
+  if (isMetros && parseFloat(metros) > 5000) {
+    if (!confirm('⚠️ ' + metros + ' metros em um dia é um valor alto.\n\nConfere a metragem?')) {
+      err.textContent = 'Confira a metragem';
+      err.style.display = 'block';
+      return;
+    }
+  }
+
+  // Horas de relógio (início/fim) coerentes
+  const hcIni = document.getElementById('m-h-inicio').value;
+  const hcFim = document.getElementById('m-h-fim').value;
+  // (17/07/2026) Medição HORA precisa de uma fonte completa:
+  // relógio (janela cobrada — VENCE quando preenchido) OU horímetro (máquina)
+  if (window._medicaoAtual === 'horimetro' || window._medicaoAtual === 'hora') {
+    const _hIni = document.getElementById('m-h-ini')?.value;
+    const _hFin = document.getElementById('m-h-fin')?.value;
+    const temHorim = _hIni !== '' && _hFin !== '' && _hIni != null && _hFin != null;
+    const temRelogio = !!(hcIni && hcFim);
+    const soInicial = (_hIni !== '' && _hIni != null) && (_hFin === '' || _hFin == null);
+    if (!temHorim && !temRelogio) {
+      if (soInicial) {
+        // (06/08/2026) Fluxo real do dia: operador lança o horímetro inicial
+        // de manhã e completa o final no fim do dia pelo ✎ Corrigir.
+        if (!confirm('⚙️ Início do dia registrado: só o horímetro inicial.\n\nO registro fica EM ABERTO (0h) até você lançar o horímetro final no fim do dia — toque no ✎ do registro para completar.\n\nSalvar assim?')) {
+          err.textContent = 'Complete o horímetro ou o horário para salvar fechado';
+          err.style.display = 'block';
+          btn.disabled = false;
+          return;
+        }
+      } else {
+        err.textContent = '⏱ Informe o horímetro inicial (início do dia), o horímetro completo OU as horas trabalhadas (início e fim)';
+        err.style.display = 'block';
+        btn.disabled = false;
+        return;
+      }
+    }
+  }
+  if (hcIni && hcFim && hcFim <= hcIni) {
+    if (!confirm('A hora fim (' + hcFim + ') não é depois da hora início (' + hcIni + ').\n\nSalvar assim?')) {
+      err.textContent = 'Confira hora início e fim';
+      err.style.display = 'block';
+      return;
+    }
+  }
+
+  const payload = {
+    // (08/07/2026) Idempotência: mesmo payload re-enviado pela fila offline
+    // carrega o mesmo client_id — o servidor nunca grava duas vezes.
+    client_id: (crypto.randomUUID ? crypto.randomUUID() : (Date.now() + '-' + Math.random().toString(36).slice(2))),
+    data,
+    equipamento_id: equipId || null,
+    equipamento_terceiro: ehTerceiro ? equipTerceiro : null,
+    operador_id: operadorId || null,
+    tipo_medicao: tipoMedicao,
+    horimetro_inicial: hIni ? parseFloat(hIni) : null,
+    horimetro_final: hFin ? parseFloat(hFin) : null,
+    km_inicial: kmIni ? parseFloat(kmIni) : null,
+    km_final: kmFin ? parseFloat(kmFin) : null,
+    qtd_metros: metros ? parseFloat(metros) : null,
+    qtd_viagens: parseFloat(document.getElementById('m-viagens').value || '0') || 0,
+    quantidade_diarias: parseFloat(document.getElementById('m-diarias').value || '0') || 0,
+    // (15/07/2026) Relógio só vale na medição hora — nas demais nem é enviado
+    hora_inicio: (window._medicaoAtual === 'horimetro' || window._medicaoAtual === 'hora')
+      ? (document.getElementById('m-h-inicio').value || null) : null,
+    hora_fim: (window._medicaoAtual === 'horimetro' || window._medicaoAtual === 'hora')
+      ? (document.getElementById('m-h-fim').value || null) : null,
+    sem_almoco: (window._medicaoAtual === 'horimetro' || window._medicaoAtual === 'hora')
+      ? document.getElementById('m-sem-almoco').checked : false,
+    // (06/08/2026) Portão por vínculo: campo oculto na tela não viaja no
+    // payload — valor digitado num vínculo anterior não vaza no registro.
+    trajeto: (vinculo === 'frete')
+      ? (document.getElementById('m-trajeto').value.trim() || null) : null,
+    por_conta_de: document.getElementById('m-por-conta').value || 'cliente',
+    vinculo_operador: vinculo,
+    fornecedor: (vinculo !== 'proprio')
+      ? (document.getElementById('m-fornecedor').value.trim() || null) : null,
+    observacao: document.getElementById('m-obs').value.trim() || null,
+  };
+
+  const btn1 = document.getElementById('btn-salvar-parte');
+  const btn2 = document.getElementById('btn-salvar-mais');
+  btn1.textContent = 'Salvando...';
+  btn1.disabled = true;
+  btn2.disabled = true;
+
+  try {
+    // ONLINE-FIRST: tenta fetch direto
+    let salvouOnline = false;
+    let salvouOffline = false;
+    try {
+      const token = localStorage.getItem('garra_token') || '';
+      const r = await fetch('/operacional/api/os/' + _osAtualId + '/partes', {
+        method: 'POST',
+        headers: {
+          'Authorization': 'Bearer ' + token,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(payload)
+      });
+      if (r.ok) {
+        salvouOnline = true;
+      } else {
+        const errData = await r.json().catch(() => ({}));
+        if (r.status >= 500 || !r.status) {
+          // (08/07/2026) Erro de servidor → ENFILEIRA de verdade (o bloco era
+          // só um comentário: o fluxo seguia fechando o modal sem salvar nada).
+          if (typeof GarraDB !== 'undefined') {
+            await GarraDB.postWithQueue(
+              '/operacional/api/os/' + _osAtualId + '/partes',
+              payload,
+              { retries: 5, retryDelay: 30000, dedup: false }
+            );
+            salvouOffline = true;
+            // (24/07/2026) Falha de SERVIDOR (5xx) ≠ falta de conexão.
+            // Guardar o motivo real: o toast diferencia e o console registra
+            // — o "Offline sem estar offline" escondia bug do backend.
+            window._falhaServidor = 'HTTP ' + r.status + (errData.detail ? ' — ' + errData.detail : '');
+            console.error('[Registro] Servidor recusou (enfileirado):', window._falhaServidor);
+          } else {
+            throw new Error(errData.detail || `Erro HTTP ${r.status}`);
+          }
+        } else {
+          // (08/07/2026) 4xx = validação: mostrar o motivo e PARAR aqui.
+          // Antes caía no catch de rede e ia para a fila offline — request
+          // inválido re-tentando para sempre, tela fechava sem salvar.
+          err.textContent = errData.detail || ('Erro ' + r.status + ' ao salvar');
+          err.style.display = 'block';
+          return;
+        }
+      }
+    } catch (netErr) {
+      // Rede caiu — enfileira offline
+      if (typeof GarraDB !== 'undefined') {
+        try {
+          await GarraDB.postWithQueue(
+            '/operacional/api/os/' + _osAtualId + '/partes',
+            payload,
+            { retries: 5, retryDelay: 30000, dedup: false }
+          );
+          salvouOffline = true;
+        } catch (qe) {
+          throw netErr;
+        }
+      } else {
+        throw netErr;
+      }
+    }
+
+    if (salvouOnline) {
+      toast('✓ Registro salvo!', 'success');
+    } else if (salvouOffline) {
+      if (window._falhaServidor) {
+        toast('⚠️ Servidor indisponível — guardado para reenvio automático', 'info');
+        window._falhaServidor = null;
+      } else {
+        toast('⚠️ Sem conexão — será enviado ao voltar online', 'info');
+      }
+    }
+
+    // Registrar a parte salva no cache local (alerta duplicidade no "salvar e novo")
+    _partesExistentesOS.push({
+      data: data,
+      equipamento_id: equipId || null,
+      equipamento_terceiro: ehTerceiro ? equipTerceiro : null,
+      vinculo_operador: vinculo
+    });
+
+    if (adicionarMais) {
+      ['m-h-ini','m-h-fin','m-km-ini','m-km-fin','m-metros','m-diarias','m-fornecedor','m-equip-terceiro',
+       'm-viagens','m-trajeto','m-obs'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.value = '';
+      });
+      // (17/07/2026) Relógio nasce vazio: preencher = intenção de cobrar por janela
+      document.getElementById('m-h-inicio').value = '';
+      document.getElementById('m-h-fim').value = '';
+      document.getElementById('m-sem-almoco').checked = false;
+      calcularHorasJornada();
+      document.getElementById('m-por-conta').value = 'cliente';
+      // Mantém equipamento e operador (provavelmente mesma OS no próximo registro)
+    } else {
+      fecharModalDireto();
+    }
+
+    carregarOSApp();
+  } catch (e) {
+    err.textContent = e.message;
+    err.style.display = 'block';
+  } finally {
+    btn1.textContent = '✅ Salvar registro';
+    btn1.disabled = false;
+    btn2.disabled = false;
+  }
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// OPERACIONAL — SALVARNOVA OS COM OFFLINE
+// ──────────────────────────────────────────────────────────────────────────────
+// ──────────────────────────────────────────────────────────────────────────────
+// UTILIDADES
+// ──────────────────────────────────────────────────────────────────────────────
+function toast(msg, type) {
+  console.log('[Toast]', msg);
+}
+
+let _partesExistentesOS = [];
+
+async function abrirModalParte(osId) {
+  _osAtualId = osId;
+  _partesExistentesOS = [];
+  document.getElementById('m-error').style.display = 'none';
+  document.getElementById('modal-parte').style.display = 'flex';
+
+  // Carregar partes já registradas desta OS (para alertar duplicidade)
+  try {
+    const token = localStorage.getItem('garra_token') || '';
+    const rp = await fetch('/operacional/api/os/' + osId + '/partes', {
+      headers: { 'Authorization': 'Bearer ' + token }
+    });
+    if (rp.ok) {
+      const dp = await rp.json();
+      _partesExistentesOS = Array.isArray(dp) ? dp : (dp.partes || []);
+    }
+  } catch (e) { /* offline — segue sem validação de duplicidade */ }
+
+  // Buscar dados da OS FRESCOS do backend (operador_id pode ter mudado por reatribuição)
+  let osData = null;
+  try {
+    const token = localStorage.getItem('garra_token') || '';
+    // 1ª tentativa: detalhe direto da OS (sempre traz operador_id atual)
+    const rDet = await fetch('/operacional/api/os/' + osId, {
+      headers: { 'Authorization': 'Bearer ' + token }
+    });
+    if (rDet.ok) {
+      osData = await rDet.json();
+    } else {
+      // fallback: lista minhas-os
+      const r = await fetch('/operacional/api/minhas-os', {
+        headers: { 'Authorization': 'Bearer ' + token }
+      });
+      if (r.ok) {
+        const lista = await r.json();
+        osData = (Array.isArray(lista) ? lista : (lista.os || []))
+          .find(o => o.id === osId);
+      }
+    }
+  } catch (e) {
+    // offline — pega do cache IDB
+    try {
+      const cached = await GarraDB._cacheGet('os_minhas_' + (USUARIO?.id || 'anonimo'));
+      const lista = Array.isArray(cached) ? cached : (cached?.os || []);
+      osData = lista.find(o => o.id === osId);
+    } catch (_) {}
+  }
+
+  // Header com info da OS
+  const info = document.getElementById('m-os-info');
+  window._osDataAtual = osData;
+  if (osData) {
+    info.innerHTML = `<strong>${osData.numero}</strong> — ${esc(osData.obra || osData.cliente_nome) || '(sem obra)'} <span style="color:var(--orange)">· ${osData.regime_cobranca || '—'}</span>`;
+  } else {
+    info.innerHTML = `OS #${osId.substring(0,8)}…`;
+  }
+
+  // Resetar campos — relógio SEMPRE nasce vazio (regra oficial): preenchido
+  // só quando o operador digitar. O padrão 07:00/17:00 era a causa raiz das
+  // horas-fantasma (relógio prevalece e atropelava o horímetro da máquina).
+  ['m-h-ini','m-h-fin','m-km-ini','m-km-fin','m-viagens','m-metros','m-diarias','m-fornecedor','m-equip-terceiro','m-trajeto','m-obs'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+  const horasCalc = document.getElementById('m-horas-calc'); if (horasCalc) horasCalc.style.display = 'none';
+  const hIni = document.getElementById('m-h-inicio'); if (hIni) hIni.value = '';
+  const hFim = document.getElementById('m-h-fim');    if (hFim) hFim.value = '';
+  const semAlm = document.getElementById('m-sem-almoco'); if (semAlm) semAlm.checked = false;
+  calcularHorasJornada();
+  // Por conta de: default CLIENTE
+  document.getElementById('m-por-conta').value = 'cliente';
+
+  // Pré-preencher data com hoje
+  document.getElementById('m-data').value = new Date(Date.now() - new Date().getTimezoneOffset()*60000).toISOString().slice(0,10);
+
+  // Carregar selects (equipamentos + operadores) com cache offline
+  const [equipamentos, operadores] = await Promise.all([
+    fetchComCacheIDB('/operacional/api/equipamentos?uso=os', 'lst_equipamentos',  3600),
+    fetchComCacheIDB('/operacional/api/operadores',   'lst_operadores',    3600),
+  ]);
+
+  // Equipamentos com data-cat (categoria/medicao) e data-resp (operador responsável)
+  const selEq = document.getElementById('m-equipamento');
+  selEq.innerHTML = '<option value="">— selecionar —</option>';
+  (equipamentos || []).forEach(e => {
+    const cat = (e.medicao || e.categoria || e.tipo || '').toLowerCase();
+    const med = (e.medicao || '').toLowerCase();
+    const resp = e.operador_responsavel_id || '';
+    selEq.innerHTML += `<option value="${e.id}" data-cat="${cat}" data-med="${med}" data-resp="${resp}" data-horimetro="${e.horimetro_atual ?? ''}">${e.codigo} — ${e.descricao || ''}</option>`;
+  });
+  // Pré-selecionar equipamento da OS
+  if (osData?.equipamento_id) {
+    selEq.value = osData.equipamento_id;
+    setTimeout(preencherUltimoHorimetro, 50);
+    if (selEq.value !== osData.equipamento_id && osData.equipamento_codigo) {
+      const resp = osData.equipamento_responsavel_id || '';
+      selEq.innerHTML += `<option value="${osData.equipamento_id}" data-cat="${(osData.equipamento_medicao||'').toLowerCase()}" data-med="${(osData.equipamento_medicao||'').toLowerCase()}" data-resp="${resp}" selected>${osData.equipamento_codigo} — ${osData.equipamento_descricao || ''}</option>`;
+      selEq.value = osData.equipamento_id;
+    }
+  }
+
+  // Operadores — selects mostra todos cadastrados
+  const selOp = document.getElementById('m-operador');
+  selOp.innerHTML = '<option value="">— selecionar —</option>';
+  (operadores || []).forEach(o => {
+    selOp.innerHTML += `<option value="${o.id}">${o.nome}</option>`;
+  });
+  // Pré-seleção do operador/motorista:
+  // 1) operador da OS (reflete reatribuição)
+  // 2) responsável do equipamento (cadastro) — para manutenção e comissão
+  // 3) usuário logado
+  if (osData?.operador_id) {
+    if (!Array.from(selOp.options).some(o => String(o.value) === String(osData.operador_id))) {
+      const nome = osData.operador_nome || osData.operador || 'Operador da OS';
+      selOp.innerHTML += `<option value="${osData.operador_id}">${nome}</option>`;
+    }
+    selOp.value = osData.operador_id;
+  }
+  // Se a OS não tem operador, usa o responsável do equipamento
+  if (!selOp.value && osData?.equipamento_responsavel_id) {
+    const respId = osData.equipamento_responsavel_id;
+    if (!Array.from(selOp.options).some(o => String(o.value) === String(respId))) {
+      selOp.innerHTML += `<option value="${respId}">${osData.equipamento_responsavel_nome || 'Responsável'}</option>`;
+    }
+    selOp.value = respId;
+  }
+  if (!selOp.value && USUARIO?.id) {
+    if (!Array.from(selOp.options).some(o => o.value === USUARIO.id)) {
+      selOp.innerHTML += `<option value="${USUARIO.id}">${USUARIO.nome || 'Eu'}</option>`;
+    }
+    selOp.value = USUARIO.id;
+  }
+
+  // Guardar medicao do TIPO DE SERVIÇO da OS (referência)
+  window._osTipoMedicao = (osData?.tipo_servico_medicao || '').toLowerCase();
+
+  // Sugestão de medição (sem acender botão). Prioridade:
+  // 1) regime da OS (definido pela Luana)  2) medição padrão do equipamento
+  // Misto: sugere o bloco certo, mas todos os botões ficam disponíveis.
+  const regime = (osData?.regime_cobranca || '').toLowerCase();
+  window._osRegimeCobranca = regime; // (08/07/2026) troca de equipamento usa a mesma prioridade
+  let sugestao = null;
+  if (regime === 'km') sugestao = 'km';
+  else if (regime === 'metro') sugestao = 'metros';
+  else if (regime === 'diaria') sugestao = 'diaria';
+  else if (regime === 'hora' || regime === 'empreito') sugestao = 'horimetro';
+  // Se o regime não definiu claramente, usa a medição do equipamento
+  if (!sugestao) {
+    const catEq = (osData?.equipamento_medicao || '').toLowerCase();
+    sugestao = _medicaoPorCategoria(catEq);
+  }
+  prepararMedicao(sugestao || 'horimetro');
+  // Vínculo padrão = próprio
+  const selVinc = document.getElementById('m-vinculo');
+  if (selVinc) { selVinc.value = 'proprio'; atualizarVinculo(); }
+}
+
+// Lista única de medições e seus blocos
+const MEDICOES = ['horimetro','diaria','viagem','metros','km'];
+const BLOCO_DE = { horimetro:null, diaria:'bloco-diaria', viagem:'bloco-viagem', metros:'bloco-metros', km:'bloco-km' };
+
+function _ocultarBlocosMedicao() {
+  ['bloco-diaria','bloco-viagem','bloco-metros','bloco-km'].forEach(id => {
+    const el = document.getElementById(id); if (el) el.style.display = 'none';
+  });
+}
+function _resetBotoesMedicao() {
+  MEDICOES.forEach(t => {
+    const btn = document.getElementById('btn-med-' + t);
+    if (btn) { btn.style.background='#fff'; btn.style.color='var(--text)'; btn.style.borderColor='var(--border)'; }
+  });
+}
+function _mostrarBloco(tipo) {
+  const id = BLOCO_DE[tipo];
+  if (id) { const el = document.getElementById(id); if (el) el.style.display = 'block'; }
+}
+
+// Mostra o bloco sugerido pelo equipamento/regime, SEM acender botão (abertura)
+function prepararMedicao(tipo) {
+  if (!MEDICOES.includes(tipo)) tipo = 'horimetro';
+  window._medicaoAtual = tipo;
+  _ocultarBlocosMedicao();
+  _mostrarBloco(tipo);
+  _resetBotoesMedicao(); // nenhum destaque até clicar
+}
+
+// _medicaoAtual guarda o que será registrado
+window._medicaoAtual = 'horimetro';
+
+// Clique do operador — acende o botão e mostra o bloco
+function selecionarMedicao(tipo) {
+  if (!MEDICOES.includes(tipo)) return;
+  // (07/08/2026) Toque no botão JÁ ATIVO desativa — viu o engano na hora,
+  // volta ao neutro sem precisar escolher outra medição.
+  if (window._medicaoAtual === tipo) {
+    window._medicaoAtual = null;
+    _ocultarBlocosMedicao();
+    _resetBotoesMedicao();
+    const rel0 = document.getElementById('m-bloco-relogio');
+    if (rel0) rel0.style.display = 'none';
+    return;
+  }
+  window._medicaoAtual = tipo;
+  _ocultarBlocosMedicao();
+  _resetBotoesMedicao();
+  // Acende o botão escolhido
+  const btnAtivo = document.getElementById('btn-med-' + tipo);
+  if (btnAtivo) { btnAtivo.style.background='var(--orange)'; btnAtivo.style.color='#fff'; btnAtivo.style.borderColor='var(--orange)'; }
+  // Mostra bloco correspondente (horímetro usa o bloco fixo sempre visível)
+  _mostrarBloco(tipo);
+  // Relógio (hora início/fim + dia corrido) só na medição HORA — tela mínima
+  const rel = document.getElementById('m-bloco-relogio');
+  if (rel) rel.style.display = (tipo === 'horimetro' || tipo === 'hora') ? 'block' : 'none';
+}
+
+// Trocar equipamento: SUGERE a medição padrão do equipamento (sem acender botão),
+// mantendo todos os botões disponíveis. Misto: sugere + deixa trocar.
+function preencherUltimoHorimetro() {
+  // Agiliza o registro: campo "horímetro inicial" nasce com a ÚLTIMA leitura
+  // do equipamento (continuidade). Só preenche se o campo estiver VAZIO —
+  // nunca sobrescreve o que o operador digitou.
+  const campo = document.getElementById('m-h-ini');
+  if (!campo || campo.value) return;
+  const sel = document.getElementById('m-equipamento');
+  const opt = sel && sel.options[sel.selectedIndex];
+  if (!opt || !opt.value) return;
+  let ultimo = '';
+  // Prioridade 1: dado FRESCO do detalhe da OS (se é o equipamento dela)
+  const od = window._osDataAtual;
+  if (od && od.equipamento_id === opt.value && od.equipamento_horimetro_atual != null) {
+    ultimo = od.equipamento_horimetro_atual;
+  } else {
+    // Prioridade 2: cache da lista de equipamentos
+    ultimo = opt.getAttribute('data-horimetro') || '';
+  }
+  if (ultimo !== '' && ultimo != null && parseFloat(ultimo) > 0) {
+    campo.value = parseFloat(ultimo);
+    const hint = document.getElementById('m-horas-calc');
+    if (hint) { hint.style.display = 'block'; hint.textContent = '⚙️ Último horímetro puxado: ' + ultimo + ' — confira antes de salvar'; }
+  }
+}
+
+function atualizarCamposMedicao() {
+  const sel = document.getElementById('m-equipamento');
+  const opt = sel && sel.options[sel.selectedIndex];
+  const cat = opt ? (opt.getAttribute('data-cat') || '') : '';
+  // (06/08/2026) Horímetro e KM pertencem ao EQUIPAMENTO: trocou de
+  // equipamento, os valores do anterior não valem — limpa e deixa o
+  // preencherUltimoHorimetro puxar a leitura do novo (se houver).
+  const _eqAtual = opt ? opt.value : '';
+  if (window._equipHorimAnterior !== undefined && window._equipHorimAnterior !== _eqAtual) {
+    ['m-h-ini','m-h-fin','m-km-ini','m-km-fin'].forEach(id => {
+      const c = document.getElementById(id); if (c) c.value = '';
+    });
+    const _hc = document.getElementById('m-horas-calc');
+    if (_hc) _hc.style.display = 'none';
+  }
+  window._equipHorimAnterior = _eqAtual;
+  setTimeout(preencherUltimoHorimetro, 50);
+  // (08/07/2026) MESMA prioridade da abertura: 1) regime da OS (Luana)
+  // 2) categoria do equipamento como fallback. Antes, trocar de máquina
+  // deixava a categoria atropelar o regime (OS hora + Mini Carregadeira
+  // "metro" → exigia metros sem o operador ter selecionado nada).
+  const regime = (window._osRegimeCobranca || '').toLowerCase();
+  let sugestao = null;
+  if (regime === 'km') sugestao = 'km';
+  else if (regime === 'metro') sugestao = 'metros';
+  else if (regime === 'diaria') sugestao = 'diaria';
+  else if (regime === 'hora' || regime === 'empreito') sugestao = 'horimetro';
+  if (!sugestao) sugestao = _medicaoPorCategoria(cat);
+  if (sugestao) {
+    prepararMedicao(sugestao);
+    const hint = document.getElementById('med-hint');
+    if (hint) hint.textContent = regime
+      ? 'Sugerido pelo regime da OS: ' + _rotuloMedicao(sugestao) + ' (pode trocar)'
+      : 'Sugerido para este equipamento: ' + _rotuloMedicao(sugestao) + ' (pode trocar)';
+  }
+  // Puxa o operador/motorista responsável do equipamento (operador pode alterar)
+  const respId = opt ? (opt.getAttribute('data-resp') || '') : '';
+  const selOp = document.getElementById('m-operador');
+  if (respId && selOp) {
+    // Tenta achar o nome do responsável entre as opções já carregadas
+    let nomeResp = 'Responsável';
+    const existente = Array.from(selOp.options).find(o => String(o.value) === String(respId));
+    if (existente) {
+      nomeResp = existente.textContent;
+    } else {
+      selOp.innerHTML += `<option value="${respId}">${nomeResp}</option>`;
+    }
+    selOp.value = respId;
+    // Aviso visual de que puxou o responsável do equipamento
+    const aviso = document.getElementById('m-resp-aviso');
+    if (aviso) {
+      aviso.textContent = '👤 Responsável do equipamento: ' + nomeResp + ' (pode alterar)';
+      aviso.style.display = 'block';
+    }
+  } else {
+    const aviso = document.getElementById('m-resp-aviso');
+    if (aviso) aviso.style.display = 'none';
+  }
+}
+
+// Mapeia a medição/categoria do equipamento para uma das 5 medições
+function _medicaoPorCategoria(cat) {
+  cat = (cat || '').toLowerCase();
+  if (cat.includes('diaria') || cat.includes('rolo')) return 'diaria';
+  if (cat.includes('viagem') || cat.includes('cacamba') || cat.includes('caçamba') || cat.includes('pipa') || cat.includes('basculante')) return 'viagem';
+  if (cat.includes('metro')) return 'metros';
+  if (cat === 'km' || cat.includes('km')) return 'km';
+  if (cat.includes('horimetro') || cat.includes('hora') || cat.includes('maquina') || cat.includes('escavadeira')) return 'horimetro';
+  return 'horimetro';
+}
+function _rotuloMedicao(t) {
+  return ({horimetro:'Hora',diaria:'Diária',viagem:'Viagem',metros:'Metros',km:'KM'})[t] || 'Hora';
+}
+
+// Vínculo governa toda a lógica do registro:
+// - proprio  → equipamento da Garra (select) + operador da Garra
+// - terceiro → equipamento texto livre + fornecedor (não usa equipamento da Garra)
+// - diarista → equipamento da Garra (opera nossa máquina) + nome do diarista
+// - frete    → equipamento da Garra (sendo transportado) + transportadora + trajeto
+function atualizarVinculo() {
+  const v = document.getElementById('m-vinculo').value;
+  const blocoProprio  = document.getElementById('bloco-equip-proprio');
+  const blocoTerceiro = document.getElementById('bloco-equip-terceiro');
+  const blocoForn = document.getElementById('bloco-fornecedor');
+  const blocoTraj = document.getElementById('bloco-trajeto');
+  const lbl = document.getElementById('lbl-fornecedor');
+
+  const ehTerceiro = (v === 'terceiro');
+  // Equipamento: próprio mostra select da Garra; terceiro mostra texto livre
+  if (blocoProprio)  blocoProprio.style.display  = ehTerceiro ? 'none' : 'block';
+  if (blocoTerceiro) blocoTerceiro.style.display = ehTerceiro ? 'block' : 'none';
+
+  // Fornecedor/de quem: terceiro, diarista e frete
+  const precisaForn = (v === 'terceiro' || v === 'diarista' || v === 'frete');
+  if (blocoForn) blocoForn.style.display = precisaForn ? 'block' : 'none';
+  // (08/07/2026) Operador/Motorista interno só quando é gente da Garra:
+  // terceiro/diarista/frete identificam a pessoa no campo Fornecedor/nome —
+  // o select some para as horas nunca caírem num colaborador interno.
+  const blocoOp = document.getElementById('bloco-operador');
+  if (blocoOp) blocoOp.style.display = precisaForn ? 'none' : 'block';
+  if (precisaForn) { const so = document.getElementById('m-operador'); if (so) so.value = ''; }
+  if (blocoTraj) blocoTraj.style.display = (v === 'frete') ? 'block' : 'none';
+  if (lbl) {
+    lbl.textContent = (v === 'diarista') ? 'Nome do diarista'
+                    : (v === 'frete') ? 'Transportadora / dono'
+                    : 'Fornecedor / dono do equipamento';
+  }
+  // (05/08/2026) Por conta de: CLIENTE é o padrão universal (decisão da
+  // gestão) — sem virada automática em terceiro/frete; operador troca se for.
+}
+
+// Calcula horas da máquina automaticamente (final - inicial)
+// Calcula horas da jornada (relógio) com desconto de 1h de almoço quando
+// a jornada cruza o horário de almoço (passa das 12h), salvo "dia corrido".
+// Retorna {bruto, almoco, liquido} em horas decimais, ou null se inválido.
+function _calcularJornada(hIni, hFim, semAlmoco) {
+  if (!hIni || !hFim) return null;
+  const ph = s => { const [h,m] = String(s).split(':').map(Number); return h*60 + (m||0); };
+  let ini = ph(hIni), fim = ph(hFim);
+  if (isNaN(ini) || isNaN(fim)) return null;
+  let diff = fim - ini;
+  if (diff < 0) diff += 24*60; // virou o dia
+  const bruto = diff / 60;
+  // Desconta 1h de almoço se a jornada cruza 12:00 (almoço) e não é dia corrido
+  const cruzaAlmoco = (ini < 12*60) && (fim > 12*60 || (fim < ini)); // começa antes do meio-dia e termina depois
+  const almoco = (!semAlmoco && cruzaAlmoco && bruto > 6) ? 1 : 0;
+  const liquido = Math.max(0, bruto - almoco);
+  return { bruto: +bruto.toFixed(2), almoco, liquido: +liquido.toFixed(2) };
+}
+
+function calcularHorasJornada() {
+  const hIni = document.getElementById('m-h-inicio').value;
+  const hFim = document.getElementById('m-h-fim').value;
+  const semAlmoco = document.getElementById('m-sem-almoco').checked;
+  const el = document.getElementById('m-horas-jornada');
+  if (!el) return;
+  const j = _calcularJornada(hIni, hFim, semAlmoco);
+  if (!j) { el.style.display = 'none'; return; }
+  if (j.almoco > 0) {
+    el.innerHTML = `🕐 ${j.bruto.toFixed(1)}h brutas − 1h almoço = <span style="color:var(--orange)">${j.liquido.toFixed(1)}h</span>`;
+  } else {
+    const obs = semAlmoco ? ' (sem intervalo)' : '';
+    el.innerHTML = `🕐 <span style="color:var(--orange)">${j.liquido.toFixed(1)}h</span>${obs}`;
+  }
+  el.style.display = 'block';
+}
+
+function calcularHorasMaquina() {
+  const ini = parseFloat(document.getElementById('m-h-ini').value);
+  const fin = parseFloat(document.getElementById('m-h-fin').value);
+  const el = document.getElementById('m-horas-calc');
+  if (!el) return;
+  if (!isNaN(ini) && !isNaN(fin) && fin >= ini) {
+    const horas = (fin - ini).toFixed(1);
+    el.textContent = '⏱️ ' + horas + ' horas de máquina';
+    el.style.color = 'var(--blue)';
+    el.style.display = 'block';
+  } else if (!isNaN(ini) && !isNaN(fin) && fin < ini) {
+    el.textContent = '⚠️ Final menor que inicial';
+    el.style.color = 'var(--red)';
+    el.style.display = 'block';
+  } else {
+    el.style.display = 'none';
+  }
+}
+
+function fecharModalDireto() {
+  document.getElementById('modal-parte').style.display = 'none';
+}
+
+function fecharModalOp(e) {
+  if (e.target === document.getElementById('modal-parte')) fecharModalDireto();
+}
+
+async function liberarOS(osId, numero) {
+  if (!confirm(
+    `Passar a ${numero} para outro operador?\n\n` +
+    `• A OS sairá da sua lista\n` +
+    `• A administração será avisada para designar outro operador\n` +
+    `• Os dias que você já registrou continuam seus (para comissão)\n\n` +
+    `Use isso quando for movido para outra obra ou máquina.`
+  )) return;
+
+  try {
+    const token = localStorage.getItem('garra_token') || '';
+    let ok = false;
+    try {
+      const r = await fetch('/operacional/api/os/' + osId + '/liberar', {
+        method: 'POST',
+        headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+        body: JSON.stringify({})
+      });
+      if (r.ok) ok = true;
+      else {
+        const d = await r.json().catch(()=>({}));
+        if (r.status < 500) { toast('❌ ' + (d.detail||'Erro'), 'error'); return; }
+      }
+    } catch (netErr) {
+      // Offline → enfileira
+      if (typeof GarraDB !== 'undefined') {
+        try {
+          await GarraDB.postWithQueue('/operacional/api/os/'+osId+'/liberar', {}, { retries:5, retryDelay:30000 });
+          toast('⚠️ Offline — será enviado ao reconectar', 'info');
+          await carregarOSApp();
+          return;
+        } catch(e){}
+      }
+      toast('❌ Sem conexão', 'error');
+      return;
+    }
+    if (ok) {
+      toast('✅ ' + numero + ' liberada — administração avisada', 'success');
+      await carregarOSApp();
+    }
+  } catch (e) {
+    toast('❌ Erro: ' + e.message, 'error');
+  }
+}
+
+async function concluirOS(osId, numero) {
+  if (!confirm(`Confirma conclusão da ${numero}?\n\nApós concluir, a OS ficará aguardando fechamento pela administração.`)) return;
+  try {
+    const token = localStorage.getItem('garra_token') || '';
+    let salvouOnline = false;
+    try {
+      const r = await fetch('/operacional/api/os/' + osId + '/concluir', {
+        method: 'POST',
+        headers: {
+          'Authorization': 'Bearer ' + token,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({})
+      });
+      if (r.ok) {
+        salvouOnline = true;
+      } else {
+        const data = await r.json().catch(() => ({}));
+        if (r.status < 500) {
+          toast('❌ ' + (data.detail || 'Erro ao concluir'), 'error');
+          return;
+        }
+      }
+    } catch (netErr) {
+      // Rede falhou — enfileirar
+      if (typeof GarraDB !== 'undefined') {
+        try {
+          await GarraDB.postWithQueue(
+            '/operacional/api/os/' + osId + '/concluir',
+            {},
+            { retries: 5, retryDelay: 30000, dedup: false }
+          );
+          toast('⚠️ Offline — conclusão será enviada ao voltar online', 'info');
+          await carregarOSApp();
+          return;
+        } catch (qe) { /* prossegue */ }
+      }
+      toast('❌ Sem conexão', 'error');
+      return;
+    }
+    if (salvouOnline) {
+      toast('✅ ' + numero + ' concluída — aguardando fechamento', 'success');
+      await carregarOSApp();
+    }
+  } catch (e) {
+    toast('❌ Erro: ' + e.message, 'error');
+  }
+}
+
+function opTab(tab) {
+  _opTab = tab;
+  const tabOS = document.getElementById('op-tab-os');
+  const tabHist = document.getElementById('op-tab-hist');
+
+  if (tab === 'os') {
+    tabOS.style.borderBottomColor = 'var(--orange)';
+    tabOS.style.color = 'var(--orange)';
+    tabHist.style.borderBottomColor = 'transparent';
+    tabHist.style.color = 'var(--muted)';
+    carregarOSApp();
+  } else {
+    tabHist.style.borderBottomColor = 'var(--orange)';
+    tabHist.style.color = 'var(--orange)';
+    tabOS.style.borderBottomColor = 'transparent';
+    tabOS.style.color = 'var(--muted)';
+    carregarHistoricoOS();
+  }
+}
+
+async function carregarHistoricoOS() {
+  const el = document.getElementById('os-lista');
+  el.innerHTML = '<div class="loading"><span class="spin"></span></div>';
+  try {
+    const token = localStorage.getItem('garra_token') || '';
+
+    // ── Resumo mensal (horas do mês) ──
+    let resumoHtml = '';
+    try {
+      const rRes = await fetch('/operacional/api/resumo-mensal', {
+        headers: { 'Authorization': 'Bearer ' + token }
+      });
+      if (rRes.ok) {
+        const res = await rRes.json();
+        resumoHtml = `
+          <div style="background:linear-gradient(135deg,var(--blue),#2A3F7E);border-radius:12px;padding:16px 20px;margin-bottom:16px;color:#fff">
+            <div style="font-size:11px;opacity:.7;text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">Suas horas em ${res.mes_nome || res.mes}</div>
+            <div style="display:flex;align-items:baseline;gap:6px;margin-bottom:12px">
+              <span style="font-size:32px;font-weight:800">${res.total_horas}h</span>
+              <span style="font-size:13px;opacity:.7">trabalhadas</span>
+            </div>
+            <div style="display:flex;gap:14px;font-size:12px;opacity:.85;flex-wrap:wrap">
+              <div>📅 ${res.dias_trabalhados} dias</div>
+              <div>📋 ${res.total_apontamentos} apontamentos</div>
+              <div>🔧 ${res.total_os} OS</div>
+              ${res.total_metros > 0 ? `<div>📏 ${res.total_metros} m</div>` : ''}
+            </div>
+          </div>`;
+      }
+    } catch(e) { /* silencioso — card é bônus */ }
+
+    const r = await fetch('/operacional/api/minhas-os?historico=1', {
+      headers: { 'Authorization': 'Bearer ' + token }
+    });
+    let lista = [];
+    if (r.ok) {
+      const dados = await r.json();
+      lista = Array.isArray(dados) ? dados : (dados.os || []);
+    }
+    // Filtrar apenas concluídas/fechadas
+    const concluidas = lista.filter(o =>
+      ['concluida_completa','concluida_sem_erp','aguardando_fechamento'].includes(o.status)
+    );
+
+    if (!concluidas.length) {
+      el.innerHTML = resumoHtml + `<div class="empty">
+        <div class="empty-icon">🕐</div>
+        <div class="empty-txt">Nenhuma OS no histórico</div>
+        <div class="empty-sub">OS concluídas aparecerão aqui</div>
+      </div>`;
+      return;
+    }
+
+    let html = resumoHtml;
+    concluidas.forEach(os => {
+      const statusLabel = {
+        'aguardando_fechamento': '⏳ Aguardando fechamento',
+        'concluida_sem_erp': '✅ Concluída',
+        'concluida_completa': '✅ Concluída'
+      }[os.status] || os.status;
+
+      html += `
+        <div class="os-card" onclick="verPartes('${os.id}', '${os.numero}', false)" style="cursor:pointer">
+          <div class="os-numero">${os.numero}
+            <span style="display:inline-block;background:#DCFCE7;color:#16A34A;font-size:10px;font-weight:700;padding:3px 10px;border-radius:99px;margin-left:8px">${statusLabel}</span>
+          </div>
+          <div class="os-cliente">${esc(os.cliente_nome || os.obra) || '(Cliente avulso)'}</div>
+          <div class="os-info">
+            <div class="os-info-item">
+              <div class="os-info-label">Equipamento</div>
+              <div class="os-info-value" style="font-size:12px">${os.equipamento_codigo || '–'}</div>
+            </div>
+            <div class="os-info-item">
+              <div class="os-info-label">Regime</div>
+              <div class="os-info-value" style="font-size:12px">${os.regime_cobranca || '–'}</div>
+            </div>
+          </div>
+          <div style="text-align:center;padding:8px;color:var(--orange);font-size:12px;font-weight:700">👁 Ver partes registradas</div>
+        </div>`;
+    });
+    el.innerHTML = html;
+  } catch (e) {
+    el.innerHTML = `<div class="empty"><div class="empty-txt">Erro ao carregar histórico</div></div>`;
+  }
+}
+
+function abrirPainelConta() {
+  if (!USUARIO) return;
+  const ini = (USUARIO.nome||'?').charAt(0).toUpperCase();
+  const nome = USUARIO.nome || USUARIO.login;
+  const login = USUARIO.login || '';
+  const perfil = USUARIO.perfil || '';
+  const modal = document.createElement('div');
+  modal.id = 'modal-conta';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:400;display:flex;align-items:flex-end';
+  modal.onclick = (e) => { if (e.target === modal) modal.remove(); };
+  modal.innerHTML = `
+    <div style="background:#fff;width:100%;border-radius:12px 12px 0 0;max-height:85dvh;overflow-y:auto">
+
+      <!-- HEADER -->
+      <div style="padding:16px 20px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--border)">
+        <div style="font-size:15px;font-weight:800;color:var(--blue)">Minha conta</div>
+        <button onclick="document.getElementById('modal-conta').remove()" style="background:none;border:none;font-size:22px;color:var(--muted);cursor:pointer">✕</button>
+      </div>
+
+      <!-- 1. INFO USUÁRIO -->
+      <div style="padding:16px 20px;display:flex;align-items:center;gap:12px;border-bottom:1px solid var(--border)">
+        <div style="width:44px;height:44px;border-radius:50%;background:var(--orange);display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:800;color:#fff;flex-shrink:0">${ini}</div>
+        <div>
+          <div style="font-size:14px;font-weight:800;color:var(--blue)">${nome}</div>
+          <div style="font-size:12px;color:var(--muted)">${login} · ${perfil}</div>
+        </div>
+      </div>
+
+      <!-- 2. MURAL -->
+      <div style="padding:16px 20px;border-bottom:1px solid var(--border)">
+        <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px">Mural</div>
+        <div id="mural-avisos-mob" style="margin-bottom:12px"><div style="font-size:12px;color:var(--muted);text-align:center">Carregando...</div></div>
+        <button onclick="document.getElementById('modal-conta').remove();abrirCartilhaMobile()" style="width:100%;padding:11px;background:var(--blue);color:#fff;border:none;border-radius:8px;font-weight:700;font-size:13px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px">📖 Manual do colaborador</button>
+      </div>
+
+      <!-- 2b. BIOMETRIA (só aparece em aparelho com suporte) -->
+      <div id="sec-bio-conta" style="display:none;padding:16px 20px;border-bottom:1px solid var(--border)">
+        <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px">Ativar biometria</div>
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px">
+          <div>
+            <div style="font-size:13px;font-weight:700;color:var(--blue)">Entrar com a digital</div>
+            <div id="bio-status-txt" style="font-size:11px;color:var(--muted);margin-top:2px">Desativada neste aparelho</div>
+          </div>
+          <div id="bio-switch" onclick="alternarBiometria()" style="width:52px;height:30px;border-radius:15px;background:#CBD5E1;position:relative;cursor:pointer;flex-shrink:0;transition:background .2s">
+            <div id="bio-switch-knob" style="width:24px;height:24px;border-radius:50%;background:#fff;position:absolute;top:3px;left:3px;transition:left .2s;box-shadow:0 1px 3px rgba(0,0,0,.3)"></div>
+          </div>
+        </div>
+        <div id="bio-msg" style="display:none;font-size:12px;margin-top:10px;padding:8px 10px;border-radius:6px"></div>
+        <div style="font-size:11px;color:var(--muted);margin-top:8px">A senha continua funcionando normalmente.</div>
+      </div>
+
+      <!-- 3. ALTERAR SENHA -->
+      <div style="padding:16px 20px;border-bottom:1px solid var(--border)">
+        <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px">Alterar senha</div>
+        <div id="conta-err" style="background:#FEE2E2;color:var(--red);border-radius:6px;padding:10px;margin-bottom:10px;font-size:13px;display:none"></div>
+        <div id="conta-ok" style="background:#DCFCE7;color:#16A34A;border-radius:6px;padding:10px;margin-bottom:10px;font-size:13px;display:none"></div>
+        <div style="margin-bottom:10px">
+          <label style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;display:block;margin-bottom:4px">Senha atual</label>
+          <input id="conta-senha-atual" type="password" style="width:100%;padding:10px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;box-sizing:border-box">
+        </div>
+        <div style="margin-bottom:10px">
+          <label style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;display:block;margin-bottom:4px">Nova senha</label>
+          <input id="conta-senha-nova" type="password" style="width:100%;padding:10px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;box-sizing:border-box">
+        </div>
+        <div style="margin-bottom:14px">
+          <label style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;display:block;margin-bottom:4px">Confirmar nova senha</label>
+          <input id="conta-senha-conf" type="password" style="width:100%;padding:10px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;box-sizing:border-box">
+        </div>
+        <button onclick="salvarNovaSenha()" style="width:100%;padding:11px;border:none;background:var(--orange);color:#fff;border-radius:8px;font-weight:700;font-size:13px;cursor:pointer">Alterar senha</button>
+      </div>
+
+      <!-- 4. SAIR -->
+      <div style="padding:16px 20px">
+        <button onclick="fazerLogout()" style="width:100%;padding:11px;background:#FEE2E2;color:var(--red);border:1.5px solid #FCA5A5;border-radius:8px;font-weight:700;font-size:13px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px">↩ Sair</button>
+      </div>
+
+    </div>`;
+  document.body.appendChild(modal);
+  carregarMuralMobile();
+  marcarMuralLido();
+  bioSuportada().then(ok => {
+    const sec = document.getElementById('sec-bio-conta');
+    if (sec && ok) { sec.style.display = 'block'; atualizarSwitchBio(); }
+  });
+}
+
+// (09/07/2026) Badge de avisos não lidos — Fase 1 das notificações
+function atualizarBadgeMural() {
+  var token = localStorage.getItem('garra_token') || ''; if (!token) return;
+  fetch('/api/mural/nao-lidos', {headers:{'Authorization':'Bearer '+token}})
+    .then(function(r){ return r.ok ? r.json() : null; })
+    .then(function(d){
+      var b = document.getElementById('mural-badge');
+      if (!b || !d) return;
+      var n = d.nao_lidos || 0;
+      b.textContent = n > 9 ? '9+' : n;
+      b.style.display = n > 0 ? 'block' : 'none';
+    }).catch(function(){});
+}
+setInterval(atualizarBadgeMural, 300000); // revalida a cada 5 min
+
+function marcarMuralLido() {
+  var token = localStorage.getItem('garra_token') || ''; if (!token) return;
+  fetch('/api/mural/lido', {method:'POST', headers:{'Authorization':'Bearer '+token}})
+    .then(function(){ var b = document.getElementById('mural-badge'); if (b) b.style.display = 'none'; })
+    .catch(function(){});
+}
+
+function carregarMuralMobile() {
+  var el = document.getElementById("mural-avisos-mob");
+  if (!el) return;
+  var token = localStorage.getItem('garra_token') || '';
+  fetch("/api/mural", {headers:{"Authorization":"Bearer "+token}})
+    .then(function(r){return r.json();})
+    .then(function(avisos){
+      if (!avisos.length) { el.innerHTML = '<div style="font-size:12px;color:var(--muted);text-align:center">Nenhum aviso no momento.</div>'; return; }
+      el.innerHTML = avisos.map(function(a){
+        return '<div style="background:#fff;border-left:3px solid var(--orange);border-radius:0 6px 6px 0;padding:10px 12px;margin-bottom:8px">'
+          + '<div style="font-size:12px;font-weight:800;color:var(--blue)">' + a.titulo + '</div>'
+          + '<div style="font-size:12px;color:var(--text);margin-top:3px">' + a.mensagem + '</div>'
+          + '</div>';
+      }).join("");
+    })
+    .catch(function(){ el.innerHTML = '<div style="font-size:12px;color:var(--muted);text-align:center">Nenhum aviso no momento.</div>'; });
+}
+
+async function salvarNovaSenha() {
+  const err = document.getElementById('conta-err');
+  const ok = document.getElementById('conta-ok');
+  err.style.display = 'none';
+  ok.style.display = 'none';
+
+  const atual = document.getElementById('conta-senha-atual').value;
+  const nova = document.getElementById('conta-senha-nova').value;
+  const conf = document.getElementById('conta-senha-conf').value;
+
+  if (!atual || !nova || !conf) {
+    err.textContent = 'Preencha todos os campos';
+    err.style.display = 'block';
+    return;
+  }
+  if (nova.length < 6) {
+    err.textContent = 'A nova senha deve ter ao menos 6 caracteres';
+    err.style.display = 'block';
+    return;
+  }
+  if (nova !== conf) {
+    err.textContent = 'As senhas não coincidem';
+    err.style.display = 'block';
+    return;
+  }
+
+  try {
+    const token = localStorage.getItem('garra_token') || '';
+    const r = await fetch('/auth/alterar-senha', {
+      method: 'POST',
+      headers: {
+        'Authorization': 'Bearer ' + token,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ senha_atual: atual, senha_nova: nova })
+    });
+    if (r.ok) {
+      ok.textContent = '✓ Senha alterada com sucesso!';
+      ok.style.display = 'block';
+      document.getElementById('conta-senha-atual').value = '';
+      document.getElementById('conta-senha-nova').value = '';
+      document.getElementById('conta-senha-conf').value = '';
+    } else {
+      const data = await r.json().catch(() => ({}));
+      err.textContent = data.detail || 'Erro ao alterar senha';
+      err.style.display = 'block';
+    }
+  } catch (e) {
+    err.textContent = 'Erro: ' + e.message;
+    err.style.display = 'block';
+  }
+}
+
+// ── MANUAL DO COLABORADOR (mobile) ────────────────────────
+function renderConteudoCartilhaMob(texto) {
+  const linhas = texto.split('\n');
+  let html = '', listaAberta = false, paragrafoAtual = [];
+  function fecharParagrafo() {
+    if (paragrafoAtual.length) {
+      let p = paragrafoAtual.join('<br>').replace(/\*\*(.+?)\*\*/g, '<strong style="color:var(--blue)">$1</strong>');
+      html += '<p style="margin:0 0 12px 0">' + p + '</p>';
+      paragrafoAtual = [];
+    }
+  }
+  function fecharLista() { if (listaAberta) { html += '</ul>'; listaAberta = false; } }
+  linhas.forEach(function(linha) {
+    const t = linha.trim();
+    if (t === '') { fecharParagrafo(); fecharLista(); return; }
+    if (t.startsWith('- ')) {
+      fecharParagrafo();
+      if (!listaAberta) { html += '<ul style="margin:0 0 12px 0;padding-left:20px">'; listaAberta = true; }
+      html += '<li style="margin-bottom:4px">' + t.slice(2) + '</li>';
+      return;
+    }
+    fecharLista();
+    paragrafoAtual.push(t.replace(/\*\*(.+?)\*\*/g, '<strong style="color:var(--blue)">$1</strong>'));
+  });
+  fecharParagrafo(); fecharLista();
+  return html;
+}
+
+async function abrirCartilhaMobile() {
+  const m = document.createElement("div");
+  m.id = "modal-cartilha-m";
+  m.style.cssText = "position:fixed;inset:0;background:#fff;z-index:500;display:flex;flex-direction:column";
+  m.innerHTML = '<div style="background:var(--blue);border-bottom:3px solid var(--orange);padding:12px 16px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0">'
+    + '<div style="color:#fff;font-size:15px;font-weight:800">📖 Manual do Colaborador</div>'
+    + '<button onclick="document.getElementById(\'modal-cartilha-m\').remove();abrirPainelConta()" style="background:none;border:none;color:#fff;font-size:22px;cursor:pointer;padding:0 4px">✕</button></div>'
+    + '<div id="cartilha-mob-body" style="flex:1;overflow-y:auto;padding:20px 16px;font-size:13px;color:var(--text);line-height:1.6"><div style="text-align:center;color:var(--muted);padding:40px 0">Carregando...</div></div>';
+  document.body.appendChild(m);
+
+  const token = localStorage.getItem('garra_token') || '';
+  try {
+    const r = await fetch('/api/cartilha', {headers:{'Authorization':'Bearer '+token}});
+    const blocos = await r.json();
+    const body = document.getElementById('cartilha-mob-body');
+    if (!blocos.length) { body.innerHTML = '<div style="text-align:center;color:var(--muted);padding:40px 0">Nenhum conteúdo publicado ainda.</div>'; return; }
+    body.innerHTML = blocos.map(b =>
+      '<div style="margin-top:8px;margin-bottom:12px;border-bottom:2px solid var(--orange);padding-bottom:6px">'
+      + '<div style="font-size:16px;font-weight:800;color:var(--blue)">' + b.titulo + '</div>'
+      + (b.subtitulo ? '<div style="font-size:11px;color:var(--muted)">' + b.subtitulo + '</div>' : '')
+      + '</div>'
+      + renderConteudoCartilhaMob(b.conteudo)
+    ).join('') + '<div style="text-align:center;padding:20px 0;font-size:11px;color:var(--muted)">Garra Terraplenagem e Caçambas</div>';
+  } catch(e) {
+    document.getElementById('cartilha-mob-body').innerHTML = '<div style="text-align:center;color:var(--muted);padding:40px 0">Erro ao carregar o manual.</div>';
+  }
+}
+
+async function verPartes(osId, osNum, editavel = true) {
+  window._vpEditavel = editavel;
+  const token = localStorage.getItem('garra_token') || '';
+  window._vpOsId = osId; window._vpOsNum = osNum;
+  let partes = [];
+  try {
+    const r = await fetch('/operacional/api/os/' + osId + '/partes', {
+      headers: { 'Authorization': 'Bearer ' + token }
+    });
+    if (r.ok) {
+      const dados = await r.json();
+      partes = Array.isArray(dados) ? dados : (dados.partes || []);
+    }
+  } catch (e) { /* offline — mostra vazio */ }
+
+  let linhas = '';
+  if (!partes.length) {
+    linhas = '<div style="padding:30px;text-align:center;color:var(--muted)">Nenhuma parte registrada</div>';
+  } else {
+    window._vpPartes = partes;
+    partes.forEach((p, _idx) => {
+      let dataFmt = p.data || '';
+      try { dataFmt = new Date(p.data + 'T00:00').toLocaleDateString('pt-BR'); } catch(e){}
+      const med = p.tipo_medicao || 'horimetro';
+
+      // Horário de relógio (início–fim)
+      const hIni = p.hora_inicio ? String(p.hora_inicio).slice(0,5) : '';
+      const hFim = p.hora_fim ? String(p.hora_fim).slice(0,5) : '';
+
+      // Horas trabalhadas: usa horímetro; se 0/nulo, calcula pelo relógio
+      // com desconto de almoço (mesma regra do registro)
+      let horas = parseFloat(p.horas_trabalhadas || 0);
+      if ((!horas || horas <= 0) && hIni && hFim) {
+        const j = _calcularJornada(hIni, hFim, !!p.sem_almoco);
+        if (j) horas = j.liquido;
+      }
+
+      // Destaque principal por tipo de medição (cobrança)
+      // (14/07/2026) Rótulo do valor pela MEDIÇÃO da parte — 5 medições
+      let medInfo = '';
+      if (med === 'metros') {
+        medInfo = `${p.qtd_metros || 0} m`;
+      } else if (med === 'viagem') {
+        const nv = parseFloat(p.qtd_viagens || 0) || 1;
+        medInfo = `${nv} viag.`;
+      } else if (med === 'diaria') {
+        const nd = parseFloat(p.quantidade_diarias || 0) || 1;
+        medInfo = `${nd} diária${nd > 1 ? 's' : ''}`;
+      } else if (med === 'km') {
+        const kmTxt = `${p.km_percorrido || 0} km`;
+        const viagTxt = p.qtd_viagens ? ` · ${p.qtd_viagens} viagem(ns)` : '';
+        medInfo = kmTxt + viagTxt;
+      } else {
+        // (23/07/2026) FONTE real das horas — relógio explícito PREVALECE
+        // (regra oficial); horímetro assume só quando não há relógio.
+        const _temHorFonte = (p.horimetro_inicial != null && p.horimetro_final != null);
+        const _fonteIcone = (hIni && hFim) ? ' 🕐' : (_temHorFonte ? ' ⚙️' : '');
+        medInfo = `${horas || 0}h${_fonteIcone}`;
+      }
+
+      // Linha secundária: equipamento + operador + marcador de terceiro
+      let equip = esc(p.equipamento_codigo || '');
+      const oper  = esc(p.operador_nome || '');
+      const vinc = (p.vinculo_operador || 'proprio');
+      let tag = '';
+      if (vinc === 'terceiro') tag = ' 🔶 terceiro';
+      else if (vinc === 'diarista') tag = ' 👷 diarista';
+      else if (vinc === 'frete') tag = ' 🚚 frete';
+      const fornec = p.fornecedor ? ` (${esc(p.fornecedor)})` : '';
+      const metaLinha = [equip + tag, oper].filter(Boolean).join(' · ') + fornec;
+
+      // (13/07/2026) Detalhe = FONTE REAL da medida do registro:
+      // horímetro preenchido → mostra a faixa (origem das horas + conferência
+      // de continuidade). Relógio só aparece quando foi ele que valeu
+      // (sem horímetro). Antes, todo registro exibia "07:00 às 17:00"
+      // decorativo do formulário — informação enganosa.
+      const temHorimetro = (p.horimetro_inicial != null && p.horimetro_inicial !== '' &&
+                            p.horimetro_final   != null && p.horimetro_final   !== '');
+      let detalhes = '';
+      // (17/07/2026) Na medição hora com RELÓGIO preenchido, é ele a fonte
+      // das horas cobradas — a linha mostra o relógio; horímetro na correção.
+      const _hMaq = temHorimetro
+        ? (parseFloat(p.horimetro_final) - parseFloat(p.horimetro_inicial)).toFixed(1)
+        : null;
+      if (temHorimetro) {
+        // (18/07/2026) REGRA FINAL: horímetro completo é a fonte — ponto.
+        // Relógio não aparece quando a máquina mediu o dia.
+        detalhes = `⚙️ ${_hMaq}h máq. (${p.horimetro_inicial}→${p.horimetro_final})`;
+      } else if ((med === 'horimetro' || med === 'hora') && hIni && hFim) {
+        detalhes = `🕐 ${hIni} às ${hFim}`;
+      } else if ((med === 'horimetro' || med === 'hora') && p.horimetro_inicial != null && p.horimetro_inicial !== '') {
+        detalhes = `⚙️ ${p.horimetro_inicial} → … <b style="color:#B45309">em aberto — complete no ✎</b>`;
+      } else if (temHorimetro) {
+        detalhes = `⚙️ ${p.horimetro_inicial} → ${p.horimetro_final} · ${_hMaq}h`;
+      } else if (med === 'km' && (p.km_inicial || p.km_final)) {
+        detalhes = `🛣 ${p.km_inicial||0} → ${p.km_final||0} km`;
+      } else if ((med === 'horimetro' || med === 'hora') && (hIni || hFim)) {
+        // Relógio só quando as horas SÃO a medida — em viagem/diária/metros
+        // os horários eram apenas o padrão do formulário (ruído enganoso)
+        detalhes = `🕐 ${hIni||'--'} às ${hFim||'--'}`;
+      }
+
+      linhas += `
+        <div style="border-bottom:1px solid var(--border);padding:12px 0">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px">
+            <div>
+              <strong style="font-size:13px;color:var(--blue)">${dataFmt}</strong>
+              ${metaLinha ? `<div style="font-size:11px;color:var(--muted);margin-top:2px">${metaLinha}</div>` : ''}
+            </div>
+            <div style="display:flex;align-items:center;gap:8px">
+              <span style="font-size:14px;font-weight:800;color:var(--orange);white-space:nowrap">${medInfo}</span>
+              ${(!p.fechado && window._vpEditavel !== false) ? `<button onclick="abrirEditarParte(${_idx})" style="background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:4px 8px;font-size:13px;cursor:pointer">✎</button>` : ''}
+            </div>
+          </div>
+          ${detalhes ? `<div style="font-size:11px;color:var(--muted);margin-top:5px">${detalhes}</div>` : ''}
+          ${p.observacao ? `<div style="font-size:12px;color:var(--text);margin-top:4px;background:var(--bg);padding:6px 8px;border-radius:6px">${esc(p.observacao)}</div>` : ''}
+        </div>`;
+    });
+  }
+
+  const modal = document.createElement('div');
+  modal.id = 'modal-ver-partes';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:400;display:flex;align-items:flex-end';
+  modal.onclick = (e) => { if (e.target === modal) modal.remove(); };
+  modal.innerHTML = `
+    <div style="background:#fff;width:100%;border-radius:12px 12px 0 0;padding:20px;max-height:80dvh;overflow-y:auto">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+        <h2 style="font-size:16px;font-weight:800;color:var(--blue)">📋 Partes — ${osNum}</h2>
+        <button onclick="document.getElementById('modal-ver-partes').remove()" style="background:none;border:none;font-size:24px;color:var(--muted);cursor:pointer">×</button>
+      </div>
+      ${linhas}
+    </div>`;
+  document.body.appendChild(modal);
+}
+
+// ── EDITAR MINHA PARTE (conferir/corrigir horímetro, horários, metros, obs) ──
+function epTrocarMed(vv) {
+  const mostra = (id, cond) => { const el = document.getElementById(id); if (el) el.style.display = cond ? 'block' : 'none'; };
+  mostra('ep-bloco-relogio', vv === 'horimetro');
+  mostra('ep-bloco-km', vv === 'km');
+  mostra('ep-bloco-viagem', vv === 'km' || vv === 'viagem');
+  mostra('ep-bloco-diaria', vv === 'diaria');
+  mostra('ep-bloco-metros', vv === 'metros');
+}
+
+async function abrirEditarParte(idx) {
+  const p = (window._vpPartes || [])[idx];
+  if (!p) return;
+  window._epOriginal = p; // (18/07/2026) para enviar só campos ALTERADOS
+  const med = p.tipo_medicao || 'horimetro';
+  // (13/07/2026) Campos importantes na correção: equipamento e operador
+  // (vínculo próprio) — mesmas fontes únicas dos selects de registro.
+  let _eqs = [], _ops = [];
+  try {
+    [_eqs, _ops] = await Promise.all([
+      fetchComCacheIDB('/operacional/api/equipamentos?uso=os', 'lst_equipamentos', 3600),
+      fetchComCacheIDB('/operacional/api/operadores', 'lst_operadores', 3600)
+    ]);
+  } catch(e) { _eqs = _eqs || []; _ops = _ops || []; }
+  const ehProprio = (p.vinculo_operador || 'proprio') === 'proprio';
+  // (18/07/2026) BLINDAGEM: o equipamento/operador ATUAIS da parte são SEMPRE
+  // opção garantida e selecionada — mesmo se a lista (filtrada/cacheada) não
+  // os contiver. Antes, a ausência fazia o select "cair" na primeira opção
+  // (um apoio), simulando seleção errada e travando a troca.
+  const _eqTem = (_eqs||[]).some(e => String(e.id) === String(p.equipamento_id));
+  const _eqAtualOpt = (!_eqTem && p.equipamento_id)
+    ? `<option value="${p.equipamento_id}" selected>${esc(p.equipamento_codigo || 'Equipamento atual')} (atual)</option>` : '';
+  const selEquip = `
+    <label style="font-size:12px;font-weight:700;color:var(--muted)">Equipamento</label>
+    <select id="ep-equip" style="width:100%;padding:11px;border:1.5px solid var(--border);border-radius:8px;font-size:15px;box-sizing:border-box;margin:4px 0 12px">
+      ${_eqAtualOpt}${(_eqs||[]).map(e => `<option value="${e.id}" ${String(e.id)===String(p.equipamento_id)?'selected':''}>${e.codigo} — ${e.descricao||''}</option>`).join('')}
+    </select>`;
+  const _opTem = (_ops||[]).some(o => String(o.id) === String(p.operador_id));
+  const _opAtualOpt = (!_opTem && p.operador_id)
+    ? `<option value="${p.operador_id}" selected>${esc(p.operador_nome || 'Operador atual')} (atual)</option>` : '';
+  const selOper = ehProprio ? `
+    <label style="font-size:12px;font-weight:700;color:var(--muted)">Operador / Motorista</label>
+    <select id="ep-oper" style="width:100%;padding:11px;border:1.5px solid var(--border);border-radius:8px;font-size:15px;box-sizing:border-box;margin:4px 0 12px">
+      ${_opAtualOpt}${(_ops||[]).map(o => `<option value="${o.id}" ${String(o.id)===String(p.operador_id)?'selected':''}>${o.nome}</option>`).join('')}
+    </select>` : '';
+  const v = (x) => (x === null || x === undefined) ? '' : x;
+  const hIni = p.hora_inicio ? String(p.hora_inicio).slice(0,5) : '';
+  const hFim = p.hora_fim ? String(p.hora_fim).slice(0,5) : '';
+  let dataIso = '';
+  try { dataIso = String(p.data).slice(0,10); } catch(e){}
+  let campos = `
+      <div style="background:#F8FAFC;border:1.5px solid var(--border);border-radius:10px;padding:10px 12px;margin-bottom:12px">
+        <div style="font-size:11px;font-weight:800;color:var(--muted);margin-bottom:6px">⚙️ HORÍMETRO DA MÁQUINA (controle interno)</div>
+        <div style="display:flex;gap:10px">
+          <div style="flex:1">
+            <label style="font-size:12px;font-weight:700;color:var(--muted)">Inicial</label>
+            <input id="ep-hini" type="number" step="0.1" value="${v(p.horimetro_inicial)}" style="width:100%;padding:11px;border:1.5px solid var(--border);border-radius:8px;font-size:15px;box-sizing:border-box;margin:4px 0 4px">
+          </div>
+          <div style="flex:1">
+            <label style="font-size:12px;font-weight:700;color:var(--muted)">Final</label>
+            <input id="ep-hfin" type="number" step="0.1" value="${v(p.horimetro_final)}" style="width:100%;padding:11px;border:1.5px solid var(--border);border-radius:8px;font-size:15px;box-sizing:border-box;margin:4px 0 4px">
+          </div>
+        </div>
+      </div>`;
+  // (07/08/2026) TODOS os blocos de medição presentes no editor, com o
+  // seletor ep-med no topo: operador marcou o botão errado no registro →
+  // troca a medição aqui e os campos certos aparecem. Nada gravado se perde.
+  const _medNorm = (med === 'hora') ? 'horimetro' : med;
+  const _medOptsEp = [['horimetro','⚙️🕐 Hora / Horímetro'],['viagem','🚛 Viagem'],['diaria','📅 Diária'],['km','🛣 KM'],['metros','📏 Metros']];
+  campos = `
+      <label style="font-size:12px;font-weight:700;color:var(--muted)">Medição do registro</label>
+      <select id="ep-med" onchange="epTrocarMed(this.value)" style="width:100%;padding:11px;border:1.5px dashed var(--orange);border-radius:8px;font-size:15px;box-sizing:border-box;margin:4px 0 12px;background:#FFF7ED">
+        ${_medOptsEp.map(o => `<option value="${o[0]}" ${_medNorm===o[0]?'selected':''}>${o[1]}</option>`).join('')}
+      </select>` + campos;
+  campos += `
+      <div id="ep-bloco-relogio" style="display:${_medNorm==='horimetro'?'block':'none'}">
+        <div style="display:flex;gap:10px">
+          <div style="flex:1">
+            <label style="font-size:12px;font-weight:700;color:var(--muted)">Hora início</label>
+            <input id="ep-horaini" type="time" value="${hIni}" style="width:100%;padding:11px;border:1.5px solid var(--border);border-radius:8px;font-size:15px;box-sizing:border-box;margin:4px 0 12px">
+          </div>
+          <div style="flex:1">
+            <label style="font-size:12px;font-weight:700;color:var(--muted)">Hora fim</label>
+            <input id="ep-horafim" type="time" value="${hFim}" style="width:100%;padding:11px;border:1.5px solid var(--border);border-radius:8px;font-size:15px;box-sizing:border-box;margin:4px 0 12px">
+          </div>
+        </div>
+        <label style="display:flex;align-items:center;gap:8px;font-size:13px;margin-bottom:6px">
+          <input id="ep-semalmoco" type="checkbox" ${p.sem_almoco ? 'checked' : ''}> Dia corrido (sem desconto de almoço)
+        </label>
+        <div style="font-size:11px;color:var(--muted);margin:0 0 12px">Para valer só a máquina: apague os dois horários — as horas recalculam pelo horímetro.</div>
+      </div>
+      <div id="ep-bloco-km" style="display:${_medNorm==='km'?'block':'none'}">
+        <div style="display:flex;gap:10px">
+          <div style="flex:1">
+            <label style="font-size:12px;font-weight:700;color:var(--muted)">KM inicial</label>
+            <input id="ep-kmini" type="number" step="0.1" value="${v(p.km_inicial)}" style="width:100%;padding:11px;border:1.5px solid var(--border);border-radius:8px;font-size:15px;box-sizing:border-box;margin:4px 0 12px">
+          </div>
+          <div style="flex:1">
+            <label style="font-size:12px;font-weight:700;color:var(--muted)">KM final</label>
+            <input id="ep-kmfin" type="number" step="0.1" value="${v(p.km_final)}" style="width:100%;padding:11px;border:1.5px solid var(--border);border-radius:8px;font-size:15px;box-sizing:border-box;margin:4px 0 12px">
+          </div>
+        </div>
+      </div>
+      <div id="ep-bloco-viagem" style="display:${(_medNorm==='km'||_medNorm==='viagem')?'block':'none'}">
+        <label style="font-size:12px;font-weight:700;color:var(--muted)">Quantidade de viagens</label>
+        <input id="ep-viagens" type="number" step="1" min="0" value="${v(p.qtd_viagens)}" placeholder="1" style="width:100%;padding:11px;border:1.5px solid var(--border);border-radius:8px;font-size:15px;box-sizing:border-box;margin:4px 0 12px">
+      </div>
+      <div id="ep-bloco-diaria" style="display:${_medNorm==='diaria'?'block':'none'}">
+        <label style="font-size:12px;font-weight:700;color:var(--muted)">Quantidade de diárias</label>
+        <input id="ep-diarias" type="number" step="0.5" min="0" value="${v(p.quantidade_diarias)}" placeholder="1" style="width:100%;padding:11px;border:1.5px solid var(--border);border-radius:8px;font-size:15px;box-sizing:border-box;margin:4px 0 12px">
+      </div>
+      <div id="ep-bloco-metros" style="display:${_medNorm==='metros'?'block':'none'}">
+        <label style="font-size:12px;font-weight:700;color:var(--muted)">Metros executados</label>
+        <input id="ep-metros" type="number" step="0.1" min="0" value="${v(p.qtd_metros)}" style="width:100%;padding:11px;border:1.5px solid var(--border);border-radius:8px;font-size:15px;box-sizing:border-box;margin:4px 0 12px">
+      </div>`;
+  let dataFmt = p.data || '';
+  try { dataFmt = new Date(p.data + 'T00:00').toLocaleDateString('pt-BR'); } catch(e){}
+  const m = document.createElement('div');
+  m.id = 'modal-editar-parte';
+  m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:410;display:flex;align-items:flex-end';
+  m.onclick = (e) => { if (e.target === m) m.remove(); };
+  m.innerHTML = `
+    <div style="background:#fff;width:100%;border-radius:12px 12px 0 0;padding:20px;max-height:85dvh;overflow-y:auto">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+        <h2 style="font-size:16px;font-weight:800;color:var(--blue)">✎ Corrigir registro — ${dataFmt}</h2>
+        <button onclick="document.getElementById('modal-editar-parte').remove()" style="background:none;border:none;font-size:24px;color:var(--muted);cursor:pointer">×</button>
+      </div>
+      <div id="ep-err" style="display:none;background:#FEE;color:#C00;padding:10px;border-radius:8px;font-size:13px;margin-bottom:12px"></div>
+      ${selEquip}
+      ${selOper}
+      ${campos}
+      <label style="font-size:12px;font-weight:700;color:var(--muted)">Observação</label>
+      <textarea id="ep-obs" rows="2" style="width:100%;padding:11px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;box-sizing:border-box;margin:4px 0 16px">${v(p.observacao)}</textarea>
+      <button onclick="salvarEdicaoParte('${p.id}','${med}')" style="width:100%;padding:14px;border:none;background:var(--orange);color:#fff;border-radius:8px;font-weight:700;font-size:15px;cursor:pointer">💾 Salvar correção</button>
+      <button onclick="excluirMinhaParte('${p.id}')" style="width:100%;padding:12px;border:1.5px solid #DC2626;background:#fff;color:#DC2626;border-radius:8px;font-weight:700;font-size:14px;cursor:pointer;margin-top:10px">🗑️ Excluir registro (duplicado)</button>
+    </div>`;
+  document.body.appendChild(m);
+}
+
+async function excluirMinhaParte(parteId) {
+  if (!confirm('Excluir este registro?\n\nUse apenas em caso de DUPLICIDADE. Esta ação não pode ser desfeita.')) return;
+  try {
+    const token = localStorage.getItem('garra_token') || '';
+    const r = await fetch('/operacional/api/minhas-partes/' + parteId, {
+      method: 'DELETE',
+      headers: { 'Authorization': 'Bearer ' + token }
+    });
+    const resp = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(resp.detail || 'Erro ao excluir');
+    document.getElementById('modal-editar-parte')?.remove();
+    document.getElementById('modal-ver-partes')?.remove();
+    if (typeof toast === 'function') toast('🗑️ Registro excluído', 'success');
+    verPartes(window._vpOsId, window._vpOsNum);
+  } catch (e) {
+    // (27/07/2026) Sem rede: exclusão vai para a fila e executa ao conectar
+    const ehRede = (e instanceof TypeError) || /failed to fetch|network/i.test(e.message || '');
+    if (ehRede && typeof GarraDB !== 'undefined') {
+      try {
+        await GarraDB.postWithQueue('/operacional/api/minhas-partes/' + parteId,
+          null, { method: 'DELETE', retries: 5, retryDelay: 30000, dedup: false });
+        document.getElementById('modal-editar-parte')?.remove();
+        document.getElementById('modal-ver-partes')?.remove();
+        toast('⚠️ Sem conexão — exclusão será feita quando o sinal voltar', 'info');
+        return;
+      } catch (qe) { /* fila indisponível — mostra erro abaixo */ }
+    }
+    const err = document.getElementById('ep-err');
+    if (err) { err.textContent = e.message; err.style.display = 'block'; }
+  }
+}
+
+async function salvarEdicaoParte(parteId, med) {
+  const err = document.getElementById('ep-err');
+  err.style.display = 'none';
+  const body = { observacao: document.getElementById('ep-obs').value };
+  const _d = document.getElementById('ep-data')?.value;
+  if (_d) body.data = _d;
+  const _eq = document.getElementById('ep-equip')?.value;
+  if (_eq) body.equipamento_id = _eq;
+  const _op = document.getElementById('ep-oper')?.value;
+  if (_op) body.operador_id = _op;
+  // (18/07/2026) FONTE EDITADA POR ÚLTIMO VENCE: enviamos SÓ o que o
+  // operador alterou — o backend recalcula pela fonte tocada (completar o
+  // horímetro à noite recalcula pelo horímetro; mexer no relógio, pelo relógio)
+  const _o = window._epOriginal || {};
+  const _mudou = (v, orig) => String(v ?? '') !== String(orig ?? '');
+  const _hiV = document.getElementById('ep-hini')?.value;
+  const _hfV = document.getElementById('ep-hfin')?.value;
+  if (_mudou(_hiV, _o.horimetro_inicial)) body.horimetro_inicial = _hiV || null;
+  if (_mudou(_hfV, _o.horimetro_final))   body.horimetro_final   = _hfV || null;
+  // (07/08/2026) A medição ESCOLHIDA no seletor manda — trocou, envia
+  // tipo_medicao e lê os campos da medição nova (todos existem no modal).
+  const _medOrigN = ((_o.tipo_medicao === 'hora') ? 'horimetro' : _o.tipo_medicao) || 'horimetro';
+  const medSel = document.getElementById('ep-med')?.value || _medOrigN;
+  if (medSel !== _medOrigN) body.tipo_medicao = medSel;
+  if (medSel === 'km') {
+    body.km_inicial  = document.getElementById('ep-kmini').value || null;
+    body.km_final    = document.getElementById('ep-kmfin').value || null;
+    body.qtd_viagens = document.getElementById('ep-viagens').value || null;
+  } else if (medSel === 'viagem') {
+    body.qtd_viagens = document.getElementById('ep-viagens').value || null;
+  } else if (medSel === 'diaria') {
+    body.quantidade_diarias = document.getElementById('ep-diarias').value || null;
+  } else if (medSel === 'metros') {
+    body.qtd_metros = document.getElementById('ep-metros').value || null;
+  } else {
+    const _riV = document.getElementById('ep-horaini').value;
+    const _rfV = document.getElementById('ep-horafim').value;
+    const _saV = document.getElementById('ep-semalmoco').checked;
+    const _norm = t => String(t ?? '').slice(0,5);
+    if (_norm(_riV) !== _norm(_o.hora_inicio)) body.hora_inicio = _riV || null;
+    if (_norm(_rfV) !== _norm(_o.hora_fim))    body.hora_fim    = _rfV || null;
+    if (_saV !== !!_o.sem_almoco)              body.sem_almoco  = _saV;
+  }
+  try {
+    const token = localStorage.getItem('garra_token') || '';
+    const r = await fetch('/operacional/api/minhas-partes/' + parteId, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+      body: JSON.stringify(body)
+    });
+    const resp = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(resp.detail || 'Erro ao salvar');
+    document.getElementById('modal-editar-parte')?.remove();
+    document.getElementById('modal-ver-partes')?.remove();
+    if (typeof toast === 'function') toast('✅ Registro corrigido' + (resp.horas_trabalhadas != null ? ` — ${resp.horas_trabalhadas}h` : ''), 'success');
+    verPartes(window._vpOsId, window._vpOsNum);
+  } catch (e) {
+    // (27/07/2026) Sem rede: correção vai para a fila e aplica ao conectar
+    const ehRede = (e instanceof TypeError) || /failed to fetch|network/i.test(e.message || '');
+    if (ehRede && typeof GarraDB !== 'undefined') {
+      try {
+        await GarraDB.postWithQueue('/operacional/api/minhas-partes/' + parteId,
+          body, { method: 'PATCH', retries: 5, retryDelay: 30000, dedup: false });
+        document.getElementById('modal-editar-parte')?.remove();
+        document.getElementById('modal-ver-partes')?.remove();
+        toast('⚠️ Sem conexão — correção será aplicada quando o sinal voltar', 'info');
+        return;
+      } catch (qe) { /* fila indisponível — mostra erro abaixo */ }
+    }
+    err.textContent = e.message;
+    err.style.display = 'block';
+  }
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// INIT
+// ──────────────────────────────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', async () => {
+  // ── BIOMETRIA: prepara a tela de login (botão + pré-preenchimento) ──
+  prepararLoginBiometrico();
+  // ── BIOMETRIA: sem sessão + biometria ativa → tenta entrar DIRETO ──
+  // (cancelou/falhou: cai na tela de login normal, sem alerta)
+  setTimeout(async () => {
+    const temSessao = !!localStorage.getItem('garra_token');
+    if (!temSessao && bioAtiva() && localStorage.getItem('garra_ultimo_login')
+        && await bioSuportada()) {
+      entrarComDigital(true); // true = modo automático (silencioso)
+    }
+  }, 400);
+  // Registrar Service Worker v8
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('/operacional/static/sw.js', { scope: '/' })
+      .then(reg => console.log('[App] Service Worker registrado'))
+      .catch(err => console.error('[App] SW erro:', err));
+  }
+
+  // Indicador online/offline
+  atualizarBadgeRede();
+  window.addEventListener('online',  () => { atualizarBadgeRede(); preCarregarListasOffline(); carregarOSApp(); });
+  window.addEventListener('offline', () => atualizarBadgeRede());
+
+  // Inicializar GarraDB
+  await GarraDB.init();
+  console.log('[App] GarraDB inicializado');
+
+  // Verificar se já está logado
+  const token = localStorage.getItem('garra_token');
+  const usuario = localStorage.getItem('garra_usuario');
+  if (token && usuario) {
+    USUARIO = JSON.parse(usuario);
+    document.getElementById('screen-login').style.display = 'none';
+    document.getElementById('screen-app').style.display = 'flex';
+    document.getElementById('user-avatar').textContent = (USUARIO.nome || '?').charAt(0).toUpperCase();
+    atualizarBadgeMural();
+
+    // Renova o permsDB do servidor SEMPRE que possível (online), para refletir
+    // as permissões atuais do painel — não confiar no permsDB salvo, que pode
+    // estar velho (login antigo antes de marcar permissões) ou ausente (SSO).
+    // Se offline, usa o que tiver salvo.
+    try {
+      const rr = await fetch('/auth/renovar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token }
+      });
+      if (rr.ok) {
+        const dd = await rr.json();
+        if (dd.permsDB) USUARIO.permsDB = dd.permsDB;
+        if (dd.token) localStorage.setItem('garra_token', dd.token);
+        localStorage.setItem('garra_usuario', JSON.stringify(USUARIO));
+      }
+    } catch (e) { /* offline: usa o permsDB salvo */ }
+
+    aplicarPermissoesPerfil();
+    abrirAbaInicial();
+    carregarOSApp();
+    // Pré-carregar listas em background para uso offline
+    if (typeof preCarregarListasOffline === 'function') {
+      preCarregarListasOffline();
+    }
+  }
+});
+
+// ──────────────────────────────────────────────────────────────────────────────
+// PERMISSÕES POR PERFIL
+// ──────────────────────────────────────────────────────────────────────────────
+function aplicarPermissoesPerfil() {
+  if (!USUARIO) return;
+  const perfil = USUARIO.perfil;
+  const perms = USUARIO.permsDB || {};
+  const navs = document.querySelectorAll('.bottom-nav .nav-btn');
+  // navs[0] = Jardinagem, navs[1] = Operacional, navs[2] = Checklist, navs[3] = Logística
+
+  // Módulos mapeados para cada aba
+  const modulos = [
+    { aba: 0, id: 'jardinagem_mobile' },
+    { aba: 1, id: 'operacional_mobile' },
+    { aba: 2, id: 'checklist' },
+    { aba: 3, id: 'checklist_logistica' },
+    { aba: 4, id: 'compras_solicitar', ids: ['compras_solicitar','compras_aprovar','compras_ver_todas'] },
+    { aba: 5, id: 'pedir_ot' },
+    { aba: 6, id: 'abastecimento' },
+  ];
+
+  // Padrão por perfil (usado quando permsDB não define o módulo)
+  const padrao = {
+    admin:     ['jardinagem_mobile','operacional_mobile','checklist','checklist_logistica','compras_solicitar','abastecimento'],
+    gestor:    ['jardinagem_mobile','operacional_mobile','checklist','checklist_logistica','compras_solicitar','abastecimento'],
+    luana:     ['jardinagem_mobile','operacional_mobile','checklist','compras_solicitar'],
+    bruna:     ['operacional_mobile','checklist','compras_solicitar','pedir_ot','abastecimento'],
+    operador:  ['operacional_mobile','checklist','abastecimento'],
+    motorista: ['operacional_mobile','checklist','abastecimento'],
+    campo:     ['jardinagem_mobile'],
+  };
+
+  const meuPadrao = padrao[perfil] || [];
+
+  // Reset: começa tudo escondido
+  navs.forEach(b => b.style.display = 'none');
+
+  // Aplicar: permsDB tem prioridade sobre padrão
+  modulos.forEach(m => {
+    // Módulo pode ser liberado por mais de uma permissão (ex.: Compras
+    // abre por solicitar, aprovar OU visão geral — caso recebedor/financeiro)
+    const ids = m.ids || [m.id];
+    let permitido = false;
+    for (const pid of ids) {
+      if (pid in perms) { if (perms[pid]) { permitido = true; break; } }
+      else if (meuPadrao.includes(pid)) { permitido = true; break; }
+    }
+    if (permitido && navs[m.aba]) {
+      navs[m.aba].style.display = '';
+    }
+  });
+}
+
+function abrirAbaInicial() {
+  if (!USUARIO) return;
+  const navs = document.querySelectorAll('.bottom-nav .nav-btn');
+  const abas = ['Jard', 'Op', 'Check', 'Log', 'OC', 'OT', 'AB'];
+
+  // Veio do botão "Módulos" da jardinagem → NÃO reabrir jardinagem (evita loop)
+  const veioDaJardinagem = new URLSearchParams(location.search).get('from') === 'jardinagem';
+
+  // Quais abas estão visíveis (permitidas)
+  const visiveis = [];
+  for (let i = 0; i < navs.length; i++) {
+    if (navs[i].style.display !== 'none') visiveis.push(abas[i]);
+  }
+
+  // Se a ÚNICA permissão é Jardinagem → entra direto no app, sem tela intermediária.
+  // Exceto quando veio do botão "Módulos" (aí mostra a tela com as abas).
+  if (visiveis.length === 1 && visiveis[0] === 'Jard' && !veioDaJardinagem) {
+    abrirJardinagemSSO();
+    return;
+  }
+
+  // Veio da jardinagem e tem outros módulos → abre numa aba que não seja a jardinagem
+  if (veioDaJardinagem) {
+    const prioOutros = ['Op', 'Check', 'Log'];
+    for (const nome of prioOutros) {
+      const idx = abas.indexOf(nome);
+      if (idx >= 0 && navs[idx] && navs[idx].style.display !== 'none') {
+        ir(nome);
+        return;
+      }
+    }
+    // Só tem jardinagem → mostra a aba jardinagem selecionada (sem reabrir o app)
+    const idxJ = abas.indexOf('Jard');
+    if (navs[idxJ] && navs[idxJ].style.display !== 'none') {
+      document.querySelectorAll('.mod-section').forEach(s => s.classList.remove('active'));
+      document.querySelectorAll('.bottom-nav .nav-btn').forEach(b => b.classList.remove('active'));
+      document.getElementById('sec-jard').classList.add('active');
+      navs[idxJ].classList.add('active');
+      document.getElementById('app-modulo').textContent = 'Jardinagem';
+      return;
+    }
+  }
+
+  // Abre na primeira aba visível, priorizando Op > Jard > Check > Log
+  const prioridade = ['Op', 'Jard', 'Check', 'Log'];
+  for (const nome of prioridade) {
+    const idx = abas.indexOf(nome);
+    if (idx >= 0 && navs[idx] && navs[idx].style.display !== 'none') {
+      ir(nome);
+      return;
+    }
+  }
+  // Fallback: primeira visível
+  for (let i = 0; i < navs.length; i++) {
+    if (navs[i].style.display !== 'none') {
+      ir(abas[i]);
+      return;
+    }
+  }
+}
+
+// ══════════════════════════════════════════════════════════════
+// BIOMETRIA (WebAuthn) — Sessão 2 (03/07/2026)
+// Toggle no painel de conta; entrada automática ao abrir o app;
+// trava anti-toque-duplo (corrige "A request is already pending").
+// A senha permanece SEMPRE como fallback.
+// ══════════════════════════════════════════════════════════════
+
+let bioEmAndamento = false; // trava: uma cerimônia biométrica por vez
+let bioAutoTentado = false; // evita reabrir o leitor em loop na mesma tela
+
+function bioAtiva() { return localStorage.getItem('garra_bio_ativa') === '1'; }
+
+// Prepara a tela de login: mostra o ícone da digital, pré-preenche o login,
+// arma o gatilho do campo e — se autoTentar — JÁ ABRE O LEITOR sozinho.
+// Chamada na abertura do app e no logout (quando a tela de login reaparece).
+function prepararLoginBiometrico(autoTentar) {
+  bioAutoTentado = false;
+  bioSuportada().then(ok => {
+    const b = document.getElementById('btn-bio-login');
+    const campo = document.getElementById('field-login');
+    // Ícone: visível SEMPRE que o aparelho suporta (discreto; sobrevive à
+    // limpeza do armazenamento local — a credencial vive no servidor).
+    if (b) b.style.display = ok ? 'flex' : 'none';
+    if (!ok) return;
+    const ultimo = localStorage.getItem('garra_ultimo_login');
+    if (ultimo && campo && !campo.value) campo.value = ultimo;
+    // Gatilho do campo: trocou/terminou o login → leitor abre (1x por tela)
+    // — apenas se a biometria está ATIVA neste aparelho (sem sustos).
+    if (campo && !campo.dataset.bioGatilho) {
+      campo.dataset.bioGatilho = '1';
+      const disparar = () => {
+        if (campo.value.trim() && bioAtiva() && !bioAutoTentado && !bioEmAndamento) {
+          bioAutoTentado = true;
+          entrarComDigital(true);
+        }
+      };
+      campo.addEventListener('blur', disparar);
+      campo.addEventListener('change', disparar);
+      campo.addEventListener('keydown', ev => { if (ev.key === 'Enter') disparar(); });
+    }
+    // Tela apareceu com biometria ATIVA neste aparelho → leitor abre DIRETO
+    if (autoTentar && bioAtiva() && campo && campo.value.trim() && !bioAutoTentado && !bioEmAndamento) {
+      bioAutoTentado = true;
+      setTimeout(() => entrarComDigital(true), 350);
+    }
+  });
+}
+
+// aparelho tem leitor de digital/Face ID utilizável pelo navegador?
+async function bioSuportada() {
+  try {
+    return !!(window.PublicKeyCredential &&
+      await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable());
+  } catch { return false; }
+}
+
+// mensagem inline no painel (substitui os alerts)
+function bioMostrarMsg(texto, ok) {
+  const el = document.getElementById('bio-msg');
+  if (!el) return;
+  el.textContent = texto;
+  el.style.display = 'block';
+  el.style.background = ok ? '#DCFCE7' : '#FEE2E2';
+  el.style.color = ok ? '#166534' : '#991B1B';
+}
+
+// sincroniza o visual do toggle com o estado
+function atualizarSwitchBio() {
+  const sw = document.getElementById('bio-switch');
+  const knob = document.getElementById('bio-switch-knob');
+  const txt = document.getElementById('bio-status-txt');
+  if (!sw || !knob) return;
+  const on = bioAtiva();
+  sw.style.background = on ? 'var(--green, #16A34A)' : '#CBD5E1';
+  knob.style.left = on ? '25px' : '3px';
+  if (txt) txt.textContent = on ? 'Ativa — o app entra direto pela digital' : 'Desativada neste aparelho';
+}
+
+// toque no toggle: ON → cadastra a digital | OFF → desliga neste aparelho
+async function alternarBiometria() {
+  if (bioEmAndamento) return;
+  const msg = document.getElementById('bio-msg');
+  if (msg) msg.style.display = 'none';
+  if (bioAtiva()) {
+    localStorage.removeItem('garra_bio_ativa');
+    atualizarSwitchBio();
+    bioMostrarMsg('Biometria desativada neste aparelho.', true);
+    return;
+  }
+  await ativarDigital();
+}
+
+// conversões base64url ⇄ ArrayBuffer (formato das rotas ⇄ formato do navegador)
+function bioB64uParaBuf(s) {
+  s = s.replace(/-/g, '+').replace(/_/g, '/');
+  const bin = atob(s + '='.repeat((4 - s.length % 4) % 4));
+  const buf = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
+  return buf.buffer;
+}
+function bioBufParaB64u(buf) {
+  const bytes = new Uint8Array(buf);
+  let bin = '';
+  for (const b of bytes) bin += String.fromCharCode(b);
+  return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+// ── CADASTRO (usuário logado, toggle do painel de conta) ──
+async function ativarDigital() {
+  if (bioEmAndamento) return;   // anti-toque-duplo
+  bioEmAndamento = true;
+  try {
+    const token = localStorage.getItem('garra_token') || '';
+    const r1 = await fetch('/auth/webauthn/registro/desafio', {
+      method: 'POST', headers: { 'Authorization': 'Bearer ' + token }
+    });
+    if (!r1.ok) throw new Error((await r1.json()).detail || 'Falha ao iniciar cadastro');
+    const opts = await r1.json();
+
+    // strings base64url → ArrayBuffer (exigência do navigator.credentials)
+    opts.challenge = bioB64uParaBuf(opts.challenge);
+    opts.user.id   = bioB64uParaBuf(opts.user.id);
+    (opts.excludeCredentials || []).forEach(c => c.id = bioB64uParaBuf(c.id));
+
+    const cred = await navigator.credentials.create({ publicKey: opts });
+
+    const credencial = {
+      id: cred.id, rawId: bioBufParaB64u(cred.rawId), type: cred.type,
+      response: {
+        clientDataJSON:    bioBufParaB64u(cred.response.clientDataJSON),
+        attestationObject: bioBufParaB64u(cred.response.attestationObject),
+      },
+    };
+    const r2 = await fetch('/auth/webauthn/registro/verificar', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+      body: JSON.stringify({ credencial, apelido: 'Celular' })
+    });
+    const res = await r2.json();
+    if (!r2.ok) throw new Error(res.detail || 'Falha ao validar biometria');
+    localStorage.setItem('garra_bio_ativa', '1');
+    if (USUARIO && USUARIO.login) localStorage.setItem('garra_ultimo_login', USUARIO.login);
+    atualizarSwitchBio();
+    bioMostrarMsg('✅ Biometria ativa — o app vai entrar direto pela digital.', true);
+  } catch (e) {
+    if (e.name === 'InvalidStateError') {
+      // O aparelho informou que ESTA digital já está cadastrada no servidor
+      // (proteção anti-duplicata). Não é erro — é só religar o interruptor.
+      localStorage.setItem('garra_bio_ativa', '1');
+      if (USUARIO && USUARIO.login) localStorage.setItem('garra_ultimo_login', USUARIO.login);
+      atualizarSwitchBio();
+      bioMostrarMsg('✅ Este aparelho já tinha a digital cadastrada — biometria ativada.', true);
+    }
+    else if (e.name === 'NotAllowedError') bioMostrarMsg('Cadastro cancelado.', false);
+    else if (e.name === 'UnknownError' || e.name === 'NotReadableError' || /credential manager/i.test(e.message || ''))
+      bioMostrarMsg('O celular não conseguiu acessar o leitor de digital. Confira nas configurações do aparelho: 1) digital (ou bloqueio de tela) cadastrada; 2) conta Google ativa e Google Play Services atualizado; 3) Chrome atualizado. Depois tente de novo. A senha continua funcionando normalmente.', false);
+    else bioMostrarMsg('Erro: ' + e.message, false);
+  } finally {
+    bioEmAndamento = false;
+  }
+}
+
+// ── LOGIN POR DIGITAL (botão da tela de login OU automático no boot) ──
+async function entrarComDigital(automatico) {
+  if (bioEmAndamento) return;   // anti-toque-duplo
+  bioEmAndamento = true;
+  const errDiv = document.getElementById('login-err');
+  errDiv.style.display = 'none';
+  const login = document.getElementById('field-login').value.trim()
+             || localStorage.getItem('garra_ultimo_login') || '';
+  if (!login) {
+    bioEmAndamento = false;
+    if (!automatico) {
+      errDiv.textContent = 'Digite seu email para entrar com a digital';
+      errDiv.style.display = 'block';
+    }
+    return;
+  }
+  try {
+    const r1 = await fetch('/auth/webauthn/login/desafio', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ login })
+    });
+    if (!r1.ok) throw new Error((await r1.json()).detail || 'Falha ao iniciar login');
+    const opts = await r1.json();
+
+    opts.challenge = bioB64uParaBuf(opts.challenge);
+    (opts.allowCredentials || []).forEach(c => c.id = bioB64uParaBuf(c.id));
+
+    const cred = await navigator.credentials.get({ publicKey: opts });
+
+    const credencial = {
+      id: cred.id, rawId: bioBufParaB64u(cred.rawId), type: cred.type,
+      response: {
+        clientDataJSON:    bioBufParaB64u(cred.response.clientDataJSON),
+        authenticatorData: bioBufParaB64u(cred.response.authenticatorData),
+        signature:         bioBufParaB64u(cred.response.signature),
+        userHandle: cred.response.userHandle ? bioBufParaB64u(cred.response.userHandle) : null,
+      },
+    };
+    const r2 = await fetch('/auth/webauthn/login/verificar', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ login, credencial })
+    });
+    const data = await r2.json();
+    if (!r2.ok) throw new Error(data.detail || 'Falha na autenticação biométrica');
+    localStorage.setItem('garra_ultimo_login', login);
+    localStorage.setItem('garra_bio_ativa', '1');
+    await aplicarLoginSucesso(data);
+  } catch (e) {
+    // modo automático: silencioso — cancelou/falhou, fica na tela de login
+    if (!automatico) {
+      if (e.name === 'NotAllowedError') {
+        errDiv.textContent = 'Leitura da digital cancelada — use a senha.';
+      } else if ((e.message || '').includes('não cadastrada')) {
+        errDiv.textContent = 'Biometria não cadastrada — entre com a senha e ative pelo menu da conta (avatar).';
+      } else if (e.name === 'UnknownError' || e.name === 'NotReadableError' || /credential manager/i.test(e.message || '')) {
+        errDiv.textContent = 'O celular não conseguiu acessar o leitor de digital — entre com a senha. Confira digital cadastrada, conta Google ativa e Chrome atualizado.';
+      } else {
+        errDiv.textContent = e.message;
+      }
+      errDiv.style.display = 'block';
+    }
+  } finally {
+    bioEmAndamento = false;
+  }
+}
+
+</script>
+
+<!-- Offline UI e outros scripts -->
+<script src="/operacional/static/js/offline-ui.js"></script>
+
+</body>
+</html>
