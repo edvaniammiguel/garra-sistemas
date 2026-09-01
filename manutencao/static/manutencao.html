@@ -1421,7 +1421,9 @@ async function equipAbastecimentos(id){
   const fmtN = (v,d) => v == null ? '\u2014' : Number(v).toLocaleString('pt-BR',{minimumFractionDigits:d==null?0:d,maximumFractionDigits:d==null?2:d});
   const FONTE = {digitada:'digitada', foto:'\ud83d\udcf7 foto', ultima:'\u00faltima conhecida', equipamento:'cadastro'};
   const linhas = lista.map(a =>
-    '<tr><td class="mono" style="font-size:10px">'+_esc(a.numero_cupom||(a.origem==='galao'?'do '+(a.galao_codigo||'gal\u00e3o'):'\u2014'))+'</td>'
+    '<tr><td class="mono" style="font-size:10px;white-space:nowrap">'+_esc(a.numero_cupom||(a.origem==='galao'?'do '+(a.galao_codigo||'gal\u00e3o'):'\u2014'))
+      +(a.foto_nota_url?' <a href="'+_esc(a.foto_nota_url)+'" target="_blank" title="Ver foto da nota">\ud83e\uddfe</a>':'')
+      +(a.foto_leitura_url?' <a href="'+_esc(a.foto_leitura_url)+'" target="_blank" title="Ver foto do hor\u00edmetro/KM">\ud83d\udd50</a>':'')+'</td>'
     + '<td>'+_esc(a.combustivel_nome||a.combustivel||'\u2014')+'</td><td>'+dd(a.data)+'</td>'
     + '<td class="r mono">'+(a.destino_tipo==='galao'?'\u2014':fmtN(a.leitura))+'</td><td class="muted" style="font-size:10px">'+(a.destino_tipo==='galao'?'':un)+'</td>'
     + '<td class="r mono">'+fmtN(a.litros,2)+'</td><td class="muted" style="font-size:10px">LT</td>'
