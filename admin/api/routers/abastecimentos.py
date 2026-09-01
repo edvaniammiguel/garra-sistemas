@@ -428,7 +428,9 @@ _PROMPT_NOTA = (
     "para 'Diesel'. (3) O rodapé impresso pode trazer PLACA e identificador do veículo "
     "(ex.: 'PLACA: GYC-9741 CB-05') — use-os como item se não houver outro. (4) 'itens' "
     "NUNCA fica vazio quando existe identificador em qualquer lugar (caneta, impresso ou "
-    "texto): o que você escreveria em 'anotacoes' como identificador vai em 'itens'. Números no "
+    "texto): o que você escreveria em 'anotacoes' como identificador vai em 'itens'. "
+    "(5) Identificador de equipamento é SEMPRE letras+números (CPO36, EH-50, CB 05) ou placa; "
+    "nome do cliente (GARRA), do motorista ou do posto NUNCA é identificador. Números no "
     "padrão brasileiro (1.234,56). Responda SOMENTE JSON válido, sem "
     "markdown, exatamente com este formato: "
     '{"posto":{"nome":str|null,"cnpj":str|null},"cupom":str|null,'
@@ -452,10 +454,34 @@ def _json_tolerante(texto):
         return json.loads(t)
     except json.JSONDecodeError:
         pass
-    t2 = re.sub(r",\s*([}\]])", r"\1", t)                       # vírgula antes de } ou ]
+    t2 = re.sub(r"//[^\n]*", "", t)                                # comentários // …
+    t2 = re.sub(r"/\*.*?\*/", "", t2, flags=re.S)                  # comentários /* … */
+    t2 = re.sub(r",\s*([}\]])", r"\1", t2)                        # vírgula antes de } ou ]
+    t2 = re.sub(r"([{,]\s*)'([^']*)'\s*:", r'\1"\2":', t2)        # chave com aspas simples
+    t2 = re.sub(r':\s*\'([^\'\n]*)\'', lambda m: ': "' + m.group(1).replace('"', '\\"') + '"', t2)  # valor com aspas simples
     t2 = re.sub(r'([{,]\s*)([A-Za-z_][A-Za-z0-9_]*)\s*:', r'\1"\2":', t2)  # chave sem aspas
     t2 = t2.replace("\u201c", '"').replace("\u201d", '"')       # aspas tipográficas
+    t2 = re.sub(r"\bNone\b", "null", t2).replace("True", "true").replace("False", "false")
     return json.loads(t2)
+
+
+def _claude_reparar_json(texto_quebrado):
+    """Segunda chance: o modelo conserta o JSON que ele mesmo quebrou.
+    Chamada só de texto — barata e rápida."""
+    import requests as req_lib
+    r = req_lib.post(
+        "https://api.anthropic.com/v1/messages",
+        headers={"x-api-key": ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01",
+                 "content-type": "application/json"},
+        json={"model": MODELO_VISAO, "max_tokens": 900,
+              "messages": [{"role": "user", "content":
+                  "O texto abaixo deveria ser JSON válido mas está com erro de sintaxe. "
+                  "Devolva SOMENTE o mesmo conteúdo como JSON estrito (aspas duplas em todas as "
+                  "chaves e strings, sem vírgula sobrando, sem comentários, sem markdown):\n\n" + texto_quebrado}]},
+        timeout=40)
+    r.raise_for_status()
+    t = "".join(b.get("text", "") for b in r.json().get("content", []) if b.get("type") == "text")
+    return _json_tolerante(t)
 
 
 def _claude_ler(imagens, texto_livre):
@@ -482,7 +508,10 @@ def _claude_ler(imagens, texto_livre):
         r.raise_for_status()
         texto = "".join(b.get("text", "") for b in r.json().get("content", [])
                         if b.get("type") == "text")
-        return _json_tolerante(texto)
+        try:
+            return _json_tolerante(texto)
+        except json.JSONDecodeError:
+            return _claude_reparar_json(texto)
     except Exception as e:  # extração nunca derruba o registro manual
         return {"_erro": str(e)[:200]}
 
@@ -509,8 +538,8 @@ async def _resolver(extr):
     itens, nao_casados = [], []
     for it in (extr.get("itens") or []):
         ident = str((it or {}).get("identificador") or "").strip()
-        if not re.search(r"[A-Za-z0-9]", ident):
-            continue  # item fantasma ('.', '-', vazio) — nem linha, nem aviso
+        if not re.search(r"\d", ident):
+            continue  # sem número não é código nem placa (GARRA, JAIR, '.') — nem linha, nem aviso
         e = por_chave.get(_chave_cod(ident)) or por_placa.get(_norm_placa(ident) or "")
         row = {"identificador_lido": ident, "litros": _num((it or {}).get("litros")),
                "leitura": _num((it or {}).get("leitura")),
