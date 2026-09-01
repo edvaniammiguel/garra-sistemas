@@ -126,7 +126,18 @@ tr.sel td{background:#DBEAFE!important;color:#1A2A5E}
 .mwm.on{display:block}
 .mwm div{padding:7px 14px;font-size:12px;cursor:pointer;white-space:nowrap;border-bottom:1px solid #F1F5F9}
 .mwm div:last-child{border-bottom:none}.mwm div:hover{background:#F0F4FF}
+.mwsub{position:relative}
+.mwm2{display:none;top:-5px;left:100%;min-width:220px}
+.mwsub:hover>.mwm2{display:block}
 tr.sel td{background:#FFF7ED !important}
+.ne-cab{display:flex;gap:10px;align-items:flex-end}
+.ne-f{display:flex;flex-direction:column;gap:2px;min-width:0}.ne-f input,.ne-f select{width:100%;font-size:12px;padding:5px 7px;border:1px solid #CBD5E1;border-radius:5px}
+.ne-l{font-size:10px;font-weight:700;color:#475569}.ne-l.r{color:#B91C1C}
+.ne-tabs{display:flex;gap:2px;border-bottom:1px solid #CBD5E1;margin-top:10px}
+.ne-tab{padding:5px 10px;font-size:11px;font-weight:700;color:#475569;border:1px solid transparent;border-bottom:none;border-radius:6px 6px 0 0;cursor:pointer}
+.ne-tab.on{background:#fff;color:#1A2A5E;border-color:#CBD5E1;margin-bottom:-1px}
+.ne-pane{display:none;border:1px solid #CBD5E1;border-top:none;padding:12px;background:#fff;max-height:400px;overflow:auto}.ne-pane.on{display:block}
+.ne-fs{border:1px solid #CBD5E1;border-radius:6px;padding:8px 10px;margin-top:6px}.ne-fs legend{font-size:10px;color:#475569;padding:0 4px}
 .modal.larga .otw-corpo{flex:1;overflow:auto;background:#fff;border:1px solid #E2E8F0;border-radius:6px}
 #otw-de,#otw-dt{display:none;position:absolute;top:30px;background:#fff;border:1px solid #CBD5E1;border-radius:6px;box-shadow:0 8px 24px rgba(0,0,0,.15);z-index:50;min-width:220px;max-height:260px;overflow:auto}
 #otw-de{left:118px}
@@ -1299,14 +1310,21 @@ const _MW = {
     novo:'novoEquipMW()', abrir:"(function(){const i=_mwPrecisa('frota','objecto'); if(i) verEquipReal(i);})()",
     repetir:"(function(){const i=_mwPrecisa('frota','objecto'); if(i) novoEquipMW(i);})()",
     excluir:"excluirEquipMW()", imprimir:"mwImprimir('frota-centro','Frota')",
-    ver:[['\ud83c\udf33 \u00c1rvore',"ftModo('arv')"],['\u2630 Lista',"ftModo('lista')"],['\u21bb Atualizar sem\u00e1foros',"carregarSemaforosReais()"]],
-    registos:[['\u26fd Abastecimentos','equipAbastecimentos'],['\ud83d\udcc8 Registo Funcionamento','equipFuncionamento'],
-              ['\ud83d\udede Subsistemas / Montagem','equipSubsistemas'],['\ud83d\udd29 Artigos aplicados','equipArtigos'],
-              ['\ud83d\udcc5 Planos de manuten\u00e7\u00e3o','abrirPlanosEquip'],['\ud83d\udd27 Ordens de Trabalho','otsDoEquip']],
-    analises:[['\ud83d\udea6 Sem\u00e1foros da frota',"carregarSemaforosReais()"],['\ud83d\udcca An\u00e1lise ABC',"_mwBreve('An\u00e1lise ABC')"]],
-    ferramentas:[['\ud83c\udf33 \u00c1rvore Objectos',"ftModo('arv')"],['\ud83d\udcc5 Plano Trabalhos',"(function(){const i=_mwPrecisa('frota','objecto'); if(i) abrirPlanosEquip(i);})()"],
-                 ['\ud83d\udcdc Hist\u00f3rico Completo OTs',"(function(){const i=_mwPrecisa('frota','objecto'); if(i) otsDoEquip(i,true);})()"],
-                 ['\u270f\ufe0f M\u00faltipla Edi\u00e7\u00e3o Objectos',"_mwBreve('M\u00faltipla edi\u00e7\u00e3o')"],['\ud83d\ude9a Guias Transporte',"_mwBreve('Guias de transporte')"]],
+    botoes:[
+      ['\ud83d\udc41','Ver',[['\ud83c\udf33 \u00c1rvore',"ftModo('arv')"],['\u2630 Lista',"ftModo('lista')"],['\u21bb Atualizar sem\u00e1foros',"carregarSemaforosReais()"]]],
+      ['\ud83d\udcca','An\u00e1lises',[['\ud83d\udea6 Sem\u00e1foros da frota',"carregarSemaforosReais()"],['\ud83d\udcca An\u00e1lise ABC',"_mwBreve('An\u00e1lise ABC')"]]],
+      ['\u22ef','Mais',[['\ud83d\udd27 Ordens de Trabalho do objecto',"(function(){const i=_mwPrecisa('frota','objecto'); if(i) otsDoEquip(i,false);})()"],['\u2699\ufe0f Parametrizar',"showModule('param')"]]],
+      ['\ud83d\udd27','Ferramentas',[
+        {sub:'\ud83d\udcd2 Registos', itens:[['\u26fd Abastecimentos','equipAbastecimentos'],['\ud83d\udcc8 Registo Funcionamento','equipFuncionamento'],
+                                          ['\ud83d\udede Subsistemas / Montagem','equipSubsistemas'],['\ud83d\udd29 Artigos aplicados','equipArtigos'],
+                                          ['\ud83d\udcc5 Planos de manuten\u00e7\u00e3o','abrirPlanosEquip']], sel:true},
+        ['\ud83d\udcca An\u00e1lise ABC',"_mwBreve('An\u00e1lise ABC')"],
+        ['\ud83c\udf33 \u00c1rvore Objectos',"ftModo('arv')"],
+        ['\ud83d\udcc5 Plano Trabalhos',"(function(){const i=_mwPrecisa('frota','objecto'); if(i) abrirPlanosEquip(i);})()"],
+        ['\ud83d\udcdc Hist\u00f3rico Completo OTs',"(function(){const i=_mwPrecisa('frota','objecto'); if(i) otsDoEquip(i,true);})()"],
+        ['\u270f\ufe0f M\u00faltipla Edi\u00e7\u00e3o Objectos',"_mwBreve('M\u00faltipla edi\u00e7\u00e3o')"],
+        ['\ud83d\ude9a Guias Transporte',"_mwBreve('Guias de transporte')"]]]
+    ],
     busca:'arv-busca'
   },
   ots: {
@@ -1314,13 +1332,22 @@ const _MW = {
     novo:'abrirNovaOT()', abrir:"(function(){const i=_mwPrecisa('ots','OT'); if(i) verOTReal(i);})()",
     repetir:"repetirOTMW()", excluir:"(function(){const i=_mwPrecisa('ots','OT'); if(i) mntStatusReal(i,'cancelada');})()",
     imprimir:"mwImprimir('mod-ots','Ordens de Trabalho')",
-    ver:[['\u2705 Todas (limpar filtro)',"limparFiltroOTs()"]],
-    registos:[['\ud83d\udce8 Pedidos (triagem)',"abrirPedidos()"],
-              ['\u25b6\ufe0f Iniciar (Em curso)',"(function(){const i=_mwPrecisa('ots','OT'); if(i) mntStatusReal(i,'em_andamento');})()"],
-              ['\u23f8\ufe0f Aguardando pe\u00e7a',"(function(){const i=_mwPrecisa('ots','OT'); if(i) mntStatusReal(i,'aguardando_peca');})()"],
-              ['\u2714\ufe0f Concluir\u2026',"(function(){const i=_mwPrecisa('ots','OT'); if(i) mntStatusReal(i,'concluida');})()"]],
-    analises:[['\ud83d\udea6 Sem\u00e1foros da frota',"showModule('frota');carregarSemaforosReais()"]],
-    ferramentas:[['\ud83d\udcdc Hist\u00f3rico Completo OTs',"limparFiltroOTs()"],['\ud83d\udcc5 Plano Trabalhos',"_mwBreve('Plano de trabalhos consolidado')"]],
+    botoes:[
+      ['\ud83d\udc41','Ver',[['\u2705 Todas (limpar filtro)',"limparFiltroOTs()"],['\u25b6\ufe0f Iniciar (Em curso)',"(function(){const i=_mwPrecisa('ots','OT'); if(i) mntStatusReal(i,'em_andamento');})()"],
+                              ['\u23f8\ufe0f Aguardando pe\u00e7a',"(function(){const i=_mwPrecisa('ots','OT'); if(i) mntStatusReal(i,'aguardando_peca');})()"],
+                              ['\u2714\ufe0f Concluir\u2026',"(function(){const i=_mwPrecisa('ots','OT'); if(i) mntStatusReal(i,'concluida');})()"]]],
+      ['\ud83d\udce8','Pedidos',"abrirPedidos()"],
+      ['\ud83d\udcc5','Calend\u00e1rio',"_mwBreve('Calend\u00e1rio de trabalhos')"],
+      ['\ud83d\uddc2','Projectos',"_mwBreve('Projectos')"],
+      ['\u22ef','Mais',[['\ud83d\udea6 Sem\u00e1foros da frota',"showModule('frota');carregarSemaforosReais()"],['\u2699\ufe0f Parametrizar',"showModule('param')"]]],
+      ['\ud83d\udd27','Ferramentas',[
+        {sub:'\ud83d\udcd2 Registos', itens:[['\ud83d\udc65 Registo M\u00e3o de Obra',"_mwBreve('Registo de m\u00e3o de obra')"],['\ud83d\udd29 Registo Artigos',"(function(){const i=_mwPrecisa('ots','OT'); if(i) verOTReal(i);})()"],['\ud83d\udcc4 Registo Outros',"_mwBreve('Registo outros')"]]},
+        ['\u270f\ufe0f M\u00faltipla Edi\u00e7\u00e3o OTs',"_mwBreve('M\u00faltipla edi\u00e7\u00e3o de OTs')"],
+        ['\u26a0\ufe0f Modos Falha',"showModule('param')"],
+        ['\ud83d\udcca Carga Trabalhos',"_mwBreve('Carga de trabalhos')"],
+        ['\ud83e\udd1d Contratos',"_mwBreve('Contratos')"],
+        ['\ud83d\ude9a Guias Transporte',"_mwBreve('Guias de transporte')"]]]
+    ],
     busca:'ots-busca'
   },
   alm: {
@@ -1328,25 +1355,35 @@ const _MW = {
     novo:"artJanela('')", abrir:"(function(){const i=_mwPrecisa('alm','artigo'); if(i) abrirPeca(i);})()",
     repetir:"(function(){const i=_mwPrecisa('alm','artigo'); if(i) artJanela(i);})()",
     excluir:"_mwBreve('Desativar artigo')", imprimir:"mwImprimir('mod-alm','Materiais')",
-    ver:[['\ud83d\uddc2 Cat\u00e1logo de Pe\u00e7as',"almLente('mestre')"],['\ud83d\udce6 Almoxarifado',"almLente('armazem')"]],
-    registos:[['\ud83d\udce5 Entrada',"almMovAbrir('entrada')"],['\ud83d\udce4 Sa\u00edda',"almMovAbrir('saida')"],
-              ['\u21c4 Transfer\u00eancia',"almMovAbrir('transferencia')"],['\ud83e\uddee Ajuste de saldo',"almMovAbrir('ajuste')"]],
-    analises:[['\ud83d\udcca An\u00e1lise ABC',"_mwBreve('An\u00e1lise ABC')"],['\u26a0 Estoque baixo',"carregarPecasReais()"]],
-    ferramentas:[['\ud83d\udccb Invent\u00e1rio',"_mwBreve('Invent\u00e1rio')"],['\ud83d\udd01 Substitutos',"_mwBreve('Substitutos')"]],
+    botoes:[
+      ['\ud83d\udc41','Ver',[['\ud83d\uddc2 Cat\u00e1logo de Pe\u00e7as',"almLente('mestre')"],['\ud83d\udce6 Almoxarifado',"almLente('armazem')"]]],
+      ['\ud83d\udcca','An\u00e1lises',[['\ud83d\udcca An\u00e1lise ABC',"_mwBreve('An\u00e1lise ABC')"],['\u26a0 Estoque baixo',"carregarPecasReais()"]]],
+      ['\u22ef','Mais',[['\u2699\ufe0f Parametrizar',"showModule('param')"]]],
+      ['\ud83d\udd27','Ferramentas',[
+        {sub:'\ud83d\udcd2 Registos', itens:[['\ud83d\udce5 Entrada',"almMovAbrir('entrada')"],['\ud83d\udce4 Sa\u00edda',"almMovAbrir('saida')"],['\u21c4 Transfer\u00eancia',"almMovAbrir('transferencia')"],['\ud83e\uddee Ajuste de saldo',"almMovAbrir('ajuste')"]]},
+        ['\ud83d\udccb Invent\u00e1rio',"_mwBreve('Invent\u00e1rio')"],
+        ['\ud83d\udd01 Substitutos',"_mwBreve('Substitutos')"]]]
+    ],
     busca:'alm-busca'
   }
 };
 
 function mwBar(aba){
   const c = _MW[aba];
-  const b = (ico, rot, fn) => '<button class="mwb" onclick="'+fn.replace(/"/g,'&quot;')+'"><span class="i">'+ico+'</span>'+rot+'</button>';
-  const dd = (ico, rot, itens, tipoSel) => '<div class="mwdd"><button class="mwb" onclick="mwMenu(this)"><span class="i">'+ico+'</span>'+rot+' \u25be</button><div class="mwm">'
-      + itens.map(([t,f]) => '<div onclick="'+(tipoSel ? "(function(){const i=_mwPrecisa('"+aba+"','"+c.rotulo+"'); if(i) "+f+"(i);})()" : f).replace(/"/g,'&quot;')+'">'+t+'</div>').join('')+'</div></div>';
+  const q = f => String(f).replace(/"/g,'&quot;');
+  const b = (ico, rot, fn) => '<button class="mwb" onclick="'+q(fn)+'"><span class="i">'+ico+'</span>'+rot+'</button>';
+  const item = (it) => {
+    if (Array.isArray(it)) return '<div onclick="'+q(it[1])+'">'+it[0]+'</div>';
+    // submenu (Registos ▸): itens podem exigir seleção (sel:true → fn recebe o id)
+    const linhas = it.itens.map(([t,f]) => '<div onclick="'+q(it.sel ? "(function(){const i=_mwPrecisa('"+aba+"','"+c.rotulo+"'); if(i) "+f+"(i);})()" : f)+'">'+t+'</div>').join('');
+    return '<div class="mwsub">'+it.sub+' <span style="float:right">\u25b8</span><div class="mwm mwm2">'+linhas+'</div></div>';
+  };
+  const dd = (ico, rot, itens) => '<div class="mwdd"><button class="mwb" onclick="mwMenu(this)"><span class="i">'+ico+'</span>'+rot+' \u25be</button><div class="mwm">'+itens.map(item).join('')+'</div></div>';
   return '<div class="mwbar" id="mwbar-'+aba+'">'
     + b('\u2795','Novo',c.novo) + b('\ud83d\udda8','Imprimir',c.imprimir) + b('\ud83d\udcc2','Abrir',c.abrir)
     + b('\ud83d\udccb','Repetir',c.repetir) + b('\u2715','Excluir',c.excluir)
     + '<span class="sep"></span>'
-    + dd('\ud83d\udc41','Ver',c.ver,false) + dd('\ud83d\udcd2','Registos',c.registos, aba==='frota') + dd('\ud83d\udcca','An\u00e1lises',c.analises,false) + dd('\ud83d\udd27','Ferramentas',c.ferramentas,false)
+    + c.botoes.map(([ico,rot,x]) => Array.isArray(x) ? dd(ico,rot,x) : b(ico,rot,x)).join('')
     + '<span class="sep"></span>'
     + '<input placeholder="Procurar\u2026" onkeydown="if(event.key===\'Enter\'){mwProcurar(\''+aba+'\',this.value)}">'
     + '<button class="mwb" onclick="mwProcurar(\''+aba+'\',this.previousElementSibling.value)"><span class="i">\ud83d\udd0d</span>Procurar</button>'
@@ -1389,63 +1426,185 @@ async function repetirOTMW(){
   abrirNovaOT(o.equipamento_id, o);
 }
 
-// ── NOVO OBJECTO (cadastro de equipamento na Frota) ────────────────────────
-// Nasce na frota única (operacional) e recebe os campos de manutenção na
-// ficha. copiarDe = id de um objecto existente → "Repetir".
-let _mwDom = null;
+// ── NOVO OBJECTO — réplica da janela do ManWinWin (print 01/09/2026) ──────
+// Estrutura = Tipo (sigla) + número sequencial sugerido → Código. Sistema vem
+// do nó da árvore que estava aberto. Abas: Identificação · Características ·
+// Dados Operacionais · Info. Complementares · Notas. OK grava e abre a ficha;
+// Aplicar grava e mantém a janela (para continuar preenchendo).
+let _mwDom = null, _neEditId = null;
 async function novoEquipMW(copiarDe){
   if (!_mwDom){
     const g = async d => { try { return (await mntFetch('/manutencao/api/param/'+d)).filter(x => x.ativo !== false); } catch(e){ return []; } };
-    _mwDom = { tipos: await g('tipos-equipamento'), sistemas: await g('sistemas'), ccs: await g('centros-custo') };
+    let ops = [], forn = [];
+    try { ops = await mntFetch('/operacional/api/operadores'); } catch(e){}
+    try { forn = await mntFetch('/manutencao/api/fornecedores'); } catch(e){}
+    _mwDom = { tipos: await g('tipos-equipamento'), sistemas: await g('sistemas'), ccs: await g('centros-custo'),
+               operadores: Array.isArray(ops) ? ops : (ops.itens || []), fornecedores: Array.isArray(forn) ? forn : (forn.itens || []) };
   }
+  _neEditId = null;
   let base = {};
   if (copiarDe){
-    try { const d = await mntFetch('/manutencao/api/equipamentos/'+copiarDe+'/detalhe'); base = d.equipamento || d || {}; } catch(e){ base = _navEquipObjs().find(x => String(x.id) === String(copiarDe)) || {}; }
+    try { const d = await mntFetch('/manutencao/api/equipamentos/'+copiarDe+'/detalhe'); base = d.equipamento || d || {}; }
+    catch(e){ base = _navEquipObjs().find(x => String(x.id) === String(copiarDe)) || {}; }
   }
+  const sisAtivo = (typeof _arvNoAtivo === 'string' && _arvNoAtivo !== '_todos') ? _arvNoAtivo : (base.sistema_codigo || '');
+  const tipoIni = base.tipo_sigla || (sisAtivo ? _neTipoDoSistema(sisAtivo) : '') || '';
+  const sel = (id, lista, val, chave, rot, vazio) => '<select id="'+id+'" onchange="'+(id==='ne-tipo'?'neTipoMudou()':'')+'"><option value="">'+(vazio||'\u2014')+'</option>'
+      + lista.map(x => '<option value="'+_esc(x[chave])+'"'+(String(x[chave])===String(val||'')?' selected':'')+'>'+_esc(x[chave])+(x[rot]?' \u2014 '+_esc(x[rot]):'')+'</option>').join('')+'</select>';
+  const fld = (rot, html, w) => '<div class="ne-f"'+(w?' style="flex:'+w+'"':'')+'><span class="ne-l">'+rot+'</span>'+html+'</div>';
+  const inp = (id, val, ph, tipo) => '<input id="'+id+'"'+(tipo?' type="'+tipo+'"':'')+' value="'+_esc(val==null?'':val)+'" placeholder="'+(ph||'')+'">';
   const cats = Array.from(new Set(_semCache.map(e => e.categoria).filter(Boolean))).sort();
-  const opt = (lista, val, chave, rot) => '<option value="">\u2014</option>' + lista.map(x => '<option value="'+_esc(x[chave])+'"'+(x[chave]===val?' selected':'')+'>'+_esc(x[chave])+' \u2014 '+_esc(x[rot]||'')+'</option>').join('');
-  const f = (id, rot, html) => '<div class="mfield" style="flex:1;min-width:140px">'+rot+html+'</div>';
-  const inp = (id, val, ph) => '<input id="'+id+'" value="'+_esc(val||'')+'" placeholder="'+(ph||'')+'">';
-  document.querySelector('#eq-ficha .modal').classList.remove('larga');
+  const pais = _semCache.filter(e => (e.categoria||'') !== 'componente');
+
+  document.querySelector('#eq-ficha .modal').classList.add('larga');
   document.getElementById('eq-ficha-corpo').innerHTML =
-    '<div style="display:flex;justify-content:space-between;align-items:center"><b style="font-size:14px;color:#1A2A5E">\u2795 Novo Objecto'+(copiarDe?' <span class="muted" style="font-weight:400;font-size:11px">(repetindo '+_esc(base.codigo||'')+')</span>':'')+'</b>'
+    '<div style="display:flex;justify-content:space-between;align-items:center"><b style="font-size:14px;color:#1A2A5E">\u2699\ufe0f Novo Objecto'
+    + (copiarDe?' <span class="muted" style="font-weight:400;font-size:11px">(repetindo '+_esc(base.codigo||'')+')</span>':'')+'</b>'
     + '<span style="cursor:pointer;font-size:18px" onclick="fichaFechar()">\u2715</span></div>'
-    + '<div class="muted" style="font-size:10px;margin:4px 0 8px">Entra na frota \u00fanica (Operacional + Manuten\u00e7\u00e3o). C\u00f3digo, descri\u00e7\u00e3o e categoria s\u00e3o obrigat\u00f3rios; o resto pode ser completado na ficha.</div>'
-    + '<div style="display:flex;gap:8px;flex-wrap:wrap">'
-    + f('ne-cod','C\u00f3digo *', inp('ne-cod','', 'ex.: EH-52')) + f('ne-desc','Descri\u00e7\u00e3o *', inp('ne-desc', base.descricao, 'ex.: Escavadeira hidr\u00e1ulica 20t'))
-    + f('ne-cat','Categoria *','<input id="ne-cat" list="ne-cat-l" value="'+_esc(base.categoria||'')+'" placeholder="caminhao, maquina, apoio\u2026"><datalist id="ne-cat-l">'+cats.map(c=>'<option value="'+_esc(c)+'">').join('')+'</datalist>')
-    + f('ne-med','Medi\u00e7\u00e3o','<select id="ne-med">'+['horimetro','km','hora','diaria','viagem','metros'].map(m=>'<option value="'+m+'"'+((base.medicao||'horimetro')===m?' selected':'')+'>'+m+'</option>').join('')+'</select>')
-    + '</div><div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px">'
-    + f('ne-tipo','Tipo (ManWinWin)','<select id="ne-tipo">'+opt(_mwDom.tipos, base.tipo_sigla, 'sigla','nome')+'</select>')
-    + f('ne-sis','Sistema','<select id="ne-sis">'+opt(_mwDom.sistemas, base.sistema_codigo, 'codigo','nome')+'</select>')
-    + f('ne-cc','Centro de custo','<select id="ne-cc">'+opt(_mwDom.ccs, base.centro_custo, 'codigo','nome')+'</select>')
-    + '</div><div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px">'
-    + f('ne-marca','Marca', inp('ne-marca', base.marca)) + f('ne-modelo','Modelo', inp('ne-modelo', base.modelo))
-    + f('ne-ano','Ano', inp('ne-ano', base.ano_fabricacao || base.ano)) + f('ne-placa','Placa', inp('ne-placa', '', 'ABC-1D23'))
-    + f('ne-serie','N\u00ba de s\u00e9rie', inp('ne-serie','')) + f('ne-loc','Localiza\u00e7\u00e3o', inp('ne-loc', base.localizacao))
+    // ── Estrutura (cabeçalho fixo) ──
+    + '<div class="ne-cab">'
+    + '<div class="ne-f" style="flex:0 0 190px"><span class="ne-l r">Estrutura:</span><div style="display:flex;gap:4px;align-items:center"><input id="ne-sigla" list="ne-sigla-l" style="width:60px;text-transform:uppercase" value="'+_esc(tipoIni)+'" oninput="neSiglaMudou()" placeholder="EH"><datalist id="ne-sigla-l">'+_mwDom.tipos.map(t=>'<option value="'+_esc(t.sigla)+'">'+_esc(t.nome||'')+'</option>').join('')+'</datalist><span>-</span><input id="ne-num" style="width:64px" oninput="neCodigo()"><button class="btn" title="Pr\u00f3ximo n\u00famero livre" onclick="neProximo()">\u2026</button></div></div>'
+    + '<div class="ne-f" style="flex:1"><span class="ne-l r">Tipo Objecto:</span>'+sel('ne-tipo', _mwDom.tipos, tipoIni, 'sigla','nome')+'</div>'
+    + '<div class="ne-f" style="flex:0 0 150px;align-items:center;justify-content:center"><span style="font-weight:800;color:#0F172A;letter-spacing:.04em">DISPON\u00cdVEL</span> <span style="display:inline-block;width:22px;height:22px;border-radius:50%;background:#16A34A;color:#fff;text-align:center;line-height:22px;font-size:11px;margin-left:6px">\u25b6</span></div>'
+    + '</div><div class="ne-cab" style="margin-top:4px">'
+    + '<div class="ne-f" style="flex:0 0 190px"><span class="ne-l r">C\u00f3digo:</span><input id="ne-cod" style="font-weight:800;color:#1A2A5E" placeholder="EH-0052"></div>'
+    + '<div class="ne-f" style="flex:1"><span class="ne-l r">Descri\u00e7\u00e3o:</span>'+inp('ne-desc', base.descricao, 'ex.: ESCAVADEIRA HIDR\u00c1ULICA 20t')+'</div>'
     + '</div>'
-    + '<div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px"><button class="btn" onclick="fichaFechar()">Cancelar</button><button class="btn p" onclick="salvarNovoEquipMW()">\ud83d\udcbe Criar objecto</button></div>';
+    // ── Abas ──
+    + '<div class="ne-tabs">'
+    + ['Identifica\u00e7\u00e3o','Caracter\u00edsticas','Dados Operacionais','Info. Complementares','Notas'].map((t,i)=>'<span class="ne-tab'+(i===0?' on':'')+'" onclick="neAba('+i+',this)">'+t+'</span>').join('')
+    + '</div>'
+    // aba 0 — Identificação
+    + '<div class="ne-pane on" id="ne-p0"><div style="display:flex;gap:14px">'
+    + '<div style="flex:1;display:flex;flex-direction:column;gap:6px">'
+    + fld('Pai', '<select id="ne-pai"><option value="">(nenhum \u2014 objecto de topo)</option>'+pais.map(e=>'<option value="'+e.id+'"'+(String(e.id)===String(base.equipamento_pai||'')?' selected':'')+'>'+_esc(e.codigo)+' \u2014 '+_esc(e.descricao||'')+'</option>').join('')+'</select>')
+    + fld('Sistema', sel('ne-sis', _mwDom.sistemas, sisAtivo, 'codigo','nome'))
+    + fld('C. Custo', sel('ne-cc', _mwDom.ccs, base.centro_custo, 'codigo','nome'))
+    + fld('Localiza\u00e7\u00e3o', inp('ne-loc', base.localizacao))
+    + fld('Operador', sel('ne-op', _mwDom.operadores, base.operador_responsavel_id, 'id','nome'))
+    + fld('Desde', inp('ne-desde', '', '', 'date'))
+    + '<fieldset class="ne-fs"><legend>Fornecedor</legend>'
+    + fld('Fornecedor', sel('ne-forn', _mwDom.fornecedores, base.fornecedor_id, 'id','nome'))
+    + '<div style="display:flex;gap:6px;margin-top:4px">'
+    + fld('<span class="r">Data:</span>', inp('ne-dtaq', new Date().toISOString().slice(0,10), '', 'date'), 1)
+    + fld('Registo (H):', inp('ne-leit', '', '0'), 1) + fld('Vida \u00datil:', inp('ne-vida', base.vida_util_h, 'h'), 1) + fld('Investimento:', inp('ne-inv', '', 'R$'), 1)
+    + '</div><div style="display:flex;justify-content:flex-end;margin-top:4px">'+fld('Valor Actual:', inp('ne-vatual','', 'R$'), 0.5)+'</div>'
+    + '</fieldset></div>'
+    + '<div style="flex:0 0 280px;display:flex;flex-direction:column;gap:6px"><div style="height:200px;border:1px solid #93C5FD;background:#F8FAFC;display:flex;align-items:center;justify-content:center;color:#94A3B8;font-size:11px">Figura</div>'
+    + fld('Figura:', '<input type="file" id="ne-figura" accept="image/*" style="font-size:10px">') + fld('Ficheiro:', '<input type="file" id="ne-fich" style="font-size:10px">') + '</div>'
+    + '</div></div>'
+    // aba 1 — Características (pares nome/valor)
+    + '<div class="ne-pane" id="ne-p1"><div class="muted" style="font-size:10px;margin-bottom:6px">Caracter\u00edsticas t\u00e9cnicas (nome = valor). Para pneus: Recapagens \u00b7 DOT/s\u00e9rie \u00b7 Medida.</div>'
+    + '<div id="ne-cars">'+((base.caracteristicas||[]).map(c=>neCarLinha(c.nome||c.n||'', c.valor||c.v||'')).join('') || neCarLinha('',''))+'</div>'
+    + '<button class="btn" onclick="document.getElementById(\'ne-cars\').insertAdjacentHTML(\'beforeend\', neCarLinha(\'\',\'\'))">\u2795 Caracter\u00edstica</button></div>'
+    // aba 2 — Dados Operacionais
+    + '<div class="ne-pane" id="ne-p2"><div style="display:flex;gap:8px;flex-wrap:wrap">'
+    + fld('Categoria (Operacional) *','<input id="ne-cat" list="ne-cat-l" value="'+_esc(base.categoria||'')+'" placeholder="caminhao, maquina, apoio\u2026"><datalist id="ne-cat-l">'+cats.map(c=>'<option value="'+_esc(c)+'">').join('')+'</datalist>',1)
+    + fld('Medi\u00e7\u00e3o','<select id="ne-med">'+['horimetro','km','hora','diaria','viagem','metros'].map(m=>'<option value="'+m+'"'+((base.medicao||'horimetro')===m?' selected':'')+'>'+m+'</option>').join('')+'</select>',1)
+    + fld('Placa', inp('ne-placa','', 'ABC-1D23'),1)
+    + '</div><div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px">'
+    + fld('Marca', inp('ne-marca', base.marca),1) + fld('Modelo', inp('ne-modelo', base.modelo),1) + fld('Ano', inp('ne-ano', base.ano_fabricacao || base.ano),1) + fld('N\u00ba de s\u00e9rie', inp('ne-serie',''),1)
+    + '</div></div>'
+    // aba 3 — Info. Complementares
+    + '<div class="ne-pane" id="ne-p3"><div style="display:flex;gap:8px;flex-wrap:wrap">'
+    + fld('Criticidade','<select id="ne-crit">'+['','A','B','C'].map(c=>'<option value="'+c+'"'+((base.criticidade||'')===c?' selected':'')+'>'+(c||'\u2014')+'</option>').join('')+'</select>',1)
+    + fld('Cor', inp('ne-cor', base.cor),1) + fld('Posi\u00e7\u00e3o (no pai)', inp('ne-pos', '', 'ex.: dianteiro esquerdo'),1)
+    + '</div></div>'
+    // aba 4 — Notas
+    + '<div class="ne-pane" id="ne-p4"><textarea id="ne-notas" style="width:100%;min-height:160px;font-size:12px;padding:8px;border:1px solid #CBD5E1;border-radius:6px" placeholder="Observa\u00e7\u00f5es livres sobre o objecto\u2026"></textarea></div>'
+    // rodapé
+    + '<div style="display:flex;justify-content:flex-end;gap:8px;margin-top:10px;border-top:1px solid #E2E8F0;padding-top:8px">'
+    + '<button class="btn p" style="min-width:90px" onclick="neSalvar(true)">OK</button><button class="btn" onclick="fichaFechar()">Cancelar</button><button class="btn" onclick="neSalvar(false)">Aplicar</button></div>';
   document.getElementById('eq-ficha').classList.add('show');
-  setTimeout(() => { const c = document.getElementById('ne-cod'); if (c) c.focus(); }, 50);
+  neProximo();
 }
-async function salvarNovoEquipMW(){
+function _neTipoDoSistema(cod){
+  // sistema 01.00.01.01 - ESCAVADEIRA HIDRAULICA → tipo cuja descrição casa com o nome do sistema
+  const sis = (_mwDom.sistemas||[]).find(x => x.codigo === cod); if (!sis) return '';
+  const nome = (sis.nome||'').toUpperCase();
+  const t = (_mwDom.tipos||[]).find(x => nome.indexOf((x.nome||'').toUpperCase()) >= 0 || (x.nome||'').toUpperCase().indexOf(nome) >= 0);
+  return t ? t.sigla : '';
+}
+function neCarLinha(n, v){
+  return '<div class="ne-car" style="display:flex;gap:6px;margin-bottom:4px"><input class="c-n" placeholder="nome" value="'+_esc(n)+'" style="flex:1"><input class="c-v" placeholder="valor" value="'+_esc(v)+'" style="flex:1"><button class="btn" onclick="this.parentNode.remove()">\u2715</button></div>';
+}
+function neAba(i, el){
+  document.querySelectorAll('.ne-tab').forEach(t => t.classList.remove('on')); el.classList.add('on');
+  document.querySelectorAll('.ne-pane').forEach((p,k) => p.classList.toggle('on', k === i));
+}
+function neSiglaMudou(){
+  // Estrutura é o gatilho: a sigla traz Tipo, número, Código, Sistema e categoria
+  const sig = (document.getElementById('ne-sigla').value||'').toUpperCase().trim();
+  const tp = (_mwDom.tipos||[]).find(x => String(x.sigla||'').toUpperCase() === sig);
+  if (tp){
+    document.getElementById('ne-tipo').value = tp.sigla;
+    _neAplicarTipo(tp);
+  }
+  neProximo();
+}
+function neTipoMudou(){
+  const t = document.getElementById('ne-tipo').value;
+  document.getElementById('ne-sigla').value = t;
+  const tp = (_mwDom.tipos||[]).find(x => x.sigla === t);
+  if (tp) _neAplicarTipo(tp);
+  neProximo();
+}
+function _neAplicarTipo(tp){
+  const n = (tp.nome||'').toUpperCase();
+  const cat = document.getElementById('ne-cat');
+  if (cat && !cat.value)
+    cat.value = /CAMINH|CARRET|REBOQ/.test(n) ? 'caminhao' : /PNEU/.test(n) ? 'componente' : /VEIC|APOIO|PICK|CARRO/.test(n) ? 'apoio' : /GAL/.test(n) ? 'galao' : 'maquina';
+  const med = document.getElementById('ne-med');
+  if (med) med.value = /CAMINH|CARRET|REBOQ|VEIC|APOIO|PICK|CARRO/.test(n) ? 'km' : 'horimetro';
+  // Sistema: o nó da árvore cujo nome casa com o tipo (01.00.01.01 - ESCAVADEIRA HIDRAULICA)
+  const sis = document.getElementById('ne-sis');
+  if (sis && !sis.value){
+    const alvo = (_mwDom.sistemas||[]).find(x => { const sn = (x.nome||'').toUpperCase(); return sn && (sn.indexOf(n) >= 0 || n.indexOf(sn) >= 0); });
+    if (alvo) sis.value = alvo.codigo;
+  }
+  // Descrição sugerida em cinza? Não: placeholder apenas (fantasma Classe 1)
+  const d = document.getElementById('ne-desc');
+  if (d && !d.value) d.placeholder = tp.nome || '';
+}
+function neProximo(){
+  const sig = (document.getElementById('ne-sigla').value||'').toUpperCase().trim();
+  if (!sig){ document.getElementById('ne-num').value = ''; neCodigo(); return; }
+  const re = new RegExp('^'+sig.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'-?0*(\\d+)$','i');
+  let maior = 0;
+  _semCache.forEach(e => { const m = re.exec(String(e.codigo||'')); if (m) maior = Math.max(maior, parseInt(m[1],10)); });
+  document.getElementById('ne-num').value = String(maior+1).padStart(4,'0');
+  neCodigo();
+}
+function neCodigo(){
+  const sig = (document.getElementById('ne-sigla').value||'').toUpperCase().trim(), num = (document.getElementById('ne-num').value||'').trim();
+  document.getElementById('ne-cod').value = sig && num ? sig+'-'+num : (sig || '');
+}
+async function neSalvar(fechar){
   const v = i => ((document.getElementById(i)||{}).value || '').trim();
   const codigo = v('ne-cod').toUpperCase(), descricao = v('ne-desc'), categoria = v('ne-cat').toLowerCase();
-  if (!codigo || !descricao || !categoria){ mostrarToast('C\u00f3digo, descri\u00e7\u00e3o e categoria s\u00e3o obrigat\u00f3rios','warn'); return; }
+  if (!codigo || !descricao){ mostrarToast('C\u00f3digo e descri\u00e7\u00e3o s\u00e3o obrigat\u00f3rios','warn'); return; }
+  if (!categoria){ mostrarToast('Informe a categoria (aba Dados Operacionais)','warn'); neAba(2, document.querySelectorAll('.ne-tab')[2]); return; }
+  const cars = Array.from(document.querySelectorAll('#ne-cars .ne-car')).map(d => ({nome: d.querySelector('.c-n').value.trim(), valor: d.querySelector('.c-v').value.trim()})).filter(c => c.nome);
+  const ficha = { tipo_sigla: v('ne-tipo')||null, sistema_codigo: v('ne-sis')||null, centro_custo: v('ne-cc')||null, localizacao: v('ne-loc')||null,
+                  operador_responsavel_id: v('ne-op')||null, operador_desde: v('ne-desde')||null,
+                  fornecedor_id: v('ne-forn')||null, data_aquisicao: v('ne-dtaq')||null, leitura_inicial: v('ne-leit')||null,
+                  vida_util_h: v('ne-vida')||null, valor_aquisicao: v('ne-inv')||null, valor_atual: v('ne-vatual')||null,
+                  num_serie: v('ne-serie')||null, ano_fabricacao: v('ne-ano')||null, criticidade: v('ne-crit')||null, cor: v('ne-cor')||null,
+                  posicao: v('ne-pos')||null, equipamento_pai: v('ne-pai')||null, notas: v('ne-notas')||null, caracteristicas: cars };
   try {
-    const r = await mntFetch('/operacional/api/equipamentos', {method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({codigo, descricao, categoria, medicao: v('ne-med'), marca: v('ne-marca')||null, modelo: v('ne-modelo')||null,
-                            ano: v('ne-ano')||null, placa: v('ne-placa')||null})});
-    const id = r.id || (r.equipamento && r.equipamento.id);
-    if (id){
-      const ficha = { tipo_sigla: v('ne-tipo')||null, sistema_codigo: v('ne-sis')||null, centro_custo: v('ne-cc')||null,
-                      num_serie: v('ne-serie')||null, localizacao: v('ne-loc')||null, ano_fabricacao: v('ne-ano')||null };
-      try { await mntFetch('/manutencao/api/equipamentos/'+id+'/ficha', {method:'PATCH', headers:{'Content-Type':'application/json'}, body: JSON.stringify(ficha)}); } catch(e){}
+    let id = _neEditId;
+    if (!id){
+      const r = await mntFetch('/operacional/api/equipamentos', {method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({codigo, descricao, categoria, medicao: v('ne-med'), marca: v('ne-marca')||null, modelo: v('ne-modelo')||null, ano: v('ne-ano')||null, placa: v('ne-placa')||null})});
+      id = r.id || (r.equipamento && r.equipamento.id);
+      _neEditId = id;
+    } else {
+      await mntFetch('/operacional/api/equipamentos/'+id, {method:'PATCH', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({descricao, categoria, medicao: v('ne-med'), marca: v('ne-marca')||null, modelo: v('ne-modelo')||null, ano: v('ne-ano')||null, placa: v('ne-placa')||null})});
     }
-    mostrarToast('\u2705 '+codigo+' criado','ok');
-    fichaFechar();
-    await carregarSemaforosReais();
-    if (id){ _mwSel.frota = id; verEquipReal(id); }
+    if (id) await mntFetch('/manutencao/api/equipamentos/'+id+'/ficha', {method:'PATCH', headers:{'Content-Type':'application/json'}, body: JSON.stringify(ficha)});
+    mostrarToast('\u2705 '+codigo+(fechar?' criado':' gravado \u2014 continue preenchendo'),'ok');
+    if (fechar){ fichaFechar(); await carregarSemaforosReais(); if (id){ _mwSel.frota = id; verEquipReal(id); } }
   } catch(e){ mostrarToast('\u274c '+e.message,'warn'); }
 }
 
