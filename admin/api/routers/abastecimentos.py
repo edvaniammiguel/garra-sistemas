@@ -1037,9 +1037,10 @@ input.ruim{border-color:#DC2626;background:#FEF2F2}
   const sso = q.get('sso');
   if (sso && sso.length > 10) { localStorage.setItem('garra_tok_abast', sso); }
   if (q.get('embedded') === '1') document.documentElement.classList.add('embedded');
+  if (sso && sso.length > 10) document.documentElement.classList.add('sso');
   if (sso || q.get('embedded')) history.replaceState(null, '', location.pathname);
 } catch(e) {} })();</script>
-<style>.embedded h1{display:none !important}.embedded body{padding-top:6px}</style>
+<style>.embedded h1{display:none !important}.embedded body{padding-top:6px}.sso #tela-login{display:none !important}</style>
 <h1>⛽ Abastecimento <span>Garra</span></h1>
 
 <div class="card" id="tela-login">
