@@ -921,7 +921,12 @@ function encaixarFoto(fotoId){
   fetch(BASE_API+"/api/fotos/mobile",{method:"POST",headers:{Authorization:"Bearer "+TOKEN},body:fd})
     .then(function(r){ hideLoading(); return r.json(); })
     .then(function(d){
-      if(d.ok){ toast("Foto salva!"); carregarPares(); }
+      if(d.ok){
+        BANCADA = BANCADA.filter(function(f){ return f.id !== fotoId; });
+        renderBancada();
+        toast("Foto salva!");
+        carregarPares();
+      }
       else { toast("Erro: "+(d.error||d.detail||JSON.stringify(d))); }
     }).catch(function(e){ hideLoading(); toast("Erro: "+e.message); });
 }
