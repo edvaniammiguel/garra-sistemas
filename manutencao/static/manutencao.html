@@ -1490,8 +1490,10 @@ async function novoEquipMW(copiarDe){
     + fld('Registo (H):', inp('ne-leit', '', '0'), 1) + fld('Vida \u00datil:', inp('ne-vida', base.vida_util_h, 'h'), 1) + fld('Investimento:', inp('ne-inv', '', 'R$'), 1)
     + '</div><div style="display:flex;justify-content:flex-end;margin-top:4px">'+fld('Valor Actual:', inp('ne-vatual','', 'R$'), 0.5)+'</div>'
     + '</fieldset></div>'
-    + '<div style="flex:0 0 280px;display:flex;flex-direction:column;gap:6px"><div style="height:200px;border:1px solid #93C5FD;background:#F8FAFC;display:flex;align-items:center;justify-content:center;color:#94A3B8;font-size:11px">Figura</div>'
-    + fld('Figura:', '<input type="file" id="ne-figura" accept="image/*" style="font-size:10px">') + fld('Ficheiro:', '<input type="file" id="ne-fich" style="font-size:10px">') + '</div>'
+    + '<div style="flex:0 0 380px;display:flex;flex-direction:column;gap:6px">'
+    + '<div id="ne-fig-box" style="height:300px;border:1px solid #93C5FD;background:#F8FAFC;display:flex;align-items:center;justify-content:center;color:#94A3B8;font-size:11px;overflow:hidden;cursor:pointer" onclick="document.getElementById(\'ne-figura\').click()">'
+    + (base.foto_url ? '<img src="'+_esc(base.foto_url)+'" style="max-width:100%;max-height:100%;object-fit:contain">' : 'Figura \u2014 clique para escolher a foto')+'</div>'
+    + fld('Figura:', '<input type="file" id="ne-figura" accept="image/*" style="font-size:10px" onchange="nePrevia(this)">') + fld('Ficheiro:', '<input type="file" id="ne-fich" style="font-size:10px">') + '</div>'
     + '</div></div>'
     // aba 1 — Características (pares nome/valor)
     + '<div class="ne-pane" id="ne-p1"><div class="muted" style="font-size:10px;margin-bottom:6px">Caracter\u00edsticas t\u00e9cnicas (nome = valor). Para pneus: Recapagens \u00b7 DOT/s\u00e9rie \u00b7 Medida.</div>'
@@ -1524,6 +1526,18 @@ function _neTipoDoSistema(cod){
   const nome = (sis.nome||'').toUpperCase();
   const t = (_mwDom.tipos||[]).find(x => nome.indexOf((x.nome||'').toUpperCase()) >= 0 || (x.nome||'').toUpperCase().indexOf(nome) >= 0);
   return t ? t.sigla : '';
+}
+function nePrevia(inp){
+  const f = inp.files && inp.files[0]; if (!f) return;
+  const box = document.getElementById('ne-fig-box'); if (!box) return;
+  const url = URL.createObjectURL(f);
+  box.innerHTML = '<img src="'+url+'" style="max-width:100%;max-height:100%;object-fit:contain">';
+}
+async function neEnviarFoto(id){
+  const inp = document.getElementById('ne-figura'); const f = inp && inp.files && inp.files[0]; if (!f || !id) return;
+  const fd = new FormData(); fd.append('foto', f, f.name || 'foto.jpg');
+  try { await mntUpload('/manutencao/api/equipamentos/'+id+'/foto', fd); inp.value = ''; }
+  catch(e){ mostrarToast('\u26a0 Foto n\u00e3o enviada: '+e.message,'warn'); }
 }
 function neCarLinha(n, v){
   return '<div class="ne-car" style="display:flex;gap:6px;margin-bottom:4px"><input class="c-n" placeholder="nome" value="'+_esc(n)+'" style="flex:1"><input class="c-v" placeholder="valor" value="'+_esc(v)+'" style="flex:1"><button class="btn" onclick="this.parentNode.remove()">\u2715</button></div>';
@@ -1577,7 +1591,12 @@ function neProximo(){
 }
 function neCodigo(){
   const sig = (document.getElementById('ne-sigla').value||'').toUpperCase().trim(), num = (document.getElementById('ne-num').value||'').trim();
-  document.getElementById('ne-cod').value = sig && num ? sig+'-'+num : (sig || '');
+  const cod = sig && num ? sig+'-'+num : (sig || '');
+  const el = document.getElementById('ne-cod'); el.value = cod;
+  // número alterado à mão: avisa na hora se o código já existe na frota
+  const dup = cod && _semCache.some(e => String(e.codigo||'').toUpperCase() === cod && String(e.id) !== String(_neEditId||''));
+  el.style.color = dup ? '#DC2626' : '#1A2A5E';
+  el.title = dup ? 'Já existe um objecto com este código' : '';
 }
 async function neSalvar(fechar){
   const v = i => ((document.getElementById(i)||{}).value || '').trim();
@@ -1603,6 +1622,7 @@ async function neSalvar(fechar){
         body: JSON.stringify({descricao, categoria, medicao: v('ne-med'), marca: v('ne-marca')||null, modelo: v('ne-modelo')||null, ano: v('ne-ano')||null, placa: v('ne-placa')||null})});
     }
     if (id) await mntFetch('/manutencao/api/equipamentos/'+id+'/ficha', {method:'PATCH', headers:{'Content-Type':'application/json'}, body: JSON.stringify(ficha)});
+    if (id) await neEnviarFoto(id);
     mostrarToast('\u2705 '+codigo+(fechar?' criado':' gravado \u2014 continue preenchendo'),'ok');
     if (fechar){ fichaFechar(); await carregarSemaforosReais(); if (id){ _mwSel.frota = id; verEquipReal(id); } }
   } catch(e){ mostrarToast('\u274c '+e.message,'warn'); }
