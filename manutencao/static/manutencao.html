@@ -1810,8 +1810,9 @@ async function equipAbastecimentos(id){
   const FONTE = {digitada:'digitada', foto:'\ud83d\udcf7 foto', ultima:'\u00faltima conhecida', equipamento:'cadastro'};
   const linhas = lista.map(a =>
     '<tr><td class="mono" style="font-size:10px;white-space:nowrap">'+_esc(a.numero_cupom||(a.origem==='galao'?'do '+(a.galao_codigo||'gal\u00e3o'):'\u2014'))
-      +(a.foto_nota_url?' <a href="'+_esc(a.foto_nota_url)+'" target="_blank" title="Ver foto da nota">\ud83e\uddfe</a>':'')
-      +(a.foto_leitura_url?' <a href="'+_esc(a.foto_leitura_url)+'" target="_blank" title="Ver foto do hor\u00edmetro/KM">\ud83d\udd50</a>':'')+'</td>'
+      +(a.foto_nota_url?' <a href="'+_esc(a.foto_nota_url)+'" target="_blank" title="Ver foto da nota">\ud83e\uddfe</a>':(a.nota_id?' <span class="chip w" style="font-size:9px" title="Nota registrada sem foto \u2014 clique em \ud83d\udcce para anexar">sem foto</span>':''))
+      +(a.foto_leitura_url?' <a href="'+_esc(a.foto_leitura_url)+'" target="_blank" title="Ver foto do hor\u00edmetro/KM">\ud83d\udd50</a>':'')
+      +(a.nota_id?' <label title="Anexar/trocar foto da nota" style="cursor:pointer">\ud83d\udcce<input type="file" accept="image/*" style="display:none" onchange="abastAnexarFoto(\''+a.id+'\',this,\''+id+'\')"></label>':'')+'</td>'
     + '<td>'+_esc(a.combustivel_nome||a.combustivel||'\u2014')+'</td><td>'+dd(a.data)+'</td>'
     + '<td class="r mono">'+(a.destino_tipo==='galao'?'\u2014':fmtN(a.leitura))+'</td><td class="muted" style="font-size:10px">'+(a.destino_tipo==='galao'?'':un)+'</td>'
     + '<td class="r mono">'+fmtN(a.litros,2)+'</td><td class="muted" style="font-size:10px">LT</td>'
@@ -2005,6 +2006,12 @@ async function anManExcluir(el){
   if (!cod){ tr.remove(); return; }
   if (!confirm('Excluir o par\u00e2metro '+cod+' de '+_anAno+'?')) return;
   try { await mntFetch('/manutencao/api/equipamentos/'+_anEq+'/parametros-manuais/'+encodeURIComponent(cod)+'?ano='+_anAno, {method:'DELETE'}); equipAnalises(_anEq, _anAno); }
+  catch(e){ mostrarToast('\u274c '+e.message,'warn'); }
+}
+async function abastAnexarFoto(itemId, inp, eqId){
+  const f = inp.files && inp.files[0]; if (!f) return;
+  const fd = new FormData(); fd.append('foto', f, f.name || 'nota.jpg'); fd.append('tipo', 'nota');
+  try { await mntUpload('/operacional/api/abastecimentos/'+itemId+'/foto', fd); mostrarToast('\u2705 Foto da nota anexada','ok'); equipAbastecimentos(eqId); }
   catch(e){ mostrarToast('\u274c '+e.message,'warn'); }
 }
 async function equipFuncionamento(id){
