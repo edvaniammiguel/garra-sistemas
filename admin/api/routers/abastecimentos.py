@@ -41,13 +41,13 @@ from core.auth import verificar_token
 from core.storage import storage_upload, storage_url as _storage_url_core
 
 
-def storage_url(path):
+def storage_url(path, segundos=None):
     """Compatibilidade: notas gravadas entre a virada e 01/09/2026 têm o caminho
     sem o prefixo do bucket ('abastecimentos/2026-08/nota-x.jpg'). Elas estão no
-    bucket unificado — prefixa antes de assinar."""
+    bucket unificado — prefixa antes de assinar. `segundos` opcional (Excel usa 7 dias)."""
     if path and ":" not in path and not path.startswith("http"):
         path = "garra-fotos:" + path
-    return _storage_url_core(path)
+    return _storage_url_core(path, segundos) if segundos else _storage_url_core(path)
 
 router = APIRouter()
 
@@ -62,6 +62,19 @@ async def verificar_abastecimento(payload=Depends(verificar_token)):
     if await _tem_modulo(payload, {"abastecimento"}):
         return payload
     raise HTTPException(status_code=403, detail="Sem permissão para Abastecimento")
+
+async def verificar_notas(payload=Depends(verificar_token)):
+    """(01/09/2026) Gate da conferência financeira das notas — o balcão da
+    Luana: vê fotos e valores e marca 'lançada na MAIS' SEM entrar na
+    Manutenção. Perfis livres + módulo abastecimento_notas (ou manutencao —
+    Bruna também enxerga)."""
+    if (payload.get("perfil") or "").lower() in _PERFIS_LIVRES:
+        return payload
+    from routers.manutencao import _tem_modulo
+    if await _tem_modulo(payload, {"abastecimento_notas", "manutencao"}):
+        return payload
+    raise HTTPException(status_code=403, detail="Sem permissão para Notas de Abastecimento")
+
 
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 MODELO_VISAO = os.environ.get("ABASTECIMENTO_MODELO", "claude-haiku-4-5-20251001")
@@ -196,6 +209,7 @@ async def _ddl():
             RETURN NULL;
           END;
         END $$""", fetch="none")
+    await ajard_query("ALTER TABLE public.fornecedores ADD COLUMN IF NOT EXISTS eh_posto BOOLEAN DEFAULT false", fetch="none")
     _DDL_OK = True
 
 
@@ -327,14 +341,173 @@ def _cascata(digitada, foto, ultima, cadastro):
     return None, None
 
 
+async def _posto_resolver(nome, cnpj):
+    """Devolve o id do posto: por CNPJ, senão por nome (exato, sem caixa),
+    senão cria. Sempre marca tipo='posto' e completa o CNPJ se faltava."""
+    nome = (nome or "").strip()
+    cnpj = _norm_cnpj(cnpj) or (cnpj or None)
+    if not nome and not cnpj:
+        raise HTTPException(status_code=400, detail="Informe o nome do posto")
+    r = None
+    if cnpj:
+        r = await ajard_query("SELECT id FROM public.fornecedores WHERE cnpj=%s AND ativo=true LIMIT 1", (cnpj,))
+    if not r and nome:
+        r = await ajard_query("SELECT id FROM public.fornecedores WHERE lower(nome)=lower(%s) AND ativo=true LIMIT 1", (nome,))
+    if r:
+        fid = str(r[0]["id"])
+        await ajard_query("UPDATE public.fornecedores SET eh_posto=true, cnpj=COALESCE(cnpj,%s) WHERE id=%s", (cnpj, fid), fetch="none")
+        return fid
+    r = await ajard_query(
+        """INSERT INTO public.fornecedores (nome, cnpj, tipo, eh_posto, observacao)
+           VALUES (%s,%s,'servico',true,'criado pelo abastecimento') RETURNING id""", (nome or cnpj, cnpj))
+    return str(r[0]["id"])
+
+
+async def _garantir_lancada():
+    await ajard_query("""ALTER TABLE operacional.abastecimento_notas
+        ADD COLUMN IF NOT EXISTS lancada_mais BOOLEAN DEFAULT false,
+        ADD COLUMN IF NOT EXISTS lancada_por UUID,
+        ADD COLUMN IF NOT EXISTS lancada_em TIMESTAMPTZ""", fetch="none")
+
+
+@router.get("/operacional/api/abastecimentos/notas")
+async def notas_listar(mes: str = None, posto: str = None, pendentes: int = 0,
+                       payload=Depends(verificar_notas)):
+    """Notas por mês (competência da fatura do posto, que fecha dia 15).
+    Cada nota: posto, cupom, combustível, litros, R$, equipamentos do rateio,
+    fotos assinadas (1 h) e o carimbo 'lançada na MAIS'."""
+    await _ddl(); await _garantir_lancada()
+    from datetime import date as _date
+    mes = (mes or _date.today().strftime("%Y-%m")).strip()[:7]
+    where, params = ["n.ativo=true", "to_char(n.data,'YYYY-MM')=%s"], [mes]
+    if posto:
+        where.append("n.fornecedor_id=%s"); params.append(posto)
+    if pendentes:
+        where.append("COALESCE(n.lancada_mais,false)=false")
+    rows = await ajard_query(
+        f"""SELECT n.id, n.numero_cupom, n.data, n.combustivel, n.rubrica, n.litros_total,
+                   n.preco_litro, n.valor_total, n.foto_nota, n.foto_leitura, n.usuario_nome,
+                   n.lancada_mais, n.lancada_em, n.fornecedor_id, fo.nome AS posto, fo.cnpj,
+                   (SELECT nome FROM public.usuarios_garra u WHERE u.id=n.lancada_por) AS lancada_por_nome,
+                   (SELECT string_agg(e.codigo || ' (' || trim(to_char(a.litros,'FM999G999D99')) || ' L)', ' + ' ORDER BY e.codigo)
+                      FROM operacional.abastecimentos a JOIN operacional.equipamentos e ON e.id=a.equipamento_id
+                     WHERE a.nota_id=n.id AND a.ativo=true) AS equipamentos
+            FROM operacional.abastecimento_notas n
+            LEFT JOIN public.fornecedores fo ON fo.id=n.fornecedor_id
+            WHERE {' AND '.join(where)}
+            ORDER BY fo.nome NULLS LAST, n.data""", tuple(params)) or []
+    notas, tot = [], {}
+    for r in rows:
+        d = dict(r)
+        d["id"] = str(d["id"]); d["fornecedor_id"] = str(d["fornecedor_id"]) if d.get("fornecedor_id") else None
+        for k in ("litros_total", "preco_litro", "valor_total"):
+            d[k] = float(d[k]) if d.get(k) is not None else None
+        d["data"] = d["data"].isoformat() if d.get("data") else None
+        d["lancada_em"] = d["lancada_em"].isoformat() if d.get("lancada_em") else None
+        d["foto_nota_url"] = storage_url(d.pop("foto_nota")) if d.get("foto_nota") else None
+        d["foto_leitura_url"] = storage_url(d.pop("foto_leitura")) if d.get("foto_leitura") else None
+        p = d.get("posto") or "(sem posto)"
+        t = tot.setdefault(p, {"posto": p, "notas": 0, "litros": 0.0, "valor": 0.0, "pendentes": 0})
+        t["notas"] += 1; t["litros"] += d["litros_total"] or 0; t["valor"] += d["valor_total"] or 0
+        if not d.get("lancada_mais"): t["pendentes"] += 1
+        notas.append(d)
+    for t in tot.values():
+        t["litros"] = round(t["litros"], 2); t["valor"] = round(t["valor"], 2)
+    return {"mes": mes, "notas": notas, "totais": sorted(tot.values(), key=lambda x: x["posto"])}
+
+
+@router.patch("/operacional/api/abastecimentos/notas/{nota_id}/lancada")
+async def nota_lancada(nota_id: str, request: Request, payload=Depends(verificar_notas)):
+    """Carimbo 'lançada na MAIS' — a conciliação viva entre os dois sistemas."""
+    await _garantir_lancada()
+    d = await request.json()
+    lanc = bool(d.get("lancada"))
+    uid = _uid(payload)
+    await ajard_query(
+        """UPDATE operacional.abastecimento_notas SET lancada_mais=%s,
+             lancada_por=CASE WHEN %s THEN %s ELSE NULL END,
+             lancada_em=CASE WHEN %s THEN now() ELSE NULL END
+           WHERE id=%s""", (lanc, lanc, uid, lanc, nota_id), fetch="none")
+    return {"ok": True, "lancada": lanc}
+
+
+@router.get("/operacional/api/abastecimentos/notas/excel")
+async def notas_excel(mes: str = None, posto: str = None, payload=Depends(verificar_notas)):
+    """Excel da competência — uma linha por nota, link da foto válido por 7 dias
+    (para anexar/conferir na MAIS sem abrir o sistema)."""
+    from fastapi.responses import Response
+    import io
+    import openpyxl
+    from openpyxl.styles import Font, Alignment, PatternFill
+    dados = await notas_listar(mes=mes, posto=posto, pendentes=0, payload=payload)
+    mes = dados["mes"]
+    wb = openpyxl.Workbook(); ws = wb.active; ws.title = f"Notas {mes}"
+    azul = PatternFill("solid", fgColor="1A2A5E"); branco = Font(color="FFFFFF", bold=True)
+    cab = ["Data", "Posto", "CNPJ", "Cupom", "Combustível", "Rubrica", "Equipamentos (rateio)",
+           "Litros", "R$/L", "Valor (R$)", "Quem registrou", "Lançada na MAIS", "Foto da nota (7 dias)"]
+    ws.append(cab)
+    for c in ws[1]:
+        c.fill = azul; c.font = branco; c.alignment = Alignment(horizontal="center")
+    # links de 7 dias: reassina a partir do caminho bruto
+    brutos = await ajard_query(
+        "SELECT id, foto_nota FROM operacional.abastecimento_notas WHERE to_char(data,'YYYY-MM')=%s AND ativo=true", (mes,)) or []
+    caminho = {str(r["id"]): r["foto_nota"] for r in brutos}
+    for n in dados["notas"]:
+        raw = caminho.get(n["id"])
+        foto = storage_url(raw, 7 * 24 * 3600) if raw else ""
+        ws.append([(n["data"] or "")[:16].replace("T", " "), n.get("posto") or "", n.get("cnpj") or "",
+                   n.get("numero_cupom") or "", n.get("combustivel") or "", n.get("rubrica") or "",
+                   n.get("equipamentos") or "", n.get("litros_total"), n.get("preco_litro"), n.get("valor_total"),
+                   n.get("usuario_nome") or "", "SIM" if n.get("lancada_mais") else "não", foto])
+    ws.append([])
+    ws.append(["TOTAIS DO MÊS POR POSTO"]); ws[ws.max_row][0].font = Font(bold=True)
+    ws.append(["Posto", "Notas", "Litros", "Valor (R$)", "Pendentes de lançar"])
+    for c in ws[ws.max_row]:
+        c.font = Font(bold=True)
+    for t in dados["totais"]:
+        ws.append([t["posto"], t["notas"], t["litros"], t["valor"], t["pendentes"]])
+    for col, w in zip("ABCDEFGHIJKLM", (15, 26, 16, 10, 12, 8, 44, 9, 8, 11, 16, 13, 60)):
+        ws.column_dimensions[col].width = w
+    buf = io.BytesIO(); wb.save(buf)
+    nome = f"notas-abastecimento-{mes}" + (f"-{posto[:8]}" if posto else "") + ".xlsx"
+    return Response(buf.getvalue(),
+                    media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    headers={"Content-Disposition": f'attachment; filename="{nome}"'})
+
+
+@router.post("/operacional/api/abastecimentos/postos")
+async def posto_criar(request: Request, payload=Depends(verificar_abastecimento)):
+    """(01/09/2026) Cadastrar/marcar posto direto da tela de abastecimento."""
+    d = await request.json()
+    fid = await _posto_resolver(d.get("nome"), d.get("cnpj"))
+    return {"ok": True, "id": fid, "postos": await _postos()}
+
+
+@router.patch("/operacional/api/abastecimentos/postos/{fid}")
+async def posto_editar(fid: str, request: Request, payload=Depends(verificar_abastecimento)):
+    """Renomear / corrigir CNPJ do posto (cadastro único public.fornecedores)."""
+    d = await request.json()
+    nome = (d.get("nome") or "").strip()
+    if not nome:
+        raise HTTPException(status_code=400, detail="Informe o nome")
+    dup = await ajard_query("SELECT id FROM public.fornecedores WHERE lower(nome)=lower(%s) AND id<>%s AND ativo=true LIMIT 1", (nome, fid))
+    if dup:
+        raise HTTPException(status_code=409, detail="Já existe fornecedor com este nome")
+    cnpj = _norm_cnpj(d.get("cnpj")) or (d.get("cnpj") or None)
+    await ajard_query("UPDATE public.fornecedores SET nome=%s, cnpj=COALESCE(%s, cnpj), eh_posto=true WHERE id=%s",
+                      (nome, cnpj, fid), fetch="none")
+    return {"ok": True, "postos": await _postos()}
+
+
 async def _postos():
-    """Só quem é posto: tipo='posto' OU já tem nota de abastecimento. Ordem =
-    uso mais recente primeiro (os parceiros de sempre ficam no topo do campo)."""
+    """Só quem é posto: flag eh_posto (papel, não tipo — o tipo é do Compras),
+    tipo legado 'posto' OU já tem nota. Ordem = uso mais recente primeiro."""
+    await _ddl()
     r = await ajard_query(
         """SELECT f.id, f.nome, f.cnpj, MAX(n.data) AS ultimo_uso
              FROM public.fornecedores f
              LEFT JOIN operacional.abastecimento_notas n ON n.fornecedor_id=f.id AND n.ativo=true
-            WHERE f.ativo=true AND (lower(COALESCE(f.tipo,'')) LIKE 'posto%%' OR n.id IS NOT NULL)
+            WHERE f.ativo=true AND (COALESCE(f.eh_posto,false) OR lower(COALESCE(f.tipo,'')) LIKE 'posto%%' OR n.id IS NOT NULL)
             GROUP BY f.id, f.nome, f.cnpj
             ORDER BY MAX(n.data) DESC NULLS LAST, f.nome""")
     return [{"id": x["id"], "nome": x["nome"], "cnpj": x["cnpj"]} for x in (r or [])]
@@ -655,6 +828,108 @@ async def _resolver(extr):
 
 
 # ── PÁGINA MOBILE ───────────────────────────────────────────────────
+@router.get("/abastecimento/notas", response_class=HTMLResponse)
+async def pagina_notas():
+    """(01/09/2026) Balcão financeiro das notinhas — feito para a Luana lançar
+    contas a pagar na MAIS Soluções sem entrar na Manutenção: mês, posto,
+    foto, valores, carimbo 'lançada' e Excel da competência."""
+    return HTMLResponse("""<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Garra — Notas de Abastecimento</title>
+<style>
+:root{--azul:#1A2A5E;--lar:#F97316}
+*{box-sizing:border-box}body{font-family:system-ui,Segoe UI,Roboto,sans-serif;margin:0;background:#F1F5F9;color:#0F172A}
+header{background:var(--azul);color:#fff;padding:10px 16px;display:flex;justify-content:space-between;align-items:center}
+header b{font-size:15px}header .l{color:var(--lar);font-weight:900}
+main{max-width:1200px;margin:14px auto;padding:0 12px}
+.filtros{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;background:#fff;border:1px solid #E2E8F0;border-radius:10px;padding:10px}
+.f{display:flex;flex-direction:column;font-size:11px;color:#475569;font-weight:700;gap:3px}
+input,select,button{font:inherit;padding:6px 8px;border:1px solid #CBD5E1;border-radius:7px;background:#fff}
+button{cursor:pointer}.p{background:var(--azul);color:#fff;border-color:var(--azul);font-weight:700}
+.cards{display:flex;gap:10px;flex-wrap:wrap;margin:12px 0}
+.card{background:#fff;border:1px solid #E2E8F0;border-radius:10px;padding:10px 14px;min-width:200px}
+.card b{color:var(--azul)}.card .v{font-size:17px;font-weight:900;color:var(--azul)}
+.card .pend{color:#B91C1C;font-weight:800;font-size:11px}
+table{width:100%;border-collapse:collapse;background:#fff;border:1px solid #E2E8F0;border-radius:10px;overflow:hidden;font-size:12px}
+th{background:#F8FAFC;text-align:left;padding:7px 8px;font-size:10px;text-transform:uppercase;color:#475569;border-bottom:2px solid #E2E8F0}
+td{padding:6px 8px;border-bottom:1px solid #F1F5F9;vertical-align:middle}
+tr.ok td{background:#F0FDF4}
+.r{text-align:right;font-variant-numeric:tabular-nums}
+.chip{font-size:10px;padding:1px 6px;border-radius:8px;background:#FEF3C7;color:#92400E;font-weight:700}
+a{color:var(--azul);font-weight:700;text-decoration:none}
+.muted{color:#64748B}
+#toast{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:var(--azul);color:#fff;padding:10px 16px;border-radius:9px;display:none;font-weight:700;z-index:9}
+</style></head><body>
+<header><b><span class="l">GARRA</span> · Notas de Abastecimento</b><span id="quem" style="font-size:12px"></span></header>
+<main>
+ <div class="filtros">
+  <div class="f">Competência<input type="month" id="f-mes"></div>
+  <div class="f">Posto<select id="f-posto"><option value="">— todos —</option></select></div>
+  <div class="f">&nbsp;<label style="font-weight:400"><input type="checkbox" id="f-pend"> só pendentes de lançar</label></div>
+  <button class="p" onclick="carregar()">🔍 Buscar</button>
+  <button onclick="excel()">📊 Excel da competência</button>
+  <span class="muted" style="font-size:11px;flex:1;text-align:right">Fatura do posto fecha dia 15 · marque ✔ ao lançar na MAIS · foto abre em nova aba (link 1 h)</span>
+ </div>
+ <div class="cards" id="cards"></div>
+ <div style="overflow:auto"><table><thead><tr>
+  <th>Data</th><th>Posto</th><th>Cupom</th><th>Combustível</th><th>Equipamentos (rateio)</th>
+  <th class="r">Litros</th><th class="r">R$/L</th><th class="r">Valor</th><th>Fotos</th><th>Quem</th><th style="width:130px">Lançada na MAIS</th>
+ </tr></thead><tbody id="corpo"><tr><td colspan="11" class="muted" style="padding:14px">Carregando…</td></tr></tbody></table></div>
+</main>
+<div id="toast"></div>
+<script>
+const $=i=>document.getElementById(i);
+(function(){const u=new URL(location.href);const sso=u.searchParams.get('sso')||u.searchParams.get('token');
+ if(sso&&sso.length>10){sessionStorage.setItem('garra_notas_token',sso);history.replaceState(null,'',u.pathname);}})();
+function tok(){return sessionStorage.getItem('garra_notas_token')||localStorage.getItem('garra_adm_token')||'';}
+async function api(u,o){const r=await fetch(u,Object.assign({},o,{headers:Object.assign({'Content-Type':'application/json','Authorization':'Bearer '+tok()},(o&&o.headers)||{})}));
+ if(r.status===401){document.body.innerHTML='<div style="padding:40px;text-align:center">🔒 Sessão expirada — abra o <a href="/admin">Admin</a> e clique em Notas de Abastecimento</div>';throw new Error('401');}
+ if(r.status===403){document.body.innerHTML='<div style="padding:40px;text-align:center">Sem permissão para Notas de Abastecimento — peça ao administrador (Admin ▸ Permissões ▸ Notas de Abastecimento)</div>';throw new Error('403');}
+ const j=await r.json().catch(()=>({})); if(!r.ok)throw new Error(j.detail||('Erro '+r.status)); return j;}
+function toast(m){const t=$('toast');t.textContent=m;t.style.display='block';clearTimeout(t._h);t._h=setTimeout(()=>t.style.display='none',3500);}
+const esc=x=>String(x??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const fN=(v,d)=>v==null?'—':Number(v).toLocaleString('pt-BR',{minimumFractionDigits:d??2,maximumFractionDigits:d??2});
+let DADOS=null;
+async function carregar(){
+ const mes=$('f-mes').value||new Date().toISOString().slice(0,7);
+ const q='mes='+mes+($('f-posto').value?'&posto='+$('f-posto').value:'')+($('f-pend').checked?'&pendentes=1':'');
+ try{DADOS=await api('/operacional/api/abastecimentos/notas?'+q);}catch(e){return;}
+ const sel=$('f-posto'),atual=sel.value; const postos={};
+ DADOS.notas.forEach(n=>{if(n.fornecedor_id)postos[n.fornecedor_id]=n.posto;});
+ if(!atual){sel.innerHTML='<option value="">— todos —</option>'+Object.entries(postos).map(([id,n])=>'<option value="'+id+'">'+esc(n)+'</option>').join('');}
+ $('cards').innerHTML=(DADOS.totais||[]).map(t=>'<div class="card"><b>'+esc(t.posto)+'</b><div class="v">R$ '+fN(t.valor)+'</div><div class="muted" style="font-size:11px">'+t.notas+' nota(s) · '+fN(t.litros)+' L'+(t.pendentes?' · <span class="pend">'+t.pendentes+' pendente(s)</span>':' · ✔ tudo lançado')+'</div></div>').join('')||'<div class="muted">Nenhuma nota na competência.</div>';
+ $('corpo').innerHTML=(DADOS.notas||[]).map(n=>'<tr class="'+(n.lancada_mais?'ok':'')+'">'
+  +'<td style="white-space:nowrap">'+(n.data||'').slice(0,16).replace('T',' ')+'</td>'
+  +'<td><b>'+esc(n.posto||'—')+'</b></td><td>'+esc(n.numero_cupom||'—')+'</td>'
+  +'<td>'+esc(n.combustivel||'')+' <span class="muted" style="font-size:10px">'+esc(n.rubrica||'')+'</span></td>'
+  +'<td style="font-size:11px">'+esc(n.equipamentos||'—')+'</td>'
+  +'<td class="r">'+fN(n.litros_total)+'</td><td class="r">'+fN(n.preco_litro,3)+'</td><td class="r"><b>'+fN(n.valor_total)+'</b></td>'
+  +'<td>'+(n.foto_nota_url?'<a href="'+esc(n.foto_nota_url)+'" target="_blank" title="Foto da nota">🧾</a> ':'<span class="chip">sem foto</span> ')
+        +(n.foto_leitura_url?'<a href="'+esc(n.foto_leitura_url)+'" target="_blank" title="Foto do horímetro/KM">🕐</a>':'')+'</td>'
+  +'<td style="font-size:11px">'+esc(n.usuario_nome||'')+'</td>'
+  +'<td><label style="cursor:pointer;font-size:11px;font-weight:700;color:'+(n.lancada_mais?'#15803D':'#B91C1C')+'"><input type="checkbox" '+(n.lancada_mais?'checked':'')+' onchange="marcar(\''+n.id+'\',this)"> '
+    +(n.lancada_mais?('✔ '+esc((n.lancada_por_nome||'').split(' ')[0])+' '+(n.lancada_em?new Date(n.lancada_em).toLocaleDateString('pt-BR'):'')):'lançar')+'</label></td></tr>').join('')
+  ||'<tr><td colspan="11" class="muted" style="padding:14px">Nenhuma nota'+($('f-pend').checked?' pendente':'')+' na competência.</td></tr>';
+}
+async function marcar(id,ck){
+ try{await api('/operacional/api/abastecimentos/notas/'+id+'/lancada',{method:'PATCH',body:JSON.stringify({lancada:ck.checked})});
+  toast(ck.checked?'✔ Marcada como lançada na MAIS':'Desmarcada');carregar();}
+ catch(e){ck.checked=!ck.checked;toast('❌ '+e.message);}
+}
+function excel(){
+ const mes=$('f-mes').value||new Date().toISOString().slice(0,7);
+ const q='mes='+mes+($('f-posto').value?'&posto='+$('f-posto').value:'');
+ fetch('/operacional/api/abastecimentos/notas/excel?'+q,{headers:{'Authorization':'Bearer '+tok()}})
+  .then(r=>{if(!r.ok)throw new Error('Erro '+r.status);return r.blob();})
+  .then(b=>{const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='notas-abastecimento-'+mes+'.xlsx';a.click();})
+  .catch(e=>toast('❌ '+e.message));
+}
+(function(){ $('f-mes').value=new Date().toISOString().slice(0,7);
+ try{const p=JSON.parse(atob(tok().split('.')[1].replace(/-/g,'+').replace(/_/g,'/')));$('quem').textContent=p.nome||p.login||'';}catch(e){}
+ carregar(); })();
+</script></body></html>""")
+
+
 @router.get("/abastecimento", response_class=HTMLResponse)
 async def pagina_abastecimento():
     return _PAGINA
@@ -880,12 +1155,8 @@ async def _registrar_nota(request, payload):
     fornecedor_id = n.get("fornecedor_id") or None
     cnpj = _norm_cnpj(n.get("cnpj")) or (n.get("cnpj") or None)
     if not fornecedor_id and (n.get("posto_nome") or "").strip():
-        # posto novo lido da nota → nasce no cadastro único de fornecedores
-        r = await ajard_query(
-            """INSERT INTO public.fornecedores (nome, cnpj, tipo, observacao)
-               VALUES (%s,%s,'posto','criado pelo abastecimento') RETURNING id""",
-            (n["posto_nome"].strip(), cnpj))
-        fornecedor_id = str(r[0]["id"])
+        # posto lido da nota → reaproveita por CNPJ/nome ou nasce no cadastro único
+        fornecedor_id = await _posto_resolver(n["posto_nome"], cnpj)
 
     cupom = (str(n.get("numero_cupom") or "").strip() or None)
     if cupom and fornecedor_id:
@@ -1070,6 +1341,8 @@ async def editar_abastecimento(item_id: str, request: Request, payload=Depends(v
     nota_alterada = False
     if it.get("nota_id") and int(it["n_itens"] or 1) == 1:
         forn = (d.get("fornecedor_id") or "").strip() or None
+        if not forn and (d.get("posto_nome") or "").strip():
+            forn = await _posto_resolver(d.get("posto_nome"), d.get("cnpj"))
         cupom = (str(d.get("numero_cupom") or "").strip() or None) if "numero_cupom" in d else None
         n = await ajard_query("SELECT fornecedor_id, numero_cupom FROM operacional.abastecimento_notas WHERE id=%s", (it["nota_id"],))
         n = n[0] if n else {}
