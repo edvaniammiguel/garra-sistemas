@@ -485,14 +485,33 @@ async def posto_criar(request: Request, payload=Depends(verificar_abastecimento)
 
 @router.patch("/operacional/api/abastecimentos/postos/{fid}")
 async def posto_editar(fid: str, request: Request, payload=Depends(verificar_abastecimento)):
-    """Renomear / corrigir CNPJ do posto (cadastro único public.fornecedores)."""
+    """Renomear / corrigir CNPJ do posto (cadastro único public.fornecedores).
+    (02/09/2026) Nome que já pertence a OUTRO fornecedor: sem 'unificar' → 409
+    perguntável; com unificar=true → as notas deste posto passam para o
+    existente e este cadastro é desativado (soft). É o caminho oficial para
+    juntar duplicado/teste com o posto real, sem SQL."""
+    await _ddl()
     d = await request.json()
     nome = (d.get("nome") or "").strip()
     if not nome:
         raise HTTPException(status_code=400, detail="Informe o nome")
-    dup = await ajard_query("SELECT id FROM public.fornecedores WHERE lower(nome)=lower(%s) AND id<>%s AND ativo=true LIMIT 1", (nome, fid))
-    if dup:
-        raise HTTPException(status_code=409, detail="Já existe fornecedor com este nome")
+    dup = await ajard_query(
+        "SELECT id, nome FROM public.fornecedores WHERE lower(nome)=lower(%s) AND id<>%s AND ativo=true LIMIT 1", (nome, fid))
+    if dup and not d.get("unificar"):
+        raise HTTPException(status_code=409, detail=f"Já existe o fornecedor \"{dup[0]['nome']}\" — "
+                            "se for o mesmo posto, confirme a unificação na tela (as notas deste passam para ele).")
+    if dup and d.get("unificar"):
+        alvo = str(dup[0]["id"])
+        n = await ajard_query(
+            "UPDATE operacional.abastecimento_notas SET fornecedor_id=%s WHERE fornecedor_id=%s RETURNING id", (alvo, fid))
+        await ajard_query(
+            """UPDATE public.fornecedores SET eh_posto=true, cnpj=COALESCE(cnpj, (SELECT cnpj FROM public.fornecedores WHERE id=%s)) WHERE id=%s""",
+            (fid, alvo), fetch="none")
+        await ajard_query(
+            """UPDATE public.fornecedores SET ativo=false, eh_posto=false,
+                 observacao=COALESCE(observacao,'') || ' | unificado em ' || %s || ' (' || now()::date || ')'
+               WHERE id=%s""", (dup[0]["nome"], fid), fetch="none")
+        return {"ok": True, "unificado_em": alvo, "notas_movidas": len(n or []), "postos": await _postos()}
     cnpj = _norm_cnpj(d.get("cnpj")) or (d.get("cnpj") or None)
     await ajard_query("UPDATE public.fornecedores SET nome=%s, cnpj=COALESCE(%s, cnpj), eh_posto=true WHERE id=%s",
                       (nome, cnpj, fid), fetch="none")
@@ -860,7 +879,13 @@ a{color:var(--azul);font-weight:700;text-decoration:none}
 .muted{color:#64748B}
 #toast{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:var(--azul);color:#fff;padding:10px 16px;border-radius:9px;display:none;font-weight:700;z-index:9}
 </style></head><body>
-<header><b><span class="l">GARRA</span> · Notas de Abastecimento</b><span id="quem" style="font-size:12px"></span></header>
+<header>
+ <span style="display:flex;align-items:center;gap:10px">
+  <img src="/static/icons/logo.png" alt="Garra Terraplenagem" style="height:34px;object-fit:contain;filter:brightness(0) invert(1)" onerror="this.style.display='none';document.getElementById('hd-fb').style.display='inline'"/>
+  <b id="hd-fb" style="display:none"><span class="l">GARRA</span></b>
+  <b>Notas de Abastecimento</b>
+ </span>
+ <span id="quem" style="font-size:12px"></span></header>
 <main>
  <div class="filtros">
   <div class="f">Competência<input type="month" id="f-mes"></div>
