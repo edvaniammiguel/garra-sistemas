@@ -384,18 +384,22 @@ async def notas_listar(mes: str = None, posto: str = None, pendentes: int = 0,
         where.append("n.fornecedor_id=%s"); params.append(posto)
     if pendentes:
         where.append("COALESCE(n.lancada_mais,false)=false")
-    rows = await ajard_query(
-        f"""SELECT n.id, n.numero_cupom, n.data, n.combustivel, n.rubrica, n.litros_total,
+    try:
+        rows = await ajard_query(
+            f"""SELECT n.id, n.numero_cupom, n.data, n.combustivel, n.rubrica, n.litros_total,
                    n.preco_litro, n.valor_total, n.foto_nota, n.foto_leitura, n.usuario_nome,
                    n.lancada_mais, n.lancada_em, n.fornecedor_id, fo.nome AS posto, fo.cnpj,
                    (SELECT nome FROM public.usuarios_garra u WHERE u.id=n.lancada_por) AS lancada_por_nome,
-                   (SELECT string_agg(e.codigo || ' (' || trim(to_char(a.litros,'FM999G999D99')) || ' L)', ' + ' ORDER BY e.codigo)
+                   (SELECT string_agg(e.codigo || ' (' || round(a.litros::numeric, 2)::text || ' L)', ' + ' ORDER BY e.codigo)
                       FROM operacional.abastecimentos a JOIN operacional.equipamentos e ON e.id=a.equipamento_id
                      WHERE a.nota_id=n.id AND a.ativo=true) AS equipamentos
             FROM operacional.abastecimento_notas n
             LEFT JOIN public.fornecedores fo ON fo.id=n.fornecedor_id
             WHERE {' AND '.join(where)}
             ORDER BY fo.nome NULLS LAST, n.data""", tuple(params)) or []
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Consulta das notas falhou: {type(e).__name__}: {e}")
     notas, tot = [], {}
     for r in rows:
         d = dict(r)
@@ -918,7 +922,8 @@ let DADOS=null;
 async function carregar(){
  const mes=$('f-mes').value||new Date().toISOString().slice(0,7);
  const q='mes='+mes+($('f-posto').value?'&posto='+$('f-posto').value:'')+($('f-pend').checked?'&pendentes=1':'');
- try{DADOS=await api('/operacional/api/abastecimentos/notas?'+q);}catch(e){return;}
+ try{DADOS=await api('/operacional/api/abastecimentos/notas?'+q);}
+ catch(e){if(e.message!=='401'&&e.message!=='403'){$('corpo').innerHTML='<tr><td colspan="11" style="padding:14px;color:#B91C1C;font-weight:700">❌ '+esc(e.message)+'</td></tr>';toast('❌ '+e.message);}return;}
  const sel=$('f-posto'),atual=sel.value; const postos={};
  DADOS.notas.forEach(n=>{if(n.fornecedor_id)postos[n.fornecedor_id]=n.posto;});
  if(!atual){sel.innerHTML='<option value="">— todos —</option>'+Object.entries(postos).map(([id,n])=>'<option value="'+id+'">'+esc(n)+'</option>').join('');}
