@@ -937,11 +937,12 @@ async function carregar(){
   +'<td>'+(n.foto_nota_url?'<a href="'+esc(n.foto_nota_url)+'" target="_blank" title="Foto da nota">🧾</a> ':'<span class="chip">sem foto</span> ')
         +(n.foto_leitura_url?'<a href="'+esc(n.foto_leitura_url)+'" target="_blank" title="Foto do horímetro/KM">🕐</a>':'')+'</td>'
   +'<td style="font-size:11px">'+esc(n.usuario_nome||'')+'</td>'
-  +'<td><label style="cursor:pointer;font-size:11px;font-weight:700;color:'+(n.lancada_mais?'#15803D':'#B91C1C')+'"><input type="checkbox" '+(n.lancada_mais?'checked':'')+' onchange="marcar(\''+n.id+'\',this)"> '
+  +'<td><label style="cursor:pointer;font-size:11px;font-weight:700;color:'+(n.lancada_mais?'#15803D':'#B91C1C')+'"><input type="checkbox" '+(n.lancada_mais?'checked':'')+' data-id="'+n.id+'" onchange="marcar(this)"> '
     +(n.lancada_mais?('✔ '+esc((n.lancada_por_nome||'').split(' ')[0])+' '+(n.lancada_em?new Date(n.lancada_em).toLocaleDateString('pt-BR'):'')):'lançar')+'</label></td></tr>').join('')
   ||'<tr><td colspan="11" class="muted" style="padding:14px">Nenhuma nota'+($('f-pend').checked?' pendente':'')+' na competência.</td></tr>';
 }
-async function marcar(id,ck){
+async function marcar(ck){
+ const id=ck.dataset.id;
  try{await api('/operacional/api/abastecimentos/notas/'+id+'/lancada',{method:'PATCH',body:JSON.stringify({lancada:ck.checked})});
   toast(ck.checked?'✔ Marcada como lançada na MAIS':'Desmarcada');carregar();}
  catch(e){ck.checked=!ck.checked;toast('❌ '+e.message);}
