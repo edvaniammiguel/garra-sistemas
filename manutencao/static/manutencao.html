@@ -1827,7 +1827,7 @@ async function equipAbastecimentos(id){
     + '<td class="muted" style="font-size:10px">'+_esc(a.usuario_nome||'')+'</td></tr>').join('');
   const litrosTot = lista.reduce((t,a)=>t+(a.litros||0),0);
   const ctx = _abCtx;
-  const optPostos = '<option value="">\u2014 posto \u2014</option>'+(ctx.postos||[]).map(p=>'<option value="'+p.id+'">'+_esc(p.nome)+'</option>').join('');
+  const optPostos = '<option value="">\u2014 posto \u2014</option>'+(ctx.postos||[]).map(p=>'<option value="'+p.id+'">'+_esc(p.nome)+'</option>').join('')+'<option value="__novo">\uff0b Outro posto (cadastrar)\u2026</option>';
   const optComb = '<option value="">\u2014 combust\u00edvel \u2014</option>'+(ctx.combustiveis||[]).map(c=>'<option value="'+c.codigo+'">'+_esc(c.nome)+'</option>').join('');
   const box = (t,v,u) => '<div style="flex:1;min-width:120px;border:1px solid #E2E8F0;border-radius:8px;padding:6px 10px"><div class="muted" style="font-size:10px;font-weight:700">'+t+'</div><div class="mono" style="font-size:14px;color:#1A2A5E">'+v+' <span class="muted" style="font-size:10px">'+(u||'')+'</span></div></div>';
   const rodape = galao ? '' : '<div style="display:flex;gap:8px;flex-wrap:wrap;margin:8px 0">'
@@ -1845,7 +1845,7 @@ async function equipAbastecimentos(id){
     + '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;padding:6px 0">'
     + '<div class="mfield" style="min-width:150px">\ud83e\uddfe Foto da nota<input type="file" id="ab-f-nota" accept="image/*" style="font-size:10px"></div>'
     + '<button class="btn" onclick="abLerFotos()">\ud83d\udd0d Ler nota</button>'
-    + '<div class="mfield" style="min-width:150px">Posto<select id="ab-posto">'+optPostos+'</select></div>'
+    + '<div class="mfield" style="min-width:150px">Posto<div style="display:flex;gap:4px"><select id="ab-posto" style="flex:1" onchange="abPostoMudou(this)">'+optPostos+'</select><button class="btn" title="Renomear / corrigir CNPJ do posto selecionado" onclick="abPostoRenomear()">\u270f\ufe0f</button></div></div>'
     + '<div class="mfield" style="width:90px">Cupom<input id="ab-cupom" placeholder="Doc."></div>'
     + '<div class="mfield" style="width:120px">Data/hora<input id="ab-data" placeholder="dd/mm/aaaa hh:mm"></div>'
     + '<div class="mfield" style="min-width:130px">Combust\u00edvel<select id="ab-comb">'+optComb+'</select></div>'
@@ -1896,6 +1896,31 @@ async function abLerFotos(){
     if (r.erro) avisos.push('leitura autom\u00e1tica indispon\u00edvel: '+r.erro);
     mostrarToast(avisos.length ? '\u26a0 '+avisos.join(' \u00b7 ') : '\ud83d\udcd6 Lido \u2014 confira os campos em laranja', avisos.length?'warn':'ok');
   } catch(e){ mostrarToast('\u274c '+e.message,'warn'); }
+}
+async function abPostoMudou(sel){
+  if (sel.value !== '__novo') return;
+  sel.value = '';
+  const nome = prompt('Nome do posto (como est\u00e1 na notinha):'); if (!nome) return;
+  const cnpj = prompt('CNPJ do posto (opcional \u2014 evita duplicar cadastro):', '') || '';
+  try {
+    const r = await mntFetch('/operacional/api/abastecimentos/postos', {method:'POST', body: JSON.stringify({nome, cnpj})});
+    abPostosAtualizar(sel, r.postos, r.id); mostrarToast('\u2705 Posto pronto: '+nome,'ok');
+  } catch(e){ mostrarToast('\u274c '+e.message,'warn'); }
+}
+async function abPostoRenomear(){
+  const sel = document.getElementById('ab-posto'); if (!sel || !sel.value || sel.value === '__novo'){ mostrarToast('Selecione o posto primeiro','warn'); return; }
+  const atual = sel.options[sel.selectedIndex].text;
+  const nome = prompt('Novo nome do posto:', atual); if (!nome || nome === atual) return;
+  const cnpj = prompt('CNPJ (deixe vazio para manter):', '') || '';
+  try {
+    const r = await mntFetch('/operacional/api/abastecimentos/postos/'+sel.value, {method:'PATCH', body: JSON.stringify({nome, cnpj})});
+    abPostosAtualizar(sel, r.postos, sel.value); mostrarToast('\u2705 Posto renomeado','ok');
+  } catch(e){ mostrarToast('\u274c '+e.message,'warn'); }
+}
+function abPostosAtualizar(sel, postos, marcar){
+  sel.innerHTML = '<option value="">\u2014 posto \u2014</option>'+(postos||[]).map(p=>'<option value="'+p.id+'">'+_esc(p.nome)+'</option>').join('')+'<option value="__novo">\uff0b Outro posto (cadastrar)\u2026</option>';
+  if (marcar) sel.value = marcar;
+  if (_abCtx) _abCtx.postos = postos || [];
 }
 let _abLista = [], _abEdit = null;
 function abEditar(i, eqId){
