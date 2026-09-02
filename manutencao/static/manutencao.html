@@ -1915,7 +1915,16 @@ async function abPostoRenomear(){
   try {
     const r = await mntFetch('/operacional/api/abastecimentos/postos/'+sel.value, {method:'PATCH', body: JSON.stringify({nome, cnpj})});
     abPostosAtualizar(sel, r.postos, sel.value); mostrarToast('\u2705 Posto renomeado','ok');
-  } catch(e){ mostrarToast('\u274c '+e.message,'warn'); }
+  } catch(e){
+    if (/Já existe/i.test(e.message)){
+      if (confirm(e.message+'\n\nUNIFICAR os cadastros?\n\u2022 As notas de "'+atual+'" passam para "'+nome+'"\n\u2022 "'+atual+'" \u00e9 desativado (hist\u00f3rico preservado)')){
+        try {
+          const r2 = await mntFetch('/operacional/api/abastecimentos/postos/'+sel.value, {method:'PATCH', body: JSON.stringify({nome, cnpj, unificar:true})});
+          abPostosAtualizar(sel, r2.postos, r2.unificado_em); mostrarToast('\u2705 Unificado \u2014 '+r2.notas_movidas+' nota(s) movida(s)','ok');
+        } catch(e2){ mostrarToast('\u274c '+e2.message,'warn'); }
+      }
+    } else mostrarToast('\u274c '+e.message,'warn');
+  }
 }
 function abPostosAtualizar(sel, postos, marcar){
   sel.innerHTML = '<option value="">\u2014 posto \u2014</option>'+(postos||[]).map(p=>'<option value="'+p.id+'">'+_esc(p.nome)+'</option>').join('')+'<option value="__novo">\uff0b Outro posto (cadastrar)\u2026</option>';
