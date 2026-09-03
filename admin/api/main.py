@@ -768,10 +768,13 @@ async def not_found_handler(request: Request, exc):
 async def server_error_handler(request: Request, exc):
     from fastapi.responses import JSONResponse
     path = request.url.path
-    print(f"[ERRO 500] {path}: {exc}")
+    import traceback
+    print(f"[ERRO 500] {path}: {type(exc).__name__}: {exc}")
+    traceback.print_exception(type(exc), exc, getattr(exc, "__traceback__", None))
     if _eh_api(path):
+        # sistema interno: o motivo real na resposta economiza horas de diagnóstico
         return JSONResponse({"ok": False, "error": "Erro interno do servidor",
-                             "detail": "Erro interno do servidor"}, status_code=500)
+                             "detail": f"{type(exc).__name__}: {exc}"[:300]}, status_code=500)
     return HTMLResponse(_pagina_erro(
         500, "Algo deu errado no servidor",
         "Ocorreu um erro inesperado ao processar sua solicitação. "
@@ -1148,6 +1151,8 @@ async def criar_schema_manutencao():
             CREATE TABLE IF NOT EXISTS manutencao.tipos_manutencao (
                 codigo TEXT PRIMARY KEY, nome TEXT NOT NULL,
                 planejavel BOOLEAN DEFAULT FALSE, sistematico BOOLEAN DEFAULT FALSE)""", fetch="none")
+        from routers.manutencao import garantir_nucleo
+        await garantir_nucleo()   # (02/09/2026) núcleo do schema nasce do código — banco zerado sobe sozinho
         await ajard_query("""
             CREATE TABLE IF NOT EXISTS manutencao.tipos_trabalho (
                 codigo TEXT PRIMARY KEY, nome TEXT NOT NULL,
