@@ -46,7 +46,13 @@ CREATE TABLE IF NOT EXISTS public.perfis_customizados (
 
 async def perfil_modulos_padrao(perfil: str):
     """Fonte da verdade: banco. Se o perfil não existir lá (ex: banco fora do ar),
-    cai no dict hardcoded como rede de segurança."""
+    cai no dict hardcoded como rede de segurança.
+    EXCEÇÃO (03/09/2026): perfil admin é MASTER — recebe SEMPRE todos os módulos,
+    ignorando perfis_customizados. É dele que as permissões são configuradas;
+    um admin trancado para fora é paradoxo de lockout (aconteceu: o registro
+    'admin' no banco nasceu antes dos módulos de abastecimento existirem)."""
+    if perfil == "admin":
+        return [m["id"] for m in MODULOS_DISPONIVEIS]
     try:
         row = await ajard_query(
             "SELECT modulos FROM public.perfis_customizados WHERE nome=%s AND ativo=true",
