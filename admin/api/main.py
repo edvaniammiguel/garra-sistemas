@@ -1126,6 +1126,44 @@ async def criar_schema_manutencao():
                 usuario_id UUID,
                 observacao TEXT,
                 criado_em TIMESTAMPTZ DEFAULT now())""", fetch="none")
+        # ══ COLUNAS TARDIAS CONSOLIDADAS (03/09/2026) — dev-novo nasce inteiro ══
+        # Réplica idempotente dos _garantir_* tardios do router: em schema recém-
+        # criado (RENAME → restart), telas de leitura (Análises, extrato) não podem
+        # depender da ordem de navegação para as colunas existirem.
+        await ajard_query("""
+            ALTER TABLE manutencao.movimentacoes
+              ADD COLUMN IF NOT EXISTS custo_unitario NUMERIC,
+              ADD COLUMN IF NOT EXISTS documento_tipo TEXT,
+              ADD COLUMN IF NOT EXISTS documento_numero TEXT,
+              ADD COLUMN IF NOT EXISTS fornecedor_id UUID,
+              ADD COLUMN IF NOT EXISTS oc_numero TEXT""", fetch="none")
+        await ajard_query("""
+            ALTER TABLE manutencao.estoque
+              ADD COLUMN IF NOT EXISTS localizacao TEXT,
+              ADD COLUMN IF NOT EXISTS maximo NUMERIC""", fetch="none")
+        await ajard_query("""
+            ALTER TABLE manutencao.planos
+              ADD COLUMN IF NOT EXISTS mao_obra JSONB,
+              ADD COLUMN IF NOT EXISTS pecas JSONB,
+              ADD COLUMN IF NOT EXISTS outros JSONB,
+              ADD COLUMN IF NOT EXISTS ferramentas JSONB""", fetch="none")
+        await ajard_query("""
+            ALTER TABLE manutencao.ot
+              ADD COLUMN IF NOT EXISTS data_prevista DATE,
+              ADD COLUMN IF NOT EXISTS horimetro_previsto NUMERIC,
+              ADD COLUMN IF NOT EXISTS plano_id UUID,
+              ADD COLUMN IF NOT EXISTS origem TEXT DEFAULT 'garra',
+              ADD COLUMN IF NOT EXISTS sintoma_codigo TEXT,
+              ADD COLUMN IF NOT EXISTS causa_codigo TEXT,
+              ADD COLUMN IF NOT EXISTS projecto_id UUID""", fetch="none")
+        await ajard_query("""
+            ALTER TABLE manutencao.pecas
+              ADD COLUMN IF NOT EXISTS caracteristicas JSONB,
+              ADD COLUMN IF NOT EXISTS observacoes TEXT,
+              ADD COLUMN IF NOT EXISTS codigo_externo TEXT,
+              ADD COLUMN IF NOT EXISTS classe TEXT,
+              ADD COLUMN IF NOT EXISTS espec_compra TEXT,
+              ADD COLUMN IF NOT EXISTS codigo_fabricante TEXT""", fetch="none")
         # ══ BIBLIOTECA DE PREPARAÇÕES PADRÃO (07/07/2026) ══
         # Templates de manutenção POR TIPO de equipamento — a fábrica dos planos.
         # planos ganham vínculo com a preparação de origem.
