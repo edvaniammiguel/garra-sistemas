@@ -1124,6 +1124,83 @@ async def docs_excluir(doc_id: str, _auth=Depends(verificar_manutencao)):
 # fornecedor, empresa, config, e os registos da OT (outros, tarefas,
 # ferramentas, leituras, documentos). Colunas em whitelist (paridade
 # EDITÁVEIS × UPDATE por construção), soft delete, DDL idempotente.
+# ── NÚCLEO DO SCHEMA (02/09/2026) ───────────────────────────────────────
+# As 6 tabelas que vieram do SQL da migração inicial e não nasciam do código:
+# ot, ot_historico, planos, pontos_controle, estoque, movimentacoes.
+# Estrutura espelhada da produção (information_schema em 02/09/2026).
+# Com isto o schema manutencao INTEIRO nasce de subir o servidor — banco
+# zerado (dev-novo) e Reset from parent deixam de depender de SQL externo.
+_NUCLEO_OK = False
+
+
+async def garantir_nucleo():
+    global _NUCLEO_OK
+    if _NUCLEO_OK:
+        return
+    await ajard_query("CREATE SCHEMA IF NOT EXISTS manutencao", fetch="none")
+    await ajard_query("""
+        CREATE TABLE IF NOT EXISTS manutencao.ot (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            numero TEXT, ano INT, sequencia INT,
+            equipamento_id UUID NOT NULL,
+            tipo TEXT DEFAULT 'corretiva', prioridade TEXT DEFAULT 'media', status TEXT DEFAULT 'aberta',
+            descricao TEXT NOT NULL,
+            solicitante_id UUID, responsavel_id UUID, fornecedor_id UUID,
+            horimetro_na_abertura NUMERIC, custo_total NUMERIC,
+            data_abertura TIMESTAMPTZ DEFAULT now(), data_conclusao TIMESTAMPTZ,
+            observacao_conclusao TEXT, ativo BOOLEAN DEFAULT true,
+            criado_em TIMESTAMPTZ DEFAULT now(), atualizado_em TIMESTAMPTZ,
+            numero_nf TEXT, valor_servico NUMERIC, data_nf DATE,
+            horas_parada NUMERIC, data_retorno_operacao DATE,
+            enviado_por UUID, enviado_em TIMESTAMPTZ,
+            ot_origem_id UUID, ot_proxima_id UUID, pedido_id UUID,
+            tipo_trabalho TEXT, interventor TEXT,
+            data_prevista DATE, horimetro_previsto NUMERIC, plano_id UUID,
+            origem TEXT DEFAULT 'garra', sintoma_codigo TEXT, causa_codigo TEXT,
+            projecto_id UUID)""", fetch="none")
+    await ajard_query("""
+        CREATE TABLE IF NOT EXISTS manutencao.ot_historico (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            ot_id UUID NOT NULL, status_de TEXT, status_para TEXT,
+            observacao TEXT, usuario_id UUID, criado_em TIMESTAMPTZ DEFAULT now())""", fetch="none")
+    await ajard_query("""
+        CREATE TABLE IF NOT EXISTS manutencao.planos (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            equipamento_id UUID NOT NULL, codigo TEXT NOT NULL, descricao TEXT NOT NULL,
+            procedimento TEXT, tipo_trabalho TEXT,
+            periodo_codigo TEXT, periodo_qtd NUMERIC, tempo_horas NUMERIC,
+            hh_previsto NUMERIC, custo_previsto NUMERIC, plano_proximo_codigo TEXT,
+            ativo BOOLEAN DEFAULT true, criado_em TIMESTAMPTZ DEFAULT now(),
+            preparacao_codigo TEXT, mao_obra JSONB, pecas JSONB, outros JSONB, ferramentas JSONB)""", fetch="none")
+    await ajard_query("""
+        CREATE TABLE IF NOT EXISTS manutencao.pontos_controle (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            equipamento_id UUID NOT NULL, codigo TEXT NOT NULL,
+            leitura_atual NUMERIC, data_leitura TIMESTAMPTZ,
+            limiar_atencao NUMERIC, limiar_urgente NUMERIC, limiar_maximo NUMERIC,
+            ativo BOOLEAN DEFAULT true,
+            UNIQUE (equipamento_id, codigo))""", fetch="none")
+    await ajard_query("""
+        CREATE TABLE IF NOT EXISTS manutencao.estoque (
+            peca_id UUID NOT NULL, almoxarifado_id UUID NOT NULL,
+            quantidade NUMERIC DEFAULT 0, minimo NUMERIC, localizacao TEXT, maximo NUMERIC,
+            PRIMARY KEY (peca_id, almoxarifado_id))""", fetch="none")
+    await ajard_query("""
+        CREATE TABLE IF NOT EXISTS manutencao.movimentacoes (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            tipo TEXT NOT NULL, peca_id UUID NOT NULL,
+            almox_origem UUID, almox_destino UUID, quantidade NUMERIC NOT NULL,
+            ot_id UUID, usuario_id UUID, observacao TEXT,
+            criado_em TIMESTAMPTZ DEFAULT now(), custo_unitario NUMERIC,
+            documento_tipo TEXT, documento_numero TEXT, fornecedor_id UUID, oc_numero TEXT)""", fetch="none")
+    await ajard_query("CREATE INDEX IF NOT EXISTS ix_ot_equip ON manutencao.ot (equipamento_id)", fetch="none")
+    await ajard_query("CREATE INDEX IF NOT EXISTS ix_ot_status ON manutencao.ot (status) WHERE ativo=true", fetch="none")
+    await ajard_query("CREATE INDEX IF NOT EXISTS ix_othist_ot ON manutencao.ot_historico (ot_id)", fetch="none")
+    await ajard_query("CREATE INDEX IF NOT EXISTS ix_mov_peca ON manutencao.movimentacoes (peca_id)", fetch="none")
+    await ajard_query("CREATE INDEX IF NOT EXISTS ix_mov_ot ON manutencao.movimentacoes (ot_id)", fetch="none")
+    _NUCLEO_OK = True
+
+
 _TABELAS = {
     "contratos": ("manutencao.contratos", {
         "numero": "TEXT", "fornecedor_id": "UUID", "objeto": "TEXT", "data_inicio": "DATE", "data_fim": "DATE",
@@ -1175,6 +1252,9 @@ async def _garantir_tabela(nome):
 def _tab_val(t, v):
     if v in (None, ""):
         return None
+    import datetime as _dtv
+    if isinstance(v, (_dtv.date, _dtv.datetime)):
+        return v
     if t.startswith("NUMERIC") or t == "INT":
         txt = str(v).strip().replace("R$", "").replace(" ", "")
         if "," in txt:                      # pt-BR: 1.500,50 → 1500.50
@@ -1288,7 +1368,7 @@ async def tab_editar(nome: str, rid: str, request: Request, _auth=Depends(verifi
         # quem marcou e quando vêm do token, nunca do cliente
         import datetime as _dtm
         d["feita_por"] = await _usuario_id(_auth) if d["feita"] else None
-        d["feita_em"] = _dtm.datetime.now().isoformat() if d["feita"] else None
+        d["feita_em"] = _dtm.datetime.now(_dtm.timezone.utc) if d["feita"] else None
     sets, vals = [], []
     for c, t in cols.items():
         if c in d:
@@ -1323,8 +1403,12 @@ async def ot_tarefas_da_fmp(ot_id: str, _auth=Depends(verificar_manutencao)):
         raise HTTPException(status_code=409, detail="A OT já tem tarefas")
     texto = ""
     if o.get("plano_id"):
-        pl = await ajard_query("SELECT tarefas FROM manutencao.planos WHERE id=%s", (o["plano_id"],), fetch="one")
-        texto = (pl or {}).get("tarefas") or ""
+        # tarefas da FMP: procedimento do plano; sem ele, as tarefas do modelo da biblioteca
+        pl = await ajard_query("SELECT procedimento, preparacao_codigo FROM manutencao.planos WHERE id=%s", (o["plano_id"],), fetch="one")
+        texto = (pl or {}).get("procedimento") or ""
+        if not texto.strip() and (pl or {}).get("preparacao_codigo"):
+            bib = await ajard_query("SELECT tarefas FROM manutencao.biblioteca_preparacoes WHERE codigo=%s", (pl["preparacao_codigo"],), fetch="one")
+            texto = (bib or {}).get("tarefas") or ""
     linhas = [l.strip(" -•*\t") for l in (texto or "").splitlines() if l.strip(" -•*\t")]
     if not linhas:
         linhas = [o.get("descricao") or "Executar o serviço descrito na OT"]
@@ -1342,7 +1426,23 @@ async def ot_preparacao(ot_id: str, _auth=Depends(verificar_manutencao)):
     if not o.get("plano_id"):
         return {"plano": None}
     pl = await ajard_query("SELECT * FROM manutencao.planos WHERE id=%s", (o["plano_id"],), fetch="one")
-    return {"plano": _tab_row(pl) if pl else None}
+    if not pl:
+        return {"plano": None}
+    d = _tab_row(pl)
+    d["tdm_horas"] = d.get("tempo_horas")
+    d["tarefas"] = d.get("procedimento") or ""
+    if d.get("preparacao_codigo"):
+        bib = await ajard_query("SELECT * FROM manutencao.biblioteca_preparacoes WHERE codigo=%s", (d["preparacao_codigo"],), fetch="one")
+        if bib:
+            b = _tab_row(bib)
+            if not (d["tarefas"] or "").strip():
+                d["tarefas"] = b.get("tarefas") or ""
+            if d.get("tdm_horas") is None:
+                d["tdm_horas"] = b.get("tdm_horas")
+            for k in ("mao_obra", "pecas", "outros", "ferramentas", "criticidade"):
+                if not d.get(k):
+                    d[k] = b.get(k)
+    return {"plano": d}
 
 
 @router.get("/manutencao/api/ots/{ot_id}/documentos")
@@ -1469,8 +1569,8 @@ async def carga_trabalhos(dias: int = 30, _auth=Depends(verificar_manutencao)):
         """SELECT COALESCE(u.nome, m.nome, '(sem nome)') AS nome, m.usuario_id, SUM(m.horas) AS horas,
                   SUM(m.horas * COALESCE(m.custo_hora,0)) AS custo, COUNT(DISTINCT m.ot_id)::int AS ots
            FROM manutencao.ot_mao_obra m LEFT JOIN public.usuarios_garra u ON u.id = m.usuario_id
-           WHERE m.ativo=true AND m.data >= now()::date - %s
-           GROUP BY 1, 2""", (int(dias),)) or []
+           WHERE m.ativo=true AND m.data >= %s
+           GROUP BY 1, 2""", ((__import__("datetime").date.today() - __import__("datetime").timedelta(days=int(dias))),)) or []
     pess = {}
     for r in ots:
         p = pess.setdefault(r["nome"], {"nome": r["nome"], "programada": 0, "aberta": 0, "em_andamento": 0,
@@ -1540,7 +1640,7 @@ async def planos_todos(_auth=Depends(verificar_manutencao)):
     """Parametrização ▸ Planos preventivos: todas as FMPs da frota."""
     await ajard_query("ALTER TABLE manutencao.planos ADD COLUMN IF NOT EXISTS ativo BOOLEAN DEFAULT true", fetch="none")
     rows = await ajard_query(
-        """SELECT p.id, p.codigo, p.descricao, p.periodo_codigo, p.tdm_horas, p.ativo, p.equipamento_id,
+        """SELECT p.id, p.codigo, p.descricao, p.periodo_codigo, p.tempo_horas AS tdm_horas, p.ativo, p.equipamento_id,
                   e.codigo AS equipamento_codigo, e.descricao AS equipamento_desc
            FROM manutencao.planos p JOIN operacional.equipamentos e ON e.id = p.equipamento_id
            WHERE COALESCE(p.ativo,true)=true ORDER BY e.codigo, p.codigo""") or []
