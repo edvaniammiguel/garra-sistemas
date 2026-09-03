@@ -7,13 +7,19 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.base import MIMEBase
 from email import encoders
-from PIL import Image
+from PIL import Image, ImageOps
 from .config import MAIL_HOST, MAIL_PORT, MAIL_USERNAME, MAIL_PASSWORD, MAIL_CC
 from .db import ajard_query
 
 # ── HELPERS JARDINAGEM ────────────────────────────────────────
 def comprimir_imagem(dados: bytes, max_px: int = 1400, qualidade: int = 82) -> bytes:
     img = Image.open(io.BytesIO(dados))
+    # Aplica a rotação do EXIF (Orientation) ANTES de re-encodar — sem isso,
+    # a tag some no save() e a foto da câmera fica tombada (90°/180°).
+    try:
+        img = ImageOps.exif_transpose(img)
+    except Exception:
+        pass
     if img.mode not in ("RGB","L"):
         img = img.convert("RGB")
     img.thumbnail((max_px, max_px), Image.LANCZOS)
