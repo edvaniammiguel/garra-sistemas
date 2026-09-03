@@ -19,8 +19,8 @@ MODULOS_DISPONIVEIS = [
 ]
 
 PERFIL_MODULOS_PADRAO = {
-    "admin":     ["admin_master","jardinagem_desktop","jardinagem_mobile","operacional_mobile","checklist","checklist_logistica","abastecimento"],
-    "gestor":    ["admin_master","jardinagem_desktop","operacional_mobile","abastecimento"],
+    "admin":     ["admin_master","jardinagem_desktop","jardinagem_mobile","operacional_mobile","checklist","checklist_logistica","abastecimento","abastecimento_notas"],
+    "gestor":    ["admin_master","jardinagem_desktop","operacional_mobile","abastecimento","abastecimento_notas"],
     "luana":     ["admin_master","jardinagem_desktop","operacional_mobile","abastecimento_notas"],
     "bruna":     ["admin_master","checklist","manutencao","pedir_ot","abastecimento"],
     "operador":  ["operacional_mobile","checklist","abastecimento"],
