@@ -72,6 +72,8 @@ async def login(req: LoginRequest, request: Request, db=Depends(get_db)):
         for m in MODULOS_DISPONIVEIS:
             if m["id"] not in perms:
                 perms[m["id"]] = m["id"] in padrao
+        if user["perfil"] == "admin":
+            perms = {m["id"]: True for m in MODULOS_DISPONIVEIS}
     except Exception:
         perms = {}
     
@@ -174,6 +176,8 @@ async def renovar_token(payload=Depends(verificar_token)):
             for m in MODULOS_DISPONIVEIS:
                 if m["id"] not in perms:
                     perms[m["id"]] = m["id"] in padrao
+            if perfil == "admin":
+                perms = {m["id"]: True for m in MODULOS_DISPONIVEIS}
         except Exception:
             perms = {}
 
@@ -338,6 +342,8 @@ async def webauthn_login_verificar(request: Request, db=Depends(get_db)):
         for m in MODULOS_DISPONIVEIS:
             if m["id"] not in perms:
                 perms[m["id"]] = m["id"] in padrao
+        if user["perfil"] == "admin":
+            perms = {m["id"]: True for m in MODULOS_DISPONIVEIS}
     except Exception:
         perms = {}
     return {
@@ -575,6 +581,8 @@ async def get_permissoes_usuario(usuario_id: str, payload=Depends(verificar_toke
         for m in MODULOS_DISPONIVEIS:
             if m["id"] not in perms:
                 perms[m["id"]] = m["id"] in padrao
+        if user["perfil"] == "admin":
+            perms = {m["id"]: True for m in MODULOS_DISPONIVEIS}
     return perms
 
 @router.post("/permissoes/usuario/{usuario_id}")
@@ -616,6 +624,8 @@ async def get_todas_permissoes(_auth=Depends(verificar_admin)):
                 user_perms[m["id"]] = perm_map[uid][m["id"]]
             else:
                 user_perms[m["id"]] = m["id"] in padrao
+        if u["perfil"] == "admin":
+            user_perms = {m["id"]: True for m in MODULOS_DISPONIVEIS}
         result.append({
             "id": uid,
             "login": u["login"],
