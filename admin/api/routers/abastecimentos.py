@@ -427,9 +427,17 @@ async def nota_lancada(nota_id: str, request: Request, payload=Depends(verificar
     d = await request.json()
     lanc = bool(d.get("lancada"))
     uid = _uid(payload)
+    if lanc and not uid:
+        sub = str(payload.get("sub") or payload.get("login") or "").strip()
+        if sub:
+            r = await ajard_query(
+                "SELECT id FROM public.usuarios_garra WHERE (login=%s OR email=%s) AND ativo=true LIMIT 1",
+                (sub, sub))
+            if r:
+                uid = str(r[0]["id"])
     await ajard_query(
         """UPDATE operacional.abastecimento_notas SET lancada_mais=%s,
-             lancada_por=CASE WHEN %s THEN %s ELSE NULL END,
+             lancada_por=CASE WHEN %s THEN %s::uuid ELSE NULL END,
              lancada_em=CASE WHEN %s THEN now() ELSE NULL END
            WHERE id=%s""", (lanc, lanc, uid, lanc, nota_id), fetch="none")
     return {"ok": True, "lancada": lanc}
