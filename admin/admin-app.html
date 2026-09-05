@@ -4287,12 +4287,8 @@ async function salvarOS() {
       }
       window._osEquipAntes = null;
     } else {
+      payload.precos_categoria = pcColetar();
       const nova = await apiFetch('/operacional/api/os', {method:'POST', body:JSON.stringify(payload)});
-      const _pcs = pcColetar();
-      if (_pcs.length) {
-        const _novaId = (nova && (nova.id || (nova.os && nova.os.id))) || null;
-        if (_novaId) await apiFetch('/operacional/api/os/'+_novaId, {method:'PATCH', body:JSON.stringify({precos_categoria:_pcs})});
-      }
       toast('OS criada!','success');
       // ── Veio da Agenda? Vincular evento → confirmado (fecha o ciclo) ──
       if (window._agendaEventoConfirmando && nova && nova.id) {
