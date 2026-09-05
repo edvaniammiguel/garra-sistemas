@@ -656,6 +656,20 @@ async def op_criar_os(request: Request, payload=Depends(verificar_gestor)):
     # condições financeiras vindas da Agenda Google). Nunca vai ao mobile.
     observacao_gestao   = (d.get("observacao_gestao") or "").strip() or None
 
+    # (04/09/2026) Paridade form × INSERT — caso OS do Filipe: o form de Nova OS
+    # envia regime e valores, mas a criação descartava (só o PATCH gravava).
+    # Valor preenchido na abertura sumia silenciosamente dos registros.
+    regime_cobranca     = (d.get("regime_cobranca") or "").strip() or None
+    def _val_num(chave):
+        v = d.get(chave)
+        return float(v) if v not in (None, "") else None
+    valor_combinado = _val_num("valor_combinado")
+    valor_hora      = _val_num("valor_hora")
+    valor_metro     = _val_num("valor_metro")
+    valor_diaria    = _val_num("valor_diaria")
+    valor_km        = _val_num("valor_km")
+    valor_viagem    = _val_num("valor_viagem")
+
     # Gerar número de OS
     ano = datetime.utcnow().year
     row = await ajard_query("SELECT operacional.proximo_numero_os(%s) AS numero", (ano,), fetch="one")
@@ -682,15 +696,19 @@ async def op_criar_os(request: Request, payload=Depends(verificar_gestor)):
                 equipamento_id, operador_id,
                 obra, endereco, gps, descricao, observacao_gestao,
                 data_inicio, data_fim_prevista,
-                status, origem, criado_por, horas_padrao_dia)
-               VALUES (%s,%s,%s,%s,%s,%s, %s,%s,%s, %s,%s, %s,%s,%s,%s,%s, %s,%s, %s,%s,%s, %s)""",
+                status, origem, criado_por, horas_padrao_dia,
+                regime_cobranca, valor_combinado,
+                valor_hora, valor_metro, valor_diaria, valor_km, valor_viagem)
+               VALUES (%s,%s,%s,%s,%s,%s, %s,%s,%s, %s,%s, %s,%s,%s,%s,%s, %s,%s, %s,%s,%s, %s, %s,%s, %s,%s,%s,%s,%s)""",
             (numero, ano, sequencia, codigo_erp, codigo_erp_em, codigo_erp_por,
              cliente_id, cliente_nome_avulso, tipo_servico_id,
              equipamento_id, operador_id,
              obra, endereco, gps, descricao, observacao_gestao,
              data_inicio, data_fim_prevista,
              status, origem, criado_por_id,
-             float(d.get("horas_padrao_dia")) if d.get("horas_padrao_dia") else None)
+             float(d.get("horas_padrao_dia")) if d.get("horas_padrao_dia") else None,
+             regime_cobranca, valor_combinado,
+             valor_hora, valor_metro, valor_diaria, valor_km, valor_viagem)
         )
         return dict(os_row)
     except Exception as e:
