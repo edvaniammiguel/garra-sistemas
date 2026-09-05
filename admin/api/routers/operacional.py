@@ -710,6 +710,21 @@ async def op_criar_os(request: Request, payload=Depends(verificar_gestor)):
              regime_cobranca, valor_combinado,
              valor_hora, valor_metro, valor_diaria, valor_km, valor_viagem)
         )
+        # (04/09/2026) Tabela de apoios no PRÓPRIO POST — antes o front fazia
+        # uma 2ª chamada (PATCH) após criar; queda de rede entre as duas
+        # deixava a OS sem a tabela, sem aviso. Uma requisição, um destino.
+        if isinstance(d.get("precos_categoria"), list):
+            for pc in d["precos_categoria"]:
+                cat = (pc.get("categoria") or "").strip()
+                med = (pc.get("tipo_medicao") or "").strip().lower()
+                val = pc.get("valor_unitario")
+                if cat and med in ("horimetro", "hora", "diaria", "viagem", "km") and val is not None:
+                    if med == "hora": med = "horimetro"
+                    await ajard_query(
+                        """INSERT INTO operacional.os_precos_categoria (os_id, categoria, tipo_medicao, valor_unitario)
+                           VALUES (%s,%s,%s,%s)
+                           ON CONFLICT (os_id, categoria, tipo_medicao) DO UPDATE SET valor_unitario=EXCLUDED.valor_unitario""",
+                        (os_row["id"], cat, med, float(val)), fetch="none")
         return dict(os_row)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erro ao criar OS: {str(e)}")
