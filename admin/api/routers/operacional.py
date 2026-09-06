@@ -1378,7 +1378,11 @@ async def op_fechar_os(os_id: str, request: Request, payload=Depends(verificar_g
                                AND COALESCE(pd.vinculo_operador,'proprio') = 'proprio'
                              LIMIT 1),
                             CASE WHEN pd.equipamento_id = os.equipamento_id
-                                 THEN os.valor_hora ELSE NULL END)
+                                 THEN COALESCE(NULLIF(os.valor_hora, 0),
+                                      CASE WHEN lower(COALESCE(os.regime_cobranca,'')) LIKE '%hora%'
+                                             OR lower(COALESCE(os.regime_cobranca,'')) LIKE '%hor_metro%'
+                                           THEN NULLIF(os.valor_combinado, 0) END)
+                                 ELSE NULL END)
                END
            FROM operacional.ordens_servico os
            WHERE os.id = pd.os_id
