@@ -537,12 +537,17 @@ async def jard_url_foto(fid: int, payload=Depends(verificar_token_jard)):
 @router.post("/jardinagem/api/relatorios/km")
 async def jard_criar_km(request: Request, payload=Depends(verificar_token_jard)):
     d = await request.json()
-    semana_id = d.get("semana_id")
-    if not semana_id:
-        hoje = date.today()
-        row = await ajard_query("SELECT id FROM jardinagem.semanas WHERE data_ini<=%s AND data_fim>=%s LIMIT 1", (hoje,hoje), fetch="one")
-        if not row: raise HTTPException(status_code=404, detail="Sem semana ativa")
+    data_reg = d.get("data") or date.today().isoformat()
+    row = await ajard_query("SELECT id FROM jardinagem.semanas WHERE data_ini<=%s AND data_fim>=%s LIMIT 1", (data_reg,data_reg), fetch="one")
+    if row:
         semana_id = row["id"]
+    else:
+        semana_id = d.get("semana_id")
+        if not semana_id:
+            hoje = date.today()
+            row = await ajard_query("SELECT id FROM jardinagem.semanas WHERE data_ini<=%s AND data_fim>=%s LIMIT 1", (hoje,hoje), fetch="one")
+            if not row: raise HTTPException(status_code=404, detail="Sem semana ativa")
+            semana_id = row["id"]
     local_nome  = (d.get("local_nome") or "").strip()
     km_ini      = d.get("km_inicial"); km_fin = d.get("km_final")
     if not local_nome: raise HTTPException(status_code=400, detail="local_nome obrigatório")
@@ -577,6 +582,11 @@ async def jard_editar_km(km_id: int, request: Request, payload=Depends(verificar
          float(km_ini), float(km_fin),
          d.get("hora_inicio"), d.get("hora_fim"), d.get("observacao",""),
          km_id), fetch="none")
+    data_reg = d.get("data")
+    if data_reg:
+        row = await ajard_query("SELECT id FROM jardinagem.semanas WHERE data_ini<=%s AND data_fim>=%s LIMIT 1", (data_reg,data_reg), fetch="one")
+        if row:
+            await ajard_query("UPDATE jardinagem.relatorios_diarios SET semana_id=%s WHERE id=%s AND semana_id<>%s", (row["id"],km_id,row["id"]), fetch="none")
     return {"ok": True, "id": km_id}
 
 @router.delete("/jardinagem/api/relatorios/{km_id}")
