@@ -4013,9 +4013,12 @@ function _precosOS(os) {
   const g = v => parseFloat(v||0)||0;
   const r = ((os && os.regime_cobranca)||'').toLowerCase();
   const legado = g(os && os.valor_combinado);
+  // (06/09/2026) "horímetro" não contém "hora" mas contém "metro" — sem esta
+  // blindagem, um regime chamado Horímetro mandava o combinado para METROS.
+  const ehHoras = r.includes('hora') || r.includes('horimetro') || r.includes('horímetro');
   return {
-    hora:   g(os && os.valor_hora)   || (r.includes('hora')  ? legado : 0),
-    metro:  g(os && os.valor_metro)  || (r.includes('metro') ? legado : 0),
+    hora:   g(os && os.valor_hora)   || (ehHoras ? legado : 0),
+    metro:  g(os && os.valor_metro)  || (!ehHoras && r.includes('metro') ? legado : 0),
     diaria: g(os && os.valor_diaria) || (r.includes('diari') ? legado : 0),
     km:     g(os && os.valor_km)     || (r.includes('km')    ? legado : 0),
     viagem: g(os && os.valor_viagem) || (r.includes('viagem') ? legado : 0),
@@ -4210,6 +4213,7 @@ async function salvarOS() {
   const osId = document.getElementById('os-id').value;
   const obra  = document.getElementById('os-obra').value.trim();
   if (!obra) { err.textContent='Obra/Local é obrigatório'; err.classList.remove('hidden'); return; }
+  if (!document.getElementById('os-regime').value) { err.textContent='Regime de Cobrança é obrigatório — é ele que diz a qual medição o Valor Combinado pertence'; err.classList.remove('hidden'); return; }
 
   const payload = {
     codigo_erp:        document.getElementById('os-codigo-erp').value.trim()||null,
