@@ -1572,7 +1572,7 @@ function enviarEmailCliente(){
     .then(function(r){return r.json();})
     .then(function(d){
       if(d.erro){status.textContent='❌ '+d.erro;status.style.color='#DC2626';}
-      else{status.textContent='✅ '+d.mensagem;status.style.color='#16A34A';setTimeout(function(){fecharModal('modalEmail');},2500);}
+      else{status.textContent='✅ '+d.mensagem;status.style.color='#16A34A';}
     })
     .catch(function(){status.textContent='❌ Erro de conexão';status.style.color='#DC2626';})
     .finally(function(){btn.disabled=false;btn.innerHTML='📧 Enviar Email';});
