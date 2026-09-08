@@ -232,7 +232,11 @@ async def criar_setor(request: Request, _auth=Depends(verificar_compras_gestor))
         raise HTTPException(status_code=400, detail="Código e nome são obrigatórios")
     await ajard_query(
         """INSERT INTO compras.setores (codigo, nome, cor)
-           VALUES (%s,%s,%s) ON CONFLICT (codigo) DO NOTHING""",
+           VALUES (%s,%s,%s)
+           ON CONFLICT (codigo) DO UPDATE
+           SET nome=EXCLUDED.nome,
+               cor=COALESCE(EXCLUDED.cor, compras.setores.cor),
+               ativo=true""",
         (codigo, nome, d.get("cor")), fetch="none")
     return {"ok": True, "codigo": codigo}
 
