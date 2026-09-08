@@ -76,6 +76,7 @@ async def _get_apool():
                 _apool = await asyncpg.create_pool(
                     DATABASE_URL, min_size=1, max_size=10,
                     command_timeout=60,
+                    statement_cache_size=0,
                 )
     return _apool
 
