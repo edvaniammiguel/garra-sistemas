@@ -1081,6 +1081,7 @@ async function abrirPedidos(){
       + '<td class="bold">'+_esc(p.equipamento_codigo||'—')+'</td><td>'+quem+'</td>'
       + '<td>'+_esc(p.descricao)+'</td>'
       + '<td class="act"><button class="btn" title="Converter em OT" onclick="converterPedido(\''+p.id+'\')">▶️</button>'
+      + (p.nc_ref ? '<button class="btn" title="Ver fotos da NC" onclick="verFotosNC(\''+p.id+'\',\''+_esc(p.numero)+'\')">📷</button>' : '')
       + '<button class="btn" title="Recusar" onclick="recusarPedido(\''+p.id+'\',\''+_esc(p.numero)+'\')">✕</button></td></tr>';
   }).join('');
   document.getElementById('eq-ficha-corpo').innerHTML =
@@ -1189,6 +1190,39 @@ async function recusarPedido(pid, numero){
     mostrarToast('✕ '+numero+' recusado','ok');
     abrirPedidos(); atualizarBadgePedidos();
   } catch(e){ mostrarToast('❌ '+e.message,'warn'); }
+}
+
+async function verFotosNC(pid, numero){
+  let d;
+  try { d = await mntFetch('/manutencao/api/pedidos/'+pid+'/fotos-nc'); }
+  catch(e){ mostrarToast('❌ '+e.message,'warn'); return; }
+  const itens = (d && d.itens) || [];
+  const comFoto = itens.filter(i => i.foto_url);
+  let corpo;
+  if (!itens.length) {
+    corpo = '<div class="pp-sub" style="padding:12px 0">Este pedido não tem itens não conformes registrados com detalhe.</div>';
+  } else {
+    corpo = '<div class="muted" style="font-size:11px;margin-bottom:10px">'
+      + _esc(d.checklist||'') + (d.operador ? ' · 👷 '+_esc(d.operador) : '')
+      + (d.equipamento ? ' · 🚜 '+_esc(d.equipamento) : '')
+      + ' · '+comFoto.length+' foto(s)</div>';
+    corpo += itens.map(i =>
+      '<div style="border:1px solid #e3e6f0;border-radius:8px;padding:10px;margin-bottom:10px">'
+      + '<div class="bold" style="color:#1A2A5E;font-size:13px">✗ '+_esc(i.item)+'</div>'
+      + (i.obs ? '<div class="muted" style="font-size:12px;margin:4px 0">📝 '+_esc(i.obs)+'</div>' : '')
+      + (i.foto_url
+          ? '<img src="'+i.foto_url+'" alt="Foto da NC" style="max-width:100%;border-radius:6px;margin-top:6px;cursor:zoom-in" onclick="window.open(\''+i.foto_url+'\',\'_blank\')">'
+          : '<div class="muted" style="font-size:11px;margin-top:4px">— sem foto neste item —</div>')
+      + '</div>').join('');
+  }
+  const html = '<div style="position:fixed;inset:0;background:rgba(10,16,40,.55);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px" onclick="if(event.target===this)this.remove()">'
+    + '<div style="background:#fff;border-radius:12px;max-width:520px;width:100%;max-height:85vh;overflow:auto;padding:18px">'
+    + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">'
+    + '<b style="color:#1A2A5E;font-size:15px">📷 Fotos da NC — '+_esc(numero)+'</b>'
+    + '<button class="btn" onclick="this.closest(\'div[style*=fixed]\').remove()">✕</button></div>'
+    + corpo + '</div></div>';
+  const wrap = document.createElement('div'); wrap.innerHTML = html;
+  document.body.appendChild(wrap.firstChild);
 }
 
 /* ══ MENU DE CONTEXTO (botão direito) ══ */
