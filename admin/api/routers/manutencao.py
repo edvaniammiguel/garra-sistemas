@@ -335,6 +335,69 @@ async def listar_pedidos(status: str = "aberto", equipamento_id: str = None,
     return [dict(r) for r in rows]
 
 
+@router.get("/manutencao/api/pedidos/{pid}/fotos-nc")
+async def fotos_nc_pedido(pid: str, _auth=Depends(verificar_manutencao)):
+    """(10/09/2026) Ponte Checklist → Pedido. O pedido automático guarda
+    nc_ref = envio_id do checklist que o gerou; as fotos moram no Storage em
+    checklist/{envio_id}/{item_id}.jpg. Aqui o pedido 'olha de volta' para o
+    envio e devolve só os itens NÃO CONFORMES, com nome do item, observação
+    do operador e URL assinada — para a triagem ver a evidência sem sair da tela."""
+    from core.storage import _checklist_assinar_fotos_para_leitura
+    import json as _json
+    ped = await ajard_query(
+        "SELECT nc_ref, via FROM manutencao.pedidos WHERE id=%s AND ativo=true",
+        (pid,), fetch="one")
+    if not ped:
+        raise HTTPException(404, "Pedido não encontrado")
+    nc_ref = ped.get("nc_ref")
+    if not nc_ref:
+        return {"origem_checklist": False, "itens": []}
+    env = await ajard_query(
+        "SELECT cl_id, cl_label, usuario_nome, enviado_em, respostas, meta "
+        "FROM checklist.envios WHERE envio_id=%s", (nc_ref,), fetch="one")
+    if not env:
+        return {"origem_checklist": True, "envio_id": nc_ref, "itens": [],
+                "aviso": "Envio do checklist não localizado"}
+    resp = env.get("respostas")
+    resp = resp if isinstance(resp, dict) else _json.loads(resp or "{}")
+    resp = _checklist_assinar_fotos_para_leitura(resp)
+    rotulos = {}
+    try:
+        steps = await ajard_query(
+            "SELECT steps FROM checklist.modelos WHERE cl_id=%s", (env.get("cl_id"),), fetch="one")
+        st_list = (steps or {}).get("steps")
+        st_list = st_list if isinstance(st_list, list) else _json.loads(st_list or "[]")
+        for st in st_list:
+            for it in (st.get("items") or []):
+                if it.get("id"):
+                    rotulos[str(it["id"])] = str(it.get("label") or it["id"])
+    except Exception:
+        pass
+    itens = []
+    for chave, ans in resp.items():
+        if not isinstance(ans, dict):
+            continue
+        if str(ans.get("val") or "").strip().upper() != "NC":
+            continue
+        itens.append({
+            "item_id": str(chave),
+            "item": rotulos.get(str(chave), str(chave)),
+            "obs": (ans.get("obs") or "").strip(),
+            "foto_url": ans.get("photo") or None,
+        })
+    meta = env.get("meta")
+    meta = meta if isinstance(meta, dict) else _json.loads(meta or "{}")
+    return {
+        "origem_checklist": True,
+        "envio_id": nc_ref,
+        "checklist": env.get("cl_label") or env.get("cl_id"),
+        "operador": env.get("usuario_nome"),
+        "enviado_em": env.get("enviado_em"),
+        "equipamento": meta.get("veiculo") or meta.get("equipamento") or None,
+        "itens": itens,
+    }
+
+
 @router.post("/manutencao/api/pedidos/{pid}/recusar")
 async def recusar_pedido(pid: str, request: Request, payload=Depends(verificar_manutencao)):
     """Pedido nunca some — recusado com motivo vira história."""

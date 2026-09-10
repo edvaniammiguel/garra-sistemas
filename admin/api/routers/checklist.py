@@ -136,18 +136,35 @@ async def salvar_envio(e: EnvioCreate, db=Depends(get_db), _auth=Depends(verific
                         ident)
                 itens_nc = []
                 resp = respostas_processadas if isinstance(respostas_processadas, dict) else {}
+                # (10/09/2026) O app grava a resposta em ans.val ('C'|'NC'|'NA') e a
+                # observação em ans.obs — a detecção antiga procurava status/resposta/
+                # valor (inexistentes) e a descrição nunca listava os itens. Agora
+                # lista o NOME do item (pelo modelo) + a observação do operador.
+                rotulos = {}
+                try:
+                    _steps = await db.fetchval(
+                        "SELECT steps FROM checklist.modelos WHERE cl_id=$1", e.cl_id)
+                    _steps = _steps if isinstance(_steps, list) else json.loads(_steps or "[]")
+                    for _st in _steps:
+                        for _it in (_st.get("items") or []):
+                            if _it.get("id"):
+                                rotulos[str(_it["id"])] = str(_it.get("label") or _it["id"])
+                except Exception:
+                    pass
                 for chave, val in resp.items():
-                    st = ""
                     if isinstance(val, dict):
-                        st = str(val.get("status") or val.get("resposta") or val.get("valor") or "")
+                        st = str(val.get("val") or val.get("status") or val.get("resposta") or val.get("valor") or "")
+                        obs = str(val.get("obs") or "").strip()
                     else:
-                        st = str(val)
-                    if "nc" in st.lower() or "não conforme" in st.lower() or "nao conforme" in st.lower():
-                        itens_nc.append(str(chave))
+                        st, obs = str(val), ""
+                    stl = st.strip().lower()
+                    if stl == "nc" or "não conforme" in stl or "nao conforme" in stl:
+                        nome = rotulos.get(str(chave), str(chave))
+                        itens_nc.append(f"{nome} ({obs})" if obs else nome)
                 desc = (f"NC no checklist {e.cl_label or e.cl_id}"
                         + (f" — {ident}" if ident else "")
                         + f": {e.total_nc} não conformidade(s)."
-                        + (f" Itens: {', '.join(itens_nc[:8])}." if itens_nc else "")
+                        + (f" Itens: {'; '.join(itens_nc[:8])}." if itens_nc else "")
                         + f" (envio {e.envio_id} de {e.usuario_nome or e.usuario_login})")
                 sol_id = await db.fetchval(
                     "SELECT id FROM public.usuarios_garra WHERE login=$1", e.usuario_login)
