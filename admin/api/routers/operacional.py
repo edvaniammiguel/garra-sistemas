@@ -1304,6 +1304,16 @@ async def op_fechar_os(os_id: str, request: Request, payload=Depends(verificar_g
     fechado_por_id = user["id"] if user else None
     agora = datetime.utcnow()
 
+    # (11/09/2026) EMPREITO fecha SEM exigir preço por linha e SEM congelar
+    # valor_unitario: linha coberta fatura pelo valor fechado da obra, e no
+    # empreito valor_unitario significa EXTRA cobrado por cima — o
+    # congelamento de 24/07 converteria toda linha coberta em extra no ato
+    # de fechar (fatura explodindo). Extras fixados pela gestão continuam
+    # com seu unitário e somam por cima, como sempre. A Apuração de
+    # Referência é calculada dos preços do cabeçalho da OS/tabela da obra,
+    # que já são snapshot — nada a congelar por linha.
+    _eh_empreito = "empreit" in (os_row.get("regime_cobranca") or "").lower()
+
     # Auto-preencher horas_cobradas = horas_trabalhadas onde não foi editado (cobradas=0 ou null)
     await ajard_query(
         """UPDATE operacional.partes_diarias pd
@@ -1318,7 +1328,8 @@ async def op_fechar_os(os_id: str, request: Request, payload=Depends(verificar_g
 
     # (13/08/2026) VALOR/HORA da OS é do equipamento PRINCIPAL. Linha de
     # hora de outro equipamento sem preço definido BLOQUEIA o fechamento.
-    _pendentes = await ajard_query(
+    # (11/09/2026) Exceto EMPREITO: coberta não fatura por linha.
+    _pendentes = [] if _eh_empreito else await ajard_query(
         """SELECT e.codigo, count(*) AS n
            FROM operacional.partes_diarias pd
            JOIN operacional.ordens_servico os ON os.id = pd.os_id
@@ -1345,51 +1356,54 @@ async def op_fechar_os(os_id: str, request: Request, payload=Depends(verificar_g
     # (24/07/2026) Preço por linha: congelar valor_unitario onde a gestão
     # não definiu — herda o preço da OS pela medição da parte (snapshot;
     # reajuste na OS nunca retroage em linha fechada).
-    await ajard_query(
-        """UPDATE operacional.partes_diarias pd
-           SET valor_unitario = CASE
-                 WHEN pd.tipo_medicao = 'metros' THEN os.valor_metro
-                 WHEN pd.tipo_medicao = 'viagem' THEN
-                   COALESCE((SELECT pc.valor_unitario FROM operacional.os_precos_categoria pc
-                             JOIN operacional.equipamentos ee ON ee.id = pd.equipamento_id
-                             WHERE pc.os_id = os.id AND pc.categoria = ee.categoria
-                               AND pc.tipo_medicao = 'viagem'
-                               AND COALESCE(pd.vinculo_operador,'proprio') = 'proprio'
-                             LIMIT 1), os.valor_viagem)
-                 WHEN pd.tipo_medicao = 'diaria' THEN
-                   COALESCE((SELECT pc.valor_unitario FROM operacional.os_precos_categoria pc
-                             JOIN operacional.equipamentos ee ON ee.id = pd.equipamento_id
-                             WHERE pc.os_id = os.id AND pc.categoria = ee.categoria
-                               AND pc.tipo_medicao = 'diaria'
-                               AND COALESCE(pd.vinculo_operador,'proprio') = 'proprio'
-                             LIMIT 1), os.valor_diaria)
-                 WHEN pd.tipo_medicao = 'km' THEN
-                   COALESCE((SELECT pc.valor_unitario FROM operacional.os_precos_categoria pc
-                             JOIN operacional.equipamentos ee ON ee.id = pd.equipamento_id
-                             WHERE pc.os_id = os.id AND pc.categoria = ee.categoria
-                               AND pc.tipo_medicao = 'km'
-                               AND COALESCE(pd.vinculo_operador,'proprio') = 'proprio'
-                             LIMIT 1), NULLIF(os.valor_viagem,0), os.valor_km)
-                 ELSE
-                   COALESCE((SELECT pc.valor_unitario FROM operacional.os_precos_categoria pc
-                             JOIN operacional.equipamentos ee ON ee.id = pd.equipamento_id
-                             WHERE pc.os_id = os.id AND pc.categoria = ee.categoria
-                               AND pc.tipo_medicao = 'horimetro'
-                               AND COALESCE(pd.vinculo_operador,'proprio') = 'proprio'
-                             LIMIT 1),
-                            CASE WHEN pd.equipamento_id = os.equipamento_id
-                                 THEN COALESCE(NULLIF(os.valor_hora, 0),
-                                      CASE WHEN lower(COALESCE(os.regime_cobranca,'')) LIKE '%hora%'
-                                             OR lower(COALESCE(os.regime_cobranca,'')) LIKE '%hor_metro%'
-                                           THEN NULLIF(os.valor_combinado, 0) END)
-                                 ELSE NULL END)
-               END
-           FROM operacional.ordens_servico os
-           WHERE os.id = pd.os_id
-             AND pd.os_id=%s AND pd.ativo=true AND pd.fechado=false
-             AND pd.valor_unitario IS NULL""",
-        (os_id,), fetch="none"
-    )
+    # (11/09/2026) NUNCA no empreito: NULL = coberta pelo valor fechado, e
+    # gravar unitário aqui a transformaria em extra faturado por cima.
+    if not _eh_empreito:
+        await ajard_query(
+            """UPDATE operacional.partes_diarias pd
+               SET valor_unitario = CASE
+                     WHEN pd.tipo_medicao = 'metros' THEN os.valor_metro
+                     WHEN pd.tipo_medicao = 'viagem' THEN
+                       COALESCE((SELECT pc.valor_unitario FROM operacional.os_precos_categoria pc
+                                 JOIN operacional.equipamentos ee ON ee.id = pd.equipamento_id
+                                 WHERE pc.os_id = os.id AND pc.categoria = ee.categoria
+                                   AND pc.tipo_medicao = 'viagem'
+                                   AND COALESCE(pd.vinculo_operador,'proprio') = 'proprio'
+                                 LIMIT 1), os.valor_viagem)
+                     WHEN pd.tipo_medicao = 'diaria' THEN
+                       COALESCE((SELECT pc.valor_unitario FROM operacional.os_precos_categoria pc
+                                 JOIN operacional.equipamentos ee ON ee.id = pd.equipamento_id
+                                 WHERE pc.os_id = os.id AND pc.categoria = ee.categoria
+                                   AND pc.tipo_medicao = 'diaria'
+                                   AND COALESCE(pd.vinculo_operador,'proprio') = 'proprio'
+                                 LIMIT 1), os.valor_diaria)
+                     WHEN pd.tipo_medicao = 'km' THEN
+                       COALESCE((SELECT pc.valor_unitario FROM operacional.os_precos_categoria pc
+                                 JOIN operacional.equipamentos ee ON ee.id = pd.equipamento_id
+                                 WHERE pc.os_id = os.id AND pc.categoria = ee.categoria
+                                   AND pc.tipo_medicao = 'km'
+                                   AND COALESCE(pd.vinculo_operador,'proprio') = 'proprio'
+                                 LIMIT 1), NULLIF(os.valor_viagem,0), os.valor_km)
+                     ELSE
+                       COALESCE((SELECT pc.valor_unitario FROM operacional.os_precos_categoria pc
+                                 JOIN operacional.equipamentos ee ON ee.id = pd.equipamento_id
+                                 WHERE pc.os_id = os.id AND pc.categoria = ee.categoria
+                                   AND pc.tipo_medicao = 'horimetro'
+                                   AND COALESCE(pd.vinculo_operador,'proprio') = 'proprio'
+                                 LIMIT 1),
+                                CASE WHEN pd.equipamento_id = os.equipamento_id
+                                     THEN COALESCE(NULLIF(os.valor_hora, 0),
+                                          CASE WHEN lower(COALESCE(os.regime_cobranca,'')) LIKE '%hora%'
+                                                 OR lower(COALESCE(os.regime_cobranca,'')) LIKE '%hor_metro%'
+                                               THEN NULLIF(os.valor_combinado, 0) END)
+                                     ELSE NULL END)
+                   END
+               FROM operacional.ordens_servico os
+               WHERE os.id = pd.os_id
+                 AND pd.os_id=%s AND pd.ativo=true AND pd.fechado=false
+                 AND pd.valor_unitario IS NULL""",
+            (os_id,), fetch="none"
+        )
 
     # Fechar todas as partes abertas
     await ajard_query(
