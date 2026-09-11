@@ -1059,7 +1059,7 @@ input,select,textarea { font-family:inherit; font-size:13px; outline:none; }
         <div id="os-vk-wrap" style="flex:1;min-width:120px"><div class="field-hint">Valor/km</div><input type="number" id="os-valor-km" step="0.01" min="0" placeholder="R$"/></div>
         <div id="os-vv-wrap" style="flex:1;min-width:120px"><div class="field-hint">Valor do frete</div><input type="number" id="os-valor-viagem" step="0.01" min="0" placeholder="R$"/></div>
       </div>
-      <div class="field-hint">O preço do regime principal vem do campo acima; preencha aqui só as medições EXTRAS que esta obra usa.</div>
+      <div class="field-hint" id="os-adicionais-hint">O preço do regime principal vem do campo acima; preencha aqui só as medições EXTRAS que esta obra usa.</div>
       <div style="margin-top:12px;padding-top:10px;border-top:1.5px dashed var(--orange)">
         <label>💰 Tabela de preços da obra — apoios (por tipo de equipamento)</label>
         <div class="field-hint" style="margin-bottom:8px">Uma linha por tipo que vai à obra. Todo registro daquele tipo (vínculo próprio) nasce com esta medição e valor sugeridos e FECHA por eles se a linha não for fixada. Diarista/terceiro/frete nunca herdam daqui.</div>
@@ -3100,6 +3100,7 @@ function renderTotaisPartes(t) {
   const tot = _totalACobrarOS(_osAtual, _partesAtual, t);
 
   let cards;
+  let _rodapeRef = ''; // (11/09/2026) quebra por equipamento no empreito
   if (regime === 'metro') {
     cards = [
       { label:'Dias trabalhados', valor: t.dias_trabalhados||0 },
@@ -3118,15 +3119,43 @@ function renderTotaisPartes(t) {
       { label:'Total a cobrar',   valor: 'R$ '+tot.toFixed(2) },
     ];
   } else if (regime === 'empreito') {
+    // (11/09/2026) APURAÇÃO DE REFERÊNCIA — gerencial, nunca fatura.
+    // Soma só as linhas COBERTAS (sem Vlr Unit. próprio) pela mesma cascata
+    // _valorParte; extras já são faturados por cima e ficam FORA da
+    // referência (entrariam duas vezes no delta). Δ = fechado − referência:
+    // a resposta direta ao "a empreitada pagou o trabalho feito?".
+    const _refPorEquip = {};
+    let _refTotal = 0;
+    (_partesAtual || []).forEach(p => {
+      if (parseFloat(p.valor_unitario) > 0) return; // extra — já faturado
+      const _v = _refValorParte(p, P);
+      if (_v > 0) {
+        _refTotal += _v;
+        const _eq = p.equipamento_codigo || p.equipamento_terceiro || '—';
+        _refPorEquip[_eq] = (_refPorEquip[_eq] || 0) + _v;
+      }
+    });
+    const _fechado = parseFloat(_osAtual.valor_combinado||0);
+    const _delta = _fechado - _refTotal;
     cards = [
       { label:'Dias trabalhados', valor: t.dias_trabalhados||0 },
       { label:'Sem apontamento', valor: (t.dias_parados||0)+' dias' },
       { label:'Total horas',      valor: (t.total_horas||0).toFixed(1)+'h' + (((t.total_horas_maquina||0) > 0 && Math.abs((t.total_horas_maquina||0)-(t.total_horas||0)) > 0.05) ? ` <span style="font-size:12px;font-weight:600;color:var(--muted)">· ⚙️ ${(t.total_horas_maquina||0).toFixed(1)}h máq.</span>` : '') },
-      { label:'Valor fechado',    valor: 'R$ '+parseFloat(_osAtual.valor_combinado||0).toFixed(2) },
+      { label:'Valor fechado',    valor: 'R$ '+_fechado.toFixed(2) },
       // (24/07/2026) Extras: linhas com Vlr Unit. próprio somam por cima
-      ...((tot - parseFloat(_osAtual.valor_combinado||0)) > 0.009
+      ...((tot - _fechado) > 0.009
           ? [{ label:'Total c/ extras', valor: 'R$ '+tot.toFixed(2) }] : []),
+      ...(_refTotal > 0 ? [
+        { label:'📊 Referência gerencial', valor: `<span style="color:var(--muted)" title="Soma das linhas cobertas pela tabela da obra — não fatura">R$ ${_refTotal.toFixed(2)}</span>` },
+        { label:'Δ Fechado − Ref.', valor: `<span style="color:${_delta >= 0 ? 'var(--green, #16A34A)' : 'var(--red)'}" title="Positivo: empreitada cobriu o trabalho pela tabela. Negativo: trabalho valeu mais que o fechado.">${_delta >= 0 ? '+' : '−'}R$ ${Math.abs(_delta).toFixed(2)}${_refTotal > 0 ? ` (${Math.round(_delta/_refTotal*100)}%)` : ''}</span>` },
+      ] : []),
     ];
+    if (_refTotal > 0) {
+      _rodapeRef = `<div style="grid-column:1/-1;font-size:12px;color:var(--muted);padding:4px 2px">` +
+        `📊 Referência por equipamento <span style="font-size:10px">(não fatura)</span>: ` +
+        Object.entries(_refPorEquip).map(([k,v]) => `<strong>${esc(k)}</strong>: R$ ${v.toFixed(2)}`).join(' · ') +
+        `</div>`;
+    }
   } else {
     // hora (padrão)
     cards = [
@@ -3146,7 +3175,7 @@ function renderTotaisPartes(t) {
     <div style="background:#fff;border:1.5px solid var(--border);border-radius:8px;padding:10px;text-align:center">
       <div style="font-size:11px;color:var(--muted);text-transform:uppercase">${c.label}</div>
       <div style="font-size:18px;font-weight:800;color:var(--blue);margin-top:2px">${c.valor}</div>
-    </div>`).join('');
+    </div>`).join('') + _rodapeRef;
 }
 
 function renderTabelaPartes(partes, statusOS) {
@@ -3431,9 +3460,18 @@ function renderTabelaPartes(partes, statusOS) {
             // exibe R$ quando tem Vlr Unit. PRÓPRIO (extra contratado à
             // parte, ex.: frete de terceiro) — esse extra soma POR CIMA do
             // valor fechado. Sem unitário: nada de R$, nada de aviso.
+            // (11/09/2026) APURAÇÃO DE REFERÊNCIA no empreito: linha coberta
+            // mostra o valor que ELA valeria pela tabela da obra/preços da OS
+            // (mesma cascata _valorParte) — em cinza itálico, PURAMENTE
+            // gerencial. NUNCA entra em _totalACobrarOS: a fatura segue
+            // valor fechado + extras. Sem preço na cascata: "—" silencioso
+            // (empreito não exibe aviso vermelho de preço faltante).
+            const _refEmpreito = _refValorParte(p, P);
             cel7 = (_vuLinha > 0)
               ? `<strong title="Extra — soma por cima do valor fechado">R$ ${(_qtdParte(p) * _vuLinha).toFixed(2)}</strong>`
-              : `<span style="color:var(--muted);font-size:12px" title="Coberto pelo valor fechado da empreitada">—</span>`;
+              : (_refEmpreito > 0
+                  ? `<span style="color:var(--muted);font-style:italic" title="Referência gerencial pela tabela — não fatura (coberto pelo valor fechado)">R$ ${_refEmpreito.toFixed(2)} <span style="font-size:10px">ref.</span></span>`
+                  : `<span style="color:var(--muted);font-size:12px" title="Coberto pelo valor fechado da empreitada">—</span>`);
           } else if (regime !== 'metro' && _medNorm !== _medDoRegime) {
             const _v2 = _valorParte(p, P);
             const _falta2 = (_vuLinhaOuCascata(p, P) != null) ? '' : _rotuloFaltaPreco(_medNorm);
@@ -3550,15 +3588,34 @@ function _vuSugeridoOS(p, P) {
 }
 function _vuNum(v) { return (v != null && parseFloat(v) > 0) ? parseFloat(v) : null; }
 
+// (11/09/2026) VALOR DE REFERÊNCIA da linha — SÓ para a Apuração de
+// Referência do empreito, NUNCA para a fatura. Cascata oficial primeiro;
+// linha de HORA sem preço na cascata cai no Valor/hora da OS para QUALQUER
+// equipamento e vínculo (inclusive diarista/terceiro — que na fatura nunca
+// herdam da tabela, mas na apuração de lucro o trabalho deles conta).
+function _refValorParte(p, P) {
+  const v = _valorParte(p, P);
+  if (v > 0) return v;
+  const med = (p.tipo_medicao || 'horimetro').toLowerCase();
+  if ((med === 'horimetro' || med === 'hora') && P.hora > 0) return _qtdParte(p) * P.hora;
+  return 0;
+}
+
 async function salvarVlrUnitario(parteId, valor) {
-  const v = parseFloat(valor);
-  if (isNaN(v) || v < 0) { toast('Valor unitário inválido','error'); verPartesOS(_osAtual.id, _osAtual.numero); return; }
+  // (11/09/2026) Campo LIMPO = DESAFIXAR: grava NULL e a linha volta à
+  // sugestão da OS — no empreito, deixa de ser extra faturado e volta a
+  // coberta (entra na Referência gerencial). Antes o vazio era rejeitado
+  // como "inválido" e não existia caminho na tela para desfazer um extra.
+  const bruto = String(valor ?? '').trim();
+  const limpar = (bruto === '');
+  const v = parseFloat(bruto);
+  if (!limpar && (isNaN(v) || v < 0)) { toast('Valor unitário inválido','error'); verPartesOS(_osAtual.id, _osAtual.numero); return; }
   try {
     await apiFetch('/operacional/api/partes/'+parteId, {
       method:'PATCH',
-      body: JSON.stringify({ valor_unitario: v }),
+      body: JSON.stringify({ valor_unitario: limpar ? null : v }),
     });
-    toast('Valor unitário definido na linha','success');
+    toast(limpar ? 'Valor da linha removido — volta à sugestão da OS' : 'Valor unitário definido na linha','success');
     const data = await apiFetch('/operacional/api/os/'+_osAtual.id+'/partes');
     _partesAtual = data.partes || [];
     if (data.precos_categoria !== undefined) window._precosCatOS = data.precos_categoria || [];
@@ -4118,6 +4175,13 @@ function _atualizarLabelRegime() {
   const wraps = { hora:'os-vh-wrap', metro:'os-vm-wrap', diaria:'os-vd-wrap', km:'os-vk-wrap' };
   Object.values(wraps).forEach(id => { const w=document.getElementById(id); if (w) w.style.display=''; });
   const oculto = wraps[regime]; if (oculto) { const w=document.getElementById(oculto); if (w) w.style.display='none'; }
+  // (11/09/2026) Hint dos adicionais por regime: no EMPREITO estes preços
+  // não faturam — alimentam a Apuração de Referência (Valor/hora vale para
+  // toda linha de hora sem preço próprio nem tabela da obra).
+  const hintAd = document.getElementById('os-adicionais-hint');
+  if (hintAd) hintAd.textContent = (regime === 'empreito')
+    ? 'No empreito estes preços NÃO faturam: alimentam a 📊 Referência gerencial. O Valor/hora vale como referência para TODA linha de hora sem preço próprio nem tabela da obra (inclusive diarista).'
+    : 'O preço do regime principal vem do campo acima; preencha aqui só as medições EXTRAS que esta obra usa.';
 }
 
 async function _carregarSelectsOS() {
