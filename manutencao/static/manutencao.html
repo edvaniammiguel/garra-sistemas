@@ -2519,7 +2519,15 @@ function pickerFornecedor(){
 async function salvarNovaOT(abaAlvo){
   _novaSync();
   const d = _novaDraft;
-  if (!d.equip || !d.desc.trim()) { mostrarToast('Escolha o equipamento e descreva o serviço', 'warn'); return; }
+  if (!d.equip || !d.desc.trim()) {
+    // (12/09/2026) Aviso preciso + foco no campo que falta (equipamento já
+    // vem preenchido quando a OT nasce da ficha do equipamento).
+    const falta = !d.equip ? 'Escolha o equipamento' : 'Descreva o serviço';
+    mostrarToast('✏️ ' + falta + ' na aba Origem para registrar a OT', 'warn');
+    if (document.getElementById('na-origem') && !document.getElementById('na-origem').classList.contains('on')) novaAba('origem');
+    setTimeout(() => { const el = document.getElementById(!d.equip ? 'no-equip' : 'no-desc'); if (el) { el.focus(); el.scrollIntoView({block:'center'}); } }, 50);
+    return;
+  }
   const body = { equipamento_id: d.equip, descricao: d.desc.trim(), prioridade: d.prior };
   if (_mntTiposTrab.length && d.tt) body.tipo_trabalho = d.tt;
   else if (d.tt || d.tipo) body.tipo = d.tt || d.tipo;
