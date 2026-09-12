@@ -1068,9 +1068,6 @@ async function sincronizarEnviosDoServidor() {
     const rows = await GarraDB.getEnvios({ limit: 200 });
     mesclarEnviosServidor(rows);
     console.log('[Envios] Hidratado do servidor:', (rows || []).length, 'envio(s)');
-    // (22/08/2026) Repopula o filtro de colaborador AQUI — a hidratação é o
-    // único ponto garantido nos dois painéis (Superior e Gestor).
-    try { populateSubmissionFilters(); } catch(_) {}
     return true;
   } catch (e) {
     console.warn('[Envios] Falha ao buscar do servidor:', e.message);
@@ -1454,7 +1451,7 @@ function populateSubmissionFilters() {
     (DB.submissions()||[]).forEach(s => { if (s.user && !vistos.has(s.user)) vistos.set(s.user, s.userName || s.user); });
     (DB.users()||[]).filter(u=>u.role==='driver').forEach(u => { if (!vistos.has(u.login)) vistos.set(u.login, u.name); });
     const atual = fu.value;
-    fu.innerHTML='<option value="">Todos os colaboradores</option>'+[...vistos.entries()]
+    fu.innerHTML='<option value="">Todos</option>'+[...vistos.entries()]
       .sort((a,b)=>String(a[1]).localeCompare(String(b[1]),'pt-BR'))
       .map(([login,nome])=>`<option value="${login}">${sanitize(nome)}</option>`).join('');
     if (atual) fu.value = atual;
@@ -1972,8 +1969,23 @@ function buildCLObject(id) {
 }
 
 // ─── DETALHE ───────────────────────────────────────
-function showSubmissionDetail(id) {
+async function showSubmissionDetail(id) {
   const sub=DB.submissions().find(s=>s.id===id); if(!sub)return;
+  // (12/09/2026) A foto usa URL ASSINADA que expira. O localStorage guarda a
+  // versão congelada — quando a Bruna reabre horas depois, a URL já venceu e o
+  // <img> não carrega. Solução: rebuscar o envio do servidor (que reassina as
+  // fotos a cada leitura) e atualizar as respostas antes de renderizar. Falha
+  // de rede cai no que já está em memória (degrada, não quebra).
+  try {
+    const tk = ckToken();
+    if (tk && navigator.onLine) {
+      const rr = await fetch('/checklist/envios?limit=500', { headers:{ 'Authorization':'Bearer '+tk } });
+      if (rr.ok) {
+        const fresco = (await rr.json()).find(e => e.envio_id === id);
+        if (fresco && fresco.respostas) sub.answers = fresco.respostas;
+      }
+    }
+  } catch(e){ /* mantém o que já tem em memória */ }
   const cl=DB.allCLs()[sub.type]||{},nc=countNC(sub),st=sub.archived?'archived':sub.synced===false?'pending':nc>0?'nc':'ok';
   const veiculo = sub.meta?.veiculo || sub.meta?.equipamento || '';
   const local   = sub.meta?.local   || '';
@@ -1991,7 +2003,7 @@ function showSubmissionDetail(id) {
   const metaLabels={operador:'Operador',local:'Local',data:'Data',equipamento:'Equipamento',veiculo:'Veículo',km:'KM',horimetro:'Horímetro',tipo:'Tipo',situacao:'Situação'};
   const metaEntries=Object.entries(sub.meta||{}).filter(([k,v])=>k!=='observacoes'&&k!=='ot'&&v);
   if(metaEntries.length)html+=`<div class="detail-section"><h4>Identificação</h4>${metaEntries.map(([k,v])=>`<div class="detail-row"><span class="dr-label">${metaLabels[k]||k}</span><span class="dr-val">${v}</span></div>`).join('')}</div>`;
-  cl.steps?.filter(s=>s.type==='checklist').forEach(step=>{html+=`<div class="detail-section"><h4>${step.title}</h4>${step.items.map(item=>{const ans=sub.answers?.[item.id];if(!ans)return'';const c=ans.val==='C'?'ok':ans.val==='NC'?'nc':'na',l=ans.val==='C'?'✓ Conforme':ans.val==='NC'?'✗ Não Conforme':'N/A';return `<div class="detail-row"><span class="dr-label">${item.label}${item.pts>1?` <small style="color:var(--orange)">⭐×${item.pts}</small>`:''}</span><span class="dr-val ${c}">${l}</span></div>${ans.obs?`<div class="detail-obs">📝 ${ans.obs}</div>`:''}`}).join('')}</div>`;});
+  cl.steps?.filter(s=>s.type==='checklist').forEach(step=>{html+=`<div class="detail-section"><h4>${step.title}</h4>${step.items.map(item=>{const ans=sub.answers?.[item.id];if(!ans)return'';const c=ans.val==='C'?'ok':ans.val==='NC'?'nc':'na',l=ans.val==='C'?'✓ Conforme':ans.val==='NC'?'✗ Não Conforme':'N/A';const foto=ans.photo?`<div class="detail-photo"><img src="${ans.photo}" alt="Foto da evidência" class="ci-photo-preview" style="max-width:100%;border-radius:8px;margin-top:6px;cursor:zoom-in" onclick="window.open('${ans.photo}','_blank')" /></div>`:'';return `<div class="detail-row"><span class="dr-label">${item.label}${item.pts>1?` <small style="color:var(--orange)">⭐×${item.pts}</small>`:''}</span><span class="dr-val ${c}">${l}</span></div>${ans.obs?`<div class="detail-obs">📝 ${ans.obs}</div>`:''}${foto}`}).join('')}</div>`;});
   if(sub.meta?.observacoes)html+=`<div class="detail-section"><h4>Observações Gerais</h4><div class="detail-obs">${sub.meta.observacoes}</div></div>`;
   document.getElementById('detail-content').innerHTML=html;showScreen('screen-detail');
 }
