@@ -109,6 +109,8 @@ tr.sel td{background:#DBEAFE!important;color:#1A2A5E}
        max-height:86vh;overflow:auto;padding:18px 20px;font-size:12px}
 .mtab.off{opacity:.45;cursor:default}
 .modal.larga{max-width:1020px;width:92%;height:620px;max-height:88vh;display:flex;flex-direction:column}
+/* (12/09/2026) Janela da OT com altura estável: o corpo das abas ocupa sempre o mesmo espaço; conteúdo maior rola dentro, menor não encolhe a janela */
+#ot-aba-corpo,#na-corpo{min-height:440px;max-height:calc(86vh - 230px);overflow:auto}
 .mwtop{display:flex;align-items:center;gap:4px;flex-wrap:wrap;margin:6px 0 4px}
 .mwtop .sep{width:8px}.mwtop .cnt{font-family:ui-monospace,monospace;font-size:10px;padding:0 4px;color:#334155}
 .mwtop input{width:150px;padding:4px 6px;border:1px solid #CBD5E1;border-radius:6px;font-size:11px}
@@ -2395,7 +2397,10 @@ async function abrirNovaOT(equipId, modelo){
                  tt: m.tipo_trabalho || '', tipo: m.tipo || 'corretiva',
                  prior: m.prioridade || 'media', desc: m.descricao || '',
                  data:'', horim:'', sintoma: m.sintoma_codigo || '', causa: m.causa_codigo || '' };
-  const abasOff = ['Gestão','Pedidos','Tarefas','Preparações','Mão de Obra','Peças','Custos','Leituras','Ferramentas','Documentos','Histórico'];
+  // (12/09/2026) Mesmo comportamento da OT nascida de Pedido: todas as abas
+  // disponíveis. Clicar numa aba registra a OT (exige equipamento + descrição)
+  // e abre a janela completa já naquela aba.
+  const abasOff = [['Gestão','gestao'],['Pedidos','ped'],['Tarefas','tar'],['Preparações','prep'],['Mão de Obra','mo'],['Peças','pc'],['Custos','cu'],['Leituras','lei'],['Ferramentas','fer'],['Documentos','doc'],['Histórico','hist']];
   document.getElementById('eq-ficha-corpo').innerHTML =
     '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px">'
     + '<div><b style="font-size:15px;color:#1A2A5E">🔧 Nova Ordem de Trabalho</b>'
@@ -2406,7 +2411,7 @@ async function abrirNovaOT(equipId, modelo){
     + '<div class="mtabs">'
     + '<div class="mtab on" id="na-origem" onclick="novaAba(\'origem\')">Origem</div>'
     + '<div class="mtab" id="na-diag" onclick="novaAba(\'diag\')">Diagnóstico</div>'
-    + abasOff.map(t => '<div class="mtab off" title="Disponível após a abertura da OT" onclick="mostrarToast(\'🔒 '+t+' fica disponível depois de Registrar a OT — preencha a Origem e clique Registrar OT\',\'warn\')">'+t+'</div>').join('')
+    + abasOff.map(([t,k]) => '<div class="mtab" title="Registra a OT e abre esta aba" onclick="salvarNovaOT(\''+k+'\')">'+t+'</div>').join('')
     + '</div><div id="na-corpo"></div>'
     + '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">'
     + '<button class="btn" onclick="document.getElementById(\'eq-ficha\').classList.remove(\'show\')">Cancelar</button>'
@@ -2511,7 +2516,7 @@ function pickerFornecedor(){
     [{id:'', label:'— nenhum —'}].concat(_mntFornList.map(f => ({id:f.id, label:f.nome}))),
     item => { _novaDraft.forn = item.id; _novaDraft.fornLabel = item.id ? item.label : ''; novaAba('origem'); });
 }
-async function salvarNovaOT(){
+async function salvarNovaOT(abaAlvo){
   _novaSync();
   const d = _novaDraft;
   if (!d.equip || !d.desc.trim()) { mostrarToast('Escolha o equipamento e descreva o serviço', 'warn'); return; }
@@ -2529,7 +2534,7 @@ async function salvarNovaOT(){
     const r = await mntFetch('/manutencao/api/ots', { method:'POST', body: JSON.stringify(body) });
     mostrarToast('✅ ' + (r.numero||'OT') + (r.status==='programada' ? ' programada' : ' aberta') + ' — abas liberadas', 'ok');
     carregarOTsReais(); carregarSemaforosReais();
-    if (r && r.id) { await verOTReal(r.id); }
+    if (r && r.id) { await verOTReal(r.id); if (abaAlvo) otAba(abaAlvo); }
     else { document.getElementById('eq-ficha').classList.remove('show'); }
   } catch(e) { mostrarToast('❌ ' + e.message, 'warn'); }
 }
