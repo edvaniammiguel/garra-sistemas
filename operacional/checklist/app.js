@@ -1969,8 +1969,23 @@ function buildCLObject(id) {
 }
 
 // ─── DETALHE ───────────────────────────────────────
-function showSubmissionDetail(id) {
+async function showSubmissionDetail(id) {
   const sub=DB.submissions().find(s=>s.id===id); if(!sub)return;
+  // (12/09/2026) A foto usa URL ASSINADA que expira. O localStorage guarda a
+  // versão congelada — quando a Bruna reabre horas depois, a URL já venceu e o
+  // <img> não carrega. Solução: rebuscar o envio do servidor (que reassina as
+  // fotos a cada leitura) e atualizar as respostas antes de renderizar. Falha
+  // de rede cai no que já está em memória (degrada, não quebra).
+  try {
+    const tk = ckToken();
+    if (tk && navigator.onLine) {
+      const rr = await fetch('/checklist/envios?limit=500', { headers:{ 'Authorization':'Bearer '+tk } });
+      if (rr.ok) {
+        const fresco = (await rr.json()).find(e => e.envio_id === id);
+        if (fresco && fresco.respostas) sub.answers = fresco.respostas;
+      }
+    }
+  } catch(e){ /* mantém o que já tem em memória */ }
   const cl=DB.allCLs()[sub.type]||{},nc=countNC(sub),st=sub.archived?'archived':sub.synced===false?'pending':nc>0?'nc':'ok';
   const veiculo = sub.meta?.veiculo || sub.meta?.equipamento || '';
   const local   = sub.meta?.local   || '';
