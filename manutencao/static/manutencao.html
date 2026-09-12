@@ -2384,10 +2384,25 @@ async function abrirNovaOT(equipId, modelo){
   if (_mntFornList === null) { try { _mntFornList = await mntFetch('/manutencao/api/fornecedores'); } catch(e){ _mntFornList = []; } }
   if (_mntUserList === null) { try { _mntUserList = (await mntFetch('/usuarios')).filter(u => u.ativo !== false); } catch(e){ _mntUserList = []; } }
   await _tiposTrab();
+  const m = modelo || {};
+  // (12/09/2026) Modelo ManWinWin: com o equipamento conhecido, a OT é
+  // REGISTRADA na abertura (número reservado, todas as abas livres). A
+  // descrição pode ser preenchida depois — é exigida só no Concluir.
+  const _eqPre = equipId || m.equipamento_id || '';
+  if (_eqPre) {
+    try {
+      const body = { equipamento_id: _eqPre, descricao: (m.descricao||'').trim() || '(a descrever)', prioridade: m.prioridade || 'media' };
+      if (m.tipo) body.tipo = m.tipo; if (m.tipo_trabalho) body.tipo_trabalho = m.tipo_trabalho;
+      if (m.fornecedor_id) body.fornecedor_id = m.fornecedor_id; if (m.responsavel_id) body.responsavel_id = m.responsavel_id;
+      if (m.sintoma_codigo) body.sintoma_codigo = m.sintoma_codigo; if (m.causa_codigo) body.causa_codigo = m.causa_codigo;
+      const r = await mntFetch('/manutencao/api/ots', { method:'POST', body: JSON.stringify(body) });
+      carregarOTsReais(); carregarSemaforosReais();
+      if (r && r.id) { await verOTReal(r.id); return; }
+    } catch(e) { mostrarToast('❌ ' + e.message, 'warn'); return; }
+  }
   let num = '';
   try { num = (await mntFetch('/manutencao/api/ots/proximo-numero')).numero; } catch(e){}
   document.querySelector('#eq-ficha .modal').classList.remove('larga');
-  const m = modelo || {};
   const fornM = m.fornecedor_id ? (_mntFornList.find(f=>String(f.id)===String(m.fornecedor_id))||{}) : {};
   const respM = m.responsavel_id ? (_mntUserList.find(u=>String(u.id)===String(m.responsavel_id))||{}) : {};
   _novaDraft = { equip: equipId || m.equipamento_id || '', fmp:'', fmpLabel:'',
@@ -2448,7 +2463,7 @@ function novaAba(aba){
       + '<button class="btn" style="height:26px" title="Escolher" onclick="'+fnAbre+'">🔍</button></div></div>';
     c.innerHTML =
       '<div class="dsec">Origem</div><div class="mgrid">'
-      + '<div class="mfield">Equipamento *<select id="no-equip" onchange="novaAba(\'origem\')">'+eqOpts+'</select></div>'
+      + '<div class="mfield">Equipamento *<select id="no-equip" onchange="_novaSync(); if(this.value){ abrirNovaOT(this.value, Object.assign({}, _novaDraft, {equipamento_id:this.value, descricao:_novaDraft.desc, prioridade:_novaDraft.prior})); } else { novaAba(\'origem\'); }">'+eqOpts+'</select></div>'
       + '<div class="mfield">Categoria / horímetro atual<input value="'+_esc(eqSel.categoria||'—')+' · '+(eqSel.horimetro_atual!=null?eqSel.horimetro_atual:'—')+'" disabled></div>'
       + '<div class="mfield">Tipo de trabalho<select id="no-tt">'+ttOpts+'</select></div>'
       + '<div class="mfield">FMP — ficha de manutenção planejada<div style="display:flex;gap:4px">'
@@ -2559,6 +2574,17 @@ async function mntStatusReal(id, novo){
   let obs = null, custo = null;
   let horasParada = null;
   if (novo === 'concluida'){
+    // (12/09/2026) Validação imprescindível só aqui: descrição real do serviço.
+    try {
+      const _o = await mntFetch('/manutencao/api/ots/'+id);
+      const _d = String(_o.descricao||'').trim();
+      if (!_d || _d === '(a descrever)') {
+        mostrarToast('✏️ Descreva o serviço na aba Origem antes de concluir a OT', 'warn');
+        await verOTReal(id); otAba('origem');
+        setTimeout(() => { const el = document.getElementById('oe-desc'); if (el) { el.focus(); el.select(); el.scrollIntoView({block:'center'}); } }, 80);
+        return;
+      }
+    } catch(e) {}
     const c = prompt('Custo total (R$):',''); if (c === null) return;
     custo = parseFloat(String(c).replace(',','.')) || null;
     const hp = prompt('Horas de máquina PARADA por esta manutenção (indisponibilidade — opcional):','');
