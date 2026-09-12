@@ -959,21 +959,22 @@ async function formNext() {
 
   // ── VALIDAÇÃO META ──────────────────────────────
   if (step.type === 'meta') {
-    const faltando = [];
+    const faltando = []; let _primeiroVazio = null;
     step.fields.forEach(f => {
       const el  = document.getElementById('meta-'+f.id);
       const val = el?.value?.trim() || '';
       if (!val && (f.id === 'veiculo' || f.id === 'equipamento' || f.id === 'operador')) {
-        faltando.push(f.label);
+        faltando.push(f.label); if (!_primeiroVazio) _primeiroVazio = el;
       }
     });
     if (faltando.length) {
       alert('⚠️ Preencha os campos obrigatórios:\n• ' + faltando.join('\n• '));
+      if (_primeiroVazio) { _primeiroVazio.focus(); _primeiroVazio.scrollIntoView({block:'center'}); }
       return;
     }
     // (12/09/2026) Alerta de leitura: horímetro/km ABAIXO do último registrado
     // (o sistema nunca recua a leitura) ou ACIMA em excesso (erro de digitação).
-    // Alerta e pede confirmação — não bloqueia, mas o operador precisa assumir.
+    // Bloqueia o avanço e devolve o foco ao campo — o operador corrige antes de seguir.
     const _codigo = (document.getElementById('meta-veiculo')?.value || document.getElementById('meta-equipamento')?.value || '').trim();
     const _hEl = document.getElementById('meta-horimetro'), _kEl = document.getElementById('meta-km');
     const _hVal = parseFloat(String(_hEl?.value||'').replace(',','.')), _kVal = parseFloat(String(_kEl?.value||'').replace(',','.'));
@@ -992,7 +993,12 @@ async function formNext() {
               if (_kVal < L.km_atual) avisos.push('KM informado ('+_kVal+') é MENOR que o último registrado ('+L.km_atual+'). O sistema não recua a leitura.');
               else if (_kVal - L.km_atual > 5000) avisos.push('KM informado ('+_kVal+') está '+Math.round(_kVal - L.km_atual)+' km acima do último registrado ('+L.km_atual+'). Confira se digitou certo.');
             }
-            if (avisos.length && !confirm('⚠️ ATENÇÃO\n\n' + avisos.join('\n\n') + '\n\nDeseja continuar mesmo assim?')) return;
+            if (avisos.length) {
+              alert('⚠️ ATENÇÃO\n\n' + avisos.join('\n\n') + '\n\nCorrija a leitura para continuar.');
+              const _alvo = (!isNaN(_hVal) && _hEl) ? _hEl : _kEl;
+              if (_alvo) { _alvo.focus(); _alvo.select && _alvo.select(); _alvo.scrollIntoView({block:'center'}); }
+              return;
+            }
           }
         }
       } catch(e) { /* offline ou falha: segue sem alerta */ }
