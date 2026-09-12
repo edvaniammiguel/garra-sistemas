@@ -164,8 +164,7 @@ async def salvar_envio(e: EnvioCreate, db=Depends(get_db), _auth=Depends(verific
                 desc = (f"NC no checklist {e.cl_label or e.cl_id}"
                         + (f" — {ident}" if ident else "")
                         + f": {e.total_nc} não conformidade(s)."
-                        + (f" Itens: {'; '.join(itens_nc[:8])}." if itens_nc else "")
-                        + f" (envio {e.envio_id} de {e.usuario_nome or e.usuario_login})")
+                        + (f" Itens: {'; '.join(itens_nc[:8])}." if itens_nc else ""))
                 sol_id = await db.fetchval(
                     "SELECT id FROM public.usuarios_garra WHERE login=$1", e.usuario_login)
                 seq = await db.fetchval(
@@ -253,6 +252,21 @@ async def remover_motorista(motor_id: str, db=Depends(get_db), _auth=Depends(ver
     await _exigir_logistica(db, _auth)
     await db.execute("DELETE FROM checklist.log_motoristas WHERE motor_id=$1", motor_id)
     return {"ok": True}
+
+@router.get("/checklist/leitura-atual/{codigo}")
+async def leitura_atual_equipamento(codigo: str, db=Depends(get_db), _auth=Depends(verificar_token)):
+    """(12/09/2026) Última leitura do equipamento (cadastro único) para o
+    checklist alertar na Identificação: horímetro/km abaixo do registrado
+    (o sistema nunca recua) ou acima em excesso (provável erro de digitação)."""
+    r = await db.fetchrow(
+        "SELECT codigo, medicao, horimetro_atual, km_atual "
+        "FROM operacional.equipamentos WHERE codigo=$1 AND ativo=true", codigo)
+    if not r:
+        return {"encontrado": False}
+    return {"encontrado": True, "codigo": r["codigo"],
+            "medicao": r["medicao"] or "",
+            "horimetro_atual": float(r["horimetro_atual"] or 0),
+            "km_atual": float(r["km_atual"] or 0)}
 
 @router.get("/frota-checklist")
 async def frota_checklist_direto(db=Depends(get_db), _auth=Depends(verificar_token)):
