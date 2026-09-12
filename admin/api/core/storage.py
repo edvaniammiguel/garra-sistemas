@@ -108,8 +108,10 @@ def _checklist_extrair_fotos_para_storage(envio_id: str, respostas: dict) -> dic
             header, b64data = photo.split(",", 1)
             dados = _b64.b64decode(b64data)
             path = f"checklist/{envio_id}/{item_id}.jpg"
-            storage_upload(dados, path)
-            ans["photo"] = path  # guarda só o caminho, não mais a imagem inteira
+            # (12/09/2026) Lição 3: guardar o RETORNO (com prefixo do bucket), nunca
+            # o path montado — sem o prefixo a leitura procura no bucket legado,
+            # a assinatura falha e a tela mostra "Offline".
+            ans["photo"] = storage_upload(dados, path) or path
         except Exception as e:
             print(f"[Checklist Storage] upload falhou para {item_id}: {e} — mantendo base64 como fallback")
     return respostas
@@ -128,5 +130,15 @@ def _checklist_assinar_fotos_para_leitura(respostas: dict) -> dict:
             continue
         if photo.startswith("data:image") or photo.startswith("http"):
             continue  # já é base64 antigo ou já é uma URL — não mexe
-        ans["photo"] = storage_url(photo) or photo
+        # (12/09/2026) Fotos do checklist gravadas sem prefixo (bug do extrator)
+        # moram no bucket unificado, não no legado: tenta o unificado primeiro,
+        # cai no comportamento antigo se não achar. Nunca devolve caminho cru
+        # como se fosse URL — sem assinatura válida, deixa vazio (tela mostra
+        # "sem foto" em vez de pedir uma URL 404 ao próprio servidor).
+        url = ""
+        if ":" not in photo:
+            url = storage_url(f"{BUCKET_ATUAL}:{photo}")
+        if not url:
+            url = storage_url(photo)
+        ans["photo"] = url or None
     return respostas
