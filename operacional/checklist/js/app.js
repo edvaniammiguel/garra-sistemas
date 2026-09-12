@@ -945,7 +945,7 @@ function saveCurrentStep() {
   if(step.type==='meta')step.fields.forEach(f=>{const el=document.getElementById('meta-'+f.id);if(el)formMeta[f.id]=el.value;});
   else if(step.type==='obs')step.fields.forEach(f=>{const el=document.getElementById('obs-'+f.id);if(el)formMeta[f.id]=el.value;});
 }
-function formNext() {
+async function formNext() {
   saveCurrentStep();
   const cl   = getCL();
   const step = cl.steps[currentStep];
@@ -970,6 +970,32 @@ function formNext() {
     if (faltando.length) {
       alert('⚠️ Preencha os campos obrigatórios:\n• ' + faltando.join('\n• '));
       return;
+    }
+    // (12/09/2026) Alerta de leitura: horímetro/km ABAIXO do último registrado
+    // (o sistema nunca recua a leitura) ou ACIMA em excesso (erro de digitação).
+    // Alerta e pede confirmação — não bloqueia, mas o operador precisa assumir.
+    const _codigo = (document.getElementById('meta-veiculo')?.value || document.getElementById('meta-equipamento')?.value || '').trim();
+    const _hEl = document.getElementById('meta-horimetro'), _kEl = document.getElementById('meta-km');
+    const _hVal = parseFloat(String(_hEl?.value||'').replace(',','.')), _kVal = parseFloat(String(_kEl?.value||'').replace(',','.'));
+    if (_codigo && navigator.onLine && (!isNaN(_hVal) || !isNaN(_kVal))) {
+      try {
+        const rr = await fetch('/checklist/leitura-atual/'+encodeURIComponent(_codigo), { headers:{ 'Authorization':'Bearer '+ckToken() } });
+        if (rr.ok) {
+          const L = await rr.json();
+          if (L.encontrado) {
+            const avisos = [];
+            if (!isNaN(_hVal) && L.horimetro_atual > 0) {
+              if (_hVal < L.horimetro_atual) avisos.push('Horímetro informado ('+_hVal+') é MENOR que o último registrado ('+L.horimetro_atual+'). O sistema não recua a leitura.');
+              else if (_hVal - L.horimetro_atual > 500) avisos.push('Horímetro informado ('+_hVal+') está '+Math.round(_hVal - L.horimetro_atual)+' h acima do último registrado ('+L.horimetro_atual+'). Confira se digitou certo.');
+            }
+            if (!isNaN(_kVal) && L.km_atual > 0) {
+              if (_kVal < L.km_atual) avisos.push('KM informado ('+_kVal+') é MENOR que o último registrado ('+L.km_atual+'). O sistema não recua a leitura.');
+              else if (_kVal - L.km_atual > 5000) avisos.push('KM informado ('+_kVal+') está '+Math.round(_kVal - L.km_atual)+' km acima do último registrado ('+L.km_atual+'). Confira se digitou certo.');
+            }
+            if (avisos.length && !confirm('⚠️ ATENÇÃO\n\n' + avisos.join('\n\n') + '\n\nDeseja continuar mesmo assim?')) return;
+          }
+        }
+      } catch(e) { /* offline ou falha: segue sem alerta */ }
     }
     if (currentStep < cl.steps.length - 1) { currentStep++; renderFormStep(); }
     else submitChecklist();
