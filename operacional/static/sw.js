@@ -1,136 +1,333 @@
-/* ═══════════════════════════════════════════════════
-   sw.js — Garra Check List v11 — 20260705 (ranking servidor)
-═══════════════════════════════════════════════════ */
+/**
+ * Service Worker v15 — Estratégia cache + network integrada com GarraDB
+ * 
+ * Escopo: /operacional/
+ * 
+ * Estratégias:
+ * 1. HTML (pages): network-first, fallback para cache
+ * 2. API: network-first, fallback para IndexedDB (GarraDB)
+ * 3. Assets (JS/CSS): stale-while-revalidate — serve o cache NA HORA
+ *    (abertura instantânea) e atualiza em background; a próxima abertura
+ *    já pega a versão nova. Resolve "fix não chega ao aparelho" sem
+ *    precisar de bump de SW a cada mudança de JS.
+ * 4. Imagens/ícones: cache-first com limite de tamanho
+ */
 
-const CACHE = 'garra-v48-20260912a';
+const CACHE_NAME = 'garra-operacional-v21';
+const ASSETS_CACHE = 'garra-assets-v70';
+const OFFLINE_PAGE = '/operacional/offline.html';
 
-const APP_SHELL = [
-  '/index.html',
+// Assets que devem sempre estar em cache (shell)
+const PRECACHE_ASSETS = [
+  '/mobile',
+  '/operacional/static/mobile.html',
+  '/operacional/static/sw.js',
+  '/operacional/static/js/idb.js',
+  '/operacional/static/js/offline-ui.js',
+  '/mobile/manifest.json',
+  '/static/icons/favicon.ico',
+  '/static/icons/icon-192.png',
+  '/static/icons/icon-512.png',
+  // Checklist (roda dentro do iframe do app shell) — necessário p/ offline
+  '/checklist',
   '/css/style.css',
   '/js/db.js',
   '/js/data.js',
   '/js/app.js',
   '/js/logistics.js',
-  '/icons/logo.png',
-  '/icons/icon-192.png',
-  '/icons/icon-512.png',
-  '/icons/favicon.ico',
-  '/icons/favicon-32.png',
-  '/icons/favicon-16.png',
-  '/manifest.json',
+  '/icons/logo.png'
 ];
 
-self.addEventListener('install', e => {
-  self.skipWaiting();
+// ============================================================
+// INSTALL — Cachear assets críticos
+// ============================================================
+
+self.addEventListener('install', (e) => {
+  console.log('[SW] Installing v15...');
   e.waitUntil(
-    caches.open(CACHE).then(cache => {
-      console.log('[SW] Cacheando app shell v9...');
-      return Promise.allSettled(
-        APP_SHELL.map(url => cache.add(url))
-      ).then(results => {
-        const ok  = results.filter(r => r.status==='fulfilled').length;
-        const err = results.filter(r => r.status==='rejected').length;
-        console.log(`[SW] Cache: ${ok} OK, ${err} falhas`);
-        if (err > 0) {
-          results.forEach((r,i) => {
-            if (r.status==='rejected') console.warn('[SW] Falhou:', APP_SHELL[i], r.reason?.message);
-          });
-        }
-      });
-    })
+    caches.open(ASSETS_CACHE)
+      .then(async (cache) => {
+        // Precache resiliente: cada item individual, falha de um não quebra os outros.
+        // (Se /mobile redirecionar ou um asset faltar, o resto ainda é cacheado.)
+        await Promise.all(
+          PRECACHE_ASSETS.filter(url => url).map(url =>
+            cache.add(url).catch(err =>
+              console.warn('[SW] Falha ao pré-cachear', url, err.message)
+            )
+          )
+        );
+      })
+      .then(() => self.skipWaiting())
   );
 });
 
-self.addEventListener('activate', e => {
+// ============================================================
+// ACTIVATE — Limpar caches antigos
+// ============================================================
+
+self.addEventListener('activate', (e) => {
+  console.log('[SW] Activating v15...');
   e.waitUntil(
-    caches.keys()
-      .then(keys => Promise.all(
-        keys.filter(k => k !== CACHE).map(k => {
-          console.log('[SW] Removendo cache antigo:', k);
-          return caches.delete(k);
-        })
-      ))
-      .then(() => self.clients.claim())
-      .then(() => console.log('[SW] ✅ Ativo e no controle'))
-  );
-});
-
-self.addEventListener('fetch', e => {
-  const url = new URL(e.request.url);
-  if (e.request.method !== 'GET') return;
-
-  // API — sempre rede
-  if (url.hostname === 'garra-sistemas.onrender.com') {
-    e.respondWith(
-      fetch(e.request).catch(() =>
-        new Response(JSON.stringify({error:'offline'}),
-          {status:503, headers:{'Content-Type':'application/json'}})
+    caches.keys().then(names =>
+      Promise.all(
+        names
+          .filter(name => name !== ASSETS_CACHE && name !== CACHE_NAME)
+          .map(name => {
+            console.log(`[SW] Deletando cache antigo: ${name}`);
+            return caches.delete(name);
+          })
       )
-    );
+    ).then(() => self.clients.claim())
+  );
+});
+
+// ============================================================
+// FETCH — Estratégias de cache por tipo de recurso
+// ============================================================
+
+self.addEventListener('fetch', (e) => {
+  const { request } = e;
+  const url = new URL(request.url);
+
+  // 0a. Só intercepta requisições do PRÓPRIO domínio. Imagens/recursos de outra
+  //     origem (ex: fotos do Supabase Storage) passam direto — senão o SW
+  //     captura o fetch cross-origin, ele falha, e devolve o placeholder "Offline"
+  //     por cima de uma foto que na verdade existe.
+  if (url.origin !== self.location.origin) {
+    return; // deixa o navegador buscar direto da rede
+  }
+
+  // 0b. Não interceptar a Jardinagem — ela tem seu próprio app/SW.
+  //    Sem isso, o SSO (/jardinagem/mobile?sso=) é capturado e o token se perde.
+  if (url.pathname.startsWith('/jardinagem')) {
+    return; // deixa o navegador buscar direto da rede
+  }
+
+  // 0c. (07/07/2026) Não interceptar o módulo MANUTENÇÃO — desktop, sempre
+  //     online. Sem isso, o GET pós-gravação do Parametrizar podia voltar do
+  //     cache/IndexedDB e parecer que o cadastro "não persistiu".
+  if (url.pathname.startsWith('/manutencao')) {
+    return; // rede direta, sem cache
+  }
+
+  // 1. HTML pages — network-first
+  if (request.headers.get('accept')?.includes('text/html')) {
+    return e.respondWith(networkFirstPage(request));
+  }
+
+  // 2. API calls — network-first, fallback para IndexedDB.
+  //    Inclui endpoints do checklist que não têm /api/ no caminho
+  //    (/checklist/modelos, /frota, /usuarios, /permissoes) — necessário offline.
+  const ehApi = url.pathname.includes('/api/')
+             || url.pathname.startsWith('/checklist/modelos')
+             || url.pathname.startsWith('/frota')
+             || url.pathname.startsWith('/usuarios')
+             || url.pathname.startsWith('/permissoes');
+  if (ehApi) {
+    if (request.method === 'GET') {
+      return e.respondWith(networkFirstAPI(request));
+    }
+    // POST/PATCH/DELETE — não cachear, deixar GarraDB.postWithQueue gerenciar
     return;
   }
 
-  // Fontes Google — cache com fallback
-  if (url.hostname.includes('fonts.')) {
-    e.respondWith(
-      caches.match(e.request).then(cached => {
-        if (cached) return cached;
-        return fetch(e.request).then(res => {
-          const clone = res.clone();
-          caches.open(CACHE).then(c => c.put(e.request, clone));
-          return res;
-        }).catch(() => new Response('', {status:200}));
+  // 3. JS/CSS — stale-while-revalidate: cache na hora + atualização em background
+  if (url.pathname.endsWith('.js') || url.pathname.endsWith('.css')) {
+    return e.respondWith(staleWhileRevalidateAssets(e));
+  }
+
+  // 3b. Ícones/SVG/manifest — cache-first (imutáveis na prática)
+  if (
+    url.pathname.endsWith('.svg') ||
+    url.pathname.includes('/icons/') ||
+    url.pathname.endsWith('/manifest.json')
+  ) {
+    return e.respondWith(cacheFirstAssets(request));
+  }
+
+  // 4. Imagens — cache-first com limite
+  if (request.destination === 'image') {
+    return e.respondWith(cacheFirstImages(request));
+  }
+
+  // 5. Default — network-first
+  return e.respondWith(networkFirst(request));
+});
+
+// ============================================================
+// ESTRATÉGIAS DE CACHE
+// ============================================================
+
+async function networkFirstPage(request) {
+  try {
+    const response = await fetch(request);
+    if (response.ok) {
+      const cache = await caches.open(CACHE_NAME);
+      cache.put(request, response.clone());
+      return response;
+    }
+  } catch (err) {
+    console.log('[SW] Network falhou para page, tentando cache...');
+  }
+
+  // 1. Tenta a própria URL no cache
+  const cached = await caches.match(request);
+  if (cached) return cached;
+
+  // 2. Fallback: serve o app principal cacheado — MAS só para a navegação
+  //    top-level do próprio app shell. NUNCA para iframes (ex: /checklist),
+  //    senão o mobile carrega dentro do iframe e recursa (página dentro de página).
+  const url = new URL(request.url);
+  const ehIframe = request.destination === 'iframe' || request.mode === 'nested-navigate';
+  const ehModuloEmbutido = url.pathname.startsWith('/checklist')
+                        || url.searchParams.get('embedded') === '1';
+  if (!ehIframe && !ehModuloEmbutido) {
+    const appShell = await caches.match('/mobile')
+                  || await caches.match('/operacional/static/mobile.html');
+    if (appShell) return appShell;
+  }
+
+  // 3. Último recurso: página offline
+  return caches.match(OFFLINE_PAGE) || new Response('Offline', { status: 503 });
+}
+
+async function networkFirstAPI(request) {
+  try {
+    const response = await fetch(request);
+    if (response.ok) {
+      const cache = await caches.open(CACHE_NAME);
+      cache.put(request, response.clone());
+      return response;
+    }
+  } catch (err) {
+    console.log(`[SW] Network falhou para ${request.url}, tentando cache...`);
+  }
+
+  // Fallback para cache
+  const cached = await caches.match(request);
+  if (cached) {
+    console.log(`[SW] Cache hit: ${request.url}`);
+    return cached;
+  }
+
+  // Sem cache, retornar erro
+  return new Response(JSON.stringify({ error: 'Offline' }), {
+    status: 503,
+    headers: { 'Content-Type': 'application/json' }
+  });
+}
+
+// Stale-while-revalidate: responde do cache IMEDIATAMENTE (abertura
+// instantânea) e busca a versão nova em background, atualizando o cache
+// para a próxima abertura. Se não há cache (1ª visita), espera a rede.
+async function staleWhileRevalidateAssets(event) {
+  const request = event.request;
+  const cache = await caches.open(ASSETS_CACHE);
+  const cached = await cache.match(request);
+
+  const atualizar = fetch(request)
+    .then(response => {
+      if (response.ok) cache.put(request, response.clone());
+      return response;
+    })
+    .catch(() => null);
+
+  if (cached) {
+    // Garante que a atualização em background termina mesmo após responder
+    event.waitUntil(atualizar);
+    return cached;
+  }
+
+  const fresco = await atualizar;
+  if (fresco) return fresco;
+  return new Response('Asset não disponível', { status: 404 });
+}
+
+async function cacheFirstAssets(request) {
+  const cached = await caches.match(request);
+  if (cached) return cached;
+
+  try {
+    const response = await fetch(request);
+    if (response.ok) {
+      const cache = await caches.open(ASSETS_CACHE);
+      cache.put(request, response.clone());
+      return response;
+    }
+  } catch (err) {
+    console.warn(`[SW] Falha ao buscar asset: ${request.url}`);
+  }
+
+  return new Response('Asset não disponível', { status: 404 });
+}
+
+async function cacheFirstImages(request) {
+  const cached = await caches.match(request);
+  if (cached) return cached;
+
+  try {
+    const response = await fetch(request);
+    if (response.ok) {
+      const cache = await caches.open(ASSETS_CACHE);
+      const size = response.headers.get('content-length');
+
+      // Cachear apenas imagens < 5MB
+      if (!size || size < 5242880) {
+        cache.put(request, response.clone());
+      }
+
+      return response;
+    }
+  } catch (err) {
+    console.log(`[SW] Imagem offline: ${request.url}`);
+  }
+
+  // Placeholder para imagem offline
+  return new Response(
+    '<svg width="200" height="200" xmlns="http://www.w3.org/2000/svg"><rect fill="#ddd" width="200" height="200"/><text x="50%" y="50%" text-anchor="middle" dy=".3em" fill="#666" font-size="14">Offline</text></svg>',
+    { headers: { 'Content-Type': 'image/svg+xml' } }
+  );
+}
+
+async function networkFirst(request) {
+  try {
+    return await fetch(request);
+  } catch (err) {
+    const cached = await caches.match(request);
+    return cached || new Response('Offline', { status: 503 });
+  }
+}
+
+// ============================================================
+// BACKGROUND SYNC (futuro)
+// ============================================================
+
+// Quando voltar online, disparar sync da fila GarraDB
+self.addEventListener('sync', (e) => {
+  if (e.tag === 'garradb-sync') {
+    e.waitUntil(
+      self.clients.matchAll().then(clients => {
+        clients.forEach(client => {
+          client.postMessage({
+            type: 'GARRADB_SYNC_REQUESTED'
+          });
+        });
       })
     );
-    return;
   }
-
-  // JS e CSS — Network First: sempre tenta a versão mais nova da rede,
-  // usa o cache só se estiver offline. Evita servir código velho (ex: fixes
-  // que não chegavam ao dispositivo por causa do Cache First).
-  if (url.pathname.endsWith('.js') || url.pathname.endsWith('.css')) {
-    e.respondWith(
-      fetch(e.request).then(res => {
-        if (res && res.ok) {
-          const clone = res.clone();
-          caches.open(CACHE).then(c => c.put(e.request, clone));
-        }
-        return res;
-      }).catch(() => caches.match(e.request))
-    );
-    return;
-  }
-
-  // App shell — Cache First
-  e.respondWith(
-    caches.match(e.request).then(cached => {
-      if (cached) {
-        // Atualiza em background
-        fetch(e.request).then(res => {
-          if (res && res.ok) {
-            caches.open(CACHE).then(c => c.put(e.request, res));
-          }
-        }).catch(() => {});
-        return cached;
-      }
-      // Sem cache — busca da rede
-      return fetch(e.request).then(res => {
-        if (res && res.ok) {
-          const clone = res.clone();
-          caches.open(CACHE).then(c => c.put(e.request, clone));
-        }
-        return res;
-      }).catch(async () => {
-        const fallback = await caches.match('/index.html');
-        return fallback || new Response(
-          '<html><body style="font-family:sans-serif;text-align:center;padding:40px"><h2>📶 Offline</h2><p>Abra com internet primeiro.</p></body></html>',
-          {headers:{'Content-Type':'text/html'}}
-        );
-      });
-    })
-  );
 });
 
-self.addEventListener('message', e => {
-  if (e.data === 'SKIP_WAITING') self.skipWaiting();
+// ============================================================
+// MESSAGE — Comunicação com frontend
+// ============================================================
+
+self.addEventListener('message', (e) => {
+  if (e.data.type === 'SKIP_WAITING') {
+    self.skipWaiting();
+  }
+  if (e.data.type === 'GARRADB_CLEAR_CACHE') {
+    caches.delete(CACHE_NAME).then(() => {
+      e.ports[0].postMessage({ cleared: true });
+    });
+  }
 });
