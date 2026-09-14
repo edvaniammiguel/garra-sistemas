@@ -936,6 +936,10 @@ async def editar_ficha(eq_id: str, request: Request, payload=Depends(verificar_m
         sets.append("caracteristicas=%s"); params.append(_json.dumps(d["caracteristicas"] or []))
     if "garantia" in d:
         sets.append("garantia=%s"); params.append(_json.dumps(d["garantia"] or {}))
+    # (14/09/2026) Info. Complementares (réplica MWW): codificação, tipos,
+    # identificações, histórico, família, combustível — JSON livre
+    if "info_compl" in d:
+        sets.append("info_compl=%s"); params.append(_json.dumps(d["info_compl"] or {}))
     if not sets:
         raise HTTPException(status_code=400, detail="Nada a alterar")
     params.append(eq_id)
@@ -2031,7 +2035,8 @@ async def _garantir_ficha_cols():
           ADD COLUMN IF NOT EXISTS valor_atual NUMERIC(14,2),
           ADD COLUMN IF NOT EXISTS operador_desde DATE,
           ADD COLUMN IF NOT EXISTS operador_responsavel_id UUID,
-          ADD COLUMN IF NOT EXISTS notas TEXT""", fetch="none")
+          ADD COLUMN IF NOT EXISTS notas TEXT,
+          ADD COLUMN IF NOT EXISTS info_compl JSONB""", fetch="none")
     await ajard_query("""
         CREATE TABLE IF NOT EXISTS manutencao.equipamento_notas (
             id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
