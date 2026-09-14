@@ -1921,7 +1921,9 @@ async def detalhe_equipamento(eq_id: str, _auth=Depends(verificar_manutencao)):
     eq = await ajard_query(
         """SELECT e.*, p.codigo AS pai_codigo,
                   (SELECT COUNT(*)::int FROM operacional.equipamentos f
-                    WHERE f.equipamento_pai = e.id) AS filhos
+                    WHERE f.equipamento_pai = e.id) AS filhos,
+                  (SELECT u.nome FROM public.usuarios_garra u WHERE u.id = e.operador_responsavel_id) AS operador_nome,
+                  (SELECT fo.nome FROM public.fornecedores fo WHERE fo.id = e.fornecedor_id) AS fornecedor_nome
            FROM operacional.equipamentos e
            LEFT JOIN operacional.equipamentos p ON p.id = e.equipamento_pai
            WHERE e.id=%s""", (eq_id,), fetch="one")
