@@ -1502,7 +1502,7 @@ async function novoEquipMW(copiarDe){
   const sisAtivo = (typeof _arvNoAtivo === 'string' && _arvNoAtivo !== '_todos') ? _arvNoAtivo : (base.sistema_codigo || '');
   const tipoIni = base.tipo_sigla || (sisAtivo ? _neTipoDoSistema(sisAtivo) : '') || '';
   const sel = (id, lista, val, chave, rot, vazio) => '<select id="'+id+'" onchange="'+(id==='ne-tipo'?'neTipoMudou()':'')+'"><option value="">'+(vazio||'\u2014')+'</option>'
-      + lista.map(x => '<option value="'+_esc(x[chave])+'"'+(String(x[chave])===String(val||'')?' selected':'')+'>'+_esc(x[chave])+(x[rot]?' \u2014 '+_esc(x[rot]):'')+'</option>').join('')+'</select>';
+      + lista.map(x => '<option value="'+_esc(x[chave])+'"'+(String(x[chave])===String(val||'')?' selected':'')+'>'+(chave==='id' ? _esc(x[rot]||'') : _esc(x[chave])+(x[rot]?' \u2014 '+_esc(x[rot]):''))+'</option>').join('')+'</select>';
   const fld = (rot, html, w) => '<div class="ne-f"'+(w?' style="flex:'+w+'"':'')+'><span class="ne-l">'+rot+'</span>'+html+'</div>';
   const inp = (id, val, ph, tipo) => '<input id="'+id+'"'+(tipo?' type="'+tipo+'"':'')+' value="'+_esc(val==null?'':val)+'" placeholder="'+(ph||'')+'">';
   const cats = Array.from(new Set(_semCache.map(e => e.categoria).filter(Boolean))).sort();
@@ -1532,11 +1532,11 @@ async function novoEquipMW(copiarDe){
     + fld('Pai', '<select id="ne-pai"><option value="">(nenhum \u2014 objecto de topo)</option>'+pais.map(e=>'<option value="'+e.id+'"'+(String(e.id)===String(base.equipamento_pai||'')?' selected':'')+'>'+_esc(e.codigo)+' \u2014 '+_esc(e.descricao||'')+'</option>').join('')+'</select>')
     + fld('Sistema', sel('ne-sis', _mwDom.sistemas, sisAtivo, 'codigo','nome'))
     + fld('C. Custo', sel('ne-cc', _mwDom.ccs, base.centro_custo, 'codigo','nome'))
-    + fld('Localiza\u00e7\u00e3o', inp('ne-loc', base.localizacao))
-    + fld('Operador', sel('ne-op', _mwDom.operadores, base.operador_responsavel_id, 'id','nome'))
-    + fld('Desde', inp('ne-desde', '', '', 'date'))
+    + fld('Localiza\u00e7\u00e3o', '<div style="display:flex;gap:4px">'+inp('ne-loc', base.localizacao, 'almoxarifado / local')+'<button class="btn" title="Localiza\u00e7\u00f5es (almoxarifados) \u2014 escolher ou criar" onclick="neSeletor(\'loc\')">\u2026</button></div>')
+    + fld('Operador/motorista', '<div style="display:flex;gap:4px">'+sel('ne-op', _mwDom.operadores, base.operador_responsavel_id, 'id','nome')+'<button class="btn" title="Colaboradores \u2014 escolher ou cadastrar" onclick="neSeletor(\'op\')">\u2026</button></div>')
+    + fld('Desde', inp('ne-desde', new Date().toISOString().slice(0,10), '', 'date'))
     + '<fieldset class="ne-fs"><legend>Fornecedor</legend>'
-    + fld('Fornecedor', sel('ne-forn', _mwDom.fornecedores, base.fornecedor_id, 'id','nome'))
+    + fld('Fornecedor', '<div style="display:flex;gap:4px">'+sel('ne-forn', _mwDom.fornecedores, base.fornecedor_id, 'id','nome')+'<button class="btn" title="Fornecedores \u2014 escolher ou cadastrar" onclick="neSeletor(\'forn\')">\u2026</button></div>')
     + '<div style="display:flex;gap:6px;margin-top:4px">'
     + fld('<span class="r">Data:</span>', inp('ne-dtaq', new Date().toISOString().slice(0,10), '', 'date'), 1)
     + fld('Registo (H):', inp('ne-leit', '', '0'), 1) + fld('Vida \u00datil:', inp('ne-vida', base.vida_util_h, 'h'), 1) + fld('Investimento:', inp('ne-inv', '', 'R$'), 1)
@@ -1608,6 +1608,64 @@ function neAba(i, el){
 }
 // (14/09/2026) Seletor "Tipos Objectos" (ManWinWin): lista Código + Descrição,
 // busca, seleção preenche Estrutura + Tipo Objecto e propõe o próximo número.
+// (14/09/2026) Seletor genérico padrão ManWinWin para a ficha do objeto:
+// lista com busca · duplo clique seleciona · ＋ Novo cadastra sem sair da ficha ·
+// Vai Para abre o cadastro completo. Aplicado a Localização, Operador e Fornecedor.
+const _NE_SEL = {
+  loc:  { titulo:'Localiza\u00e7\u00f5es', icone:'\ud83d\udccd', carregar: async()=>{ const r = await mntFetch('/manutencao/api/almoxarifados'); return (Array.isArray(r)?r:(r.itens||[])).map(a=>({id:a.codigo, cod:a.codigo, nome:a.nome})); },
+          aplicar: it => { const el=document.getElementById('ne-loc'); if(el) el.value = it.nome; },
+          novo: { campos:[['codigo','C\u00f3digo (ex.: A3)','text'],['nome','Nome','text']], post: async d => { await mntFetch('/manutencao/api/almoxarifados',{method:'POST',body:JSON.stringify(d)}); return {id:d.codigo, cod:d.codigo, nome:d.nome}; } },
+          vaiPara: () => { showModule('param'); abrirParamPane('almox','almox','Almoxarifados'); } },
+  op:   { titulo:'Colaboradores', icone:'\ud83d\udc64', carregar: async()=>{ const r = await mntFetch('/operacional/api/operadores'); return (Array.isArray(r)?r:(r.itens||[])).map(o=>({id:o.id, cod:'', nome:o.nome})); },
+          aplicar: it => { const el=document.getElementById('ne-op'); if(!el) return; if(![...el.options].some(o=>o.value===String(it.id))){ const o=document.createElement('option'); o.value=it.id; o.textContent=it.nome; el.appendChild(o);} el.value = it.id; },
+          novo: null, vaiPara: () => { window.open('/admin#usuarios','_blank'); } },
+  forn: { titulo:'Fornecedores', icone:'\ud83c\udfed', carregar: async()=>{ const r = await mntFetch('/manutencao/api/fornecedores'); return (Array.isArray(r)?r:(r.itens||[])).map(f=>({id:f.id, cod:f.cnpj||'', nome:f.nome})); },
+          aplicar: it => { const el=document.getElementById('ne-forn'); if(!el) return; if(![...el.options].some(o=>o.value===String(it.id))){ const o=document.createElement('option'); o.value=it.id; o.textContent=it.nome; el.appendChild(o);} el.value = it.id; },
+          novo: { campos:[['nome','Nome','text'],['cnpj','CNPJ','text'],['telefone','Telefone','text'],['email','E-mail','email']], post: async d => { const r = await mntFetch('/manutencao/api/fornecedores',{method:'POST',body:JSON.stringify(d)}); return {id:(r&&r.id)||'', cod:d.cnpj||'', nome:d.nome}; } },
+          vaiPara: () => { showModule('param'); abrirParamPane('forn','forn','Fornecedores'); } }
+};
+let _neSelItens = [];
+async function neSeletor(tipo){
+  const cfg = _NE_SEL[tipo]; if(!cfg) return;
+  try { _neSelItens = await cfg.carregar(); } catch(e){ mostrarToast('\u274c '+e.message,'warn'); return; }
+  _neSelItens.sort((a,b)=>String(a.nome||'').localeCompare(String(b.nome||'')));
+  const linhas = _neSelItens.map((it,i)=>'<tr data-i="'+i+'" data-busca="'+_esc((it.cod+' '+it.nome).toLowerCase())+'" onclick="neSelMarcar('+i+')" ondblclick="neSelEscolher(\''+tipo+'\','+i+')">'
+     + (cfg.novo && cfg.novo.campos[0][0]==='codigo' ? '<td style="width:70px;font-weight:700;color:#1A2A5E">'+_esc(it.cod)+'</td>' : '')
+     + '<td>'+_esc(it.nome)+'</td></tr>').join('');
+  const html = '<div id="ne-sel" style="position:fixed;inset:0;background:rgba(10,16,40,.45);z-index:9999;display:flex;align-items:center;justify-content:center" onclick="if(event.target===this)this.remove()">'
+    + '<div style="background:#fff;border-radius:10px;width:600px;max-width:95vw;max-height:80vh;display:flex;flex-direction:column;box-shadow:0 12px 40px rgba(0,0,0,.3)">'
+    + '<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;border-bottom:1px solid #e3e6f0"><b style="color:#1A2A5E">'+cfg.icone+'&nbsp; '+cfg.titulo+'</b><button class="btn" onclick="document.getElementById(\'ne-sel\').remove()">\u2715</button></div>'
+    + '<div style="padding:8px 14px;display:flex;gap:8px;align-items:center;border-bottom:1px solid #e3e6f0">'
+    + (cfg.novo ? '<button class="btn" title="Novo cadastro sem sair da ficha" onclick="neSelNovo(\''+tipo+'\')">\u2795 Novo</button>' : '')
+    + '<input id="ne-sel-busca" placeholder="Procurar\u2026" style="flex:1" oninput="neSelFiltrar(this.value)"><button class="btn" onclick="document.getElementById(\'ne-sel-busca\').value=\'\';neSelFiltrar(\'\')">Limpar Filtro</button>'
+    + '<button class="btn" style="background:#1A2A5E;color:#fff" title="Abre o cadastro completo" onclick="document.getElementById(\'ne-sel\').remove();_NE_SEL[\''+tipo+'\'].vaiPara()">\u21e8 Vai Para</button></div>'
+    + '<div id="ne-sel-novo" style="display:none;padding:10px 14px;border-bottom:1px solid #e3e6f0;background:#f7f8fc"></div>'
+    + '<div style="overflow:auto;flex:1"><table style="width:100%;border-collapse:collapse"><tbody id="ne-sel-lista">'+linhas+'</tbody></table></div>'
+    + '<div style="padding:6px 14px;border-top:1px solid #e3e6f0;font-size:11px;color:#6b7280"><span id="ne-sel-qtd">'+_neSelItens.length+'</span> '+cfg.titulo+' \u00b7 duplo clique seleciona \u00b7 Vai Para abre o cadastro</div>'
+    + '</div></div>';
+  const w=document.createElement('div'); w.innerHTML=html; document.body.appendChild(w.firstChild);
+  const st=document.createElement('style'); st.textContent='#ne-sel-lista tr{cursor:pointer} #ne-sel-lista td{padding:6px 10px;border-bottom:1px solid #f1f3f8} #ne-sel-lista tr.on{background:#dbe6ff;outline:1px dotted #1A2A5E}'; document.getElementById('ne-sel').appendChild(st);
+  setTimeout(()=>document.getElementById('ne-sel-busca')?.focus(),30);
+}
+function neSelFiltrar(q){ q=(q||'').toLowerCase().trim(); let n=0; document.querySelectorAll('#ne-sel-lista tr').forEach(tr=>{ const ok=!q||tr.dataset.busca.includes(q); tr.style.display=ok?'':'none'; if(ok)n++; }); const c=document.getElementById('ne-sel-qtd'); if(c)c.textContent=n; }
+function neSelMarcar(i){ document.querySelectorAll('#ne-sel-lista tr').forEach(tr=>tr.classList.toggle('on', String(tr.dataset.i)===String(i))); }
+function neSelEscolher(tipo,i){ const it=_neSelItens[i]; if(!it) return; _NE_SEL[tipo].aplicar(it); document.getElementById('ne-sel')?.remove(); }
+function neSelNovo(tipo){
+  const cfg=_NE_SEL[tipo]; const box=document.getElementById('ne-sel-novo'); if(!cfg||!cfg.novo||!box) return;
+  box.style.display='block';
+  box.innerHTML = '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end">'
+    + cfg.novo.campos.map(([k,rot,t])=>'<label style="display:flex;flex-direction:column;font-size:11px;color:#6b7280;flex:1;min-width:140px">'+rot+'<input id="ne-sn-'+k+'" type="'+t+'"></label>').join('')
+    + '<button class="btn" style="background:#f07c1e;color:#fff" onclick="neSelSalvarNovo(\''+tipo+'\')">Salvar e usar</button>'
+    + '<button class="btn" onclick="document.getElementById(\'ne-sel-novo\').style.display=\'none\'">Cancelar</button></div>';
+  setTimeout(()=>document.getElementById('ne-sn-'+cfg.novo.campos[0][0])?.focus(),30);
+}
+async function neSelSalvarNovo(tipo){
+  const cfg=_NE_SEL[tipo]; const d={};
+  cfg.novo.campos.forEach(([k])=>{ d[k]=(document.getElementById('ne-sn-'+k)?.value||'').trim(); });
+  if(!d[cfg.novo.campos[0][0]] || (d.nome!==undefined && !d.nome)){ mostrarToast('Preencha os campos principais','warn'); return; }
+  try { const it = await cfg.novo.post(d); mostrarToast('\u2705 Cadastrado','ok'); cfg.aplicar(it); document.getElementById('ne-sel')?.remove(); }
+  catch(e){ mostrarToast('\u274c '+e.message,'warn'); }
+}
 function neTiposObjectos(){
   const tipos = (_mwDom.tipos||[]).slice().sort((a,b)=>String(a.sigla).localeCompare(String(b.sigla)));
   const atual = (document.getElementById('ne-sigla')?.value||'').toUpperCase().trim();
@@ -1616,13 +1674,26 @@ function neTiposObjectos(){
   const html = '<div id="to-modal" style="position:fixed;inset:0;background:rgba(10,16,40,.45);z-index:9999;display:flex;align-items:center;justify-content:center" onclick="if(event.target===this)this.remove()">'
     + '<div style="background:#fff;border-radius:10px;width:560px;max-width:95vw;max-height:80vh;display:flex;flex-direction:column;box-shadow:0 12px 40px rgba(0,0,0,.3)">'
     + '<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;border-bottom:1px solid #e3e6f0"><b style="color:#1A2A5E">T&nbsp; Tipos Objectos</b><button class="btn" onclick="document.getElementById(\'to-modal\').remove()">\u2715</button></div>'
-    + '<div style="padding:8px 14px;display:flex;gap:8px;align-items:center;border-bottom:1px solid #e3e6f0"><input id="to-busca" placeholder="Procurar\u2026" style="flex:1" oninput="neTipoFiltrar(this.value)"><button class="btn" onclick="document.getElementById(\'to-busca\').value=\'\';neTipoFiltrar(\'\')">Limpar Filtro</button><button class="btn" style="background:#1A2A5E;color:#fff" onclick="neTipoEscolher(null,true)">\u21e8 Vai Para</button></div>'
+    + '<div style="padding:8px 14px;display:flex;gap:8px;align-items:center;border-bottom:1px solid #e3e6f0"><input id="to-busca" placeholder="Procurar\u2026" style="flex:1" oninput="neTipoFiltrar(this.value)"><button class="btn" onclick="document.getElementById(\'to-busca\').value=\'\';neTipoFiltrar(\'\')">Limpar Filtro</button><button class="btn" style="background:#1A2A5E;color:#fff" title="Abre o cadastro do tipo selecionado (Parametrizar)" onclick="neTipoVaiPara()">\u21e8 Vai Para</button></div>'
     + '<div style="overflow:auto;flex:1"><table class="mtab-table" style="width:100%;border-collapse:collapse"><thead><tr><th style="text-align:left;padding:6px 10px;border-bottom:1px solid #e3e6f0">C\u00f3digo</th><th style="text-align:left;padding:6px 10px;border-bottom:1px solid #e3e6f0">Descri\u00e7\u00e3o</th></tr></thead><tbody id="to-lista">'+linhas+'</tbody></table></div>'
-    + '<div style="padding:6px 14px;border-top:1px solid #e3e6f0;font-size:11px;color:#6b7280"><span id="to-qtd">'+tipos.length+'</span> Tipos Objectos \u00b7 clique seleciona, duplo clique confirma</div>'
+    + '<div style="padding:6px 14px;border-top:1px solid #e3e6f0;font-size:11px;color:#6b7280"><span id="to-qtd">'+tipos.length+'</span> Tipos Objectos \u00b7 duplo clique seleciona \u00b7 Vai Para abre o cadastro do tipo</div>'
     + '</div></div>';
   const w = document.createElement('div'); w.innerHTML = html; document.body.appendChild(w.firstChild);
   const st = document.createElement('style'); st.textContent = '#to-lista tr{cursor:pointer} #to-lista td{padding:6px 10px;border-bottom:1px solid #f1f3f8} #to-lista tr.on{background:#dbe6ff;outline:1px dotted #1A2A5E}'; document.getElementById('to-modal').appendChild(st);
   setTimeout(()=>document.getElementById('to-busca')?.focus(),30);
+}
+function neTipoVaiPara(){
+  // Lógica ManWinWin: "Vai Para" navega ao cadastro do tipo selecionado.
+  const sel = document.querySelector('#to-lista tr.on')?.dataset.sigla;
+  if (!sel) { mostrarToast('Selecione um tipo na lista', 'warn'); return; }
+  document.getElementById('to-modal')?.remove();
+  document.getElementById('eq-ficha')?.classList.remove('show');
+  showModule('param');
+  abrirParamPane('tipos', 'dom', 'Tipos de equipamento');
+  setTimeout(() => {
+    const alvo = Array.from(document.querySelectorAll('#pane-tipos tr, .pane.on tr, tr')).find(tr => (tr.textContent||'').trim().toUpperCase().startsWith(sel.toUpperCase()));
+    if (alvo) { alvo.scrollIntoView({block:'center'}); alvo.style.outline = '2px solid #f07c1e'; setTimeout(()=>alvo.style.outline='', 2500); }
+  }, 350);
 }
 function neTipoFiltrar(q){
   q = (q||'').toLowerCase().trim(); let n = 0;
