@@ -1625,8 +1625,8 @@ const _NE_SEL = {
           vaiPara: () => { showModule('param'); abrirParamPane('forn','forn','Fornecedores'); } }
 };
 let _neSelItens = [];
-async function neSeletor(tipo){
-  const cfg = _NE_SEL[tipo]; if(!cfg) return;
+async function neSeletor(tipo, alvo){
+  const cfg = _NE_SEL[tipo]; if(!cfg) return; _neSelAlvo = alvo || null;
   try { _neSelItens = await cfg.carregar(); } catch(e){ mostrarToast('\u274c '+e.message,'warn'); return; }
   _neSelItens.sort((a,b)=>String(a.nome||'').localeCompare(String(b.nome||'')));
   const linhas = _neSelItens.map((it,i)=>'<tr data-i="'+i+'" data-busca="'+_esc((it.cod+' '+it.nome).toLowerCase())+'" onclick="neSelMarcar('+i+')" ondblclick="neSelEscolher(\''+tipo+'\','+i+')">'
@@ -1650,7 +1650,15 @@ async function neSeletor(tipo){
 function neSelFiltrar(q){ q=(q||'').toLowerCase().trim(); let n=0; document.querySelectorAll('#ne-sel-lista tr').forEach(tr=>{ const ok=!q||tr.dataset.busca.includes(q); tr.style.display=ok?'':'none'; if(ok)n++; }); const c=document.getElementById('ne-sel-qtd'); if(c)c.textContent=n; }
 function neSelMarcar(i){ document.querySelectorAll('#ne-sel-lista tr').forEach(tr=>tr.classList.toggle('on', String(tr.dataset.i)===String(i))); }
 function neSelConfirmar(tipo){ const tr=document.querySelector('#ne-sel-lista tr.on'); if(!tr){ mostrarToast('Selecione um item na lista','warn'); return; } neSelEscolher(tipo, tr.dataset.i); }
-function neSelEscolher(tipo,i){ const it=_neSelItens[i]; if(!it) return; _NE_SEL[tipo].aplicar(it); document.getElementById('ne-sel')?.remove(); }
+let _neSelAlvo = null;
+function neSelEscolher(tipo,i){ const it=_neSelItens[i]; if(!it) return; _neSelAplicar(tipo, it); document.getElementById('ne-sel')?.remove(); }
+function _neSelAplicar(tipo, it){
+  const alvo = _neSelAlvo || { loc:'ne-loc', op:'ne-op', forn:'ne-forn' };
+  if (tipo === 'loc') { const el=document.getElementById(alvo.loc); if(el) el.value = it.nome; return; }
+  const el = document.getElementById(alvo[tipo]); if(!el) return;
+  if (el.tagName === 'SELECT') { if(![...el.options].some(o=>o.value===String(it.id))){ const o=document.createElement('option'); o.value=it.id; o.textContent=it.nome; el.appendChild(o);} el.value = it.id; }
+  else { el.value = it.id; const lbl = document.getElementById(alvo[tipo]+'-lbl'); if (lbl) lbl.value = it.nome; }
+}
 function neSelNovo(tipo){
   const cfg=_NE_SEL[tipo]; const box=document.getElementById('ne-sel-novo'); if(!cfg||!cfg.novo||!box) return;
   box.style.display='block';
@@ -1664,7 +1672,7 @@ async function neSelSalvarNovo(tipo){
   const cfg=_NE_SEL[tipo]; const d={};
   cfg.novo.campos.forEach(([k])=>{ d[k]=(document.getElementById('ne-sn-'+k)?.value||'').trim(); });
   if(!d[cfg.novo.campos[0][0]] || (d.nome!==undefined && !d.nome)){ mostrarToast('Preencha os campos principais','warn'); return; }
-  try { const it = await cfg.novo.post(d); mostrarToast('\u2705 Cadastrado','ok'); cfg.aplicar(it); document.getElementById('ne-sel')?.remove(); }
+  try { const it = await cfg.novo.post(d); mostrarToast('\u2705 Cadastrado','ok'); _neSelAplicar(tipo, it); document.getElementById('ne-sel')?.remove(); }
   catch(e){ mostrarToast('\u274c '+e.message,'warn'); }
 }
 function neTiposObjectos(){
@@ -3242,6 +3250,9 @@ function fichaAba(aba){
   const c = document.getElementById('ficha-corpo');
   const fld = (rot, inner) => '<div class="mfield">'+rot+inner+'</div>';
   if (aba === 'ident'){
+    // (14/09/2026) Paridade com a ficha Novo Objecto: mesmos campos e os mesmos
+    // seletores "…" (Localização · Operador/motorista · Fornecedor) com ➕ Novo inline.
+    const FI = { loc:'fi-loc', op:'fi-oper', forn:'fi-forn' };
     const paiOpts = '<option value="">— nenhum —</option>' + _mntEquipList.filter(x=>String(x.id)!==String(e.id)).map(x =>
       '<option value="'+x.id+'"'+(String(x.id)===String(e.equipamento_pai)?' selected':'')+'>'+_esc(x.codigo)+' — '+_esc(x.descricao||'')+'</option>').join('');
     const sisOpts = '<option value="">— sem grupo —</option>' + (_arvSistemas||[]).map(s =>
@@ -3249,16 +3260,26 @@ function fichaAba(aba){
     const ccOpts = '<option value="">— nenhum —</option>' + (_eqCC||[]).map(x =>
       '<option value="'+_esc(x.codigo)+'"'+(x.codigo===e.centro_custo?' selected':'')+'>'+_esc(x.codigo)+' — '+_esc(x.nome||'')+'</option>').join('');
     const oper = e.operador_nome || '';
+    const dt = v => v ? String(v).slice(0,10) : '';
     c.innerHTML = '<div class="dsec">Identificação</div><div class="mgrid">'
       + fld('Pai (componente de)','<select id="fi-pai">'+paiOpts+'</select>')
       + fld('Sistema (nó da árvore — mover de grupo aqui)','<select id="fi-sis">'+sisOpts+'</select>')
       + fld('Centro de custo','<select id="fi-cc">'+ccOpts+'</select>')
-      + fld('Localização física','<input id="fi-loc" value="'+_esc(e.localizacao||'')+'" placeholder="ex.: Pátio sede">')
-      + fld('Operador responsável','<div style="display:flex;gap:4px"><input id="fi-oper-lbl" value="'+_esc(oper)+'" placeholder="— nenhum —" readonly style="flex:1;background:#F8FAFC"><button class="btn" style="height:26px" onclick="fichaPickOper()">🔍</button></div><input type="hidden" id="fi-oper" value="'+_esc(String(e.operador_responsavel_id||''))+'">')
+      + fld('Localização','<div style="display:flex;gap:4px"><input id="fi-loc" value="'+_esc(e.localizacao||'')+'" placeholder="almoxarifado / local" style="flex:1"><button class="btn" title="Localizações — escolher ou criar" onclick="neSeletor(\'loc\',{loc:\'fi-loc\',op:\'fi-oper\',forn:\'fi-forn\'})">…</button></div>')
+      + fld('Operador/motorista','<div style="display:flex;gap:4px"><input id="fi-oper-lbl" value="'+_esc(oper)+'" placeholder="— nenhum —" readonly style="flex:1;background:#F8FAFC"><button class="btn" title="Colaboradores" onclick="neSeletor(\'op\',{loc:\'fi-loc\',op:\'fi-oper\',forn:\'fi-forn\'})">…</button></div><input type="hidden" id="fi-oper" value="'+_esc(String(e.operador_responsavel_id||''))+'">')
+      + fld('Desde','<input id="fi-desde" type="date" value="'+_esc(dt(e.operador_desde))+'">')
       + fld('Descrição','<input id="fi-desc" value="'+_esc(e.descricao||'')+'">')
-      + fld('Data de aquisição','<input id="fi-dtaq" type="date" value="'+_esc(e.data_aquisicao ? String(e.data_aquisicao).slice(0,10) : '')+'">')
+      + '</div><fieldset class="ne-fs" style="margin-top:8px"><legend>Fornecedor</legend><div class="mgrid">'
+      + fld('Fornecedor','<div style="display:flex;gap:4px"><select id="fi-forn" data-val="'+_esc(String(e.fornecedor_id||''))+'" style="flex:1"><option value="">—</option></select><button class="btn" title="Fornecedores — escolher ou cadastrar" onclick="neSeletor(\'forn\',{loc:\'fi-loc\',op:\'fi-oper\',forn:\'fi-forn\'})">…</button></div>')
+      + fld('Data de aquisição','<input id="fi-dtaq" type="date" value="'+_esc(dt(e.data_aquisicao))+'">')
+      + fld('Vida útil (h)','<input id="fi-vida" type="number" step="1" value="'+_esc(e.vida_util_h ?? '')+'">')
       + fld('Investimento (R$)','<input id="fi-vlr" type="number" step="0.01" value="'+(e.valor_aquisicao ?? '')+'">')
-      + '</div><div style="display:flex;justify-content:flex-end;margin-top:10px"><button class="btn p" onclick="fichaSalvarIdent()">💾 Salvar</button></div>';
+      + fld('Valor actual (R$)','<input id="fi-vatual" type="number" step="0.01" value="'+(e.valor_atual ?? '')+'">')
+      + '</div></fieldset><div style="display:flex;justify-content:flex-end;margin-top:10px"><button class="btn p" onclick="fichaSalvarIdent()">💾 Salvar</button></div>';
+    mntFetch('/manutencao/api/fornecedores').then(r => {
+      const lista = Array.isArray(r) ? r : (r.itens || []); const el = document.getElementById('fi-forn'); if (!el) return; const v = el.dataset.val;
+      el.innerHTML = '<option value="">—</option>' + lista.map(f => '<option value="'+f.id+'"'+(String(f.id)===String(v)?' selected':'')+'>'+_esc(f.nome)+'</option>').join('');
+    }).catch(()=>{});
   }
   if (aba === 'carac'){
     // (14/09/2026) 5 pares PADRÃO (Marca, Modelo, Ano, Chassi/Nº série, Cor) + pares livres.
@@ -3394,8 +3415,9 @@ function fichaSalvarIdent(){
   const g = id => document.getElementById(id).value;
   _fichaPatch({ equipamento_pai: g('fi-pai') || null, sistema_codigo: g('fi-sis') || null,
     centro_custo: g('fi-cc') || null, localizacao: g('fi-loc'),
-    operador_responsavel_id: g('fi-oper') || null, descricao: g('fi-desc'),
-    data_aquisicao: g('fi-dtaq'), valor_aquisicao: g('fi-vlr') }, 'ident');
+    operador_responsavel_id: g('fi-oper') || null, operador_desde: g('fi-desde') || null, descricao: g('fi-desc'),
+    fornecedor_id: g('fi-forn') || null, data_aquisicao: g('fi-dtaq'), valor_aquisicao: g('fi-vlr'),
+    vida_util_h: g('fi-vida'), valor_atual: g('fi-vatual') }, 'ident');
 }
 function fichaMaisPar(){
   const box = document.getElementById('fi-carac');
