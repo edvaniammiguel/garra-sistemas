@@ -1696,8 +1696,8 @@ async function novoEquipMW(copiarDe, editar){
     + '</div></div>'
     // aba 3 — Info. Complementares
     + '<div class="ne-pane" id="ne-p3"><div style="display:flex;gap:8px;flex-wrap:wrap">'
-    + fld('Criticidade','<select id="ne-crit">'+['','A','B','C'].map(c=>'<option value="'+c+'"'+((base.criticidade||'')===c?' selected':'')+'>'+(c||'\u2014')+'</option>').join('')+'</select>',1)
-    + fld('Cor', inp('ne-cor', base.cor),1) + fld('Posi\u00e7\u00e3o (no pai)', inp('ne-pos', '', 'ex.: dianteiro esquerdo'),1)
+    + (editar ? '' : fld('Criticidade','<select id="ne-crit">'+['','normal','alta','critica'].map(c=>'<option value="'+c+'"'+((base.criticidade||'')===c?' selected':'')+'>'+(c||'\u2014')+'</option>').join('')+'</select>',1))
+    + fld('Posi\u00e7\u00e3o (no pai)', inp('ne-pos', base.posicao||'', 'ex.: dianteiro esquerdo'),1)
     + '</div></div>'
     // aba 4 — Notas
     + '<div class="ne-pane" id="ne-p4"><textarea id="ne-notas" style="width:100%;min-height:160px;font-size:12px;padding:8px;border:1px solid #CBD5E1;border-radius:6px" placeholder="Observa\u00e7\u00f5es livres sobre o objecto\u2026"></textarea></div>'
@@ -1718,6 +1718,7 @@ async function novoEquipMW(copiarDe, editar){
     [['ne-p2','oper'],['ne-p3','compl'],['ne-p4','notas']].forEach(([pid, aba]) => {
       const pane = document.getElementById(pid); if (!pane) return;
       const d = document.createElement('div'); d.style.marginTop = '10px'; d.style.borderTop = '1px solid #E2E8F0'; d.style.paddingTop = '8px'; pane.appendChild(d); fichaAba(aba, d);
+      d.querySelectorAll('button').forEach(b => { if (/Salvar/.test(b.textContent)) b.closest('div').remove(); });
     });
     // navegação ⏮ ◀ n/N ▶ ⏭ no rodapé
     const rod = document.querySelector('#eq-ficha-corpo .ne-pane')?.parentElement?.lastElementChild;
@@ -1945,13 +1946,22 @@ async function neSalvar(fechar){
   // gravava {nome,valor} e a ficha lia {r,v}: o que era cadastrado sumia na edição.
   const cars = Array.from(document.querySelectorAll('#ne-cars .ne-car')).map(d => ({r: d.querySelector('.c-n').value.trim().toUpperCase(), v: d.querySelector('.c-v').value.trim()})).filter(c => c.r || c.v);
   const car = rot => (cars.find(c => c.r === rot) || {}).v || '';
-  const _marca = car('MARCA'), _modelo = car('MODELO'), _ano = car('ANO'), _serie = car('CHASSI / Nº SÉRIE');
+  const _marca = car('MARCA'), _modelo = car('MODELO'), _serie = car('CHASSI / Nº SÉRIE');
+  // (14/09/2026) `ano` no Operacional é inteiro — cadastros antigos guardaram placa no ano;
+  // só vai para a coluna quando for ano de verdade (4 dígitos), senão fica só na Característica.
+  const _anoTxt = car('ANO'); const _ano = /^\d{4}$/.test(_anoTxt) ? _anoTxt : '';
   const ficha = { tipo_sigla: v('ne-tipo')||null, sistema_codigo: v('ne-sis')||null, centro_custo: v('ne-cc')||null, localizacao: v('ne-loc')||null,
                   operador_responsavel_id: v('ne-op')||null, operador_desde: v('ne-desde')||null,
                   fornecedor_id: v('ne-forn')||null, data_aquisicao: v('ne-dtaq')||null, leitura_inicial: v('ne-leit')||null,
                   vida_util_h: v('ne-vida')||null, valor_aquisicao: v('ne-inv')||null, valor_atual: v('ne-vatual')||null,
                   num_serie: _serie||null, ano_fabricacao: _ano||null, criticidade: v('ne-crit')||null, cor: car('COR')||null, marca: _marca||null, modelo: _modelo||null,
                   posicao: v('ne-pos')||null, equipamento_pai: v('ne-pai')||null, notas: v('ne-notas')||null, caracteristicas: cars };
+  // (14/09/2026) Janela unificada: OK/Aplicar gravam os blocos MWW junto (sem Salvar por bloco)
+  if (eraEdicao) {
+    if (document.getElementById('fo-fmd')) Object.assign(ficha, _colOper());
+    if (document.getElementById('ic-familia')) Object.assign(ficha, _colCompl());
+  }
+  if (!ficha.criticidade) delete ficha.criticidade;
   try {
     let id = _neEditId;
     if (!id){
@@ -3388,92 +3398,11 @@ async function verEquipReal(id, destino){
     await novoEquipMW(id, true);
   } catch(e) { mostrarToast('❌ '+e.message,'warn'); }
 }
-function _fichaEscreve(html){
-  if (_eqFichaDestino === 'centro' && document.getElementById('frota-centro')) {
-    document.getElementById('frota-centro').innerHTML = html;
-  } else {
-    document.querySelector('#eq-ficha .modal').classList.remove('larga');
-    document.getElementById('eq-ficha-corpo').innerHTML = html;
-    document.getElementById('eq-ficha').classList.add('show');
-  }
-}
 function fichaAba(aba, alvo){
-  const e = _eqFicha; if (!e) return;
-  const sem = _semCache.find(s => String(s.id) === String(e.id)) || {};
-  const dot = ({vermelho:'r',laranja:'o',amarelo:'y',verde:'g'})[sem.status] || 'g';
-  const ABAS = [['ident','Identificação'],['carac','Características'],['oper','Dados Operacionais'],['compl','Complementares'],['notas','Notas']];
-  const foto = e.foto_url
-    ? '<img src="'+e.foto_url+'" style="width:86px;height:64px;object-fit:cover;border-radius:6px;border:1px solid #CBD5E1;cursor:pointer" title="Trocar figura" onclick="fichaFoto()">'
-    : '<div style="width:86px;height:64px;border:1px dashed #CBD5E1;border-radius:6px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:#94A3B8;font-size:22px" title="Adicionar figura" onclick="fichaFoto()">📷</div>';
-  let html = '<div style="display:flex;gap:12px;align-items:flex-start">'
-    + foto + '<input type="file" id="ficha-foto-input" accept="image/*" style="display:none" onchange="fichaFotoEnvia(this)">'
-    + '<div style="flex:1"><div style="display:flex;justify-content:space-between;align-items:center">'
-    + '<b style="font-size:15px;color:#1A2A5E">'+_esc(e.codigo)+' <span class="muted" style="font-weight:400">('+_esc(e.tipo_sigla||e.categoria||'')+')</span> — '+_esc(e.descricao||'')+'</b>'
-    + (_eqFichaDestino==='centro' ? '' : '<span style="cursor:pointer;font-size:18px" onclick="document.getElementById(\'eq-ficha\').classList.remove(\'show\')">✕</span>')
-    + '</div><div style="margin-top:2px"><span class="dot '+dot+'"></span> <span class="muted">'+(sem.status==='verde'?'DISPONÍVEL':sem.status==='vermelho'?'VENCIDO':sem.status==='laranja'?'URGENTE':'ATENÇÃO')
-    + ' · horímetro '+(e.horimetro_atual ?? '—')+' '+(e.medicao==='km'?'km':'h')+' · código é identidade histórica, não se edita</span></div></div></div>'
-    + '<div class="mtabs" style="margin-top:8px">'
-    + ABAS.map(([k,t]) => '<div class="mtab'+(k===aba?' on':'')+'" onclick="fichaAba(\''+k+'\')">'+t+'</div>').join('')
-    + '</div><div id="ficha-corpo"></div>';
-  if (!alvo) _fichaEscreve(html);
-  const c = alvo || document.getElementById('ficha-corpo');
+  // Renderiza o corpo de uma aba MWW (oper · compl · notas) dentro da janela unificada do Objecto.
+  const e = _eqFicha; if (!e || !alvo) return;
+  const c = alvo;
   const fld = (rot, inner) => '<div class="mfield">'+rot+inner+'</div>';
-  if (aba === 'ident'){
-    // (14/09/2026) Paridade com a ficha Novo Objecto: mesmos campos e os mesmos
-    // seletores "…" (Localização · Operador/motorista · Fornecedor) com ➕ Novo inline.
-    const FI = { loc:'fi-loc', op:'fi-oper', forn:'fi-forn' };
-    const paiOpts = '<option value="">— nenhum —</option>' + _mntEquipList.filter(x=>String(x.id)!==String(e.id)).map(x =>
-      '<option value="'+x.id+'"'+(String(x.id)===String(e.equipamento_pai)?' selected':'')+'>'+_esc(x.codigo)+' — '+_esc(x.descricao||'')+'</option>').join('');
-    const sisOpts = '<option value="">— sem grupo —</option>' + (_arvSistemas||[]).map(s =>
-      '<option value="'+_esc(s.codigo)+'"'+(s.codigo===e.sistema_codigo?' selected':'')+'>'+_esc(s.codigo)+' — '+_esc(s.nome)+'</option>').join('');
-    const ccOpts = '<option value="">— nenhum —</option>' + (_eqCC||[]).map(x =>
-      '<option value="'+_esc(x.codigo)+'"'+(x.codigo===e.centro_custo?' selected':'')+'>'+_esc(x.codigo)+' — '+_esc(x.nome||'')+'</option>').join('');
-    const oper = e.operador_nome || '';
-    const dt = v => v ? String(v).slice(0,10) : '';
-    const figura = e.foto_url
-      ? '<img src="'+e.foto_url+'" style="max-width:100%;max-height:100%;object-fit:contain">'
-      : 'Figura — clique para escolher a foto';
-    c.innerHTML = '<div class="dsec">Identificação</div><div style="display:flex;gap:14px;align-items:stretch">'
-      + '<div style="flex:1"><div class="mgrid">'
-      + fld('Pai (componente de)','<select id="fi-pai">'+paiOpts+'</select>')
-      + fld('Sistema (nó da árvore — mover de grupo aqui)','<select id="fi-sis">'+sisOpts+'</select>')
-      + fld('Centro de custo','<select id="fi-cc">'+ccOpts+'</select>')
-      + fld('Localização','<div style="display:flex;gap:4px"><input id="fi-loc" value="'+_esc(e.localizacao||'')+'" placeholder="almoxarifado / local" style="flex:1"><button class="btn" title="Localizações — escolher ou criar" onclick="neSeletor(\'loc\',{loc:\'fi-loc\',op:\'fi-oper\',forn:\'fi-forn\'})">…</button></div>')
-      + fld('Operador/motorista','<div style="display:flex;gap:4px"><input id="fi-oper-lbl" value="'+_esc(oper)+'" placeholder="— nenhum —" readonly style="flex:1;background:#F8FAFC"><button class="btn" title="Colaboradores" onclick="neSeletor(\'op\',{loc:\'fi-loc\',op:\'fi-oper\',forn:\'fi-forn\'})">…</button></div><input type="hidden" id="fi-oper" value="'+_esc(String(e.operador_responsavel_id||''))+'">')
-      + fld('Desde','<input id="fi-desde" type="date" value="'+_esc(dt(e.operador_desde))+'">')
-      + fld('Descrição','<input id="fi-desc" value="'+_esc(e.descricao||'')+'">')
-      + '</div><fieldset class="ne-fs" style="margin-top:8px"><legend>Fornecedor</legend><div class="mgrid">'
-      + fld('Fornecedor','<div style="display:flex;gap:4px"><select id="fi-forn" data-val="'+_esc(String(e.fornecedor_id||''))+'" style="flex:1"><option value="">—</option></select><button class="btn" title="Fornecedores — escolher ou cadastrar" onclick="neSeletor(\'forn\',{loc:\'fi-loc\',op:\'fi-oper\',forn:\'fi-forn\'})">…</button></div>')
-      + fld('Data de aquisição','<input id="fi-dtaq" type="date" value="'+_esc(dt(e.data_aquisicao))+'">')
-      + fld('Vida útil (h)','<input id="fi-vida" type="number" step="1" value="'+_esc(e.vida_util_h ?? '')+'">')
-      + fld('Investimento (R$)','<input id="fi-vlr" type="number" step="0.01" value="'+(e.valor_aquisicao ?? '')+'">')
-      + fld('Valor actual (R$)','<input id="fi-vatual" type="number" step="0.01" value="'+(e.valor_atual ?? '')+'">')
-      + '</div></fieldset></div>'
-      + '<div style="flex:0 0 340px;display:flex;flex-direction:column"><div style="flex:1;min-height:300px;border:1px solid #93C5FD;background:#F8FAFC;display:flex;align-items:center;justify-content:center;color:#94A3B8;font-size:11px;overflow:hidden;cursor:pointer" title="Clique para trocar a foto" onclick="fichaFoto()">'+figura+'</div></div>'
-      + '</div><div style="display:flex;justify-content:space-between;align-items:center;margin-top:10px">'
-      + fichaNavBarra()
-      + '<button class="btn p" onclick="fichaSalvarIdent()">💾 Salvar</button></div>';
-    mntFetch('/manutencao/api/fornecedores').then(r => {
-      const lista = Array.isArray(r) ? r : (r.itens || []); const el = document.getElementById('fi-forn'); if (!el) return; const v = el.dataset.val;
-      el.innerHTML = '<option value="">—</option>' + lista.map(f => '<option value="'+f.id+'"'+(String(f.id)===String(v)?' selected':'')+'>'+_esc(f.nome)+'</option>').join('');
-    }).catch(()=>{});
-  }
-  if (aba === 'carac'){
-    // (14/09/2026) 5 pares PADRÃO (Marca, Modelo, Ano, Chassi/Nº série, Cor) + pares livres.
-    // Vale para frota e para objetos fora da frota (bebedouro, ar-condicionado…): rótulos editáveis.
-    const PADRAO = [['MARCA', e.marca], ['MODELO', e.modelo], ['ANO', e.ano_fabricacao], ['CHASSI / Nº SÉRIE', e.num_serie], ['COR', e.cor]];
-    let pares = (Array.isArray(e.caracteristicas) ? e.caracteristicas : []).map(p => ({ r: p.r || p.nome || p.n || '', v: (p.v !== undefined ? p.v : p.valor) || '' }));
-    PADRAO.forEach(([r, v], i) => { if (!pares.some(p => p.r.toUpperCase() === r)) pares.splice(i, 0, { r, v: v ?? '' }); });
-    while (pares.length < 12) pares.push({r:'',v:''});
-    c.innerHTML = '<div class="dsec">Características — 5 padrão (Marca · Modelo · Ano · Chassi · Cor) + pares livres; rótulos editáveis</div>'
-      + '<div id="fi-carac">' + pares.map((p,i) =>
-        '<div style="display:flex;gap:6px;margin:3px 0"><span class="mono" style="width:22px;color:#94A3B8;font-size:10px;padding-top:6px">'+String(i+1).padStart(2,'0')+'</span>'
-        + '<input class="fc-r" value="'+_esc(p.r||'')+'" placeholder="RÓTULO (ex.: PLACA)" style="width:200px;text-transform:uppercase">'
-        + '<input class="fc-v" value="'+_esc(p.v||'')+'" placeholder="valor" style="flex:1"></div>').join('')
-      + '</div><div style="display:flex;justify-content:space-between;margin-top:10px">'
-      + '<button class="btn" onclick="fichaMaisPar()">＋ mais pares</button>'
-      + '<button class="btn p" onclick="fichaSalvarCarac()">💾 Salvar</button></div>';
-  }
   if (aba === 'oper'){
     // (14/09/2026) Espelho da aba Dados Operacionais do ManWinWin: Tempos ·
     // Funcionamento Médio Diário · Garantia · Contrato Manutenção. Tudo gravado
@@ -3574,66 +3503,39 @@ function fichaAba(aba, alvo){
       + '<button class="btn p" onclick="fichaNovaNota()">➕ Registrar</button></div>';
   }
 }
-function fichaPickOper(){
-  abrirPicker('Operador responsável', [{id:'',label:'— nenhum —'}].concat(_mntUserList.map(u=>({id:u.id,label:(u.nome||u.login)}))),
-    it => { document.getElementById('fi-oper').value = it.id; document.getElementById('fi-oper-lbl').value = it.id ? it.label : ''; });
-}
 async function _fichaPatch(body, aba){
   try {
     await mntFetch('/manutencao/api/equipamentos/'+_eqFicha.id+'/ficha', {method:'PATCH', body: JSON.stringify(body)});
     mostrarToast('💾 Salvo','ok');
     const dest = _eqFichaDestino;
     await verEquipReal(_eqFicha.id, dest);
-    fichaAba(aba);
+    const idx = ({ident:0, carac:1, oper:2, compl:3, notas:4})[aba]; const tabs = document.querySelectorAll('.ne-tab');
+    if (idx !== undefined && tabs[idx]) neAba(idx, tabs[idx]);
     carregarSemaforosReais();
   } catch(e){ mostrarToast('❌ '+e.message,'warn'); }
 }
-function fichaSalvarIdent(){
-  const g = id => document.getElementById(id).value;
-  _fichaPatch({ equipamento_pai: g('fi-pai') || null, sistema_codigo: g('fi-sis') || null,
-    centro_custo: g('fi-cc') || null, localizacao: g('fi-loc'),
-    operador_responsavel_id: g('fi-oper') || null, operador_desde: g('fi-desde') || null, descricao: g('fi-desc'),
-    fornecedor_id: g('fi-forn') || null, data_aquisicao: g('fi-dtaq'), valor_aquisicao: g('fi-vlr'),
-    vida_util_h: g('fi-vida'), valor_atual: g('fi-vatual') }, 'ident');
-}
-function fichaMaisPar(){
-  const box = document.getElementById('fi-carac');
-  const n = box.querySelectorAll('.fc-r').length;
-  for (let k = 0; k < 4; k++) {
-    const div = document.createElement('div');
-    div.style.cssText = 'display:flex;gap:6px;margin:3px 0';
-    div.innerHTML = '<span class="mono" style="width:22px;color:#94A3B8;font-size:10px;padding-top:6px">'+String(n+k+1).padStart(2,'0')+'</span>'
-      + '<input class="fc-r" placeholder="RÓTULO" style="width:200px;text-transform:uppercase"><input class="fc-v" placeholder="valor" style="flex:1">';
-    box.appendChild(div);
-  }
-}
-function fichaSalvarCarac(){
-  const rs = [...document.querySelectorAll('#fi-carac .fc-r')];
-  const vs = [...document.querySelectorAll('#fi-carac .fc-v')];
-  const pares = rs.map((r,i) => ({r: r.value.trim().toUpperCase(), v: vs[i].value.trim()})).filter(p => p.r || p.v);
-  const pega = rot => (pares.find(p => p.r === rot) || {}).v || '';
-  _fichaPatch({ caracteristicas: pares, marca: pega('MARCA'), modelo: pega('MODELO'), ano_fabricacao: pega('ANO'), num_serie: pega('CHASSI / Nº SÉRIE'), cor: pega('COR') }, 'carac');
-}
-function fichaSalvarOper(){
+function fichaSalvarOper(){ _fichaPatch(_colOper(), 'oper'); }
+function _colOper(){
   const g = id => (document.getElementById(id)||{}).value ?? '';
   const b = id => !!(document.getElementById(id)||{}).checked;
   const nomeSel = id => { const el = document.getElementById(id); return el && el.selectedIndex > 0 ? el.options[el.selectedIndex].text : ''; };
-  _fichaPatch({ garantia: {
+  return ({ garantia: {
     tempos: { trq: b('fo-trq'), tf: b('fo-tf') },
     fmd: { valor: g('fo-fmd'), unidade: g('fo-unid'), data: g('fo-fmd-data'), reg_par: g('fo-par'), calc: b('fo-calc'), contador: g('fo-contador') },
     gar: { ativo: b('fg-on'), data: g('fg-data'), registro: g('fg-reg'), fornecedor_id: g('fg-forn'), fornecedor: nomeSel('fg-forn'), obs: g('fg-obs') },
-    ctr: { ativo: b('fc-on'), data: g('fc-data'), validade: g('fc-val'), fornecedor_id: g('fc-forn'), fornecedor: nomeSel('fc-forn'), obs: g('fc-obs') } } }, 'oper');
+    ctr: { ativo: b('fc-on'), data: g('fc-data'), validade: g('fc-val'), fornecedor_id: g('fc-forn'), fornecedor: nomeSel('fc-forn'), obs: g('fc-obs') } } });
 }
-function fichaSalvarCompl(){
+function fichaSalvarCompl(){ _fichaPatch(_colCompl(), 'compl'); }
+function _colCompl(){
   const g = id => (document.getElementById(id)||{}).value ?? '';
   const b = id => !!(document.getElementById(id)||{}).checked;
   const usar = (document.querySelector('input[name="ic-ident"]:checked')||{}).value || 'estrutura';
-  _fichaPatch({ criticidade: g('fp-crit'),
+  return ({ criticidade: g('fp-crit'),
     info_compl: {
       tipos: { viatura: b('ic-viatura'), emm: b('ic-emm'), ferramenta: b('ic-ferr') },
       ident: { usar, matricula: g('ic-matr'), cod_emm: g('ic-cemm'), cod_u1: g('ic-u1'), cod_u2: g('ic-u2') },
       inativo_desde: g('ic-inat-desde'), guardar_hist: b('ic-hist'),
-      familia: g('ic-familia'), combustivel: g('ic-comb') } }, 'compl');
+      familia: g('ic-familia'), combustivel: g('ic-comb') } });
 }
 // (14/09/2026) Navegação entre fichas (formato MWW): percorre a lista visível
 // da Frota na ordem em que está na tela e vai marcando a linha ao fundo.
@@ -3680,7 +3582,7 @@ async function fichaNovaNota(){
     await mntFetch('/manutencao/api/equipamentos/'+_eqFicha.id+'/notas', {method:'POST', body: JSON.stringify({descricao: txt})});
     const dest = _eqFichaDestino;
     await verEquipReal(_eqFicha.id, dest);
-    fichaAba('notas');
+    { const t = document.querySelectorAll('.ne-tab'); if (t[4]) neAba(4, t[4]); }
   } catch(e){ mostrarToast('❌ '+e.message,'warn'); }
 }
 async function fichaDelNota(nid){
@@ -3689,7 +3591,7 @@ async function fichaDelNota(nid){
     await mntFetch('/manutencao/api/equipamentos/'+_eqFicha.id+'/notas/'+nid, {method:'DELETE'});
     const dest = _eqFichaDestino;
     await verEquipReal(_eqFicha.id, dest);
-    fichaAba('notas');
+    { const t = document.querySelectorAll('.ne-tab'); if (t[4]) neAba(4, t[4]); }
   } catch(e){ mostrarToast('❌ '+e.message,'warn'); }
 }
 
