@@ -1847,6 +1847,20 @@ async def analises_equipamento(eq_id: str, ano: int = None, _auth=Depends(verifi
             "manuais": manuais}
 
 
+@router.delete("/manutencao/api/equipamentos/{eq_id}/foto")
+async def foto_equipamento_excluir(eq_id: str, payload=Depends(verificar_manutencao)):
+    """(14/09/2026) Remove a figura do objecto: apaga do Storage e limpa foto_path."""
+    eq = await ajard_query("SELECT id, foto_path FROM operacional.equipamentos WHERE id=%s", (eq_id,), fetch="one")
+    if not eq:
+        raise HTTPException(status_code=404, detail="Equipamento não encontrado")
+    if eq.get("foto_path"):
+        try:
+            storage_delete([eq["foto_path"]])
+        except Exception:
+            pass
+    await ajard_query("UPDATE operacional.equipamentos SET foto_path=NULL WHERE id=%s", (eq_id,), fetch="none")
+    return {"ok": True}
+
 @router.post("/manutencao/api/equipamentos/{eq_id}/foto")
 async def foto_equipamento(eq_id: str, foto: UploadFile = File(...), payload=Depends(verificar_manutencao)):
     """Figura do equipamento — Supabase Storage (bucket garra-fotos,
