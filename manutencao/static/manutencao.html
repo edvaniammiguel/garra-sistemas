@@ -1638,10 +1638,10 @@ async function neSeletor(tipo){
     + '<div style="padding:8px 14px;display:flex;gap:8px;align-items:center;border-bottom:1px solid #e3e6f0">'
     + (cfg.novo ? '<button class="btn" title="Novo cadastro sem sair da ficha" onclick="neSelNovo(\''+tipo+'\')">\u2795 Novo</button>' : '')
     + '<input id="ne-sel-busca" placeholder="Procurar\u2026" style="flex:1" oninput="neSelFiltrar(this.value)"><button class="btn" onclick="document.getElementById(\'ne-sel-busca\').value=\'\';neSelFiltrar(\'\')">Limpar Filtro</button>'
-    + '<button class="btn" style="background:#1A2A5E;color:#fff" title="Abre o cadastro completo" onclick="document.getElementById(\'ne-sel\').remove();_NE_SEL[\''+tipo+'\'].vaiPara()">\u21e8 Vai Para</button></div>'
+    + '<button class="btn" style="background:#1A2A5E;color:#fff" title="Confirma o item selecionado" onclick="neSelConfirmar(\''+tipo+'\')">\u21e8 Vai Para</button></div>'
     + '<div id="ne-sel-novo" style="display:none;padding:10px 14px;border-bottom:1px solid #e3e6f0;background:#f7f8fc"></div>'
     + '<div style="overflow:auto;flex:1"><table style="width:100%;border-collapse:collapse"><tbody id="ne-sel-lista">'+linhas+'</tbody></table></div>'
-    + '<div style="padding:6px 14px;border-top:1px solid #e3e6f0;font-size:11px;color:#6b7280"><span id="ne-sel-qtd">'+_neSelItens.length+'</span> '+cfg.titulo+' \u00b7 duplo clique seleciona \u00b7 Vai Para abre o cadastro</div>'
+    + '<div style="padding:6px 14px;border-top:1px solid #e3e6f0;font-size:11px;color:#6b7280"><span id="ne-sel-qtd">'+_neSelItens.length+'</span> '+cfg.titulo+' \u00b7 clique marca \u00b7 duplo clique ou Vai Para confirma</div>'
     + '</div></div>';
   const w=document.createElement('div'); w.innerHTML=html; document.body.appendChild(w.firstChild);
   const st=document.createElement('style'); st.textContent='#ne-sel-lista tr{cursor:pointer} #ne-sel-lista td{padding:6px 10px;border-bottom:1px solid #f1f3f8} #ne-sel-lista tr.on{background:#dbe6ff;outline:1px dotted #1A2A5E}'; document.getElementById('ne-sel').appendChild(st);
@@ -1649,6 +1649,7 @@ async function neSeletor(tipo){
 }
 function neSelFiltrar(q){ q=(q||'').toLowerCase().trim(); let n=0; document.querySelectorAll('#ne-sel-lista tr').forEach(tr=>{ const ok=!q||tr.dataset.busca.includes(q); tr.style.display=ok?'':'none'; if(ok)n++; }); const c=document.getElementById('ne-sel-qtd'); if(c)c.textContent=n; }
 function neSelMarcar(i){ document.querySelectorAll('#ne-sel-lista tr').forEach(tr=>tr.classList.toggle('on', String(tr.dataset.i)===String(i))); }
+function neSelConfirmar(tipo){ const tr=document.querySelector('#ne-sel-lista tr.on'); if(!tr){ mostrarToast('Selecione um item na lista','warn'); return; } neSelEscolher(tipo, tr.dataset.i); }
 function neSelEscolher(tipo,i){ const it=_neSelItens[i]; if(!it) return; _NE_SEL[tipo].aplicar(it); document.getElementById('ne-sel')?.remove(); }
 function neSelNovo(tipo){
   const cfg=_NE_SEL[tipo]; const box=document.getElementById('ne-sel-novo'); if(!cfg||!cfg.novo||!box) return;
@@ -1674,9 +1675,9 @@ function neTiposObjectos(){
   const html = '<div id="to-modal" style="position:fixed;inset:0;background:rgba(10,16,40,.45);z-index:9999;display:flex;align-items:center;justify-content:center" onclick="if(event.target===this)this.remove()">'
     + '<div style="background:#fff;border-radius:10px;width:560px;max-width:95vw;max-height:80vh;display:flex;flex-direction:column;box-shadow:0 12px 40px rgba(0,0,0,.3)">'
     + '<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;border-bottom:1px solid #e3e6f0"><b style="color:#1A2A5E">T&nbsp; Tipos Objectos</b><button class="btn" onclick="document.getElementById(\'to-modal\').remove()">\u2715</button></div>'
-    + '<div style="padding:8px 14px;display:flex;gap:8px;align-items:center;border-bottom:1px solid #e3e6f0"><input id="to-busca" placeholder="Procurar\u2026" style="flex:1" oninput="neTipoFiltrar(this.value)"><button class="btn" onclick="document.getElementById(\'to-busca\').value=\'\';neTipoFiltrar(\'\')">Limpar Filtro</button><button class="btn" style="background:#1A2A5E;color:#fff" title="Abre o cadastro do tipo selecionado (Parametrizar)" onclick="neTipoVaiPara()">\u21e8 Vai Para</button></div>'
+    + '<div style="padding:8px 14px;display:flex;gap:8px;align-items:center;border-bottom:1px solid #e3e6f0"><input id="to-busca" placeholder="Procurar\u2026" style="flex:1" oninput="neTipoFiltrar(this.value)"><button class="btn" onclick="document.getElementById(\'to-busca\').value=\'\';neTipoFiltrar(\'\')">Limpar Filtro</button><button class="btn" style="background:#1A2A5E;color:#fff" title="Confirma o tipo selecionado" onclick="neTipoEscolher(null,true)">\u21e8 Vai Para</button></div>'
     + '<div style="overflow:auto;flex:1"><table class="mtab-table" style="width:100%;border-collapse:collapse"><thead><tr><th style="text-align:left;padding:6px 10px;border-bottom:1px solid #e3e6f0">C\u00f3digo</th><th style="text-align:left;padding:6px 10px;border-bottom:1px solid #e3e6f0">Descri\u00e7\u00e3o</th></tr></thead><tbody id="to-lista">'+linhas+'</tbody></table></div>'
-    + '<div style="padding:6px 14px;border-top:1px solid #e3e6f0;font-size:11px;color:#6b7280"><span id="to-qtd">'+tipos.length+'</span> Tipos Objectos \u00b7 duplo clique seleciona \u00b7 Vai Para abre o cadastro do tipo</div>'
+    + '<div style="padding:6px 14px;border-top:1px solid #e3e6f0;font-size:11px;color:#6b7280"><span id="to-qtd">'+tipos.length+'</span> Tipos Objectos \u00b7 clique marca \u00b7 duplo clique ou Vai Para confirma</div>'
     + '</div></div>';
   const w = document.createElement('div'); w.innerHTML = html; document.body.appendChild(w.firstChild);
   const st = document.createElement('style'); st.textContent = '#to-lista tr{cursor:pointer} #to-lista td{padding:6px 10px;border-bottom:1px solid #f1f3f8} #to-lista tr.on{background:#dbe6ff;outline:1px dotted #1A2A5E}'; document.getElementById('to-modal').appendChild(st);
@@ -3272,24 +3273,55 @@ function fichaAba(aba){
       + '<button class="btn p" onclick="fichaSalvarCarac()">💾 Salvar</button></div>';
   }
   if (aba === 'oper'){
-    const g = (e.garantia && e.garantia.gar) || {};
-    const ct = (e.garantia && e.garantia.ctr) || {};
-    c.innerHTML = '<div class="dsec">Funcionamento médio (calculado por registros do Operacional)</div>'
-      + '<div id="fi-ritmo" class="muted" style="padding:4px 0">calculando…</div>'
-      + '<div style="display:flex;gap:14px;margin-top:8px"><div style="flex:1"><div class="dsec">Garantia</div><div class="mgrid">'
-      + fld('Até (data)','<input id="fg-data" type="date" value="'+_esc(g.data||'')+'">')
-      + fld('Ou até (horím./KM)','<input id="fg-reg" type="number" value="'+_esc(g.registro||'')+'">')
-      + '</div>'+fld('Fornecedor da garantia','<input id="fg-forn" value="'+_esc(g.fornecedor||'')+'">')
-      + '</div><div style="flex:1"><div class="dsec">Contrato de manutenção</div><div class="mgrid">'
-      + fld('Início','<input id="fc-data" type="date" value="'+_esc(ct.data||'')+'">')
-      + fld('Válido até','<input id="fc-val" type="date" value="'+_esc(ct.validade||'')+'">')
-      + '</div>'+fld('Fornecedor do contrato','<input id="fc-forn" value="'+_esc(ct.fornecedor||'')+'">')
-      + '</div></div><div style="display:flex;justify-content:flex-end;margin-top:10px"><button class="btn p" onclick="fichaSalvarOper()">💾 Salvar</button></div>';
+    // (14/09/2026) Espelho da aba Dados Operacionais do ManWinWin: Tempos ·
+    // Funcionamento Médio Diário · Garantia · Contrato Manutenção. Tudo gravado
+    // no JSON `garantia` do equipamento (chaves gar/ctr já existiam; tempos/fmd novas).
+    const G = e.garantia || {};
+    const g = G.gar || {}, ct = G.ctr || {}, tp = G.tempos || {}, fm = G.fmd || {};
+    const unid = e.medicao === 'km' ? 'KM' : 'H';
+    const ultReg = e.medicao === 'km' ? (e.km_atual ?? '') : (e.horimetro_atual ?? '');
+    const chk = (id, on, rot) => '<label style="display:flex;align-items:center;gap:6px;font-size:12px;color:#1A2A5E"><input type="checkbox" id="'+id+'"'+(on?' checked':'')+'> '+rot+'</label>';
+    const fornSel = (id, val) => '<select id="'+id+'" data-val="'+_esc(val||'')+'"><option value="">— carregando —</option></select>';
+    c.innerHTML =
+        '<div style="display:flex;gap:14px">'
+      + '<div style="flex:0 0 260px"><div class="dsec">Tempos</div><div style="display:flex;flex-direction:column;gap:6px;padding:6px 0">'
+      +   chk('fo-trq', !!tp.trq, 'TRQ — Independente da hierarquia') + chk('fo-tf', !!tp.tf, 'TF — Independente da hierarquia') + '</div></div>'
+      + '<div style="flex:1"><div class="dsec">Funcionamento Médio Diário</div><div class="mgrid" style="grid-template-columns:repeat(5,1fr)">'
+      +   fld('FMD','<input id="fo-fmd" type="number" step="0.01" value="'+_esc(fm.valor ?? '')+'"'+(fm.calc?' readonly style="background:#f1f3f8"':'')+'>')
+      +   fld('Unidade','<select id="fo-unid"><option'+((fm.unidade||unid)==='H'?' selected':'')+'>H</option><option'+((fm.unidade||unid)==='KM'?' selected':'')+'>KM</option></select>')
+      +   fld('Data','<input id="fo-fmd-data" type="date" value="'+_esc(fm.data||'')+'">')
+      +   fld('Últ. Reg. ('+unid+')','<input id="fo-ult" value="'+_esc(ultReg)+'" readonly style="background:#f1f3f8">')
+      +   fld('Reg. Par. ('+unid+')','<input id="fo-par" type="number" step="0.01" value="'+_esc(fm.reg_par ?? '')+'">')
+      + '</div><div style="display:flex;gap:14px;align-items:center;margin-top:6px">'
+      +   chk('fo-calc', !!fm.calc, 'Calcular por registos') + '<span id="fi-ritmo" class="muted" style="font-size:11px">calculando…</span></div>'
+      +   fld('Obj. Contador','<input id="fo-contador" value="'+_esc(fm.contador||'')+'" placeholder="objecto cujo contador alimenta este (opcional)">')
+      + '</div></div>'
+      + '<div style="display:flex;gap:14px;margin-top:10px">'
+      + '<div style="flex:1"><div class="dsec">Garantia</div>' + chk('fg-on', !!g.ativo, 'Garantia') + '<div class="mgrid">'
+      +   fld('Data','<input id="fg-data" type="date" value="'+_esc(g.data||'')+'">')
+      +   fld('Registo ('+unid+')','<input id="fg-reg" type="number" value="'+_esc(g.registro||'')+'">')
+      + '</div>'+fld('Fornecedor', fornSel('fg-forn', g.fornecedor_id))
+      +   fld('Observações','<textarea id="fg-obs" rows="3">'+_esc(g.obs||'')+'</textarea>') + '</div>'
+      + '<div style="flex:1"><div class="dsec">Contrato Manutenção</div>' + chk('fc-on', !!ct.ativo, 'Contrato') + '<div class="mgrid">'
+      +   fld('Data','<input id="fc-data" type="date" value="'+_esc(ct.data||'')+'">')
+      +   fld('Válido até','<input id="fc-val" type="date" value="'+_esc(ct.validade||'')+'">')
+      + '</div>'+fld('Fornecedor', fornSel('fc-forn', ct.fornecedor_id))
+      +   fld('Observações','<textarea id="fc-obs" rows="3">'+_esc(ct.obs||'')+'</textarea>') + '</div>'
+      + '</div><div style="display:flex;justify-content:flex-end;margin-top:10px"><button class="btn p" onclick="fichaSalvarOper()">💾 Salvar</button></div>';
+    // fornecedores nos dois selects (mostra só o nome)
+    mntFetch('/manutencao/api/fornecedores').then(r => {
+      const lista = Array.isArray(r) ? r : (r.itens || []);
+      ['fg-forn','fc-forn'].forEach(id => { const el = document.getElementById(id); if (!el) return; const v = el.dataset.val;
+        el.innerHTML = '<option value="">—</option>' + lista.map(f => '<option value="'+f.id+'"'+(String(f.id)===String(v)?' selected':'')+'>'+_esc(f.nome)+'</option>').join(''); });
+    }).catch(()=>{});
+    // FMD-R calculado pelos registos do Operacional
     mntFetch('/manutencao/api/equipamentos/'+e.id+'/ritmo').then(r => {
-      document.getElementById('fi-ritmo').innerHTML = r.media_h_dia
-        ? '<b style="color:#1A2A5E">FMD-R: '+r.media_h_dia+' '+(e.medicao==='km'?'km':'h')+'/dia</b> · '+r.total_horas_60d+' em 60 dias ('+r.dias_com_uso+' dias com uso) — alimenta a reprogramação'
-        : 'Sem partes diárias nos últimos 60 dias.';
-    }).catch(()=>{ document.getElementById('fi-ritmo').textContent = '—'; });
+      const el = document.getElementById('fi-ritmo'); if (!el) return;
+      el.innerHTML = r.media_h_dia ? 'FMD-R: <b style="color:#1A2A5E">'+r.media_h_dia+' '+unid.toLowerCase()+'/dia</b> · '+r.total_horas_60d+' em 60 dias ('+r.dias_com_uso+' dias com uso)' : 'Sem partes diárias nos últimos 60 dias.';
+      const ck = document.getElementById('fo-calc'), fmd = document.getElementById('fo-fmd');
+      const aplicar = () => { if (ck.checked) { fmd.value = r.media_h_dia || ''; fmd.readOnly = true; fmd.style.background = '#f1f3f8'; } else { fmd.readOnly = false; fmd.style.background = ''; } };
+      ck.onchange = aplicar; if (ck.checked) aplicar();
+    }).catch(()=>{ const el = document.getElementById('fi-ritmo'); if (el) el.textContent = '—'; });
   }
   if (aba === 'compl'){
     c.innerHTML = '<div class="dsec">Complementares</div><div class="mgrid">'
@@ -3358,10 +3390,14 @@ function fichaSalvarCarac(){
   _fichaPatch({ caracteristicas: pares }, 'carac');
 }
 function fichaSalvarOper(){
-  const g = id => document.getElementById(id).value;
+  const g = id => (document.getElementById(id)||{}).value ?? '';
+  const b = id => !!(document.getElementById(id)||{}).checked;
+  const nomeSel = id => { const el = document.getElementById(id); return el && el.selectedIndex > 0 ? el.options[el.selectedIndex].text : ''; };
   _fichaPatch({ garantia: {
-    gar: { data: g('fg-data'), registro: g('fg-reg'), fornecedor: g('fg-forn') },
-    ctr: { data: g('fc-data'), validade: g('fc-val'), fornecedor: g('fc-forn') } } }, 'oper');
+    tempos: { trq: b('fo-trq'), tf: b('fo-tf') },
+    fmd: { valor: g('fo-fmd'), unidade: g('fo-unid'), data: g('fo-fmd-data'), reg_par: g('fo-par'), calc: b('fo-calc'), contador: g('fo-contador') },
+    gar: { ativo: b('fg-on'), data: g('fg-data'), registro: g('fg-reg'), fornecedor_id: g('fg-forn'), fornecedor: nomeSel('fg-forn'), obs: g('fg-obs') },
+    ctr: { ativo: b('fc-on'), data: g('fc-data'), validade: g('fc-val'), fornecedor_id: g('fc-forn'), fornecedor: nomeSel('fc-forn'), obs: g('fc-obs') } } }, 'oper');
 }
 function fichaSalvarCompl(){
   const g = id => document.getElementById(id).value;
