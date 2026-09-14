@@ -1607,7 +1607,7 @@ async function repetirOTMW(){
 // Dados Operacionais · Info. Complementares · Notas. OK grava e abre a ficha;
 // Aplicar grava e mantém a janela (para continuar preenchendo).
 let _mwDom = null, _neEditId = null;
-async function novoEquipMW(copiarDe){
+async function novoEquipMW(copiarDe, editar){
   if (!_mwDom){
     const g = async d => { try { return (await mntFetch('/manutencao/api/param/'+d)).filter(x => x.ativo !== false); } catch(e){ return []; } };
     let ops = [], forn = [];
@@ -1621,7 +1621,12 @@ async function novoEquipMW(copiarDe){
   if (copiarDe){
     try { const d = await mntFetch('/manutencao/api/equipamentos/'+copiarDe+'/detalhe'); base = d.equipamento || d || {}; }
     catch(e){ base = _navEquipObjs().find(x => String(x.id) === String(copiarDe)) || {}; }
+    if (typeof base.caracteristicas === 'string') { try { base.caracteristicas = JSON.parse(base.caracteristicas); } catch(x){ base.caracteristicas = []; } }
+    if (typeof base.garantia === 'string') { try { base.garantia = JSON.parse(base.garantia); } catch(x){ base.garantia = {}; } }
+    if (typeof base.info_compl === 'string') { try { base.info_compl = JSON.parse(base.info_compl); } catch(x){ base.info_compl = {}; } }
   }
+  // (14/09/2026) MESMA janela para criar, ver e editar (réplica MWW "Objecto").
+  if (editar && copiarDe) { _neEditId = copiarDe; _eqFicha = base; }
   const sisAtivo = (typeof _arvNoAtivo === 'string' && _arvNoAtivo !== '_todos') ? _arvNoAtivo : (base.sistema_codigo || '');
   const tipoIni = base.tipo_sigla || (sisAtivo ? _neTipoDoSistema(sisAtivo) : '') || '';
   const sel = (id, lista, val, chave, rot, vazio) => '<select id="'+id+'" onchange="'+(id==='ne-tipo'?'neTipoMudou()':'')+'"><option value="">'+(vazio||'\u2014')+'</option>'
@@ -1633,8 +1638,8 @@ async function novoEquipMW(copiarDe){
 
   document.querySelector('#eq-ficha .modal').classList.add('larga');
   document.getElementById('eq-ficha-corpo').innerHTML =
-    '<div style="display:flex;justify-content:space-between;align-items:center"><b style="font-size:14px;color:#1A2A5E">\u2699\ufe0f Novo Objecto'
-    + (copiarDe?' <span class="muted" style="font-weight:400;font-size:11px">(repetindo '+_esc(base.codigo||'')+')</span>':'')+'</b>'
+    '<div style="display:flex;justify-content:space-between;align-items:center"><b style="font-size:14px;color:#1A2A5E">\u2699\ufe0f '+(editar?'Objecto':'Novo Objecto')
+    + (copiarDe && !editar ? ' <span class="muted" style="font-weight:400;font-size:11px">(repetindo '+_esc(base.codigo||'')+')</span>' : '')+'</b>'
     + '<span style="cursor:pointer;font-size:18px" onclick="fichaFechar()">\u2715</span></div>'
     // ── Estrutura (cabeçalho fixo) ──
     + '<div class="ne-cab">'
@@ -1668,7 +1673,9 @@ async function novoEquipMW(copiarDe){
     + '<div style="flex:0 0 380px;display:flex;flex-direction:column;gap:6px">'
     + '<div id="ne-fig-box" style="flex:1;min-height:300px;border:1px solid #93C5FD;background:#F8FAFC;display:flex;align-items:center;justify-content:center;color:#94A3B8;font-size:11px;overflow:hidden;cursor:pointer" title="Clique para escolher a foto" onclick="document.getElementById(\'ne-figura\').click()">'
     + (base.foto_url ? '<img src="'+_esc(base.foto_url)+'" style="max-width:100%;max-height:100%;object-fit:contain">' : 'Figura \u2014 clique para escolher a foto')+'</div>'
-    + '<input type="file" id="ne-figura" accept="image/*" style="display:none" onchange="nePrevia(this)"></div>'
+    + '<input type="file" id="ne-figura" accept="image/*" style="display:none" onchange="nePrevia(this)">'
+    + '<div style="display:flex;gap:6px;justify-content:flex-end"><button class="btn" title="Escolher outra foto" onclick="document.getElementById(\'ne-figura\').click()">\ud83d\udcf7 Trocar</button>'
+    + '<button class="btn" id="ne-fig-del" title="Excluir a foto do cadastro" style="'+(base.foto_url?'':'display:none')+'" onclick="neExcluirFoto()">\ud83d\uddd1 Excluir foto</button></div></div>'
     + '</div></div>'
     // aba 1 — Características (pares nome/valor)
     + '<div class="ne-pane" id="ne-p1"><div class="muted" style="font-size:10px;margin-bottom:6px">Caracter\u00edsticas t\u00e9cnicas (nome = valor). Para pneus: Recapagens \u00b7 DOT/s\u00e9rie \u00b7 Medida.</div>'
@@ -1693,6 +1700,25 @@ async function novoEquipMW(copiarDe){
     + '<div style="display:flex;justify-content:flex-end;gap:8px;margin-top:10px;border-top:1px solid #E2E8F0;padding-top:8px">'
     + '<button class="btn p" style="min-width:90px" onclick="neSalvar(true)">OK</button><button class="btn" onclick="fichaFechar()">Cancelar</button><button class="btn" onclick="neSalvar(false)">Aplicar</button></div>';
   document.getElementById('eq-ficha').classList.add('show');
+  if (editar && copiarDe) {
+    // código é identidade histórica: não se edita
+    const cod = document.getElementById('ne-cod'); if (cod) { cod.value = base.codigo || ''; cod.readOnly = true; cod.style.background = '#f1f3f8'; }
+    ['ne-sigla','ne-num'].forEach(i => { const el = document.getElementById(i); if (el) { el.disabled = true; el.style.background = '#f1f3f8'; } });
+    const sg = document.getElementById('ne-sigla'); if (sg) sg.value = base.tipo_sigla || sg.value;
+    const nm = document.getElementById('ne-num'); if (nm && base.codigo) nm.value = String(base.codigo).split('-').slice(1).join('-');
+    const dsc = document.getElementById('ne-desc'); if (dsc) dsc.value = base.descricao || '';
+    const nt = document.getElementById('ne-notas'); if (nt) nt.value = base.notas || '';
+    const pl = document.getElementById('ne-placa'); if (pl) pl.value = base.placa || '';
+    // blocos completos do MWW (Dados Operacionais · Info. Complementares · Notas-diário) abaixo dos campos base
+    [['ne-p2','oper'],['ne-p3','compl'],['ne-p4','notas']].forEach(([pid, aba]) => {
+      const pane = document.getElementById(pid); if (!pane) return;
+      const d = document.createElement('div'); d.style.marginTop = '10px'; d.style.borderTop = '1px solid #E2E8F0'; d.style.paddingTop = '8px'; pane.appendChild(d); fichaAba(aba, d);
+    });
+    // navegação ⏮ ◀ n/N ▶ ⏭ no rodapé
+    const rod = document.querySelector('#eq-ficha-corpo .ne-pane')?.parentElement?.lastElementChild;
+    if (rod && rod.querySelector('button')) { const nav = document.createElement('div'); nav.style.marginRight = 'auto'; nav.innerHTML = fichaNavBarra(); rod.prepend(nav); }
+    return;
+  }
   neProximo();
 }
 function _neTipoDoSistema(cod){
@@ -1702,11 +1728,23 @@ function _neTipoDoSistema(cod){
   const t = (_mwDom.tipos||[]).find(x => nome.indexOf((x.nome||'').toUpperCase()) >= 0 || (x.nome||'').toUpperCase().indexOf(nome) >= 0);
   return t ? t.sigla : '';
 }
+async function neExcluirFoto(){
+  const id = _neEditId; if (!id) { mostrarToast('Grave o objecto antes de mexer na foto','warn'); return; }
+  if (!confirm('Excluir a foto deste objecto?')) return;
+  try {
+    await mntFetch('/manutencao/api/equipamentos/'+id+'/foto', {method:'DELETE'});
+    const box = document.getElementById('ne-fig-box'); if (box) box.innerHTML = 'Figura \u2014 clique para escolher a foto';
+    const b = document.getElementById('ne-fig-del'); if (b) b.style.display = 'none';
+    if (_eqFicha && String(_eqFicha.id) === String(id)) _eqFicha.foto_url = null;
+    mostrarToast('\u2705 Foto exclu\u00edda','ok');
+  } catch(e){ mostrarToast('\u274c '+e.message,'warn'); }
+}
 function nePrevia(inp){
   const f = inp.files && inp.files[0]; if (!f) return;
   const box = document.getElementById('ne-fig-box'); if (!box) return;
   const url = URL.createObjectURL(f);
   box.innerHTML = '<img src="'+url+'" style="max-width:100%;max-height:100%;object-fit:contain">';
+  const b = document.getElementById('ne-fig-del'); if (b && _neEditId) b.style.display = '';
 }
 async function neEnviarFoto(id){
   const inp = document.getElementById('ne-figura'); const f = inp && inp.files && inp.files[0];
@@ -1893,6 +1931,7 @@ function neCodigo(){
   el.title = dup ? 'Já existe um objecto com este código' : '';
 }
 async function neSalvar(fechar){
+  const eraEdicao = !!_neEditId;
   const v = i => ((document.getElementById(i)||{}).value || '').trim();
   const codigo = v('ne-cod').toUpperCase(), descricao = v('ne-desc'), categoria = v('ne-cat').toLowerCase();
   if (!codigo || !descricao){ mostrarToast('C\u00f3digo e descri\u00e7\u00e3o s\u00e3o obrigat\u00f3rios','warn'); return; }
@@ -1919,8 +1958,8 @@ async function neSalvar(fechar){
     }
     if (id) await mntFetch('/manutencao/api/equipamentos/'+id+'/ficha', {method:'PATCH', headers:{'Content-Type':'application/json'}, body: JSON.stringify(ficha)});
     if (id) await neEnviarFoto(id);
-    mostrarToast('\u2705 '+codigo+(fechar?' criado':' gravado \u2014 continue preenchendo'),'ok');
-    if (fechar){ fichaFechar(); await carregarSemaforosReais(); if (id){ _mwSel.frota = id; verEquipReal(id); } }
+    mostrarToast('\u2705 '+codigo+(eraEdicao?' gravado':(fechar?' criado':' gravado \u2014 continue preenchendo')),'ok');
+    if (fechar){ fichaFechar(); await carregarSemaforosReais(); if (id && !eraEdicao){ _mwSel.frota = id; verEquipReal(id); } }
   } catch(e){ mostrarToast('\u274c '+e.message,'warn'); }
 }
 
@@ -3339,7 +3378,7 @@ async function verEquipReal(id, destino){
     if (typeof e.caracteristicas === 'string') { try { e.caracteristicas = JSON.parse(e.caracteristicas); } catch(x){ e.caracteristicas = []; } }
     if (typeof e.garantia === 'string') { try { e.garantia = JSON.parse(e.garantia); } catch(x){ e.garantia = {}; } }
     _eqFicha = e; _eqFichaDestino = destino || null;
-    fichaAba('ident');
+    await novoEquipMW(id, true);
   } catch(e) { mostrarToast('❌ '+e.message,'warn'); }
 }
 function _fichaEscreve(html){
@@ -3351,7 +3390,7 @@ function _fichaEscreve(html){
     document.getElementById('eq-ficha').classList.add('show');
   }
 }
-function fichaAba(aba){
+function fichaAba(aba, alvo){
   const e = _eqFicha; if (!e) return;
   const sem = _semCache.find(s => String(s.id) === String(e.id)) || {};
   const dot = ({vermelho:'r',laranja:'o',amarelo:'y',verde:'g'})[sem.status] || 'g';
@@ -3369,8 +3408,8 @@ function fichaAba(aba){
     + '<div class="mtabs" style="margin-top:8px">'
     + ABAS.map(([k,t]) => '<div class="mtab'+(k===aba?' on':'')+'" onclick="fichaAba(\''+k+'\')">'+t+'</div>').join('')
     + '</div><div id="ficha-corpo"></div>';
-  _fichaEscreve(html);
-  const c = document.getElementById('ficha-corpo');
+  if (!alvo) _fichaEscreve(html);
+  const c = alvo || document.getElementById('ficha-corpo');
   const fld = (rot, inner) => '<div class="mfield">'+rot+inner+'</div>';
   if (aba === 'ident'){
     // (14/09/2026) Paridade com a ficha Novo Objecto: mesmos campos e os mesmos
