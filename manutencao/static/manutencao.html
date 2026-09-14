@@ -1515,7 +1515,7 @@ async function novoEquipMW(copiarDe){
     + '<span style="cursor:pointer;font-size:18px" onclick="fichaFechar()">\u2715</span></div>'
     // ── Estrutura (cabeçalho fixo) ──
     + '<div class="ne-cab">'
-    + '<div class="ne-f" style="flex:0 0 190px"><span class="ne-l r">Estrutura:</span><div style="display:flex;gap:4px;align-items:center"><input id="ne-sigla" list="ne-sigla-l" style="width:60px;text-transform:uppercase" value="'+_esc(tipoIni)+'" oninput="neSiglaMudou()" placeholder="EH"><datalist id="ne-sigla-l">'+_mwDom.tipos.map(t=>'<option value="'+_esc(t.sigla)+'">'+_esc(t.nome||'')+'</option>').join('')+'</datalist><span>-</span><input id="ne-num" style="width:64px" oninput="neCodigo()"><button class="btn" title="Pr\u00f3ximo n\u00famero livre" onclick="neProximo()">\u2026</button></div></div>'
+    + '<div class="ne-f" style="flex:0 0 190px"><span class="ne-l r">Estrutura:</span><div style="display:flex;gap:4px;align-items:center"><input id="ne-sigla" list="ne-sigla-l" style="width:60px;text-transform:uppercase" value="'+_esc(tipoIni)+'" oninput="neSiglaMudou()" placeholder="EH"><datalist id="ne-sigla-l">'+_mwDom.tipos.map(t=>'<option value="'+_esc(t.sigla)+'">'+_esc(t.nome||'')+'</option>').join('')+'</datalist><span>-</span><input id="ne-num" style="width:64px" oninput="neCodigo()"><button class="btn" title="Tipos Objectos \u2014 escolher o tipo (preenche Estrutura, Tipo e pr\u00f3ximo n\u00famero)" onclick="neTiposObjectos()">\u2026</button></div></div>'
     + '<div class="ne-f" style="flex:1"><span class="ne-l r">Tipo Objecto:</span>'+sel('ne-tipo', _mwDom.tipos, tipoIni, 'sigla','nome')+'</div>'
     + '<div class="ne-f" style="flex:0 0 150px;align-items:center;justify-content:center"><span style="font-weight:800;color:#0F172A;letter-spacing:.04em">DISPON\u00cdVEL</span> <span style="display:inline-block;width:22px;height:22px;border-radius:50%;background:#16A34A;color:#fff;text-align:center;line-height:22px;font-size:11px;margin-left:6px">\u25b6</span></div>'
     + '</div><div class="ne-cab" style="margin-top:4px">'
@@ -1605,6 +1605,37 @@ function neCarLinha(n, v){
 function neAba(i, el){
   document.querySelectorAll('.ne-tab').forEach(t => t.classList.remove('on')); el.classList.add('on');
   document.querySelectorAll('.ne-pane').forEach((p,k) => p.classList.toggle('on', k === i));
+}
+// (14/09/2026) Seletor "Tipos Objectos" (ManWinWin): lista Código + Descrição,
+// busca, seleção preenche Estrutura + Tipo Objecto e propõe o próximo número.
+function neTiposObjectos(){
+  const tipos = (_mwDom.tipos||[]).slice().sort((a,b)=>String(a.sigla).localeCompare(String(b.sigla)));
+  const atual = (document.getElementById('ne-sigla')?.value||'').toUpperCase().trim();
+  const linhas = tipos.map(t => '<tr class="to-row'+(String(t.sigla).toUpperCase()===atual?' on':'')+'" data-sigla="'+_esc(t.sigla)+'" data-nome="'+_esc((t.nome||'').toLowerCase())+'" onclick="neTipoEscolher(\''+_esc(t.sigla)+'\')" ondblclick="neTipoEscolher(\''+_esc(t.sigla)+'\',true)">'
+      + '<td style="width:70px;font-weight:700;color:#1A2A5E">'+_esc(t.sigla)+'</td><td>'+_esc(t.nome||'')+'</td></tr>').join('');
+  const html = '<div id="to-modal" style="position:fixed;inset:0;background:rgba(10,16,40,.45);z-index:9999;display:flex;align-items:center;justify-content:center" onclick="if(event.target===this)this.remove()">'
+    + '<div style="background:#fff;border-radius:10px;width:560px;max-width:95vw;max-height:80vh;display:flex;flex-direction:column;box-shadow:0 12px 40px rgba(0,0,0,.3)">'
+    + '<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;border-bottom:1px solid #e3e6f0"><b style="color:#1A2A5E">T&nbsp; Tipos Objectos</b><button class="btn" onclick="document.getElementById(\'to-modal\').remove()">\u2715</button></div>'
+    + '<div style="padding:8px 14px;display:flex;gap:8px;align-items:center;border-bottom:1px solid #e3e6f0"><input id="to-busca" placeholder="Procurar\u2026" style="flex:1" oninput="neTipoFiltrar(this.value)"><button class="btn" onclick="document.getElementById(\'to-busca\').value=\'\';neTipoFiltrar(\'\')">Limpar Filtro</button><button class="btn" style="background:#1A2A5E;color:#fff" onclick="neTipoEscolher(null,true)">\u21e8 Vai Para</button></div>'
+    + '<div style="overflow:auto;flex:1"><table class="mtab-table" style="width:100%;border-collapse:collapse"><thead><tr><th style="text-align:left;padding:6px 10px;border-bottom:1px solid #e3e6f0">C\u00f3digo</th><th style="text-align:left;padding:6px 10px;border-bottom:1px solid #e3e6f0">Descri\u00e7\u00e3o</th></tr></thead><tbody id="to-lista">'+linhas+'</tbody></table></div>'
+    + '<div style="padding:6px 14px;border-top:1px solid #e3e6f0;font-size:11px;color:#6b7280"><span id="to-qtd">'+tipos.length+'</span> Tipos Objectos \u00b7 clique seleciona, duplo clique confirma</div>'
+    + '</div></div>';
+  const w = document.createElement('div'); w.innerHTML = html; document.body.appendChild(w.firstChild);
+  const st = document.createElement('style'); st.textContent = '#to-lista tr{cursor:pointer} #to-lista td{padding:6px 10px;border-bottom:1px solid #f1f3f8} #to-lista tr.on{background:#dbe6ff;outline:1px dotted #1A2A5E}'; document.getElementById('to-modal').appendChild(st);
+  setTimeout(()=>document.getElementById('to-busca')?.focus(),30);
+}
+function neTipoFiltrar(q){
+  q = (q||'').toLowerCase().trim(); let n = 0;
+  document.querySelectorAll('#to-lista tr').forEach(tr => { const ok = !q || tr.dataset.sigla.toLowerCase().includes(q) || tr.dataset.nome.includes(q); tr.style.display = ok ? '' : 'none'; if (ok) n++; });
+  const c = document.getElementById('to-qtd'); if (c) c.textContent = n;
+}
+function neTipoEscolher(sigla, confirmar){
+  if (sigla) { document.querySelectorAll('#to-lista tr').forEach(tr => tr.classList.toggle('on', tr.dataset.sigla === sigla)); }
+  const sel = sigla || document.querySelector('#to-lista tr.on')?.dataset.sigla;
+  if (!confirmar || !sel) return;
+  const sg = document.getElementById('ne-sigla'); if (sg) sg.value = sel;
+  neSiglaMudou();
+  document.getElementById('to-modal')?.remove();
 }
 function neSiglaMudou(){
   // Estrutura é o gatilho: a sigla traz Tipo, número, Código, Sistema e categoria
