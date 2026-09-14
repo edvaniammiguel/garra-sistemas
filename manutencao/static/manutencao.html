@@ -473,7 +473,7 @@ function renderCentroEquip(){
   const situDe = e => e.proxima ? '<span style="font-size:10px;color:'+(e.status==='vermelho'?'#DC2626':'#B45309')+'">'+_esc(e.proxima)+'</span>'
              : (e.motivo ? '<span style="font-size:10px;color:#B45309">'+_esc(e.motivo)+'</span>' : '<span class="chip em">Em dia</span>');
   const tr0 = e => '<tr data-id="'+e.id+'" data-cod="'+_esc(e.codigo)+'" '
-      + 'onclick="mwSel(\'frota\',this.dataset.id);this.parentNode.querySelectorAll(\'tr\').forEach(r=>r.classList.remove(\'sel\'));this.classList.add(\'sel\')" '
+      + 'onclick="frotaSelClick(event,this)" '
       + 'ondblclick="verEquipReal(this.dataset.id)" '
       + 'oncontextmenu="showCtxReal(event,this.dataset.id,\'equip\',this.dataset.cod)">';
   const eqs = (_ftModo === 'lista' ? todos.slice() : todos.filter(e => !e.equipamento_pai))
@@ -523,7 +523,7 @@ function renderCentroEquip(){
         + '<td>'+situDe(e)+'</td></tr>';
       if (aberto) linha += filhosDe(e.id).map(f => {
         return '<tr data-id="'+f.id+'" data-cod="'+_esc(f.codigo)+'" style="background:#F8FAFC" '
-          + 'onclick="mwSel(\'frota\',this.dataset.id);this.parentNode.querySelectorAll(\'tr\').forEach(r=>r.classList.remove(\'sel\'));this.classList.add(\'sel\')" '
+          + 'onclick="frotaSelClick(event,this)" '
           + 'ondblclick="verEquipReal(this.dataset.id)" '
           + 'oncontextmenu="showCtxReal(event,this.dataset.id,\'equip\',this.dataset.cod)">'
           + '<td style="text-align:center"><span class="dot '+dotOf(f.status)+'" style="width:7px;height:7px"></span></td>'
@@ -1351,7 +1351,7 @@ const _MW = {
     rotulo:'objecto',
     novo:'novoEquipMW()', abrir:"(function(){const i=_mwPrecisa('frota','objecto'); if(i) verEquipReal(i);})()",
     repetir:"(function(){const i=_mwPrecisa('frota','objecto'); if(i) novoEquipMW(i);})()",
-    excluir:"excluirEquipMW()", imprimir:"mwImprimir('frota-centro','Frota')",
+    excluir:"excluirEquipMW()", imprimir:"imprimirDialogo('frota')",
     botoes:[
       ['\ud83d\udc41','Ver',[['\ud83c\udf33 \u00c1rvore',"ftModo('arv')"],['\u2630 Lista',"ftModo('lista')"],['\u21bb Atualizar sem\u00e1foros',"carregarSemaforosReais()"]]],
       ['\ud83d\udcca','An\u00e1lises',[['\ud83d\udcca Par\u00e2metros do objecto (m\u00eas a m\u00eas)',"(function(){const i=_mwPrecisa('frota','objecto'); if(i) equipAnalises(i);})()"],['\ud83d\udea6 Sem\u00e1foros da frota',"carregarSemaforosReais()"],['\ud83d\udcca An\u00e1lise ABC',"anABC()"]]],
@@ -1455,6 +1455,129 @@ function mwProcurar(aba, txt){
   alvo.value = txt || '';
   alvo.dispatchEvent(new Event('input'));
 }
+// (14/09/2026) Seleção múltipla na Frota (Ctrl = alterna, Shift = intervalo) —
+// alimenta o escopo "seleccionados" do diálogo de impressão.
+let _frotaUltimoSel = null;
+function frotaSelClick(ev, tr){
+  const trs = [...tr.parentNode.querySelectorAll('tr[data-id]')];
+  if (ev.shiftKey && _frotaUltimoSel) {
+    const a = trs.findIndex(x => x.dataset.id === _frotaUltimoSel), b = trs.indexOf(tr);
+    const [i0, i1] = a < b ? [a, b] : [b, a];
+    trs.forEach((x, i) => x.classList.toggle('sel', i >= i0 && i <= i1));
+  } else if (ev.ctrlKey || ev.metaKey) {
+    tr.classList.toggle('sel');
+  } else {
+    trs.forEach(x => x.classList.remove('sel')); tr.classList.add('sel');
+  }
+  _frotaUltimoSel = tr.dataset.id; mwSel('frota', tr.dataset.id);
+}
+function _frotaSelecionados(){ return [...document.querySelectorAll('#frota-centro tr[data-id].sel')].map(t => t.dataset.id); }
+function _frotaListados(){ return [...document.querySelectorAll('#frota-centro tr[data-id]')].map(t => t.dataset.id).filter((v,i,a)=>a.indexOf(v)===i); }
+
+// ══ Diálogo genérico "Imprimir" — padrão ManWinWin (escopo × tipo × destino) ══
+// Reutilizável por módulo: cada módulo declara escopos, tipos e o gerador de HTML.
+const _IMP = {
+  frota: {
+    titulo: 'Imprimir Objectos',
+    atual: () => { const id = _mwSel.frota; const e = id && _navEquipObjs().find(x => String(x.id) === String(id)); return e ? { id, rot: e.codigo + ' — ' + (e.descricao||'') } : null; },
+    selecionados: () => _frotaSelecionados(),
+    todos: () => _frotaListados(),
+    tipos: [['ficha','Ficha do Objecto'],['lista','Lista simples'],['etiqueta','Etiqueta (QR)'],['agrupado','Agrupados por Sistema']],
+    gerar: imprimirFrotaHTML
+  }
+};
+function imprimirDialogo(mod){
+  const M = _IMP[mod]; if (!M) return;
+  const at = M.atual(), sel = M.selecionados(), tod = M.todos();
+  const r = (name, val, rot, on, dis) => '<label style="display:flex;align-items:center;gap:8px;font-size:12px;padding:3px 0;'+(dis?'color:#94A3B8':'color:#1A2A5E')+'"><input type="radio" name="'+name+'" value="'+val+'"'+(on?' checked':'')+(dis?' disabled':'')+'> '+rot+'</label>';
+  const html = '<div id="imp-dlg" style="position:fixed;inset:0;background:rgba(10,16,40,.45);z-index:9999;display:flex;align-items:center;justify-content:center" onclick="if(event.target===this)this.remove()">'
+    + '<div style="background:#fff;border-radius:10px;width:520px;max-width:95vw;box-shadow:0 12px 40px rgba(0,0,0,.3)">'
+    + '<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;border-bottom:1px solid #e3e6f0"><b style="color:#1A2A5E">🖨 '+M.titulo+'</b><button class="btn" onclick="document.getElementById(\'imp-dlg\').remove()">✕</button></div>'
+    + '<div style="padding:12px 14px;display:flex;flex-direction:column;gap:12px">'
+    + '<fieldset class="ne-fs"><legend>Escopo</legend>'
+    +   r('imp-esc','atual', at ? '<b>'+_esc(at.rot)+'</b>' : 'Registro atual (nenhum selecionado)', !!at, !at)
+    +   r('imp-esc','sel', '<b>'+sel.length+'</b> Objectos seleccionados', !at && sel.length>0, !sel.length)
+    +   r('imp-esc','todos', '<b>'+tod.length+'</b> Objectos listados', !at && !sel.length, !tod.length) + '</fieldset>'
+    + '<fieldset class="ne-fs"><legend>Tipo de relatório</legend>' + M.tipos.map(([v,t],i)=>r('imp-tipo',v,t,i===0)).join('') + '</fieldset>'
+    + '<fieldset class="ne-fs"><legend>Destino</legend>' + r('imp-dest','prev','Pré-visualizar (aba nova · também salva PDF)',true) + r('imp-dest','print','Imprimir directo') + '</fieldset>'
+    + '</div><div style="display:flex;justify-content:flex-end;gap:8px;padding:10px 14px;border-top:1px solid #e3e6f0">'
+    + '<button class="btn" onclick="document.getElementById(\'imp-dlg\').remove()">Cancelar</button>'
+    + '<button class="btn" style="background:#1A2A5E;color:#fff;min-width:80px" onclick="imprimirExecutar(\''+mod+'\')">OK</button></div></div></div>';
+  const w = document.createElement('div'); w.innerHTML = html; document.body.appendChild(w.firstChild);
+}
+async function imprimirExecutar(mod){
+  const M = _IMP[mod]; const v = n => (document.querySelector('input[name="'+n+'"]:checked')||{}).value;
+  const esc = v('imp-esc'), tipo = v('imp-tipo'), dest = v('imp-dest');
+  let ids = esc === 'atual' ? [M.atual().id] : esc === 'sel' ? M.selecionados() : M.todos();
+  if (!ids.length) { mostrarToast('Nada para imprimir', 'warn'); return; }
+  document.getElementById('imp-dlg')?.remove();
+  const w = window.open('', '_blank'); if (!w){ mostrarToast('Bloqueador de pop-up impediu a impressão','warn'); return; }
+  w.document.write('<html><head><meta charset="UTF-8"><title>Garra Sistemas — a preparar…</title></head><body style="font-family:system-ui;padding:20px;color:#64748B">A preparar '+ids.length+' registro(s)…</body></html>');
+  try {
+    const html = await M.gerar(ids, tipo);
+    w.document.open(); w.document.write(html); w.document.close(); w.focus();
+    if (dest === 'print') setTimeout(() => w.print(), 400);
+  } catch(e) { w.document.body.innerHTML = '<b style="color:#B91C1C">Erro: '+_esc(e.message)+'</b>'; }
+}
+const _IMP_CSS = 'body{font-family:system-ui,Segoe UI,sans-serif;font-size:11px;color:#0F172A;margin:0;padding:14mm}'
+  + 'h1{font-size:15px;color:#1A2A5E;margin:0 0 2px}.sub{color:#64748B;font-size:10px;margin-bottom:10px}'
+  + '.cab{display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid #F97316;padding-bottom:6px;margin-bottom:10px}'
+  + '.cab .g{font-weight:800;color:#1A2A5E;font-size:16px}.cab .g span{color:#F97316}'
+  + 'table{border-collapse:collapse;width:100%}th{background:#1A2A5E;color:#fff;text-align:left;padding:5px 6px;font-size:10px}td{padding:4px 6px;border-bottom:1px solid #E2E8F0;vertical-align:top}'
+  + '.sec{background:#1A2A5E;color:#F97316;font-weight:700;font-size:10px;padding:3px 8px;margin:10px 0 4px;letter-spacing:.3px}'
+  + '.kv{display:grid;grid-template-columns:150px 1fr;gap:2px 10px}.kv b{color:#475569;font-weight:600}'
+  + '.ficha{page-break-after:always}.ficha:last-child{page-break-after:auto}'
+  + '.fig{width:100%;height:190px;border:1px solid #CBD5E1;display:flex;align-items:center;justify-content:center;color:#94A3B8;overflow:hidden}.fig img{max-width:100%;max-height:100%;object-fit:contain}'
+  + '.grid2{display:grid;grid-template-columns:1fr 260px;gap:14px}'
+  + '.etq{display:inline-block;width:62mm;border:1px solid #1A2A5E;border-radius:4px;padding:5px;margin:3px;vertical-align:top;page-break-inside:avoid}.etq .c{font-weight:800;font-size:14px;color:#1A2A5E}.etq .d{font-size:10px;color:#334155}.etq img{width:70px;height:70px;float:right}'
+  + '@media print{.noprint{display:none}}';
+function _impCab(titulo, n){
+  return '<div class="cab"><div><div class="g">GARRA <span>Terraplenagem</span> · Sistemas — Manutenção</div><div class="sub">'+_esc(titulo)+' · '+n+' registro(s) · '+new Date().toLocaleString('pt-BR')+'</div></div>'
+       + '<button class="noprint" onclick="window.print()" style="padding:6px 12px;background:#1A2A5E;color:#fff;border:0;border-radius:6px;cursor:pointer">🖨 Imprimir / PDF</button></div>';
+}
+async function imprimirFrotaHTML(ids, tipo){
+  const detalhes = [];
+  for (const id of ids) { try { detalhes.push(await mntFetch('/manutencao/api/equipamentos/'+id+'/detalhe')); } catch(e){} }
+  const semDe = id => _semCache.find(s => String(s.id) === String(id)) || {};
+  const car = e => { let c = e.caracteristicas; if (typeof c === 'string') { try { c = JSON.parse(c); } catch(x){ c = []; } } return Array.isArray(c) ? c.map(p => ({ r: p.r||p.nome||p.n||'', v: (p.v!==undefined?p.v:p.valor)||'' })).filter(p=>p.r||p.v) : []; };
+  const G = e => (typeof e.garantia === 'string' ? (()=>{try{return JSON.parse(e.garantia)}catch(x){return {}}})() : (e.garantia||{}));
+  const nz = v => (v===null||v===undefined||v==='') ? '—' : _esc(String(v));
+  const dt = v => v ? new Date(v).toLocaleDateString('pt-BR') : '—';
+  const qr = txt => 'https://api.qrserver.com/v1/create-qr-code/?size=140x140&data='+encodeURIComponent(txt);
+  let corpo = '';
+  if (tipo === 'ficha') {
+    corpo = detalhes.map(e => {
+      const sm = semDe(e.id), g = G(e), gar = g.gar||{}, ctr = g.ctr||{}, fmd = g.fmd||{}; const cs = car(e);
+      return '<div class="ficha"><div class="grid2"><div>'
+        + '<h1>'+_esc(e.codigo)+' — '+_esc(e.descricao||'')+'</h1><div class="sub">Tipo '+nz(e.tipo_sigla)+' · '+(sm.status==='verde'?'DISPONÍVEL':sm.status==='vermelho'?'VENCIDO':sm.status==='laranja'?'URGENTE':sm.status?'ATENÇÃO':'—')+' · '+(e.medicao==='km'?'km':'horímetro')+' '+nz(e.medicao==='km'?e.km_atual:e.horimetro_atual)+'</div>'
+        + '<div class="sec">IDENTIFICAÇÃO</div><div class="kv">'
+        + '<b>Pai</b><span>'+nz(e.pai_codigo)+'</span><b>Sistema</b><span>'+nz(e.sistema_codigo)+'</span><b>C. Custo</b><span>'+nz(e.centro_custo)+'</span>'
+        + '<b>Localização</b><span>'+nz(e.localizacao)+'</span><b>Operador/motorista</b><span>'+nz(e.operador_nome)+'</span><b>Desde</b><span>'+dt(e.operador_desde)+'</span>'
+        + '<b>Fornecedor</b><span>'+nz(e.fornecedor_nome)+'</span><b>Data aquisição</b><span>'+dt(e.data_aquisicao)+'</span><b>Vida útil (h)</b><span>'+nz(e.vida_util_h)+'</span>'
+        + '<b>Investimento</b><span>'+(e.valor_aquisicao!=null?'R$ '+Number(e.valor_aquisicao).toLocaleString('pt-BR',{minimumFractionDigits:2}):'—')+'</span><b>Valor actual</b><span>'+(e.valor_atual!=null?'R$ '+Number(e.valor_atual).toLocaleString('pt-BR',{minimumFractionDigits:2}):'—')+'</span></div>'
+        + '<div class="sec">CARACTERÍSTICAS</div>' + (cs.length ? '<div class="kv">'+cs.map(p=>'<b>'+_esc(p.r)+'</b><span>'+nz(p.v)+'</span>').join('')+'</div>' : '<span class="sub">—</span>')
+        + '<div class="sec">DADOS OPERACIONAIS</div><div class="kv">'
+        + '<b>FMD</b><span>'+nz(fmd.valor)+' '+nz(fmd.unidade)+(fmd.calc?' (por registos)':'')+'</span>'
+        + '<b>Garantia</b><span>'+(gar.ativo?'Sim · até '+dt(gar.data)+(gar.registro?' / '+gar.registro:'')+(gar.fornecedor?' · '+_esc(gar.fornecedor):''):'—')+'</span>'
+        + '<b>Contrato</b><span>'+(ctr.ativo?'Sim · '+dt(ctr.data)+' a '+dt(ctr.validade)+(ctr.fornecedor?' · '+_esc(ctr.fornecedor):''):'—')+'</span></div>'
+        + '</div><div><div class="fig">'+(e.foto_url?'<img src="'+e.foto_url+'">':'sem figura')+'</div>'
+        + '<div style="text-align:center;margin-top:8px"><img src="'+qr(e.codigo)+'" width="90" height="90"><div class="sub">'+_esc(e.codigo)+'</div></div></div></div></div>';
+    }).join('');
+  } else if (tipo === 'lista') {
+    corpo = '<table><thead><tr><th>Objecto</th><th>Descrição</th><th>Tipo</th><th>Sistema</th><th>Operador</th><th>Localização</th><th>Situação</th></tr></thead><tbody>'
+      + detalhes.map(e => { const sm = semDe(e.id); return '<tr><td><b>'+_esc(e.codigo)+'</b></td><td>'+nz(e.descricao)+'</td><td>'+nz(e.tipo_sigla)+'</td><td>'+nz(e.sistema_codigo)+'</td><td>'+nz(e.operador_nome)+'</td><td>'+nz(e.localizacao)+'</td><td>'+(sm.proxima?_esc(sm.proxima):'Em dia')+'</td></tr>'; }).join('')
+      + '</tbody></table>';
+  } else if (tipo === 'etiqueta') {
+    corpo = detalhes.map(e => '<div class="etq"><img src="'+qr(e.codigo)+'"><div class="c">'+_esc(e.codigo)+'</div><div class="d">'+nz(e.descricao)+'</div><div class="d" style="color:#64748B">'+nz(e.tipo_sigla)+' · '+nz(e.sistema_codigo)+'</div><div class="d" style="margin-top:6px;font-size:9px;color:#94A3B8">GARRA Terraplenagem</div></div>').join('');
+  } else { // agrupado por sistema
+    const grupos = {};
+    detalhes.forEach(e => { const k = e.sistema_codigo || '(sem sistema)'; (grupos[k] = grupos[k] || []).push(e); });
+    corpo = Object.keys(grupos).sort().map(k => '<div class="sec">'+_esc(k)+' · '+grupos[k].length+'</div><table><thead><tr><th>Objecto</th><th>Descrição</th><th>Tipo</th><th>Operador</th><th>Localização</th></tr></thead><tbody>'
+      + grupos[k].map(e => '<tr><td><b>'+_esc(e.codigo)+'</b></td><td>'+nz(e.descricao)+'</td><td>'+nz(e.tipo_sigla)+'</td><td>'+nz(e.operador_nome)+'</td><td>'+nz(e.localizacao)+'</td></tr>').join('')+'</tbody></table>').join('');
+  }
+  const tit = ({ficha:'Ficha do Objecto',lista:'Lista de Objectos',etiqueta:'Etiquetas',agrupado:'Objectos agrupados por Sistema'})[tipo] || 'Objectos';
+  return '<html><head><meta charset="UTF-8"><title>Garra — '+tit+'</title><style>'+_IMP_CSS+'</style></head><body>'+_impCab(tit, detalhes.length)+corpo+'</body></html>';
+}
 function mwImprimir(idArea, titulo){
   const c = document.getElementById(idArea); if (!c) return;
   const w = window.open('', '_blank'); if (!w){ mostrarToast('Bloqueador de pop-up impediu a impress\u00e3o','warn'); return; }
@@ -1543,9 +1666,9 @@ async function novoEquipMW(copiarDe){
     + '</div><div style="display:flex;justify-content:flex-end;margin-top:4px">'+fld('Valor Actual:', inp('ne-vatual','', 'R$'), 0.5)+'</div>'
     + '</fieldset></div>'
     + '<div style="flex:0 0 380px;display:flex;flex-direction:column;gap:6px">'
-    + '<div id="ne-fig-box" style="height:300px;border:1px solid #93C5FD;background:#F8FAFC;display:flex;align-items:center;justify-content:center;color:#94A3B8;font-size:11px;overflow:hidden;cursor:pointer" onclick="document.getElementById(\'ne-figura\').click()">'
+    + '<div id="ne-fig-box" style="flex:1;min-height:300px;border:1px solid #93C5FD;background:#F8FAFC;display:flex;align-items:center;justify-content:center;color:#94A3B8;font-size:11px;overflow:hidden;cursor:pointer" title="Clique para escolher a foto" onclick="document.getElementById(\'ne-figura\').click()">'
     + (base.foto_url ? '<img src="'+_esc(base.foto_url)+'" style="max-width:100%;max-height:100%;object-fit:contain">' : 'Figura \u2014 clique para escolher a foto')+'</div>'
-    + fld('Figura:', '<input type="file" id="ne-figura" accept="image/*" style="font-size:10px" onchange="nePrevia(this)">') + fld('Ficheiro:', '<input type="file" id="ne-fich" style="font-size:10px">') + '</div>'
+    + '<input type="file" id="ne-figura" accept="image/*" style="display:none" onchange="nePrevia(this)"></div>'
     + '</div></div>'
     // aba 1 — Características (pares nome/valor)
     + '<div class="ne-pane" id="ne-p1"><div class="muted" style="font-size:10px;margin-bottom:6px">Caracter\u00edsticas t\u00e9cnicas (nome = valor). Para pneus: Recapagens \u00b7 DOT/s\u00e9rie \u00b7 Medida.</div>'
@@ -1592,7 +1715,7 @@ async function neEnviarFoto(id){
     try { await mntUpload('/manutencao/api/equipamentos/'+id+'/foto', fd); inp.value = ''; }
     catch(e){ mostrarToast('\u26a0 Foto n\u00e3o enviada: '+e.message,'warn'); }
   }
-  const fi = document.getElementById('ne-fich'); const d = fi && fi.files && fi.files[0];
+  const fi = document.getElementById('ne-fich'); const d = fi && fi.files && fi.files[0]; // (ficheiro removido da tela — mantido só por compatibilidade)
   if (d && id){
     const fd2 = new FormData(); fd2.append('ficheiro', d, d.name);
     try { await mntUpload('/manutencao/api/equipamentos/'+id+'/documentos', fd2); fi.value = ''; }
@@ -3261,7 +3384,11 @@ function fichaAba(aba){
       '<option value="'+_esc(x.codigo)+'"'+(x.codigo===e.centro_custo?' selected':'')+'>'+_esc(x.codigo)+' — '+_esc(x.nome||'')+'</option>').join('');
     const oper = e.operador_nome || '';
     const dt = v => v ? String(v).slice(0,10) : '';
-    c.innerHTML = '<div class="dsec">Identificação</div><div class="mgrid">'
+    const figura = e.foto_url
+      ? '<img src="'+e.foto_url+'" style="max-width:100%;max-height:100%;object-fit:contain">'
+      : 'Figura — clique para escolher a foto';
+    c.innerHTML = '<div class="dsec">Identificação</div><div style="display:flex;gap:14px;align-items:stretch">'
+      + '<div style="flex:1"><div class="mgrid">'
       + fld('Pai (componente de)','<select id="fi-pai">'+paiOpts+'</select>')
       + fld('Sistema (nó da árvore — mover de grupo aqui)','<select id="fi-sis">'+sisOpts+'</select>')
       + fld('Centro de custo','<select id="fi-cc">'+ccOpts+'</select>')
@@ -3275,7 +3402,11 @@ function fichaAba(aba){
       + fld('Vida útil (h)','<input id="fi-vida" type="number" step="1" value="'+_esc(e.vida_util_h ?? '')+'">')
       + fld('Investimento (R$)','<input id="fi-vlr" type="number" step="0.01" value="'+(e.valor_aquisicao ?? '')+'">')
       + fld('Valor actual (R$)','<input id="fi-vatual" type="number" step="0.01" value="'+(e.valor_atual ?? '')+'">')
-      + '</div></fieldset><div style="display:flex;justify-content:flex-end;margin-top:10px"><button class="btn p" onclick="fichaSalvarIdent()">💾 Salvar</button></div>';
+      + '</div></fieldset></div>'
+      + '<div style="flex:0 0 340px;display:flex;flex-direction:column"><div style="flex:1;min-height:300px;border:1px solid #93C5FD;background:#F8FAFC;display:flex;align-items:center;justify-content:center;color:#94A3B8;font-size:11px;overflow:hidden;cursor:pointer" title="Clique para trocar a foto" onclick="fichaFoto()">'+figura+'</div></div>'
+      + '</div><div style="display:flex;justify-content:space-between;align-items:center;margin-top:10px">'
+      + fichaNavBarra()
+      + '<button class="btn p" onclick="fichaSalvarIdent()">💾 Salvar</button></div>';
     mntFetch('/manutencao/api/fornecedores').then(r => {
       const lista = Array.isArray(r) ? r : (r.itens || []); const el = document.getElementById('fi-forn'); if (!el) return; const v = el.dataset.val;
       el.innerHTML = '<option value="">—</option>' + lista.map(f => '<option value="'+f.id+'"'+(String(f.id)===String(v)?' selected':'')+'>'+_esc(f.nome)+'</option>').join('');
@@ -3457,6 +3588,31 @@ function fichaSalvarCompl(){
       ident: { usar, matricula: g('ic-matr'), cod_emm: g('ic-cemm'), cod_u1: g('ic-u1'), cod_u2: g('ic-u2') },
       inativo_desde: g('ic-inat-desde'), guardar_hist: b('ic-hist'),
       familia: g('ic-familia'), combustivel: g('ic-comb') } }, 'compl');
+}
+// (14/09/2026) Navegação entre fichas (formato MWW): percorre a lista visível
+// da Frota na ordem em que está na tela e vai marcando a linha ao fundo.
+function _fichaNavLista(){
+  const trs = [...document.querySelectorAll('#frota-tabela tr[data-id], #eq-lista tr[data-id], .tela.on tr[data-id]')];
+  const ids = trs.map(t => t.dataset.id).filter((v,i,a) => v && a.indexOf(v) === i);
+  return ids.length ? ids : _mntEquipList.map(x => String(x.id));
+}
+function fichaNavBarra(){
+  const ids = _fichaNavLista(); const i = ids.indexOf(String((_eqFicha||{}).id));
+  const n = ids.length, pos = i >= 0 ? i + 1 : 0;
+  const b = (t, fn, dis) => '<button class="btn" '+(dis?'disabled':'')+' onclick="'+fn+'" style="min-width:30px">'+t+'</button>';
+  return '<div style="display:flex;gap:4px;align-items:center">'
+    + b('⏮','fichaNav(\'ini\')', pos<=1) + b('◀','fichaNav(\'ant\')', pos<=1)
+    + '<span class="mono" style="font-size:11px;padding:0 8px">'+pos+' / '+n+'</span>'
+    + b('▶','fichaNav(\'prox\')', !n || pos>=n) + b('⏭','fichaNav(\'fim\')', !n || pos>=n) + '</div>';
+}
+function fichaNav(dir){
+  const ids = _fichaNavLista(); if (!ids.length) return;
+  let i = ids.indexOf(String((_eqFicha||{}).id)); if (i < 0) i = 0;
+  if (dir === 'ini') i = 0; else if (dir === 'fim') i = ids.length - 1; else if (dir === 'ant') i = Math.max(0, i-1); else i = Math.min(ids.length-1, i+1);
+  const id = ids[i];
+  document.querySelectorAll('tr[data-id]').forEach(tr => tr.classList.toggle('sel', tr.dataset.id === id));
+  const tr = document.querySelector('tr[data-id="'+id+'"].sel'); if (tr) tr.scrollIntoView({block:'center'});
+  verEquipReal(id, _eqFichaDestino);
 }
 function fichaFoto(){ document.getElementById('ficha-foto-input').click(); }
 async function fichaFotoEnvia(input){
