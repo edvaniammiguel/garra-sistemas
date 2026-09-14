@@ -135,13 +135,14 @@ tr.sel td{background:#FDBA74 !important;color:#1A2A5E;font-weight:600}
 .ne-cab{display:flex;gap:10px;align-items:flex-end}
 .ne-f{display:flex;flex-direction:column;gap:2px;min-width:0}.ne-f input,.ne-f select{width:100%;font-size:12px;padding:4px 7px;border:1px solid #CBD5E1;border-radius:5px}
 /* (14/09/2026) Nas abas: rótulo à esquerda, na mesma linha do campo (formato MWW) — cabe sem rolagem */
-.ne-pane .ne-f{flex-direction:row;align-items:center;gap:8px}.ne-pane .ne-f>.ne-l{flex:0 0 118px;text-align:right;font-size:11px}.ne-pane .ne-f>*:not(.ne-l){flex:1;min-width:0}
+.ne-pane .ne-f{flex-direction:row;align-items:center;gap:8px}.ne-pane .ne-f>.ne-l{flex:0 0 118px;text-align:left;font-size:11px}.ne-pane .ne-f>*:not(.ne-l){flex:1;min-width:0}
 .ne-pane .ne-fs .ne-f>.ne-l{flex:0 0 78px}.ne-pane .ne-fs{padding:6px 8px;margin-top:4px}
 .ne-l{font-size:10px;font-weight:700;color:#475569}.ne-l.r{color:#B91C1C}
 .ne-tabs{display:flex;gap:2px;border-bottom:1px solid #CBD5E1;margin-top:10px}
 .ne-tab{padding:5px 10px;font-size:11px;font-weight:700;color:#475569;border:1px solid transparent;border-bottom:none;border-radius:6px 6px 0 0;cursor:pointer}
 .ne-tab.on{background:#fff;color:#1A2A5E;border-color:#CBD5E1;margin-bottom:-1px}
-.ne-pane{display:none;border:1px solid #CBD5E1;border-top:none;padding:10px 12px;background:#fff;min-height:440px;max-height:calc(86vh - 230px);overflow:auto}.ne-pane.on{display:block}
+.ne-pane{display:none;border:1px solid #CBD5E1;border-top:none;padding:10px 12px;background:#fff;height:calc(88vh - 300px);min-height:360px;overflow:auto}.ne-pane.on{display:block}
+#eq-ficha .modal{max-height:92vh}
 .ne-fs{border:1px solid #CBD5E1;border-radius:6px;padding:8px 10px;margin-top:6px}.ne-fs legend{font-size:10px;color:#475569;padding:0 4px}
 .modal.larga .otw-corpo{flex:1;overflow:auto;background:#fff;border:1px solid #E2E8F0;border-radius:6px}
 #otw-de,#otw-dt{display:none;position:absolute;top:30px;background:#fff;border:1px solid #CBD5E1;border-radius:6px;box-shadow:0 8px 24px rgba(0,0,0,.15);z-index:50;min-width:220px;max-height:260px;overflow:auto}
@@ -1668,11 +1669,14 @@ async function novoEquipMW(copiarDe, editar){
     + fld('Desde', inp('ne-desde', new Date().toISOString().slice(0,10), '', 'date'))
     + '<fieldset class="ne-fs"><legend>Fornecedor</legend>'
     + fld('Fornecedor', '<div style="display:flex;gap:4px">'+sel('ne-forn', _mwDom.fornecedores, base.fornecedor_id, 'id','nome')+'<button class="btn" title="Fornecedores \u2014 escolher ou cadastrar" onclick="neSeletor(\'forn\')">\u2026</button></div>')
-    + '<div style="display:flex;gap:6px;margin-top:4px">'
+    + '<div style="display:flex;gap:10px;margin-top:4px">'
     + fld('<span class="r">Data:</span>', inp('ne-dtaq', new Date().toISOString().slice(0,10), '', 'date'), 1)
-    + fld('Registo (H):', inp('ne-leit', '', '0'), 1) + fld('Vida \u00datil:', inp('ne-vida', base.vida_util_h, 'h'), 1) + fld('Investimento:', inp('ne-inv', '', 'R$'), 1)
-    + '</div><div style="display:flex;justify-content:flex-end;margin-top:4px">'+fld('Valor Actual:', inp('ne-vatual','', 'R$'), 0.5)+'</div>'
-    + '</fieldset></div>'
+    + fld('Registo (H):', inp('ne-leit', '', '0'), 1)
+    + '</div><div style="display:flex;gap:10px;margin-top:4px">'
+    + fld('Vida \u00datil (h):', inp('ne-vida', base.vida_util_h, 'h'), 1) + fld('Investimento:', inp('ne-inv', '', 'R$'), 1)
+    + '</div><div style="display:flex;gap:10px;margin-top:4px">'
+    + fld('Valor Actual:', inp('ne-vatual','', 'R$'), 1) + '<div style="flex:1"></div>'
+    + '</div></fieldset></div>'
     + '<div style="flex:0 0 380px;display:flex;flex-direction:column;gap:6px">'
     + '<div id="ne-fig-box" style="flex:1;min-height:300px;border:1px solid #93C5FD;background:#F8FAFC;display:flex;align-items:center;justify-content:center;color:#94A3B8;font-size:11px;overflow:hidden;cursor:pointer" title="Clique para escolher a foto" onclick="document.getElementById(\'ne-figura\').click()">'
     + (base.foto_url ? '<img src="'+_esc(base.foto_url)+'" style="max-width:100%;max-height:100%;object-fit:contain">' : 'Figura \u2014 clique para escolher a foto')+'</div>'
@@ -1689,8 +1693,6 @@ async function novoEquipMW(copiarDe, editar){
     + fld('Categoria (Operacional) *','<input id="ne-cat" list="ne-cat-l" value="'+_esc(base.categoria||'')+'" placeholder="caminhao, maquina, apoio\u2026"><datalist id="ne-cat-l">'+cats.map(c=>'<option value="'+_esc(c)+'">').join('')+'</datalist>',1)
     + fld('Medi\u00e7\u00e3o','<select id="ne-med">'+['horimetro','km','hora','diaria','viagem','metros'].map(m=>'<option value="'+m+'"'+((base.medicao||'horimetro')===m?' selected':'')+'>'+m+'</option>').join('')+'</select>',1)
     + fld('Placa', inp('ne-placa','', 'ABC-1D23'),1)
-    + '</div><div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px">'
-    + fld('Marca', inp('ne-marca', base.marca),1) + fld('Modelo', inp('ne-modelo', base.modelo),1) + fld('Ano', inp('ne-ano', base.ano_fabricacao || base.ano),1) + fld('N\u00ba de s\u00e9rie', inp('ne-serie',''),1)
     + '</div></div>'
     // aba 3 — Info. Complementares
     + '<div class="ne-pane" id="ne-p3"><div style="display:flex;gap:8px;flex-wrap:wrap">'
@@ -1942,22 +1944,24 @@ async function neSalvar(fechar){
   // (14/09/2026) Formato único {r,v} (o mesmo que a ficha de edição lê/grava) — antes a criação
   // gravava {nome,valor} e a ficha lia {r,v}: o que era cadastrado sumia na edição.
   const cars = Array.from(document.querySelectorAll('#ne-cars .ne-car')).map(d => ({r: d.querySelector('.c-n').value.trim().toUpperCase(), v: d.querySelector('.c-v').value.trim()})).filter(c => c.r || c.v);
+  const car = rot => (cars.find(c => c.r === rot) || {}).v || '';
+  const _marca = car('MARCA'), _modelo = car('MODELO'), _ano = car('ANO'), _serie = car('CHASSI / Nº SÉRIE');
   const ficha = { tipo_sigla: v('ne-tipo')||null, sistema_codigo: v('ne-sis')||null, centro_custo: v('ne-cc')||null, localizacao: v('ne-loc')||null,
                   operador_responsavel_id: v('ne-op')||null, operador_desde: v('ne-desde')||null,
                   fornecedor_id: v('ne-forn')||null, data_aquisicao: v('ne-dtaq')||null, leitura_inicial: v('ne-leit')||null,
                   vida_util_h: v('ne-vida')||null, valor_aquisicao: v('ne-inv')||null, valor_atual: v('ne-vatual')||null,
-                  num_serie: v('ne-serie')||null, ano_fabricacao: v('ne-ano')||null, criticidade: v('ne-crit')||null, cor: v('ne-cor')||null,
+                  num_serie: _serie||null, ano_fabricacao: _ano||null, criticidade: v('ne-crit')||null, cor: car('COR')||null, marca: _marca||null, modelo: _modelo||null,
                   posicao: v('ne-pos')||null, equipamento_pai: v('ne-pai')||null, notas: v('ne-notas')||null, caracteristicas: cars };
   try {
     let id = _neEditId;
     if (!id){
       const r = await mntFetch('/operacional/api/equipamentos', {method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({codigo, descricao, categoria, medicao: v('ne-med'), marca: v('ne-marca')||null, modelo: v('ne-modelo')||null, ano: v('ne-ano')||null, placa: v('ne-placa')||null})});
+        body: JSON.stringify({codigo, descricao, categoria, medicao: v('ne-med'), marca: _marca||null, modelo: _modelo||null, ano: _ano||null, placa: v('ne-placa')||null})});
       id = r.id || (r.equipamento && r.equipamento.id);
       _neEditId = id;
     } else {
       await mntFetch('/operacional/api/equipamentos/'+id, {method:'PATCH', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({descricao, categoria, medicao: v('ne-med'), marca: v('ne-marca')||null, modelo: v('ne-modelo')||null, ano: v('ne-ano')||null, placa: v('ne-placa')||null})});
+        body: JSON.stringify({descricao, categoria, medicao: v('ne-med'), marca: _marca||null, modelo: _modelo||null, ano: _ano||null, placa: v('ne-placa')||null})});
     }
     if (id) await mntFetch('/manutencao/api/equipamentos/'+id+'/ficha', {method:'PATCH', headers:{'Content-Type':'application/json'}, body: JSON.stringify(ficha)});
     if (id) await neEnviarFoto(id);
