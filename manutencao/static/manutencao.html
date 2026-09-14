@@ -133,12 +133,15 @@ tr.sel td{background:#DBEAFE!important;color:#1A2A5E}
 .mwsub:hover>.mwm2{display:block}
 tr.sel td{background:#FDBA74 !important;color:#1A2A5E;font-weight:600}
 .ne-cab{display:flex;gap:10px;align-items:flex-end}
-.ne-f{display:flex;flex-direction:column;gap:2px;min-width:0}.ne-f input,.ne-f select{width:100%;font-size:12px;padding:5px 7px;border:1px solid #CBD5E1;border-radius:5px}
+.ne-f{display:flex;flex-direction:column;gap:2px;min-width:0}.ne-f input,.ne-f select{width:100%;font-size:12px;padding:4px 7px;border:1px solid #CBD5E1;border-radius:5px}
+/* (14/09/2026) Nas abas: rótulo à esquerda, na mesma linha do campo (formato MWW) — cabe sem rolagem */
+.ne-pane .ne-f{flex-direction:row;align-items:center;gap:8px}.ne-pane .ne-f>.ne-l{flex:0 0 118px;text-align:right;font-size:11px}.ne-pane .ne-f>*:not(.ne-l){flex:1;min-width:0}
+.ne-pane .ne-fs .ne-f>.ne-l{flex:0 0 78px}.ne-pane .ne-fs{padding:6px 8px;margin-top:4px}
 .ne-l{font-size:10px;font-weight:700;color:#475569}.ne-l.r{color:#B91C1C}
 .ne-tabs{display:flex;gap:2px;border-bottom:1px solid #CBD5E1;margin-top:10px}
 .ne-tab{padding:5px 10px;font-size:11px;font-weight:700;color:#475569;border:1px solid transparent;border-bottom:none;border-radius:6px 6px 0 0;cursor:pointer}
 .ne-tab.on{background:#fff;color:#1A2A5E;border-color:#CBD5E1;margin-bottom:-1px}
-.ne-pane{display:none;border:1px solid #CBD5E1;border-top:none;padding:12px;background:#fff;max-height:400px;overflow:auto}.ne-pane.on{display:block}
+.ne-pane{display:none;border:1px solid #CBD5E1;border-top:none;padding:10px 12px;background:#fff;min-height:440px;max-height:calc(86vh - 230px);overflow:auto}.ne-pane.on{display:block}
 .ne-fs{border:1px solid #CBD5E1;border-radius:6px;padding:8px 10px;margin-top:6px}.ne-fs legend{font-size:10px;color:#475569;padding:0 4px}
 .modal.larga .otw-corpo{flex:1;overflow:auto;background:#fff;border:1px solid #E2E8F0;border-radius:6px}
 #otw-de,#otw-dt{display:none;position:absolute;top:30px;background:#fff;border:1px solid #CBD5E1;border-radius:6px;box-shadow:0 8px 24px rgba(0,0,0,.15);z-index:50;min-width:220px;max-height:260px;overflow:auto}
@@ -1656,7 +1659,7 @@ async function novoEquipMW(copiarDe, editar){
     + '</div>'
     // aba 0 — Identificação
     + '<div class="ne-pane on" id="ne-p0"><div style="display:flex;gap:14px">'
-    + '<div style="flex:1;display:flex;flex-direction:column;gap:6px">'
+    + '<div style="flex:1;display:flex;flex-direction:column;gap:4px">'
     + fld('Pai', '<select id="ne-pai"><option value="">(nenhum \u2014 objecto de topo)</option>'+pais.map(e=>'<option value="'+e.id+'"'+(String(e.id)===String(base.equipamento_pai||'')?' selected':'')+'>'+_esc(e.codigo)+' \u2014 '+_esc(e.descricao||'')+'</option>').join('')+'</select>')
     + fld('Sistema', sel('ne-sis', _mwDom.sistemas, sisAtivo, 'codigo','nome'))
     + fld('C. Custo', sel('ne-cc', _mwDom.ccs, base.centro_custo, 'codigo','nome'))
