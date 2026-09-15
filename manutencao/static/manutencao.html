@@ -110,7 +110,9 @@ tr.sel td{background:#DBEAFE!important;color:#1A2A5E}
 .mtab.off{opacity:.45;cursor:default}
 .modal.larga{max-width:1020px;width:92%;height:620px;max-height:88vh;display:flex;flex-direction:column}
 /* (12/09/2026) Janela da OT com altura estável: o corpo das abas ocupa sempre o mesmo espaço; conteúdo maior rola dentro, menor não encolhe a janela */
-#ot-aba-corpo,#na-corpo,#ficha-corpo{min-height:440px;max-height:calc(86vh - 230px);overflow:auto}
+/* (15/09/2026) PADRÃO DE JANELA: todo corpo de abas das fichas (OT · Nova OT · Peça · FMP · Biblioteca)
+   tem a MESMA altura fixa da ficha do Objecto — navegar entre abas não muda o tamanho; conteúdo maior rola por dentro */
+#ot-aba-corpo,#na-corpo,#pc-corpo,#plf-corpo,#bb-corpo{height:calc(88vh - 300px);min-height:360px;max-height:none;overflow:auto}
 .mwtop{display:flex;align-items:center;gap:4px;flex-wrap:wrap;margin:6px 0 4px}
 .mwtop .sep{width:8px}.mwtop .cnt{font-family:ui-monospace,monospace;font-size:10px;padding:0 4px;color:#334155}
 .mwtop input{width:150px;padding:4px 6px;border:1px solid #CBD5E1;border-radius:6px;font-size:11px}
