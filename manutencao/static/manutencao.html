@@ -1788,6 +1788,10 @@ const _NE_SEL = {
   op:   { titulo:'Colaboradores', icone:'\ud83d\udc64', carregar: async()=>{ const r = await mntFetch('/operacional/api/operadores'); return (Array.isArray(r)?r:(r.itens||[])).map(o=>({id:o.id, cod:'', nome:o.nome})); },
           aplicar: it => { const el=document.getElementById('ne-op'); if(!el) return; if(![...el.options].some(o=>o.value===String(it.id))){ const o=document.createElement('option'); o.value=it.id; o.textContent=it.nome; el.appendChild(o);} el.value = it.id; },
           novo: null, vaiPara: () => { window.open('/admin#usuarios','_blank'); } },
+  fam:  { titulo:'Fam\u00edlias', icone:'\ud83d\udcc1', carregar: async()=>{ const r = await mntFetch('/manutencao/api/param/familias'); return (Array.isArray(r)?r:(r.itens||[])).map(f=>({id:f.codigo, cod:f.codigo, nome:f.nome})); },
+          novo: { campos:[['codigo','C\u00f3digo','text'],['nome','Nome','text']], post: async d => { await mntFetch('/manutencao/api/param/familias',{method:'POST',body:JSON.stringify(d)}); return {id:d.codigo, cod:d.codigo, nome:d.nome}; } } },
+  comb: { titulo:'Combust\u00edvel \u2014 Materiais/pe\u00e7as', icone:'\u26fd', carregar: async()=>{ const r = await mntFetch('/manutencao/api/pecas'); return (Array.isArray(r)?r:(r.itens||[])).map(x=>({id:x.id, cod:x.codigo, nome:x.descricao})); },
+          novo: { campos:[['codigo','C\u00f3digo','text'],['descricao','Descri\u00e7\u00e3o','text'],['unidade','Unidade (L)','text']], post: async d => { const r = await mntFetch('/manutencao/api/pecas',{method:'POST',body:JSON.stringify(d)}); return {id:(r&&r.id)||'', cod:d.codigo, nome:d.descricao}; } } },
   forn: { titulo:'Fornecedores', icone:'\ud83c\udfed', carregar: async()=>{ const r = await mntFetch('/manutencao/api/fornecedores'); return (Array.isArray(r)?r:(r.itens||[])).map(f=>({id:f.id, cod:f.cnpj||'', nome:f.nome})); },
           aplicar: it => { const el=document.getElementById('ne-forn'); if(!el) return; if(![...el.options].some(o=>o.value===String(it.id))){ const o=document.createElement('option'); o.value=it.id; o.textContent=it.nome; el.appendChild(o);} el.value = it.id; },
           novo: { campos:[['nome','Nome','text'],['cnpj','CNPJ','text'],['telefone','Telefone','text'],['email','E-mail','email']], post: async d => { const r = await mntFetch('/manutencao/api/fornecedores',{method:'POST',body:JSON.stringify(d)}); return {id:(r&&r.id)||'', cod:d.cnpj||'', nome:d.nome}; } },
@@ -1799,7 +1803,7 @@ async function neSeletor(tipo, alvo){
   try { _neSelItens = await cfg.carregar(); } catch(e){ mostrarToast('\u274c '+e.message,'warn'); return; }
   _neSelItens.sort((a,b)=>String(a.nome||'').localeCompare(String(b.nome||'')));
   const linhas = _neSelItens.map((it,i)=>'<tr data-i="'+i+'" data-busca="'+_esc((it.cod+' '+it.nome).toLowerCase())+'" onclick="neSelMarcar('+i+')" ondblclick="neSelEscolher(\''+tipo+'\','+i+')">'
-     + (cfg.novo && cfg.novo.campos[0][0]==='codigo' ? '<td style="width:70px;font-weight:700;color:#1A2A5E">'+_esc(it.cod)+'</td>' : '')
+     + (it.cod ? '<td style="width:90px;font-weight:700;color:#1A2A5E">'+_esc(it.cod)+'</td>' : '')
      + '<td>'+_esc(it.nome)+'</td></tr>').join('');
   const html = '<div id="ne-sel" style="position:fixed;inset:0;background:rgba(10,16,40,.45);z-index:9999;display:flex;align-items:center;justify-content:center" onclick="if(event.target===this)this.remove()">'
     + '<div style="background:#fff;border-radius:10px;width:600px;max-width:95vw;max-height:80vh;display:flex;flex-direction:column;box-shadow:0 12px 40px rgba(0,0,0,.3)">'
@@ -1824,6 +1828,7 @@ function neSelEscolher(tipo,i){ const it=_neSelItens[i]; if(!it) return; _neSelA
 function _neSelAplicar(tipo, it){
   const alvo = _neSelAlvo || { loc:'ne-loc', op:'ne-op', forn:'ne-forn' };
   if (tipo === 'loc') { const el=document.getElementById(alvo.loc); if(el) el.value = it.nome; return; }
+  if (tipo === 'fam' || tipo === 'comb') { const el=document.getElementById(alvo[tipo]); if(el) el.value = (it.cod ? it.cod+' \u2014 ' : '')+it.nome; const h=document.getElementById(alvo[tipo]+'-id'); if(h) h.value = it.id; return; }
   const el = document.getElementById(alvo[tipo]); if(!el) return;
   if (el.tagName === 'SELECT') { if(![...el.options].some(o=>o.value===String(it.id))){ const o=document.createElement('option'); o.value=it.id; o.textContent=it.nome; el.appendChild(o);} el.value = it.id; }
   else { el.value = it.id; const lbl = document.getElementById(alvo[tipo]+'-lbl'); if (lbl) lbl.value = it.nome; }
@@ -1840,7 +1845,7 @@ function neSelNovo(tipo){
 async function neSelSalvarNovo(tipo){
   const cfg=_NE_SEL[tipo]; const d={};
   cfg.novo.campos.forEach(([k])=>{ d[k]=(document.getElementById('ne-sn-'+k)?.value||'').trim(); });
-  if(!d[cfg.novo.campos[0][0]] || (d.nome!==undefined && !d.nome)){ mostrarToast('Preencha os campos principais','warn'); return; }
+  if(!d[cfg.novo.campos[0][0]] || (d.nome!==undefined && !d.nome) || (d.descricao!==undefined && !d.descricao)){ mostrarToast('Preencha os campos principais','warn'); return; }
   try { const it = await cfg.novo.post(d); mostrarToast('\u2705 Cadastrado','ok'); _neSelAplicar(tipo, it); document.getElementById('ne-sel')?.remove(); }
   catch(e){ mostrarToast('\u274c '+e.message,'warn'); }
 }
@@ -3464,7 +3469,6 @@ function fichaAba(aba, alvo){
     const tp = IC.tipos || {}, idn = IC.ident || {};
     const chk = (id, on, rot, dis) => '<label style="display:flex;align-items:center;gap:6px;font-size:12px;color:#1A2A5E"><input type="checkbox" id="'+id+'"'+(on?' checked':'')+(dis?' disabled':'')+'> '+rot+'</label>';
     const rad = (val, on, rot, inputId, inputVal, ro) => '<div style="display:flex;align-items:center;gap:8px;margin:4px 0"><label style="display:flex;align-items:center;gap:6px;font-size:12px;width:150px"><input type="radio" name="ic-ident" value="'+val+'"'+(on?' checked':'')+'> '+rot+'</label><input id="'+inputId+'" value="'+_esc(inputVal||'')+'" style="flex:1"'+(ro?' readonly style="flex:1;background:#f1f3f8"':'')+'></div>';
-    const combs = ['','Diesel S10','Diesel S500','Gasolina','Etanol','Flex','Elétrico','GNV'];
     c.innerHTML =
         '<div class="dsec">Codificação</div><div style="display:flex;gap:14px">'
       + '<div style="flex:0 0 150px"><div class="muted" style="font-size:10px;margin-bottom:4px">Tipo</div>'
@@ -3477,13 +3481,13 @@ function fichaAba(aba, alvo){
       +   rad('u2', idn.usar==='u2', 'Cód. Utilizador N.º 2', 'ic-u2', idn.cod_u2) + '</div>'
       + '<div style="flex:0 0 230px">'
       +   fld('Criticidade','<select id="fp-crit">'+['normal','alta','critica'].map(x=>'<option value="'+x+'"'+((e.criticidade||'normal')===x?' selected':'')+'>'+x.charAt(0).toUpperCase()+x.slice(1)+'</option>').join('')+'</select>')
-      +   '<div style="margin-top:10px">'+chk('ic-inativo', e.ativo===false, 'Inactivo (ativação/inativação: Cadastros)', true)+'</div>'
+      +   '<div style="margin-top:10px">'+chk('ic-inativo', e.ativo===false, 'Inactivo')+'</div>'
       +   fld('Desde','<input id="ic-inat-desde" type="date" value="'+_esc(IC.inativo_desde||'')+'">')
       +   '<div style="margin-top:8px">'+chk('ic-hist', IC.guardar_hist !== false, 'Guardar alterações no Histórico Utilização')+'</div>'
       + '</div></div>'
       + '<div class="dsec" style="margin-top:10px">Outras Informações</div><div class="mgrid">'
-      +   fld('Família','<input id="ic-familia" value="'+_esc(IC.familia||'')+'" placeholder="ex.: Caçambas, Linha amarela">')
-      +   fld('Combustível','<select id="ic-comb">'+combs.map(x=>'<option value="'+x+'"'+((IC.combustivel||'')===x?' selected':'')+'>'+(x||'—')+'</option>').join('')+'</select>')
+      +   fld('Família','<div style="display:flex;gap:4px"><input id="ic-familia" value="'+_esc(IC.familia||'')+'" readonly placeholder="— escolher —" style="flex:1;background:#F8FAFC"><button class="btn" title="Famílias — escolher ou cadastrar" onclick="neSeletor(\'fam\',{fam:\'ic-familia\'})">…</button></div><input type="hidden" id="ic-familia-id" value="'+_esc(IC.familia_codigo||'')+'">')
+      +   fld('Combustível','<div style="display:flex;gap:4px"><input id="ic-comb" value="'+_esc(IC.combustivel||'')+'" readonly placeholder="— escolher em Materiais —" style="flex:1;background:#F8FAFC"><button class="btn" title="Materiais/peças — escolher o combustível ou cadastrar" onclick="neSeletor(\'comb\',{comb:\'ic-comb\'})">…</button></div><input type="hidden" id="ic-comb-id" value="'+_esc(IC.combustivel_peca_id||'')+'">')
       + '</div>'
       + '<div class="muted" style="font-size:10px;margin-top:6px">Marca · Modelo · Ano · Chassi · Cor ficam na aba Características. Tipo: '+_esc(e.tipo_sigla||'')+' · Medição: '+_esc(e.medicao||'')+' · Ativo: '+(e.ativo===false?'não':'sim')+'</div>'
       + '<div style="display:flex;justify-content:flex-end;margin-top:10px"><button class="btn p" onclick="fichaSalvarCompl()">💾 Salvar</button></div>';
@@ -3532,12 +3536,12 @@ function _colCompl(){
   const g = id => (document.getElementById(id)||{}).value ?? '';
   const b = id => !!(document.getElementById(id)||{}).checked;
   const usar = (document.querySelector('input[name="ic-ident"]:checked')||{}).value || 'estrutura';
-  return ({ criticidade: g('fp-crit'),
+  return ({ criticidade: g('fp-crit'), ativo: !b('ic-inativo'),
     info_compl: {
       tipos: { viatura: b('ic-viatura'), emm: b('ic-emm'), ferramenta: b('ic-ferr') },
       ident: { usar, matricula: g('ic-matr'), cod_emm: g('ic-cemm'), cod_u1: g('ic-u1'), cod_u2: g('ic-u2') },
       inativo_desde: g('ic-inat-desde'), guardar_hist: b('ic-hist'),
-      familia: g('ic-familia'), combustivel: g('ic-comb') } });
+      familia: g('ic-familia'), familia_codigo: g('ic-familia-id'), combustivel: g('ic-comb'), combustivel_peca_id: g('ic-comb-id') } });
 }
 // (14/09/2026) Navegação entre fichas (formato MWW): percorre a lista visível
 // da Frota na ordem em que está na tela e vai marcando a linha ao fundo.
