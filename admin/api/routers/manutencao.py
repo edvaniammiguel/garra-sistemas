@@ -655,6 +655,15 @@ async def mudar_status_ot(ot_id: str, request: Request, payload=Depends(verifica
         """INSERT INTO manutencao.ot_historico (ot_id, status_de, status_para, observacao, usuario_id)
            VALUES (%s,%s,%s,%s,%s)""",
         (ot_id, atual, novo, (d.get("observacao") or "").strip() or None, uid), fetch="none")
+    if novo == "concluida":
+        # (15/09/2026) Fecha o ciclo da FMP: a conclusão vira a nova baseline (data + leitura viva)
+        await _garantir_planos_cols()
+        await ajard_query(
+            """UPDATE manutencao.planos p SET ultima_data = now()::date,
+                      ultima_leitura = e.horimetro_atual
+               FROM manutencao.ot o JOIN operacional.equipamentos e ON e.id = o.equipamento_id
+               WHERE o.id=%s AND o.plano_id IS NOT NULL AND p.id = o.plano_id""",
+            (ot_id,), fetch="none")
     return {"ok": True, "status": novo}
 
 
@@ -800,6 +809,14 @@ async def semaforos_frota(_auth=Depends(verificar_manutencao)):
            ORDER BY e.codigo, p.codigo""")
     equipes = {}
     ordem = {"vermelho": 0, "laranja": 1, "amarelo": 2, "verde": 3}
+    # (15/09/2026) 3ª fonte do semáforo: previsão das FMPs (última execução + período × leitura viva)
+    prev_por_eq = {}
+    try:
+        for it in (await _calcular_previsoes())["itens"]:
+            if it["status"] in ("vencida", "a_vencer"):
+                prev_por_eq.setdefault(it["equipamento_id"], []).append(it)
+    except Exception:
+        prev_por_eq = {}
     for r in rows:
         vivo = float(r["horimetro_atual"] or 0)
         eq = equipes.setdefault(str(r["id"]), {
@@ -851,6 +868,27 @@ async def semaforos_frota(_auth=Depends(verificar_manutencao)):
         if st and ordem[st] < ordem[eq["status"]]:
             eq["status"] = st
             eq["motivo"] = txt
+    # FMPs vencidas / a vencer sem OT programada (a OT, quando existe, já entrou acima)
+    for eq_id, its in prev_por_eq.items():
+        eq = equipes.get(eq_id)
+        if not eq:
+            continue
+        for it in its:
+            if it.get("ot"):
+                continue
+            nivel = 0 if it["status"] == "vencida" else 1
+            resto = it.get("restante")
+            if it["modo"] == "calendario":
+                det = ("vencida há %d d" % abs(int(resto))) if nivel == 0 else ("vence em %d d" % int(resto))
+            else:
+                det = ("vencida há %s %s" % (abs(int(resto)), it["unidade"])) if nivel == 0 else ("faltam %s %s" % (int(resto), it["unidade"]))
+            txt = f"FMP {it['plano_codigo']} · {det}"
+            if eq["proxima"] is None or nivel < eq["proxima"][0]:
+                eq["proxima"] = (nivel, txt)
+            st = nivel_st[nivel]
+            if ordem[st] < ordem[eq["status"]]:
+                eq["status"] = st
+                eq["motivo"] = txt
     for eq in equipes.values():
         if eq["proxima"] is not None:
             eq["proxima"] = eq["proxima"][1]
@@ -1705,10 +1743,21 @@ async def equipamentos_ficha(_auth=Depends(verificar_manutencao)):
     return [_tab_row(r) for r in rows]
 
 
+
+_planos_cols_ok = False
+async def _garantir_planos_cols():
+    """planos.ativo + baseline do ciclo (ultima_data / ultima_leitura). Idempotente, uma vez por processo."""
+    global _planos_cols_ok
+    if _planos_cols_ok:
+        return
+    await ajard_query("ALTER TABLE manutencao.planos ADD COLUMN IF NOT EXISTS ativo BOOLEAN DEFAULT true, "
+                      "ADD COLUMN IF NOT EXISTS ultima_data DATE, ADD COLUMN IF NOT EXISTS ultima_leitura NUMERIC", fetch="none")
+    _planos_cols_ok = True
+
 @router.get("/manutencao/api/planos-todos")
 async def planos_todos(_auth=Depends(verificar_manutencao)):
     """Parametrização ▸ Planos preventivos: todas as FMPs da frota."""
-    await ajard_query("ALTER TABLE manutencao.planos ADD COLUMN IF NOT EXISTS ativo BOOLEAN DEFAULT true", fetch="none")
+    await _garantir_planos_cols()
     rows = await ajard_query(
         """SELECT p.id, p.codigo, p.descricao, p.periodo_codigo, p.tempo_horas AS tdm_horas, p.ativo, p.equipamento_id,
                   e.codigo AS equipamento_codigo, e.descricao AS equipamento_desc
@@ -1934,6 +1983,7 @@ async def ritmo_equipamento(eq_id: str, _auth=Depends(verificar_manutencao)):
 
 @router.get("/manutencao/api/equipamentos/{eq_id}/detalhe")
 async def detalhe_equipamento(eq_id: str, _auth=Depends(verificar_manutencao)):
+    await _garantir_planos_cols()
     await _garantir_ficha_cols()
     eq = await ajard_query(
         """SELECT e.*, p.codigo AS pai_codigo,
@@ -1952,7 +2002,7 @@ async def detalhe_equipamento(eq_id: str, _auth=Depends(verificar_manutencao)):
     await _garantir_biblioteca()
     planos = await ajard_query(
         """SELECT id, codigo, descricao, tipo_trabalho, periodo_codigo, periodo_qtd, tempo_horas, hh_previsto, custo_previsto, procedimento, plano_proximo_codigo,
-                  mao_obra, pecas, outros, ferramentas
+                  mao_obra, pecas, outros, ferramentas, ultima_data, ultima_leitura
            FROM manutencao.planos WHERE equipamento_id=%s AND ativo=true ORDER BY codigo""", (eq_id,))
     ots = await ajard_query(
         """SELECT numero, tipo, prioridade, status, descricao, data_abertura, data_conclusao, custo_total
@@ -2711,6 +2761,8 @@ async def editar_plano(pid: str, request: Request, payload=Depends(verificar_man
     for c in ["mao_obra", "pecas", "outros", "ferramentas"]:
         if c in d:
             sets.append(f"{c}=%s"); params.append(_json.dumps(d[c] or []))
+    if "ativo" in d:
+        sets.append("ativo=%s"); params.append(bool(d["ativo"]))
     _blocos = [d.get("mao_obra") or [], d.get("pecas") or [], d.get("outros") or []]
     if any(isinstance(b, list) and len(b) for b in _blocos):
         def _n(v):
@@ -2998,6 +3050,11 @@ async def _fmd_por_equipamento():
 
 @router.get("/manutencao/api/previsoes")
 async def previsoes_frota(_auth=Depends(verificar_manutencao)):
+    return await _calcular_previsoes()
+
+
+async def _calcular_previsoes():
+    await _garantir_planos_cols()
     """Trabalhos previstos: um item por plano ativo, com próxima manutenção
     calculada, data projetada pelo FMD e status (vencida / a_vencer /
     programada / ok / sem_base / sem_periodo)."""
@@ -3012,7 +3069,7 @@ async def previsoes_frota(_auth=Depends(verificar_manutencao)):
     hoje = _date.today()
     planos = await ajard_query(
         """SELECT p.id, p.equipamento_id, p.codigo, p.descricao, p.tipo_trabalho,
-                  p.periodo_codigo, p.periodo_qtd, p.custo_previsto, p.criado_em,
+                  p.periodo_codigo, p.periodo_qtd, p.custo_previsto, p.ultima_data, p.ultima_leitura, p.criado_em,
                   e.codigo AS eq_codigo, e.descricao AS eq_desc,
                   e.horimetro_atual, e.medicao,
                   per.nome AS periodo_nome
@@ -3030,6 +3087,12 @@ async def previsoes_frota(_auth=Depends(verificar_manutencao)):
            WHERE status = 'concluida' AND ativo = true AND plano_id IS NOT NULL
            ORDER BY plano_id, data_conclusao DESC""")
     ult = {str(u["plano_id"]): u for u in ults}
+    # (15/09/2026) Baseline manual da FMP ("Última execução") quando não há OT concluída —
+    # é o que liga os 105 planos migrados do ManWinWin à régua viva do horímetro.
+    for p in planos:
+        pid = str(p["id"])
+        if pid not in ult and (p.get("ultima_data") or p.get("ultima_leitura") is not None):
+            ult[pid] = {"plano_id": pid, "dt": p.get("ultima_data"), "leitura": p.get("ultima_leitura")}
     progs = await ajard_query(
         """SELECT DISTINCT ON (plano_id) plano_id, id, numero, data_prevista, horimetro_previsto
            FROM manutencao.ot
@@ -3093,18 +3156,12 @@ async def previsoes_frota(_auth=Depends(verificar_manutencao)):
             "itens": itens}
 
 
-@router.post("/manutencao/api/previsoes/{plano_id}/gerar-ot")
-async def previsao_gerar_ot(plano_id: str, request: Request, payload=Depends(verificar_manutencao)):
+async def _gerar_ot_previsao(plano_id, d, payload):
     """Transforma previsão em OT PROGRAMADA herdando a FMP (plano_id,
     tipo de trabalho, descrição) com data/leitura previstas. Recusa se o
     plano já tem OT programada ativa (respeito ao agendamento existente)."""
     from datetime import date as _date
     await _garantir_colunas_ot()
-    d = {}
-    try:
-        d = await request.json()
-    except Exception:
-        d = {}
     ja = await ajard_query(
         """SELECT numero FROM manutencao.ot
            WHERE plano_id=%s AND status='programada' AND ativo=true LIMIT 1""",
@@ -3134,6 +3191,96 @@ async def previsao_gerar_ot(plano_id: str, request: Request, payload=Depends(ver
              "horimetro_previsto": d.get("horimetro_previsto"),
              "prioridade": d.get("prioridade", "media")}
     return await _inserir_ot(corpo, eq, uid, numero, ano, seq)
+
+
+@router.post("/manutencao/api/previsoes/{plano_id}/gerar-ot")
+async def previsao_gerar_ot(plano_id: str, request: Request, payload=Depends(verificar_manutencao)):
+    try:
+        d = await request.json()
+    except Exception:
+        d = {}
+    return await _gerar_ot_previsao(plano_id, d, payload)
+
+
+@router.post("/manutencao/api/previsoes/gerar")
+async def previsoes_gerar_lote(payload=Depends(verificar_manutencao)):
+    """(15/09/2026) Botão "Gerar preventivas" (ManWinWin): cria a OT programada de toda
+    FMP vencida ou a vencer que ainda não tem OT. Uma por plano; falhas não param o lote."""
+    prev = await _calcular_previsoes()
+    geradas, puladas = [], []
+    for it in prev["itens"]:
+        if it["status"] not in ("vencida", "a_vencer") or it.get("ot"):
+            continue
+        try:
+            r = await _gerar_ot_previsao(it["plano_id"], {
+                "data_prevista": it.get("proxima_data"),
+                "horimetro_previsto": it.get("leitura_alvo"),
+                "prioridade": "alta" if it["status"] == "vencida" else "media"}, payload)
+            geradas.append({"plano": it["plano_codigo"], "equipamento": it["eq_codigo"], "ot": (r or {}).get("numero")})
+        except HTTPException as ex:
+            puladas.append({"plano": it["plano_codigo"], "motivo": ex.detail})
+    return {"geradas": geradas, "puladas": puladas, "total_geradas": len(geradas)}
+
+
+async def _copiar_plano(p, eq_id, desc=None):
+    """Cópia de uma FMP para um objecto: cabeçalho, período, TDM, custo, procedimento,
+    mão de obra, peças, outros, ferramentas — próximo código do tipo no destino.
+    Baseline (última execução) não é copiada."""
+    eq = await ajard_query("SELECT id, codigo FROM operacional.equipamentos WHERE id=%s AND ativo=true", (eq_id,), fetch="one")
+    if not eq:
+        return None
+    tt = p["tipo_trabalho"] or "PS"
+    seq = await ajard_query(
+        """SELECT COALESCE(MAX(CAST(NULLIF(split_part(codigo, '-', 2), '') AS INT)), 0) + 1 AS n
+           FROM manutencao.planos WHERE equipamento_id=%s AND codigo LIKE %s""",
+        (eq_id, f"{tt}-%"), fetch="one")
+    codigo = f"{tt}-{int(seq['n']):02d}"
+    row = await ajard_query(
+        """INSERT INTO manutencao.planos
+             (equipamento_id, codigo, descricao, tipo_trabalho, periodo_codigo, periodo_qtd,
+              tempo_horas, hh_previsto, custo_previsto, procedimento, preparacao_codigo,
+              mao_obra, pecas, outros, ferramentas)
+           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+           RETURNING id, codigo""",
+        (eq_id, codigo, (desc or p["descricao"] or "").strip(), tt, p["periodo_codigo"], p["periodo_qtd"],
+         p["tempo_horas"], p["hh_previsto"], p["custo_previsto"], p["procedimento"], p.get("preparacao_codigo"),
+         p.get("mao_obra"), p.get("pecas"), p.get("outros"), p.get("ferramentas")), fetch="one")
+    return {"equipamento": eq["codigo"], "codigo": row["codigo"], "id": row["id"], "origem": p["codigo"]}
+
+
+@router.post("/manutencao/api/planos/repetir")
+async def repetir_planos(request: Request, _auth=Depends(verificar_manutencao)):
+    """(16/09/2026) "Repetir Planos Manutenção" (ManWinWin): N FMPs de origem × M objectos
+    de destino, numa chamada. Body: {planos: [ids], equipamentos: [ids]}."""
+    await _garantir_planos_cols()
+    d = await request.json()
+    planos = d.get("planos") or []
+    destinos = d.get("equipamentos") or []
+    if not planos or not destinos:
+        raise HTTPException(status_code=400, detail="Informe as FMPs de origem e os objectos de destino")
+    criados = []
+    for pid in planos:
+        p = await ajard_query("SELECT * FROM manutencao.planos WHERE id=%s", (pid,), fetch="one")
+        if not p:
+            continue
+        for eq_id in destinos:
+            r = await _copiar_plano(p, eq_id)
+            if r:
+                criados.append(r)
+    return {"criados": criados, "total": len(criados)}
+
+
+@router.patch("/manutencao/api/planos/{plano_id}/baseline")
+async def plano_baseline(plano_id: str, request: Request, _auth=Depends(verificar_manutencao)):
+    """Última execução manual da FMP (data + leitura) — baseline do ciclo quando não há OT concluída."""
+    await _garantir_planos_cols()
+    d = await request.json()
+    dt = (d.get("ultima_data") or "").strip() or None
+    le = d.get("ultima_leitura")
+    le = float(str(le).replace(",", ".")) if le not in (None, "") else None
+    await ajard_query("UPDATE manutencao.planos SET ultima_data=%s, ultima_leitura=%s WHERE id=%s",
+                      (dt, le, plano_id), fetch="none")
+    return {"ok": True}
 
 
 @router.post("/manutencao/api/ots/{ot_id}/novo-ciclo")
@@ -3187,11 +3334,12 @@ async def ot_novo_ciclo(ot_id: str, payload=Depends(verificar_manutencao)):
 @router.get("/manutencao/api/planos/{pid}")
 async def obter_plano(pid: str, _auth=Depends(verificar_manutencao)):
     """Plano completo (Planeado da OT herdado da FMP)."""
+    await _garantir_planos_cols()
     await _garantir_biblioteca()
     p = await ajard_query(
         """SELECT id, codigo, descricao, tipo_trabalho, periodo_codigo, periodo_qtd,
                   tempo_horas, custo_previsto, procedimento,
-                  mao_obra, pecas, outros, ferramentas
+                  mao_obra, pecas, outros, ferramentas, ultima_data, ultima_leitura, ativo
            FROM manutencao.planos WHERE id=%s""", (pid,), fetch="one")
     if not p:
         raise HTTPException(status_code=404, detail="Plano não encontrado")
