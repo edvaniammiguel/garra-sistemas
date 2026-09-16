@@ -2763,6 +2763,8 @@ async def editar_plano(pid: str, request: Request, payload=Depends(verificar_man
             sets.append(f"{c}=%s"); params.append(_json.dumps(d[c] or []))
     if "ativo" in d:
         sets.append("ativo=%s"); params.append(bool(d["ativo"]))
+    if "preparacao_codigo" in d:
+        sets.append("preparacao_codigo=%s"); params.append((d.get("preparacao_codigo") or "").strip() or None)
     _blocos = [d.get("mao_obra") or [], d.get("pecas") or [], d.get("outros") or []]
     if any(isinstance(b, list) and len(b) for b in _blocos):
         def _n(v):
@@ -3278,6 +3280,20 @@ async def plano_baseline(plano_id: str, request: Request, _auth=Depends(verifica
     dt = (d.get("ultima_data") or "").strip() or None
     le = d.get("ultima_leitura")
     le = float(str(le).replace(",", ".")) if le not in (None, "") else None
+    # (16/09/2026) Coerência com o objecto: não pode ter executado antes de existir,
+    # nem com leitura acima do horímetro/km atual.
+    eq = await ajard_query(
+        """SELECT e.codigo, e.medicao, e.data_aquisicao, e.horimetro_atual, e.km_atual
+           FROM manutencao.planos p JOIN operacional.equipamentos e ON e.id = p.equipamento_id
+           WHERE p.id=%s""", (plano_id,), fetch="one")
+    if eq:
+        if dt and eq.get("data_aquisicao") and str(dt) < str(eq["data_aquisicao"])[:10]:
+            raise HTTPException(status_code=400,
+                detail=f"Última execução ({dt[8:10]}/{dt[5:7]}/{dt[:4]}) anterior à aquisição do objecto ({str(eq['data_aquisicao'])[8:10]}/{str(eq['data_aquisicao'])[5:7]}/{str(eq['data_aquisicao'])[:4]})")
+        vivo = float((eq.get("km_atual") if eq.get("medicao") == "km" else eq.get("horimetro_atual")) or 0)
+        if le is not None and vivo > 0 and le > vivo:
+            raise HTTPException(status_code=400,
+                detail=f"Leitura da última execução ({le:g}) maior que a leitura atual do objecto ({vivo:g})")
     await ajard_query("UPDATE manutencao.planos SET ultima_data=%s, ultima_leitura=%s WHERE id=%s",
                       (dt, le, plano_id), fetch="none")
     return {"ok": True}
