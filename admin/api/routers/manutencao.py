@@ -3248,7 +3248,7 @@ async def _copiar_plano(p, eq_id, desc=None):
     return {"equipamento": eq["codigo"], "codigo": row["codigo"], "id": row["id"], "origem": p["codigo"]}
 
 
-@router.post("/manutencao/api/planos/repetir")
+@router.post("/manutencao/api/planos-repetir")
 async def repetir_planos(request: Request, _auth=Depends(verificar_manutencao)):
     """(16/09/2026) "Repetir Planos Manutenção" (ManWinWin): N FMPs de origem × M objectos
     de destino, numa chamada. Body: {planos: [ids], equipamentos: [ids]}."""
