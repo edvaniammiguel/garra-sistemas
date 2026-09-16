@@ -757,6 +757,11 @@ async def not_found_handler(request: Request, exc):
     from fastapi.responses import JSONResponse
     path = request.url.path
     if _eh_api(path):
+        # (16/09/2026) Lição 4: um 404 levantado DENTRO da rota ("Setor não encontrado",
+        # "Equipamento não encontrado") mantém o motivo; só rota inexistente vira "Rota não encontrada".
+        detalhe = getattr(exc, "detail", None)
+        if detalhe and str(detalhe) != "Not Found":
+            return JSONResponse({"ok": False, "error": str(detalhe), "detail": str(detalhe), "path": path}, status_code=404)
         return JSONResponse({"ok": False, "error": "Rota não encontrada",
                              "detail": "Rota não encontrada", "path": path}, status_code=404)
     return HTMLResponse(_pagina_erro(
