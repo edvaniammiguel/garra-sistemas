@@ -858,7 +858,7 @@ async function plRepetirOK(){
   if (!planos.length || !eqs.length) { mostrarToast('Marque ao menos uma FMP e um objecto', 'warn'); return; }
   if (!confirm('Criar '+(planos.length*eqs.length)+' FMP(s) em '+eqs.length+' objecto(s)?')) return;
   try {
-    const r = await mntFetch('/manutencao/api/planos/repetir', {method:'POST', body: JSON.stringify({planos, equipamentos: eqs})});
+    const r = await mntFetch('/manutencao/api/planos-repetir', {method:'POST', body: JSON.stringify({planos, equipamentos: eqs})});
     document.getElementById('rp-modal')?.remove();
     mostrarToast('📋 '+r.total+' FMP(s) criadas', 'ok');
     abrirPlanosEquip(_plEquip); carregarSemaforosReais();
