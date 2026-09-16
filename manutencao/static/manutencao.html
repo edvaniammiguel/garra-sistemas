@@ -890,51 +890,65 @@ async function plFicha(pid, aba){
                   custo: p.custo_previsto != null ? parseFloat(p.custo_previsto) : '',
                   tarefas: p.procedimento || '', prox: p.plano_proximo_codigo || '',
                   mo: j(p.mao_obra), pc: j(p.pecas), ou: j(p.outros), fe: j(p.ferramentas),
-                  ult_dt: p.ultima_data ? String(p.ultima_data).slice(0,10) : '', ult_le: p.ultima_leitura ?? '' };
+                  ult_dt: p.ultima_data ? String(p.ultima_data).slice(0,10) : '', ult_le: p.ultima_leitura ?? '', prep: p.preparacao_codigo || '' };
   }
   _plfSync();
   if (_plfPer === null) { try { _plfPer = (await mntFetch('/manutencao/api/param/periodos')).filter(x=>x.ativo!==false); } catch(e){ _plfPer = []; } }
   if (_bibRub === null) { try { _bibRub = (await mntFetch('/manutencao/api/param/rubricas')).filter(r=>r.ativo!==false); } catch(e){ _bibRub = []; } }
-  aba = aba || 'cab';
+  aba = aba || 'tar';
   const d = _plfDraft;
   const eq = _mntEquipList.find(e => String(e.id) === String(_plEquip)) || {};
-  const ABAS = [['cab','Cabeçalho'],['tar','Tarefas'],['mo','Mão de Obra'],['pc','Peças'],['ou','Outros'],['fe','Ferramentas']];
+  const ABAS = [['tar','Tarefas'],['prep','Preparações'],['mo','Mão de Obra'],['pc','Artigos'],['ou','Outros'],['fe','Ferramentas']];
+  const idx = _plLista.findIndex(x => String(x.id) === String(d.id)), n = _plLista.length;
+  const fld = (rot, inner) => '<div class="mfield">'+rot+inner+'</div>';
+  const perQtd = String(d.qtd ?? '');
+  const isReg = String(d.per) === '6';
+  const calOpts = _plfPer.filter(x => String(x.codigo) !== '6').map(x=>'<option value="'+_esc(x.codigo)+'"'+(String(x.codigo)===String(d.per)?' selected':'')+'>'+_esc(x.nome||x.codigo)+'</option>').join('');
+  const custoHtml = (function(){ const sm = plfSoma(d);
+      if (!sm.tem) return '<input id="plf-custo" type="number" step="0.01" value="'+_esc(String(d.custo))+'" style="width:110px">';
+      return '<input id="plf-custo" type="number" value="'+sm.total.toFixed(2)+'" readonly style="width:110px;background:#F1F5F9;font-weight:700" title="MO '+sm.mo.toFixed(2)+' + Artigos '+sm.pc.toFixed(2)+' + Outros '+sm.ou.toFixed(2)+'">'; })();
   document.querySelector('#eq-ficha .modal').classList.remove('larga');
   document.getElementById('eq-ficha-corpo').innerHTML =
     '<div style="display:flex;justify-content:space-between;align-items:center">'
-    + '<b style="font-size:14px;color:#1A2A5E">📂 FMP '+_esc(d.codigo)+' — '+_esc(eq.codigo||'')+'</b>'
+    + '<b style="font-size:14px;color:#1A2A5E">📂 Ficha Manutenção Planeada</b>'
     + '<span style="cursor:pointer;font-size:18px" onclick="_plfDraft=null;abrirPlanosEquip(_plEquip)">✕</span></div>'
-    + '<div class="mtabs" style="margin-top:6px">'
+    // ── cabeçalho fixo (formato ManWinWin) ──
+    + '<div style="display:flex;gap:14px;margin-top:8px;align-items:stretch">'
+    + '<div style="flex:1;display:flex;flex-direction:column;gap:4px">'
+    +   '<div class="ne-f" style="flex-direction:row;align-items:center;gap:8px"><span class="ne-l" style="flex:0 0 96px">Objecto</span><input value="'+_esc((eq.codigo||'')+' — '+(eq.descricao||''))+'" readonly style="flex:1;background:#F1F5F9"></div>'
+    +   '<div class="ne-f" style="flex-direction:row;align-items:center;gap:8px"><span class="ne-l r" style="flex:0 0 96px">Tipo Trab.</span><input value="'+_esc(d.tt||'')+'" readonly style="flex:1;background:#F1F5F9"></div>'
+    +   '<div style="display:flex;gap:8px"><div class="ne-f" style="flex:0 0 160px;flex-direction:row;align-items:center;gap:8px"><span class="ne-l r" style="flex:0 0 96px">Código</span><input value="'+_esc(d.codigo)+'" readonly style="flex:1;background:#F1F5F9;font-weight:700"></div>'
+    +   '<div class="ne-f" style="flex:1;flex-direction:row;align-items:center;gap:8px"><span class="ne-l r" style="flex:0 0 76px">Descrição</span><input id="plf-desc" value="'+_esc(d.desc)+'" style="flex:1"></div></div>'
+    +   '<div style="display:flex;gap:8px"><div class="ne-f" style="flex-direction:row;align-items:center;gap:8px"><span class="ne-l" style="flex:0 0 96px">Prev. TDM (h)</span><input id="plf-tdm" type="number" step="0.1" value="'+_esc(String(d.tdm))+'" style="width:90px"></div>'
+    +   '<div class="ne-f" style="flex-direction:row;align-items:center;gap:8px"><span class="ne-l" style="flex:0 0 110px">Custo prev. (R$)</span>'+custoHtml+'</div>'
+    +   '<div class="ne-f" style="flex:1;flex-direction:row;align-items:center;gap:8px"><span class="ne-l" style="flex:0 0 90px">Próxima FMP</span><select id="plf-prox" style="flex:1"><option value="">— nenhuma —</option>'
+    +     _plLista.map(pp => '<option value="'+_esc(pp.codigo)+'"'+(String(pp.codigo)===String(d.prox)?' selected':'')+'>'+_esc(pp.codigo)+' — '+_esc(pp.descricao||'')+'</option>').join('')+'</select></div></div>'
+    + '</div>'
+    + '<fieldset class="ne-fs" style="flex:0 0 330px;margin-top:0"><legend>Periodicidade</legend>'
+    +   '<div style="display:flex;gap:8px;align-items:center;margin-bottom:6px"><label style="display:flex;align-items:center;gap:6px;font-size:12px;width:120px"><input type="radio" name="plf-modo" value="cal"'+(!isReg?' checked':'')+' onchange="plfModo()"> Calendário</label>'
+    +   '<input id="plf-cal-qtd" type="number" min="1" value="'+(!isReg?_esc(perQtd):'')+'" style="width:70px"'+(isReg?' disabled':'')+'><select id="plf-cal-un" style="flex:1"'+(isReg?' disabled':'')+'>'+calOpts+'</select></div>'
+    +   '<div style="display:flex;gap:8px;align-items:center;margin-bottom:6px"><label style="display:flex;align-items:center;gap:6px;font-size:12px;width:120px"><input type="radio" name="plf-modo" value="reg"'+(isReg?' checked':'')+' onchange="plfModo()"> Registos ('+(eq.medicao==='km'?'KM':'H')+')</label>'
+    +   '<input id="plf-reg-qtd" type="number" min="1" value="'+(isReg?_esc(perQtd):'')+'" style="width:110px"'+(!isReg?' disabled':'')+'></div>'
+    +   '<div style="display:flex;gap:8px;align-items:center;margin-bottom:4px;font-size:11px"><span style="width:120px;color:#475569;font-weight:700">Última execução</span><input id="plf-ult-dt" type="date" value="'+_esc(d.ult_dt||'')+'" onchange="plfBaseline()" style="width:130px"><input id="plf-ult-le" type="number" step="0.1" placeholder="leitura" value="'+_esc(String(d.ult_le ?? ''))+'" onchange="plfBaseline()" style="width:90px"></div>'
+    +   '<div style="display:flex;gap:8px;align-items:center;font-size:11px"><span style="width:120px;color:#475569;font-weight:700">Próxima</span><span id="plf-prox-calc" class="mono" style="color:#1A2A5E">…</span></div>'
+    + '</fieldset></div>'
+    // ── abas ──
+    + '<div class="mtabs" style="margin-top:8px">'
     + ABAS.map(([k,t]) => '<div class="mtab'+(k===aba?' on':'')+'" onclick="plFicha(\''+d.id+'\',\''+k+'\')">'+t+'</div>').join('')
     + '</div><div id="plf-corpo"></div>'
-    + '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">'
-    + '<button class="btn" onclick="_plfDraft=null;abrirPlanosEquip(_plEquip)">Cancelar</button>'
-    + '<button class="btn p" onclick="plFichaSalvar()">💾 Salvar</button></div>';
+    // ── rodapé: navegação + OK/Cancelar/Aplicar ──
+    + '<div style="display:flex;justify-content:space-between;align-items:center;margin-top:10px">'
+    + '<div style="display:flex;gap:4px;align-items:center"><button class="btn" '+(idx<=0?'disabled':'')+' onclick="plfNav(0)">⏮</button><button class="btn" '+(idx<=0?'disabled':'')+' onclick="plfNav(-1)">◀</button><span class="mono" style="font-size:11px;padding:0 8px">'+(idx+1)+' / '+n+'</span><button class="btn" '+(idx>=n-1?'disabled':'')+' onclick="plfNav(1)">▶</button><button class="btn" '+(idx>=n-1?'disabled':'')+' onclick="plfNav(2)">⏭</button></div>'
+    + '<div style="display:flex;gap:8px"><button class="btn p" style="min-width:80px" onclick="plFichaSalvar(true)">OK</button><button class="btn" onclick="_plfDraft=null;abrirPlanosEquip(_plEquip)">Cancelar</button><button class="btn" onclick="plFichaSalvar(false)">Aplicar</button></div></div>';
   document.getElementById('eq-ficha').classList.add('show');
+  setTimeout(plfProxima, 30);
   const c = document.getElementById('plf-corpo');
-  const fld = (rot, inner) => '<div class="mfield">'+rot+inner+'</div>';
   const rubOpts = sel => '<option value="">—</option>' + _bibRub.map(r =>
     '<option value="'+_esc(r.codigo)+'"'+(r.codigo===sel?' selected':'')+'>'+_esc(r.codigo)+' '+_esc(r.nome||'')+'</option>').join('');
-  if (aba === 'cab'){
-    setTimeout(plfProxima, 30);
-    c.innerHTML = '<div class="dsec">Cabeçalho</div><div class="mgrid">'
-      + fld('Tipo de trabalho','<div class="mono" style="padding:6px 0">'+_esc(d.tt||'—')+' <span class="muted">(fixo — o código '+_esc(d.codigo)+' nasce do tipo)</span></div>')
-      + fld('Periodicidade','<select id="plf-per"><option value="">—</option>'
-        + _plfPer.map(x=>'<option value="'+_esc(x.codigo)+'"'+(String(x.codigo)===String(d.per)?' selected':'')+'>'+_esc(x.codigo)+' — '+_esc(x.nome||'')+'</option>').join('')+'</select>')
-      + fld('Descrição *','<input id="plf-desc" value="'+_esc(d.desc)+'">')
-      + fld('Qtd do período (se horím./km)','<input id="plf-qtd" type="number" value="'+_esc(String(d.qtd))+'">')
-      + fld('Prev. TDM (h)','<input id="plf-tdm" type="number" step="0.1" value="'+_esc(String(d.tdm))+'">')
-      + fld('Última execução (data)','<input id="plf-ult-dt" type="date" value="'+_esc(d.ult_dt||'')+'" onchange="plfBaseline()">')
-      + fld('Última execução (leitura)','<input id="plf-ult-le" type="number" step="0.1" value="'+_esc(String(d.ult_le ?? ''))+'" onchange="plfBaseline()">')
-      + fld('Próxima (calculada)','<div id="plf-prox-calc" class="mono" style="padding:6px 0;color:#1A2A5E">…</div>')
-      + fld('Próxima FMP (encadeamento)','<select id="plf-prox"><option value="">— nenhuma —</option>'
-        + _plLista.map(pp => '<option value="'+_esc(pp.codigo)+'"'+(String(pp.codigo)===String(d.prox)?' selected':'')+'>'+_esc(pp.codigo)+' — '+_esc(pp.descricao||'')+'</option>').join('')+'</select>')
-      + (function(){ const s = plfSoma(d);
-          if (!s.tem) return fld('Custo previsto (R$)','<input id="plf-custo" type="number" step="0.01" value="'+_esc(String(d.custo))+'">');
-          return fld('Custo previsto (R$) — Σ dos blocos','<input id="plf-custo" type="number" value="'+s.total.toFixed(2)+'" readonly style="background:#F1F5F9;font-weight:700">'
-            + '<div class="muted" style="font-size:10px;margin-top:2px">MO '+s.mo.toFixed(2)+' + Peças '+s.pc.toFixed(2)+' + Outros '+s.ou.toFixed(2)+'</div>');
-        })()
-      + '</div>';
+  if (aba === 'prep'){
+    c.innerHTML = '<div class="dsec">Preparações — modelo de origem (Biblioteca)</div>'
+      + '<div style="padding:8px 0;font-size:12px">'+(d.prep ? 'Esta FMP nasceu da preparação <b>'+_esc(d.prep)+'</b>.' : 'Esta FMP não está ligada a uma preparação da Biblioteca.')
+      + ' <button class="btn" onclick="plfDaBibliotecaFicha()">📚 Puxar tarefas / blocos da Biblioteca</button></div>';
   }
   if (aba === 'tar'){
     c.innerHTML = '<div class="dsec">Tarefas — o passo a passo da revisão</div>'
@@ -1004,7 +1018,13 @@ async function plfBaseline(){
   try {
     await mntFetch('/manutencao/api/planos/'+d.id+'/baseline', {method:'PATCH', body: JSON.stringify({ultima_data: dt, ultima_leitura: le === '' ? null : le})});
     d.ult_dt = dt || ''; d.ult_le = le; plfProxima();
-  } catch(e){ mostrarToast('❌ '+e.message,'warn'); }
+  } catch(e){
+    // regra do objecto barrou: alerta e devolve os valores anteriores — reveja o cadastro (Data de aquisição / leitura)
+    alert('⚠️ '+e.message+'\n\nReveja o cadastro do objecto (Data de aquisição / leitura atual) ou a última execução.');
+    const a = document.getElementById('plf-ult-dt'), b = document.getElementById('plf-ult-le');
+    if (a) a.value = d.ult_dt || ''; if (b) b.value = d.ult_le ?? '';
+    (dt !== (d.ult_dt||null) ? a : b)?.focus();
+  }
 }
 async function plfProxima(){
   const d = _plfDraft, el = document.getElementById('plf-prox-calc'); if (!d || !el) return;
@@ -1034,12 +1054,38 @@ async function gerarPreventivas(){
     carregarOTsReais(); carregarSemaforosReais();
   } catch(e){ mostrarToast('❌ '+e.message,'warn'); }
 }
+function plfModo(){
+  const reg = (document.querySelector('input[name="plf-modo"]:checked')||{}).value === 'reg';
+  ['plf-cal-qtd','plf-cal-un'].forEach(i => { const el = document.getElementById(i); if (el) el.disabled = reg; });
+  const r = document.getElementById('plf-reg-qtd'); if (r) r.disabled = !reg;
+}
+function plfNav(dir){
+  _plfSync();
+  const i = _plLista.findIndex(x => String(x.id) === String(_plfDraft.id));
+  const j = dir === 0 ? 0 : dir === 2 ? _plLista.length - 1 : Math.min(_plLista.length - 1, Math.max(0, i + dir));
+  if (j === i) return;
+  _plfDraft = null; plFicha(_plLista[j].id);
+}
+async function plfDaBibliotecaFicha(){
+  const eq = _mntEquipList.find(e => String(e.id) === String(_plEquip)) || {};
+  let lista = [];
+  try { lista = await mntFetch('/manutencao/api/biblioteca?tipo_sigla='+encodeURIComponent(eq.tipo_sigla||'')); } catch(e){ mostrarToast('❌ '+e.message,'warn'); return; }
+  lista = Array.isArray(lista) ? lista : (lista.itens||[]);
+  if (!lista.length) { mostrarToast('Biblioteca sem preparações para o tipo '+(eq.tipo_sigla||''),'warn'); return; }
+  const esc = lista.map((b,i) => (i+1)+') '+b.codigo+' — '+(b.descricao||'')).join('\n');
+  const n = parseInt(prompt('Preparação da Biblioteca:\n\n'+esc+'\n\nNúmero:', '1')||'0'); const b = lista[n-1]; if (!b) return;
+  const d = _plfDraft; d.prep = b.codigo; if (b.tarefas) d.tarefas = b.tarefas; if (b.tdm_horas != null) d.tdm = b.tdm_horas;
+  mostrarToast('📚 '+b.codigo+' aplicada — confira as Tarefas e Aplique','ok'); plFicha(d.id, 'tar');
+}
 function _plfSync(){
   const g = id => document.getElementById(id);
   const d = _plfDraft; if (!d) return;
-  if (g('plf-desc')) { d.desc = g('plf-desc').value; d.per = g('plf-per').value; d.qtd = g('plf-qtd').value;
-    d.tdm = g('plf-tdm').value; d.custo = g('plf-custo').value;
-    if (g('plf-prox')) d.prox = g('plf-prox').value; }
+  if (g('plf-desc')) {
+    d.desc = g('plf-desc').value; d.tdm = g('plf-tdm').value; d.custo = g('plf-custo').value;
+    if (g('plf-prox')) d.prox = g('plf-prox').value;
+    const reg = (document.querySelector('input[name="plf-modo"]:checked')||{}).value === 'reg';
+    d.per = reg ? '6' : (g('plf-cal-un')?.value || ''); d.qtd = reg ? g('plf-reg-qtd').value : g('plf-cal-qtd').value;
+  }
   if (g('plf-tarefas')) d.tarefas = g('plf-tarefas').value;
   const colhe = (cls, campos) => [...document.querySelectorAll('.'+cls)].map(row => {
     const o = {}; campos.forEach(c => { o[c.k] = row.querySelector('.'+c.cls).value; }); return o;
@@ -1164,7 +1210,7 @@ function plfMais(cls){
   _plfMin[cls] = document.querySelectorAll('.plf-'+cls+'-row').length + 1;
   plFicha(_plfDraft.id, cls);
 }
-async function plFichaSalvar(){
+async function plFichaSalvar(fechar){
   _plfSync();
   const d = _plfDraft; if (!d) return;
   if (!String(d.desc).trim()) { mostrarToast('Descrição é obrigatória','warn'); return; }
@@ -1173,9 +1219,11 @@ async function plFichaSalvar(){
       descricao: String(d.desc).trim(), periodo_codigo: d.per,
       periodo_qtd: d.qtd, tempo_horas: d.tdm,
       custo_previsto: (function(){ const s = plfSoma(d); return s.tem ? s.total.toFixed(2) : d.custo; })(),
-      procedimento: d.tarefas, plano_proximo_codigo: d.prox,
+      procedimento: d.tarefas, plano_proximo_codigo: d.prox, preparacao_codigo: d.prep || null,
       mao_obra: d.mo, pecas: d.pc, outros: d.ou, ferramentas: d.fe })});
     mostrarToast('✅ '+r.codigo+' atualizada','ok');
+    if (fechar === false) { const aba = (document.querySelector('.mtab.on')||{}).textContent; const k = {'Tarefas':'tar','Preparações':'prep','Mão de Obra':'mo','Artigos':'pc','Outros':'ou','Ferramentas':'fe'}[aba] || 'tar';
+      _plLista = (await mntFetch('/manutencao/api/equipamentos/'+_plEquip+'/detalhe')).planos || _plLista; _plfDraft = null; plFicha(d.id, k); return; }
     _plfDraft = null;
     abrirPlanosEquip(_plEquip);
   } catch(e){ mostrarToast('❌ '+e.message,'warn'); }
@@ -1788,16 +1836,16 @@ async function novoEquipMW(copiarDe, editar){
     + fld('C. Custo', sel('ne-cc', _mwDom.ccs, base.centro_custo, 'codigo','nome'))
     + fld('Localiza\u00e7\u00e3o', '<div style="display:flex;gap:4px">'+inp('ne-loc', base.localizacao, 'almoxarifado / local')+'<button class="btn" title="Localiza\u00e7\u00f5es (almoxarifados) \u2014 escolher ou criar" onclick="neSeletor(\'loc\')">\u2026</button></div>')
     + fld('Operador/motorista', '<div style="display:flex;gap:4px">'+sel('ne-op', _mwDom.operadores, base.operador_responsavel_id, 'id','nome')+'<button class="btn" title="Colaboradores \u2014 escolher ou cadastrar" onclick="neSeletor(\'op\')">\u2026</button></div>')
-    + fld('Desde', inp('ne-desde', new Date().toISOString().slice(0,10), '', 'date'))
+    + fld('Desde', inp('ne-desde', editar ? (base.operador_desde ? String(base.operador_desde).slice(0,10) : '') : new Date().toISOString().slice(0,10), '', 'date'))
     + '<fieldset class="ne-fs"><legend>Fornecedor</legend>'
     + fld('Fornecedor', '<div style="display:flex;gap:4px">'+sel('ne-forn', _mwDom.fornecedores, base.fornecedor_id, 'id','nome')+'<button class="btn" title="Fornecedores \u2014 escolher ou cadastrar" onclick="neSeletor(\'forn\')">\u2026</button></div>')
     + '<div style="display:flex;gap:10px;margin-top:4px">'
-    + fld('<span class="r">Data:</span>', inp('ne-dtaq', new Date().toISOString().slice(0,10), '', 'date'), 1)
-    + fld('Registo (H):', inp('ne-leit', '', '0'), 1)
+    + fld('<span class="r">Data:</span>', inp('ne-dtaq', editar ? (base.data_aquisicao ? String(base.data_aquisicao).slice(0,10) : '') : new Date().toISOString().slice(0,10), '', 'date'), 1)
+    + fld('Registo (H):', inp('ne-leit', editar ? (base.medicao==='km' ? base.km_atual : base.horimetro_atual) ?? '' : '', '0'), 1)
     + '</div><div style="display:flex;gap:10px;margin-top:4px">'
-    + fld('Vida \u00datil (h):', inp('ne-vida', base.vida_util_h, 'h'), 1) + fld('Investimento:', inp('ne-inv', '', 'R$'), 1)
+    + fld('Vida \u00datil (h):', inp('ne-vida', base.vida_util_h, 'h'), 1) + fld('Investimento:', inp('ne-inv', editar ? (base.valor_aquisicao ?? '') : '', 'R$'), 1)
     + '</div><div style="display:flex;gap:10px;margin-top:4px">'
-    + fld('Valor Actual:', inp('ne-vatual','', 'R$'), 1) + '<div style="flex:1"></div>'
+    + fld('Valor Actual:', inp('ne-vatual', editar ? (base.valor_atual ?? '') : '', 'R$'), 1) + '<div style="flex:1"></div>'
     + '</div></fieldset></div>'
     + '<div style="flex:0 0 380px;display:flex;flex-direction:column;gap:6px">'
     + '<div id="ne-fig-box" style="flex:1;min-height:300px;border:1px solid #93C5FD;background:#F8FAFC;display:flex;align-items:center;justify-content:center;color:#94A3B8;font-size:11px;overflow:hidden;cursor:pointer" title="Clique para escolher a foto" onclick="document.getElementById(\'ne-figura\').click()">'
