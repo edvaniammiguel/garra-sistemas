@@ -709,6 +709,7 @@ function renderPlanos(){
     + '<div style="display:flex;align-items:center;gap:4px;margin:8px 0">'
     + '<button class="btn" title="Nova FMP" onclick="plNova()">➕</button>'
     + '<button class="btn" title="Abrir ficha da selecionada" onclick="plFichaSel()">📂</button>'
+    + '<button class="btn" title="Repetir FMPs para outros objectos" onclick="plRepetir()">📋</button>'
     + '<button class="btn" title="Desativar selecionada" onclick="plDesativar()">✕</button>'
     + '<span style="width:8px"></span>'
     + '<button class="btn" onclick="plNav(0)">⏮</button><button class="btn" onclick="plNav(-1)">◀</button>'
@@ -796,6 +797,47 @@ async function plDesativar(){
 function plFichaSel(){
   if (!_plSel) { mostrarToast('Selecione uma FMP na lista','warn'); return; }
   plFicha(_plSel);
+}
+// (16/09/2026) Repetir Planos Manutenção (ManWinWin): FMPs de origem com caixas (em cima)
+// × objectos de destino com caixas (embaixo). Uma FMP marcada = "Repetir Ficha"; várias = "Repetir Planos".
+function plRepetir(){
+  const eqAtual = _mntEquipList.find(e => String(e.id) === String(_plEquip)) || {};
+  const fmps = (_plLista || []);
+  if (!fmps.length) { mostrarToast('Este objecto não tem FMPs para repetir', 'warn'); return; }
+  const lin = fmps.map(p => '<label style="display:flex;gap:8px;align-items:center;padding:3px 10px;border-bottom:1px solid #f1f3f8;cursor:pointer">'
+    + '<input type="checkbox" class="rp-fmp" value="'+p.id+'"'+(String(p.id)===String(_plSel)?' checked':'')+'><b style="width:60px;color:#1A2A5E">'+_esc(p.codigo)+'</b><span style="flex:1">'+_esc(p.descricao||'')+'</span>'
+    + '<span class="mono muted" style="font-size:10px">'+_esc(p.periodo_qtd? p.periodo_qtd+' '+(p.periodo_codigo==='6'?'H':'') : '')+'</span></label>').join('');
+  const lista = _mntEquipList.filter(e => (e.categoria||'') !== 'componente').slice().sort((a,b)=>String(a.codigo).localeCompare(String(b.codigo)));
+  const linhas = lista.map(e => '<label class="rp-row" data-busca="'+_esc((e.codigo+' '+(e.descricao||'')+' '+(e.tipo_sigla||'')).toLowerCase())+'" style="display:flex;gap:8px;align-items:center;padding:3px 10px;border-bottom:1px solid #f1f3f8;cursor:pointer">'
+    + '<input type="checkbox" class="rp-eq" value="'+e.id+'"><b style="width:90px;color:#1A2A5E">'+_esc(e.codigo)+'</b><span style="flex:1">'+_esc(e.descricao||'')+'</span><span class="muted" style="font-size:10px">'+_esc(e.tipo_sigla||'')+'</span></label>').join('');
+  const html = '<div id="rp-modal" style="position:fixed;inset:0;background:rgba(10,16,40,.45);z-index:9999;display:flex;align-items:center;justify-content:center" onclick="if(event.target===this)this.remove()">'
+    + '<div style="background:#fff;border-radius:10px;width:680px;max-width:95vw;height:86vh;display:flex;flex-direction:column;box-shadow:0 12px 40px rgba(0,0,0,.3)">'
+    + '<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;border-bottom:1px solid #e3e6f0"><b style="color:#1A2A5E">📋 Repetir Planos Manutenção</b><button class="btn" onclick="document.getElementById(\'rp-modal\').remove()">✕</button></div>'
+    + '<div style="padding:8px 14px;font-size:12px;border-bottom:1px solid #e3e6f0">Objecto origem: <b>'+_esc(eqAtual.codigo)+' — '+_esc(eqAtual.descricao||'')+'</b></div>'
+    + '<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 14px;background:#F8FAFC;font-size:11px;font-weight:700;color:#475569"><span>FMPs de origem</span><span><button class="btn" onclick="document.querySelectorAll(\'.rp-fmp\').forEach(c=>c.checked=true)">Todas</button> <button class="btn" onclick="document.querySelectorAll(\'.rp-fmp\').forEach(c=>c.checked=false)">Nenhuma</button></span></div>'
+    + '<div style="overflow:auto;flex:0 0 32%;border-bottom:2px solid #1A2A5E">'+lin+'</div>'
+    + '<div style="display:flex;gap:8px;align-items:center;padding:6px 14px;background:#F8FAFC;font-size:11px;font-weight:700;color:#475569"><span>Objectos destino</span><input id="rp-busca" placeholder="Procurar objecto…" style="flex:1;font-weight:400" oninput="plRepetirFiltrar(this.value)">'
+    + '<button class="btn" onclick="document.querySelectorAll(\'#rp-lista .rp-row:not([style*=none]) .rp-eq\').forEach(c=>c.checked=true)">Marcar visíveis</button><button class="btn" onclick="document.querySelectorAll(\'.rp-eq\').forEach(c=>c.checked=false)">Limpar</button></div>'
+    + '<div id="rp-lista" style="overflow:auto;flex:1">'+linhas+'</div>'
+    + '<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;border-top:1px solid #e3e6f0"><span id="rp-resumo" class="muted" style="font-size:11px"></span><span><button class="btn" onclick="document.getElementById(\'rp-modal\').remove()">Cancelar</button> <button class="btn" style="background:#1A2A5E;color:#fff;min-width:90px" onclick="plRepetirOK()">OK</button></span></div>'
+    + '</div></div>';
+  const w = document.createElement('div'); w.innerHTML = html; document.body.appendChild(w.firstChild);
+  const upd = () => { const f = document.querySelectorAll('.rp-fmp:checked').length, e = document.querySelectorAll('.rp-eq:checked').length; document.getElementById('rp-resumo').textContent = f+' FMP(s) × '+e+' objecto(s) = '+(f*e)+' ficha(s) a criar'; };
+  document.getElementById('rp-modal').addEventListener('change', upd); document.getElementById('rp-modal').addEventListener('click', () => setTimeout(upd, 0)); upd();
+  setTimeout(() => document.getElementById('rp-busca')?.focus(), 30);
+}
+function plRepetirFiltrar(q){ q=(q||'').toLowerCase().trim(); document.querySelectorAll('#rp-lista .rp-row').forEach(r => { r.style.display = (!q || r.dataset.busca.includes(q)) ? '' : 'none'; }); }
+async function plRepetirOK(){
+  const planos = [...document.querySelectorAll('.rp-fmp:checked')].map(c => c.value);
+  const eqs = [...document.querySelectorAll('.rp-eq:checked')].map(c => c.value);
+  if (!planos.length || !eqs.length) { mostrarToast('Marque ao menos uma FMP e um objecto', 'warn'); return; }
+  if (!confirm('Criar '+(planos.length*eqs.length)+' FMP(s) em '+eqs.length+' objecto(s)?')) return;
+  try {
+    const r = await mntFetch('/manutencao/api/planos/repetir', {method:'POST', body: JSON.stringify({planos, equipamentos: eqs})});
+    document.getElementById('rp-modal')?.remove();
+    mostrarToast('📋 '+r.total+' FMP(s) criadas', 'ok');
+    abrirPlanosEquip(_plEquip); carregarSemaforosReais();
+  } catch(e){ mostrarToast('❌ '+e.message, 'warn'); }
 }
 function plSelRow(tr){
   _plSel = tr.dataset.id;
