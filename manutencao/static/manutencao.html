@@ -812,7 +812,8 @@ async function plFicha(pid, aba){
                   per: p.periodo_codigo || '', qtd: p.periodo_qtd ?? '', tdm: p.tempo_horas ?? '',
                   custo: p.custo_previsto != null ? parseFloat(p.custo_previsto) : '',
                   tarefas: p.procedimento || '', prox: p.plano_proximo_codigo || '',
-                  mo: j(p.mao_obra), pc: j(p.pecas), ou: j(p.outros), fe: j(p.ferramentas) };
+                  mo: j(p.mao_obra), pc: j(p.pecas), ou: j(p.outros), fe: j(p.ferramentas),
+                  ult_dt: p.ultima_data ? String(p.ultima_data).slice(0,10) : '', ult_le: p.ultima_leitura ?? '' };
   }
   _plfSync();
   if (_plfPer === null) { try { _plfPer = (await mntFetch('/manutencao/api/param/periodos')).filter(x=>x.ativo!==false); } catch(e){ _plfPer = []; } }
@@ -838,6 +839,7 @@ async function plFicha(pid, aba){
   const rubOpts = sel => '<option value="">—</option>' + _bibRub.map(r =>
     '<option value="'+_esc(r.codigo)+'"'+(r.codigo===sel?' selected':'')+'>'+_esc(r.codigo)+' '+_esc(r.nome||'')+'</option>').join('');
   if (aba === 'cab'){
+    setTimeout(plfProxima, 30);
     c.innerHTML = '<div class="dsec">Cabeçalho</div><div class="mgrid">'
       + fld('Tipo de trabalho','<div class="mono" style="padding:6px 0">'+_esc(d.tt||'—')+' <span class="muted">(fixo — o código '+_esc(d.codigo)+' nasce do tipo)</span></div>')
       + fld('Periodicidade','<select id="plf-per"><option value="">—</option>'
@@ -845,6 +847,9 @@ async function plFicha(pid, aba){
       + fld('Descrição *','<input id="plf-desc" value="'+_esc(d.desc)+'">')
       + fld('Qtd do período (se horím./km)','<input id="plf-qtd" type="number" value="'+_esc(String(d.qtd))+'">')
       + fld('Prev. TDM (h)','<input id="plf-tdm" type="number" step="0.1" value="'+_esc(String(d.tdm))+'">')
+      + fld('Última execução (data)','<input id="plf-ult-dt" type="date" value="'+_esc(d.ult_dt||'')+'" onchange="plfBaseline()">')
+      + fld('Última execução (leitura)','<input id="plf-ult-le" type="number" step="0.1" value="'+_esc(String(d.ult_le ?? ''))+'" onchange="plfBaseline()">')
+      + fld('Próxima (calculada)','<div id="plf-prox-calc" class="mono" style="padding:6px 0;color:#1A2A5E">…</div>')
       + fld('Próxima FMP (encadeamento)','<select id="plf-prox"><option value="">— nenhuma —</option>'
         + _plLista.map(pp => '<option value="'+_esc(pp.codigo)+'"'+(String(pp.codigo)===String(d.prox)?' selected':'')+'>'+_esc(pp.codigo)+' — '+_esc(pp.descricao||'')+'</option>').join('')+'</select>')
       + (function(){ const s = plfSoma(d);
@@ -914,6 +919,41 @@ async function plFicha(pid, aba){
         + '<input class="f" style="flex:1" value="'+_esc(x.tipo||'')+'" placeholder="ex.: Torquímetro calibrado">'
         + '<input class="h" type="number" style="width:70px" value="'+_esc(String(x.qtd??''))+'"></div>', 'ferramenta');
   }
+}
+// (15/09/2026) Baseline da FMP (Última execução) grava na hora e recalcula a Próxima
+async function plfBaseline(){
+  const d = _plfDraft; if (!d || !d.id) return;
+  const dt = (document.getElementById('plf-ult-dt')||{}).value || null, le = (document.getElementById('plf-ult-le')||{}).value;
+  try {
+    await mntFetch('/manutencao/api/planos/'+d.id+'/baseline', {method:'PATCH', body: JSON.stringify({ultima_data: dt, ultima_leitura: le === '' ? null : le})});
+    d.ult_dt = dt || ''; d.ult_le = le; plfProxima();
+  } catch(e){ mostrarToast('❌ '+e.message,'warn'); }
+}
+async function plfProxima(){
+  const d = _plfDraft, el = document.getElementById('plf-prox-calc'); if (!d || !el) return;
+  try {
+    const prev = await mntFetch('/manutencao/api/previsoes');
+    const it = (prev.itens||[]).find(x => String(x.plano_id) === String(d.id));
+    if (!it) { el.textContent = '—'; return; }
+    const rot = {vencida:'🔴 vencida', a_vencer:'🟡 a vencer', programada:'📅 OT programada', ok:'🟢 em dia', sem_base:'⚪ sem última execução', sem_periodo:'⚪ período indecifrável'}[it.status] || it.status;
+    const dt = v => v ? new Date(v+'T00:00').toLocaleDateString('pt-BR') : '';
+    const alvo = it.modo === 'calendario' ? (dt(it.proxima_data) || '—')
+               : (it.leitura_alvo != null ? it.leitura_alvo+' '+(it.unidade||'') + (it.proxima_data ? ' · ~'+dt(it.proxima_data) : '') : '—');
+    el.innerHTML = '<b>'+_esc(alvo)+'</b> · '+rot + (it.ot ? ' ('+_esc(it.ot.numero)+')' : '') + (it.restante != null ? ' · restam '+_esc(String(it.restante))+(it.modo==='calendario'?' d':' '+(it.unidade||'')) : '');
+  } catch(e){ el.textContent = '—'; }
+}
+// (15/09/2026) Botão ManWinWin "Gerar preventivas": FMPs vencidas/a vencer viram OT programada
+async function gerarPreventivas(){
+  let prev;
+  try { prev = await mntFetch('/manutencao/api/previsoes'); } catch(e){ mostrarToast('❌ '+e.message,'warn'); return; }
+  const cand = (prev.itens||[]).filter(i => (i.status==='vencida' || i.status==='a_vencer') && !i.ot);
+  if (!cand.length) { mostrarToast('Nenhuma FMP vencida ou a vencer sem OT · '+(prev.sem_base||0)+' sem última execução', 'ok'); return; }
+  if (!confirm('Gerar '+cand.length+' OT(s) programada(s)?\n\n'+cand.slice(0,12).map(i=>'• '+i.eq_codigo+' · '+i.plano_codigo+' — '+(i.status==='vencida'?'VENCIDA':'a vencer')).join('\n')+(cand.length>12?'\n…':''))) return;
+  try {
+    const r = await mntFetch('/manutencao/api/previsoes/gerar', {method:'POST'});
+    mostrarToast('⚡ '+r.total_geradas+' OT(s) geradas'+(r.puladas.length?' · '+r.puladas.length+' pulada(s)':''), 'ok');
+    carregarOTsReais(); carregarSemaforosReais();
+  } catch(e){ mostrarToast('❌ '+e.message,'warn'); }
 }
 function _plfSync(){
   const g = id => document.getElementById(id);
@@ -1375,6 +1415,7 @@ const _MW = {
         {sub:'\ud83d\udcd2 Registos', itens:[['\u26fd Abastecimentos','equipAbastecimentos'],['\ud83d\udcc8 Registo Funcionamento','equipFuncionamento'],
                                           ['\ud83d\udede Subsistemas / Montagem','equipSubsistemas'],['\ud83d\udd29 Artigos aplicados','equipArtigos'],
                                           ['\ud83d\udcc5 Planos de manuten\u00e7\u00e3o','abrirPlanosEquip']], sel:true},
+        ['\u26a1 Gerar preventivas',"gerarPreventivas()"],
         ['\ud83d\udcca An\u00e1lise ABC',"anABC()"],
         ['\ud83c\udf33 \u00c1rvore Objectos',"ftModo('arv')"],
         ['\ud83d\udcc5 Plano Trabalhos',"(function(){const i=_mwPrecisa('frota','objecto'); if(i) abrirPlanosEquip(i);})()"],
