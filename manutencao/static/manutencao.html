@@ -699,7 +699,7 @@ function renderPlanos(){
     '<tr'+(String(_plSel)===String(p.id)?' class="sel"':'')+' data-id="'+p.id+'" onclick="plSelRow(this)" ondblclick="plFicha(this.dataset.id)" style="cursor:pointer">'
     + '<td class="bold">'+_esc(p.codigo)+'</td><td>'+_esc(p.descricao)+'</td>'
     + '<td class="mono">'+_esc(p.tipo_trabalho||'')+'</td>'
-    + '<td class="mono">'+_esc(plPeriodoRotulo(p))+'</td>'
+    + '<td class="mono">'+plPeriodoRotulo(p)+'</td>'
     + '<td class="r mono">'+(p.tempo_horas ?? '—')+'</td>'
     + '<td class="r mono">'+(p.custo_previsto != null ? 'R$ '+parseFloat(p.custo_previsto).toFixed(2) : '—')+'</td></tr>').join('');
   document.getElementById('eq-ficha-corpo').innerHTML =
@@ -872,7 +872,7 @@ function plPeriodoRotulo(p){
   const unid = {'1':'sem','2':'meses','6':unidReg}[cod] || cod || '';
   let qtd = parseFloat(p.periodo_qtd);
   if (!qtd) { const m = /(\d[\d.]*)\s*(h|hora|horas|km|d|dias|sem|semana|semanas|m|mes|meses)?/i.exec(p.descricao||''); if (m) qtd = parseFloat(m[1].replace('.','')); }
-  return qtd ? qtd.toLocaleString('pt-BR')+' '+unid : (unid || '—');
+  return qtd ? qtd.toLocaleString('pt-BR')+' '+unid : '<span style="color:#B91C1C">— sem período</span>';
 }
 function plSelRow(tr){
   _plSel = tr.dataset.id;
