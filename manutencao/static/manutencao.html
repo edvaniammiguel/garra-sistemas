@@ -699,7 +699,7 @@ function renderPlanos(){
     '<tr'+(String(_plSel)===String(p.id)?' class="sel"':'')+' data-id="'+p.id+'" onclick="plSelRow(this)" ondblclick="plFicha(this.dataset.id)" style="cursor:pointer">'
     + '<td class="bold">'+_esc(p.codigo)+'</td><td>'+_esc(p.descricao)+'</td>'
     + '<td class="mono">'+_esc(p.tipo_trabalho||'')+'</td>'
-    + '<td>'+_esc(p.periodo_codigo||'—')+(p.periodo_qtd?' ('+p.periodo_qtd+')':'')+'</td>'
+    + '<td class="mono">'+_esc(plPeriodoRotulo(p))+'</td>'
     + '<td class="r mono">'+(p.tempo_horas ?? '—')+'</td>'
     + '<td class="r mono">'+(p.custo_previsto != null ? 'R$ '+parseFloat(p.custo_previsto).toFixed(2) : '—')+'</td></tr>').join('');
   document.getElementById('eq-ficha-corpo').innerHTML =
@@ -864,6 +864,16 @@ async function plRepetirOK(){
     abrirPlanosEquip(_plEquip); carregarSemaforosReais();
   } catch(e){ mostrarToast('❌ '+e.message, 'warn'); }
 }
+// Período legível (espelho do que o motor de previsões resolve): quantidade + unidade,
+// caindo no número da descrição ("A cada 500 horas" → 500 H) quando a qtd não foi preenchida.
+function plPeriodoRotulo(p){
+  const cod = String(p.periodo_codigo||''), eq = _mntEquipList.find(e => String(e.id) === String(_plEquip)) || {};
+  const unidReg = (eq.medicao === 'km') ? 'KM' : 'H';
+  const unid = {'1':'sem','2':'meses','6':unidReg}[cod] || cod || '';
+  let qtd = parseFloat(p.periodo_qtd);
+  if (!qtd) { const m = /(\d[\d.]*)\s*(h|hora|horas|km|d|dias|sem|semana|semanas|m|mes|meses)?/i.exec(p.descricao||''); if (m) qtd = parseFloat(m[1].replace('.','')); }
+  return qtd ? qtd.toLocaleString('pt-BR')+' '+unid : (unid || '—');
+}
 function plSelRow(tr){
   _plSel = tr.dataset.id;
   tr.parentElement.querySelectorAll('tr').forEach(r => r.classList.toggle('sel', r === tr));
@@ -1006,7 +1016,9 @@ async function plfProxima(){
     const dt = v => v ? new Date(v+'T00:00').toLocaleDateString('pt-BR') : '';
     const alvo = it.modo === 'calendario' ? (dt(it.proxima_data) || '—')
                : (it.leitura_alvo != null ? it.leitura_alvo+' '+(it.unidade||'') + (it.proxima_data ? ' · ~'+dt(it.proxima_data) : '') : '—');
-    el.innerHTML = '<b>'+_esc(alvo)+'</b> · '+rot + (it.ot ? ' ('+_esc(it.ot.numero)+')' : '') + (it.restante != null ? ' · restam '+_esc(String(it.restante))+(it.modo==='calendario'?' d':' '+(it.unidade||'')) : '');
+    const un = it.modo==='calendario' ? ' d' : ' '+(it.unidade||'');
+    const rest = it.restante != null ? (it.restante < 0 ? ' · vencida há '+Math.abs(it.restante)+un : ' · restam '+it.restante+un) : '';
+    el.innerHTML = '<b>'+_esc(alvo)+'</b> · '+rot + (it.ot ? ' ('+_esc(it.ot.numero)+')' : '') + rest;
   } catch(e){ el.textContent = '—'; }
 }
 // (15/09/2026) Botão ManWinWin "Gerar preventivas": FMPs vencidas/a vencer viram OT programada
