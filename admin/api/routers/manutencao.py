@@ -981,6 +981,8 @@ async def editar_ficha(eq_id: str, request: Request, payload=Depends(verificar_m
     # (15/09/2026) Inactivo pela própria ficha do Objecto (MWW): ativa/inativa sem sair do cadastro
     if "ativo" in d:
         sets.append("ativo=%s"); params.append(bool(d["ativo"]))
+    if "os_alimenta_manutencao" in d:
+        sets.append("os_alimenta_manutencao=%s"); params.append(bool(d["os_alimenta_manutencao"]))
     if not sets:
         raise HTTPException(status_code=400, detail="Nada a alterar")
     params.append(eq_id)
@@ -1897,6 +1899,33 @@ async def analises_equipamento(eq_id: str, ano: int = None, _auth=Depends(verifi
             "parametros": [{"codigo": c, "nome": n, "fmt": f, "meses": [round(x, 2) for x in vals[c]],
                             "total": round(sum(vals[c]), 2)} for c, n, f in P],
             "manuais": manuais}
+
+
+@router.post("/manutencao/api/equipamentos/{eq_id}/acerto-horimetro")
+async def acerto_horimetro(eq_id: str, request: Request, payload=Depends(verificar_manutencao)):
+    """(18/09/2026) Acerto do contador de MANUTENÇÃO (ManWinWin ▸ Registos ▸ Acerto):
+    única forma de baixar uma leitura (troca de horímetro físico, contaminação por OS de
+    cliente, erro de digitação). Gestão, motivo obrigatório, fica no diário do objecto."""
+    d = await request.json()
+    try:
+        novo = float(str(d.get("valor")).replace(",", "."))
+    except Exception:
+        raise HTTPException(status_code=400, detail="Informe o valor do acerto")
+    motivo = (d.get("motivo") or "").strip()
+    if len(motivo) < 5:
+        raise HTTPException(status_code=400, detail="Motivo do acerto é obrigatório")
+    eq = await ajard_query("SELECT codigo, medicao, horimetro_atual, km_atual FROM operacional.equipamentos WHERE id=%s", (eq_id,), fetch="one")
+    if not eq:
+        raise HTTPException(status_code=404, detail="Equipamento não encontrado")
+    km = (eq.get("medicao") == "km")
+    antes = float((eq["km_atual"] if km else eq["horimetro_atual"]) or 0)
+    await ajard_query(f"UPDATE operacional.equipamentos SET {'km_atual' if km else 'horimetro_atual'}=%s, atualizado_em=now() WHERE id=%s",
+                      (novo, eq_id), fetch="none")
+    uid = await _usuario_id(payload)
+    await ajard_query(
+        "INSERT INTO manutencao.equipamento_notas (equipamento_id, usuario_id, descricao) VALUES (%s,%s,%s)",
+        (eq_id, uid, f"⚙ Acerto de {'km' if km else 'horímetro'} (manutenção): {antes:g} → {novo:g}. Motivo: {motivo}"), fetch="none")
+    return {"ok": True, "antes": antes, "depois": novo}
 
 
 @router.delete("/manutencao/api/equipamentos/{eq_id}/foto")

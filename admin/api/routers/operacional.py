@@ -1075,18 +1075,28 @@ async def op_criar_parte(os_id: str, request: Request, payload=Depends(verificar
              criado_por_id,
              horas_cobradas_padrao, client_id)
         )
-        # Atualizar horímetro atual do equipamento (só equipamento próprio da Garra)
+        # (18/09/2026) Duas pistas de leitura: a OS do cliente alimenta SEMPRE o contador
+        # comercial e alimenta o de manutenção só se o objecto permitir (os_alimenta_manutencao —
+        # máquina com dois horímetros desliga). Ambos "nunca recuam".
         if h_fin is not None and equipamento_id:
             await ajard_query(
-                "UPDATE operacional.equipamentos SET horimetro_atual=%s, atualizado_em=now() WHERE id=%s",
-                (h_fin, equipamento_id), fetch="none"
+                """UPDATE operacional.equipamentos SET
+                     horimetro_comercial = GREATEST(COALESCE(horimetro_comercial,0), %s),
+                     horimetro_atual = CASE WHEN COALESCE(os_alimenta_manutencao, true)
+                                            THEN GREATEST(COALESCE(horimetro_atual,0), %s) ELSE horimetro_atual END,
+                     atualizado_em = now()
+                   WHERE id=%s""",
+                (h_fin, h_fin, equipamento_id), fetch="none"
             )
-        # (29/08/2026) Espelho para medição por KM: alimenta km_atual — leitura
-        # que a Manutenção carimba nas montagens de componentes (vida do pneu).
         if km_fin is not None and equipamento_id:
             await ajard_query(
-                "UPDATE operacional.equipamentos SET km_atual=%s, atualizado_em=now() WHERE id=%s",
-                (km_fin, equipamento_id), fetch="none"
+                """UPDATE operacional.equipamentos SET
+                     km_comercial = GREATEST(COALESCE(km_comercial,0), %s),
+                     km_atual = CASE WHEN COALESCE(os_alimenta_manutencao, true)
+                                     THEN GREATEST(COALESCE(km_atual,0), %s) ELSE km_atual END,
+                     atualizado_em = now()
+                   WHERE id=%s""",
+                (km_fin, km_fin, equipamento_id), fetch="none"
             )
         return dict(parte)
     except HTTPException:
