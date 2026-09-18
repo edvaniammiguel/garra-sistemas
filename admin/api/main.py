@@ -1048,6 +1048,9 @@ async def criar_schema_manutencao():
                 criado_em TIMESTAMPTZ DEFAULT now())""", fetch="none")
         await ajard_query("""
             ALTER TABLE operacional.equipamentos
+              ADD COLUMN IF NOT EXISTS horimetro_comercial NUMERIC,
+              ADD COLUMN IF NOT EXISTS km_comercial NUMERIC,
+              ADD COLUMN IF NOT EXISTS os_alimenta_manutencao BOOLEAN DEFAULT true,
               ADD COLUMN IF NOT EXISTS marca TEXT,
               ADD COLUMN IF NOT EXISTS modelo TEXT,
               ADD COLUMN IF NOT EXISTS ano_fabricacao TEXT,
