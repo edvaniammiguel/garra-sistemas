@@ -805,6 +805,10 @@ async def semaforos_frota(_auth=Depends(verificar_manutencao)):
            FROM operacional.equipamentos e
            LEFT JOIN manutencao.pontos_controle p
                   ON p.equipamento_id = e.id AND p.ativo = true
+                 -- (19/09/2026) equipamento com FMP ativa: o ciclo vivo é a FMP; o ponto
+                 -- legado (contador próprio, não sincronizado) sai do semáforo
+                 AND NOT EXISTS (SELECT 1 FROM manutencao.planos pl
+                                  WHERE pl.equipamento_id = e.id AND pl.ativo = true)
            WHERE e.ativo = true AND COALESCE(e.categoria,'') <> 'apoio'
            ORDER BY e.codigo, p.codigo""")
     equipes = {}
