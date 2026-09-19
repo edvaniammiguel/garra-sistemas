@@ -113,6 +113,7 @@ tr.sel td{background:#DBEAFE!important;color:#1A2A5E}
 /* (15/09/2026) PADRÃO DE JANELA: todo corpo de abas das fichas (OT · Nova OT · Peça · FMP · Biblioteca)
    tem a MESMA altura fixa da ficha do Objecto — navegar entre abas não muda o tamanho; conteúdo maior rola por dentro */
 #ot-aba-corpo,#na-corpo,#pc-corpo,#plf-corpo,#bb-corpo{height:calc(88vh - 300px);min-height:360px;max-height:none;overflow:auto}
+.modal.larga #plf-corpo,.modal.larga #ot-aba-corpo{height:auto;min-height:0;flex:1}
 .mwtop{display:flex;align-items:center;gap:4px;flex-wrap:wrap;margin:6px 0 4px}
 .mwtop .sep{width:8px}.mwtop .cnt{font-family:ui-monospace,monospace;font-size:10px;padding:0 4px;color:#334155}
 .mwtop input{width:150px;padding:4px 6px;border:1px solid #CBD5E1;border-radius:6px;font-size:11px}
@@ -907,7 +908,7 @@ async function plFicha(pid, aba){
   const custoHtml = (function(){ const sm = plfSoma(d);
       if (!sm.tem) return '<input id="plf-custo" type="number" step="0.01" value="'+_esc(String(d.custo))+'" style="width:110px">';
       return '<input id="plf-custo" type="number" value="'+sm.total.toFixed(2)+'" readonly style="width:110px;background:#F1F5F9;font-weight:700" title="MO '+sm.mo.toFixed(2)+' + Artigos '+sm.pc.toFixed(2)+' + Outros '+sm.ou.toFixed(2)+'">'; })();
-  document.querySelector('#eq-ficha .modal').classList.remove('larga');
+  document.querySelector('#eq-ficha .modal').classList.add('larga');
   document.getElementById('eq-ficha-corpo').innerHTML =
     '<div style="display:flex;justify-content:space-between;align-items:center">'
     + '<b style="font-size:14px;color:#1A2A5E">📂 Ficha Manutenção Planeada</b>'
@@ -924,12 +925,12 @@ async function plFicha(pid, aba){
     +   '<div class="ne-f" style="flex:1;flex-direction:row;align-items:center;gap:8px"><span class="ne-l" style="flex:0 0 90px">Próxima FMP</span><select id="plf-prox" style="flex:1"><option value="">— nenhuma —</option>'
     +     _plLista.map(pp => '<option value="'+_esc(pp.codigo)+'"'+(String(pp.codigo)===String(d.prox)?' selected':'')+'>'+_esc(pp.codigo)+' — '+_esc(pp.descricao||'')+'</option>').join('')+'</select></div></div>'
     + '</div>'
-    + '<fieldset class="ne-fs" style="flex:0 0 330px;margin-top:0"><legend>Periodicidade</legend>'
+    + '<fieldset class="ne-fs" style="flex:0 0 400px;margin-top:0"><legend>Periodicidade</legend>'
     +   '<div style="display:flex;gap:8px;align-items:center;margin-bottom:6px"><label style="display:flex;align-items:center;gap:6px;font-size:12px;width:120px"><input type="radio" name="plf-modo" value="cal"'+(!isReg?' checked':'')+' onchange="plfModo()"> Calendário</label>'
     +   '<input id="plf-cal-qtd" type="number" min="1" value="'+(!isReg?_esc(perQtd):'')+'" style="width:70px"'+(isReg?' disabled':'')+'><select id="plf-cal-un" style="flex:1"'+(isReg?' disabled':'')+'>'+calOpts+'</select></div>'
     +   '<div style="display:flex;gap:8px;align-items:center;margin-bottom:6px"><label style="display:flex;align-items:center;gap:6px;font-size:12px;width:120px"><input type="radio" name="plf-modo" value="reg"'+(isReg?' checked':'')+' onchange="plfModo()"> Registos ('+(eq.medicao==='km'?'KM':'H')+')</label>'
-    +   '<input id="plf-reg-qtd" type="number" min="1" value="'+(isReg?_esc(perQtd):'')+'" style="width:110px"'+(!isReg?' disabled':'')+'></div>'
-    +   '<div style="display:flex;gap:8px;align-items:center;margin-bottom:4px;font-size:11px"><span style="width:120px;color:#475569;font-weight:700">Última execução</span><input id="plf-ult-dt" type="date" value="'+_esc(d.ult_dt||'')+'" onchange="plfBaseline()" style="width:130px"><input id="plf-ult-le" type="number" step="0.1" placeholder="leitura" value="'+_esc(String(d.ult_le ?? ''))+'" onchange="plfBaseline()" style="width:90px"></div>'
+    +   '<input id="plf-reg-qtd" type="number" min="1" value="'+(isReg?_esc(perQtd):'')+'" style="width:120px"'+(!isReg?' disabled':'')+'></div>'
+    +   '<div style="display:flex;gap:8px;align-items:center;margin-bottom:4px;font-size:11px"><span style="width:120px;color:#475569;font-weight:700">Última execução</span><input id="plf-ult-dt" type="date" value="'+_esc(d.ult_dt||'')+'" onchange="plfBaseline()" style="width:140px"><input id="plf-ult-le" type="number" step="0.1" placeholder="leitura" value="'+_esc(String(d.ult_le ?? ''))+'" onchange="plfBaseline()" style="width:100px"></div>'
     +   '<div style="display:flex;gap:8px;align-items:center;font-size:11px"><span style="width:120px;color:#475569;font-weight:700">Próxima</span><span id="plf-prox-calc" class="mono" style="color:#1A2A5E">…</span></div>'
     + '</fieldset></div>'
     // ── abas ──
