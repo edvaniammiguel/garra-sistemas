@@ -3264,7 +3264,8 @@ async def previsoes_gerar_lote(payload=Depends(verificar_manutencao)):
     prev = await _calcular_previsoes()
     geradas, puladas = [], []
     for it in prev["itens"]:
-        if it["status"] not in ("vencida", "a_vencer") or it.get("ot"):
+        # (23/09/2026) Modelo MWW: toda FMP com baseline tem UMA OT programada (em dia, a vencer ou vencida)
+        if it["status"] not in ("ok", "vencida", "a_vencer") or it.get("ot"):
             continue
         try:
             r = await _gerar_ot_previsao(it["plano_id"], {
