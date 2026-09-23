@@ -664,6 +664,12 @@ async def mudar_status_ot(ot_id: str, request: Request, payload=Depends(verifica
                FROM manutencao.ot o JOIN operacional.equipamentos e ON e.id = o.equipamento_id
                WHERE o.id=%s AND o.plano_id IS NOT NULL AND p.id = o.plano_id""",
             (ot_id,), fetch="none")
+        pl = await ajard_query("SELECT plano_id FROM manutencao.ot WHERE id=%s", (ot_id,), fetch="one")
+        if pl and pl.get("plano_id"):
+            try:
+                await _garantir_ot_programada(pl["plano_id"], payload)
+            except HTTPException:
+                pass
     return {"ok": True, "status": novo}
 
 
@@ -3237,6 +3243,20 @@ async def previsao_gerar_ot(plano_id: str, request: Request, payload=Depends(ver
     return await _gerar_ot_previsao(plano_id, d, payload)
 
 
+async def _garantir_ot_programada(plano_id, payload):
+    """(23/09/2026) Encadeamento MWW: uma FMP com última execução tem sempre UMA OT
+    programada (a próxima ocorrência). Chamado ao definir a baseline e ao concluir a OT
+    preventiva anterior. Idempotente: se já existe OT programada, não faz nada."""
+    prev = await _calcular_previsoes()
+    it = next((i for i in prev["itens"] if str(i["plano_id"]) == str(plano_id)), None)
+    if not it or it.get("ot") or it["status"] not in ("ok", "a_vencer", "vencida"):
+        return None
+    return await _gerar_ot_previsao(plano_id, {
+        "data_prevista": it.get("proxima_data"),
+        "horimetro_previsto": it.get("leitura_alvo"),
+        "prioridade": "alta" if it["status"] == "vencida" else "media"}, payload)
+
+
 @router.post("/manutencao/api/previsoes/gerar")
 async def previsoes_gerar_lote(payload=Depends(verificar_manutencao)):
     """(15/09/2026) Botão "Gerar preventivas" (ManWinWin): cria a OT programada de toda
@@ -3329,7 +3349,12 @@ async def plano_baseline(plano_id: str, request: Request, _auth=Depends(verifica
                 detail=f"Leitura da última execução ({le:g}) maior que a leitura atual do objecto ({vivo:g})")
     await ajard_query("UPDATE manutencao.planos SET ultima_data=%s, ultima_leitura=%s WHERE id=%s",
                       (dt, le, plano_id), fetch="none")
-    return {"ok": True}
+    ot = None
+    try:
+        ot = await _garantir_ot_programada(plano_id, _auth)
+    except HTTPException:
+        ot = None
+    return {"ok": True, "ot": (ot or {}).get("numero")}
 
 
 @router.post("/manutencao/api/ots/{ot_id}/novo-ciclo")
