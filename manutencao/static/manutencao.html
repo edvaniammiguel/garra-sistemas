@@ -224,6 +224,7 @@ tr.sel td{background:#FDBA74 !important;color:#1A2A5E;font-weight:600}
       <option value="checklist">📋 Checklist (NC)</option>
     </select>
     <div class="bfilt" id="ots-filtros">
+      <label title="FMPs configuradas com o semáforo (plano de trabalhos — vira OT quando a Bruna confirmar)"><input type="checkbox" id="ots-f-prev" checked onchange="renderOTs()"> 📅 Preventivas (plano)</label>
       <label><input type="checkbox" value="programada" checked onchange="renderOTs()"> Programadas</label>
       <label><input type="checkbox" value="aberta" checked onchange="renderOTs()"> Abertas</label>
       <label><input type="checkbox" value="em_andamento" checked onchange="renderOTs()"> Em curso</label>
@@ -606,7 +607,12 @@ function montarNavTipos(){
 }
 function filtrarTT(cod){ _filtroTT = cod; renderOTs(); montarNavTipos(); }
 
+let _prevCache = [];
+async function carregarPrevisoesReais(){
+  try { const r = await mntFetch('/manutencao/api/previsoes'); _prevCache = r.itens || []; } catch(e){ _prevCache = []; }
+}
 async function carregarOTsReais(){
+  await carregarPrevisoesReais();
   try {
     await _tiposTrab();
     _otsCache = await mntFetch('/manutencao/api/ots');
@@ -646,7 +652,39 @@ function renderOTs(){
   document.getElementById('ft-ots').innerHTML =
     '<b>'+tot+'</b> OTs · <b>'+cont('programada')+'</b> programadas · <b>'+cont('em_andamento')+'</b> em curso';
   const d = v => { if(!v) return '—'; try { return new Date(v).toLocaleDateString('pt-BR'); } catch(e){ return '—'; } };
-  tb.innerHTML = ots.length ? ots.map(o => {
+  // ── Plano de Trabalhos (ManWinWin): toda FMP configurada aparece com o semáforo;
+  //    só vira OT quando a gestão confirmar (▶). FMP que já tem OT programada não repete.
+  let prevRows = '';
+  if ((document.getElementById('ots-f-prev')||{}).checked) {
+    let prev = _prevCache.filter(i => !i.ot && i.status !== 'sem_periodo');
+    if (_filtroEquipId) prev = prev.filter(i => String(i.equipamento_id) === String(_filtroEquipId));
+    if (_filtroTT !== null) prev = prev.filter(i => _filtroTT === '_sem' ? !i.tipo_trabalho : (_filtroTT.length === 1 ? (i.tipo_trabalho||'').charAt(0) === _filtroTT : i.tipo_trabalho === _filtroTT));
+    if (q) prev = prev.filter(i => (i.plano_codigo||'').toLowerCase().includes(q) || (i.plano_descricao||'').toLowerCase().includes(q) || (i.eq_codigo||'').toLowerCase().includes(q));
+    const ord = {vencida:0, a_vencer:1, ok:2, sem_base:3};
+    prev.sort((a,b) => (ord[a.status]??9) - (ord[b.status]??9) || String(a.eq_codigo).localeCompare(String(b.eq_codigo)));
+    if (st) st.textContent = ots.length + ' de ' + tot + ' OT(s) · ' + prev.length + ' preventiva(s) no plano' + (_filtroEquipId ? ' · filtrado por equipamento — ↻ limpa' : '');
+    prevRows = prev.map(i => {
+      const dot = i.status === 'vencida' ? 'r' : i.status === 'a_vencer' ? 'y' : i.status === 'ok' ? 'g' : 'n';
+      const un = i.modo === 'calendario' ? ' d' : ' ' + (i.unidade || '');
+      const alvo = i.modo === 'calendario' ? d(i.proxima_data) : (i.leitura_alvo != null ? i.leitura_alvo + ' ' + (i.unidade||'') : '—');
+      const sit = i.status === 'vencida' ? '<span style="color:#DC2626;font-size:10px;font-weight:700">vencida há '+Math.abs(i.restante)+un+'</span>'
+                : i.status === 'a_vencer' ? '<span style="color:#B45309;font-size:10px;font-weight:700">faltam '+i.restante+un+'</span>'
+                : i.status === 'ok' ? '<span style="color:#16A34A;font-size:10px">em dia · restam '+i.restante+un+'</span>'
+                : '<span class="muted" style="font-size:10px">sem última execução</span>';
+      return `<tr style="background:#FCFCFD" title="Preventiva do plano — ainda não é OT">
+        <td style="text-align:center"><span class="dot ${dot}"></span></td>
+        <td class="bold mono" style="white-space:nowrap;color:#475569">FMP ${_esc(i.plano_codigo)}</td>
+        <td>${_esc(i.plano_descricao||'')} <span class="muted" style="font-size:10px">· plano</span></td>
+        <td>${_esc(i.eq_codigo||'')}</td>
+        <td class="mono">${_esc(i.tipo_trabalho||'')}</td>
+        <td><span class="chip" style="font-size:9px;background:#EEF2FF;color:#3730A3">Preventiva</span></td>
+        <td>${sit}</td>
+        <td><span class="mono" style="font-size:10px">${_esc(alvo)}</span></td>
+        <td colspan="2" style="text-align:right"><button class="btn" title="Confirmar: virar OT programada" onclick="event.stopPropagation();prevGerarOT('${i.plano_id}','${_esc(i.plano_codigo)}')">▶ Gerar OT</button></td>
+      </tr>`;
+    }).join('');
+  }
+  tb.innerHTML = prevRows + (ots.length ? ots.map(o => {
     const [cc, cl] = MNT_CHIP[o.status] || ['nr', o.status];
     const v = o.vencimento;
     const dot = v ? (v.nivel===0 ? 'r' : v.nivel===1 ? 'y' : 'g') : (MNT_DOT[o.prioridade] || 'y');
@@ -664,7 +702,15 @@ function renderOTs(){
       <td>${d(o.data_abertura)}</td>
       <td>${d(o.data_conclusao)}</td>
     </tr>`;
-  }).join('') : '<tr><td colspan="10" style="padding:16px;color:#64748B">Nenhuma OT no filtro atual — abra uma na barra acima.</td></tr>';
+  }).join('') : (prevRows ? '' : '<tr><td colspan="10" style="padding:16px;color:#64748B">Nenhuma OT no filtro atual — abra uma na barra acima.</td></tr>'));
+}
+async function prevGerarOT(planoId, codigo){
+  if (!confirm('Gerar OT programada para a FMP '+codigo+'?')) return;
+  try {
+    const r = await mntFetch('/manutencao/api/previsoes/'+planoId+'/gerar-ot', {method:'POST', body: JSON.stringify({})});
+    mostrarToast('✅ '+(r.numero||'OT')+' programada a partir da '+codigo, 'ok');
+    carregarOTsReais(); carregarSemaforosReais();
+  } catch(e){ mostrarToast('❌ '+e.message, 'warn'); }
 }
 function limparFiltroOTs(){
   _filtroEquipId = null;
