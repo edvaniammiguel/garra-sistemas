@@ -503,7 +503,9 @@ async def _inserir_ot(d, eq, uid, numero, ano, seq):
         hor_prev = float(str(hor_prev).replace(",", ".")) if hor_prev not in (None, "") else None
     except ValueError:
         hor_prev = None
-    programada = bool(data_prev or hor_prev is not None)
+    # (23/09/2026) MWW: OT criada pela janela nasce PROGRAMADA (número reservado, não emitida);
+    # vira em curso no Emitir. Só a conversão de pedido nasce aberta.
+    programada = bool(data_prev or hor_prev is not None or d.get("rascunho"))
     status_ini = "programada" if programada else "aberta"
     tt = (d.get("tipo_trabalho") or "").strip().upper() or None
     _classe = {"A": "preventiva", "B": "preventiva", "C": "corretiva",
