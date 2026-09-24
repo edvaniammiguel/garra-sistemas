@@ -1014,6 +1014,9 @@ async def editar_ficha(eq_id: str, request: Request, payload=Depends(verificar_m
     if "caracteristicas" in d:
         sets.append("caracteristicas=%s"); params.append(_json.dumps(d["caracteristicas"] or []))
     if "garantia" in d:
+        _f = (d["garantia"] or {}).get("fmd") or {}
+        if _f.get("calc") is False and not _fmd_num(_f.get("valor")):
+            raise HTTPException(status_code=400, detail="Desmarcou 'Calcular por registos': informe o FMD manual")
         sets.append("garantia=%s"); params.append(_json.dumps(d["garantia"] or {}))
     # (14/09/2026) Info. Complementares (réplica MWW): codificação, tipos,
     # identificações, histórico, família, combustível — JSON livre
@@ -2063,22 +2066,25 @@ async def excluir_nota(eq_id: str, nota_id: str, payload=Depends(verificar_manut
 
 @router.get("/manutencao/api/equipamentos/{eq_id}/ritmo")
 async def ritmo_equipamento(eq_id: str, _auth=Depends(verificar_manutencao)):
-    """(24/08→24/09/2026) Ritmo médio de uso — ficha do Objecto (FMD / Data) e reprogramação.
-    Mesma fonte e regra do semáforo: v_leituras (partes + checklists + abastecimentos,
-    com correções) nos últimos 60 dias, FMD-R por _fmd_serie. Antes lia só
-    partes_diarias.horas_trabalhadas — caminhão que só manda checklist ficava sem FMD."""
+    """(24/08→24/09/2026) Ritmo de uso — ficha do Objecto (FMD / Data) e reprogramação.
+    media_h_dia = FMD-R dos registos (v_leituras: partes + checklists + abastecimentos,
+    com correções; JANELA_FMD_DIAS; _fmd_serie). fmd_em_uso = manual da ficha se
+    desmarcado 'Calcular por registos', senão o calculado — o mesmo das previsões."""
     await _garantir_leituras()
     rows = await ajard_query(
         """SELECT data::date AS d, MAX(leitura) AS leitura
            FROM operacional.v_leituras
-           WHERE equipamento_id=%s AND data >= now() - interval '60 days' AND leitura > 0
-           GROUP BY data::date""", (eq_id,)) or []
+           WHERE equipamento_id=%s AND data >= now() - make_interval(days => %s) AND leitura > 0
+           GROUP BY data::date""", (eq_id, JANELA_FMD_DIAS)) or []
     serie = sorted((r["d"], float(r["leitura"])) for r in rows)
     ult = serie[-1] if serie else None
-    return {"media_h_dia": _fmd_serie(serie), "dias_com_uso": len(serie),
+    calc = _fmd_serie(serie)
+    manual = (await _fmd_manual(eq_id)).get(str(eq_id))
+    return {"media_h_dia": calc, "fmd_manual": manual, "fmd_em_uso": manual or calc,
+            "janela_dias": JANELA_FMD_DIAS, "dias_com_uso": len(serie),
             "ultima_data": ult[0].isoformat() if ult else None,
             "ultima_leitura": ult[1] if ult else None,
-            "avanco_60d": round(serie[-1][1] - serie[0][1], 1) if len(serie) > 1 else 0}
+            "avanco": round(serie[-1][1] - serie[0][1], 1) if len(serie) > 1 else 0}
 
 
 @router.get("/manutencao/api/equipamentos/{eq_id}/detalhe")
@@ -3124,6 +3130,17 @@ def _resolver_plano(periodo_nome, periodo_qtd, descricao):
     return _resolver_descricao(descricao)
 
 
+JANELA_FMD_DIAS = 90   # (24/09/2026) janela ÚNICA do FMD-R: semáforo, Registo Funcionamento, ficha, reprogramação
+
+
+def _fmd_num(v):
+    try:
+        n = float(str(v).replace(",", "."))
+        return n if n > 0 else None
+    except (TypeError, ValueError):
+        return None
+
+
 def _fmd_serie(serie):
     """(24/09/2026) Regra ÚNICA do FMD-R (ManWinWin): série diária [(data, maior leitura do dia)],
     em qualquer ordem; vale com ≥4 dias e leitura crescente. Usada pelo semáforo/previsões,
@@ -3137,26 +3154,30 @@ def _fmd_serie(serie):
     return round((l1 - l0) / max(1, (d1 - d0).days), 2)
 
 
+async def _fmd_manual(eq_id: str = None):
+    """FMD informado à mão na ficha (☐ Calcular por registos + valor > 0) — ManWinWin."""
+    sql = """SELECT id, garantia->'fmd'->>'valor' AS v FROM operacional.equipamentos
+             WHERE (garantia->'fmd'->>'calc') = 'false'"""
+    rows = (await ajard_query(sql + " AND id=%s", (eq_id,)) if eq_id else await ajard_query(sql)) or []
+    return {str(r["id"]): n for r in rows if (n := _fmd_num(r["v"]))}
+
+
 async def _fmd_por_equipamento():
-    """FMD-R por equipamento a partir das partes diárias (últimos 120 dias).
-    Regra ManWinWin: só vale com >= 4 registros; senão None (sem projeção
-    de data — o vencimento por leitura continua funcionando)."""
+    """(24/09/2026) FMD EM USO por equipamento — o que move previsões e ciclo:
+    manual da ficha quando desmarcado 'Calcular por registos'; senão o FMD-R dos
+    registos (v_leituras, JANELA_FMD_DIAS, regra _fmd_serie). None = sem projeção
+    de data (o vencimento por leitura continua)."""
     await _garantir_leituras()
     rows = await ajard_query(
         """SELECT equipamento_id, data::date AS d, MAX(leitura) AS leitura
            FROM operacional.v_leituras
-           WHERE data >= now() - interval '120 days'
-           GROUP BY equipamento_id, data::date
-           ORDER BY equipamento_id, d""")
+           WHERE data >= now() - make_interval(days => %s) AND leitura > 0
+           GROUP BY equipamento_id, data::date""", (JANELA_FMD_DIAS,))
     por_eq = {}
     for r in rows:
-        if float(r["leitura"] or 0) > 0:
-            por_eq.setdefault(str(r["equipamento_id"]), []).append((r["d"], float(r["leitura"])))
-    fmd = {}
-    for eq_id, regs in por_eq.items():
-        v = _fmd_serie(regs)
-        if v:
-            fmd[eq_id] = v
+        por_eq.setdefault(str(r["equipamento_id"]), []).append((r["d"], float(r["leitura"])))
+    fmd = {k: v for k, regs in por_eq.items() if (v := _fmd_serie(regs))}
+    fmd.update(await _fmd_manual())
     return fmd
 
 
@@ -3764,8 +3785,8 @@ async def equip_funcionamento(eq_id: str, _auth=Depends(verificar_manutencao)):
     rows = await ajard_query(
         """SELECT data::date AS d, leitura, fonte, ref, leitura_original, corrigida
            FROM operacional.v_leituras
-           WHERE equipamento_id=%s AND data >= now() - interval '90 days'
-           ORDER BY data DESC LIMIT 80""", (eq_id,))
+           WHERE equipamento_id=%s AND data >= now() - make_interval(days => %s)
+           ORDER BY data DESC LIMIT 80""", (eq_id, JANELA_FMD_DIAS))
     regs = [{"data": r["d"].isoformat(), "leitura": float(r["leitura"] or 0), "fonte": r["fonte"],
              "ref": r["ref"], "corrigida": bool(r["corrigida"]),
              "leitura_original": float(r["leitura_original"] or 0)}
@@ -3773,8 +3794,8 @@ async def equip_funcionamento(eq_id: str, _auth=Depends(verificar_manutencao)):
     anuladas = await ajard_query(
         """SELECT data::date AS d, fonte, ref, leitura_original, motivo
            FROM manutencao.leituras_correcao
-           WHERE equipamento_id=%s AND anulada AND data >= now() - interval '90 days'
-           ORDER BY data DESC""", (eq_id,)) or []
+           WHERE equipamento_id=%s AND anulada AND data >= now() - make_interval(days => %s)
+           ORDER BY data DESC""", (eq_id, JANELA_FMD_DIAS)) or []
     # FMD-R pela maior leitura de cada dia (regra dos ≥4 dias)
     dias = {}
     for x in regs:
