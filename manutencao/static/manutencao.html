@@ -2859,7 +2859,7 @@ async function abrirNovaOT(equipId, modelo){
   const _eqPre = equipId || m.equipamento_id || '';
   if (_eqPre) {
     try {
-      const body = { equipamento_id: _eqPre, descricao: (m.descricao||'').trim() || '(a descrever)', prioridade: m.prioridade || 'media' };
+      const body = { equipamento_id: _eqPre, descricao: (m.descricao||'').trim() || '(a descrever)', prioridade: m.prioridade || 'media', rascunho: true };
       if (m.tipo) body.tipo = m.tipo; if (m.tipo_trabalho) body.tipo_trabalho = m.tipo_trabalho;
       if (m.fornecedor_id) body.fornecedor_id = m.fornecedor_id; if (m.responsavel_id) body.responsavel_id = m.responsavel_id;
       if (m.sintoma_codigo) body.sintoma_codigo = m.sintoma_codigo; if (m.causa_codigo) body.causa_codigo = m.causa_codigo;
@@ -3021,6 +3021,7 @@ async function salvarNovaOT(abaAlvo){
   if (d.fmp) body.plano_id = d.fmp;
   if (d.sintoma) body.sintoma_codigo = d.sintoma;
   if (d.causa) body.causa_codigo = d.causa;
+  body.rascunho = true; // (23/09/2026) MWW: nasce Programada; Emitir a coloca em curso
   try {
     const r = await mntFetch('/manutencao/api/ots', { method:'POST', body: JSON.stringify(body) });
     mostrarToast('✅ ' + (r.numero||'OT') + (r.status==='programada' ? ' programada' : ' aberta') + ' — abas liberadas', 'ok');
@@ -3078,6 +3079,8 @@ async function verOTReal(id){
     document.getElementById('eq-ficha-corpo').innerHTML =
       '<div style="display:flex;justify-content:space-between;align-items:center"><div>'
       + '<b style="font-size:15px;color:#1A2A5E">'+_esc(o.numero)+'</b> — '+_esc(o.equipamento_codigo||'')
+      + (o.tipo_trabalho ? ' <span class="mono" style="font-size:11px;color:#475569">· '+_esc(o.tipo_trabalho)+'</span>' : '')
+      + (o.plano_id ? ' <span class="chip" style="font-size:9px;background:#EEF2FF;color:#3730A3" title="OT preventiva ligada à FMP">📅 FMP</span>' : '')
       + ' <span class="chip '+((MNT_CHIP[o.status]||['nr'])[0])+'">'+_esc(cl)+'</span></div>'
       + '<span style="cursor:pointer;font-size:18px" onclick="document.getElementById(\'eq-ficha\').classList.remove(\'show\')">✕</span></div>'
       + '<div class="mtabs">'
@@ -3375,6 +3378,7 @@ function otAba(aba){
       + '<div class="mfield">Fornecedor<select id="oe-forn">'+foOpts+'</select></div>'
       + '<div class="mfield">Projecto<select id="oe-proj">'+_tabOpts(_projList||[],'id','nome',o.projecto_id,'— nenhum —')+'</select></div>'
       + '<div class="mfield">FMP (plano de manutenção)<div style="display:flex;gap:4px"><select id="oe-fmp" data-val="'+_esc(String(o.plano_id||''))+'" style="flex:1"><option value="">— carregando —</option></select><button class="btn" title="A OT assume da FMP: título, tipo de trabalho, tarefas e programação" onclick="otAplicarFMP()">Aplicar</button></div></div>'
+      + '<div class="mfield">Tipo de trabalho<input value="'+_esc(o.tipo_trabalho||'—')+'" readonly style="background:#F1F5F9" title="Herdado da FMP (A1, B…) — muda ao aplicar outra FMP"></div>'
       + '<div class="mfield">Tipo<select id="oe-tipo">'
         + ['corretiva','preventiva','reforma','melhoria'].map(t=>'<option value="'+t+'"'+(o.tipo===t?' selected':'')+'>'+t.charAt(0).toUpperCase()+t.slice(1)+'</option>').join('')
         + '</select></div>'
@@ -3550,7 +3554,7 @@ async function otAplicarFMP(){
   try {
     await mntFetch('/manutencao/api/ots/'+o.id+'/aplicar-fmp', {method:'POST', body: JSON.stringify({plano_id: pid})});
     try { await mntFetch('/manutencao/api/ots/'+o.id+'/tarefas/da-fmp', {method:'POST', body: '{}'}); } catch(e){}
-    mostrarToast('📋 OT assumiu a FMP — título, tipo, tarefas e programação', 'ok');
+    mostrarToast('📋 OT assumiu a FMP '+rot+': descrição, Preventiva/'+(o.tipo_trabalho||'A1')+', programação, tarefas — e Preparação/Peças/MO/Ferramentas leem a ficha', 'ok');
     await verOTReal(o.id); otAba('origem'); carregarOTsReais(); carregarSemaforosReais();
   } catch(e){ mostrarToast('❌ '+e.message, 'warn'); }
 }
