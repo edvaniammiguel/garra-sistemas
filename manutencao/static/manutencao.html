@@ -2599,11 +2599,54 @@ async function equipFuncionamento(id){
     + '<div class="mfield" style="min-width:120px">FMD-R<div style="font-weight:800;color:'+(r.fmd_valido?'#1A2A5E':'#B45309')+'">'+(r.fmd_valido?r.fmd+' '+un+'/d':'\u2014 (m\u00edn. 4 registos)')+'</div></div>'
     + '<div class="mfield" style="min-width:150px">Em 30 dias ter\u00e1<div style="font-weight:800;color:#1A2A5E">'+(r.projecao_30d!=null?r.projecao_30d.toLocaleString('pt-BR')+' '+un:'\u2014')+'</div></div>'
     + '</div>'
-    + '<div class="dsec">Registos (partes di\u00e1rias + abastecimentos \u00b7 '+r.n_registos+' em 90 dias)</div>'
-    + '<div style="max-height:280px;overflow:auto"><table><thead><tr><th>Data</th><th>Fonte</th><th class="r">Leitura ('+un+')</th></tr></thead><tbody>'
-    + r.registos.map(x=>'<tr><td>'+dd(x.data)+'</td><td class="muted" style="font-size:10px">'+((x.fonte||'').indexOf('abastecimento')>=0?'\u26fd ':'')+((x.fonte||'').indexOf('parte')>=0?'\ud83d\udccb ':'')+_esc(x.fonte||'')+'</td><td class="r mono">'+x.leitura.toLocaleString('pt-BR')+'</td></tr>').join('')
-    + '</tbody></table></div>';
+    + '<div class="dsec">Registos (partes di\u00e1rias + checklists + abastecimentos \u00b7 '+r.n_registos+' em 90 dias)</div>'
+    + '<div class="muted" style="font-size:10px;margin:2px 0 4px">\u270f\ufe0f corrige / \u2715 exclui s\u00f3 a leitura (FMD e previs\u00f5es) \u2014 parte, checklist e nota de abastecimento continuam como est\u00e3o. Motivo obrigat\u00f3rio, vai ao di\u00e1rio.</div>'
+    + '<div style="max-height:280px;overflow:auto"><table><thead><tr><th>Data</th><th>Fonte</th><th class="r">Leitura ('+un+')</th><th></th></tr></thead><tbody>'
+    + r.registos.map(x=>{ const a = "'"+id+"','"+_esc(x.fonte)+"','"+_esc(x.ref)+"'";
+        return '<tr><td>'+dd(x.data)+'</td><td class="muted" style="font-size:10px">'+(x.fonte==='abastecimento'?'\u26fd ':'')+(x.fonte==='parte'?'\ud83d\udccb ':'')+_esc(x.fonte||'')+'</td>'
+        + '<td class="r mono">'+x.leitura.toLocaleString('pt-BR')+(x.corrigida?' <span class="chip w" style="font-size:9px" title="Corrigida \u2014 original '+x.leitura_original.toLocaleString('pt-BR')+'">corrigida</span>':'')+'</td>'
+        + '<td style="white-space:nowrap;text-align:right"><span style="cursor:pointer" title="Corrigir leitura" onclick="funcLeituraAlterar('+a+','+x.leitura+')">\u270f\ufe0f</span> '
+        + (x.corrigida?'<span style="cursor:pointer" title="Voltar ao original ('+x.leitura_original.toLocaleString('pt-BR')+')" onclick="funcLeituraRestaurar('+a+')">\u21ba</span> ':'')
+        + '<span style="cursor:pointer;color:#B91C1C" title="Excluir leitura" onclick="funcLeituraExcluir('+a+','+x.leitura+')">\u2715</span></td></tr>'; }).join('')
+    + '</tbody></table></div>'
+    + ((r.anuladas||[]).length ? '<div class="dsec" style="margin-top:8px">Leituras exclu\u00eddas ('+r.anuladas.length+')</div><div style="max-height:140px;overflow:auto"><table><tbody>'
+      + r.anuladas.map(x=>'<tr style="color:#94A3B8"><td>'+dd(x.data)+'</td><td style="font-size:10px">'+_esc(x.fonte||'')+'</td><td class="r mono" style="text-decoration:line-through">'+x.leitura_original.toLocaleString('pt-BR')+'</td><td style="font-size:10px">'+_esc(x.motivo||'')+'</td>'
+        + '<td style="text-align:right"><span style="cursor:pointer;color:#1A2A5E" title="Restaurar leitura" onclick="funcLeituraRestaurar(\''+id+'\',\''+_esc(x.fonte)+'\',\''+_esc(x.ref)+'\')">\u21ba</span></td></tr>').join('')
+      + '</tbody></table></div>' : '');
   document.getElementById('eq-ficha').classList.add('show');
+}
+// (24/09/2026) Correção de leitura no Registo Funcionamento — documento de origem intacto
+async function funcLeituraAlterar(eqId, fonte, ref, atual){
+  const v = prompt('Leitura correta ('+fonte+'):', String(atual).replace('.',',')); if (v === null) return;
+  const n = parseFloat(String(v).replace(/\./g,'').replace(',','.'));
+  if (!(n > 0)) { mostrarToast('Leitura inv\u00e1lida','warn'); return; }
+  if (n === atual) return;
+  const motivo = _pedirMotivo('Corrigir leitura '+atual.toLocaleString('pt-BR')+' \u2192 '+n.toLocaleString('pt-BR')); if (!motivo) return;
+  await _funcLeituraEnviar(eqId, '/'+encodeURIComponent(fonte)+'/'+encodeURIComponent(ref), 'PATCH', {leitura:n, motivo}, motivo);
+}
+async function funcLeituraExcluir(eqId, fonte, ref, atual){
+  const motivo = _pedirMotivo('Excluir a leitura '+atual.toLocaleString('pt-BR')+' ('+fonte+')?\nO documento de origem n\u00e3o \u00e9 apagado.'); if (!motivo) return;
+  await _funcLeituraEnviar(eqId, '/'+encodeURIComponent(fonte)+'/'+encodeURIComponent(ref), 'DELETE', {motivo}, motivo);
+}
+async function funcLeituraRestaurar(eqId, fonte, ref){
+  if (!confirm('Voltar esta leitura ao valor original do documento?')) return;
+  await _funcLeituraEnviar(eqId, '/'+encodeURIComponent(fonte)+'/'+encodeURIComponent(ref)+'/correcao', 'DELETE', null, null);
+}
+async function _funcLeituraEnviar(eqId, sufixo, metodo, corpo, motivo){
+  let r;
+  try { r = await mntFetch('/manutencao/api/equipamentos/'+eqId+'/leituras'+sufixo, {method:metodo, ...(corpo?{body:JSON.stringify(corpo)}:{})}); }
+  catch(e){ mostrarToast('\u274c '+e.message,'warn'); return; }
+  mostrarToast('\u2705 Leitura atualizada','ok');
+  // Contador de manuten\u00e7\u00e3o nunca recua sozinho: se ficou acima da maior leitura v\u00e1lida, oferece o \u2699 Acerto
+  if (r && r.maior_leitura > 0 && r.contador > r.maior_leitura
+      && confirm('O contador de manuten\u00e7\u00e3o est\u00e1 em '+r.contador.toLocaleString('pt-BR')+', acima da maior leitura v\u00e1lida ('+r.maior_leitura.toLocaleString('pt-BR')+').\n\nFazer \u2699 Acerto para '+r.maior_leitura.toLocaleString('pt-BR')+' agora? (libera o checklist)')){
+    const m = motivo || _pedirMotivo('\u2699 Acerto do contador para '+r.maior_leitura.toLocaleString('pt-BR'));
+    if (m) {
+      try { await mntFetch('/manutencao/api/equipamentos/'+eqId+'/acerto-horimetro', {method:'POST', body: JSON.stringify({valor:r.maior_leitura, motivo:m})}); mostrarToast('\u2705 Contador acertado','ok'); }
+      catch(e){ mostrarToast('\u274c '+e.message,'warn'); }
+    }
+  }
+  equipFuncionamento(eqId); carregarSemaforosReais();
 }
 async function equipArtigos(id){
   let r;
@@ -2796,13 +2839,23 @@ function otwRepetir(){
   if (!o) return;
   abrirNovaOT(_otwin.eqId, o);
 }
+// (24/09/2026) Motivo obrigatório (mín. 5 caracteres) — cancelar OT, corrigir/excluir leitura; o backend também barra
+function _pedirMotivo(pergunta){
+  let m = '';
+  while (true) {
+    m = prompt(pergunta+'\n\nMotivo (obrigatório):', m);
+    if (m === null) return null;
+    m = m.trim();
+    if (m.length >= 5) return m;
+    alert('Informe o motivo (mínimo 5 caracteres).');
+  }
+}
 async function otwCancelar(){
   if (!_otwin.sel) { mostrarToast('Selecione uma OT para cancelar', 'warn'); return; }
   const o = _otwin.ots.find(x => String(x.id) === String(_otwin.sel));
   if (!o) return;
   if (o.status === 'concluida' || o.status === 'cancelada') { mostrarToast('OT já encerrada', 'warn'); return; }
-  if (!confirm('Cancelar '+o.numero+'?')) return;
-  const obs = prompt('Motivo:','') || null;
+  const obs = _pedirMotivo('Cancelar '+o.numero); if (!obs) return;
   try {
     await mntFetch('/manutencao/api/ots/'+o.id+'/status', {method:'PATCH', body: JSON.stringify({status:'cancelada', observacao:obs})});
     mostrarToast('✅ '+o.numero+' cancelada','ok');
@@ -3060,7 +3113,7 @@ async function mntStatusReal(id, novo){
     if (hp) horasParada = parseFloat(String(hp).replace(',','.')) || null;
     obs = prompt('O que foi feito:','') || null;
   }
-  if (novo === 'cancelada'){ if(!confirm('Cancelar esta OT?')) return; obs = prompt('Motivo:','') || null; }
+  if (novo === 'cancelada'){ obs = _pedirMotivo('Cancelar esta OT'); if (!obs) return; }
   try {
     await mntFetch('/manutencao/api/ots/'+id+'/status', {method:'PATCH', body: JSON.stringify({status:novo, observacao:obs, custo_total:custo, horas_parada:horasParada})});
     mostrarToast('✅ OT atualizada','ok');
@@ -3494,8 +3547,8 @@ async function abrirReprogramar(){
   document.getElementById('eq-ficha-corpo').innerHTML =
     '<div style="display:flex;justify-content:space-between;align-items:center"><b style="font-size:14px;color:#1A2A5E">📅 Reprogramar '+_esc(o.numero)+'</b>'
     + '<span style="cursor:pointer;font-size:18px" onclick="verOTReal(\''+o.id+'\')">✕</span></div>'
-    + '<div class="pp-sub">'+(ritmo ? 'Ritmo real do '+_esc(eq.codigo||'equipamento')+': <b>'+ritmo+' h·km/dia</b> (60 dias do Operacional) — um campo calcula o outro'
-                                    : 'Sem partes diárias nos últimos 60 dias — conversão automática indisponível, informe manualmente')+'</div>'
+    + '<div class="pp-sub">'+(ritmo ? 'Ritmo real do '+_esc(eq.codigo||'equipamento')+': <b>'+ritmo+' '+(eq.medicao==='km'?'km':'h')+'/dia</b> (registos dos últimos 60 dias) — um campo calcula o outro'
+                                    : 'Sem registos suficientes nos últimos 60 dias (mín. 4 dias) — conversão automática indisponível, informe manualmente')+'</div>'
     + '<div class="dsec">Nova previsão</div><div class="mgrid">'
     + '<div class="mfield">Data prevista<input id="rp-data" type="date" value="'+dtPrev+'" onchange="reprogCalc(\'data\')"></div>'
     + '<div class="mfield">Horímetro/KM previsto (atual: '+atual+')<input id="rp-horim" type="number" value="'+(o.horimetro_previsto??'')+'" oninput="reprogCalc(\'horim\')"></div>'
@@ -3662,12 +3715,14 @@ function fichaAba(aba, alvo){
       ['fg-forn','fc-forn'].forEach(id => { const el = document.getElementById(id); if (!el) return; const v = el.dataset.val;
         el.innerHTML = '<option value="">—</option>' + lista.map(f => '<option value="'+f.id+'"'+(String(f.id)===String(v)?' selected':'')+'>'+_esc(f.nome)+'</option>').join(''); });
     }).catch(()=>{});
-    // FMD-R calculado pelos registos do Operacional
+    // FMD-R calculado pelos registos (partes + checklists + abastecimentos — mesma regra do semáforo)
     mntFetch('/manutencao/api/equipamentos/'+e.id+'/ritmo').then(r => {
       const el = document.getElementById('fi-ritmo'); if (!el) return;
-      el.innerHTML = r.media_h_dia ? 'FMD-R: <b style="color:#1A2A5E">'+r.media_h_dia+' '+unid.toLowerCase()+'/dia</b> · '+r.total_horas_60d+' em 60 dias ('+r.dias_com_uso+' dias com uso)' : 'Sem partes diárias nos últimos 60 dias.';
-      const ck = document.getElementById('fo-calc'), fmd = document.getElementById('fo-fmd');
-      const aplicar = () => { if (ck.checked) { fmd.value = r.media_h_dia || ''; fmd.readOnly = true; fmd.style.background = '#f1f3f8'; } else { fmd.readOnly = false; fmd.style.background = ''; } };
+      const u = unid.toLowerCase(), dt = r.ultima_data ? r.ultima_data.split('-').reverse().join('/') : '';
+      el.innerHTML = r.media_h_dia ? 'FMD-R: <b style="color:#1A2A5E">'+r.media_h_dia+' '+u+'/dia</b> · +'+Number(r.avanco_60d).toLocaleString('pt-BR')+' '+u+' em 60 dias ('+r.dias_com_uso+' dias com registo) · último '+dt
+        : (r.dias_com_uso ? 'Só '+r.dias_com_uso+' dia(s) com registo em 60 dias — FMD-R precisa de 4.' : 'Sem registos (parte, checklist ou abastecimento) nos últimos 60 dias.');
+      const ck = document.getElementById('fo-calc'), fmd = document.getElementById('fo-fmd'), fdt = document.getElementById('fo-fmd-data');
+      const aplicar = () => { if (ck.checked) { fmd.value = r.media_h_dia || ''; fmd.readOnly = true; fmd.style.background = '#f1f3f8'; if (fdt && r.ultima_data) fdt.value = r.ultima_data; } else { fmd.readOnly = false; fmd.style.background = ''; } };
       ck.onchange = aplicar; if (ck.checked) aplicar();
     }).catch(()=>{ const el = document.getElementById('fi-ritmo'); if (el) el.textContent = '—'; });
   }
