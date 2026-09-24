@@ -123,43 +123,54 @@ async def _garantir_leituras():
         return
     from routers.abastecimentos import _ddl as _ddl_abast
     await _ddl_abast()
-    _sql_completa = """
-        CREATE OR REPLACE VIEW operacional.v_leituras AS
+    # (24/09/2026) Correção de leitura (Registo Funcionamento ▸ ✏️/✕): o documento de
+    # origem (parte, checklist, abastecimento) fica intacto; a leitura é corrigida
+    # ou excluída só para o FMD/funcionamento, com motivo e trilha no diário.
+    await ajard_query("""
+        CREATE TABLE IF NOT EXISTS manutencao.leituras_correcao (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            equipamento_id UUID NOT NULL,
+            fonte TEXT NOT NULL,
+            ref TEXT NOT NULL,
+            data TIMESTAMPTZ,
+            leitura_original NUMERIC,
+            leitura_nova NUMERIC,
+            anulada BOOLEAN NOT NULL DEFAULT false,
+            motivo TEXT NOT NULL,
+            usuario_id UUID,
+            criado_em TIMESTAMPTZ DEFAULT now(),
+            UNIQUE (fonte, ref))""", fetch="none")
+    _parte = """
         SELECT equipamento_id, data,
                GREATEST(COALESCE(horimetro_final,0), COALESCE(km_final,0)) AS leitura,
-               'parte'::text AS fonte
+               'parte'::text AS fonte, id::text AS ref
           FROM operacional.partes_diarias
          WHERE COALESCE(ativo, true) = true
         UNION ALL
-        SELECT equipamento_id, data, leitura, 'abastecimento'::text AS fonte
+        SELECT equipamento_id, data, leitura, 'abastecimento'::text AS fonte, id::text AS ref
           FROM operacional.abastecimentos
          WHERE ativo = true AND leitura IS NOT NULL
            AND COALESCE(divergencia_leitura, false) = false
-           AND COALESCE(destino_tipo,'equipamento') = 'equipamento'
+           AND COALESCE(destino_tipo,'equipamento') = 'equipamento'"""
+    _checklist = """
         UNION ALL
         SELECT e.id AS equipamento_id, c.enviado_em AS data,
                operacional.f_num_br(COALESCE(m.j->>'km', m.j->>'horimetro')) AS leitura,
-               'checklist'::text AS fonte
+               'checklist'::text AS fonte, c.envio_id::text AS ref
           FROM checklist.envios c
           CROSS JOIN LATERAL (SELECT c.meta::jsonb AS j) m
           JOIN operacional.equipamentos e
             ON upper(trim(e.codigo)) = upper(trim(COALESCE(m.j->>'veiculo', m.j->>'identificacao', m.j->>'equipamento')))
-         WHERE operacional.f_num_br(COALESCE(m.j->>'km', m.j->>'horimetro')) > 0
-    """
-    _sql_base = """
+         WHERE operacional.f_num_br(COALESCE(m.j->>'km', m.j->>'horimetro')) > 0"""
+    _view = lambda fontes: f"""
         CREATE OR REPLACE VIEW operacional.v_leituras AS
-        SELECT equipamento_id, data,
-               GREATEST(COALESCE(horimetro_final,0), COALESCE(km_final,0)) AS leitura,
-               'parte'::text AS fonte
-          FROM operacional.partes_diarias
-         WHERE COALESCE(ativo, true) = true
-        UNION ALL
-        SELECT equipamento_id, data, leitura, 'abastecimento'::text AS fonte
-          FROM operacional.abastecimentos
-         WHERE ativo = true AND leitura IS NOT NULL
-           AND COALESCE(divergencia_leitura, false) = false
-           AND COALESCE(destino_tipo,'equipamento') = 'equipamento'
-    """
+        SELECT b.equipamento_id, b.data, COALESCE(c.leitura_nova, b.leitura) AS leitura, b.fonte,
+               b.ref, b.leitura AS leitura_original, (c.id IS NOT NULL) AS corrigida
+          FROM ({fontes}) b
+          LEFT JOIN manutencao.leituras_correcao c ON c.fonte = b.fonte AND c.ref = b.ref
+         WHERE COALESCE(c.anulada, false) = false"""
+    _sql_completa = _view(_parte + _checklist)
+    _sql_base = _view(_parte)
     try:
         await ajard_query(_sql_completa, fetch="none")
     except Exception:
@@ -641,6 +652,8 @@ async def mudar_status_ot(ot_id: str, request: Request, payload=Depends(verifica
         raise HTTPException(
             status_code=400,
             detail=f"Transição inválida: {atual} → {novo}")
+    if novo == "cancelada" and len((d.get("observacao") or "").strip()) < 5:
+        raise HTTPException(status_code=400, detail="Motivo do cancelamento é obrigatório (mínimo 5 caracteres)")
     uid = await _usuario_id(payload)
     extras, params = "", [novo]
     if novo == "concluida":
@@ -2050,23 +2063,22 @@ async def excluir_nota(eq_id: str, nota_id: str, payload=Depends(verificar_manut
 
 @router.get("/manutencao/api/equipamentos/{eq_id}/ritmo")
 async def ritmo_equipamento(eq_id: str, _auth=Depends(verificar_manutencao)):
-    """(24/08/2026) Ritmo médio de uso — motor da reprogramação (o 'Avançado'
-    do ManWinWin): converte horímetro↔data. Média por DIA CORRIDO das partes
-    diárias do Operacional nos últimos 60 dias (dia-calendário é o que
-    interessa para prever data)."""
-    r = await ajard_query(
-        """SELECT COALESCE(SUM(p.horas_trabalhadas),0) AS total,
-                  COUNT(DISTINCT p.data) AS dias_com_uso,
-                  MIN(p.data) AS ini, MAX(p.data) AS fim
-           FROM operacional.partes_diarias p
-           WHERE p.equipamento_id = %s AND p.ativo = true
-             AND p.data >= (now()::date - 60)""",
-        (eq_id,), fetch="one")
-    total = float(r["total"] or 0)
-    dias_corridos = ((r["fim"] - r["ini"]).days + 1) if r["ini"] and r["fim"] else 0
-    media = round(total / dias_corridos, 2) if dias_corridos > 0 and total > 0 else None
-    return {"media_h_dia": media, "total_horas_60d": round(total, 1),
-            "dias_com_uso": int(r["dias_com_uso"] or 0), "dias_corridos": dias_corridos}
+    """(24/08→24/09/2026) Ritmo médio de uso — ficha do Objecto (FMD / Data) e reprogramação.
+    Mesma fonte e regra do semáforo: v_leituras (partes + checklists + abastecimentos,
+    com correções) nos últimos 60 dias, FMD-R por _fmd_serie. Antes lia só
+    partes_diarias.horas_trabalhadas — caminhão que só manda checklist ficava sem FMD."""
+    await _garantir_leituras()
+    rows = await ajard_query(
+        """SELECT data::date AS d, MAX(leitura) AS leitura
+           FROM operacional.v_leituras
+           WHERE equipamento_id=%s AND data >= now() - interval '60 days' AND leitura > 0
+           GROUP BY data::date""", (eq_id,)) or []
+    serie = sorted((r["d"], float(r["leitura"])) for r in rows)
+    ult = serie[-1] if serie else None
+    return {"media_h_dia": _fmd_serie(serie), "dias_com_uso": len(serie),
+            "ultima_data": ult[0].isoformat() if ult else None,
+            "ultima_leitura": ult[1] if ult else None,
+            "avanco_60d": round(serie[-1][1] - serie[0][1], 1) if len(serie) > 1 else 0}
 
 
 @router.get("/manutencao/api/equipamentos/{eq_id}/detalhe")
@@ -3112,6 +3124,19 @@ def _resolver_plano(periodo_nome, periodo_qtd, descricao):
     return _resolver_descricao(descricao)
 
 
+def _fmd_serie(serie):
+    """(24/09/2026) Regra ÚNICA do FMD-R (ManWinWin): série diária [(data, maior leitura do dia)],
+    em qualquer ordem; vale com ≥4 dias e leitura crescente. Usada pelo semáforo/previsões,
+    Registo Funcionamento e ficha do Objecto."""
+    s = sorted(serie)
+    if len(s) < 4:
+        return None
+    (d0, l0), (d1, l1) = s[0], s[-1]
+    if l1 <= l0:
+        return None
+    return round((l1 - l0) / max(1, (d1 - d0).days), 2)
+
+
 async def _fmd_por_equipamento():
     """FMD-R por equipamento a partir das partes diárias (últimos 120 dias).
     Regra ManWinWin: só vale com >= 4 registros; senão None (sem projeção
@@ -3129,12 +3154,9 @@ async def _fmd_por_equipamento():
             por_eq.setdefault(str(r["equipamento_id"]), []).append((r["d"], float(r["leitura"])))
     fmd = {}
     for eq_id, regs in por_eq.items():
-        if len(regs) < 4:
-            continue
-        (d0, l0), (d1, l1) = regs[0], regs[-1]
-        dias = max(1, (d1 - d0).days)
-        if l1 > l0:
-            fmd[eq_id] = round((l1 - l0) / dias, 2)
+        v = _fmd_serie(regs)
+        if v:
+            fmd[eq_id] = v
     return fmd
 
 
@@ -3740,20 +3762,24 @@ async def equip_funcionamento(eq_id: str, _auth=Depends(verificar_manutencao)):
     if not eq:
         raise HTTPException(status_code=404, detail="Equipamento não encontrado")
     rows = await ajard_query(
-        """SELECT data::date AS d, MAX(leitura) AS leitura,
-                  string_agg(DISTINCT fonte, '+') AS fonte
+        """SELECT data::date AS d, leitura, fonte, ref, leitura_original, corrigida
            FROM operacional.v_leituras
            WHERE equipamento_id=%s AND data >= now() - interval '90 days'
-           GROUP BY data::date ORDER BY d DESC LIMIT 40""", (eq_id,))
-    regs = [{"data": r["d"].isoformat(), "leitura": float(r["leitura"] or 0), "fonte": r["fonte"]}
+           ORDER BY data DESC LIMIT 80""", (eq_id,))
+    regs = [{"data": r["d"].isoformat(), "leitura": float(r["leitura"] or 0), "fonte": r["fonte"],
+             "ref": r["ref"], "corrigida": bool(r["corrigida"]),
+             "leitura_original": float(r["leitura_original"] or 0)}
             for r in rows if float(r["leitura"] or 0) > 0]
-    fmd = None
-    if len(regs) >= 4:
-        d1, l1 = regs[0]["data"], regs[0]["leitura"]
-        d0, l0 = regs[-1]["data"], regs[-1]["leitura"]
-        dias = max(1, (_date.fromisoformat(d1) - _date.fromisoformat(d0)).days)
-        if l1 > l0:
-            fmd = round((l1 - l0) / dias, 2)
+    anuladas = await ajard_query(
+        """SELECT data::date AS d, fonte, ref, leitura_original, motivo
+           FROM manutencao.leituras_correcao
+           WHERE equipamento_id=%s AND anulada AND data >= now() - interval '90 days'
+           ORDER BY data DESC""", (eq_id,)) or []
+    # FMD-R pela maior leitura de cada dia (regra dos ≥4 dias)
+    dias = {}
+    for x in regs:
+        dias[x["data"]] = max(dias.get(x["data"], 0), x["leitura"])
+    fmd = _fmd_serie([(_date.fromisoformat(k), v) for k, v in dias.items()])
     proj_30 = None
     vivo = eq["km_atual"] if eq.get("medicao") == "km" else eq["horimetro_atual"]
     atual = float(vivo or (regs[0]["leitura"] if regs else 0) or 0)
@@ -3762,8 +3788,100 @@ async def equip_funcionamento(eq_id: str, _auth=Depends(verificar_manutencao)):
     return {"equipamento": eq["codigo"], "descricao": eq["descricao"],
             "medicao": eq["medicao"], "leitura_atual": atual,
             "registos": regs, "n_registos": len(regs),
+            "anuladas": [{"data": r["d"].isoformat() if r["d"] else None, "fonte": r["fonte"], "ref": r["ref"],
+                          "leitura_original": float(r["leitura_original"] or 0), "motivo": r["motivo"]} for r in anuladas],
             "fmd": fmd, "fmd_valido": fmd is not None,
             "projecao_30d": proj_30, "gerado_em": _date.today().isoformat()}
+
+
+_FONTES_LEITURA = {"parte", "abastecimento", "checklist"}
+_dmy = lambda v: v.strftime("%d/%m/%Y") if v else "—"
+
+
+async def _leitura_resposta(eq_id: str):
+    """Contador de manutenção × maior leitura válida — o front oferece ⚙ Acerto se o contador ficou acima."""
+    eq = await ajard_query("SELECT medicao, horimetro_atual, km_atual FROM operacional.equipamentos WHERE id=%s",
+                           (eq_id,), fetch="one") or {}
+    mx = await ajard_query("SELECT MAX(leitura) AS mx FROM operacional.v_leituras WHERE equipamento_id=%s",
+                           (eq_id,), fetch="one") or {}
+    cont = eq.get("km_atual") if eq.get("medicao") == "km" else eq.get("horimetro_atual")
+    return {"ok": True, "contador": float(cont or 0), "maior_leitura": float(mx.get("mx") or 0)}
+
+
+async def _leitura_da_view(eq_id: str, fonte: str, ref: str):
+    if fonte not in _FONTES_LEITURA:
+        raise HTTPException(status_code=400, detail="Fonte de leitura inválida")
+    await _garantir_leituras()
+    r = await ajard_query(
+        """SELECT data, leitura, leitura_original FROM operacional.v_leituras
+           WHERE equipamento_id=%s AND fonte=%s AND ref=%s LIMIT 1""", (eq_id, fonte, ref), fetch="one")
+    if not r:
+        raise HTTPException(status_code=404, detail="Leitura não encontrada")
+    return r
+
+
+async def _leitura_gravar(eq_id, fonte, ref, r, nova, anulada, motivo, payload):
+    uid = await _usuario_id(payload)
+    await ajard_query(
+        """INSERT INTO manutencao.leituras_correcao
+               (equipamento_id, fonte, ref, data, leitura_original, leitura_nova, anulada, motivo, usuario_id)
+           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
+           ON CONFLICT (fonte, ref) DO UPDATE SET leitura_nova=EXCLUDED.leitura_nova, anulada=EXCLUDED.anulada,
+               motivo=EXCLUDED.motivo, usuario_id=EXCLUDED.usuario_id, criado_em=now()""",
+        (eq_id, fonte, ref, r["data"], r["leitura_original"], nova, anulada, motivo, uid), fetch="none")
+    orig = float(r["leitura_original"] or 0)
+    txt = (f"✕ Leitura excluída ({fonte} {_dmy(r['data'])}): {orig:g}" if anulada
+           else f"✏️ Leitura corrigida ({fonte} {_dmy(r['data'])}): {orig:g} → {nova:g}")
+    await ajard_query(
+        "INSERT INTO manutencao.equipamento_notas (equipamento_id, usuario_id, descricao) VALUES (%s,%s,%s)",
+        (eq_id, uid, f"{txt}. Motivo: {motivo}"), fetch="none")
+
+
+@router.patch("/manutencao/api/equipamentos/{eq_id}/leituras/{fonte}/{ref}")
+async def leitura_corrigir(eq_id: str, fonte: str, ref: str, request: Request, payload=Depends(verificar_manutencao)):
+    """(24/09/2026) Registo Funcionamento ▸ ✏️ — corrige o valor da leitura (documento de origem intacto)."""
+    d = await request.json()
+    try:
+        nova = float(str(d.get("leitura")).replace(",", "."))
+    except Exception:
+        raise HTTPException(status_code=400, detail="Informe a leitura correta")
+    if nova <= 0:
+        raise HTTPException(status_code=400, detail="Leitura deve ser maior que zero")
+    motivo = (d.get("motivo") or "").strip()
+    if len(motivo) < 5:
+        raise HTTPException(status_code=400, detail="Motivo da correção é obrigatório (mínimo 5 caracteres)")
+    r = await _leitura_da_view(eq_id, fonte, ref)
+    await _leitura_gravar(eq_id, fonte, ref, r, nova, False, motivo, payload)
+    return await _leitura_resposta(eq_id)
+
+
+@router.delete("/manutencao/api/equipamentos/{eq_id}/leituras/{fonte}/{ref}")
+async def leitura_excluir(eq_id: str, fonte: str, ref: str, request: Request, payload=Depends(verificar_manutencao)):
+    """(24/09/2026) Registo Funcionamento ▸ ✕ — tira a leitura do FMD/funcionamento (documento de origem intacto)."""
+    d = await request.json()
+    motivo = (d.get("motivo") or "").strip()
+    if len(motivo) < 5:
+        raise HTTPException(status_code=400, detail="Motivo da exclusão é obrigatório (mínimo 5 caracteres)")
+    r = await _leitura_da_view(eq_id, fonte, ref)
+    await _leitura_gravar(eq_id, fonte, ref, r, None, True, motivo, payload)
+    return await _leitura_resposta(eq_id)
+
+
+@router.delete("/manutencao/api/equipamentos/{eq_id}/leituras/{fonte}/{ref}/correcao")
+async def leitura_restaurar(eq_id: str, fonte: str, ref: str, payload=Depends(verificar_manutencao)):
+    """(24/09/2026) Desfaz correção/exclusão — volta a leitura original do documento."""
+    await _garantir_leituras()
+    c = await ajard_query(
+        "DELETE FROM manutencao.leituras_correcao WHERE equipamento_id=%s AND fonte=%s AND ref=%s "
+        "RETURNING data, leitura_original", (eq_id, fonte, ref), fetch="one")
+    if not c:
+        raise HTTPException(status_code=404, detail="Correção não encontrada")
+    uid = await _usuario_id(payload)
+    await ajard_query(
+        "INSERT INTO manutencao.equipamento_notas (equipamento_id, usuario_id, descricao) VALUES (%s,%s,%s)",
+        (eq_id, uid, f"↺ Leitura restaurada ({fonte} {_dmy(c['data'])}): {float(c['leitura_original'] or 0):g}"),
+        fetch="none")
+    return await _leitura_resposta(eq_id)
 
 
 @router.get("/manutencao/api/equipamentos/{eq_id}/artigos-aplicados")
