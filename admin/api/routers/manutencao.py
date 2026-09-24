@@ -1530,7 +1530,7 @@ async def tab_excluir(nome: str, rid: str, _auth=Depends(verificar_manutencao)):
 
 @router.post("/manutencao/api/ots/{ot_id}/aplicar-fmp")
 async def ot_aplicar_fmp(ot_id: str, request: Request, payload=Depends(verificar_manutencao)):
-    """(23/09/2026) Botão FMP da Origem (ManWinWin): a OT assume da ficha o título,
+    """(23/09/2026) Botão FMP da Origem (ManWinWin): a OT assume da ficha a descrição,
     o tipo de trabalho (A1…), Preventiva, TDM, e a programação (próxima data/leitura
     das previsões). As tarefas entram pela rota /tarefas/da-fmp que o front chama em seguida."""
     d = await request.json()
