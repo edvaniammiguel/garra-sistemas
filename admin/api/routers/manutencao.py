@@ -733,7 +733,7 @@ async def editar_ot(ot_id: str, request: Request, payload=Depends(verificar_manu
             d[c] = None
     campos = ["tipo", "prioridade", "descricao", "responsavel_id",
               "fornecedor_id", "custo_total", "data_prevista", "horimetro_previsto",
-              "sintoma_codigo", "causa_codigo", "tipo_trabalho", "projecto_id"]
+              "sintoma_codigo", "causa_codigo", "tipo_trabalho", "projecto_id", "plano_id"]
     if "projecto_id" in d and d["projecto_id"] == "":
         d["projecto_id"] = None
     updates, params = [], []
@@ -1508,6 +1508,37 @@ async def tab_excluir(nome: str, rid: str, _auth=Depends(verificar_manutencao)):
     tab, _ = await _garantir_tabela(nome)
     await ajard_query(f"UPDATE {tab} SET ativo=false, atualizado_em=now() WHERE id=%s", (rid,), fetch="none")
     return {"ok": True}
+
+
+@router.post("/manutencao/api/ots/{ot_id}/aplicar-fmp")
+async def ot_aplicar_fmp(ot_id: str, request: Request, payload=Depends(verificar_manutencao)):
+    """(23/09/2026) Botão FMP da Origem (ManWinWin): a OT assume da ficha o título,
+    o tipo de trabalho (A1…), Preventiva, TDM, e a programação (próxima data/leitura
+    das previsões). As tarefas entram pela rota /tarefas/da-fmp que o front chama em seguida."""
+    d = await request.json()
+    pid = (d.get("plano_id") or "").strip()
+    if not pid:
+        raise HTTPException(status_code=400, detail="Informe a FMP")
+    await _garantir_planos_cols()
+    p = await ajard_query("SELECT * FROM manutencao.planos WHERE id=%s AND ativo=true", (pid,), fetch="one")
+    if not p:
+        raise HTTPException(status_code=404, detail="FMP não encontrada")
+    o = await ajard_query("SELECT id, equipamento_id, status FROM manutencao.ot WHERE id=%s AND ativo=true", (ot_id,), fetch="one")
+    if not o:
+        raise HTTPException(status_code=404, detail="OT não encontrada")
+    if str(o["equipamento_id"]) != str(p["equipamento_id"]):
+        raise HTTPException(status_code=400, detail="A FMP é de outro equipamento")
+    prev = await _calcular_previsoes()
+    it = next((i for i in prev["itens"] if str(i["plano_id"]) == str(pid)), None)
+    await ajard_query(
+        """UPDATE manutencao.ot SET plano_id=%s, descricao=%s, tipo='preventiva', tipo_trabalho=%s,
+               data_prevista=COALESCE(%s, data_prevista), horimetro_previsto=COALESCE(%s, horimetro_previsto),
+               atualizado_em=now()
+           WHERE id=%s""",
+        (pid, p["descricao"], p["tipo_trabalho"],
+         (it or {}).get("proxima_data"), (it or {}).get("leitura_alvo"), ot_id), fetch="none")
+    return {"ok": True, "descricao": p["descricao"], "tipo_trabalho": p["tipo_trabalho"],
+            "data_prevista": (it or {}).get("proxima_data"), "horimetro_previsto": (it or {}).get("leitura_alvo")}
 
 
 @router.post("/manutencao/api/ots/{ot_id}/tarefas/da-fmp")
