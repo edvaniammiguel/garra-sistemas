@@ -577,7 +577,7 @@ function arvFecharTudo(){
 }
 
 /* ══ ORDENS DE TRABALHO ══ */
-const MNT_CHIP = { programada:['pr','Programada'], aberta:['nr','Aberta'], em_andamento:['em','Em curso'],
+const MNT_CHIP = { rascunho:['nr','Em criação'], programada:['pr','Programada'], aberta:['nr','Aberta'], em_andamento:['em','Em curso'],
   aguardando_peca:['pr','Aguard. peça'], concluida:['tm','Encerrada'], cancelada:['ap','Cancelada'] };
 const MNT_DOT = { urgente:'r', alta:'r', media:'y', baixa:'g' };
 let _otsCache = [], _mntEquipList = [], _filtroEquipId = null, _filtroTT = null;
@@ -3050,7 +3050,7 @@ async function mntStatusReal(id, novo){
       if (!_d || _d === '(a descrever)') {
         mostrarToast('✏️ Descreva o serviço na aba Origem antes de concluir a OT', 'warn');
         await verOTReal(id); otAba('origem');
-        setTimeout(() => { const el = document.getElementById('oe-desc'); if (el) { el.focus(); el.select(); el.scrollIntoView({block:'center'}); } }, 80);
+        setTimeout(() => { const el = document.getElementById('ot-titulo'); if (el) { el.focus(); el.select(); el.scrollIntoView({block:'center'}); } }, 80);
         return;
       }
     } catch(e) {}
@@ -3083,6 +3083,9 @@ async function verOTReal(id){
       + (o.plano_id ? ' <span class="chip" style="font-size:9px;background:#EEF2FF;color:#3730A3" title="OT preventiva ligada à FMP">📅 FMP</span>' : '')
       + ' <span class="chip '+((MNT_CHIP[o.status]||['nr'])[0])+'">'+_esc(cl)+'</span></div>'
       + '<span style="cursor:pointer;font-size:18px" onclick="document.getElementById(\'eq-ficha\').classList.remove(\'show\')">✕</span></div>'
+      // (23/09/2026) Título da OT (descrição) no cabeçalho, como no MWW — gravado pelo OK/Aplicar do rodapé
+      + '<div style="display:flex;align-items:center;gap:8px;margin:6px 0 4px"><span class="ne-l r" style="flex:0 0 60px">Título</span>'
+      + '<input id="ot-titulo" value="'+_esc((o.descricao||'')==='(a descrever)'?'':(o.descricao||''))+'" placeholder="Descreva o serviço — ex.: Revisão 500 horas" style="flex:1;font-weight:600"></div>'
       + '<div class="mtabs">'
       + '<div class="mtab on" id="mt-origem" onclick="otAba(\'origem\')">Origem</div>'
       + '<div class="mtab" id="mt-gestao" onclick="otAba(\'gestao\')">Gestão</div>'
@@ -3103,7 +3106,10 @@ async function verOTReal(id){
           const st = o.status, fecha = ";document.getElementById('eq-ficha').classList.remove('show')";
           const b = (rot, ac, p) => '<button class="btn'+(p?' p':'')+'" onclick="'+ac.replace(/'/g,'&#39;')+'">'+rot+'</button>';
           let acoes = '';
-          if (st === 'programada')
+          if (st === 'rascunho')
+            acoes = b('🖨 Emitir', "salvarOrigem(true,'em_andamento')")
+              + ' ' + b('✖️ Cancelar', "otDescartar('"+o.id+"')");
+          else if (st === 'programada')
             acoes = b('🖨 Emitir', "mntStatusReal('"+o.id+"','em_andamento')"+fecha, true)
               + (o.plano_id ? ' ' + b('🔁 Novo ciclo', "otNovoCiclo('"+o.id+"')") : '')
               + ' ' + b('✖️ Cancelar…', "mntStatusReal('"+o.id+"','cancelada')"+fecha);
@@ -3118,9 +3124,10 @@ async function verOTReal(id){
             acoes = b('▶️ Retomar', "mntStatusReal('"+o.id+"','em_andamento')"+fecha, true)
               + ' ' + b('✔️ Encerrar…', "mntStatusReal('"+o.id+"','concluida')"+fecha)
               + ' ' + b('✖️ Cancelar…', "mntStatusReal('"+o.id+"','cancelada')"+fecha);
-          return acoes
-            ? '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px;border-top:1px solid #E2E8F0;padding-top:10px">'+acoes+'</div>'
-            : '';
+          // OK grava (título + Origem) e fecha — no rascunho também confirma (Programada); Aplicar grava e mantém
+          const okAc = st === 'rascunho' ? "salvarOrigem(true,'programada')" : "salvarOrigem(true)";
+          const base = b('OK', okAc, true) + ' ' + b('Aplicar', "salvarOrigem(false)");
+          return '<div style="display:flex;gap:8px;justify-content:space-between;margin-top:12px;border-top:1px solid #E2E8F0;padding-top:10px"><div>'+base+'</div><div>'+acoes+'</div></div>';
         })();
     document.getElementById('eq-ficha').classList.add('show');
     otAba('origem');
@@ -3385,12 +3392,10 @@ function otAba(aba){
       + '<div class="mfield">Prioridade<select id="oe-prior">'
         + ['baixa','media','alta','urgente'].map(p=>'<option value="'+p+'"'+(o.prioridade===p?' selected':'')+'>'+p.charAt(0).toUpperCase()+p.slice(1)+'</option>').join('')
         + '</select></div>'
-      + '</div><div class="mfield" style="margin-top:8px">Descrição<textarea id="oe-desc" rows="2">'+_esc(o.descricao||'')+'</textarea></div>'
-      + '<div class="dsec">Programação</div><div class="mgrid">'
+      + '</div><div class="dsec">Programação</div><div class="mgrid">'
       + '<div class="mfield">Data prevista<input id="oe-data" type="date" value="'+dtPrev+'"></div>'
       + '<div class="mfield">Horímetro/KM previsto<input id="oe-horim" type="number" value="'+(o.horimetro_previsto??'')+'"></div>'
-      + '</div><div style="display:flex;justify-content:flex-end;margin-top:12px">'
-      + '<button class="btn p" onclick="salvarOrigem()">💾 Salvar alterações</button></div>';
+      + '</div>';
     mntFetch('/manutencao/api/equipamentos/'+o.equipamento_id+'/detalhe').then(det => {
       const el = document.getElementById('oe-fmp'); if (!el) return; const v = el.dataset.val;
       const pls = det.planos || [];
@@ -3545,6 +3550,15 @@ async function salvarDiagnostico(){
   } catch(e){ mostrarToast('❌ '+e.message,'warn'); }
 }
 // (23/09/2026) Botão FMP da Origem (ManWinWin): a OT herda título, A1, Preventiva, programação e tarefas
+// (23/09/2026) OT em criação (rascunho): Cancelar descarta — ela nunca chegou a existir para a lista
+async function otDescartar(id){
+  if (!confirm('Descartar esta OT em criação?')) return;
+  try {
+    await mntFetch('/manutencao/api/ots/'+id, {method:'DELETE'});
+    document.getElementById('eq-ficha').classList.remove('show');
+    mostrarToast('OT descartada', 'ok'); carregarOTsReais(); carregarSemaforosReais();
+  } catch(e){ mostrarToast('❌ '+e.message, 'warn'); }
+}
 async function otAplicarFMP(){
   const o = _otAberta; if (!o) return;
   const sel = document.getElementById('oe-fmp'); const pid = (sel||{}).value;
@@ -3558,21 +3572,22 @@ async function otAplicarFMP(){
     await verOTReal(o.id); otAba('origem'); carregarOTsReais(); carregarSemaforosReais();
   } catch(e){ mostrarToast('❌ '+e.message, 'warn'); }
 }
-async function salvarOrigem(){
+async function salvarOrigem(fechar, promover){
   const o = _otAberta; if (!o) return;
-  const body = {
-    descricao: document.getElementById('oe-desc').value.trim(),
-    ...(_mntTiposTrab.length ? {tipo_trabalho: document.getElementById('oe-tipo').value} : {tipo: document.getElementById('oe-tipo').value}),
-    prioridade: document.getElementById('oe-prior').value,
-    fornecedor_id: document.getElementById('oe-forn').value || null,
-    projecto_id: document.getElementById('oe-proj').value || '',
-    data_prevista: document.getElementById('oe-data').value || '',
-    horimetro_previsto: document.getElementById('oe-horim').value.trim()
-  };
+  const g = id => document.getElementById(id);
+  const titulo = (g('ot-titulo')||{}).value?.trim() || '';
+  if (!titulo) { mostrarToast('✏️ Dê um título à OT (campo no cabeçalho)', 'warn'); g('ot-titulo')?.focus(); return; }
+  const body = { descricao: titulo };
+  if (g('oe-prior')) Object.assign(body, {
+    ...(_mntTiposTrab.length ? {tipo_trabalho: g('oe-tipo').value} : {tipo: g('oe-tipo').value}),
+    prioridade: g('oe-prior').value, fornecedor_id: g('oe-forn').value || null,
+    projecto_id: g('oe-proj').value || '', data_prevista: g('oe-data').value || '',
+    horimetro_previsto: g('oe-horim').value.trim() });
   try {
     await mntFetch('/manutencao/api/ots/'+o.id, {method:'PATCH', body: JSON.stringify(body)});
-    mostrarToast('✅ OT atualizada','ok');
-    document.getElementById('eq-ficha').classList.remove('show');
+    if (promover) await mntFetch('/manutencao/api/ots/'+o.id+'/status', {method:'PATCH', body: JSON.stringify({status: promover})});
+    mostrarToast('✅ OT gravada','ok');
+    if (fechar) document.getElementById('eq-ficha').classList.remove('show'); else { await verOTReal(o.id); }
     carregarOTsReais(); carregarSemaforosReais();
   } catch(e){ mostrarToast('❌ '+e.message,'warn'); }
 }
