@@ -64,6 +64,8 @@ async def verificar_pedir_ot(payload=Depends(verificar_token)):
                         detail="Sem permissão para pedir OT — marque o módulo na matriz de Permissões (perfil Mecânica já vem com ele)")
 
 _TRANSICOES = {
+    # (23/09/2026) rascunho = OT em criação (número reservado, invisível) até OK/Emitir
+    "rascunho":        {"programada", "aberta", "em_andamento", "cancelada"},
     "programada":      {"aberta", "em_andamento", "cancelada"},
     "aberta":          {"em_andamento", "cancelada"},
     "em_andamento":    {"aguardando_peca", "concluida", "cancelada"},
@@ -505,8 +507,8 @@ async def _inserir_ot(d, eq, uid, numero, ano, seq):
         hor_prev = None
     # (23/09/2026) MWW: OT criada pela janela nasce PROGRAMADA (número reservado, não emitida);
     # vira em curso no Emitir. Só a conversão de pedido nasce aberta.
-    programada = bool(data_prev or hor_prev is not None or d.get("rascunho"))
-    status_ini = "programada" if programada else "aberta"
+    programada = bool(data_prev or hor_prev is not None)
+    status_ini = "rascunho" if d.get("rascunho") else ("programada" if programada else "aberta")
     tt = (d.get("tipo_trabalho") or "").strip().upper() or None
     _classe = {"A": "preventiva", "B": "preventiva", "C": "corretiva",
                "M": "melhoria", "R": "reforma"}
@@ -546,6 +548,8 @@ async def listar_ots(status: str = None, equipamento_id: str = None,
     if status:
         params.append(status)
         where.append("ot.status=%s")
+    else:
+        where.append("ot.status <> 'rascunho'")
     if equipamento_id:
         params.append(equipamento_id)
         where.append("ot.equipamento_id=%s")
@@ -714,6 +718,18 @@ async def reprogramar_ot(ot_id: str, request: Request, payload=Depends(verificar
            VALUES (%s,%s,%s,%s,%s)""",
         (ot_id, ot["status"], ot["status"], obs, uid), fetch="none")
     return {"ok": True, "data_prevista": data_n, "horimetro_previsto": hor_n}
+
+
+@router.delete("/manutencao/api/ots/{ot_id}")
+async def descartar_rascunho_ot(ot_id: str, _auth=Depends(verificar_manutencao)):
+    """(23/09/2026) Cancelar na OT em criação: só rascunho pode ser descartado (soft delete)."""
+    o = await ajard_query("SELECT status FROM manutencao.ot WHERE id=%s AND ativo=true", (ot_id,), fetch="one")
+    if not o:
+        raise HTTPException(status_code=404, detail="OT não encontrada")
+    if o["status"] != "rascunho":
+        raise HTTPException(status_code=400, detail="Só uma OT em criação (rascunho) pode ser descartada — use Cancelar")
+    await ajard_query("UPDATE manutencao.ot SET ativo=false, atualizado_em=now() WHERE id=%s", (ot_id,), fetch="none")
+    return {"ok": True}
 
 
 @router.patch("/manutencao/api/ots/{ot_id}")
