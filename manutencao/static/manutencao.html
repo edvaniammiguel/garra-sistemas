@@ -3543,8 +3543,10 @@ async function salvarDiagnostico(){
 // (23/09/2026) Botão FMP da Origem (ManWinWin): a OT herda título, A1, Preventiva, programação e tarefas
 async function otAplicarFMP(){
   const o = _otAberta; if (!o) return;
-  const pid = (document.getElementById('oe-fmp')||{}).value;
+  const sel = document.getElementById('oe-fmp'); const pid = (sel||{}).value;
   if (!pid) { mostrarToast('Escolha a FMP', 'warn'); return; }
+  const rot = sel.options[sel.selectedIndex].text.split(' — ')[0];
+  if (!confirm('Atenção: deseja substituir as informações da OT '+(o.numero||'')+' pelas da Ficha Manutenção Planeada '+rot+'?\n\n(título, tipo de trabalho, tarefas e programação)')) return;
   try {
     await mntFetch('/manutencao/api/ots/'+o.id+'/aplicar-fmp', {method:'POST', body: JSON.stringify({plano_id: pid})});
     try { await mntFetch('/manutencao/api/ots/'+o.id+'/tarefas/da-fmp', {method:'POST', body: '{}'}); } catch(e){}
