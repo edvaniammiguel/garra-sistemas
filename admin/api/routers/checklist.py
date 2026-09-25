@@ -1,10 +1,10 @@
-"""routers.checklist — Checklist Digital (9), Frota (3) e Logística (9):
-os três grupos do domínio checklist, 21 rotas.
+"""routers.checklist — Checklist Digital, Frota e Logística.
+Retorno da gestão por envio (25/09/2026): visto + mensagem + atalhos parametrizados.
 
 Refatoração Fase 2 · Etapa 3 (04/07/2026). Corpos IDÊNTICOS aos do main.py.
 Este grupo já é 100% asyncpg (get_db) — zero jard_query.
 """
-import os, io, json, time, uuid, secrets
+import os, io, json, time, uuid, secrets, logging
 from datetime import datetime, timedelta, date
 from typing import Optional
 from fastapi import APIRouter, Request, HTTPException, Depends, Header, Body
@@ -20,6 +20,58 @@ from core.models import (
 )
 
 router = APIRouter()
+log = logging.getLogger("garra.checklist")
+
+
+# ══════════════════════════════════════════════════════════════
+# RETORNO DA GESTÃO (25/09/2026) — cada envio recebe "visto" e
+# mensagens da gestão; o operador lê no mobile (lido_em = recibo).
+# ══════════════════════════════════════════════════════════════
+_RETORNOS_OK = False
+
+async def _garantir_retornos(db):
+    global _RETORNOS_OK
+    if _RETORNOS_OK:
+        return
+    await db.execute("""CREATE TABLE IF NOT EXISTS checklist.retornos (
+        id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+        envio_id    text NOT NULL,
+        tipo        text NOT NULL CHECK (tipo IN ('visto','mensagem')),
+        texto       text,
+        autor_login text NOT NULL,
+        criado_em   timestamptz NOT NULL DEFAULT now(),
+        lido_em     timestamptz,
+        ativo       boolean NOT NULL DEFAULT true)""")
+    await db.execute("CREATE INDEX IF NOT EXISTS ix_ck_retornos_envio ON checklist.retornos (envio_id) WHERE ativo")
+    _RETORNOS_OK = True
+
+
+_SQL_ENVIO = """SELECT e.*, r.visto_em,
+       COALESCE(r.n_msg, 0)::int       AS retornos_msg,
+       COALESCE(r.n_nao_lidas, 0)::int AS retornos_nao_lidos,
+       p.numero AS pedido_numero
+  FROM checklist.envios e
+  LEFT JOIN LATERAL (
+       SELECT MIN(x.criado_em) AS visto_em,
+              COUNT(*) FILTER (WHERE x.tipo='mensagem') AS n_msg,
+              COUNT(*) FILTER (WHERE x.tipo='mensagem' AND x.lido_em IS NULL) AS n_nao_lidas
+         FROM checklist.retornos x
+        WHERE x.envio_id = e.envio_id AND x.ativo) r ON TRUE
+  LEFT JOIN LATERAL (
+       SELECT pp.numero FROM manutencao.pedidos pp
+        WHERE pp.nc_ref = e.envio_id AND pp.ativo LIMIT 1) p ON TRUE"""
+
+
+def _envio_saida(r, gestor: bool) -> dict:
+    """pedido_numero é dado de manutenção: só a gestão recebe."""
+    d = dict(r)
+    if not gestor:
+        d.pop("pedido_numero", None)
+    d["meta"]      = d["meta"]      if isinstance(d["meta"],dict)      else json.loads(d["meta"]      or "{}")
+    d["respostas"] = d["respostas"] if isinstance(d["respostas"],dict) else json.loads(d["respostas"] or "{}")
+    d["respostas"] = _checklist_assinar_fotos_para_leitura(d["respostas"])
+    return d
+
 
 @router.get("/checklist/modelos")
 async def listar_modelos(db=Depends(get_db), _auth=Depends(verificar_token)):
@@ -54,23 +106,81 @@ async def remover_modelo(cl_id: str, db=Depends(get_db), _auth=Depends(verificar
 
 @router.get("/checklist/envios")
 async def listar_envios(usuario: Optional[str]=None, cl_id: Optional[str]=None, limit: int=100, db=Depends(get_db), _auth=Depends(verificar_token)):
-    where, params = "WHERE arquivado=FALSE", []
+    await _garantir_retornos(db)
+    where, params = "WHERE e.arquivado=FALSE", []
     # Menor privilégio (05/07/2026): operador/motorista só vê os PRÓPRIOS envios,
     # independente do parâmetro. Gestor/admin filtram livremente.
     if not _eh_gestor_ck(_auth):
         usuario = _auth.get("sub", "")
-    if usuario: params.append(usuario); where += f" AND usuario_login=${len(params)}"
-    if cl_id:   params.append(cl_id);   where += f" AND cl_id=${len(params)}"
+    if usuario: params.append(usuario); where += f" AND e.usuario_login=${len(params)}"
+    if cl_id:   params.append(cl_id);   where += f" AND e.cl_id=${len(params)}"
     params.append(limit)
-    rows = await db.fetch(f"SELECT * FROM checklist.envios {where} ORDER BY enviado_em DESC LIMIT ${len(params)}", *params)
-    result = []
-    for r in rows:
-        d = dict(r)
-        d["meta"]      = d["meta"]      if isinstance(d["meta"],dict)      else json.loads(d["meta"]      or "{}")
-        d["respostas"] = d["respostas"] if isinstance(d["respostas"],dict) else json.loads(d["respostas"] or "{}")
-        d["respostas"] = _checklist_assinar_fotos_para_leitura(d["respostas"])
-        result.append(d)
-    return result
+    rows = await db.fetch(f"{_SQL_ENVIO} {where} ORDER BY e.enviado_em DESC LIMIT ${len(params)}", *params)
+    return [_envio_saida(r, _eh_gestor_ck(_auth)) for r in rows]
+
+
+@router.get("/checklist/envios/{envio_id}")
+async def obter_envio(envio_id: str, db=Depends(get_db), _auth=Depends(verificar_token)):
+    """Um envio (fotos reassinadas) + retornos da gestão. Dono ou gestão."""
+    await _garantir_retornos(db)
+    row = await db.fetchrow(f"{_SQL_ENVIO} WHERE e.envio_id=$1", envio_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="Envio não encontrado.")
+    if not _eh_gestor_ck(_auth) and row["usuario_login"] != _auth.get("sub", ""):
+        raise HTTPException(status_code=403, detail="Envio de outro colaborador.")
+    d = _envio_saida(row, _eh_gestor_ck(_auth))
+    ret = await db.fetch(
+        """SELECT x.id::text AS id, x.tipo, x.texto, x.autor_login,
+                  COALESCE(u.nome, x.autor_login) AS autor_nome, x.criado_em, x.lido_em
+             FROM checklist.retornos x
+             LEFT JOIN public.usuarios_garra u ON u.login = x.autor_login
+            WHERE x.envio_id=$1 AND x.ativo
+            ORDER BY x.criado_em""", envio_id)
+    d["retornos"] = [dict(r) for r in ret]
+    return d
+
+
+@router.post("/checklist/envios/{envio_id}/retornos")
+async def enviar_retorno(envio_id: str, request: Request, db=Depends(get_db), _auth=Depends(verificar_token)):
+    """Mensagem da gestão sobre um envio."""
+    if not _eh_gestor_ck(_auth):
+        raise HTTPException(status_code=403, detail="Apenas a gestão responde envios.")
+    await _garantir_retornos(db)
+    d = await request.json()
+    texto = str(d.get("texto") or "").strip()
+    if not texto:
+        raise HTTPException(status_code=400, detail="Escreva a mensagem.")
+    if len(texto) > 500:
+        raise HTTPException(status_code=400, detail="Mensagem com mais de 500 caracteres.")
+    if not await db.fetchval("SELECT 1 FROM checklist.envios WHERE envio_id=$1", envio_id):
+        raise HTTPException(status_code=404, detail="Envio não encontrado.")
+    await db.execute(
+        "INSERT INTO checklist.retornos (envio_id, tipo, texto, autor_login) VALUES ($1,'mensagem',$2,$3)",
+        envio_id, texto, _auth.get("sub", ""))
+    return {"ok": True}
+
+
+@router.post("/checklist/envios/{envio_id}/visto")
+async def marcar_visto(envio_id: str, db=Depends(get_db), _auth=Depends(verificar_token)):
+    """Abrir o detalhe: dono → lê os retornos; gestão → registra o visto (uma vez)."""
+    await _garantir_retornos(db)
+    eu = _auth.get("sub", "")
+    dono = await db.fetchval("SELECT usuario_login FROM checklist.envios WHERE envio_id=$1", envio_id)
+    if dono is None:
+        raise HTTPException(status_code=404, detail="Envio não encontrado.")
+    if dono == eu:
+        await db.execute(
+            "UPDATE checklist.retornos SET lido_em=now() WHERE envio_id=$1 AND ativo AND lido_em IS NULL",
+            envio_id)
+        return {"ok": True, "papel": "autor"}
+    if not _eh_gestor_ck(_auth):
+        raise HTTPException(status_code=403, detail="Envio de outro colaborador.")
+    await db.execute(
+        """INSERT INTO checklist.retornos (envio_id, tipo, autor_login)
+           SELECT $1, 'visto', $2
+            WHERE NOT EXISTS (SELECT 1 FROM checklist.retornos WHERE envio_id=$1 AND ativo)""",
+        envio_id, eu)
+    return {"ok": True, "papel": "gestao"}
 
 @router.post("/checklist/envios")
 async def salvar_envio(e: EnvioCreate, db=Depends(get_db), _auth=Depends(verificar_token)):
@@ -113,7 +223,7 @@ async def salvar_envio(e: EnvioCreate, db=Depends(get_db), _auth=Depends(verific
                     " WHERE upper(trim(codigo)) = upper($2) AND ativo=TRUE",
                     _val, _ident)
     except Exception:
-        pass
+        log.exception("checklist %s: leitura não gravada no cadastro da frota", e.envio_id)
     # ── (28/08/2026) NC → PEDIDO DE MANUTENÇÃO automático ──────────────
     # Checklist reprovou → nasce um Pedido na triagem da Bruna (via
     # 'checklist', nc_ref = envio). O envio é sagrado: qualquer falha aqui
@@ -179,7 +289,7 @@ async def salvar_envio(e: EnvioCreate, db=Depends(get_db), _auth=Depends(verific
                     "VALUES ($1,$2,$3,'checklist','alta',$4,$5,$6,'checklist-nc',$7,$6)",
                     ano, int(seq), numero, desc, eq_id, sol_id, e.envio_id)
         except Exception:
-            pass  # envio nunca falha por causa do pedido
+            log.exception("checklist %s: pedido NC não criado", e.envio_id)  # envio nunca falha por causa do pedido
     return {"ok": True}
 
 @router.patch("/checklist/envios/{envio_id}/arquivar")
@@ -521,3 +631,49 @@ async def checklist_listar_ajustes(_auth=Depends(verificar_token), db=Depends(ge
            ORDER BY a.criado_em DESC LIMIT 100"""
     )
     return [dict(r) for r in rows]
+
+
+# ══════════════════════════════════════════════════════════════
+# ATALHOS DE RETORNO (25/09/2026) — respostas rápidas da gestão,
+# no banco (checklist.config 'retornos_rapidos'); seed só na 1ª leitura.
+# ══════════════════════════════════════════════════════════════
+_ATALHOS_SEED = [
+    "✅ Visto. Tudo certo, bom trabalho!",
+    "🔧 NC recebida — a manutenção já foi acionada.",
+    "📸 Faltou a foto da NC. Na próxima, registre a evidência.",
+    "🔁 Refaça o checklist com atenção aos itens marcados.",
+    "📞 Me procure para conversarmos sobre este checklist.",
+]
+
+
+@router.get("/checklist/retornos-config")
+async def checklist_get_retornos_config(_auth=Depends(verificar_token), db=Depends(get_db)):
+    if not _eh_gestor_ck(_auth):
+        raise HTTPException(status_code=403, detail="Apenas gestores.")
+    await db.execute(
+        """INSERT INTO checklist.config (chave, valor, atualizado_em)
+           VALUES ('retornos_rapidos', $1::jsonb, now()) ON CONFLICT (chave) DO NOTHING""",
+        json.dumps({"atalhos": _ATALHOS_SEED}))
+    v = await db.fetchval("SELECT valor FROM checklist.config WHERE chave='retornos_rapidos'")
+    return json.loads(v) if isinstance(v, str) else v
+
+
+@router.put("/checklist/retornos-config")
+async def checklist_put_retornos_config(request: Request, _auth=Depends(verificar_token), db=Depends(get_db)):
+    if not _eh_gestor_ck(_auth):
+        raise HTTPException(status_code=403, detail="Apenas gestores.")
+    d = await request.json()
+    atalhos = []
+    for t in (d.get("atalhos") or []):
+        t = str(t or "").strip()[:200]
+        if t and t not in atalhos:
+            atalhos.append(t)
+    if len(atalhos) > 12:
+        raise HTTPException(status_code=400, detail="Máximo de 12 atalhos.")
+    cfg = {"atalhos": atalhos}
+    await db.execute(
+        """INSERT INTO checklist.config (chave, valor, atualizado_em)
+           VALUES ('retornos_rapidos', $1::jsonb, now())
+           ON CONFLICT (chave) DO UPDATE SET valor=$1::jsonb, atualizado_em=now()""",
+        json.dumps(cfg))
+    return {"ok": True, **cfg}
