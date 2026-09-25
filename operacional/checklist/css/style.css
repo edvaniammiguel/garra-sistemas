@@ -1291,3 +1291,12 @@ html,body { height:100%; overflow:hidden; font-family:var(--fb); background:var(
 @media print {
   .rt-scroll { overflow: visible; }
 }
+
+/* (25/09/2026) Cursor de clique — padrão único do Garra Sistemas: tudo que é clicável mostra a mãozinha */
+button, a[href], select, summary, [role=button], [role=tab],
+input[type=checkbox], input[type=radio], input[type=file], input[type=color], input[type=range],
+input[type=submit], input[type=button], input[type=reset],
+label:has(> input[type=checkbox]), label:has(> input[type=radio]),
+input::-webkit-calendar-picker-indicator,
+[onclick]:not(input:not([readonly])):not(textarea), [ondblclick]:not(input:not([readonly])):not(textarea) { cursor: pointer; }
+button:disabled, select:disabled, input:disabled, fieldset:disabled *, [aria-disabled=true] { cursor: not-allowed; }
