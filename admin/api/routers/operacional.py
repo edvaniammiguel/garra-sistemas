@@ -370,6 +370,14 @@ async def op_remover_regime(reg_id: str, payload=Depends(verificar_gestor)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+# (09/07→24/09/2026) LISTA BRANCA da frota de OS — única: seletor de equipamento
+# da OS e Controle Mensal (máquina sem parte no mês também aparece).
+_FILTRO_FROTA_OS = ("AND (lower(coalesce(eq.categoria,'')) LIKE 'caminhao%' "
+                    "OR lower(coalesce(eq.categoria,'')) IN "
+                    "('escavadeira','retroescavadeira','patrol',"
+                    "'carregadeira','compactador','apoio'))")
+
+
 @router.get("/operacional/api/equipamentos")
 async def op_listar_equipamentos(uso: str = None, _auth=Depends(verificar_token)):
     """Lista equipamentos ativos para popular select e tela de cadastro.
@@ -386,10 +394,7 @@ async def op_listar_equipamentos(uso: str = None, _auth=Depends(verificar_token)
         # (17/08/2026) Categorias de caminhão refinadas em tipos comerciais
         # (caminhao_basculante/pipa/bruck/reboque) — o caminhão entra por
         # PREFIXO; caminhão novo de qualquer tipo já nasce dentro da lista.
-        filtro_uso = ("AND (lower(coalesce(eq.categoria,'')) LIKE 'caminhao%' "
-                      "OR lower(coalesce(eq.categoria,'')) IN "
-                      "('escavadeira','retroescavadeira','patrol',"
-                      "'carregadeira','compactador','apoio'))")
+        filtro_uso = _FILTRO_FROTA_OS
     rows = await ajard_query(
         f"""SELECT eq.id, eq.codigo, eq.descricao, eq.categoria, eq.medicao, eq.agenda_ics_url,
                   eq.marca, eq.modelo, eq.ano, eq.placa,
@@ -1307,6 +1312,33 @@ async def op_fechar_os(os_id: str, request: Request, payload=Depends(verificar_g
     if os_row.get("status") in ("concluida_completa","concluida_sem_erp","cancelada"):
         raise HTTPException(status_code=400, detail="OS já está fechada")
 
+    # (24/09/2026) Dia da OS em que a máquina não rodou precisa de motivo —
+    # BLOQUEIA o fechamento (paradas: Controle Mensal › clique no dia).
+    _dt = lambda v: v.date() if isinstance(v, datetime) else v
+    _ini = _dt(os_row.get("data_inicio") or os_row.get("criado_em"))
+    # até o fim real da OS; OS sem fim real → até ontem (o dia de hoje ainda pode receber parte)
+    _fim = min(date.today(), _dt(os_row["data_fim_real"])) if os_row.get("data_fim_real") else date.today() - timedelta(days=1)
+    if _ini and _fim >= _ini:
+        _eqs = await ajard_query(
+            """SELECT equipamento_id FROM operacional.ordens_servico WHERE id=%s AND equipamento_id IS NOT NULL
+               UNION SELECT equipamento_id FROM operacional.partes_diarias
+               WHERE os_id=%s AND ativo=true AND equipamento_id IS NOT NULL""", (os_id, os_id)) or []
+        _st = await _status_dias(_ini, _fim, [str(r["equipamento_id"]) for r in _eqs])
+        _pend = {}
+        for _eq, _dias in _st.items():
+            for _iso, _s in _dias.items():
+                if _s.get("pendente"):
+                    _pend.setdefault(_eq, []).append(_iso)
+        if _pend:
+            _cods = {str(r["id"]): r["codigo"] for r in await ajard_query(
+                "SELECT id, codigo FROM operacional.equipamentos WHERE id = ANY(%s::uuid[])", (list(_pend),)) or []}
+            _lista = "; ".join(
+                f"{_cods.get(e, 'máquina')}: " + ", ".join(date.fromisoformat(x).strftime("%d/%m") for x in sorted(ds))
+                for e, ds in _pend.items())
+            raise HTTPException(status_code=400, detail=(
+                f"Informe o motivo dos dias em que a máquina não rodou antes de fechar a OS — {_lista}. "
+                "Controle Mensal › visão por máquina › clique no dia."))
+
     login = payload.get("sub","")
     user  = await ajard_query(
         "SELECT id FROM public.usuarios_garra WHERE login=%s", (login,), fetch="one"
@@ -1882,6 +1914,253 @@ async def op_controle_mensal_periodos(db=Depends(get_db), _auth=Depends(verifica
     """)
     return [dict(r) for r in rows]
 
+# ════════════════════════════════════════════════════════════════════════
+# (24/09/2026) PARADAS — motivo do dia em que a máquina NÃO RODOU
+# Um registro por período (início–fim, ou em aberto), com ou sem OS. O dia de
+# cada máquina é resolvido AQUI (fonte única da tela e do Excel), em ordem:
+#   1 parte com apontamento → rodou
+#   2 parada lançada na OS (os_id) → motivo
+#   3 OT de manutenção em curso no dia → MANUTENÇÃO — OT-xxxx (automático)
+#   4 parada de período (sem OS) → motivo
+#   5 sábado / domingo
+#   6 máquina sem OS no dia → OCIOSA — SEM OS (automático)
+#   7 OS aberta e nada acima → NÃO RODOU — SEM MOTIVO (pendência; bloqueia Fechar OS)
+# ════════════════════════════════════════════════════════════════════════
+_PARADAS_OK = False
+_MOTIVOS_PARADA = [
+    # codigo, nome, sigla, responsavel, ordem
+    ("SEM_FRENTE", "Sem frente de serviço", "S/F", "cliente", 10),
+    ("OBRA_PARADA", "Obra parada", "OBP", "cliente", 11),
+    ("AG_LIBERACAO", "Aguardando liberação", "LIB", "cliente", 12),
+    ("A_DISPOSICAO", "Máquina à disposição", "DIS", "cliente", 13),
+    ("QUEBRA", "Máquina quebrada", "QBR", "garra", 20),
+    ("SEM_OPERADOR", "Sem operador", "S/O", "garra", 21),
+    ("FALTA", "Falta do operador", "FAL", "garra", 22),
+    ("MOBILIZACAO", "Mobilização / transporte", "MOB", "garra", 23),
+    ("DOCUMENTACAO", "Documentação", "DOC", "garra", 24),
+    ("RESERVA", "Reserva / pátio", "RES", "garra", 25),
+    ("AG_INICIO", "Aguardando início de obra", "AGI", "garra", 26),
+    ("A_VENDA", "À venda / desmobilizada", "VND", "garra", 27),
+    ("CHUVA", "Chuva", "CHU", "neutro", 30),
+    ("SOLO", "Solo encharcado", "SOL", "neutro", 31),
+    ("FERIADO", "Feriado", "FER", "neutro", 32),
+    ("OUTRO", "Outro (descrever)", "OUT", "neutro", 99),
+]
+
+
+async def _garantir_paradas():
+    global _PARADAS_OK
+    if _PARADAS_OK:
+        return
+    await ajard_query("""
+        CREATE TABLE IF NOT EXISTS operacional.paradas_motivos (
+            codigo TEXT PRIMARY KEY, nome TEXT NOT NULL, sigla TEXT NOT NULL,
+            responsavel TEXT NOT NULL DEFAULT 'neutro', ordem INT DEFAULT 50,
+            ativo BOOLEAN NOT NULL DEFAULT true)""", fetch="none")
+    await ajard_query("""
+        CREATE TABLE IF NOT EXISTS operacional.paradas (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            equipamento_id UUID NOT NULL,
+            os_id UUID,
+            inicio DATE NOT NULL,
+            fim DATE,
+            motivo_codigo TEXT NOT NULL,
+            observacao TEXT,
+            origem TEXT NOT NULL DEFAULT 'desktop',
+            usuario_id UUID,
+            ativo BOOLEAN NOT NULL DEFAULT true,
+            criado_em TIMESTAMPTZ DEFAULT now())""", fetch="none")
+    await ajard_query("CREATE INDEX IF NOT EXISTS ix_paradas_eq ON operacional.paradas (equipamento_id, inicio)",
+                      fetch="none")
+    for c, n, s, r, o in _MOTIVOS_PARADA:
+        await ajard_query(
+            """INSERT INTO operacional.paradas_motivos (codigo, nome, sigla, responsavel, ordem)
+               VALUES (%s,%s,%s,%s,%s) ON CONFLICT (codigo) DO NOTHING""", (c, n, s, r, o), fetch="none")
+    _PARADAS_OK = True
+
+
+async def _encerrar_paradas_abertas():
+    """Período sem OS em aberto fecha sozinho na véspera da 1ª parte seguinte."""
+    await ajard_query("""
+        UPDATE operacional.paradas p SET fim = s.d - 1
+        FROM (SELECT p2.id, MIN(pd.data) AS d
+                FROM operacional.paradas p2
+                JOIN operacional.partes_diarias pd
+                  ON pd.equipamento_id = p2.equipamento_id AND pd.ativo = true AND pd.data > p2.inicio
+               WHERE p2.fim IS NULL AND p2.ativo = true
+               GROUP BY p2.id) s
+        WHERE p.id = s.id""", fetch="none")
+
+
+async def _status_dias(inicio: date, fim: date, eq_ids=None, incluir=()):
+    """{eq_id: {iso: {rotulo, motivo, sigla, responsavel, parada_id, origem, pendente}}}
+    só para os dias SEM parte (dia com parte = rodou). eq_ids=None → frota de OS
+    + `incluir` (máquinas com parte no período, mesmo fora da lista branca)."""
+    await _garantir_paradas()
+    await _encerrar_paradas_abertas()
+    if eq_ids is None:
+        frota = await ajard_query(
+            f"SELECT eq.id FROM operacional.equipamentos eq WHERE eq.ativo = true {_FILTRO_FROTA_OS}") or []
+        eq_ids = [str(r["id"]) for r in frota] + [str(e) for e in incluir]
+    eq_ids = list(dict.fromkeys(str(e) for e in eq_ids if e))
+    if not eq_ids or fim < inicio:
+        return {}
+    rng = (eq_ids, inicio, fim)
+    partes = await ajard_query(
+        """SELECT DISTINCT equipamento_id, data FROM operacional.partes_diarias
+           WHERE ativo = true AND equipamento_id = ANY(%s::uuid[]) AND data BETWEEN %s AND %s""", rng) or []
+    rodou = {(str(r["equipamento_id"]), r["data"]) for r in partes}
+    paradas = await ajard_query(
+        """SELECT p.id, p.equipamento_id, p.os_id, p.inicio, p.fim AS fim_real, COALESCE(p.fim, %s) AS fim, p.observacao,
+                  m.codigo, m.nome, m.sigla, m.responsavel
+           FROM operacional.paradas p JOIN operacional.paradas_motivos m ON m.codigo = p.motivo_codigo
+           WHERE p.ativo = true AND p.equipamento_id = ANY(%s::uuid[])
+             AND p.inicio <= %s AND COALESCE(p.fim, %s) >= %s
+           ORDER BY (p.os_id IS NULL), p.inicio""", (fim, eq_ids, fim, fim, inicio)) or []
+    # OS a que a máquina está ligada (principal ou com parte nela), com o período
+    os_rows = await ajard_query(
+        """SELECT DISTINCT x.eq, COALESCE(os.data_inicio, os.criado_em::date) AS ini,
+                  COALESCE(os.data_fim_real::date, CURRENT_DATE) AS fim
+           FROM operacional.ordens_servico os
+           JOIN (SELECT id AS os_id, equipamento_id AS eq FROM operacional.ordens_servico
+                 UNION SELECT os_id, equipamento_id FROM operacional.partes_diarias WHERE ativo = true) x
+             ON x.os_id = os.id
+           WHERE os.ativo = true AND os.status <> 'cancelada' AND x.eq = ANY(%s::uuid[])
+             AND COALESCE(os.data_inicio, os.criado_em::date) <= %s
+             AND COALESCE(os.data_fim_real::date, CURRENT_DATE) >= %s""", rng[:1] + (fim, inicio)) or []
+    try:
+        ots = await ajard_query(
+            """SELECT o.equipamento_id, o.numero, MIN(h.criado_em)::date AS ini,
+                      COALESCE(o.data_retorno_operacao, o.data_conclusao::date,
+                               CASE WHEN o.status IN ('em_curso','aguardando_peca') THEN CURRENT_DATE END) AS fim
+               FROM manutencao.ot o
+               JOIN manutencao.ot_historico h ON h.ot_id = o.id AND h.status_para = 'em_curso'
+               WHERE o.equipamento_id = ANY(%s::uuid[])
+               GROUP BY o.id""", (eq_ids,)) or []
+    except Exception:
+        ots = []
+    ots = [o for o in ots if o["fim"] and o["ini"] <= fim and o["fim"] >= inicio]
+
+    out = {}
+    d = inicio
+    while d <= fim:
+        iso = d.isoformat()
+        for eq in eq_ids:
+            if (eq, d) in rodou:
+                continue
+            par = next((x for x in paradas if str(x["equipamento_id"]) == eq and x["inicio"] <= d <= x["fim"]), None)
+            ot = next((o for o in ots if str(o["equipamento_id"]) == eq and o["ini"] <= d <= o["fim"]), None)
+            if par and (par["os_id"] or not ot):
+                st = {"rotulo": par["nome"].upper(), "motivo": par["codigo"], "sigla": par["sigla"],
+                      "responsavel": par["responsavel"], "parada_id": str(par["id"]), "observacao": par["observacao"],
+                      "inicio": par["inicio"].isoformat(),
+                      "fim": par["fim_real"].isoformat() if par["fim_real"] else None,
+                      "os_id": str(par["os_id"]) if par["os_id"] else None, "origem": "lancada"}
+            elif ot:
+                st = {"rotulo": f"MANUTENÇÃO — {ot['numero']}", "sigla": "MAN", "responsavel": "garra",
+                      "origem": "auto_ot"}
+            elif d.weekday() == 6:
+                st = {"rotulo": "DOMINGO", "origem": "calendario"}
+            elif d.weekday() == 5:
+                st = {"rotulo": "SÁBADO", "origem": "calendario"}
+            elif not any(str(o["eq"]) == eq and o["ini"] <= d <= o["fim"] for o in os_rows):
+                st = {"rotulo": "OCIOSA — SEM OS", "sigla": "OCI", "responsavel": "garra", "origem": "auto_sem_os"}
+            else:
+                st = {"rotulo": "NÃO RODOU — SEM MOTIVO", "pendente": True, "origem": "pendente"}
+            out.setdefault(eq, {})[iso] = st
+        d += timedelta(days=1)
+    return out
+
+
+async def _parada_validar(d):
+    motivo = (d.get("motivo_codigo") or "").strip().upper()
+    m = await ajard_query("SELECT codigo FROM operacional.paradas_motivos WHERE codigo=%s AND ativo=true",
+                          (motivo,), fetch="one")
+    if not m:
+        raise HTTPException(status_code=400, detail="Motivo inválido")
+    obs = (d.get("observacao") or "").strip() or None
+    if motivo == "OUTRO" and len(obs or "") < 5:
+        raise HTTPException(status_code=400, detail="Motivo 'Outro': descreva na observação (mínimo 5 caracteres)")
+    try:
+        ini = date.fromisoformat(str(d.get("inicio")))
+        fim = date.fromisoformat(str(d["fim"])) if d.get("fim") else None
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Data inválida")
+    if ini > date.today():
+        raise HTTPException(status_code=400, detail="Início no futuro")
+    if fim and fim < ini:
+        raise HTTPException(status_code=400, detail="Fim antes do início")
+    if d.get("os_id") and not fim:
+        fim = ini   # parada lançada na OS é do(s) dia(s) informado(s), nunca em aberto
+    return motivo, obs, ini, fim
+
+
+async def _parada_conflito(eq_id, ini, fim, ignorar_id=None):
+    c = await ajard_query(
+        """SELECT p.inicio, p.fim, m.nome FROM operacional.paradas p
+           JOIN operacional.paradas_motivos m ON m.codigo = p.motivo_codigo
+           WHERE p.ativo = true AND p.equipamento_id = %s AND p.id <> COALESCE(%s::uuid, gen_random_uuid())
+             AND p.inicio <= COALESCE(%s::date, 'infinity'::date)
+             AND COALESCE(p.fim, 'infinity'::date) >= %s LIMIT 1""",
+        (eq_id, ignorar_id, fim, ini), fetch="one")
+    if c:
+        per = c["inicio"].strftime("%d/%m") + " a " + (c["fim"].strftime("%d/%m") if c["fim"] else "em aberto")
+        cod = await ajard_query("SELECT codigo FROM operacional.equipamentos WHERE id=%s", (eq_id,), fetch="one")
+        raise HTTPException(status_code=409, detail=(
+            f"{(cod or {}).get('codigo') or 'Máquina'} já tem parada no período ({c['nome']}, {per}) — edite ou exclua a existente"))
+
+
+@router.get("/operacional/api/paradas-motivos")
+async def op_paradas_motivos(_auth=Depends(verificar_token)):
+    await _garantir_paradas()
+    return await ajard_query(
+        "SELECT codigo, nome, sigla, responsavel FROM operacional.paradas_motivos WHERE ativo=true ORDER BY ordem, nome"
+    ) or []
+
+
+@router.post("/operacional/api/paradas")
+async def op_parada_criar(request: Request, payload=Depends(verificar_gestor)):
+    """Lança parada para uma ou várias máquinas (ex.: chuva na obra toda)."""
+    await _garantir_paradas()
+    d = await request.json()
+    eqs = [e for e in (d.get("equipamento_ids") or [d.get("equipamento_id")]) if e]
+    if not eqs:
+        raise HTTPException(status_code=400, detail="Informe a máquina")
+    motivo, obs, ini, fim = await _parada_validar(d)
+    for eq in eqs:
+        await _parada_conflito(eq, ini, fim)
+    u = await ajard_query("SELECT id FROM public.usuarios_garra WHERE login=%s", (payload.get("sub", ""),), fetch="one")
+    for eq in eqs:
+        await ajard_query(
+            """INSERT INTO operacional.paradas (equipamento_id, os_id, inicio, fim, motivo_codigo, observacao, origem, usuario_id)
+               VALUES (%s,%s,%s,%s,%s,%s,'desktop',%s)""",
+            (eq, d.get("os_id") or None, ini, fim, motivo, obs, u["id"] if u else None), fetch="none")
+    return {"ok": True, "n": len(eqs)}
+
+
+@router.patch("/operacional/api/paradas/{parada_id}")
+async def op_parada_editar(parada_id: str, request: Request, _auth=Depends(verificar_gestor)):
+    await _garantir_paradas()
+    atual = await ajard_query("SELECT * FROM operacional.paradas WHERE id=%s AND ativo=true", (parada_id,), fetch="one")
+    if not atual:
+        raise HTTPException(status_code=404, detail="Parada não encontrada")
+    d = {"motivo_codigo": atual["motivo_codigo"], "observacao": atual["observacao"], "os_id": atual["os_id"],
+         "inicio": atual["inicio"].isoformat(), "fim": atual["fim"].isoformat() if atual["fim"] else None}
+    d.update(await request.json())
+    motivo, obs, ini, fim = await _parada_validar(d)
+    await _parada_conflito(str(atual["equipamento_id"]), ini, fim, parada_id)
+    await ajard_query(
+        "UPDATE operacional.paradas SET motivo_codigo=%s, observacao=%s, inicio=%s, fim=%s WHERE id=%s",
+        (motivo, obs, ini, fim, parada_id), fetch="none")
+    return {"ok": True}
+
+
+@router.delete("/operacional/api/paradas/{parada_id}")
+async def op_parada_excluir(parada_id: str, _auth=Depends(verificar_gestor)):
+    await ajard_query("UPDATE operacional.paradas SET ativo=false WHERE id=%s", (parada_id,), fetch="none")
+    return {"ok": True}
+
+
 @router.get("/operacional/api/controle-mensal")
 async def op_controle_mensal(
     ano: int,
@@ -1891,7 +2170,10 @@ async def op_controle_mensal(
     _auth=Depends(verificar_gestor)
 ):
     """Retorna partes diárias do mês (ou do ANO inteiro, se mes ausente)
-    para preview do controle mensal / exportação anual."""
+    para preview do controle mensal / exportação anual.
+    (25/09/2026) equipamento_id e operador_id aceitam um ou vários ids separados por vírgula."""
+    eq_filtro = [x.strip() for x in (equipamento_id or "").split(",") if x.strip()]
+    op_filtro = [x.strip() for x in (operador_id or "").split(",") if x.strip()]
     filtros = ["pd.ativo=true"]
     params = []
     if mes:
@@ -1900,12 +2182,12 @@ async def op_controle_mensal(
     filtros.append("EXTRACT(YEAR FROM pd.data)=%s")
     params.append(ano)
 
-    if equipamento_id:
-        filtros.append("pd.equipamento_id=%s")
-        params.append(equipamento_id)
-    if operador_id:
-        filtros.append("pd.operador_id=%s")
-        params.append(operador_id)
+    if eq_filtro:
+        filtros.append("pd.equipamento_id = ANY(%s::uuid[])")
+        params.append(eq_filtro)
+    if op_filtro:
+        filtros.append("pd.operador_id = ANY(%s::uuid[])")
+        params.append(op_filtro)
 
     where = " AND ".join(filtros)
 
@@ -1981,8 +2263,8 @@ async def op_controle_mensal(
         total_viagens += float(d.get("qtd_viagens") or 0)
 
         if d.get("equipamento_id") and d.get("equipamento_codigo"):
-            equipamentos[d["equipamento_id"]] = {
-                "id": d["equipamento_id"],
+            equipamentos[str(d["equipamento_id"])] = {
+                "id": str(d["equipamento_id"]),
                 "codigo": d["equipamento_codigo"],
                 "descricao": d["equipamento_descricao"]
             }
@@ -1998,6 +2280,21 @@ async def op_controle_mensal(
     else:
         dias_no_mes = 366 if calendar.isleap(ano) else 365
 
+    # (24/09/2026) Dias sem parte com motivo resolvido no servidor (tela e Excel
+    # leem daqui). Visão de máquina, mês fechado: toda a frota de OS aparece,
+    # inclusive máquina sem parte no mês (parada sem OS).
+    dias_status = {}
+    if mes and not operador_id:
+        ultimo = min(dias_no_mes, date.today().day) if (ano, mes) == (date.today().year, date.today().month) else dias_no_mes
+        dias_status = await _status_dias(date(ano, mes, 1), date(ano, mes, ultimo),
+                                         eq_filtro or None, incluir=list(equipamentos))
+        faltam = [e for e in dias_status if e not in equipamentos]
+        if faltam:
+            for r in await ajard_query(
+                    "SELECT id, codigo, descricao FROM operacional.equipamentos WHERE id = ANY(%s::uuid[])",
+                    (faltam,)) or []:
+                equipamentos[str(r["id"])] = {"id": str(r["id"]), "codigo": r["codigo"], "descricao": r["descricao"]}
+
     return {
         "mes": mes, "ano": ano,
         "dias_no_mes": dias_no_mes,
@@ -2009,9 +2306,11 @@ async def op_controle_mensal(
         "total_km": round(total_km, 2),
         "total_metros": round(total_metros, 2),
         "total_viagens": int(total_viagens),
-        "equipamentos": list(equipamentos.values()),
+        "equipamentos": sorted(equipamentos.values(), key=lambda e: e["codigo"] or ""),
         "operadores": list(operadores.values()),
-        "partes": partes
+        "partes": partes,
+        "dias_status": dias_status,
+        "dias_sem_motivo": sum(1 for dd in dias_status.values() for s in dd.values() if s.get("pendente")),
     }
 
 @router.get("/operacional/api/backup-relatorios")
@@ -2123,16 +2422,20 @@ async def op_controle_mensal_excel(
     total_fill = PatternFill(start_color="FFF7ED", end_color="FFF7ED", fill_type="solid")
     total_font = Font(bold=True, size=10)
 
+    dias_status = dados.get("dias_status") or {}
     if view == "equipamento":
-        # Agrupar por equipamento
+        # Agrupar por equipamento — + frota sem parte no mês (paradas / ociosa)
         grupos = {}
         for p in partes:
-            key = p.get("equipamento_id") or "sem_equipamento"
+            key = str(p.get("equipamento_id") or "sem_equipamento")
             label = (f"{p.get('equipamento_codigo') or 'Equip'} — {p.get('equipamento_descricao') or ''}"
                      if p.get("equipamento_id") else "Sem equipamento")
             if key not in grupos:
                 grupos[key] = {"label": label, "partes": []}
             grupos[key]["partes"].append(p)
+        for e in dados.get("equipamentos") or []:
+            if e["id"] in dias_status and e["id"] not in grupos:
+                grupos[e["id"]] = {"label": f"{e['codigo']} — {e.get('descricao') or ''}", "partes": []}
     else:
         # Agrupar por operador
         grupos = {}
@@ -2198,6 +2501,7 @@ async def op_controle_mensal_excel(
             from datetime import date as dt_date, timedelta
             gap_font_fds = Font(bold=True, size=10, color="DC2626")
             gap_font = Font(bold=True, size=10, color="475569")
+            gap_font_pend = Font(bold=True, size=10, color="B45309")
             gap_fill = PatternFill(start_color="F8FAFC", end_color="F8FAFC", fill_type="solid")
 
             if mes:
@@ -2212,14 +2516,21 @@ async def op_controle_mensal_excel(
             for dia_iso in dias_iter:
                 lista_dia = sorted(por_dia.get(dia_iso, []), key=lambda x: str(x.get("criado_em") or ""))
                 if not lista_dia:
-                    # ESPELHO: dia sem apontamento — NÃO RODOU / SÁBADO / DOMINGO
+                    # ESPELHO: dia sem apontamento — motivo resolvido no servidor (visão
+                    # máquina); na visão colaborador segue NÃO RODOU / SÁBADO / DOMINGO
                     try:
                         d_obj = dt_date.fromisoformat(dia_iso)
-                        rotulo = "SÁBADO" if d_obj.weekday() == 5 else ("DOMINGO" if d_obj.weekday() == 6 else "NÃO RODOU")
+                        st = (dias_status.get(key) or {}).get(dia_iso) if view == "equipamento" else None
+                        if st:
+                            rotulo = st["rotulo"] + (f" — {st['observacao']}" if st.get("observacao") else "")
+                            fonte = gap_font_pend if st.get("pendente") else (gap_font_fds if st.get("origem") == "calendario" else gap_font)
+                        else:
+                            rotulo = "SÁBADO" if d_obj.weekday() == 5 else ("DOMINGO" if d_obj.weekday() == 6 else "NÃO RODOU")
+                            fonte = gap_font_fds if rotulo != "NÃO RODOU" else gap_font
                         c1 = ws.cell(row=row, column=1, value=d_obj.strftime("%d/%m/%Y"))
                         c1.fill = gap_fill; c1.border = border
                         c2 = ws.cell(row=row, column=2, value=rotulo)
-                        c2.font = gap_font_fds if rotulo != "NÃO RODOU" else gap_font
+                        c2.font = fonte
                         c2.fill = gap_fill
                         for col in range(2, 14):
                             ws.cell(row=row, column=col).fill = gap_fill
