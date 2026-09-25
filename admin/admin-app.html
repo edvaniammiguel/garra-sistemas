@@ -324,6 +324,18 @@ input,select,textarea { font-family:inherit; font-size:13px; outline:none; }
   @page { margin: 1cm; size: landscape; }
 }
 </style>
+<style>
+/* (25/09/2026) Cursor de clique — padrão único do Garra Sistemas (regras separadas:
+   um seletor não suportado pelo navegador não derruba os outros) */
+button, a[href], select, summary, [role=button], [role=tab] { cursor: pointer; }
+input[type=checkbox], input[type=radio], input[type=file], input[type=color], input[type=range],
+input[type=submit], input[type=button], input[type=reset] { cursor: pointer; }
+[onclick], [ondblclick] { cursor: pointer; }
+input[onclick]:not([readonly]), textarea[onclick], input[ondblclick]:not([readonly]), textarea[ondblclick] { cursor: text; }
+label:has(> input[type=checkbox]), label:has(> input[type=radio]) { cursor: pointer; }
+input::-webkit-calendar-picker-indicator { cursor: pointer; }
+button:disabled, select:disabled, input:disabled, [aria-disabled=true] { cursor: not-allowed; }
+</style>
 </head>
 <body>
 
@@ -801,20 +813,14 @@ input,select,textarea { font-family:inherit; font-size:13px; outline:none; }
           <div class="card-title" style="flex-wrap:wrap;gap:8px">
             📅 Controle Mensal
             <div style="display:flex;gap:6px;align-items:center;margin-left:auto">
-              <select id="cm-periodo" style="padding:6px 10px;border:1.5px solid var(--blue);border-radius:6px;font-size:13px;font-weight:600;color:var(--blue);min-width:180px" onchange="carregarControleMensal()">
+              <select id="cm-periodo" style="padding:6px 10px;border:1.5px solid var(--blue);border-radius:6px;font-size:13px;font-weight:600;color:var(--blue);min-width:180px;height:34px" onchange="carregarControleMensal()">
                 <option value="">Carregando períodos...</option>
               </select>
-              <select id="cm-filtro-equip" style="padding:6px 10px;border:1.5px solid var(--border);border-radius:6px;font-size:13px" onchange="carregarControleMensal()">
-                <option value="">Todos os equipamentos</option>
-              </select>
-              <select id="cm-filtro-oper" style="display:none" onchange="carregarControleMensal()">
-                <option value="">Todos os colaboradores</option>
-              </select>
-              <div id="cm-oper-combo" style="position:relative">
-                <input id="cm-oper-busca" type="text" placeholder="Todos os colaboradores" autocomplete="off" readonly
-                  onclick="cmOperAbrir()"
-                  style="padding:6px 10px;border:1.5px solid var(--border);border-radius:6px;font-size:13px;min-width:190px;cursor:pointer;background:#fff"/>
-                <div id="cm-oper-lista" style="display:none;position:absolute;top:calc(100% + 4px);left:0;right:0;background:#fff;border:1.5px solid var(--border);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.12);z-index:60;max-height:280px;overflow-y:auto"></div>
+              <!-- (25/09/2026) Relatórios no cabeçalho, mesma altura do período -->
+              <div id="cm-exportar" style="display:flex;gap:6px;padding-left:6px;margin-left:2px;border-left:1.5px solid var(--border)">
+                <button class="btn btn-secondary" style="height:34px;padding:0 12px;font-size:12px;white-space:nowrap" title="Exportar Excel do mês" onclick="cmExportExcel()">📊 Excel mês</button>
+                <button class="btn btn-secondary" style="height:34px;padding:0 12px;font-size:12px;white-space:nowrap" title="Exportar Excel do ano" onclick="cmExportExcelAnual()">📥 Excel ano</button>
+                <button class="btn btn-secondary" style="height:34px;padding:0 12px;font-size:12px;white-space:nowrap" title="Imprimir / salvar em PDF" onclick="window.print()">🖨 Imprimir</button>
               </div>
             </div>
           </div>
@@ -826,22 +832,33 @@ input,select,textarea { font-family:inherit; font-size:13px; outline:none; }
           <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;padding-bottom:12px;border-bottom:2px solid var(--border)">
             <label style="font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em">Agrupar por:</label>
             <select id="cm-agrupar" style="padding:8px 14px;border:1.5px solid var(--blue);border-radius:8px;font-size:14px;font-weight:700;color:var(--blue);background:#fff;cursor:pointer" onchange="cmTab(this.value)">
-              <option value="equipamento" selected>🚜 Equipamento</option>
+              <option value="" selected disabled>Selecione…</option>
+              <option value="equipamento">🚜 Equipamento</option>
               <option value="colaborador">👤 Colaborador</option>
               <option value="os">📋 Cód Interno</option>
               <option value="codigo_erp">🏷️ OS (ERP)</option>
             </select>
+            <!-- (25/09/2026) Filtro da visão (equipamentos ou colaboradores): um ou vários -->
+            <div id="cm-f-combo" style="position:relative;display:none">
+              <button type="button" id="cm-f-btn" onclick="cmFAbrir()"
+                style="padding:8px 14px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;background:#fff;min-width:220px;text-align:left"></button>
+              <div id="cm-f-lista" style="display:none;position:absolute;top:calc(100% + 4px);left:0;width:340px;background:#fff;border:1.5px solid var(--border);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.12);z-index:60">
+                <div style="padding:8px;border-bottom:1px solid var(--border)">
+                  <input id="cm-f-busca" type="text" placeholder="Buscar…" autocomplete="off" oninput="cmFRender()"
+                    style="width:100%;padding:6px 8px;border:1.5px solid var(--border);border-radius:6px;font-size:13px"/>
+                </div>
+                <div id="cm-f-itens" style="max-height:280px;overflow-y:auto;padding:4px 0"></div>
+                <div style="display:flex;gap:6px;justify-content:flex-end;padding:8px;border-top:1px solid var(--border)">
+                  <button type="button" class="btn btn-secondary" style="padding:5px 12px;font-size:12px" onclick="cmFLimpar()">Todos</button>
+                  <button type="button" class="btn btn-primary" style="padding:5px 12px;font-size:12px" onclick="cmFAplicar()">Aplicar</button>
+                </div>
+              </div>
+            </div>
           </div>
 
           <!-- Tabela -->
-          <div id="cm-tabela"><div class="loading" style="color:var(--muted)">Selecione mês/ano e clique em carregar</div></div>
+          <div id="cm-tabela"></div>
 
-          <!-- Exportar -->
-          <div style="display:flex;gap:8px;margin-top:16px;justify-content:flex-end" id="cm-exportar" style="display:none">
-            <button class="btn btn-secondary" style="padding:8px 16px;font-size:12px" onclick="cmExportExcel()">📊 Exportar Excel (mês)</button>
-            <button class="btn btn-secondary" style="padding:8px 16px;font-size:12px" onclick="cmExportExcelAnual()">📥 Exportar Excel (ano)</button>
-            <button class="btn btn-secondary" style="padding:8px 16px;font-size:12px" onclick="window.print()">🖨 Imprimir / PDF</button>
-          </div>
         </div>
       </section>
 
@@ -1260,6 +1277,27 @@ input,select,textarea { font-family:inherit; font-size:13px; outline:none; }
     <div class="modal-actions">
       <button class="btn btn-secondary" onclick="fecharModalDesativar()">Cancelar</button>
       <button class="btn btn-danger" id="btn-confirmar-desativar" onclick="confirmarDesativar()">Desativar</button>
+    </div>
+  </div>
+</div>
+
+<!-- (24/09/2026) PARADA — motivo do dia em que a máquina não rodou -->
+<div id="modal-parada" class="modal-backdrop hidden">
+  <div class="modal-card" style="max-width:520px">
+    <div class="modal-title" id="mp-titulo">Motivo — máquina não rodou</div>
+    <div class="field"><label>Motivo *</label><select id="mp-motivo" onchange="cmParadaMotivoMudou()"></select></div>
+    <div class="field-row">
+      <div class="field"><label>De *</label><input type="date" id="mp-ini"/></div>
+      <div class="field"><label>Até</label><input type="date" id="mp-fim"/></div>
+    </div>
+    <label id="mp-aberto-box" style="font-size:12px;display:block;margin:-4px 0 10px"><input type="checkbox" id="mp-aberto" onchange="document.getElementById('mp-fim').disabled=this.checked"> em aberto — vale até a máquina voltar a rodar (fecha sozinho na véspera da próxima parte)</label>
+    <div class="field"><label>Observação <span id="mp-obs-req" style="color:var(--red)"></span></label><input type="text" id="mp-obs" maxlength="200" placeholder="ex.: cliente sem frente liberada, aguardando topografia"/></div>
+    <div class="field" id="mp-maquinas-box"><label>Aplicar também a (ex.: chuva na obra toda)</label>
+      <div id="mp-maquinas" style="max-height:140px;overflow:auto;border:1px solid var(--border);border-radius:6px;padding:6px 8px;font-size:12px;columns:3"></div></div>
+    <div class="modal-actions">
+      <button class="btn btn-danger" id="mp-excluir" style="margin-right:auto" onclick="cmParadaExcluir()">Excluir</button>
+      <button class="btn btn-secondary" onclick="document.getElementById('modal-parada').classList.add('hidden')">Cancelar</button>
+      <button class="btn btn-primary" onclick="cmParadaSalvar()">Salvar</button>
     </div>
   </div>
 </div>
@@ -5306,7 +5344,7 @@ async function salvarAjustePts(login) {
    CONTROLE MENSAL
 ══════════════════════════════════════════════ */
 let _cmDados = null;
-let _cmView = 'equipamento';
+let _cmView = '';   // (25/09/2026) nasce sem agrupamento — tela limpa até o usuário escolher
 
 const CM_MESES_PT = ['','Janeiro','Fevereiro','Março','Abril','Maio','Junho',
                      'Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
@@ -5363,7 +5401,63 @@ function cmTab(view) {
   _cmView = view;
   const sel = document.getElementById('cm-agrupar');
   if (sel && sel.value !== view) sel.value = view;
+  document.getElementById('cm-f-combo').style.display = _cmF[view] ? '' : 'none';
+  // cada filtro pertence à sua visão: sair dela limpa o filtro (nada escondido valendo)
+  let limpou = false;
+  Object.keys(_cmF).forEach(k => { if (k !== view && _cmF[k].sel.size) { _cmF[k].sel.clear(); limpou = true; } });
+  if (_cmF[view]) cmFRotulo();
+  if (limpou) { carregarControleMensal(); return; }
   if (_cmDados) renderControleMensal(_cmDados);
+}
+
+// (25/09/2026) Filtro da visão — equipamentos ou colaboradores, um ou vários
+const _cmF = {
+  equipamento: { sel: new Set(), lista: [], ico: '🚜', todos: 'Todos os equipamentos', plural: 'equipamentos',
+                 txt: e => e.codigo, sub: e => e.descricao || '' },
+  colaborador: { sel: new Set(), lista: [], ico: '👤', todos: 'Todos os colaboradores', plural: 'colaboradores',
+                 txt: o => o.nome, sub: () => '' },
+};
+let _cmFRascunho = null;
+function cmFiltro(tipo) { return [..._cmF[tipo].sel].join(','); }
+function cmFRotulo() {
+  const f = _cmF[_cmView], b = document.getElementById('cm-f-btn');
+  const nome = id => f.txt(f.lista.find(x => x.id === id) || {}) || '?';
+  b.textContent = f.ico + ' ' + (!f.sel.size ? f.todos
+    : f.sel.size <= 3 ? [...f.sel].map(nome).join(', ') : f.sel.size + ' ' + f.plural) + ' ▾';
+  b.style.borderColor = f.sel.size ? 'var(--blue)' : 'var(--border)';
+  b.style.fontWeight = f.sel.size ? '700' : '';
+}
+function cmFAbrir() {
+  const lista = document.getElementById('cm-f-lista');
+  if (lista.style.display === 'block') { lista.style.display = 'none'; return; }
+  _cmFRascunho = new Set(_cmF[_cmView].sel);
+  document.getElementById('cm-f-busca').value = '';
+  cmFRender();
+  lista.style.display = 'block';
+  document.getElementById('cm-f-busca').focus();
+  const fechar = ev => {
+    if (!document.getElementById('cm-f-combo').contains(ev.target)) {
+      lista.style.display = 'none'; document.removeEventListener('click', fechar);
+    }
+  };
+  setTimeout(() => document.addEventListener('click', fechar), 0);
+}
+function cmFRender() {
+  const f = _cmF[_cmView], q = document.getElementById('cm-f-busca').value.toLowerCase();
+  const itens = f.lista.filter(x => !q || (f.txt(x) + ' ' + f.sub(x)).toLowerCase().includes(q));
+  document.getElementById('cm-f-itens').innerHTML = itens.length ? itens.map(x =>
+    `<label style="display:flex;gap:8px;align-items:center;padding:6px 12px;font-size:13px">
+       <input type="checkbox" ${_cmFRascunho.has(x.id) ? 'checked' : ''} onchange="cmFMarcar('${x.id}', this.checked)">
+       <b>${esc(f.txt(x))}</b><span style="color:var(--muted);font-size:12px">${esc(f.sub(x))}</span></label>`).join('')
+    : '<div style="padding:12px;color:var(--muted);font-size:12px;text-align:center">Nada encontrado</div>';
+}
+function cmFMarcar(id, on) { on ? _cmFRascunho.add(id) : _cmFRascunho.delete(id); }
+function cmFLimpar() { _cmFRascunho = new Set(); cmFAplicar(); }
+function cmFAplicar() {
+  _cmF[_cmView].sel = new Set(_cmFRascunho);
+  document.getElementById('cm-f-lista').style.display = 'none';
+  cmFRotulo();
+  carregarControleMensal();
 }
 
 async function carregarControleMensal() {
@@ -5371,8 +5465,8 @@ async function carregarControleMensal() {
   el.innerHTML = '<div class="loading"><span class="spin"></span>Carregando...</div>';
 
   const { mes, ano } = cmPeriodoSelecionado();
-  const eqId = document.getElementById('cm-filtro-equip').value;
-  const opId = document.getElementById('cm-filtro-oper').value;
+  const eqId = cmFiltro('equipamento');
+  const opId = cmFiltro('colaborador');
 
   let url = `/operacional/api/controle-mensal?mes=${mes}&ano=${ano}`;
   if (eqId) url += `&equipamento_id=${eqId}`;
@@ -5382,24 +5476,10 @@ async function carregarControleMensal() {
     _cmDados = await apiFetch(url);
 
     // Popular filtros com dados do mês
-    const selEq = document.getElementById('cm-filtro-equip');
-    const selOp = document.getElementById('cm-filtro-oper');
-    const eqAtual = selEq.value;
-    const opAtual = selOp.value;
-
-    // Só popular se estiver vazio (primeira carga) ou sem filtro ativo
-    if (!eqAtual && _cmDados.equipamentos?.length) {
-      selEq.innerHTML = '<option value="">Todos os equipamentos</option>';
-      _cmDados.equipamentos.forEach(e => {
-        selEq.innerHTML += `<option value="${e.id}">${esc(e.codigo)} — ${esc(e.descricao||'')}</option>`;
-      });
-    }
-    if (!opAtual && _cmDados.operadores?.length) {
-      selOp.innerHTML = '<option value="">Todos os colaboradores</option>';
-      _cmDados.operadores.forEach(o => {
-        selOp.innerHTML += `<option value="${o.id}">${esc(o.nome)}</option>`;
-      });
-    }
+    // Listas dos filtros: só se renovam sem filtro ativo (senão encolheriam ao filtrado)
+    if (!_cmF.equipamento.sel.size && _cmDados.equipamentos?.length) _cmF.equipamento.lista = _cmDados.equipamentos;
+    if (!_cmF.colaborador.sel.size && _cmDados.operadores?.length)
+      _cmF.colaborador.lista = _cmDados.operadores.slice().sort((a, b) => (a.nome || '').localeCompare(b.nome || ''));
 
     // KPIs
     // Conta partes suspeitas (horímetro >24h num dia)
@@ -5427,62 +5507,6 @@ async function carregarControleMensal() {
   }
 }
 
-function cmOperAbrir() {
-  const inp = document.getElementById('cm-oper-busca');
-  const lista = document.getElementById('cm-oper-lista');
-  inp.removeAttribute('readonly');
-  inp.value = '';
-  inp.oninput = () => cmOperRenderLista(inp.value);
-  cmOperRenderLista('');
-  lista.style.display = 'block';
-  const fechar = (ev) => {
-    if (!document.getElementById('cm-oper-combo').contains(ev.target)) {
-      lista.style.display = 'none';
-      cmOperAtualizarLabel();
-      document.removeEventListener('click', fechar);
-    }
-  };
-  setTimeout(() => document.addEventListener('click', fechar), 0);
-  inp.focus();
-}
-
-function cmOperRenderLista(filtro) {
-  const lista = document.getElementById('cm-oper-lista');
-  const sel = document.getElementById('cm-filtro-oper');
-  const f = (filtro || '').toLowerCase();
-  const ops = (_cmDados?.operadores || []).filter(o => !f || (o.nome||'').toLowerCase().includes(f));
-  let html = `<div onclick="cmOperEscolher('','Todos os colaboradores')" style="padding:9px 12px;cursor:pointer;font-size:13px;border-bottom:1px solid var(--border);color:var(--muted)">Todos os colaboradores</div>`;
-  if (!ops.length) {
-    html += `<div style="padding:12px;color:var(--muted);font-size:12px;text-align:center">Nenhum nome encontrado</div>`;
-  } else {
-    ops.forEach(o => {
-      const ativo = String(sel.value) === String(o.id);
-      html += `<div onclick="cmOperEscolher('${o.id}','${esc(o.nome).replace(/'/g,"\\'")}')"
-        style="padding:9px 12px;cursor:pointer;font-size:13px;${ativo?'background:var(--bg);font-weight:700;color:var(--blue)':''}"
-        onmouseover="this.style.background='var(--bg)'" onmouseout="this.style.background='${ativo?'var(--bg)':''}'">${esc(o.nome)}</div>`;
-    });
-  }
-  lista.innerHTML = html;
-}
-
-function cmOperEscolher(id, nome) {
-  const sel = document.getElementById('cm-filtro-oper');
-  sel.value = id;
-  document.getElementById('cm-oper-lista').style.display = 'none';
-  cmOperAtualizarLabel(nome);
-  carregarControleMensal();
-}
-
-function cmOperAtualizarLabel(nome) {
-  const inp = document.getElementById('cm-oper-busca');
-  const sel = document.getElementById('cm-filtro-oper');
-  inp.setAttribute('readonly', '');
-  if (nome !== undefined) { inp.value = sel.value ? nome : ''; inp.placeholder = sel.value ? '' : 'Todos os colaboradores'; return; }
-  const opt = sel.options[sel.selectedIndex];
-  inp.value = sel.value ? (opt?.text || '') : '';
-  if (!sel.value) inp.placeholder = 'Todos os colaboradores';
-}
-
 function cmEditarSelect(parteId, campo, td, atualId) {
   if (td.querySelector('select')) return;
   const original = td.innerHTML;
@@ -5490,7 +5514,7 @@ function cmEditarSelect(parteId, campo, td, atualId) {
   if (campo === 'por_conta_de') {
     opts = ['empresa','cliente'].map(v => `<option value="${v}" ${v===atualId?'selected':''}>${v}</option>`).join('');
   } else {
-    const lista = (campo === 'equipamento_id') ? (_cmDados?.equipamentos||[]) : (_cmDados?.operadores||[]);
+    const lista = (campo === 'equipamento_id') ? _cmF.equipamento.lista : _cmF.colaborador.lista;
     if (!lista.length) { toast('Lista indisponível — recarregue a página', 'error'); return; }
     opts = lista.map(o => `<option value="${o.id}" ${String(o.id)===String(atualId)?'selected':''}>${esc(o.codigo ? (o.codigo+' — '+(o.descricao||'')) : o.nome)}</option>`).join('');
   }
@@ -5651,11 +5675,80 @@ function cmEditarCobr(parteId, td, atual) {
   inp.addEventListener('blur', salvar);
 }
 
+// (24/09/2026) Paradas — motivo do dia em que a máquina não rodou (Controle Mensal, visão máquina)
+let _mpMotivos = null, _mpEdit = null;
+async function cmParadaAbrir(eqId, iso) {
+  if (!_mpMotivos) {
+    try { _mpMotivos = await apiFetch('/operacional/api/paradas-motivos'); }
+    catch (e) { toast('❌ ' + e.message, 'error'); return; }
+  }
+  const g = id => document.getElementById(id);
+  const st = ((_cmDados.dias_status || {})[eqId] || {})[iso] || {};
+  const eq = _cmF.equipamento.lista.find(e => e.id === eqId) || {};
+  const lancada = st.origem === 'lancada';
+  _mpEdit = { id: lancada ? st.parada_id : null, eqId, osId: lancada ? st.os_id : null };
+  const grp = { cliente: 'Responsabilidade do cliente', garra: 'Responsabilidade da Garra', neutro: 'Neutro' };
+  g('mp-motivo').innerHTML = '<option value="">— selecione —</option>'
+    + Object.keys(grp).map(k => `<optgroup label="${grp[k]}">`
+      + _mpMotivos.filter(m => m.responsavel === k).map(m => `<option value="${m.codigo}">${esc(m.nome)}</option>`).join('')
+      + '</optgroup>').join('');
+  g('mp-titulo').textContent = (lancada ? 'Editar parada — ' : 'Motivo — ') + (eq.codigo || 'máquina');
+  g('mp-motivo').value = st.motivo || '';
+  g('mp-ini').value = lancada ? st.inicio : iso;
+  g('mp-fim').value = lancada ? (st.fim || '') : iso;
+  g('mp-aberto').checked = lancada && !st.fim;
+  g('mp-fim').disabled = g('mp-aberto').checked;
+  g('mp-aberto-box').style.display = _mpEdit.osId ? 'none' : '';
+  g('mp-obs').value = st.observacao || '';
+  g('mp-excluir').style.display = lancada ? '' : 'none';
+  g('mp-maquinas-box').style.display = lancada ? 'none' : '';
+  g('mp-maquinas').innerHTML = _cmF.equipamento.lista.filter(e => e.id !== eqId)
+    .map(e => `<label style="display:block"><input type="checkbox" class="mp-eq" value="${e.id}"> ${esc(e.codigo)}</label>`).join('');
+  cmParadaMotivoMudou();
+  g('modal-parada').classList.remove('hidden');
+}
+function cmParadaMotivoMudou() {
+  document.getElementById('mp-obs-req').textContent = document.getElementById('mp-motivo').value === 'OUTRO' ? '* obrigatória' : '';
+}
+async function cmParadaSalvar() {
+  const g = id => document.getElementById(id);
+  const corpo = { motivo_codigo: g('mp-motivo').value, inicio: g('mp-ini').value,
+                  fim: g('mp-aberto').checked ? null : (g('mp-fim').value || g('mp-ini').value),
+                  observacao: g('mp-obs').value.trim() || null };
+  if (!corpo.motivo_codigo) { toast('Selecione o motivo', 'error'); return; }
+  if (!corpo.inicio) { toast('Informe a data inicial', 'error'); return; }
+  try {
+    if (_mpEdit.id) {
+      await apiFetch('/operacional/api/paradas/' + _mpEdit.id, { method: 'PATCH', body: JSON.stringify(corpo) });
+    } else {
+      corpo.equipamento_ids = [_mpEdit.eqId, ...[...document.querySelectorAll('.mp-eq:checked')].map(c => c.value)];
+      await apiFetch('/operacional/api/paradas', { method: 'POST', body: JSON.stringify(corpo) });
+    }
+    g('modal-parada').classList.add('hidden');
+    toast('✅ Motivo registrado', 'success');
+    carregarControleMensal();
+  } catch (e) { toast('❌ ' + e.message, 'error'); }
+}
+async function cmParadaExcluir() {
+  if (!_mpEdit.id || !confirm('Excluir esta parada? O(s) dia(s) voltam a ficar sem motivo.')) return;
+  try {
+    await apiFetch('/operacional/api/paradas/' + _mpEdit.id, { method: 'DELETE' });
+    document.getElementById('modal-parada').classList.add('hidden');
+    toast('✅ Parada excluída', 'success');
+    carregarControleMensal();
+  } catch (e) { toast('❌ ' + e.message, 'error'); }
+}
+
 function renderControleMensal(dados) {
   const el = document.getElementById('cm-tabela');
   const partes = dados.partes || [];
 
-  if (!partes.length) {
+  if (!_cmView) {
+    el.innerHTML = '<div style="padding:40px;text-align:center;color:var(--muted);font-size:14px">Escolha em <b>Agrupar por</b> como ver o mês: Equipamento, Colaborador, Cód Interno ou OS (ERP).</div>';
+    return;
+  }
+  const _ds = (_cmView === 'equipamento') ? (dados.dias_status || {}) : {};
+  if (!partes.length && !Object.keys(_ds).length) {
     el.innerHTML = '<div style="padding:30px;text-align:center;color:var(--muted)">Nenhum registro neste período</div>';
     return;
   }
@@ -5678,8 +5771,12 @@ function renderControleMensal(dados) {
       key = p.operador_id || 'sem';
       label = p.operador_nome || 'Sem operador';
     }
-    if (!grupos[key]) grupos[key] = { label, partes: [] };
+    if (!grupos[key]) grupos[key] = { label, partes: [], eqId: _cmView === 'equipamento' ? p.equipamento_id : null };
     grupos[key].partes.push(p);
+  });
+  // (24/09/2026) Visão máquina: frota sem parte no mês também aparece (paradas / ociosa)
+  (dados.equipamentos || []).forEach(e => {
+    if (_ds[e.id] && !grupos[e.id]) grupos[e.id] = { label: `${e.codigo} — ${e.descricao || ''}`, partes: [], eqId: e.id };
   });
 
   // Coluna 4: o que mostrar na 4ª coluna depende do agrupamento
@@ -5698,8 +5795,9 @@ function renderControleMensal(dados) {
       return pares.length ? pares.join(' · ') : '0';
     };
 
+    const _pend = grupo.eqId ? Object.values(_ds[grupo.eqId] || {}).filter(s => s.pendente).length : 0;
     html += `<div style="margin-bottom:24px">
-      <div style="font-size:14px;font-weight:800;color:var(--blue);margin-bottom:8px;padding:8px 12px;background:#F0F4FF;border-radius:6px">${esc(grupo.label)}</div>
+      <div style="font-size:14px;font-weight:800;color:var(--blue);margin-bottom:8px;padding:8px 12px;background:#F0F4FF;border-radius:6px">${esc(grupo.label)}${_pend ? ` <span style="font-size:11px;font-weight:700;color:#B45309;background:#FEF3C7;border-radius:10px;padding:2px 8px;margin-left:6px">⚠ ${_pend} dia(s) sem motivo</span>` : ''}</div>
       <div style="overflow-x:auto">
       <table style="width:100%;border-collapse:collapse;font-size:12px">
         <thead><tr style="background:#F8FAFC;border-bottom:2px solid var(--border)">
@@ -5718,36 +5816,32 @@ function renderControleMensal(dados) {
         </tr></thead>
         <tbody>`;
 
-    // ── Linhas "Não rodou": injeta lacunas de dias (seg–sáb) sem apontamento ──
-    // Só na visão por equipamento e só em mês específico (não no ano inteiro)
-    let linhas = grupo.partes.slice().sort((a,b) => (a.data||'').localeCompare(b.data||''));
-    if (_cmView === 'equipamento' && dados.mes && grupo.partes[0]?.equipamento_id) {
-      const diasComRegistro = new Set(grupo.partes.map(p => p.data));
-      const hoje = new Date();
-      const ehMesAtual = (dados.ano === hoje.getFullYear() && dados.mes === (hoje.getMonth()+1));
-      const ultimoDia = ehMesAtual ? hoje.getDate() : dados.dias_no_mes;
-      const gaps = [];
-      for (let d = 1; d <= ultimoDia; d++) {
-        const dt = new Date(dados.ano, dados.mes-1, d);
-        const iso = `${dados.ano}-${String(dados.mes).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
-        if (!diasComRegistro.has(iso)) {
-          const dow = dt.getDay();
-          const rotulo = dow === 0 ? 'DOMINGO' : (dow === 6 ? 'SÁBADO' : 'NÃO RODOU');
-          gaps.push({ data: iso, _gap: true, _rotulo: rotulo });
-        }
-      }
-      linhas = linhas.concat(gaps).sort((a,b) => (a.data||'').localeCompare(b.data||''));
+    // ── Dias sem parte: motivo resolvido no servidor (dias_status) — só visão máquina ──
+    let linhas = grupo.partes.slice();
+    if (grupo.eqId && _ds[grupo.eqId]) {
+      Object.entries(_ds[grupo.eqId]).forEach(([iso, st]) => linhas.push({ data: iso, _gap: true, _st: st }));
     }
+    linhas.sort((a,b) => (a.data||'').localeCompare(b.data||''));
 
     linhas.forEach(p => {
       if (p._gap) {
+        const st = p._st;
         let dataFmt = p.data;
         try { dataFmt = new Date(p.data+'T00:00').toLocaleDateString('pt-BR'); } catch(e){}
-        const fimDeSemana = (p._rotulo === 'SÁBADO' || p._rotulo === 'DOMINGO');
-        const cor = fimDeSemana ? 'color:#DC2626;font-weight:700' : 'color:#475569;font-weight:700';
-        html += `<tr style="border-bottom:1px solid #F1F5F9;background:#F8FAFC">
+        const cor = st.pendente ? 'color:#B45309;font-weight:800'
+          : st.origem === 'calendario' ? 'color:#DC2626;font-weight:700' : 'color:#475569;font-weight:700';
+        const bg = st.pendente ? '#FFFBEB' : '#F8FAFC';
+        const resp = st.responsavel ? ` <span style="font-size:10px;font-weight:600;color:var(--muted)">· ${({cliente:'cliente',garra:'Garra',neutro:'neutro'})[st.responsavel]||''}</span>` : '';
+        const dm = v => v.split('-').reverse().slice(0,2).join('/');
+        const per = (st.origem === 'lancada' && st.fim !== st.inicio)
+          ? ` <span style="font-size:10px;color:var(--muted)">(${dm(st.inicio)} a ${st.fim ? dm(st.fim) : 'em aberto'})</span>` : '';
+        const acao = st.origem === 'auto_ot' ? ''
+          : st.origem === 'lancada' ? ' <span style="font-size:11px;color:var(--blue)">✏️ editar</span>'
+          : ' <span style="font-size:11px;color:var(--orange)">＋ motivo</span>';
+        const click = st.origem === 'auto_ot' ? '' : ` onclick="cmParadaAbrir('${grupo.eqId}','${p.data}')" style="cursor:pointer;background:${bg}"`;
+        html += `<tr style="border-bottom:1px solid #F1F5F9;background:${bg}"${click}>
           <td style="padding:6px 8px;color:var(--muted)">${dataFmt}</td>
-          <td colspan="11" style="padding:6px 8px;${cor}">${p._rotulo}</td>
+          <td colspan="11" style="padding:6px 8px;${cor}">${esc(st.rotulo)}${st.observacao ? ' <span style="font-weight:500">— '+esc(st.observacao)+'</span>' : ''}${resp}${per}${acao}</td>
         </tr>`;
         return;
       }
@@ -5854,8 +5948,9 @@ function renderControleMensal(dados) {
 
 function cmExportExcel() {
   const { mes, ano } = cmPeriodoSelecionado();
-  const eqId = document.getElementById('cm-filtro-equip').value;
-  const opId = document.getElementById('cm-filtro-oper').value;
+  if (!_cmView) { toast('Escolha em Agrupar por antes de exportar', 'error'); return; }
+  const eqId = cmFiltro('equipamento');
+  const opId = cmFiltro('colaborador');
 
   let url = `/operacional/api/controle-mensal/excel?mes=${mes}&ano=${ano}&view=${_cmView}`;
   if (eqId) url += `&equipamento_id=${eqId}`;
@@ -5868,8 +5963,9 @@ function cmExportExcel() {
 // Excel do ANO inteiro (todos os meses do ano selecionado no menu)
 function cmExportExcelAnual() {
   const { ano } = cmPeriodoSelecionado();
-  const eqId = document.getElementById('cm-filtro-equip').value;
-  const opId = document.getElementById('cm-filtro-oper').value;
+  if (!_cmView) { toast('Escolha em Agrupar por antes de exportar', 'error'); return; }
+  const eqId = cmFiltro('equipamento');
+  const opId = cmFiltro('colaborador');
 
   let url = `/operacional/api/controle-mensal/excel?ano=${ano}&view=${_cmView}`;
   if (eqId) url += `&equipamento_id=${eqId}`;
