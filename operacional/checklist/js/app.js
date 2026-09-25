@@ -300,8 +300,8 @@ function migrarFilaAntiga() {
         meta:          s.meta,
         respostas:     s.answers,
         pts:           s.pts,
-        tem_nc:        (s.meta?.totalNC || 0) > 0,
-        total_nc:      s.meta?.totalNC || 0,
+        tem_nc:        countNC(s) > 0,
+        total_nc:      countNC(s),
         enviado_em:    s.date,
       })}
     });
@@ -689,16 +689,21 @@ function renderMeusEnvios(targetId, login) {
       if (!r.ok) throw new Error('HTTP ' + r.status);
       const envios = await r.json();
       if (!envios.length) { histEl.innerHTML = '<div class="empty-state"><div class="es-icon">📋</div>Nenhum check list enviado ainda!</div>'; return; }
-      histEl.innerHTML = envios.map(e => {
+      const novas = envios.filter(e => (e.retornos_nao_lidos || 0) > 0).length;
+      const aviso = novas
+        ? `<div class="ret-aviso">💬 A gestão respondeu ${novas} check list${novas > 1 ? 's' : ''} — toque para ler</div>`
+        : '';
+      histEl.innerHTML = aviso + envios.map(e => {
         const nc  = e.total_nc || 0;
         const lbl = nc > 0 ? `⚠ ${nc} NC` : '✓ Conforme';
         const st  = nc > 0 ? 'nc' : 'ok';
         const veh = e.meta?.veiculo || e.meta?.equipamento || '';
-        return `<div class="history-item">
+        return `<div class="history-item${(e.retornos_nao_lidos || 0) > 0 ? ' ret-nova' : ''}" onclick="showSubmissionDetail('${esc(e.envio_id)}')">
           <div class="hi-icon">📋</div>
           <div class="hi-body">
             <div class="hi-title">${sanitize(e.cl_label || e.cl_id || 'Check list')}${veh ? ' – ' + sanitize(veh) : ''}</div>
             <div class="hi-meta">${formatDateTime(e.enviado_em)}${e.meta?.local ? ' • ' + sanitize(e.meta.local) : ''}</div>
+            ${seloRetorno(e.visto_em, e.retornos_msg, e.retornos_nao_lidos, false)}
           </div>
           <div class="badge ${st}">${lbl}</div>
         </div>`;
@@ -1069,21 +1074,29 @@ function countNC(s) { return Object.values(s.answers||{}).filter(a=>a.val==='NC'
 // O painel do gestor/admin renderizava SÓ do localStorage do próprio
 // dispositivo — envios feitos no celular do operador nunca apareciam no
 // desktop. Agora: busca do servidor e mescla com o cache local.
+function envioDoServidor(r) {
+  return {
+    id:        r.envio_id,
+    user:      r.usuario_login,
+    userName:  r.usuario_nome,
+    type:      r.cl_id,
+    clLabel:   r.cl_label,
+    meta:      r.meta || {},
+    answers:   r.respostas || {},
+    pts:       r.pts || 0,
+    date:      r.enviado_em,
+    synced:    true,
+    archived:  !!r.arquivado,
+    vistoEm:   r.visto_em || null,
+    retMsg:    r.retornos_msg || 0,
+    retNaoLid: r.retornos_nao_lidos || 0,
+    pedido:    r.pedido_numero || '',
+  };
+}
+
 function mesclarEnviosServidor(serverRows) {
   const locais = DB.submissions();
-  const doServidor = (serverRows || []).map(r => ({
-    id:       r.envio_id,
-    user:     r.usuario_login,
-    userName: r.usuario_nome,
-    type:     r.cl_id,
-    clLabel:  r.cl_label,
-    meta:     r.meta || {},
-    answers:  r.respostas || {},
-    pts:      r.pts || 0,
-    date:     r.enviado_em,
-    synced:   true,
-    archived: false, // o GET só retorna arquivado=FALSE
-  }));
+  const doServidor = (serverRows || []).map(envioDoServidor);
   const idsServidor = new Set(doServidor.map(s => s.id));
   // (08/07/2026) Servidor é a fonte da verdade: preserva APENAS locais ainda
   // não sincronizados (fila offline). Itens com synced=true que o servidor
@@ -1450,6 +1463,7 @@ function renderSubmissions() {
   if(statusF==='ok')subs=subs.filter(s=>countNC(s)===0&&!s.archived);
   if(statusF==='nc')subs=subs.filter(s=>countNC(s)>0);
   if(statusF==='archived')subs=subs.filter(s=>s.archived);
+  if(statusF==='novo')subs=subs.filter(s=>s.synced!==false&&!s.vistoEm&&s.user!==currentUser?.login);
   const el=document.getElementById('submissions-list');
   if(!subs.length){el.innerHTML='<div class="empty-state"><div class="es-icon">📭</div>Nenhum envio encontrado.</div>';return;}
   const allCLs=DB.allCLs();
@@ -1459,6 +1473,7 @@ function renderSubmissions() {
         <div>
           <div class="sub-title">${cl.icon||'📋'} ${cl.label||s.type}</div>
           <div class="sub-meta">${s.userName} • ${formatDate(s.date)}</div>
+          ${s.synced!==false&&s.user!==currentUser?.login?seloRetorno(s.vistoEm,s.retMsg,s.retNaoLid,true):''}
           ${veh ? `<div class="sub-equip">🚜 ${veh}${s.meta?.local?' • 📍 '+s.meta.local:''}</div>` : (s.meta?.local?`<div class="sub-equip">📍 ${s.meta.local}</div>`:'')}
         </div>
         <div class="badge ${st}">${nc>0?nc+' NC':st==='pending'?'⏳':st==='archived'?'📦':'✓'}</div>
@@ -2002,22 +2017,18 @@ function buildCLObject(id) {
 
 // ─── DETALHE ───────────────────────────────────────
 async function showSubmissionDetail(id) {
-  const sub=DB.submissions().find(s=>s.id===id); if(!sub)return;
-  // (12/09/2026) A foto usa URL ASSINADA que expira. O localStorage guarda a
-  // versão congelada — quando a Bruna reabre horas depois, a URL já venceu e o
-  // <img> não carrega. Solução: rebuscar o envio do servidor (que reassina as
-  // fotos a cada leitura) e atualizar as respostas antes de renderizar. Falha
-  // de rede cai no que já está em memória (degrada, não quebra).
-  try {
-    const tk = ckToken();
-    if (tk && navigator.onLine) {
-      const rr = await fetch('/checklist/envios?limit=500', { headers:{ 'Authorization':'Bearer '+tk } });
-      if (rr.ok) {
-        const fresco = (await rr.json()).find(e => e.envio_id === id);
-        if (fresco && fresco.respostas) sub.answers = fresco.respostas;
-      }
-    }
-  } catch(e){ /* mantém o que já tem em memória */ }
+  // (12/09 → 25/09/2026) URL de foto ASSINADA expira: o detalhe sempre busca
+  // ESTE envio no servidor (reassina as fotos e traz os retornos da gestão).
+  // Offline/erro cai no cache local (degrada, não quebra).
+  let sub = DB.submissions().find(s=>s.id===id) || null, retornos = null;
+  if (navigator.onLine) {
+    try {
+      const r = await apiFetch('/checklist/envios/' + encodeURIComponent(id));
+      sub = envioDoServidor(r);
+      retornos = r.retornos || [];
+    } catch(e) { /* mantém o que já tem em memória */ }
+  }
+  if(!sub)return;
   const cl=DB.allCLs()[sub.type]||{},nc=countNC(sub),st=sub.archived?'archived':sub.synced===false?'pending':nc>0?'nc':'ok';
   const veiculo = sub.meta?.veiculo || sub.meta?.equipamento || '';
   const local   = sub.meta?.local   || '';
@@ -2037,7 +2048,88 @@ async function showSubmissionDetail(id) {
   if(metaEntries.length)html+=`<div class="detail-section"><h4>Identificação</h4>${metaEntries.map(([k,v])=>`<div class="detail-row"><span class="dr-label">${metaLabels[k]||k}</span><span class="dr-val">${v}</span></div>`).join('')}</div>`;
   cl.steps?.filter(s=>s.type==='checklist').forEach(step=>{html+=`<div class="detail-section"><h4>${step.title}</h4>${step.items.map(item=>{const ans=sub.answers?.[item.id];if(!ans)return'';const c=ans.val==='C'?'ok':ans.val==='NC'?'nc':'na',l=ans.val==='C'?'✓ Conforme':ans.val==='NC'?'✗ Não Conforme':'N/A';const foto=ans.photo?`<div class="detail-photo"><img src="${ans.photo}" alt="Foto da evidência" class="ci-photo-preview" style="max-width:100%;border-radius:8px;margin-top:6px;cursor:zoom-in" onclick="window.open('${ans.photo}','_blank')" /></div>`:'';return `<div class="detail-row"><span class="dr-label">${item.label}${item.pts>1?` <small style="color:var(--orange)">⭐×${item.pts}</small>`:''}</span><span class="dr-val ${c}">${l}</span></div>${ans.obs?`<div class="detail-obs">📝 ${ans.obs}</div>`:''}${foto}`}).join('')}</div>`;});
   if(sub.meta?.observacoes)html+=`<div class="detail-section"><h4>Observações Gerais</h4><div class="detail-obs">${sub.meta.observacoes}</div></div>`;
+  if(retornos)html+=`<div id="ret-box" class="detail-section">${htmlRetornos(sub,retornos)}</div>`;
   document.getElementById('detail-content').innerHTML=html;showScreen('screen-detail');
+  if(retornos){
+    apiFetch('/checklist/envios/'+encodeURIComponent(id)+'/visto',{method:'POST'}).catch(()=>{});
+    if(podeResponder(sub))carregarAtalhos();
+  }
+}
+
+// ─── RETORNO DA GESTÃO (25/09/2026) ────────────────
+// Gestão abre o envio → "visto" automático; responde com atalho ou texto.
+// Operador vê o selo em Meus Envios e lê no detalhe (recibo de leitura).
+let _atalhosRetorno = null;
+
+function podeResponder(sub) { return currentUser?.role==='manager' && sub.user!==currentUser.login && sub.synced!==false; }
+
+function seloRetorno(vistoEm, nMsg, nNaoLidas, gestao) {
+  nMsg = nMsg || 0; nNaoLidas = nNaoLidas || 0;
+  if (gestao) {
+    if (!vistoEm) return '<div class="ret-selo novo">🆕 Não visto</div>';
+    if (!nMsg)    return '<div class="ret-selo">👁 Visto</div>';
+    return `<div class="ret-selo">💬 ${nMsg} · ${nNaoLidas ? 'não lido' : '✓✓ lido'}</div>`;
+  }
+  if (nNaoLidas) return `<div class="ret-selo msg">💬 ${nNaoLidas} resposta${nNaoLidas>1?'s':''} nova${nNaoLidas>1?'s':''}</div>`;
+  if (nMsg)      return '<div class="ret-selo">💬 Respondido</div>';
+  if (vistoEm)   return '<div class="ret-selo">👁 Visto pela gestão</div>';
+  return '';
+}
+
+function htmlRetornos(sub, retornos) {
+  const gestao = podeResponder(sub);
+  let h = '<h4>Retorno da Gestão</h4>';
+  if (gestao && sub.pedido) h += `<div class="ret-pedido">🔧 Pedido <strong>${sanitize(sub.pedido)}</strong> aberto para a manutenção</div>`;
+  h += retornos.map(r => r.tipo === 'visto'
+    ? `<div class="ret-visto">👁 Visto${gestao ? ' por ' + sanitize(r.autor_nome) : ' pela gestão'} • ${formatDateTime(r.criado_em)}</div>`
+    : `<div class="ret-msg">
+         <div class="ret-msg-txt">${sanitize(r.texto)}</div>
+         <div class="ret-msg-meta">${sanitize(r.autor_nome)} • ${formatDateTime(r.criado_em)}${gestao ? (r.lido_em ? ' • ✓✓ lido ' + formatDateTime(r.lido_em) : ' • não lido') : ''}</div>
+       </div>`).join('');
+  if (!retornos.length && !gestao) h += '<div class="ret-vazio">Aguardando a gestão ver este check list.</div>';
+  if (gestao) h += `<div id="ret-atalhos" class="ret-atalhos"></div>
+    <textarea id="ret-texto" class="ret-texto" maxlength="500" rows="2" placeholder="Escreva um retorno para ${esc(sub.userName)}"></textarea>
+    <button class="btn-primary full" onclick="enviarRetorno('${esc(sub.id)}')">Enviar retorno</button>`;
+  return h;
+}
+
+async function carregarAtalhos() {
+  if (!_atalhosRetorno) {
+    try { _atalhosRetorno = (await apiFetch('/checklist/retornos-config')).atalhos || []; }
+    catch(e) { _atalhosRetorno = []; }
+  }
+  const el = document.getElementById('ret-atalhos'); if (!el) return;
+  el.innerHTML = _atalhosRetorno.map((t,i) => `<button class="ret-chip" onclick="usarAtalho(${i})">${sanitize(t)}</button>`).join('')
+    + '<button class="ret-chip edit" onclick="editarAtalhos()">✏️ Atalhos</button>';
+}
+
+function usarAtalho(i) {
+  const ta = document.getElementById('ret-texto');
+  if (ta) { ta.value = _atalhosRetorno[i] || ''; ta.focus(); }
+}
+
+function editarAtalhos() {
+  const el = document.getElementById('ret-atalhos'); if (!el) return;
+  el.innerHTML = `<textarea id="ret-atalhos-ed" class="ret-texto" rows="6" placeholder="Um atalho por linha (máx. 12)">${esc((_atalhosRetorno||[]).join('\n'))}</textarea>
+    <div class="ret-ed-acoes"><button class="btn-secondary" onclick="carregarAtalhos()">Cancelar</button><button class="btn-save" onclick="salvarAtalhos()">Salvar atalhos</button></div>`;
+}
+
+async function salvarAtalhos() {
+  const linhas = (document.getElementById('ret-atalhos-ed')?.value || '').split('\n').map(t => t.trim()).filter(Boolean);
+  try {
+    _atalhosRetorno = (await apiFetch('/checklist/retornos-config', { method:'PUT', body: JSON.stringify({ atalhos: linhas }) })).atalhos || [];
+    carregarAtalhos();
+  } catch(e) { alert(e.message); }
+}
+
+async function enviarRetorno(id) {
+  const ta = document.getElementById('ret-texto');
+  const texto = (ta?.value || '').trim();
+  if (!texto) { ta?.focus(); return; }
+  try {
+    await apiFetch('/checklist/envios/' + encodeURIComponent(id) + '/retornos', { method:'POST', body: JSON.stringify({ texto }) });
+    showSubmissionDetail(id);
+  } catch(e) { alert(e.message); }
 }
 
 // ─── MODAIS / UTILS ────────────────────────────────
