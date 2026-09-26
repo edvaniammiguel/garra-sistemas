@@ -2032,9 +2032,9 @@ async def _status_dias(inicio: date, fim: date, eq_ids=None, incluir=()):
         ots = await ajard_query(
             """SELECT o.equipamento_id, o.numero, MIN(h.criado_em)::date AS ini,
                       COALESCE(o.data_retorno_operacao, o.data_conclusao::date,
-                               CASE WHEN o.status IN ('em_curso','aguardando_peca') THEN CURRENT_DATE END) AS fim
+                               CASE WHEN o.status IN ('em_andamento','aguardando_peca') THEN CURRENT_DATE END) AS fim
                FROM manutencao.ot o
-               JOIN manutencao.ot_historico h ON h.ot_id = o.id AND h.status_para = 'em_curso'
+               JOIN manutencao.ot_historico h ON h.ot_id = o.id AND h.status_para = 'em_andamento'
                WHERE o.equipamento_id = ANY(%s::uuid[])
                GROUP BY o.id""", (eq_ids,)) or []
     except Exception:

@@ -568,7 +568,9 @@ async def listar_ots(status: str = None, equipamento_id: str = None,
         f"""SELECT ot.*, eq.codigo AS equipamento_codigo, eq.descricao AS equipamento_desc,
                   eq.horimetro_atual AS equipamento_horimetro, eq.medicao AS equipamento_medicao,
                   us.nome AS solicitante_nome, ur.nome AS responsavel_nome,
-                  fo.nome AS fornecedor_nome, pd.via AS pedido_via
+                  fo.nome AS fornecedor_nome, pd.via AS pedido_via,
+                  (SELECT MIN(h.criado_em) FROM manutencao.ot_historico h
+                    WHERE h.ot_id = ot.id AND h.status_para = 'em_andamento') AS data_inicio_exec
            FROM manutencao.ot ot
            JOIN operacional.equipamentos eq ON eq.id = ot.equipamento_id
            LEFT JOIN public.usuarios_garra us ON us.id = ot.solicitante_id
