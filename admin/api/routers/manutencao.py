@@ -2747,6 +2747,23 @@ async def _garantir_dominios():
             f"""CREATE TABLE IF NOT EXISTS {_t} (
                 codigo TEXT PRIMARY KEY, nome TEXT, ativo BOOLEAN DEFAULT true)""",
             fetch="none")
+    # (26/09/2026) Hierarquia ManWinWin dos Tipos de Trabalho (domínio "tipos-manutencao",
+    # o que alimenta a árvore de OTs): a letra é a pasta, o subtipo (A1, C1, C2…) é o
+    # que a OT/FMP recebe. Idempotente: só insere o que falta; nomes existentes ficam.
+    await ajard_query("""
+        INSERT INTO manutencao.tipos_manutencao (codigo, nome) VALUES
+          ('A','Preventivo Sistemático'), ('A1','Sistemático'),
+          ('B','Preventivo Condicionado'), ('B1','Condicionado'),
+          ('C','Corretivo'), ('C1','Reparação Avaria'), ('C2','Corretiva Deferida'),
+          ('M','Melhoria'), ('M1','Melhoria')
+        ON CONFLICT (codigo) DO NOTHING""", fetch="none")
+    # OTs sem tipo de trabalho válido herdam o subtipo padrão da sua classe (tipo)
+    await ajard_query("""
+        UPDATE manutencao.ot SET tipo_trabalho = CASE tipo
+            WHEN 'preventiva' THEN 'A1' WHEN 'corretiva' THEN 'C1'
+            WHEN 'melhoria' THEN 'M1' WHEN 'reforma' THEN 'M1' ELSE 'C1' END
+        WHERE tipo_trabalho IS NULL
+           OR tipo_trabalho NOT IN (SELECT codigo FROM manutencao.tipos_manutencao)""", fetch="none")
     _DOM_OK = True
 
 _BIB_OK = False
