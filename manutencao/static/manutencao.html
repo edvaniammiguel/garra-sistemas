@@ -619,15 +619,19 @@ function montarNavTipos(){
     '<div class="pn-item'+(String(_filtroTT)===String(cod)?' on':'')+'"'+(filho?' style="padding-left:22px"':'')
     + ' data-tt="'+(cod===null?'':_esc(cod))+'" onclick="ttMarcar(this)" ondblclick="filtrarTT('+(cod===null?'null':'\''+cod+'\'')+')" title="Duplo clique filtra">'
     + rotulo + ' <span class="muted">('+cont(cod)+')</span></div>';
-  const tipos = _mntTiposTrab || [];
+  const tipos = (_mntTiposTrab || []).filter(t => t.ativo !== false);
   const letras = [...new Set(tipos.map(t => (t.codigo||'').charAt(0)).filter(Boolean))].sort();
+  // (26/09/2026) Hierarquia ManWinWin: a letra é a pasta (nome vindo do próprio cadastro
+  // quando existe, ex.: "C — Corretivo"); os filhos são os subtipos (C1, C2…). A letra
+  // cadastrada como tipo não aparece repetida abaixo da pasta.
   nav.innerHTML = '<div class="pn-grp">🔧 Tipos de Trabalho</div>'
     + item(null, 'Todos')
-    + letras.map(L =>
-        item(L, '📁 ' + L + ' — ' + (_TT_CAT[L] || 'Outros'))
-        + tipos.filter(t => (t.codigo||'').charAt(0) === L)
-            .map(t => item(t.codigo, _esc(t.codigo)+' — '+_esc(t.nome||''), true)).join('')
-      ).join('')
+    + letras.map(L => {
+        const pasta = tipos.find(t => t.codigo === L);
+        return item(L, '📁 ' + L + ' — ' + _esc((pasta && pasta.nome) || _TT_CAT[L] || 'Outros'))
+          + tipos.filter(t => (t.codigo||'').length > 1 && t.codigo.charAt(0) === L)
+              .map(t => item(t.codigo, _esc(t.codigo)+' — '+_esc(t.nome||''), true)).join('');
+      }).join('')
     + item('_sem', '(sem tipo)');
 }
 function ttMarcar(el){ document.querySelectorAll('#tt-nav .pn-item').forEach(x => x.classList.toggle('on', x === el)); }
