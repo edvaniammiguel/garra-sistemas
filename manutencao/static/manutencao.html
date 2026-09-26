@@ -191,7 +191,13 @@ button:disabled, select:disabled, input:disabled, [aria-disabled=true] { cursor:
 
 <!-- ══ TOPBAR ══ -->
 <div class="topbar">
-  <div class="tb-brand">GARRA <span>Sistemas · Manutenção</span></div>
+  <!-- (26/09/2026) Logotipo igual ao painel admin (/static/icons/logo.png, branco); texto só se a imagem faltar -->
+  <div class="tb-brand" style="display:flex;align-items:center;gap:8px">
+    <img src="/static/icons/logo.png" alt="Garra Terraplenagem" style="height:24px;object-fit:contain;filter:brightness(0) invert(1)"
+      onerror="this.style.display='none';this.nextElementSibling.style.display='inline'"/>
+    <b style="display:none">GARRA</b>
+    <span>Sistemas · Manutenção</span>
+  </div>
   <div class="tbn on" id="tn-frota" onclick="showModule('frota')">🚦 Frota</div>
   <div class="tbn" id="tn-ots" onclick="showModule('ots')">🔧 Ordens de Trabalho</div>
   <div class="tbn" id="tn-alm" onclick="showModule('alm')">🧰 Materiais</div>
