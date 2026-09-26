@@ -175,14 +175,16 @@ tr.sel td{background:#FDBA74 !important;color:#1A2A5E;font-weight:600}
 .cal-d{font-weight:800;color:#1A2A5E;margin-bottom:2px}.cal-ot{padding:1px 3px;margin:1px 0;background:#F1F5F9;border-radius:2px;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 </style>
 <style>
-/* (25/09/2026) Cursor de clique — padrão único do Garra Sistemas: tudo que é clicável mostra a mãozinha */
-button, a[href], select, summary, [role=button], [role=tab],
+/* (25/09/2026) Cursor de clique — padrão único do Garra Sistemas (regras separadas:
+   um seletor não suportado pelo navegador não derruba os outros) */
+button, a[href], select, summary, [role=button], [role=tab] { cursor: pointer; }
 input[type=checkbox], input[type=radio], input[type=file], input[type=color], input[type=range],
-input[type=submit], input[type=button], input[type=reset],
-label:has(> input[type=checkbox]), label:has(> input[type=radio]),
-input::-webkit-calendar-picker-indicator,
-[onclick]:not(input:not([readonly])):not(textarea), [ondblclick]:not(input:not([readonly])):not(textarea) { cursor: pointer; }
-button:disabled, select:disabled, input:disabled, fieldset:disabled *, [aria-disabled=true] { cursor: not-allowed; }
+input[type=submit], input[type=button], input[type=reset] { cursor: pointer; }
+[onclick], [ondblclick] { cursor: pointer; }
+input[onclick]:not([readonly]), textarea[onclick], input[ondblclick]:not([readonly]), textarea[ondblclick] { cursor: text; }
+label:has(> input[type=checkbox]), label:has(> input[type=radio]) { cursor: pointer; }
+input::-webkit-calendar-picker-indicator { cursor: pointer; }
+button:disabled, select:disabled, input:disabled, [aria-disabled=true] { cursor: not-allowed; }
 </style>
 </head>
 <body>
@@ -233,14 +235,12 @@ button:disabled, select:disabled, input:disabled, fieldset:disabled *, [aria-dis
       <option value="mobile">📱 Mobile (mecânico)</option>
       <option value="checklist">📋 Checklist (NC)</option>
     </select>
-    <div class="bfilt" id="ots-filtros">
-      <label><input type="checkbox" value="programada" checked onchange="renderOTs()"> Programadas</label>
-      <label><input type="checkbox" value="aberta" checked onchange="renderOTs()"> Abertas</label>
-      <label><input type="checkbox" value="em_andamento" checked onchange="renderOTs()"> Em curso</label>
-      <label><input type="checkbox" value="aguardando_peca" checked onchange="renderOTs()"> Aguard. peça</label>
-      <label><input type="checkbox" value="concluida" onchange="renderOTs()"> Encerradas</label>
-      <label><input type="checkbox" value="cancelada" onchange="renderOTs()"> Canceladas</label>
-    </div>
+    <select id="ots-agrupar" onchange="renderOTs()" title="Agrupar a lista" style="width:170px">
+      <option value="fornecedor">Agrupar: Fornecedor</option>
+      <option value="equipamento">Agrupar: Equipamento</option>
+      <option value="estado">Agrupar: Estado</option>
+      <option value="">Sem agrupamento</option>
+    </select>
   </div>
   <div class="strip">🔧 Trabalhos <span class="sc" id="ots-strip">carregando…</span></div>
   <div class="param-wrap">
@@ -248,14 +248,29 @@ button:disabled, select:disabled, input:disabled, fieldset:disabled *, [aria-dis
     <div style="flex:1;display:flex;flex-direction:column;overflow:hidden">
       <div class="tw" style="flex:1">
         <table>
-          <thead><tr>
-            <th style="width:26px"></th><th style="width:100px">OT</th><th>Descrição</th>
-            <th style="width:90px">Equipamento</th><th style="width:52px">Tipo</th><th style="width:100px">Responsável</th>
-            <th style="width:85px">Estado</th><th style="width:130px">Programada</th>
-            <th style="width:80px">Abertura</th><th style="width:80px">Fim</th>
+          <thead><tr id="ots-thead">
+            <th style="width:26px"></th>
+            <th style="width:100px" data-ord="numero">OT</th>
+            <th data-ord="descricao">Descrição</th>
+            <th style="width:210px" data-ord="entidade">Entidade</th>
+            <th style="width:52px" data-ord="tipo_trabalho">Tipo</th>
+            <th style="width:150px" data-ord="fornecedor_nome">Interventor</th>
+            <th style="width:90px" data-ord="status">Estado</th>
+            <th style="width:130px" data-ord="data_prevista">Programada</th>
+            <th style="width:80px" data-ord="data_inicio_exec">Início</th>
+            <th style="width:80px" data-ord="data_conclusao">Fim</th>
           </tr></thead>
           <tbody id="ots-tbody"><tr><td colspan="10" style="padding:16px;color:#64748B">Carregando…</td></tr></tbody>
         </table>
+      </div>
+      <!-- (26/09/2026) Filtro de estado no rodapé, com contagem — padrão ManWinWin -->
+      <div class="bfilt" id="ots-filtros" style="padding:6px 10px;border-top:1px solid #E2E8F0;background:#F8FAFC;font-size:11px;gap:18px">
+        <label><input type="checkbox" value="programada" checked onchange="renderOTs()"> Programadas <b data-c="programada"></b></label>
+        <label><input type="checkbox" value="aberta" checked onchange="renderOTs()"> Abertas <b data-c="aberta"></b></label>
+        <label><input type="checkbox" value="em_andamento" checked onchange="renderOTs()"> Em curso <b data-c="em_andamento"></b></label>
+        <label><input type="checkbox" value="aguardando_peca" checked onchange="renderOTs()"> Aguard. peça <b data-c="aguardando_peca"></b></label>
+        <label><input type="checkbox" value="concluida" onchange="renderOTs()"> Encerradas <b data-c="concluida"></b></label>
+        <label><input type="checkbox" value="cancelada" onchange="renderOTs()"> Canceladas <b data-c="cancelada"></b></label>
       </div>
     </div>
   </div>
@@ -599,9 +614,10 @@ function montarNavTipos(){
     : cod === '_sem' ? !o.tipo_trabalho
     : cod.length === 1 ? (o.tipo_trabalho||'').charAt(0) === cod
     : o.tipo_trabalho === cod).length;
+  // (26/09/2026) Padrão ManWinWin: clique marca o tipo, duplo clique filtra a lista
   const item = (cod, rotulo, filho) =>
     '<div class="pn-item'+(String(_filtroTT)===String(cod)?' on':'')+'"'+(filho?' style="padding-left:22px"':'')
-    + ' onclick="filtrarTT('+(cod===null?'null':'\''+cod+'\'')+')">'
+    + ' data-tt="'+(cod===null?'':_esc(cod))+'" onclick="ttMarcar(this)" ondblclick="filtrarTT('+(cod===null?'null':'\''+cod+'\'')+')" title="Duplo clique filtra">'
     + rotulo + ' <span class="muted">('+cont(cod)+')</span></div>';
   const tipos = _mntTiposTrab || [];
   const letras = [...new Set(tipos.map(t => (t.codigo||'').charAt(0)).filter(Boolean))].sort();
@@ -614,7 +630,15 @@ function montarNavTipos(){
       ).join('')
     + item('_sem', '(sem tipo)');
 }
+function ttMarcar(el){ document.querySelectorAll('#tt-nav .pn-item').forEach(x => x.classList.toggle('on', x === el)); }
 function filtrarTT(cod){ _filtroTT = cod; renderOTs(); montarNavTipos(); }
+function ttRotulo(){
+  if (_filtroTT === null) return '';
+  if (_filtroTT === '_sem') return '(sem tipo)';
+  if (_filtroTT.length === 1) return _filtroTT + ' — ' + (_TT_CAT[_filtroTT] || 'Outros');
+  const t = (_mntTiposTrab || []).find(x => x.codigo === _filtroTT);
+  return _filtroTT + (t && t.nome ? ' — ' + t.nome : '');
+}
 
 async function carregarOTsReais(){
   try {
@@ -651,31 +675,69 @@ function renderOTs(){
     (o.equipamento_codigo||'').toLowerCase().includes(q));
   const tot = _otsCache.length;
   const cont = s => _otsCache.filter(o=>o.status===s).length;
-  if (st) st.textContent = ots.length + ' de ' + tot + ' OT(s)'
+  const agrNome = { fornecedor: 'Fornecedor', equipamento: 'Equipamento', estado: 'Estado' }[(document.getElementById('ots-agrupar') || {}).value] || '';
+  if (st) st.textContent = (agrNome ? 'OTs agrupadas por ' + agrNome : 'Lista de OTs')
+    + (ttRotulo() ? ' · ' + ttRotulo() : '')
+    + ' · ' + ots.length + ' de ' + tot
     + (_filtroEquipId ? ' · filtrado por equipamento — ↻ limpa' : '');
   document.getElementById('ft-ots').innerHTML =
     '<b>'+tot+'</b> OTs · <b>'+cont('programada')+'</b> programadas · <b>'+cont('em_andamento')+'</b> em curso';
+  document.querySelectorAll('#ots-filtros b[data-c]').forEach(b => { b.textContent = '(' + cont(b.dataset.c) + ')'; });
+  // ordenação por coluna (clique no cabeçalho; padrão: Programada ↑, como no ManWinWin)
+  const val = (o, k) => k === 'entidade' ? (o.equipamento_codigo || '')
+    : k === 'data_prevista' ? (o.data_prevista || (o.horimetro_previsto != null ? '9' + String(o.horimetro_previsto).padStart(9, '0') : ''))
+    : (o[k] == null ? '' : String(o[k]));
+  ots.sort((a, b) => {
+    const x = val(a, _otsOrd.k), y = val(b, _otsOrd.k);
+    if (!x && y) return 1; if (x && !y) return -1;
+    return x.localeCompare(y, 'pt-BR', { numeric: true }) * _otsOrd.dir;
+  });
+  document.querySelectorAll('#ots-thead th[data-ord]').forEach(th => {
+    th.onclick = () => { _otsOrd = { k: th.dataset.ord, dir: _otsOrd.k === th.dataset.ord ? -_otsOrd.dir : 1 }; renderOTs(); };
+    th.textContent = th.textContent.replace(/ [▲▼]$/, '') + (th.dataset.ord === _otsOrd.k ? (_otsOrd.dir > 0 ? ' ▲' : ' ▼') : '');
+  });
   const d = v => { if(!v) return '—'; try { return new Date(v).toLocaleDateString('pt-BR'); } catch(e){ return '—'; } };
-  tb.innerHTML = ots.length ? ots.map(o => {
+  const linha = o => {
     const [cc, cl] = MNT_CHIP[o.status] || ['nr', o.status];
     const v = o.vencimento;
     const dot = v ? (v.nivel===0 ? 'r' : v.nivel===1 ? 'y' : 'g') : (MNT_DOT[o.prioridade] || 'y');
     const dp = o.data_prevista ? d(o.data_prevista) : (o.horimetro_previsto != null ? o.horimetro_previsto + ' h·km' : '—');
     const prog = v ? `<span style="color:${v.nivel===0?'#DC2626':v.nivel===1?'#B45309':'#16A34A'};font-size:10px">${_esc(v.texto)}</span>` : dp;
+    const ent = (o.equipamento_codigo || '') + (o.equipamento_desc ? ' — ' + o.equipamento_desc : '');
     return `<tr oncontextmenu="showCtxReal(event,'${o.id}','ot','${_esc(o.numero)}')" onclick="mwSel('ots','${o.id}');verOTReal('${o.id}')">
       <td style="text-align:center"><span class="dot ${dot}"></span></td>
       <td class="bold" style="white-space:nowrap">${_esc(o.numero)}</td>
       <td>${_esc(o.descricao)}</td>
-      <td>${_esc(o.equipamento_codigo||'')}</td>
+      <td style="max-width:210px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${_esc(ent)}">${_esc(ent)}</td>
       <td class="mono">${_esc(o.tipo_trabalho||'')}</td>
-      <td><span class="chip pe" style="font-size:9px">${_esc(o.responsavel_nome||'Manutenção')}</span></td>
+      <td style="max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${_esc(o.fornecedor_nome||'')}</td>
       <td><span class="chip ${cc}">${cl}</span></td>
       <td>${prog}</td>
-      <td>${d(o.data_abertura)}</td>
+      <td>${d(o.data_inicio_exec)}</td>
       <td>${d(o.data_conclusao)}</td>
     </tr>`;
-  }).join('') : '<tr><td colspan="10" style="padding:16px;color:#64748B">Nenhuma OT no filtro atual — abra uma na barra acima.</td></tr>';
+  };
+  if (!ots.length) { tb.innerHTML = '<tr><td colspan="10" style="padding:16px;color:#64748B">Nenhuma OT no filtro atual — abra uma na barra acima.</td></tr>'; return; }
+  // agrupamento (padrão ManWinWin: por Fornecedor, "Sem Fornecedor Definido" primeiro)
+  const agr = (document.getElementById('ots-agrupar') || {}).value || '';
+  if (!agr) { tb.innerHTML = ots.map(linha).join(''); return; }
+  const chave = o => agr === 'fornecedor' ? (o.fornecedor_nome || '')
+    : agr === 'equipamento' ? (o.equipamento_codigo || '') : (MNT_CHIP[o.status] || [0, o.status])[1];
+  const vazio = { fornecedor: 'Sem Fornecedor Definido', equipamento: 'Sem equipamento', estado: '—' }[agr];
+  const grupos = new Map();
+  ots.forEach(o => { const k = chave(o); if (!grupos.has(k)) grupos.set(k, []); grupos.get(k).push(o); });
+  const ordem = [...grupos.keys()].sort((a, b) => (!a ? -1 : !b ? 1 : a.localeCompare(b, 'pt-BR')));
+  _otsGrpIds = ordem.map(k => agr + ':' + k);
+  tb.innerHTML = ordem.map((k, i) => {
+    const fechado = _otsGrpFechados.has(_otsGrpIds[i]), lista = grupos.get(k);
+    return `<tr onclick="otsGrpAlternar(${i})" style="background:#F8FAFC">
+        <td colspan="10" style="padding:5px 8px;color:#1D4ED8;font-weight:600;border-bottom:1px solid #BFDBFE">
+          ${fechado ? '▸' : '▾'} ${_esc(k || vazio)} <span style="font-weight:400">(${lista.length})</span></td></tr>`
+      + (fechado ? '' : lista.map(linha).join(''));
+  }).join('');
 }
+let _otsOrd = { k: 'data_prevista', dir: 1 }, _otsGrpFechados = new Set(), _otsGrpIds = [];
+function otsGrpAlternar(i){ const id = _otsGrpIds[i]; _otsGrpFechados.has(id) ? _otsGrpFechados.delete(id) : _otsGrpFechados.add(id); renderOTs(); }
 function limparFiltroOTs(){
   _filtroEquipId = null;
   document.getElementById('ots-busca').value = '';
