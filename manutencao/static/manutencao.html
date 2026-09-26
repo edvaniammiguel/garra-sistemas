@@ -621,9 +621,11 @@ function montarNavTipos(){
     : cod.length === 1 ? (o.tipo_trabalho||'').charAt(0) === cod
     : o.tipo_trabalho === cod).length;
   // (26/09/2026) Padrão ManWinWin: clique marca o tipo, duplo clique filtra a lista
-  const item = (cod, rotulo, filho) =>
-    '<div class="pn-item'+(String(_filtroTT)===String(cod)?' on':'')+'"'+(filho?' style="padding-left:22px"':'')
+  // Árvore recolhível (▾/▸ na pasta), como no ManWinWin; clique marca, duplo clique filtra
+  const item = (cod, rotulo, filho, seta) =>
+    '<div class="pn-item'+(String(_filtroTT)===String(cod)?' on':'')+'"'+(filho?' style="padding-left:30px"':'')
     + ' data-tt="'+(cod===null?'':_esc(cod))+'" onclick="ttMarcar(this)" ondblclick="filtrarTT('+(cod===null?'null':'\''+cod+'\'')+')" title="Duplo clique filtra">'
+    + (seta ? '<span onclick="event.stopPropagation();ttAlternar(\''+seta+'\')" style="display:inline-block;width:14px;cursor:pointer" title="Expandir / recolher">'+(_ttFechados.has(seta)?'▸':'▾')+'</span>' : '')
     + rotulo + ' <span class="muted">('+cont(cod)+')</span></div>';
   const tipos = (_mntTiposTrab || []).filter(t => t.ativo !== false);
   const letras = [...new Set(tipos.map(t => (t.codigo||'').charAt(0)).filter(Boolean))].sort();
@@ -634,12 +636,14 @@ function montarNavTipos(){
     + item(null, 'Todos')
     + letras.map(L => {
         const pasta = tipos.find(t => t.codigo === L);
-        return item(L, '📁 ' + L + ' — ' + _esc((pasta && pasta.nome) || _TT_CAT[L] || 'Outros'))
-          + tipos.filter(t => (t.codigo||'').length > 1 && t.codigo.charAt(0) === L)
-              .map(t => item(t.codigo, _esc(t.codigo)+' — '+_esc(t.nome||''), true)).join('');
+        const filhos = tipos.filter(t => (t.codigo||'').length > 1 && t.codigo.charAt(0) === L);
+        return item(L, '📁 ' + L + ' — ' + _esc((pasta && pasta.nome) || _TT_CAT[L] || 'Outros'), false, filhos.length ? L : '')
+          + (_ttFechados.has(L) ? '' : filhos.map(t => item(t.codigo, _esc(t.codigo)+' — '+_esc(t.nome||''), true)).join(''));
       }).join('')
     + item('_sem', '(sem tipo)');
 }
+let _ttFechados = new Set();
+function ttAlternar(L){ _ttFechados.has(L) ? _ttFechados.delete(L) : _ttFechados.add(L); montarNavTipos(); }
 function ttMarcar(el){ document.querySelectorAll('#tt-nav .pn-item').forEach(x => x.classList.toggle('on', x === el)); }
 function filtrarTT(cod){ _filtroTT = cod; renderOTs(); montarNavTipos(); }
 function ttRotulo(){
