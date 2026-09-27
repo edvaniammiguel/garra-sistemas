@@ -221,7 +221,7 @@ button:disabled, select:disabled, input:disabled, [aria-disabled=true] { cursor:
       <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;color:#94A3B8;gap:8px">
         <div style="font-size:40px">🚦</div>
         <div style="font-size:13px;font-weight:700;color:#64748B">Escolha um grupo na organização</div>
-        <div style="font-size:11px">clique/botão direito no grupo = carrega os equipamentos aqui no centro · no equipamento: botão direito = serviços · duplo clique = ficha</div>
+        <div style="font-size:11px">clique = marca / expande o ramo · <b>duplo clique</b> = carrega o grupo aqui no centro · botão direito = carregar, expandir ou fechar tudo</div>
       </div>
     </div>
   </div>
@@ -460,7 +460,7 @@ async function renderArvore(){
   const ordem = {vermelho:0, laranja:1, amarelo:2, verde:3};
   const sems = _arvSistemas.slice().sort((a,b)=> a.codigo.localeCompare(b.codigo))
     .filter(s => !q || s.nome.toLowerCase().includes(q) || s.codigo.includes(q));
-  let html = '<div class="pn-grp" data-cod="_todos" onclick="arvCarregar(this.dataset.cod)" oncontextmenu="arvCtxGrupo(event,this.dataset.cod)" style="font-size:12px">🏢 Organização <span class="muted">('+_semCache.length+')</span></div>';
+  let html = '<div class="pn-grp'+(_arvSel==='_todos'?' sel':'')+'" data-cod="_todos" onclick="arvNoMarcar(this.dataset.cod)" ondblclick="arvCarregar(this.dataset.cod)" oncontextmenu="arvCtxGrupo(event,this.dataset.cod)" style="font-size:12px" title="Duplo clique carrega">🏢 Organização <span class="muted">('+_semCache.length+')</span></div>';
   sems.forEach(s => {
     if (!q) {
       const partes = s.codigo.split('.');
@@ -470,22 +470,32 @@ async function renderArvore(){
     const eqs = _eqsDoNo(s.codigo);
     const verm = eqs.filter(e=>e.status==='vermelho').length;
     const aberto = q ? true : _arvAbertos.has(s.codigo);
-    const ativo = _arvNoAtivo === s.codigo;
-    html += '<div class="pn-grp'+(ativo?'" style="background:#1A2A5E;color:#fff;padding-left:'+(8+nivel(s.codigo)*12)+'px"':'" style="padding-left:'+(8+nivel(s.codigo)*12)+'px"')+' data-cod="'+_esc(s.codigo)+'" '
-      + 'onclick="arvNoClique(this.dataset.cod)" oncontextmenu="arvCtxGrupo(event,this.dataset.cod)">'
+    const ativo = _arvNoAtivo === s.codigo, sel = _arvSel === s.codigo && !ativo;
+    html += '<div class="pn-grp'+(ativo?'" style="background:#1A2A5E;color:#fff;padding-left:'+(8+nivel(s.codigo)*12)+'px"':'" style="'+(sel?'background:#DBEAFE;':'')+'padding-left:'+(8+nivel(s.codigo)*12)+'px"')+' data-cod="'+_esc(s.codigo)+'" '
+      + 'onclick="arvNoMarcar(this.dataset.cod)" ondblclick="arvCarregar(this.dataset.cod)" oncontextmenu="arvCtxGrupo(event,this.dataset.cod)" title="Duplo clique carrega no centro">'
       + '<span class="pn-arr" style="'+(aberto?'transform:rotate(90deg)':'')+(ativo?';color:#E8820C':'')+'">▶</span> '
       + '<span class="mono" style="font-size:9px;color:'+(ativo?'#93C5FD':'#94A3B8')+'">'+_esc(s.codigo)+'</span> '+_esc(s.nome)
       + ' <span class="muted"'+(ativo?' style="color:#CBD5E1"':'')+'>('+eqs.length+(verm?' · '+verm+'🔴':'')+')</span></div>';
   });
   const semGrupo = _eqsDoNo('_sem');
   if (semGrupo.length)
-    html += '<div class="pn-grp" data-cod="_sem" onclick="arvCarregar(this.dataset.cod)">❔ Sem grupo <span class="muted">('+semGrupo.length+') — aponte em Cadastros</span></div>';
+    html += '<div class="pn-grp" data-cod="_sem" onclick="arvNoMarcar(this.dataset.cod)" ondblclick="arvCarregar(this.dataset.cod)" title="Duplo clique carrega">❔ Sem grupo <span class="muted">('+semGrupo.length+') — aponte em Cadastros</span></div>';
   corpo.innerHTML = html;
-  if (_arvNoAtivo) renderCentroEquip();
+  renderCentroEquip();
 }
-function arvNoClique(cod){
-  if (_arvAbertos.has(cod)) _arvAbertos.delete(cod); else _arvAbertos.add(cod);
-  arvCarregar(cod);
+// (27/09/2026) Padrão ManWinWin: clique marca o nó e abre/fecha o ramo — NÃO carrega;
+// duplo clique carrega só aquele grupo no centro; botão direito: carregar / expandir / fechar tudo
+function arvNoMarcar(cod){
+  _arvSel = cod;
+  if (cod !== '_todos' && cod !== '_sem') { if (_arvAbertos.has(cod)) _arvAbertos.delete(cod); else _arvAbertos.add(cod); }
+  renderArvore();
+}
+function frotaLimpar(){
+  _arvNoAtivo = null;
+  const centro = document.getElementById('frota-centro');
+  if (centro) centro.innerHTML = '<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;color:#94A3B8;gap:8px">'
+    + '<div style="font-size:40px">🚦</div><div style="font-size:13px;font-weight:700;color:#64748B">Escolha um grupo na organização</div>'
+    + '<div style="font-size:11px">clique = marca / expande o ramo · <b>duplo clique</b> = carrega o grupo aqui no centro · botão direito = carregar, expandir ou fechar tudo</div></div>';
 }
 function ftToggle(id){
   id = String(id);
@@ -493,12 +503,12 @@ function ftToggle(id){
   renderCentroEquip();
 }
 function arvCarregar(cod){
-  _arvNoAtivo = cod;
+  _arvNoAtivo = cod; _arvSel = cod;
   renderArvore();
-  renderCentroEquip();
 }
 function renderCentroEquip(){
-  const centro = document.getElementById('frota-centro'); if (!centro || !_arvNoAtivo) return;
+  const centro = document.getElementById('frota-centro'); if (!centro) return;
+  if (!_arvNoAtivo) { frotaLimpar(); return; }
   const cod = _arvNoAtivo;
   const rot = cod === '_todos' ? '🏢 Organização — todos'
             : cod === '_sem' ? '❔ Sem grupo definido'
@@ -586,7 +596,7 @@ function arvCtxGrupo(ev, cod){
     + 'onmouseover="this.style.background=\'#F0F4FF\'" onmouseout="this.style.background=\'\'">'+ico+' '+txt+'</div>';
   m.innerHTML = '<div style="padding:6px 14px;font-weight:800;color:#1A2A5E;border-bottom:1px solid #E2E8F0">'+_esc(cod==='_todos'?'Organização':cod)+'</div>'
     + it('📂','Carregar dados', 'arvCarregarCtx()')
-    + it('⬇️','Expandir tudo', "expandirTudo('frota',true)")
+    + it('⬇️','Expandir tudo', 'arvExpandirCtx()')
     + it('⬆️','Fechar tudo', "expandirTudo('frota',false)");
   m.style.left = Math.min(ev.clientX, window.innerWidth-230)+'px';
   m.style.top = Math.min(ev.clientY, window.innerHeight-160)+'px';
@@ -595,7 +605,17 @@ function arvCtxGrupo(ev, cod){
 function arvCarregarCtx(){
   const cod = _ctxMenuEl().dataset.cod;
   if (!cod) return;
+  _ctxMenuEl().style.display = 'none';
+  arvCarregar(cod);
+}
+function arvExpandirCtx(){
+  // expande os ramos de dentro da estrutura escolhida e carrega tudo o que há nela
+  const cod = _ctxMenuEl().dataset.cod;
+  if (!cod) return;
+  _ctxMenuEl().style.display = 'none';
   (_arvSistemas||[]).forEach(s => { if (cod==='_todos' || s.codigo === cod || s.codigo.startsWith(cod+'.')) _arvAbertos.add(s.codigo); });
+  const pais = new Set(_semCache.filter(f => f.equipamento_pai).map(f => String(f.equipamento_pai)));
+  _eqsDoNo(cod).forEach(e => { if (pais.has(String(e.id))) _ftAbertos.add(String(e.id)); });
   arvCarregar(cod);
 }
 // (27/09/2026) Expandir / Fechar tudo vale para a ÁRVORE e para o CONTEÚDO do meio da tela
@@ -620,7 +640,9 @@ function expandirTudo(mod, abrir){
     _arvAbertos = abrir ? new Set((_arvSistemas||[]).map(s => s.codigo)) : new Set();
     const pais = new Set(_semCache.filter(f => f.equipamento_pai).map(f => String(f.equipamento_pai)));
     _ftAbertos = abrir ? pais : new Set();
-    renderArvore(); renderCentroEquip();
+    _arvNoAtivo = abrir ? '_todos' : null;   // expandir = carrega toda a organização · fechar = tela limpa
+    if (!abrir) _arvSel = null;
+    renderArvore();
   } else if (mod === 'ots') {
     _ttFechados = abrir ? new Set() : new Set(Object.keys(_TT_CAT).concat((_mntTiposTrab||[]).map(t => (t.codigo||'').charAt(0))));
     _otsGrpFechados = abrir ? new Set() : new Set(_otsGrpIds);
