@@ -217,7 +217,7 @@ button:disabled, select:disabled, input:disabled, [aria-disabled=true] { cursor:
       </div>
       <div id="arv-corpo" style="flex:1;overflow:auto"></div>
     </div>
-    <div class="param-pane" id="frota-centro">
+    <div class="param-pane" id="frota-centro" oncontextmenu="ctxExpandir(event,'frota')">
       <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;color:#94A3B8;gap:8px">
         <div style="font-size:40px">🚦</div>
         <div style="font-size:13px;font-weight:700;color:#64748B">Escolha um grupo na organização</div>
@@ -250,9 +250,9 @@ button:disabled, select:disabled, input:disabled, [aria-disabled=true] { cursor:
   </div>
   <div class="strip">🔧 Trabalhos <span class="sc" id="ots-strip">carregando…</span></div>
   <div class="param-wrap">
-    <div class="param-nav" style="width:210px" id="tt-nav"></div>
+    <div class="param-nav" style="width:210px" id="tt-nav" oncontextmenu="ctxExpandir(event,'ots')"></div>
     <div style="flex:1;display:flex;flex-direction:column;overflow:hidden">
-      <div class="tw" style="flex:1">
+      <div class="tw" style="flex:1" oncontextmenu="ctxExpandir(event,'ots')">
         <table>
           <thead><tr id="ots-thead">
             <th style="width:26px"></th>
@@ -289,9 +289,9 @@ button:disabled, select:disabled, input:disabled, [aria-disabled=true] { cursor:
   <div class="strip">🧰 Materiais <span class="sc" id="alm-strip">carregando…</span></div>
   <div class="param-wrap">
     <div class="param-nav" style="width:230px;display:flex;flex-direction:column">
-      <div id="alm-nav" style="flex:1;overflow:auto"></div>
+      <div id="alm-nav" style="flex:1;overflow:auto" oncontextmenu="ctxExpandir(event,'alm')"></div>
     </div>
-    <div class="param-pane" style="display:flex;flex-direction:column;overflow:hidden">
+    <div class="param-pane" style="display:flex;flex-direction:column;overflow:hidden" oncontextmenu="ctxExpandir(event,'alm')">
       <div class="bar" style="background:transparent;border:none;padding:0 0 6px">
         <button class="btn p" id="alm-l-mestre" onclick="almLente('mestre')">🗂 Catálogo de Peças</button>
         <button class="btn" id="alm-l-armazem" onclick="almLente('armazem')">📦 Almoxarifado</button>
@@ -586,8 +586,8 @@ function arvCtxGrupo(ev, cod){
     + 'onmouseover="this.style.background=\'#F0F4FF\'" onmouseout="this.style.background=\'\'">'+ico+' '+txt+'</div>';
   m.innerHTML = '<div style="padding:6px 14px;font-weight:800;color:#1A2A5E;border-bottom:1px solid #E2E8F0">'+_esc(cod==='_todos'?'Organização':cod)+'</div>'
     + it('📂','Carregar dados', 'arvCarregarCtx()')
-    + it('⬇️','Expandir tudo', 'arvExpandirTudo()')
-    + it('⬆️','Fechar tudo', 'arvFecharTudo()');
+    + it('⬇️','Expandir tudo', "expandirTudo('frota',true)")
+    + it('⬆️','Fechar tudo', "expandirTudo('frota',false)");
   m.style.left = Math.min(ev.clientX, window.innerWidth-230)+'px';
   m.style.top = Math.min(ev.clientY, window.innerHeight-160)+'px';
   m.style.display = 'block';
@@ -598,13 +598,36 @@ function arvCarregarCtx(){
   (_arvSistemas||[]).forEach(s => { if (cod==='_todos' || s.codigo === cod || s.codigo.startsWith(cod+'.')) _arvAbertos.add(s.codigo); });
   arvCarregar(cod);
 }
-function arvExpandirTudo(){
-  (_arvSistemas||[]).forEach(s => _arvAbertos.add(s.codigo));
-  renderArvore();
+// (27/09/2026) Expandir / Fechar tudo vale para a ÁRVORE e para o CONTEÚDO do meio da tela
+// do módulo: Frota = ramos + subsistemas dos equipamentos; OTs = tipos + grupos da lista;
+// Materiais = famílias. Menu no botão direito da árvore ou do painel central.
+function ctxExpandir(ev, mod){
+  ev.preventDefault(); ev.stopPropagation();
+  const m = _ctxMenuEl();
+  const it = (ico, txt, fn) => '<div onclick="'+fn+'" style="padding:7px 14px;cursor:pointer;display:flex;gap:8px;align-items:center" '
+    + 'onmouseover="this.style.background=\'#F0F4FF\'" onmouseout="this.style.background=\'\'">'+ico+' '+txt+'</div>';
+  const tit = { frota:'Frota', ots:'Ordens de Trabalho', alm:'Materiais' }[mod];
+  m.innerHTML = '<div style="padding:6px 14px;font-weight:800;color:#1A2A5E;border-bottom:1px solid #E2E8F0">'+tit+'</div>'
+    + it('⬇️','Expandir tudo', "expandirTudo('"+mod+"',true)")
+    + it('⬆️','Fechar tudo', "expandirTudo('"+mod+"',false)");
+  m.style.left = Math.min(ev.clientX, window.innerWidth-230)+'px';
+  m.style.top = Math.min(ev.clientY, window.innerHeight-120)+'px';
+  m.style.display = 'block';
 }
-function arvFecharTudo(){
-  _arvAbertos = new Set();
-  renderArvore();
+function expandirTudo(mod, abrir){
+  _ctxMenuEl().style.display = 'none';
+  if (mod === 'frota') {
+    _arvAbertos = abrir ? new Set((_arvSistemas||[]).map(s => s.codigo)) : new Set();
+    const pais = new Set(_semCache.filter(f => f.equipamento_pai).map(f => String(f.equipamento_pai)));
+    _ftAbertos = abrir ? pais : new Set();
+    renderArvore(); renderCentroEquip();
+  } else if (mod === 'ots') {
+    _ttFechados = abrir ? new Set() : new Set(Object.keys(_TT_CAT).concat((_mntTiposTrab||[]).map(t => (t.codigo||'').charAt(0))));
+    _otsGrpFechados = abrir ? new Set() : new Set(_otsGrpIds);
+    montarNavTipos(); renderOTs();
+  } else if (mod === 'alm') {
+    _almArvTodas = abrir; montarNavAlm();
+  }
 }
 
 /* ══ ORDENS DE TRABALHO ══ */
@@ -889,7 +912,7 @@ function plFichaSel(){
   if (!_plSel) { mostrarToast('Selecione uma FMP na lista','warn'); return; }
   plFicha(_plSel);
 }
-// (16/09/2026) Repetir (ManWinWin): menu com "Ficha Manutenção Planeada" (uma FMP) e
+// (16/09/2026) Repetir (ManWinWin): menu com "Ficha Manutenção Planejada" (uma FMP) e
 // "Planos Manutenção" (várias). Objecto ORIGEM é escolhido na janela — funciona numa
 // máquina nova sem FMP; destinos com busca e caixas; o objecto aberto vem marcado como destino.
 function plRepetir(ev){
@@ -898,7 +921,7 @@ function plRepetir(ev){
   const r = b.getBoundingClientRect();
   const m = document.createElement('div'); m.id = 'rp-menu';
   m.style.cssText = 'position:fixed;left:'+r.left+'px;top:'+(r.bottom+2)+'px;background:#fff;border:1px solid #CBD5E1;border-radius:6px;box-shadow:0 8px 24px rgba(0,0,0,.18);z-index:9999;min-width:230px';
-  m.innerHTML = '<div class="mi" style="padding:8px 12px;cursor:pointer" onclick="plRepetirJanela(\'ficha\')">Ficha Manutenção Planeada</div><div class="mi" style="padding:8px 12px;cursor:pointer;border-top:1px solid #f1f3f8" onclick="plRepetirJanela(\'planos\')">Planos Manutenção</div>';
+  m.innerHTML = '<div class="mi" style="padding:8px 12px;cursor:pointer" onclick="plRepetirJanela(\'ficha\')">Ficha Manutenção Planejada</div><div class="mi" style="padding:8px 12px;cursor:pointer;border-top:1px solid #f1f3f8" onclick="plRepetirJanela(\'planos\')">Planos Manutenção</div>';
   document.body.appendChild(m);
   setTimeout(() => document.addEventListener('click', () => m.remove(), {once:true}), 0);
 }
@@ -912,7 +935,7 @@ async function plRepetirJanela(modo){
   const opts = objs.map(e => '<option value="'+e.id+'"'+(String(e.id)===String(origem)?' selected':'')+'>'+_esc(e.codigo)+' — '+_esc(e.descricao||'')+'</option>').join('');
   const linhas = objs.map(e => '<label class="rp-row" data-busca="'+_esc((e.codigo+' '+(e.descricao||'')+' '+(e.tipo_sigla||'')).toLowerCase())+'" style="display:flex;gap:8px;align-items:center;padding:3px 10px;border-bottom:1px solid #f1f3f8;cursor:pointer">'
     + '<input type="checkbox" class="rp-eq" value="'+e.id+'"'+(String(e.id)===String(_plEquip)?' checked':'')+'><b style="width:90px;color:#1A2A5E">'+_esc(e.codigo)+'</b><span style="flex:1">'+_esc(e.descricao||'')+'</span><span class="muted" style="font-size:10px">'+_esc(e.tipo_sigla||'')+'</span></label>').join('');
-  const titulo = modo === 'ficha' ? 'Repetir Ficha Manutenção Planeada' : 'Repetir Planos Manutenção';
+  const titulo = modo === 'ficha' ? 'Repetir Ficha Manutenção Planejada' : 'Repetir Planos Manutenção';
   const html = '<div id="rp-modal" style="position:fixed;inset:0;background:rgba(10,16,40,.45);z-index:9999;display:flex;align-items:center;justify-content:center" onclick="if(event.target===this)this.remove()">'
     + '<div style="background:#fff;border-radius:10px;width:700px;max-width:95vw;height:86vh;display:flex;flex-direction:column;box-shadow:0 12px 40px rgba(0,0,0,.3)">'
     + '<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;border-bottom:1px solid #e3e6f0"><b style="color:#1A2A5E">📋 '+titulo+'</b><button class="btn" onclick="document.getElementById(\'rp-modal\').remove()">✕</button></div>'
@@ -1001,7 +1024,7 @@ async function plFicha(pid, aba){
   document.querySelector('#eq-ficha .modal').classList.add('larga');
   document.getElementById('eq-ficha-corpo').innerHTML =
     '<div style="display:flex;justify-content:space-between;align-items:center">'
-    + '<b style="font-size:14px;color:#1A2A5E">📂 Ficha Manutenção Planeada</b>'
+    + '<b style="font-size:14px;color:#1A2A5E">📂 Ficha Manutenção Planejada</b>'
     + '<span style="cursor:pointer;font-size:18px" onclick="_plfDraft=null;abrirPlanosEquip(_plEquip)">✕</span></div>'
     // ── cabeçalho fixo (formato ManWinWin) ──
     + '<div style="display:flex;gap:14px;margin-top:8px;align-items:stretch">'
@@ -3281,7 +3304,7 @@ async function verOTReal(id){
     otAba('origem');
   } catch(e){ mostrarToast('❌ '+e.message,'warn'); }
 }
-/* ══ OT · PEÇAS — Planeado (FMP) × Realizado (Almoxarifado) — fatia 1 ══ */
+/* ══ OT · PEÇAS — Planejado (FMP) × Realizado (Almoxarifado) — fatia 1 ══ */
 let _otPc = { plano: null, cons: null, alms: null };
 /* ── Mão de Obra da OT (HH) — padrão ManWinWin ── */
 let _otMo = null;
@@ -3404,7 +3427,7 @@ async function otPecasRender(){
   const delta = cons.total - totPl;
   const podeBaixar = ['programada','aberta','em_andamento','aguardando_peca'].includes(o.status);
   c.innerHTML =
-    '<div class="dsec">Planeado — herdado da FMP'+(_otPc.plano ? ' '+_esc(_otPc.plano.codigo) : '')+'</div>'
+    '<div class="dsec">Planejado — herdado da FMP'+(_otPc.plano ? ' '+_esc(_otPc.plano.codigo) : '')+'</div>'
     + (pl.length
         ? pl.map(linhaPl).join('') + '<div style="text-align:right;font-weight:700;padding:4px 6px;color:#1A2A5E">Total previsto: '+money(totPl)+'</div>'
         : '<div class="muted" style="padding:8px 6px;font-size:11px">'+(_otPc.plano ? 'FMP sem peças detalhadas.' : 'OT sem FMP vinculada — sem previsto.')+'</div>')
@@ -3712,7 +3735,7 @@ async function otAplicarFMP(){
   const sel = document.getElementById('oe-fmp'); const pid = (sel||{}).value;
   if (!pid) { mostrarToast('Escolha a FMP', 'warn'); return; }
   const rot = sel.options[sel.selectedIndex].text.split(' — ')[0];
-  if (!confirm('Atenção: deseja substituir as informações da OT '+(o.numero||'')+' pelas da Ficha Manutenção Planeada '+rot+'?\n\n(descrição, tipo de trabalho, tarefas e programação)')) return;
+  if (!confirm('Atenção: deseja substituir as informações da OT '+(o.numero||'')+' pelas da Ficha Manutenção Planejada '+rot+'?\n\n(descrição, tipo de trabalho, tarefas e programação)')) return;
   try {
     await mntFetch('/manutencao/api/ots/'+o.id+'/aplicar-fmp', {method:'POST', body: JSON.stringify({plano_id: pid})});
     try { await mntFetch('/manutencao/api/ots/'+o.id+'/tarefas/da-fmp', {method:'POST', body: '{}'}); } catch(e){}
@@ -3989,7 +4012,7 @@ async function _almoxarifados(force){
   }
   return _almList;
 }
-let _almArvAberta = {};
+let _almArvAberta = {}, _almArvTodas = null;   // _almArvTodas: pedido pendente de abrir/fechar todas as famílias
 function almArvToggle(raiz){ _almArvAberta[raiz] = !_almArvAberta[raiz]; montarNavAlm(); }
 async function montarNavAlm(){
   await _almoxarifados();
@@ -4045,6 +4068,7 @@ async function montarNavAlm(){
   }
   html += '<div class="pn-grp">🗂 Norma de Materiais</div>'
     + item('', 'Todas as peças', totalN, 0);
+  if (_almArvTodas !== null) { raizes.forEach(r => { _almArvAberta[r] = _almArvTodas; }); _almArvTodas = null; }
   raizes.forEach(raiz => {
     const filhos = filhosDe(raiz);
     const aberto = !!_almArvAberta[raiz];
@@ -5279,7 +5303,7 @@ function projectosJanela(){
     nota:'Agrupador de OTs: reforma geral, campanha na frota, prepara\u00e7\u00e3o para obra. A OT escolhe o projecto na aba Origem. Custo = fechamento da OT (ou o apurado nos registos, se ainda aberta) \u2014 canceladas n\u00e3o somam.',
     campos:[{k:'codigo',label:'C\u00f3digo',req:true,w:'110px',ph:'PRJ-2026-01'}, {k:'nome',label:'Nome',req:true}, _F.user('responsavel_id'),
             {k:'data_inicio',label:'In\u00edcio',type:'date',w:'130px'}, {k:'data_fim',label:'Fim',type:'date',w:'130px'},
-            _F.status('status',['planeado','em curso','conclu\u00eddo','cancelado'],'planeado'), {k:'descricao',label:'Descri\u00e7\u00e3o',type:'textarea'}],
+            _F.status('status',['planejado','em curso','conclu\u00eddo','cancelado'],'planejado'), {k:'descricao',label:'Descri\u00e7\u00e3o',type:'textarea'}],
     // (27/09/2026) Consolidação: custo, OTs e dias por projecto (rota /projectos-resumo)
     carregar: async () => { _projResumo = await mntFetch('/manutencao/api/projectos-resumo'); },
     colunas:[{t:'C\u00f3digo',k:'codigo'},{t:'Nome',k:'nome'},{t:'Respons\u00e1vel',fmt:r=>_esc(r.responsavel_nome||'')},
