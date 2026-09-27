@@ -2908,8 +2908,6 @@ async def editar_plano(pid: str, request: Request, payload=Depends(verificar_man
             params[sets.index("custo_previsto=%s")] = _soma
         else:
             sets.append("custo_previsto=%s"); params.append(_soma)
-    if "ativo" in d:
-        sets.append("ativo=%s"); params.append(bool(d["ativo"]))
     if not sets:
         raise HTTPException(status_code=400, detail="Nada a alterar")
     params.append(pid)
