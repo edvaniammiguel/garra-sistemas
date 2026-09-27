@@ -615,7 +615,10 @@ let _otsCache = [], _mntEquipList = [], _filtroEquipId = null, _filtroTT = null;
 const _TT_CAT = { A:'Preventivo Sistemático', B:'Preventivo Condicionado', C:'Corretivo', M:'Melhoria' };
 function montarNavTipos(){
   const nav = document.getElementById('tt-nav'); if (!nav) return;
-  const cont = cod => _otsCache.filter(o =>
+  // (27/09/2026) A contagem da árvore respeita o filtro de estado do rodapé — o mesmo
+  // universo da lista (antes contava canceladas/encerradas ocultas e não batia).
+  const ativos = Array.from(document.querySelectorAll('#ots-filtros input:checked')).map(c => c.value);
+  const cont = cod => _otsCache.filter(o => ativos.includes(o.status)).filter(o =>
     cod === null ? true
     : cod === '_sem' ? !o.tipo_trabalho
     : cod.length === 1 ? (o.tipo_trabalho||'').charAt(0) === cod
@@ -642,7 +645,7 @@ function montarNavTipos(){
       }).join('')
     + item('_sem', '(sem tipo)');
 }
-let _ttFechados = new Set();
+let _ttFechados = new Set(), _ttUltimoFiltro = null;
 function ttAlternar(L){ _ttFechados.has(L) ? _ttFechados.delete(L) : _ttFechados.add(L); montarNavTipos(); }
 function ttMarcar(el){ document.querySelectorAll('#tt-nav .pn-item').forEach(x => x.classList.toggle('on', x === el)); }
 function filtrarTT(cod){ _filtroTT = cod; renderOTs(); montarNavTipos(); }
@@ -697,6 +700,7 @@ function renderOTs(){
   document.getElementById('ft-ots').innerHTML =
     '<b>'+tot+'</b> OTs · <b>'+cont('programada')+'</b> programadas · <b>'+cont('em_andamento')+'</b> em curso';
   document.querySelectorAll('#ots-filtros b[data-c]').forEach(b => { b.textContent = '(' + cont(b.dataset.c) + ')'; });
+  if (_ttUltimoFiltro !== ativos.join(',')) { _ttUltimoFiltro = ativos.join(','); montarNavTipos(); }
   // ordenação por coluna (clique no cabeçalho; padrão: Programada ↑, como no ManWinWin)
   const val = (o, k) => k === 'entidade' ? (o.equipamento_codigo || '')
     : k === 'data_prevista' ? (o.data_prevista || (o.horimetro_previsto != null ? '9' + String(o.horimetro_previsto).padStart(9, '0') : ''))
