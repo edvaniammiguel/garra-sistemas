@@ -2764,6 +2764,9 @@ async def _garantir_dominios():
             WHEN 'melhoria' THEN 'M1' WHEN 'reforma' THEN 'M1' ELSE 'C1' END
         WHERE tipo_trabalho IS NULL
            OR tipo_trabalho NOT IN (SELECT codigo FROM manutencao.tipos_manutencao)""", fetch="none")
+    # (27/09/2026) PT-BR: "planeado" → "planejado" no status dos projectos (valor gravado)
+    await _garantir_tabela("projectos")
+    await ajard_query("UPDATE manutencao.projectos SET status='planejado' WHERE status='planeado'", fetch="none")
     _DOM_OK = True
 
 _BIB_OK = False
@@ -3519,7 +3522,7 @@ async def ot_novo_ciclo(ot_id: str, payload=Depends(verificar_manutencao)):
 
 @router.get("/manutencao/api/planos/{pid}")
 async def obter_plano(pid: str, _auth=Depends(verificar_manutencao)):
-    """Plano completo (Planeado da OT herdado da FMP)."""
+    """Plano completo (Planejado da OT herdado da FMP)."""
     await _garantir_planos_cols()
     await _garantir_biblioteca()
     p = await ajard_query(
@@ -3625,7 +3628,7 @@ async def projecto_ots(projecto_id: str, _auth=Depends(verificar_manutencao)):
 
 @router.get("/manutencao/api/ots/{ot_id}/consumos")
 async def ot_consumos(ot_id: str, _auth=Depends(verificar_manutencao)):
-    """(28/08/2026) Fatia 1 do Planeado × Realizado — o REALIZADO da OT:
+    """(28/08/2026) Fatia 1 do Planejado × Realizado — o REALIZADO da OT:
     movimentações de estoque vinculadas (saída consome; entrada = devolução,
     abate). Custo da linha = snapshot gravado no movimento (fallback:
     custo médio atual do acervo)."""
