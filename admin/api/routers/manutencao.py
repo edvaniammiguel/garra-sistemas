@@ -3532,6 +3532,97 @@ async def obter_plano(pid: str, _auth=Depends(verificar_manutencao)):
     return dict(p)
 
 
+# ════════════════════════════════════════════════════════════════════════
+# (27/09/2026) PROJECTOS — consolidação: custo e prazo das OTs ligadas
+# Custo da OT = custo do fechamento quando existe; senão o apurado nos registos
+# (peças baixadas + mão de obra + outros), a mesma regra da aba Custos da OT.
+# ════════════════════════════════════════════════════════════════════════
+_SQL_OTS_PROJECTO = """
+    SELECT o.id, o.numero, o.descricao, o.status, o.tipo_trabalho, o.projecto_id,
+           o.data_abertura, o.data_conclusao, o.custo_total,
+           e.codigo AS equipamento_codigo, fo.nome AS fornecedor_nome,
+           COALESCE((SELECT SUM((CASE WHEN m.tipo = 'entrada' THEN -1 ELSE 1 END) * m.quantidade
+                                * COALESCE(m.custo_unitario, p.custo_medio, 0))
+                       FROM manutencao.movimentacoes m JOIN manutencao.pecas p ON p.id = m.peca_id
+                      WHERE m.ot_id = o.id AND m.tipo IN ('saida','entrada','aplicacao_direta')), 0) AS pecas,
+           COALESCE((SELECT SUM(x.horas * COALESCE(x.custo_hora, 0)) FROM manutencao.ot_mao_obra x
+                      WHERE x.ot_id = o.id AND x.ativo = true), 0) AS mao_obra,
+           COALESCE((SELECT SUM(x.valor) FROM manutencao.ot_outros x
+                      WHERE x.ot_id = o.id AND x.ativo = true), 0) AS outros
+      FROM manutencao.ot o
+      LEFT JOIN operacional.equipamentos e ON e.id = o.equipamento_id
+      LEFT JOIN public.fornecedores fo ON fo.id = o.fornecedor_id
+     WHERE o.ativo = true AND o.projecto_id IS NOT NULL {filtro}
+     ORDER BY o.data_abertura"""
+
+
+async def _ots_de_projectos(projecto_id: str = None):
+    await _garantir_mao_obra()
+    await _garantir_tabela("ot-outros")
+    await ajard_query("ALTER TABLE manutencao.movimentacoes ADD COLUMN IF NOT EXISTS custo_unitario NUMERIC",
+                      fetch="none")
+    sql = _SQL_OTS_PROJECTO.format(filtro="AND o.projecto_id = %s" if projecto_id else "")
+    rows = (await ajard_query(sql, (projecto_id,)) if projecto_id else await ajard_query(sql)) or []
+    out = []
+    for r in rows:
+        apurado = round(float(r["pecas"] or 0) + float(r["mao_obra"] or 0) + float(r["outros"] or 0), 2)
+        fech = float(r["custo_total"]) if r["custo_total"] is not None else None
+        out.append({
+            "id": str(r["id"]), "projecto_id": str(r["projecto_id"]), "numero": r["numero"],
+            "descricao": r["descricao"], "status": r["status"], "tipo_trabalho": r["tipo_trabalho"],
+            "equipamento_codigo": r["equipamento_codigo"], "fornecedor_nome": r["fornecedor_nome"],
+            "data_abertura": r["data_abertura"].isoformat() if r["data_abertura"] else None,
+            "data_conclusao": r["data_conclusao"].isoformat() if r["data_conclusao"] else None,
+            "pecas": round(float(r["pecas"] or 0), 2), "mao_obra": round(float(r["mao_obra"] or 0), 2),
+            "outros": round(float(r["outros"] or 0), 2), "apurado": apurado, "fechamento": fech,
+            "custo": fech if fech is not None else apurado})
+    return out
+
+
+def _resumo_projecto(pr, ots):
+    """Totais de um projecto: OTs, concluídas, custo e dias (início→fim, ou até hoje)."""
+    from datetime import date as _date
+    datas_ini = [o["data_abertura"][:10] for o in ots if o["data_abertura"]]
+    datas_fim = [o["data_conclusao"][:10] for o in ots if o["data_conclusao"]]
+    ini = pr.get("data_inicio") or (min(datas_ini) if datas_ini else None)
+    todas_fechadas = ots and all(o["status"] in ("concluida", "cancelada") for o in ots)
+    fim = pr.get("data_fim") or (max(datas_fim) if todas_fechadas and datas_fim else None)
+    d0 = _date.fromisoformat(str(ini)[:10]) if ini else None
+    d1 = _date.fromisoformat(str(fim)[:10]) if fim else _date.today()
+    return {"n_ots": len(ots), "n_concluidas": sum(1 for o in ots if o["status"] == "concluida"),
+            "n_canceladas": sum(1 for o in ots if o["status"] == "cancelada"),
+            "custo": round(sum(o["custo"] for o in ots if o["status"] != "cancelada"), 2),
+            "custo_fechado": round(sum(o["custo"] for o in ots if o["status"] == "concluida"), 2),
+            "externo": round(sum(o["custo"] for o in ots if o["fornecedor_nome"] and o["status"] != "cancelada"), 2),
+            "inicio": str(ini)[:10] if ini else None, "fim": str(fim)[:10] if fim else None,
+            "em_aberto": not fim, "dias": (d1 - d0).days + 1 if d0 else None}
+
+
+@router.get("/manutencao/api/projectos-resumo")
+async def projectos_resumo(_auth=Depends(verificar_manutencao)):
+    """Lista de Projectos: custo, OTs e dias de cada um (colunas da tela)."""
+    await _garantir_tabela("projectos")
+    prs = await ajard_query(
+        "SELECT id, data_inicio, data_fim FROM manutencao.projectos WHERE ativo = true") or []
+    ots = await _ots_de_projectos()
+    return {str(pr["id"]): _resumo_projecto(
+        {"data_inicio": pr["data_inicio"], "data_fim": pr["data_fim"]},
+        [o for o in ots if o["projecto_id"] == str(pr["id"])]) for pr in prs}
+
+
+@router.get("/manutencao/api/projectos/{projecto_id}/ots")
+async def projecto_ots(projecto_id: str, _auth=Depends(verificar_manutencao)):
+    """Detalhe do Projecto: as OTs ligadas com o custo de cada uma + totais."""
+    await _garantir_tabela("projectos")
+    pr = await ajard_query("SELECT * FROM manutencao.projectos WHERE id = %s", (projecto_id,), fetch="one")
+    if not pr:
+        raise HTTPException(status_code=404, detail="Projecto não encontrado")
+    ots = await _ots_de_projectos(projecto_id)
+    return {"projecto": {"id": str(pr["id"]), "codigo": pr["codigo"], "nome": pr["nome"], "status": pr["status"]},
+            "ots": ots,
+            "resumo": _resumo_projecto({"data_inicio": pr["data_inicio"], "data_fim": pr["data_fim"]}, ots)}
+
+
 @router.get("/manutencao/api/ots/{ot_id}/consumos")
 async def ot_consumos(ot_id: str, _auth=Depends(verificar_manutencao)):
     """(28/08/2026) Fatia 1 do Planeado × Realizado — o REALIZADO da OT:
