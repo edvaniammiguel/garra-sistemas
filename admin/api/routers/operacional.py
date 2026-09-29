@@ -1312,8 +1312,11 @@ async def op_fechar_os(os_id: str, request: Request, payload=Depends(verificar_g
     if os_row.get("status") in ("concluida_completa","concluida_sem_erp","cancelada"):
         raise HTTPException(status_code=400, detail="OS já está fechada")
 
-    # (24/09/2026) Dia da OS em que a máquina não rodou precisa de motivo —
-    # BLOQUEIA o fechamento (paradas: Controle Mensal › clique no dia).
+    # (24/09→29/09/2026) Dia da OS em que a máquina não rodou e ficou sem motivo:
+    # o fechamento NÃO bloqueia — lança sozinho o motivo "Não rodou" (SEM_MOTIVO)
+    # (um período por sequência de dias, ligado à OS, origem auto_fechamento) e devolve
+    # avisos; quem souber a causa troca depois no Controle Mensal (✏️).
+    _avisos = []
     _dt = lambda v: v.date() if isinstance(v, datetime) else v
     _ini = _dt(os_row.get("data_inicio") or os_row.get("criado_em"))
     # até o fim real da OS; OS sem fim real → até ontem (o dia de hoje ainda pode receber parte)
@@ -1332,12 +1335,19 @@ async def op_fechar_os(os_id: str, request: Request, payload=Depends(verificar_g
         if _pend:
             _cods = {str(r["id"]): r["codigo"] for r in await ajard_query(
                 "SELECT id, codigo FROM operacional.equipamentos WHERE id = ANY(%s::uuid[])", (list(_pend),)) or []}
-            _lista = "; ".join(
-                f"{_cods.get(e, 'máquina')}: " + ", ".join(date.fromisoformat(x).strftime("%d/%m") for x in sorted(ds))
-                for e, ds in _pend.items())
-            raise HTTPException(status_code=400, detail=(
-                f"Informe o motivo dos dias em que a máquina não rodou antes de fechar a OS — {_lista}. "
-                "Controle Mensal › visão por máquina › clique no dia."))
+            _uid = (await ajard_query("SELECT id FROM public.usuarios_garra WHERE login=%s",
+                                      (payload.get("sub", ""),), fetch="one") or {}).get("id")
+            for _eq, _ds in _pend.items():
+                _dias = sorted(date.fromisoformat(x) for x in _ds)
+                for _p_ini, _p_fim in _periodos_consecutivos(_dias):
+                    await ajard_query(
+                        """INSERT INTO operacional.paradas
+                               (equipamento_id, os_id, inicio, fim, motivo_codigo, origem, usuario_id)
+                           VALUES (%s,%s,%s,%s,'SEM_MOTIVO','auto_fechamento',%s)""",
+                        (_eq, os_id, _p_ini, _p_fim, _uid), fetch="none")
+                _avisos.append(f"{_cods.get(_eq, 'máquina')}: {len(_dias)} dia(s) ("
+                               + ", ".join(d.strftime("%d/%m") for d in _dias)
+                               + ") lançado(s) como 'Não rodou'")
 
     login = payload.get("sub","")
     user  = await ajard_query(
@@ -1465,7 +1475,10 @@ async def op_fechar_os(os_id: str, request: Request, payload=Depends(verificar_g
         (novo_status, agora.date(), agora, os_id), fetch="none"
     )
 
-    return await op_detalhe_os(os_id, _auth=payload)
+    _det = await op_detalhe_os(os_id, _auth=payload)
+    if _avisos and isinstance(_det, dict):
+        _det["avisos"] = _avisos
+    return _det
 
 @router.post("/operacional/api/os/{os_id}/partes/lote")
 async def op_lancar_diarias_lote(os_id: str, request: Request,
@@ -1944,6 +1957,7 @@ _MOTIVOS_PARADA = [
     ("CHUVA", "Chuva", "CHU", "neutro", 30),
     ("SOLO", "Solo encharcado", "SOL", "neutro", 31),
     ("FERIADO", "Feriado", "FER", "neutro", 32),
+    ("SEM_MOTIVO", "Não rodou", "N/R", "neutro", 98),
     ("OUTRO", "Outro (descrever)", "OUT", "neutro", 99),
 ]
 
@@ -1976,6 +1990,8 @@ async def _garantir_paradas():
         await ajard_query(
             """INSERT INTO operacional.paradas_motivos (codigo, nome, sigla, responsavel, ordem)
                VALUES (%s,%s,%s,%s,%s) ON CONFLICT (codigo) DO NOTHING""", (c, n, s, r, o), fetch="none")
+    await ajard_query("UPDATE operacional.paradas_motivos SET nome='Não rodou', sigla='N/R' WHERE codigo='SEM_MOTIVO'",
+                      fetch="none")
     _PARADAS_OK = True
 
 
@@ -2095,6 +2111,49 @@ async def _parada_validar(d):
     return motivo, obs, ini, fim
 
 
+def _periodos_consecutivos(dias):
+    """[date...] ordenadas → [(ini, fim)] por sequência de dias seguidos."""
+    out = []
+    for d in dias:
+        if out and d == out[-1][1] + timedelta(days=1):
+            out[-1] = (out[-1][0], d)
+        else:
+            out.append((d, d))
+    return out
+
+
+async def _parada_substituir(eq_id, ini, fim, ignorar_id=None):
+    """Lançar por cima: as paradas que cruzam o novo período são aparadas — o pedaço fora
+    do novo período continua valendo; o que fica dentro sai (o novo lançamento prevalece)."""
+    fim_eff = fim or date(9999, 12, 31)
+    rows = await ajard_query(
+        """SELECT id, inicio, fim, os_id, motivo_codigo, observacao, origem, usuario_id
+           FROM operacional.paradas
+           WHERE ativo = true AND equipamento_id = %s AND id <> COALESCE(%s::uuid, gen_random_uuid())
+             AND inicio <= %s AND COALESCE(fim, 'infinity'::date) >= %s""",
+        (eq_id, ignorar_id, fim_eff, ini)) or []
+    for r in rows:
+        antes = r["inicio"] < ini
+        depois = r["fim"] is None or r["fim"] > fim_eff
+        if antes and depois:      # cortado em dois: fica o pedaço antes e nasce o pedaço depois
+            await ajard_query("UPDATE operacional.paradas SET fim=%s WHERE id=%s",
+                              (ini - timedelta(days=1), r["id"]), fetch="none")
+            await ajard_query(
+                """INSERT INTO operacional.paradas
+                       (equipamento_id, os_id, inicio, fim, motivo_codigo, observacao, origem, usuario_id)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s)""",
+                (eq_id, r["os_id"], fim_eff + timedelta(days=1), r["fim"], r["motivo_codigo"],
+                 r["observacao"], r["origem"], r["usuario_id"]), fetch="none")
+        elif antes:
+            await ajard_query("UPDATE operacional.paradas SET fim=%s WHERE id=%s",
+                              (ini - timedelta(days=1), r["id"]), fetch="none")
+        elif depois:
+            await ajard_query("UPDATE operacional.paradas SET inicio=%s WHERE id=%s",
+                              (fim_eff + timedelta(days=1), r["id"]), fetch="none")
+        else:
+            await ajard_query("UPDATE operacional.paradas SET ativo=false WHERE id=%s", (r["id"],), fetch="none")
+
+
 async def _parada_conflito(eq_id, ini, fim, ignorar_id=None):
     c = await ajard_query(
         """SELECT p.inicio, p.fim, m.nome FROM operacional.paradas p
@@ -2107,7 +2166,7 @@ async def _parada_conflito(eq_id, ini, fim, ignorar_id=None):
         per = c["inicio"].strftime("%d/%m") + " a " + (c["fim"].strftime("%d/%m") if c["fim"] else "em aberto")
         cod = await ajard_query("SELECT codigo FROM operacional.equipamentos WHERE id=%s", (eq_id,), fetch="one")
         raise HTTPException(status_code=409, detail=(
-            f"{(cod or {}).get('codigo') or 'Máquina'} já tem parada no período ({c['nome']}, {per}) — edite ou exclua a existente"))
+            f"[CONFLITO] {(cod or {}).get('codigo') or 'Máquina'} já tem parada no período ({c['nome']}, {per})"))
 
 
 @router.get("/operacional/api/paradas-motivos")
@@ -2128,7 +2187,10 @@ async def op_parada_criar(request: Request, payload=Depends(verificar_gestor)):
         raise HTTPException(status_code=400, detail="Informe a máquina")
     motivo, obs, ini, fim = await _parada_validar(d)
     for eq in eqs:
-        await _parada_conflito(eq, ini, fim)
+        if d.get("substituir"):
+            await _parada_substituir(eq, ini, fim)     # lançar por cima (confirmado na tela)
+        else:
+            await _parada_conflito(eq, ini, fim)
     u = await ajard_query("SELECT id FROM public.usuarios_garra WHERE login=%s", (payload.get("sub", ""),), fetch="one")
     for eq in eqs:
         await ajard_query(
@@ -2148,7 +2210,10 @@ async def op_parada_editar(parada_id: str, request: Request, _auth=Depends(verif
          "inicio": atual["inicio"].isoformat(), "fim": atual["fim"].isoformat() if atual["fim"] else None}
     d.update(await request.json())
     motivo, obs, ini, fim = await _parada_validar(d)
-    await _parada_conflito(str(atual["equipamento_id"]), ini, fim, parada_id)
+    if d.get("substituir"):
+        await _parada_substituir(str(atual["equipamento_id"]), ini, fim, parada_id)
+    else:
+        await _parada_conflito(str(atual["equipamento_id"]), ini, fim, parada_id)
     await ajard_query(
         "UPDATE operacional.paradas SET motivo_codigo=%s, observacao=%s, inicio=%s, fim=%s WHERE id=%s",
         (motivo, obs, ini, fim, parada_id), fetch="none")
