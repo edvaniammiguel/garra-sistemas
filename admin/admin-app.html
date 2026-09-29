@@ -4007,8 +4007,11 @@ async function confirmarFechamento() {
       `Após fechar, as partes ficam congeladas (não editáveis).`;
     if (!confirm(msg)) return;
 
-    await apiFetch('/operacional/api/os/'+_osAtual.id+'/fechar', { method:'POST' });
+    const _r = await apiFetch('/operacional/api/os/'+_osAtual.id+'/fechar', { method:'POST' });
     toast('OS fechada com sucesso!','success');
+    // (29/09/2026) dias sem motivo foram lançados como "Não rodou" — só avisa
+    if (_r && _r.avisos && _r.avisos.length)
+      setTimeout(() => alert('OS fechada.\n\n' + _r.avisos.join('\n') + '\n\nSe souber a causa, ajuste no Controle Mensal › visão por máquina › ✏️ no dia.'), 300);
     await carregarOS();
     navTo('os', document.querySelector('.sb-item[onclick*="os"]'));
   } catch(e) { toast('Erro ao fechar: '+e.message,'error'); }
@@ -5717,12 +5720,17 @@ async function cmParadaSalvar() {
                   observacao: g('mp-obs').value.trim() || null };
   if (!corpo.motivo_codigo) { toast('Selecione o motivo', 'error'); return; }
   if (!corpo.inicio) { toast('Informe a data inicial', 'error'); return; }
+  if (!_mpEdit.id) corpo.equipamento_ids = [_mpEdit.eqId, ...[...document.querySelectorAll('.mp-eq:checked')].map(c => c.value)];
+  const enviar = () => _mpEdit.id
+    ? apiFetch('/operacional/api/paradas/' + _mpEdit.id, { method: 'PATCH', body: JSON.stringify(corpo) })
+    : apiFetch('/operacional/api/paradas', { method: 'POST', body: JSON.stringify(corpo) });
   try {
-    if (_mpEdit.id) {
-      await apiFetch('/operacional/api/paradas/' + _mpEdit.id, { method: 'PATCH', body: JSON.stringify(corpo) });
-    } else {
-      corpo.equipamento_ids = [_mpEdit.eqId, ...[...document.querySelectorAll('.mp-eq:checked')].map(c => c.value)];
-      await apiFetch('/operacional/api/paradas', { method: 'POST', body: JSON.stringify(corpo) });
+    try { await enviar(); }
+    catch (e) {
+      // (29/09/2026) lançar por cima: período cruza outro → confirma e o novo prevalece
+      if (!String(e.message).startsWith('[CONFLITO]')) throw e;
+      if (!confirm(e.message.replace('[CONFLITO] ', '') + '.\n\nSubstituir pelo novo lançamento nesses dias? (o que estiver fora do período continua valendo)')) return;
+      corpo.substituir = true; await enviar();
     }
     g('modal-parada').classList.add('hidden');
     toast('✅ Motivo registrado', 'success');
