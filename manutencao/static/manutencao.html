@@ -89,7 +89,8 @@ tr.sel td{background:#DBEAFE!important;color:#1A2A5E}
         border-bottom:1px solid #E2E8F0;display:flex;align-items:center;gap:6px;
         user-select:none;background:#F8FAFC}
 .pn-grp:hover{background:#F0F4FF}
-.pn-arr{display:inline-block;transition:.15s;font-size:9px;color:#64748B}
+.pn-arr{display:inline-block;transition:.15s;font-size:9px;color:#64748B;width:14px;padding:2px 0;text-align:center;cursor:pointer}
+.pn-arr:hover{color:#E8820C}
 .pn-body{display:none}
 .pn-body.open{display:block}
 .pn-item{padding:6px 12px 6px 26px;font-size:11px;cursor:pointer;
@@ -213,6 +214,7 @@ button:disabled, select:disabled, input:disabled, [aria-disabled=true] { cursor:
     <div class="param-nav" style="width:250px;display:flex;flex-direction:column">
       <div style="padding:6px 8px;border-bottom:1px solid #E2E8F0;display:flex;gap:4px">
         <input id="arv-busca" placeholder="🔍 Procurar…" style="flex:1;font-size:11px;padding:4px 7px;border:1px solid #CBD5E1;border-radius:4px" oninput="renderArvore()">
+        <button class="btn" title="Novo sistema dentro do nó marcado" onclick="sisNovo()">➕</button>
         <button class="btn" title="Atualizar" onclick="carregarSemaforosReais()">↻</button>
       </div>
       <div id="arv-corpo" style="flex:1;overflow:auto"></div>
@@ -221,7 +223,7 @@ button:disabled, select:disabled, input:disabled, [aria-disabled=true] { cursor:
       <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;color:#94A3B8;gap:8px">
         <div style="font-size:40px">🚦</div>
         <div style="font-size:13px;font-weight:700;color:#64748B">Escolha um grupo na organização</div>
-        <div style="font-size:11px">clique = marca / expande o ramo · <b>duplo clique</b> = carrega o grupo aqui no centro · botão direito = carregar, expandir ou fechar tudo</div>
+        <div style="font-size:11px">clique = marca e abre o ramo · setinha ▶ = abre/fecha · <b>duplo clique</b> = carrega o grupo aqui no centro · botão direito = carregar, expandir ou fechar tudo</div>
       </div>
     </div>
   </div>
@@ -332,6 +334,37 @@ button:disabled, select:disabled, input:disabled, [aria-disabled=true] { cursor:
 <!-- ══ FICHA DO EQUIPAMENTO (dados reais) ══ -->
 <div class="overlay" id="eq-ficha" onclick="if(event.target===this)this.classList.remove('show')">
   <div class="modal" id="eq-ficha-corpo"></div>
+</div>
+
+<!-- ══ NOVO SISTEMA (nó da Organização — padrão ManWinWin "Organização Funcional › Novo Sistema") ══ -->
+<div class="overlay" id="sis-modal" style="z-index:9999" onclick="if(event.target===this)this.classList.remove('show')">
+  <div class="modal" style="max-width:460px;width:460px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+      <b id="sis-titulo" style="font-size:14px;color:#1A2A5E">Novo Sistema</b>
+      <span style="cursor:pointer;font-size:18px" onclick="document.getElementById('sis-modal').classList.remove('show')">✕</span>
+    </div>
+    <div style="background:#F8FAFC;border:1px solid #E2E8F0;border-radius:6px;padding:10px 12px;font-size:12px">
+      <div style="color:#475569;margin-bottom:2px">Nível Superior:</div>
+      <div id="sis-pai" style="border:1px solid #CBD5E1;background:#fff;padding:4px 8px;font-weight:700;color:#1E3A8A;margin-bottom:8px">—</div>
+      <div style="color:#475569;margin-bottom:2px">Código Completo:</div>
+      <div id="sis-completo" class="mono" style="border:1px solid #CBD5E1;background:#fff;padding:4px 8px;font-weight:700;color:#1E3A8A;margin-bottom:8px">—</div>
+      <div style="display:grid;grid-template-columns:140px 1fr;gap:8px">
+        <div><div style="color:#B91C1C;font-weight:700;margin-bottom:2px">Código:</div>
+          <input id="sis-cod" class="mono" maxlength="6" style="width:100%;font-size:13px;padding:5px 8px;border:1px solid #CBD5E1;border-radius:4px" placeholder="06" oninput="sisPreview()" onkeydown="if(event.key==='Enter')sisGravar()"></div>
+        <div><div style="color:#B91C1C;font-weight:700;margin-bottom:2px">Descrição:</div>
+          <input id="sis-nome" style="width:100%;font-size:13px;padding:5px 8px;border:1px solid #CBD5E1;border-radius:4px" placeholder="Ex.: Implementos" onkeydown="if(event.key==='Enter')sisGravar()"></div>
+      </div>
+      <div style="display:flex;align-items:center;gap:14px;margin-top:10px">
+        <span id="sis-disp" style="display:inline-block;min-width:140px;text-align:center;padding:4px 10px;font-weight:800;font-size:11px;color:#fff;background:#15803D;border-radius:3px">DISPONÍVEL</span>
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="sis-inativo"> Inativo</label>
+      </div>
+      <div id="sis-erro" style="color:#B91C1C;font-size:11px;min-height:14px;margin-top:6px"></div>
+    </div>
+    <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px">
+      <button class="btn primary" onclick="sisGravar()">OK</button>
+      <button class="btn" onclick="document.getElementById('sis-modal').classList.remove('show')">Cancelar</button>
+    </div>
+  </div>
 </div>
 
 <!-- ══ PICKER (janela de seleção com busca — padrão ManWinWin) ══ -->
@@ -470,10 +503,13 @@ async function renderArvore(){
     const eqs = _eqsDoNo(s.codigo);
     const verm = eqs.filter(e=>e.status==='vermelho').length;
     const aberto = q ? true : _arvAbertos.has(s.codigo);
+    const temFilhos = _arvSistemas.some(x => x.codigo.startsWith(s.codigo + '.'));
     const ativo = _arvNoAtivo === s.codigo, sel = _arvSel === s.codigo && !ativo;
     html += '<div class="pn-grp'+(ativo?'" style="background:#1A2A5E;color:#fff;padding-left:'+(8+nivel(s.codigo)*12)+'px"':'" style="'+(sel?'background:#DBEAFE;':'')+'padding-left:'+(8+nivel(s.codigo)*12)+'px"')+' data-cod="'+_esc(s.codigo)+'" '
-      + 'onclick="arvNoMarcar(this.dataset.cod)" ondblclick="arvCarregar(this.dataset.cod)" oncontextmenu="arvCtxGrupo(event,this.dataset.cod)" title="Duplo clique carrega no centro">'
-      + '<span class="pn-arr" style="'+(aberto?'transform:rotate(90deg)':'')+(ativo?';color:#E8820C':'')+'">▶</span> '
+      + 'onclick="arvNoMarcar(this.dataset.cod)" ondblclick="arvCarregar(this.dataset.cod)" oncontextmenu="arvCtxGrupo(event,this.dataset.cod)" title="Clique = marca e abre · setinha = abre/fecha · duplo clique carrega no centro">'
+      + (temFilhos
+          ? '<span class="pn-arr" data-cod="'+_esc(s.codigo)+'" onclick="event.stopPropagation();arvAlternar(this.dataset.cod)" ondblclick="event.stopPropagation()" title="Expandir / recolher" style="'+(aberto?'transform:rotate(90deg)':'')+(ativo?';color:#E8820C':'')+'">▶</span> '
+          : '<span class="pn-arr" style="visibility:hidden">▶</span> ')
       + '<span class="mono" style="font-size:9px;color:'+(ativo?'#93C5FD':'#94A3B8')+'">'+_esc(s.codigo)+'</span> '+_esc(s.nome)
       + ' <span class="muted"'+(ativo?' style="color:#CBD5E1"':'')+'>('+eqs.length+(verm?' · '+verm+'🔴':'')+')</span></div>';
   });
@@ -483,11 +519,17 @@ async function renderArvore(){
   corpo.innerHTML = html;
   renderCentroEquip();
 }
-// (27/09/2026) Padrão ManWinWin: clique marca o nó e abre/fecha o ramo — NÃO carrega;
-// duplo clique carrega só aquele grupo no centro; botão direito: carregar / expandir / fechar tudo
+// (30/09/2026) Padrão ManWinWin, sem "efeito sanfona": o clique marca o nó e só ABRE o ramo
+// (nunca fecha — assim o 2º clique do duplo clique não recolhe o que o 1º abriu); quem fecha é
+// a setinha ▶; duplo clique carrega o grupo no centro e garante o ramo aberto; botão direito:
+// carregar / expandir / fechar tudo (só no centro).
 function arvNoMarcar(cod){
   _arvSel = cod;
-  if (cod !== '_todos' && cod !== '_sem') { if (_arvAbertos.has(cod)) _arvAbertos.delete(cod); else _arvAbertos.add(cod); }
+  if (cod !== '_todos' && cod !== '_sem') _arvAbertos.add(cod);
+  renderArvore();
+}
+function arvAlternar(cod){
+  if (_arvAbertos.has(cod)) _arvAbertos.delete(cod); else _arvAbertos.add(cod);
   renderArvore();
 }
 function frotaLimpar(){
@@ -495,7 +537,7 @@ function frotaLimpar(){
   const centro = document.getElementById('frota-centro');
   if (centro) centro.innerHTML = '<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;color:#94A3B8;gap:8px">'
     + '<div style="font-size:40px">🚦</div><div style="font-size:13px;font-weight:700;color:#64748B">Escolha um grupo na organização</div>'
-    + '<div style="font-size:11px">clique = marca / expande o ramo · <b>duplo clique</b> = carrega o grupo aqui no centro · botão direito = carregar, expandir ou fechar tudo</div></div>';
+    + '<div style="font-size:11px">clique = marca e abre o ramo · setinha ▶ = abre/fecha · <b>duplo clique</b> = carrega o grupo aqui no centro · botão direito = carregar, expandir ou fechar tudo</div></div>';
 }
 function ftToggle(id){
   id = String(id);
@@ -504,6 +546,7 @@ function ftToggle(id){
 }
 function arvCarregar(cod){
   _arvNoAtivo = cod; _arvSel = cod;
+  if (cod !== '_todos' && cod !== '_sem') _arvAbertos.add(cod);
   renderArvore();
 }
 function renderCentroEquip(){
@@ -560,7 +603,7 @@ function renderCentroEquip(){
       const aberto = _ftAbertos.has(String(e.id));
       const chev = (e.n_filhos > 0)
         ? '<span style="cursor:pointer;font-weight:800;color:#1A2A5E" data-i="'+e.id+'" '
-          + 'onclick="event.stopPropagation();ftToggle(this.dataset.i)">'+(aberto?'▾':'▸')+'</span> '
+          + 'onclick="event.stopPropagation();ftToggle(this.dataset.i)" ondblclick="event.stopPropagation()">'+(aberto?'▾':'▸')+'</span> '
         : (e.categoria === 'componente' ? '🛞 ' : '');
       let linha = tr0(e)
         + '<td style="text-align:center"><span class="dot '+dotOf(e.status)+'"></span></td>'
@@ -597,7 +640,9 @@ function arvCtxGrupo(ev, cod){
   m.innerHTML = '<div style="padding:6px 14px;font-weight:800;color:#1A2A5E;border-bottom:1px solid #E2E8F0">'+_esc(cod==='_todos'?'Organização':cod)+'</div>'
     + it('📂','Carregar dados', 'arvCarregarCtx()')
     + it('⬇️','Expandir tudo', 'arvExpandirCtx()')
-    + it('⬆️','Fechar tudo', "expandirTudo('frota',false)");
+    + it('⬆️','Fechar tudo', 'arvFecharCtx()')
+    + (cod === '_sem' ? '' : '<div style="border-top:1px solid #E2E8F0;margin:2px 0"></div>' + it('➕','Novo sistema aqui dentro', 'sisNovo(_ctxMenuEl().dataset.cod)'))
+    + (cod === '_todos' || cod === '_sem' ? '' : it('✏️','Renomear', 'sisRenomear(_ctxMenuEl().dataset.cod)') + it('🚫','Inativar', 'sisInativar(_ctxMenuEl().dataset.cod)'));
   m.style.left = Math.min(ev.clientX, window.innerWidth-230)+'px';
   m.style.top = Math.min(ev.clientY, window.innerHeight-160)+'px';
   m.style.display = 'block';
@@ -607,6 +652,105 @@ function arvCarregarCtx(){
   if (!cod) return;
   _ctxMenuEl().style.display = 'none';
   arvCarregar(cod);
+}
+// (30/09/2026) Expandir / Fechar tudo no botão direito da árvore valem para a ESTRUTURA onde se
+// clicou: em "Máquinas" abre/fecha só o que está dentro de Máquinas; na Organização, tudo.
+function arvFecharCtx(){
+  const cod = _ctxMenuEl().dataset.cod;
+  if (!cod) return;
+  _ctxMenuEl().style.display = 'none';
+  if (cod === '_todos') { expandirTudo('frota', false); return; }
+  (_arvSistemas||[]).forEach(s => { if (s.codigo === cod || s.codigo.startsWith(cod+'.')) _arvAbertos.delete(s.codigo); });
+  _eqsDoNo(cod).forEach(e => _ftAbertos.delete(String(e.id)));
+  _arvSel = cod;
+  renderArvore();
+}
+// ── (30/09/2026) Manutenção da ORGANIZAÇÃO direto na árvore (ManWinWin "Organização Funcional"):
+// Novo Sistema nasce DENTRO do nó marcado (código = pai + "." + código curto); renomear e inativar
+// pelo botão direito. Persistência: manutencao.sistemas (param/sistemas), hierarquia pela pontuação.
+let _sisPai = null;
+function sisNovo(cod){
+  _ctxMenuEl().style.display = 'none';
+  cod = cod || _arvSel;
+  if (cod === '_sem') { mostrarToast('Marque um grupo da Organização', 'warn'); return; }
+  _sisPai = (!cod || cod === '_todos') ? null : cod;
+  const pai = _sisPai ? (_arvSistemas||[]).find(s => s.codigo === _sisPai) : null;
+  document.getElementById('sis-pai').textContent = _sisPai ? _sisPai + ' - ' + ((pai && pai.nome) || '') : 'Organização (raiz)';
+  document.getElementById('sis-cod').value = sisProximoCodigo();
+  document.getElementById('sis-nome').value = '';
+  document.getElementById('sis-inativo').checked = false;
+  document.getElementById('sis-erro').textContent = '';
+  _sisTodos = _arvSistemas || [];
+  sisPreview();
+  document.getElementById('sis-modal').classList.add('show');
+  mntFetch('/manutencao/api/param/sistemas').then(t => { _sisTodos = t || []; sisPreview(); }).catch(() => {});
+  setTimeout(() => { const el = document.getElementById('sis-nome'); el && el.focus(); }, 50);
+}
+function sisProximoCodigo(){
+  // sugere o próximo número livre no nível (01.00.01 … 01.00.05 → 06); raiz: 2 dígitos
+  const pref = _sisPai ? _sisPai + '.' : '';
+  const nivel = _sisPai ? _sisPai.split('.').length : 0;
+  const usados = (_arvSistemas||[]).map(s => s.codigo).filter(c => c.startsWith(pref) && c.split('.').length === nivel + 1)
+    .map(c => parseInt(c.slice(pref.length), 10)).filter(n => !isNaN(n));
+  const n = usados.length ? Math.max(...usados) + 1 : 1;
+  return String(n).padStart(2, '0');
+}
+let _sisTodos = [];
+function sisPreview(){
+  // (30/09/2026) Conforme digita o código, o Código Completo e o selo DISPONÍVEL / JÁ EXISTE acompanham
+  const c = (document.getElementById('sis-cod').value || '').trim();
+  const completo = (_sisPai ? _sisPai + '.' : '') + (c || '__');
+  document.getElementById('sis-completo').textContent = completo;
+  const disp = document.getElementById('sis-disp');
+  const existe = c && _sisTodos.some(s => s.codigo === completo);
+  const ok = /^[0-9A-Za-z]{1,6}$/.test(c);
+  disp.textContent = !c ? 'INFORME O CÓDIGO' : !ok ? 'CÓDIGO INVÁLIDO' : existe ? 'JÁ EXISTE' : 'DISPONÍVEL';
+  disp.style.background = !c ? '#94A3B8' : (!ok || existe) ? '#B91C1C' : '#15803D';
+}
+async function sisGravar(){
+  const erro = document.getElementById('sis-erro');
+  const c = (document.getElementById('sis-cod').value || '').trim();
+  const nome = (document.getElementById('sis-nome').value || '').trim();
+  const inativo = document.getElementById('sis-inativo').checked;
+  if (!/^[0-9A-Za-z]{1,6}$/.test(c)) { erro.textContent = 'Código: só letras/números, sem ponto (o ponto é a hierarquia).'; return; }
+  if (!nome) { erro.textContent = 'Informe a descrição.'; return; }
+  const completo = (_sisPai ? _sisPai + '.' : '') + c;
+  let todos = [];
+  try { todos = await mntFetch('/manutencao/api/param/sistemas'); } catch(e) { todos = _sisTodos; }
+  if (todos.some(s => s.codigo === completo)) { erro.textContent = 'Já existe o sistema ' + completo + ' (mesmo que inativo). Use outro código.'; return; }
+  try {
+    await mntFetch('/manutencao/api/param/sistemas', { method:'POST', body: JSON.stringify({ codigo: completo, nome }) });
+    if (inativo) await mntFetch('/manutencao/api/param/sistemas/' + encodeURIComponent(completo), { method:'PATCH', body: JSON.stringify({ ativo: false }) });
+  } catch(e) { erro.textContent = '❌ ' + e.message; return; }
+  document.getElementById('sis-modal').classList.remove('show');
+  mostrarToast('✅ Sistema ' + completo + ' - ' + nome + (inativo ? ' (inativo)' : ''), 'ok');
+  _arvSistemas = null; _mwDom = null;
+  if (_sisPai) _arvAbertos.add(_sisPai);
+  _arvSel = inativo ? _sisPai : completo;
+  renderArvore();
+}
+async function sisRenomear(cod){
+  _ctxMenuEl().style.display = 'none';
+  const s = (_arvSistemas||[]).find(x => x.codigo === cod); if (!s) return;
+  const nome = prompt('Renomear ' + cod + ':', s.nome || ''); if (nome === null) return;
+  if (!nome.trim()) { mostrarToast('Descrição vazia', 'warn'); return; }
+  try {
+    await mntFetch('/manutencao/api/param/sistemas/' + encodeURIComponent(cod), { method:'PATCH', body: JSON.stringify({ nome: nome.trim() }) });
+    mostrarToast('✅ ' + cod + ' renomeado', 'ok');
+    _arvSistemas = null; _mwDom = null; renderArvore();
+  } catch(e) { mostrarToast('❌ ' + e.message, 'warn'); }
+}
+async function sisInativar(cod){
+  _ctxMenuEl().style.display = 'none';
+  const filhos = (_arvSistemas||[]).filter(s => s.codigo.startsWith(cod + '.')).length;
+  const eqs = _eqsDoNo(cod).length;
+  if (filhos || eqs) { alert('Não dá para inativar ' + cod + ':\n\n' + (filhos ? '• tem ' + filhos + ' sub-sistema(s) dentro\n' : '') + (eqs ? '• tem ' + eqs + ' equipamento(s) apontando para ele (mude o sistema deles em Cadastros)' : '')); return; }
+  if (!confirm('Inativar o sistema ' + cod + '?\n\nEle sai da árvore, mas o código fica guardado (histórico).')) return;
+  try {
+    await mntFetch('/manutencao/api/param/sistemas/' + encodeURIComponent(cod), { method:'PATCH', body: JSON.stringify({ ativo: false }) });
+    mostrarToast('✅ ' + cod + ' inativado', 'ok');
+    _arvSistemas = null; _mwDom = null; if (_arvSel === cod) _arvSel = null; if (_arvNoAtivo === cod) _arvNoAtivo = null; renderArvore();
+  } catch(e) { mostrarToast('❌ ' + e.message, 'warn'); }
 }
 function arvExpandirCtx(){
   // expande os ramos de dentro da estrutura escolhida e carrega tudo o que há nela
@@ -673,7 +817,7 @@ function montarNavTipos(){
   const item = (cod, rotulo, filho, seta) =>
     '<div class="pn-item'+(String(_filtroTT)===String(cod)?' on':'')+'"'+(filho?' style="padding-left:30px"':'')
     + ' data-tt="'+(cod===null?'':_esc(cod))+'" onclick="ttMarcar(this)" ondblclick="filtrarTT('+(cod===null?'null':'\''+cod+'\'')+')" title="Duplo clique filtra">'
-    + (seta ? '<span onclick="event.stopPropagation();ttAlternar(\''+seta+'\')" style="display:inline-block;width:14px;cursor:pointer" title="Expandir / recolher">'+(_ttFechados.has(seta)?'▸':'▾')+'</span>' : '')
+    + (seta ? '<span onclick="event.stopPropagation();ttAlternar(\''+seta+'\')" ondblclick="event.stopPropagation()" style="display:inline-block;width:14px;cursor:pointer" title="Expandir / recolher">'+(_ttFechados.has(seta)?'▸':'▾')+'</span>' : '')
     + rotulo + ' <span class="muted">('+cont(cod)+')</span></div>';
   const tipos = (_mntTiposTrab || []).filter(t => t.ativo !== false);
   const letras = [...new Set(tipos.map(t => (t.codigo||'').charAt(0)).filter(Boolean))].sort();
@@ -4062,7 +4206,7 @@ async function montarNavAlm(){
   const item = (cod, rotulo, n, nivel, chev) =>
     '<div class="pn-item'+(String(_almFamSel)===String(cod)?' on':'')+'" style="padding-left:'+(8+nivel*13)+'px;display:flex;align-items:center;gap:4px">'
     + (chev !== undefined
-        ? '<span style="cursor:pointer;width:12px;display:inline-block" data-r="'+_esc(String(cod))+'" onclick="event.stopPropagation();almArvToggle(this.dataset.r)">'+(chev?'▾':'▸')+'</span>'
+        ? '<span style="cursor:pointer;width:12px;display:inline-block" data-r="'+_esc(String(cod))+'" onclick="event.stopPropagation();almArvToggle(this.dataset.r)" ondblclick="event.stopPropagation()">'+(chev?'▾':'▸')+'</span>'
         : '<span style="width:12px;display:inline-block"></span>')
     + '<span style="flex:1;cursor:pointer" data-cod="'+_esc(String(cod))+'" onclick="almFamFiltra(this.dataset.cod)">'
     + rotulo + (n !== null ? ' <span class="muted">('+(n||0)+')</span>' : '') + '</span></div>';
