@@ -668,9 +668,10 @@ function arvFecharCtx(){
 // ── (30/09/2026) Manutenção da ORGANIZAÇÃO direto na árvore (ManWinWin "Organização Funcional"):
 // Novo Sistema nasce DENTRO do nó marcado (código = pai + "." + código curto); renomear e inativar
 // pelo botão direito. Persistência: manutencao.sistemas (param/sistemas), hierarquia pela pontuação.
-let _sisPai = null;
-function sisNovo(cod){
+let _sisPai = null, _sisDepois = null;
+function sisNovo(cod, depois){
   _ctxMenuEl().style.display = 'none';
+  _sisDepois = typeof depois === 'function' ? depois : null;
   cod = cod || _arvSel;
   if (cod === '_sem') { mostrarToast('Marque um grupo da Organização', 'warn'); return; }
   _sisPai = (!cod || cod === '_todos') ? null : cod;
@@ -683,14 +684,14 @@ function sisNovo(cod){
   _sisTodos = _arvSistemas || [];
   sisPreview();
   document.getElementById('sis-modal').classList.add('show');
-  mntFetch('/manutencao/api/param/sistemas').then(t => { _sisTodos = t || []; sisPreview(); }).catch(() => {});
+  mntFetch('/manutencao/api/param/sistemas').then(t => { _sisTodos = t || []; document.getElementById('sis-cod').value = sisProximoCodigo(); sisPreview(); }).catch(() => {});
   setTimeout(() => { const el = document.getElementById('sis-nome'); el && el.focus(); }, 50);
 }
 function sisProximoCodigo(){
   // sugere o próximo número livre no nível (01.00.01 … 01.00.05 → 06); raiz: 2 dígitos
   const pref = _sisPai ? _sisPai + '.' : '';
   const nivel = _sisPai ? _sisPai.split('.').length : 0;
-  const usados = (_arvSistemas||[]).map(s => s.codigo).filter(c => c.startsWith(pref) && c.split('.').length === nivel + 1)
+  const usados = (_sisTodos.length ? _sisTodos : (_arvSistemas||[])).map(s => s.codigo).filter(c => c.startsWith(pref) && c.split('.').length === nivel + 1)
     .map(c => parseInt(c.slice(pref.length), 10)).filter(n => !isNaN(n));
   const n = usados.length ? Math.max(...usados) + 1 : 1;
   return String(n).padStart(2, '0');
@@ -725,9 +726,10 @@ async function sisGravar(){
   document.getElementById('sis-modal').classList.remove('show');
   mostrarToast('✅ Sistema ' + completo + ' - ' + nome + (inativo ? ' (inativo)' : ''), 'ok');
   _arvSistemas = null; _mwDom = null;
+  if (_arvAbertos === null) _arvAbertos = new Set();
   if (_sisPai) _arvAbertos.add(_sisPai);
   _arvSel = inativo ? _sisPai : completo;
-  renderArvore();
+  if (_sisDepois) { const f = _sisDepois; _sisDepois = null; f(); } else renderArvore();
 }
 async function sisRenomear(cod){
   _ctxMenuEl().style.display = 'none';
@@ -5303,6 +5305,8 @@ async function panePontos(){
       + '</tbody></table></div>';
   } catch(e){ mostrarToast('❌ '+e.message,'warn'); }
 }
+let _ppFechados = new Set();
+function ppAlternar(k, paneId){ _ppFechados.has(k) ? _ppFechados.delete(k) : _ppFechados.add(k); ligarParamPane(paneId); }
 async function ligarParamPane(paneId){
   const cfg = PARAM_MAP[paneId]; if (!cfg) return;
   const pane = document.getElementById('pp-pane'); if (!pane) return;
@@ -5315,11 +5319,22 @@ async function ligarParamPane(paneId){
         + '<button class="btn" title="Excluir de vez (só se nunca usado)" onclick="excluirParam(\''+dom+'\',\''+_esc(cod)+'\',\''+paneId+'\')">🗑️</button>'
       : '<button class="btn" title="Renomear" onclick="editarParam(\''+dom+'\',\''+_esc(cod)+'\',\''+nomeJs+'\',\''+paneId+'\')">✏️</button>'
         + '<button class="btn" title="Desativar (some dos formulários, fica na história)" onclick="toggleParam(\''+dom+'\',\''+_esc(cod)+'\',\''+paneId+'\',false)">🚫</button>';
-    return '<tr'+(inat?' style="opacity:.55"':'')+'><td class="bold" style="width:90px">'
-      + (inat?'<s>':'')+_esc(cod)+(inat?'</s>':'')+'</td><td>'
+    // (30/09/2026) Domínios hierárquicos (ponto = nível): linha recuada por nível, setinha ▾/▸ para
+    // recolher o ramo, e ➕ que abre "Novo Sistema" já DENTRO daquele nó (janela ManWinWin)
+    const hier = ['sistemas','familias','rubricas','centros-custo'].includes(dom);
+    const nivel = hier ? String(cod).split('.').length - 1 : 0;
+    const temFilhos = hier && rows.some(x => String(x[pk] ?? x.codigo).startsWith(String(cod) + '.'));
+    if (hier && String(cod).split('.').slice(0,-1).some((_, k, arr) => _ppFechados.has(dom + ':' + arr.slice(0, k+1).join('.')))) return '';
+    const seta = hier ? (temFilhos
+      ? '<span class="pn-arr" data-k="'+_esc(dom+':'+cod)+'" onclick="ppAlternar(this.dataset.k,\''+paneId+'\')" title="Expandir / recolher" style="'+(_ppFechados.has(dom+':'+cod)?'':'transform:rotate(90deg)')+'">▶</span> '
+      : '<span class="pn-arr" style="visibility:hidden">▶</span> ') : '';
+    const btnFilho = (hier && dom === 'sistemas' && !inat)
+      ? '<button class="btn" title="Novo sistema dentro de '+_esc(cod)+'" data-c="'+_esc(cod)+'" onclick="sisNovo(this.dataset.c, function(){ ligarParamPane(\''+paneId+'\'); })">➕</button>' : '';
+    return '<tr'+(inat?' style="opacity:.55"':'')+'><td class="bold" style="width:'+(hier?170:90)+'px;padding-left:'+(8+nivel*16)+'px;white-space:nowrap">'
+      + seta + (inat?'<s>':'')+_esc(cod)+(inat?'</s>':'')+'</td><td>'
       + (inat?'<s>':'')+_esc(r.nome||'')+(inat?'</s>':'')
       + (inat?' <span class="chip ap" style="font-size:9px">INATIVO</span>':'')+'</td>'
-      + '<td class="act" style="width:96px">'+botoes+'</td></tr>';
+      + '<td class="act" style="width:130px;white-space:nowrap">'+btnFilho+botoes+'</td></tr>';
   }).join('') || '<tr><td colspan="3" style="padding:12px;color:#64748B">Nenhum registro.</td></tr>';
   const tabela = (titulo, dom, pk, rows, comNovo) =>
     (titulo ? '<div class="pp-title" style="margin-top:16px;font-size:13px">'+titulo
@@ -5342,6 +5357,8 @@ async function ligarParamPane(paneId){
   } catch(e){ mostrarToast('❌ '+e.message,'warn'); }
 }
 async function novoParam(dom, paneId){
+  // (30/09/2026) Sistemas: janela "Novo Sistema" (ManWinWin) na raiz; o ➕ de cada linha cria dentro do nó
+  if (dom === 'sistemas') { await _sistemas(); sisNovo('_todos', function(){ ligarParamPane(paneId); }); return; }
   // estrutura é o gatilho: informa o código pai (vazio = raiz) e o sistema propõe o próximo filho; pode alterar
   const arvore = ['sistemas','familias','rubricas','centros-custo'].includes(dom);
   let pai = '';
