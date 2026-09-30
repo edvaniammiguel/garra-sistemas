@@ -5305,8 +5305,13 @@ async function panePontos(){
       + '</tbody></table></div>';
   } catch(e){ mostrarToast('❌ '+e.message,'warn'); }
 }
-let _ppFechados = new Set();
+let _ppFechados = new Set(), _ppSel = {};
 function ppAlternar(k, paneId){ _ppFechados.has(k) ? _ppFechados.delete(k) : _ppFechados.add(k); ligarParamPane(paneId); }
+function ppMarcar(dom, cod, tr){
+  _ppSel[dom] = _ppSel[dom] === String(cod) ? null : String(cod);   // 2º clique desmarca (＋ Novo volta à raiz)
+  const tb = tr.closest('tbody'); if (tb) tb.querySelectorAll('tr').forEach(x => x.classList.toggle('sel', x === tr && !!_ppSel[dom]));
+  const b = document.getElementById('pp-novo-rot'); if (b) b.textContent = _ppSel[dom] ? '＋ Novo em ' + _ppSel[dom] : '＋ Novo';
+}
 async function ligarParamPane(paneId){
   const cfg = PARAM_MAP[paneId]; if (!cfg) return;
   const pane = document.getElementById('pp-pane'); if (!pane) return;
@@ -5326,15 +5331,19 @@ async function ligarParamPane(paneId){
     const temFilhos = hier && rows.some(x => String(x[pk] ?? x.codigo).startsWith(String(cod) + '.'));
     if (hier && String(cod).split('.').slice(0,-1).some((_, k, arr) => _ppFechados.has(dom + ':' + arr.slice(0, k+1).join('.')))) return '';
     const seta = hier ? (temFilhos
-      ? '<span class="pn-arr" data-k="'+_esc(dom+':'+cod)+'" onclick="ppAlternar(this.dataset.k,\''+paneId+'\')" title="Expandir / recolher" style="'+(_ppFechados.has(dom+':'+cod)?'':'transform:rotate(90deg)')+'">▶</span> '
+      ? '<span class="pn-arr" data-k="'+_esc(dom+':'+cod)+'" onclick="event.stopPropagation();ppAlternar(this.dataset.k,\''+paneId+'\')" title="Expandir / recolher" style="'+(_ppFechados.has(dom+':'+cod)?'':'transform:rotate(90deg)')+'">▶</span> '
       : '<span class="pn-arr" style="visibility:hidden">▶</span> ') : '';
     const btnFilho = (hier && dom === 'sistemas' && !inat)
       ? '<button class="btn" title="Novo sistema dentro de '+_esc(cod)+'" data-c="'+_esc(cod)+'" onclick="sisNovo(this.dataset.c, function(){ ligarParamPane(\''+paneId+'\'); })">➕</button>' : '';
-    return '<tr'+(inat?' style="opacity:.55"':'')+'><td class="bold" style="width:'+(hier?170:90)+'px;padding-left:'+(8+nivel*16)+'px;white-space:nowrap">'
+    // (30/09/2026) Linha selecionável (clique = marca): "＋ Novo" cria DENTRO do nó marcado (subfamília)
+    const selRow = hier && _ppSel[dom] === String(cod);
+    return '<tr'+(selRow?' class="sel"':'')+' style="'+(inat?'opacity:.55;':'')+(hier?'cursor:pointer':'')+'"'
+      + (hier ? ' data-c="'+_esc(cod)+'" onclick="ppMarcar(\''+dom+'\',this.dataset.c,this)" title="Clique = marca · ＋ Novo cria dentro do marcado"' : '')
+      + '><td class="bold" style="width:'+(hier?170:90)+'px;padding-left:'+(8+nivel*16)+'px;white-space:nowrap">'
       + seta + (inat?'<s>':'')+_esc(cod)+(inat?'</s>':'')+'</td><td>'
       + (inat?'<s>':'')+_esc(r.nome||'')+(inat?'</s>':'')
       + (inat?' <span class="chip ap" style="font-size:9px">INATIVO</span>':'')+'</td>'
-      + '<td class="act" style="width:130px;white-space:nowrap">'+btnFilho+botoes+'</td></tr>';
+      + '<td class="act" style="width:130px;white-space:nowrap" onclick="event.stopPropagation()">'+btnFilho+botoes+'</td></tr>';
   }).join('') || '<tr><td colspan="3" style="padding:12px;color:#64748B">Nenhum registro.</td></tr>';
   const tabela = (titulo, dom, pk, rows, comNovo) =>
     (titulo ? '<div class="pp-title" style="margin-top:16px;font-size:13px">'+titulo
@@ -5352,17 +5361,17 @@ async function ligarParamPane(paneId){
     pane.innerHTML =
       '<div class="pp-hdr"><div><div class="pp-title">'+cfg.titulo+'</div>'
       + '<div class="pp-sub">✏️ renomear · 🚫 desativar (soft delete) · ♻️ reativar · 🗑️ excluir de vez (só código nunca usado)</div></div>'
-      + '<button class="btn o" onclick="novoParam(\''+cfg.dom+'\',\''+paneId+'\')">＋ Novo</button></div>'
+      + '<button class="btn o" id="pp-novo-rot" onclick="novoParam(\''+cfg.dom+'\',\''+paneId+'\')">'+(_ppSel[cfg.dom] ? '＋ Novo em '+_esc(_ppSel[cfg.dom]) : '＋ Novo')+'</button></div>'
       + tabela(null, cfg.dom, cfg.pk, rows, false) + extraHtml;
   } catch(e){ mostrarToast('❌ '+e.message,'warn'); }
 }
 async function novoParam(dom, paneId){
   // (30/09/2026) Sistemas: janela "Novo Sistema" (ManWinWin) na raiz; o ➕ de cada linha cria dentro do nó
-  if (dom === 'sistemas') { await _sistemas(); sisNovo('_todos', function(){ ligarParamPane(paneId); }); return; }
-  // estrutura é o gatilho: informa o código pai (vazio = raiz) e o sistema propõe o próximo filho; pode alterar
+  if (dom === 'sistemas') { await _sistemas(); sisNovo(_ppSel[dom] || '_todos', function(){ ligarParamPane(paneId); }); return; }
+  // estrutura é o gatilho: o nó marcado na lista é o pai (ou informa; vazio = raiz) e o sistema propõe o próximo filho
   const arvore = ['sistemas','familias','rubricas','centros-custo'].includes(dom);
   let pai = '';
-  if (arvore){ pai = prompt('Código pai (vazio = nível raiz):', ''); if (pai === null) return; pai = pai.trim(); }
+  if (arvore){ pai = prompt('Código pai (vazio = nível raiz):', _ppSel[dom] || ''); if (pai === null) return; pai = pai.trim(); }
   const r = await mwProximoCodigo(dom, pai, pai ? '.' : '', 2);
   const cod = prompt('Código' + (r && r.codigo ? ' (próximo livre: '+r.codigo+')' : '') + ':', r && r.codigo ? r.codigo : ''); if (!cod) return;
   if (await mwCodigoExiste(dom, cod.trim())){ mostrarToast('❌ Já existe '+cod.trim()+' neste cadastro','warn'); return; }
