@@ -725,7 +725,7 @@ async function sisGravar(){
   } catch(e) { erro.textContent = '❌ ' + e.message; return; }
   document.getElementById('sis-modal').classList.remove('show');
   mostrarToast('✅ Sistema ' + completo + ' - ' + nome + (inativo ? ' (inativo)' : ''), 'ok');
-  _arvSistemas = null; _mwDom = null;
+  paramCacheLimpar('sistemas');
   if (_arvAbertos === null) _arvAbertos = new Set();
   if (_sisPai) _arvAbertos.add(_sisPai);
   _arvSel = inativo ? _sisPai : completo;
@@ -739,7 +739,7 @@ async function sisRenomear(cod){
   try {
     await mntFetch('/manutencao/api/param/sistemas/' + encodeURIComponent(cod), { method:'PATCH', body: JSON.stringify({ nome: nome.trim() }) });
     mostrarToast('✅ ' + cod + ' renomeado', 'ok');
-    _arvSistemas = null; _mwDom = null; renderArvore();
+    paramCacheLimpar('sistemas'); renderArvore();
   } catch(e) { mostrarToast('❌ ' + e.message, 'warn'); }
 }
 async function sisInativar(cod){
@@ -751,7 +751,7 @@ async function sisInativar(cod){
   try {
     await mntFetch('/manutencao/api/param/sistemas/' + encodeURIComponent(cod), { method:'PATCH', body: JSON.stringify({ ativo: false }) });
     mostrarToast('✅ ' + cod + ' inativado', 'ok');
-    _arvSistemas = null; _mwDom = null; if (_arvSel === cod) _arvSel = null; if (_arvNoAtivo === cod) _arvNoAtivo = null; renderArvore();
+    paramCacheLimpar('sistemas'); if (_arvSel === cod) _arvSel = null; if (_arvNoAtivo === cod) _arvNoAtivo = null; renderArvore();
   } catch(e) { mostrarToast('❌ ' + e.message, 'warn'); }
 }
 function arvExpandirCtx(){
@@ -4203,8 +4203,14 @@ async function montarNavAlm(){
   // Só a Norma VIVA: raízes que existem no acervo (o padrão importado do
   // ManWinWin com contagem zero fica fora — mora em Parametrizar → Famílias)
   const raizes = Object.keys(contRaiz).sort();
-  const filhosDe = raiz => fams.filter(f => String(f.codigo).startsWith(raiz + '.'))
-      .sort((a,b)=>String(a.codigo).localeCompare(String(b.codigo)));
+  // (30/09/2026) Subfamílias = as cadastradas em Parametrizar → Famílias E as que a própria
+  // codificação das peças carrega (C.AC.010.001 → AC.010), mesmo sem cadastro
+  const filhosDe = raiz => {
+    const m = new Map();
+    fams.filter(f => String(f.codigo).startsWith(raiz + '.')).forEach(f => m.set(String(f.codigo), { codigo: f.codigo, nome: f.nome || '' }));
+    arv.filter(x => String(x.familia).startsWith(raiz + '.')).forEach(x => { if (!m.has(String(x.familia))) m.set(String(x.familia), { codigo: x.familia, nome: '', semCadastro: true }); });
+    return [...m.values()].sort((a,b)=>String(a.codigo).localeCompare(String(b.codigo)));
+  };
   const item = (cod, rotulo, n, nivel, chev) =>
     '<div class="pn-item'+(String(_almFamSel)===String(cod)?' on':'')+'" style="padding-left:'+(8+nivel*13)+'px;display:flex;align-items:center;gap:4px">'
     + (chev !== undefined
@@ -4246,7 +4252,7 @@ async function montarNavAlm(){
       if (filhos.length)
         filhos.forEach(f => {
           const prof = String(f.codigo).split('.').length - 1;
-          html += item(f.codigo, _esc(String(f.codigo)) + (f.nome ? ' — '+_esc(f.nome) : ''), cont[f.codigo]||0, prof);
+          html += item(f.codigo, _esc(String(f.codigo)) + (f.nome ? ' — '+_esc(f.nome) : (f.semCadastro ? ' <span class="muted" title="Subfamília vinda da codificação das peças — dê nome em Parametrizar → Famílias">(sem nome)</span>' : '')), cont[f.codigo]||0, prof);
         });
       else
         html += '<div class="pn-item muted" style="padding-left:34px;font-size:10px;cursor:default">sem subfamílias — cadastre em Parametrizar → Famílias ('+_esc(raiz)+'.010…)</div>';
@@ -5377,25 +5383,37 @@ async function novoParam(dom, paneId){
   if (await mwCodigoExiste(dom, cod.trim())){ mostrarToast('❌ Já existe '+cod.trim()+' neste cadastro','warn'); return; }
   const nome = prompt('Descrição de '+cod.trim()+':'); if (!nome) return;
   try { await mntFetch('/manutencao/api/param/'+dom, {method:'POST', body: JSON.stringify({codigo:cod.trim(), nome:nome.trim()})});
-    mostrarToast('✅ Cadastrado','ok'); ligarParamPane(paneId);
+    mostrarToast('✅ Cadastrado','ok'); paramCacheLimpar(dom); ligarParamPane(paneId);
   } catch(e){ mostrarToast('❌ '+e.message,'warn'); }
+}
+// (30/09/2026) Domínio alterado em Parametrizar → limpa os caches do front que guardam
+// esses nomes (árvore da Frota, combos da ficha do objeto, biblioteca, tipos de trabalho…)
+// e recarrega a frota, para o nome novo aparecer no sistema inteiro sem F5.
+function paramCacheLimpar(dom){
+  _mwDom = null;
+  if (dom === 'sistemas') { _arvSistemas = null; _sisTodos = []; }
+  if (dom === 'tipos-manutencao') _mntTiposTrab = null;
+  if (dom === 'rubricas') _bibRub = null;
+  if (dom === 'periodos') { _plfPer = null; _bibPer = null; }
+  if (dom === 'tipos-equipamento') _bibTipos = null;
+  if (typeof carregarSemaforosReais === 'function') carregarSemaforosReais();
 }
 async function editarParam(dom, cod, nomeAtual, paneId){
   const nome = prompt('Descrição de '+cod+':', nomeAtual); if (nome===null) return;
   try { await mntFetch('/manutencao/api/param/'+dom+'/'+encodeURIComponent(cod), {method:'PATCH', body: JSON.stringify({nome:nome.trim()})});
-    mostrarToast('✅ Atualizado','ok'); ligarParamPane(paneId);
+    mostrarToast('✅ Atualizado','ok'); paramCacheLimpar(dom); ligarParamPane(paneId);
   } catch(e){ mostrarToast('❌ '+e.message,'warn'); }
 }
 async function toggleParam(dom, cod, paneId, ativar){
   if (!ativar && !confirm('Desativar '+cod+'?\n\nSoft delete: some dos formulários novos, mas continua na história (OTs antigas seguem íntegras). Pode reativar quando quiser.')) return;
   try { await mntFetch('/manutencao/api/param/'+dom+'/'+encodeURIComponent(cod), {method:'PATCH', body: JSON.stringify({ativo: !!ativar})});
-    mostrarToast(ativar ? '♻️ '+cod+' reativado' : '🚫 '+cod+' desativado','ok'); ligarParamPane(paneId);
+    mostrarToast(ativar ? '♻️ '+cod+' reativado' : '🚫 '+cod+' desativado','ok'); paramCacheLimpar(dom); ligarParamPane(paneId);
   } catch(e){ mostrarToast('❌ '+e.message,'warn'); }
 }
 async function excluirParam(dom, cod, paneId){
   if (!confirm('Excluir '+cod+' DE VEZ?\n\nSó é possível se o código nunca foi usado. Se houver histórico, o sistema recusa e orienta desativar.')) return;
   try { await mntFetch('/manutencao/api/param/'+dom+'/'+encodeURIComponent(cod), {method:'DELETE'});
-    mostrarToast('🗑️ '+cod+' excluído','ok'); ligarParamPane(paneId);
+    mostrarToast('🗑️ '+cod+' excluído','ok'); paramCacheLimpar(dom); ligarParamPane(paneId);
   } catch(e){ mostrarToast('❌ '+e.message,'warn'); }
 }
 
