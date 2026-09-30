@@ -941,6 +941,16 @@ async def semaforos_frota(_auth=Depends(verificar_manutencao)):
 
 # ── ALMOXARIFADO: peças reais (Onda 1) com busca ──
 @router.get("/manutencao/api/pecas")
+# (30/09/2026) Família EFETIVA da peça: a cadastrada quando já tem subfamília (AC.010);
+# senão a que a própria codificação carrega (C.AC.010.001 → AC.010). Assim a Norma de
+# Materiais mostra as subfamílias mesmo onde o cadastro só apontou a raiz (AC).
+def _fam_efetiva(alias: str = "") -> str:
+    a = f"{alias}." if alias else ""
+    return (f"CASE WHEN {a}familia_codigo LIKE '%%.%%' THEN {a}familia_codigo "
+            f"WHEN {a}codigo ~ '^C\\.[A-Za-z0-9]+\\.[0-9]+\\.' THEN split_part({a}codigo,'.',2)||'.'||split_part({a}codigo,'.',3) "
+            f"ELSE {a}familia_codigo END")
+
+
 async def listar_pecas(busca: str = None, familia: str = None, limit: int = 100,
                        _auth=Depends(verificar_manutencao)):
     await _garantir_peca_cols()
@@ -951,7 +961,8 @@ async def listar_pecas(busca: str = None, familia: str = None, limit: int = 100,
         where.append("(codigo ILIKE %s OR descricao ILIKE %s OR codigo_externo ILIKE %s OR codigo_fabricante ILIKE %s)"); params += [b, b, b, b]
     if familia and familia.strip():
         # subfamílias por pontuação (MC pega MC e MC.010…)
-        where.append("(familia_codigo = %s OR familia_codigo LIKE %s)")
+        fe = _fam_efetiva()
+        where.append(f"({fe} = %s OR {fe} LIKE %s)")
         params += [familia.strip(), familia.strip() + ".%"]
     rows = await ajard_query(
         f"""SELECT codigo, descricao, unidade, familia_codigo, custo_medio
@@ -3681,7 +3692,8 @@ async def lente_armazem(almox: str = None, busca: str = None, familia: str = Non
         cond.append("(p.codigo ILIKE %s OR p.descricao ILIKE %s OR p.codigo_externo ILIKE %s OR p.codigo_fabricante ILIKE %s)")
         params += [f"%{busca}%", f"%{busca}%", f"%{busca}%", f"%{busca}%"]
     if familia:
-        cond.append("p.familia_codigo = %s"); params.append(familia)
+        fe = _fam_efetiva("p")
+        cond.append(f"({fe} = %s OR {fe} LIKE %s)"); params += [familia, familia + ".%"]
     if incluir_zerados:
         # catálogo inteiro com saldo 0 quando sem registro — para endereçar
         # C-P-N e definir mínimos antes da primeira entrada
@@ -3717,7 +3729,7 @@ async def pecas_arvore(_auth=Depends(verificar_manutencao)):
     """(28/08/2026) Estrutura do Catálogo de Peças: famílias com contagem
     do acervo — o front monta a árvore pela pontuação (MC → MC.010)."""
     rows = await ajard_query(
-        """SELECT COALESCE(familia_codigo,'—') AS familia, COUNT(*)::int AS n
+        f"""SELECT COALESCE({_fam_efetiva()},'—') AS familia, COUNT(*)::int AS n
            FROM manutencao.pecas WHERE ativo=true
            GROUP BY 1 ORDER BY 1""")
     return [dict(r) for r in rows]
