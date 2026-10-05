@@ -8,7 +8,9 @@ import bcrypt
 import jwt as pyjwt
 from datetime import datetime, timedelta
 from typing import Optional
+import logging
 from fastapi import APIRouter, Request, HTTPException, Depends, Header, Body
+log = logging.getLogger("uvicorn.error")
 from fastapi.responses import JSONResponse
 
 from core.config import JWT_SECRET, JWT_EXPIRY_HOURS, FRONTEND_URL
@@ -243,6 +245,22 @@ async def webauthn_registro_verificar(request: Request, db=Depends(get_db), payl
     )
     await db.execute("DELETE FROM public.webauthn_desafios WHERE login=$1 AND tipo='registro'", payload["login"])
     return {"ok": True, "mensagem": "Biometria cadastrada — próximo login pode ser pela digital"}
+
+@router.post("/auth/log-cliente")
+async def log_cliente(request: Request):
+    """(05/10/2026) Telemetria mínima: o app manda o erro real que aconteceu no celular
+    (ex.: falha após o login aceito) e ele aparece no log do Render — sem isso só se vê
+    'POST /auth/login 200' e nada depois. Sem autenticação; só grava no log, não no banco."""
+    check_rate_limit(request.client.host)
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    log.warning("CLIENTE %s | login=%s | onde=%s | storage_bloqueado=%s | erro=%s | ua=%s",
+                request.client.host, str(body.get("login") or "")[:80], str(body.get("onde") or "")[:40],
+                body.get("storage_bloqueado"), str(body.get("erro") or "")[:400], str(body.get("ua") or "")[:160])
+    return {"ok": True}
+
 
 @router.post("/auth/webauthn/login/desafio")
 async def webauthn_login_desafio(request: Request, db=Depends(get_db)):
