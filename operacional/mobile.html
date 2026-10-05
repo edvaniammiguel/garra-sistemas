@@ -706,6 +706,10 @@ async function fazerLogin() {
   } catch (e) {
     errDiv.textContent = e.message;
     errDiv.style.display = 'block';
+    // (05/10/2026) manda o erro real para o log do servidor (diagnóstico de login no celular)
+    try { fetch('/auth/log-cliente', { method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ login, onde:'fazerLogin', erro: (e && (e.stack || e.message)) || String(e),
+                             storage_bloqueado: !!window.__storageBloqueado, ua: navigator.userAgent }) }); } catch(_) {}
   }
 }
 
