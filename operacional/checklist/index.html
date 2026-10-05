@@ -1,6 +1,33 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
+<script>
+/* (05/10/2026) Navegador bloqueando "dados do site" (cookies/armazenamento desativados ou link aberto
+   dentro do WhatsApp/Instagram): window.localStorage lança "Access is denied" e o login morre.
+   Aqui o app segue com armazenamento em memória (sessão vale até fechar a página) e avisa o usuário. */
+(function(){
+  try { window.localStorage.getItem('__t'); window.__storageBloqueado = false; return; } catch(e){}
+  var mem = {};
+  var fake = {
+    getItem: function(k){ return Object.prototype.hasOwnProperty.call(mem,k) ? mem[k] : null; },
+    setItem: function(k,v){ mem[k] = String(v); },
+    removeItem: function(k){ delete mem[k]; },
+    clear: function(){ mem = {}; },
+    key: function(i){ return Object.keys(mem)[i] || null; },
+    get length(){ return Object.keys(mem).length; }
+  };
+  try { Object.defineProperty(window, 'localStorage', { value: fake, configurable: true }); } catch(e){}
+  try { Object.defineProperty(window, 'sessionStorage', { value: fake, configurable: true }); } catch(e){}
+  window.__storageBloqueado = true;
+  window.addEventListener('DOMContentLoaded', function(){
+    var d = document.createElement('div');
+    d.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:99999;background:#B45309;color:#fff;font:600 13px system-ui;padding:8px 12px;text-align:center';
+    d.textContent = '⚠️ O navegador está bloqueando os dados do site: o app funciona, mas não vai lembrar o login nem guardar dados offline. Abra no Chrome e permita cookies/dados para garra-sistemas.onrender.com.';
+    document.body.appendChild(d);
+  });
+})();
+</script>
+
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
   <meta name="theme-color" content="#1a2158" />
