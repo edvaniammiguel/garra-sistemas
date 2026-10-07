@@ -52,6 +52,71 @@ def nome_arquivo_semana(sem, tipo: str) -> str:
     except: pass
     return f"relatorio-{tipo.lower()}-{mes_abr}{ano}-semana{num}.xlsx"
 
+
+# ══════════════════════════════════════════════════════════════
+# KM — PERTENCIMENTO POR DATA (07/10/2026)
+# A semana/mês dono de um registro de KM é definido pelo campo `data`,
+# nunca pelo semana_id gravado. Relatórios recortam por intervalo de data;
+# POST/PATCH derivam semana_id da data (criando o mês se ainda não existir).
+# ══════════════════════════════════════════════════════════════
+
+_MESES_NOME = ["","Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho",
+               "Agosto","Setembro","Outubro","Novembro","Dezembro"]
+
+def _parse_data(valor) -> date:
+    try:
+        return date.fromisoformat(str(valor)[:10])
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="data inválida (use AAAA-MM-DD)")
+
+async def _garantir_mes(ano: int, mes: int, label: Optional[str] = None):
+    exist = await ajard_query("SELECT id FROM jardinagem.meses WHERE ano=%s AND mes=%s", (ano,mes), fetch="one")
+    if exist:
+        mes_id, ja_existia = exist["id"], True
+    else:
+        row = await ajard_query_id("INSERT INTO jardinagem.meses(ano,mes,label) VALUES(%s,%s,%s)",
+                                   (ano, mes, label or f"{_MESES_NOME[mes]}/{ano}"))
+        mes_id, ja_existia = row["id"], False
+    sem_exist = await ajard_query("SELECT id FROM jardinagem.semanas WHERE mes_id=%s LIMIT 1", (mes_id,), fetch="one")
+    if not sem_exist:
+        await semanas_do_mes(ano, mes, mes_id)
+    return mes_id, ja_existia
+
+async def _semana_da_data(data_reg: date) -> int:
+    sql = "SELECT id FROM jardinagem.semanas WHERE data_ini<=%s AND data_fim>=%s ORDER BY ordem LIMIT 1"
+    row = await ajard_query(sql, (data_reg, data_reg), fetch="one")
+    if not row:
+        await _garantir_mes(data_reg.year, data_reg.month)
+        row = await ajard_query(sql, (data_reg, data_reg), fetch="one")
+    if not row:
+        raise HTTPException(status_code=400, detail=f"Nenhuma semana cobre {data_reg.strftime('%d/%m/%Y')}")
+    return row["id"]
+
+async def _kms_periodo(data_ini, data_fim):
+    return await ajard_query("""SELECT r.*, u.nome AS responsavel_nome
+        FROM jardinagem.relatorios_diarios r
+        JOIN public.usuarios_garra u ON u.id = r.usuario_id
+        WHERE r.data BETWEEN %s AND %s
+        ORDER BY r.data, r.km_inicial, r.criado_em""", (data_ini, data_fim))
+
+def _kms_excel(kms_raw):
+    return [{"data":r["data"].strftime("%d/%m/%Y") if r["data"] else "","local":r["local_nome"] or "",
+             "km_ini":float(r["km_inicial"] or 0),"km_fin":float(r["km_final"] or 0),
+             "hr_ini":str(r["hora_inicio"]) if r["hora_inicio"] else "","hr_fim":str(r["hora_fim"]) if r["hora_fim"] else "",
+             "obs":r["observacao"] or "","responsavel":r["responsavel_nome"] or ""} for r in kms_raw]
+
+def _kms_json(kms_raw):
+    return [{"id":r["id"],"data":r["data"].strftime("%d/%m/%Y") if r["data"] else "","local_nome":r["local_nome"] or "",
+             "km_inicial":float(r["km_inicial"] or 0),"km_final":float(r["km_final"] or 0),
+             "hora_inicio":str(r["hora_inicio"]) if r["hora_inicio"] else "",
+             "hora_fim":str(r["hora_fim"]) if r["hora_fim"] else "",
+             "observacao":r["observacao"] or "","responsavel":r["responsavel_nome"] or r.get("responsavel") or ""} for r in kms_raw]
+
+async def _intervalo_mes(mes_id: int):
+    m = await ajard_query("SELECT ano, mes FROM jardinagem.meses WHERE id=%s", (mes_id,), fetch="one")
+    if not m: raise HTTPException(status_code=404, detail="Mês não encontrado")
+    return date(m["ano"], m["mes"], 1), date(m["ano"], m["mes"], calendar.monthrange(m["ano"], m["mes"])[1])
+
 @router.get("/jardinagem", response_class=HTMLResponse)
 @router.get("/jardinagem/", response_class=HTMLResponse)
 async def jard_index():
@@ -157,20 +222,7 @@ async def jard_del_mes(mid: int, payload=Depends(verificar_token_jard)):
 @router.post("/jardinagem/api/meses")
 async def jard_criar_mes(request: Request, payload=Depends(verificar_token_jard)):
     d = await request.json()
-    ano, mes = int(d["ano"]), int(d["mes"])
-    nomes = ["","Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"]
-    label = d.get("label") or f"{nomes[mes]}/{ano}"
-    exist = await ajard_query("SELECT id FROM jardinagem.meses WHERE ano=%s AND mes=%s", (ano,mes), fetch="one")
-    ja_existia = False
-    if exist:
-        mes_id = exist["id"]
-        ja_existia = True
-    else:
-        row = await ajard_query_id("INSERT INTO jardinagem.meses(ano,mes,label) VALUES(%s,%s,%s)", (ano,mes,label))
-        mes_id = row["id"]
-    sem_exist = await ajard_query("SELECT id FROM jardinagem.semanas WHERE mes_id=%s LIMIT 1", (mes_id,), fetch="one")
-    if not sem_exist:
-        await semanas_do_mes(ano, mes, mes_id)
+    mes_id, ja_existia = await _garantir_mes(int(d["ano"]), int(d["mes"]), d.get("label"))
     mes_data = await ajard_query("SELECT * FROM jardinagem.meses WHERE id=%s", (mes_id,), fetch="one")
     result = dict(mes_data)
     result["ja_existia"] = ja_existia
@@ -322,7 +374,7 @@ async def jard_status_semana(sid: int, payload=Depends(verificar_token_jard)):
     emails = await ajard_query("SELECT * FROM jardinagem.emails_enviados WHERE semana_id=%s ORDER BY enviado_em DESC", (sid,))
     tp = await ajard_query("SELECT COUNT(*) as n FROM jardinagem.pares WHERE semana_id=%s", (sid,), fetch="one")
     tf = await ajard_query("SELECT COUNT(*) as n FROM jardinagem.fotos f JOIN jardinagem.pares p ON p.id=f.par_id WHERE p.semana_id=%s", (sid,), fetch="one")
-    tr = await ajard_query("SELECT COUNT(*) as n FROM jardinagem.relatorios_diarios WHERE semana_id=%s", (sid,), fetch="one")
+    tr = await ajard_query("SELECT COUNT(*) as n FROM jardinagem.relatorios_diarios WHERE data BETWEEN %s AND %s", (sem["data_ini"],sem["data_fim"]), fetch="one")
     return {"semana":dict(sem),"total_pares":tp["n"],"total_fotos":tf["n"],"total_relatorios":tr["n"],"emails":[dict(e) for e in emails]}
 
 @router.get("/jardinagem/api/pares")
@@ -537,17 +589,7 @@ async def jard_url_foto(fid: int, payload=Depends(verificar_token_jard)):
 @router.post("/jardinagem/api/relatorios/km")
 async def jard_criar_km(request: Request, payload=Depends(verificar_token_jard)):
     d = await request.json()
-    data_reg = d.get("data") or date.today().isoformat()
-    row = await ajard_query("SELECT id FROM jardinagem.semanas WHERE data_ini<=%s AND data_fim>=%s LIMIT 1", (data_reg,data_reg), fetch="one")
-    if row:
-        semana_id = row["id"]
-    else:
-        semana_id = d.get("semana_id")
-        if not semana_id:
-            hoje = date.today()
-            row = await ajard_query("SELECT id FROM jardinagem.semanas WHERE data_ini<=%s AND data_fim>=%s LIMIT 1", (hoje,hoje), fetch="one")
-            if not row: raise HTTPException(status_code=404, detail="Sem semana ativa")
-            semana_id = row["id"]
+    data_reg = _parse_data(d.get("data") or date.today().isoformat())
     local_nome  = (d.get("local_nome") or "").strip()
     km_ini      = d.get("km_inicial"); km_fin = d.get("km_final")
     if not local_nome: raise HTTPException(status_code=400, detail="local_nome obrigatório")
@@ -557,10 +599,11 @@ async def jard_criar_km(request: Request, payload=Depends(verificar_token_jard))
     if offline_id:
         exist = await ajard_query("SELECT id FROM jardinagem.relatorios_diarios WHERE offline_id=%s", (offline_id,), fetch="one")
         if exist: return {"ok": True, "duplicado": True, "id": exist["id"]}
+    semana_id = await _semana_da_data(data_reg)
     row = await ajard_query_id("""INSERT INTO jardinagem.relatorios_diarios
         (semana_id,usuario_id,data,local_nome,km_inicial,km_final,hora_inicio,hora_fim,observacao,offline_id)
         VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
-        (semana_id,payload["sub"],d.get("data",date.today().isoformat()),local_nome,
+        (semana_id,payload["sub"],data_reg,local_nome,
          float(km_ini),float(km_fin),d.get("hora_inicio"),d.get("hora_fim"),d.get("observacao",""),offline_id))
     return {"ok": True, "id": row["id"]}
 
@@ -572,21 +615,17 @@ async def jard_editar_km(km_id: int, request: Request, payload=Depends(verificar
     if not local_nome: raise HTTPException(status_code=400, detail="local_nome obrigatório")
     if km_ini is None or km_fin is None: raise HTTPException(status_code=400, detail="km_inicial e km_final obrigatórios")
     if float(km_fin) < float(km_ini): raise HTTPException(status_code=400, detail="km_final não pode ser menor que km_inicial")
-    
-    # Atualiza o registro
-    await ajard_query("""UPDATE jardinagem.relatorios_diarios 
-        SET data=%s, local_nome=%s, km_inicial=%s, km_final=%s, 
+    atual = await ajard_query("SELECT data FROM jardinagem.relatorios_diarios WHERE id=%s", (km_id,), fetch="one")
+    if not atual: raise HTTPException(status_code=404, detail="Registro não encontrado")
+    data_reg = _parse_data(d["data"]) if d.get("data") else atual["data"]
+    semana_id = await _semana_da_data(data_reg)
+    await ajard_query("""UPDATE jardinagem.relatorios_diarios
+        SET data=%s, semana_id=%s, local_nome=%s, km_inicial=%s, km_final=%s,
             hora_inicio=%s, hora_fim=%s, observacao=%s
         WHERE id=%s""",
-        (d.get("data",date.today().isoformat()), local_nome,
-         float(km_ini), float(km_fin),
+        (data_reg, semana_id, local_nome, float(km_ini), float(km_fin),
          d.get("hora_inicio"), d.get("hora_fim"), d.get("observacao",""),
          km_id), fetch="none")
-    data_reg = d.get("data")
-    if data_reg:
-        row = await ajard_query("SELECT id FROM jardinagem.semanas WHERE data_ini<=%s AND data_fim>=%s LIMIT 1", (data_reg,data_reg), fetch="one")
-        if row:
-            await ajard_query("UPDATE jardinagem.relatorios_diarios SET semana_id=%s WHERE id=%s AND semana_id<>%s", (row["id"],km_id,row["id"]), fetch="none")
     return {"ok": True, "id": km_id}
 
 @router.delete("/jardinagem/api/relatorios/{km_id}")
@@ -693,27 +732,8 @@ async def jard_clientes(payload=Depends(verificar_token_jard)):
 @router.get("/jardinagem/api/km/mes/{mes_id}")
 async def jard_km_mes(mes_id: int, payload=Depends(verificar_token_jard)):
     """Retorna todos os KMs do mês em 1 chamada — evita N chamadas /preview."""
-    kms_raw = await ajard_query("""
-        SELECT r.id, r.data, r.local_nome, r.km_inicial, r.km_final,
-               r.hora_inicio, r.hora_fim, r.observacao, r.responsavel,
-               u.nome as responsavel_nome
-        FROM jardinagem.relatorios_diarios r
-        JOIN jardinagem.semanas s ON s.id = r.semana_id
-        JOIN public.usuarios_garra u ON u.id = r.usuario_id
-        WHERE s.mes_id = %s
-        ORDER BY r.data, r.criado_em
-    """, (mes_id,))
-    kms = [{"id": r["id"],
-            "data": r["data"].strftime("%d/%m/%Y") if r["data"] else "",
-            "local_nome": r["local_nome"] or "",
-            "km_inicial": float(r["km_inicial"] or 0),
-            "km_final": float(r["km_final"] or 0),
-            "hora_inicio": str(r["hora_inicio"]) if r["hora_inicio"] else "",
-            "hora_fim": str(r["hora_fim"]) if r["hora_fim"] else "",
-            "observacao": r["observacao"] or "",
-            "responsavel": r["responsavel_nome"] or r["responsavel"] or ""
-            } for r in kms_raw]
-    return {"mes_id": mes_id, "relatorios": kms}
+    ini, fim = await _intervalo_mes(mes_id)
+    return {"mes_id": mes_id, "relatorios": _kms_json(await _kms_periodo(ini, fim))}
 
 @router.get("/jardinagem/api/relatorios/{semana_id}/preview")
 async def jard_preview(semana_id: int, payload=Depends(verificar_token_jard)):
@@ -755,13 +775,7 @@ async def jard_preview(semana_id: int, payload=Depends(verificar_token_jard)):
                       "foto_antes":bool(fa),"foto_depois":bool(fd),
                       "url_antes":urls.get(f"{pid}_antes",""),
                       "url_depois":urls.get(f"{pid}_depois","")})
-    kms_raw = await ajard_query("""SELECT r.*,u.nome as responsavel_nome FROM jardinagem.relatorios_diarios r
-        JOIN public.usuarios_garra u ON u.id=r.usuario_id WHERE r.semana_id=%s ORDER BY r.data,r.criado_em""", (semana_id,))
-    kms = [{"id":r["id"],"data":r["data"].strftime("%d/%m/%Y") if r["data"] else "","local_nome":r["local_nome"] or "",
-            "km_inicial":float(r["km_inicial"] or 0),"km_final":float(r["km_final"] or 0),
-            "hora_inicio":str(r["hora_inicio"]) if r["hora_inicio"] else "",
-            "hora_fim":str(r["hora_fim"]) if r["hora_fim"] else "",
-            "observacao":r["observacao"] or "","responsavel":r["responsavel_nome"] or ""} for r in kms_raw]
+    kms = _kms_json(await _kms_periodo(sem["data_ini"], sem["data_fim"]))
     return {"semana_id":semana_id,"label":sem["label"],"pares":pares,"relatorios":kms,
             "total_pares":len(pares),"pares_completos":sum(1 for p in pares if p["foto_antes"] and p["foto_depois"]),"total_km":len(kms)}
 
@@ -798,12 +812,7 @@ async def jard_excel_km(semana_id: int, payload=Depends(verificar_token_jard)):
     sem = await ajard_query("SELECT * FROM jardinagem.semanas WHERE id=%s", (semana_id,), fetch="one")
     if not sem: raise HTTPException(status_code=404, detail="Semana não encontrada")
     semana_dict = {"label":sem["label"],"data_ini":sem["data_ini"].strftime("%d/%m/%Y") if sem["data_ini"] else "","data_fim":sem["data_fim"].strftime("%d/%m/%Y") if sem["data_fim"] else ""}
-    kms_raw = await ajard_query("""SELECT r.*,u.nome as responsavel_nome FROM jardinagem.relatorios_diarios r
-        JOIN public.usuarios_garra u ON u.id=r.usuario_id WHERE r.semana_id=%s ORDER BY r.data,r.criado_em""", (semana_id,))
-    relatorios = [{"data":r["data"].strftime("%d/%m/%Y") if r["data"] else "","local":r["local_nome"] or "",
-                   "km_ini":float(r["km_inicial"] or 0),"km_fin":float(r["km_final"] or 0),
-                   "hr_ini":str(r["hora_inicio"]) if r["hora_inicio"] else "","hr_fim":str(r["hora_fim"]) if r["hora_fim"] else "",
-                   "obs":r["observacao"] or "","responsavel":r["responsavel_nome"] or ""} for r in kms_raw]
+    relatorios = _kms_excel(await _kms_periodo(sem["data_ini"], sem["data_fim"]))
     buf = gerar_relatorio_km(semana_dict, relatorios)
     return StreamingResponse(buf, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                              headers={"Content-Disposition":f'attachment; filename="{nome_arquivo_semana(sem, "KM")}"'})
@@ -832,12 +841,7 @@ async def jard_enviar_email(semana_id: int, payload=Depends(verificar_token_jard
         fp = fotos_por_par_email.get(p["id"], {})
         pares.append({"codigo_a":p["codigo_a"],"codigo_d":p["codigo_d"],"local_nome":p["local_nome"] or "",
                       "foto_antes":fp.get("antes"), "foto_depois":fp.get("depois")})
-    kms_raw = await ajard_query("""SELECT r.*,u.nome as responsavel_nome FROM jardinagem.relatorios_diarios r
-        JOIN public.usuarios_garra u ON u.id=r.usuario_id WHERE r.semana_id=%s ORDER BY r.data,r.criado_em""", (semana_id,))
-    relatorios = [{"data":r["data"].strftime("%d/%m/%Y") if r["data"] else "","local":r["local_nome"] or "",
-                   "km_ini":float(r["km_inicial"] or 0),"km_fin":float(r["km_final"] or 0),
-                   "hr_ini":str(r["hora_inicio"]) if r["hora_inicio"] else "","hr_fim":str(r["hora_fim"]) if r["hora_fim"] else "",
-                   "obs":r["observacao"] or "","responsavel":r["responsavel_nome"] or ""} for r in kms_raw]
+    relatorios = _kms_excel(await _kms_periodo(sem["data_ini"], sem["data_fim"]))
     try:
         buf_fotos = gerar_relatorio_fotos(semana_dict, pares, SUPABASE_URL, SUPABASE_SERVICE_KEY)
         buf_km    = gerar_relatorio_km(semana_dict, relatorios)
@@ -921,19 +925,8 @@ async def jard_excel_km_mes(mes_id: int, payload=Depends(verificar_token_jard)):
     import sys; sys.path.insert(0, os.path.join(JARD_DIR))
     from gerar_relatorio import gerar_relatorio_km
     mes, mes_dict, arq = await _mes_periodo(mes_id)
-    kms_raw = await ajard_query(
-        """SELECT r.*, u.nome AS responsavel_nome
-           FROM jardinagem.relatorios_diarios r
-           JOIN jardinagem.semanas s ON s.id = r.semana_id
-           JOIN public.usuarios_garra u ON u.id = r.usuario_id
-           WHERE s.mes_id=%s
-           ORDER BY r.data, r.criado_em""", (mes_id,))
-    relatorios = [{"data": r["data"].strftime("%d/%m/%Y") if r["data"] else "",
-                   "local": r["local_nome"] or "",
-                   "km_ini": float(r["km_inicial"] or 0), "km_fin": float(r["km_final"] or 0),
-                   "hr_ini": str(r["hora_inicio"]) if r["hora_inicio"] else "",
-                   "hr_fim": str(r["hora_fim"]) if r["hora_fim"] else "",
-                   "obs": r["observacao"] or "", "responsavel": r["responsavel_nome"] or ""} for r in kms_raw]
+    ini, fim = await _intervalo_mes(mes_id)
+    relatorios = _kms_excel(await _kms_periodo(ini, fim))
     buf = gerar_relatorio_km(mes_dict, relatorios)
     return StreamingResponse(buf, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                              headers={"Content-Disposition": f'attachment; filename="{arq.format(tipo="km")}"'})
