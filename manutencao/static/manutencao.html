@@ -252,7 +252,7 @@ button:disabled, select:disabled, input:disabled, [aria-disabled=true] { cursor:
   </div>
   <div class="strip">🔧 Trabalhos <span class="sc" id="ots-strip">carregando…</span></div>
   <div class="param-wrap">
-    <div class="param-nav" style="width:210px" id="tt-nav" oncontextmenu="ctxExpandir(event,'ots')"></div>
+    <div class="param-nav" style="width:210px" id="tt-nav"></div>
     <div style="flex:1;display:flex;flex-direction:column;overflow:hidden">
       <div class="tw" style="flex:1" oncontextmenu="ctxExpandir(event,'ots')">
         <table>
@@ -293,7 +293,7 @@ button:disabled, select:disabled, input:disabled, [aria-disabled=true] { cursor:
     <div class="param-nav" style="width:230px;display:flex;flex-direction:column">
       <div id="alm-nav" style="flex:1;overflow:auto" oncontextmenu="ctxExpandir(event,'alm')"></div>
     </div>
-    <div class="param-pane" style="display:flex;flex-direction:column;overflow:hidden" oncontextmenu="ctxExpandir(event,'alm')">
+    <div class="param-pane" style="display:flex;flex-direction:column;overflow:hidden">
       <div class="bar" style="background:transparent;border:none;padding:0 0 6px">
         <button class="btn p" id="alm-l-mestre" onclick="almLente('mestre')">🗂 Catálogo de Peças</button>
         <button class="btn" id="alm-l-armazem" onclick="almLente('armazem')">📦 Almoxarifado</button>
@@ -516,7 +516,7 @@ async function renderArvore(){
   const semGrupo = _eqsDoNo('_sem');
   if (semGrupo.length)
     html += '<div class="pn-grp" data-cod="_sem" onclick="arvNoMarcar(this.dataset.cod)" ondblclick="arvCarregar(this.dataset.cod)" title="Duplo clique carrega">❔ Sem grupo <span class="muted">('+semGrupo.length+') — aponte em Cadastros</span></div>';
-  corpo.innerHTML = html;
+  const _st = corpo.scrollTop; corpo.innerHTML = html; corpo.scrollTop = _st;   // não mexe na rolagem do menu
   renderCentroEquip();
 }
 // (30/09/2026) Padrão ManWinWin, sem "efeito sanfona": o clique marca o nó e só ABRE o ramo
@@ -653,16 +653,16 @@ function arvCarregarCtx(){
   _ctxMenuEl().style.display = 'none';
   arvCarregar(cod);
 }
-// (30/09/2026) Expandir / Fechar tudo no botão direito da árvore valem para a ESTRUTURA onde se
-// clicou: em "Máquinas" abre/fecha só o que está dentro de Máquinas; na Organização, tudo.
+// (07/10/2026) REGRA ÚNICA do botão direito "Expandir tudo / Fechar tudo", em todos os módulos:
+// age SÓ no conteúdo do CENTRO. Nunca abre/fecha ramos do menu da esquerda (isso é a setinha)
+// nem mexe na rolagem dele. Frota — Expandir: carrega a estrutura clicada no centro com os
+// componentes dos equipamentos abertos; Fechar: limpa a tela central.
 function arvFecharCtx(){
   const cod = _ctxMenuEl().dataset.cod;
   if (!cod) return;
   _ctxMenuEl().style.display = 'none';
-  if (cod === '_todos') { expandirTudo('frota', false); return; }
-  (_arvSistemas||[]).forEach(s => { if (s.codigo === cod || s.codigo.startsWith(cod+'.')) _arvAbertos.delete(s.codigo); });
-  _eqsDoNo(cod).forEach(e => _ftAbertos.delete(String(e.id)));
-  _arvSel = cod;
+  _ftAbertos = new Set();
+  _arvNoAtivo = null;            // tela central limpa; árvore fica como está
   renderArvore();
 }
 // ── (30/09/2026) Manutenção da ORGANIZAÇÃO direto na árvore (ManWinWin "Organização Funcional"):
@@ -755,14 +755,13 @@ async function sisInativar(cod){
   } catch(e) { mostrarToast('❌ ' + e.message, 'warn'); }
 }
 function arvExpandirCtx(){
-  // expande os ramos de dentro da estrutura escolhida e carrega tudo o que há nela
   const cod = _ctxMenuEl().dataset.cod;
   if (!cod) return;
   _ctxMenuEl().style.display = 'none';
-  (_arvSistemas||[]).forEach(s => { if (cod==='_todos' || s.codigo === cod || s.codigo.startsWith(cod+'.')) _arvAbertos.add(s.codigo); });
   const pais = new Set(_semCache.filter(f => f.equipamento_pai).map(f => String(f.equipamento_pai)));
   _eqsDoNo(cod).forEach(e => { if (pais.has(String(e.id))) _ftAbertos.add(String(e.id)); });
-  arvCarregar(cod);
+  _arvNoAtivo = cod; _arvSel = cod;   // carrega no centro SEM abrir ramos da árvore
+  renderArvore();
 }
 // (27/09/2026) Expandir / Fechar tudo vale para a ÁRVORE e para o CONTEÚDO do meio da tela
 // do módulo: Frota = ramos + subsistemas dos equipamentos; OTs = tipos + grupos da lista;
@@ -783,16 +782,13 @@ function ctxExpandir(ev, mod){
 function expandirTudo(mod, abrir){
   _ctxMenuEl().style.display = 'none';
   if (mod === 'frota') {
-    _arvAbertos = abrir ? new Set((_arvSistemas||[]).map(s => s.codigo)) : new Set();
     const pais = new Set(_semCache.filter(f => f.equipamento_pai).map(f => String(f.equipamento_pai)));
     _ftAbertos = abrir ? pais : new Set();
-    _arvNoAtivo = abrir ? '_todos' : null;   // expandir = carrega toda a organização · fechar = tela limpa
-    if (!abrir) _arvSel = null;
-    renderArvore();
+    _arvNoAtivo = abrir ? '_todos' : null;   // expandir = toda a organização no centro · fechar = tela limpa
+    renderArvore();                           // ramos e rolagem da árvore ficam como estão
   } else if (mod === 'ots') {
-    _ttFechados = abrir ? new Set() : new Set(Object.keys(_TT_CAT).concat((_mntTiposTrab||[]).map(t => (t.codigo||'').charAt(0))));
     _otsGrpFechados = abrir ? new Set() : new Set(_otsGrpIds);
-    montarNavTipos(); renderOTs();
+    renderOTs();                              // só os grupos da lista central; o menu de tipos não muda
   } else if (mod === 'alm') {
     _almArvTodas = abrir; montarNavAlm();
   }
