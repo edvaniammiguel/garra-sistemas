@@ -133,7 +133,7 @@ button:disabled, select:disabled, input:disabled, fieldset:disabled *, [aria-dis
   <span class="badge-fila" id="badge-fila">0</span>
   <span style="flex:1"></span>
   <span id="hdr-user" style="font-size:12px;opacity:.85"></span>
-  <span style="font-size:10px;opacity:.6;margin-left:8px">v1.32</span>
+  <span style="font-size:10px;opacity:.6;margin-left:8px">v1.33</span>
 </header>
 
 <div class="wrap">
@@ -581,6 +581,19 @@ async function _salvarOC(solicitar){
   const itens=lerItens();
   if(!itens.length){ toast('Adicione ao menos 1 item com descrição','warn'); return; }
   let modoAv = document.getElementById('chip-forn-av').classList.contains('sel');
+  // Fornecedor é obrigatório — nunca salvar OC "fornecedor a definir".
+  const _fBusca=document.getElementById('n-forn-busca').value.trim();
+  const _fAv=document.getElementById('n-forn-avulso').value.trim();
+  const _fId=document.getElementById('n-fornecedor').value;
+  if ((!modoAv && !_fId && !_fBusca) || (modoAv && !_fAv)){
+    toast('Defina o fornecedor: escolha um cadastrado ou digite no ✎ Avulso','warn');
+    const chip=document.getElementById('chip-forn-av');
+    chip.style.outline='2px solid #d97706'; chip.style.outlineOffset='2px';
+    setTimeout(()=>{ chip.style.outline=''; chip.style.outlineOffset=''; },1800);
+    if (modoAv){ try{ document.getElementById('n-forn-avulso').focus(); }catch(e){} }
+    else { try{ chip.setAttribute('tabindex','-1'); chip.focus(); }catch(e){} }
+    return;
+  }
   let _avulsoAuto = null;
   if (!modoAv && !fornResolver()){
     // Digitou um nome que NÃO está no cadastro (caso balcão: loja nova).
