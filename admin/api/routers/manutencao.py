@@ -204,6 +204,9 @@ async def _garantir_colunas_ot():
         "ALTER TABLE manutencao.ot ADD COLUMN IF NOT EXISTS contrato TEXT",
         "ALTER TABLE manutencao.ot ADD COLUMN IF NOT EXISTS tdm_previsto NUMERIC",
         "ALTER TABLE manutencao.ot ADD COLUMN IF NOT EXISTS bloqueada BOOLEAN DEFAULT false",
+        # (10/10/2026) "Data Programada Alterada" do ManWinWin: a programação saiu do cálculo da FMP
+        # por decisão humana (Avançado). Recalcular pelo plano (Aplicar FMP) não sobrepõe; Novo ciclo limpa.
+        "ALTER TABLE manutencao.ot ADD COLUMN IF NOT EXISTS prog_alterada BOOLEAN DEFAULT false",
     ):
         await ajard_query(ddl, fetch="none")
     # OT que já tem fornecedor é externa (migração idempotente)
@@ -770,7 +773,7 @@ async def reprogramar_ot(ot_id: str, request: Request, payload=Depends(verificar
     if not data_n and hor_n is None:
         raise HTTPException(status_code=400, detail="Informe nova data e/ou novo horímetro")
     await ajard_query(
-        "UPDATE manutencao.ot SET data_prevista=%s, horimetro_previsto=%s, atualizado_em=now() WHERE id=%s",
+        "UPDATE manutencao.ot SET data_prevista=%s, horimetro_previsto=%s, prog_alterada=true, atualizado_em=now() WHERE id=%s",
         (data_n, hor_n, ot_id), fetch="none")
     uid = await _usuario_id(payload)
     antes = f"{ot['data_prevista'] or '—'} · {ot['horimetro_previsto'] or '—'}"
@@ -808,11 +811,6 @@ async def editar_ot(ot_id: str, request: Request, payload=Depends(verificar_manu
             d["horimetro_previsto"] = float(str(d["horimetro_previsto"]).replace(",", "."))
         except ValueError:
             d.pop("horimetro_previsto")
-    for c in ("data_prevista", "horimetro_previsto"):
-        if c in d and d[c] == "":
-            d[c] = None
-    if d.get("data_prevista"):
-        d["data_prevista"] = _data_ok(d["data_prevista"])
     for c in ("sintoma_codigo", "causa_codigo", "setor_interventor", "contrato", "responsavel_id", "fornecedor_id"):
         if c in d and d[c] == "":
             d[c] = None
@@ -830,8 +828,12 @@ async def editar_ot(ot_id: str, request: Request, payload=Depends(verificar_manu
         d["setor_interventor"] = None
     if "bloqueada" in d:
         d["bloqueada"] = bool(d["bloqueada"])
+    # (10/10/2026) ManWinWin: a programação (data/registro previstos) NÃO se edita na ficha —
+    # só pelo Avançado (/reprogramar, com motivo e histórico) ou pelo plano (aplicar-fmp, novo-ciclo).
+    for c in ("data_prevista", "horimetro_previsto"):
+        d.pop(c, None)
     campos = ["tipo", "prioridade", "descricao", "responsavel_id",
-              "fornecedor_id", "custo_total", "data_prevista", "horimetro_previsto",
+              "fornecedor_id", "custo_total",
               "sintoma_codigo", "causa_codigo", "tipo_trabalho", "projecto_id", "plano_id",
               "interventor", "setor_interventor", "contrato", "tdm_previsto", "bloqueada"]
     if "projecto_id" in d and d["projecto_id"] == "":
@@ -1875,22 +1877,28 @@ async def ot_aplicar_fmp(ot_id: str, request: Request, payload=Depends(verificar
     p = await ajard_query("SELECT * FROM manutencao.planos WHERE id=%s AND ativo=true", (pid,), fetch="one")
     if not p:
         raise HTTPException(status_code=404, detail="FMP não encontrada")
-    o = await ajard_query("SELECT id, equipamento_id, status FROM manutencao.ot WHERE id=%s AND ativo=true", (ot_id,), fetch="one")
+    o = await ajard_query("SELECT id, equipamento_id, status, plano_id, prog_alterada, data_prevista, horimetro_previsto FROM manutencao.ot WHERE id=%s AND ativo=true", (ot_id,), fetch="one")
     if not o:
         raise HTTPException(status_code=404, detail="OT não encontrada")
     if str(o["equipamento_id"]) != str(p["equipamento_id"]):
         raise HTTPException(status_code=400, detail="A FMP é de outro equipamento")
     prev = await _calcular_previsoes()
     it = next((i for i in prev["itens"] if str(i["plano_id"]) == str(pid)), None)
+    # (10/10/2026) Programação alterada à mão (Avançado) na MESMA FMP não é sobreposta pelo recálculo
+    manter = bool(o.get("prog_alterada")) and str(o.get("plano_id") or "") == str(pid)
+    if manter:
+        nova_data, novo_hor = o["data_prevista"], o["horimetro_previsto"]
+    else:
+        nova_data, novo_hor = (it or {}).get("proxima_data"), (it or {}).get("leitura_alvo")
     await ajard_query(
         """UPDATE manutencao.ot SET plano_id=%s, descricao=%s, tipo='preventiva', tipo_trabalho=%s,
                data_prevista=COALESCE(%s, data_prevista), horimetro_previsto=COALESCE(%s, horimetro_previsto),
-               atualizado_em=now()
+               prog_alterada=%s, atualizado_em=now()
            WHERE id=%s""",
-        (pid, p["descricao"], p["tipo_trabalho"],
-         (it or {}).get("proxima_data"), (it or {}).get("leitura_alvo"), ot_id), fetch="none")
-    return {"ok": True, "descricao": p["descricao"], "tipo_trabalho": p["tipo_trabalho"],
-            "data_prevista": (it or {}).get("proxima_data"), "horimetro_previsto": (it or {}).get("leitura_alvo")}
+        (pid, p["descricao"], p["tipo_trabalho"], nova_data, novo_hor, manter, ot_id), fetch="none")
+    return {"ok": True, "descricao": p["descricao"], "tipo_trabalho": p["tipo_trabalho"], "prog_alterada": manter,
+            "data_prevista": (nova_data.isoformat() if hasattr(nova_data, "isoformat") else nova_data),
+            "horimetro_previsto": (float(novo_hor) if novo_hor is not None else None)}
 
 
 @router.post("/manutencao/api/ots/{ot_id}/tarefas/da-fmp")
@@ -3829,7 +3837,7 @@ async def ot_novo_ciclo(ot_id: str, payload=Depends(verificar_manutencao)):
         base = nova_data or _date.today()
         nova_data = base + _td(days=int(total))
     await ajard_query(
-        "UPDATE manutencao.ot SET data_prevista=%s, horimetro_previsto=%s WHERE id=%s",
+        "UPDATE manutencao.ot SET data_prevista=%s, horimetro_previsto=%s, prog_alterada=false WHERE id=%s",
         (nova_data, novo_hor, ot_id), fetch="none")
     uid = await _usuario_id(payload)
     await ajard_query(
