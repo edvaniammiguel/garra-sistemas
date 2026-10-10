@@ -1202,6 +1202,26 @@ async def _garantir_funcoes():
     for ddl in ("ALTER TABLE manutencao.ot_mao_obra ADD COLUMN IF NOT EXISTS funcao_codigo TEXT",
                 "ALTER TABLE manutencao.ot_mao_obra ADD COLUMN IF NOT EXISTS rubrica TEXT"):
         await ajard_query(ddl, fetch="none")
+    # (10/10/2026) ORGANOGRAMA da empresa (ManWinWin): setor › função › pessoas. Funções reais da Garra,
+    # idempotente — custo HH e conta ficam para a Parametrização. Setor INT (Inativo) junta-se a MAN/PRD/EXT/ADM.
+    await _garantir_dominios()
+    await ajard_query("""INSERT INTO manutencao.setores_interventor (codigo,nome) VALUES ('INT','Inativo')
+                         ON CONFLICT (codigo) DO NOTHING""", fetch="none")
+    await ajard_query("""
+        INSERT INTO manutencao.funcoes (codigo, nome, setor, rubrica, externa) VALUES
+          ('MAN.01','Responsável Manutenção','MAN','1.01',false), ('MAN.02','Canalizador/Eletricista','MAN','1.01',false),
+          ('MAN.03','Serralheiro Mecânico','MAN','1.01',false),   ('MAN.04','Preparador Trabalho','MAN','1.01',false),
+          ('MAN.05','Eletromecânico','MAN','1.01',false),         ('MAN.06','Rasteleiro','MAN','1.01',false),
+          ('MAN.07','Servente','MAN','1.01',false),               ('MAN.08','Auxiliar Manutenção','MAN','1.01',false),
+          ('MAN.09','Operadores','PRD','1.02',false),             ('MAN.10','Responsável Produção','PRD','1.02',false),
+          ('MAN.11','Manutenção externa','EXT','1.03',true)
+        ON CONFLICT (codigo) DO NOTHING""", fetch="none")
+    # seed provisório anterior (códigos inventados) sai se nunca foi usado
+    await ajard_query("""DELETE FROM manutencao.funcoes f
+                          WHERE f.codigo IN ('MEC','ELE','SOL','BOR','LUB','AJM','OPE','MOT','SER','ADM','TER','OFI')
+                            AND f.custo_hh IS NULL
+                            AND NOT EXISTS (SELECT 1 FROM manutencao.colaborador_funcao c WHERE c.funcao_codigo=f.codigo)
+                            AND NOT EXISTS (SELECT 1 FROM manutencao.ot_mao_obra m WHERE m.funcao_codigo=f.codigo)""", fetch="none")
     _FUNC_OK = True
 
 
