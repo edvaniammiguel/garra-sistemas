@@ -1406,6 +1406,7 @@ function _pcAcBox(){
       if (it.dataset.v !== '') row.querySelector('.v').value = it.dataset.v;
       pcTotLinha(row.querySelector('.h'));
       b.style.display = 'none';
+      if (row.querySelector('.saldo')) { row._familia = it.dataset.fam || ''; pcSaldoInfo(row, it.dataset.c); otSaidaRubrica(true); }   // janelas da OT
     });
     document.addEventListener('click', ev => { if (!b.contains(ev.target) && ev.target !== b._alvo) b.style.display = 'none'; });
   }
@@ -1419,9 +1420,17 @@ function pcSugerir(inp){
   _pcAcTimer = setTimeout(async () => {
     let r; try { r = await mntFetch('/manutencao/api/pecas?busca=' + encodeURIComponent(q) + '&limit=8'); } catch(e){ return; }
     const itens = (r && r.itens) || [];
-    if (!itens.length){ box.style.display = 'none'; return; }
+    const naOT = !!inp.closest('#ot-saida, #ot-aplic');
+    if (!itens.length){
+      if (!naOT) { box.style.display = 'none'; return; }
+      // (10/10/2026) peça não cadastrada: cadastra e aplica sem sair da OT
+      box.innerHTML = '<div style="padding:7px 8px;cursor:pointer;color:#B45309" onmousedown="event.preventDefault();otPecaNova(\''+_esc(q).replace(/'/g,'&#39;')+'\')">➕ "'+_esc(q)+'" não está no cadastro — <b>cadastrar agora e aplicar na OT</b></div>';
+      const rct = inp.getBoundingClientRect();
+      box.style.left = rct.left+'px'; box.style.top = (rct.bottom+2)+'px'; box.style.width = Math.max(rct.width, 340)+'px';
+      box.style.display = 'block'; box._alvo = inp; return;
+    }
     box.innerHTML = itens.map(p =>
-      '<div class="pc-ac-it" style="padding:5px 8px;cursor:pointer;border-bottom:1px solid #F1F5F9" data-c="'+_esc(p.codigo)+'" data-d="'+_esc(p.descricao||'')+'" data-u="'+_esc(p.unidade||'UN')+'" data-v="'+(p.custo_medio != null ? parseFloat(p.custo_medio) : '')+'">'
+      '<div class="pc-ac-it" style="padding:5px 8px;cursor:pointer;border-bottom:1px solid #F1F5F9" data-c="'+_esc(p.codigo)+'" data-d="'+_esc(p.descricao||'')+'" data-u="'+_esc(p.unidade||'UN')+'" data-fam="'+_esc(p.familia_codigo||'')+'" data-v="'+(p.custo_medio != null ? parseFloat(p.custo_medio) : '')+'">'
       + '<b>'+_esc(p.codigo)+'</b> '+_esc(p.descricao||'')
       + (p.custo_medio != null ? ' <span class="muted">R$ '+parseFloat(p.custo_medio).toFixed(2)+'</span>' : '')
       + '</div>').join('');
@@ -3674,7 +3683,7 @@ async function otPecasRender(){
   const linhaRe = x =>
     '<div style="display:flex;gap:6px;padding:4px 6px;border-bottom:1px solid #F1F5F9;font-size:11px;align-items:center">'
     + '<span style="width:62px" class="muted">'+dd2(x.data)+'</span>'
-    + '<span class="chip '+(x.tipo==='saida'?'em':'tm')+'" style="font-size:9px">'+(x.tipo==='saida'?'Saída':'Devolução')+'</span>'
+    + '<span class="chip '+(x.tipo==='saida'?'em':x.tipo==='aplicacao_direta'?'pr':'tm')+'" style="font-size:9px" title="'+(x.rubrica?'Rubrica '+_esc(x.rubrica):'')+'">'+(x.tipo==='saida'?'Estoque':x.tipo==='aplicacao_direta'?'Fornecedor':'Devolução')+(x.rubrica?' · '+_esc(x.rubrica):'')+'</span>'
     + '<b style="width:100px">'+_esc(x.peca_codigo)+'</b><span style="flex:1">'+_esc(x.peca_descricao||'')+'</span>'
     + '<span style="width:50px;text-align:right">'+x.quantidade+'</span>'
     + '<span style="width:35px">'+_esc(x.unidade)+'</span>'
@@ -3696,8 +3705,7 @@ async function otPecasRender(){
         ? '<div style="text-align:right;padding:2px 6px;font-size:11px;font-weight:700;color:'+(delta>0?'#B91C1C':'#15803D')+'">Δ realizado − previsto: '+money(delta)+'</div>' : '')
     + (podeBaixar
         ? '<div style="margin-top:8px;display:flex;gap:8px">'
-          + '<button class="btn p" onclick="otSaidaAbrir()">＋ Saída (baixa do estoque)</button>'
-          + '<button class="btn" title="Peça do cadastro consumida sem passar pelo estoque (compra/oficina direto na máquina)" onclick="otAplicDireta()">⚡ Aplicação direta</button>'
+          + '<button class="btn p" onclick="otSaidaAbrir()">＋ Baixar peça (estoque ou fornecedor)</button>'
           + '<button class="btn" title="Peças previstas na FMP que o estoque e as OCs abertas não cobrem → OC em rascunho no Compras, amarrada a esta OT" onclick="ocDaOT()">🛒 Gerar OC (faltantes)</button>'
           + '</div>'
         : '');
@@ -3712,8 +3720,9 @@ function otAplicDireta(){
   b.innerHTML = '<div class="plf-pc-row" style="background:#fff;border-radius:10px;box-shadow:0 12px 32px rgba(15,23,42,.3);padding:16px;width:540px;max-width:94vw">'
     + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><b style="color:#1A2A5E">⚡ Aplicação direta — do cadastro para a OT</b><span style="cursor:pointer;font-size:16px" onclick="document.getElementById(\'ot-aplic\').style.display=\'none\'">✕</span></div>'
     + '<div class="muted" style="font-size:10px;margin-bottom:6px">Consumo sem passar pelo estoque. Peça nova? Preencha código + descrição que ela nasce no cadastro junto.</div>'
-    + '<div class="mfield">Peça (código ou descrição — busca no cadastro)<input class="f" placeholder="ex.: filtro" oninput="pcSugerir(this)" autocomplete="off"></div>'
-    + '<div class="mfield" style="margin-top:6px">Descrição<input class="d" oninput="pcSugerir(this)" autocomplete="off"></div>'
+    + '<div class="mfield">Peça (código ou descrição — busca no cadastro; não achou? cadastre na hora)<input class="f" placeholder="ex.: filtro" oninput="pcSugerir(this)" autocomplete="off"></div>'
+    + '<div class="saldo muted" style="font-size:10px;min-height:13px;margin:2px 0 4px"></div>'
+    + '<div class="mfield">Descrição<input class="d" oninput="pcSugerir(this)" autocomplete="off"></div>'
     + '<div style="display:flex;gap:8px;margin-top:6px">'
     + '<div class="mfield" style="width:80px">Quant.<input class="h" type="number" step="0.5" oninput="pcTotLinha(this)"></div>'
     + '<div class="mfield" style="width:60px">UN<input class="c" value="UN"></div>'
@@ -3745,8 +3754,93 @@ async function otAplicOK(){
     otPecasRender();
   } catch(e){ mostrarToast('❌ '+e.message, 'warn'); }
 }
+// (10/10/2026) Saldo por almoxarifado da peça escolhida — decide na hora: do estoque ou aplicação direta
+async function pcSaldoInfo(row, cod){
+  const el = row.querySelector('.saldo'); if (!el) return;
+  try {
+    const r = await mntFetch('/manutencao/api/armazem?busca='+encodeURIComponent(cod));
+    const its = (r.itens||[]).filter(x => x.codigo === cod);
+    row._saldos = {}; its.forEach(x => { row._saldos[x.almox] = parseFloat(x.quantidade||0); });
+    const tot = its.reduce((s,x)=>s+parseFloat(x.quantidade||0),0);
+    const alm = row.querySelector('.alm');
+    if (alm) {
+      // saldo vai no próprio nome do almoxarifado: "A2 — Galpão (saldo 12)"; o de maior saldo fica selecionado
+      [...alm.options].forEach(o => { const s = row._saldos[o.value]; o.textContent = o.textContent.replace(/ \(saldo .*\)$/, '') + (s != null ? ' (saldo '+s.toLocaleString('pt-BR')+')' : ' (sem saldo)'); });
+      const best = its.slice().sort((a,b)=>parseFloat(b.quantidade)-parseFloat(a.quantidade))[0];
+      if (best && parseFloat(best.quantidade) > 0) alm.value = best.almox;
+    }
+    if (el.style.display !== 'none') el.innerHTML = its.length ? 'Saldo: ' + its.map(x => '<b>'+_esc(x.almox)+'</b> '+parseFloat(x.quantidade||0).toLocaleString('pt-BR')).join(' · ') : '<span style="color:#B45309">Sem saldo em nenhum almoxarifado</span>';
+    if (!tot && row.closest('#ot-saida')) { otSaidaModo('direta'); row.querySelector('.aviso').textContent = 'Sem saldo no estoque — marcado como vindo do fornecedor / oficina.'; }
+    else otSaidaChecar();
+  } catch(e){}
+}
+// Peça fora do cadastro: cadastra pela própria janela (código + descrição + UN + família) e já aplica na OT
+async function otPecaNova(texto){
+  _pcAcBox().style.display = 'none';
+  let fams = []; try { fams = (await mntFetch('/manutencao/api/param/familias')).filter(f => f.ativo !== false); } catch(e){}
+  let b = document.getElementById('ot-pcnova');
+  if (!b){ b = document.createElement('div'); b.id = 'ot-pcnova'; b.style.cssText = 'position:fixed;inset:0;z-index:9999;background:rgba(15,23,42,.45);display:none;align-items:center;justify-content:center'; document.body.appendChild(b); }
+  const ehCod = /^[A-Za-z]\.[A-Za-z0-9]+\./.test(texto);
+  b.innerHTML = '<div style="background:#fff;border-radius:10px;box-shadow:0 12px 32px rgba(15,23,42,.3);padding:16px;width:520px;max-width:94vw">'
+    + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><b style="color:#1A2A5E">➕ Cadastrar peça e aplicar na OT</b><span style="cursor:pointer;font-size:16px" onclick="document.getElementById(\'ot-pcnova\').style.display=\'none\'">✕</span></div>'
+    + '<div class="muted" style="font-size:10px;margin-bottom:6px">Nasce no Catálogo de Peças agora, com custo médio = custo desta aplicação. Sem passar pelo estoque.</div>'
+    + '<div class="mgrid"><div class="mfield">Família<select id="pn-fam" onchange="otPecaNovaCod()"><option value="">— escolha —</option>'+fams.map(f=>'<option value="'+_esc(f.codigo)+'">'+_esc(f.codigo)+' — '+_esc(f.nome||'')+'</option>').join('')+'</select></div>'
+    + '<div class="mfield">Código<input id="pn-cod" value="'+(ehCod?_esc(texto):'')+'" placeholder="ex.: C.MC.130.013 (sugerido pela família)"></div></div>'
+    + '<div class="mfield" style="margin-top:6px">Descrição<input id="pn-desc" value="'+(ehCod?'':_esc(texto))+'" placeholder="ex.: Óleo hidráulico ISO VG 68"></div>'
+    + '<div style="display:flex;gap:8px;margin-top:6px">'
+    + '<div class="mfield" style="width:80px">Quant.<input id="pn-qtd" type="number" step="0.5" min="0"></div>'
+    + '<div class="mfield" style="width:70px">UN<input id="pn-un" value="UN"></div>'
+    + '<div class="mfield" style="width:110px">Custo un. (R$)<input id="pn-custo" type="number" step="0.01"></div>'
+    + '<div class="mfield" style="flex:1">Referência (NF / oficina)<input id="pn-ref" placeholder="opcional"></div></div>'
+    + '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">'
+    + '<button class="btn" onclick="document.getElementById(\'ot-pcnova\').style.display=\'none\'">Cancelar</button>'
+    + '<button class="btn p" onclick="otPecaNovaOK()">Cadastrar e aplicar</button></div></div>';
+  b.style.display = 'flex';
+  setTimeout(() => { const el = document.getElementById(ehCod ? 'pn-desc' : 'pn-fam'); el && el.focus(); }, 50);
+}
+async function otPecaNovaCod(){
+  // próximo código livre na família (C.<FAM>.<sub>.NNN) — mesma regra do catálogo
+  const fam = document.getElementById('pn-fam').value, el = document.getElementById('pn-cod');
+  if (!fam || el.value.trim()) return;
+  try {
+    const r = await mntFetch('/manutencao/api/pecas?familia='+encodeURIComponent(fam)+'&limit=300');
+    const cods = (r.itens||[]).map(p => p.codigo).filter(c => /\.\d{3}$/.test(c)).sort();
+    const raiz = fam.includes('.') ? 'C.'+fam : 'C.'+fam+'.010';
+    const ult = cods.filter(c => c.startsWith(raiz+'.')).map(c => parseInt(c.slice(-3),10)).filter(n=>!isNaN(n));
+    el.value = raiz + '.' + String((ult.length ? Math.max(...ult) : 0) + 1).padStart(3,'0');
+  } catch(e){}
+}
+async function otPecaNovaOK(){
+  const g = id => (document.getElementById(id)||{}).value || '';
+  const cod = g('pn-cod').trim().toUpperCase(), desc = g('pn-desc').trim(), qtd = parseFloat(String(g('pn-qtd')).replace(',','.'))||0;
+  if (!cod || !desc) { mostrarToast('Código e descrição são obrigatórios', 'warn'); return; }
+  if (qtd <= 0) { mostrarToast('Quantidade deve ser positiva', 'warn'); return; }
+  try {
+    const r = await mntFetch('/manutencao/api/entradas', { method:'POST', body: JSON.stringify({
+      documento_tipo: 'aplicacao_direta', documento_numero: g('pn-ref').trim(), ot_id: _otAberta.id,
+      observacao: 'Aplicação direta OT '+_otAberta.numero+' (peça cadastrada na OT)',
+      itens: [{ peca: cod, descricao: desc, quantidade: qtd, un: g('pn-un').trim() || 'UN', custo_unitario: g('pn-custo'), familia_codigo: g('pn-fam') || null }] })});
+    mostrarToast('✅ '+cod+' cadastrada e aplicada na OT'+(r.total?' · R$ '+r.total.toFixed(2):''), 'ok');
+    document.getElementById('ot-pcnova').style.display = 'none';
+    const s = document.getElementById('ot-saida'); if (s) s.style.display = 'none';
+    const a = document.getElementById('ot-aplic'); if (a) a.style.display = 'none';
+    otPecasRender();
+  } catch(e){ mostrarToast('❌ '+e.message,'warn'); }
+}
+function otSaidaModo(m){
+  const b = document.getElementById('ot-saida'); if (!b) return;
+  const r = b.querySelector('input[name="sai-modo"][value="'+m+'"]'); if (r) r.checked = true;
+  const direta = m === 'direta';
+  b.querySelector('.alm-wrap').style.display = direta ? 'none' : '';
+  b.querySelector('.ref-wrap').style.display = direta ? '' : 'none';
+  b.querySelector('.c').readOnly = !direta; b.querySelector('.c').style.background = direta ? '' : '#F8FAFC';
+  b.querySelector('.btn-ok').textContent = direta ? 'Confirmar baixa (fornecedor)' : 'Confirmar baixa (estoque)';
+  otSaidaRubrica(true);
+}
 function otSaidaAbrir(){
-  const alms = _otPc.alms || [];
+  // (10/10/2026) Janela enxuta: peça · quantidade/custo · DE ONDE veio. A rubrica (2.01–2.06, padrão
+  // ManWinWin) o servidor decide pela origem + classe da peça — nada disso aparece para o usuário.
+  const alms = (_otPc.alms || []).filter(a=>a.ativo!==false);
   let b = document.getElementById('ot-saida');
   if (!b){
     b = document.createElement('div'); b.id = 'ot-saida';
@@ -3754,21 +3848,51 @@ function otSaidaAbrir(){
     document.body.appendChild(b);
   }
   b.innerHTML = '<div class="plf-pc-row" style="background:#fff;border-radius:10px;box-shadow:0 12px 32px rgba(15,23,42,.3);padding:16px;width:520px;max-width:94vw">'
-    + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><b style="color:#1A2A5E">Saída de peça — baixa no estoque</b><span style="cursor:pointer;font-size:16px" onclick="document.getElementById(\'ot-saida\').style.display=\'none\'">✕</span></div>'
-    + '<div class="mfield">Peça (código ou descrição — busca no acervo)<input class="f" placeholder="ex.: filtro" oninput="pcSugerir(this)" autocomplete="off"></div>'
+    + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><b style="color:#1A2A5E">Baixar peça na OT</b><span style="cursor:pointer;font-size:16px" onclick="document.getElementById(\'ot-saida\').style.display=\'none\'">✕</span></div>'
+    + '<div class="mfield">Peça<input class="f" placeholder="código ou descrição — não achou? cadastre na hora" oninput="pcSugerir(this)" autocomplete="off"></div>'
     + '<div class="mfield" style="margin-top:6px">Descrição<input class="d" oninput="pcSugerir(this)" autocomplete="off"></div>'
+    + '<div class="saldo" style="display:none"></div>'
     + '<div style="display:flex;gap:8px;margin-top:6px">'
-    + '<div class="mfield" style="width:80px">Quant.<input class="h" type="number" step="0.5" oninput="pcTotLinha(this)"></div>'
+    + '<div class="mfield" style="width:80px">Quant.<input class="h" type="number" step="0.5" oninput="pcTotLinha(this);otSaidaChecar()"></div>'
     + '<div class="mfield" style="width:60px">UN<input class="c" value="UN" readonly style="background:#F8FAFC"></div>'
     + '<div class="mfield" style="width:100px">Custo un.<input class="v" type="number" step="0.01" oninput="pcTotLinha(this)"></div>'
     + '<div class="mfield" style="flex:1">Total<div class="t" style="padding:6px 0;font-weight:700;color:#1A2A5E">—</div></div></div>'
-    + '<div class="mfield" style="margin-top:6px">Almoxarifado de origem<select class="alm">'
-    + alms.filter(a=>a.ativo!==false).map(a=>'<option value="'+_esc(a.codigo)+'">'+_esc(a.codigo)+' — '+_esc(a.nome||'')+'</option>').join('')
-    + '</select></div>'
-    + '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">'
+    + '<div class="dsec" style="margin-top:10px">De onde veio</div>'
+    + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:6px">'
+    +   '<label style="display:flex;align-items:center;gap:6px;font-size:11px;cursor:pointer"><input type="radio" name="sai-modo" value="estoque" checked onchange="otSaidaModo(\'estoque\')"> Estoque Garra</label>'
+    +   '<label style="display:flex;align-items:center;gap:6px;font-size:11px;cursor:pointer"><input type="radio" name="sai-modo" value="direta" onchange="otSaidaModo(\'direta\')"> Direto do fornecedor / oficina</label>'
+    +   '<div class="mfield alm-wrap">Almoxarifado<select class="alm" onchange="otSaidaChecar()">'
+    +     alms.map(a=>'<option value="'+_esc(a.codigo)+'">'+_esc(a.codigo)+' — '+_esc(a.nome||'')+'</option>').join('')
+    +   '</select></div>'
+    +   '<div class="mfield ref-wrap" style="display:none">NF / notinha (opcional)<input class="ref" placeholder="ex.: NF 887"></div>'
+    + '</div>'
+    + '<div class="mfield" style="margin-top:6px">Rubrica de custo <span class="muted" style="font-weight:400">(sugerida pela origem e pelo tipo da peça — pode trocar)</span><select class="rub" onchange="otSaidaRubManual(this)"><option value="">— carregando —</option></select></div>'
+    + '<div class="aviso" style="font-size:11px;min-height:14px;margin-top:6px;color:#B45309"></div>'
+    + '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:8px">'
     + '<button class="btn" onclick="document.getElementById(\'ot-saida\').style.display=\'none\'">Cancelar</button>'
-    + '<button class="btn p" onclick="otSaidaOK()">Confirmar saída</button></div></div>';
+    + '<button class="btn p btn-ok" onclick="otSaidaOK()">Confirmar baixa</button></div></div>';
   b.style.display = 'flex';
+  _rubricas().then(() => { const s = b.querySelector('.rub'); if (s) { s.innerHTML = _tabOpts(_rubFolhas('2'), 'id', 'nome', '', '— rubrica —'); otSaidaRubrica(); } });
+}
+// sugere a rubrica a partir de origem (estoque/direto) + classe da peça; só troca se o usuário não escolheu outra
+function otSaidaRubManual(s){ s.dataset.manual = s.value ? '1' : ''; }
+function otSaidaRubrica(forcar){
+  const b = document.getElementById('ot-saida'); if (!b) return;
+  const s = b.querySelector('.rub'); if (!s || !s.options.length) return;
+  const origem = (b.querySelector('input[name="sai-modo"]:checked')||{}).value === 'direta' ? 'direta' : 'estoque';
+  const row = b.querySelector('.plf-pc-row');
+  const sug = _rubSugerir(origem, row._familia || '', b.querySelector('.d').value);
+  if (forcar || !s.dataset.manual) { s.value = sug; if (!s.value) s.selectedIndex = 0; }
+}
+// quantidade × saldo do almoxarifado escolhido: sem saldo, sugere aplicação direta antes de o servidor barrar
+function otSaidaChecar(){
+  const b = document.getElementById('ot-saida'); if (!b) return;
+  const row = b.querySelector('.plf-pc-row'), av = b.querySelector('.aviso');
+  const modo = (b.querySelector('input[name="sai-modo"]:checked')||{}).value;
+  if (modo !== 'estoque' || !row._saldos) { av.textContent = ''; return; }
+  const alm = b.querySelector('.alm').value, qtd = parseFloat(String(b.querySelector('.h').value).replace(',','.'))||0;
+  const s = row._saldos[alm] || 0;
+  av.textContent = qtd > s ? 'Saldo em '+alm+' é '+s.toLocaleString('pt-BR')+' — faltam '+(qtd-s).toLocaleString('pt-BR')+'. Se a peça veio de fora, marque "Direto do fornecedor / oficina".' : '';
 }
 async function otSaidaOK(){
   const b = document.getElementById('ot-saida'); if (!b) return;
@@ -3777,12 +3901,31 @@ async function otSaidaOK(){
   const qtd = parseFloat(String(q('h').value).replace(',', '.')) || 0;
   if (!peca){ mostrarToast('Informe a peça','warn'); return; }
   if (qtd <= 0){ mostrarToast('Quantidade deve ser positiva','warn'); return; }
+  const direta = (b.querySelector('input[name="sai-modo"]:checked')||{}).value === 'direta';
+  const aplicar = async () => {
+    const r = await mntFetch('/manutencao/api/entradas', { method:'POST', body: JSON.stringify({
+      documento_tipo: 'aplicacao_direta', documento_numero: (q('ref')||{}).value?.trim() || '', ot_id: _otAberta.id,
+      observacao: 'Aplicação direta OT '+_otAberta.numero,
+      itens: [{ peca, descricao: q('d').value.trim(), quantidade: qtd, un: q('c').value.trim() || 'UN', custo_unitario: q('v').value, rubrica: (q('rub')||{}).value || null }] })});
+    mostrarToast('⚡ Aplicado na OT'+(r.total?' · R$ '+r.total.toFixed(2):''), 'ok');
+  };
   try {
-    const r = await mntFetch('/manutencao/api/estoque/movimentar', { method:'POST', body: JSON.stringify({
-      tipo:'saida', peca, origem: q('alm').value, quantidade: qtd,
-      custo_unitario: q('v').value, ot_id: _otAberta.id,
-      observacao: 'Consumo OT '+_otAberta.numero })});
-    mostrarToast('✅ Baixa registrada — saldo restante: '+(r.saldo_origem ?? '—'), 'ok');
+    if (direta) { await aplicar(); }
+    else {
+      try {
+        const r = await mntFetch('/manutencao/api/estoque/movimentar', { method:'POST', body: JSON.stringify({
+          tipo:'saida', peca, origem: q('alm').value, quantidade: qtd,
+          custo_unitario: q('v').value, ot_id: _otAberta.id, rubrica: (q('rub')||{}).value || null,
+          observacao: 'Consumo OT '+_otAberta.numero })});
+        mostrarToast('✅ Baixa registrada — saldo restante: '+(r.saldo_origem ?? '—'), 'ok');
+      } catch(e) {
+        // (10/10/2026) sem saldo / sem registro no almoxarifado: resolve na hora como aplicação direta
+        if (/saldo insuficiente|sem saldo|não cadastrada|nao cadastrada|não há saldo/i.test(e.message)
+            && confirm('Sem saldo de '+peca+' em '+q('alm').value+'.\n\nBaixar como vinda DIRETO do fornecedor / oficina (sem passar pelo estoque)?')) {
+          otSaidaModo('direta'); await aplicar();
+        } else throw e;
+      }
+    }
     b.style.display = 'none';
     otPecasRender();
   } catch(e){ mostrarToast('❌ '+e.message, 'warn'); }
@@ -5762,6 +5905,25 @@ async function tabExcluir(id){
   try { await mntFetch('/manutencao/api/tab/'+_tabCfg.tab+'/'+id, {method:'DELETE'}); if (_tabCfg.depois) _tabCfg.depois(); tabJanela(_tabCfg); }
   catch(e){ mostrarToast('\u274c '+e.message,'warn'); }
 }
+// (10/10/2026) Rubricas vêm de Parametrizar › Rubricas de custo (árvore do ManWinWin): quem lança escolhe a
+// folha do ramo certo (1 = MO · 2 = peças · 3 = serviços…). O sistema só SUGERE pela origem/classe.
+let _rubCache = null;
+async function _rubricas(){
+  if (_rubCache === null) { try { _rubCache = (await mntFetch('/manutencao/api/param/rubricas')).filter(r => r.ativo !== false); } catch(e){ _rubCache = []; } }
+  return _rubCache;
+}
+function _rubFolhas(ramo){
+  const all = _rubCache || [];
+  return all.filter(r => (!ramo || String(r.codigo).startsWith(ramo + '.')) && !all.some(x => x.codigo !== r.codigo && String(x.codigo).startsWith(r.codigo + '.')))
+            .map(r => ({ id: r.codigo, nome: r.codigo + ' — ' + (r.nome||'') }));
+}
+// regra de sugestão (mesma do servidor): origem + classe da peça → 2.01…2.06
+function _rubSugerir(origem, familia, descricao){
+  const d = descricao || '', f = (familia || '').toUpperCase();
+  const classe = (f.startsWith('LU') || /\b(oleo|óleo|graxa|lubrif|fluido|arla|aditivo|hidraul)/i.test(d)) ? 3
+               : (f.startsWith('CO') || /\b(parafuso|porca|arruela|abra[cç]adeira|fita|estopa|lixa|eletrodo|solda|tinta|spray|pano|luva|rebite|anilha|silicone|cola|adesivo|desengrip|wd|contato|terminal|fus[ií]vel|l[aâ]mpada|cabo|fio)/i.test(d)) ? 1 : 2;
+  return '2.0' + ((origem === 'direta' ? 4 : 1) + classe - 1);
+}
 const _F = {
   forn: (k,label,w) => ({k, label: label||'Fornecedor', type:'select', opts:()=>_mntFornList||[], w}),
   user: (k,label,w) => ({k, label: label||'Respons\u00e1vel', type:'select', opts:()=>(_mntUserList||[]).map(u=>({id:u.id,nome:u.nome||u.login})), w}),
@@ -5928,13 +6090,13 @@ async function clientesPane(){
 }
 
 /* ══ ABAS DA OT: Outros · Tarefas · Preparação · Leituras · Ferramentas · Documentos ══ */
-function otOutrosRender(){
-  const o = _otAberta;
+async function otOutrosRender(){
+  const o = _otAberta; await _rubricas();
   tabJanela({ tab:'ot-outros', inline:'ot-aba-corpo', icone:'\ud83d\udcc4', titulo:'Outros', singular:'custo',
     filtro:'ot_id='+o.id, fixo:{ot_id:o.id},
     nota:'Custos avulsos da OT que n\u00e3o s\u00e3o pe\u00e7a de stock nem HH: servi\u00e7o externo, frete, guincho, aluguer de ferramenta. Entram no COU das An\u00e1lises e na aba Custos.',
     campos:[{k:'data',label:'Data',type:'date',w:'130px',def:_F.hoje}, {k:'descricao',label:'Descri\u00e7\u00e3o',req:true}, _F.forn('fornecedor_id'),
-            {k:'documento',label:'Documento (NF/recibo)',w:'130px'}, {k:'rubrica',label:'Rubrica',w:'90px',ph:'3.01'}, {k:'valor',label:'Valor (R$)',type:'number',step:'0.01',req:true,w:'110px'}],
+            {k:'documento',label:'Documento (NF/recibo)',w:'130px'}, {k:'rubrica',label:'Rubrica',type:'select',opts:()=>_rubFolhas('3').concat(_rubFolhas('4'),_rubFolhas('6'),_rubFolhas('7')),w:'220px',vazio:'— rubrica —'}, {k:'valor',label:'Valor (R$)',type:'number',step:'0.01',req:true,w:'110px'}],
     colunas:[{t:'Data',k:'data',date:true},{t:'Descri\u00e7\u00e3o',k:'descricao'},{t:'Fornecedor',fmt:r=>_esc(r.fornecedor_nome||'')},{t:'Doc.',k:'documento'},{t:'Rubrica',k:'rubrica'},{t:'Valor',k:'valor',money:true,r:true}],
     rodape: rows => '<div style="text-align:right;font-weight:700;padding:4px 6px;color:#1A2A5E">Total outros: R$ '+rows.reduce((s,r)=>s+(parseFloat(r.valor)||0),0).toLocaleString('pt-BR',{minimumFractionDigits:2})+'</div>' });
 }
