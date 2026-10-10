@@ -211,6 +211,22 @@ async def _garantir_colunas_ot():
     _OT_COLS_OK = True
 
 
+def _data_ok(v, campo="Data prevista"):
+    """(10/10/2026) O <input type=date> do Chrome aceita ano parcial ('0202' enquanto se
+    digita 2026) e a OT ficava gravada com ano 0202 → 'vencida há 666198 d'.
+    Devolve 'AAAA-MM-DD' ou None; fora de 2000–2100 recusa com 400."""
+    v = (str(v or "")).strip()
+    if not v:
+        return None
+    try:
+        ano = int(v[:4])
+    except ValueError:
+        raise HTTPException(status_code=400, detail=f"{campo} inválida: {v}")
+    if not 2000 <= ano <= 2100:
+        raise HTTPException(status_code=400, detail=f"{campo} com ano inválido ({ano}). Confira o ano e grave de novo.")
+    return v
+
+
 def _vencimento_ot(data_prevista, horimetro_previsto, horimetro_vivo, hoje, unidade="h"):
     """Semáforo REAL da OT programada — calculado de data/horímetro contra
     hoje (decisão 24/08: semáforo é estado, nunca enfeite).
@@ -530,7 +546,7 @@ async def _inserir_ot(d, eq, uid, numero, ano, seq):
     """Miolo compartilhado: abertura manual e conversão de pedido."""
     eq_id = d.get("equipamento_id")
     descricao = (d.get("descricao") or "").strip()
-    data_prev = (d.get("data_prevista") or "").strip() or None
+    data_prev = _data_ok(d.get("data_prevista"))
     hor_prev = d.get("horimetro_previsto")
     try:
         hor_prev = float(str(hor_prev).replace(",", ".")) if hor_prev not in (None, "") else None
@@ -745,7 +761,7 @@ async def reprogramar_ot(ot_id: str, request: Request, payload=Depends(verificar
         raise HTTPException(status_code=404, detail="OT não encontrada")
     if ot["status"] not in ("programada", "aberta", "em_andamento", "aguardando_peca"):
         raise HTTPException(status_code=400, detail="OT encerrada não se reprograma")
-    data_n = (d.get("data_prevista") or "").strip() or None
+    data_n = _data_ok(d.get("data_prevista"), "Nova data")
     hor_n = d.get("horimetro_previsto")
     try:
         hor_n = float(str(hor_n).replace(",", ".")) if hor_n not in (None, "") else None
@@ -795,6 +811,8 @@ async def editar_ot(ot_id: str, request: Request, payload=Depends(verificar_manu
     for c in ("data_prevista", "horimetro_previsto"):
         if c in d and d[c] == "":
             d[c] = None
+    if d.get("data_prevista"):
+        d["data_prevista"] = _data_ok(d["data_prevista"])
     for c in ("sintoma_codigo", "causa_codigo", "setor_interventor", "contrato", "responsavel_id", "fornecedor_id"):
         if c in d and d[c] == "":
             d[c] = None
@@ -3645,7 +3663,7 @@ async def _gerar_ot_previsao(plano_id, d, payload):
              "descricao": f"{p['codigo']} — {p['descricao'] or ''}".strip(" —"),
              "tipo_trabalho": p["tipo_trabalho"],
              "plano_id": plano_id,
-             "data_prevista": (d.get("data_prevista") or "").strip() or None,
+             "data_prevista": _data_ok(d.get("data_prevista")),
              "horimetro_previsto": d.get("horimetro_previsto"),
              "prioridade": d.get("prioridade", "media")}
     return await _inserir_ot(corpo, eq, uid, numero, ano, seq)
