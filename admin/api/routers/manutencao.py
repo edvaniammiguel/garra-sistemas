@@ -1336,15 +1336,41 @@ async def ot_mao_obra_listar(ot_id: str, _auth=Depends(verificar_manutencao)):
            FROM manutencao.ot_mao_obra
            WHERE ativo=true AND usuario_id IS NOT NULL AND custo_hora IS NOT NULL
            ORDER BY usuario_id, criado_em DESC""") or []
-    # previsto pela FMP da OT (hh_previsto do plano) — Planeado × Realizado como no ManWinWin
+    # PLANEJADO: previsões manuais da OT (ot_mo_previsto) + mão de obra prevista na FMP (plano.mao_obra JSONB)
     prev = await ajard_query(
-        """SELECT p.hh_previsto, p.custo_previsto FROM manutencao.ot o
+        """SELECT p.hh_previsto, p.custo_previsto, p.mao_obra, p.codigo AS plano_codigo FROM manutencao.ot o
            JOIN manutencao.planos p ON p.id = o.plano_id WHERE o.id=%s""", (ot_id,), fetch="one")
+    await _garantir_tabela("ot-mo-previsto")
+    await _garantir_dominios()
+    import json as _json
+    previstos = []
+    if prev and prev.get("mao_obra"):
+        mo = prev["mao_obra"]
+        if isinstance(mo, str):
+            try: mo = _json.loads(mo)
+            except Exception: mo = []
+        for it in (mo or []):
+            try:
+                hh = float(str(it.get("hh") or 0).replace(",", ".")); ch = float(str(it.get("custo") or 0).replace(",", "."))
+            except ValueError:
+                hh, ch = 0.0, 0.0
+            previstos.append({"id": None, "origem": prev["plano_codigo"], "funcao_codigo": None, "funcao_nome": it.get("funcao") or "",
+                              "hh": hh, "custo_hh": ch, "custo": round(hh * ch, 2), "rubrica": it.get("rubrica") or "1.01"})
+    for r in (await ajard_query(
+            """SELECT t.id, t.funcao_codigo, COALESCE(f.nome, t.funcao_nome) AS funcao_nome, t.hh, t.custo_hh, t.rubrica, t.observacao
+               FROM manutencao.ot_mo_previsto t LEFT JOIN manutencao.funcoes f ON f.codigo = t.funcao_codigo
+               WHERE t.ot_id=%s AND t.ativo=true ORDER BY t.criado_em""", (ot_id,)) or []):
+        hh = float(r["hh"] or 0); ch = float(r["custo_hh"] or 0)
+        previstos.append({"id": str(r["id"]), "origem": "OT", "funcao_codigo": r["funcao_codigo"], "funcao_nome": r["funcao_nome"] or "",
+                          "hh": hh, "custo_hh": ch, "custo": round(hh * ch, 2), "rubrica": r["rubrica"], "observacao": r["observacao"]})
+    hh_prev = round(sum(x["hh"] for x in previstos), 2) if previstos else (float(prev["hh_previsto"]) if prev and prev["hh_previsto"] is not None else None)
+    custo_prev = round(sum(x["custo"] for x in previstos), 2) if previstos else (float(prev["custo_previsto"]) if prev and prev["custo_previsto"] is not None else None)
+    setores = await ajard_query("SELECT codigo, nome FROM manutencao.setores_interventor WHERE ativo=true ORDER BY codigo") or []
     return {"itens": itens, "total_horas": round(th, 2), "total_custo": round(tc, 2),
             "custo_hora_sugerido": {str(x["usuario_id"]): float(x["custo_hora"]) for x in sug},
             "funcoes": await _funcoes_lista(True), "colaboradores": await _colaboradores_funcao(),
-            "hh_previsto": float(prev["hh_previsto"]) if prev and prev["hh_previsto"] is not None else None,
-            "custo_previsto": float(prev["custo_previsto"]) if prev and prev["custo_previsto"] is not None else None}
+            "setores": [dict(s) for s in setores], "previstos": previstos,
+            "hh_previsto": hh_prev, "custo_previsto": custo_prev}
 
 
 @router.post("/manutencao/api/ots/{ot_id}/mao-obra")
@@ -1609,6 +1635,10 @@ _TABELAS = {
         "razao_social": "TEXT", "nome_fantasia": "TEXT", "cnpj": "TEXT", "endereco": "TEXT", "cidade": "TEXT",
         "uf": "TEXT", "telefone": "TEXT", "email": "TEXT", "responsavel_manutencao": "TEXT"}),
     "config": ("manutencao.config", {"chave": "TEXT", "valor": "TEXT", "descricao": "TEXT"}),
+    # (10/10/2026) Previsão de mão de obra da OT (Planejado × Realizado, como no ManWinWin)
+    "ot-mo-previsto": ("manutencao.ot_mo_previsto", {
+        "ot_id": "UUID", "funcao_codigo": "TEXT", "funcao_nome": "TEXT", "hh": "NUMERIC(8,2)",
+        "custo_hh": "NUMERIC(12,2)", "rubrica": "TEXT", "observacao": "TEXT"}),
     "ot-outros": ("manutencao.ot_outros", {
         "ot_id": "UUID", "data": "DATE", "descricao": "TEXT", "fornecedor_id": "UUID", "documento": "TEXT",
         "rubrica": "TEXT", "valor": "NUMERIC(14,2)"}),
