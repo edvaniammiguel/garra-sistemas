@@ -196,8 +196,17 @@ async def _garantir_colunas_ot():
         "ALTER TABLE manutencao.ot ADD COLUMN IF NOT EXISTS sintoma_codigo TEXT",
         "ALTER TABLE manutencao.ot ADD COLUMN IF NOT EXISTS causa_codigo TEXT",
         "ALTER TABLE manutencao.ot ADD COLUMN IF NOT EXISTS projecto_id UUID",
+        # (10/10/2026) Origem no padrão ManWinWin: Interventor (interno = setor · externo = fornecedor),
+        # Contrato, Prev. TDM (h) e bloqueio temporário
+        "ALTER TABLE manutencao.ot ADD COLUMN IF NOT EXISTS interventor TEXT DEFAULT 'interno'",
+        "ALTER TABLE manutencao.ot ADD COLUMN IF NOT EXISTS setor_interventor TEXT",
+        "ALTER TABLE manutencao.ot ADD COLUMN IF NOT EXISTS contrato TEXT",
+        "ALTER TABLE manutencao.ot ADD COLUMN IF NOT EXISTS tdm_previsto NUMERIC",
+        "ALTER TABLE manutencao.ot ADD COLUMN IF NOT EXISTS bloqueada BOOLEAN DEFAULT false",
     ):
         await ajard_query(ddl, fetch="none")
+    # OT que já tem fornecedor é externa (migração idempotente)
+    await ajard_query("UPDATE manutencao.ot SET interventor='externo' WHERE fornecedor_id IS NOT NULL AND COALESCE(interventor,'interno')='interno' AND setor_interventor IS NULL", fetch="none")
     _OT_COLS_OK = True
 
 
@@ -607,10 +616,18 @@ async def proximo_numero_ot(_auth=Depends(verificar_manutencao)):
 
 @router.get("/manutencao/api/ots/{ot_id}")
 async def detalhe_ot(ot_id: str, _auth=Depends(verificar_manutencao)):
+    await _garantir_colunas_ot()
     ot = await ajard_query(
-        """SELECT ot.*, eq.codigo AS equipamento_codigo, eq.descricao AS equipamento_desc
+        """SELECT ot.*, eq.codigo AS equipamento_codigo, eq.descricao AS equipamento_desc,
+                  eq.sistema_codigo, si.nome AS sistema_nome,
+                  eq.centro_custo, cc.nome AS centro_custo_nome,
+                  ur.nome AS responsavel_nome, fo.nome AS fornecedor_nome
            FROM manutencao.ot ot
            JOIN operacional.equipamentos eq ON eq.id = ot.equipamento_id
+           LEFT JOIN manutencao.sistemas si ON si.codigo = eq.sistema_codigo
+           LEFT JOIN manutencao.centros_custo cc ON cc.codigo = eq.centro_custo
+           LEFT JOIN public.usuarios_garra ur ON ur.id = ot.responsavel_id
+           LEFT JOIN public.fornecedores fo ON fo.id = ot.fornecedor_id
            WHERE ot.id=%s AND ot.ativo=true""", (ot_id,), fetch="one")
     if not ot:
         raise HTTPException(status_code=404, detail="OT não encontrada")
@@ -761,12 +778,27 @@ async def editar_ot(ot_id: str, request: Request, payload=Depends(verificar_manu
     for c in ("data_prevista", "horimetro_previsto"):
         if c in d and d[c] == "":
             d[c] = None
-    for c in ("sintoma_codigo", "causa_codigo"):
+    for c in ("sintoma_codigo", "causa_codigo", "setor_interventor", "contrato", "responsavel_id", "fornecedor_id"):
         if c in d and d[c] == "":
             d[c] = None
+    if "tdm_previsto" in d:
+        try:
+            d["tdm_previsto"] = float(str(d["tdm_previsto"]).replace(",", ".")) if d["tdm_previsto"] not in (None, "") else None
+        except ValueError:
+            d.pop("tdm_previsto")
+    if d.get("interventor") not in (None, "interno", "externo"):
+        d.pop("interventor")
+    # Interventor é um OU outro: interno limpa fornecedor, externo limpa setor
+    if d.get("interventor") == "interno":
+        d["fornecedor_id"] = None
+    elif d.get("interventor") == "externo":
+        d["setor_interventor"] = None
+    if "bloqueada" in d:
+        d["bloqueada"] = bool(d["bloqueada"])
     campos = ["tipo", "prioridade", "descricao", "responsavel_id",
               "fornecedor_id", "custo_total", "data_prevista", "horimetro_previsto",
-              "sintoma_codigo", "causa_codigo", "tipo_trabalho", "projecto_id", "plano_id"]
+              "sintoma_codigo", "causa_codigo", "tipo_trabalho", "projecto_id", "plano_id",
+              "interventor", "setor_interventor", "contrato", "tdm_previsto", "bloqueada"]
     if "projecto_id" in d and d["projecto_id"] == "":
         d["projecto_id"] = None
     updates, params = [], []
