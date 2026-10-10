@@ -124,7 +124,7 @@ async def _garantir_leituras():
         return
     from routers.abastecimentos import _ddl as _ddl_abast
     await _ddl_abast()
-    # (24/09/2026) Correção de leitura (Registo Funcionamento ▸ ✏️/✕): o documento de
+    # (24/09/2026) Correção de leitura (Registro Funcionamento ▸ ✏️/✕): o documento de
     # origem (parte, checklist, abastecimento) fica intacto; a leitura é corrigida
     # ou excluída só para o FMD/funcionamento, com motivo e trilha no diário.
     await ajard_query("""
@@ -995,10 +995,10 @@ def _sem_acento(txt: str) -> str:
 
 # ══════════════════════════════════════════════════════════════
 # (10/10/2026) RUBRICA DE MATERIAL — automática, padrão ManWinWin (árvore 2 — Peças e consumíveis):
-#   do ESTOQUE Garra (saída de armazém)      2.01 consumo · 2.02 sobressalentes · 2.03 lubrificantes
-#   DIRETO do fornecedor/oficina (aplicação) 2.04 consumo · 2.05 sobressalentes · 2.06 lubrificantes
+#   do ESTOQUE Garra (saída de armazém)      2.01 consumo · 2.02 peças de reposição · 2.03 lubrificantes
+#   DIRETO do fornecedor/oficina (aplicação) 2.04 consumo · 2.05 peças de reposição · 2.06 lubrificantes
 # A classe sai da família/descrição da peça; o usuário só diz de ONDE veio. Fica gravada na
-# movimentação para o relatório de custos por rubrica.
+# movimentação para o relatório de custos por conta.
 _RX_LUB = re.compile(r"\b(oleo|óleo|graxa|lubrif|fluido|arla|aditivo|hidraul)", re.I)
 _RX_CONS = re.compile(r"\b(parafuso|porca|arruela|abra[cç]adeira|fita|estopa|lixa|eletrodo|solda|tinta|spray|pano|luva|rebite|anilha|silicone|cola|adesivo|desengrip|wd|contato|terminal|fus[ií]vel|l[aâ]mpada|cabo|fio)", re.I)
 def _rubrica_material(tipo_mov: str, familia: str, descricao: str) -> str:
@@ -1063,7 +1063,7 @@ async def editar_ficha(eq_id: str, request: Request, payload=Depends(verificar_m
             params.append(float(str(d["valor_aquisicao"]).replace(",", ".")) if d["valor_aquisicao"] not in (None, "") else None)
         except ValueError:
             sets.pop()
-    # (01/09/2026) Novo Objecto — réplica ManWinWin: fornecedor, vida útil,
+    # (01/09/2026) Novo Objeto — réplica ManWinWin: fornecedor, vida útil,
     # valor atual, operador desde, notas
     if "fornecedor_id" in d:
         sets.append("fornecedor_id=%s"); params.append(d["fornecedor_id"] or None)
@@ -1078,7 +1078,7 @@ async def editar_ficha(eq_id: str, request: Request, payload=Depends(verificar_m
                 params.append(float(str(d[c_num]).replace(".", "").replace(",", ".")) if d[c_num] not in (None, "") else None)
             except ValueError:
                 sets.pop()
-    # leitura inicial ("Registo (H)"): só preenche se o cadastro ainda está zerado —
+    # leitura inicial ("Registro (H)"): só preenche se o cadastro ainda está zerado —
     # leitura nunca recua, nem no nascimento
     if "leitura_inicial" in d and d["leitura_inicial"] not in (None, ""):
         try:
@@ -1099,7 +1099,7 @@ async def editar_ficha(eq_id: str, request: Request, payload=Depends(verificar_m
     # identificações, histórico, família, combustível — JSON livre
     if "info_compl" in d:
         sets.append("info_compl=%s"); params.append(_json.dumps(d["info_compl"] or {}))
-    # (15/09/2026) Inactivo pela própria ficha do Objecto (MWW): ativa/inativa sem sair do cadastro
+    # (15/09/2026) Inactivo pela própria ficha do Objeto (MWW): ativa/inativa sem sair do cadastro
     if "ativo" in d:
         sets.append("ativo=%s"); params.append(bool(d["ativo"]))
     if "os_alimenta_manutencao" in d:
@@ -1181,9 +1181,9 @@ def _mo_num(v):
 
 # ══════════════════════════════════════════════════════════════
 # (10/10/2026) FUNÇÕES × CUSTO HH — padrão ManWinWin (Organograma › Função › Custo HH) adaptado:
-# a função carrega o custo/HH padrão e a rubrica; o colaborador aponta para uma função (com
+# a função carrega o custo/HH padrão e a conta; o colaborador aponta para uma função (com
 # custo próprio opcional). Na OT, escolher o colaborador (ou a função do terceiro) preenche o
-# custo/h sozinho e a rubrica sai automática (1.01 interno · 1.03 externo, ou a da função).
+# custo/h sozinho e a conta sai automática (1.01 interno · 1.03 externo, ou a da função).
 # ══════════════════════════════════════════════════════════════
 _FUNC_OK = False
 async def _garantir_funcoes():
@@ -1363,7 +1363,7 @@ async def ot_mao_obra_criar(ot_id: str, request: Request, payload=Depends(verifi
     if not usuario_id and not nome:
         raise HTTPException(status_code=400, detail="Informe o colaborador")
     data = (d.get("data") or "").strip() or None
-    # (10/10/2026) função → custo/HH e rubrica automáticos quando não vierem preenchidos
+    # (10/10/2026) função → custo/HH e conta automáticos quando não vierem preenchidos
     await _garantir_funcoes()
     funcao = (d.get("funcao_codigo") or "").strip() or None
     custo = _mo_num(d.get("custo_hora"))
@@ -1507,8 +1507,8 @@ async def docs_excluir(doc_id: str, _auth=Depends(verificar_manutencao)):
 
 # ── MOTOR GENÉRICO DE TABELAS (01/09/2026) ─────────────────────────────
 # Um CRUD só para os cadastros "de apoio" do ManWinWin que faltavam:
-# contratos, projectos, guias de transporte, substitutos, referências de
-# fornecedor, empresa, config, e os registos da OT (outros, tarefas,
+# contratos, projetos, guias de transporte, substitutos, referências de
+# fornecedor, empresa, config, e os registros da OT (outros, tarefas,
 # ferramentas, leituras, documentos). Colunas em whitelist (paridade
 # EDITÁVEIS × UPDATE por construção), soft delete, DDL idempotente.
 # ── NÚCLEO DO SCHEMA (02/09/2026) ───────────────────────────────────────
@@ -1735,7 +1735,7 @@ async def tab_criar(nome: str, request: Request, payload=Depends(verificar_manut
     row = await ajard_query_id(
         f"INSERT INTO {tab} ({', '.join(campos)}) VALUES ({', '.join(['%s'] * len(campos))})", tuple(vals))
     if nome == "ot-leituras" and (d.get("momento") or "") == "fim" and _tab_val("NUMERIC", d.get("leitura")):
-        # leitura de fim de serviço atualiza o contador do objecto — nunca recua
+        # leitura de fim de serviço atualiza o contador do objeto — nunca recua
         leit = _tab_val("NUMERIC", d.get("leitura"))
         await ajard_query(
             """UPDATE operacional.equipamentos e SET
@@ -2104,7 +2104,7 @@ async def analises_equipamento(eq_id: str, ano: int = None, _auth=Depends(verifi
         ("COU",   "Outros custos lançados na OT (R$)", "r"),
         ("TDR",   "Tempo de reparação (dias)", "d"),
         ("PDI",   "Período de indisponibilidade (dias)", "d"),
-        ("RF",    f"Registo de funcionamento ({un})", "u"),
+        ("RF",    f"Registro de funcionamento ({un})", "u"),
         ("HHT",   "Total HH de mão de obra (h)", "u"),
         ("HHMC",  "HH em manutenção corretiva (h)", "u"),
         ("HHMP",  "HH em manutenção preventiva (h)", "u"),
@@ -2935,7 +2935,7 @@ async def movimentar_estoque(request: Request, payload=Depends(verificar_manuten
         await _soma(destino, qtd - atual)
 
     uid = await _usuario_id(payload)
-    # rubrica escolhida na tela (cadastro de Parametrizar) vale; sem escolha, a sugestão automática
+    # conta escolhida na tela (cadastro de Parametrizar) vale; sem escolha, a sugestão automática
     rub = ((d.get("rubrica") or "").strip() or _rubrica_material(tipo, peca["familia_codigo"], peca["descricao"])) if tipo == "saida" and d.get("ot_id") else None
     await ajard_query("""
         INSERT INTO manutencao.movimentacoes (tipo, peca_id, almox_origem, almox_destino, quantidade, ot_id, usuario_id, observacao, custo_unitario, rubrica)
@@ -2998,7 +2998,7 @@ async def _garantir_dominios():
             WHEN 'melhoria' THEN 'M1' WHEN 'reforma' THEN 'M1' ELSE 'C1' END
         WHERE tipo_trabalho IS NULL
            OR tipo_trabalho NOT IN (SELECT codigo FROM manutencao.tipos_manutencao)""", fetch="none")
-    # (27/09/2026) PT-BR: "planeado" → "planejado" no status dos projectos (valor gravado)
+    # (27/09/2026) PT-BR: "planeado" → "planejado" no status dos projetos (valor gravado)
     await _garantir_tabela("projectos")
     await ajard_query("UPDATE manutencao.projectos SET status='planejado' WHERE status='planeado'", fetch="none")
     _DOM_OK = True
@@ -3023,20 +3023,27 @@ async def _garantir_biblioteca():
         INSERT INTO manutencao.rubricas (codigo, nome) VALUES
           ('1','Mão de Obra'), ('1.01','Pessoal interno'), ('1.02','Pessoal produção'), ('1.03','Pessoal externo'),
           ('2','Peças e consumíveis aplicados'),
-          ('2.01','Saída armazém - mater.consumo'), ('2.02','Saída armazém - sobressalentes'), ('2.03','Saída armazém - lubrificantes'),
-          ('2.04','Aplicação directa - mat.consumo'), ('2.05','Aplica.directa - sobressalente'), ('2.06','Aplica.directa - lubrificantes'),
+          ('2.01','Saída estoque - mater.consumo'), ('2.02','Saída estoque - peças de reposição'), ('2.03','Saída estoque - lubrificantes'),
+          ('2.04','Aplicação direta - mat.consumo'), ('2.05','Aplicação direta - peças de reposição'), ('2.06','Aplicação direta - lubrificantes'),
           ('3','Serviços aplicados'), ('3.01','Aquisição serviços'), ('3.02','Contratos manutenção'),
           ('4','Estrutura depart. manutenção'),
           ('4.01','Salá. + encargos pess.directo'), ('4.02','Salá. + encarg. pess.indirecto'), ('4.03','Ferramentas'),
           ('4.04','Energia e fluídos p/ depto.'), ('4.05','Funcionamento (geral)'),
-          ('5','Aquisição materiais p/ armazém'),
-          ('5.01','Entradas armazém mat.consumo'), ('5.02','Entradas armaz.sobressalentes'), ('5.03','Entradas armz. lubrificantes'),
+          ('5','Aquisição materiais p/ estoque'),
+          ('5.01','Entradas estoque mat.consumo'), ('5.02','Entradas estoque peças de reposição'), ('5.03','Entradas estoque lubrificantes'),
           ('6','Combustível, energia e fluídos'),
           ('6.01','Electricidade'), ('6.02','Gás'), ('6.03','Água'), ('6.04','Combustíveis'),
           ('6.04.01','Óleo Diesel'), ('6.04.02','Gasolina'), ('6.04.03','Etanol'),
           ('7','Custo padrão de referência'), ('7.01','Custos indisponibilidade'),
           ('8','Funcionário'), ('8.01','Funcionário ativo'), ('8.02','Funcionário inativo')
         ON CONFLICT DO NOTHING""", fetch="none")
+    # (10/10/2026) PT-BR: "armazém" → "estoque" nos nomes já gravados no banco (idempotente)
+    await ajard_query("""UPDATE manutencao.rubricas
+                            SET nome = regexp_replace(replace(replace(replace(replace(nome,'armazém','estoque'),'Armazém','Estoque'),'armaz.','estoque '),'armz.','estoque '), '\\s{2,}', ' ', 'g')
+                          WHERE nome ILIKE '%armaz%'""", fetch="none")
+    await ajard_query("""UPDATE manutencao.rubricas
+                            SET nome = replace(replace(replace(replace(replace(nome,'Aplica.directa','Aplicação direta'),'Aplicação directa','Aplicação direta'),'directa','direta'),'sobressalentes','peças de reposição'),'sobressalente','peças de reposição')
+                          WHERE nome ILIKE '%direct%' OR nome ILIKE '%sobressalente%'""", fetch="none")
     await ajard_query("""
         CREATE TABLE IF NOT EXISTS manutencao.biblioteca_preparacoes (
             id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -3448,7 +3455,7 @@ async def _calcular_previsoes():
     from datetime import date as _date, timedelta as _td
     await _garantir_colunas_ot()
     await _garantir_dominios()
-    for _cod, _nom in (("1", "Semanas"), ("2", "Meses"), ("6", "Registos (horímetro/km)")):
+    for _cod, _nom in (("1", "Semanas"), ("2", "Meses"), ("6", "Registros (horímetro/km)")):
         await ajard_query(
             """INSERT INTO manutencao.periodos (codigo, nome, ativo)
                VALUES (%s, %s, true) ON CONFLICT (codigo) DO NOTHING""",
@@ -3659,7 +3666,7 @@ async def repetir_planos(request: Request, _auth=Depends(verificar_manutencao)):
     planos = d.get("planos") or []
     destinos = d.get("equipamentos") or []
     if not planos or not destinos:
-        raise HTTPException(status_code=400, detail="Informe as FMPs de origem e os objectos de destino")
+        raise HTTPException(status_code=400, detail="Informe as FMPs de origem e os objetos de destino")
     criados = []
     for pid in planos:
         p = await ajard_query("SELECT * FROM manutencao.planos WHERE id=%s", (pid,), fetch="one")
@@ -3680,7 +3687,7 @@ async def plano_baseline(plano_id: str, request: Request, _auth=Depends(verifica
     dt = (d.get("ultima_data") or "").strip() or None
     le = d.get("ultima_leitura")
     le = float(str(le).replace(",", ".")) if le not in (None, "") else None
-    # (16/09/2026) Coerência com o objecto: não pode ter executado antes de existir,
+    # (16/09/2026) Coerência com o objeto: não pode ter executado antes de existir,
     # nem com leitura acima do horímetro/km atual.
     eq = await ajard_query(
         """SELECT e.codigo, e.medicao, e.data_aquisicao, e.horimetro_atual, e.km_atual
@@ -3689,11 +3696,11 @@ async def plano_baseline(plano_id: str, request: Request, _auth=Depends(verifica
     if eq:
         if dt and eq.get("data_aquisicao") and str(dt) < str(eq["data_aquisicao"])[:10]:
             raise HTTPException(status_code=400,
-                detail=f"Última execução ({dt[8:10]}/{dt[5:7]}/{dt[:4]}) anterior à aquisição do objecto ({str(eq['data_aquisicao'])[8:10]}/{str(eq['data_aquisicao'])[5:7]}/{str(eq['data_aquisicao'])[:4]})")
+                detail=f"Última execução ({dt[8:10]}/{dt[5:7]}/{dt[:4]}) anterior à aquisição do objeto ({str(eq['data_aquisicao'])[8:10]}/{str(eq['data_aquisicao'])[5:7]}/{str(eq['data_aquisicao'])[:4]})")
         vivo = float((eq.get("km_atual") if eq.get("medicao") == "km" else eq.get("horimetro_atual")) or 0)
         if le is not None and vivo > 0 and le > vivo:
             raise HTTPException(status_code=400,
-                detail=f"Leitura da última execução ({le:g}) maior que a leitura atual do objecto ({vivo:g})")
+                detail=f"Leitura da última execução ({le:g}) maior que a leitura atual do objeto ({vivo:g})")
     await ajard_query("UPDATE manutencao.planos SET ultima_data=%s, ultima_leitura=%s WHERE id=%s",
                       (dt, le, plano_id), fetch="none")
     ot = None
@@ -3769,7 +3776,7 @@ async def obter_plano(pid: str, _auth=Depends(verificar_manutencao)):
 
 # ════════════════════════════════════════════════════════════════════════
 # (27/09/2026) PROJECTOS — consolidação: custo e prazo das OTs ligadas
-# Custo da OT = custo do fechamento quando existe; senão o apurado nos registos
+# Custo da OT = custo do fechamento quando existe; senão o apurado nos registros
 # (peças baixadas + mão de obra + outros), a mesma regra da aba Custos da OT.
 # ════════════════════════════════════════════════════════════════════════
 _SQL_OTS_PROJECTO = """
@@ -3835,7 +3842,7 @@ def _resumo_projecto(pr, ots):
 
 @router.get("/manutencao/api/projectos-resumo")
 async def projectos_resumo(_auth=Depends(verificar_manutencao)):
-    """Lista de Projectos: custo, OTs e dias de cada um (colunas da tela)."""
+    """Lista de Projetos: custo, OTs e dias de cada um (colunas da tela)."""
     await _garantir_tabela("projectos")
     prs = await ajard_query(
         "SELECT id, data_inicio, data_fim FROM manutencao.projectos WHERE ativo = true") or []
@@ -3847,11 +3854,11 @@ async def projectos_resumo(_auth=Depends(verificar_manutencao)):
 
 @router.get("/manutencao/api/projectos/{projecto_id}/ots")
 async def projecto_ots(projecto_id: str, _auth=Depends(verificar_manutencao)):
-    """Detalhe do Projecto: as OTs ligadas com o custo de cada uma + totais."""
+    """Detalhe do Projeto: as OTs ligadas com o custo de cada uma + totais."""
     await _garantir_tabela("projectos")
     pr = await ajard_query("SELECT * FROM manutencao.projectos WHERE id = %s", (projecto_id,), fetch="one")
     if not pr:
-        raise HTTPException(status_code=404, detail="Projecto não encontrado")
+        raise HTTPException(status_code=404, detail="Projeto não encontrado")
     ots = await _ots_de_projectos(projecto_id)
     return {"projecto": {"id": str(pr["id"]), "codigo": pr["codigo"], "nome": pr["nome"], "status": pr["status"]},
             "ots": ots,
@@ -4213,7 +4220,7 @@ async def _leitura_gravar(eq_id, fonte, ref, r, nova, anulada, motivo, payload):
 
 @router.patch("/manutencao/api/equipamentos/{eq_id}/leituras/{fonte}/{ref}")
 async def leitura_corrigir(eq_id: str, fonte: str, ref: str, request: Request, payload=Depends(verificar_manutencao)):
-    """(24/09/2026) Registo Funcionamento ▸ ✏️ — corrige o valor da leitura (documento de origem intacto)."""
+    """(24/09/2026) Registro Funcionamento ▸ ✏️ — corrige o valor da leitura (documento de origem intacto)."""
     d = await request.json()
     try:
         nova = float(str(d.get("leitura")).replace(",", "."))
@@ -4231,7 +4238,7 @@ async def leitura_corrigir(eq_id: str, fonte: str, ref: str, request: Request, p
 
 @router.delete("/manutencao/api/equipamentos/{eq_id}/leituras/{fonte}/{ref}")
 async def leitura_excluir(eq_id: str, fonte: str, ref: str, request: Request, payload=Depends(verificar_manutencao)):
-    """(24/09/2026) Registo Funcionamento ▸ ✕ — tira a leitura do FMD/funcionamento (documento de origem intacto)."""
+    """(24/09/2026) Registro Funcionamento ▸ ✕ — tira a leitura do FMD/funcionamento (documento de origem intacto)."""
     d = await request.json()
     motivo = (d.get("motivo") or "").strip()
     if len(motivo) < 5:
