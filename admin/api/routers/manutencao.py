@@ -460,9 +460,7 @@ async def converter_pedido(pid: str, request: Request, payload=Depends(verificar
         raise HTTPException(status_code=404, detail="Equipamento não encontrado")
     if (eq.get("categoria") or "") == "apoio":
         raise HTTPException(status_code=400, detail="Equipamento de apoio não recebe OT")
-    seq = await ajard_query(
-        """SELECT COALESCE(MAX(sequencia),0)+1 AS n FROM manutencao.ot
-           WHERE ano = EXTRACT(YEAR FROM now())::int""", fetch="one")
+    seq = await _proximo_seq_ot()
     from datetime import date as _date
     ano = _date.today().year
     numero = f"OT-{ano}-{int(seq['n']):04d}"
@@ -505,15 +503,27 @@ async def abrir_ot(request: Request, payload=Depends(verificar_manutencao)):
             status_code=400,
             detail="Equipamento de Apoio/Combinado não entra em manutenção (decisão de projeto).")
 
-    seq = await ajard_query(
-        """SELECT COALESCE(MAX(sequencia),0)+1 AS n FROM manutencao.ot
-           WHERE ano = EXTRACT(YEAR FROM now())::int""", fetch="one")
+    seq = await _proximo_seq_ot()
     from datetime import date as _date
     ano = _date.today().year
     numero = f"OT-{ano}-{int(seq['n']):04d}"
 
     uid = await _usuario_id(payload)
     return await _inserir_ot(d, eq, uid, numero, ano, seq)
+
+
+async def _proximo_seq_ot():
+    """(10/10/2026) Próximo número do ano, à prova de buraco: olha a coluna sequencia E o número gravado
+    (OT-AAAA-NNNN) — uma OT antiga com ano/sequencia nulos deixava MAX(sequencia) atrás do número real e
+    o INSERT estourava 'duplicate key ordens_trabalho_numero_key'."""
+    r = await ajard_query(
+        """SELECT GREATEST(
+                    COALESCE((SELECT MAX(sequencia) FROM manutencao.ot WHERE ano = EXTRACT(YEAR FROM now())::int), 0),
+                    COALESCE((SELECT MAX(NULLIF(regexp_replace(split_part(numero,'-',3), '\\D', '', 'g'), '')::int)
+                                FROM manutencao.ot
+                               WHERE numero LIKE 'OT-' || EXTRACT(YEAR FROM now())::int || '-%%'), 0)
+                  ) + 1 AS n""", fetch="one")
+    return {"n": int(r["n"])}
 
 
 async def _inserir_ot(d, eq, uid, numero, ano, seq):
@@ -534,18 +544,26 @@ async def _inserir_ot(d, eq, uid, numero, ano, seq):
     _classe = {"A": "preventiva", "B": "preventiva", "C": "corretiva",
                "M": "melhoria", "R": "reforma"}
     tipo_padrao = _classe.get((tt or " ")[0], "preventiva" if programada else "corretiva")
-    row = await ajard_query_id(
-        """INSERT INTO manutencao.ot
-              (numero, ano, sequencia, equipamento_id, tipo, prioridade,
-               descricao, solicitante_id, responsavel_id, fornecedor_id,
-               horimetro_na_abertura, status, data_prevista, horimetro_previsto, plano_id,
-               sintoma_codigo, causa_codigo, tipo_trabalho)
-           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
-        (numero, ano, int(seq["n"]), eq_id,
-         d.get("tipo", tipo_padrao), d.get("prioridade", "media"),
-         descricao, uid, d.get("responsavel_id"), d.get("fornecedor_id"),
-         eq.get("horimetro_atual"), status_ini, data_prev, hor_prev, d.get("plano_id"),
-         (d.get("sintoma_codigo") or None), (d.get("causa_codigo") or None), tt))
+    import asyncpg as _apg
+    for _tent in range(5):
+        try:
+            row = await ajard_query_id(
+                """INSERT INTO manutencao.ot
+                      (numero, ano, sequencia, equipamento_id, tipo, prioridade,
+                       descricao, solicitante_id, responsavel_id, fornecedor_id,
+                       horimetro_na_abertura, status, data_prevista, horimetro_previsto, plano_id,
+                       sintoma_codigo, causa_codigo, tipo_trabalho)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+                (numero, ano, int(seq["n"]), eq_id,
+                 d.get("tipo", tipo_padrao), d.get("prioridade", "media"),
+                 descricao, uid, d.get("responsavel_id"), d.get("fornecedor_id"),
+                 eq.get("horimetro_atual"), status_ini, data_prev, hor_prev, d.get("plano_id"),
+                 (d.get("sintoma_codigo") or None), (d.get("causa_codigo") or None), tt))
+            break
+        except _apg.exceptions.UniqueViolationError:
+            # corrida ou buraco na numeração: recalcula e tenta de novo
+            seq = await _proximo_seq_ot(); numero = f"OT-{ano}-{int(seq['n']):04d}"
+            if _tent == 4: raise
     await ajard_query(
         """INSERT INTO manutencao.ot_historico (ot_id, status_de, status_para, observacao, usuario_id)
            VALUES (%s,NULL,%s,%s,%s)""",
@@ -608,9 +626,7 @@ async def proximo_numero_ot(_auth=Depends(verificar_manutencao)):
     """(24/08/2026) Prévia do próximo número para exibir no modal Nova OT
     (padrão ManWinWin). Prévia informativa — quem reserva de verdade é o
     POST, pela mesma sequência, à prova de corrida."""
-    seq = await ajard_query(
-        """SELECT COALESCE(MAX(sequencia),0)+1 AS n FROM manutencao.ot
-           WHERE ano = EXTRACT(YEAR FROM now())::int""", fetch="one")
+    seq = await _proximo_seq_ot()
     from datetime import date as _date
     return {"numero": f"OT-{_date.today().year}-{int(seq['n']):04d}"}
 
@@ -3621,9 +3637,7 @@ async def _gerar_ot_previsao(plano_id, d, payload):
     eq = await ajard_query(
         "SELECT id, codigo, categoria, horimetro_atual FROM operacional.equipamentos WHERE id=%s AND ativo=true",
         (str(p["equipamento_id"]),), fetch="one")
-    seq = await ajard_query(
-        """SELECT COALESCE(MAX(sequencia),0)+1 AS n FROM manutencao.ot
-           WHERE ano = EXTRACT(YEAR FROM now())::int""", fetch="one")
+    seq = await _proximo_seq_ot()
     ano = _date.today().year
     numero = f"OT-{ano}-{int(seq['n']):04d}"
     uid = await _usuario_id(payload)
