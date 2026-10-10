@@ -4677,7 +4677,7 @@ function abrirModalCliente(cliente = null) {
   const c = cliente || {};
   const isEdit = !!cliente;
   const html = `
-    <div id="modal-cli" style="position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:300;display:flex;align-items:center;justify-content:center;padding:20px" onclick="if(event.target===this)fecharModalCli()">
+    <div id="modal-cli" style="position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:300;display:flex;align-items:center;justify-content:center;padding:20px">
       <div style="background:#fff;width:100%;max-width:520px;max-height:90vh;overflow-y:auto;border-radius:12px;padding:24px">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
           <h2 style="font-size:16px;font-weight:800;color:var(--blue)">${isEdit ? '✎ Editar' : '+ Novo'} Cliente</h2>
@@ -4831,7 +4831,7 @@ function abrirModalEquipamento(eq = null) {
   const e = eq || {};
   const isEdit = !!eq;
   const html = `
-    <div id="modal-eq" style="position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:300;display:flex;align-items:center;justify-content:center;padding:20px" onclick="if(event.target===this)fecharModalEq()">
+    <div id="modal-eq" style="position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:300;display:flex;align-items:center;justify-content:center;padding:20px">
       <div style="background:#fff;width:100%;max-width:560px;max-height:90vh;overflow-y:auto;border-radius:12px;padding:24px">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
           <h2 style="font-size:16px;font-weight:800;color:var(--blue)">${isEdit ? '✎ Editar' : '+ Novo'} Equipamento</h2>
@@ -5037,7 +5037,7 @@ function abrirModalTipoServico(ts = null) {
   const t = ts || {};
   const isEdit = !!ts;
   const html = `
-    <div id="modal-ts" style="position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:300;display:flex;align-items:center;justify-content:center;padding:20px" onclick="if(event.target===this)fecharModalTs()">
+    <div id="modal-ts" style="position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:300;display:flex;align-items:center;justify-content:center;padding:20px">
       <div style="background:#fff;width:100%;max-width:480px;border-radius:12px;padding:24px">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
           <h2 style="font-size:16px;font-weight:800;color:var(--blue)">${isEdit ? '✎ Editar' : '+ Novo'} Tipo de Serviço</h2>
@@ -5170,7 +5170,7 @@ function abrirModalRegime(reg = null) {
   const r = reg || {};
   const isEdit = !!reg;
   const html = `
-    <div id="modal-reg" style="position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:300;display:flex;align-items:center;justify-content:center;padding:20px" onclick="if(event.target===this)fecharModalReg()">
+    <div id="modal-reg" style="position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:300;display:flex;align-items:center;justify-content:center;padding:20px">
       <div style="background:#fff;width:100%;max-width:480px;border-radius:12px;padding:24px">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
           <h2 style="font-size:16px;font-weight:800;color:var(--blue)">${isEdit ? '✎ Editar' : '+ Novo'} Regime de Cobrança</h2>
@@ -5253,7 +5253,7 @@ async function removerRegime(id, nome) {
 /* ─── AJUSTE DE PONTOS ─── */
 function abrirModalAjustePts(login, nome, ptsAtual) {
   const html = `
-    <div id="modal-pts" style="position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:300;display:flex;align-items:center;justify-content:center;padding:20px" onclick="if(event.target===this)fecharModalPts()">
+    <div id="modal-pts" style="position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:300;display:flex;align-items:center;justify-content:center;padding:20px">
       <div style="background:#fff;width:100%;max-width:420px;border-radius:12px;padding:24px">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
           <h2 style="font-size:16px;font-weight:800;color:var(--blue)">± Ajustar Pontos</h2>
