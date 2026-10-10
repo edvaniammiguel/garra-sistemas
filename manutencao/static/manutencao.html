@@ -4020,7 +4020,6 @@ function otAba(aba){
       '<option value="'+f.id+'"'+(String(f.id)===String(o.fornecedor_id||'')?' selected':'')+'>'+_esc(f.nome)+'</option>').join('');
     const usOpts = '<option value="">— ninguém —</option>' + (_mntUserList||[]).map(u =>
       '<option value="'+u.id+'"'+(String(u.id)===String(o.responsavel_id||'')?' selected':'')+'>'+_esc(u.nome||u.login)+'</option>').join('');
-    const dtPrev = o.data_prevista ? String(o.data_prevista).slice(0,10) : '';
     const interv = o.interventor === 'externo' ? 'externo' : 'interno';
     const ro = v => '<input value="'+_esc(v||'—')+'" readonly style="background:#F1F5F9">';
     c.innerHTML =
@@ -4057,11 +4056,20 @@ function otAba(aba){
       +   '<div class="mfield" style="margin-top:6px">Responsável<select id="oe-resp">'+usOpts+'</select></div>'
       + '</fieldset>'
       + '</div>'
-      + '</div><div class="dsec">Programação</div><div class="mgrid">'
-      + '<div class="mfield">Data prevista<input id="oe-data" type="date" min="2000-01-01" max="2100-12-31" value="'+dtPrev+'"></div>'
-      + '<div class="mfield">Horímetro/KM previsto<input id="oe-horim" type="number" value="'+(o.horimetro_previsto??'')+'"></div>'
+      // (10/10/2026) ManWinWin: a Origem NÃO tem "Programação" — tem PERIODICIDADE, só leitura, vinda da FMP:
+      // Calendário (qtd + unidade de tempo) e Registros (qtd + h/km), Data fixa / Registro fixo, Próxima FMP.
+      // A data programada vive em Gestão › Prog. Início e só muda pelo Avançado.
+      + '</div><div class="dsec">Periodicidade</div>'
+      + '<div id="oe-period" style="display:grid;grid-template-columns:130px 1fr 1fr 1fr;gap:4px 14px;align-items:end;font-size:11px">'
+      +   '<div style="display:flex;flex-direction:column;gap:6px;color:#475569">'
+      +     '<label style="display:flex;gap:5px;align-items:center"><input type="checkbox" id="oe-dfixa" disabled> Data fixa</label>'
+      +     '<label style="display:flex;gap:5px;align-items:center"><input type="checkbox" id="oe-rfixo" disabled> Registro fixo</label></div>'
+      +   '<div class="mfield">Calendário<div style="display:flex;gap:4px"><input id="oe-per-cal" readonly style="background:#F1F5F9;width:60px" value=""><input id="oe-per-calu" readonly style="background:#F1F5F9" value=""></div></div>'
+      +   '<div class="mfield">Registros <span id="oe-per-un" class="muted"></span><input id="oe-per-reg" readonly style="background:#F1F5F9" value=""></div>'
+      +   '<div class="mfield">Próxima FMP<input id="oe-per-prox" readonly style="background:#F1F5F9" value="'+(o.plano_id ? '…' : '—')+'"></div>'
       + '</div>';
     otInterventor();
+    otPeriodicidade(o);
     mntFetch('/manutencao/api/equipamentos/'+o.equipamento_id+'/detalhe').then(det => {
       const el = document.getElementById('oe-fmp'); if (!el) return; const v = el.dataset.val;
       const pls = det.planos || [];
@@ -4096,7 +4104,7 @@ function otAba(aba){
       + linha('Abertura', dd(o.data_abertura) + ' · horím. ' + (o.horimetro_na_abertura ?? '—'))
       + linha('Última OT', u ? _esc(u.numero)+' · '+dd(u.data_conclusao)+' · horím. '+(u.horimetro_na_abertura ?? '—') : '— (primeira deste equipamento)')
       + linha('Prog. Início', (o.data_prevista ? _fmtData(o.data_prevista) : '—')
-              + ' · horím. previsto ' + (o.horimetro_previsto ?? '—'), true)
+              + ' · horím. previsto ' + (o.horimetro_previsto ?? '—') + (o.prog_alterada ? ' <span style="color:#92400E;font-size:10px">✎ alterada</span>' : ''), true)
       + linha('Início real', inicioReal ? dd(h1.criado_em) : '—', true)
       + linha('Fim', fim ? dd(o.data_conclusao) : '—', true)
       + linha('Encerramento', (o.observacao_conclusao ? _esc(o.observacao_conclusao) : '—')
@@ -4170,15 +4178,25 @@ async function abrirReprogramar(){
       const it = (pv.itens || []).find(x => String(x.plano_id) === String(o.plano_id));
       if (it) {
         const un = it.unidade === 'km' ? 'km' : 'h';
-        const porReg = it.leitura_alvo != null ? it.leitura_alvo.toLocaleString('pt-BR') + ' ' + un + (it.proxima_data && it.modo !== 'calendario' ? ' ≈ ' + _fmtData(it.proxima_data) : '') : '—';
-        const porCal = it.modo === 'calendario' && it.proxima_data ? _fmtData(it.proxima_data) : '—';
-        refHtml = '<div style="display:grid;grid-template-columns:110px 1fr;gap:4px 10px;font-size:11px;background:#F8FAFC;border:1px solid #E2E8F0;border-radius:6px;padding:8px 10px;margin-bottom:8px">'
-          + '<b>FMP</b><span>'+_esc(it.plano_codigo)+' — '+_esc(it.plano_descricao||'')+' · a cada '+(it.periodo_qtd!=null?it.periodo_qtd.toLocaleString('pt-BR'):'?')+' '+_esc(it.periodo||'')+'</span>'
-          + '<b>Última</b><span>'+(it.ultima_data ? _fmtData(it.ultima_data) : '—')+(it.ultima_leitura!=null ? ' · '+it.ultima_leitura.toLocaleString('pt-BR')+' '+un : '')+'</span>'
-          + '<b>Pelo calendário</b><span>'+porCal+'</span>'
-          + '<b>Pelo registro</b><span>'+porReg+(it.restante!=null && it.modo!=='calendario' ? ' <span class="muted">(faltam '+it.restante.toLocaleString('pt-BR')+' '+un+')</span>' : '')+'</span>'
-          + '<b>Programado hoje</b><span>'+(o.data_prevista ? _fmtData(o.data_prevista) : '—')+(o.horimetro_previsto!=null ? ' · '+Number(o.horimetro_previsto).toLocaleString('pt-BR')+' '+un : '')+'</span>'
-          + '</div>';
+        // (10/10/2026) Quadro "Programação OT" do ManWinWin: linha CALENDÁRIO (plano por tempo: última + período;
+        // registro projetado pelo ritmo) e linha REGISTRO (plano por leitura: última leitura + período; data
+        // projetada pelo ritmo). A linha vazia é o modo que a FMP não usa. "usar" copia para a linha Programada.
+        const hoje0 = new Date(); hoje0.setHours(0,0,0,0);
+        const diasAte = d => Math.round((new Date(d+'T00:00:00') - hoje0) / 86400000);
+        let calD = '', calR = null, regD = '', regR = null;
+        if (it.modo === 'calendario' && it.proxima_data) { calD = it.proxima_data; if (ritmo) calR = Math.round(atual + diasAte(calD) * ritmo); }
+        if (it.modo !== 'calendario' && it.leitura_alvo != null) { regR = it.leitura_alvo; regD = it.proxima_data || ''; }
+        window._reprog.ref = { calD, calR, regD, regR };
+        const fmtR = v => v != null ? Number(v).toLocaleString('pt-BR') + ' ' + un : '—';
+        const usar = qual => '<button class="btn" style="padding:1px 7px;font-size:10px" onclick="reprogUsar(\''+qual+'\')">usar</button>';
+        refHtml = '<div style="font-size:11px;background:#F8FAFC;border:1px solid #E2E8F0;border-radius:6px;padding:8px 10px;margin-bottom:8px">'
+          + '<div style="margin-bottom:6px"><b>FMP</b> '+_esc(it.plano_codigo)+' — '+_esc(it.plano_descricao||'')+' · a cada '+(it.periodo_qtd!=null?it.periodo_qtd.toLocaleString('pt-BR'):'?')+' '+_esc(it.periodo||'')
+          + ' · <b>Última</b> '+(it.ultima_data ? _fmtData(it.ultima_data) : '—')+(it.ultima_leitura!=null ? ' · '+it.ultima_leitura.toLocaleString('pt-BR')+' '+un : '')+'</div>'
+          + '<table style="font-size:11px;width:100%"><thead><tr><th style="width:110px"></th><th>Data</th><th>Registro</th><th style="width:48px"></th></tr></thead><tbody>'
+          + '<tr><td><b>Calendário</b></td><td>'+(calD ? _fmtData(calD) : '—')+'</td><td>'+fmtR(calR)+'</td><td>'+(calD ? usar('cal') : '')+'</td></tr>'
+          + '<tr><td><b>Registro</b></td><td>'+(regD ? '≈ '+_fmtData(regD) : '—')+'</td><td>'+fmtR(regR)+(it.restante!=null && it.modo!=='calendario' ? ' <span class="muted">(faltam '+it.restante.toLocaleString('pt-BR')+')</span>' : '')+'</td><td>'+(regR != null ? usar('reg') : '')+'</td></tr>'
+          + '<tr style="background:#FFF7ED"><td><b>Programada</b></td><td>'+(o.data_prevista ? _fmtData(o.data_prevista) : '—')+'</td><td>'+fmtR(o.horimetro_previsto)+'</td><td>'+(o.prog_alterada ? '<span title="Data programada alterada" style="color:#92400E">✎</span>' : '')+'</td></tr>'
+          + '</tbody></table></div>';
       }
     } catch(e) {}
   }
@@ -4195,6 +4213,7 @@ async function abrirReprogramar(){
     + '<div class="mfield">Data prevista<input id="rp-data" type="date" min="2000-01-01" max="2100-12-31" value="'+dtPrev+'" onchange="reprogCalc(\'data\')"></div>'
     + '<div class="mfield">Horímetro/KM previsto (atual: '+atual+')<input id="rp-horim" type="number" value="'+(o.horimetro_previsto??'')+'" oninput="reprogCalc(\'horim\')"></div>'
     + '</div><div id="rp-aviso" style="font-size:11px;min-height:15px;margin-top:4px;color:#475569"></div>'
+    + '<label style="display:flex;align-items:center;gap:6px;font-size:11px;margin-top:6px;color:#475569"><input type="checkbox" id="rp-alterada" '+(o.prog_alterada?'checked':'')+' disabled> Data programada alterada <span class="muted">(marca-se sozinha ao gravar; Novo ciclo recalcula pela FMP e desmarca)</span></label>'
     + '<div class="mfield" style="margin-top:8px">Motivo da reprogramação *<select id="rp-motivo">'+motOpts+'</select></div>'
     + '<div class="mfield" style="margin-top:8px">Observação<input id="rp-obs" placeholder="opcional"></div>'
     + '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">'
@@ -4213,6 +4232,12 @@ function _dataOk(id, rotulo){
   mostrarToast('⚠️ '+(rotulo||'Data')+' com ano inválido ('+v.slice(0,4)+'). Digite o ano completo, ex.: 2026.', 'warn');
   if (el) el.focus();
   return false;
+}
+function reprogUsar(qual){
+  const r = (window._reprog||{}).ref || {}; const gd = document.getElementById('rp-data'), gh = document.getElementById('rp-horim');
+  if (qual === 'cal') { gd.value = r.calD || ''; gh.value = r.calR != null ? r.calR : ''; }
+  else { gh.value = r.regR != null ? r.regR : ''; gd.value = r.regD || ''; }
+  const av = document.getElementById('rp-aviso'); if (av) { av.textContent = 'Copiado da linha '+(qual==='cal'?'Calendário':'Registro')+' da FMP.'; av.style.color = '#475569'; }
 }
 function reprogCalc(origem){
   const r = window._reprog || {};
@@ -4288,6 +4313,24 @@ async function otDescartar(id){
     mostrarToast('OT descartada', 'ok'); carregarOTsReais(); carregarSemaforosReais();
   } catch(e){ mostrarToast('❌ '+e.message, 'warn'); }
 }
+// (10/10/2026) Quadro "Periodicidade" da Origem (ManWinWin), só leitura: lê a FMP da OT em /previsoes.
+async function otPeriodicidade(o){
+  const g = id => document.getElementById(id);
+  const set = (id, v) => { const el = g(id); if (el) el.value = v == null ? '' : String(v); };
+  const semPlano = !o.plano_id;
+  if (g('oe-dfixa')) g('oe-dfixa').checked = semPlano ? !!o.data_prevista : !!(o.prog_alterada && o.data_prevista);
+  if (g('oe-rfixo')) g('oe-rfixo').checked = semPlano ? (o.horimetro_previsto != null) : !!(o.prog_alterada && o.horimetro_previsto != null);
+  if (semPlano) { set('oe-per-prox', '—'); return; }
+  let it = null;
+  try { const pv = await mntFetch('/manutencao/api/previsoes'); it = (pv.itens||[]).find(x => String(x.plano_id) === String(o.plano_id)) || null; } catch(e){}
+  if (!it || g('oe-per-prox') == null) { set('oe-per-prox', '—'); return; }
+  const qtd = it.periodo_qtd != null ? Number(it.periodo_qtd).toLocaleString('pt-BR') : '';
+  const unTempo = (it.periodo || '').replace(/^\w/, c => c.toUpperCase());
+  if (it.modo === 'calendario') { set('oe-per-cal', qtd); set('oe-per-calu', unTempo || 'Dias'); set('oe-per-reg', ''); }
+  else { set('oe-per-cal', ''); set('oe-per-calu', ''); set('oe-per-reg', qtd); }
+  const un = g('oe-per-un'); if (un) un.textContent = '(' + (it.unidade === 'km' ? 'KM' : 'H') + ')';
+  set('oe-per-prox', it.plano_codigo || '—');
+}
 async function otAplicarFMP(){
   const o = _otAberta; if (!o) return;
   const sel = document.getElementById('oe-fmp'); const pid = (sel||{}).value;
@@ -4309,7 +4352,6 @@ async function salvarOrigem(fechar, promover){
   const body = { descricao };
   if (g('oe-prior')) {
     const interv = (document.querySelector('input[name="oe-interv"]:checked')||{}).value || 'interno';
-    if (!_dataOk('oe-data','Data prevista')) return;
     if (interv === 'externo' && !g('oe-forn').value) { mostrarToast('Interventor externo: escolha o fornecedor', 'warn'); g('oe-forn').focus(); return; }
     Object.assign(body, {
       ...(_mntTiposTrab.length ? {tipo_trabalho: g('oe-tipo').value} : {tipo: g('oe-tipo').value}),
@@ -4321,8 +4363,7 @@ async function salvarOrigem(fechar, promover){
       contrato: g('oe-contrato').value.trim(),
       tdm_previsto: g('oe-tdm').value.trim(),
       bloqueada: g('oe-bloq').checked,
-      projecto_id: g('oe-proj').value || '', data_prevista: g('oe-data').value || '',
-      horimetro_previsto: g('oe-horim').value.trim() });
+      projecto_id: g('oe-proj').value || '' });
   }
   try {
     await mntFetch('/manutencao/api/ots/'+o.id, {method:'PATCH', body: JSON.stringify(body)});
@@ -6447,7 +6488,7 @@ async function multiEdicao(alvo){
   const ehOT = alvo === 'ots';
   const lista = ehOT ? (_otsCache||[]).filter(o => ['programada','aberta','em_andamento','aguardando_peca'].includes(o.status)) : (_semCache||[]);
   const campos = ehOT
-    ? [['responsavel_id','Respons\u00e1vel','select',()=>(_mntUserList||[]).map(u=>({id:u.id,nome:u.nome||u.login}))],['prioridade','Prioridade','select',()=>['baixa','media','alta','urgente'].map(x=>({id:x,nome:x}))],['data_prevista','Data prevista','date'],['fornecedor_id','Fornecedor','select',()=>_mntFornList||[]],['projecto_id','Projeto','select',()=>_projList||[]]]
+    ? [['responsavel_id','Respons\u00e1vel','select',()=>(_mntUserList||[]).map(u=>({id:u.id,nome:u.nome||u.login}))],['prioridade','Prioridade','select',()=>['baixa','media','alta','urgente'].map(x=>({id:x,nome:x}))],['fornecedor_id','Fornecedor','select',()=>_mntFornList||[]],['projecto_id','Projeto','select',()=>_projList||[]]]
     : [['sistema_codigo','Sistema','select',()=>(_arvSistemas||[]).map(s=>({id:s.codigo,nome:s.codigo+' \u2014 '+(s.nome||'')}))],['centro_custo','Centro de custo','text'],['localizacao','Localiza\u00e7\u00e3o','text'],['operador_responsavel_id','Operador','select',()=>(_mntUserList||[]).map(u=>({id:u.id,nome:u.nome||u.login}))],['fornecedor_id','Fornecedor','select',()=>_mntFornList||[]]];
   if (ehOT && _projList === null){ try { _projList = (await mntFetch('/manutencao/api/tab/projectos')).map(p=>({id:p.id,nome:p.codigo+' \u2014 '+(p.nome||'')})); } catch(e){ _projList = []; } }
   window._meCampos = campos; window._meAlvo = alvo;
