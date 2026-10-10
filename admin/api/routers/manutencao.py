@@ -7,6 +7,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File
 from fastapi.responses import HTMLResponse
 import os
+import re
 
 from core.auth import verificar_token, verificar_gestor
 from core.db import ajard_query, ajard_query_id
@@ -992,6 +993,27 @@ def _sem_acento(txt: str) -> str:
     return (txt or "").translate(str.maketrans(_SEM_ACENTO_DE, _SEM_ACENTO_PARA))
 
 
+# ══════════════════════════════════════════════════════════════
+# (10/10/2026) RUBRICA DE MATERIAL — automática, padrão ManWinWin (árvore 2 — Peças e consumíveis):
+#   do ESTOQUE Garra (saída de armazém)      2.01 consumo · 2.02 sobressalentes · 2.03 lubrificantes
+#   DIRETO do fornecedor/oficina (aplicação) 2.04 consumo · 2.05 sobressalentes · 2.06 lubrificantes
+# A classe sai da família/descrição da peça; o usuário só diz de ONDE veio. Fica gravada na
+# movimentação para o relatório de custos por rubrica.
+_RX_LUB = re.compile(r"\b(oleo|óleo|graxa|lubrif|fluido|arla|aditivo|hidraul)", re.I)
+_RX_CONS = re.compile(r"\b(parafuso|porca|arruela|abra[cç]adeira|fita|estopa|lixa|eletrodo|solda|tinta|spray|pano|luva|rebite|anilha|silicone|cola|adesivo|desengrip|wd|contato|terminal|fus[ií]vel|l[aâ]mpada|cabo|fio)", re.I)
+def _rubrica_material(tipo_mov: str, familia: str, descricao: str) -> str:
+    fam = (familia or "").upper()
+    desc = descricao or ""
+    if fam.startswith("LU") or _RX_LUB.search(desc):
+        classe = 3
+    elif fam.startswith("CO") or _RX_CONS.search(desc):
+        classe = 1
+    else:
+        classe = 2
+    base = 4 if tipo_mov == "aplicacao_direta" else 1
+    return f"2.0{base + classe - 1}"
+
+
 @router.get("/manutencao/api/pecas")
 async def listar_pecas(busca: str = None, familia: str = None, limit: int = 100,
                        _auth=Depends(verificar_manutencao)):
@@ -1562,6 +1584,7 @@ async def garantir_nucleo():
     await ajard_query("CREATE INDEX IF NOT EXISTS ix_ot_status ON manutencao.ot (status) WHERE ativo=true", fetch="none")
     await ajard_query("CREATE INDEX IF NOT EXISTS ix_othist_ot ON manutencao.ot_historico (ot_id)", fetch="none")
     await ajard_query("CREATE INDEX IF NOT EXISTS ix_mov_peca ON manutencao.movimentacoes (peca_id)", fetch="none")
+    await ajard_query("ALTER TABLE manutencao.movimentacoes ADD COLUMN IF NOT EXISTS rubrica TEXT", fetch="none")
     await ajard_query("CREATE INDEX IF NOT EXISTS ix_mov_ot ON manutencao.movimentacoes (ot_id)", fetch="none")
     _NUCLEO_OK = True
 
@@ -2851,7 +2874,7 @@ async def movimentar_estoque(request: Request, payload=Depends(verificar_manuten
         "ALTER TABLE manutencao.movimentacoes ADD COLUMN IF NOT EXISTS custo_unitario NUMERIC",
         fetch="none")
     peca = await ajard_query(
-        "SELECT id, custo_medio FROM manutencao.pecas WHERE codigo=%s OR id::text=%s",
+        "SELECT id, custo_medio, familia_codigo, descricao FROM manutencao.pecas WHERE codigo=%s OR id::text=%s",
         (d.get("peca"), str(d.get("peca"))), fetch="one")
     if not peca:
         raise HTTPException(status_code=404, detail="Peça não encontrada")
@@ -2912,10 +2935,12 @@ async def movimentar_estoque(request: Request, payload=Depends(verificar_manuten
         await _soma(destino, qtd - atual)
 
     uid = await _usuario_id(payload)
+    # rubrica escolhida na tela (cadastro de Parametrizar) vale; sem escolha, a sugestão automática
+    rub = ((d.get("rubrica") or "").strip() or _rubrica_material(tipo, peca["familia_codigo"], peca["descricao"])) if tipo == "saida" and d.get("ot_id") else None
     await ajard_query("""
-        INSERT INTO manutencao.movimentacoes (tipo, peca_id, almox_origem, almox_destino, quantidade, ot_id, usuario_id, observacao, custo_unitario)
-        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
-        (tipo, pid, origem, destino, qtd, d.get("ot_id"), uid, (d.get("observacao") or "").strip() or None, custo_unit), fetch="none")
+        INSERT INTO manutencao.movimentacoes (tipo, peca_id, almox_origem, almox_destino, quantidade, ot_id, usuario_id, observacao, custo_unitario, rubrica)
+        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+        (tipo, pid, origem, destino, qtd, d.get("ot_id"), uid, (d.get("observacao") or "").strip() or None, custo_unit, rub), fetch="none")
     return {"ok": True, "saldo_origem": (await _saldo(origem)) if origem else None,
             "saldo_destino": (await _saldo(destino)) if destino else None}
 
@@ -3843,7 +3868,7 @@ async def ot_consumos(ot_id: str, _auth=Depends(verificar_manutencao)):
         "ALTER TABLE manutencao.movimentacoes ADD COLUMN IF NOT EXISTS custo_unitario NUMERIC",
         fetch="none")
     rows = await ajard_query(
-        """SELECT m.id, m.tipo, m.quantidade, m.custo_unitario, m.criado_em, m.observacao,
+        """SELECT m.id, m.tipo, m.quantidade, m.custo_unitario, m.criado_em, m.observacao, m.rubrica,
                   p.codigo AS peca_codigo, p.descricao AS peca_descricao, p.unidade,
                   p.custo_medio,
                   ao.codigo AS almox_origem, ad.codigo AS almox_destino,
@@ -3869,7 +3894,7 @@ async def ot_consumos(ot_id: str, _auth=Depends(verificar_manutencao)):
             "peca_codigo": r["peca_codigo"], "peca_descricao": r["peca_descricao"],
             "unidade": r["unidade"] or "UN", "quantidade": qtd,
             "custo_unitario": custo, "total": linha,
-            "almox": r["almox_origem"] or r["almox_destino"],
+            "almox": r["almox_origem"] or r["almox_destino"], "rubrica": r["rubrica"],
             "usuario": r["usuario"], "observacao": r["observacao"]})
     return {"itens": itens, "total": round(total, 2)}
 
@@ -4045,14 +4070,17 @@ async def _entrada_core(d, payload):
         p = await ajard_query(
             "SELECT id, custo_medio FROM manutencao.pecas WHERE codigo=%s",
             (cod,), fetch="one")
+        desc_it = (it.get("descricao") or "").strip()
         if not p:
-            desc = (it.get("descricao") or "").strip()
+            desc = desc_it
             if not desc:
                 raise HTTPException(status_code=404, detail=f"Peça {cod} não cadastrada — informe a descrição para cadastrar na hora")
+            # (10/10/2026) peça cadastrada pela OT pode já vir com família (Catálogo organizado desde o nascimento)
             p = await ajard_query_id(
-                """INSERT INTO manutencao.pecas (codigo, descricao, unidade, custo_medio)
-                   VALUES (%s,%s,%s,%s)""",
-                (cod, desc, (it.get("un") or "UN").strip().upper() or "UN", _num(it.get("custo_unitario"))))
+                """INSERT INTO manutencao.pecas (codigo, descricao, unidade, custo_medio, familia_codigo)
+                   VALUES (%s,%s,%s,%s,%s)""",
+                (cod, desc, (it.get("un") or "UN").strip().upper() or "UN", _num(it.get("custo_unitario")),
+                 (it.get("familia_codigo") or "").strip() or None))
             p = {"id": p["id"], "custo_medio": _num(it.get("custo_unitario"))}
         custo = _num(it.get("custo_unitario"))
         if custo is None:
@@ -4075,16 +4103,20 @@ async def _entrada_core(d, payload):
                 DO UPDATE SET quantidade = manutencao.estoque.quantidade + EXCLUDED.quantidade""",
                 (p["id"], destino, qtd), fetch="none")
         tipo_mov = "entrada" if doc_tipo != "aplicacao_direta" else "aplicacao_direta"
+        rub = None
+        if tipo_mov == "aplicacao_direta":
+            pf = await ajard_query("SELECT familia_codigo, descricao FROM manutencao.pecas WHERE id=%s", (p["id"],), fetch="one")
+            rub = (it.get("rubrica") or "").strip() or _rubrica_material("aplicacao_direta", pf["familia_codigo"] if pf else None, pf["descricao"] if pf else desc_it)
         await ajard_query("""
             INSERT INTO manutencao.movimentacoes
                 (tipo, peca_id, almox_destino, quantidade, ot_id, usuario_id, observacao,
-                 custo_unitario, documento_tipo, documento_numero, fornecedor_id, oc_numero)
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+                 custo_unitario, documento_tipo, documento_numero, fornecedor_id, oc_numero, rubrica)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
             (tipo_mov, p["id"], destino, qtd,
              (ot_id if doc_tipo == "aplicacao_direta" else None), uid,
              (d.get("observacao") or "").strip() or None, custo,
              doc_tipo, doc_num or None, d.get("fornecedor_id") or None,
-             (d.get("oc_numero") or "").strip() or None), fetch="none")
+             (d.get("oc_numero") or "").strip() or None, rub), fetch="none")
         total_doc += qtd * (custo or 0)
         lancados.append(cod)
     return {"ok": True, "documento": doc_num or doc_tipo, "itens": len(lancados),
