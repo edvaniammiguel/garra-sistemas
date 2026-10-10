@@ -427,6 +427,18 @@ function mostrarToast(msg, tipo){
     document.getElementById('tb-user').innerHTML = '<b>'+_esc(p.nome || p.sub || '')+'</b> — Manutenção';
   } catch(e) {}
 })();
+// (10/10/2026) REGRA ÚNICA de data no módulo: 'AAAA-MM-DD' (só data, ex.: data prevista) é lida como
+// data LOCAL — new Date('2026-10-10') é meia-noite UTC e, no Brasil (UTC-3), virava 09/10. Timestamps
+// completos (com hora) continuam convertidos para o horário local.
+function _fmtData(v){
+  if (!v) return '—';
+  try {
+    const s = String(v);
+    const m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (m) return m[3]+'/'+m[2]+'/'+m[1];
+    return new Date(s).toLocaleDateString('pt-BR');
+  } catch(e){ return '—'; }
+}
 document.getElementById('ft-data').textContent = new Date().toLocaleDateString('pt-BR');
 
 /* ══ NAVEGAÇÃO ══ */
@@ -901,7 +913,7 @@ function renderOTs(){
     th.onclick = () => { _otsOrd = { k: th.dataset.ord, dir: _otsOrd.k === th.dataset.ord ? -_otsOrd.dir : 1 }; renderOTs(); };
     th.textContent = th.textContent.replace(/ [▲▼]$/, '') + (th.dataset.ord === _otsOrd.k ? (_otsOrd.dir > 0 ? ' ▲' : ' ▼') : '');
   });
-  const d = v => { if(!v) return '—'; try { return new Date(v).toLocaleDateString('pt-BR'); } catch(e){ return '—'; } };
+  const d = v => { if(!v) return '—'; try { return _fmtData(v); } catch(e){ return '—'; } };
   const linha = o => {
     const [cc, cl] = MNT_CHIP[o.status] || ['nr', o.status];
     const v = o.vencimento;
@@ -2000,7 +2012,7 @@ async function imprimirFrotaHTML(ids, tipo){
   const car = e => { let c = e.caracteristicas; if (typeof c === 'string') { try { c = JSON.parse(c); } catch(x){ c = []; } } return Array.isArray(c) ? c.map(p => ({ r: p.r||p.nome||p.n||'', v: (p.v!==undefined?p.v:p.valor)||'' })).filter(p=>p.r||p.v) : []; };
   const G = e => (typeof e.garantia === 'string' ? (()=>{try{return JSON.parse(e.garantia)}catch(x){return {}}})() : (e.garantia||{}));
   const nz = v => (v===null||v===undefined||v==='') ? '—' : _esc(String(v));
-  const dt = v => v ? new Date(v).toLocaleDateString('pt-BR') : '—';
+  const dt = v => v ? _fmtData(v) : '—';
   const qr = txt => 'https://api.qrserver.com/v1/create-qr-code/?size=140x140&data='+encodeURIComponent(txt);
   let corpo = '';
   if (tipo === 'ficha') {
@@ -2511,7 +2523,7 @@ async function equipSubsistemas(id){
   let r;
   try { r = await mntFetch('/manutencao/api/equipamentos/'+id+'/subsistemas'); }
   catch(e){ mostrarToast('\u274c '+e.message,'warn'); return; }
-  const dd = v => { if(!v) return '\u2014'; try{ return new Date(v).toLocaleDateString('pt-BR'); }catch(e){ return '\u2014'; } };
+  const dd = v => { if(!v) return '\u2014'; try{ return _fmtData(v); }catch(e){ return '\u2014'; } };
   const eu = r.eu;
   let corpo = '';
   if (eu.categoria === 'componente'){
@@ -2768,7 +2780,7 @@ async function equipDocumentos(id){
   try { docs = await mntFetch('/manutencao/api/equipamentos/'+id+'/documentos'); }
   catch(e){ mostrarToast('\u274c '+e.message,'warn'); return; }
   const eqF = _navEquipObjs().find(e => String(e.id) === String(id)) || {};
-  const dd = v => { if(!v) return '\u2014'; try{ return new Date(v).toLocaleDateString('pt-BR'); }catch(e){ return '\u2014'; } };
+  const dd = v => { if(!v) return '\u2014'; try{ return _fmtData(v); }catch(e){ return '\u2014'; } };
   const kb = n => n ? (n > 1048576 ? (n/1048576).toFixed(1)+' MB' : Math.max(1,Math.round(n/1024))+' KB') : '';
   const ico = t => /pdf/.test(t||'') ? '\ud83d\udcc4' : /image/.test(t||'') ? '\ud83d\uddbc' : /sheet|excel|csv/.test(t||'') ? '\ud83d\udcca' : '\ud83d\udcce';
   document.querySelector('#eq-ficha .modal').classList.remove('larga');
@@ -2940,7 +2952,7 @@ async function equipArtigos(id){
   let r;
   try { r = await mntFetch('/manutencao/api/equipamentos/'+id+'/artigos-aplicados'); }
   catch(e){ mostrarToast('\u274c '+e.message,'warn'); return; }
-  const dd = v => { if(!v) return '\u2014'; try{ return new Date(v).toLocaleDateString('pt-BR'); }catch(e){ return '\u2014'; } };
+  const dd = v => { if(!v) return '\u2014'; try{ return _fmtData(v); }catch(e){ return '\u2014'; } };
   const T = { saida:'\ud83d\udce4', aplicacao_direta:'\u26a1', entrada:'\u21a9' };
   document.querySelector('#eq-ficha .modal').classList.add('larga');
   document.getElementById('eq-ficha-corpo').innerHTML =
@@ -3033,7 +3045,7 @@ function renderJanelaOTs(){
   const eq = _mntEquipList[idx] || {};
   const ots = _otwin.ots.filter(o => _otwin.estados.has(o.status))
     .filter(o => !_otwin.tipos || _otwin.tipos.has(o.tipo_trabalho || '') || (!o.tipo_trabalho && _otwin.tipos.has('_sem')));
-  const d = v => { if(!v) return '—'; try { return new Date(v).toLocaleDateString('pt-BR'); } catch(e){ return '—'; } };
+  const d = v => { if(!v) return '—'; try { return _fmtData(v); } catch(e){ return '—'; } };
   const ESTADOS = [['programada','Programada'],['aberta','Aberta'],['em_andamento','Em Curso'],['aguardando_peca','Aguard. peça'],['concluida','Encerrada'],['cancelada','Cancelada']];
   const chkE = ESTADOS.map(([v,l]) =>
     '<label style="display:flex;gap:5px;padding:4px 10px;cursor:pointer;font-size:11px"><input type="checkbox" '+(_otwin.estados.has(v)?'checked':'')+' onchange="otwFiltroEstado(\''+v+'\',this.checked)"> '+l+'</label>').join('');
@@ -3438,6 +3450,8 @@ async function verOTReal(id){
   try {
     document.querySelector('#eq-ficha .modal').classList.remove('larga');
     await _tiposTrab();
+    if (_mntFornList === null) { try { _mntFornList = await mntFetch('/manutencao/api/fornecedores'); } catch(e){ _mntFornList = []; } }
+    if (_mntUserList === null) { try { _mntUserList = (await mntFetch('/usuarios')).filter(u => u.ativo !== false); } catch(e){ _mntUserList = []; } }
     const o = await mntFetch('/manutencao/api/ots/'+id);
     _otAberta = o;
     if (_projList === null){ try { _projList = (await mntFetch('/manutencao/api/tab/projectos')).map(p=>({id:p.id,nome:p.codigo+' — '+(p.nome||'')})); } catch(e){ _projList = []; } }
@@ -3609,7 +3623,7 @@ async function otPecasRender(){
       + '<b style="width:85px;text-align:right;color:#1A2A5E">'+(t>0?t.toFixed(2):'—')+'</b></div>';
   };
   const cons = _otPc.cons || { itens: [], total: 0 };
-  const dd2 = v => { if(!v) return '—'; try{ return new Date(v).toLocaleDateString('pt-BR'); }catch(e){ return '—'; } };
+  const dd2 = v => { if(!v) return '—'; try{ return _fmtData(v); }catch(e){ return '—'; } };
   const linhaRe = x =>
     '<div style="display:flex;gap:6px;padding:4px 6px;border-bottom:1px solid #F1F5F9;font-size:11px;align-items:center">'
     + '<span style="width:62px" class="muted">'+dd2(x.data)+'</span>'
@@ -3727,6 +3741,19 @@ async function otSaidaOK(){
   } catch(e){ mostrarToast('❌ '+e.message, 'warn'); }
 }
 async function otAbrirEm(id, aba){ await verOTReal(id); otAba(aba); }
+let _setIntCache = null;
+async function _setoresInterventor(){
+  if (_setIntCache === null) { try { _setIntCache = (await mntFetch('/manutencao/api/param/setores-interventor')).filter(s => s.ativo !== false); } catch(e){ _setIntCache = []; } }
+  return _setIntCache;
+}
+// Interventor: Interno mostra Setor, Externo mostra Fornecedor (um OU outro, como no ManWinWin)
+function otInterventor(){
+  const r = document.querySelector('input[name="oe-interv"]:checked'); if (!r) return;
+  const ext = r.value === 'externo';
+  const sw = document.getElementById('oe-setor-wrap'), fw = document.getElementById('oe-forn-wrap');
+  if (sw) sw.style.display = ext ? 'none' : '';
+  if (fw) fw.style.display = ext ? '' : 'none';
+}
 function otAba(aba){
   document.querySelectorAll('.mtab').forEach(t=>t.classList.remove('on'));
   const tabEl = document.getElementById('mt-'+(aba==='hist'?'hist':aba));
@@ -3743,31 +3770,65 @@ function otAba(aba){
   if (aba === 'doc'){ otDocsRender(); return; }
   const dd = v => { if(!v) return '—'; try{ return new Date(v).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',year:'2-digit',hour:'2-digit',minute:'2-digit'}); }catch(e){ return '—'; } };
   if (aba === 'origem'){
-    const foOpts = '<option value="">— nenhum —</option>' + (_mntFornList||[]).map(f =>
+    // (10/10/2026) Origem no padrão ManWinWin: esquerda = Objecto · Sistema · C. Custo · Projecto · FMP · Tipo Trab. ·
+    // Prev. TDM · Bloquear; direita = Grau Urgência · Contrato · INTERVENTOR (Interno → Setor · Externo → Fornecedor) · Responsável.
+    const foOpts = '<option value="">— escolha o fornecedor —</option>' + (_mntFornList||[]).map(f =>
       '<option value="'+f.id+'"'+(String(f.id)===String(o.fornecedor_id||'')?' selected':'')+'>'+_esc(f.nome)+'</option>').join('');
+    const usOpts = '<option value="">— ninguém —</option>' + (_mntUserList||[]).map(u =>
+      '<option value="'+u.id+'"'+(String(u.id)===String(o.responsavel_id||'')?' selected':'')+'>'+_esc(u.nome||u.login)+'</option>').join('');
     const dtPrev = o.data_prevista ? String(o.data_prevista).slice(0,10) : '';
+    const interv = o.interventor === 'externo' ? 'externo' : 'interno';
+    const ro = v => '<input value="'+_esc(v||'—')+'" readonly style="background:#F1F5F9">';
     c.innerHTML =
-      '<div class="mgrid">'
-      + '<div class="mfield">Equipamento<input value="'+_esc(o.equipamento_codigo||'')+' — '+_esc(o.equipamento_desc||'')+'" disabled></div>'
-      + '<div class="mfield">Fornecedor<select id="oe-forn">'+foOpts+'</select></div>'
+      '<div class="mgrid" style="grid-template-columns:1.1fr 1fr;gap:12px">'
+      // ── coluna esquerda ──
+      + '<div style="display:flex;flex-direction:column;gap:6px">'
+      + '<div class="mfield">Objecto'+ro((o.equipamento_codigo||'')+' — '+(o.equipamento_desc||''))+'</div>'
+      + '<div class="mfield">Sistema'+ro(o.sistema_codigo ? o.sistema_codigo+' — '+(o.sistema_nome||'') : '')+'</div>'
+      + '<div class="mfield">C. Custo'+ro(o.centro_custo ? o.centro_custo+' — '+(o.centro_custo_nome||'') : '')+'</div>'
       + '<div class="mfield">Projecto<select id="oe-proj">'+_tabOpts(_projList||[],'id','nome',o.projecto_id,'— nenhum —')+'</select></div>'
-      + '<div class="mfield">FMP (plano de manutenção)<div style="display:flex;gap:4px"><select id="oe-fmp" data-val="'+_esc(String(o.plano_id||''))+'" style="flex:1"><option value="">— carregando —</option></select><button class="btn" title="A OT assume da FMP: descrição, tipo de trabalho, tarefas e programação" onclick="otAplicarFMP()">Aplicar</button></div></div>'
-      + '<div class="mfield">Tipo de trabalho<input value="'+_esc(o.tipo_trabalho||'—')+'" readonly style="background:#F1F5F9" title="Herdado da FMP (A1, B…) — muda ao aplicar outra FMP"></div>'
-      + '<div class="mfield">Tipo<select id="oe-tipo">'
-        + ['corretiva','preventiva','reforma','melhoria'].map(t=>'<option value="'+t+'"'+(o.tipo===t?' selected':'')+'>'+t.charAt(0).toUpperCase()+t.slice(1)+'</option>').join('')
-        + '</select></div>'
-      + '<div class="mfield">Prioridade<select id="oe-prior">'
+      + '<div class="mfield">FMP (plano de manutenção)<div style="display:flex;gap:4px"><select id="oe-fmp" data-val="'+_esc(String(o.plano_id||''))+'" style="flex:1"><option value="">— carregando —</option></select><button class="btn" title="Aplicar a FMP escolhida: herda tipo de trabalho, tarefas e peças" onclick="otAplicarFMP()">Aplicar</button></div></div>'
+      + '<div class="mfield">Tipo Trab.'+ro(o.tipo_trabalho)+'</div>'
+      + '<div style="display:flex;gap:12px;align-items:flex-end">'
+      +   '<div class="mfield" style="width:120px">Prev. TDM (h)<input id="oe-tdm" type="number" step="0.5" min="0" value="'+(o.tdm_previsto??'')+'" title="Tempo de manutenção previsto, em horas"></div>'
+      +   '<label style="display:flex;align-items:center;gap:6px;font-size:11px;font-weight:400;color:#1E293B;padding-bottom:5px;cursor:pointer"><input type="checkbox" id="oe-bloq"'+(o.bloqueada?' checked':'')+'> Bloquear temporariamente OT</label>'
+      + '</div>'
+      + '</div>'
+      // ── coluna direita ──
+      + '<div style="display:flex;flex-direction:column;gap:6px">'
+      + '<div class="mgrid"><div class="mfield">Grau Urgência<select id="oe-prior">'
         + ['baixa','media','alta','urgente'].map(p=>'<option value="'+p+'"'+(o.prioridade===p?' selected':'')+'>'+p.charAt(0).toUpperCase()+p.slice(1)+'</option>').join('')
         + '</select></div>'
+      + '<div class="mfield">Tipo<select id="oe-tipo">'
+        + ['corretiva','preventiva','reforma','melhoria'].map(t=>'<option value="'+t+'"'+(o.tipo===t?' selected':'')+'>'+t.charAt(0).toUpperCase()+t.slice(1)+'</option>').join('')
+        + '</select></div></div>'
+      + '<div class="mfield">Contrato<input id="oe-contrato" value="'+_esc(o.contrato||'')+'" placeholder="nº / referência do contrato (opcional)"></div>'
+      + '<fieldset style="border:1px solid #CBD5E1;border-radius:6px;padding:8px 10px;margin:2px 0 0"><legend style="font-size:10px;font-weight:700;color:#475569;padding:0 4px">Interventor</legend>'
+      +   '<div style="display:flex;gap:18px;justify-content:center;margin-bottom:8px;font-size:11px">'
+      +     '<label style="display:flex;align-items:center;gap:5px;cursor:pointer"><input type="radio" name="oe-interv" value="interno"'+(interv==='interno'?' checked':'')+' onchange="otInterventor()"> Interno</label>'
+      +     '<label style="display:flex;align-items:center;gap:5px;cursor:pointer"><input type="radio" name="oe-interv" value="externo"'+(interv==='externo'?' checked':'')+' onchange="otInterventor()"> Externo</label>'
+      +   '</div>'
+      +   '<div class="mfield" id="oe-setor-wrap">Setor<select id="oe-setor" data-val="'+_esc(o.setor_interventor||'')+'"><option value="">— carregando —</option></select></div>'
+      +   '<div class="mfield" id="oe-forn-wrap">Fornecedor<select id="oe-forn">'+foOpts+'</select></div>'
+      +   '<div class="mfield" style="margin-top:6px">Responsável<select id="oe-resp">'+usOpts+'</select></div>'
+      + '</fieldset>'
+      + '</div>'
       + '</div><div class="dsec">Programação</div><div class="mgrid">'
       + '<div class="mfield">Data prevista<input id="oe-data" type="date" value="'+dtPrev+'"></div>'
       + '<div class="mfield">Horímetro/KM previsto<input id="oe-horim" type="number" value="'+(o.horimetro_previsto??'')+'"></div>'
       + '</div>';
+    otInterventor();
     mntFetch('/manutencao/api/equipamentos/'+o.equipamento_id+'/detalhe').then(det => {
       const el = document.getElementById('oe-fmp'); if (!el) return; const v = el.dataset.val;
       const pls = det.planos || [];
       el.innerHTML = '<option value="">— nenhuma (corretiva) —</option>' + pls.map(p => '<option value="'+p.id+'"'+(String(p.id)===String(v)?' selected':'')+'>'+_esc(p.codigo)+' — '+_esc(p.descricao||'')+'</option>').join('');
     }).catch(()=>{});
+    _setoresInterventor().then(lst => {
+      const el = document.getElementById('oe-setor'); if (!el) return; const v = el.dataset.val;
+      el.innerHTML = '<option value="">— escolha o setor —</option>' + lst.map(s => '<option value="'+_esc(s.codigo)+'"'+(s.codigo===v?' selected':'')+'>'+_esc(s.codigo)+' — '+_esc(s.nome||'')+'</option>').join('')
+        + (v && !lst.some(s => s.codigo===v) ? '<option value="'+_esc(v)+'" selected>'+_esc(v)+' (inativo)</option>' : '');
+      if (!lst.length) el.innerHTML = '<option value="">— cadastre em Parametrizar › Setores Interventor —</option>';
+    });
   }
   if (aba === 'gestao'){
 
@@ -3790,7 +3851,7 @@ function otAba(aba){
       + '<div style="flex:1.6"><div class="dsec">Trabalho</div>'
       + linha('Abertura', dd(o.data_abertura) + ' · horím. ' + (o.horimetro_na_abertura ?? '—'))
       + linha('Última OT', u ? _esc(u.numero)+' · '+dd(u.data_conclusao)+' · horím. '+(u.horimetro_na_abertura ?? '—') : '— (primeira deste equipamento)')
-      + linha('Prog. Início', (o.data_prevista ? new Date(o.data_prevista).toLocaleDateString('pt-BR') : '—')
+      + linha('Prog. Início', (o.data_prevista ? _fmtData(o.data_prevista) : '—')
               + ' · horím. previsto ' + (o.horimetro_previsto ?? '—'), true)
       + linha('Início real', inicioReal ? dd(h1.criado_em) : '—', true)
       + linha('Fim', fim ? dd(o.data_conclusao) : '—', true)
@@ -3945,11 +4006,22 @@ async function salvarOrigem(fechar, promover){
   const descricao = (g('ot-descricao')||{}).value?.trim() || '';
   if (!descricao) { mostrarToast('✏️ Descreva a OT (campo Descrição no cabeçalho)', 'warn'); g('ot-descricao')?.focus(); return; }
   const body = { descricao };
-  if (g('oe-prior')) Object.assign(body, {
-    ...(_mntTiposTrab.length ? {tipo_trabalho: g('oe-tipo').value} : {tipo: g('oe-tipo').value}),
-    prioridade: g('oe-prior').value, fornecedor_id: g('oe-forn').value || null,
-    projecto_id: g('oe-proj').value || '', data_prevista: g('oe-data').value || '',
-    horimetro_previsto: g('oe-horim').value.trim() });
+  if (g('oe-prior')) {
+    const interv = (document.querySelector('input[name="oe-interv"]:checked')||{}).value || 'interno';
+    if (interv === 'externo' && !g('oe-forn').value) { mostrarToast('Interventor externo: escolha o fornecedor', 'warn'); g('oe-forn').focus(); return; }
+    Object.assign(body, {
+      ...(_mntTiposTrab.length ? {tipo_trabalho: g('oe-tipo').value} : {tipo: g('oe-tipo').value}),
+      prioridade: g('oe-prior').value,
+      interventor: interv,
+      fornecedor_id: interv === 'externo' ? (g('oe-forn').value || null) : null,
+      setor_interventor: interv === 'interno' ? (g('oe-setor').value || null) : null,
+      responsavel_id: g('oe-resp').value || null,
+      contrato: g('oe-contrato').value.trim(),
+      tdm_previsto: g('oe-tdm').value.trim(),
+      bloqueada: g('oe-bloq').checked,
+      projecto_id: g('oe-proj').value || '', data_prevista: g('oe-data').value || '',
+      horimetro_previsto: g('oe-horim').value.trim() });
+  }
   try {
     await mntFetch('/manutencao/api/ots/'+o.id, {method:'PATCH', body: JSON.stringify(body)});
     if (promover) await mntFetch('/manutencao/api/ots/'+o.id+'/status', {method:'PATCH', body: JSON.stringify({status: promover})});
@@ -5654,7 +5726,7 @@ async function vinculoGravar(id, campo){
 async function docsTodosPane(q){
   let docs = [];
   try { docs = await mntFetch('/manutencao/api/documentos'+(q?'?busca='+encodeURIComponent(q):'')); } catch(e){ mostrarToast('\u274c '+e.message,'warn'); return; }
-  const dd = v => v ? new Date(v).toLocaleDateString('pt-BR') : '\u2014';
+  const dd = v => v ? _fmtData(v) : '\u2014';
   document.getElementById('pp-pane').innerHTML = '<div class="pp-title">Documentos de equipamentos</div><div class="pp-sub">Tudo que foi anexado a objectos e OTs. Para anexar: Frota \u25b8 Mais \u25b8 Documentos, ou a aba Documentos da OT.</div>'
     + '<div style="margin:8px 0"><input placeholder="Procurar por nome, descri\u00e7\u00e3o ou objecto\u2026" onkeydown="if(event.key===\'Enter\') docsTodosPane(this.value)" style="width:300px"></div>'
     + '<div style="max-height:400px;overflow:auto"><table style="font-size:11px"><thead><tr><th>Objecto</th><th>Documento</th><th>Descri\u00e7\u00e3o</th><th>Origem</th><th>Data</th><th>Quem</th></tr></thead><tbody>'
@@ -5701,7 +5773,7 @@ async function otTarefasRender(){
     + (t.length ? t.map(x => '<div style="display:flex;gap:8px;align-items:center;padding:4px 6px;border-bottom:1px solid #F1F5F9;font-size:11px">'
         + '<input type="checkbox"'+(x.feita?' checked':'')+' onchange="otTarefaMarcar(\''+x.id+'\',this.checked)" style="width:16px;height:16px">'
         + '<span class="muted" style="width:22px">'+(x.ordem||'')+'</span><span style="flex:1;'+(x.feita?'text-decoration:line-through;color:#64748B':'')+'">'+_esc(x.descricao)+'</span>'
-        + (x.feita ? '<span class="muted">'+_esc(x.feita_por_nome||'')+' \u00b7 '+(x.feita_em?new Date(x.feita_em).toLocaleDateString('pt-BR'):'')+'</span>' : '')
+        + (x.feita ? '<span class="muted">'+_esc(x.feita_por_nome||'')+' \u00b7 '+(x.feita_em?_fmtData(x.feita_em):'')+'</span>' : '')
         + '<span style="cursor:pointer;color:#B91C1C" onclick="otTarefaExcluir(\''+x.id+'\')">\u2715</span></div>').join('')
       : '<div class="muted" style="padding:8px 6px;font-size:11px">Sem tarefas. Importe da FMP ou adicione abaixo.</div>')
     + '<div style="display:flex;gap:6px;margin-top:8px;align-items:flex-end"><div class="mfield" style="flex:1">Nova tarefa<input id="tar-desc" placeholder="ex.: verificar folga do material rodante"></div>'
@@ -5778,7 +5850,7 @@ async function otDocsRender(){
   const o = _otAberta, c = document.getElementById('ot-aba-corpo');
   let docs = [];
   try { docs = await mntFetch('/manutencao/api/ots/'+o.id+'/documentos'); } catch(e){ c.innerHTML = '\u274c '+_esc(e.message); return; }
-  const dd = v => v ? new Date(v).toLocaleDateString('pt-BR') : '\u2014';
+  const dd = v => v ? _fmtData(v) : '\u2014';
   const kb = n => n ? (n > 1048576 ? (n/1048576).toFixed(1)+' MB' : Math.max(1,Math.round(n/1024))+' KB') : '';
   c.innerHTML = '<div class="dsec">Anexar (foto do servi\u00e7o, NF do fornecedor, laudo \u2014 at\u00e9 15 MB)</div>'
     + '<div style="display:flex;gap:6px;align-items:flex-end;flex-wrap:wrap"><div class="mfield" style="flex:1;min-width:200px">Ficheiro<input type="file" id="otdoc-file" style="font-size:11px"></div>'
@@ -5803,7 +5875,7 @@ async function recebimentosJanela(st){
   try { [rows, alms] = await Promise.all([mntFetch('/manutencao/api/recebimentos?status='+st), mntFetch('/manutencao/api/almoxarifados')]); }
   catch(e){ mostrarToast('\u274c '+e.message,'warn'); return; }
   alms = Array.isArray(alms) ? alms : (alms.almoxarifados||[]);
-  const dd = v => v ? new Date(v).toLocaleDateString('pt-BR') : '\u2014';
+  const dd = v => v ? _fmtData(v) : '\u2014';
   const n = v => (parseFloat(v)||0).toLocaleString('pt-BR');
   document.querySelector('#eq-ficha .modal').classList.add('larga');
   document.getElementById('eq-ficha-corpo').innerHTML =
