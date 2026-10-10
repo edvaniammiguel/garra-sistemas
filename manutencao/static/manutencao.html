@@ -3380,6 +3380,31 @@ async function otNovoCiclo(id){
     verOTReal(id); carregarOTsReais(); carregarSemaforosReais();
   } catch(e){ mostrarToast('❌ '+e.message, 'warn'); }
 }
+// (10/10/2026) A Descrição do cabeçalho só era gravada pelo OK/Aplicar: quem editava e saía pelo
+// Encerrar/Emitir ou pelo ✕ perdia a alteração. Agora os botões de estado gravam o cabeçalho antes,
+// e o ✕ pergunta se há alteração pendente.
+function otCabecalhoSujo(){
+  const o = _otAberta, el = document.getElementById('ot-descricao');
+  if (!o || !el) return false;
+  const atual = (o.descricao||'') === '(a descrever)' ? '' : (o.descricao||'');
+  return el.value.trim() !== atual.trim();
+}
+async function otGravarCabecalho(){
+  const o = _otAberta, el = document.getElementById('ot-descricao');
+  const d = (el && el.value.trim()) || '';
+  if (!o || !d) return;
+  await mntFetch('/manutencao/api/ots/'+o.id, {method:'PATCH', body: JSON.stringify({descricao: d})});
+  o.descricao = d;
+}
+async function otStatusGravando(id, novo){
+  try { if (otCabecalhoSujo()) await otGravarCabecalho(); }
+  catch(e){ mostrarToast('❌ Descrição não gravada: '+e.message,'warn'); return; }
+  await mntStatusReal(id, novo);
+}
+function otFechar(){
+  if (otCabecalhoSujo() && confirm('A descrição da OT foi alterada e não foi gravada.\n\nGravar antes de fechar?')) { salvarOrigem(true); return; }
+  document.getElementById('eq-ficha').classList.remove('show');
+}
 async function mntStatusReal(id, novo){
   let obs = null, custo = null;
   let horasParada = null;
@@ -3423,8 +3448,9 @@ async function verOTReal(id){
       + (o.tipo_trabalho ? ' <span class="mono" style="font-size:11px;color:#475569">· '+_esc(o.tipo_trabalho)+'</span>' : '')
       + (o.plano_id ? ' <span class="chip" style="font-size:9px;background:#EEF2FF;color:#3730A3" title="OT preventiva ligada à FMP">📅 FMP</span>' : '')
       + ' <span class="chip '+((MNT_CHIP[o.status]||['nr'])[0])+'">'+_esc(cl)+'</span></div>'
-      + '<span style="cursor:pointer;font-size:18px" onclick="document.getElementById(\'eq-ficha\').classList.remove(\'show\')">✕</span></div>'
+      + '<span style="cursor:pointer;font-size:18px" onclick="otFechar()">✕</span></div>'
       // (23/09/2026) Descrição da OT no cabeçalho, como no MWW — gravada pelo OK/Aplicar do rodapé
+      // (10/10/2026) …e também pelos botões de estado (Emitir/Encerrar/…) e, se esquecida, o ✕ pergunta
       + '<div style="display:flex;align-items:center;gap:8px;margin:6px 0 4px"><span class="ne-l r" style="flex:0 0 72px">Descrição</span>'
       + '<input id="ot-descricao" value="'+_esc((o.descricao||'')==='(a descrever)'?'':(o.descricao||''))+'" placeholder="Descreva o serviço — ex.: Revisão 500 horas" style="flex:1;font-weight:600"></div>'
       + '<div class="mtabs">'
@@ -3451,20 +3477,20 @@ async function verOTReal(id){
             acoes = b('🖨 Emitir', "salvarOrigem(true,'em_andamento')")
               + ' ' + b('✖️ Cancelar', "otDescartar('"+o.id+"')");
           else if (st === 'programada')
-            acoes = b('🖨 Emitir', "mntStatusReal('"+o.id+"','em_andamento')"+fecha, true)
+            acoes = b('🖨 Emitir', "otStatusGravando('"+o.id+"','em_andamento')"+fecha, true)
               + (o.plano_id ? ' ' + b('🔁 Novo ciclo', "otNovoCiclo('"+o.id+"')") : '')
-              + ' ' + b('✖️ Cancelar…', "mntStatusReal('"+o.id+"','cancelada')"+fecha);
+              + ' ' + b('✖️ Cancelar…', "otStatusGravando('"+o.id+"','cancelada')"+fecha);
           else if (st === 'aberta')
-            acoes = b('🖨 Emitir', "mntStatusReal('"+o.id+"','em_andamento')"+fecha, true)
-              + ' ' + b('✖️ Cancelar…', "mntStatusReal('"+o.id+"','cancelada')"+fecha);
+            acoes = b('🖨 Emitir', "otStatusGravando('"+o.id+"','em_andamento')"+fecha, true)
+              + ' ' + b('✖️ Cancelar…', "otStatusGravando('"+o.id+"','cancelada')"+fecha);
           else if (st === 'em_andamento')
-            acoes = b('✔️ Encerrar…', "mntStatusReal('"+o.id+"','concluida')"+fecha, true)
-              + ' ' + b('⏸️ Aguardando peça', "mntStatusReal('"+o.id+"','aguardando_peca')"+fecha)
-              + ' ' + b('✖️ Cancelar…', "mntStatusReal('"+o.id+"','cancelada')"+fecha);
+            acoes = b('✔️ Encerrar…', "otStatusGravando('"+o.id+"','concluida')"+fecha, true)
+              + ' ' + b('⏸️ Aguardando peça', "otStatusGravando('"+o.id+"','aguardando_peca')"+fecha)
+              + ' ' + b('✖️ Cancelar…', "otStatusGravando('"+o.id+"','cancelada')"+fecha);
           else if (st === 'aguardando_peca')
-            acoes = b('▶️ Retomar', "mntStatusReal('"+o.id+"','em_andamento')"+fecha, true)
-              + ' ' + b('✔️ Encerrar…', "mntStatusReal('"+o.id+"','concluida')"+fecha)
-              + ' ' + b('✖️ Cancelar…', "mntStatusReal('"+o.id+"','cancelada')"+fecha);
+            acoes = b('▶️ Retomar', "otStatusGravando('"+o.id+"','em_andamento')"+fecha, true)
+              + ' ' + b('✔️ Encerrar…', "otStatusGravando('"+o.id+"','concluida')"+fecha)
+              + ' ' + b('✖️ Cancelar…', "otStatusGravando('"+o.id+"','cancelada')"+fecha);
           // OK grava (descrição + Origem) e fecha — no rascunho também confirma (Programada); Aplicar grava e mantém
           const okAc = st === 'rascunho' ? "salvarOrigem(true,'programada')" : "salvarOrigem(true)";
           const base = b('OK', okAc, true) + ' ' + b('Aplicar', "salvarOrigem(false)");
