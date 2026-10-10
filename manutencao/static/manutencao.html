@@ -1224,7 +1224,7 @@ async function plFicha(pid, aba){
     +   '<input id="plf-cal-qtd" type="number" min="1" value="'+(!isReg?_esc(perQtd):'')+'" style="width:70px"'+(isReg?' disabled':'')+'><select id="plf-cal-un" style="flex:1"'+(isReg?' disabled':'')+'>'+calOpts+'</select></div>'
     +   '<div style="display:flex;gap:8px;align-items:center;margin-bottom:6px"><label style="display:flex;align-items:center;gap:6px;font-size:12px;width:120px"><input type="radio" name="plf-modo" value="reg"'+(isReg?' checked':'')+' onchange="plfModo()"> Registros ('+(eq.medicao==='km'?'KM':'H')+')</label>'
     +   '<input id="plf-reg-qtd" type="number" min="1" value="'+(isReg?_esc(perQtd):'')+'" style="width:120px"'+(!isReg?' disabled':'')+'></div>'
-    +   '<div style="display:flex;gap:8px;align-items:center;margin-bottom:4px;font-size:11px"><span style="width:120px;color:#475569;font-weight:700">Última execução</span><input id="plf-ult-dt" type="date" value="'+_esc(d.ult_dt||'')+'" onchange="plfBaseline()" style="width:140px"><input id="plf-ult-le" type="number" step="0.1" placeholder="leitura" value="'+_esc(String(d.ult_le ?? ''))+'" onchange="plfBaseline()" style="width:100px"></div>'
+    +   '<div style="display:flex;gap:8px;align-items:center;margin-bottom:4px;font-size:11px"><span style="width:120px;color:#475569;font-weight:700">Última execução</span><input id="plf-ult-dt" type="date" min="2000-01-01" max="2100-12-31" value="'+_esc(d.ult_dt||'')+'" onchange="plfBaseline()" style="width:140px"><input id="plf-ult-le" type="number" step="0.1" placeholder="leitura" value="'+_esc(String(d.ult_le ?? ''))+'" onchange="plfBaseline()" style="width:100px"></div>'
     +   '<div style="display:flex;gap:8px;align-items:center;font-size:11px"><span style="width:120px;color:#475569;font-weight:700">Próxima</span><span id="plf-prox-calc" class="mono" style="color:#1A2A5E">…</span></div>'
     + '</fieldset></div>'
     // ── abas ──
@@ -3318,7 +3318,7 @@ function novaAba(aba){
       + '<div></div></div>'
       + '<div class="mfield" style="margin-top:8px">Descrição do serviço *<textarea id="no-desc" rows="2">'+_esc(d.desc)+'</textarea></div>'
       + '<div class="dsec">Periodicidade / Programação</div><div class="mgrid">'
-      + '<div class="mfield">Data fixa (prevista)<input id="no-data" type="date" value="'+_esc(d.data)+'"></div>'
+      + '<div class="mfield">Data fixa (prevista)<input id="no-data" type="date" min="2000-01-01" max="2100-12-31" value="'+_esc(d.data)+'"></div>'
       + '<div class="mfield">Registro fixo — horímetro/KM previsto<input id="no-horim" type="number" placeholder="ex.: 500" value="'+_esc(d.horim)+'"></div>'
       + '</div>';
   }
@@ -3383,7 +3383,7 @@ async function salvarNovaOT(abaAlvo){
   else if (d.tt || d.tipo) body.tipo = d.tt || d.tipo;
   if (d.interv === 'externo' && d.forn) body.fornecedor_id = d.forn;
   if (d.interv !== 'externo' && d.resp) body.responsavel_id = d.resp;
-  if (d.data) body.data_prevista = d.data;
+  if (d.data) { const ano = parseInt(d.data.slice(0,4),10); if (!(ano >= 2000 && ano <= 2100)) { mostrarToast('⚠️ Data prevista com ano inválido ('+d.data.slice(0,4)+'). Digite o ano completo, ex.: 2026.', 'warn'); return; } body.data_prevista = d.data; }
   if (d.horim.trim()) body.horimetro_previsto = d.horim.trim();
   if (d.fmp) body.plano_id = d.fmp;
   if (d.sintoma) body.sintoma_codigo = d.sintoma;
@@ -3616,7 +3616,7 @@ async function otMaoObraRender(){
       + '<div class="mfield" id="mo-user-wrap" style="width:220px">Colaborador<select id="mo-user" onchange="otMoSugerir()">'+colOpts+'</select></div>'
       + '<div class="mfield" id="mo-nome-wrap" style="width:160px;display:none">Nome<input id="mo-nome" placeholder="terceiro / autônomo"></div>'
       + '<div class="mfield" id="mo-fn-wrap" style="width:220px">Função<select id="mo-fn" onchange="otMoFnMudou(\'mo\')">'+fnOpts()+'</select></div>'
-      + '<div class="mfield" style="width:120px">Data<input id="mo-data" type="date" value="'+hoje+'"></div>'
+      + '<div class="mfield" style="width:120px">Data<input id="mo-data" type="date" min="2000-01-01" max="2100-12-31" value="'+hoje+'"></div>'
       + '<div class="mfield" style="width:70px">Horas<input id="mo-horas" type="number" step="0.25" min="0.25" placeholder="0,00"></div>'
       + '<div class="mfield" style="width:90px">Custo/h<input id="mo-custo" type="number" step="0.01" placeholder="0,00" title="Preenchido pela função; pode ajustar"></div>'
       + '<div class="mfield" style="width:220px">Conta * <span id="mo-rub-dica" class="muted" style="font-weight:400"></span><select id="mo-rub">'+contaOpts+'</select></div>'
@@ -4058,7 +4058,7 @@ function otAba(aba){
       + '</fieldset>'
       + '</div>'
       + '</div><div class="dsec">Programação</div><div class="mgrid">'
-      + '<div class="mfield">Data prevista<input id="oe-data" type="date" value="'+dtPrev+'"></div>'
+      + '<div class="mfield">Data prevista<input id="oe-data" type="date" min="2000-01-01" max="2100-12-31" value="'+dtPrev+'"></div>'
       + '<div class="mfield">Horímetro/KM previsto<input id="oe-horim" type="number" value="'+(o.horimetro_previsto??'')+'"></div>'
       + '</div>';
     otInterventor();
@@ -4192,7 +4192,7 @@ async function abrirReprogramar(){
     + '<div class="pp-sub">'+(ritmo ? 'Ritmo real do '+_esc(eq.codigo||'equipamento')+': <b>'+ritmo+' '+(eq.medicao==='km'?'km':'h')+'/dia</b> (FMD em uso) — um campo calcula o outro'
                                     : 'Sem FMD (registros insuficientes e sem FMD manual) — conversão automática indisponível, informe manualmente')+'</div>'
     + '<div class="dsec">Nova previsão</div><div class="mgrid">'
-    + '<div class="mfield">Data prevista<input id="rp-data" type="date" value="'+dtPrev+'" onchange="reprogCalc(\'data\')"></div>'
+    + '<div class="mfield">Data prevista<input id="rp-data" type="date" min="2000-01-01" max="2100-12-31" value="'+dtPrev+'" onchange="reprogCalc(\'data\')"></div>'
     + '<div class="mfield">Horímetro/KM previsto (atual: '+atual+')<input id="rp-horim" type="number" value="'+(o.horimetro_previsto??'')+'" oninput="reprogCalc(\'horim\')"></div>'
     + '</div><div id="rp-aviso" style="font-size:11px;min-height:15px;margin-top:4px;color:#475569"></div>'
     + '<div class="mfield" style="margin-top:8px">Motivo da reprogramação *<select id="rp-motivo">'+motOpts+'</select></div>'
@@ -4204,6 +4204,16 @@ async function abrirReprogramar(){
 // (10/10/2026) Conversão nos DOIS sentidos, como o "Programação OT" do ManWinWin: para a frente projeta pelo
 // ritmo (FMD); para trás consulta — se há registro real naquela data usa o registro, senão retrocede pelo ritmo.
 // Passado é consulta: pode gravar, mas a OT nasce vencida (aviso em âmbar).
+/* (10/10/2026) Chrome aceita ano parcial no type=date ('0202' a caminho de 2026) — só grava ano 2000–2100 */
+function _dataOk(id, rotulo){
+  const el = document.getElementById(id); const v = (el && el.value) || '';
+  if (!v) return true;
+  const ano = parseInt(v.slice(0,4), 10);
+  if (ano >= 2000 && ano <= 2100) return true;
+  mostrarToast('⚠️ '+(rotulo||'Data')+' com ano inválido ('+v.slice(0,4)+'). Digite o ano completo, ex.: 2026.', 'warn');
+  if (el) el.focus();
+  return false;
+}
 function reprogCalc(origem){
   const r = window._reprog || {};
   const gd = document.getElementById('rp-data'), gh = document.getElementById('rp-horim'), av = document.getElementById('rp-aviso');
@@ -4221,6 +4231,7 @@ function reprogCalc(origem){
     else aviso('Faltam '+n(alvo - r.atual)+' ÷ '+r.ritmo+'/dia ≈ '+dias+' dia(s) → '+_fmtData(gd.value));
   }
   if (origem === 'data' && gd.value) {
+    if (parseInt(gd.value.slice(0,4),10) < 2000) return; // ano ainda sendo digitado
     const dias = Math.round((new Date(gd.value+'T00:00:00') - hoje) / 86400000);
     if (dias >= 0) {
       gh.value = Math.round(r.atual + dias * r.ritmo);
@@ -4243,6 +4254,7 @@ async function salvarReprogramacao(){
   const o = _otAberta; if (!o) return;
   const motivo = document.getElementById('rp-motivo').value;
   if (!motivo) { mostrarToast('Escolha o motivo da reprogramação', 'warn'); return; }
+  if (!_dataOk('rp-data','Data prevista')) return;
   try {
     await mntFetch('/manutencao/api/ots/'+o.id+'/reprogramar', {method:'POST', body: JSON.stringify({
       data_prevista: document.getElementById('rp-data').value || '',
@@ -4297,6 +4309,7 @@ async function salvarOrigem(fechar, promover){
   const body = { descricao };
   if (g('oe-prior')) {
     const interv = (document.querySelector('input[name="oe-interv"]:checked')||{}).value || 'interno';
+    if (!_dataOk('oe-data','Data prevista')) return;
     if (interv === 'externo' && !g('oe-forn').value) { mostrarToast('Interventor externo: escolha o fornecedor', 'warn'); g('oe-forn').focus(); return; }
     Object.assign(body, {
       ...(_mntTiposTrab.length ? {tipo_trabalho: g('oe-tipo').value} : {tipo: g('oe-tipo').value}),
@@ -4363,7 +4376,7 @@ function fichaAba(aba, alvo){
       + '<div style="flex:1"><div class="dsec">Funcionamento Médio Diário</div><div class="mgrid" style="grid-template-columns:repeat(3,1fr)">'
       +   fld('FMD','<input id="fo-fmd" type="number" step="0.01" value="'+_esc(fm.valor ?? '')+'"'+(fm.calc?' readonly style="background:#f1f3f8"':'')+'>')
       +   fld('Unidade','<select id="fo-unid"><option'+((fm.unidade||unid)==='H'?' selected':'')+'>H</option><option'+((fm.unidade||unid)==='KM'?' selected':'')+'>KM</option></select>')
-      +   fld('Data','<input id="fo-fmd-data" type="date" value="'+_esc(fm.data||'')+'">')
+      +   fld('Data','<input id="fo-fmd-data" type="date" min="2000-01-01" max="2100-12-31" value="'+_esc(fm.data||'')+'">')
       +   fld('Últ. Reg. manutenção ('+unid+')','<div style="display:flex;gap:4px"><input id="fo-ult" value="'+_esc(ultReg)+'" readonly style="background:#f1f3f8;flex:1"><button class="btn" title="Acerto do contador de manutenção (gestão, com motivo)" onclick="fichaAcertoHorimetro()">⚙</button></div>')
       +   fld('Últ. Reg. comercial ('+unid+')','<input value="'+_esc((e.medicao==='km' ? e.km_comercial : e.horimetro_comercial) ?? '')+'" readonly style="background:#f1f3f8" title="Alimentado pelas OS do cliente">')
       +   fld('Reg. Par. ('+unid+')','<input id="fo-par" type="number" step="0.01" value="'+_esc(fm.reg_par ?? '')+'">')
@@ -4374,13 +4387,13 @@ function fichaAba(aba, alvo){
       + '</div></div>'
       + '<div style="display:flex;gap:14px;margin-top:10px">'
       + '<div style="flex:1"><div class="dsec">Garantia</div>' + chk('fg-on', !!g.ativo, 'Garantia') + '<div class="mgrid">'
-      +   fld('Data','<input id="fg-data" type="date" value="'+_esc(g.data||'')+'">')
+      +   fld('Data','<input id="fg-data" type="date" min="2000-01-01" max="2100-12-31" value="'+_esc(g.data||'')+'">')
       +   fld('Registro ('+unid+')','<input id="fg-reg" type="number" value="'+_esc(g.registro||'')+'">')
       + '</div>'+fld('Fornecedor', fornSel('fg-forn', g.fornecedor_id))
       +   fld('Observações','<textarea id="fg-obs" rows="3">'+_esc(g.obs||'')+'</textarea>') + '</div>'
       + '<div style="flex:1"><div class="dsec">Contrato Manutenção</div>' + chk('fc-on', !!ct.ativo, 'Contrato') + '<div class="mgrid">'
-      +   fld('Data','<input id="fc-data" type="date" value="'+_esc(ct.data||'')+'">')
-      +   fld('Válido até','<input id="fc-val" type="date" value="'+_esc(ct.validade||'')+'">')
+      +   fld('Data','<input id="fc-data" type="date" min="2000-01-01" max="2100-12-31" value="'+_esc(ct.data||'')+'">')
+      +   fld('Válido até','<input id="fc-val" type="date" min="2000-01-01" max="2100-12-31" value="'+_esc(ct.validade||'')+'">')
       + '</div>'+fld('Fornecedor', fornSel('fc-forn', ct.fornecedor_id))
       +   fld('Observações','<textarea id="fc-obs" rows="3">'+_esc(ct.obs||'')+'</textarea>') + '</div>'
       + '</div><div style="display:flex;justify-content:flex-end;margin-top:10px"><button class="btn p" onclick="fichaSalvarOper()">💾 Salvar</button></div>';
@@ -4426,7 +4439,7 @@ function fichaAba(aba, alvo){
       + '<div style="flex:0 0 230px">'
       +   fld('Criticidade','<select id="fp-crit">'+['normal','alta','critica'].map(x=>'<option value="'+x+'"'+((e.criticidade||'normal')===x?' selected':'')+'>'+x.charAt(0).toUpperCase()+x.slice(1)+'</option>').join('')+'</select>')
       +   '<div style="margin-top:10px">'+chk('ic-inativo', e.ativo===false, 'Inactivo')+'</div>'
-      +   fld('Desde','<input id="ic-inat-desde" type="date" value="'+_esc(IC.inativo_desde||'')+'">')
+      +   fld('Desde','<input id="ic-inat-desde" type="date" min="2000-01-01" max="2100-12-31" value="'+_esc(IC.inativo_desde||'')+'">')
       +   '<div style="margin-top:8px">'+chk('ic-hist', IC.guardar_hist !== false, 'Guardar alterações no Histórico Utilização')+'</div>'
       + '</div></div>'
       + '<div class="dsec" style="margin-top:10px">Outras Informações</div><div class="mgrid">'
@@ -6238,7 +6251,7 @@ async function otLeiturasRender(){
     + (apont.length ? '<span>Apontadas pelo mec\u00e2nico: <b>'+apont.map(a=>a.txt).join(' \u00b7 ')+'</b></span>' : '') + '</div>'
     + (l.length ? l.map(x => '<div style="display:flex;gap:8px;padding:3px 6px;border-bottom:1px solid #F1F5F9;font-size:11px"><span style="width:70px" class="muted">'+dd(x.data)+'</span><span class="chip tm">'+_esc(x.momento||'')+'</span><b class="mono">'+(x.leitura??'')+'</b><span style="flex:1" class="muted">'+_esc(x.observacao||'')+'</span><span style="cursor:pointer;color:#B91C1C" onclick="otLeituraExcluir(\''+x.id+'\')">\u2715</span></div>').join('')
       : '<div class="muted" style="padding:8px 6px;font-size:11px">Nenhuma leitura registada na OT.</div>')
-    + '<div style="display:flex;gap:6px;margin-top:8px;align-items:flex-end;flex-wrap:wrap"><div class="mfield" style="width:130px">Data<input id="lei-data" type="date" value="'+_F.hoje()+'"></div>'
+    + '<div style="display:flex;gap:6px;margin-top:8px;align-items:flex-end;flex-wrap:wrap"><div class="mfield" style="width:130px">Data<input id="lei-data" type="date" min="2000-01-01" max="2100-12-31" value="'+_F.hoje()+'"></div>'
     + '<div class="mfield" style="width:120px">Momento<select id="lei-mom"><option value="in\u00edcio">in\u00edcio</option><option value="fim">fim</option><option value="teste">teste</option></select></div>'
     + '<div class="mfield" style="width:120px">Leitura (h/km)<input id="lei-val" type="number" step="0.1"></div><div class="mfield" style="flex:1">Observa\u00e7\u00e3o<input id="lei-obs"></div>'
     + '<button class="btn p" onclick="otLeituraAdd()">\uff0b Registar</button></div>'
