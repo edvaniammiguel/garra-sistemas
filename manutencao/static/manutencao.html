@@ -3541,16 +3541,38 @@ async function otMaoObraRender(){
   const dd2 = v => { if(!v) return '—'; try{ return v.split('-').reverse().join('/'); }catch(e){ return '—'; } };
   const money = v => v == null ? '—' : 'R$ ' + v.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
   const podeLancar = ['programada','aberta','em_andamento','aguardando_peca','concluida'].includes(o.status);
-  // (10/10/2026) Colaborador → função e custo/h vêm de Parametrizar › Funções (custo sugerido = último usado
-  // só quando não há função). Terceiro = nome + função externa. Conta automática. Previsto (FMP) × Realizado.
-  const col = _otMo.colaboradores || {}, fns = _otMo.funcoes || [];
+  // (10/10/2026) Padrão ManWinWin: PLANEJADO (previsão por função, da FMP ou lançada na OT) × REALIZADO
+  // (horas apontadas). Função vem do organograma (Parametrizar › Funções, agrupadas por setor); Conta vem
+  // do Plano de contas (ramo 1 — Mão de Obra), neutra e obrigatória. Custo/HH sai da função/colaborador.
+  await _rubricas();
+  const col = _otMo.colaboradores || {}, fns = _otMo.funcoes || [], sets = _otMo.setores || [];
   const money2 = v => v == null ? '' : Number(v).toFixed(2);
-  const opts = '<option value="">— colaborador —</option>' + (_mntUserList||[]).map(u => {
-    const cf = col[String(u.id)];
-    return '<option value="'+u.id+'" data-fn="'+_esc(cf&&cf.funcao_codigo||'')+'" data-custo="'+(cf&&cf.custo_hh!=null?cf.custo_hh:'')+'">'+_esc(u.nome||u.login)+(cf&&cf.funcao_nome?' · '+_esc(cf.funcao_nome):'')+'</option>';
+  const nomeSetor = c => { const s = sets.find(x => x.codigo === c); return s ? s.codigo + ' — ' + (s.nome||'') : (c || 'Sem setor'); };
+  // funções agrupadas por setor (organograma)
+  const grupos = {}; fns.forEach(f => { (grupos[f.setor||''] = grupos[f.setor||''] || []).push(f); });
+  const fnOpts = (sel) => '<option value="">— função —</option>' + Object.keys(grupos).sort().map(st =>
+    '<optgroup label="'+_esc(nomeSetor(st))+'">' + grupos[st].map(f => '<option value="'+_esc(f.codigo)+'" data-custo="'+(f.custo_hh!=null?f.custo_hh:'')+'" data-rub="'+_esc(f.rubrica||'')+'" data-set="'+_esc(f.setor||'')+'"'+(f.codigo===sel?' selected':'')+'>'+_esc(f.codigo)+' — '+_esc(f.nome||'')+(f.custo_hh!=null?' (R$ '+money2(f.custo_hh)+'/h)':'')+'</option>').join('') + '</optgroup>').join('');
+  const setOpts = '<option value="">— todos os setores —</option>' + sets.map(s => '<option value="'+_esc(s.codigo)+'">'+_esc(s.codigo)+' — '+_esc(s.nome||'')+'</option>').join('');
+  const colOpts = '<option value="">— colaborador —</option>' + (_mntUserList||[]).map(u => {
+    const cf = col[String(u.id)] || {}; const f = fns.find(x => x.codigo === cf.funcao_codigo) || {};
+    return '<option value="'+u.id+'" data-fn="'+_esc(cf.funcao_codigo||'')+'" data-set="'+_esc(f.setor||'')+'" data-custo="'+(cf.custo_hh!=null?cf.custo_hh:'')+'" data-rub="'+_esc(cf.rubrica||'')+'">'+_esc(u.nome||u.login)+(cf.funcao_nome?' · '+_esc(cf.funcao_nome):'')+'</option>';
   }).join('');
-  const fnOpts = '<option value="">— função —</option>' + fns.map(f => '<option value="'+_esc(f.codigo)+'" data-custo="'+(f.custo_hh!=null?f.custo_hh:'')+'">'+_esc(f.codigo)+' — '+_esc(f.nome||'')+(f.custo_hh!=null?' (R$ '+money2(f.custo_hh)+'/h)':'')+'</option>').join('');
+  const contaOpts = _tabOpts(_rubFolhas('1'), 'id', 'nome', '', '— conta —');
   const hoje = new Date().toISOString().slice(0,10);
+  // ── Planejado ──
+  const prevs = _otMo.previstos || [];
+  const totPrevH = prevs.reduce((s,x)=>s+(x.hh||0),0), totPrevC = prevs.reduce((s,x)=>s+(x.custo||0),0);
+  const linhaPrev = x =>
+    '<div style="display:flex;gap:6px;padding:4px 6px;border-bottom:1px solid #F1F5F9;font-size:11px;align-items:center">'
+    + '<span class="chip '+(x.origem==='OT'?'tm':'pr')+'" style="font-size:9px;width:56px;text-align:center">'+_esc(x.origem)+'</span>'
+    + '<b style="flex:1">'+_esc(x.funcao_codigo?x.funcao_codigo+' — ':'')+_esc(x.funcao_nome||'')+'</b>'
+    + '<span style="width:55px;text-align:right">'+x.hh.toLocaleString('pt-BR')+' h</span>'
+    + '<span style="width:75px;text-align:right">'+(x.custo_hh?x.custo_hh.toFixed(2)+'/h':'<span class="muted">—</span>')+'</span>'
+    + '<b style="width:90px;text-align:right;color:#1A2A5E">'+money(x.custo)+'</b>'
+    + '<span style="width:40px" class="muted mono" title="Conta">'+_esc(x.rubrica||'')+'</span>'
+    + '<span style="flex:1" class="muted">'+_esc(x.observacao||'')+'</span>'
+    + (x.id ? '<span style="cursor:pointer;color:#B91C1C" title="Remover previsão" onclick="otMoPrevExcluir(\''+x.id+'\')">✕</span>' : '<span style="width:12px"></span>') + '</div>';
+  // ── Realizado ──
   const linha = x =>
     '<div style="display:flex;gap:6px;padding:4px 6px;border-bottom:1px solid #F1F5F9;font-size:11px;align-items:center">'
     + '<span style="width:62px" class="muted">'+dd2(x.data)+'</span>'
@@ -3562,37 +3584,94 @@ async function otMaoObraRender(){
     + '<span style="width:40px" class="muted mono" title="Conta">'+_esc(x.rubrica||'')+'</span>'
     + '<span style="flex:1" class="muted">'+_esc(x.observacao||'')+'</span>'
     + '<span style="cursor:pointer;color:#B91C1C" title="Remover" onclick="otMoExcluir(\''+x.id+'\')">✕</span></div>';
-  const prev = _otMo.hh_previsto != null
-    ? '<div style="display:flex;gap:18px;padding:6px 6px;font-size:11px;background:#F8FAFC;border:1px solid #E2E8F0;border-radius:6px;margin-bottom:6px">'
-      + '<span><b>Planeado (FMP):</b> '+Number(_otMo.hh_previsto).toLocaleString('pt-BR')+' h'+(_otMo.custo_previsto!=null?' · '+money(_otMo.custo_previsto):'')+'</span>'
+  const desvioH = _otMo.total_horas - totPrevH, desvioC = _otMo.total_custo - totPrevC;
+  const comparativo = prevs.length
+    ? '<div style="display:flex;gap:18px;padding:6px;font-size:11px;background:#F8FAFC;border:1px solid #E2E8F0;border-radius:6px;margin:6px 0">'
+      + '<span><b>Planejado:</b> '+totPrevH.toLocaleString('pt-BR')+' h · '+money(totPrevC)+'</span>'
       + '<span><b>Realizado:</b> '+_otMo.total_horas.toLocaleString('pt-BR')+' h · '+money(_otMo.total_custo)+'</span>'
-      + '<span style="color:'+(_otMo.total_horas > _otMo.hh_previsto ? '#B91C1C' : '#15803D')+'"><b>Desvio:</b> '+(_otMo.total_horas - _otMo.hh_previsto).toLocaleString('pt-BR',{maximumFractionDigits:2})+' h</span></div>'
+      + '<span style="color:'+(desvioH > 0 ? '#B91C1C' : '#15803D')+'"><b>Desvio:</b> '+(desvioH>0?'+':'')+desvioH.toLocaleString('pt-BR',{maximumFractionDigits:2})+' h · '+(desvioC>0?'+':'')+money(desvioC)+'</span></div>'
     : '';
+  const semFn = fns.length ? '' : '<div class="muted" style="font-size:10px;margin:4px 0">Sem funções cadastradas — cadastre em Parametrizar › Funções e custo HH (função por setor, custo/HH e conta).</div>';
   c.innerHTML =
-    '<div class="dsec">Registro de Mão de Obra — '+_otMo.itens.length+' linha(s) · '+_otMo.total_horas.toLocaleString('pt-BR')+' h · '+money(_otMo.total_custo)+'</div>'
-    + prev
-    + (_otMo.itens.length ? _otMo.itens.map(linha).join('') : '<div class="muted" style="padding:8px 6px;font-size:11px">Nenhuma hora lançada. O mecânico lança pelo app (Registrar execução → Horas) ou aqui.</div>')
+    '<div class="dsec">Planejado — '+prevs.length+' previsão(ões) · '+totPrevH.toLocaleString('pt-BR')+' h · '+money(totPrevC)+'</div>'
+    + (prevs.length ? prevs.map(linhaPrev).join('') : '<div class="muted" style="padding:6px;font-size:11px">Sem previsão. Vem da FMP (mão de obra prevista) ou lance aqui.</div>')
+    + (podeLancar ? '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:flex-end;padding:6px 0 2px">'
+      + '<div class="mfield" style="width:150px">Setor<select id="mp-set" onchange="otMoFiltraSetor(\'mp\')">'+setOpts+'</select></div>'
+      + '<div class="mfield" style="width:230px">Função<select id="mp-fn" onchange="otMoFnMudou(\'mp\')">'+fnOpts()+'</select></div>'
+      + '<div class="mfield" style="width:70px">HH<input id="mp-hh" type="number" step="0.5" min="0.5" placeholder="0,0" oninput="otMoPrevTotal()"></div>'
+      + '<div class="mfield" style="width:90px">Custo HH<input id="mp-custo" type="number" step="0.01" placeholder="0,00" oninput="otMoPrevTotal()"></div>'
+      + '<div class="mfield" style="width:90px">Custo prev.<div id="mp-tot" style="padding:6px 0;font-weight:700;color:#1A2A5E">—</div></div>'
+      + '<div class="mfield" style="width:220px">Conta * <span id="mp-rub-dica" class="muted" style="font-weight:400"></span><select id="mp-rub">'+contaOpts+'</select></div>'
+      + '<button class="btn" onclick="otMoPrevAdd()">＋ Prever</button></div>' : '')
+    + comparativo
+    + '<div class="dsec" style="margin-top:8px">Realizado — '+_otMo.itens.length+' linha(s) · '+_otMo.total_horas.toLocaleString('pt-BR')+' h · '+money(_otMo.total_custo)+'</div>'
+    + (_otMo.itens.length ? _otMo.itens.map(linha).join('') : '<div class="muted" style="padding:6px;font-size:11px">Nenhuma hora lançada. O mecânico lança pelo app (Registrar execução → Horas) ou aqui.</div>')
     + (podeLancar ? '<div class="dsec" style="margin-top:10px">Lançar horas</div>'
       + '<div style="display:flex;gap:14px;margin:6px 0 4px;font-size:11px">'
       +   '<label style="display:flex;align-items:center;gap:5px;cursor:pointer"><input type="radio" name="mo-quem" value="interno" checked onchange="otMoQuem()"> Colaborador</label>'
       +   '<label style="display:flex;align-items:center;gap:5px;cursor:pointer"><input type="radio" name="mo-quem" value="externo" onchange="otMoQuem()"> Terceiro / autônomo</label>'
       + '</div>'
       + '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:flex-end">'
-      + '<div class="mfield" id="mo-user-wrap" style="width:230px">Colaborador<select id="mo-user" onchange="otMoSugerir()">'+opts+'</select></div>'
+      + '<div class="mfield" style="width:150px">Setor<select id="mo-set" onchange="otMoFiltraSetor(\'mo\')">'+setOpts+'</select></div>'
+      + '<div class="mfield" id="mo-user-wrap" style="width:220px">Colaborador<select id="mo-user" onchange="otMoSugerir()">'+colOpts+'</select></div>'
       + '<div class="mfield" id="mo-nome-wrap" style="width:160px;display:none">Nome<input id="mo-nome" placeholder="terceiro / autônomo"></div>'
-      + '<div class="mfield" id="mo-fn-wrap" style="width:200px">Função<select id="mo-fn" onchange="otMoSugerir(true)">'+fnOpts+'</select></div>'
+      + '<div class="mfield" id="mo-fn-wrap" style="width:220px">Função<select id="mo-fn" onchange="otMoFnMudou(\'mo\')">'+fnOpts()+'</select></div>'
       + '<div class="mfield" style="width:120px">Data<input id="mo-data" type="date" value="'+hoje+'"></div>'
-      + '<div class="mfield" style="width:80px">Horas<input id="mo-horas" type="number" step="0.25" min="0.25" placeholder="0,00"></div>'
-      + '<div class="mfield" style="width:100px">Custo/h (R$)<input id="mo-custo" type="number" step="0.01" placeholder="0,00" title="Preenchido pela função; pode ajustar"></div>'
-      + '<div class="mfield" style="flex:1;min-width:160px">Observação<input id="mo-obs" placeholder="opcional"></div>'
-      + '<button class="btn p" onclick="otMoLancar()">＋ Lançar</button></div>'
-      + (fns.length ? '' : '<div class="muted" style="font-size:10px;margin-top:4px">Sem funções cadastradas — cadastre em Parametrizar › Funções e custo HH para o custo/h vir sozinho.</div>') : '');
+      + '<div class="mfield" style="width:70px">Horas<input id="mo-horas" type="number" step="0.25" min="0.25" placeholder="0,00"></div>'
+      + '<div class="mfield" style="width:90px">Custo/h<input id="mo-custo" type="number" step="0.01" placeholder="0,00" title="Preenchido pela função; pode ajustar"></div>'
+      + '<div class="mfield" style="width:220px">Conta * <span id="mo-rub-dica" class="muted" style="font-weight:400"></span><select id="mo-rub">'+contaOpts+'</select></div>'
+      + '<div class="mfield" style="flex:1;min-width:140px">Observação<input id="mo-obs" placeholder="opcional"></div>'
+      + '<button class="btn p" onclick="otMoLancar()">＋ Lançar</button></div>' + semFn : '');
+}
+// Setor filtra as funções (organograma) e os colaboradores daquele setor — "todos" mostra tudo
+function otMoFiltraSetor(pfx){
+  const st = (document.getElementById(pfx+'-set')||{}).value || '';
+  const fs = document.getElementById(pfx+'-fn');
+  if (fs) { [...fs.options].forEach(o => { if (!o.value) return; o.hidden = !!st && o.dataset.set !== st; }); [...fs.querySelectorAll('optgroup')].forEach(g => { g.hidden = !!st && ![...g.children].some(o => !o.hidden); }); if (fs.selectedOptions[0] && fs.selectedOptions[0].hidden) fs.value = ''; }
+  if (pfx === 'mo') { const us = document.getElementById('mo-user'); if (us) { [...us.options].forEach(o => { if (!o.value) return; o.hidden = !!st && o.dataset.set !== st; }); if (us.selectedOptions[0] && us.selectedOptions[0].hidden) us.value = ''; } }
+}
+function otMoFnMudou(pfx){
+  const fs = document.getElementById(pfx+'-fn'), fo = fs && fs.selectedOptions[0];
+  const c = document.getElementById(pfx === 'mp' ? 'mp-custo' : 'mo-custo');
+  if (fo && fo.value && fo.dataset.custo && c) c.value = fo.dataset.custo;
+  otMoDicaConta(pfx, fo && fo.dataset.rub);
+  if (pfx === 'mp') otMoPrevTotal();
+}
+// Conta: nunca pré-seleciona — mostra a sugestão (conta da função / 1.01 interno / 1.03 externo) ao lado
+function otMoDicaConta(pfx, sug){
+  const ext = pfx === 'mo' && (document.querySelector('input[name="mo-quem"]:checked')||{}).value === 'externo';
+  sug = sug || (ext ? '1.03' : '1.01');
+  const r = (_rubCache||[]).find(x => x.codigo === sug);
+  const el = document.getElementById(pfx === 'mp' ? 'mp-rub-dica' : 'mo-rub-dica');
+  if (el) el.textContent = r ? '(sugestão: '+sug+' — '+(r.nome||'')+')' : '';
+}
+function otMoPrevTotal(){
+  const hh = parseFloat(String((document.getElementById('mp-hh')||{}).value||'').replace(',','.'))||0, c = parseFloat(String((document.getElementById('mp-custo')||{}).value||'').replace(',','.'))||0;
+  const el = document.getElementById('mp-tot'); if (el) el.textContent = hh && c ? 'R$ '+(hh*c).toLocaleString('pt-BR',{minimumFractionDigits:2}) : '—';
+}
+async function otMoPrevAdd(){
+  const g = id => (document.getElementById(id)||{}).value || '';
+  const fs = document.getElementById('mp-fn'), fo = fs && fs.selectedOptions[0];
+  if (!g('mp-fn')) { mostrarToast('Escolha a função', 'warn'); return; }
+  if (!(parseFloat(g('mp-hh')) > 0)) { mostrarToast('Informe as HH previstas', 'warn'); return; }
+  if (!g('mp-rub')) { mostrarToast('Escolha a conta do plano de contas', 'warn'); return; }
+  try {
+    await mntFetch('/manutencao/api/tab/ot-mo-previsto', {method:'POST', body: JSON.stringify({ ot_id: _otAberta.id, funcao_codigo: g('mp-fn'),
+      funcao_nome: fo ? fo.textContent.split(' — ')[1] || '' : '', hh: g('mp-hh'), custo_hh: g('mp-custo'), rubrica: g('mp-rub') })});
+    mostrarToast('✅ Previsão lançada','ok'); otMaoObraRender();
+  } catch(e){ mostrarToast('❌ '+e.message,'warn'); }
+}
+async function otMoPrevExcluir(id){
+  if (!confirm('Remover esta previsão?')) return;
+  try { await mntFetch('/manutencao/api/tab/ot-mo-previsto/'+id, {method:'DELETE'}); otMaoObraRender(); }
+  catch(e){ mostrarToast('❌ '+e.message,'warn'); }
 }
 function otMoQuem(){
   const ext = (document.querySelector('input[name="mo-quem"]:checked')||{}).value === 'externo';
   document.getElementById('mo-user-wrap').style.display = ext ? 'none' : '';
   document.getElementById('mo-nome-wrap').style.display = ext ? '' : 'none';
   if (ext) { document.getElementById('mo-user').value = ''; }
+  otMoDicaConta('mo');
   otMoSugerir(ext);
 }
 function otMoSugerir(porFuncao){
@@ -3600,11 +3679,11 @@ function otMoSugerir(porFuncao){
   if (!c) return;
   const uo = us && us.selectedOptions[0];
   if (!porFuncao && uo && uo.value) {
-    // colaborador escolhido: função e custo vêm do apontamento de Parametrizar
     if (uo.dataset.fn && fs) fs.value = uo.dataset.fn;
-    if (uo.dataset.custo) { c.value = uo.dataset.custo; c.placeholder = ''; return; }
-    const sug = _otMo && _otMo.custo_hora_sugerido ? _otMo.custo_hora_sugerido[uo.value] : null;
-    c.value = ''; c.placeholder = sug != null ? sug.toFixed(2) + ' (último usado)' : '0,00';
+    if (uo.dataset.custo) { c.value = uo.dataset.custo; c.placeholder = ''; }
+    else { const sug = _otMo && _otMo.custo_hora_sugerido ? _otMo.custo_hora_sugerido[uo.value] : null; c.value = ''; c.placeholder = sug != null ? sug.toFixed(2) + ' (último usado)' : '0,00'; }
+    otMoDicaConta('mo', uo.dataset.rub || (fs && fs.selectedOptions[0] && fs.selectedOptions[0].dataset.rub));
+    return;
   }
   const fo = fs && fs.selectedOptions[0];
   if (fo && fo.value && fo.dataset.custo && (porFuncao || !c.value)) { c.value = fo.dataset.custo; c.placeholder = ''; }
@@ -3614,11 +3693,12 @@ async function otMoLancar(){
   const ext = (document.querySelector('input[name="mo-quem"]:checked')||{}).value === 'externo';
   if (ext && !g('mo-nome').trim()) { mostrarToast('Informe o nome do terceiro', 'warn'); return; }
   if (!ext && !g('mo-user')) { mostrarToast('Escolha o colaborador', 'warn'); return; }
+  if (!g('mo-rub')) { mostrarToast('Escolha a conta do plano de contas', 'warn'); document.getElementById('mo-rub').focus(); return; }
   const custo = g('mo-custo') || ((_otMo && _otMo.custo_hora_sugerido && _otMo.custo_hora_sugerido[g('mo-user')]) ?? '');
   try {
     await mntFetch('/manutencao/api/ots/'+_otAberta.id+'/mao-obra', {method:'POST', body: JSON.stringify({
       usuario_id: ext ? null : (g('mo-user') || null), nome: ext ? g('mo-nome').trim() : '', data: g('mo-data') || null,
-      funcao_codigo: g('mo-fn') || null,
+      funcao_codigo: g('mo-fn') || null, rubrica: g('mo-rub'),
       horas: g('mo-horas'), custo_hora: custo === '' ? null : custo, observacao: g('mo-obs') })});
     mostrarToast('✅ Horas lançadas','ok'); otMaoObraRender();
   } catch(e){ mostrarToast('❌ '+e.message,'warn'); }
@@ -3770,71 +3850,36 @@ async function pcSaldoInfo(row, cod){
       if (best && parseFloat(best.quantidade) > 0) alm.value = best.almox;
     }
     if (el.style.display !== 'none') el.innerHTML = its.length ? 'Saldo: ' + its.map(x => '<b>'+_esc(x.almox)+'</b> '+parseFloat(x.quantidade||0).toLocaleString('pt-BR')).join(' · ') : '<span style="color:#B45309">Sem saldo em nenhum almoxarifado</span>';
-    if (!tot && row.closest('#ot-saida')) { otSaidaRubrica(true, 'direta'); row.querySelector('.aviso').textContent = 'Sem saldo no estoque — conta sugerida como aplicação direta (veio de fora).'; }
-    else otSaidaChecar();
+    if (row.closest('#ot-saida')) { otSaidaRubrica(true, tot ? 'estoque' : 'direta'); if (!tot) row.querySelector('.aviso').textContent = 'Sem saldo no estoque — se veio de fora, escolha uma conta de aplicação direta.'; else otSaidaChecar(); }
   } catch(e){}
 }
-// Peça fora do cadastro: cadastra pela própria janela (código + descrição + UN + família) e já aplica na OT
-async function otPecaNova(texto){
+// (10/10/2026) Peça fora do cadastro: abre o cadastro COMPLETO do item (mesma janela de Materiais › Novo item —
+// identificação, codificação, características, estoques, observações) e, ao criar, volta para a baixa já preenchida.
+function otPecaNova(texto){
   _pcAcBox().style.display = 'none';
-  let fams = []; try { fams = (await mntFetch('/manutencao/api/param/familias')).filter(f => f.ativo !== false); } catch(e){}
-  let b = document.getElementById('ot-pcnova');
-  if (!b){ b = document.createElement('div'); b.id = 'ot-pcnova'; b.style.cssText = 'position:fixed;inset:0;z-index:9999;background:rgba(15,23,42,.45);display:none;align-items:center;justify-content:center'; document.body.appendChild(b); }
   const ehCod = /^[A-Za-z]\.[A-Za-z0-9]+\./.test(texto);
-  b.innerHTML = '<div style="background:#fff;border-radius:10px;box-shadow:0 12px 32px rgba(15,23,42,.3);padding:16px;width:520px;max-width:94vw">'
-    + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><b style="color:#1A2A5E">➕ Cadastrar peça e aplicar na OT</b><span style="cursor:pointer;font-size:16px" onclick="document.getElementById(\'ot-pcnova\').style.display=\'none\'">✕</span></div>'
-    + '<div class="muted" style="font-size:10px;margin-bottom:6px">Nasce no Catálogo de Peças agora, com custo médio = custo desta aplicação. Sem passar pelo estoque.</div>'
-    + '<div class="mgrid"><div class="mfield">Família<select id="pn-fam" onchange="otPecaNovaCod()"><option value="">— escolha —</option>'+fams.map(f=>'<option value="'+_esc(f.codigo)+'">'+_esc(f.codigo)+' — '+_esc(f.nome||'')+'</option>').join('')+'</select></div>'
-    + '<div class="mfield">Código<input id="pn-cod" value="'+(ehCod?_esc(texto):'')+'" placeholder="ex.: C.MC.130.013 (sugerido pela família)"></div></div>'
-    + '<div class="mfield" style="margin-top:6px">Descrição<input id="pn-desc" value="'+(ehCod?'':_esc(texto))+'" placeholder="ex.: Óleo hidráulico ISO VG 68"></div>'
-    + '<div style="display:flex;gap:8px;margin-top:6px">'
-    + '<div class="mfield" style="width:80px">Quant.<input id="pn-qtd" type="number" step="0.5" min="0"></div>'
-    + '<div class="mfield" style="width:70px">UN<input id="pn-un" value="UN"></div>'
-    + '<div class="mfield" style="width:110px">Custo un. (R$)<input id="pn-custo" type="number" step="0.01"></div>'
-    + '<div class="mfield" style="flex:1">Referência (NF / oficina)<input id="pn-ref" placeholder="opcional"></div></div>'
-    + '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">'
-    + '<button class="btn" onclick="document.getElementById(\'ot-pcnova\').style.display=\'none\'">Cancelar</button>'
-    + '<button class="btn p" onclick="otPecaNovaOK()">Cadastrar e aplicar</button></div></div>';
-  b.style.display = 'flex';
-  setTimeout(() => { const el = document.getElementById(ehCod ? 'pn-desc' : 'pn-fam'); el && el.focus(); }, 50);
-}
-async function otPecaNovaCod(){
-  // próximo código livre na família (C.<FAM>.<sub>.NNN) — mesma regra do catálogo
-  const fam = document.getElementById('pn-fam').value, el = document.getElementById('pn-cod');
-  if (!fam || el.value.trim()) return;
-  try {
-    const r = await mntFetch('/manutencao/api/pecas?familia='+encodeURIComponent(fam)+'&limit=300');
-    const cods = (r.itens||[]).map(p => p.codigo).filter(c => /\.\d{3}$/.test(c)).sort();
-    const raiz = fam.includes('.') ? 'C.'+fam : 'C.'+fam+'.010';
-    const ult = cods.filter(c => c.startsWith(raiz+'.')).map(c => parseInt(c.slice(-3),10)).filter(n=>!isNaN(n));
-    el.value = raiz + '.' + String((ult.length ? Math.max(...ult) : 0) + 1).padStart(3,'0');
-  } catch(e){}
-}
-async function otPecaNovaOK(){
-  const g = id => (document.getElementById(id)||{}).value || '';
-  const cod = g('pn-cod').trim().toUpperCase(), desc = g('pn-desc').trim(), qtd = parseFloat(String(g('pn-qtd')).replace(',','.'))||0;
-  if (!cod || !desc) { mostrarToast('Código e descrição são obrigatórios', 'warn'); return; }
-  if (qtd <= 0) { mostrarToast('Quantidade deve ser positiva', 'warn'); return; }
-  try {
-    const r = await mntFetch('/manutencao/api/entradas', { method:'POST', body: JSON.stringify({
-      documento_tipo: 'aplicacao_direta', documento_numero: g('pn-ref').trim(), ot_id: _otAberta.id,
-      observacao: 'Aplicação direta OT '+_otAberta.numero+' (peça cadastrada na OT)',
-      itens: [{ peca: cod, descricao: desc, quantidade: qtd, un: g('pn-un').trim() || 'UN', custo_unitario: g('pn-custo'), familia_codigo: g('pn-fam') || null }] })});
-    mostrarToast('✅ '+cod+' cadastrada e aplicada na OT'+(r.total?' · R$ '+r.total.toFixed(2):''), 'ok');
-    document.getElementById('ot-pcnova').style.display = 'none';
-    const s = document.getElementById('ot-saida'); if (s) s.style.display = 'none';
-    const a = document.getElementById('ot-aplic'); if (a) a.style.display = 'none';
-    otPecasRender();
-  } catch(e){ mostrarToast('❌ '+e.message,'warn'); }
+  artJanela(null, { descricao: ehCod ? '' : texto, depois: p => {
+    const b = document.getElementById('ot-saida') || document.getElementById('ot-aplic'); if (!b) return;
+    const row = b.querySelector('.plf-pc-row'); if (!row) return;
+    row.querySelector('.f').value = p.codigo; row.querySelector('.d').value = p.descricao;
+    row.querySelector('.c').value = p.unidade || 'UN';
+    if (p.custo_medio) row.querySelector('.v').value = p.custo_medio;
+    row._familia = p.familia_codigo || ''; row._saldos = {};
+    pcTotLinha(row.querySelector('.h'));
+    const av = row.querySelector('.aviso'); if (av) av.textContent = p.codigo + ' cadastrado — item novo, sem saldo em estoque.';
+    otSaidaRubrica(true, 'direta');
+    mostrarToast('✅ ' + p.codigo + ' cadastrado — continue a baixa', 'ok');
+  }});
 }
 function otSaidaModo(m){
   const b = document.getElementById('ot-saida'); if (!b) return;
-  const hid = b.querySelector('input[name="sai-modo"]'); if (hid) hid.value = m;
+  const hid = b.querySelector('input[name="sai-modo"]'); if (hid) hid.value = m || '';
   const direta = m === 'direta';
-  b.querySelector('.alm-wrap').style.display = direta ? 'none' : '';
+  b.querySelector('.alm-wrap').style.display = m === 'estoque' ? '' : 'none';   // sem conta escolhida: nada aparece
   b.querySelector('.ref-wrap').style.display = direta ? '' : 'none';
   b.querySelector('.c').readOnly = !direta; b.querySelector('.c').style.background = direta ? '' : '#F8FAFC';
-  b.querySelector('.btn-ok').textContent = direta ? 'Confirmar (aplicação direta)' : 'Confirmar (saída do estoque)';
+  b.querySelector('.btn-ok').textContent = !m ? 'Confirmar' : direta ? 'Confirmar (aplicação direta)' : 'Confirmar (saída do estoque)';
+  if (m === 'estoque') otSaidaChecar(); else { const av = b.querySelector('.aviso'); if (av && /Saldo em/.test(av.textContent)) av.textContent = ''; }
 }
 function otSaidaAbrir(){
   // (10/10/2026) Janela enxuta: peça · quantidade/custo · DE ONDE veio. A conta (2.01–2.06, padrão
@@ -3860,19 +3905,19 @@ function otSaidaAbrir(){
     // estoque (pede almoxarifado) · "Aplicação direta" = veio de fora (pede NF). Sugerida pelo tipo da peça.
     + '<div class="dsec" style="margin-top:10px">Saída</div>'
     + '<div style="display:grid;grid-template-columns:1.4fr 1fr;gap:8px;margin-top:6px">'
-    +   '<div class="mfield">Conta <span class="muted" style="font-weight:400">(sugerida pelo tipo da peça — pode trocar)</span><select class="rub" onchange="otSaidaRubManual(this)"><option value="">— carregando —</option></select></div>'
-    +   '<div class="mfield alm-wrap">Almoxarifado<select class="alm" onchange="otSaidaChecar()">'
+    +   '<div class="mfield">Conta * <span class="rub-dica muted" style="font-weight:400"></span><select class="rub" onchange="otSaidaRubManual(this)"><option value="">— carregando —</option></select></div>'
+    +   '<div class="mfield alm-wrap" style="display:none">Estoque<select class="alm" onchange="otSaidaChecar()">'
     +     alms.map(a=>'<option value="'+_esc(a.codigo)+'">'+_esc(a.codigo)+' — '+_esc(a.nome||'')+'</option>').join('')
     +   '</select></div>'
     +   '<div class="mfield ref-wrap" style="display:none">NF / notinha (opcional)<input class="ref" placeholder="ex.: NF 887"></div>'
     + '</div>'
-    + '<input type="hidden" name="sai-modo" value="estoque">'
+    + '<input type="hidden" name="sai-modo" value="">'
     + '<div class="aviso" style="font-size:11px;min-height:14px;margin-top:6px;color:#B45309"></div>'
     + '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:8px">'
     + '<button class="btn" onclick="document.getElementById(\'ot-saida\').style.display=\'none\'">Cancelar</button>'
     + '<button class="btn p btn-ok" onclick="otSaidaOK()">Confirmar baixa</button></div></div>';
   b.style.display = 'flex';
-  _rubricas().then(() => { const s = b.querySelector('.rub'); if (s) { s.innerHTML = _tabOpts(_rubFolhas('2'), 'id', 'nome', '', '— conta —'); otSaidaRubrica(); } });
+  _rubricas().then(() => { const s = b.querySelector('.rub'); if (s) { s.innerHTML = _tabOpts(_rubFolhas('2'), 'id', 'nome', '', '— conta —'); otSaidaModo(null); } });
 }
 // sugere a conta a partir de origem (estoque/direto) + classe da peça; só troca se o usuário não escolheu outra
 // conta → de onde sai: "Aplicação direta" (2.04–2.06 ou nome com "direct") = de fora; o resto = estoque
@@ -3880,15 +3925,16 @@ function _rubEhDireta(cod){
   const r = (_rubCache||[]).find(x => x.codigo === cod) || {};
   return /direct|direta/i.test(r.nome||'') || /^2\.0[4-6]$/.test(cod||'');
 }
-function otSaidaRubManual(s){ s.dataset.manual = s.value ? '1' : ''; otSaidaModo(_rubEhDireta(s.value) ? 'direta' : 'estoque'); }
+function otSaidaRubManual(s){ otSaidaModo(!s.value ? null : _rubEhDireta(s.value) ? 'direta' : 'estoque'); }
+// (10/10/2026) A conta NÃO vem pré-selecionada: o usuário escolhe (obrigatório). A regra de sugestão só
+// aparece como dica ao lado ("sugestão: 2.02 — …") — nunca decide por ele.
 function otSaidaRubrica(forcar, origem){
   const b = document.getElementById('ot-saida'); if (!b) return;
-  const s = b.querySelector('.rub'); if (!s || !s.options.length) return;
+  const s = b.querySelector('.rub'), dica = b.querySelector('.rub-dica'); if (!s) return;
   const row = b.querySelector('.plf-pc-row');
-  origem = origem || (_rubEhDireta(s.value) ? 'direta' : 'estoque');
-  const sug = _rubSugerir(origem, row._familia || '', b.querySelector('.d').value);
-  if (forcar || !s.dataset.manual) { s.value = sug; if (!s.value) s.selectedIndex = 0; }
-  otSaidaModo(_rubEhDireta(s.value) ? 'direta' : 'estoque');
+  const sug = _rubSugerir(origem || 'estoque', row._familia || '', b.querySelector('.d').value);
+  const r = (_rubCache||[]).find(x => x.codigo === sug);
+  if (dica) dica.textContent = r ? '(sugestão: ' + sug + ' — ' + (r.nome||'') + ')' : '';
 }
 // quantidade × saldo do almoxarifado escolhido: sem saldo, sugere aplicação direta antes de o servidor barrar
 function otSaidaChecar(){
@@ -3907,7 +3953,9 @@ async function otSaidaOK(){
   const qtd = parseFloat(String(q('h').value).replace(',', '.')) || 0;
   if (!peca){ mostrarToast('Informe a peça','warn'); return; }
   if (qtd <= 0){ mostrarToast('Quantidade deve ser positiva','warn'); return; }
-  const direta = (b.querySelector('input[name="sai-modo"]')||{}).value === 'direta';
+  const modo = (b.querySelector('input[name="sai-modo"]')||{}).value;
+  if (!modo || !(q('rub')||{}).value) { mostrarToast('Escolha a conta do plano de contas', 'warn'); q('rub') && q('rub').focus(); return; }
+  const direta = modo === 'direta';
   const aplicar = async () => {
     const r = await mntFetch('/manutencao/api/entradas', { method:'POST', body: JSON.stringify({
       documento_tipo: 'aplicacao_direta', documento_numero: (q('ref')||{}).value?.trim() || '', ot_id: _otAberta.id,
@@ -3928,7 +3976,7 @@ async function otSaidaOK(){
         // (10/10/2026) sem saldo / sem registro no almoxarifado: resolve na hora como aplicação direta
         if (/saldo insuficiente|sem saldo|não cadastrada|nao cadastrada|não há saldo/i.test(e.message)
             && confirm('Sem saldo de '+peca+' em '+q('alm').value+'.\n\nLançar como APLICAÇÃO DIRECTA (veio de fora, sem passar pelo estoque)?')) {
-          otSaidaRubrica(true, 'direta'); await aplicar();
+          await aplicar();
         } else throw e;
       }
     }
@@ -5057,13 +5105,15 @@ function pecaSalvarObs(){
 }
 async function novaPeca(){ artJanela(null); }
 let _artEdit = null, _artFams = null;
-async function artJanela(codigo){
+let _artDepois = null;   // (10/10/2026) chamada a partir da baixa na OT: devolve o item criado à janela de origem
+async function artJanela(codigo, opts){
   // réplica da janela "Novo Item" do ManWinWin (print 28/08)
+  _artDepois = (opts && typeof opts.depois === 'function') ? opts.depois : null;
   if (_artFams === null) {
     try { _artFams = (await mntFetch('/manutencao/api/param/familias')).filter(f => f.ativo !== false); }
     catch(e){ _artFams = []; }
   }
-  let p = { unidade:'UN', caracteristicas:[] };
+  let p = { unidade:'UN', caracteristicas:[], descricao: (opts && opts.descricao) || '' };
   _artEdit = null; _artCodAuto = true;
   if (codigo){
     try { p = await mntFetch('/manutencao/api/peca-ficha?peca_codigo=' + encodeURIComponent(codigo)); _artEdit = codigo; }
@@ -5079,7 +5129,7 @@ async function artJanela(codigo){
   let b = document.getElementById('art-jan');
   if (!b){
     b = document.createElement('div'); b.id = 'art-jan';
-    b.style.cssText = 'position:fixed;inset:0;z-index:9998;background:rgba(15,23,42,.45);display:none;align-items:center;justify-content:center';
+    b.style.cssText = 'position:fixed;inset:0;z-index:9999;background:rgba(15,23,42,.45);display:none;align-items:center;justify-content:center';
     document.body.appendChild(b);
   }
   const abas = [['id','Identificação'],['cod','Codificação'],['car','Características'],['arm','Estoques'],['obs','Observações']];
@@ -5201,6 +5251,7 @@ async function artOK(){
     }
     document.getElementById('art-jan').style.display = 'none';
     carregarPecasReais(); montarNavAlm();
+    if (_artDepois) { const f = _artDepois; _artDepois = null; f({ codigo: cod, descricao: desc, unidade: body.unidade, familia_codigo: body.familia_codigo, custo_medio: body.custo_medio }); return; }
     if (!_artEdit) abrirPeca(cod);
   } catch(e){ mostrarToast('❌ '+e.message,'warn'); }
 }
