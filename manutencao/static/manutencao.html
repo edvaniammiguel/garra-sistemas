@@ -304,7 +304,7 @@ button:disabled, select:disabled, input:disabled, [aria-disabled=true] { cursor:
             <input type="checkbox" id="alm-zerados" onchange="carregarPecasReais()"> incluir sem saldo</label>
         </span>
         <button class="btn o" id="alm-btn-novo" onclick="novaPeca()">＋ Nova peça</button>
-        <span class="muted">clique na peça = ficha completa</span>
+        <span class="muted">clique = marca · duplo clique = ficha</span>
       </div>
       <div style="flex:1;overflow:auto;background:#fff;border:1px solid #E2E8F0;border-radius:6px">
         <table>
@@ -882,7 +882,7 @@ function renderOTs(){
   const agrNome = { fornecedor: 'Fornecedor', equipamento: 'Equipamento', estado: 'Estado' }[(document.getElementById('ots-agrupar') || {}).value] || '';
   if (st) st.textContent = (agrNome ? 'OTs agrupadas por ' + agrNome : 'Lista de OTs')
     + (ttRotulo() ? ' · ' + ttRotulo() : '')
-    + ' · ' + ots.length + ' de ' + tot
+    + ' · ' + ots.length + ' de ' + tot + ' · clique = marca · duplo clique = ficha · botão direito = serviços'
     + (_filtroEquipId ? ' · filtrado por equipamento — ↻ limpa' : '');
   document.getElementById('ft-ots').innerHTML =
     '<b>'+tot+'</b> OTs · <b>'+cont('programada')+'</b> programadas · <b>'+cont('em_andamento')+'</b> em curso';
@@ -909,7 +909,7 @@ function renderOTs(){
     const dp = o.data_prevista ? d(o.data_prevista) : (o.horimetro_previsto != null ? o.horimetro_previsto + ' h·km' : '—');
     const prog = v ? `<span style="color:${v.nivel===0?'#DC2626':v.nivel===1?'#B45309':'#16A34A'};font-size:10px">${_esc(v.texto)}</span>` : dp;
     const ent = (o.equipamento_codigo || '') + (o.equipamento_desc ? ' — ' + o.equipamento_desc : '');
-    return `<tr oncontextmenu="showCtxReal(event,'${o.id}','ot','${_esc(o.numero)}')" onclick="mwSel('ots','${o.id}');verOTReal('${o.id}')">
+    return `<tr data-id="${o.id}"${String(_mwSel.ots)===String(o.id)?' class="sel"':''} style="cursor:pointer" oncontextmenu="showCtxReal(event,'${o.id}','ot','${_esc(o.numero)}')" onclick="listaSelClick(event,this,'ots')" ondblclick="verOTReal('${o.id}')">
       <td style="text-align:center"><span class="dot ${dot}"></span></td>
       <td class="bold" style="white-space:nowrap">${_esc(o.numero)}</td>
       <td>${_esc(o.descricao)}</td>
@@ -1908,11 +1908,16 @@ function mwProcurar(aba, txt){
 }
 // (14/09/2026) Seleção múltipla na Frota (Ctrl = alterna, Shift = intervalo) —
 // alimenta o escopo "seleccionados" do diálogo de impressão.
-let _frotaUltimoSel = null;
-function frotaSelClick(ev, tr){
-  const trs = [...tr.parentNode.querySelectorAll('tr[data-id]')];
-  if (ev.shiftKey && _frotaUltimoSel) {
-    const a = trs.findIndex(x => x.dataset.id === _frotaUltimoSel), b = trs.indexOf(tr);
+// (10/10/2026) PADRÃO ÚNICO de clique nas listas do módulo (igual à Frota): clique = marca a linha
+// (laranja) e alimenta Abrir/Repetir/Excluir da barra; Shift = faixa; Ctrl = vários; duplo clique = ficha;
+// botão direito = serviços. A ficha NUNCA abre no clique simples.
+let _frotaUltimoSel = null, _listaUltimoSel = {};
+function listaSelClick(ev, tr, aba){
+  const chave = tr.dataset.id != null ? 'id' : 'cod';
+  const trs = [...tr.closest('tbody').querySelectorAll('tr[data-'+chave+']')];
+  const ult = _listaUltimoSel[aba];
+  if (ev.shiftKey && ult) {
+    const a = trs.findIndex(x => x.dataset[chave] === ult), b = trs.indexOf(tr);
     const [i0, i1] = a < b ? [a, b] : [b, a];
     trs.forEach((x, i) => x.classList.toggle('sel', i >= i0 && i <= i1));
   } else if (ev.ctrlKey || ev.metaKey) {
@@ -1920,8 +1925,10 @@ function frotaSelClick(ev, tr){
   } else {
     trs.forEach(x => x.classList.remove('sel')); tr.classList.add('sel');
   }
-  _frotaUltimoSel = tr.dataset.id; mwSel('frota', tr.dataset.id);
+  _listaUltimoSel[aba] = tr.dataset[chave]; mwSel(aba, tr.dataset[chave]);
+  if (aba === 'frota') _frotaUltimoSel = tr.dataset[chave];
 }
+function frotaSelClick(ev, tr){ listaSelClick(ev, tr, 'frota'); }
 function _frotaSelecionados(){ return [...document.querySelectorAll('#frota-centro tr[data-id].sel')].map(t => t.dataset.id); }
 function _frotaListados(){ return [...document.querySelectorAll('#frota-centro tr[data-id]')].map(t => t.dataset.id).filter((v,i,a)=>a.indexOf(v)===i); }
 
@@ -4499,7 +4506,7 @@ async function carregarPecasReais(){
     const r = await mntFetch('/manutencao/api/pecas' + (qs.length ? '?' + qs.join('&') : ''));
     _pcNav = (r.itens||[]).map(x => ({codigo:x.codigo, descricao:x.descricao||x.nome||''}));
     if (!r || !Array.isArray(r.itens)) throw new Error('Resposta inesperada do servidor');
-    tb.innerHTML = r.itens.map(p => `<tr data-cod="${_esc(p.codigo)}" style="cursor:pointer" onclick="mwSel('alm',this.dataset.cod);abrirPeca(this.dataset.cod)">
+    tb.innerHTML = r.itens.map(p => `<tr data-cod="${_esc(p.codigo)}"${String(_mwSel.alm)===String(p.codigo)?' class="sel"':''} style="cursor:pointer" onclick="listaSelClick(event,this,'alm')" ondblclick="abrirPeca(this.dataset.cod)">
       <td class="bold">${_esc(p.codigo)}</td>
       <td>${_esc(p.descricao)}</td>
       <td>${_esc(p.familia_codigo || '—')}</td>
@@ -4597,7 +4604,7 @@ async function carregarArmazem(q){
     if ((document.getElementById('alm-zerados')||{}).checked) qs.push('incluir_zerados=1');
     const r = await mntFetch('/manutencao/api/armazem' + (qs.length ? '?' + qs.join('&') : ''));
     const abaixo = x => x.minimo != null && parseFloat(x.quantidade) < parseFloat(x.minimo);
-    tb.innerHTML = (r.itens || []).map(x => `<tr data-cod="${_esc(x.codigo)}" style="cursor:pointer" onclick="mwSel('alm',this.dataset.cod);abrirPeca(this.dataset.cod)">
+    tb.innerHTML = (r.itens || []).map(x => `<tr data-cod="${_esc(x.codigo)}"${String(_mwSel.alm)===String(x.codigo)?' class="sel"':''} style="cursor:pointer" onclick="listaSelClick(event,this,'alm')" ondblclick="abrirPeca(this.dataset.cod)">
       <td class="bold">${_esc(x.codigo)}</td>
       <td>${_esc(x.descricao)}</td>
       <td><span class="chip pe" style="font-size:9px">${_esc(x.almox)}</span></td>
