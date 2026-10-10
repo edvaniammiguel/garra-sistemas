@@ -332,12 +332,12 @@ button:disabled, select:disabled, input:disabled, [aria-disabled=true] { cursor:
 </div>
 
 <!-- ══ FICHA DO EQUIPAMENTO (dados reais) ══ -->
-<div class="overlay" id="eq-ficha" onclick="if(event.target===this)this.classList.remove('show')">
+<div class="overlay" id="eq-ficha">
   <div class="modal" id="eq-ficha-corpo"></div>
 </div>
 
 <!-- ══ NOVO SISTEMA (nó da Organização — padrão ManWinWin "Organização Funcional › Novo Sistema") ══ -->
-<div class="overlay" id="sis-modal" style="z-index:9999" onclick="if(event.target===this)this.classList.remove('show')">
+<div class="overlay" id="sis-modal" style="z-index:9999" onmousedown="this._fora=(event.target===this)" onclick="if(this._fora&&event.target===this)this.classList.remove('show')">
   <div class="modal" style="max-width:460px;width:460px">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
       <b id="sis-titulo" style="font-size:14px;color:#1A2A5E">Novo Sistema</b>
@@ -368,7 +368,7 @@ button:disabled, select:disabled, input:disabled, [aria-disabled=true] { cursor:
 </div>
 
 <!-- ══ PICKER (janela de seleção com busca — padrão ManWinWin) ══ -->
-<div class="overlay" id="picker" style="z-index:9999" onclick="if(event.target===this)this.classList.remove('show')">
+<div class="overlay" id="picker" style="z-index:9999" onmousedown="this._fora=(event.target===this)" onclick="if(this._fora&&event.target===this)this.classList.remove('show')">
   <div class="modal" style="max-width:440px">
     <div style="display:flex;justify-content:space-between;align-items:center">
       <b id="picker-titulo" style="font-size:14px;color:#1A2A5E"></b>
@@ -1631,8 +1631,7 @@ async function converterPedido(pid){
     const ot = await mntFetch('/manutencao/api/pedidos/'+pid+'/converter', {method:'POST', body: JSON.stringify({})});
     mostrarToast('✅ '+ot.numero+' criada do '+p.numero,'ok');
     carregarOTsReais(); carregarSemaforosReais(); atualizarBadgePedidos();
-    document.querySelector('#eq-ficha .modal').classList.remove('larga');
-    verOTReal(ot.id);
+    await verOTReal(ot.id);   // a janela só muda de tamanho quando a OT já está na tela
   } catch(e){ mostrarToast('❌ '+e.message,'warn'); }
 }
 async function recusarPedido(pid, numero){
