@@ -3962,7 +3962,8 @@ async function abrirReprogramar(){
   try { motivos = (await mntFetch('/manutencao/api/param/motivos-reprogramacao')).filter(m => m.ativo !== false); } catch(e){}
   const eq = _mntEquipList.find(e => String(e.id) === String(o.equipamento_id)) || {};
   const atual = parseFloat(eq.horimetro_atual || 0);
-  window._reprog = { ritmo: ritmo, atual: atual };
+  window._reprog = { ritmo: ritmo, atual: atual, regs: [] };
+  try { const f = await mntFetch('/manutencao/api/equipamentos/'+o.equipamento_id+'/funcionamento'); window._reprog.regs = (f.registos||[]).map(r => ({d: r.data.slice(0,10), l: r.leitura})); } catch(e){}
   // (10/10/2026) Referências como no "Programação OT" do ManWinWin: o que a FMP diz pelo CALENDÁRIO e pelo
   // REGISTO, para decidir com os dois números à vista. Vem de /previsoes (mesma regra das preventivas).
   let refHtml = '';
@@ -3996,27 +3997,49 @@ async function abrirReprogramar(){
     + '<div class="dsec">Nova previsão</div><div class="mgrid">'
     + '<div class="mfield">Data prevista<input id="rp-data" type="date" value="'+dtPrev+'" onchange="reprogCalc(\'data\')"></div>'
     + '<div class="mfield">Horímetro/KM previsto (atual: '+atual+')<input id="rp-horim" type="number" value="'+(o.horimetro_previsto??'')+'" oninput="reprogCalc(\'horim\')"></div>'
-    + '</div><div class="mfield" style="margin-top:8px">Motivo da reprogramação *<select id="rp-motivo">'+motOpts+'</select></div>'
+    + '</div><div id="rp-aviso" style="font-size:11px;min-height:15px;margin-top:4px;color:#475569"></div>'
+    + '<div class="mfield" style="margin-top:8px">Motivo da reprogramação *<select id="rp-motivo">'+motOpts+'</select></div>'
     + '<div class="mfield" style="margin-top:8px">Observação<input id="rp-obs" placeholder="opcional"></div>'
     + '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">'
     + '<button class="btn" onclick="verOTReal(\''+o.id+'\')">Voltar</button>'
     + '<button class="btn p" onclick="salvarReprogramacao()">Reprogramar</button></div>';
 }
+// (10/10/2026) Conversão nos DOIS sentidos, como o "Programação OT" do ManWinWin: para a frente projeta pelo
+// ritmo (FMD); para trás consulta — se há registo real naquela data usa o registo, senão retrocede pelo ritmo.
+// Passado é consulta: pode gravar, mas a OT nasce vencida (aviso em âmbar).
 function reprogCalc(origem){
   const r = window._reprog || {};
-  if (!r.ritmo) return;
-  const gd = document.getElementById('rp-data'), gh = document.getElementById('rp-horim');
+  const gd = document.getElementById('rp-data'), gh = document.getElementById('rp-horim'), av = document.getElementById('rp-aviso');
   const hoje = new Date(); hoje.setHours(0,0,0,0);
+  const fmt = d => d.toISOString().slice(0,10);
+  const n = v => Number(v).toLocaleString('pt-BR', {maximumFractionDigits:1});
+  const aviso = (t, cor) => { if (av) { av.textContent = t || ''; av.style.color = cor || '#475569'; } };
+  if (!r.ritmo) { aviso('Sem ritmo (FMD) para converter — informe os dois campos.'); return; }
   if (origem === 'horim' && gh.value) {
-    const dias = Math.ceil((parseFloat(gh.value) - r.atual) / r.ritmo);
-    if (isFinite(dias) && dias >= 0) {
-      const dt = new Date(hoje.getTime() + dias*86400000);
-      gd.value = dt.toISOString().slice(0,10);
-    }
+    const alvo = parseFloat(gh.value);
+    const dias = Math.ceil((alvo - r.atual) / r.ritmo);
+    if (!isFinite(dias)) return;
+    gd.value = fmt(new Date(hoje.getTime() + dias*86400000));
+    if (alvo < r.atual) aviso('Horímetro abaixo do atual ('+n(r.atual)+'): pelo ritmo de '+r.ritmo+'/dia foi há ≈ '+(-dias)+' dia(s) → '+_fmtData(gd.value)+'. Gravar deixa a OT vencida.', '#B45309');
+    else aviso('Faltam '+n(alvo - r.atual)+' ÷ '+r.ritmo+'/dia ≈ '+dias+' dia(s) → '+_fmtData(gd.value));
   }
   if (origem === 'data' && gd.value) {
     const dias = Math.round((new Date(gd.value+'T00:00:00') - hoje) / 86400000);
-    if (dias >= 0) gh.value = Math.round(r.atual + dias * r.ritmo);
+    if (dias >= 0) {
+      gh.value = Math.round(r.atual + dias * r.ritmo);
+      aviso(dias+' dia(s) × '+r.ritmo+'/dia = +'+n(dias*r.ritmo)+' sobre o contador atual ('+n(r.atual)+')');
+      return;
+    }
+    // passado: registo real do dia (ou o último antes dele) vale mais que a projeção
+    const regs = (r.regs||[]).filter(x => x.d <= gd.value).sort((a,b) => a.d < b.d ? 1 : -1);
+    const reg = regs[0];
+    if (reg && (new Date(gd.value+'T00:00:00') - new Date(reg.d+'T00:00:00')) / 86400000 <= 7) {
+      gh.value = Math.round(reg.l);
+      aviso('Registo real de '+_fmtData(reg.d)+': '+n(reg.l)+' (consulta retroativa). Gravar deixa a OT vencida.', '#B45309');
+    } else {
+      gh.value = Math.round(r.atual + dias * r.ritmo);
+      aviso('Estimativa retroativa: '+n(r.atual)+' − '+(-dias)+' dia(s) × '+r.ritmo+'/dia ≈ '+n(r.atual + dias*r.ritmo)+' (sem registo próximo da data). Gravar deixa a OT vencida.', '#B45309');
+    }
   }
 }
 async function salvarReprogramacao(){
