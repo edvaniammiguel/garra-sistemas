@@ -160,6 +160,11 @@ tr.sel td{background:#FDBA74 !important;color:#1A2A5E;font-weight:600}
 .mfield{display:flex;flex-direction:column;gap:2px;font-size:10px;color:#475569;font-weight:700}
 .mfield input,.mfield select,.mfield textarea{font-size:11px;padding:4px 7px;border:1px solid #CBD5E1;border-radius:4px;font-weight:400;color:#1E293B}
 .mgrid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+/* (10/10/2026) Campo nunca alarga a janela: um <select> com opção comprida (fornecedor) ou um fieldset
+   têm largura mínima = conteúdo; aqui a coluna manda e o texto longo é cortado com reticências */
+.mgrid>*,.mfield,fieldset{min-width:0}
+.mfield input,.mfield select,.mfield textarea{width:100%;max-width:100%;box-sizing:border-box;text-overflow:ellipsis}
+#ot-aba-corpo{overflow-x:hidden}
 .dsec{background:#1A2A5E;color:#E8820C;font-size:10px;font-weight:800;
       letter-spacing:.05em;text-transform:uppercase;padding:3px 8px;
       border-radius:3px;margin:10px 0 4px}
@@ -3900,7 +3905,7 @@ function otAba(aba){
       + linha('Encerramento', (o.observacao_conclusao ? _esc(o.observacao_conclusao) : '—')
               + (o.custo_total != null ? ' · R$ ' + parseFloat(o.custo_total).toFixed(2) : ''))
       + (['programada','aberta','em_andamento','aguardando_peca'].includes(o.status)
-          ? '<div style="padding:8px 0 0"><button class="btn" onclick="abrirReprogramar()">📅 Reprogramar (data ↔ horímetro pelo ritmo real)</button></div>'
+          ? '<div style="padding:8px 0 0"><button class="btn" onclick="abrirReprogramar()">⚙ Avançado — Programação (data ↔ horímetro pelo ritmo real)</button></div>'
           : '')
       + '</div>'
       + '<div style="flex:1;border:1px solid #E2E8F0;border-radius:6px;padding:8px 12px;background:#F8FAFC">'
@@ -3958,12 +3963,34 @@ async function abrirReprogramar(){
   const eq = _mntEquipList.find(e => String(e.id) === String(o.equipamento_id)) || {};
   const atual = parseFloat(eq.horimetro_atual || 0);
   window._reprog = { ritmo: ritmo, atual: atual };
+  // (10/10/2026) Referências como no "Programação OT" do ManWinWin: o que a FMP diz pelo CALENDÁRIO e pelo
+  // REGISTO, para decidir com os dois números à vista. Vem de /previsoes (mesma regra das preventivas).
+  let refHtml = '';
+  if (o.plano_id) {
+    try {
+      const pv = await mntFetch('/manutencao/api/previsoes');
+      const it = (pv.itens || []).find(x => String(x.plano_id) === String(o.plano_id));
+      if (it) {
+        const un = it.unidade === 'km' ? 'km' : 'h';
+        const porReg = it.leitura_alvo != null ? it.leitura_alvo.toLocaleString('pt-BR') + ' ' + un + (it.proxima_data && it.modo !== 'calendario' ? ' ≈ ' + _fmtData(it.proxima_data) : '') : '—';
+        const porCal = it.modo === 'calendario' && it.proxima_data ? _fmtData(it.proxima_data) : '—';
+        refHtml = '<div style="display:grid;grid-template-columns:110px 1fr;gap:4px 10px;font-size:11px;background:#F8FAFC;border:1px solid #E2E8F0;border-radius:6px;padding:8px 10px;margin-bottom:8px">'
+          + '<b>FMP</b><span>'+_esc(it.plano_codigo)+' — '+_esc(it.plano_descricao||'')+' · a cada '+(it.periodo_qtd!=null?it.periodo_qtd.toLocaleString('pt-BR'):'?')+' '+_esc(it.periodo||'')+'</span>'
+          + '<b>Última</b><span>'+(it.ultima_data ? _fmtData(it.ultima_data) : '—')+(it.ultima_leitura!=null ? ' · '+it.ultima_leitura.toLocaleString('pt-BR')+' '+un : '')+'</span>'
+          + '<b>Pelo calendário</b><span>'+porCal+'</span>'
+          + '<b>Pelo registo</b><span>'+porReg+(it.restante!=null && it.modo!=='calendario' ? ' <span class="muted">(faltam '+it.restante.toLocaleString('pt-BR')+' '+un+')</span>' : '')+'</span>'
+          + '<b>Programado hoje</b><span>'+(o.data_prevista ? _fmtData(o.data_prevista) : '—')+(o.horimetro_previsto!=null ? ' · '+Number(o.horimetro_previsto).toLocaleString('pt-BR')+' '+un : '')+'</span>'
+          + '</div>';
+      }
+    } catch(e) {}
+  }
   const motOpts = '<option value="">— escolha o motivo * —</option>' + motivos.map(m =>
     '<option value="'+_esc(m.codigo)+'">'+_esc(m.codigo)+' — '+_esc(m.nome||'')+'</option>').join('');
   const dtPrev = o.data_prevista ? String(o.data_prevista).slice(0,10) : '';
   document.getElementById('eq-ficha-corpo').innerHTML =
-    '<div style="display:flex;justify-content:space-between;align-items:center"><b style="font-size:14px;color:#1A2A5E">📅 Reprogramar '+_esc(o.numero)+'</b>'
+    '<div style="display:flex;justify-content:space-between;align-items:center"><b style="font-size:14px;color:#1A2A5E">⚙ Programação — '+_esc(o.numero)+'</b>'
     + '<span style="cursor:pointer;font-size:18px" onclick="verOTReal(\''+o.id+'\')">✕</span></div>'
+    + refHtml
     + '<div class="pp-sub">'+(ritmo ? 'Ritmo real do '+_esc(eq.codigo||'equipamento')+': <b>'+ritmo+' '+(eq.medicao==='km'?'km':'h')+'/dia</b> (FMD em uso) — um campo calcula o outro'
                                     : 'Sem FMD (registos insuficientes e sem FMD manual) — conversão automática indisponível, informe manualmente')+'</div>'
     + '<div class="dsec">Nova previsão</div><div class="mgrid">'
