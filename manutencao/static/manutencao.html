@@ -3527,42 +3527,84 @@ async function otMaoObraRender(){
   const dd2 = v => { if(!v) return '—'; try{ return v.split('-').reverse().join('/'); }catch(e){ return '—'; } };
   const money = v => v == null ? '—' : 'R$ ' + v.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
   const podeLancar = ['programada','aberta','em_andamento','aguardando_peca','concluida'].includes(o.status);
-  const opts = '<option value="">— colaborador —</option>' + (_mntUserList||[]).map(u => '<option value="'+u.id+'">'+_esc(u.nome||u.login)+'</option>').join('');
+  // (10/10/2026) Colaborador → função e custo/h vêm de Parametrizar › Funções (custo sugerido = último usado
+  // só quando não há função). Terceiro = nome + função externa. Rubrica automática. Previsto (FMP) × Realizado.
+  const col = _otMo.colaboradores || {}, fns = _otMo.funcoes || [];
+  const money2 = v => v == null ? '' : Number(v).toFixed(2);
+  const opts = '<option value="">— colaborador —</option>' + (_mntUserList||[]).map(u => {
+    const cf = col[String(u.id)];
+    return '<option value="'+u.id+'" data-fn="'+_esc(cf&&cf.funcao_codigo||'')+'" data-custo="'+(cf&&cf.custo_hh!=null?cf.custo_hh:'')+'">'+_esc(u.nome||u.login)+(cf&&cf.funcao_nome?' · '+_esc(cf.funcao_nome):'')+'</option>';
+  }).join('');
+  const fnOpts = '<option value="">— função —</option>' + fns.map(f => '<option value="'+_esc(f.codigo)+'" data-custo="'+(f.custo_hh!=null?f.custo_hh:'')+'">'+_esc(f.codigo)+' — '+_esc(f.nome||'')+(f.custo_hh!=null?' (R$ '+money2(f.custo_hh)+'/h)':'')+'</option>').join('');
   const hoje = new Date().toISOString().slice(0,10);
   const linha = x =>
     '<div style="display:flex;gap:6px;padding:4px 6px;border-bottom:1px solid #F1F5F9;font-size:11px;align-items:center">'
     + '<span style="width:62px" class="muted">'+dd2(x.data)+'</span>'
-    + '<b style="flex:1">'+_esc(x.nome||'—')+'</b>'
+    + '<b style="flex:1">'+_esc(x.nome||'—')+(x.funcao_nome?' <span class="muted" style="font-weight:400">· '+_esc(x.funcao_nome)+'</span>':'')+'</b>'
     + '<span class="chip '+(x.origem==='mobile'?'em':'tm')+'" style="font-size:9px">'+(x.origem==='mobile'?'📱 app':'🖥 desktop')+'</span>'
     + '<span style="width:55px;text-align:right">'+x.horas.toLocaleString('pt-BR')+' h</span>'
     + '<span style="width:75px;text-align:right">'+(x.custo_hora!=null?x.custo_hora.toFixed(2)+'/h':'<span class="muted">sem custo</span>')+'</span>'
     + '<b style="width:90px;text-align:right;color:#1A2A5E">'+money(x.valor)+'</b>'
+    + '<span style="width:40px" class="muted mono" title="Rubrica">'+_esc(x.rubrica||'')+'</span>'
     + '<span style="flex:1" class="muted">'+_esc(x.observacao||'')+'</span>'
     + '<span style="cursor:pointer;color:#B91C1C" title="Remover" onclick="otMoExcluir(\''+x.id+'\')">✕</span></div>';
+  const prev = _otMo.hh_previsto != null
+    ? '<div style="display:flex;gap:18px;padding:6px 6px;font-size:11px;background:#F8FAFC;border:1px solid #E2E8F0;border-radius:6px;margin-bottom:6px">'
+      + '<span><b>Planeado (FMP):</b> '+Number(_otMo.hh_previsto).toLocaleString('pt-BR')+' h'+(_otMo.custo_previsto!=null?' · '+money(_otMo.custo_previsto):'')+'</span>'
+      + '<span><b>Realizado:</b> '+_otMo.total_horas.toLocaleString('pt-BR')+' h · '+money(_otMo.total_custo)+'</span>'
+      + '<span style="color:'+(_otMo.total_horas > _otMo.hh_previsto ? '#B91C1C' : '#15803D')+'"><b>Desvio:</b> '+(_otMo.total_horas - _otMo.hh_previsto).toLocaleString('pt-BR',{maximumFractionDigits:2})+' h</span></div>'
+    : '';
   c.innerHTML =
     '<div class="dsec">Registo de Mão de Obra — '+_otMo.itens.length+' linha(s) · '+_otMo.total_horas.toLocaleString('pt-BR')+' h · '+money(_otMo.total_custo)+'</div>'
+    + prev
     + (_otMo.itens.length ? _otMo.itens.map(linha).join('') : '<div class="muted" style="padding:8px 6px;font-size:11px">Nenhuma hora lançada. O mecânico lança pelo app (Registrar execução → Horas) ou aqui.</div>')
     + (podeLancar ? '<div class="dsec" style="margin-top:10px">Lançar horas</div>'
+      + '<div style="display:flex;gap:14px;margin:6px 0 4px;font-size:11px">'
+      +   '<label style="display:flex;align-items:center;gap:5px;cursor:pointer"><input type="radio" name="mo-quem" value="interno" checked onchange="otMoQuem()"> Colaborador</label>'
+      +   '<label style="display:flex;align-items:center;gap:5px;cursor:pointer"><input type="radio" name="mo-quem" value="externo" onchange="otMoQuem()"> Terceiro / autônomo</label>'
+      + '</div>'
       + '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:flex-end">'
-      + '<div class="mfield" style="width:190px">Colaborador<select id="mo-user" onchange="otMoSugerir()">'+opts+'</select></div>'
-      + '<div class="mfield" style="width:150px">ou nome (externo)<input id="mo-nome" placeholder="terceiro / autônomo"></div>'
+      + '<div class="mfield" id="mo-user-wrap" style="width:230px">Colaborador<select id="mo-user" onchange="otMoSugerir()">'+opts+'</select></div>'
+      + '<div class="mfield" id="mo-nome-wrap" style="width:160px;display:none">Nome<input id="mo-nome" placeholder="terceiro / autônomo"></div>'
+      + '<div class="mfield" id="mo-fn-wrap" style="width:200px">Função<select id="mo-fn" onchange="otMoSugerir(true)">'+fnOpts+'</select></div>'
       + '<div class="mfield" style="width:120px">Data<input id="mo-data" type="date" value="'+hoje+'"></div>'
       + '<div class="mfield" style="width:80px">Horas<input id="mo-horas" type="number" step="0.25" min="0.25" placeholder="0,00"></div>'
-      + '<div class="mfield" style="width:100px">Custo/h (R$)<input id="mo-custo" type="number" step="0.01" placeholder="0,00"></div>'
+      + '<div class="mfield" style="width:100px">Custo/h (R$)<input id="mo-custo" type="number" step="0.01" placeholder="0,00" title="Preenchido pela função; pode ajustar"></div>'
       + '<div class="mfield" style="flex:1;min-width:160px">Observação<input id="mo-obs" placeholder="opcional"></div>'
-      + '<button class="btn p" onclick="otMoLancar()">＋ Lançar</button></div>' : '');
+      + '<button class="btn p" onclick="otMoLancar()">＋ Lançar</button></div>'
+      + (fns.length ? '' : '<div class="muted" style="font-size:10px;margin-top:4px">Sem funções cadastradas — cadastre em Parametrizar › Funções e custo HH para o custo/h vir sozinho.</div>') : '');
 }
-function otMoSugerir(){
-  const u = document.getElementById('mo-user').value, c = document.getElementById('mo-custo');
-  const sug = _otMo && _otMo.custo_hora_sugerido ? _otMo.custo_hora_sugerido[u] : null;
-  if (c && sug != null && !c.value) c.placeholder = sug.toFixed(2) + ' (último usado)';   // sugestão em cinza, nunca valor (fantasma Classe 1)
+function otMoQuem(){
+  const ext = (document.querySelector('input[name="mo-quem"]:checked')||{}).value === 'externo';
+  document.getElementById('mo-user-wrap').style.display = ext ? 'none' : '';
+  document.getElementById('mo-nome-wrap').style.display = ext ? '' : 'none';
+  if (ext) { document.getElementById('mo-user').value = ''; }
+  otMoSugerir(ext);
+}
+function otMoSugerir(porFuncao){
+  const us = document.getElementById('mo-user'), fs = document.getElementById('mo-fn'), c = document.getElementById('mo-custo');
+  if (!c) return;
+  const uo = us && us.selectedOptions[0];
+  if (!porFuncao && uo && uo.value) {
+    // colaborador escolhido: função e custo vêm do apontamento de Parametrizar
+    if (uo.dataset.fn && fs) fs.value = uo.dataset.fn;
+    if (uo.dataset.custo) { c.value = uo.dataset.custo; c.placeholder = ''; return; }
+    const sug = _otMo && _otMo.custo_hora_sugerido ? _otMo.custo_hora_sugerido[uo.value] : null;
+    c.value = ''; c.placeholder = sug != null ? sug.toFixed(2) + ' (último usado)' : '0,00';
+  }
+  const fo = fs && fs.selectedOptions[0];
+  if (fo && fo.value && fo.dataset.custo && (porFuncao || !c.value)) { c.value = fo.dataset.custo; c.placeholder = ''; }
 }
 async function otMoLancar(){
   const g = id => (document.getElementById(id)||{}).value || '';
+  const ext = (document.querySelector('input[name="mo-quem"]:checked')||{}).value === 'externo';
+  if (ext && !g('mo-nome').trim()) { mostrarToast('Informe o nome do terceiro', 'warn'); return; }
+  if (!ext && !g('mo-user')) { mostrarToast('Escolha o colaborador', 'warn'); return; }
   const custo = g('mo-custo') || ((_otMo && _otMo.custo_hora_sugerido && _otMo.custo_hora_sugerido[g('mo-user')]) ?? '');
   try {
     await mntFetch('/manutencao/api/ots/'+_otAberta.id+'/mao-obra', {method:'POST', body: JSON.stringify({
-      usuario_id: g('mo-user') || null, nome: g('mo-nome').trim(), data: g('mo-data') || null,
+      usuario_id: ext ? null : (g('mo-user') || null), nome: ext ? g('mo-nome').trim() : '', data: g('mo-data') || null,
+      funcao_codigo: g('mo-fn') || null,
       horas: g('mo-horas'), custo_hora: custo === '' ? null : custo, observacao: g('mo-obs') })});
     mostrarToast('✅ Horas lançadas','ok'); otMaoObraRender();
   } catch(e){ mostrarToast('❌ '+e.message,'warn'); }
@@ -5057,6 +5099,7 @@ const PARAM_GRUPOS = [
     ['tipoOT','dom','Tipos de OT'],
     ['tiposman','dom','Tipos de Manutenção'],
     ['setint','dom','Setores Interventor'],
+    ['funcoes','funcoes','Funções e custo HH'],
     ['sintomas','dom','Sintomas e Causas'],
     ['motivos','dom','Motivos de Reprogramação'],
     ['motpend','dom','Motivos de OT Pendente'] ]},
@@ -5110,6 +5153,7 @@ function abrirParamPane(paneId, tipo, titulo){
   if (tipo === 'biblio') { paneBiblioteca(); return; }
   if (tipo === 'equip')  { paneEquipamentos(); return; }
   if (tipo === 'pontos') { panePontos(); return; }
+  if (tipo === 'funcoes') { paneFuncoes(); return; }
   if (tipo === 'alm')    { showModule('alm'); return; }
   if (tipo === 'admin')  { paneAviso(titulo, 'Usuários, perfis e permissões são gerenciados no <b>Admin Master</b> — cadastro único (usuarios_garra), sem duplicação aqui.'); return; }
   const fila = { empresa: empresaPane, clientes: clientesPane, planos: planosTodosPane, refforn: referenciasPane,
@@ -5389,6 +5433,88 @@ async function paneEquipamentos(){
         ).join('') || '<tr><td colspan="3" style="padding:12px;color:#64748B">Frota vazia.</td></tr>')
       + '</tbody></table></div>';
   } catch(e){ mostrarToast('❌ '+e.message,'warn'); }
+}
+// (10/10/2026) Parametrizar › Funções e custo HH — ManWinWin "Organograma › Função" adaptado à Garra:
+// função = setor interventor + custo/HH padrão + rubrica (1.01 interno · 1.03 externo); abaixo, cada
+// colaborador aponta a sua função (e um custo/HH próprio, se diferente). É daqui que a OT puxa o custo.
+let _fnData = null;
+async function paneFuncoes(){
+  const pane = document.getElementById('pp-pane');
+  try { _fnData = await mntFetch('/manutencao/api/funcoes'); } catch(e){ mostrarToast('❌ '+e.message,'warn'); return; }
+  if (_mntUserList === null) { try { _mntUserList = (await mntFetch('/usuarios')).filter(u => u.ativo !== false); } catch(e){ _mntUserList = []; } }
+  const setores = await _setoresInterventor();
+  if (_bibRub === null) { try { _bibRub = (await mntFetch('/manutencao/api/param/rubricas')).filter(r=>r.ativo!==false); } catch(e){ _bibRub = []; } }
+  const rubMO = (_bibRub||[]).filter(r => String(r.codigo).startsWith('1.'));
+  const money = v => v == null ? '' : Number(v).toFixed(2);
+  const selSet = (v, attrs) => '<select '+attrs+'><option value="">—</option>'+setores.map(s=>'<option value="'+_esc(s.codigo)+'"'+(s.codigo===v?' selected':'')+'>'+_esc(s.codigo)+' — '+_esc(s.nome||'')+'</option>').join('')+'</select>';
+  const selRub = (v, attrs) => '<select '+attrs+'>'+rubMO.map(r=>'<option value="'+_esc(r.codigo)+'"'+(r.codigo===v?' selected':'')+'>'+_esc(r.codigo)+' — '+_esc(r.nome||'')+'</option>').join('')+(v && !rubMO.some(r=>r.codigo===v)?'<option value="'+_esc(v)+'" selected>'+_esc(v)+'</option>':'')+'</select>';
+  const fns = _fnData.funcoes || [];
+  const linhaF = f => {
+    const c = _esc(f.codigo), inat = f.ativo === false;
+    const at = 'data-c="'+c+'" style="width:100%;font-size:11px;padding:3px 5px;border:1px solid #CBD5E1;border-radius:4px"';
+    return '<tr'+(inat?' style="opacity:.55"':'')+'>'
+      + '<td class="bold" style="width:70px">'+(inat?'<s>':'')+c+(inat?'</s>':'')+'</td>'
+      + '<td><input value="'+_esc(f.nome||'')+'" '+at+' onchange="fnEditar(this.dataset.c,{nome:this.value})"></td>'
+      + '<td style="width:170px">'+selSet(f.setor||'', at+' onchange="fnEditar(this.dataset.c,{setor:this.value})"')+'</td>'
+      + '<td style="width:100px"><input type="number" step="0.01" min="0" value="'+money(f.custo_hh)+'" placeholder="0,00" '+at+' onchange="fnEditar(this.dataset.c,{custo_hh:this.value})"></td>'
+      + '<td style="width:190px">'+selRub(f.rubrica||'', at+' onchange="fnEditar(this.dataset.c,{rubrica:this.value})"')+'</td>'
+      + '<td style="width:60px;text-align:center"><input type="checkbox" data-c="'+c+'"'+(f.externa?' checked':'')+' onchange="fnEditar(this.dataset.c,{externa:this.checked})" title="Função de terceiro / autônomo"></td>'
+      + '<td class="act" style="width:70px;white-space:nowrap">'
+      + (inat ? '<button class="btn" title="Reativar" data-c="'+c+'" onclick="fnEditar(this.dataset.c,{ativo:true})">♻️</button><button class="btn" title="Excluir de vez (só se nunca usada)" data-c="'+c+'" onclick="fnExcluir(this.dataset.c)">🗑️</button>'
+              : '<button class="btn" title="Desativar" data-c="'+c+'" onclick="fnEditar(this.dataset.c,{ativo:false})">🚫</button>')
+      + '</td></tr>';
+  };
+  const ativas = fns.filter(f => f.ativo !== false);
+  const selFn = (v, attrs) => '<select '+attrs+'><option value="">— sem função —</option>'+ativas.map(f=>'<option value="'+_esc(f.codigo)+'"'+(f.codigo===v?' selected':'')+'>'+_esc(f.codigo)+' — '+_esc(f.nome||'')+(f.custo_hh!=null?' (R$ '+money(f.custo_hh)+'/h)':'')+'</option>').join('')+'</select>';
+  const col = _fnData.colaboradores || {};
+  const linhaC = u => {
+    const cf = col[String(u.id)] || {}, fn = ativas.find(f => f.codigo === cf.funcao_codigo);
+    const at = 'data-u="'+_esc(u.id)+'" style="width:100%;font-size:11px;padding:3px 5px;border:1px solid #CBD5E1;border-radius:4px"';
+    return '<tr><td class="bold">'+_esc(u.nome||u.login)+'</td><td class="muted" style="width:90px">'+_esc(u.perfil||'')+'</td>'
+      + '<td style="width:260px">'+selFn(cf.funcao_codigo||'', at+' onchange="colFuncao(this.dataset.u)"')+'</td>'
+      + '<td style="width:120px"><input type="number" step="0.01" min="0" id="cf-custo-'+_esc(u.id)+'" value="'+(cf.custo_proprio?money(cf.custo_hh):'')+'" placeholder="'+(fn&&fn.custo_hh!=null?money(fn.custo_hh)+' (função)':'da função')+'" '+at+' onchange="colFuncao(this.dataset.u)" title="Vazio = usa o custo/HH da função"></td></tr>';
+  };
+  pane.innerHTML =
+    '<div class="pp-hdr"><div><div class="pp-title">Funções e custo HH</div>'
+    + '<div class="pp-sub">A função carrega o <b>custo/HH padrão</b> e a <b>rubrica</b>. Na OT, escolher o colaborador (ou a função do terceiro) preenche o custo/h sozinho. Edite direto na linha.</div></div>'
+    + '<button class="btn o" onclick="fnNova()">＋ Nova função</button></div>'
+    + '<div style="margin-top:6px;background:#fff;border:1px solid #E2E8F0;border-radius:6px;overflow:hidden"><table><thead><tr>'
+    + '<th>Código</th><th>Função</th><th>Setor</th><th>Custo HH (R$)</th><th>Rubrica</th><th>Externa</th><th></th></tr></thead><tbody>'
+    + (fns.map(linhaF).join('') || '<tr><td colspan="7" style="padding:12px;color:#64748B">Nenhuma função. Comece por ＋ Nova função (ex.: MEC — Mecânico · ELE — Eletricista · BOR — Borracheiro · AJU — Ajudante · TER — Terceiro).</td></tr>')
+    + '</tbody></table></div>'
+    + '<div class="pp-title" style="margin-top:18px;font-size:13px">Colaboradores × Função</div>'
+    + '<div class="pp-sub">Quem aparece aqui são os usuários ativos do sistema. Custo/HH vazio = usa o da função; preencha só quando o colaborador tem valor próprio.</div>'
+    + '<div style="margin-top:6px;background:#fff;border:1px solid #E2E8F0;border-radius:6px;overflow:hidden"><table><thead><tr>'
+    + '<th>Colaborador</th><th>Perfil</th><th>Função</th><th>Custo HH próprio</th></tr></thead><tbody>'
+    + ((_mntUserList||[]).map(linhaC).join('') || '<tr><td colspan="4" style="padding:12px;color:#64748B">Nenhum usuário ativo.</td></tr>')
+    + '</tbody></table></div>';
+}
+async function fnNova(){
+  const cod = prompt('Código da função (curto, ex.: MEC):'); if (!cod || !cod.trim()) return;
+  const nome = prompt('Nome da função (ex.: Mecânico):'); if (!nome || !nome.trim()) return;
+  const custo = prompt('Custo HH padrão (R$/hora) — pode deixar vazio e preencher depois:', '');
+  if (custo === null) return;
+  try {
+    await mntFetch('/manutencao/api/funcoes', {method:'POST', body: JSON.stringify({codigo: cod.trim(), nome: nome.trim(), custo_hh: custo.trim() || null})});
+    mostrarToast('✅ Função cadastrada','ok'); paneFuncoes();
+  } catch(e){ mostrarToast('❌ '+e.message,'warn'); }
+}
+async function fnEditar(cod, patch){
+  try { await mntFetch('/manutencao/api/funcoes/'+encodeURIComponent(cod), {method:'PATCH', body: JSON.stringify(patch)});
+    mostrarToast('✅ '+cod+' atualizada','ok'); if ('ativo' in patch) paneFuncoes(); }
+  catch(e){ mostrarToast('❌ '+e.message,'warn'); paneFuncoes(); }
+}
+async function fnExcluir(cod){
+  if (!confirm('Excluir a função '+cod+' DE VEZ?\n\nSó é possível se nunca foi usada em OT nem apontada a colaborador.')) return;
+  try { await mntFetch('/manutencao/api/funcoes/'+encodeURIComponent(cod), {method:'DELETE'}); mostrarToast('🗑️ '+cod+' excluída','ok'); paneFuncoes(); }
+  catch(e){ mostrarToast('❌ '+e.message,'warn'); }
+}
+async function colFuncao(uid){
+  const tr = document.getElementById('cf-custo-'+uid).closest('tr');
+  const fc = tr.querySelector('select').value, custo = document.getElementById('cf-custo-'+uid).value;
+  try { await mntFetch('/manutencao/api/colaboradores/'+uid+'/funcao', {method:'PUT', body: JSON.stringify({funcao_codigo: fc, custo_hh: custo})});
+    mostrarToast('✅ Função do colaborador gravada','ok'); paneFuncoes(); }
+  catch(e){ mostrarToast('❌ '+e.message,'warn'); }
 }
 async function panePontos(){
   const pane = document.getElementById('pp-pane');
