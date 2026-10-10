@@ -972,7 +972,6 @@ async def semaforos_frota(_auth=Depends(verificar_manutencao)):
 
 
 # ── ALMOXARIFADO: peças reais (Onda 1) com busca ──
-@router.get("/manutencao/api/pecas")
 # (30/09/2026) Família EFETIVA da peça: a cadastrada quando já tem subfamília (AC.010);
 # senão a que a própria codificação carrega (C.AC.010.001 → AC.010). Assim a Norma de
 # Materiais mostra as subfamílias mesmo onde o cadastro só apontou a raiz (AC).
@@ -983,14 +982,25 @@ def _fam_efetiva(alias: str = "") -> str:
             f"ELSE {a}familia_codigo END")
 
 
+# (10/10/2026) Busca sem acento: "oleo" acha "Óleo", "filtro de ar" acha "FILTRO DE AR" —
+# regra única para o catálogo e para o armazém (digitação na oficina não tem acento).
+_SEM_ACENTO_DE = "áàâãäéèêëíìîïóòôõöúùûüçÁÀÂÃÄÉÈÊËÍÌÎÏÓÒÔÕÖÚÙÛÜÇ"
+_SEM_ACENTO_PARA = "aaaaaeeeeiiiiooooouuuucAAAAAEEEEIIIIOOOOOUUUUC"
+def _sem_acento_sql(col: str) -> str:
+    return f"translate({col}, '{_SEM_ACENTO_DE}', '{_SEM_ACENTO_PARA}')"
+def _sem_acento(txt: str) -> str:
+    return (txt or "").translate(str.maketrans(_SEM_ACENTO_DE, _SEM_ACENTO_PARA))
+
+
+@router.get("/manutencao/api/pecas")
 async def listar_pecas(busca: str = None, familia: str = None, limit: int = 100,
                        _auth=Depends(verificar_manutencao)):
     await _garantir_peca_cols()
     limit = min(max(int(limit or 100), 1), 300)
     where, params = ["ativo=true"], []
     if busca and busca.strip():
-        b = f"%{busca.strip()}%"
-        where.append("(codigo ILIKE %s OR descricao ILIKE %s OR codigo_externo ILIKE %s OR codigo_fabricante ILIKE %s)"); params += [b, b, b, b]
+        b = f"%{_sem_acento(busca.strip())}%"
+        where.append("(" + " OR ".join(f"{_sem_acento_sql(c)} ILIKE %s" for c in ("codigo", "descricao", "codigo_externo", "codigo_fabricante")) + ")"); params += [b, b, b, b]
     if familia and familia.strip():
         # subfamílias por pontuação (MC pega MC e MC.010…)
         fe = _fam_efetiva()
@@ -1147,14 +1157,145 @@ def _mo_num(v):
         return None
 
 
+# ══════════════════════════════════════════════════════════════
+# (10/10/2026) FUNÇÕES × CUSTO HH — padrão ManWinWin (Organograma › Função › Custo HH) adaptado:
+# a função carrega o custo/HH padrão e a rubrica; o colaborador aponta para uma função (com
+# custo próprio opcional). Na OT, escolher o colaborador (ou a função do terceiro) preenche o
+# custo/h sozinho e a rubrica sai automática (1.01 interno · 1.03 externo, ou a da função).
+# ══════════════════════════════════════════════════════════════
+_FUNC_OK = False
+async def _garantir_funcoes():
+    global _FUNC_OK
+    if _FUNC_OK:
+        return
+    await _garantir_mao_obra()
+    await ajard_query("""
+        CREATE TABLE IF NOT EXISTS manutencao.funcoes (
+            codigo TEXT PRIMARY KEY, nome TEXT NOT NULL, setor TEXT, custo_hh NUMERIC(12,2),
+            rubrica TEXT DEFAULT '1.01', externa BOOLEAN DEFAULT false, ativo BOOLEAN DEFAULT true)""", fetch="none")
+    await ajard_query("""
+        CREATE TABLE IF NOT EXISTS manutencao.colaborador_funcao (
+            usuario_id UUID PRIMARY KEY, funcao_codigo TEXT, custo_hh NUMERIC(12,2),
+            atualizado_em TIMESTAMPTZ DEFAULT now())""", fetch="none")
+    for ddl in ("ALTER TABLE manutencao.ot_mao_obra ADD COLUMN IF NOT EXISTS funcao_codigo TEXT",
+                "ALTER TABLE manutencao.ot_mao_obra ADD COLUMN IF NOT EXISTS rubrica TEXT"):
+        await ajard_query(ddl, fetch="none")
+    _FUNC_OK = True
+
+
+async def _funcoes_lista(so_ativas=True):
+    await _garantir_funcoes()
+    rows = await ajard_query(
+        "SELECT codigo, nome, setor, custo_hh, rubrica, externa, ativo FROM manutencao.funcoes"
+        + (" WHERE ativo=true" if so_ativas else "") + " ORDER BY codigo") or []
+    out = []
+    for r in rows:
+        d = dict(r); d["custo_hh"] = float(d["custo_hh"]) if d["custo_hh"] is not None else None
+        out.append(d)
+    return out
+
+
+async def _colaboradores_funcao():
+    await _garantir_funcoes()
+    rows = await ajard_query(
+        """SELECT cf.usuario_id, cf.funcao_codigo, cf.custo_hh, f.nome AS funcao_nome, f.custo_hh AS custo_funcao, f.rubrica
+           FROM manutencao.colaborador_funcao cf LEFT JOIN manutencao.funcoes f ON f.codigo = cf.funcao_codigo""") or []
+    return {str(r["usuario_id"]): {"funcao_codigo": r["funcao_codigo"], "funcao_nome": r["funcao_nome"],
+                                   "custo_hh": float(r["custo_hh"]) if r["custo_hh"] is not None else
+                                               (float(r["custo_funcao"]) if r["custo_funcao"] is not None else None),
+                                   "custo_proprio": r["custo_hh"] is not None, "rubrica": r["rubrica"]}
+            for r in rows}
+
+
+@router.get("/manutencao/api/funcoes")
+async def funcoes_listar(_auth=Depends(verificar_manutencao)):
+    """Funções (todas, inclusive inativas) + apontamento colaborador→função, para Parametrizar."""
+    return {"funcoes": await _funcoes_lista(False), "colaboradores": await _colaboradores_funcao()}
+
+
+@router.post("/manutencao/api/funcoes")
+async def funcoes_upsert(request: Request, payload=Depends(verificar_manutencao)):
+    await _garantir_funcoes()
+    d = await request.json()
+    cod = (d.get("codigo") or "").strip().upper()
+    nome = (d.get("nome") or "").strip()
+    if not cod or not nome:
+        raise HTTPException(status_code=400, detail="Código e nome são obrigatórios")
+    await ajard_query(
+        """INSERT INTO manutencao.funcoes (codigo, nome, setor, custo_hh, rubrica, externa)
+           VALUES (%s,%s,%s,%s,%s,%s)
+           ON CONFLICT (codigo) DO UPDATE SET nome=EXCLUDED.nome, setor=EXCLUDED.setor, custo_hh=EXCLUDED.custo_hh,
+                                              rubrica=EXCLUDED.rubrica, externa=EXCLUDED.externa""",
+        (cod, nome, (d.get("setor") or "").strip() or None, _mo_num(d.get("custo_hh")),
+         (d.get("rubrica") or "").strip() or ("1.03" if d.get("externa") else "1.01"), bool(d.get("externa"))), fetch="none")
+    return {"ok": True, "codigo": cod}
+
+
+@router.patch("/manutencao/api/funcoes/{codigo}")
+async def funcoes_editar(codigo: str, request: Request, payload=Depends(verificar_manutencao)):
+    await _garantir_funcoes()
+    d = await request.json()
+    sets, params = [], []
+    if "nome" in d and (d.get("nome") or "").strip():
+        sets.append("nome=%s"); params.append(d["nome"].strip())
+    if "setor" in d:
+        sets.append("setor=%s"); params.append((d.get("setor") or "").strip() or None)
+    if "custo_hh" in d:
+        sets.append("custo_hh=%s"); params.append(_mo_num(d.get("custo_hh")))
+    if "rubrica" in d:
+        sets.append("rubrica=%s"); params.append((d.get("rubrica") or "").strip() or None)
+    if "externa" in d:
+        sets.append("externa=%s"); params.append(bool(d["externa"]))
+    if "ativo" in d:
+        sets.append("ativo=%s"); params.append(bool(d["ativo"]))
+    if not sets:
+        raise HTTPException(status_code=400, detail="Nada a alterar")
+    params.append(codigo)
+    await ajard_query(f"UPDATE manutencao.funcoes SET {', '.join(sets)} WHERE codigo=%s", tuple(params), fetch="none")
+    return {"ok": True}
+
+
+@router.delete("/manutencao/api/funcoes/{codigo}")
+async def funcoes_excluir(codigo: str, payload=Depends(verificar_manutencao)):
+    """Exclusão definitiva só se nunca usada (OT ou colaborador); senão 409 → desativar."""
+    await _garantir_funcoes()
+    uso = await ajard_query(
+        """SELECT (SELECT COUNT(*) FROM manutencao.ot_mao_obra WHERE funcao_codigo=%s AND ativo=true)
+                + (SELECT COUNT(*) FROM manutencao.colaborador_funcao WHERE funcao_codigo=%s) AS n""",
+        (codigo, codigo), fetch="one")
+    if uso and int(uso["n"]) > 0:
+        raise HTTPException(status_code=409, detail="Função em uso (OTs ou colaboradores) — desative em vez de excluir")
+    await ajard_query("DELETE FROM manutencao.funcoes WHERE codigo=%s", (codigo,), fetch="none")
+    return {"ok": True}
+
+
+@router.put("/manutencao/api/colaboradores/{usuario_id}/funcao")
+async def colaborador_funcao(usuario_id: str, request: Request, payload=Depends(verificar_manutencao)):
+    """Aponta a função do colaborador (e um custo/HH próprio, opcional — vazio usa o da função)."""
+    await _garantir_funcoes()
+    d = await request.json()
+    fc = (d.get("funcao_codigo") or "").strip() or None
+    custo = _mo_num(d.get("custo_hh"))
+    if not fc and custo is None:
+        await ajard_query("DELETE FROM manutencao.colaborador_funcao WHERE usuario_id=%s", (usuario_id,), fetch="none")
+        return {"ok": True}
+    await ajard_query(
+        """INSERT INTO manutencao.colaborador_funcao (usuario_id, funcao_codigo, custo_hh)
+           VALUES (%s,%s,%s)
+           ON CONFLICT (usuario_id) DO UPDATE SET funcao_codigo=EXCLUDED.funcao_codigo, custo_hh=EXCLUDED.custo_hh, atualizado_em=now()""",
+        (usuario_id, fc, custo), fetch="none")
+    return {"ok": True}
+
+
 @router.get("/manutencao/api/ots/{ot_id}/mao-obra")
 async def ot_mao_obra_listar(ot_id: str, _auth=Depends(verificar_manutencao)):
-    await _garantir_mao_obra()
+    await _garantir_funcoes()
     rows = await ajard_query(
         """SELECT m.id, m.usuario_id, COALESCE(u.nome, m.nome) AS nome, m.data, m.horas,
-                  m.custo_hora, m.observacao, m.origem, m.criado_em
+                  m.custo_hora, m.observacao, m.origem, m.criado_em, m.funcao_codigo, m.rubrica, f.nome AS funcao_nome
            FROM manutencao.ot_mao_obra m
            LEFT JOIN public.usuarios_garra u ON u.id = m.usuario_id
+           LEFT JOIN manutencao.funcoes f ON f.codigo = m.funcao_codigo
            WHERE m.ot_id=%s AND m.ativo=true
            ORDER BY m.data DESC, m.criado_em DESC""", (ot_id,)) or []
     itens, th, tc = [], 0.0, 0.0
@@ -1165,15 +1306,23 @@ async def ot_mao_obra_listar(ot_id: str, _auth=Depends(verificar_manutencao)):
         itens.append({"id": str(r["id"]), "usuario_id": str(r["usuario_id"]) if r["usuario_id"] else None,
                       "nome": r["nome"], "data": r["data"].isoformat() if r["data"] else None,
                       "horas": h, "custo_hora": ch, "valor": v, "observacao": r["observacao"],
-                      "origem": r["origem"]})
-    # sugestão de custo/hora por colaborador = último usado
+                      "origem": r["origem"], "funcao_codigo": r["funcao_codigo"], "funcao_nome": r["funcao_nome"],
+                      "rubrica": r["rubrica"]})
+    # sugestão de custo/hora por colaborador = último usado (fallback quando não há função apontada)
     sug = await ajard_query(
         """SELECT DISTINCT ON (usuario_id) usuario_id, custo_hora
            FROM manutencao.ot_mao_obra
            WHERE ativo=true AND usuario_id IS NOT NULL AND custo_hora IS NOT NULL
            ORDER BY usuario_id, criado_em DESC""") or []
+    # previsto pela FMP da OT (hh_previsto do plano) — Planeado × Realizado como no ManWinWin
+    prev = await ajard_query(
+        """SELECT p.hh_previsto, p.custo_previsto FROM manutencao.ot o
+           JOIN manutencao.planos p ON p.id = o.plano_id WHERE o.id=%s""", (ot_id,), fetch="one")
     return {"itens": itens, "total_horas": round(th, 2), "total_custo": round(tc, 2),
-            "custo_hora_sugerido": {str(x["usuario_id"]): float(x["custo_hora"]) for x in sug}}
+            "custo_hora_sugerido": {str(x["usuario_id"]): float(x["custo_hora"]) for x in sug},
+            "funcoes": await _funcoes_lista(True), "colaboradores": await _colaboradores_funcao(),
+            "hh_previsto": float(prev["hh_previsto"]) if prev and prev["hh_previsto"] is not None else None,
+            "custo_previsto": float(prev["custo_previsto"]) if prev and prev["custo_previsto"] is not None else None}
 
 
 @router.post("/manutencao/api/ots/{ot_id}/mao-obra")
@@ -1192,11 +1341,28 @@ async def ot_mao_obra_criar(ot_id: str, request: Request, payload=Depends(verifi
     if not usuario_id and not nome:
         raise HTTPException(status_code=400, detail="Informe o colaborador")
     data = (d.get("data") or "").strip() or None
+    # (10/10/2026) função → custo/HH e rubrica automáticos quando não vierem preenchidos
+    await _garantir_funcoes()
+    funcao = (d.get("funcao_codigo") or "").strip() or None
+    custo = _mo_num(d.get("custo_hora"))
+    rubrica = (d.get("rubrica") or "").strip() or None
+    if usuario_id:
+        cf = (await _colaboradores_funcao()).get(usuario_id)
+        if cf:
+            funcao = funcao or cf.get("funcao_codigo")
+            if custo is None: custo = cf.get("custo_hh")
+            rubrica = rubrica or cf.get("rubrica")
+    if funcao:
+        f = await ajard_query("SELECT custo_hh, rubrica FROM manutencao.funcoes WHERE codigo=%s", (funcao,), fetch="one")
+        if f:
+            if custo is None and f["custo_hh"] is not None: custo = float(f["custo_hh"])
+            rubrica = rubrica or f["rubrica"]
+    rubrica = rubrica or ("1.01" if usuario_id else "1.03")
     row = await ajard_query_id(
-        """INSERT INTO manutencao.ot_mao_obra (ot_id, usuario_id, nome, data, horas, custo_hora, observacao, origem, criado_por)
-           VALUES (%s,%s,%s,COALESCE(%s::date, now()::date),%s,%s,%s,%s,%s)""",
-        (ot_id, usuario_id, nome, data, horas, _mo_num(d.get("custo_hora")),
-         (d.get("observacao") or "").strip() or None, (d.get("origem") or "desktop"), uid))
+        """INSERT INTO manutencao.ot_mao_obra (ot_id, usuario_id, nome, data, horas, custo_hora, observacao, origem, criado_por, funcao_codigo, rubrica)
+           VALUES (%s,%s,%s,COALESCE(%s::date, now()::date),%s,%s,%s,%s,%s,%s,%s)""",
+        (ot_id, usuario_id, nome, data, horas, custo,
+         (d.get("observacao") or "").strip() or None, (d.get("origem") or "desktop"), uid, funcao, rubrica))
     return {"ok": True, "id": str(row["id"]) if row else None}
 
 
@@ -3721,8 +3887,8 @@ async def lente_armazem(almox: str = None, busca: str = None, familia: str = Non
     if almox:
         cond.append("a.codigo = %s"); params.append(almox)
     if busca:
-        cond.append("(p.codigo ILIKE %s OR p.descricao ILIKE %s OR p.codigo_externo ILIKE %s OR p.codigo_fabricante ILIKE %s)")
-        params += [f"%{busca}%", f"%{busca}%", f"%{busca}%", f"%{busca}%"]
+        cond.append("(" + " OR ".join(f"{_sem_acento_sql(c)} ILIKE %s" for c in ("p.codigo", "p.descricao", "p.codigo_externo", "p.codigo_fabricante")) + ")")
+        params += [f"%{_sem_acento(busca)}%"] * 4
     if familia:
         fe = _fam_efetiva("p")
         cond.append(f"({fe} = %s OR {fe} LIKE %s)"); params += [familia, familia + ".%"]
