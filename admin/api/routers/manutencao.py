@@ -1655,6 +1655,15 @@ async def garantir_nucleo():
             limiar_atencao NUMERIC, limiar_urgente NUMERIC, limiar_maximo NUMERIC,
             ativo BOOLEAN DEFAULT true,
             UNIQUE (equipamento_id, codigo))""", fetch="none")
+    # (11/10/2026) Pontos de leitura por objeto (janela própria): descrição, unidade e histórico de leituras
+    await ajard_query("""ALTER TABLE manutencao.pontos_controle
+        ADD COLUMN IF NOT EXISTS descricao TEXT, ADD COLUMN IF NOT EXISTS unidade TEXT,
+        ADD COLUMN IF NOT EXISTS observacao TEXT""", fetch="none")
+    await ajard_query("""
+        CREATE TABLE IF NOT EXISTS manutencao.pontos_leituras (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            ponto_id UUID NOT NULL, leitura NUMERIC NOT NULL, data TIMESTAMPTZ DEFAULT now(),
+            usuario_id UUID, observacao TEXT, criado_em TIMESTAMPTZ DEFAULT now())""", fetch="none")
     await ajard_query("""
         CREATE TABLE IF NOT EXISTS manutencao.estoque (
             peca_id UUID NOT NULL, almoxarifado_id UUID NOT NULL,
@@ -4233,6 +4242,132 @@ async def _entrada_core(d, payload):
         lancados.append(cod)
     return {"ok": True, "documento": doc_num or doc_tipo, "itens": len(lancados),
             "total": round(total_doc, 2)}
+
+
+# ══ (11/10/2026) PONTOS DE LEITURA DO OBJETO — janela própria (menu de serviços › Pontos de leitura) ══
+# Um ponto = contador/medição do objeto com limiares 🟡🟠🔴 (ex.: horas da bomba, km do pneu, temperatura).
+# Leitura registrada aqui alimenta o semáforo (objetos sem FMP) e fica no histórico pontos_leituras.
+def _ponto_status(leit, at, ur, mx):
+    if leit is None:
+        return "verde"
+    leit = float(leit)
+    if mx is not None and leit >= float(mx):
+        return "vermelho"
+    if ur is not None and leit >= float(ur):
+        return "laranja"
+    if at is not None and leit >= float(at):
+        return "amarelo"
+    return "verde"
+
+
+def _num_ou_none(v):
+    if v in (None, ""):
+        return None
+    try:
+        if isinstance(v, str):
+            v = v.strip()
+            return float(v.replace(".", "").replace(",", ".")) if "," in v else float(v)
+        return float(v)
+    except (TypeError, ValueError):
+        return None
+
+
+@router.get("/manutencao/api/equipamentos/{eq_id}/pontos")
+async def pontos_do_objeto(eq_id: str, _auth=Depends(verificar_manutencao)):
+    await _garantir_biblioteca()
+    eq = await ajard_query("SELECT id, codigo, descricao, medicao, horimetro_atual, km_atual FROM operacional.equipamentos WHERE id=%s", (eq_id,), fetch="one")
+    if not eq:
+        raise HTTPException(status_code=404, detail="Objeto não encontrado")
+    rows = await ajard_query(
+        """SELECT id, codigo, descricao, unidade, leitura_atual, data_leitura, limiar_atencao, limiar_urgente, limiar_maximo, ativo, observacao,
+                  (SELECT COUNT(*)::int FROM manutencao.pontos_leituras l WHERE l.ponto_id = p.id) AS n_leituras
+           FROM manutencao.pontos_controle p WHERE equipamento_id=%s ORDER BY ativo DESC, codigo""", (eq_id,))
+    pontos = []
+    for r in rows:
+        d = dict(r)
+        for k in ("leitura_atual", "limiar_atencao", "limiar_urgente", "limiar_maximo"):
+            d[k] = float(d[k]) if d[k] is not None else None
+        d["data_leitura"] = d["data_leitura"].isoformat() if d["data_leitura"] else None
+        d["status"] = _ponto_status(d["leitura_atual"], d["limiar_atencao"], d["limiar_urgente"], d["limiar_maximo"])
+        d["id"] = str(d["id"])
+        pontos.append(d)
+    tem_fmp = await ajard_query("SELECT COUNT(*)::int AS n FROM manutencao.planos WHERE equipamento_id=%s AND ativo=true", (eq_id,), fetch="one")
+    return {"equipamento": eq["codigo"], "descricao": eq["descricao"], "medicao": eq["medicao"],
+            "leitura_viva": float(eq["km_atual"] or 0) if eq["medicao"] == "km" else float(eq["horimetro_atual"] or 0),
+            "com_fmp": bool(tem_fmp and tem_fmp["n"]), "pontos": pontos}
+
+
+@router.post("/manutencao/api/equipamentos/{eq_id}/pontos")
+async def ponto_criar(eq_id: str, request: Request, _auth=Depends(verificar_manutencao)):
+    await _garantir_biblioteca()
+    d = await request.json()
+    cod = (d.get("codigo") or "").strip().upper()
+    if not cod:
+        raise HTTPException(status_code=400, detail="Informe o código do ponto")
+    ja = await ajard_query("SELECT id, ativo FROM manutencao.pontos_controle WHERE equipamento_id=%s AND codigo=%s", (eq_id, cod), fetch="one")
+    vals = ((d.get("descricao") or "").strip() or None, (d.get("unidade") or "").strip() or None,
+            _num_ou_none(d.get("limiar_atencao")), _num_ou_none(d.get("limiar_urgente")), _num_ou_none(d.get("limiar_maximo")),
+            (d.get("observacao") or "").strip() or None)
+    if ja:
+        await ajard_query("""UPDATE manutencao.pontos_controle SET descricao=%s, unidade=%s, limiar_atencao=%s, limiar_urgente=%s,
+                             limiar_maximo=%s, observacao=%s, ativo=true WHERE id=%s""", vals + (ja["id"],), fetch="none")
+        return {"ok": True, "id": str(ja["id"]), "reativado": not ja["ativo"]}
+    r = await ajard_query("""INSERT INTO manutencao.pontos_controle (equipamento_id, codigo, descricao, unidade, limiar_atencao, limiar_urgente, limiar_maximo, observacao, leitura_atual)
+                             VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id""",
+                          (eq_id, cod) + vals + (_num_ou_none(d.get("leitura_atual")),), fetch="one")
+    return {"ok": True, "id": str(r["id"])}
+
+
+@router.patch("/manutencao/api/pontos/{ponto_id}")
+async def ponto_editar(ponto_id: str, request: Request, _auth=Depends(verificar_manutencao)):
+    d = await request.json()
+    sets, params = [], []
+    for c in ("descricao", "unidade", "observacao"):
+        if c in d:
+            sets.append(f"{c}=%s"); params.append((str(d[c] or "")).strip() or None)
+    for c in ("limiar_atencao", "limiar_urgente", "limiar_maximo"):
+        if c in d:
+            sets.append(f"{c}=%s"); params.append(_num_ou_none(d[c]))
+    if "ativo" in d:
+        sets.append("ativo=%s"); params.append(bool(d["ativo"]))
+    if not sets:
+        raise HTTPException(status_code=400, detail="Nada a alterar")
+    params.append(ponto_id)
+    await ajard_query(f"UPDATE manutencao.pontos_controle SET {', '.join(sets)} WHERE id=%s", tuple(params), fetch="none")
+    return {"ok": True}
+
+
+@router.post("/manutencao/api/pontos/{ponto_id}/leitura")
+async def ponto_leitura(ponto_id: str, request: Request, payload=Depends(verificar_manutencao)):
+    """Registra leitura do ponto: atualiza leitura_atual/data_leitura e guarda no histórico.
+    Leitura menor que a atual só com forcar=true (contador trocado/zerado)."""
+    d = await request.json()
+    n = _num_ou_none(d.get("leitura"))
+    if n is None:
+        raise HTTPException(status_code=400, detail="Leitura inválida")
+    p = await ajard_query("SELECT id, codigo, leitura_atual FROM manutencao.pontos_controle WHERE id=%s", (ponto_id,), fetch="one")
+    if not p:
+        raise HTTPException(status_code=404, detail="Ponto não encontrado")
+    if p["leitura_atual"] is not None and n < float(p["leitura_atual"]) and not d.get("forcar"):
+        raise HTTPException(status_code=400, detail=f"Leitura {n:g} é menor que a atual ({float(p['leitura_atual']):g}). Confirme se o contador foi trocado/zerado.")
+    dt = _data_ok(d.get("data"), "Data da leitura")
+    from datetime import datetime as _dt, timezone as _tz, timedelta as _td
+    quando = _dt.fromisoformat(dt + "T12:00:00").replace(tzinfo=_tz(_td(hours=-3))) if dt else _dt.now(_tz.utc)
+    uid = await _usuario_id(payload)
+    await ajard_query("INSERT INTO manutencao.pontos_leituras (ponto_id, leitura, data, usuario_id, observacao) VALUES (%s,%s,%s,%s,%s)",
+                      (ponto_id, n, quando, uid, (d.get("observacao") or "").strip() or None), fetch="none")
+    await ajard_query("UPDATE manutencao.pontos_controle SET leitura_atual=%s, data_leitura=%s WHERE id=%s", (n, quando, ponto_id), fetch="none")
+    return {"ok": True, "leitura": n}
+
+
+@router.get("/manutencao/api/pontos/{ponto_id}/leituras")
+async def ponto_leituras(ponto_id: str, _auth=Depends(verificar_manutencao)):
+    rows = await ajard_query(
+        """SELECT l.id, l.leitura, l.data, l.observacao, u.nome AS usuario_nome
+           FROM manutencao.pontos_leituras l LEFT JOIN public.usuarios_garra u ON u.id = l.usuario_id
+           WHERE l.ponto_id=%s ORDER BY l.data DESC LIMIT 200""", (ponto_id,))
+    return [{"id": str(r["id"]), "leitura": float(r["leitura"]), "data": r["data"].isoformat() if r["data"] else None,
+             "observacao": r["observacao"], "usuario_nome": r["usuario_nome"]} for r in rows]
 
 
 @router.get("/manutencao/api/equipamentos/{eq_id}/funcionamento")
