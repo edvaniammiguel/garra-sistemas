@@ -2503,7 +2503,18 @@ async function neSalvar(fechar){
     if (id) await neEnviarFoto(id);
     mostrarToast('\u2705 '+codigo+(eraEdicao?' gravado':(fechar?' criado':' gravado \u2014 continue preenchendo')),'ok');
     if (fechar){ fichaFechar(); await carregarSemaforosReais(); if (id && !eraEdicao){ _mwSel.frota = id; verEquipReal(id); } }
-  } catch(e){ mostrarToast('\u274c '+e.message,'warn'); }
+  } catch(e){
+    // (10/10/2026) Código já existe (ex.: objeto criado pelo Admin sem ficha): em vez de jogar fora o que foi
+    // digitado, oferece aplicar esta janela ao objeto existente — vira edição e grava tudo (ficha + blocos MWW)
+    if (!_neEditId && /já existe/i.test(e.message)) {
+      const ex = (_navEquipObjs()||[]).find(x => String(x.codigo||'').toUpperCase() === codigo);
+      if (ex && confirm(e.message + '\n\nAplicar os dados desta janela ao objeto existente ' + codigo + '?')) {
+        _neEditId = ex.id; _eqFicha = Object.assign({}, _eqFicha || {}, ex);
+        return neSalvar(fechar);
+      }
+    }
+    mostrarToast('\u274c '+e.message,'warn');
+  }
 }
 
 // ── (31/08/2026) TOPO PADRÃO DAS JANELAS — réplica ManWinWin ─────────────
