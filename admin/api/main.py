@@ -88,10 +88,24 @@ app.add_middleware(
     allow_headers=["Content-Type","Authorization"],
 )
 
-# ── SECURITY HEADERS ──────────────────────────────────────────
+# ── (11/10/2026) COMPRESSÃO — manutencao.html tem ~530 KB; gzip entrega ~90 KB.
+# JSON das listas (semáforos, OTs, equipamentos) também encolhe 5–10×.
+from fastapi.middleware.gzip import GZipMiddleware
+app.add_middleware(GZipMiddleware, minimum_size=1500)
+
+# ── SECURITY HEADERS + (11/10/2026) MEDIÇÃO DE LENTIDÃO ───────
+# Toda resposta leva Server-Timing (visível no F12 › Network) e qualquer
+# pedido acima de 0,8 s vai para o log do Render como [LENTO] — é por aí
+# que se acha a rota pesada, sem adivinhar.
+import time as _time
 @app.middleware("http")
 async def security_headers(request: Request, call_next):
+    _t0 = _time.perf_counter()
     response = await call_next(request)
+    _ms = (_time.perf_counter() - _t0) * 1000
+    response.headers["Server-Timing"] = f"app;dur={_ms:.0f}"
+    if _ms > 800:
+        print(f"[LENTO] {_ms/1000:.2f}s {request.method} {request.url.path}")
     response.headers["X-Content-Type-Options"]  = "nosniff"
     response.headers["X-Frame-Options"]         = "SAMEORIGIN"
     response.headers["X-XSS-Protection"]        = "1; mode=block"
