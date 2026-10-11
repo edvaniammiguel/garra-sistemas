@@ -626,7 +626,8 @@ function renderCentroEquip(){
     }).join('');
   } else {
     colspan = 4;
-    thead = '<th style="width:26px"></th><th style="width:110px">Equip.</th><th>Descrição</th>'
+    // (11/10/2026) Coluna Equip. com folga para o filho recuado (🛞 PNEU-0032) não quebrar em duas linhas
+    thead = '<th style="width:26px"></th><th style="width:150px">Equip.</th><th>Descrição</th>'
       + '<th style="width:190px">Situação</th>';
     linhas = eqs.map(e => {
       const aberto = _ftAbertos.has(String(e.id));
@@ -636,7 +637,7 @@ function renderCentroEquip(){
         : (e.categoria === 'componente' ? '🛞 ' : '');
       let linha = tr0(e)
         + '<td style="text-align:center"><span class="dot '+dotOf(e.status)+'"></span></td>'
-        + '<td class="bold">'+chev+_esc(e.codigo)
+        + '<td class="bold" style="white-space:nowrap">'+chev+_esc(e.codigo)
         + (e.n_filhos > 0 ? ' <span class="muted" style="font-size:9px">('+e.n_filhos+')</span>' : '')
         + (e.categoria === 'componente' && !e.equipamento_pai ? ' <span class="muted" style="font-size:9px">solto</span>' : '')
         + '</td><td>'+_esc(e.descricao||'')+'</td>'
@@ -647,8 +648,9 @@ function renderCentroEquip(){
           + 'ondblclick="verEquipReal(this.dataset.id)" '
           + 'oncontextmenu="showCtxReal(event,this.dataset.id,\'equip\',this.dataset.cod)">'
           + '<td style="text-align:center"><span class="dot '+dotOf(f.status)+'" style="width:7px;height:7px"></span></td>'
-          + '<td style="padding-left:26px">🛞 <b>'+_esc(f.codigo)+'</b></td>'
-          + '<td>'+_esc(f.descricao||'')+(f.posicao?' · <b style="color:#1A2A5E">'+_esc(f.posicao)+'</b>':'')+'</td>'
+          + '<td style="padding-left:22px;white-space:nowrap"><span style="color:#94A3B8">└</span> 🛞 <b>'+_esc(f.codigo)+'</b></td>'
+          // posição só quando acrescenta algo (antes repetia a descrição: "Pneu dianteiro direito · Pneu dianteiro direito")
+          + '<td>'+_esc(f.descricao||'')+(f.posicao && String(f.posicao).trim().toLowerCase() !== String(f.descricao||'').trim().toLowerCase() ? ' <span class="muted">·</span> <b style="color:#1A2A5E">'+_esc(f.posicao)+'</b>' : '')+'</td>'
           + '<td class="muted" style="font-size:10px">subsistema</td></tr>';
       }).join('');
       return linha;
@@ -922,6 +924,7 @@ function renderOTs(){
   const val = (o, k) => k === 'entidade' ? (o.equipamento_codigo || '')
     : k === 'data_prevista' ? (o.data_prevista || (o.horimetro_previsto != null ? '9' + String(o.horimetro_previsto).padStart(9, '0') : ''))
     : (o[k] == null ? '' : String(o[k]));
+  window._otsRender = ots;   // (11/10/2026) o que está na tela — base do ⬇ Excel
   ots.sort((a, b) => {
     const x = val(a, _otsOrd.k), y = val(b, _otsOrd.k);
     if (!x && y) return 1; if (x && !y) return -1;
@@ -1936,6 +1939,9 @@ function mwBar(aba){
     + b('\ud83d\udccb','Repetir',c.repetir) + b('\u2715','Excluir',c.excluir)
     + '<span class="sep"></span>'
     + c.botoes.map(([ico,rot,x]) => Array.isArray(x) ? dd(ico,rot,x) : b(ico,rot,x)).join('')
+    + '<span class="sep"></span>'
+    // (11/10/2026) Relatórios num lugar só + Excel da lista que está na tela — igual nos três módulos
+    + b('\ud83d\udcd1','Relat\u00f3rios',"relatoriosJanela()") + b('\u2b07','Excel',"xlsListaAtual('"+aba+"')")
     + '<span class="sep"></span>'
     + '<input placeholder="Procurar\u2026" onkeydown="if(event.key===\'Enter\'){mwProcurar(\''+aba+'\',this.value)}">'
     + '<button class="mwb" onclick="mwProcurar(\''+aba+'\',this.previousElementSibling.value)"><span class="i">\ud83d\udd0d</span>Procurar</button>'
@@ -3044,6 +3050,171 @@ async function pontoHistorico(eqId, pid, cod){
        || '<tr><td colspan="4" style="padding:12px;color:#64748B">Sem leituras registradas.</td></tr>')
     + '</tbody></table></div>'
     + '<div style="display:flex;justify-content:flex-end;margin-top:10px"><button class="btn" onclick="equipPontos(\''+eqId+'\')">Voltar</button></div>';
+}
+/* ══ (11/10/2026) RELATÓRIOS — um lugar só, tudo para Excel ═══════════════════════════════
+   Catálogo e dados vêm do servidor (/manutencao/api/relatorios). A janela: lista à esquerda por grupo,
+   filtros aceitos pelo relatório à direita, grade com totais, 🖨 PDF e ⬇ Excel (xlsx gerado no servidor,
+   números como números). xlsExportar() serve também para qualquer lista da tela (Frota · OTs · Materiais). */
+let _relCat = null, _relAtual = null, _relDados = null, _relF = { de: '', ate: '', sistema: '', equipamento_id: '', tipo_trabalho: '', setor: '', familia: '' };
+function _relFmt(v, tipo){
+  if (v == null || v === '') return '—';
+  if (tipo === 'moeda') return 'R$ ' + Number(v).toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+  if (tipo === 'num') return Number(v).toLocaleString('pt-BR', {maximumFractionDigits: 2});
+  if (tipo === 'int') return Number(v).toLocaleString('pt-BR', {maximumFractionDigits: 0});
+  if (tipo === 'pct') return (Number(v) * 100).toLocaleString('pt-BR', {maximumFractionDigits: 1}) + '%';
+  if (tipo === 'data') return _fmtData(String(v).slice(0, 10));
+  if (tipo === 'datahora') { const d = new Date(v); return isNaN(d) ? String(v) : d.toLocaleString('pt-BR', {day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit'}); }
+  return String(v);
+}
+async function xlsExportar(titulo, colunas, linhas, filtros){
+  if (!linhas || !linhas.length) { mostrarToast('Nada para exportar', 'warn'); return; }
+  try {
+    const r = await fetch('/manutencao/api/exportar-xlsx', {method:'POST', headers:{'Content-Type':'application/json', 'Authorization':'Bearer '+mntToken()},
+      body: JSON.stringify({titulo, filtros: filtros || '', colunas, linhas})});
+    if (!r.ok) { const j = await r.json().catch(()=>({})); throw new Error(j.detail || ('Erro ' + r.status)); }
+    _xlsBaixar(await r.blob(), r.headers.get('Content-Disposition'));
+    mostrarToast('⬇ Excel gerado', 'ok');
+  } catch(e){ mostrarToast('❌ ' + e.message, 'warn'); }
+}
+function _xlsBaixar(blob, disp){
+  const m = /filename="?([^";]+)"?/.exec(disp || ''); const nome = m ? m[1] : 'garra-relatorio.xlsx';
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = nome; document.body.appendChild(a); a.click();
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 2000);
+}
+// ⬇ Excel da lista que está na tela, por módulo (mesmos filtros/ordem que o usuário vê)
+function xlsListaAtual(aba){
+  const sis = cod => { const s = (_arvSistemas||[]).find(x => x.codigo === cod); return s ? cod + ' — ' + s.nome : (cod || ''); };
+  if (aba === 'frota') {
+    const ids = _frotaListados(); const objs = _semCache || [];   // semáforos: tem situação, leitura viva, operador
+    const linhas = ids.map(id => objs.find(e => String(e.id) === String(id))).filter(Boolean).map(e => ({
+      codigo: e.codigo, descricao: e.descricao || '', sistema: sis(e.sistema_codigo), tipo: e.tipo_sigla || '', categoria: e.categoria || '',
+      leitura: e.horimetro, unidade: e.medicao === 'km' ? 'km' : 'h',
+      situacao: ({vermelho:'Vencido', laranja:'Urgente', amarelo:'Atenção', verde:'Em dia'})[e.status] || e.status || '',
+      detalhe: e.proxima || e.motivo || '', operador: e.operador_nome || '', ots_abertas: e.ots_abertas || 0 }));
+    const rot = (document.querySelector('#frota-centro b, #frota-centro .ft-tit') || {}).textContent || 'Frota';
+    return xlsExportar('Frota — ' + rot.trim(), [
+      {k:'codigo',t:'Objeto',tipo:'txt'},{k:'descricao',t:'Descrição',tipo:'txt'},{k:'sistema',t:'Sistema',tipo:'txt'},{k:'tipo',t:'Tipo',tipo:'txt'},{k:'categoria',t:'Categoria',tipo:'txt'},
+      {k:'leitura',t:'Leitura atual',tipo:'num'},{k:'unidade',t:'Un.',tipo:'txt'},{k:'situacao',t:'Situação',tipo:'txt'},{k:'detalhe',t:'Detalhe',tipo:'txt'},{k:'operador',t:'Operador',tipo:'txt'},{k:'ots_abertas',t:'OTs abertas',tipo:'int',soma:true}], linhas, 'Conforme a tela');
+  }
+  if (aba === 'ots') {
+    const linhas = (window._otsRender || []).map(o => ({
+      numero: o.numero, descricao: o.descricao || '', objeto: (o.equipamento_codigo || '') + (o.equipamento_desc ? ' — ' + o.equipamento_desc : ''),
+      tipo_trabalho: o.tipo_trabalho || '', classe: o.tipo || '', prioridade: o.prioridade || '', estado: (MNT_CHIP[o.status] || [0, o.status])[1],
+      abertura: o.data_abertura, programada: o.data_prevista, horimetro_prev: o.horimetro_previsto, conclusao: o.data_conclusao,
+      responsavel: o.responsavel_nome || o.fornecedor_nome || '', setor: o.setor_interventor || (o.interventor === 'externo' ? 'EXT' : ''), custo: o.custo_total }));
+    return xlsExportar('Ordens de Trabalho' + (ttRotulo() ? ' — ' + ttRotulo() : ''), [
+      {k:'numero',t:'OT',tipo:'txt'},{k:'descricao',t:'Descrição',tipo:'txt'},{k:'objeto',t:'Objeto',tipo:'txt'},{k:'tipo_trabalho',t:'Tipo trab.',tipo:'txt'},{k:'classe',t:'Classe',tipo:'txt'},
+      {k:'prioridade',t:'Urgência',tipo:'txt'},{k:'estado',t:'Estado',tipo:'txt'},{k:'abertura',t:'Abertura',tipo:'datahora'},{k:'programada',t:'Programada',tipo:'data'},{k:'horimetro_prev',t:'Leitura prevista',tipo:'num'},
+      {k:'conclusao',t:'Encerramento',tipo:'datahora'},{k:'responsavel',t:'Responsável',tipo:'txt'},{k:'setor',t:'Setor',tipo:'txt'},{k:'custo',t:'Custo (R$)',tipo:'moeda',soma:true}], linhas, 'Conforme a tela (filtros e ordem)');
+  }
+  if (aba === 'alm') {
+    if (_almVista === 'baixo' && Array.isArray(_ebRows) && _ebRows.length) {
+      return xlsExportar('Estoque baixo — sugestão de compra', [
+        {k:'codigo',t:'Item',tipo:'txt'},{k:'descricao',t:'Descrição',tipo:'txt'},{k:'almox',t:'Estoque',tipo:'txt'},{k:'localizacao',t:'Local',tipo:'txt'},{k:'quantidade',t:'Saldo',tipo:'num'},{k:'minimo',t:'Mínimo',tipo:'num'},
+        {k:'maximo',t:'Máximo',tipo:'num'},{k:'em_pedido',t:'Em pedido',tipo:'num'},{k:'a_conferir',t:'A conferir',tipo:'num'},{k:'sugestao',t:'Sugestão',tipo:'num',soma:true},{k:'unidade',t:'Un.',tipo:'txt'},{k:'ref_fornecedor_nome',t:'Fornecedor ref.',tipo:'txt'},{k:'preco_sugerido',t:'Preço (R$)',tipo:'moeda'}], _ebRows, 'Conforme a tela');
+    }
+    const linhas = (window._pecasRender || []).map(p => ({codigo: p.codigo, descricao: p.descricao || '', familia: p.familia_codigo || '', unidade: p.unidade || '', custo_medio: p.custo_medio, saldo: p.saldo_total ?? p.quantidade}));
+    return xlsExportar('Materiais' + (_almFamSel ? ' — família ' + _almFamSel : ''), [
+      {k:'codigo',t:'Item',tipo:'txt'},{k:'descricao',t:'Descrição',tipo:'txt'},{k:'familia',t:'Família',tipo:'txt'},{k:'unidade',t:'Un.',tipo:'txt'},{k:'custo_medio',t:'Custo médio (R$)',tipo:'moeda'},{k:'saldo',t:'Saldo',tipo:'num'}], linhas, 'Conforme a tela');
+  }
+}
+async function relatoriosJanela(nome){
+  if (!_relCat) { try { _relCat = await mntFetch('/manutencao/api/relatorios'); } catch(e){ mostrarToast('❌ ' + e.message, 'warn'); return; } }
+  await _sistemas(); if (!_mntEquipList.length) { try { await carregarEquipReais(); } catch(e){} }
+  await _tiposTrab();
+  const setores = await _setoresInterventor();
+  if (!_relF.ate) { const h = new Date(); _relF.ate = h.toISOString().slice(0,10); const d = new Date(h); d.setFullYear(d.getFullYear()-1); _relF.de = d.toISOString().slice(0,10); }
+  _relAtual = nome || _relAtual || _relCat.grupos[0].itens[0].nome;
+  document.querySelector('#eq-ficha .modal').classList.add('larga');
+  const nav = _relCat.grupos.map(g => '<div class="pn-grp" style="cursor:default">' + _esc(g.grupo) + '</div>'
+    + g.itens.map(it => '<div class="pn-item' + (it.nome === _relAtual ? ' on' : '') + '" data-n="' + it.nome + '" onclick="relEscolher(this.dataset.n)" title="' + _esc(it.sub) + '">' + _esc(it.titulo) + '</div>').join('')).join('');
+  document.getElementById('eq-ficha-corpo').innerHTML =
+    '<div style="display:flex;justify-content:space-between;align-items:center"><b style="font-size:14px;color:#1A2A5E">📑 Relatórios — Manutenção</b>'
+    + '<span style="cursor:pointer;font-size:18px" onclick="fichaFechar()">✕</span></div>'
+    + '<div style="display:flex;gap:10px;margin-top:8px;flex:1;min-height:0">'
+    +   '<div class="param-nav" style="width:230px;border:1px solid #E2E8F0;border-radius:6px;overflow:auto">' + nav + '</div>'
+    +   '<div style="flex:1;display:flex;flex-direction:column;min-width:0">'
+    +     '<div id="rel-filtros" style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-bottom:6px"></div>'
+    +     '<div id="rel-titulo" style="display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap;margin-bottom:4px"></div>'
+    +     '<div id="rel-grade" style="flex:1;overflow:auto;background:#fff;border:1px solid #E2E8F0;border-radius:6px;min-height:200px"></div>'
+    +   '</div></div>';
+  document.getElementById('eq-ficha').classList.add('show');
+  window._relDom = { setores, tipos: (_mntTiposTrab || []) };
+  relEscolher(_relAtual);
+}
+function _relCfg(nome){ for (const g of _relCat.grupos) for (const it of g.itens) if (it.nome === nome) return it; return null; }
+function relEscolher(nome){
+  _relAtual = nome; const cfg = _relCfg(nome); if (!cfg) return;
+  document.querySelectorAll('#eq-ficha-corpo .pn-item').forEach(x => x.classList.toggle('on', x.dataset.n === nome));
+  const f = cfg.filtros || [], F = _relF, D = window._relDom || {};
+  const fld = (rot, inner, w) => '<div class="mfield" style="width:' + (w || 150) + 'px">' + rot + inner + '</div>';
+  const opt = (lista, val, vazio) => '<option value="">' + vazio + '</option>' + lista.map(x => '<option value="' + _esc(x.v) + '"' + (String(x.v) === String(val) ? ' selected' : '') + '>' + _esc(x.t) + '</option>').join('');
+  let h = '';
+  if (f.includes('periodo')) h += fld('De', '<input type="date" id="rf-de" min="2000-01-01" max="2100-12-31" value="' + F.de + '">', 130) + fld('Até', '<input type="date" id="rf-ate" min="2000-01-01" max="2100-12-31" value="' + F.ate + '">', 130)
+    + '<div style="display:flex;gap:3px;padding-bottom:4px">' + [['30d',30],['90d',90],['12m',365],['Ano',0]].map(([t,n]) => '<button class="btn" style="padding:2px 6px;font-size:10px" onclick="relPeriodo(' + n + ')">' + t + '</button>').join('') + '</div>';
+  if (f.includes('sistema')) h += fld('Sistema', '<select id="rf-sis">' + opt((_arvSistemas||[]).map(x => ({v: x.codigo, t: x.codigo + ' — ' + x.nome})), F.sistema, '— todos —') + '</select>', 200);
+  if (f.includes('objeto')) h += fld('Objeto', '<select id="rf-eq">' + opt((_mntEquipList||[]).map(x => ({v: x.id, t: x.codigo + ' — ' + (x.descricao||'')})), F.equipamento_id, '— todos —') + '</select>', 200);
+  if (f.includes('tipo_trabalho')) h += fld('Tipo trab.', '<select id="rf-tt">' + opt([{v:'A',t:'A — Preventivo sistemático'},{v:'B',t:'B — Preventivo condicionado'},{v:'C',t:'C — Corretivo'},{v:'M',t:'M — Melhoria'}].concat((D.tipos||[]).map(x => ({v: x.codigo, t: x.codigo + ' — ' + (x.nome||'')}))), F.tipo_trabalho, '— todos —') + '</select>', 170);
+  if (f.includes('setor')) h += fld('Setor', '<select id="rf-setor">' + opt((D.setores||[]).map(x => ({v: x.codigo, t: x.codigo + ' — ' + (x.nome||'')})), F.setor, '— todos —') + '</select>', 150);
+  if (f.includes('familia')) h += fld('Família', '<input id="rf-fam" value="' + _esc(F.familia) + '" placeholder="ex.: AC ou AC.010">', 120);
+  h += '<div style="display:flex;gap:6px;margin-left:auto;padding-bottom:2px"><button class="btn p" onclick="relGerar()">▶ Gerar</button>'
+    + '<button class="btn" onclick="relPDF()">🖨 PDF</button><button class="btn" style="background:#107C41;color:#fff;border-color:#107C41" onclick="relExcel()">⬇ Excel</button></div>';
+  document.getElementById('rel-filtros').innerHTML = h;
+  document.getElementById('rel-titulo').innerHTML = '<div><b style="color:#1A2A5E">' + _esc(cfg.titulo) + '</b> <span class="muted" style="font-size:10px">' + _esc(cfg.sub) + '</span></div>';
+  relGerar();
+}
+function relPeriodo(dias){
+  const h = new Date(); let d;
+  if (dias === 0) d = new Date(h.getFullYear(), 0, 1); else { d = new Date(h); d.setDate(d.getDate() - dias); }
+  const g = id => document.getElementById(id); if (g('rf-de')) g('rf-de').value = d.toISOString().slice(0,10); if (g('rf-ate')) g('rf-ate').value = h.toISOString().slice(0,10);
+  relGerar();
+}
+function _relQuery(){
+  const g = id => (document.getElementById(id) || {}).value || '';
+  const anoOk = v => !v || (parseInt(v.slice(0,4),10) >= 2000 && parseInt(v.slice(0,4),10) <= 2100);
+  if (!anoOk(g('rf-de')) || !anoOk(g('rf-ate'))) { mostrarToast('⚠️ Data com ano inválido — digite o ano completo', 'warn'); return null; }
+  Object.assign(_relF, { de: g('rf-de') || _relF.de, ate: g('rf-ate') || _relF.ate, sistema: g('rf-sis'), equipamento_id: g('rf-eq'), tipo_trabalho: g('rf-tt'), setor: g('rf-setor'), familia: g('rf-fam') });
+  const cfg = _relCfg(_relAtual) || {filtros: []}; const q = [];
+  const add = (k, v) => { if (v) q.push(k + '=' + encodeURIComponent(v)); };
+  if (cfg.filtros.includes('periodo')) { add('de', _relF.de); add('ate', _relF.ate); }
+  if (cfg.filtros.includes('sistema')) add('sistema', _relF.sistema);
+  if (cfg.filtros.includes('objeto')) add('equipamento_id', _relF.equipamento_id);
+  if (cfg.filtros.includes('tipo_trabalho')) add('tipo_trabalho', _relF.tipo_trabalho);
+  if (cfg.filtros.includes('setor')) add('setor', _relF.setor);
+  if (cfg.filtros.includes('familia')) add('familia', _relF.familia);
+  return q.join('&');
+}
+async function relGerar(){
+  const q = _relQuery(); if (q === null) return;
+  const grade = document.getElementById('rel-grade'); if (!grade) return;
+  grade.innerHTML = '<div class="muted" style="padding:14px">Gerando…</div>';
+  try { _relDados = await mntFetch('/manutencao/api/relatorios/' + _relAtual + (q ? '?' + q : '')); }
+  catch(e){ grade.innerHTML = '<div style="padding:14px;color:#B91C1C">' + _esc(e.message) + '</div>'; return; }
+  const d = _relDados, cols = d.colunas;
+  const num = t => ['int','num','moeda','pct'].includes(t);
+  grade.innerHTML = '<table style="font-size:11px"><thead><tr>' + cols.map(c => '<th' + (num(c.tipo) ? ' class="r" style="white-space:nowrap"' : '') + '>' + _esc(c.t) + '</th>').join('') + '</tr></thead><tbody>'
+    + (d.linhas.map(l => '<tr>' + cols.map(c => '<td' + (num(c.tipo) ? ' class="r mono" style="white-space:nowrap"' : (c.tipo === 'data' || c.tipo === 'datahora' ? ' style="white-space:nowrap"' : '')) + '>' + _esc(_relFmt(l[c.k], c.tipo)) + '</td>').join('') + '</tr>').join('')
+       || '<tr><td colspan="' + cols.length + '" style="padding:14px;color:#64748B">Sem dados para os filtros escolhidos.</td></tr>')
+    + (d.linhas.length && Object.keys(d.totais||{}).length ? '<tr style="background:#FFF7ED;font-weight:700"><td>Total</td>' + cols.slice(1).map(c => '<td class="r mono">' + (c.k in d.totais ? _esc(_relFmt(d.totais[c.k], c.tipo)) : '') + '</td>').join('') + '</tr>' : '')
+    + '</tbody></table>';
+  const t = document.getElementById('rel-titulo'); if (t) t.innerHTML = '<div><b style="color:#1A2A5E">' + _esc(d.titulo) + '</b> <span class="muted" style="font-size:10px">' + _esc(d.sub) + '</span></div><span class="muted" style="font-size:10px">' + _esc(d.filtros) + ' · ' + d.linhas.length + ' linha(s)</span>';
+}
+async function relExcel(){
+  const q = _relQuery(); if (q === null) return;
+  try {
+    const r = await fetch('/manutencao/api/relatorios/' + _relAtual + '?formato=xlsx' + (q ? '&' + q : ''), {headers:{'Authorization':'Bearer '+mntToken()}});
+    if (!r.ok) { const j = await r.json().catch(()=>({})); throw new Error(j.detail || ('Erro ' + r.status)); }
+    _xlsBaixar(await r.blob(), r.headers.get('Content-Disposition')); mostrarToast('⬇ Excel gerado', 'ok');
+  } catch(e){ mostrarToast('❌ ' + e.message, 'warn'); }
+}
+function relPDF(){
+  const d = _relDados; if (!d) { mostrarToast('Gere o relatório primeiro', 'warn'); return; }
+  const grade = document.getElementById('rel-grade'); if (!grade) return;
+  const w = window.open('', '_blank'); if (!w) { mostrarToast('Pop-up bloqueado', 'warn'); return; }
+  w.document.write('<html><head><meta charset="UTF-8"><title>' + _esc(d.titulo) + '</title><style>' + _IMP_CSS + ' table{border-collapse:collapse;width:100%;font-size:10px}th,td{border:1px solid #CBD5E1;padding:3px 5px;text-align:left}th{background:#1A2A5E;color:#fff}.r{text-align:right}h2{font-size:14px;color:#1A2A5E;margin:0 0 2px}.sub{font-size:10px;color:#64748B;margin-bottom:8px}@media print{.noprint{display:none}}</style></head><body>'
+    + '<h2>' + _esc(d.titulo) + '</h2><div class="sub">' + _esc(d.filtros) + ' · ' + d.linhas.length + ' linha(s) · Garra Terraplenagem — ' + new Date().toLocaleString('pt-BR') + '</div>'
+    + grade.innerHTML + '<div style="margin-top:12px"><button class="noprint" onclick="window.print()" style="padding:6px 12px;background:#1A2A5E;color:#fff;border:0;border-radius:6px;cursor:pointer">🖨 Imprimir / PDF</button></div></body></html>');
+  w.document.close();
 }
 async function equipFuncionamento(id){
   let r;
@@ -5146,6 +5317,7 @@ async function carregarPecasReais(){
     const r = await mntFetch('/manutencao/api/pecas' + (qs.length ? '?' + qs.join('&') : ''));
     _pcNav = (r.itens||[]).map(x => ({codigo:x.codigo, descricao:x.descricao||x.nome||''}));
     if (!r || !Array.isArray(r.itens)) throw new Error('Resposta inesperada do servidor');
+    window._pecasRender = r.itens;
     // (11/10/2026) Padrão único das listas: sem filtro de família o centro agrupa por família (▾/▸ recolhe);
     // botão direito no centro = Expandir/Fechar tudo só aqui. Com família marcada ou busca, lista plana.
     const agrupar = !fam && !q && r.itens.length > 1;
