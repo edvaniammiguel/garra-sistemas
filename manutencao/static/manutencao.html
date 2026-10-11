@@ -109,7 +109,7 @@ tr.sel td{background:#DBEAFE!important;color:#1A2A5E}
 .modal{background:#fff;border-radius:10px;max-width:780px;width:96%;
        max-height:86vh;overflow:auto;padding:18px 20px;font-size:12px}
 .mtab.off{opacity:.45;cursor:default}
-.modal.larga{max-width:1020px;width:92%;height:620px;max-height:88vh;display:flex;flex-direction:column}
+.modal.larga{max-width:1020px;width:92%;height:min(700px,88vh);max-height:88vh;display:flex;flex-direction:column}
 /* (12/09/2026) Janela da OT com altura estável: o corpo das abas ocupa sempre o mesmo espaço; conteúdo maior rola dentro, menor não encolhe a janela */
 /* (15/09/2026) PADRÃO DE JANELA: todo corpo de abas das fichas (OT · Nova OT · Peça · FMP · Biblioteca)
    tem a MESMA altura fixa da ficha do Objeto — navegar entre abas não muda o tamanho; conteúdo maior rola por dentro */
@@ -1185,7 +1185,8 @@ async function plFicha(pid, aba){
                   custo: p.custo_previsto != null ? parseFloat(p.custo_previsto) : '',
                   tarefas: p.procedimento || '', prox: p.plano_proximo_codigo || '',
                   mo: j(p.mao_obra), pc: j(p.pecas), ou: j(p.outros), fe: j(p.ferramentas),
-                  ult_dt: p.ultima_data ? String(p.ultima_data).slice(0,10) : '', ult_le: p.ultima_leitura ?? '', prep: p.preparacao_codigo || '' };
+                  ult_dt: p.ultima_data ? String(p.ultima_data).slice(0,10) : '', ult_le: p.ultima_leitura ?? '', prep: p.preparacao_codigo || '',
+                  dfixa: !!p.data_fixa, rfixo: !!p.registro_fixo };
   }
   _plfSync();
   if (_plfPer === null) { try { _plfPer = (await mntFetch('/manutencao/api/param/periodos')).filter(x=>x.ativo!==false); } catch(e){ _plfPer = []; } }
@@ -1226,6 +1227,11 @@ async function plFicha(pid, aba){
     +   '<input id="plf-reg-qtd" type="number" min="1" value="'+(isReg?_esc(perQtd):'')+'" style="width:120px"'+(!isReg?' disabled':'')+'></div>'
     +   '<div style="display:flex;gap:8px;align-items:center;margin-bottom:4px;font-size:11px"><span style="width:120px;color:#475569;font-weight:700">Última execução</span><input id="plf-ult-dt" type="date" min="2000-01-01" max="2100-12-31" value="'+_esc(d.ult_dt||'')+'" onchange="plfBaseline()" style="width:140px"><input id="plf-ult-le" type="number" step="0.1" placeholder="leitura" value="'+_esc(String(d.ult_le ?? ''))+'" onchange="plfBaseline()" style="width:100px"></div>'
     +   '<div style="display:flex;gap:8px;align-items:center;font-size:11px"><span style="width:120px;color:#475569;font-weight:700">Próxima</span><span id="plf-prox-calc" class="mono" style="color:#1A2A5E">…</span></div>'
+    // (10/10/2026) ManWinWin: Data Fixa / Registro Fixo — o ciclo seguinte conta da data/leitura PROGRAMADA, não da execução real
+    +   '<div style="display:flex;gap:14px;align-items:center;font-size:11px;margin-top:6px;padding-top:6px;border-top:1px dashed #E2E8F0">'
+    +     '<label style="display:flex;align-items:center;gap:5px" title="Próxima = data programada + período (mesmo que a execução atrase). Desmarcado: próxima = data em que foi feita + período"><input type="checkbox" id="plf-dfixa"'+(d.dfixa?' checked':'')+'> Data fixa</label>'
+    +     '<label style="display:flex;align-items:center;gap:5px" title="Próxima = leitura programada + período (mesmo que tenha passado). Desmarcado: próxima = leitura real na execução + período"><input type="checkbox" id="plf-rfixo"'+(d.rfixo?' checked':'')+'> Registro fixo</label>'
+    +   '</div>'
     + '</fieldset></div>'
     // ── abas ──
     + '<div class="mtabs" style="margin-top:8px">'
@@ -1310,6 +1316,8 @@ async function plFicha(pid, aba){
 async function plfBaseline(){
   const d = _plfDraft; if (!d || !d.id) return;
   const dt = (document.getElementById('plf-ult-dt')||{}).value || null, le = (document.getElementById('plf-ult-le')||{}).value;
+  // (10/10/2026) Chrome dispara change a cada dígito do ano ('0002' a caminho de 2026): só grava com ano completo
+  if (dt && parseInt(dt.slice(0,4),10) < 2000) return;
   try {
     await mntFetch('/manutencao/api/planos/'+d.id+'/baseline', {method:'PATCH', body: JSON.stringify({ultima_data: dt, ultima_leitura: le === '' ? null : le})});
     d.ult_dt = dt || ''; d.ult_le = le; plfProxima();
@@ -1378,6 +1386,7 @@ function _plfSync(){
   if (g('plf-desc')) {
     d.desc = g('plf-desc').value; d.tdm = g('plf-tdm').value; d.custo = g('plf-custo').value;
     if (g('plf-prox')) d.prox = g('plf-prox').value;
+    if (g('plf-dfixa')) { d.dfixa = g('plf-dfixa').checked; d.rfixo = g('plf-rfixo').checked; }
     const reg = (document.querySelector('input[name="plf-modo"]:checked')||{}).value === 'reg';
     d.per = reg ? '6' : (g('plf-cal-un')?.value || ''); d.qtd = reg ? g('plf-reg-qtd').value : g('plf-cal-qtd').value;
   }
@@ -1524,6 +1533,7 @@ async function plFichaSalvar(fechar){
       periodo_qtd: d.qtd, tempo_horas: d.tdm,
       custo_previsto: (function(){ const s = plfSoma(d); return s.tem ? s.total.toFixed(2) : d.custo; })(),
       procedimento: d.tarefas, plano_proximo_codigo: d.prox, preparacao_codigo: d.prep || null,
+      data_fixa: !!d.dfixa, registro_fixo: !!d.rfixo,
       mao_obra: d.mo, pecas: d.pc, outros: d.ou, ferramentas: d.fe })});
     mostrarToast('✅ '+r.codigo+' atualizada','ok');
     if (fechar === false) { const aba = (document.querySelector('.mtab.on')||{}).textContent; const k = {'Tarefas':'tar','Preparações':'prep','Mão de Obra':'mo','Itens':'pc','Outros':'ou','Ferramentas':'fe'}[aba] || 'tar';
@@ -4032,10 +4042,6 @@ function otAba(aba){
       + '<div class="mfield">Projeto<select id="oe-proj">'+_tabOpts(_projList||[],'id','nome',o.projecto_id,'— nenhum —')+'</select></div>'
       + '<div class="mfield">FMP (plano de manutenção)<div style="display:flex;gap:4px"><select id="oe-fmp" data-val="'+_esc(String(o.plano_id||''))+'" style="flex:1"><option value="">— carregando —</option></select><button class="btn" title="Aplicar a FMP escolhida: herda tipo de trabalho, tarefas e peças" onclick="otAplicarFMP()">Aplicar</button></div></div>'
       + '<div class="mfield">Tipo Trab.'+ro(o.tipo_trabalho)+'</div>'
-      + '<div style="display:flex;gap:12px;align-items:flex-end">'
-      +   '<div class="mfield" style="width:120px">Prev. TDM (h)<input id="oe-tdm" type="number" step="0.5" min="0" value="'+(o.tdm_previsto??'')+'" title="Tempo de manutenção previsto, em horas"></div>'
-      +   '<label style="display:flex;align-items:center;gap:6px;font-size:11px;font-weight:400;color:#1E293B;padding-bottom:5px;cursor:pointer"><input type="checkbox" id="oe-bloq"'+(o.bloqueada?' checked':'')+'> Bloquear temporariamente OT</label>'
-      + '</div>'
       + '</div>'
       // ── coluna direita ──
       + '<div style="display:flex;flex-direction:column;gap:6px">'
@@ -4055,15 +4061,19 @@ function otAba(aba){
       +   '<div class="mfield" id="oe-forn-wrap">Fornecedor<select id="oe-forn">'+foOpts+'</select></div>'
       +   '<div class="mfield" style="margin-top:6px">Responsável<select id="oe-resp">'+usOpts+'</select></div>'
       + '</fieldset>'
+      + '<div style="display:flex;gap:12px;align-items:flex-end">'
+      +   '<div class="mfield" style="width:120px">Prev. TDM (h)<input id="oe-tdm" type="number" step="0.5" min="0" value="'+(o.tdm_previsto??'')+'" title="Tempo de manutenção previsto, em horas"></div>'
+      +   '<label style="display:flex;align-items:center;gap:6px;font-size:11px;font-weight:400;color:#1E293B;padding-bottom:5px;cursor:pointer"><input type="checkbox" id="oe-bloq"'+(o.bloqueada?' checked':'')+'> Bloquear temporariamente OT</label>'
+      + '</div>'
       + '</div>'
       // (10/10/2026) ManWinWin: a Origem NÃO tem "Programação" — tem PERIODICIDADE, só leitura, vinda da FMP:
       // Calendário (qtd + unidade de tempo) e Registros (qtd + h/km), Data fixa / Registro fixo, Próxima FMP.
       // A data programada vive em Gestão › Prog. Início e só muda pelo Avançado.
       + '</div><div class="dsec">Periodicidade</div>'
-      + '<div id="oe-period" style="display:grid;grid-template-columns:130px 1fr 1fr 1fr;gap:4px 14px;align-items:end;font-size:11px">'
-      +   '<div style="display:flex;flex-direction:column;gap:6px;color:#475569">'
-      +     '<label style="display:flex;gap:5px;align-items:center"><input type="checkbox" id="oe-dfixa" disabled> Data fixa</label>'
-      +     '<label style="display:flex;gap:5px;align-items:center"><input type="checkbox" id="oe-rfixo" disabled> Registro fixo</label></div>'
+      + '<div id="oe-period" style="display:grid;grid-template-columns:auto 1fr 1fr 1fr;gap:4px 14px;align-items:end;font-size:11px">'
+      +   '<div style="display:flex;gap:12px;color:#475569;padding-bottom:5px">'
+      +     '<label style="display:flex;gap:5px;align-items:center" title="Próximo ciclo conta da data programada (ficha da FMP)"><input type="checkbox" id="oe-dfixa" disabled> Data fixa</label>'
+      +     '<label style="display:flex;gap:5px;align-items:center" title="Próximo ciclo conta da leitura programada (ficha da FMP)"><input type="checkbox" id="oe-rfixo" disabled> Registro fixo</label></div>'
       +   '<div class="mfield">Calendário<div style="display:flex;gap:4px"><input id="oe-per-cal" readonly style="background:#F1F5F9;width:60px" value=""><input id="oe-per-calu" readonly style="background:#F1F5F9" value=""></div></div>'
       +   '<div class="mfield">Registros <span id="oe-per-un" class="muted"></span><input id="oe-per-reg" readonly style="background:#F1F5F9" value=""></div>'
       +   '<div class="mfield">Próxima FMP<input id="oe-per-prox" readonly style="background:#F1F5F9" value="'+(o.plano_id ? '…' : '—')+'"></div>'
@@ -4318,8 +4328,8 @@ async function otPeriodicidade(o){
   const g = id => document.getElementById(id);
   const set = (id, v) => { const el = g(id); if (el) el.value = v == null ? '' : String(v); };
   const semPlano = !o.plano_id;
-  if (g('oe-dfixa')) g('oe-dfixa').checked = semPlano ? !!o.data_prevista : !!(o.prog_alterada && o.data_prevista);
-  if (g('oe-rfixo')) g('oe-rfixo').checked = semPlano ? (o.horimetro_previsto != null) : !!(o.prog_alterada && o.horimetro_previsto != null);
+  if (g('oe-dfixa')) g('oe-dfixa').checked = false;
+  if (g('oe-rfixo')) g('oe-rfixo').checked = false;
   if (semPlano) { set('oe-per-prox', '—'); return; }
   let it = null;
   try { const pv = await mntFetch('/manutencao/api/previsoes'); it = (pv.itens||[]).find(x => String(x.plano_id) === String(o.plano_id)) || null; } catch(e){}
@@ -4329,7 +4339,9 @@ async function otPeriodicidade(o){
   if (it.modo === 'calendario') { set('oe-per-cal', qtd); set('oe-per-calu', unTempo || 'Dias'); set('oe-per-reg', ''); }
   else { set('oe-per-cal', ''); set('oe-per-calu', ''); set('oe-per-reg', qtd); }
   const un = g('oe-per-un'); if (un) un.textContent = '(' + (it.unidade === 'km' ? 'KM' : 'H') + ')';
-  set('oe-per-prox', it.plano_codigo || '—');
+  set('oe-per-prox', it.proxima_fmp || it.plano_codigo || '—');
+  if (g('oe-dfixa')) g('oe-dfixa').checked = !!it.data_fixa;
+  if (g('oe-rfixo')) g('oe-rfixo').checked = !!it.registro_fixo;
 }
 async function otAplicarFMP(){
   const o = _otAberta; if (!o) return;
