@@ -1747,7 +1747,7 @@ function showCtxReal(ev, id, tipo, rotulo){
       + it('📋','Abrir ficha', "verEquipReal('"+id+"')")
       + it('🔧','Ordens de Trabalho', "otsDoEquip('"+id+"',false)")
       + it('📅','Planos de manutenção', "abrirPlanosEquip('"+id+"')")
-      + it('🚦','Pontos de leitura', "verEquipReal('"+id+"')")
+      + it('🚦','Pontos de leitura', "equipPontos('"+id+"')")
       + it('🛞','Subsistemas / Montagem', "equipSubsistemas('"+id+"')")
       + it('⛽','Abastecimentos', "equipAbastecimentos('"+id+"')")
       + it('📈','Registro Funcionamento', "equipFuncionamento('"+id+"')")
@@ -2948,6 +2948,101 @@ async function abastAnexarFoto(itemId, inp, eqId){
   const fd = new FormData(); fd.append('foto', f, f.name || 'nota.jpg'); fd.append('tipo', 'nota');
   try { await mntUpload('/operacional/api/abastecimentos/'+itemId+'/foto', fd); mostrarToast('\u2705 Foto da nota anexada','ok'); equipAbastecimentos(eqId); }
   catch(e){ mostrarToast('\u274c '+e.message,'warn'); }
+}
+// ══ (11/10/2026) PONTOS DE LEITURA DO OBJETO — janela própria (antes o item do menu abria a ficha) ══
+// Ponto = contador/medição do objeto com limiares 🟡🟠🔴 (horas da bomba, km do pneu, temperatura…).
+// Registrar leitura alimenta o semáforo (objetos sem FMP) e guarda histórico.
+async function equipPontos(id){
+  let r;
+  try { r = await mntFetch('/manutencao/api/equipamentos/'+id+'/pontos'); }
+  catch(e){ mostrarToast('❌ '+e.message,'warn'); return; }
+  const eqF = _navEquipObjs().find(e => String(e.id) === String(id)) || {codigo:r.equipamento, descricao:r.descricao};
+  const dot = st => '<span class="dot '+({vermelho:'r',laranja:'o',amarelo:'y',verde:'g'}[st]||'g')+'"></span>';
+  const n = v => v == null ? '—' : Number(v).toLocaleString('pt-BR');
+  const dd = s => s ? new Date(s).toLocaleDateString('pt-BR') : '—';
+  const ativos = r.pontos.filter(p => p.ativo !== false), inativos = r.pontos.filter(p => p.ativo === false);
+  const linha = p => '<tr data-id="'+p.id+'" style="'+(p.ativo===false?'color:#94A3B8':'')+'" ondblclick="pontoEditar(\''+id+'\',\''+p.id+'\')">'
+    + '<td>'+dot(p.status)+'</td><td class="bold">'+_esc(p.codigo)+'</td><td>'+_esc(p.descricao||'')+'</td>'
+    + '<td class="r mono">'+n(p.leitura_atual)+(p.unidade?' <span class="muted">'+_esc(p.unidade)+'</span>':'')+'</td><td>'+dd(p.data_leitura)+'</td>'
+    + '<td class="r mono">'+n(p.limiar_atencao)+'</td><td class="r mono">'+n(p.limiar_urgente)+'</td><td class="r mono">'+n(p.limiar_maximo)+'</td>'
+    + '<td style="white-space:nowrap;text-align:right">'
+    + (p.ativo===false ? '<span style="cursor:pointer" title="Reativar" onclick="pontoAtivo(\''+id+'\',\''+p.id+'\',true)">♻️</span>'
+      : '<span style="cursor:pointer" title="Registrar leitura" onclick="pontoLeitura(\''+id+'\',\''+p.id+'\',\''+_esc(p.codigo)+'\','+(p.leitura_atual??'null')+')">📝</span> '
+      + '<span style="cursor:pointer" title="Histórico de leituras ('+(p.n_leituras||0)+')" onclick="pontoHistorico(\''+id+'\',\''+p.id+'\',\''+_esc(p.codigo)+'\')">📜</span> '
+      + '<span style="cursor:pointer" title="Editar limiares" onclick="pontoEditar(\''+id+'\',\''+p.id+'\')">✏️</span> '
+      + '<span style="cursor:pointer;color:#B91C1C" title="Desativar" onclick="pontoAtivo(\''+id+'\',\''+p.id+'\',false)">🚫</span>')
+    + '</td></tr>';
+  window._pontosCache = r;
+  document.querySelector('#eq-ficha .modal').classList.remove('larga');
+  document.getElementById('eq-ficha-corpo').innerHTML =
+    fichaTopo({icone:'🚦', titulo:'Pontos de leitura', codigo:eqF.codigo||r.equipamento, descricao:eqF.descricao||r.descricao, id:id, fn:'equipPontos'})
+    + '<div style="display:flex;gap:14px;margin:8px 0;flex-wrap:wrap;align-items:flex-end">'
+    + '<div class="mfield" style="min-width:160px">Contador vivo do objeto<div style="font-weight:800;color:#1A2A5E">'+n(r.leitura_viva)+' '+(r.medicao==='km'?'km':'h')+'</div></div>'
+    + '<div class="muted" style="font-size:10px;flex:1">'+(r.com_fmp ? 'Objeto com FMP ativa: o semáforo segue as fichas planejadas; os pontos aqui são controles extras (histórico e alertas próprios).' : 'Objeto sem FMP: o pior ponto manda no semáforo da Frota.')+'</div>'
+    + '<button class="btn p" onclick="pontoNovo(\''+id+'\')">➕ Novo ponto</button></div>'
+    + '<div class="dsec">Pontos ('+ativos.length+')</div>'
+    + '<div class="muted" style="font-size:10px;margin:2px 0 4px">📝 registra leitura · 📜 histórico · ✏️ limiares · duplo clique edita · 🚫 desativa (fica na história)</div>'
+    + '<div style="max-height:300px;overflow:auto"><table><thead><tr><th style="width:26px"></th><th style="width:80px">Ponto</th><th>Descrição</th><th class="r">Leitura</th><th>Data</th><th class="r" style="width:60px">🟡</th><th class="r" style="width:60px">🟠</th><th class="r" style="width:60px">🔴</th><th style="width:90px"></th></tr></thead><tbody>'
+    + (ativos.map(linha).join('') || '<tr><td colspan="9" style="padding:12px;color:#64748B">Nenhum ponto de leitura — use “Novo ponto”.</td></tr>')
+    + '</tbody></table></div>'
+    + (inativos.length ? '<div class="dsec" style="margin-top:8px">Desativados ('+inativos.length+')</div><div style="max-height:120px;overflow:auto"><table><tbody>'+inativos.map(linha).join('')+'</tbody></table></div>' : '');
+  document.getElementById('eq-ficha').classList.add('show');
+}
+function _pontoForm(eqId, p){
+  const g = (k, v) => '<div class="mfield">'+k+'<input id="pt-'+v+'" value="'+_esc(p[v] == null ? '' : p[v])+'"'+(v==='codigo' && p.id ? ' readonly style="background:#F1F5F9"' : '')+'></div>';
+  document.getElementById('eq-ficha-corpo').innerHTML =
+    '<div style="display:flex;justify-content:space-between;align-items:center"><b style="font-size:14px;color:#1A2A5E">🚦 '+(p.id?'Ponto '+_esc(p.codigo):'Novo ponto de leitura')+'</b>'
+    + '<span style="cursor:pointer;font-size:18px" onclick="equipPontos(\''+eqId+'\')">✕</span></div>'
+    + '<div class="mgrid" style="margin-top:8px">'+g('Código *','codigo')+g('Descrição','descricao')+'</div>'
+    + '<div class="mgrid" style="margin-top:6px;grid-template-columns:1fr 1fr 1fr 1fr">'+g('Unidade (h, km, °C…)','unidade')+g('🟡 Atenção a partir de','limiar_atencao')+g('🟠 Urgente a partir de','limiar_urgente')+g('🔴 Máximo','limiar_maximo')+'</div>'
+    + (p.id ? '' : '<div class="mgrid" style="margin-top:6px">'+g('Leitura inicial','leitura_atual')+'</div>')
+    + '<div class="mfield" style="margin-top:6px">Observação<input id="pt-observacao" value="'+_esc(p.observacao||'')+'"></div>'
+    + '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px"><button class="btn" onclick="equipPontos(\''+eqId+'\')">Cancelar</button>'
+    + '<button class="btn p" onclick="pontoGravar(\''+eqId+'\',\''+(p.id||'')+'\')">OK</button></div>';
+}
+function pontoNovo(eqId){ _pontoForm(eqId, {}); }
+function pontoEditar(eqId, pid){ const p = ((window._pontosCache||{}).pontos||[]).find(x => x.id === pid); if (p) _pontoForm(eqId, p); }
+async function pontoGravar(eqId, pid){
+  const v = k => ((document.getElementById('pt-'+k)||{}).value || '').trim();
+  const body = { codigo: v('codigo'), descricao: v('descricao'), unidade: v('unidade'), limiar_atencao: v('limiar_atencao'), limiar_urgente: v('limiar_urgente'), limiar_maximo: v('limiar_maximo'), observacao: v('observacao') };
+  if (!pid) body.leitura_atual = v('leitura_atual');
+  if (!body.codigo) { mostrarToast('Informe o código do ponto','warn'); return; }
+  try {
+    if (pid) await mntFetch('/manutencao/api/pontos/'+pid, {method:'PATCH', body: JSON.stringify(body)});
+    else await mntFetch('/manutencao/api/equipamentos/'+eqId+'/pontos', {method:'POST', body: JSON.stringify(body)});
+    mostrarToast('✅ Ponto gravado','ok'); equipPontos(eqId); carregarSemaforosReais();
+  } catch(e){ mostrarToast('❌ '+e.message,'warn'); }
+}
+async function pontoAtivo(eqId, pid, ativo){
+  if (!ativo && !confirm('Desativar este ponto? Ele sai do semáforo e fica na história.')) return;
+  try { await mntFetch('/manutencao/api/pontos/'+pid, {method:'PATCH', body: JSON.stringify({ativo})}); equipPontos(eqId); carregarSemaforosReais(); }
+  catch(e){ mostrarToast('❌ '+e.message,'warn'); }
+}
+async function pontoLeitura(eqId, pid, cod, atual, forcar){
+  const v = prompt('Leitura do ponto '+cod+(atual!=null?' (atual '+Number(atual).toLocaleString('pt-BR')+')':'')+':', ''); if (v === null) return;
+  const dt = prompt('Data da leitura (AAAA-MM-DD) — vazio = hoje:', '') ; if (dt === null) return;
+  try {
+    await mntFetch('/manutencao/api/pontos/'+pid+'/leitura', {method:'POST', body: JSON.stringify({leitura: v, data: dt.trim(), forcar: !!forcar})});
+    mostrarToast('✅ Leitura registrada','ok'); equipPontos(eqId); carregarSemaforosReais();
+  } catch(e){
+    if (!forcar && /menor que a atual/.test(e.message) && confirm(e.message+'\n\nGravar mesmo assim (contador trocado/zerado)?')) {
+      try { await mntFetch('/manutencao/api/pontos/'+pid+'/leitura', {method:'POST', body: JSON.stringify({leitura: v, data: dt.trim(), forcar: true})}); mostrarToast('✅ Leitura registrada','ok'); equipPontos(eqId); carregarSemaforosReais(); return; }
+      catch(e2){ mostrarToast('❌ '+e2.message,'warn'); return; }
+    }
+    mostrarToast('❌ '+e.message,'warn');
+  }
+}
+async function pontoHistorico(eqId, pid, cod){
+  let rows = [];
+  try { rows = await mntFetch('/manutencao/api/pontos/'+pid+'/leituras'); } catch(e){ mostrarToast('❌ '+e.message,'warn'); return; }
+  document.getElementById('eq-ficha-corpo').innerHTML =
+    '<div style="display:flex;justify-content:space-between;align-items:center"><b style="font-size:14px;color:#1A2A5E">📜 Leituras — ponto '+_esc(cod)+'</b>'
+    + '<span style="cursor:pointer;font-size:18px" onclick="equipPontos(\''+eqId+'\')">✕</span></div>'
+    + '<div style="max-height:360px;overflow:auto;margin-top:8px"><table><thead><tr><th>Data</th><th class="r">Leitura</th><th>Quem</th><th>Obs.</th></tr></thead><tbody>'
+    + (rows.map(x => '<tr><td>'+new Date(x.data).toLocaleString('pt-BR')+'</td><td class="r mono">'+Number(x.leitura).toLocaleString('pt-BR')+'</td><td class="muted">'+_esc(x.usuario_nome||'')+'</td><td>'+_esc(x.observacao||'')+'</td></tr>').join('')
+       || '<tr><td colspan="4" style="padding:12px;color:#64748B">Sem leituras registradas.</td></tr>')
+    + '</tbody></table></div>'
+    + '<div style="display:flex;justify-content:flex-end;margin-top:10px"><button class="btn" onclick="equipPontos(\''+eqId+'\')">Voltar</button></div>';
 }
 async function equipFuncionamento(id){
   let r;
