@@ -302,12 +302,12 @@ button:disabled, select:disabled, input:disabled, [aria-disabled=true] { cursor:
   <div class="strip">🧰 Materiais <span class="sc" id="alm-strip">carregando…</span></div>
   <div class="param-wrap">
     <div class="param-nav" style="width:230px;display:flex;flex-direction:column">
-      <div id="alm-nav" style="flex:1;overflow:auto" oncontextmenu="ctxExpandir(event,'alm')"></div>
+      <div id="alm-nav" style="flex:1;overflow:auto"></div>
     </div>
     <div class="param-pane" style="display:flex;flex-direction:column;overflow:hidden">
       <div class="bar" style="background:transparent;border:none;padding:0 0 6px">
         <button class="btn p" id="alm-l-mestre" onclick="almLente('mestre')">🗂 Catálogo de Peças</button>
-        <button class="btn" id="alm-l-armazem" onclick="almLente('armazem')">📦 Almoxarifado</button>
+        <button class="btn" id="alm-l-armazem" onclick="almLente('armazem')">📦 Estoque</button>
         <input id="alm-busca" placeholder="🔍 Código ou descrição da peça…" style="width:210px" oninput="buscarPecas()">
         <span id="alm-ops" style="display:none;align-items:center;gap:6px">
           <select id="alm-local" style="width:160px;font-size:11px" onchange="almLocalSel(this.value)"></select>
@@ -317,7 +317,7 @@ button:disabled, select:disabled, input:disabled, [aria-disabled=true] { cursor:
         <button class="btn o" id="alm-btn-novo" onclick="novaPeca()">＋ Nova peça</button>
         <span class="muted">clique = marca · duplo clique = ficha</span>
       </div>
-      <div style="flex:1;overflow:auto;background:#fff;border:1px solid #E2E8F0;border-radius:6px">
+      <div style="flex:1;overflow:auto;background:#fff;border:1px solid #E2E8F0;border-radius:6px" oncontextmenu="ctxExpandir(event,'alm')">
         <table>
           <thead><tr id="alm-thead">
             <th style="width:100px">Código</th><th>Descrição</th><th style="width:80px">Família</th>
@@ -819,7 +819,8 @@ function expandirTudo(mod, abrir){
     _otsGrpFechados = abrir ? new Set() : new Set(_otsGrpIds);
     renderOTs();                              // só os grupos da lista central; o menu de tipos não muda
   } else if (mod === 'alm') {
-    _almArvTodas = abrir; montarNavAlm();
+    _almGrpFechados = abrir ? new Set() : new Set(_almGrpIds);   // só os grupos da lista central; a árvore não muda
+    carregarPecasReais();
   }
 }
 
@@ -1860,8 +1861,8 @@ const _MW = {
         ['\ud83d\udcce Documentos',"(function(){const i=_mwPrecisa('frota','objeto'); if(i) equipDocumentos(i);})()"],
         ['\ud83d\udd29 Itens Aplicados',"(function(){const i=_mwPrecisa('frota','objeto'); if(i) equipArtigos(i);})()"],
         {sub:'\u23f1 Tempos', itens:[['\ud83d\udcc8 Registro Funcionamento','equipFuncionamento'],['\u26fd Abastecimentos','equipAbastecimentos']], sel:true},
-        ['\ud83d\udcd0 Pontos Leitura',"(function(){const i=_mwPrecisa('frota','objeto'); if(i) verEquipReal(i,'pontos');})()"],
-        ['\ud83d\udcda Hist\u00f3rico Utiliza\u00e7\u00e3o',"(function(){const i=_mwPrecisa('frota','objeto'); if(i) equipFuncionamento(i);})()"],
+        ['\ud83d\udea6 Pontos de leitura',"(function(){const i=_mwPrecisa('frota','objeto'); if(i) equipPontos(i);})()"],
+        ['\ud83d\udcda Hist\u00f3rico Utiliza\u00e7\u00e3o',"(function(){const i=_mwPrecisa('frota','objeto'); if(i) otsDoEquip(i,true);})()"],
         ['\u2699\ufe0f Parametrizar',"showModule('param')"]]],
       ['\ud83d\udd27','Ferramentas',[
         {sub:'\ud83d\udcd2 Registros', itens:[['\u26fd Abastecimentos','equipAbastecimentos'],['\ud83d\udcc8 Registro Funcionamento','equipFuncionamento'],
@@ -1893,7 +1894,7 @@ const _MW = {
       ['\ud83d\udd27','Ferramentas',[
         {sub:'\ud83d\udcd2 Registros', itens:[['\ud83d\udc65 Registro M\u00e3o de Obra',"(function(){const i=_mwPrecisa('ots','OT'); if(i) otAbrirEm(i,'mo');})()"],['\ud83d\udd29 Registro Itens',"(function(){const i=_mwPrecisa('ots','OT'); if(i) verOTReal(i);})()"],['\ud83d\udcc4 Registro Outros',"(function(){const i=_mwPrecisa('ots','OT'); if(i) otAbrirEm(i,'ou');})()"]]},
         ['\u270f\ufe0f M\u00faltipla Edi\u00e7\u00e3o OTs',"multiEdicao('ots')"],
-        ['\u26a0\ufe0f Modos Falha',"showModule('param')"],
+        ['\u26a0\ufe0f Modos Falha (sintomas / causas)',"showModule('param');abrirParamPane('sintomas','dom','Sintomas e Causas')"],
         ['\ud83d\udcca Carga Trabalhos',"cargaTrabalhos()"],
         ['\ud83e\udd1d Contratos',"contratosJanela()"],
         ['\ud83d\ude9a Guias Transporte',"guiasJanela()"]]]
@@ -1906,7 +1907,7 @@ const _MW = {
     repetir:"(function(){const i=_mwPrecisa('alm','item'); if(i) artJanela(i);})()",
     excluir:"desativarArtigoMW()", imprimir:"mwImprimir('mod-alm','Materiais')",
     botoes:[
-      ['\ud83d\udc41','Ver',[['\ud83d\uddc2 Cat\u00e1logo de Pe\u00e7as',"almLente('mestre')"],['\ud83d\udce6 Almoxarifado',"almLente('armazem')"]]],
+      ['\ud83d\udc41','Ver',[['\ud83d\uddc2 Cat\u00e1logo de Pe\u00e7as',"almLente('mestre')"],['\ud83d\udce6 Estoque',"almLente('armazem')"]]],
       ['\ud83d\udcca','An\u00e1lises',[['\ud83d\udcca An\u00e1lise ABC',"anABC()"],['\u26a0 Estoque baixo',"almVistaBaixo()"]]],
       ['\ud83d\udce5','Receber',"recebimentosJanela()"],
       ['\u22ef','Mais',[['\u2699\ufe0f Parametrizar',"showModule('param')"]]],
@@ -4788,6 +4789,40 @@ async function _almoxarifados(force){
   return _almList;
 }
 let _almArvAberta = {}, _almArvTodas = null;   // _almArvTodas: pedido pendente de abrir/fechar todas as famílias
+let _almGrpFechados = new Set(), _almGrpIds = [];
+function almGrpAlternar(g){ _almGrpFechados.has(g) ? _almGrpFechados.delete(g) : _almGrpFechados.add(g); carregarPecasReais(); }
+// (11/10/2026) Botão direito num nó da árvore de Materiais = serviços (igual à árvore da Frota)
+function almCtxFam(ev, cod){
+  ev.preventDefault(); ev.stopPropagation();
+  const m = _ctxMenuEl(); m.dataset.cod = cod || '';
+  const it = (ico, txt, fn) => '<div onclick="'+fn+'" style="padding:7px 14px;cursor:pointer;display:flex;gap:8px;align-items:center" onmouseover="this.style.background=\'#F0F4FF\'" onmouseout="this.style.background=\'\'">'+ico+' '+txt+'</div>';
+  m.innerHTML = '<div style="padding:6px 14px;font-weight:800;color:#1A2A5E;border-bottom:1px solid #E2E8F0">'+_esc(cod || 'Todas as peças')+'</div>'
+    + it('📂','Carregar dados', "_ctxMenuEl().style.display='none';almFamFiltra(_ctxMenuEl().dataset.cod)")
+    + it('⬇️','Expandir tudo', "expandirTudo('alm',true)")
+    + it('⬆️','Fechar tudo', "expandirTudo('alm',false)")
+    + (cod ? '<div style="border-top:1px solid #E2E8F0;margin:2px 0"></div>'
+        + it('➕','Nova subfamília aqui dentro', "almFamNova(_ctxMenuEl().dataset.cod)")
+        + it('✏️','Renomear', "almFamRenomear(_ctxMenuEl().dataset.cod)") : '');
+  m.style.left = Math.min(ev.clientX, window.innerWidth-230)+'px';
+  m.style.top = Math.min(ev.clientY, window.innerHeight-160)+'px';
+  m.style.display = 'block';
+}
+async function almFamNova(pai){
+  _ctxMenuEl().style.display = 'none';
+  const sufixo = prompt('Código da subfamília dentro de '+pai+' (ex.: 010):'); if (!sufixo) return;
+  const nome = prompt('Nome da subfamília:'); if (nome === null) return;
+  const codigo = pai + '.' + sufixo.trim();
+  try { await mntFetch('/manutencao/api/param/familias', {method:'POST', body: JSON.stringify({codigo, nome: nome.trim()})});
+    mostrarToast('✅ Família '+codigo+' criada','ok'); paramCacheLimpar('familias'); _almArvAberta[String(pai).split('.')[0]] = true; montarNavAlm();
+  } catch(e){ mostrarToast('❌ '+e.message,'warn'); }
+}
+async function almFamRenomear(cod){
+  _ctxMenuEl().style.display = 'none';
+  const nome = prompt('Nome da família '+cod+':', _almFamNomes[cod] || ''); if (nome === null) return;
+  try { await mntFetch('/manutencao/api/param/familias/'+encodeURIComponent(cod), {method:'PATCH', body: JSON.stringify({nome: nome.trim()})});
+    mostrarToast('✅ Renomeada','ok'); paramCacheLimpar('familias'); montarNavAlm(); carregarPecasReais();
+  } catch(e){ mostrarToast('❌ '+e.message,'warn'); }
+}
 function almArvToggle(raiz){ _almArvAberta[raiz] = !_almArvAberta[raiz]; montarNavAlm(); }
 async function montarNavAlm(){
   await _almoxarifados();
@@ -4819,7 +4854,7 @@ async function montarNavAlm(){
     return [...m.values()].sort((a,b)=>String(a.codigo).localeCompare(String(b.codigo)));
   };
   const item = (cod, rotulo, n, nivel, chev) =>
-    '<div class="pn-item'+(String(_almFamSel)===String(cod)?' on':'')+'" style="padding-left:'+(8+nivel*13)+'px;display:flex;align-items:center;gap:4px">'
+    '<div class="pn-item'+(String(_almFamSel)===String(cod)?' on':'')+'" style="padding-left:'+(8+nivel*13)+'px;display:flex;align-items:center;gap:4px" data-fam="'+_esc(String(cod))+'" oncontextmenu="almCtxFam(event,this.dataset.fam)">'
     + (chev !== undefined
         ? '<span style="cursor:pointer;width:12px;display:inline-block" data-r="'+_esc(String(cod))+'" onclick="event.stopPropagation();almArvToggle(this.dataset.r)" ondblclick="event.stopPropagation()">'+(chev?'▾':'▸')+'</span>'
         : '<span style="width:12px;display:inline-block"></span>')
@@ -5111,13 +5146,25 @@ async function carregarPecasReais(){
     const r = await mntFetch('/manutencao/api/pecas' + (qs.length ? '?' + qs.join('&') : ''));
     _pcNav = (r.itens||[]).map(x => ({codigo:x.codigo, descricao:x.descricao||x.nome||''}));
     if (!r || !Array.isArray(r.itens)) throw new Error('Resposta inesperada do servidor');
-    tb.innerHTML = r.itens.map(p => `<tr data-cod="${_esc(p.codigo)}"${String(_mwSel.alm)===String(p.codigo)?' class="sel"':''} style="cursor:pointer" onclick="listaSelClick(event,this,'alm')" ondblclick="abrirPeca(this.dataset.cod)">
+    // (11/10/2026) Padrão único das listas: sem filtro de família o centro agrupa por família (▾/▸ recolhe);
+    // botão direito no centro = Expandir/Fechar tudo só aqui. Com família marcada ou busca, lista plana.
+    const agrupar = !fam && !q && r.itens.length > 1;
+    const grupos = {}; r.itens.forEach(p => { const g = String(p.familia_codigo || '—').split('.')[0]; (grupos[g] = grupos[g] || []).push(p); });
+    _almGrpIds = Object.keys(grupos).sort();
+    const linhaPeca = p => `<tr data-cod="${_esc(p.codigo)}"${String(_mwSel.alm)===String(p.codigo)?' class="sel"':''} style="cursor:pointer" onclick="listaSelClick(event,this,'alm')" ondblclick="abrirPeca(this.dataset.cod)">
       <td class="bold">${_esc(p.codigo)}</td>
       <td>${_esc(p.descricao)}</td>
       <td>${_esc(p.familia_codigo || '—')}</td>
       <td>${_esc(p.unidade || '')}</td>
       <td class="r mono">${p.custo_medio != null ? 'R$ ' + parseFloat(p.custo_medio).toFixed(2) : '—'}</td>
-    </tr>`).join('') || '<tr><td colspan="5" style="padding:14px;color:#64748B">Nada encontrado.</td></tr>';
+    </tr>`;
+    tb.innerHTML = (agrupar
+      ? _almGrpIds.map(g => {
+          const fechado = _almGrpFechados.has(g);
+          return '<tr class="grp" style="background:#F1F5F9;cursor:pointer" onclick="almGrpAlternar(\''+_esc(g)+'\')"><td colspan="5" style="font-weight:700;color:#1A2A5E;padding:5px 8px">'+(fechado?'▸':'▾')+' '+_esc(g)+(_almFamNomes[g]?' — '+_esc(_almFamNomes[g]):'')+' <span class="muted">('+grupos[g].length+')</span></td></tr>'
+            + (fechado ? '' : grupos[g].map(linhaPeca).join(''));
+        }).join('')
+      : r.itens.map(linhaPeca).join('')) || '<tr><td colspan="5" style="padding:14px;color:#64748B">Nada encontrado.</td></tr>';
   } catch(e) { mostrarToast('❌ '+e.message,'warn'); }
 }
 let _ebRows = [];
