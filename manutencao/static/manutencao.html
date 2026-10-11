@@ -4040,7 +4040,7 @@ function otAba(aba){
       + '<div class="mfield">Sistema'+ro(o.sistema_codigo ? o.sistema_codigo+' — '+(o.sistema_nome||'') : '')+'</div>'
       + '<div class="mfield">C. Custo'+ro(o.centro_custo ? o.centro_custo+' — '+(o.centro_custo_nome||'') : '')+'</div>'
       + '<div class="mfield">Projeto<select id="oe-proj">'+_tabOpts(_projList||[],'id','nome',o.projecto_id,'— nenhum —')+'</select></div>'
-      + '<div class="mfield">FMP (plano de manutenção)<div style="display:flex;gap:4px"><select id="oe-fmp" data-val="'+_esc(String(o.plano_id||''))+'" style="flex:1" onchange="otAplicarFMP(true)"><option value="">— carregando —</option></select><button class="btn" title="Aplicar a FMP escolhida: herda tipo de trabalho, tarefas e peças" onclick="otAplicarFMP()">↻ Reaplicar</button></div></div>'
+      + '<div class="mfield">FMP (plano de manutenção)<div style="display:flex;gap:4px"><select id="oe-fmp" data-val="'+_esc(String(o.plano_id||''))+'" style="flex:1" onchange="otAplicarFMP(true)" title="Escolher a FMP aplica a ficha à OT (descrição, tipo de trabalho, programação, tarefas)"><option value="">— carregando —</option></select></div></div>'
       + '<div class="mfield">Tipo Trab.'+ro(o.tipo_trabalho)+'</div>'
       + '</div>'
       // ── coluna direita ──
@@ -4349,7 +4349,7 @@ async function otPeriodicidade(o){
 async function otAplicarFMP(aoEscolher){
   const o = _otAberta; if (!o) return;
   const sel = document.getElementById('oe-fmp'); const pid = (sel||{}).value;
-  if (!pid) { if (!aoEscolher) mostrarToast('Escolha a FMP', 'warn'); return; }
+  if (!pid) return;
   if (aoEscolher && String(o.plano_id||'') === String(pid)) return;
   const rot = sel.options[sel.selectedIndex].text.split(' — ')[0];
   const descAtual = ((document.getElementById('ot-descricao')||{}).value || '').trim();
