@@ -733,8 +733,11 @@ async def mudar_status_ot(ot_id: str, request: Request, payload=Depends(verifica
         # (15/09/2026) Fecha o ciclo da FMP: a conclusão vira a nova baseline (data + leitura viva)
         await _garantir_planos_cols()
         await ajard_query(
-            """UPDATE manutencao.planos p SET ultima_data = now()::date,
-                      ultima_leitura = e.horimetro_atual
+            """UPDATE manutencao.planos p SET
+                      ultima_data = CASE WHEN COALESCE(p.data_fixa,false) AND o.data_prevista IS NOT NULL
+                                         THEN o.data_prevista ELSE now()::date END,
+                      ultima_leitura = CASE WHEN COALESCE(p.registro_fixo,false) AND o.horimetro_previsto IS NOT NULL
+                                            THEN o.horimetro_previsto ELSE e.horimetro_atual END
                FROM manutencao.ot o JOIN operacional.equipamentos e ON e.id = o.equipamento_id
                WHERE o.id=%s AND o.plano_id IS NOT NULL AND p.id = o.plano_id""",
             (ot_id,), fetch="none")
@@ -2154,7 +2157,10 @@ async def _garantir_planos_cols():
     if _planos_cols_ok:
         return
     await ajard_query("ALTER TABLE manutencao.planos ADD COLUMN IF NOT EXISTS ativo BOOLEAN DEFAULT true, "
-                      "ADD COLUMN IF NOT EXISTS ultima_data DATE, ADD COLUMN IF NOT EXISTS ultima_leitura NUMERIC", fetch="none")
+                      "ADD COLUMN IF NOT EXISTS ultima_data DATE, ADD COLUMN IF NOT EXISTS ultima_leitura NUMERIC, "
+                      # (10/10/2026) ManWinWin "Data Fixa" / "Registo Fixo": o próximo ciclo conta a partir da
+                      # data/leitura PROGRAMADA (calendário rígido) e não da execução real (calendário flutuante)
+                      "ADD COLUMN IF NOT EXISTS data_fixa BOOLEAN DEFAULT false, ADD COLUMN IF NOT EXISTS registro_fixo BOOLEAN DEFAULT false", fetch="none")
     _planos_cols_ok = True
 
 @router.get("/manutencao/api/planos-todos")
@@ -2434,7 +2440,8 @@ async def detalhe_equipamento(eq_id: str, _auth=Depends(verificar_manutencao)):
     await _garantir_biblioteca()
     planos = await ajard_query(
         """SELECT id, codigo, descricao, tipo_trabalho, periodo_codigo, periodo_qtd, tempo_horas, hh_previsto, custo_previsto, procedimento, plano_proximo_codigo,
-                  mao_obra, pecas, outros, ferramentas, ultima_data, ultima_leitura
+                  mao_obra, pecas, outros, ferramentas, ultima_data, ultima_leitura, preparacao_codigo,
+                  COALESCE(data_fixa,false) AS data_fixa, COALESCE(registro_fixo,false) AS registro_fixo
            FROM manutencao.planos WHERE equipamento_id=%s AND ativo=true ORDER BY codigo""", (eq_id,))
     ots = await ajard_query(
         """SELECT numero, tipo, prioridade, status, descricao, data_abertura, data_conclusao, custo_total
@@ -3224,6 +3231,9 @@ async def editar_plano(pid: str, request: Request, payload=Depends(verificar_man
             sets.append(f"{c}=%s"); params.append(_json.dumps(d[c] or []))
     if "ativo" in d:
         sets.append("ativo=%s"); params.append(bool(d["ativo"]))
+    for c in ("data_fixa", "registro_fixo"):
+        if c in d:
+            sets.append(f"{c}=%s"); params.append(bool(d[c]))
     if "preparacao_codigo" in d:
         sets.append("preparacao_codigo=%s"); params.append((d.get("preparacao_codigo") or "").strip() or None)
     _blocos = [d.get("mao_obra") or [], d.get("pecas") or [], d.get("outros") or []]
@@ -3556,6 +3566,7 @@ async def _calcular_previsoes():
     planos = await ajard_query(
         """SELECT p.id, p.equipamento_id, p.codigo, p.descricao, p.tipo_trabalho,
                   p.periodo_codigo, p.periodo_qtd, p.custo_previsto, p.ultima_data, p.ultima_leitura, p.criado_em,
+                  p.plano_proximo_codigo, COALESCE(p.data_fixa,false) AS data_fixa, COALESCE(p.registro_fixo,false) AS registro_fixo,
                   e.codigo AS eq_codigo, e.descricao AS eq_desc,
                   e.horimetro_atual, e.medicao,
                   per.nome AS periodo_nome
@@ -3601,6 +3612,7 @@ async def _calcular_previsoes():
                 "eq_descricao": p["eq_desc"], "tipo_trabalho": p["tipo_trabalho"],
                 "periodo": p["periodo_nome"] or p["periodo_codigo"], "periodo_qtd": (float(p["periodo_qtd"]) if p["periodo_qtd"] is not None else None),
                 "modo": modo, "unidade": unidade, "custo_previsto": (float(p["custo_previsto"]) if p["custo_previsto"] is not None else None),
+                "proxima_fmp": p.get("plano_proximo_codigo"), "data_fixa": bool(p.get("data_fixa")), "registro_fixo": bool(p.get("registro_fixo")),
                 "ultima_data": (base_dt.isoformat() if u else None),
                 "ultima_leitura": base_leitura, "leitura_atual": atual or None,
                 "fmd": eq_fmd, "proxima_data": None, "leitura_alvo": None,
@@ -3774,7 +3786,7 @@ async def plano_baseline(plano_id: str, request: Request, _auth=Depends(verifica
     """Última execução manual da FMP (data + leitura) — baseline do ciclo quando não há OT concluída."""
     await _garantir_planos_cols()
     d = await request.json()
-    dt = (d.get("ultima_data") or "").strip() or None
+    dt = _data_ok(d.get("ultima_data"), "Última execução")
     le = d.get("ultima_leitura")
     le = float(str(le).replace(",", ".")) if le not in (None, "") else None
     # (16/09/2026) Coerência com o objeto: não pode ter executado antes de existir,
