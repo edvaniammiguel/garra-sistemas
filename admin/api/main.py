@@ -828,6 +828,8 @@ app.include_router(sistema_router)
 app.include_router(pages_router)
 from routers.manutencao import router as manutencao_router  # v26
 app.include_router(manutencao_router)
+from routers.relatorios import router as relatorios_router  # (11/10/2026) Relatórios + Excel
+app.include_router(relatorios_router)
 from routers.compras import router as compras_router  # v28 — Ordens de Compra
 app.include_router(compras_router)
 from routers.abastecimentos import router as abastecimentos_router  # 29/08 — reconstruído
