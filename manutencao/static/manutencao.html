@@ -93,8 +93,14 @@ tr.sel td{background:#DBEAFE!important;color:#1A2A5E}
 .pn-arr:hover{color:#E8820C}
 .pn-body{display:none}
 .pn-body.open{display:block}
-.pn-item{padding:6px 12px 6px 26px;font-size:11px;cursor:pointer;
-         border-bottom:1px solid #F8FAFC;color:#334155;user-select:none}
+.pn-item{padding:6px 12px 6px 26px;font-size:11px;cursor:pointer;line-height:1.35;
+         border-bottom:1px solid #F8FAFC;color:#1E293B;user-select:none}
+/* (10/10/2026) Rótulo longo ("A — Preventivo Sistemático") quebra linha inteiro, nunca fica cortado;
+   a contagem vai para a direita e não disputa espaço com a última palavra */
+#tt-nav .pn-item{display:flex;align-items:flex-start;gap:6px}
+#tt-nav .pn-item .pn-lbl{flex:1;min-width:0;overflow-wrap:anywhere}
+#tt-nav .pn-item .muted{flex-shrink:0;margin-left:auto}
+#tt-nav .pn-item.on .muted{color:#CBD5E1}
 .pn-item:hover{background:#F0F4FF}
 .pn-item.on{background:#1A2A5E;color:#fff;font-weight:700}
 .param-pane{flex:1;overflow:auto;padding:14px;background:#F8FAFC}
@@ -833,7 +839,7 @@ function montarNavTipos(){
     '<div class="pn-item'+(String(_filtroTT)===String(cod)?' on':'')+'"'+(filho?' style="padding-left:30px"':'')
     + ' data-tt="'+(cod===null?'':_esc(cod))+'" onclick="ttMarcar(this)" ondblclick="filtrarTT('+(cod===null?'null':'\''+cod+'\'')+')" title="Duplo clique filtra">'
     + (seta ? '<span onclick="event.stopPropagation();ttAlternar(\''+seta+'\')" ondblclick="event.stopPropagation()" style="display:inline-block;width:14px;cursor:pointer" title="Expandir / recolher">'+(_ttFechados.has(seta)?'▸':'▾')+'</span>' : '')
-    + rotulo + ' <span class="muted">('+cont(cod)+')</span></div>';
+    + '<span class="pn-lbl">' + rotulo + '</span><span class="muted">('+cont(cod)+')</span></div>';
   const tipos = (_mntTiposTrab || []).filter(t => t.ativo !== false);
   const letras = [...new Set(tipos.map(t => (t.codigo||'').charAt(0)).filter(Boolean))].sort();
   // (26/09/2026) Hierarquia ManWinWin: a letra é a pasta (nome vindo do próprio cadastro
@@ -4380,7 +4386,9 @@ async function salvarOrigem(fechar, promover){
     const interv = (document.querySelector('input[name="oe-interv"]:checked')||{}).value || 'interno';
     if (interv === 'externo' && !g('oe-forn').value) { mostrarToast('Interventor externo: escolha o fornecedor', 'warn'); g('oe-forn').focus(); return; }
     Object.assign(body, {
-      ...(_mntTiposTrab.length ? {tipo_trabalho: g('oe-tipo').value} : {tipo: g('oe-tipo').value}),
+      // (10/10/2026) 'Tipo' da Origem é a classe (corretiva/preventiva/…); a sigla do Tipo de Trabalho (A1, C1…)
+      // só vem da FMP ou da Nova OT — este select gravava 'preventiva' em tipo_trabalho e a lista mostrava por extenso
+      tipo: g('oe-tipo').value,
       prioridade: g('oe-prior').value,
       interventor: interv,
       fornecedor_id: interv === 'externo' ? (g('oe-forn').value || null) : null,
