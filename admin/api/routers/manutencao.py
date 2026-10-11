@@ -211,6 +211,9 @@ async def _garantir_colunas_ot():
         await ajard_query(ddl, fetch="none")
     # OT que já tem fornecedor é externa (migração idempotente)
     await ajard_query("UPDATE manutencao.ot SET interventor='externo' WHERE fornecedor_id IS NOT NULL AND COALESCE(interventor,'interno')='interno' AND setor_interventor IS NULL", fetch="none")
+    # (10/10/2026) Saneia tipo_trabalho gravado por extenso pela Origem ('preventiva'…): volta a sigla da FMP, ou limpa
+    await ajard_query("""UPDATE manutencao.ot o SET tipo_trabalho = (SELECT p.tipo_trabalho FROM manutencao.planos p WHERE p.id = o.plano_id)
+                         WHERE lower(COALESCE(o.tipo_trabalho,'')) IN ('corretiva','preventiva','reforma','melhoria')""", fetch="none")
     _OT_COLS_OK = True
 
 
