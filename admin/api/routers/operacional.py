@@ -415,6 +415,20 @@ async def op_listar_equipamentos(uso: str = None, _auth=Depends(verificar_token)
     )
     return [dict(r) for r in (rows or [])]
 
+def _ano_int(v):
+    """(10/10/2026) A ficha manda o ano como texto ('2025'); a coluna é INTEGER e o asyncpg
+    não converte sozinho → 500 'str object cannot be interpreted as an integer'."""
+    if v in (None, ""):
+        return None
+    try:
+        n = int(str(v).strip())
+    except ValueError:
+        raise HTTPException(status_code=400, detail=f"Ano inválido: {v}")
+    if not 1950 <= n <= 2100:
+        raise HTTPException(status_code=400, detail=f"Ano fora do intervalo (1950–2100): {n}")
+    return n
+
+
 @router.post("/operacional/api/equipamentos")
 async def op_criar_equipamento(request: Request, payload=Depends(verificar_gestor)):
     """Cria equipamento — sincroniza em operacional.equipamentos + checklist.frota."""
@@ -429,7 +443,7 @@ async def op_criar_equipamento(request: Request, payload=Depends(verificar_gesto
         raise HTTPException(status_code=400, detail="Código, descrição e categoria são obrigatórios")
     marca  = (d.get("marca")  or "").strip() or None
     modelo = (d.get("modelo") or "").strip() or None
-    ano    = d.get("ano")
+    ano    = _ano_int(d.get("ano"))
     placa  = (d.get("placa")  or "").strip() or None
     operador_resp = (d.get("operador_responsavel_id") or "").strip() or None
     agenda_ics_url = (d.get("agenda_ics_url") or "").strip() or None
@@ -496,6 +510,8 @@ async def op_editar_equipamento(eq_id: str, request: Request, payload=Depends(ve
                 valor = valor.strip() or None
                 if campo in ("categoria","medicao") and valor:
                     valor = valor.lower()
+            if campo == "ano":
+                valor = _ano_int(valor)
             updates.append(f"{campo}=%s"); valores.append(valor)
     if not updates:
         raise HTTPException(status_code=400, detail="Nada a atualizar")
