@@ -2118,14 +2118,16 @@ async function novoEquipMW(copiarDe, editar){
     const g = async d => { try { return (await mntFetch('/manutencao/api/param/'+d)).filter(x => x.ativo !== false); } catch(e){ return []; } };
     let ops = [], forn = [];
     try { ops = await mntFetch('/operacional/api/operadores'); } catch(e){}
-    try { forn = await mntFetch('/manutencao/api/fornecedores'); } catch(e){}
+    try { forn = _mntFornList || await mntFetch('/manutencao/api/fornecedores'); if (!_mntFornList) _mntFornList = Array.isArray(forn) ? forn : (forn.itens || []); } catch(e){}
     _mwDom = { tipos: await g('tipos-equipamento'), sistemas: await g('sistemas'), ccs: await g('centros-custo'),
                operadores: Array.isArray(ops) ? ops : (ops.itens || []), fornecedores: Array.isArray(forn) ? forn : (forn.itens || []) };
   }
   _neEditId = null;
   let base = {};
   if (copiarDe){
-    try { const d = await mntFetch('/manutencao/api/equipamentos/'+copiarDe+'/detalhe'); base = d.equipamento || d || {}; }
+    // (11/10/2026) desempenho: em edição o verEquipReal já trouxe o detalhe — não busca de novo
+    if (editar && _eqFicha && String(_eqFicha.id) === String(copiarDe)) base = _eqFicha;
+    else try { const d = await mntFetch('/manutencao/api/equipamentos/'+copiarDe+'/detalhe'); base = d.equipamento || d || {}; }
     catch(e){ base = _navEquipObjs().find(x => String(x.id) === String(copiarDe)) || {}; }
     if (typeof base.caracteristicas === 'string') { try { base.caracteristicas = JSON.parse(base.caracteristicas); } catch(x){ base.caracteristicas = []; } }
     if (typeof base.garantia === 'string') { try { base.garantia = JSON.parse(base.garantia); } catch(x){ base.garantia = {}; } }
@@ -2138,7 +2140,9 @@ async function novoEquipMW(copiarDe, editar){
   // Rascunho sem id: os blocos são colhidos no OK/Aplicar e gravados logo após o POST criar o objeto.
   else { _eqFicha = Object.assign({}, base, { id: null, codigo: '', garantia: (base.garantia && typeof base.garantia === 'object') ? base.garantia : {}, info_compl: (base.info_compl && typeof base.info_compl === 'object') ? base.info_compl : {}, medicao: base.medicao || 'horimetro' }); }
   const sisAtivo = (typeof _arvNoAtivo === 'string' && _arvNoAtivo !== '_todos') ? _arvNoAtivo : (base.sistema_codigo || '');
-  const tipoIni = base.tipo_sigla || (sisAtivo ? _neTipoDoSistema(sisAtivo) : '') || '';
+  // (10/10/2026) Objeto gravado sem tipo (ex.: criado pelo Admin): o Tipo Objeto vem da sigla do código (EH-51 → EH)
+  const _sigDoCod = (base.codigo && (_mwDom.tipos||[]).some(t => t.sigla === String(base.codigo).split('-')[0].toUpperCase())) ? String(base.codigo).split('-')[0].toUpperCase() : '';
+  const tipoIni = base.tipo_sigla || _sigDoCod || (sisAtivo ? _neTipoDoSistema(sisAtivo) : '') || '';
   const sel = (id, lista, val, chave, rot, vazio) => '<select id="'+id+'" onchange="'+(id==='ne-tipo'?'neTipoMudou()':'')+'"><option value="">'+(vazio||'\u2014')+'</option>'
       + lista.map(x => '<option value="'+_esc(x[chave])+'"'+(String(x[chave])===String(val||'')?' selected':'')+'>'+(chave==='id' ? _esc(x[rot]||'') : _esc(x[chave])+(x[rot]?' \u2014 '+_esc(x[rot]):''))+'</option>').join('')+'</select>';
   const fld = (rot, html, w) => '<div class="ne-f"'+(w?' style="flex:'+w+'"':'')+'><span class="ne-l">'+rot+'</span>'+html+'</div>';
@@ -4504,7 +4508,7 @@ function fichaAba(aba, alvo){
       +   fld('Observações','<textarea id="fc-obs" rows="3">'+_esc(ct.obs||'')+'</textarea>') + '</div>'
       + '</div><div style="display:flex;justify-content:flex-end;margin-top:10px"><button class="btn p" onclick="fichaSalvarOper()">💾 Salvar</button></div>';
     // fornecedores nos dois selects (mostra só o nome)
-    mntFetch('/manutencao/api/fornecedores').then(r => {
+    (_mntFornList ? Promise.resolve(_mntFornList) : mntFetch('/manutencao/api/fornecedores').then(r => { _mntFornList = Array.isArray(r) ? r : (r.itens || []); return _mntFornList; })).then(r => {
       const lista = Array.isArray(r) ? r : (r.itens || []);
       ['fg-forn','fc-forn'].forEach(id => { const el = document.getElementById(id); if (!el) return; const v = el.dataset.val;
         el.innerHTML = '<option value="">—</option>' + lista.map(f => '<option value="'+f.id+'"'+(String(f.id)===String(v)?' selected':'')+'>'+_esc(f.nome)+'</option>').join(''); });
