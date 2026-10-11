@@ -514,8 +514,11 @@ async function renderArvore(){
   if (_arvAbertos === null) _arvAbertos = new Set();
   const nivel = cod => cod.split('.').length - 1;
   const ordem = {vermelho:0, laranja:1, amarelo:2, verde:3};
+  // (10/10/2026) Procurar (barra e árvore) acha OBJETOS, não só nomes de sistema: "EH" mostra os ramos que
+  // têm EH-xx e o centro lista os objetos encontrados (padrão ManWinWin)
+  const eqCasa = e => !q || [e.codigo, e.descricao, e.placa, e.marca, e.modelo].some(v => String(v||'').toLowerCase().includes(q));
   const sems = _arvSistemas.slice().sort((a,b)=> a.codigo.localeCompare(b.codigo))
-    .filter(s => !q || s.nome.toLowerCase().includes(q) || s.codigo.includes(q));
+    .filter(s => !q || s.nome.toLowerCase().includes(q) || s.codigo.includes(q) || _eqsDoNo(s.codigo).some(eqCasa));
   let html = '<div class="pn-grp'+(_arvSel==='_todos'?' sel':'')+'" data-cod="_todos" onclick="arvNoMarcar(this.dataset.cod)" ondblclick="arvCarregar(this.dataset.cod)" oncontextmenu="arvCtxGrupo(event,this.dataset.cod)" style="font-size:12px" title="Duplo clique carrega">🏢 Organização <span class="muted">('+_semCache.length+')</span></div>';
   sems.forEach(s => {
     if (!q) {
@@ -536,7 +539,7 @@ async function renderArvore(){
       + '<span class="mono" style="font-size:9px;color:'+(ativo?'#93C5FD':'#94A3B8')+'">'+_esc(s.codigo)+'</span> '+_esc(s.nome)
       + ' <span class="muted"'+(ativo?' style="color:#CBD5E1"':'')+'>('+eqs.length+(verm?' · '+verm+'🔴':'')+')</span></div>';
   });
-  const semGrupo = _eqsDoNo('_sem');
+  const semGrupo = _eqsDoNo('_sem').filter(eqCasa);
   if (semGrupo.length)
     html += '<div class="pn-grp" data-cod="_sem" onclick="arvNoMarcar(this.dataset.cod)" ondblclick="arvCarregar(this.dataset.cod)" title="Duplo clique carrega">❔ Sem grupo <span class="muted">('+semGrupo.length+') — aponte em Cadastros</span></div>';
   const _st = corpo.scrollTop; corpo.innerHTML = html; corpo.scrollTop = _st;   // não mexe na rolagem do menu
@@ -574,13 +577,16 @@ function arvCarregar(cod){
 }
 function renderCentroEquip(){
   const centro = document.getElementById('frota-centro'); if (!centro) return;
-  if (!_arvNoAtivo) { frotaLimpar(); return; }
-  const cod = _arvNoAtivo;
-  const rot = cod === '_todos' ? '🏢 Organização — todos'
+  const q = ((document.getElementById('arv-busca')||{}).value || '').trim().toLowerCase();
+  if (!_arvNoAtivo && !q) { frotaLimpar(); return; }
+  const cod = q ? '_todos' : _arvNoAtivo;
+  const eqCasa = e => !q || [e.codigo, e.descricao, e.placa, e.marca, e.modelo].some(v => String(v||'').toLowerCase().includes(q));
+  const rot = q ? '🔍 Procura "'+_esc(q)+'"'
+            : cod === '_todos' ? '🏢 Organização — todos'
             : cod === '_sem' ? '❔ Sem grupo definido'
             : ((_arvSistemas.find(s=>s.codigo===cod)||{}).nome ? cod+' — '+(_arvSistemas.find(s=>s.codigo===cod)||{}).nome : cod);
   const ordem = {vermelho:0, laranja:1, amarelo:2, verde:3};
-  const todos = _eqsDoNo(cod);
+  const todos = _eqsDoNo(cod).filter(eqCasa);
   const filhosDe = id => _semCache.filter(f => String(f.equipamento_pai) === String(id));
   const paiDe = e => (_semCache.find(x=>String(x.id)===String(e.equipamento_pai))||{}).codigo || '?';
   const dotOf = st => ({vermelho:'r',laranja:'o',amarelo:'y',verde:'g'})[st] || 'g';
@@ -590,7 +596,7 @@ function renderCentroEquip(){
       + 'onclick="frotaSelClick(event,this)" '
       + 'ondblclick="verEquipReal(this.dataset.id)" '
       + 'oncontextmenu="showCtxReal(event,this.dataset.id,\'equip\',this.dataset.cod)">';
-  const eqs = (_ftModo === 'lista' ? todos.slice() : todos.filter(e => !e.equipamento_pai))
+  const eqs = ((_ftModo === 'lista' || q) ? todos.slice() : todos.filter(e => !e.equipamento_pai))   // procura: lista plana, filhos (pneus) também aparecem
       .sort((a,b)=> (ordem[a.status]-ordem[b.status]) || a.codigo.localeCompare(b.codigo));
   let thead, linhas, colspan;
   if (_ftModo === 'lista'){
@@ -2127,6 +2133,10 @@ async function novoEquipMW(copiarDe, editar){
   }
   // (14/09/2026) MESMA janela para criar, ver e editar (réplica MWW "Objeto").
   if (editar && copiarDe) { _neEditId = copiarDe; _eqFicha = base; }
+  // (10/10/2026) Novo Objeto no padrão ManWinWin: Dados Operacionais (Tempos · FMD · Garantia · Contrato) e
+  // Info. Complementares completos JÁ na criação — antes só apareciam depois do OK (ficha de edição).
+  // Rascunho sem id: os blocos são colhidos no OK/Aplicar e gravados logo após o POST criar o objeto.
+  else { _eqFicha = Object.assign({}, base, { id: null, codigo: '', garantia: (base.garantia && typeof base.garantia === 'object') ? base.garantia : {}, info_compl: (base.info_compl && typeof base.info_compl === 'object') ? base.info_compl : {}, medicao: base.medicao || 'horimetro' }); }
   const sisAtivo = (typeof _arvNoAtivo === 'string' && _arvNoAtivo !== '_todos') ? _arvNoAtivo : (base.sistema_codigo || '');
   const tipoIni = base.tipo_sigla || (sisAtivo ? _neTipoDoSistema(sisAtivo) : '') || '';
   const sel = (id, lista, val, chave, rot, vazio) => '<select id="'+id+'" onchange="'+(id==='ne-tipo'?'neTipoMudou()':'')+'"><option value="">'+(vazio||'\u2014')+'</option>'
@@ -2192,7 +2202,7 @@ async function novoEquipMW(copiarDe, editar){
     + '</div></div>'
     // aba 3 — Info. Complementares
     + '<div class="ne-pane" id="ne-p3"><div style="display:flex;gap:8px;flex-wrap:wrap">'
-    + (editar ? '' : fld('Criticidade','<select id="ne-crit">'+['','normal','alta','critica'].map(c=>'<option value="'+c+'"'+((base.criticidade||'')===c?' selected':'')+'>'+(c||'\u2014')+'</option>').join('')+'</select>',1))
+    + (true ? '' : fld('Criticidade','<select id="ne-crit">'+['','normal','alta','critica'].map(c=>'<option value="'+c+'"'+((base.criticidade||'')===c?' selected':'')+'>'+(c||'\u2014')+'</option>').join('')+'</select>',1))
     + fld('Posi\u00e7\u00e3o (no pai)', inp('ne-pos', base.posicao||'', 'ex.: dianteiro esquerdo'),1)
     + '</div></div>'
     // aba 4 — Notas
@@ -2221,6 +2231,14 @@ async function novoEquipMW(copiarDe, editar){
     if (rod && rod.querySelector('button')) { const nav = document.createElement('div'); nav.style.marginRight = 'auto'; nav.innerHTML = fichaNavBarra(); rod.prepend(nav); }
     return;
   }
+  // novo: mesmos blocos MWW (sem Notas-diário, que exige objeto gravado — a aba Notas tem o texto livre)
+  [['ne-p2','oper'],['ne-p3','compl']].forEach(([pid, aba]) => {
+    const pane = document.getElementById(pid); if (!pane) return;
+    const d = document.createElement('div'); d.style.marginTop = '10px'; d.style.borderTop = '1px solid #E2E8F0'; d.style.paddingTop = '8px'; pane.appendChild(d); fichaAba(aba, d);
+    d.querySelectorAll('button').forEach(b => { if (/Salvar/.test(b.textContent)) b.closest('div').remove(); });
+  });
+  // a unidade do FMD acompanha a Medição escolhida
+  const med = document.getElementById('ne-med'); if (med) med.addEventListener('change', () => { const u = document.getElementById('fo-unid'); if (u) u.value = med.value === 'km' ? 'KM' : 'H'; });
   neProximo();
 }
 function _neTipoDoSistema(cod){
@@ -2397,6 +2415,9 @@ function neSiglaMudou(){
 }
 function neTipoMudou(){
   const t = document.getElementById('ne-tipo').value;
+  // (10/10/2026) Em EDIÇÃO o código é identidade histórica: mudar o Tipo só classifica o objeto
+  // (tipo_sigla) — não recalcula estrutura nem número. Só o Novo propõe o próximo código.
+  if (_neEditId) return;
   document.getElementById('ne-sigla').value = t;
   const tp = (_mwDom.tipos||[]).find(x => x.sigla === t);
   if (tp) _neAplicarTipo(tp);
@@ -2458,15 +2479,14 @@ async function neSalvar(fechar){
                   num_serie: _serie||null, ano_fabricacao: _ano||null, criticidade: v('ne-crit')||null, cor: car('COR')||null, marca: _marca||null, modelo: _modelo||null,
                   posicao: v('ne-pos')||null, equipamento_pai: v('ne-pai')||null, notas: v('ne-notas')||null, caracteristicas: cars };
   // (14/09/2026) Janela unificada: OK/Aplicar gravam os blocos MWW junto (sem Salvar por bloco)
-  if (eraEdicao) {
-    if (document.getElementById('fo-fmd')) {
-      if (!document.getElementById('fo-calc').checked && !(parseFloat(document.getElementById('fo-fmd').value) > 0)) {
-        mostrarToast("Desmarcou 'Calcular por registros': informe o FMD manual", 'warn'); document.getElementById('fo-fmd').focus(); return;
-      }
-      Object.assign(ficha, _colOper());
+  // (10/10/2026) blocos MWW existem também no Novo Objeto: colhe sempre que estiverem na tela
+  if (document.getElementById('fo-fmd')) {
+    if (!document.getElementById('fo-calc').checked && !(parseFloat(document.getElementById('fo-fmd').value) > 0)) {
+      mostrarToast("Desmarcou 'Calcular por registros': informe o FMD manual", 'warn'); document.getElementById('fo-fmd').focus(); return;
     }
-    if (document.getElementById('ic-familia')) Object.assign(ficha, _colCompl());
+    Object.assign(ficha, _colOper());
   }
+  if (document.getElementById('ic-familia')) Object.assign(ficha, _colCompl());
   if (!ficha.criticidade) delete ficha.criticidade;
   try {
     let id = _neEditId;
@@ -4479,7 +4499,7 @@ function fichaAba(aba, alvo){
         el.innerHTML = '<option value="">—</option>' + lista.map(f => '<option value="'+f.id+'"'+(String(f.id)===String(v)?' selected':'')+'>'+_esc(f.nome)+'</option>').join(''); });
     }).catch(()=>{});
     // FMD: ☑ = FMD-R dos registros (travado, Data = último registro) · ☐ = manual obrigatório, usado nas previsões (MWW)
-    mntFetch('/manutencao/api/equipamentos/'+e.id+'/ritmo').then(r => {
+    (e.id ? mntFetch('/manutencao/api/equipamentos/'+e.id+'/ritmo') : Promise.reject(new Error('novo'))).then(r => {
       const el = document.getElementById('fi-ritmo'); if (!el) return;
       const u = unid.toLowerCase(), dt = r.ultima_data ? r.ultima_data.split('-').reverse().join('/') : '';
       const calcTxt = r.media_h_dia ? 'FMD-R calculado: <b style="color:#1A2A5E">'+r.media_h_dia+' '+u+'/dia</b> · +'+Number(r.avanco).toLocaleString('pt-BR')+' '+u+' em '+r.janela_dias+' dias ('+r.dias_com_uso+' dias com registro) · último '+dt
@@ -4506,7 +4526,7 @@ function fichaAba(aba, alvo){
       + '<div style="flex:0 0 150px"><div class="muted" style="font-size:10px;margin-bottom:4px">Tipo</div>'
       +   chk('ic-parque', true, 'Parque', true) + chk('ic-viatura', !!tp.viatura, 'Viatura') + chk('ic-emm', !!tp.emm, 'EMM') + chk('ic-ferr', !!tp.ferramenta, 'Ferramenta') + '</div>'
       + '<div style="flex:1"><div class="muted" style="font-size:10px;margin-bottom:4px">Identificação</div>'
-      +   rad('estrutura', (idn.usar||'estrutura')==='estrutura', 'Estrutura', 'ic-estr', e.codigo, true)
+      +   rad('estrutura', (idn.usar||'estrutura')==='estrutura', 'Estrutura', 'ic-estr', e.codigo || ((document.getElementById('ne-cod')||{}).value||''), true)
       +   rad('matricula', idn.usar==='matricula', 'Matrícula (placa)', 'ic-matr', idn.matricula || e.placa || '')
       +   rad('emm', idn.usar==='emm', 'Cód. EMM', 'ic-cemm', idn.cod_emm)
       +   rad('u1', idn.usar==='u1', 'Cód. Utilizador N.º 1', 'ic-u1', idn.cod_u1)
