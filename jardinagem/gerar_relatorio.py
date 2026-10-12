@@ -49,6 +49,21 @@ def make_logo(w=160):
         return None, 0, 0
 
 # ── Download foto do Supabase Storage ────────────────────────
+# (12/10/2026) Sessão HTTP reaproveitada (keep-alive) e download em paralelo:
+# o relatório fotográfico baixava 40–80 fotos uma a uma, cada uma com
+# conexão TLS nova — 1–3 min para montar o Excel/e-mail.
+_sess = requests.Session()
+
+def baixar_fotos_lote(paths, supabase_url, service_key, workers=8):
+    """Baixa várias fotos em paralelo. Devolve {storage_path: BytesIO|None}."""
+    from concurrent.futures import ThreadPoolExecutor
+    paths = [p for p in dict.fromkeys(paths) if p]
+    if not paths:
+        return {}
+    with ThreadPoolExecutor(max_workers=min(workers, len(paths))) as ex:
+        bufs = list(ex.map(lambda p: baixar_foto(p, supabase_url, service_key), paths))
+    return dict(zip(paths, bufs))
+
 def baixar_foto(storage_path, supabase_url, service_key,
                 max_px=800, qualidade=80):
     """Baixa foto via signed URL do Supabase Storage.
@@ -67,13 +82,13 @@ def baixar_foto(storage_path, supabase_url, service_key,
             "Authorization": f"Bearer {service_key}",
             "apikey": service_key
         }
-        rs = requests.post(sign_url, json={"expiresIn": 3600},
-                           headers=headers, timeout=10)
+        rs = _sess.post(sign_url, json={"expiresIn": 3600},
+                        headers=headers, timeout=10)
         if rs.status_code == 200:
             signed = rs.json().get("signedURL", "")
             if signed:
                 url = f"{supabase_url}/storage/v1{signed}"
-                r = requests.get(url, timeout=30)
+                r = _sess.get(url, timeout=30)
                 if r.status_code == 200:
                     img = PILImage.open(io.BytesIO(r.content))
                     if img.mode not in ("RGB","L"):
@@ -85,7 +100,7 @@ def baixar_foto(storage_path, supabase_url, service_key,
                     return buf
         # Fallback: acesso direto com apikey
         url = f"{supabase_url}/storage/v1/object/{bucket}/{real_path}"
-        r = requests.get(url, headers=headers, timeout=30)
+        r = _sess.get(url, headers=headers, timeout=30)
         if r.status_code != 200:
             return None
         img = PILImage.open(io.BytesIO(r.content))
@@ -107,6 +122,14 @@ def gerar_relatorio_fotos(semana: dict, pares: list,
     semana: {label, data_ini, data_fim}
     pares:  [{codigo_a, codigo_d, local_nome, foto_antes{storage_path}, foto_depois{storage_path}}]
     """
+    # (12/10/2026) todas as fotos do relatório baixadas em paralelo antes de montar
+    _paths = []
+    for _p in pares:
+        for _k in ("foto_antes", "foto_depois"):
+            _f = _p.get(_k)
+            if _f and _f.get("storage_path"):
+                _paths.append(_f["storage_path"])
+    _fotos = baixar_fotos_lote(_paths, supabase_url, service_key)
     wb = Workbook()
     ws = wb.active
     ws.title = "Relatório Fotográfico"
@@ -193,7 +216,7 @@ def gerar_relatorio_fotos(semana: dict, pares: list,
         # Insere foto ANTES do par A
         foto_a_antes = pa.get("foto_antes")
         if foto_a_antes and foto_a_antes.get("storage_path"):
-            buf_img = baixar_foto(foto_a_antes["storage_path"], supabase_url, service_key)
+            buf_img = _fotos.get(foto_a_antes["storage_path"])
             if buf_img:
                 xl_img = XLImage(buf_img)
                 xl_img.width=FOTO_W; xl_img.height=FOTO_H
@@ -208,7 +231,7 @@ def gerar_relatorio_fotos(semana: dict, pares: list,
         # Insere foto DEPOIS do par A
         foto_a_dep = pa.get("foto_depois")
         if foto_a_dep and foto_a_dep.get("storage_path"):
-            buf_img2 = baixar_foto(foto_a_dep["storage_path"], supabase_url, service_key)
+            buf_img2 = _fotos.get(foto_a_dep["storage_path"])
             if buf_img2:
                 xl_img2 = XLImage(buf_img2)
                 xl_img2.width=FOTO_W; xl_img2.height=FOTO_H
@@ -223,7 +246,7 @@ def gerar_relatorio_fotos(semana: dict, pares: list,
         if pb:
             foto_b_antes = pb.get("foto_antes")
             if foto_b_antes and foto_b_antes.get("storage_path"):
-                buf_img3 = baixar_foto(foto_b_antes["storage_path"], supabase_url, service_key)
+                buf_img3 = _fotos.get(foto_b_antes["storage_path"])
                 if buf_img3:
                     xl_img3 = XLImage(buf_img3)
                     xl_img3.width=FOTO_W; xl_img3.height=FOTO_H
@@ -237,7 +260,7 @@ def gerar_relatorio_fotos(semana: dict, pares: list,
 
             foto_b_dep = pb.get("foto_depois")
             if foto_b_dep and foto_b_dep.get("storage_path"):
-                buf_img4 = baixar_foto(foto_b_dep["storage_path"], supabase_url, service_key)
+                buf_img4 = _fotos.get(foto_b_dep["storage_path"])
                 if buf_img4:
                     xl_img4 = XLImage(buf_img4)
                     xl_img4.width=FOTO_W; xl_img4.height=FOTO_H
