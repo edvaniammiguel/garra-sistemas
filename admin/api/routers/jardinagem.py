@@ -19,7 +19,8 @@ from core.config import (
 )
 from core.db import ajard_query, ajard_query_id
 from core.auth import gerar_token_jard, verificar_token_jard, exigir_acesso_jardinagem
-from core.storage import storage_upload, storage_url, storage_delete
+from core.storage import storage_upload, storage_url, storage_urls, storage_delete
+import asyncio as _asyncio
 from core.helpers import comprimir_imagem, next_code, semanas_do_mes, enviar_email_smtp
 
 router = APIRouter()
@@ -237,7 +238,6 @@ async def jard_patch_mes(mid: int, request: Request, payload=Depends(verificar_t
 
 @router.get("/jardinagem/api/meses/{mid}")
 async def jard_get_mes(mid: int, payload=Depends(verificar_token_jard)):
-    from concurrent.futures import ThreadPoolExecutor
     m = await ajard_query("SELECT * FROM jardinagem.meses WHERE id=%s", (mid,), fetch="one")
     if not m: raise HTTPException(status_code=404, detail="Não encontrado")
     result = dict(m)
@@ -262,15 +262,14 @@ async def jard_get_mes(mid: int, payload=Depends(verificar_token_jard)):
             f"SELECT * FROM jardinagem.fotos WHERE par_id IN ({ph2})",
             tuple(par_ids)
         )
-    # Gerar todas as URLs em paralelo
+    # (12/10/2026) Assinatura em lote, fora do event loop: 1 chamada ao Supabase
+    # por bucket em vez de 1 por foto, e o servidor continua atendendo os outros
+    # enquanto espera (antes o ThreadPoolExecutor bloqueava o loop 3–6 s).
     paths_map = {f["id"]: f["storage_path"] for f in fotos_raw if f.get("storage_path")}
     urls = {}
     if paths_map:
-        with ThreadPoolExecutor(max_workers=12) as ex:
-            futures = {ex.submit(storage_url, path): fid for fid, path in paths_map.items()}
-            for future, fid in futures.items():
-                try: urls[fid] = future.result(timeout=10)
-                except: urls[fid] = ""
+        assinadas = await _asyncio.to_thread(storage_urls, list(paths_map.values()))
+        urls = {fid: assinadas.get(path, "") for fid, path in paths_map.items()}
     # Montar estrutura por par
     fotos_por_par = {}
     for f in fotos_raw:
@@ -385,15 +384,25 @@ async def jard_listar_pares(semana_id: int = None, payload=Depends(verificar_tok
         "SELECT * FROM jardinagem.pares WHERE semana_id=%s AND (ativo IS NULL OR ativo=true) ORDER BY codigo_a",
         (semana_id,)
     )
+    # (12/10/2026) 1 query de fotos para a semana toda + assinatura em lote
+    # (antes: 1 query + N assinaturas por par, em série, bloqueando o loop).
+    fotos_raw = []
+    if pares_raw:
+        ph = ",".join(["%s"] * len(pares_raw))
+        fotos_raw = await ajard_query(
+            f"SELECT * FROM jardinagem.fotos WHERE par_id IN ({ph})",
+            tuple(p["id"] for p in pares_raw))
+    paths = [f["storage_path"] for f in fotos_raw if f.get("storage_path")]
+    urls = await _asyncio.to_thread(storage_urls, paths) if paths else {}
+    fotos_por_par = {}
+    for f in fotos_raw:
+        fd = dict(f)
+        fd["url"] = urls.get(f["storage_path"], "") if f.get("storage_path") else ""
+        fotos_por_par.setdefault(f["par_id"], []).append(fd)
     pares = []
     for p in pares_raw:
         pd = dict(p)
-        fotos = await ajard_query("SELECT * FROM jardinagem.fotos WHERE par_id=%s", (p["id"],))
-        pd["fotos"] = []
-        for f in fotos:
-            fd = dict(f)
-            fd["url"] = storage_url(f["storage_path"]) if f["storage_path"] else ""
-            pd["fotos"].append(fd)
+        pd["fotos"] = fotos_por_par.get(p["id"], [])
         pares.append(pd)
     return {"ok": True, "pares": pares}
 
@@ -652,17 +661,13 @@ async def jard_historico_hoje(semana_id: Optional[int]=None, payload=Depends(ver
         km_raw = await ajard_query("""SELECT id,data,local_nome,km_inicial,km_final,hora_inicio,hora_fim,observacao
             FROM jardinagem.relatorios_diarios WHERE usuario_id=%s AND data=%s ORDER BY criado_em DESC""",
             (payload["sub"],hoje))
-    # Gerar URLs das fotos em paralelo
-    from concurrent.futures import ThreadPoolExecutor
+    # (12/10/2026) Assinatura em lote, fora do event loop
     fotos_list = [dict(f) for f in fotos_raw]
     paths_hoje = [(i, f["storage_path"]) for i, f in enumerate(fotos_list) if f.get("storage_path")]
     urls_hoje = {}
     if paths_hoje:
-        with ThreadPoolExecutor(max_workers=8) as ex:
-            futures = {ex.submit(storage_url, path): i for i, path in paths_hoje}
-            for future, i in futures.items():
-                try: urls_hoje[i] = future.result(timeout=10)
-                except: urls_hoje[i] = ""
+        assinadas = await _asyncio.to_thread(storage_urls, [p for _, p in paths_hoje])
+        urls_hoje = {i: assinadas.get(p, "") for i, p in paths_hoje}
     fotos = []
     for i, f in enumerate(fotos_list):
         f["url"] = urls_hoje.get(i, "") if f.get("storage_path") else ""
@@ -737,7 +742,6 @@ async def jard_km_mes(mes_id: int, payload=Depends(verificar_token_jard)):
 
 @router.get("/jardinagem/api/relatorios/{semana_id}/preview")
 async def jard_preview(semana_id: int, payload=Depends(verificar_token_jard)):
-    from concurrent.futures import ThreadPoolExecutor
     sem = await ajard_query("SELECT * FROM jardinagem.semanas WHERE id=%s", (semana_id,), fetch="one")
     if not sem: raise HTTPException(status_code=404, detail="Semana não encontrada")
     # 1 query pares + 1 query fotos (elimina N+1)
@@ -758,14 +762,11 @@ async def jard_preview(semana_id: int, payload=Depends(verificar_token_jard)):
         fa = fp.get("antes"); fd = fp.get("depois")
         if fa and fa.get("storage_path"): paths_map[f"{pid}_antes"] = fa["storage_path"]
         if fd and fd.get("storage_path"): paths_map[f"{pid}_depois"] = fd["storage_path"]
-    # Gerar todas as URLs em paralelo
+    # (12/10/2026) Assinatura em lote, fora do event loop
     urls = {}
     if paths_map:
-        with ThreadPoolExecutor(max_workers=12) as ex:
-            futures = {ex.submit(storage_url, path): key for key, path in paths_map.items()}
-            for future, key in futures.items():
-                try: urls[key] = future.result(timeout=10)
-                except: urls[key] = ""
+        assinadas = await _asyncio.to_thread(storage_urls, list(paths_map.values()))
+        urls = {key: assinadas.get(path, "") for key, path in paths_map.items()}
     pares = []
     for p in pares_raw:
         pid = p["id"]
