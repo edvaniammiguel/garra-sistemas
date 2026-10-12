@@ -802,7 +802,8 @@ async def jard_excel_fotos(semana_id: int, payload=Depends(verificar_token_jard)
         fp = fotos_por_par.get(p["id"], {})
         pares.append({"codigo_a":p["codigo_a"],"codigo_d":p["codigo_d"],"local_nome":p["local_nome"] or "",
                       "foto_antes":fp.get("antes"), "foto_depois":fp.get("depois")})
-    buf = gerar_relatorio_fotos(semana_dict, pares, SUPABASE_URL, SUPABASE_SERVICE_KEY)
+    # (12/10/2026) baixa fotos e monta o Excel numa thread — o servidor segue atendendo
+    buf = await _asyncio.to_thread(gerar_relatorio_fotos, semana_dict, pares, SUPABASE_URL, SUPABASE_SERVICE_KEY)
     return StreamingResponse(buf, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                              headers={"Content-Disposition":f'attachment; filename="{nome_arquivo_semana(sem, "Fotos")}"'})
 
@@ -814,7 +815,7 @@ async def jard_excel_km(semana_id: int, payload=Depends(verificar_token_jard)):
     if not sem: raise HTTPException(status_code=404, detail="Semana não encontrada")
     semana_dict = {"label":sem["label"],"data_ini":sem["data_ini"].strftime("%d/%m/%Y") if sem["data_ini"] else "","data_fim":sem["data_fim"].strftime("%d/%m/%Y") if sem["data_fim"] else ""}
     relatorios = _kms_excel(await _kms_periodo(sem["data_ini"], sem["data_fim"]))
-    buf = gerar_relatorio_km(semana_dict, relatorios)
+    buf = await _asyncio.to_thread(gerar_relatorio_km, semana_dict, relatorios)
     return StreamingResponse(buf, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                              headers={"Content-Disposition":f'attachment; filename="{nome_arquivo_semana(sem, "KM")}"'})
 
@@ -844,15 +845,17 @@ async def jard_enviar_email(semana_id: int, payload=Depends(verificar_token_jard
                       "foto_antes":fp.get("antes"), "foto_depois":fp.get("depois")})
     relatorios = _kms_excel(await _kms_periodo(sem["data_ini"], sem["data_fim"]))
     try:
-        buf_fotos = gerar_relatorio_fotos(semana_dict, pares, SUPABASE_URL, SUPABASE_SERVICE_KEY)
-        buf_km    = gerar_relatorio_km(semana_dict, relatorios)
+        # (12/10/2026) fotos + Excel + SMTP em thread: antes bloqueava o servidor
+        # inteiro (todas as telas, de todos os usuários) por 1–3 min a cada envio
+        buf_fotos = await _asyncio.to_thread(gerar_relatorio_fotos, semana_dict, pares, SUPABASE_URL, SUPABASE_SERVICE_KEY)
+        buf_km    = await _asyncio.to_thread(gerar_relatorio_km, semana_dict, relatorios)
         corpo = f"""<div style="font-family:Arial;padding:20px;">
             <h2 style="color:#1A2A5E;">Relatório Jardinagem — {semana_dict['label']}</h2>
             <p>Segue em anexo os relatórios fotográfico e de KM da semana.</p>
             <p style="color:#64748B;font-size:12px;">Garra Terraplenagem e Caçambas</p></div>"""
-        enviar_email_smtp(MAIL_DESTINO, f"Relatório Jardinagem — {semana_dict['label']}", corpo,
-                          [(nome_arquivo_semana(sem, 'Fotos'), buf_fotos.getvalue()),
-                           (nome_arquivo_semana(sem, 'KM'),    buf_km.getvalue())])
+        await _asyncio.to_thread(enviar_email_smtp, MAIL_DESTINO, f"Relatório Jardinagem — {semana_dict['label']}", corpo,
+                                 [(nome_arquivo_semana(sem, 'Fotos'), buf_fotos.getvalue()),
+                                  (nome_arquivo_semana(sem, 'KM'),    buf_km.getvalue())])
         await ajard_query("INSERT INTO jardinagem.emails_enviados (semana_id,destinatario,assunto,status) VALUES (%s,%s,%s,'enviado')",
                    (semana_id,MAIL_DESTINO,f"Relatório {semana_dict['label']}"), fetch="none")
         await ajard_query("UPDATE jardinagem.semanas SET status='enviada',enviado_em=NOW() WHERE id=%s", (semana_id,), fetch="none")
@@ -916,7 +919,7 @@ async def jard_excel_fotos_mes(mes_id: int, payload=Depends(verificar_token_jard
     pares = [{"codigo_a": p["codigo_a"], "codigo_d": p["codigo_d"], "local_nome": p["local_nome"] or "",
               "foto_antes": fotos_por_par.get(p["id"], {}).get("antes"),
               "foto_depois": fotos_por_par.get(p["id"], {}).get("depois")} for p in pares_raw]
-    buf = gerar_relatorio_fotos(mes_dict, pares, SUPABASE_URL, SUPABASE_SERVICE_KEY)
+    buf = await _asyncio.to_thread(gerar_relatorio_fotos, mes_dict, pares, SUPABASE_URL, SUPABASE_SERVICE_KEY)
     return StreamingResponse(buf, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                              headers={"Content-Disposition": f'attachment; filename="{arq.format(tipo="fotos")}"'})
 
@@ -928,6 +931,6 @@ async def jard_excel_km_mes(mes_id: int, payload=Depends(verificar_token_jard)):
     mes, mes_dict, arq = await _mes_periodo(mes_id)
     ini, fim = await _intervalo_mes(mes_id)
     relatorios = _kms_excel(await _kms_periodo(ini, fim))
-    buf = gerar_relatorio_km(mes_dict, relatorios)
+    buf = await _asyncio.to_thread(gerar_relatorio_km, mes_dict, relatorios)
     return StreamingResponse(buf, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                              headers={"Content-Disposition": f'attachment; filename="{arq.format(tipo="km")}"'})
