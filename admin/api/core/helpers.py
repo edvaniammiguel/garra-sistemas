@@ -67,7 +67,7 @@ def enviar_email_smtp(destino: str, assunto: str, corpo_html: str, anexos: list 
             part.add_header("Content-Disposition", f'attachment; filename="{nome}"')
             msg.attach(part)
     destinatarios = lista_to + lista_cc
-    with smtplib.SMTP(MAIL_HOST, MAIL_PORT) as s:
+    with smtplib.SMTP(MAIL_HOST, MAIL_PORT, timeout=60) as s:   # (12/10/2026) sem timeout, um SMTP mudo prendia a requisição para sempre
         s.ehlo(); s.starttls()
         s.login(MAIL_USERNAME, MAIL_PASSWORD)
         s.sendmail(MAIL_USERNAME, destinatarios, msg.as_string())
