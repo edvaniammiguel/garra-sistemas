@@ -3076,8 +3076,8 @@ async function xlsExportar(titulo, colunas, linhas, filtros){
     mostrarToast('⬇ Excel gerado', 'ok');
   } catch(e){ mostrarToast('❌ ' + e.message, 'warn'); }
 }
-function _xlsBaixar(blob, disp){
-  const m = /filename="?([^";]+)"?/.exec(disp || ''); const nome = m ? m[1] : 'garra-relatorio.xlsx';
+function _xlsBaixar(blob, disp, padrao){
+  const m = /filename="?([^";]+)"?/.exec(disp || ''); const nome = m ? m[1] : (padrao || 'garra-relatorio.xlsx');
   const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = nome; document.body.appendChild(a); a.click();
   setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 2000);
 }
@@ -3158,7 +3158,7 @@ function relEscolher(nome){
   if (f.includes('setor')) h += fld('Setor', '<select id="rf-setor">' + opt((D.setores||[]).map(x => ({v: x.codigo, t: x.codigo + ' — ' + (x.nome||'')})), F.setor, '— todos —') + '</select>', 150);
   if (f.includes('familia')) h += fld('Família', '<input id="rf-fam" value="' + _esc(F.familia) + '" placeholder="ex.: AC ou AC.010">', 120);
   h += '<div style="display:flex;gap:6px;margin-left:auto;padding-bottom:2px"><button class="btn p" onclick="relGerar()">▶ Gerar</button>'
-    + '<button class="btn" onclick="relPDF()">🖨 PDF</button><button class="btn" style="background:#107C41;color:#fff;border-color:#107C41" onclick="relExcel()">⬇ Excel</button></div>';
+    + '<button class="btn" onclick="relPDF()">📄 PDF</button><button class="btn" style="background:#107C41;color:#fff;border-color:#107C41" onclick="relExcel()">⬇ Excel</button></div>';
   document.getElementById('rel-filtros').innerHTML = h;
   document.getElementById('rel-titulo').innerHTML = '<div><b style="color:#1A2A5E">' + _esc(cfg.titulo) + '</b> <span class="muted" style="font-size:10px">' + _esc(cfg.sub) + '</span></div>';
   relGerar();
@@ -3207,14 +3207,17 @@ async function relExcel(){
     _xlsBaixar(await r.blob(), r.headers.get('Content-Disposition')); mostrarToast('⬇ Excel gerado', 'ok');
   } catch(e){ mostrarToast('❌ ' + e.message, 'warn'); }
 }
-function relPDF(){
-  const d = _relDados; if (!d) { mostrarToast('Gere o relatório primeiro', 'warn'); return; }
-  const grade = document.getElementById('rel-grade'); if (!grade) return;
-  const w = window.open('', '_blank'); if (!w) { mostrarToast('Pop-up bloqueado', 'warn'); return; }
-  w.document.write('<html><head><meta charset="UTF-8"><title>' + _esc(d.titulo) + '</title><style>' + _IMP_CSS + ' table{border-collapse:collapse;width:100%;font-size:10px}th,td{border:1px solid #CBD5E1;padding:3px 5px;text-align:left}th{background:#1A2A5E;color:#fff}.r{text-align:right}h2{font-size:14px;color:#1A2A5E;margin:0 0 2px}.sub{font-size:10px;color:#64748B;margin-bottom:8px}@media print{.noprint{display:none}}</style></head><body>'
-    + '<h2>' + _esc(d.titulo) + '</h2><div class="sub">' + _esc(d.filtros) + ' · ' + d.linhas.length + ' linha(s) · Garra Terraplenagem — ' + new Date().toLocaleString('pt-BR') + '</div>'
-    + grade.innerHTML + '<div style="margin-top:12px"><button class="noprint" onclick="window.print()" style="padding:6px 12px;background:#1A2A5E;color:#fff;border:0;border-radius:6px;cursor:pointer">🖨 Imprimir / PDF</button></div></body></html>');
-  w.document.close();
+async function relPDF(){
+  // (12/10/2026) PDF gerado no servidor no padrão documental Garra (logotipo,
+  // moldura, rodapé com página X de Y) e baixado como arquivo — antes abria
+  // uma aba com a tabela e dependia do "Imprimir" do navegador.
+  const q = _relQuery(); if (q === null) return;
+  try {
+    mostrarToast('Gerando PDF…', 'ok');
+    const r = await fetch('/manutencao/api/relatorios/' + _relAtual + '?formato=pdf' + (q ? '&' + q : ''), {headers:{'Authorization':'Bearer '+mntToken()}});
+    if (!r.ok) { const j = await r.json().catch(()=>({})); throw new Error(j.detail || ('Erro ' + r.status)); }
+    _xlsBaixar(await r.blob(), r.headers.get('Content-Disposition'), 'garra-relatorio.pdf'); mostrarToast('⬇ PDF gerado', 'ok');
+  } catch(e){ mostrarToast('❌ ' + e.message, 'warn'); }
 }
 async function equipFuncionamento(id){
   let r;
