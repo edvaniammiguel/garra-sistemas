@@ -5,7 +5,13 @@ Padrão:
   GET /manutencao/api/relatorios                      → catálogo (grupos, relatórios, filtros aceitos)
   GET /manutencao/api/relatorios/{nome}?de=&ate=&...  → JSON {titulo, colunas, linhas, totais, filtros}
   GET /manutencao/api/relatorios/{nome}?...&formato=xlsx → arquivo .xlsx (números como números)
+  GET /manutencao/api/relatorios/{nome}?...&formato=pdf  → arquivo .pdf (padrão documental Garra)
   POST /manutencao/api/exportar-xlsx {titulo, colunas, linhas} → .xlsx de qualquer lista da tela
+  POST /manutencao/api/exportar-pdf  {titulo, colunas, linhas} → .pdf  de qualquer lista da tela
+
+(12/10/2026) Identidade documental Garra nos dois formatos: logotipo + "GARRA
+TERRAPLENAGEM E CAÇAMBAS" no cabeçalho, moldura laranja fina (PDF), azul
+#001F4D nas tabelas, rodapé com emissão/emitente e "Página X de Y".
 
 Cada relatório é uma função que devolve linhas (dicts). As COLUNAS levam o tipo
 (txt · int · num · moeda · pct · data · datahora) — é o tipo que decide o formato
@@ -21,6 +27,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from datetime import date as _date, datetime as _dt, timedelta as _td, timezone as _tz
 import io
+import os
 import re
 
 from core.db import ajard_query
@@ -725,8 +732,11 @@ async def relatorio(nome: str, request: Request, _auth=Depends(verificar_manuten
     F = _F(request.query_params)
     linhas = await cfg["fn"](F)
     cols = cfg["cols"]
-    if (request.query_params.get("formato") or "").lower() == "xlsx":
-        return _xlsx_response(cfg["titulo"], F.rotulo("periodo" in cfg["filtros"]), _cols_json(cols), linhas, nome)
+    formato = (request.query_params.get("formato") or "").lower()
+    if formato == "xlsx":
+        return _xlsx_response(cfg["titulo"], F.rotulo("periodo" in cfg["filtros"]), _cols_json(cols), linhas, nome, _emitente(_auth))
+    if formato == "pdf":
+        return _pdf_response(cfg["titulo"], F.rotulo("periodo" in cfg["filtros"]), _cols_json(cols), linhas, _totais(cols, linhas), nome, _emitente(_auth))
     return {"nome": nome, "titulo": cfg["titulo"], "sub": cfg["sub"], "filtros": F.rotulo("periodo" in cfg["filtros"]),
             "colunas": _cols_json(cols), "linhas": [{k: _json_val(v) for k, v in l.items()} for l in linhas], "totais": _totais(cols, linhas)}
 
@@ -771,22 +781,71 @@ def _coagir(v, tipo):
     return str(v)
 
 
-def _xlsx_bytes(titulo, filtros, colunas, linhas):
+
+# ── identidade documental Garra (skill garra-identidade-documental) ─────────
+AZUL, LARANJA, CINZA, CINZA_TXT = "001F4D", "FF9500", "F2F2F2", "999999"
+EMPRESA = "GARRA TERRAPLENAGEM E CAÇAMBAS"
+_LOGO = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "core", "logo-garra.png")
+
+
+def _emitente(auth):
+    return (auth or {}).get("nome") or (auth or {}).get("login") or ""
+
+
+def _br(v, tipo):
+    """valor → texto pt-BR para o PDF (o Excel recebe o valor cru tipado)"""
+    v = _coagir(v, tipo)
+    if v is None:
+        return ""
+    if isinstance(v, str):
+        return v
+    if tipo == "int":
+        return f"{int(v):,}".replace(",", ".")
+    if tipo in ("num", "moeda", "pct"):
+        if tipo == "pct":
+            v = v * 100
+        t = f"{v:,.{1 if tipo == 'pct' else 2}f}".replace(",", "X").replace(".", ",").replace("X", ".")
+        return ("R$ " + t) if tipo == "moeda" else (t + "%" if tipo == "pct" else t)
+    if tipo == "datahora":
+        return v.strftime("%d/%m/%Y %H:%M")
+    if tipo == "data":
+        return v.strftime("%d/%m/%Y")
+    return str(v)
+
+
+def _subtitulo(filtros, n, emitente):
+    return f"{filtros} · {n} linha(s) · emitido em {_dt.now().strftime('%d/%m/%Y %H:%M')}" + (f" por {emitente}" if emitente else "")
+
+def _xlsx_bytes(titulo, filtros, colunas, linhas, emitente=""):
     from openpyxl import Workbook
     from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
     from openpyxl.utils import get_column_letter
+    from openpyxl.drawing.image import Image as XImg
     wb = Workbook(); ws = wb.active
     ws.title = re.sub(r"[\[\]\*\?/\\:]", "-", titulo)[:31] or "Relatório"
-    azul, laranja = "1A2A5E", "E8820C"
-    ws["A1"] = titulo; ws["A1"].font = Font(bold=True, size=14, color=azul)
-    ws["A2"] = f"{filtros} · gerado em {_dt.now().strftime('%d/%m/%Y %H:%M')} · Garra Sistemas — Manutenção"
-    ws["A2"].font = Font(size=9, color="64748B")
-    hdr = 4
+    ncol = max(len(colunas), 4)
+    fim_col = get_column_letter(ncol)
+    # ── cabeçalho Garra: logotipo (A1:A3) + empresa / título / subtítulo (B..) ──
+    try:
+        img = XImg(_LOGO); img.width, img.height = 110, 52
+        ws.add_image(img, "A1")
+    except Exception as e:
+        print(f"[Relatórios] logotipo no Excel falhou: {e}")
+    ws.column_dimensions["A"].width = 18
+    ws.row_dimensions[1].height = 22; ws.row_dimensions[2].height = 18; ws.row_dimensions[3].height = 14
+    ws.merge_cells(f"B1:{fim_col}1"); ws.merge_cells(f"B2:{fim_col}2"); ws.merge_cells(f"B3:{fim_col}3")
+    ws["B1"] = EMPRESA; ws["B1"].font = Font(bold=True, size=14, color=AZUL); ws["B1"].alignment = Alignment(vertical="center")
+    ws["B2"] = f"Relatório de Manutenção — {titulo}"; ws["B2"].font = Font(bold=True, size=11, color=AZUL); ws["B2"].alignment = Alignment(vertical="center")
+    ws["B3"] = _subtitulo(filtros, len(linhas), emitente); ws["B3"].font = Font(size=8, color="64748B"); ws["B3"].alignment = Alignment(vertical="center")
+    for col in range(1, ncol + 1):
+        ws.cell(row=3, column=col).border = Border(bottom=Side(style="medium", color=LARANJA))
+    hdr = 5
     fino = Side(style="thin", color="CBD5E1")
     for j, c in enumerate(colunas, 1):
         cell = ws.cell(row=hdr, column=j, value=c["t"])
-        cell.font = Font(bold=True, color="FFFFFF"); cell.fill = PatternFill("solid", fgColor=azul)
-        cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True); cell.border = Border(bottom=Side(style="thin", color=laranja))
+        cell.font = Font(bold=True, color="FFFFFF"); cell.fill = PatternFill("solid", fgColor=AZUL)
+        cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True); cell.border = Border(bottom=Side(style="thin", color=LARANJA))
+    zebra = PatternFill("solid", fgColor=CINZA)
     for i, l in enumerate(linhas, hdr + 1):
         for j, c in enumerate(colunas, 1):
             v = _coagir(l.get(c["k"]), c["tipo"])
@@ -796,38 +855,179 @@ def _xlsx_bytes(titulo, filtros, colunas, linhas):
             if c["tipo"] in ("int", "num", "moeda", "pct"):
                 cell.alignment = Alignment(horizontal="right")
             cell.border = Border(bottom=fino)
+            if (i - hdr) % 2 == 0:
+                cell.fill = zebra
     fim = hdr + len(linhas)
     if linhas and any(c.get("soma") for c in colunas):
         tr = fim + 1
-        ws.cell(row=tr, column=1, value="Total").font = Font(bold=True)
+        ws.cell(row=tr, column=1, value="Total").font = Font(bold=True, color=AZUL)
         for j, c in enumerate(colunas, 1):
+            ws.cell(row=tr, column=j).border = Border(top=Side(style="thin", color=LARANJA))
             if c.get("soma"):
                 L = get_column_letter(j)
                 cell = ws.cell(row=tr, column=j, value=f"=SUBTOTAL(9,{L}{hdr+1}:{L}{fim})")
-                cell.font = Font(bold=True); cell.number_format = _FMT.get(c["tipo"], "#,##0.00"); cell.alignment = Alignment(horizontal="right")
+                cell.font = Font(bold=True, color=AZUL); cell.number_format = _FMT.get(c["tipo"], "#,##0.00"); cell.alignment = Alignment(horizontal="right")
                 cell.fill = PatternFill("solid", fgColor="FFF7ED")
     ws.freeze_panes = ws.cell(row=hdr + 1, column=1)
     if linhas:
         ws.auto_filter.ref = f"A{hdr}:{get_column_letter(len(colunas))}{fim}"
     for j, c in enumerate(colunas, 1):
         larg = max([len(str(c["t"]))] + [len(str(_coagir(l.get(c["k"]), "txt") or "")) for l in linhas[:500]])
-        ws.column_dimensions[get_column_letter(j)].width = min(max(8, larg + 2), 48)
+        ws.column_dimensions[get_column_letter(j)].width = max(ws.column_dimensions[get_column_letter(j)].width or 0, min(max(8, larg + 2), 48))
     ws.row_dimensions[hdr].height = 30
+    # ── impressão: paisagem, cabe na largura, cabeçalho repete, rodapé Garra ──
+    ws.page_setup.orientation = "landscape"; ws.page_setup.paperSize = ws.PAPERSIZE_A4
+    ws.page_setup.fitToWidth = 1; ws.page_setup.fitToHeight = 0; ws.sheet_properties.pageSetUpPr.fitToPage = True
+    ws.print_title_rows = f"1:{hdr}"
+    ws.print_options.horizontalCentered = True
+    ws.page_margins.left = ws.page_margins.right = 0.4; ws.page_margins.top = 0.5; ws.page_margins.bottom = 0.6
+    ws.oddFooter.left.text = f"Garra Sistemas — Manutenção · {titulo}"; ws.oddFooter.left.size = 8
+    ws.oddFooter.center.text = f"Emitido em {_dt.now().strftime('%d/%m/%Y %H:%M')}" + (f" por {emitente}" if emitente else ""); ws.oddFooter.center.size = 8
+    ws.oddFooter.right.text = "Página &P de &N"; ws.oddFooter.right.size = 8
     bio = io.BytesIO(); wb.save(bio); bio.seek(0)
     return bio
 
 
-def _xlsx_response(titulo, filtros, colunas, linhas, nome):
-    bio = _xlsx_bytes(titulo, filtros, colunas, linhas)
+# ═════════════════════════════ PDF ════════════════════════════════════════
+def _pdf_bytes(titulo, filtros, colunas, linhas, totais=None, emitente=""):
+    """PDF no padrão documental Garra: moldura laranja fina nas 4 laterais,
+    cabeçalho com logotipo + empresa, tabela azul #001F4D com zebra, rodapé
+    com emissão/emitente e "Página X de Y". Paisagem quando a tabela é larga."""
+    from reportlab.lib.pagesizes import A4, landscape
+    from reportlab.lib import colors
+    from reportlab.lib.units import mm
+    from reportlab.lib.styles import ParagraphStyle
+    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+    from reportlab.pdfgen import canvas as _cv
+    from xml.sax.saxutils import escape as _x
+
+    azul, laranja, cinza = colors.HexColor("#" + AZUL), colors.HexColor("#" + LARANJA), colors.HexColor("#" + CINZA)
+    largo = len(colunas) > 6 or sum(min(max(len(str(c["t"])), max([len(str(_br(l.get(c["k"]), c["tipo"]))) for l in linhas[:300]] or [0])), 40) for c in colunas) > 110
+    pagesize = landscape(A4) if largo else A4
+    W, H = pagesize
+    mx, topo, base = 12 * mm, 30 * mm, 16 * mm
+    sub = _subtitulo(filtros, len(linhas), emitente)
+    emissao = f"Emitido em {_dt.now().strftime('%d/%m/%Y %H:%M')}" + (f" por {emitente}" if emitente else "")
+
+    class _Canvas(_cv.Canvas):
+        """desenha moldura, cabeçalho e rodapé em cada página, com total de páginas"""
+        def __init__(self, *a, **k):
+            super().__init__(*a, **k); self._paginas = []
+        def showPage(self):
+            self._paginas.append(dict(self.__dict__)); self._startPage()
+        def save(self):
+            n = len(self._paginas)
+            for st in self._paginas:
+                self.__dict__.update(st); self._moldura(n); super().showPage()
+            super().save()
+        def _moldura(self, n):
+            c = self
+            c.setStrokeColor(laranja); c.setLineWidth(1)
+            c.rect(6 * mm, 6 * mm, W - 12 * mm, H - 12 * mm)
+            # cabeçalho
+            try:
+                c.drawImage(_LOGO, mx, H - topo + 6 * mm, width=38 * mm, height=18 * mm, preserveAspectRatio=True, anchor="w", mask="auto")
+            except Exception:
+                pass
+            c.setFillColor(azul); c.setFont("Helvetica-Bold", 13)
+            c.drawCentredString(mx + 42 * mm + (W - 2 * mx - 42 * mm) / 2, H - topo + 15 * mm, EMPRESA)
+            c.setFont("Helvetica-Bold", 10)
+            c.drawCentredString(mx + 42 * mm + (W - 2 * mx - 42 * mm) / 2, H - topo + 9.5 * mm, "RELATÓRIO DE MANUTENÇÃO")
+            c.setStrokeColor(azul); c.setLineWidth(0.8); c.line(mx, H - topo + 4 * mm, W - mx, H - topo + 4 * mm)
+            # rodapé
+            c.setStrokeColor(colors.HexColor("#CBD5E1")); c.setLineWidth(0.5); c.line(mx, base - 3 * mm, W - mx, base - 3 * mm)
+            c.setFillColor(colors.HexColor("#" + CINZA_TXT)); c.setFont("Helvetica", 7)
+            c.drawString(mx, base - 7 * mm, f"Garra Sistemas — Manutenção · {titulo}")
+            c.drawCentredString(W / 2, base - 7 * mm, emissao)
+            c.drawRightString(W - mx, base - 7 * mm, f"Página {c._pageNumber} de {n}")
+
+    from reportlab.pdfbase.pdfmetrics import stringWidth as _sw
+    st_t = ParagraphStyle("t", fontName="Helvetica-Bold", fontSize=13, textColor=azul, leading=16)
+    st_s = ParagraphStyle("s", fontName="Helvetica", fontSize=7.5, textColor=colors.HexColor("#64748B"), leading=10)
+    num = lambda t: t in ("int", "num", "moeda", "pct")
+    tem_total = bool(linhas) and bool(totais)
+    disp = W - 2 * mx
+    pad = 6  # LEFTPADDING + RIGHTPADDING
+    # ── larguras: cada coluna precisa ao menos da maior "palavra" (código,
+    # data, valor — nunca quebram no meio); o que sobra vai proporcional ao
+    # texto completo. Se nem o mínimo cabe, reduz a fonte (7.5 → 6).
+    textos = [[_br(l.get(c["k"]), c["tipo"]) for c in colunas] for l in linhas[:300]]
+    tot_txt = [(_br(totais[c["k"]], c["tipo"]) if tem_total and c["k"] in totais else "") for c in colunas]
+    for fs in (7.5, 7.0, 6.5, 6.0):
+        fb, fn = ("Helvetica-Bold", fs), ("Helvetica", fs)
+        minimo, desejado = [], []
+        for j, c in enumerate(colunas):
+            cab = str(c["t"])
+            palavras = [_sw(w, *fb) for w in cab.split()] or [0]
+            vals = [textos[i][j] for i in range(len(textos))] + [tot_txt[j]]
+            if num(c["tipo"]):   # número nunca quebra
+                m = max(palavras + [_sw(v, *fb) for v in vals])
+            else:                # texto quebra entre palavras, nunca no meio de uma
+                m = max(palavras + [_sw(w, *fn) for v in vals for w in v.split()])
+            d = max([_sw(cab, *fb)] + [_sw(v, *fn) for v in vals])
+            minimo.append(min(m, 110) + pad); desejado.append(min(max(d, m), 230) + pad)
+        if sum(minimo) <= disp:
+            break
+    if sum(desejado) <= disp:
+        larguras = [d * disp / sum(desejado) for d in desejado]
+    else:
+        sobra = max(disp - sum(minimo), 0); extra = [d - m for d, m in zip(desejado, minimo)]; te = sum(extra) or 1
+        larguras = [m + sobra * e / te for m, e in zip(minimo, extra)]
+        if sum(larguras) > disp:  # nem o mínimo coube com fonte 6: encolhe tudo
+            larguras = [w * disp / sum(larguras) for w in larguras]
+    st_h = ParagraphStyle("h", fontName="Helvetica-Bold", fontSize=fs, textColor=colors.white, leading=fs + 1.5, alignment=1)
+    st_c = ParagraphStyle("c", fontName="Helvetica", fontSize=fs, leading=fs + 1.5)
+    st_r = ParagraphStyle("r", parent=st_c, alignment=2)
+    dados = [[Paragraph(_x(str(c["t"])), st_h) for c in colunas]]
+    for i in range(len(linhas)):
+        l = linhas[i]
+        dados.append([Paragraph(_x(_br(l.get(c["k"]), c["tipo"])), st_r if num(c["tipo"]) else st_c) for c in colunas])
+    if tem_total:
+        fila = []
+        for j, c in enumerate(colunas):
+            if j == 0:
+                fila.append(Paragraph("<b>Total</b>", st_c))
+            elif c["k"] in totais:
+                fila.append(Paragraph("<b>" + _x(_br(totais[c["k"]], c["tipo"])) + "</b>", st_r))
+            else:
+                fila.append("")
+        dados.append(fila)
+    t = Table(dados, colWidths=larguras, repeatRows=1)
+    estilo = [("BACKGROUND", (0, 0), (-1, 0), azul), ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+              ("LINEBELOW", (0, 0), (-1, 0), 0.8, laranja), ("GRID", (0, 1), (-1, -1), 0.3, colors.HexColor("#CBD5E1")),
+              ("TOPPADDING", (0, 0), (-1, -1), 2), ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+              ("LEFTPADDING", (0, 0), (-1, -1), 3), ("RIGHTPADDING", (0, 0), (-1, -1), 3)]
+    for i in range(2, len(dados) - (1 if tem_total else 0), 2):
+        estilo.append(("BACKGROUND", (0, i), (-1, i), cinza))
+    if tem_total:
+        estilo += [("BACKGROUND", (0, -1), (-1, -1), colors.HexColor("#FFF7ED")), ("LINEABOVE", (0, -1), (-1, -1), 0.8, laranja)]
+    t.setStyle(TableStyle(estilo))
+    corpo = [Paragraph(_x(titulo), st_t), Paragraph(_x(sub), st_s), Spacer(1, 4 * mm), t]
+    if not linhas:
+        corpo.append(Spacer(1, 3 * mm)); corpo.append(Paragraph("Sem dados para os filtros escolhidos.", st_s))
+    bio = io.BytesIO()
+    doc = SimpleDocTemplate(bio, pagesize=pagesize, leftMargin=mx, rightMargin=mx, topMargin=topo, bottomMargin=base,
+                            title=f"{titulo} — Garra Terraplenagem", author="Garra Sistemas")
+    doc.build(corpo, canvasmaker=_Canvas)
+    bio.seek(0)
+    return bio
+
+
+def _pdf_response(titulo, filtros, colunas, linhas, totais, nome, emitente=""):
+    bio = _pdf_bytes(titulo, filtros, colunas, linhas, totais, emitente)
+    arq = re.sub(r"[^a-z0-9]+", "-", nome.lower()).strip("-") or "relatorio"
+    return StreamingResponse(bio, media_type="application/pdf",
+                             headers={"Content-Disposition": f'attachment; filename="garra-{arq}-{_date.today().isoformat()}.pdf"'})
+
+
+def _xlsx_response(titulo, filtros, colunas, linhas, nome, emitente=""):
+    bio = _xlsx_bytes(titulo, filtros, colunas, linhas, emitente)
     arq = re.sub(r"[^a-z0-9]+", "-", nome.lower()).strip("-") or "relatorio"
     return StreamingResponse(bio, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                              headers={"Content-Disposition": f'attachment; filename="garra-{arq}-{_date.today().isoformat()}.xlsx"'})
 
 
-@router.post("/manutencao/api/exportar-xlsx")
-async def exportar_xlsx(request: Request, _auth=Depends(verificar_manutencao)):
-    """Qualquer lista da tela → Excel. body: {titulo, filtros?, colunas:[{k,t,tipo,soma?}], linhas:[{...}]}"""
-    d = await request.json()
+def _lista_da_tela(d):
     cols = d.get("colunas") or []
     linhas = d.get("linhas") or []
     if not cols:
@@ -836,4 +1036,23 @@ async def exportar_xlsx(request: Request, _auth=Depends(verificar_manutencao)):
         raise HTTPException(status_code=400, detail="Lista grande demais (máx. 50.000 linhas)")
     for c in cols:
         c.setdefault("tipo", "txt"); c.setdefault("t", c.get("k", ""))
-    return _xlsx_response(d.get("titulo") or "Lista", d.get("filtros") or "Conforme a tela", cols, linhas, d.get("titulo") or "lista")
+    return d.get("titulo") or "Lista", d.get("filtros") or "Conforme a tela", cols, linhas
+
+
+@router.post("/manutencao/api/exportar-xlsx")
+async def exportar_xlsx(request: Request, _auth=Depends(verificar_manutencao)):
+    """Qualquer lista da tela → Excel. body: {titulo, filtros?, colunas:[{k,t,tipo,soma?}], linhas:[{...}]}"""
+    titulo, filtros, cols, linhas = _lista_da_tela(await request.json())
+    return _xlsx_response(titulo, filtros, cols, linhas, titulo, _emitente(_auth))
+
+
+@router.post("/manutencao/api/exportar-pdf")
+async def exportar_pdf(request: Request, _auth=Depends(verificar_manutencao)):
+    """Qualquer lista da tela → PDF no padrão Garra. Mesmo body do exportar-xlsx."""
+    titulo, filtros, cols, linhas = _lista_da_tela(await request.json())
+    totais = {}
+    for c in cols:
+        if c.get("soma"):
+            vals = [_coagir(l.get(c["k"]), c["tipo"]) for l in linhas]
+            totais[c["k"]] = sum(v for v in vals if isinstance(v, (int, float)))
+    return _pdf_response(titulo, filtros, cols, linhas, totais, titulo, _emitente(_auth))
