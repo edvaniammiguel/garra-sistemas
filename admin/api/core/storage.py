@@ -32,15 +32,25 @@ _url_cache: dict = {}  # {storage_path: (url, expires_at)}
 _URL_TTL = 23 * 3600   # 23 horas em segundos
 _URL_SUPABASE_EXPIRY = 24 * 3600  # 24h — URL válida no Supabase
 
-def storage_url(path: str, segundos: int = _URL_SUPABASE_EXPIRY) -> str:
-    if not SUPABASE_URL or not SUPABASE_SERVICE_KEY or not path:
-        return ""
+# (12/10/2026) Sessão HTTP reaproveitada: cada assinatura abria uma conexão TLS
+# nova com o Supabase (~150–300 ms só de handshake). Com keep-alive, as
+# chamadas seguintes reutilizam a conexão.
+_sess = req_lib.Session()
+_sess.headers.update({"apikey": SUPABASE_SERVICE_KEY or "",
+                      "Authorization": f"Bearer {SUPABASE_SERVICE_KEY or ''}"})
+
+def _bucket_e_path(path: str):
     # Resolve o bucket a partir do prefixo "bucket:path".
     # Fotos antigas (gravadas antes da unificação) não têm prefixo → bucket legado.
     if ":" in path and not path.startswith("http"):
         bucket, real_path = path.split(":", 1)
-    else:
-        bucket, real_path = BUCKET_NAME, path
+        return bucket, real_path
+    return BUCKET_NAME, path
+
+def storage_url(path: str, segundos: int = _URL_SUPABASE_EXPIRY) -> str:
+    if not SUPABASE_URL or not SUPABASE_SERVICE_KEY or not path:
+        return ""
+    bucket, real_path = _bucket_e_path(path)
     # Verificar cache
     agora = time.time()
     cached = _url_cache.get(path)
@@ -50,12 +60,8 @@ def storage_url(path: str, segundos: int = _URL_SUPABASE_EXPIRY) -> str:
             return url
     # Gerar URL nova no Supabase
     try:
-        r = req_lib.post(
+        r = _sess.post(
             f"{SUPABASE_URL}/storage/v1/object/sign/{bucket}/{real_path}",
-            headers={
-                "Authorization": f"Bearer {SUPABASE_SERVICE_KEY}",
-                "apikey": SUPABASE_SERVICE_KEY
-            },
             json={"expiresIn": segundos}, timeout=10
         )
         if r.status_code == 200:
@@ -64,6 +70,55 @@ def storage_url(path: str, segundos: int = _URL_SUPABASE_EXPIRY) -> str:
             return url
     except: pass
     return ""
+
+def storage_urls(paths, segundos: int = _URL_SUPABASE_EXPIRY) -> dict:
+    """(12/10/2026) Assina VÁRIOS caminhos de uma vez — 1 chamada por bucket
+    (endpoint de lote do Supabase) em vez de 1 chamada por foto. O mês da
+    Jardinagem tem dezenas de fotos: 60 round-trips viravam 3–6 s de espera.
+    Devolve {path: url} ('' para o que falhar); o que já está no cache não
+    volta ao Supabase. Se o lote falhar, cai na assinatura individual."""
+    out = {}
+    if not SUPABASE_URL or not SUPABASE_SERVICE_KEY:
+        return {p: "" for p in paths if p}
+    agora = time.time()
+    por_bucket: dict = {}
+    for p in paths:
+        if not p or p in out:
+            continue
+        cached = _url_cache.get(p)
+        if cached and agora < cached[1]:
+            out[p] = cached[0]
+            continue
+        bucket, real = _bucket_e_path(p)
+        por_bucket.setdefault(bucket, {})[real] = p
+    for bucket, reais in por_bucket.items():
+        lista = list(reais.keys())
+        ok = False
+        try:
+            r = _sess.post(f"{SUPABASE_URL}/storage/v1/object/sign/{bucket}",
+                           json={"expiresIn": segundos, "paths": lista}, timeout=15)
+            if r.status_code == 200 and isinstance(r.json(), list):
+                ok = True
+                for item in r.json():
+                    real = item.get("path") or ""
+                    p = reais.get(real)
+                    if p is None:
+                        continue
+                    su = item.get("signedURL") if not item.get("error") else None
+                    if su:
+                        url = f"{SUPABASE_URL}/storage/v1{su}"
+                        _url_cache[p] = (url, agora + _URL_TTL)
+                        out[p] = url
+                    else:
+                        out[p] = ""
+        except Exception as e:
+            print(f"[Storage] lote de assinaturas falhou ({bucket}): {e}")
+        if not ok:
+            for real, p in reais.items():
+                out[p] = storage_url(p, segundos)
+        for p in reais.values():
+            out.setdefault(p, "")
+    return out
 
 def storage_delete(paths: list):
     if not paths or not SUPABASE_URL: return
