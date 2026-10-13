@@ -3766,6 +3766,39 @@ async def _garantir_ot_programada(plano_id, payload):
         "prioridade": "alta" if it["status"] == "vencida" else "media"}, payload)
 
 
+@router.post("/manutencao/api/ots/atualizar-datas")
+async def ots_atualizar_datas(payload=Depends(verificar_manutencao)):
+    """(13/10/2026) ManWinWin "Actualizar Datas OT": recalcula data/horímetro previstos
+    de TODAS as OTs programadas ligadas a uma FMP a partir da previsão viva (baseline +
+    período + leituras + FMD). Respeita a programação alterada à mão (prog_alterada).
+    Também é chamado automaticamente ao abrir o módulo — o botão existe para o usuário
+    forçar na hora, depois de lançar leituras."""
+    from datetime import date as _date
+    await _garantir_colunas_ot()
+    prev = await _calcular_previsoes()
+    ots = {str(o["id"]): o for o in await ajard_query(
+        """SELECT id, numero, plano_id, data_prevista, horimetro_previsto, COALESCE(prog_alterada,false) AS prog_alterada
+           FROM manutencao.ot WHERE status='programada' AND ativo=true AND plano_id IS NOT NULL""")}
+    atualizadas, mantidas = [], 0
+    for it in prev["itens"]:
+        o = it.get("ot") and ots.get(str(it["ot"]["id"]))
+        if not o:
+            continue
+        if o["prog_alterada"]:
+            mantidas += 1
+            continue
+        nd, nh = it.get("proxima_data"), it.get("leitura_alvo")
+        if nd is None and nh is None:
+            continue
+        nd_dt = _date.fromisoformat(nd) if nd else None
+        if (o["data_prevista"] == nd_dt) and ((float(o["horimetro_previsto"]) if o["horimetro_previsto"] is not None else None) == nh):
+            continue
+        await ajard_query("UPDATE manutencao.ot SET data_prevista=%s, horimetro_previsto=%s, atualizado_em=now() WHERE id=%s",
+                          (nd_dt, nh, o["id"]), fetch="none")
+        atualizadas.append({"ot": o["numero"], "equipamento": it["eq_codigo"], "data_prevista": nd, "horimetro_previsto": nh})
+    return {"atualizadas": atualizadas, "total": len(atualizadas), "mantidas_manuais": mantidas}
+
+
 @router.post("/manutencao/api/previsoes/gerar")
 async def previsoes_gerar_lote(payload=Depends(verificar_manutencao)):
     """(15/09/2026) Botão "Gerar preventivas" (ManWinWin): cria a OT programada de toda
