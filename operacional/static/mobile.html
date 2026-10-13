@@ -153,6 +153,7 @@ input,select,textarea{font-family:inherit;outline:none;border:none}
 .nav-btn.active{color:var(--orange)}
 .nav-btn.active .nav-icon{transform:scale(1.15)}
 .nav-icon{font-size:22px;line-height:1;transition:.15s}
+.nav-icon.nav-svg{display:flex}.nav-icon.nav-svg svg{width:23px;height:23px;color:currentColor}
 .nav-label{font-size:10px;font-weight:700;letter-spacing:.02em}
 
 /* Seções */
@@ -401,7 +402,7 @@ input,select,textarea{font-family:inherit;outline:none;border:none}
     <button class="nav-btn" onclick="ir('Log')" style="display:none"><span class="nav-icon">🚗</span><span class="nav-label">Logística</span></button>
     <button class="nav-btn" onclick="ir('OC')" style="display:none"><span class="nav-icon">🛒</span><span class="nav-label">Compras</span></button>
     <button class="nav-btn" onclick="ir('OT')" style="display:none"><span class="nav-icon">📨</span><span class="nav-label">Pedir OT</span></button>
-    <button class="nav-btn" onclick="ir('AB')" style="display:none"><span class="nav-icon">⛽</span><span class="nav-label">Abastecer</span></button>
+    <button class="nav-btn" onclick="ir('AB')" style="display:none"><span class="nav-icon nav-svg"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 22V5a2 2 0 0 1 2-2h7a2 2 0 0 1 2 2v17"/><path d="M2 22h13"/><rect x="6" y="6" width="5" height="4" rx="1"/><path d="M14 11h1.5a2 2 0 0 1 2 2v4.5a1.5 1.5 0 0 0 3 0V9.8a2 2 0 0 0-.6-1.4L18 6.5"/></svg></span><span class="nav-label">Abastecer</span></button>
   </div>
 </div>
 
