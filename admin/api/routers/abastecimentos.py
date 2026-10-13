@@ -1480,44 +1480,61 @@ async def excluir(ab_id: str, payload=Depends(verificar_token)):
 _PAGINA = r"""<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>Garra — Abastecimento</title>
 <style>
+/* (13/10/2026) Repaginação visual — mesmas cores Garra (azul #1A2A5E / laranja
+   #E8820C), ids, classes e funções intactos. Só aparência. */
+:root{--azul:#1A2A5E;--azul-2:#2C3F7A;--lar:#E8820C;--lar-2:#CF7108;--fundo:#EEF2F7;--borda:#DCE3EC;--texto:#0F172A;--muted:#64748B;--ok:#16A34A;--r:14px}
 *{box-sizing:border-box;margin:0;padding:0}
-body{font-family:system-ui,sans-serif;background:#F1F5F9;color:#0F172A;font-size:15px;padding:12px 12px 96px;max-width:560px;margin:0 auto}
-h1{font-size:16px;color:#1A2A5E;margin:6px 0 12px}h1 span{color:#E8820C}
-.card{background:#fff;border:1px solid #E2E8F0;border-radius:12px;padding:14px;margin-bottom:10px}
-label{display:block;font-size:12px;color:#475569;font-weight:600;margin:10px 0 4px}
-input,select,textarea{width:100%;padding:12px;border:1px solid #CBD5E1;border-radius:9px;font-size:16px;background:#fff}
-input.lido,select.lido{border-color:#E8820C;background:#FFF7ED}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Inter,system-ui,sans-serif;background:var(--fundo);color:var(--texto);font-size:15px;line-height:1.4;padding:12px 12px 100px;max-width:560px;margin:0 auto;-webkit-font-smoothing:antialiased}
+h1{display:flex;align-items:center;gap:10px;font-size:17px;font-weight:800;color:var(--azul);margin:6px 0 14px;letter-spacing:-.01em}h1 span{color:var(--lar)}
+h1 svg{width:26px;height:26px;color:var(--lar)}
+.card{background:#fff;border:1px solid var(--borda);border-radius:var(--r);padding:16px;margin-bottom:12px;box-shadow:0 1px 2px rgba(15,23,42,.04),0 6px 20px -12px rgba(26,42,94,.18)}
+.card>b{display:block;font-size:14px;font-weight:800;color:var(--azul);letter-spacing:-.01em}
+.card>b+.muted{margin-top:2px}
+label{display:block;font-size:11.5px;color:#475569;font-weight:700;letter-spacing:.02em;text-transform:uppercase;margin:12px 0 5px}
+input,select,textarea{width:100%;padding:12px 13px;border:1.5px solid #D5DCE6;border-radius:12px;font-size:16px;background:#fff;color:var(--texto);transition:border-color .15s,box-shadow .15s;-webkit-appearance:none;appearance:none}
+select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2364748B' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 12px center;padding-right:36px}
+input:focus,select:focus,textarea:focus{outline:none;border-color:var(--lar);box-shadow:0 0 0 3px rgba(232,130,12,.18)}
+input::placeholder{color:#A0AEC0}
+input.lido,select.lido{border-color:var(--lar);background:#FFF8EF}
 input.ruim{border-color:#DC2626;background:#FEF2F2}
-.btn{width:100%;padding:14px;border:none;border-radius:10px;font-size:16px;font-weight:700;cursor:pointer;margin-top:10px}
-.btn-p{background:#1A2A5E;color:#fff}.btn-o{background:#E8820C;color:#fff}.btn-c{background:#E2E8F0;color:#0F172A}
-.btn:disabled{opacity:.5}
+.btn{width:100%;padding:14px;border:none;border-radius:12px;font-size:15.5px;font-weight:700;cursor:pointer;margin-top:10px;display:inline-flex;align-items:center;justify-content:center;gap:8px;letter-spacing:.01em;transition:transform .08s,filter .15s,background .15s;-webkit-tap-highlight-color:transparent}
+.btn:active{transform:scale(.985)}
+.btn svg{width:19px;height:19px;flex:none}
+.btn-p{background:var(--azul);color:#fff;box-shadow:0 6px 16px -8px rgba(26,42,94,.6)}.btn-p:active{background:var(--azul-2)}
+.btn-o{background:var(--lar);color:#fff;box-shadow:0 6px 16px -8px rgba(232,130,12,.7)}.btn-o:active{background:var(--lar-2)}
+.btn-c{background:#fff;color:var(--azul);border:1.5px solid #D5DCE6}.btn-c:active{background:#F1F5F9}
+.btn:disabled{opacity:.5;box-shadow:none}
 .row{display:flex;gap:8px}.row>*{flex:1}
-.muted{font-size:12px;color:#64748B}
-.flag{font-size:13px;padding:9px 11px;border-radius:9px;margin-top:8px;line-height:1.35}
-.flag-warn{background:#FEF3C7;color:#92400E}.flag-ok{background:#DCFCE7;color:#166534}.flag-err{background:#FEE2E2;color:#991B1B}.flag-info{background:#DBEAFE;color:#1E3A8A}
-.hist{font-size:13px;border-top:1px solid #E2E8F0;padding:8px 0}.hist b{color:#1A2A5E}
-#toast{position:fixed;bottom:100px;left:50%;transform:translateX(-50%);background:#0F172A;color:#fff;padding:10px 16px;border-radius:9px;font-size:14px;display:none;z-index:99;max-width:92%}
+.muted{font-size:12.5px;color:var(--muted)}
+.flag{font-size:13px;padding:10px 12px;border-radius:10px;margin-top:8px;line-height:1.4;border:1px solid transparent}
+.flag-warn{background:#FFF7E6;color:#92400E;border-color:#FDE4B8}.flag-ok{background:#ECFDF3;color:#166534;border-color:#BBF0CC}.flag-err{background:#FEF2F2;color:#991B1B;border-color:#FECACA}.flag-info{background:#EEF4FF;color:#1E3A8A;border-color:#C7D7FE}
+.hist{font-size:13px;border-top:1px solid #EEF2F7;padding:10px 0;line-height:1.45}.hist b{color:var(--azul);font-weight:800}
+#tela-hist .hist:first-child{border-top:none}
+#toast{position:fixed;bottom:104px;left:50%;transform:translateX(-50%);background:#0F172A;color:#fff;padding:11px 16px;border-radius:12px;font-size:14px;display:none;z-index:99;max-width:92%;box-shadow:0 10px 30px -10px rgba(0,0,0,.5)}
 .hide{display:none}
-.foto{display:flex;gap:10px;align-items:center;border:2px dashed #CBD5E1;border-radius:12px;padding:10px;background:#F8FAFC;cursor:pointer;min-height:76px}
-.foto.ok{border-style:solid;border-color:#16A34A;background:#F0FDF4}
-.foto img{width:64px;height:64px;object-fit:cover;border-radius:8px;background:#E2E8F0}
-.foto .ic{width:64px;height:64px;border-radius:8px;background:#E2E8F0;display:flex;align-items:center;justify-content:center;font-size:28px}
-.foto .tx{flex:1;font-size:14px}.foto .tx b{display:block;color:#1A2A5E}
+.foto{display:flex;gap:12px;align-items:center;border:1.5px dashed #C3CCDA;border-radius:var(--r);padding:11px;background:#F8FAFC;min-height:84px;transition:border-color .15s,background .15s}
+.foto.ok{border-style:solid;border-color:var(--ok);background:#F0FDF4}
+.foto img{width:62px;height:62px;object-fit:cover;border-radius:10px;background:#E2E8F0;flex:none}
+.foto .ic{width:62px;height:62px;border-radius:12px;background:#E8EEF9;color:var(--azul);display:flex;align-items:center;justify-content:center;flex:none}
+.foto .ic svg{width:30px;height:30px}
+.foto.ok .ic{background:#DCFCE7;color:var(--ok)}
+.foto .tx{flex:1;font-size:14px;line-height:1.35}.foto .tx b{display:block;color:var(--azul);font-weight:800;margin-bottom:2px}
 .foto{cursor:default}
-.btn-ditar{display:inline-block;margin-top:6px;padding:9px 12px;border:1px solid #CBD5E1;border-radius:8px;background:#F8FAFC;color:#1A2A5E;font-size:13px;font-weight:700;cursor:pointer}.btn-ditar.gravando{background:#FEE2E2;border-color:#DC2626;color:#991B1B}
-.fbtn{margin-top:6px}
+.btn-ditar{display:inline-flex;align-items:center;gap:7px;margin-top:8px;padding:9px 14px;border:1.5px solid #D5DCE6;border-radius:999px;background:#fff;color:var(--azul);font-size:13px;font-weight:700;cursor:pointer;-webkit-tap-highlight-color:transparent}.btn-ditar svg{width:16px;height:16px}.btn-ditar.gravando{background:#FEE2E2;border-color:#DC2626;color:#991B1B}
+.fbtn{margin-top:8px}
 .fbtn .btn{margin-top:0;padding:11px;font-size:14px}
-.prog{height:6px;background:#E2E8F0;border-radius:3px;overflow:hidden;margin-top:8px}.prog i{display:block;height:100%;width:0;background:#E8820C;transition:width .4s}
-.item{border:1px solid #E2E8F0;border-radius:10px;padding:10px;margin-top:8px;background:#FAFAFA}
+.prog{height:6px;background:#E2E8F0;border-radius:3px;overflow:hidden;margin-top:10px}.prog i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--lar),#F5A54A);transition:width .4s}
+.item{border:1px solid var(--borda);border-radius:12px;padding:10px;margin-top:8px;background:#FAFBFD}
 .item .top{display:flex;gap:8px;align-items:center}.item .top select{flex:1}
-.item .x{width:40px;height:40px;border:none;border-radius:8px;background:#FEE2E2;color:#991B1B;font-size:18px;font-weight:700}
-.item .sub{font-size:12px;color:#64748B;margin-top:4px}
-.soma{display:flex;justify-content:space-between;font-size:13px;margin-top:8px;padding:8px 10px;border-radius:8px;background:#F1F5F9}
+.item .x{width:42px;height:42px;border:none;border-radius:10px;background:#FEE2E2;color:#991B1B;font-size:18px;font-weight:700;flex:none}
+.item .sub{font-size:12px;color:var(--muted);margin-top:4px}
+.soma{display:flex;justify-content:space-between;font-size:13px;margin-top:10px;padding:9px 12px;border-radius:10px;background:#F1F5F9}
 .soma.ok{background:#DCFCE7;color:#166534}.soma.ruim{background:#FEE2E2;color:#991B1B}
-#rodape{position:fixed;left:0;right:0;bottom:0;background:#fff;border-top:1px solid #E2E8F0;padding:10px 12px;z-index:50}
-#rodape .btn{margin:0}
-.chip{display:inline-block;font-size:11px;padding:2px 8px;border-radius:10px;background:#E2E8F0;color:#334155;margin-right:4px}
+#rodape{position:fixed;left:0;right:0;bottom:0;background:rgba(255,255,255,.92);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);border-top:1px solid var(--borda);padding:10px 12px calc(10px + env(safe-area-inset-bottom));z-index:50}
+#rodape .btn{margin:0;max-width:536px;margin:0 auto;display:flex}
+.chip{display:inline-block;font-size:11px;font-weight:700;padding:2px 9px;border-radius:999px;background:#E8EEF9;color:var(--azul);margin-right:4px}
 .chip.g{background:#DCFCE7;color:#166534}.chip.w{background:#FEF3C7;color:#92400E}.chip.r{background:#FEE2E2;color:#991B1B}
+#lk-manual a{display:inline-flex;align-items:center;gap:6px;color:var(--azul);font-weight:700;text-decoration:none;padding:8px 14px;border-radius:999px;background:#fff;border:1.5px solid var(--borda);font-size:13px}
 </style></head><body>
 <script>(function(){ try {
   const q = new URLSearchParams(location.search);
@@ -1528,7 +1545,7 @@ input.ruim{border-color:#DC2626;background:#FEF2F2}
   if (sso || q.get('embedded')) history.replaceState(null, '', location.pathname);
 } catch(e) {} })();</script>
 <style>.embedded h1{display:none !important}.embedded body{padding-top:6px}.sso #tela-login{display:none !important}</style>
-<h1>⛽ Abastecimento <span>Garra</span></h1>
+<h1><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 22V5a2 2 0 0 1 2-2h7a2 2 0 0 1 2 2v17"/><path d="M2 22h13"/><rect x="6" y="6" width="5" height="4" rx="1"/><path d="M14 11h1.5a2 2 0 0 1 2 2v4.5a1.5 1.5 0 0 0 3 0V9.8a2 2 0 0 0-.6-1.4L18 6.5"/></svg> Abastecimento <span>Garra</span></h1>
 
 <div class="card" id="tela-login">
   <b>Entrar</b><div class="muted">Use o mesmo login dos aplicativos Garra.</div>
@@ -1540,34 +1557,34 @@ input.ruim{border-color:#DC2626;background:#FEF2F2}
 <div class="hide" id="tela-form">
   <div class="card">
     <div class="foto" id="box-nota">
-      <span class="ic" id="ic-nota">🧾</span>
+      <span class="ic" id="ic-nota"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1Z"/><path d="M14 8H8"/><path d="M16 12H8"/><path d="M13 16H8"/></svg></span>
       <span class="tx"><b>Foto da notinha do posto</b><span class="muted" id="tx-nota">Obrigatória</span></span>
     </div>
     <div class="row fbtn">
-      <button type="button" class="btn btn-o" onclick="$('f-nota').click()">📷 Tirar foto</button>
-      <button type="button" class="btn btn-c" onclick="$('g-f-nota').click()">🖼 Galeria</button>
+      <button type="button" class="btn btn-o" onclick="$('f-nota').click()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></svg> Tirar foto</button>
+      <button type="button" class="btn btn-c" onclick="$('g-f-nota').click()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="3"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.1-3.1a2 2 0 0 0-2.8 0L6 21"/></svg> Galeria</button>
     </div>
     <input type="file" id="f-nota" accept="image/*" capture="environment" style="display:none" onchange="fotoEscolhida('nota',this)">
     <input type="file" id="g-f-nota" accept="image/*" style="display:none" onchange="fotoEscolhida('nota',this)">
     <div class="foto" id="box-leitura" style="margin-top:12px">
-      <span class="ic" id="ic-leitura">🕐</span>
+      <span class="ic" id="ic-leitura"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m12 15 3.5-4.5"/><path d="M3.34 19a10 10 0 1 1 17.32 0"/><circle cx="12" cy="15" r="1"/></svg></span>
       <span class="tx"><b>Foto do horímetro / KM</b><span class="muted" id="tx-leitura">Opcional — se não está anotado na nota</span></span>
     </div>
     <div class="row fbtn">
-      <button type="button" class="btn btn-o" onclick="$('f-leitura').click()">📷 Tirar foto</button>
-      <button type="button" class="btn btn-c" onclick="$('g-f-leitura').click()">🖼 Galeria</button>
+      <button type="button" class="btn btn-o" onclick="$('f-leitura').click()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></svg> Tirar foto</button>
+      <button type="button" class="btn btn-c" onclick="$('g-f-leitura').click()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="3"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.1-3.1a2 2 0 0 0-2.8 0L6 21"/></svg> Galeria</button>
     </div>
     <input type="file" id="f-leitura" accept="image/*" capture="environment" style="display:none" onchange="fotoEscolhida('leitura',this)">
     <input type="file" id="g-f-leitura" accept="image/*" style="display:none" onchange="fotoEscolhida('leitura',this)">
     <label>Escreva como mandaria no grupo <span class="muted">(opcional)</span></label>
     <input id="f-texto" placeholder="ex.: CB-05 441545 km · EH-50 120 L" onblur="talvezLer()">
-    <button type="button" class="btn-ditar" data-ditar="f-texto">🎤 Ditar</button>
+    <button type="button" class="btn-ditar" data-ditar="f-texto"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><path d="M12 19v3"/></svg> Ditar</button>
     <div class="prog hide" id="prog"><i id="prog-i"></i></div>
     <div class="muted" id="prog-tx" style="margin-top:6px"></div>
     <div id="leitura-flags"></div>
   </div>
 
-  <div class="muted" style="text-align:center;margin:2px 0 8px" id="lk-manual"><a href="#" onclick="mostrarDados();return false">✍️ Preencher sem foto →</a></div>
+  <div class="muted" style="text-align:center;margin:2px 0 8px" id="lk-manual"><a href="#" onclick="mostrarDados();return false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" width="15" height="15"><path d="M17 3a2.8 2.8 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg> Preencher sem foto →</a></div>
 
   <div class="hide" id="sec-dados">
   <div class="card" id="card-nota">
@@ -1597,7 +1614,7 @@ input.ruim{border-color:#DC2626;background:#FEF2F2}
     <b style="color:#1A2A5E">Para onde foi o combustível</b>
     <div class="muted">Um item por máquina, caminhão ou galão. Os litros dos itens têm que fechar com a nota.</div>
     <div id="itens"></div>
-    <button class="btn btn-c" onclick="addItem()">➕ Adicionar equipamento ou galão</button>
+    <button class="btn btn-c" onclick="addItem()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg> Adicionar equipamento ou galão</button>
     <div class="soma" id="soma"><span>Soma dos itens</span><b id="soma-v">0,00 L</b></div>
   </div>
 
@@ -1608,10 +1625,11 @@ input.ruim{border-color:#DC2626;background:#FEF2F2}
   <div class="card" id="tela-hist"><b>Meus últimos registros</b><div class="muted">Confirmação do que você já enviou — evita mandar a mesma nota duas vezes.</div><div id="hist"></div></div>
 </div>
 
-<div id="rodape" class="hide"><button class="btn btn-p" id="btn-salvar" onclick="salvar()">💾 Registrar abastecimento</button></div>
+<div id="rodape" class="hide"><button class="btn btn-p" id="btn-salvar" onclick="salvar()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg> Registrar abastecimento</button></div>
 <div id="toast"></div>
 <script>
 const API = location.origin;
+const _ICONES = {nota:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1Z"/><path d="M14 8H8"/><path d="M16 12H8"/><path d="M13 16H8"/></svg>', leitura:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m12 15 3.5-4.5"/><path d="M3.34 19a10 10 0 1 1 17.32 0"/><circle cx="12" cy="15" r="1"/></svg>'};
 let TOK = localStorage.getItem('garra_tok_abast') || '';
 let CTX = {frota:[], galoes:[], combustiveis:[], postos:[]};
 let FOTOS = {nota:null, leitura:null};   // File comprimido
@@ -1842,7 +1860,7 @@ function mostrarResultado(r){
 function limpar(){
   FOTOS={nota:null,leitura:null}; PATHS={}; BRUTO=null; LIDO_HASH='';
   ['f-nota','f-leitura','g-f-nota','g-f-leitura'].forEach(id=>{ $(id).value=''; });
-  ['nota','leitura'].forEach(q=>{ const b=$('box-'+q); b.classList.remove('ok'); const cur=$('ic-'+q); const s=document.createElement('span'); s.className='ic'; s.id='ic-'+q; s.textContent=q==='nota'?'🧾':'🕐'; cur.replaceWith(s); $('tx-'+q).textContent=q==='nota'?'Toque para fotografar · obrigatória':'Opcional — se não está anotado na nota'; });
+  ['nota','leitura'].forEach(q=>{ const b=$('box-'+q); b.classList.remove('ok'); const cur=$('ic-'+q); const s=document.createElement('span'); s.className='ic'; s.id='ic-'+q; s.innerHTML=_ICONES[q]; cur.replaceWith(s); $('tx-'+q).textContent=q==='nota'?'Toque para fotografar · obrigatória':'Opcional — se não está anotado na nota'; });
   ['f-texto','n-cupom','n-data','n-litros','n-preco','n-valor','n-posto-nome','n-cnpj'].forEach(id=>{ $(id).value=''; $(id).classList.remove('lido'); });
   ['n-posto','n-comb'].forEach(id=>{ $(id).value=''; $(id).classList.remove('lido'); }); mostrar('posto-novo',false);
   $('confianca').textContent=''; $('leitura-flags').innerHTML=''; $('prog-tx').textContent='';
