@@ -329,6 +329,30 @@ async def _ultima_leitura(eq):
     return float(v) if v else None
 
 
+async def _leituras_vizinhas(eq, data):
+    """(13/10/2026) Leituras imediatamente ANTES e DEPOIS da data da nota, na
+    fonte única (partes + checklists + abastecimentos não divergentes). Uma nota
+    lançada com atraso (data 06/10, registrada dia 13) era comparada com a maior
+    leitura da frota — a parte de 12/10 — e virava "divergente" mesmo estando
+    certa. A leitura só é divergente se for menor que a anterior à data OU maior
+    que a posterior. Devolve (anterior, posterior); cada um pode ser None."""
+    try:
+        from routers.manutencao import _garantir_leituras
+        await _garantir_leituras()
+        r = await ajard_query(
+            """SELECT (SELECT MAX(leitura) FROM operacional.v_leituras
+                        WHERE equipamento_id=%s AND leitura > 0 AND data < %s) AS ant,
+                      (SELECT MIN(leitura) FROM operacional.v_leituras
+                        WHERE equipamento_id=%s AND leitura > 0 AND data > %s) AS pos""",
+            (eq["id"], data, eq["id"], data))
+        if r:
+            ant = r[0].get("ant"); pos = r[0].get("pos")
+            return (float(ant) if ant else None), (float(pos) if pos else None)
+    except Exception as e:
+        print(f"[Abastecimento] leituras vizinhas falhou: {e}")
+    return None, None
+
+
 def _cascata(digitada, foto, ultima, cadastro):
     if digitada is not None:
         return digitada, "digitada"
@@ -1083,7 +1107,15 @@ async def _gravar_item(nota_id, eq, litros, it, comb, rubrica, preco_litro, data
     if it.get("leitura_via") == "painel" and fonte == "digitada":
         fonte = "foto"
 
-    div_leitura = bool(leitura is not None and ultima and leitura < ultima)
+    # (13/10/2026) divergência medida contra as leituras vizinhas à DATA DA NOTA,
+    # não contra a maior leitura já vista (nota atrasada ficava divergente à toa)
+    anterior, posterior = await _leituras_vizinhas(eq, data)
+    if anterior is None and posterior is None:
+        anterior = ultima
+    div_leitura = bool(leitura is not None and fonte in ("digitada", "foto") and (
+        (anterior and leitura < anterior) or (posterior and leitura > posterior)))
+    if anterior:
+        ultima = anterior   # o que a tela mostra como "última conhecida" é a anterior à nota
     if digitada is not None and foto:
         if abs(digitada - foto) > max(0.05 * foto, 1):
             div_leitura = True
@@ -1353,16 +1385,17 @@ async def editar_abastecimento(item_id: str, request: Request, payload=Depends(v
     data = _dt(d.get("data_hora")) if d.get("data_hora") else it["data"]
     # leitura: digitada → recalcula divergência contra as OUTRAS leituras
     leitura = it.get("leitura"); fonte = it.get("leitura_fonte"); div = bool(it.get("divergencia_leitura"))
-    if "leitura" in d:
-        nova = _num(d.get("leitura"))
+    if "leitura" in d or "data_hora" in d:
+        nova = _num(d.get("leitura")) if "leitura" in d else (float(leitura) if leitura is not None else None)
         if nova is not None:
-            outras = await ajard_query(
-                """SELECT COALESCE(MAX(leitura),0) AS m FROM operacional.abastecimentos
-                   WHERE equipamento_id=%s AND ativo=true AND id<>%s AND data < %s
-                     AND COALESCE(divergencia_leitura,false)=false AND destino_tipo='equipamento'""",
-                (eq["id"], item_id, data))
-            ant = float(outras[0]["m"] or 0) if outras else 0.0
-            leitura, fonte, div = nova, "digitada", bool(ant and nova < ant)
+            # (13/10/2026) mesma régua do registro: vizinhas à data da nota, na fonte
+            # única (partes + checklists + abastecimentos). O próprio item fica fora
+            # porque tem a mesma data (nem "antes" nem "depois").
+            ant, pos = await _leituras_vizinhas(eq, data)
+            leitura = nova
+            if "leitura" in d:
+                fonte = "digitada"
+            div = bool((ant and nova < ant) or (pos and nova > pos))
     quem = payload.get("nome") or payload.get("login") or ""
     trilha = f"editado por {quem} em {datetime.now().strftime('%d/%m/%Y %H:%M')}"
     obs = (d.get("observacao") if "observacao" in d else it.get("observacao")) or ""
@@ -1849,7 +1882,7 @@ function mostrarResultado(r){
     const un=i.medicao==='km'?' km':' h';
     let h='<div class="flag '+(i.divergencia_leitura?'flag-warn':'flag-ok')+'">✅ <b>'+esc(i.equipamento)+'</b> · '+fmt(i.litros,1)+' L'+(i.leitura!=null?' · '+fmt(i.leitura,0)+un+' <span class="muted">('+esc(i.leitura_fonte)+')</span>':'');
     if(i.consumo_medio!=null) h+='<br>Consumo neste trecho: <b>'+fmt(i.consumo_medio,i.medicao==='km'?1:2)+(i.medicao==='km'?' L/100 km':' L/h')+'</b>'+(i.cmd_r!=null?' · média do equipamento '+fmt(i.cmd_r,i.medicao==='km'?1:2):'');
-    if(i.divergencia_leitura) h+='<br>⚠️ Leitura menor que a última conhecida — registrada como divergente, não moveu o cadastro.';
+    if(i.divergencia_leitura) h+='<br>⚠️ Leitura fora da sequência (menor que a anterior ou maior que a seguinte à data da nota) — registrada como divergente, não moveu o cadastro.';
     if(i.alerta_consumo) h+='<br>🔥 Consumo acima da própria média — avisar manutenção (filtro, bico, vazamento).';
     if(i.sem_funcionamento) h+='<br>⚠️ Nenhuma parte diária ou checklist desde o abastecimento anterior.';
     if(i.divergencia_placa) h+='<br>⚠️ Placa da foto não é deste equipamento.';
