@@ -3271,6 +3271,11 @@ async def editar_plano(pid: str, request: Request, payload=Depends(verificar_man
         tuple(params), fetch="one")
     if not r:
         raise HTTPException(status_code=404, detail="Plano não encontrado")
+    # (13/10/2026) período/baseline mudou → OT programada da FMP acompanha (se não alterada à mão)
+    try:
+        await _garantir_ot_programada(pid, payload)
+    except HTTPException:
+        pass
     return {"ok": True, "codigo": r["codigo"]}
 
 
@@ -3580,7 +3585,7 @@ async def _calcular_previsoes():
                   p.periodo_codigo, p.periodo_qtd, p.custo_previsto, p.ultima_data, p.ultima_leitura, p.criado_em,
                   p.plano_proximo_codigo, COALESCE(p.data_fixa,false) AS data_fixa, COALESCE(p.registro_fixo,false) AS registro_fixo,
                   e.codigo AS eq_codigo, e.descricao AS eq_desc,
-                  e.horimetro_atual, e.medicao,
+                  e.horimetro_atual, e.km_atual, e.medicao,
                   per.nome AS periodo_nome
            FROM manutencao.planos p
            JOIN operacional.equipamentos e
@@ -3602,6 +3607,14 @@ async def _calcular_previsoes():
         pid = str(p["id"])
         if pid not in ult and (p.get("ultima_data") or p.get("ultima_leitura") is not None):
             ult[pid] = {"plano_id": pid, "dt": p.get("ultima_data"), "leitura": p.get("ultima_leitura")}
+        elif pid in ult:
+            # (13/10/2026) OT concluída sem leitura na abertura (ou sem data) não pode deixar
+            # a FMP "sem base" quando a ficha tem a última execução informada
+            u = ult[pid]
+            if u.get("leitura") is None and p.get("ultima_leitura") is not None:
+                u["leitura"] = p.get("ultima_leitura")
+            if not u.get("dt") and p.get("ultima_data"):
+                u["dt"] = p.get("ultima_data")
     progs = await ajard_query(
         """SELECT DISTINCT ON (plano_id) plano_id, id, numero, data_prevista, horimetro_previsto
            FROM manutencao.ot
@@ -3609,15 +3622,30 @@ async def _calcular_previsoes():
            ORDER BY plano_id, data_prevista NULLS LAST""")
     prog = {str(o["plano_id"]): o for o in progs}
     fmd = await _fmd_por_equipamento()
+    # (13/10/2026) leitura VIVA por objeto: maior leitura da fonte única (partes, checklists,
+    # abastecimentos) ou o cadastro, o que for maior — e km_atual para quem mede em km
+    # (antes lia horimetro_atual para todos, inclusive caminhões)
+    vivas = {}
+    try:
+        for r in await ajard_query(
+                "SELECT equipamento_id, MAX(leitura) AS l FROM operacional.v_leituras WHERE leitura > 0 GROUP BY equipamento_id"):
+            vivas[str(r["equipamento_id"])] = float(r["l"] or 0)
+    except Exception as e:
+        print(f"[Previsões] leituras vivas indisponíveis: {e}")
 
     itens = []
     for p in planos:
         pid = str(p["id"])
         modo, total, unidade = _resolver_plano(p["periodo_nome"] or p["periodo_codigo"], p["periodo_qtd"], p["descricao"])
+        if modo == "leitura":
+            # (13/10/2026) o período genérico "Registros (horímetro/km)" tem "KM" no nome e
+            # rotulava tudo como KM — a unidade é a medição do objeto
+            unidade = "km" if (p.get("medicao") == "km") else "h"
         u = ult.get(pid)
         base_dt = (u["dt"] if u and u["dt"] else (p["criado_em"].date() if p["criado_em"] else hoje))
         base_leitura = (float(u["leitura"]) if u and u["leitura"] is not None else None)
-        atual = float(p["horimetro_atual"] or 0)
+        cad = p["km_atual"] if p.get("medicao") == "km" else p["horimetro_atual"]
+        atual = max(float(cad or 0), vivas.get(str(p["equipamento_id"]), 0.0))
         eq_fmd = fmd.get(str(p["equipamento_id"]))
         item = {"plano_id": pid, "plano_codigo": p["codigo"], "plano_descricao": p["descricao"],
                 "equipamento_id": str(p["equipamento_id"]), "eq_codigo": p["eq_codigo"],
@@ -3650,7 +3678,8 @@ async def _calcular_previsoes():
                 item["leitura_alvo"] = alvo
                 rest = alvo - atual
                 item["restante"] = round(rest, 1)
-                if eq_fmd and rest > 0:
+                if eq_fmd:
+                    # (13/10/2026) vencida também ganha data (no passado): "quando venceu"
                     item["proxima_data"] = (hoje + _td(days=int(rest / eq_fmd))).isoformat()
                 item["status"] = "vencida" if rest <= 0 else ("a_vencer" if rest <= 50 else "ok")
         if o and item["status"] in ("vencida", "a_vencer", "ok"):
@@ -3716,7 +3745,20 @@ async def _garantir_ot_programada(plano_id, payload):
     preventiva anterior. Idempotente: se já existe OT programada, não faz nada."""
     prev = await _calcular_previsoes()
     it = next((i for i in prev["itens"] if str(i["plano_id"]) == str(plano_id)), None)
-    if not it or it.get("ot") or it["status"] not in ("ok", "a_vencer", "vencida"):
+    if not it:
+        return None
+    if it.get("ot"):
+        # (13/10/2026) Já existe OT programada (ex.: aberta à mão pela FMP antes da baseline):
+        # ela herda a previsão recalculada — a não ser que a programação tenha sido
+        # alterada no Avançado (prog_alterada), que é soberana.
+        o = await ajard_query("SELECT id, prog_alterada FROM manutencao.ot WHERE id=%s AND ativo=true",
+                              (it["ot"]["id"],), fetch="one")
+        if o and not o.get("prog_alterada") and (it.get("proxima_data") or it.get("leitura_alvo") is not None):
+            await ajard_query(
+                """UPDATE manutencao.ot SET data_prevista=%s, horimetro_previsto=%s, atualizado_em=now()
+                   WHERE id=%s""", (it.get("proxima_data"), it.get("leitura_alvo"), o["id"]), fetch="none")
+        return None
+    if it["status"] not in ("ok", "a_vencer", "vencida"):
         return None
     return await _gerar_ot_previsao(plano_id, {
         "data_prevista": it.get("proxima_data"),
