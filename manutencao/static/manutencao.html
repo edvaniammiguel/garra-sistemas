@@ -1360,6 +1360,15 @@ async function plfProxima(){
     el.innerHTML = '<b>'+_esc(alvo)+'</b> · '+rot + (it.ot ? ' ('+_esc(it.ot.numero)+')' : '') + rest;
   } catch(e){ el.textContent = '—'; }
 }
+// (13/10/2026) ManWinWin "Actualizar Datas OT": OTs programadas de FMP recebem a previsão viva
+// (baseline + período + leituras + FMD). Roda sozinho ao abrir o módulo; o botão em OT › Mais força na hora.
+async function atualizarDatasOT(avisar){
+  try {
+    const r = await mntFetch('/manutencao/api/ots/atualizar-datas', {method:'POST'});
+    if (avisar) mostrarToast('\ud83d\udd04 '+r.total+' OT(s) com previsão atualizada'+(r.mantidas_manuais?' · '+r.mantidas_manuais+' mantida(s): programação manual':''), 'ok');
+    if (r.total) { carregarOTsReais(); carregarSemaforosReais(); if (_otAberta) verOTReal(_otAberta.id); }
+  } catch(e){ if (avisar) mostrarToast('\u274c '+e.message, 'warn'); }
+}
 // (15/09/2026) Botão ManWinWin "Gerar preventivas": FMPs vencidas/a vencer viram OT programada
 async function gerarPreventivas(){
   let prev;
@@ -1893,7 +1902,7 @@ const _MW = {
       ['\ud83d\udce8','Pedidos',"abrirPedidos()"],
       ['\ud83d\udcc5','Calend\u00e1rio',"calTrabalhos()"],
       ['\ud83d\uddc2','Projetos',"projectosJanela()"],
-      ['\u22ef','Mais',[['\ud83d\udea6 Sem\u00e1foros da frota',"showModule('frota');carregarSemaforosReais()"],['\u2699\ufe0f Parametrizar',"showModule('param')"]]],
+      ['\u22ef','Mais',[['\ud83d\udd04 Atualizar datas OT',"atualizarDatasOT(true)"],['\ud83d\udea6 Sem\u00e1foros da frota',"showModule('frota');carregarSemaforosReais()"],['\u2699\ufe0f Parametrizar',"showModule('param')"]]],
       ['\ud83d\udd27','Ferramentas',[
         {sub:'\ud83d\udcd2 Registros', itens:[['\ud83d\udc65 Registro M\u00e3o de Obra',"(function(){const i=_mwPrecisa('ots','OT'); if(i) otAbrirEm(i,'mo');})()"],['\ud83d\udd29 Registro Itens',"(function(){const i=_mwPrecisa('ots','OT'); if(i) verOTReal(i);})()"],['\ud83d\udcc4 Registro Outros',"(function(){const i=_mwPrecisa('ots','OT'); if(i) otAbrirEm(i,'ou');})()"]]},
         ['\u270f\ufe0f M\u00faltipla Edi\u00e7\u00e3o OTs',"multiEdicao('ots')"],
@@ -6920,8 +6929,8 @@ async function desativarArtigoMW(){
 
 /* ══ INICIALIZAÇÃO ══ */
 document.addEventListener('DOMContentLoaded', function(){
-  carregarSemaforosReais();
-  carregarOTsReais();
+  // (13/10/2026) sincroniza as OTs programadas com a previsão viva antes de montar as listas
+  atualizarDatasOT(false).finally(function(){ carregarSemaforosReais(); carregarOTsReais(); });
   carregarEquipReais();
   mntFetch('/manutencao/api/fornecedores').then(f => { _mntFornList = f; }).catch(()=>{ _mntFornList = []; });
 });
