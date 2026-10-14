@@ -67,6 +67,7 @@ tr.sel td{background:#DBEAFE!important;color:#1A2A5E}
 .chip.em{background:#DBEAFE;color:#1E40AF}
 .chip.pr{background:#FEF9C3;color:#854D0E}
 .chip.tm{background:#DCFCE7;color:#166534}
+.chip.ok{background:#DCFCE7;color:#166534;border:1px solid #86EFAC}
 .chip.nr{background:#FEE2E2;color:#991B1B}
 .chip.ap{background:#D1FAE5;color:#065F46}
 .chip.pe{background:#FFF7ED;color:#9A3412}
@@ -273,7 +274,7 @@ button:disabled, select:disabled, input:disabled, [aria-disabled=true] { cursor:
             <th data-ord="descricao">Descrição</th>
             <th style="width:210px" data-ord="entidade">Entidade</th>
             <th style="width:52px" data-ord="tipo_trabalho">Tipo</th>
-            <th style="width:150px" data-ord="fornecedor_nome">Interventor</th>
+            <th style="width:150px" data-ord="interventor_nome">Interventor / Responsável</th>
             <th style="width:90px" data-ord="status">Estado</th>
             <th style="width:130px" data-ord="data_prevista">Programada</th>
             <th style="width:80px" data-ord="data_inicio_exec">Início</th>
@@ -290,6 +291,9 @@ button:disabled, select:disabled, input:disabled, [aria-disabled=true] { cursor:
         <label><input type="checkbox" value="aguardando_peca" checked onchange="renderOTs()"> Aguard. peça <b data-c="aguardando_peca"></b></label>
         <label><input type="checkbox" value="concluida" onchange="renderOTs()"> Encerradas <b data-c="concluida"></b></label>
         <label><input type="checkbox" value="cancelada" onchange="renderOTs()"> Canceladas <b data-c="cancelada"></b></label>
+        <span style="border-left:1px solid #CBD5E1;height:14px"></span>
+        <label title="OTs internas sem responsável definido"><input type="checkbox" id="ots-f-semresp" onchange="renderOTs()"> Sem responsável <b id="ots-c-semresp"></b></label>
+        <label title="Mecânico sinalizou serviço concluído pelo app — falta a gestão encerrar"><input type="checkbox" id="ots-f-sinal" onchange="renderOTs()"> ✅ Sinalizadas p/ encerrar <b id="ots-c-sinal"></b></label>
       </div>
     </div>
   </div>
@@ -901,6 +905,14 @@ function renderOTs(){
     if (via === 'mobile' || org.indexOf('mobile') >= 0) return 'mobile';
     return 'desktop';
   };
+  // (14/10/2026) Interventor/Responsável numa coluna só: externo = fornecedor; interno = responsável da equipe.
+  _otsCache.forEach(o => { o.interventor_nome = o.fornecedor_nome || o.responsavel_nome || ''; });
+  const semResp = o => !o.fornecedor_nome && !o.responsavel_nome && !['concluida','cancelada'].includes(o.status);
+  const cSem = document.getElementById('ots-c-semresp'), cSin = document.getElementById('ots-c-sinal');
+  if (cSem) cSem.textContent = '(' + _otsCache.filter(semResp).length + ')';
+  if (cSin) cSin.textContent = '(' + _otsCache.filter(o => o.sinal_concluido && !['concluida','cancelada'].includes(o.status)).length + ')';
+  if ((document.getElementById('ots-f-semresp') || {}).checked) ots = ots.filter(semResp);
+  if ((document.getElementById('ots-f-sinal') || {}).checked) ots = ots.filter(o => o.sinal_concluido);
   const canalSel = (document.getElementById('ots-origem') || {}).value || '';
   if (canalSel) ots = ots.filter(o => canalDe(o) === canalSel);
   if (_filtroTT !== null) ots = ots.filter(o => _filtroTT === '_sem' ? !o.tipo_trabalho : (_filtroTT.length === 1 ? (o.tipo_trabalho||'').charAt(0) === _filtroTT : o.tipo_trabalho === _filtroTT));
@@ -948,8 +960,8 @@ function renderOTs(){
       <td>${_esc(o.descricao)}</td>
       <td style="max-width:210px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${_esc(ent)}">${_esc(ent)}</td>
       <td class="mono">${_esc(o.tipo_trabalho||'')}</td>
-      <td style="max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${_esc(o.fornecedor_nome||'')}</td>
-      <td><span class="chip ${cc}">${cl}</span></td>
+      <td style="max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${o.fornecedor_nome ? '🏭 ' + _esc(o.fornecedor_nome) : o.responsavel_nome ? '👤 ' + _esc(o.responsavel_nome) : (semResp(o) ? '<span style="color:#C2410C;font-weight:600">— sem responsável</span>' : '')}</td>
+      <td><span class="chip ${cc}">${cl}</span>${o.sinal_concluido && !['concluida','cancelada'].includes(o.status) ? ' <span class="chip ok" title="Mecânico sinalizou serviço concluído pelo app">✅ sinal.</span>' : ''}${o.apontamentos ? ' <span class="muted" style="font-size:9px" title="registros do mecânico pelo app">' + o.apontamentos + ' reg.</span>' : ''}</td>
       <td>${prog}</td>
       <td>${d(o.data_inicio_exec)}</td>
       <td>${d(o.data_conclusao)}</td>

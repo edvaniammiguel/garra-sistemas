@@ -71,6 +71,7 @@
   <div id="abas" style="display:none;gap:8px;margin-bottom:10px">
     <button class="btn s" id="aba-novo" style="margin-top:0" onclick="verAba('novo')">＋ Pedido</button>
     <button class="btn" id="aba-minhas" style="margin-top:0;background:#fff;border:2px solid #CBD5E1" onclick="verAba('minhas')">📋 Minhas</button>
+    <button class="btn" id="aba-ots" style="margin-top:0;background:#fff;border:2px solid #CBD5E1" onclick="verAba('ots')">🔧 OTs</button>
   </div>
 
   <!-- PEDIDO -->
@@ -111,6 +112,17 @@
     <div id="minhas-lista" class="muted" style="margin-top:8px">Carregando…</div>
   </div>
 
+  <!-- (14/10/2026) TODAS AS OTs ABERTAS — não só as dos pedidos do próprio mecânico:
+       na oficina um cobre o outro, e a gestão confere pelo app o que está em aberto. -->
+  <div class="card" id="tela-ots" style="display:none">
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <b>OTs em aberto</b>
+      <label class="muted" style="display:flex;align-items:center;gap:4px;margin:0;font-size:12px"><input type="checkbox" id="ots-so-minhas" onchange="renderOts()" style="width:18px;height:18px"> só as minhas</label>
+    </div>
+    <input id="ots-busca" placeholder="🔍 máquina, nº da OT ou serviço" oninput="renderOts()" style="margin-top:8px">
+    <div id="ots-lista" class="muted" style="margin-top:8px">Carregando…</div>
+  </div>
+
   <!-- APONTAMENTO -->
   <div class="card" id="tela-apont" style="display:none">
     <b>Registrar execução</b>
@@ -146,7 +158,7 @@
     </label>
     <button class="btn p" id="ap-btn" onclick="apEnviar()">💾 Registrar na OT</button>
     <button class="btn" id="ap-cancel" style="display:none;background:#fff;border:2px solid var(--laranja);color:#1A2A5E" onclick="apCancelarEdicao()">✖ Cancelar edição</button>
-    <button class="btn" style="background:#fff;border:2px solid #CBD5E1" onclick="verAba('minhas')">Voltar</button>
+    <button class="btn" style="background:#fff;border:2px solid #CBD5E1" onclick="verAba(AP_VOLTA)">Voltar</button>
     <!-- (14/10/2026) Tudo que já foi registrado nesta OT: o mecânico confere antes de
          concluir, carrega de volta nos campos para corrigir, ou exclui (como o KM da Jardinagem). -->
     <div class="ap-hist">
@@ -242,12 +254,44 @@ function novo(){
 let AP_OT = null;
 function verAba(a){
   document.getElementById('abas').style.display = 'flex';
-  document.getElementById('aba-novo').className = 'btn ' + (a === 'novo' ? 's' : '');
-  document.getElementById('aba-novo').style.cssText = 'margin-top:0' + (a === 'novo' ? '' : ';background:#fff;border:2px solid #CBD5E1;color:#0F172A');
-  document.getElementById('aba-minhas').className = 'btn ' + (a === 'minhas' ? 's' : '');
-  document.getElementById('aba-minhas').style.cssText = 'margin-top:0' + (a === 'minhas' ? '' : ';background:#fff;border:2px solid #CBD5E1;color:#0F172A');
-  tela(a === 'novo' ? 'tela-pedido' : 'tela-minhas');
+  [['novo','tela-pedido'],['minhas','tela-minhas'],['ots','tela-ots']].forEach(([k, t]) => {
+    const b = document.getElementById('aba-' + k);
+    b.className = 'btn ' + (a === k ? 's' : '');
+    b.style.cssText = 'margin-top:0' + (a === k ? '' : ';background:#fff;border:2px solid #CBD5E1;color:#0F172A');
+  });
+  tela({ novo:'tela-pedido', minhas:'tela-minhas', ots:'tela-ots' }[a]);
   if (a === 'minhas') carregarMinhas();
+  if (a === 'ots') carregarOts();
+}
+const PRIO = { urgente:['#B91C1C','🔴 Urgente'], alta:['#C2410C','🟠 Alta'], media:['#64748B','🟢 Normal'], baixa:['#64748B','⚪ Baixa'] };
+let OTS = [];
+async function carregarOts(){
+  const el = document.getElementById('ots-lista');
+  try { const r = await api('/manutencao/api/ots-abertas-mobile'); OTS = r.ots || []; document.getElementById('aba-ots').style.display = r.executor ? '' : 'none'; renderOts(); }
+  catch(e){ el.innerHTML = '❌ ' + e.message; }
+}
+function renderOts(){
+  const el = document.getElementById('ots-lista');
+  const q = (document.getElementById('ots-busca').value || '').trim().toLowerCase();
+  const so = document.getElementById('ots-so-minhas').checked;
+  const lista = OTS.filter(o => (!so || o.minha) && (!q || [o.numero, o.equipamento_codigo, o.equipamento_desc, o.descricao].join(' ').toLowerCase().includes(q)));
+  if (!lista.length){ el.innerHTML = OTS.length ? 'Nenhuma OT com esse filtro.' : 'Nenhuma OT em aberto.'; return; }
+  el.innerHTML = lista.map(o => {
+    const pr = PRIO[o.prioridade] || PRIO.media;
+    const dt = o.data_abertura ? new Date(o.data_abertura).toLocaleDateString('pt-BR') : '';
+    return '<div style="border-bottom:1px solid #E2E8F0;padding:10px 0">'
+      + '<div style="display:flex;justify-content:space-between;align-items:center;gap:6px">'
+      + '<b style="color:#1A2A5E">' + _h(o.numero) + (o.equipamento_codigo ? ' <span style="color:#E8730C">· ' + _h(o.equipamento_codigo) + '</span>' : '') + '</b>'
+      + '<span style="font-size:12px;font-weight:700;color:' + pr[0] + '">' + pr[1] + '</span></div>'
+      + '<div style="font-size:13px;margin-top:2px">' + _h(o.descricao || '') + '</div>'
+      + '<div class="muted" style="margin-top:2px">' + (ST_OT[o.status] || o.status) + ' · ' + dt
+      + (o.responsavel_nome ? ' · 👤 ' + _h(o.responsavel_nome) : ' · <span style="color:#C2410C">sem responsável</span>')
+      + (o.apontamentos ? ' · ' + o.apontamentos + ' registro(s)' : '') + (o.sinal_concluido ? ' · ✅ sinalizada' : '')
+      + (o.minha ? ' · <b style="color:#1A2A5E">minha</b>' : '') + '</div>'
+      + '<button style="margin-top:6px;padding:7px 12px;border:none;border-radius:8px;background:#E8730C;color:#fff;font-weight:700" '
+      + 'onclick="apAbrir(\'' + o.id + '\',\'' + _esc(o.numero) + '\',\'' + _esc(o.equipamento_codigo) + '\',\'' + _esc(o.descricao) + '\')">🔧 Registrar execução</button>'
+      + '</div>';
+  }).join('');
 }
 const ST_PED = { aberto:['#64748B','⏳ Na triagem'], convertido:['#1D4ED8','🔧 Virou OT'], recusado:['#B91C1C','✖ Recusado'] };
 const ST_OT = { programada:'📅 Programada', aberta:'📂 Aberta', em_andamento:'▶️ Em execução',
@@ -389,8 +433,9 @@ async function apSubirFotos(tipo, apId){
 }
 function _esc(s){ return String(s || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\n/g, ' '); }
 function _h(s){ return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+let AP_VOLTA = 'minhas';
 function apAbrir(otId, otNum, eq, desc){
-  AP_OT = otId;
+  AP_OT = otId; AP_VOLTA = document.getElementById('tela-ots').style.display !== 'none' ? 'ots' : 'minhas';
   AP_FOTOS = { nota: [], servico: [] }; apFotosRender('nota'); apFotosRender('servico');
   const pg = document.getElementById('ap-prog'); if (pg) pg.textContent = '';
   // (14/10/2026) OT + equipamento na mesma linha: com várias OTs abertas o mecânico
@@ -441,13 +486,13 @@ async function apEnviar(){
     if (pg) pg.textContent = '';
     toast((AP_EDIT ? '✅ Alteração salva' : '✅ Registrado na OT') + (n ? ' · ' + n + ' foto(s) anexada(s)' : ''));
     apCancelarEdicao();   // limpa os campos e recarrega a lista — mecânico continua na OT
-    if (concluido) verAba('minhas');
+    if (concluido) verAba(AP_VOLTA);
   } catch(e){ toast('❌ ' + e.message, 'erro'); }
   finally { if (btn) btn.disabled = false; }
 }
 (async () => {
   if (TOK){
-    try { await carregarFrota(); urg('normal'); verAba('novo'); return; }
+    try { await carregarFrota(); urg('normal'); verAba('novo'); api('/manutencao/api/ots-abertas-mobile').then(r => { document.getElementById('aba-ots').style.display = r.executor ? '' : 'none'; }).catch(() => {}); return; }
     catch(e){}
   }
   tela('tela-login');
