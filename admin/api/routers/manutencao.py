@@ -605,7 +605,7 @@ async def _inserir_ot(d, eq, uid, numero, ano, seq):
 @router.get("/manutencao/api/ots")
 async def listar_ots(status: str = None, equipamento_id: str = None,
                      _auth=Depends(verificar_manutencao)):
-    await _garantir_colunas_ot()
+    await _garantir_colunas_ot(); await _garantir_apontamentos()
     where, params = ["ot.ativo=true"], []
     if status:
         params.append(status)
@@ -621,7 +621,9 @@ async def listar_ots(status: str = None, equipamento_id: str = None,
                   us.nome AS solicitante_nome, ur.nome AS responsavel_nome,
                   fo.nome AS fornecedor_nome, pd.via AS pedido_via,
                   (SELECT MIN(h.criado_em) FROM manutencao.ot_historico h
-                    WHERE h.ot_id = ot.id AND h.status_para = 'em_andamento') AS data_inicio_exec
+                    WHERE h.ot_id = ot.id AND h.status_para = 'em_andamento') AS data_inicio_exec,
+                  (SELECT COUNT(*) FROM manutencao.ot_apontamentos a WHERE a.ot_id=ot.id AND a.ativo=true)::int AS apontamentos,
+                  (SELECT bool_or(a.concluido) FROM manutencao.ot_apontamentos a WHERE a.ot_id=ot.id AND a.ativo=true) AS sinal_concluido
            FROM manutencao.ot ot
            JOIN operacional.equipamentos eq ON eq.id = ot.equipamento_id
            LEFT JOIN public.usuarios_garra us ON us.id = ot.solicitante_id
@@ -4769,6 +4771,7 @@ async def ot_apontamento(ot_id: str, request: Request, payload=Depends(verificar
     o, uid = await _ot_mobile_pode(ot_id, payload)
     if o["status"] not in _OT_STATUS_APONTAVEL:
         raise HTTPException(status_code=400, detail="OT já encerrada — apontamento indisponível")
+    await _ot_assumir_se_vaga(o, uid, ot_id)
     mo_id = None
     if horas:
         sug = await ajard_query(
@@ -4895,10 +4898,68 @@ async def _ot_mobile_pode(ot_id, payload):
            WHERE o.id=%s AND o.ativo=true""", (ot_id,), fetch="one")
     if not o:
         raise HTTPException(status_code=404, detail="OT não encontrada")
-    gestor = (payload.get("perfil") or "").lower() in _PERFIS_MANUTENCAO
-    if not gestor and str(uid) not in (str(o["responsavel_id"]), str(o["solicitante_id"])):
-        raise HTTPException(status_code=403, detail="Só o solicitante do pedido ou o responsável da OT anexam fotos nela")
+    # (14/10/2026) Quem EXECUTA (módulo ot_executar, ou perfil da manutenção) aponta
+    # em qualquer OT aberta — na oficina um mecânico cobre o outro. Quem só PEDE
+    # (pedir_ot) continua restrito às OTs dos próprios pedidos / onde é responsável.
+    if await _e_executor(payload):
+        return o, uid
+    if str(uid) not in (str(o["responsavel_id"]), str(o["solicitante_id"])):
+        raise HTTPException(status_code=403, detail="Esta OT não é sua — peça o módulo 'Executar OT' para apontar em OTs de outros")
     return o, uid
+
+
+async def _e_executor(payload) -> bool:
+    if (payload.get("perfil") or "").lower() in _PERFIS_MANUTENCAO:
+        return True
+    return await _tem_modulo(payload, {"ot_executar", "manutencao"})
+
+
+async def _ot_assumir_se_vaga(o, uid, ot_id):
+    if o.get("responsavel_id") or not uid:
+        return
+    await ajard_query("UPDATE manutencao.ot SET responsavel_id=%s, atualizado_em=now() WHERE id=%s AND responsavel_id IS NULL",
+                      (uid, ot_id), fetch="none")
+    await ajard_query(
+        """INSERT INTO manutencao.ot_historico (ot_id, status_de, status_para, observacao, usuario_id)
+           VALUES (%s,%s,%s,%s,%s)""",
+        (ot_id, o["status"], o["status"], "👤 Assumiu a OT pelo app (primeiro apontamento)", uid), fetch="none")
+    o["responsavel_id"] = uid
+
+
+@router.get("/manutencao/api/ots-abertas-mobile")
+async def ots_abertas_mobile(payload=Depends(verificar_pedir_ot)):
+    """(14/10/2026) Todas as OTs em aberto para o app do mecânico — não só as
+    dos pedidos dele. `minha` = ele é responsável ou solicitante. Quem não tem
+    'Executar OT' recebe só as suas (e o app esconde a aba)."""
+    await _garantir_pedidos(); await _garantir_apontamentos()
+    uid = await _usuario_id(payload)
+    executor = await _e_executor(payload)
+    rows = await ajard_query(
+        """SELECT o.id, o.numero, o.status, o.prioridade, o.tipo, o.descricao, o.data_abertura, o.data_prevista,
+                  o.responsavel_id, o.solicitante_id,
+                  eq.codigo AS equipamento_codigo, eq.descricao AS equipamento_desc,
+                  r.nome AS responsavel_nome, p.solicitante_id AS pedido_solicitante_id,
+                  (SELECT COUNT(*) FROM manutencao.ot_apontamentos a WHERE a.ot_id=o.id AND a.ativo=true)::int AS apontamentos,
+                  (SELECT bool_or(a.concluido) FROM manutencao.ot_apontamentos a WHERE a.ot_id=o.id AND a.ativo=true) AS sinal_concluido
+           FROM manutencao.ot o
+           LEFT JOIN operacional.equipamentos eq ON eq.id = o.equipamento_id
+           LEFT JOIN public.usuarios_garra r ON r.id = o.responsavel_id
+           LEFT JOIN manutencao.pedidos p ON p.id = o.pedido_id
+           WHERE o.ativo=true AND o.status IN ('programada','aberta','em_andamento','aguardando_peca')
+           ORDER BY CASE o.status WHEN 'em_andamento' THEN 0 WHEN 'aguardando_peca' THEN 1 WHEN 'aberta' THEN 2 ELSE 3 END,
+                    CASE o.prioridade WHEN 'urgente' THEN 0 WHEN 'alta' THEN 1 WHEN 'media' THEN 2 ELSE 3 END,
+                    o.data_abertura DESC LIMIT 200""") or []
+    out = []
+    for r in rows:
+        d = dict(r)
+        d["minha"] = str(uid) in (str(r["responsavel_id"]), str(r["solicitante_id"]), str(r["pedido_solicitante_id"]))
+        for k in ("id", "responsavel_id", "solicitante_id", "pedido_solicitante_id"):
+            d[k] = str(d[k]) if d[k] else None
+        for k in ("data_abertura", "data_prevista"):
+            d[k] = d[k].isoformat() if d[k] else None
+        if executor or d["minha"]:
+            out.append(d)
+    return {"executor": executor, "ots": out}
 
 
 @router.post("/manutencao/api/ots/{ot_id}/fotos-execucao")
