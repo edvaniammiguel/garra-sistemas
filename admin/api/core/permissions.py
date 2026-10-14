@@ -13,7 +13,10 @@ MODULOS_DISPONIVEIS = [
     {"id": "checklist",           "label": "Checklist",             "desc": "Checklist de máquinas"},
     {"id": "checklist_logistica", "label": "Logística (Checklist)", "desc": "Aba de carros de apoio dentro do Checklist"},
     {"id": "manutencao",          "label": "Manutenção Desktop",    "desc": "Módulo completo — frota, OTs, materiais (gestão)"},
-    {"id": "pedir_ot",            "label": "Manutenção — Pedir OT", "desc": "Solicitar OT pelo mobile e acompanhar (mecânicos)"},
+    {"id": "pedir_ot",            "label": "Manutenção — Pedir OT", "desc": "Solicitar OT pelo mobile e acompanhar as próprias (operadores e mecânicos)"},
+    # (14/10/2026) Separa quem só PEDE (operador) de quem EXECUTA (mecânico): a aba
+    # 🔧 OTs do app e o apontamento em OT de outros exigem este módulo.
+    {"id": "ot_executar",         "label": "Manutenção — Executar OT", "desc": "Vê todas as OTs em aberto no app e registra execução em qualquer uma (mecânicos)"},
     {"id": "abastecimento",       "label": "Abastecimento (mobile)", "desc": "Registrar abastecimento com fotos — leitura alimenta FMD/preventivas"},
     {"id": "abastecimento_notas", "label": "Notas de Abastecimento", "desc": "Conferência financeira das notinhas (foto, valores, lançado na MAIS) — sem acesso à Manutenção"},
     # (13/10/2026) Compras estava só na lista do front, que é SOBRESCRITA por esta
@@ -29,7 +32,7 @@ PERFIL_MODULOS_PADRAO = {
     "admin":     ["admin_master","jardinagem_desktop","jardinagem_mobile","operacional_mobile","checklist","checklist_logistica","abastecimento","abastecimento_notas","compras_solicitar","compras_aprovar","compras_alcadas","compras_ver_todas"],
     "gestor":    ["admin_master","jardinagem_desktop","operacional_mobile","abastecimento","abastecimento_notas","compras_solicitar","compras_aprovar","compras_alcadas","compras_ver_todas"],
     "luana":     ["admin_master","jardinagem_desktop","operacional_mobile","abastecimento_notas","compras_solicitar","compras_aprovar","compras_alcadas","compras_ver_todas"],
-    "bruna":     ["admin_master","checklist","manutencao","pedir_ot","abastecimento","compras_solicitar","compras_aprovar"],
+    "bruna":     ["admin_master","checklist","manutencao","pedir_ot","ot_executar","abastecimento","compras_solicitar","compras_aprovar"],
     "operador":  ["operacional_mobile","checklist","abastecimento"],
     "motorista": ["operacional_mobile","checklist","abastecimento"],
     "campo":     ["jardinagem_mobile"],
