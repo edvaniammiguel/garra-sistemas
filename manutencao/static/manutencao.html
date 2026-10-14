@@ -6722,8 +6722,36 @@ async function otDocsRender(){
     + '<div style="display:flex;gap:6px;align-items:flex-end;flex-wrap:wrap"><div class="mfield" style="flex:1;min-width:200px">Ficheiro<input type="file" id="otdoc-file" style="font-size:11px"></div>'
     + '<div class="mfield" style="flex:1;min-width:180px">Descri\u00e7\u00e3o<input id="otdoc-desc"></div><button class="btn p" onclick="otDocEnviar()">\u2b06 Enviar</button></div>'
     + '<div class="dsec" style="margin-top:10px">'+docs.length+' documento(s)</div>'
-    + (docs.length ? docs.map(d => '<div style="display:flex;gap:8px;align-items:center;padding:5px 6px;border-bottom:1px solid #F1F5F9;font-size:11px"><a href="'+_esc(d.url)+'" target="_blank" style="flex:1;font-weight:700;color:#1A2A5E">'+_esc(d.nome)+'</a><span class="muted" style="flex:1">'+_esc(d.descricao||'')+'</span><span class="muted">'+kb(d.tamanho)+'</span><span class="muted">'+dd(d.criado_em)+' \u00b7 '+_esc(d.usuario_nome||'')+'</span><span style="cursor:pointer;color:#B91C1C" onclick="equipDocExcluirOT(\''+d.id+'\')">\u2715</span></div>').join('')
+    + otDocsGaleria(docs)
+    + (docs.length ? docs.map(d => '<div style="display:flex;gap:8px;align-items:center;padding:5px 6px;border-bottom:1px solid #F1F5F9;font-size:11px">'+_docEtq(d)+'<a href="'+_esc(d.url)+'" target="_blank" style="flex:1;font-weight:700;color:#1A2A5E">'+_esc(d.nome)+'</a><span class="muted" style="flex:1">'+_esc(d.descricao||'')+'</span><span class="muted">'+kb(d.tamanho)+'</span><span class="muted">'+dd(d.criado_em)+' \u00b7 '+_esc(d.usuario_nome||'')+'</span><span style="cursor:pointer;color:#B91C1C" onclick="equipDocExcluirOT(\''+d.id+'\')">\u2715</span></div>').join('')
       : '<div class="muted" style="padding:8px 6px;font-size:11px">Nenhum documento anexado.</div>');
+}
+// (14/10/2026) Fotos vindas do app do mecânico (notinhas e fotos do serviço) e qualquer imagem anexada:
+// galeria de miniaturas com etiqueta do tipo; clique abre em tela cheia. PDFs e outros ficam só na lista.
+function _docEtq(d){
+  const c = d.categoria || '';
+  const e = c === 'nota_fiscal' ? ['\ud83e\uddfe Notinha', '#FEF3C7', '#92400E'] : c === 'foto_servico' ? ['\ud83d\udd27 Servi\u00e7o', '#DBEAFE', '#1E3A8A'] : null;
+  return e ? '<span class="chip" style="background:'+e[1]+';color:'+e[2]+';font-size:10px">'+e[0]+'</span>' : '';
+}
+function otDocsGaleria(docs){
+  const imgs = (docs||[]).filter(d => (d.content_type||'').startsWith('image/'));
+  if (!imgs.length) return '';
+  window._otImgs = imgs;
+  return '<div style="display:flex;flex-wrap:wrap;gap:8px;padding:6px 0 10px">'
+    + imgs.map((d, i) => '<div style="width:118px;cursor:zoom-in" onclick="otFotoVer('+i+')" title="'+_esc(d.nome)+'">'
+      + '<div style="width:118px;height:118px;border-radius:8px;overflow:hidden;border:1px solid #E2E8F0;background:#F1F5F9"><img src="'+_esc(d.url)+'" style="width:100%;height:100%;object-fit:cover" loading="lazy"></div>'
+      + '<div style="font-size:10px;margin-top:3px;display:flex;gap:4px;align-items:center;flex-wrap:wrap">'+_docEtq(d)+'<span class="muted">'+_fmtData(d.criado_em)+'</span></div>'
+      + (d.descricao ? '<div class="muted" style="font-size:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+_esc(d.descricao)+'</div>' : '') + '</div>').join('')
+    + '</div>';
+}
+function otFotoVer(i){
+  const imgs = window._otImgs || []; const d = imgs[i]; if (!d) return;
+  let v = document.getElementById('ot-foto-viewer');
+  if (!v){ v = document.createElement('div'); v.id = 'ot-foto-viewer'; v.style.cssText = 'position:fixed;inset:0;background:rgba(15,23,42,.92);z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px'; v.onclick = e => { if (e.target === v) v.remove(); }; document.body.appendChild(v); }
+  v.innerHTML = '<div style="color:#fff;font-size:12px;display:flex;gap:14px;align-items:center">'+_docEtq(d)+'<b>'+_esc(d.nome)+'</b><span>'+_esc(d.descricao||'')+'</span><span class="muted" style="color:#CBD5E1">'+_esc(d.usuario_nome||'')+'</span>'
+    + '<a href="'+_esc(d.url)+'" target="_blank" style="color:#F5A54A">abrir original \u2197</a><span style="cursor:pointer;font-size:18px;margin-left:10px" onclick="document.getElementById(\'ot-foto-viewer\').remove()">\u2715</span></div>'
+    + '<img src="'+_esc(d.url)+'" style="max-width:94vw;max-height:84vh;border-radius:8px;box-shadow:0 20px 60px rgba(0,0,0,.6)">'
+    + '<div style="color:#CBD5E1;font-size:12px;display:flex;gap:16px">'+(i>0?'<span style="cursor:pointer" onclick="otFotoVer('+(i-1)+')">\u25c0 anterior</span>':'')+'<span>'+(i+1)+' / '+imgs.length+'</span>'+(i<imgs.length-1?'<span style="cursor:pointer" onclick="otFotoVer('+(i+1)+')">pr\u00f3xima \u25b6</span>':'')+'</div>';
 }
 async function otDocEnviar(){
   const inp = document.getElementById('otdoc-file'); const f = inp && inp.files && inp.files[0];

@@ -25,6 +25,13 @@
   .btn{width:100%;padding:14px;border:none;border-radius:10px;font-size:16px;font-weight:800;margin-top:14px;cursor:pointer}
   .btn.p{background:var(--laranja);color:#fff}
   .btn.s{background:var(--azul);color:#fff}
+  .fbtn{display:flex;gap:8px;margin-top:6px}
+  .btn-f{flex:1;padding:11px;border:1.5px solid #CBD5E1;border-radius:10px;background:#fff;color:#1A2A5E;font-size:14px;font-weight:700;cursor:pointer}
+  .btn-f.cam{background:var(--laranja);border-color:var(--laranja);color:#fff}
+  .fotos{display:flex;flex-wrap:wrap;gap:8px}.fotos:empty{display:none}
+  .fotos .ft{position:relative;width:72px;height:72px;border-radius:10px;overflow:hidden;border:1px solid #E2E8F0;background:#F1F5F9}
+  .fotos .ft img{width:100%;height:100%;object-fit:cover}
+  .fotos .ft b{position:absolute;top:2px;right:2px;width:22px;height:22px;border-radius:50%;background:#DC2626;color:#fff;font-size:13px;line-height:22px;text-align:center;cursor:pointer}
   .muted{font-size:11px;color:var(--cinza)}
   .toast{position:fixed;left:12px;right:12px;bottom:16px;padding:14px;border-radius:10px;font-weight:700;
          color:#fff;display:none;z-index:99;text-align:center}
@@ -106,10 +113,29 @@
     <input id="ap-horas" type="number" step="0.25" min="0" inputmode="decimal" placeholder="ex.: 2,5">
     <label>Horímetro/KM no serviço (opcional)</label>
     <input id="ap-hor" type="number" step="0.1" inputmode="decimal">
+    <!-- (14/10/2026) Fotos: notinhas (cupom/NF de peça ou serviço comprado) e fotos do serviço.
+         Comprimidas no aparelho (~1600 px, JPEG), sobem para o Storage e ficam na aba Documentos da OT. -->
+    <label>🧾 Notinhas (cupom / nota de peça ou serviço) <span style="font-weight:400;color:#64748B">— opcional</span></label>
+    <div class="fotos" id="ap-fotos-nota"></div>
+    <div class="fbtn">
+      <button type="button" class="btn-f cam" onclick="document.getElementById('f-nota-cam').click()">📷 Tirar foto</button>
+      <button type="button" class="btn-f" onclick="document.getElementById('f-nota-gal').click()">🖼 Galeria</button>
+    </div>
+    <input type="file" id="f-nota-cam" accept="image/*" capture="environment" style="display:none" onchange="apFotoAdd('nota',this)">
+    <input type="file" id="f-nota-gal" accept="image/*" multiple style="display:none" onchange="apFotoAdd('nota',this)">
+    <label>🔧 Fotos do serviço <span style="font-weight:400;color:#64748B">— opcional</span></label>
+    <div class="fotos" id="ap-fotos-servico"></div>
+    <div class="fbtn">
+      <button type="button" class="btn-f cam" onclick="document.getElementById('f-serv-cam').click()">📷 Tirar foto</button>
+      <button type="button" class="btn-f" onclick="document.getElementById('f-serv-gal').click()">🖼 Galeria</button>
+    </div>
+    <input type="file" id="f-serv-cam" accept="image/*" capture="environment" style="display:none" onchange="apFotoAdd('servico',this)">
+    <input type="file" id="f-serv-gal" accept="image/*" multiple style="display:none" onchange="apFotoAdd('servico',this)">
+    <div class="muted" id="ap-prog" style="margin-top:6px"></div>
     <label style="display:flex;align-items:center;gap:8px;margin-top:12px;font-size:14px;color:#0F172A">
       <input type="checkbox" id="ap-fim" style="width:22px;height:22px"> ✅ Serviço concluído — pronto para a gestão encerrar
     </label>
-    <button class="btn p" onclick="apEnviar()">💾 Registrar na OT</button>
+    <button class="btn p" id="ap-btn" onclick="apEnviar()">💾 Registrar na OT</button>
     <button class="btn" style="background:#fff;border:2px solid #CBD5E1" onclick="verAba('minhas')">Voltar</button>
   </div>
 
@@ -237,8 +263,48 @@ async function carregarMinhas(){
     }).join('');
   } catch(e){ el.innerHTML = '❌ ' + e.message; }
 }
+// ── fotos da execução (notinhas / serviço) ──
+let AP_FOTOS = { nota: [], servico: [] };
+function apComprimir(file, max){
+  return new Promise(res => {
+    const img = new Image(); const url = URL.createObjectURL(file);
+    img.onload = () => {
+      let w = img.width, h = img.height; const k = Math.min(1, (max || 1600) / Math.max(w, h)); w = Math.round(w * k); h = Math.round(h * k);
+      const c = document.createElement('canvas'); c.width = w; c.height = h; c.getContext('2d').drawImage(img, 0, 0, w, h);
+      c.toBlob(b => { URL.revokeObjectURL(url); res(b ? new File([b], (file.name || 'foto').replace(/\.\w+$/, '') + '.jpg', { type: 'image/jpeg' }) : file); }, 'image/jpeg', 0.82);
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); res(file); };
+    img.src = url;
+  });
+}
+async function apFotoAdd(tipo, inp){
+  const files = Array.from(inp.files || []); inp.value = '';
+  if (!files.length) return;
+  if (AP_FOTOS[tipo].length + files.length > 10) { toast('Máximo de 10 fotos por tipo', 'erro'); return; }
+  for (const f of files) {
+    const c = await apComprimir(f, 1600);
+    AP_FOTOS[tipo].push({ file: c, url: URL.createObjectURL(c) });
+  }
+  apFotosRender(tipo);
+}
+function apFotoDel(tipo, i){ URL.revokeObjectURL(AP_FOTOS[tipo][i].url); AP_FOTOS[tipo].splice(i, 1); apFotosRender(tipo); }
+function apFotosRender(tipo){
+  const el = document.getElementById('ap-fotos-' + tipo); if (!el) return;
+  el.innerHTML = AP_FOTOS[tipo].map((f, i) => '<div class="ft"><img src="' + f.url + '"><b onclick="apFotoDel(\'' + tipo + '\',' + i + ')">✕</b></div>').join('');
+}
+async function apSubirFotos(tipo){
+  const lista = AP_FOTOS[tipo]; if (!lista.length) return 0;
+  const fd = new FormData();
+  lista.forEach(f => fd.append('fotos', f.file, f.file.name));
+  const r = await fetch(API + '/manutencao/api/ots/' + AP_OT + '/fotos-execucao?tipo=' + tipo, { method: 'POST', headers: { 'Authorization': 'Bearer ' + TOK }, body: fd });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.detail || ('Erro ' + r.status + ' ao subir fotos'));
+  return j.salvas || 0;
+}
 function apAbrir(otId, otNum){
   AP_OT = otId;
+  AP_FOTOS = { nota: [], servico: [] }; apFotosRender('nota'); apFotosRender('servico');
+  const pg = document.getElementById('ap-prog'); if (pg) pg.textContent = '';
   document.getElementById('ap-ot').textContent = otNum + ' — o relato vai para o histórico; o encerramento é da gestão.';
   document.getElementById('ap-relato').value = '';
   document.getElementById('ap-hor').value = '';
@@ -250,14 +316,26 @@ async function apEnviar(){
   const relato = document.getElementById('ap-relato').value.trim();
   if (!relato){ toast('Descreva o que foi feito', 'erro'); return; }
   try {
+    const btn = document.getElementById('ap-btn'), pg = document.getElementById('ap-prog');
+    if (btn) btn.disabled = true;
     await api('/manutencao/api/ots/' + AP_OT + '/apontamento', { method: 'POST',
       body: JSON.stringify({ relato,
         horas: document.getElementById('ap-horas').value || null,
         horimetro: document.getElementById('ap-hor').value || null,
         concluido: document.getElementById('ap-fim').checked }) });
-    toast('✅ Registrado na OT');
+    // fotos sobem DEPOIS do relato: se a rede cair no meio, o relato já está na OT
+    let n = 0;
+    const total = AP_FOTOS.nota.length + AP_FOTOS.servico.length;
+    if (total) {
+      if (pg) pg.textContent = 'Enviando ' + total + ' foto(s)…';
+      n += await apSubirFotos('nota');
+      n += await apSubirFotos('servico');
+    }
+    if (btn) btn.disabled = false; if (pg) pg.textContent = '';
+    toast('✅ Registrado na OT' + (n ? ' · ' + n + ' foto(s) anexada(s)' : ''));
+    AP_FOTOS = { nota: [], servico: [] };
     verAba('minhas');
-  } catch(e){ toast('❌ ' + e.message, 'erro'); }
+  } catch(e){ const btn = document.getElementById('ap-btn'); if (btn) btn.disabled = false; toast('❌ ' + e.message, 'erro'); }
 }
 (async () => {
   if (TOK){
