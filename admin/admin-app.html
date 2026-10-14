@@ -1928,9 +1928,11 @@ function renderPermPerfis() {
                 <div style="font-size:11px;color:var(--muted)">${count} colaborador(es)</div>
               </td>
               ${MODULOS.map(m=>{
-                const checked=(PERFIL_PADRAO[p]||[]).includes(m.id);
-                const bloqueado=isAdmin&&m.id==='admin_master';
-                return `<td style="padding:10px;text-align:center"><input type="checkbox" style="width:18px;height:18px;cursor:${bloqueado?'not-allowed':'pointer'};accent-color:var(--orange)" ${checked?'checked':''} ${bloqueado?'disabled title="Protegido"':''} onchange="salvarPermPerfil('${p}','${m.id}',this.checked)"/></td>`;
+                // (14/10/2026) Perfil Administrador é MASTER: o servidor já dá todos os módulos
+                // (perfil_modulos_padrao) — a tela mostra tudo marcado e travado, sem precisar marcar um a um
+                const checked=isAdmin||(PERFIL_PADRAO[p]||[]).includes(m.id);
+                const bloqueado=isAdmin;
+                return `<td style="padding:10px;text-align:center"><input type="checkbox" style="width:18px;height:18px;cursor:${bloqueado?'not-allowed':'pointer'};accent-color:var(--orange)" ${checked?'checked':''} ${bloqueado?'disabled title="Master — acesso total a todos os módulos"':''} onchange="salvarPermPerfil('${p}','${m.id}',this.checked)"/></td>`;
               }).join('')}
               <td style="padding:8px;text-align:center">${!isAdmin?`<button class="btn-sm" style="color:var(--red);border-color:var(--red)" onclick="excluirPerfil('${p}','${PERFIL_LABEL[p]||p}',${count})">✕</button>`:'<span style="font-size:12px">🔒</span>'}</td>
             </tr>`;
@@ -1938,7 +1940,7 @@ function renderPermPerfis() {
         </tbody>
       </table>
     </div>
-    <div style="margin-top:12px;font-size:11px;color:var(--muted)">🔒 Admin Master não pode ser removido do perfil Admin · Alterações aplicadas a todos do perfil.</div>`;
+    <div style="margin-top:12px;font-size:11px;color:var(--muted)">🔒 Perfil Administrador é <b>Master</b>: acesso a todos os módulos, inclusive os criados no futuro — não se marca módulo a módulo · Alterações nos demais perfis aplicam-se a todos do perfil.</div>`;
 }
 
 async function salvarPermPerfil(perfil, modulo, permitido) {
@@ -2072,12 +2074,14 @@ async function abrirPermColaborador(uid, perfil) {
         </div>
         <button class="btn btn-secondary" style="margin-left:auto;font-size:12px;padding:5px 10px" onclick="document.getElementById('perm-detail-content').innerHTML=''">✕ Fechar</button>
       </div>
+      ${perfil==='admin'?`<div style="margin-bottom:12px;padding:10px 14px;border-radius:8px;background:#FFF7ED;border:1.5px solid var(--orange);font-size:12px;color:#9A3412"><b>★ Master</b> — o perfil Administrador tem acesso a todos os módulos, inclusive os que forem criados daqui para a frente. Não há o que marcar aqui; para restringir alguém, troque o perfil do colaborador.</div>`:''}
       <div style="display:flex;flex-direction:column;gap:8px;max-width:560px">
         ${MODULOS.map(m=>{
-          const temPerm=perms[m.id]??padrao.includes(m.id);
-          const ePadrao=padrao.includes(m.id);
-          const ehExcecao=perms[m.id]!==undefined&&perms[m.id]!==ePadrao;
-          const bloqueado=perfil==='admin'&&m.id==='admin_master';
+          const master=perfil==='admin';
+          const temPerm=master||(perms[m.id]??padrao.includes(m.id));
+          const ePadrao=master||padrao.includes(m.id);
+          const ehExcecao=!master&&perms[m.id]!==undefined&&perms[m.id]!==ePadrao;
+          const bloqueado=master;
           return `<div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;
             border:1.5px solid ${ehExcecao?'var(--orange)':temPerm?'#BBF7D0':'var(--border)'};
             border-radius:8px;background:${temPerm?'#F0FDF4':'#fff'}">
@@ -2085,7 +2089,7 @@ async function abrirPermColaborador(uid, perfil) {
               <div style="font-size:13px;font-weight:600;color:var(--text)">${m.label}</div>
               <div style="font-size:11px;color:var(--muted)">${m.desc}
                 <span style="color:${ehExcecao?'var(--orange)':'var(--muted)'}">
-                  ${ehExcecao?'✎ exceção':'↑ herdado'}
+                  ${ehExcecao?'✎ exceção':(perfil==='admin'?'★ master':'↑ herdado')}
                 </span>
               </div>
             </div>
@@ -2101,9 +2105,9 @@ async function abrirPermColaborador(uid, perfil) {
           </div>`;
         }).join('')}
       </div>
-      <button class="btn btn-secondary" style="margin-top:14px;font-size:12px" onclick="resetarTodasPermissoes('${uid}','${perfil}')">
+      ${perfil==='admin'?'':`<button class="btn btn-secondary" style="margin-top:14px;font-size:12px" onclick="resetarTodasPermissoes('${uid}','${perfil}')">
         ↺ Resetar todas para padrão do perfil
-      </button>`;
+      </button>`}`;
   } catch(e) {
     document.getElementById('perm-detail-content').innerHTML += `<div style="color:var(--red)">Erro: ${esc(e.message)}</div>`;
   }
