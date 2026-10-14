@@ -249,7 +249,7 @@ async function carregarMinhas(){
         ot = '<div style="margin-top:4px;font-size:13px"><b>' + p.ot_numero + '</b> — ' + (ST_OT[p.ot_status] || p.ot_status);
         if (['em_andamento','aguardando_peca','aberta'].includes(p.ot_status))
           ot += ' <button style="margin-left:6px;padding:6px 10px;border:none;border-radius:8px;background:#E8730C;color:#fff;font-weight:700" '
-             + 'onclick="apAbrir(\'' + p.ot_id + '\',\'' + p.ot_numero + '\')">🔧 Registrar execução</button>';
+             + 'onclick="apAbrir(\'' + p.ot_id + '\',\'' + p.ot_numero + '\',\'' + _esc(p.equipamento_codigo) + '\',\'' + _esc(p.descricao) + '\')">🔧 Registrar execução</button>';
         ot += '</div>';
       }
       if (p.status === 'recusado' && p.motivo_recusa)
@@ -301,11 +301,19 @@ async function apSubirFotos(tipo){
   if (!r.ok) throw new Error(j.detail || ('Erro ' + r.status + ' ao subir fotos'));
   return j.salvas || 0;
 }
-function apAbrir(otId, otNum){
+function _esc(s){ return String(s || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\n/g, ' '); }
+function _h(s){ return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+function apAbrir(otId, otNum, eq, desc){
   AP_OT = otId;
   AP_FOTOS = { nota: [], servico: [] }; apFotosRender('nota'); apFotosRender('servico');
   const pg = document.getElementById('ap-prog'); if (pg) pg.textContent = '';
-  document.getElementById('ap-ot').textContent = otNum + ' — o relato vai para o histórico; o encerramento é da gestão.';
+  // (14/10/2026) OT + equipamento na mesma linha: com várias OTs abertas o mecânico
+  // precisa ver em qual máquina está apontando, não só o número.
+  const cab = document.getElementById('ap-ot');
+  cab.innerHTML = '<div style="font-size:16px;color:#1A2A5E;margin:4px 0"><b>' + _h(otNum) + '</b>'
+    + (eq ? ' <span style="color:#E8730C;font-weight:800">· ' + _h(eq) + '</span>' : '') + '</div>'
+    + (desc ? '<div style="font-size:13px;color:#0F172A;margin-bottom:4px">' + _h(desc) + '</div>' : '')
+    + '<div>O relato vai para o histórico; o encerramento é da gestão.</div>';
   document.getElementById('ap-relato').value = '';
   document.getElementById('ap-hor').value = '';
   document.getElementById('ap-horas').value = '';
@@ -314,7 +322,17 @@ function apAbrir(otId, otNum){
 }
 async function apEnviar(){
   const relato = document.getElementById('ap-relato').value.trim();
-  if (!relato){ toast('Descreva o que foi feito', 'erro'); return; }
+  const elHoras = document.getElementById('ap-horas'), elHor = document.getElementById('ap-hor');
+  const concluido = document.getElementById('ap-fim').checked;
+  const horas = elHoras.value === '' ? null : parseFloat(elHoras.value.replace(',', '.'));
+  const hor = elHor.value === '' ? null : parseFloat(elHor.value.replace(',', '.'));
+  // (14/10/2026) Validação: relato sempre; horas obrigatórias ao concluir (sem elas a OT
+  // fecha sem custo de mão de obra); horímetro opcional, mas se vier tem de ser número > 0.
+  if (relato.length < 10){ toast('Descreva o que foi feito (pelo menos 10 letras)', 'erro'); document.getElementById('ap-relato').focus(); return; }
+  if (horas !== null && (isNaN(horas) || horas <= 0 || horas > 24)){ toast('Horas trabalhadas: informe entre 0,25 e 24', 'erro'); elHoras.focus(); return; }
+  if (concluido && horas === null){ toast('Para concluir, informe as horas trabalhadas', 'erro'); elHoras.focus(); return; }
+  if (hor !== null && (isNaN(hor) || hor <= 0)){ toast('Horímetro/KM inválido', 'erro'); elHor.focus(); return; }
+  if (!concluido && horas === null && !confirm('Registrar sem horas trabalhadas?')) { elHoras.focus(); return; }
   try {
     const btn = document.getElementById('ap-btn'), pg = document.getElementById('ap-prog');
     if (btn) btn.disabled = true;
