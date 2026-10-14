@@ -33,6 +33,16 @@
   .fotos .ft img{width:100%;height:100%;object-fit:cover}
   .fotos .ft b{position:absolute;top:2px;right:2px;width:22px;height:22px;border-radius:50%;background:#DC2626;color:#fff;font-size:13px;line-height:22px;text-align:center;cursor:pointer}
   .muted{font-size:11px;color:var(--cinza)}
+  .ap-hist{margin-top:14px;border-top:2px solid #E2E8F0;padding-top:10px}
+  .ap-item{border:1px solid #E2E8F0;border-radius:10px;padding:10px;margin-top:8px;background:#F8FAFC}
+  .ap-item.edit{border-color:var(--laranja);background:#FFF7ED}
+  .ap-item .top{display:flex;justify-content:space-between;font-size:12px;color:#64748B}
+  .ap-item .rel{font-size:14px;color:#0F172A;margin:4px 0;white-space:pre-wrap}
+  .ap-item .tags{font-size:12px;color:#1A2A5E;font-weight:700}
+  .ap-item .acoes{display:flex;gap:8px;margin-top:8px}
+  .ap-item .acoes button{flex:1;padding:8px;border-radius:8px;font-size:13px;font-weight:700;border:1.5px solid #CBD5E1;background:#fff;color:#1A2A5E}
+  .ap-item .acoes .del{color:#B91C1C;border-color:#FCA5A5}
+  .ap-item .fotos{margin-top:6px}.ap-item .fotos .ft{width:56px;height:56px}
   .toast{position:fixed;left:12px;right:12px;bottom:16px;padding:14px;border-radius:10px;font-weight:700;
          color:#fff;display:none;z-index:99;text-align:center}
   .toast.ok{background:#15803D}.toast.erro{background:#B91C1C}
@@ -136,7 +146,14 @@
       <input type="checkbox" id="ap-fim" style="width:22px;height:22px"> ✅ Serviço concluído — pronto para a gestão encerrar
     </label>
     <button class="btn p" id="ap-btn" onclick="apEnviar()">💾 Registrar na OT</button>
+    <button class="btn" id="ap-cancel" style="display:none;background:#fff;border:2px solid var(--laranja);color:#1A2A5E" onclick="apCancelarEdicao()">✖ Cancelar edição</button>
     <button class="btn" style="background:#fff;border:2px solid #CBD5E1" onclick="verAba('minhas')">Voltar</button>
+    <!-- (14/10/2026) Tudo que já foi registrado nesta OT: o mecânico confere antes de
+         concluir, carrega de volta nos campos para corrigir, ou exclui (como o KM da Jardinagem). -->
+    <div class="ap-hist">
+      <b>📜 Já registrado nesta OT</b>
+      <div id="ap-lista" class="muted" style="margin-top:4px">Carregando…</div>
+    </div>
   </div>
 
 </main>
@@ -265,6 +282,68 @@ async function carregarMinhas(){
 }
 // ── fotos da execução (notinhas / serviço) ──
 let AP_FOTOS = { nota: [], servico: [] };
+let AP_EDIT = null;        // id do apontamento em edição (null = novo)
+let AP_ITENS = [];         // apontamentos carregados da OT
+function _fmtDt(s){ if (!s) return ''; const d = new Date(s); return d.toLocaleDateString('pt-BR') + ' ' + d.toLocaleTimeString('pt-BR', {hour:'2-digit',minute:'2-digit'}); }
+async function apCarregarLista(){
+  const el = document.getElementById('ap-lista'); if (!el) return;
+  try {
+    const r = await api('/manutencao/api/ots/' + AP_OT + '/apontamentos');
+    AP_ITENS = r.apontamentos || [];
+    if (!AP_ITENS.length){ el.innerHTML = 'Nada registrado ainda.'; return; }
+    el.innerHTML = AP_ITENS.map(a => {
+      const tags = [];
+      if (a.horas != null) tags.push('⏱ ' + String(a.horas).replace('.', ',') + ' h');
+      if (a.horimetro != null) tags.push('🔢 ' + String(a.horimetro).replace('.', ','));
+      if (a.concluido) tags.push('✅ concluído');
+      const fotos = (a.fotos || []).length
+        ? '<div class="fotos">' + a.fotos.map(f => '<div class="ft"><img src="' + f.url + '" onclick="window.open(\'' + f.url + '\')"></div>').join('') + '</div>' : '';
+      const acoes = a.meu && r.aberta
+        ? '<div class="acoes"><button onclick="apEditar(\'' + a.id + '\')">✏️ Editar</button><button class="del" onclick="apExcluir(\'' + a.id + '\')">🗑 Excluir</button></div>' : '';
+      return '<div class="ap-item' + (AP_EDIT === a.id ? ' edit' : '') + '" id="api-' + a.id + '">'
+        + '<div class="top"><span>' + _fmtDt(a.criado_em) + (a.atualizado_em ? ' · editado' : '') + '</span><span>' + _h(a.usuario_nome || '') + '</span></div>'
+        + '<div class="rel">' + _h(a.relato) + '</div>'
+        + (tags.length ? '<div class="tags">' + tags.join(' · ') + '</div>' : '')
+        + fotos + acoes + '</div>';
+    }).join('');
+  } catch(e){ el.innerHTML = '❌ ' + e.message; }
+}
+function apEditar(id){
+  const a = AP_ITENS.find(x => x.id === id); if (!a) return;
+  AP_EDIT = id;
+  AP_FOTOS = { nota: [], servico: [] };
+  document.getElementById('ap-relato').value = a.relato || '';
+  document.getElementById('ap-horas').value = a.horas != null ? a.horas : '';
+  document.getElementById('ap-hor').value = a.horimetro != null ? a.horimetro : '';
+  document.getElementById('ap-fim').checked = !!a.concluido;
+  // fotos já salvas entram na grade com ✕ (remoção imediata no servidor, com confirmação)
+  (a.fotos || []).forEach(f => AP_FOTOS[f.categoria === 'foto_servico' ? 'servico' : 'nota'].push({ id: f.id, url: f.url }));
+  apFotosRender('nota'); apFotosRender('servico');
+  document.getElementById('ap-btn').textContent = '💾 Salvar alteração';
+  document.getElementById('ap-cancel').style.display = '';
+  apCarregarLista();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+  toast('Registro carregado — altere e salve');
+}
+function apCancelarEdicao(){
+  AP_EDIT = null;
+  AP_FOTOS = { nota: [], servico: [] }; apFotosRender('nota'); apFotosRender('servico');
+  ['ap-relato','ap-horas','ap-hor'].forEach(i => document.getElementById(i).value = '');
+  document.getElementById('ap-fim').checked = false;
+  document.getElementById('ap-btn').textContent = '💾 Registrar na OT';
+  document.getElementById('ap-cancel').style.display = 'none';
+  apCarregarLista();
+}
+async function apExcluir(id){
+  const a = AP_ITENS.find(x => x.id === id); if (!a) return;
+  if (!confirm('Excluir este registro' + ((a.fotos || []).length ? ' e suas ' + a.fotos.length + ' foto(s)' : '') + '?\n\n"' + (a.relato || '').slice(0, 80) + '"')) return;
+  try {
+    await api('/manutencao/api/ots/' + AP_OT + '/apontamentos/' + id, { method: 'DELETE' });
+    if (AP_EDIT === id) apCancelarEdicao();
+    toast('Registro excluído');
+    apCarregarLista();
+  } catch(e){ toast('❌ ' + e.message, 'erro'); }
+}
 function apComprimir(file, max){
   return new Promise(res => {
     const img = new Image(); const url = URL.createObjectURL(file);
@@ -287,16 +366,24 @@ async function apFotoAdd(tipo, inp){
   }
   apFotosRender(tipo);
 }
-function apFotoDel(tipo, i){ URL.revokeObjectURL(AP_FOTOS[tipo][i].url); AP_FOTOS[tipo].splice(i, 1); apFotosRender(tipo); }
+async function apFotoDel(tipo, i){
+  const f = AP_FOTOS[tipo][i]; if (!f) return;
+  if (f.id) {   // foto já no servidor (modo edição)
+    if (!confirm('Remover esta foto da OT?')) return;
+    try { await api('/manutencao/api/ots/' + AP_OT + '/fotos-execucao/' + f.id, { method: 'DELETE' }); }
+    catch(e){ toast('❌ ' + e.message, 'erro'); return; }
+  } else URL.revokeObjectURL(f.url);
+  AP_FOTOS[tipo].splice(i, 1); apFotosRender(tipo);
+}
 function apFotosRender(tipo){
   const el = document.getElementById('ap-fotos-' + tipo); if (!el) return;
   el.innerHTML = AP_FOTOS[tipo].map((f, i) => '<div class="ft"><img src="' + f.url + '"><b onclick="apFotoDel(\'' + tipo + '\',' + i + ')">✕</b></div>').join('');
 }
-async function apSubirFotos(tipo){
-  const lista = AP_FOTOS[tipo]; if (!lista.length) return 0;
+async function apSubirFotos(tipo, apId){
+  const lista = AP_FOTOS[tipo].filter(f => f.file); if (!lista.length) return 0;
   const fd = new FormData();
   lista.forEach(f => fd.append('fotos', f.file, f.file.name));
-  const r = await fetch(API + '/manutencao/api/ots/' + AP_OT + '/fotos-execucao?tipo=' + tipo, { method: 'POST', headers: { 'Authorization': 'Bearer ' + TOK }, body: fd });
+  const r = await fetch(API + '/manutencao/api/ots/' + AP_OT + '/fotos-execucao?tipo=' + tipo + (apId ? '&apontamento_id=' + apId : ''), { method: 'POST', headers: { 'Authorization': 'Bearer ' + TOK }, body: fd });
   const j = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(j.detail || ('Erro ' + r.status + ' ao subir fotos'));
   return j.salvas || 0;
@@ -318,7 +405,11 @@ function apAbrir(otId, otNum, eq, desc){
   document.getElementById('ap-hor').value = '';
   document.getElementById('ap-horas').value = '';
   document.getElementById('ap-fim').checked = false;
+  AP_EDIT = null; AP_ITENS = [];
+  document.getElementById('ap-btn').textContent = '💾 Registrar na OT';
+  document.getElementById('ap-cancel').style.display = 'none';
   tela('tela-apont');
+  apCarregarLista();
 }
 async function apEnviar(){
   const relato = document.getElementById('ap-relato').value.trim();
@@ -333,27 +424,27 @@ async function apEnviar(){
   if (concluido && horas === null){ toast('Para concluir, informe as horas trabalhadas', 'erro'); elHoras.focus(); return; }
   if (hor !== null && (isNaN(hor) || hor <= 0)){ toast('Horímetro/KM inválido', 'erro'); elHor.focus(); return; }
   if (!concluido && horas === null && !confirm('Registrar sem horas trabalhadas?')) { elHoras.focus(); return; }
+  const btn = document.getElementById('ap-btn'), pg = document.getElementById('ap-prog');
   try {
-    const btn = document.getElementById('ap-btn'), pg = document.getElementById('ap-prog');
     if (btn) btn.disabled = true;
-    await api('/manutencao/api/ots/' + AP_OT + '/apontamento', { method: 'POST',
-      body: JSON.stringify({ relato,
-        horas: document.getElementById('ap-horas').value || null,
-        horimetro: document.getElementById('ap-hor').value || null,
-        concluido: document.getElementById('ap-fim').checked }) });
+    const body = JSON.stringify({ relato, horas, horimetro: hor, concluido });
+    let apId = AP_EDIT;
+    if (AP_EDIT) await api('/manutencao/api/ots/' + AP_OT + '/apontamentos/' + AP_EDIT, { method: 'PUT', body });
+    else { const r = await api('/manutencao/api/ots/' + AP_OT + '/apontamento', { method: 'POST', body }); apId = r.id; }
     // fotos sobem DEPOIS do relato: se a rede cair no meio, o relato já está na OT
     let n = 0;
-    const total = AP_FOTOS.nota.length + AP_FOTOS.servico.length;
+    const total = AP_FOTOS.nota.filter(f => f.file).length + AP_FOTOS.servico.filter(f => f.file).length;
     if (total) {
       if (pg) pg.textContent = 'Enviando ' + total + ' foto(s)…';
-      n += await apSubirFotos('nota');
-      n += await apSubirFotos('servico');
+      n += await apSubirFotos('nota', apId);
+      n += await apSubirFotos('servico', apId);
     }
-    if (btn) btn.disabled = false; if (pg) pg.textContent = '';
-    toast('✅ Registrado na OT' + (n ? ' · ' + n + ' foto(s) anexada(s)' : ''));
-    AP_FOTOS = { nota: [], servico: [] };
-    verAba('minhas');
-  } catch(e){ const btn = document.getElementById('ap-btn'); if (btn) btn.disabled = false; toast('❌ ' + e.message, 'erro'); }
+    if (pg) pg.textContent = '';
+    toast((AP_EDIT ? '✅ Alteração salva' : '✅ Registrado na OT') + (n ? ' · ' + n + ' foto(s) anexada(s)' : ''));
+    apCancelarEdicao();   // limpa os campos e recarrega a lista — mecânico continua na OT
+    if (concluido) verAba('minhas');
+  } catch(e){ toast('❌ ' + e.message, 'erro'); }
+  finally { if (btn) btn.disabled = false; }
 }
 (async () => {
   if (TOK){
