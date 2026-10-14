@@ -34,15 +34,14 @@
   .fotos .ft b{position:absolute;top:2px;right:2px;width:22px;height:22px;border-radius:50%;background:#DC2626;color:#fff;font-size:13px;line-height:22px;text-align:center;cursor:pointer}
   .muted{font-size:11px;color:var(--cinza)}
   .ap-hist{margin-top:14px;border-top:2px solid #E2E8F0;padding-top:10px}
-  .ap-item{border:1px solid #E2E8F0;border-radius:10px;padding:10px;margin-top:8px;background:#F8FAFC}
+  .ap-item{border:1px solid #E2E8F0;border-radius:10px;padding:10px 12px;margin-top:8px;background:#fff;display:flex;gap:8px}
   .ap-item.edit{border-color:var(--laranja);background:#FFF7ED}
-  .ap-item .top{display:flex;justify-content:space-between;font-size:12px;color:#64748B}
-  .ap-item .rel{font-size:14px;color:#0F172A;margin:4px 0;white-space:pre-wrap}
-  .ap-item .tags{font-size:12px;color:#1A2A5E;font-weight:700}
-  .ap-item .acoes{display:flex;gap:8px;margin-top:8px}
-  .ap-item .acoes button{flex:1;padding:8px;border-radius:8px;font-size:13px;font-weight:700;border:1.5px solid #CBD5E1;background:#fff;color:#1A2A5E}
-  .ap-item .acoes .del{color:#B91C1C;border-color:#FCA5A5}
-  .ap-item .fotos{margin-top:6px}.ap-item .fotos .ft{width:56px;height:56px}
+  .ap-item .corpo{flex:1;min-width:0}
+  .ap-item .rel{font-size:14px;font-weight:700;color:#1A2A5E;white-space:pre-wrap;word-break:break-word}
+  .ap-item .tags{font-size:12px;color:#64748B;margin-top:2px}
+  .ap-item .ico{display:flex;gap:10px;align-items:flex-start;font-size:20px;line-height:1}
+  .ap-item .ico span{cursor:pointer}
+  .ap-item .fotos{margin-top:6px}.ap-item .fotos .ft{width:48px;height:48px}
   .toast{position:fixed;left:12px;right:12px;bottom:16px;padding:14px;border-radius:10px;font-weight:700;
          color:#fff;display:none;z-index:99;text-align:center}
   .toast.ok{background:#15803D}.toast.erro{background:#B91C1C}
@@ -298,13 +297,13 @@ async function apCarregarLista(){
       if (a.concluido) tags.push('✅ concluído');
       const fotos = (a.fotos || []).length
         ? '<div class="fotos">' + a.fotos.map(f => '<div class="ft"><img src="' + f.url + '" onclick="window.open(\'' + f.url + '\')"></div>').join('') + '</div>' : '';
-      const acoes = a.meu && r.aberta
-        ? '<div class="acoes"><button onclick="apEditar(\'' + a.id + '\')">✏️ Editar</button><button class="del" onclick="apExcluir(\'' + a.id + '\')">🗑 Excluir</button></div>' : '';
-      return '<div class="ap-item' + (AP_EDIT === a.id ? ' edit' : '') + '" id="api-' + a.id + '">'
-        + '<div class="top"><span>' + _fmtDt(a.criado_em) + (a.atualizado_em ? ' · editado' : '') + '</span><span>' + _h(a.usuario_nome || '') + '</span></div>'
+      const ico = a.meu && r.aberta
+        ? '<div class="ico"><span title="Editar" onclick="apEditar(\'' + a.id + '\')">✏️</span><span title="Excluir" onclick="apExcluir(\'' + a.id + '\')">🗑️</span></div>' : '';
+      const linha2 = [_fmtDt(a.criado_em) + (a.atualizado_em ? ' (editado)' : ''), a.usuario_nome || ''].concat(tags).filter(Boolean);
+      return '<div class="ap-item' + (AP_EDIT === a.id ? ' edit' : '') + '" id="api-' + a.id + '"><div class="corpo">'
         + '<div class="rel">' + _h(a.relato) + '</div>'
-        + (tags.length ? '<div class="tags">' + tags.join(' · ') + '</div>' : '')
-        + fotos + acoes + '</div>';
+        + '<div class="tags">' + _h(linha2.join(' · ')) + '</div>'
+        + fotos + '</div>' + ico + '</div>';
     }).join('');
   } catch(e){ el.innerHTML = '❌ ' + e.message; }
 }
