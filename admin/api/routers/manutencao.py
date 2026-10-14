@@ -4674,58 +4674,210 @@ async def meus_pedidos(payload=Depends(verificar_pedir_ot)):
     return [dict(r) for r in rows]
 
 
+_APONT_OK = False
+async def _garantir_apontamentos():
+    """(14/10/2026) Apontamentos do mecânico como REGISTRO próprio (antes era só
+    uma linha de texto no histórico): permite ao mecânico conferir, editar e
+    excluir o que registrou antes de a gestão encerrar a OT. A linha do
+    histórico e a linha de mão de obra continuam existindo — ficam ligadas
+    pelo id do apontamento e acompanham edição/exclusão."""
+    global _APONT_OK
+    if _APONT_OK:
+        return
+    await _garantir_mao_obra()
+    await ajard_query("""
+        CREATE TABLE IF NOT EXISTS manutencao.ot_apontamentos (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            ot_id UUID NOT NULL,
+            usuario_id UUID,
+            relato TEXT NOT NULL,
+            horas NUMERIC(8,2),
+            horimetro NUMERIC(12,1),
+            concluido BOOLEAN DEFAULT false,
+            mao_obra_id UUID,
+            historico_id UUID,
+            ativo BOOLEAN DEFAULT true,
+            criado_em TIMESTAMPTZ DEFAULT now(),
+            atualizado_em TIMESTAMPTZ)""", fetch="none")
+    await ajard_query("CREATE INDEX IF NOT EXISTS ix_ot_apont_ot ON manutencao.ot_apontamentos (ot_id)", fetch="none")
+    await ajard_query("ALTER TABLE manutencao.equipamento_documentos ADD COLUMN IF NOT EXISTS ot_id UUID", fetch="none")
+    await ajard_query("ALTER TABLE manutencao.equipamento_documentos ADD COLUMN IF NOT EXISTS categoria TEXT", fetch="none")
+    await ajard_query("ALTER TABLE manutencao.equipamento_documentos ADD COLUMN IF NOT EXISTS apontamento_id UUID", fetch="none")
+    _APONT_OK = True
+
+
+_OT_STATUS_APONTAVEL = ("em_andamento", "aguardando_peca", "aberta", "programada")
+
+
+def _apont_validar(d):
+    relato = (d.get("relato") or "").strip()
+    if len(relato) < 10:
+        raise HTTPException(status_code=400, detail="Descreva o que foi feito (pelo menos 10 letras)")
+    horas = _mo_num(d.get("horas"))
+    # (14/10/2026) Mesma regra do app: ao sinalizar concluído, horas obrigatórias
+    # (custo de MO da OT); horas fora de 0–24 é digitação errada.
+    if horas is not None and (horas <= 0 or horas > 24):
+        raise HTTPException(status_code=400, detail="Horas trabalhadas: informe entre 0,25 e 24")
+    concluido = bool(d.get("concluido"))
+    if concluido and not horas:
+        raise HTTPException(status_code=400, detail="Para sinalizar concluído, informe as horas trabalhadas")
+    hor = _mo_num(d.get("horimetro"))
+    if hor is not None and hor <= 0:
+        raise HTTPException(status_code=400, detail="Horímetro/KM inválido")
+    return relato, horas, hor, concluido
+
+
+def _apont_texto(relato, horas, hor, concluido, editado=False):
+    partes = [f"🔧 Execução (mecânico): {relato}"]
+    if hor is not None:
+        partes.append(f"Horímetro/KM no serviço: {hor:g}")
+    if horas:
+        partes.append(f"⏱ Mão de obra: {horas:g} h")
+    if concluido:
+        partes.append("✅ SINALIZOU SERVIÇO CONCLUÍDO — pronto para encerramento pela gestão")
+    if editado:
+        partes.append(f"(editado pelo mecânico em {datetime.now().strftime('%d/%m %H:%M')})")
+    return " · ".join(partes)
+
+
+async def _apont_do_usuario(ap_id, ot_id, payload):
+    """Carrega o apontamento e garante que quem mexe é o autor (ou gestor) e a OT está aberta."""
+    o, uid = await _ot_mobile_pode(ot_id, payload)
+    if o["status"] not in _OT_STATUS_APONTAVEL:
+        raise HTTPException(status_code=400, detail="OT já encerrada — apontamento indisponível")
+    ap = await ajard_query("SELECT * FROM manutencao.ot_apontamentos WHERE id=%s AND ot_id=%s AND ativo=true",
+                           (ap_id, ot_id), fetch="one")
+    if not ap:
+        raise HTTPException(status_code=404, detail="Apontamento não encontrado")
+    gestor = (payload.get("perfil") or "").lower() in _PERFIS_MANUTENCAO
+    if not gestor and str(ap["usuario_id"]) != str(uid):
+        raise HTTPException(status_code=403, detail="Só quem registrou pode alterar este apontamento")
+    return o, uid, ap
+
+
 @router.post("/manutencao/api/ots/{ot_id}/apontamento")
 async def ot_apontamento(ot_id: str, request: Request, payload=Depends(verificar_pedir_ot)):
     """(28/08/2026) Mecânico alimenta o FECHAMENTO sem fechar: relato do
     serviço + horímetro + sinal de concluído vão para o HISTÓRICO da OT.
     Quem pode: o solicitante do pedido de origem ou o responsável da OT.
-    O estado NÃO muda — o fechamento real é do admin/gestão."""
+    O estado NÃO muda — o fechamento real é do admin/gestão.
+    (14/10/2026) Grava também em ot_apontamentos e devolve o id — o app usa
+    para ligar as fotos e para editar/excluir depois."""
+    await _garantir_apontamentos()
     d = await request.json()
-    relato = (d.get("relato") or "").strip()
-    if not relato:
-        raise HTTPException(status_code=400, detail="Descreva o que foi feito")
-    uid = await _usuario_id(payload)
-    o = await ajard_query(
-        """SELECT o.numero, o.status, o.responsavel_id, p.solicitante_id
-           FROM manutencao.ot o
-           LEFT JOIN manutencao.pedidos p ON p.id = o.pedido_id
-           WHERE o.id=%s AND o.ativo=true""", (ot_id,), fetch="one")
-    if not o:
-        raise HTTPException(status_code=404, detail="OT não encontrada")
-    perfil_gestor = (payload.get("perfil") or "").lower() in _PERFIS_MANUTENCAO
-    if not perfil_gestor and str(uid) not in (str(o["responsavel_id"]), str(o["solicitante_id"])):
-        raise HTTPException(status_code=403,
-                            detail="Só o solicitante do pedido ou o responsável da OT apontam nela")
-    if o["status"] not in ("em_andamento", "aguardando_peca", "aberta", "programada"):
+    relato, horas, hor, concluido = _apont_validar(d)
+    o, uid = await _ot_mobile_pode(ot_id, payload)
+    if o["status"] not in _OT_STATUS_APONTAVEL:
         raise HTTPException(status_code=400, detail="OT já encerrada — apontamento indisponível")
-    partes = [f"🔧 Execução (mecânico): {relato}"]
-    if d.get("horimetro") not in (None, ""):
-        partes.append(f"Horímetro/KM no serviço: {d.get('horimetro')}")
-    horas = _mo_num(d.get("horas"))
-    # (14/10/2026) Mesma regra do app: ao sinalizar concluído, horas obrigatórias
-    # (custo de MO da OT); horas fora de 0–24 é digitação errada.
-    if horas is not None and (horas < 0 or horas > 24):
-        raise HTTPException(status_code=400, detail="Horas trabalhadas: informe entre 0,25 e 24")
-    if d.get("concluido") and not (horas and horas > 0):
-        raise HTTPException(status_code=400, detail="Para sinalizar concluído, informe as horas trabalhadas")
-    if horas and horas > 0:
-        await _garantir_mao_obra()
+    mo_id = None
+    if horas:
         sug = await ajard_query(
             """SELECT custo_hora FROM manutencao.ot_mao_obra
                WHERE usuario_id=%s AND ativo=true AND custo_hora IS NOT NULL
                ORDER BY criado_em DESC LIMIT 1""", (uid,), fetch="one")
-        await ajard_query(
+        mo = await ajard_query_id(
             """INSERT INTO manutencao.ot_mao_obra (ot_id, usuario_id, data, horas, custo_hora, observacao, origem, criado_por)
                VALUES (%s,%s,now()::date,%s,%s,%s,'mobile',%s)""",
-            (ot_id, uid, horas, (sug or {}).get("custo_hora"), relato[:200], uid), fetch="none")
-        partes.append(f"⏱ Mão de obra: {horas:g} h")
-    if d.get("concluido"):
-        partes.append("✅ SINALIZOU SERVIÇO CONCLUÍDO — pronto para encerramento pela gestão")
-    await ajard_query(
+            (ot_id, uid, horas, (sug or {}).get("custo_hora"), relato[:200], uid))
+        mo_id = mo["id"] if mo else None
+    h = await ajard_query_id(
         """INSERT INTO manutencao.ot_historico (ot_id, status_de, status_para, observacao, usuario_id)
            VALUES (%s,%s,%s,%s,%s)""",
-        (ot_id, o["status"], o["status"], " · ".join(partes), uid), fetch="none")
-    return {"ok": True, "numero": o["numero"]}
+        (ot_id, o["status"], o["status"], _apont_texto(relato, horas, hor, concluido), uid))
+    ap = await ajard_query_id(
+        """INSERT INTO manutencao.ot_apontamentos (ot_id, usuario_id, relato, horas, horimetro, concluido, mao_obra_id, historico_id)
+           VALUES (%s,%s,%s,%s,%s,%s,%s,%s)""",
+        (ot_id, uid, relato, horas, hor, concluido, mo_id, h["id"] if h else None))
+    return {"ok": True, "numero": o["numero"], "id": str(ap["id"]) if ap else None}
+
+
+@router.get("/manutencao/api/ots/{ot_id}/apontamentos")
+async def ot_apontamentos_listar(ot_id: str, payload=Depends(verificar_pedir_ot)):
+    """Tudo que já foi registrado na OT pelo app (de qualquer mecânico), com as
+    fotos de cada registro. `meu` = pode editar/excluir."""
+    await _garantir_apontamentos()
+    o, uid = await _ot_mobile_pode(ot_id, payload)
+    gestor = (payload.get("perfil") or "").lower() in _PERFIS_MANUTENCAO
+    rows = await ajard_query(
+        """SELECT a.*, u.nome AS usuario_nome
+           FROM manutencao.ot_apontamentos a LEFT JOIN public.usuarios_garra u ON u.id = a.usuario_id
+           WHERE a.ot_id=%s AND a.ativo=true ORDER BY a.criado_em DESC""", (ot_id,)) or []
+    fotos = await ajard_query(
+        """SELECT id, apontamento_id, categoria, path FROM manutencao.equipamento_documentos
+           WHERE ot_id=%s AND ativo=true AND apontamento_id IS NOT NULL AND content_type LIKE 'image/%%'
+           ORDER BY criado_em""", (ot_id,)) or []
+    por_ap = {}
+    for f in fotos:
+        por_ap.setdefault(str(f["apontamento_id"]), []).append(
+            {"id": str(f["id"]), "categoria": f["categoria"], "url": storage_url(f["path"])})
+    return {"numero": o["numero"], "status": o["status"], "aberta": o["status"] in _OT_STATUS_APONTAVEL,
+            "apontamentos": [{
+                "id": str(r["id"]), "relato": r["relato"],
+                "horas": float(r["horas"]) if r["horas"] is not None else None,
+                "horimetro": float(r["horimetro"]) if r["horimetro"] is not None else None,
+                "concluido": bool(r["concluido"]), "usuario_nome": r["usuario_nome"],
+                "criado_em": r["criado_em"].isoformat() if r["criado_em"] else None,
+                "atualizado_em": r["atualizado_em"].isoformat() if r["atualizado_em"] else None,
+                "meu": gestor or str(r["usuario_id"]) == str(uid),
+                "fotos": por_ap.get(str(r["id"]), [])} for r in rows]}
+
+
+@router.put("/manutencao/api/ots/{ot_id}/apontamentos/{ap_id}")
+async def ot_apontamento_editar(ot_id: str, ap_id: str, request: Request, payload=Depends(verificar_pedir_ot)):
+    await _garantir_apontamentos()
+    d = await request.json()
+    relato, horas, hor, concluido = _apont_validar(d)
+    o, uid, ap = await _apont_do_usuario(ap_id, ot_id, payload)
+    mo_id = ap["mao_obra_id"]
+    if horas:
+        if mo_id:
+            await ajard_query("UPDATE manutencao.ot_mao_obra SET horas=%s, observacao=%s WHERE id=%s",
+                              (horas, relato[:200], mo_id), fetch="none")
+        else:
+            sug = await ajard_query(
+                """SELECT custo_hora FROM manutencao.ot_mao_obra
+                   WHERE usuario_id=%s AND ativo=true AND custo_hora IS NOT NULL
+                   ORDER BY criado_em DESC LIMIT 1""", (ap["usuario_id"],), fetch="one")
+            mo = await ajard_query_id(
+                """INSERT INTO manutencao.ot_mao_obra (ot_id, usuario_id, data, horas, custo_hora, observacao, origem, criado_por)
+                   VALUES (%s,%s,%s,%s,%s,%s,'mobile',%s)""",
+                (ot_id, ap["usuario_id"], ap["criado_em"], horas, (sug or {}).get("custo_hora"), relato[:200], uid))
+            mo_id = mo["id"] if mo else None
+    elif mo_id:
+        await ajard_query("UPDATE manutencao.ot_mao_obra SET ativo=false WHERE id=%s", (mo_id,), fetch="none")
+        mo_id = None
+    if ap["historico_id"]:
+        await ajard_query("UPDATE manutencao.ot_historico SET observacao=%s WHERE id=%s",
+                          (_apont_texto(relato, horas, hor, concluido, editado=True), ap["historico_id"]), fetch="none")
+    await ajard_query(
+        """UPDATE manutencao.ot_apontamentos SET relato=%s, horas=%s, horimetro=%s, concluido=%s,
+                  mao_obra_id=%s, atualizado_em=now() WHERE id=%s""",
+        (relato, horas, hor, concluido, mo_id, ap_id), fetch="none")
+    return {"ok": True, "id": ap_id}
+
+
+@router.delete("/manutencao/api/ots/{ot_id}/apontamentos/{ap_id}")
+async def ot_apontamento_excluir(ot_id: str, ap_id: str, payload=Depends(verificar_pedir_ot)):
+    """Exclusão lógica: some do app e das somas de MO; o histórico da OT guarda
+    o rastro ("removido pelo mecânico") e as fotos vão junto."""
+    await _garantir_apontamentos()
+    o, uid, ap = await _apont_do_usuario(ap_id, ot_id, payload)
+    if ap["mao_obra_id"]:
+        await ajard_query("UPDATE manutencao.ot_mao_obra SET ativo=false WHERE id=%s", (ap["mao_obra_id"],), fetch="none")
+    fotos = await ajard_query("SELECT id, path FROM manutencao.equipamento_documentos WHERE apontamento_id=%s AND ativo=true",
+                              (ap_id,)) or []
+    if fotos:
+        await ajard_query("UPDATE manutencao.equipamento_documentos SET ativo=false WHERE apontamento_id=%s", (ap_id,), fetch="none")
+        try:
+            storage_delete([f["path"] for f in fotos])
+        except Exception as e:
+            print(f"[Apontamento] falha ao apagar fotos no Storage: {e}")
+    if ap["historico_id"]:
+        await ajard_query(
+            "UPDATE manutencao.ot_historico SET observacao = '🗑 (removido pelo mecânico) ' || observacao WHERE id=%s",
+            (ap["historico_id"],), fetch="none")
+    await ajard_query("UPDATE manutencao.ot_apontamentos SET ativo=false, atualizado_em=now() WHERE id=%s", (ap_id,), fetch="none")
+    return {"ok": True, "fotos_removidas": len(fotos)}
 
 
 # (14/10/2026) FOTOS DA EXECUÇÃO pelo mobile do mecânico: notinhas (cupom/NF de peça ou
@@ -4751,12 +4903,16 @@ async def _ot_mobile_pode(ot_id, payload):
 
 @router.post("/manutencao/api/ots/{ot_id}/fotos-execucao")
 async def ot_fotos_execucao(ot_id: str, fotos: list[UploadFile] = File(...), tipo: str = "nota",
-                            descricao: str = None, payload=Depends(verificar_pedir_ot)):
-    """Até 10 fotos por envio, cada uma ≤ 8 MB (o app já comprime para ~1600 px / JPEG)."""
-    await _garantir_mao_obra()
-    await ajard_query("ALTER TABLE manutencao.equipamento_documentos ADD COLUMN IF NOT EXISTS ot_id UUID", fetch="none")
-    await ajard_query("ALTER TABLE manutencao.equipamento_documentos ADD COLUMN IF NOT EXISTS categoria TEXT", fetch="none")
+                            descricao: str = None, apontamento_id: str = None, payload=Depends(verificar_pedir_ot)):
+    """Até 10 fotos por envio, cada uma ≤ 8 MB (o app já comprime para ~1600 px / JPEG).
+    `apontamento_id` liga a foto ao registro do mecânico (edição/exclusão acompanham)."""
+    await _garantir_apontamentos()
     o, uid = await _ot_mobile_pode(ot_id, payload)
+    if apontamento_id:
+        ok = await ajard_query("SELECT 1 FROM manutencao.ot_apontamentos WHERE id=%s AND ot_id=%s AND ativo=true",
+                               (apontamento_id, ot_id), fetch="one")
+        if not ok:
+            raise HTTPException(status_code=404, detail="Apontamento não encontrado")
     if o["status"] not in ("em_andamento", "aguardando_peca", "aberta", "programada"):
         raise HTTPException(status_code=400, detail="OT já encerrada — anexos indisponíveis")
     cat, rotulo = _FOTO_CATEGORIAS.get((tipo or "nota").lower(), _FOTO_CATEGORIAS["nota"])
@@ -4778,9 +4934,9 @@ async def ot_fotos_execucao(ot_id: str, fotos: list[UploadFile] = File(...), tip
         nome = f"{rotulo} {datetime.now().strftime('%d/%m/%Y %H:%M')}"
         row = await ajard_query_id(
             """INSERT INTO manutencao.equipamento_documentos
-                 (equipamento_id, ot_id, nome, path, content_type, tamanho, descricao, categoria, usuario_id)
-               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
-            (o["equipamento_id"], ot_id, nome, path, ctype, len(conteudo), (descricao or "").strip() or None, cat, uid))
+                 (equipamento_id, ot_id, nome, path, content_type, tamanho, descricao, categoria, usuario_id, apontamento_id)
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+            (o["equipamento_id"], ot_id, nome, path, ctype, len(conteudo), (descricao or "").strip() or None, cat, uid, apontamento_id))
         salvas.append({"id": str(row["id"]) if row else None, "url": storage_url(path)})
     if salvas:
         await ajard_query(
@@ -4793,8 +4949,7 @@ async def ot_fotos_execucao(ot_id: str, fotos: list[UploadFile] = File(...), tip
 
 @router.get("/manutencao/api/ots/{ot_id}/fotos-execucao")
 async def ot_fotos_execucao_listar(ot_id: str, payload=Depends(verificar_pedir_ot)):
-    await _garantir_mao_obra()
-    await ajard_query("ALTER TABLE manutencao.equipamento_documentos ADD COLUMN IF NOT EXISTS categoria TEXT", fetch="none")
+    await _garantir_apontamentos()
     await _ot_mobile_pode(ot_id, payload)
     rows = await ajard_query(
         """SELECT d.id, d.nome, d.path, d.categoria, d.descricao, d.criado_em, u.nome AS usuario_nome
@@ -4804,6 +4959,28 @@ async def ot_fotos_execucao_listar(ot_id: str, payload=Depends(verificar_pedir_o
     return [{"id": str(r["id"]), "nome": r["nome"], "categoria": r["categoria"], "descricao": r["descricao"],
              "criado_em": r["criado_em"].isoformat() if r["criado_em"] else None, "usuario_nome": r["usuario_nome"],
              "url": storage_url(r["path"])} for r in rows]
+
+
+@router.delete("/manutencao/api/ots/{ot_id}/fotos-execucao/{doc_id}")
+async def ot_foto_execucao_excluir(ot_id: str, doc_id: str, payload=Depends(verificar_pedir_ot)):
+    """Mecânico remove uma foto que ele mesmo subiu (OT ainda aberta)."""
+    await _garantir_apontamentos()
+    o, uid = await _ot_mobile_pode(ot_id, payload)
+    if o["status"] not in _OT_STATUS_APONTAVEL:
+        raise HTTPException(status_code=400, detail="OT já encerrada — anexos indisponíveis")
+    f = await ajard_query("SELECT id, path, usuario_id FROM manutencao.equipamento_documentos WHERE id=%s AND ot_id=%s AND ativo=true",
+                          (doc_id, ot_id), fetch="one")
+    if not f:
+        raise HTTPException(status_code=404, detail="Foto não encontrada")
+    gestor = (payload.get("perfil") or "").lower() in _PERFIS_MANUTENCAO
+    if not gestor and str(f["usuario_id"]) != str(uid):
+        raise HTTPException(status_code=403, detail="Só quem enviou a foto pode removê-la")
+    await ajard_query("UPDATE manutencao.equipamento_documentos SET ativo=false WHERE id=%s", (doc_id,), fetch="none")
+    try:
+        storage_delete([f["path"]])
+    except Exception as e:
+        print(f"[Apontamento] falha ao apagar foto no Storage: {e}")
+    return {"ok": True}
 
 
 async def _garantir_montagens():
