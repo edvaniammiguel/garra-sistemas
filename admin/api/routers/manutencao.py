@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File
 from fastapi.responses import HTMLResponse
 import os
 import re
+from datetime import datetime
 
 from core.auth import verificar_token, verificar_gestor
 from core.db import ajard_query, ajard_query_id
@@ -1975,12 +1976,14 @@ async def ot_preparacao(ot_id: str, _auth=Depends(verificar_manutencao)):
 async def ot_docs_listar(ot_id: str, _auth=Depends(verificar_manutencao)):
     await _garantir_mao_obra()
     await ajard_query("ALTER TABLE manutencao.equipamento_documentos ADD COLUMN IF NOT EXISTS ot_id UUID", fetch="none")
+    await ajard_query("ALTER TABLE manutencao.equipamento_documentos ADD COLUMN IF NOT EXISTS categoria TEXT", fetch="none")
     rows = await ajard_query(
-        """SELECT d.id, d.nome, d.path, d.content_type, d.tamanho, d.descricao, d.criado_em, u.nome AS usuario_nome
+        """SELECT d.id, d.nome, d.path, d.content_type, d.tamanho, d.descricao, d.categoria, d.criado_em, u.nome AS usuario_nome
            FROM manutencao.equipamento_documentos d LEFT JOIN public.usuarios_garra u ON u.id = d.usuario_id
            WHERE d.ot_id=%s AND d.ativo=true ORDER BY d.criado_em DESC""", (ot_id,)) or []
     return [{"id": str(r["id"]), "nome": r["nome"], "content_type": r["content_type"], "tamanho": r["tamanho"],
-             "descricao": r["descricao"], "criado_em": r["criado_em"].isoformat() if r["criado_em"] else None,
+             "descricao": r["descricao"], "categoria": r.get("categoria"),
+             "criado_em": r["criado_em"].isoformat() if r["criado_em"] else None,
              "usuario_nome": r["usuario_nome"], "url": storage_url(r["path"])} for r in rows]
 
 
@@ -4717,6 +4720,84 @@ async def ot_apontamento(ot_id: str, request: Request, payload=Depends(verificar
            VALUES (%s,%s,%s,%s,%s)""",
         (ot_id, o["status"], o["status"], " · ".join(partes), uid), fetch="none")
     return {"ok": True, "numero": o["numero"]}
+
+
+# (14/10/2026) FOTOS DA EXECUÇÃO pelo mobile do mecânico: notinhas (cupom/NF de peça ou
+# serviço comprado na rua) e fotos do serviço. Guardadas no mesmo lugar dos documentos
+# da OT (manutencao.equipamento_documentos com ot_id), com categoria, para aparecerem
+# na aba Documentos da OT no desktop e na conferência financeira.
+_FOTO_CATEGORIAS = {"nota": ("nota_fiscal", "Notinha / cupom"), "servico": ("foto_servico", "Foto do serviço")}
+
+
+async def _ot_mobile_pode(ot_id, payload):
+    uid = await _usuario_id(payload)
+    o = await ajard_query(
+        """SELECT o.id, o.numero, o.status, o.equipamento_id, o.responsavel_id, p.solicitante_id
+           FROM manutencao.ot o LEFT JOIN manutencao.pedidos p ON p.id = o.pedido_id
+           WHERE o.id=%s AND o.ativo=true""", (ot_id,), fetch="one")
+    if not o:
+        raise HTTPException(status_code=404, detail="OT não encontrada")
+    gestor = (payload.get("perfil") or "").lower() in _PERFIS_MANUTENCAO
+    if not gestor and str(uid) not in (str(o["responsavel_id"]), str(o["solicitante_id"])):
+        raise HTTPException(status_code=403, detail="Só o solicitante do pedido ou o responsável da OT anexam fotos nela")
+    return o, uid
+
+
+@router.post("/manutencao/api/ots/{ot_id}/fotos-execucao")
+async def ot_fotos_execucao(ot_id: str, fotos: list[UploadFile] = File(...), tipo: str = "nota",
+                            descricao: str = None, payload=Depends(verificar_pedir_ot)):
+    """Até 10 fotos por envio, cada uma ≤ 8 MB (o app já comprime para ~1600 px / JPEG)."""
+    await _garantir_mao_obra()
+    await ajard_query("ALTER TABLE manutencao.equipamento_documentos ADD COLUMN IF NOT EXISTS ot_id UUID", fetch="none")
+    await ajard_query("ALTER TABLE manutencao.equipamento_documentos ADD COLUMN IF NOT EXISTS categoria TEXT", fetch="none")
+    o, uid = await _ot_mobile_pode(ot_id, payload)
+    if o["status"] not in ("em_andamento", "aguardando_peca", "aberta", "programada"):
+        raise HTTPException(status_code=400, detail="OT já encerrada — anexos indisponíveis")
+    cat, rotulo = _FOTO_CATEGORIAS.get((tipo or "nota").lower(), _FOTO_CATEGORIAS["nota"])
+    if not fotos or len(fotos) > 10:
+        raise HTTPException(status_code=400, detail="Envie de 1 a 10 fotos")
+    import uuid as _uuid
+    salvas = []
+    for f in fotos:
+        conteudo = await f.read()
+        if not conteudo:
+            continue
+        if len(conteudo) > 8 * 1024 * 1024:
+            raise HTTPException(status_code=400, detail=f"{f.filename}: acima de 8 MB")
+        ctype = f.content_type or "image/jpeg"
+        if not ctype.startswith("image/"):
+            raise HTTPException(status_code=400, detail=f"{f.filename}: só imagens")
+        ext = "png" if "png" in ctype else "jpg"
+        path = storage_upload(conteudo, f"manutencao/ots/{ot_id}/{cat}/{_uuid.uuid4().hex}.{ext}", content_type=ctype)
+        nome = f"{rotulo} {datetime.now().strftime('%d/%m/%Y %H:%M')}"
+        row = await ajard_query_id(
+            """INSERT INTO manutencao.equipamento_documentos
+                 (equipamento_id, ot_id, nome, path, content_type, tamanho, descricao, categoria, usuario_id)
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+            (o["equipamento_id"], ot_id, nome, path, ctype, len(conteudo), (descricao or "").strip() or None, cat, uid))
+        salvas.append({"id": str(row["id"]) if row else None, "url": storage_url(path)})
+    if salvas:
+        await ajard_query(
+            """INSERT INTO manutencao.ot_historico (ot_id, status_de, status_para, observacao, usuario_id)
+               VALUES (%s,%s,%s,%s,%s)""",
+            (ot_id, o["status"], o["status"], f"📎 {len(salvas)} foto(s) — {rotulo} (mobile)" + (f": {descricao.strip()}" if descricao and descricao.strip() else ""), uid),
+            fetch="none")
+    return {"ok": True, "numero": o["numero"], "salvas": len(salvas), "fotos": salvas}
+
+
+@router.get("/manutencao/api/ots/{ot_id}/fotos-execucao")
+async def ot_fotos_execucao_listar(ot_id: str, payload=Depends(verificar_pedir_ot)):
+    await _garantir_mao_obra()
+    await ajard_query("ALTER TABLE manutencao.equipamento_documentos ADD COLUMN IF NOT EXISTS categoria TEXT", fetch="none")
+    await _ot_mobile_pode(ot_id, payload)
+    rows = await ajard_query(
+        """SELECT d.id, d.nome, d.path, d.categoria, d.descricao, d.criado_em, u.nome AS usuario_nome
+           FROM manutencao.equipamento_documentos d LEFT JOIN public.usuarios_garra u ON u.id = d.usuario_id
+           WHERE d.ot_id=%s AND d.ativo=true AND d.content_type LIKE 'image/%%'
+           ORDER BY d.criado_em DESC""", (ot_id,)) or []
+    return [{"id": str(r["id"]), "nome": r["nome"], "categoria": r["categoria"], "descricao": r["descricao"],
+             "criado_em": r["criado_em"].isoformat() if r["criado_em"] else None, "usuario_nome": r["usuario_nome"],
+             "url": storage_url(r["path"])} for r in rows]
 
 
 async def _garantir_montagens():
