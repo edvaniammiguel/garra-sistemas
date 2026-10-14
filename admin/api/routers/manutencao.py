@@ -4702,6 +4702,12 @@ async def ot_apontamento(ot_id: str, request: Request, payload=Depends(verificar
     if d.get("horimetro") not in (None, ""):
         partes.append(f"Horímetro/KM no serviço: {d.get('horimetro')}")
     horas = _mo_num(d.get("horas"))
+    # (14/10/2026) Mesma regra do app: ao sinalizar concluído, horas obrigatórias
+    # (custo de MO da OT); horas fora de 0–24 é digitação errada.
+    if horas is not None and (horas < 0 or horas > 24):
+        raise HTTPException(status_code=400, detail="Horas trabalhadas: informe entre 0,25 e 24")
+    if d.get("concluido") and not (horas and horas > 0):
+        raise HTTPException(status_code=400, detail="Para sinalizar concluído, informe as horas trabalhadas")
     if horas and horas > 0:
         await _garantir_mao_obra()
         sug = await ajard_query(
