@@ -127,6 +127,8 @@
   <div class="card" id="tela-apont" style="display:none">
     <b>Registrar execução</b>
     <div class="muted" id="ap-ot"></div>
+    <div id="ap-fechada" style="display:none;margin-top:8px;padding:10px;border-radius:10px;background:#F1F5F9;color:#334155;font-size:14px">🔒 OT encerrada pela gestão — somente consulta.</div>
+    <div id="ap-form">
     <label>O que foi feito? *</label>
     <textarea id="ap-relato" placeholder="ex.: trocado filtro e óleo do comando; testado sem vazamento"></textarea>
     <button type="button" class="btn-ditar" data-ditar="ap-relato">🎤 Ditar</button>
@@ -156,6 +158,7 @@
     <label style="display:flex;align-items:center;gap:8px;margin-top:12px;font-size:14px;color:#0F172A">
       <input type="checkbox" id="ap-fim" style="width:22px;height:22px"> ✅ Serviço concluído — pronto para a gestão encerrar
     </label>
+    </div>
     <button class="btn p" id="ap-btn" onclick="apEnviar()">💾 Registrar na OT</button>
     <button class="btn" id="ap-cancel" style="display:none;background:#fff;border:2px solid var(--laranja);color:#1A2A5E" onclick="apCancelarEdicao()">✖ Cancelar edição</button>
     <button class="btn" style="background:#fff;border:2px solid #CBD5E1" onclick="verAba(AP_VOLTA)">Voltar</button>
@@ -333,6 +336,11 @@ async function apCarregarLista(){
   try {
     const r = await api('/manutencao/api/ots/' + AP_OT + '/apontamentos');
     AP_ITENS = r.apontamentos || [];
+    // (15/10/2026) OT já encerrada pela gestão: tela vira só consulta (sem formulário, sem ✏️🗑️)
+    const fechada = !r.aberta;
+    ['ap-form','ap-btn','ap-cancel'].forEach(i => { const e = document.getElementById(i); if (e) e.style.display = fechada ? 'none' : (i === 'ap-cancel' ? (AP_EDIT ? '' : 'none') : ''); });
+    const av = document.getElementById('ap-fechada'); if (av) av.style.display = fechada ? '' : 'none';
+    if (fechada && AP_EDIT) AP_EDIT = null;
     if (!AP_ITENS.length){ el.innerHTML = 'Nada registrado ainda.'; return; }
     el.innerHTML = AP_ITENS.map(a => {
       const tags = [];
@@ -450,6 +458,8 @@ function apAbrir(otId, otNum, eq, desc){
   document.getElementById('ap-horas').value = '';
   document.getElementById('ap-fim').checked = false;
   AP_EDIT = null; AP_ITENS = [];
+  document.getElementById('ap-form').style.display = ''; document.getElementById('ap-btn').style.display = '';
+  document.getElementById('ap-fechada').style.display = 'none';
   document.getElementById('ap-btn').textContent = '💾 Registrar na OT';
   document.getElementById('ap-cancel').style.display = 'none';
   tela('tela-apont');
