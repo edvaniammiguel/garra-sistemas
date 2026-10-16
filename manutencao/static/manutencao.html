@@ -1784,7 +1784,8 @@ function showCtxReal(ev, id, tipo, rotulo){
       + it('▶️','Iniciar (Em curso)', "mntStatusReal('"+id+"','em_andamento')")
       + it('⏸️','Aguardando peça', "mntStatusReal('"+id+"','aguardando_peca')")
       + it('✔️','Concluir…', "mntStatusReal('"+id+"','concluida')")
-      + it('✖️','Cancelar…', "mntStatusReal('"+id+"','cancelada')");
+      + it('✖️','Cancelar OT…', "mntStatusReal('"+id+"','cancelada')")
+      + it('↩️','Reabrir…', "mntStatusReal('"+id+"','em_andamento')");
   }
   m.style.left = Math.min(ev.clientX, window.innerWidth-230)+'px';
   m.style.top  = Math.min(ev.clientY, window.innerHeight-220)+'px';
@@ -3788,13 +3789,31 @@ async function mntStatusReal(id, novo){
         return;
       }
     } catch(e) {}
-    const c = prompt('Custo total (R$):',''); if (c === null) return;
+    // (15/10/2026) Aproveita o que o mecânico já registrou pelo app: relato(s) e horas de MO.
+    let sugObs = '', sugCusto = '';
+    try {
+      const ap = await mntFetch('/manutencao/api/ots/'+id+'/apontamentos');
+      const rel = (ap.apontamentos||[]).slice().reverse().map(a => a.relato).filter(Boolean);
+      if (rel.length) sugObs = rel.join(' · ');
+      const _o2 = await mntFetch('/manutencao/api/ots/'+id);
+      if (_o2.custo_total != null) sugCusto = String(_o2.custo_total).replace('.', ',');
+    } catch(e) {}
+    const c = prompt('Custo total (R$):', sugCusto); if (c === null) return;
     custo = parseFloat(String(c).replace(',','.')) || null;
     const hp = prompt('Horas de máquina PARADA por esta manutenção (indisponibilidade — opcional):','');
+    if (hp === null) return;
     if (hp) horasParada = parseFloat(String(hp).replace(',','.')) || null;
-    obs = prompt('O que foi feito:','') || null;
+    obs = prompt('O que foi feito:' + (sugObs ? ' (já veio do app — edite se quiser)' : ''), sugObs);
+    if (obs === null) return; obs = obs || null;
   }
-  if (novo === 'cancelada'){ obs = _pedirMotivo('Cancelar esta OT'); if (!obs) return; }
+  if (novo === 'cancelada'){
+    if (!confirm('⚠️ Isto CANCELA a OT (não é cancelar a edição).\n\nContinuar?')) return;
+    obs = _pedirMotivo('Cancelar esta OT'); if (!obs) return;
+  }
+  if (novo === 'em_andamento'){
+    const _o3 = _otsCache.find(o => String(o.id) === String(id));
+    if (_o3 && ['concluida','cancelada'].includes(_o3.status)) { obs = _pedirMotivo('Reabrir esta OT'); if (!obs) return; }
+  }
   try {
     await mntFetch('/manutencao/api/ots/'+id+'/status', {method:'PATCH', body: JSON.stringify({status:novo, observacao:obs, custo_total:custo, horas_parada:horasParada})});
     mostrarToast('✅ OT atualizada','ok');
@@ -3849,18 +3868,20 @@ async function verOTReal(id){
           else if (st === 'programada')
             acoes = b('🖨 Emitir', "otStatusGravando('"+o.id+"','em_andamento')"+fecha, true)
               + (o.plano_id ? ' ' + b('🔁 Novo ciclo', "otNovoCiclo('"+o.id+"')") : '')
-              + ' ' + b('✖️ Cancelar…', "otStatusGravando('"+o.id+"','cancelada')"+fecha);
+              + ' ' + b('✖️ Cancelar OT…', "otStatusGravando('"+o.id+"','cancelada')"+fecha);
           else if (st === 'aberta')
             acoes = b('🖨 Emitir', "otStatusGravando('"+o.id+"','em_andamento')"+fecha, true)
-              + ' ' + b('✖️ Cancelar…', "otStatusGravando('"+o.id+"','cancelada')"+fecha);
+              + ' ' + b('✖️ Cancelar OT…', "otStatusGravando('"+o.id+"','cancelada')"+fecha);
           else if (st === 'em_andamento')
             acoes = b('✔️ Encerrar…', "otStatusGravando('"+o.id+"','concluida')"+fecha, true)
               + ' ' + b('⏸️ Aguardando peça', "otStatusGravando('"+o.id+"','aguardando_peca')"+fecha)
-              + ' ' + b('✖️ Cancelar…', "otStatusGravando('"+o.id+"','cancelada')"+fecha);
+              + ' ' + b('✖️ Cancelar OT…', "otStatusGravando('"+o.id+"','cancelada')"+fecha);
           else if (st === 'aguardando_peca')
             acoes = b('▶️ Retomar', "otStatusGravando('"+o.id+"','em_andamento')"+fecha, true)
               + ' ' + b('✔️ Encerrar…', "otStatusGravando('"+o.id+"','concluida')"+fecha)
-              + ' ' + b('✖️ Cancelar…', "otStatusGravando('"+o.id+"','cancelada')"+fecha);
+              + ' ' + b('✖️ Cancelar OT…', "otStatusGravando('"+o.id+"','cancelada')"+fecha);
+          else if (st === 'concluida' || st === 'cancelada')
+            acoes = b('↩️ Reabrir…', "otStatusGravando('"+o.id+"','em_andamento')"+fecha);
           // OK grava (descrição + Origem) e fecha — no rascunho também confirma (Programada); Aplicar grava e mantém
           const okAc = st === 'rascunho' ? "salvarOrigem(true,'programada')" : "salvarOrigem(true)";
           const base = b('OK', okAc, true) + ' ' + b('Aplicar', "salvarOrigem(false)");
@@ -4460,9 +4481,24 @@ function otAba(aba){
       + tempo('TDE','Tempo De Espera — da abertura ao início da intervenção', tde, abertura && inicioReal ? 'assumido das datas' : '')
       + tempo('TDM','Tempo De Manutenção — duração da intervenção', tdm, inicioReal ? 'assumido das datas' : '')
       + tempo('PDI','Paragem Devido à Intervenção — horas de máquina parada', o.horas_parada != null ? String(o.horas_parada).replace('.',',')+' h' : '—', o.horas_parada != null ? 'digitado no encerramento' : '')
-      + tempo('TDR','Tempo De Reparação — mão na máquina (apontamento futuro)', '—', 'entra com Mão de Obra')
+      + tempo('TDR','Tempo De Reparação — horas de mão de obra apontadas', o.mo_horas ? String(o.mo_horas).replace('.',',')+' h' : '—', o.mo_horas ? 'soma da aba Mão de Obra' : 'entra com Mão de Obra')
       + '<div class="muted" style="margin-top:6px;line-height:1.5">PDI é o que vira dinheiro: máquina parada = diária perdida. Alimenta o KPI de Disponibilidade no BI.</div>'
-      + '</div></div>';
+      + '</div></div>'
+      // (15/10/2026) O que o mecânico registrou pelo app — relato, horas, horímetro, sinal de concluído, fotos.
+      + '<div class="dsec" style="margin-top:12px">📱 Registros do mecânico (app)</div>'
+      + ((o.apontamentos||[]).length
+          ? '<table style="font-size:11px"><thead><tr><th style="width:95px">Data</th><th style="width:110px">Quem</th><th>O que foi feito</th><th class="r" style="width:50px">Horas</th><th class="r" style="width:70px">Horím./KM</th><th style="width:60px"></th><th style="width:44px"></th></tr></thead><tbody>'
+            + o.apontamentos.map(a => '<tr>'
+              + '<td class="mono">'+dd(a.criado_em)+(a.atualizado_em?' <span class="muted" title="editado">✎</span>':'')+'</td>'
+              + '<td>'+_esc(a.usuario_nome||'')+'</td>'
+              + '<td>'+_esc(a.relato||'')+'</td>'
+              + '<td class="r mono">'+(a.horas!=null?String(a.horas).replace('.',','):'—')+'</td>'
+              + '<td class="r mono">'+(a.horimetro!=null?String(a.horimetro).replace('.',','):'—')+'</td>'
+              + '<td>'+(a.concluido?'<span class="chip ok">✅ concluído</span>':'')+'</td>'
+              + '<td class="muted">'+(a.fotos?'📎 '+a.fotos:'')+'</td></tr>').join('')
+            + '</tbody></table>'
+            + '<div class="muted" style="margin-top:4px">Horas somam na aba Mão de Obra · fotos ficam na aba Documentos · o Encerrar já vem com este relato preenchido.</div>'
+          : '<div class="muted">Nenhum registro pelo app nesta OT.</div>');
   }
   if (aba === 'ped'){
     const p = o.pedido;
