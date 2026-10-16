@@ -72,8 +72,10 @@ _TRANSICOES = {
     "aberta":          {"em_andamento", "cancelada"},
     "em_andamento":    {"aguardando_peca", "concluida", "cancelada"},
     "aguardando_peca": {"em_andamento", "concluida", "cancelada"},
-    "concluida":       set(),
-    "cancelada":       set(),
+    # (15/10/2026) Reabrir: gestão desfaz um encerramento/cancelamento por engano
+    # (botão Cancelar… clicado achando que cancelava a edição). Exige motivo.
+    "concluida":       {"em_andamento"},
+    "cancelada":       {"em_andamento", "aberta"},
 }
 
 
@@ -687,6 +689,17 @@ async def detalhe_ot(ot_id: str, _auth=Depends(verificar_manutencao)):
     d = dict(ot)
     d["historico"] = [dict(h) for h in hist]
     d["ultima_ot"] = dict(ultima) if ultima else None
+    # (15/10/2026) Registros do mecânico pelo app (relato, horas, horímetro, concluído, fotos)
+    # viajam com a ficha — a gestão vê na aba Gestão sem caçar no histórico.
+    await _garantir_apontamentos()
+    aps = await ajard_query(
+        """SELECT a.id, a.relato, a.horas, a.horimetro, a.concluido, a.criado_em, a.atualizado_em, u.nome AS usuario_nome,
+                  (SELECT COUNT(*) FROM manutencao.equipamento_documentos f WHERE f.apontamento_id=a.id AND f.ativo=true)::int AS fotos
+           FROM manutencao.ot_apontamentos a LEFT JOIN public.usuarios_garra u ON u.id = a.usuario_id
+           WHERE a.ot_id=%s AND a.ativo=true ORDER BY a.criado_em""", (ot_id,)) or []
+    d["apontamentos"] = [dict(a) for a in aps]
+    mo = await ajard_query("SELECT COALESCE(SUM(horas),0) AS h FROM manutencao.ot_mao_obra WHERE ot_id=%s AND ativo=true", (ot_id,), fetch="one")
+    d["mo_horas"] = float(mo["h"]) if mo and mo["h"] is not None else 0.0
     d["pedido"] = None
     if d.get("pedido_id"):
         await _garantir_pedidos()
@@ -715,8 +728,13 @@ async def mudar_status_ot(ot_id: str, request: Request, payload=Depends(verifica
             detail=f"Transição inválida: {atual} → {novo}")
     if novo == "cancelada" and len((d.get("observacao") or "").strip()) < 5:
         raise HTTPException(status_code=400, detail="Motivo do cancelamento é obrigatório (mínimo 5 caracteres)")
+    reabrindo = atual in ("concluida", "cancelada")
+    if reabrindo and len((d.get("observacao") or "").strip()) < 5:
+        raise HTTPException(status_code=400, detail="Motivo da reabertura é obrigatório (mínimo 5 caracteres)")
     uid = await _usuario_id(payload)
     extras, params = "", [novo]
+    if reabrindo:
+        extras = ", data_conclusao=NULL, data_retorno_operacao=NULL"
     if novo == "concluida":
         extras = ", data_conclusao=now(), data_retorno_operacao=now()::date, observacao_conclusao=%s, custo_total=%s"
         params += [(d.get("observacao") or "").strip() or None, d.get("custo_total")]
@@ -734,7 +752,7 @@ async def mudar_status_ot(ot_id: str, request: Request, payload=Depends(verifica
     await ajard_query(
         """INSERT INTO manutencao.ot_historico (ot_id, status_de, status_para, observacao, usuario_id)
            VALUES (%s,%s,%s,%s,%s)""",
-        (ot_id, atual, novo, (d.get("observacao") or "").strip() or None, uid), fetch="none")
+        (ot_id, atual, novo, ("↩ REABERTA: " if reabrindo else "") + ((d.get("observacao") or "").strip() or ""), uid), fetch="none")
     if novo == "concluida":
         # (15/09/2026) Fecha o ciclo da FMP: a conclusão vira a nova baseline (data + leitura viva)
         await _garantir_planos_cols()
