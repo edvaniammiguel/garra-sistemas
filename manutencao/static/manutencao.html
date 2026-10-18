@@ -896,8 +896,11 @@ function renderOTs(){
   const tb = document.getElementById('ots-tbody');
   const st = document.getElementById('ots-strip');
   if (!tb) return;
-  const ativos = Array.from(document.querySelectorAll('#ots-filtros input:checked')).map(c=>c.value);
+  let ativos = Array.from(document.querySelectorAll('#ots-filtros input[value]:checked')).map(c=>c.value);
   const q = (document.getElementById('ots-busca').value || '').trim().toLowerCase();
+  // (18/10/2026) "Sem responsável" / "Sinalizadas" valem sozinhos: sem nenhum estado marcado, olham todas as OTs vivas
+  const fSem = (document.getElementById('ots-f-semresp') || {}).checked, fSin = (document.getElementById('ots-f-sinal') || {}).checked;
+  if (!ativos.length && (fSem || fSin)) ativos = ['programada','aberta','em_andamento','aguardando_peca'];
   let ots = _otsCache.filter(o => ativos.includes(o.status));
   const canalDe = o => {
     const org = (o.origem || '').toLowerCase(), via = (o.pedido_via || '').toLowerCase();
@@ -911,8 +914,8 @@ function renderOTs(){
   const cSem = document.getElementById('ots-c-semresp'), cSin = document.getElementById('ots-c-sinal');
   if (cSem) cSem.textContent = '(' + _otsCache.filter(semResp).length + ')';
   if (cSin) cSin.textContent = '(' + _otsCache.filter(o => o.sinal_concluido && !['concluida','cancelada'].includes(o.status)).length + ')';
-  if ((document.getElementById('ots-f-semresp') || {}).checked) ots = ots.filter(semResp);
-  if ((document.getElementById('ots-f-sinal') || {}).checked) ots = ots.filter(o => o.sinal_concluido);
+  if (fSem) ots = ots.filter(semResp);
+  if (fSin) ots = ots.filter(o => o.sinal_concluido);
   const canalSel = (document.getElementById('ots-origem') || {}).value || '';
   if (canalSel) ots = ots.filter(o => canalDe(o) === canalSel);
   if (_filtroTT !== null) ots = ots.filter(o => _filtroTT === '_sem' ? !o.tipo_trabalho : (_filtroTT.length === 1 ? (o.tipo_trabalho||'').charAt(0) === _filtroTT : o.tipo_trabalho === _filtroTT));
@@ -954,8 +957,12 @@ function renderOTs(){
     const dp = o.data_prevista ? d(o.data_prevista) : (o.horimetro_previsto != null ? o.horimetro_previsto + ' h·km' : '—');
     const prog = v ? `<span style="color:${v.nivel===0?'#DC2626':v.nivel===1?'#B45309':'#16A34A'};font-size:10px">${_esc(v.texto)}</span>` : dp;
     const ent = (o.equipamento_codigo || '') + (o.equipamento_desc ? ' — ' + o.equipamento_desc : '');
+    // (16/10/2026) Padrão ManWinWin: semáforo só em OT viva; encerrada vira arquivo fechado, cancelada vira ✕.
+    const ico = o.status === 'concluida' ? '<span title="Encerrada" style="font-size:13px;line-height:1">🗂️</span>'
+              : o.status === 'cancelada' ? '<span title="Cancelada" style="color:#94A3B8;font-weight:900;font-size:12px">✕</span>'
+              : `<span class="dot ${dot}"></span>`;
     return `<tr data-id="${o.id}"${String(_mwSel.ots)===String(o.id)?' class="sel"':''} style="cursor:pointer" oncontextmenu="showCtxReal(event,'${o.id}','ot','${_esc(o.numero)}')" onclick="listaSelClick(event,this,'ots')" ondblclick="verOTReal('${o.id}')">
-      <td style="text-align:center"><span class="dot ${dot}"></span></td>
+      <td style="text-align:center">${ico}</td>
       <td class="bold" style="white-space:nowrap">${_esc(o.numero)}</td>
       <td>${_esc(o.descricao)}</td>
       <td style="max-width:210px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${_esc(ent)}">${_esc(ent)}</td>
@@ -1779,13 +1786,17 @@ function showCtxReal(ev, id, tipo, rotulo){
       + it('🔩','Itens aplicados', "equipArtigos('"+id+"')")
       + it('📜','Histórico de OTs', "otsDoEquip('"+id+"',true)");
   } else {
+    const _st = ((_otsCache||[]).find(x => String(x.id) === String(id)) || {}).status || '';
+    const fechada = ['concluida','cancelada'].includes(_st);
     m.innerHTML = hd
       + it('📂','Detalhes + histórico', "verOTReal('"+id+"')")
-      + it('▶️','Iniciar (Em curso)', "mntStatusReal('"+id+"','em_andamento')")
-      + it('⏸️','Aguardando peça', "mntStatusReal('"+id+"','aguardando_peca')")
-      + it('✔️','Concluir…', "mntStatusReal('"+id+"','concluida')")
-      + it('✖️','Cancelar OT…', "mntStatusReal('"+id+"','cancelada')")
-      + it('↩️','Reabrir…', "mntStatusReal('"+id+"','em_andamento')");
+      + (fechada
+          ? it('↩️','Reabrir…', "mntStatusReal('"+id+"','em_andamento')")
+          : (_st === 'aguardando_peca' ? it('▶️','Retomar (Em curso)', "mntStatusReal('"+id+"','em_andamento')")
+             : _st === 'em_andamento' ? '' : it('▶️','Iniciar (Em curso)', "mntStatusReal('"+id+"','em_andamento')"))
+            + (_st === 'em_andamento' ? it('⏸️','Aguardando peça', "mntStatusReal('"+id+"','aguardando_peca')") : '')
+            + (['em_andamento','aguardando_peca'].includes(_st) ? it('✔️','Encerrar…', "mntStatusReal('"+id+"','concluida')") : '')
+            + it('✖️','Cancelar OT…', "mntStatusReal('"+id+"','cancelada')"));
   }
   m.style.left = Math.min(ev.clientX, window.innerWidth-230)+'px';
   m.style.top  = Math.min(ev.clientY, window.innerHeight-220)+'px';
@@ -1911,7 +1922,7 @@ const _MW = {
     botoes:[
       ['\ud83d\udc41','Ver',[['\u2705 Todas (limpar filtro)',"limparFiltroOTs()"],['\u25b6\ufe0f Iniciar (Em curso)',"(function(){const i=_mwPrecisa('ots','OT'); if(i) mntStatusReal(i,'em_andamento');})()"],
                               ['\u23f8\ufe0f Aguardando pe\u00e7a',"(function(){const i=_mwPrecisa('ots','OT'); if(i) mntStatusReal(i,'aguardando_peca');})()"],
-                              ['\u2714\ufe0f Concluir\u2026',"(function(){const i=_mwPrecisa('ots','OT'); if(i) mntStatusReal(i,'concluida');})()"]]],
+                              ['\u2714\ufe0f Encerrar\u2026',"(function(){const i=_mwPrecisa('ots','OT'); if(i) mntStatusReal(i,'concluida');})()"]]],
       ['\ud83d\udce8','Pedidos',"abrirPedidos()"],
       ['\ud83d\udcc5','Calend\u00e1rio',"calTrabalhos()"],
       ['\ud83d\uddc2','Projetos',"projectosJanela()"],
@@ -2335,7 +2346,10 @@ const _NE_SEL = {
           novo: null, vaiPara: () => { window.open('/admin#usuarios','_blank'); } },
   fam:  { titulo:'Fam\u00edlias', icone:'\ud83d\udcc1', carregar: async()=>{ const r = await mntFetch('/manutencao/api/param/familias'); return (Array.isArray(r)?r:(r.itens||[])).map(f=>({id:f.codigo, cod:f.codigo, nome:f.nome})); },
           novo: { campos:[['codigo','C\u00f3digo','text'],['nome','Nome','text']], post: async d => { await mntFetch('/manutencao/api/param/familias',{method:'POST',body:JSON.stringify(d)}); return {id:d.codigo, cod:d.codigo, nome:d.nome}; } } },
-  comb: { titulo:'Combust\u00edvel \u2014 Materiais/pe\u00e7as', icone:'\u26fd', carregar: async()=>{ const r = await mntFetch('/manutencao/api/pecas'); return (Array.isArray(r)?r:(r.itens||[])).map(x=>({id:x.id, cod:x.codigo, nome:x.descricao})); },
+  comb: { titulo:'Combust\u00edvel \u2014 Materiais/pe\u00e7as', icone:'\u26fd',
+          // (18/10/2026) Abre com a fam\u00edlia CB (combust\u00edveis); digitar procura no servidor em todo o cat\u00e1logo (4 mil itens, a lista local era s\u00f3 os 100 primeiros)
+          carregar: async()=>{ const r = await mntFetch('/manutencao/api/pecas?familia=CB&limit=300'); return (Array.isArray(r)?r:(r.itens||[])).map(x=>({id:x.id||x.codigo, cod:x.codigo, nome:x.descricao})); },
+          buscar: async(q)=>{ const r = await mntFetch('/manutencao/api/pecas?busca='+encodeURIComponent(q)+'&limit=300'); return (Array.isArray(r)?r:(r.itens||[])).map(x=>({id:x.id||x.codigo, cod:x.codigo, nome:x.descricao})); },
           novo: { campos:[['codigo','C\u00f3digo','text'],['descricao','Descri\u00e7\u00e3o','text'],['unidade','Unidade (L)','text']], post: async d => { const r = await mntFetch('/manutencao/api/pecas',{method:'POST',body:JSON.stringify(d)}); return {id:(r&&r.id)||'', cod:d.codigo, nome:d.descricao}; } } },
   forn: { titulo:'Fornecedores', icone:'\ud83c\udfed', carregar: async()=>{ const r = await mntFetch('/manutencao/api/fornecedores'); return (Array.isArray(r)?r:(r.itens||[])).map(f=>({id:f.id, cod:f.cnpj||'', nome:f.nome})); },
           aplicar: it => { const el=document.getElementById('ne-forn'); if(!el) return; if(![...el.options].some(o=>o.value===String(it.id))){ const o=document.createElement('option'); o.value=it.id; o.textContent=it.nome; el.appendChild(o);} el.value = it.id; },
@@ -2344,7 +2358,7 @@ const _NE_SEL = {
 };
 let _neSelItens = [];
 async function neSeletor(tipo, alvo){
-  const cfg = _NE_SEL[tipo]; if(!cfg) return; _neSelAlvo = alvo || null;
+  const cfg = _NE_SEL[tipo]; if(!cfg) return; _neSelAlvo = alvo || null; _neSelTipo = tipo;
   try { _neSelItens = await cfg.carregar(); } catch(e){ mostrarToast('\u274c '+e.message,'warn'); return; }
   _neSelItens.sort((a,b)=>String(a.nome||'').localeCompare(String(b.nome||'')));
   const linhas = _neSelItens.map((it,i)=>'<tr data-i="'+i+'" data-busca="'+_esc((it.cod+' '+it.nome).toLowerCase())+'" onclick="neSelMarcar('+i+')" ondblclick="neSelEscolher(\''+tipo+'\','+i+')">'
@@ -2365,7 +2379,29 @@ async function neSeletor(tipo, alvo){
   const st=document.createElement('style'); st.textContent='#ne-sel-lista tr{cursor:pointer} #ne-sel-lista td{padding:6px 10px;border-bottom:1px solid #f1f3f8} #ne-sel-lista tr.on{background:#dbe6ff;outline:1px dotted #1A2A5E}'; document.getElementById('ne-sel').appendChild(st);
   setTimeout(()=>document.getElementById('ne-sel-busca')?.focus(),30);
 }
-function neSelFiltrar(q){ q=(q||'').toLowerCase().trim(); let n=0; document.querySelectorAll('#ne-sel-lista tr').forEach(tr=>{ const ok=!q||tr.dataset.busca.includes(q); tr.style.display=ok?'':'none'; if(ok)n++; }); const c=document.getElementById('ne-sel-qtd'); if(c)c.textContent=n; }
+let _neSelTipo = null, _neSelTimer = null;
+function _neSelLinhas(tipo){
+  return _neSelItens.map((it,i)=>'<tr data-i="'+i+'" data-busca="'+_esc((it.cod+' '+it.nome).toLowerCase())+'" onclick="neSelMarcar('+i+')" ondblclick="neSelEscolher(\''+tipo+'\','+i+')">'
+     + (it.cod ? '<td style="width:90px;font-weight:700;color:#1A2A5E">'+_esc(it.cod)+'</td>' : '')
+     + '<td>'+_esc(it.nome)+'</td></tr>').join('');
+}
+function neSelFiltrar(q){
+  q=(q||'').toLowerCase().trim(); let n=0;
+  document.querySelectorAll('#ne-sel-lista tr').forEach(tr=>{ const ok=!q||tr.dataset.busca.includes(q); tr.style.display=ok?'':'none'; if(ok)n++; });
+  const c=document.getElementById('ne-sel-qtd'); if(c)c.textContent=n;
+  // lista parcial → procura no servidor (com atraso para não disparar a cada tecla)
+  const cfg = _NE_SEL[_neSelTipo]; if (!cfg || !cfg.buscar) return;
+  clearTimeout(_neSelTimer);
+  if (q.length < 2) return;
+  _neSelTimer = setTimeout(async () => {
+    try {
+      const itens = await cfg.buscar(q); if ((document.getElementById('ne-sel-busca')||{}).value.toLowerCase().trim() !== q) return;
+      _neSelItens = itens.sort((a,b)=>String(a.nome||'').localeCompare(String(b.nome||'')));
+      const tb = document.getElementById('ne-sel-lista'); if (tb) tb.innerHTML = _neSelLinhas(_neSelTipo);
+      if (c) c.textContent = _neSelItens.length;
+    } catch(e){}
+  }, 350);
+}
 function neSelMarcar(i){ document.querySelectorAll('#ne-sel-lista tr').forEach(tr=>tr.classList.toggle('on', String(tr.dataset.i)===String(i))); }
 function neSelConfirmar(tipo){ const tr=document.querySelector('#ne-sel-lista tr.on'); if(!tr){ mostrarToast('Selecione um item na lista','warn'); return; } neSelEscolher(tipo, tr.dataset.i); }
 let _neSelAlvo = null;
@@ -2870,7 +2906,7 @@ async function abSalvar(id){
 }
 /* ── Documentos do objeto (anexo Ficheiro → Storage) ── */
 async function equipDocumentos(id){
-  let docs;
+  let docs; await _docCats();
   try { docs = await mntFetch('/manutencao/api/equipamentos/'+id+'/documentos'); }
   catch(e){ mostrarToast('\u274c '+e.message,'warn'); return; }
   const eqF = _navEquipObjs().find(e => String(e.id) === String(id)) || {};
@@ -2884,11 +2920,13 @@ async function equipDocumentos(id){
     + '<div style="display:flex;gap:6px;align-items:flex-end;flex-wrap:wrap">'
     + '<div class="mfield" style="flex:1;min-width:200px">Ficheiro<input type="file" id="doc-file" style="font-size:11px"></div>'
     + '<div class="mfield" style="flex:1;min-width:180px">Descri\u00e7\u00e3o<input id="doc-desc" placeholder="ex.: manual do operador"></div>'
+    + '<div class="mfield" style="width:170px">Categoria<select id="doc-cat"><option value="">\u2014 sem categoria \u2014</option>'+DOC_CATS.map(c => '<option value="'+c.id+'">'+_esc(c.label)+'</option>').join('')+'</select></div>'
     + '<button class="btn p" onclick="equipDocEnviar(\''+id+'\')">\u2b06 Enviar</button></div>'
     + '<div class="dsec" style="margin-top:10px">'+docs.length+' documento(s)</div>'
     + (docs.length ? '<div style="max-height:300px;overflow:auto">' + docs.map(d =>
         '<div style="display:flex;gap:8px;align-items:center;padding:5px 6px;border-bottom:1px solid #F1F5F9;font-size:11px">'
         + '<span>'+ico(d.content_type)+'</span><a href="'+_esc(d.url)+'" target="_blank" style="flex:1;font-weight:700;color:#1A2A5E">'+_esc(d.nome)+'</a>'
+        + '<span style="width:130px">'+(d.categoria ? '<span class="chip pr" style="font-size:9px">'+_esc(DOC_CAT_LABEL[d.categoria]||d.categoria)+'</span>' : '')+(d.ot_numero ? ' <span class="muted">'+_esc(d.ot_numero)+'</span>' : '')+'</span>'
         + '<span class="muted" style="flex:1">'+_esc(d.descricao||'')+'</span>'
         + '<span class="muted">'+kb(d.tamanho)+'</span><span class="muted">'+dd(d.criado_em)+' \u00b7 '+_esc(d.usuario_nome||'')+'</span>'
         + '<span style="cursor:pointer;color:#B91C1C" title="Remover" onclick="equipDocExcluir(\''+d.id+'\',\''+id+'\')">\u2715</span></div>').join('') + '</div>'
@@ -2899,7 +2937,7 @@ async function equipDocumentos(id){
 async function equipDocEnviar(id){
   const inp = document.getElementById('doc-file'); const f = inp && inp.files && inp.files[0];
   if (!f){ mostrarToast('Escolha um ficheiro','warn'); return; }
-  const fd = new FormData(); fd.append('ficheiro', f, f.name); fd.append('descricao', (document.getElementById('doc-desc')||{}).value || '');
+  const fd = new FormData(); fd.append('ficheiro', f, f.name); fd.append('descricao', (document.getElementById('doc-desc')||{}).value || ''); fd.append('categoria', (document.getElementById('doc-cat')||{}).value || '');
   try { await mntUpload('/manutencao/api/equipamentos/'+id+'/documentos', fd); mostrarToast('\u2705 Documento anexado','ok'); equipDocumentos(id); }
   catch(e){ mostrarToast('\u274c '+e.message,'warn'); }
 }
@@ -4780,7 +4818,7 @@ async function mntUpload(path, formData){
 }
 async function verEquipReal(id, destino){
   try {
-    await _sistemas();
+    await _sistemas(); await _docCats();
     if (_eqCC === null) { try { _eqCC = (await mntFetch('/manutencao/api/param/centros-custo')).filter(x=>x.ativo!==false); } catch(e){ _eqCC = []; } }
     if (_mntUserList === null) { try { _mntUserList = (await mntFetch('/usuarios')).filter(u => u.ativo !== false); } catch(e){ _mntUserList = []; } }
     if (!_mntEquipList.length) await carregarEquipReais();
@@ -4839,7 +4877,23 @@ function fichaAba(aba, alvo){
       const lista = Array.isArray(r) ? r : (r.itens || []);
       ['fg-forn','fc-forn'].forEach(id => { const el = document.getElementById(id); if (!el) return; const v = el.dataset.val;
         el.innerHTML = '<option value="">—</option>' + lista.map(f => '<option value="'+f.id+'"'+(String(f.id)===String(v)?' selected':'')+'>'+_esc(f.nome)+'</option>').join(''); });
-    }).catch(()=>{});
+      fichaOperBlocos();
+    }).catch(()=>{ fichaOperBlocos(); });
+    // (18/10/2026) Padrão ManWinWin: Garantia e Contrato ficam inativos até marcar a caixa;
+    // ao marcar, o fornecedor vem pré-preenchido com o da Identificação (quem vendeu a máquina).
+    const fornIdent = () => { const s = document.getElementById('ne-forn'); return (s && s.value) || e.fornecedor_id || ''; };
+    window.fichaOperBlocos = function(mudou){
+      [['fg-on',['fg-data','fg-reg','fg-forn','fg-obs']],['fc-on',['fc-data','fc-val','fc-forn','fc-obs']]].forEach(([cb, ids]) => {
+        const on = !!(document.getElementById(cb)||{}).checked;
+        ids.forEach(i => { const el = document.getElementById(i); if (!el) return; el.disabled = !on; el.style.background = on ? '' : '#f1f3f8'; });
+        if (on && mudou === cb) {
+          const f = document.getElementById(ids[2]);
+          if (f && !f.value && fornIdent() && [...f.options].some(o => o.value === String(fornIdent()))) f.value = fornIdent();
+          const d = document.getElementById(ids[0]); if (d && !d.value) d.value = new Date().toISOString().slice(0,10);
+        }
+      });
+    };
+    ['fg-on','fc-on'].forEach(cb => { const el = document.getElementById(cb); if (el) el.onchange = () => fichaOperBlocos(cb); });
     // FMD: ☑ = FMD-R dos registros (travado, Data = último registro) · ☐ = manual obrigatório, usado nas previsões (MWW)
     (e.id ? mntFetch('/manutencao/api/equipamentos/'+e.id+'/ritmo') : Promise.reject(new Error('novo'))).then(r => {
       const el = document.getElementById('fi-ritmo'); if (!el) return;
@@ -4887,20 +4941,34 @@ function fichaAba(aba, alvo){
       + '<div style="display:flex;justify-content:flex-end;margin-top:10px"><button class="btn p" onclick="fichaSalvarCompl()">💾 Salvar</button></div>';
   }
   if (aba === 'notas'){
+    // (18/10/2026) Padrão ManWinWin: Nova Nota = data · funcionário · descrição · ficheiro (opcional).
+    // Diário do equipamento + pasta de documentos (NF, CRLV, seguro, manual…) no mesmo lugar.
     const dd = v => { try { return new Date(v).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',year:'2-digit',hour:'2-digit',minute:'2-digit'}); } catch(x){ return '—'; } };
-    c.innerHTML = '<div class="dsec">Notas — diário do equipamento (autor e data automáticos)</div>'
-      + '<div style="display:flex;gap:8px;padding:4px 0;border-bottom:2px solid #1A2A5E;font-size:10px;font-weight:700;color:#1A2A5E"><span style="width:100px">Data</span><span style="width:130px">Funcionário</span><span style="flex:1">Nota</span><span style="width:30px"></span></div>'
-      + '<div style="max-height:300px;overflow:auto">'
+    const ico = t => /pdf/.test(t||'') ? '📄' : /image/.test(t||'') ? '🖼' : /sheet|excel|csv/.test(t||'') ? '📊' : '📎';
+    const catOpts = '<option value="">— sem categoria —</option>' + DOC_CATS.map(c => '<option value="'+c.id+'">'+_esc(c.label)+'</option>').join('');
+    c.innerHTML = '<div class="dsec" style="display:flex;justify-content:space-between;align-items:center">Notas — diário e documentos do equipamento'
+      + '<button class="btn" style="font-size:10px" onclick="equipDocumentos(\''+e.id+'\')">📎 Só documentos (acervo)</button></div>'
+      + '<div style="display:flex;gap:8px;padding:4px 0;border-bottom:2px solid #1A2A5E;font-size:10px;font-weight:700;color:#1A2A5E"><span style="width:100px">Data</span><span style="width:120px">Funcionário</span><span style="flex:1">Nota</span><span style="width:190px">Ficheiro</span><span style="width:30px"></span></div>'
+      + '<div style="max-height:260px;overflow:auto">'
       + ((e.notas||[]).map(n =>
           '<div style="display:flex;gap:8px;padding:6px 0;border-bottom:1px solid #F1F5F9;align-items:baseline">'
           + '<span class="mono" style="font-size:10px;color:#64748B;white-space:nowrap;width:100px">'+dd(n.data_nota)+'</span>'
-          + '<span class="chip pe" style="font-size:9px;width:130px;overflow:hidden;text-overflow:ellipsis">'+_esc(n.usuario_nome||'—')+'</span>'
+          + '<span class="chip pe" style="font-size:9px;width:120px;overflow:hidden;text-overflow:ellipsis">'+_esc(n.usuario_nome||'—')+'</span>'
           + '<span style="flex:1;font-size:11px">'+_esc(n.descricao)+'</span>'
+          + '<span style="width:190px;font-size:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'
+          + (n.documento_id ? (n.doc_categoria ? '<span class="chip pr" style="font-size:9px">'+_esc(DOC_CAT_LABEL[n.doc_categoria]||n.doc_categoria)+'</span> ' : '')
+              + ico(n.doc_tipo) + ' <a href="'+_esc(n.doc_url||'#')+'" target="_blank" style="color:#1A2A5E;font-weight:700" title="'+_esc(n.doc_nome||'')+'">'+_esc(n.doc_nome||'ficheiro')+'</a>' : '')
+          + '</span>'
           + '<button class="btn" title="Excluir" data-id="'+n.id+'" onclick="fichaDelNota(this.dataset.id)">🗑</button></div>').join('')
         || '<div class="muted" style="padding:8px 0">Nenhuma nota ainda.</div>')
-      + '</div><div style="display:flex;gap:6px;margin-top:10px">'
-      + '<input id="fn-txt" placeholder="Nova nota — ex.: pneu dianteiro trocado, barulho no comando…" style="flex:1">'
-      + '<button class="btn p" onclick="fichaNovaNota()">➕ Registrar</button></div>';
+      + '</div>'
+      + '<div class="dsec" style="margin-top:10px">Nova nota</div>'
+      + '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:flex-end">'
+      + '<div class="mfield" style="flex:2;min-width:220px">Descrição<input id="fn-txt" placeholder="ex.: NF de compra · pneu dianteiro trocado · barulho no comando…"></div>'
+      + '<div class="mfield" style="width:170px">Categoria do ficheiro<select id="fn-cat">'+catOpts+'</select></div>'
+      + '<div class="mfield" style="flex:1;min-width:180px">Ficheiro (opcional, até 15 MB)<input type="file" id="fn-file" style="font-size:11px"></div>'
+      + '<button class="btn p" onclick="fichaNovaNota()">➕ Registrar</button></div>'
+      + '<div class="muted" style="font-size:10px;margin-top:4px">Com ficheiro, a nota também entra na pasta de documentos da máquina (categoria ajuda a achar: NF, CRLV, seguro…). Fotos e notinhas das OTs já vão para lá automaticamente.</div>';
   }
 }
 async function _fichaPatch(body, aba){
@@ -4990,11 +5058,19 @@ async function fichaFotoEnvia(input){
     await verEquipReal(_eqFicha.id, dest);
   } catch(e){ mostrarToast('❌ '+e.message,'warn'); }
 }
+let DOC_CATS = [], DOC_CAT_LABEL = {};
+async function _docCats(){
+  if (DOC_CATS.length) return;
+  try { DOC_CATS = await mntFetch('/manutencao/api/documentos-categorias'); DOC_CATS.forEach(c => DOC_CAT_LABEL[c.id] = c.label); } catch(e){}
+}
 async function fichaNovaNota(){
   const txt = document.getElementById('fn-txt').value.trim();
-  if (!txt) { mostrarToast('Escreva a nota','warn'); return; }
+  const inp = document.getElementById('fn-file'); const f = inp && inp.files && inp.files[0];
+  if (!txt && !f) { mostrarToast('Escreva a nota ou anexe um ficheiro','warn'); return; }
   try {
-    await mntFetch('/manutencao/api/equipamentos/'+_eqFicha.id+'/notas', {method:'POST', body: JSON.stringify({descricao: txt})});
+    const fd = new FormData(); fd.append('descricao', txt); fd.append('categoria', (document.getElementById('fn-cat')||{}).value || '');
+    if (f) fd.append('ficheiro', f, f.name);
+    await mntUpload('/manutencao/api/equipamentos/'+_eqFicha.id+'/notas-anexo', fd);
     const dest = _eqFichaDestino;
     await verEquipReal(_eqFicha.id, dest);
     { const t = document.querySelectorAll('.ne-tab'); if (t[4]) neAba(4, t[4]); }
