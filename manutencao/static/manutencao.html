@@ -2262,7 +2262,7 @@ async function novoEquipMW(copiarDe, editar){
     const sg = document.getElementById('ne-sigla'); if (sg) sg.value = base.tipo_sigla || sg.value;
     const nm = document.getElementById('ne-num'); if (nm && base.codigo) nm.value = String(base.codigo).split('-').slice(1).join('-');
     const dsc = document.getElementById('ne-desc'); if (dsc) dsc.value = base.descricao || '';
-    const nt = document.getElementById('ne-notas'); if (nt) nt.value = (typeof base.notas === 'string' && base.notas !== '[object Object]') ? base.notas : '';
+    const nt = document.getElementById('ne-notas'); if (nt) nt.value = (typeof base.notas === 'string' && !/^(\[object Object\],?\s*)+$/.test(base.notas.trim())) ? base.notas : '';
     const pl = document.getElementById('ne-placa'); if (pl) pl.value = base.placa || '';
     // blocos completos do MWW (Dados Operacionais · Info. Complementares · Notas-diário) abaixo dos campos base
     [['ne-p2','oper'],['ne-p3','compl'],['ne-p4','notas']].forEach(([pid, aba]) => {
