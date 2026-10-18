@@ -4,7 +4,7 @@
 #   aberta → em_andamento → aguardando_peca → concluida | cancelada
 # Categoria 'apoio' (Combinado) é EXCLUÍDA de OT por decisão de projeto.
 # ══════════════════════════════════════════════════════════════
-from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File, Form
 from fastapi.responses import HTMLResponse
 import os
 import re
@@ -12,7 +12,7 @@ from datetime import datetime
 
 from core.auth import verificar_token, verificar_gestor
 from core.db import ajard_query, ajard_query_id
-from core.storage import storage_upload, storage_url, storage_delete
+from core.storage import storage_upload, storage_url, storage_urls, storage_delete
 from core.helpers import comprimir_imagem
 from core.permissions import perfil_modulos_padrao
 
@@ -1092,9 +1092,11 @@ async def listar_pecas(busca: str = None, familia: str = None, limit: int = 100,
         where.append(f"({fe} = %s OR {fe} LIKE %s)")
         params += [familia.strip(), familia.strip() + ".%"]
     rows = await ajard_query(
-        f"""SELECT codigo, descricao, unidade, familia_codigo, custo_medio
+        f"""SELECT id, codigo, descricao, unidade, familia_codigo, custo_medio
             FROM manutencao.pecas WHERE {' AND '.join(where)}
             ORDER BY codigo LIMIT {limit}""", params)
+    for r in rows:
+        r["id"] = str(r["id"]) if r.get("id") is not None else None
     total = await ajard_query("SELECT COUNT(*)::int AS n FROM manutencao.pecas WHERE ativo=true", fetch="one")
     return {"total": total["n"], "itens": [dict(r) for r in rows]}
 
@@ -1562,33 +1564,20 @@ async def param_manuais_excluir(eq_id: str, codigo: str, ano: int, _auth=Depends
     return {"ok": True}
 
 
-@router.get("/manutencao/api/equipamentos/{eq_id}/documentos")
-async def docs_listar(eq_id: str, _auth=Depends(verificar_manutencao)):
-    await _garantir_mao_obra()
-    rows = await ajard_query(
-        """SELECT d.id, d.nome, d.path, d.content_type, d.tamanho, d.descricao, d.criado_em, u.nome AS usuario_nome
-           FROM manutencao.equipamento_documentos d
-           LEFT JOIN public.usuarios_garra u ON u.id = d.usuario_id
-           WHERE d.equipamento_id=%s AND d.ativo=true ORDER BY d.criado_em DESC""", (eq_id,)) or []
-    out = []
-    for r in rows:
-        out.append({"id": str(r["id"]), "nome": r["nome"], "content_type": r["content_type"],
-                    "tamanho": r["tamanho"], "descricao": r["descricao"],
-                    "criado_em": r["criado_em"].isoformat() if r["criado_em"] else None,
-                    "usuario_nome": r["usuario_nome"], "url": storage_url(r["path"])})
-    return out
+# (18/10/2026) Categorias dos documentos do objecto — a "pasta" da máquina.
+DOC_CATEGORIAS = [("nota_fiscal", "Nota fiscal"), ("crlv", "CRLV / licenciamento"), ("seguro", "Seguro"),
+                  ("contrato", "Contrato / financiamento"), ("manual", "Manual / catálogo"),
+                  ("laudo", "Laudo / inspeção"), ("foto_servico", "Foto do serviço"), ("outro", "Outro")]
+_DOC_CAT_OK = {c for c, _ in DOC_CATEGORIAS}
 
 
-@router.post("/manutencao/api/equipamentos/{eq_id}/documentos")
-async def docs_enviar(eq_id: str, ficheiro: UploadFile = File(...), descricao: str = None,
-                      payload=Depends(verificar_manutencao)):
-    """Anexo 'Ficheiro' do objecto: manual, nota fiscal, laudo, CRLV… (PDF,
-    imagem, planilha — até 15 MB). Vai ao bucket garra-fotos em
-    manutencao/equipamentos/{id}/docs/."""
-    await _garantir_mao_obra()
-    eq = await ajard_query("SELECT id FROM operacional.equipamentos WHERE id=%s", (eq_id,), fetch="one")
-    if not eq:
-        raise HTTPException(status_code=404, detail="Equipamento não encontrado")
+@router.get("/manutencao/api/documentos-categorias")
+async def docs_categorias(_auth=Depends(verificar_manutencao)):
+    return [{"id": c, "label": l} for c, l in DOC_CATEGORIAS]
+
+
+async def _doc_guardar(eq_id, ficheiro: UploadFile, descricao, categoria, uid, ot_id=None):
+    """Upload de um ficheiro do objecto (até 15 MB) para o Storage + linha em equipamento_documentos."""
     conteudo = await ficheiro.read()
     if not conteudo:
         raise HTTPException(status_code=400, detail="Arquivo vazio")
@@ -1598,13 +1587,79 @@ async def docs_enviar(eq_id: str, ficheiro: UploadFile = File(...), descricao: s
     nome = (ficheiro.filename or "ficheiro").strip()
     seguro = _re.sub(r"[^A-Za-z0-9._-]+", "_", nome)[:80]
     ctype = ficheiro.content_type or "application/octet-stream"
+    cat = (categoria or "").strip().lower()
+    if cat and cat not in _DOC_CAT_OK:
+        cat = "outro"
     path = storage_upload(conteudo, f"manutencao/equipamentos/{eq_id}/docs/{_uuid.uuid4().hex}_{seguro}", content_type=ctype)
-    uid = await _usuario_id(payload)
     row = await ajard_query_id(
-        """INSERT INTO manutencao.equipamento_documentos (equipamento_id, nome, path, content_type, tamanho, descricao, usuario_id)
-           VALUES (%s,%s,%s,%s,%s,%s,%s)""",
-        (eq_id, nome, path, ctype, len(conteudo), (descricao or "").strip() or None, uid))
+        """INSERT INTO manutencao.equipamento_documentos (equipamento_id, ot_id, nome, path, content_type, tamanho, descricao, categoria, usuario_id)
+           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+        (eq_id, ot_id, nome, path, ctype, len(conteudo), (descricao or "").strip() or None, cat or None, uid))
+    return row, path
+
+
+@router.get("/manutencao/api/equipamentos/{eq_id}/documentos")
+async def docs_listar(eq_id: str, _auth=Depends(verificar_manutencao)):
+    await _garantir_ficha_cols()
+    rows = await ajard_query(
+        """SELECT d.id, d.nome, d.path, d.content_type, d.tamanho, d.descricao, d.categoria, d.criado_em,
+                  u.nome AS usuario_nome, o.numero AS ot_numero
+           FROM manutencao.equipamento_documentos d
+           LEFT JOIN public.usuarios_garra u ON u.id = d.usuario_id
+           LEFT JOIN manutencao.ot o ON o.id = d.ot_id
+           WHERE d.equipamento_id=%s AND d.ativo=true ORDER BY d.criado_em DESC""", (eq_id,)) or []
+    urls = storage_urls([r["path"] for r in rows])
+    out = []
+    for r in rows:
+        out.append({"id": str(r["id"]), "nome": r["nome"], "content_type": r["content_type"],
+                    "tamanho": r["tamanho"], "descricao": r["descricao"], "categoria": r["categoria"],
+                    "ot_numero": r["ot_numero"],
+                    "criado_em": r["criado_em"].isoformat() if r["criado_em"] else None,
+                    "usuario_nome": r["usuario_nome"], "url": urls.get(r["path"], "")})
+    return out
+
+
+@router.post("/manutencao/api/equipamentos/{eq_id}/documentos")
+async def docs_enviar(eq_id: str, ficheiro: UploadFile = File(...), descricao: str = Form(None), categoria: str = Form(None),
+                      payload=Depends(verificar_manutencao)):
+    # (18/10/2026) descricao/categoria vêm no multipart → precisam de Form(); como query simples chegavam vazios.
+    """Anexo 'Ficheiro' do objecto: manual, nota fiscal, laudo, CRLV… (PDF,
+    imagem, planilha — até 15 MB). Vai ao bucket garra-fotos em
+    manutencao/equipamentos/{id}/docs/."""
+    await _garantir_ficha_cols()
+    eq = await ajard_query("SELECT id FROM operacional.equipamentos WHERE id=%s", (eq_id,), fetch="one")
+    if not eq:
+        raise HTTPException(status_code=404, detail="Equipamento não encontrado")
+    uid = await _usuario_id(payload)
+    row, path = await _doc_guardar(eq_id, ficheiro, descricao, categoria, uid)
     return {"ok": True, "id": str(row["id"]) if row else None, "url": storage_url(path)}
+
+
+@router.post("/manutencao/api/equipamentos/{eq_id}/notas-anexo")
+async def criar_nota_anexo(eq_id: str, descricao: str = Form(None), categoria: str = Form(None),
+                           ficheiro: UploadFile = File(None), payload=Depends(verificar_manutencao)):
+    """(18/10/2026) Nova Nota no padrão ManWinWin: descrição + ficheiro opcional.
+    O ficheiro entra na pasta do objecto (equipamento_documentos, com categoria)
+    e a nota aponta para ele — a aba Notas mostra o 📎 e o acervo lista o documento."""
+    await _garantir_ficha_cols()
+    descricao = (descricao or "").strip()
+    tem_arq = ficheiro is not None and bool(ficheiro.filename)
+    if not descricao and not tem_arq:
+        raise HTTPException(status_code=400, detail="Escreva a nota ou anexe um ficheiro")
+    eq = await ajard_query("SELECT id FROM operacional.equipamentos WHERE id=%s", (eq_id,), fetch="one")
+    if not eq:
+        raise HTTPException(status_code=404, detail="Equipamento não encontrado")
+    uid = await _usuario_id(payload)
+    doc_id = None
+    if tem_arq:
+        row, _ = await _doc_guardar(eq_id, ficheiro, descricao, categoria, uid)
+        doc_id = row["id"] if row else None
+        if not descricao:
+            descricao = f"📎 {ficheiro.filename}"
+    nota = await ajard_query_id(
+        "INSERT INTO manutencao.equipamento_notas (equipamento_id, usuario_id, descricao, documento_id) VALUES (%s,%s,%s,%s)",
+        (eq_id, uid, descricao, doc_id))
+    return {"ok": True, "id": str(nota["id"]) if nota else None, "documento_id": str(doc_id) if doc_id else None}
 
 
 @router.delete("/manutencao/api/documentos/{doc_id}")
@@ -2008,7 +2063,7 @@ async def ot_docs_listar(ot_id: str, _auth=Depends(verificar_manutencao)):
 
 
 @router.post("/manutencao/api/ots/{ot_id}/documentos")
-async def ot_docs_enviar(ot_id: str, ficheiro: UploadFile = File(...), descricao: str = None,
+async def ot_docs_enviar(ot_id: str, ficheiro: UploadFile = File(...), descricao: str = Form(None),
                          payload=Depends(verificar_manutencao)):
     await _garantir_mao_obra()
     await ajard_query("ALTER TABLE manutencao.equipamento_documentos ADD COLUMN IF NOT EXISTS ot_id UUID", fetch="none")
@@ -2486,11 +2541,17 @@ async def detalhe_equipamento(eq_id: str, _auth=Depends(verificar_manutencao)):
         """SELECT codigo, descricao, posicao FROM operacional.equipamentos
            WHERE equipamento_pai=%s ORDER BY codigo""", (eq_id,))
     notas = await ajard_query(
-        """SELECT n.id, n.data_nota, n.descricao, u.nome AS usuario_nome
+        """SELECT n.id, n.data_nota, n.descricao, u.nome AS usuario_nome,
+                  d.id AS documento_id, d.nome AS doc_nome, d.path AS doc_path, d.categoria AS doc_categoria, d.content_type AS doc_tipo
            FROM manutencao.equipamento_notas n
            LEFT JOIN public.usuarios_garra u ON u.id = n.usuario_id
+           LEFT JOIN manutencao.equipamento_documentos d ON d.id = n.documento_id AND d.ativo=true
            WHERE n.equipamento_id=%s AND n.ativo=true
            ORDER BY n.data_nota DESC""", (eq_id,))
+    _urls = storage_urls([x["doc_path"] for x in notas if x.get("doc_path")])
+    for x in notas:
+        x["doc_url"] = _urls.get(x["doc_path"], "") if x.get("doc_path") else None
+        x.pop("doc_path", None)
     oper = None
     if eq.get("operador_responsavel_id"):
         o = await ajard_query("SELECT nome FROM public.usuarios_garra WHERE id=%s",
@@ -2589,6 +2650,11 @@ async def _garantir_ficha_cols():
             descricao TEXT NOT NULL,
             ativo BOOLEAN DEFAULT true,
             criado_em TIMESTAMPTZ DEFAULT now())""", fetch="none")
+    # (18/10/2026) Nota com ficheiro (padrão ManWinWin: Nova Nota = data · funcionário · descrição · ficheiro)
+    await ajard_query("ALTER TABLE manutencao.equipamento_notas ADD COLUMN IF NOT EXISTS documento_id UUID", fetch="none")
+    await _garantir_mao_obra()
+    await ajard_query("ALTER TABLE manutencao.equipamento_documentos ADD COLUMN IF NOT EXISTS categoria TEXT", fetch="none")
+    await ajard_query("ALTER TABLE manutencao.equipamento_documentos ADD COLUMN IF NOT EXISTS ot_id UUID", fetch="none")
     _FICHA_COLS_OK = True
 
 
