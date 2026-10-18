@@ -2562,7 +2562,12 @@ async def detalhe_equipamento(eq_id: str, _auth=Depends(verificar_manutencao)):
     d["planos"] = [dict(x) for x in planos]
     d["ots"] = [dict(x) for x in ots]
     d["componentes"] = [dict(x) for x in filhos]
-    d["notas"] = [dict(n) for n in notas]
+    # (18/10/2026) `notas` (coluna texto = observações livres) ≠ diário de notas: a lista ia no mesmo nome,
+    # sobrescrevia o texto e a ficha gravava "[object Object]" de volta no banco.
+    d["notas_lista"] = [dict(n) for n in notas]
+    if isinstance(d.get("notas"), str) and d["notas"].strip() == "[object Object]":
+        d["notas"] = None
+        await ajard_query("UPDATE operacional.equipamentos SET notas=NULL WHERE id=%s AND notas='[object Object]'", (eq_id,), fetch="none")
     d["operador_nome"] = oper
     d["foto_url"] = storage_url(d["foto_path"]) if d.get("foto_path") else None
     return d
