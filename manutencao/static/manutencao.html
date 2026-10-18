@@ -2250,7 +2250,7 @@ async function novoEquipMW(copiarDe, editar){
     + fld('Posi\u00e7\u00e3o (no pai)', inp('ne-pos', base.posicao||'', 'ex.: dianteiro esquerdo'),1)
     + '</div></div>'
     // aba 4 — Notas
-    + '<div class="ne-pane" id="ne-p4"><textarea id="ne-notas" style="width:100%;min-height:160px;font-size:12px;padding:8px;border:1px solid #CBD5E1;border-radius:6px" placeholder="Observa\u00e7\u00f5es livres sobre o objeto\u2026"></textarea></div>'
+    + '<div class="ne-pane" id="ne-p4">'+fld('Observa\u00e7\u00f5es gerais do objeto (texto fixo do cadastro)','<textarea id="ne-notas" rows="2" style="width:100%;font-size:12px;padding:6px;border:1px solid #CBD5E1;border-radius:6px" placeholder="ex.: m\u00e1quina alugada com op\u00e7\u00e3o de compra \u00b7 chave reserva no escrit\u00f3rio\u2026"></textarea>')+'</div>'
     // rodapé
     + '<div style="display:flex;justify-content:flex-end;gap:8px;margin-top:10px;border-top:1px solid #E2E8F0;padding-top:8px">'
     + '<button class="btn p" style="min-width:90px" onclick="neSalvar(true)">OK</button><button class="btn" onclick="fichaFechar()">Cancelar</button><button class="btn" onclick="neSalvar(false)">Aplicar</button></div>';
@@ -2262,7 +2262,7 @@ async function novoEquipMW(copiarDe, editar){
     const sg = document.getElementById('ne-sigla'); if (sg) sg.value = base.tipo_sigla || sg.value;
     const nm = document.getElementById('ne-num'); if (nm && base.codigo) nm.value = String(base.codigo).split('-').slice(1).join('-');
     const dsc = document.getElementById('ne-desc'); if (dsc) dsc.value = base.descricao || '';
-    const nt = document.getElementById('ne-notas'); if (nt) nt.value = base.notas || '';
+    const nt = document.getElementById('ne-notas'); if (nt) nt.value = (typeof base.notas === 'string' && base.notas !== '[object Object]') ? base.notas : '';
     const pl = document.getElementById('ne-placa'); if (pl) pl.value = base.placa || '';
     // blocos completos do MWW (Dados Operacionais · Info. Complementares · Notas-diário) abaixo dos campos base
     [['ne-p2','oper'],['ne-p3','compl'],['ne-p4','notas']].forEach(([pid, aba]) => {
@@ -4950,7 +4950,7 @@ function fichaAba(aba, alvo){
       + '<button class="btn" style="font-size:10px" onclick="equipDocumentos(\''+e.id+'\')">📎 Só documentos (acervo)</button></div>'
       + '<div style="display:flex;gap:8px;padding:4px 0;border-bottom:2px solid #1A2A5E;font-size:10px;font-weight:700;color:#1A2A5E"><span style="width:100px">Data</span><span style="width:120px">Funcionário</span><span style="flex:1">Nota</span><span style="width:190px">Ficheiro</span><span style="width:30px"></span></div>'
       + '<div style="max-height:260px;overflow:auto">'
-      + ((e.notas||[]).map(n =>
+      + ((e.notas_lista||[]).map(n =>
           '<div style="display:flex;gap:8px;padding:6px 0;border-bottom:1px solid #F1F5F9;align-items:baseline">'
           + '<span class="mono" style="font-size:10px;color:#64748B;white-space:nowrap;width:100px">'+dd(n.data_nota)+'</span>'
           + '<span class="chip pe" style="font-size:9px;width:120px;overflow:hidden;text-overflow:ellipsis">'+_esc(n.usuario_nome||'—')+'</span>'
