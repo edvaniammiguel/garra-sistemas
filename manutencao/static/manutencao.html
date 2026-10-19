@@ -3814,6 +3814,79 @@ function otFechar(){
   if (otCabecalhoSujo() && confirm('A descrição da OT foi alterada e não foi gravada.\n\nGravar antes de fechar?')) { salvarOrigem(true); return; }
   document.getElementById('eq-ficha').classList.remove('show');
 }
+// (19/10/2026) Encerramento na própria ficha (aba Gestão): estado por OT, com defaults vindos do app
+let _otEncState = {};
+function otEncLocal(d){ const x = new Date(d); if (isNaN(x)) return ''; const p = n => String(n).padStart(2,'0'); return x.getFullYear()+'-'+p(x.getMonth()+1)+'-'+p(x.getDate())+'T'+p(x.getHours())+':'+p(x.getMinutes()); }
+function otEncEstado(o){
+  const id = String(o.id);
+  if (!_otEncState[id]){
+    const aps = (o.apontamentos||[]).slice();
+    const ultimo = aps.slice().sort((a,b) => String(b.criado_em||'').localeCompare(String(a.criado_em||'')))[0] || null;
+    const comHor = aps.filter(a => a.horimetro != null && a.horimetro !== '').sort((a,b) => parseFloat(b.horimetro)-parseFloat(a.horimetro))[0] || null;
+    _otEncState[id] = { data: otEncLocal(ultimo && ultimo.criado_em ? ultimo.criado_em : new Date()),
+                        hor: comHor ? String(comHor.horimetro) : '', horApp: comHor ? String(comHor.horimetro) : '',
+                        obs: aps.slice().reverse().map(a => a.relato).filter(Boolean).join(' · '), hp: '' };
+  }
+  return _otEncState[id];
+}
+function otEncGuardar(campo, v){ if (_otAberta) { otEncEstado(_otAberta)[campo] = v; } }
+// (19/10/2026) Janela "Encerrar OT" (usada só quando a ficha NÃO está aberta — ex.: botão direito na lista): devolve {data_conclusao(ISO), horimetro, custo, horas_parada, obs} ou null
+function otEncerrarDialogo(id){
+  return new Promise(async resolve => {
+    let o = {}, ap = {apontamentos:[]};
+    try { o = await mntFetch('/manutencao/api/ots/'+id); } catch(e){}
+    try { ap = await mntFetch('/manutencao/api/ots/'+id+'/apontamentos'); } catch(e){}
+    const aps = (ap.apontamentos||[]).slice();
+    const ultimo = aps.slice().sort((a,b) => String(b.criado_em||'').localeCompare(String(a.criado_em||'')))[0] || null;
+    const comHor = aps.filter(a => a.horimetro != null && a.horimetro !== '').sort((a,b) => parseFloat(b.horimetro)-parseFloat(a.horimetro))[0] || null;
+    const rel = aps.slice().reverse().map(a => a.relato).filter(Boolean).join(' · ');
+    const km = (o.equipamento_medicao || '') === 'km';
+    const unid = km ? 'km' : 'h';
+    const contador = km ? o.equipamento_km : o.equipamento_horimetro;
+    const _local = d => { const x = new Date(d); if (isNaN(x)) return ''; const p = n => String(n).padStart(2,'0'); return x.getFullYear()+'-'+p(x.getMonth()+1)+'-'+p(x.getDate())+'T'+p(x.getHours())+':'+p(x.getMinutes()); };
+    const dtSug = _local(ultimo && ultimo.criado_em ? ultimo.criado_em : new Date());
+    const horSug = comHor ? String(comHor.horimetro) : '';
+    const custoSug = o.custo_total != null ? String(o.custo_total).replace('.', ',') : '';
+    let b = document.getElementById('ot-encerrar');
+    if (!b){
+      b = document.createElement('div'); b.id = 'ot-encerrar';
+      b.style.cssText = 'position:fixed;inset:0;z-index:9998;background:rgba(15,23,42,.45);display:none;align-items:center;justify-content:center';
+      document.body.appendChild(b);
+    }
+    const fechar = v => { b.style.display = 'none'; resolve(v); };
+    b.innerHTML = '<div style="background:#fff;border-radius:10px;box-shadow:0 12px 32px rgba(15,23,42,.3);padding:16px;width:560px;max-width:94vw">'
+      + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><b style="color:#1A2A5E">🗂️ Encerrar '+_esc(o.numero||'OT')+' — '+_esc(o.equipamento_codigo||'')+'</b><span id="ote-x" style="cursor:pointer;font-size:16px">✕</span></div>'
+      + '<div style="display:flex;gap:8px;flex-wrap:wrap">'
+      + '<div class="mfield" style="width:200px">Data/hora de conclusão *<input id="ote-data" type="datetime-local" value="'+dtSug+'" max="'+_local(new Date())+'"></div>'
+      + '<div class="mfield" style="width:160px">'+(km?'Km':'Horímetro')+' na conclusão ('+unid+')<input id="ote-hor" inputmode="decimal" value="'+_esc(horSug)+'" placeholder="'+(contador != null ? 'contador: '+contador : 'leitura')+'"></div>'
+      + '<div class="mfield" style="flex:1;min-width:150px;align-self:flex-end"><span class="muted" style="font-size:10px">'+(contador != null ? 'Contador atual da máquina: <b>'+_esc(contador)+' '+unid+'</b>' : 'Máquina sem contador registrado')+(comHor ? ' · do app: '+_esc(comHor.horimetro) : '')+'</span></div>'
+      + '</div>'
+      + '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px">'
+      + '<div class="mfield" style="width:160px">Custo total (R$)<input id="ote-custo" inputmode="decimal" value="'+_esc(custoSug)+'"></div>'
+      + '<div class="mfield" style="width:220px">Horas de máquina PARADA (opcional)<input id="ote-hp" inputmode="decimal" placeholder="indisponibilidade"></div>'
+      + '</div>'
+      + '<div class="mfield" style="margin-top:6px">O que foi feito'+(rel?' <span class="muted" style="font-size:10px">(veio do app — edite se quiser)</span>':'')+'<textarea id="ote-obs" rows="4" style="width:100%">'+_esc(rel)+'</textarea></div>'
+      + '<div class="muted" style="font-size:10px;margin-top:4px">A leitura informada vira a última leitura da máquina (Registo Funcionamento, fonte OT) e a baseline da preventiva vinculada.</div>'
+      + '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px"><button class="btn" id="ote-cancel">Cancelar</button><button class="btn p" id="ote-ok">✔ Encerrar OT</button></div>'
+      + '</div>';
+    b.style.display = 'flex';
+    document.getElementById('ote-x').onclick = () => fechar(null);
+    document.getElementById('ote-cancel').onclick = () => fechar(null);
+    document.getElementById('ote-ok').onclick = () => {
+      const g = i => (document.getElementById(i).value || '').trim();
+      const n = v => v === '' ? null : (parseFloat(v.replace(',', '.')) || null);
+      const dt = g('ote-data');
+      if (!dt) { mostrarToast('📅 Informe a data/hora de conclusão', 'warn'); return; }
+      if (new Date(dt) > new Date(Date.now() + 10*60000)) { mostrarToast('📅 Data de conclusão no futuro', 'warn'); return; }
+      const hor = g('ote-hor');
+      if (hor !== '' && isNaN(parseFloat(hor.replace(',', '.')))) { mostrarToast('🔢 Leitura inválida', 'warn'); return; }
+      if (hor !== '' && contador != null && parseFloat(hor.replace(',', '.')) < parseFloat(contador) * 0.5) { if (!confirm('A leitura '+hor+' está bem abaixo do contador atual ('+contador+' '+unid+'). Confirmar mesmo assim?')) return; }
+      fechar({ data_conclusao: new Date(dt).toISOString(), horimetro: hor === '' ? null : parseFloat(hor.replace(',', '.')),
+               custo: n(g('ote-custo')), horas_parada: n(g('ote-hp')), obs: g('ote-obs') || null });
+    };
+    setTimeout(() => { const e = document.getElementById('ote-hor'); if (e && !e.value) e.focus(); }, 50);
+  });
+}
 async function mntStatusReal(id, novo){
   let obs = null, custo = null;
   let horasParada = null;
@@ -3829,22 +3902,26 @@ async function mntStatusReal(id, novo){
         return;
       }
     } catch(e) {}
-    // (15/10/2026) Aproveita o que o mecânico já registrou pelo app: relato(s) e horas de MO.
-    let sugObs = '', sugCusto = '';
-    try {
-      const ap = await mntFetch('/manutencao/api/ots/'+id+'/apontamentos');
-      const rel = (ap.apontamentos||[]).slice().reverse().map(a => a.relato).filter(Boolean);
-      if (rel.length) sugObs = rel.join(' · ');
-      const _o2 = await mntFetch('/manutencao/api/ots/'+id);
-      if (_o2.custo_total != null) sugCusto = String(_o2.custo_total).replace('.', ',');
-    } catch(e) {}
-    const c = prompt('Custo total (R$):', sugCusto); if (c === null) return;
-    custo = parseFloat(String(c).replace(',','.')) || null;
-    const hp = prompt('Horas de máquina PARADA por esta manutenção (indisponibilidade — opcional):','');
-    if (hp === null) return;
-    if (hp) horasParada = parseFloat(String(hp).replace(',','.')) || null;
-    obs = prompt('O que foi feito:' + (sugObs ? ' (já veio do app — edite se quiser)' : ''), sugObs);
-    if (obs === null) return; obs = obs || null;
+    // (19/10/2026) Janela única de encerramento (substitui a cadeia de prompts): data/hora de conclusão,
+    // leitura (horímetro/km) no fim do serviço, custo, horas paradas e relato — pré-preenchidos com o que
+    // o mecânico registrou pelo app.
+    let dados = null;
+    if (_otAberta && String(_otAberta.id) === String(id) && document.getElementById('eq-ficha') && document.getElementById('eq-ficha').classList.contains('show')){
+      // ficha aberta: os campos estão na aba Gestão (Fim · leitura · PDI · o que foi feito)
+      const s = otEncEstado(_otAberta);
+      const n = v => String(v ?? '').trim() === '' ? null : (parseFloat(String(v).replace(',', '.')) || null);
+      if (!s.data){ otAba('gestao'); mostrarToast('📅 Informe a data/hora de conclusão (aba Gestão → Fim)', 'warn'); setTimeout(() => { const e = document.getElementById('ot-enc-data'); if (e) e.focus(); }, 120); return; }
+      if (new Date(s.data) > new Date(Date.now() + 10*60000)){ otAba('gestao'); mostrarToast('📅 Data de conclusão no futuro', 'warn'); return; }
+      if (String(s.hor).trim() !== '' && isNaN(parseFloat(String(s.hor).replace(',', '.')))){ otAba('gestao'); mostrarToast('🔢 Leitura (horímetro/km) inválida', 'warn'); return; }
+      const km = (_otAberta.equipamento_medicao||'') === 'km';
+      const dtTxt = new Date(s.data).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',year:'2-digit',hour:'2-digit',minute:'2-digit'});
+      if (!confirm('Encerrar '+(_otAberta.numero||'a OT')+'?\n\nFim: '+dtTxt+'\n'+(km?'Km':'Horímetro')+': '+(String(s.hor).trim() || '— (não informado)')+'\nHoras paradas: '+(String(s.hp).trim() || '—')+'\nCusto total: R$ '+(_otAberta.custo_total != null ? parseFloat(_otAberta.custo_total).toFixed(2) : '0,00'))) return;
+      dados = { data_conclusao: new Date(s.data).toISOString(), horimetro: n(s.hor), custo: _otAberta.custo_total != null ? parseFloat(_otAberta.custo_total) : null, horas_parada: n(s.hp), obs: String(s.obs||'').trim() || null };
+    } else {
+      dados = await otEncerrarDialogo(id); if (!dados) return;
+    }
+    custo = dados.custo; horasParada = dados.horas_parada; obs = dados.obs;
+    var extraEnc = { data_conclusao: dados.data_conclusao, horimetro: dados.horimetro };
   }
   if (novo === 'cancelada'){
     if (!confirm('⚠️ Isto CANCELA a OT (não é cancelar a edição).\n\nContinuar?')) return;
@@ -3855,8 +3932,8 @@ async function mntStatusReal(id, novo){
     if (_o3 && ['concluida','cancelada'].includes(_o3.status)) { obs = _pedirMotivo('Reabrir esta OT'); if (!obs) return; }
   }
   try {
-    await mntFetch('/manutencao/api/ots/'+id+'/status', {method:'PATCH', body: JSON.stringify({status:novo, observacao:obs, custo_total:custo, horas_parada:horasParada})});
-    mostrarToast('✅ OT atualizada','ok');
+    await mntFetch('/manutencao/api/ots/'+id+'/status', {method:'PATCH', body: JSON.stringify(Object.assign({status:novo, observacao:obs, custo_total:custo, horas_parada:horasParada}, (typeof extraEnc !== 'undefined' && extraEnc) || {}))});
+    mostrarToast('✅ OT atualizada','ok'); delete _otEncState[String(id)];
     carregarOTsReais(); carregarSemaforosReais();
   } catch(e){ mostrarToast('❌ '+e.message,'warn'); }
 }
@@ -4509,9 +4586,18 @@ function otAba(aba){
       + linha('Prog. Início', (o.data_prevista ? _fmtData(o.data_prevista) : '—')
               + ' · horím. previsto ' + (o.horimetro_previsto ?? '—') + (o.prog_alterada ? ' <span style="color:#92400E;font-size:10px">✎ alterada</span>' : ''), true)
       + linha('Início real', inicioReal ? dd(h1.criado_em) : '—', true)
-      + linha('Fim', fim ? dd(o.data_conclusao) : '—', true)
-      + linha('Encerramento', (o.observacao_conclusao ? _esc(o.observacao_conclusao) : '—')
-              + (o.custo_total != null ? ' · R$ ' + parseFloat(o.custo_total).toFixed(2) : ''))
+      + (['programada','aberta','em_andamento','aguardando_peca'].includes(o.status)
+          // (19/10/2026) Encerramento preenchido AQUI, na tela: Fim (data/hora) e leitura da máquina.
+          // O botão "Encerrar…" lê estes campos — sem janela extra.
+          ? (function(){ const s = otEncEstado(o); const km = (o.equipamento_medicao||'') === 'km'; const cont = km ? o.equipamento_km : o.equipamento_horimetro;
+              return linha('Fim', '<input type="datetime-local" id="ot-enc-data" value="'+_esc(s.data)+'" max="'+_esc(otEncLocal(new Date()))+'" style="width:175px;font-size:11px" oninput="otEncGuardar(\'data\',this.value)"> '
+                + '<span class="muted" style="font-size:10px">'+(km?'km':'horím.')+'</span> <input id="ot-enc-hor" inputmode="decimal" value="'+_esc(s.hor)+'" placeholder="'+(cont != null ? 'contador '+cont : 'leitura')+'" style="width:90px;font-size:11px" oninput="otEncGuardar(\'hor\',this.value)">'
+                + (s.horApp ? ' <span class="muted" style="font-size:10px">(do app: '+_esc(s.horApp)+')</span>' : ''), true)
+              + linha('Encerramento', '<textarea id="ot-enc-obs" rows="2" style="width:100%;font-size:11px" placeholder="o que foi feito" oninput="otEncGuardar(\'obs\',this.value)">'+_esc(s.obs)+'</textarea>'
+                + '<div class="muted" style="font-size:10px;margin-top:2px">Custo total: R$ '+(o.custo_total != null ? parseFloat(o.custo_total).toFixed(2) : '0,00')+' (aba Custos) · preencha e clique <b>Encerrar…</b> embaixo</div>'); })()
+          : linha('Fim', fim ? dd(o.data_conclusao) + (o.horimetro_conclusao != null ? ' · horím. ' + o.horimetro_conclusao : '') : '—', true)
+            + linha('Encerramento', (o.observacao_conclusao ? _esc(o.observacao_conclusao) : '—')
+              + (o.custo_total != null ? ' · R$ ' + parseFloat(o.custo_total).toFixed(2) : '')))
       + (['programada','aberta','em_andamento','aguardando_peca'].includes(o.status)
           ? '<div style="padding:8px 0 0"><button class="btn" onclick="abrirReprogramar()">⚙ Avançado — Programação (data ↔ horímetro pelo ritmo real)</button></div>'
           : '')
@@ -4520,7 +4606,9 @@ function otAba(aba){
       + '<div style="font-weight:800;color:#1A2A5E;font-size:11px;margin-bottom:4px">Tempos e Indisponibilidades</div>'
       + tempo('TDE','Tempo De Espera — da abertura ao início da intervenção', tde, abertura && inicioReal ? 'assumido das datas' : '')
       + tempo('TDM','Tempo De Manutenção — duração da intervenção', tdm, inicioReal ? 'assumido das datas' : '')
-      + tempo('PDI','Paragem Devido à Intervenção — horas de máquina parada', o.horas_parada != null ? String(o.horas_parada).replace('.',',')+' h' : '—', o.horas_parada != null ? 'digitado no encerramento' : '')
+      + (['programada','aberta','em_andamento','aguardando_peca'].includes(o.status)
+          ? tempo('PDI','Paragem Devido à Intervenção — horas de máquina parada', '<input id="ot-enc-hp" inputmode="decimal" value="'+_esc(otEncEstado(o).hp)+'" placeholder="h paradas" style="width:70px;font-size:11px" oninput="otEncGuardar(\'hp\',this.value)"> h', 'digite no encerramento')
+          : tempo('PDI','Paragem Devido à Intervenção — horas de máquina parada', o.horas_parada != null ? String(o.horas_parada).replace('.',',')+' h' : '—', o.horas_parada != null ? 'digitado no encerramento' : ''))
       + tempo('TDR','Tempo De Reparação — horas de mão de obra apontadas', o.mo_horas ? String(o.mo_horas).replace('.',',')+' h' : '—', o.mo_horas ? 'soma da aba Mão de Obra' : 'entra com Mão de Obra')
       + '<div class="muted" style="margin-top:6px;line-height:1.5">PDI é o que vira dinheiro: máquina parada = diária perdida. Alimenta o KPI de Disponibilidade no BI.</div>'
       + '</div></div>'
