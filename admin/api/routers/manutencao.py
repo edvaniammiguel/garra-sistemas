@@ -7,6 +7,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File, Form
 from fastapi.responses import HTMLResponse
 import os
+import json as _json
 import re
 from datetime import datetime
 
@@ -1039,10 +1040,24 @@ async def semaforos_frota(_auth=Depends(verificar_manutencao)):
 # (30/09/2026) Família EFETIVA da peça: a cadastrada quando já tem subfamília (AC.010);
 # senão a que a própria codificação carrega (C.AC.010.001 → AC.010). Assim a Norma de
 # Materiais mostra as subfamílias mesmo onde o cadastro só apontou a raiz (AC).
+def _classe_cond(alias: str = "") -> str:
+    """(19/10/2026) Filtro por CLASSE da Norma ('@G'): classe gravada na peça,
+    ou prefixo do código (G.BT.010…), ou classe da família cadastrada."""
+    a = f"{alias}." if alias else ""
+    fe = _fam_efetiva(alias)
+    return (f"(upper(COALESCE({a}classe,'')) = %s OR upper({a}codigo) LIKE %s "
+            f"OR split_part({fe},'.',1) IN (SELECT codigo FROM manutencao.familias WHERE upper(COALESCE(classe,''))=%s))")
+
+
+def _classe_params(familia: str) -> list:
+    cl = familia.strip()[1:].upper()
+    return [cl, cl + ".%", cl]
+
+
 def _fam_efetiva(alias: str = "") -> str:
     a = f"{alias}." if alias else ""
     return (f"CASE WHEN {a}familia_codigo LIKE '%%.%%' THEN {a}familia_codigo "
-            f"WHEN {a}codigo ~ '^C\\.[A-Za-z0-9]+\\.[0-9]+\\.' THEN split_part({a}codigo,'.',2)||'.'||split_part({a}codigo,'.',3) "
+            f"WHEN {a}codigo ~ '^[A-Za-z]\\.[A-Za-z0-9]+\\.[0-9]+\\.' THEN split_part({a}codigo,'.',2)||'.'||split_part({a}codigo,'.',3) "
             f"ELSE {a}familia_codigo END")
 
 
@@ -1086,7 +1101,11 @@ async def listar_pecas(busca: str = None, familia: str = None, limit: int = 100,
     if busca and busca.strip():
         b = f"%{_sem_acento(busca.strip())}%"
         where.append("(" + " OR ".join(f"{_sem_acento_sql(c)} ILIKE %s" for c in ("codigo", "descricao", "codigo_externo", "codigo_fabricante")) + ")"); params += [b, b, b, b]
-    if familia and familia.strip():
+    if familia and familia.strip().startswith("@"):
+        # (19/10/2026) '@G' = toda uma CLASSE da Norma (classe gravada na peça
+        # OU prefixo do código OU classe da família cadastrada)
+        where.append(_classe_cond()); params += _classe_params(familia)
+    elif familia and familia.strip():
         # subfamílias por pontuação (MC pega MC e MC.010…)
         fe = _fam_efetiva()
         where.append(f"({fe} = %s OR {fe} LIKE %s)")
@@ -3159,6 +3178,12 @@ _DOMINIOS_PARAM = {
     "tipos-equipamento": "manutencao.tipos_equipamento",
     "sistemas": "manutencao.sistemas",
     "familias": "manutencao.familias",
+    # (19/10/2026) Norma de materiais em 3 níveis (ManWinWin ARQ01/02/03): Classe → Família → Subfamília.
+    # Classe mora aqui; famílias ganham coluna `classe`; subfamílias continuam como "BT.010".
+    "classes-materiais": "manutencao.classes_materiais",
+    # (19/10/2026) Famílias de OBJETOS (escavadeiras, caminhões…) separadas da Norma de
+    # materiais (AC, AU, MC…): as duas moravam em manutencao.familias e colidiam (CB).
+    "familias-objetos": "manutencao.familias_objetos",
     "sintomas": "manutencao.sintomas",
     "causas": "manutencao.causas",
     "centros-custo": "manutencao.centros_custo",
@@ -3186,6 +3211,8 @@ async def _garantir_dominios():
             f"""CREATE TABLE IF NOT EXISTS {_t} (
                 codigo TEXT PRIMARY KEY, nome TEXT, ativo BOOLEAN DEFAULT true)""",
             fetch="none")
+    await ajard_query("ALTER TABLE manutencao.familias ADD COLUMN IF NOT EXISTS classe TEXT", fetch="none")
+    await ajard_query("ALTER TABLE manutencao.familias ADD COLUMN IF NOT EXISTS caracteristicas JSONB", fetch="none")
     # (26/09/2026) Hierarquia ManWinWin dos Tipos de Trabalho (domínio "tipos-manutencao",
     # o que alimenta a árvore de OTs): a letra é a pasta, o subtipo (A1, C1, C2…) é o
     # que a OT/FMP recebe. Idempotente: só insere o que falta; nomes existentes ficam.
@@ -3466,6 +3493,8 @@ async def editar_dominio(dominio: str, codigo: str, request: Request, payload=De
         sets.append("ativo=%s"); params.append(bool(d["ativo"]))
     if "rubrica" in d and "combustiveis" in tabela:
         sets.append("rubrica=%s"); params.append((d.get("rubrica") or "").strip() or None)
+    if "classe" in d and tabela == "manutencao.familias":
+        sets.append("classe=%s"); params.append((d.get("classe") or "").strip().upper() or None)
     if not sets:
         raise HTTPException(status_code=400, detail="Nada a alterar")
     params.append(codigo)
@@ -3504,7 +3533,15 @@ async def listar_dominio(dominio: str, _auth=Depends(verificar_manutencao)):
         raise HTTPException(status_code=404, detail="Domínio não parametrizável")
     await ajard_query(f"ALTER TABLE {tabela} ADD COLUMN IF NOT EXISTS ativo BOOLEAN DEFAULT true", fetch="none")
     rows = await ajard_query(f"SELECT * FROM {tabela} ORDER BY 1")
-    return [dict(r) for r in rows]
+    out = []
+    for r in rows:
+        d = dict(r)
+        # (19/10/2026) JSONB chega como texto do asyncpg → lista (características da subfamília)
+        if isinstance(d.get("caracteristicas"), str):
+            try: d["caracteristicas"] = _json.loads(d["caracteristicas"])
+            except Exception: pass
+        out.append(d)
+    return out
 
 
 @router.post("/manutencao/api/param/{dominio}")
@@ -3522,6 +3559,9 @@ async def upsert_dominio(dominio: str, request: Request, payload=Depends(verific
         f"""INSERT INTO {tabela} ({pk}, nome) VALUES (%s,%s)
             ON CONFLICT ({pk}) DO UPDATE SET nome=EXCLUDED.nome""",
         (cod, nome), fetch="none")
+    if tabela == "manutencao.familias" and (d.get("classe") or "").strip():
+        await ajard_query("UPDATE manutencao.familias SET classe=%s, ativo=true WHERE codigo=%s",
+                          ((d.get("classe") or "").strip().upper(), cod), fetch="none")
     return {"ok": True}
 
 
@@ -4198,19 +4238,26 @@ async def lente_armazem(almox: str = None, busca: str = None, familia: str = Non
     existência física por peça×local — saldo, endereço C-P-N, mínimo e
     custo médio. Sem filtro de local = todas as existências."""
     await _garantir_estoque_cols()
-    cond, params = ["p.ativo = true", "a.ativo = true"], []
+    # (19/10/2026) cada condição carrega os próprios parâmetros e diz se só
+    # depende da peça (vale também no modo "incluir zerados", que faz LEFT JOIN)
+    conds = [("p.ativo = true", [], True), ("a.ativo = true", [], False)]
     if almox:
-        cond.append("a.codigo = %s"); params.append(almox)
+        conds.append(("a.codigo = %s", [almox], False))
     if busca:
-        cond.append("(" + " OR ".join(f"{_sem_acento_sql(c)} ILIKE %s" for c in ("p.codigo", "p.descricao", "p.codigo_externo", "p.codigo_fabricante")) + ")")
-        params += [f"%{_sem_acento(busca)}%"] * 4
-    if familia:
+        conds.append(("(" + " OR ".join(f"{_sem_acento_sql(c)} ILIKE %s" for c in ("p.codigo", "p.descricao", "p.codigo_externo", "p.codigo_fabricante")) + ")",
+                      [f"%{_sem_acento(busca)}%"] * 4, True))
+    if familia and familia.startswith("@"):
+        conds.append((_classe_cond("p"), _classe_params(familia), True))
+    elif familia:
         fe = _fam_efetiva("p")
-        cond.append(f"({fe} = %s OR {fe} LIKE %s)"); params += [familia, familia + ".%"]
+        conds.append((f"({fe} = %s OR {fe} LIKE %s)", [familia, familia + ".%"], True))
+    cond = [c for c, _, _ in conds]
+    params = [x for _, ps, _ in conds for x in ps]
     if incluir_zerados:
         # catálogo inteiro com saldo 0 quando sem registro — para endereçar
         # C-P-N e definir mínimos antes da primeira entrada
-        cond_p = [c for c in cond if c.startswith("p.")]
+        cond_p = [c for c, _, so_p in conds if so_p]
+        params_p = [x for _, ps, so_p in conds if so_p for x in ps]
         rows = await ajard_query(
             f"""SELECT p.codigo, p.descricao, p.unidade, p.custo_medio, p.familia_codigo,
                        COALESCE(a.codigo, %s) AS almox,
@@ -4222,8 +4269,7 @@ async def lente_armazem(almox: str = None, busca: str = None, familia: str = Non
                   {'AND a.codigo = %s' if almox else ''}
                 WHERE {' AND '.join(cond_p)}
                 ORDER BY p.codigo LIMIT 800""",
-            tuple(([almox or '—'] + ([almox] if almox else []))
-                  + [p for p, c in zip(params, cond) if c.startswith("p.")]))
+            tuple([almox or '—'] + ([almox] if almox else []) + params_p))
         return {"itens": [dict(r) for r in rows]}
     rows = await ajard_query(
         f"""SELECT p.codigo, p.descricao, p.unidade, p.custo_medio, p.familia_codigo,
@@ -4241,10 +4287,11 @@ async def lente_armazem(almox: str = None, busca: str = None, familia: str = Non
 async def pecas_arvore(_auth=Depends(verificar_manutencao)):
     """(28/08/2026) Estrutura do Catálogo de Peças: famílias com contagem
     do acervo — o front monta a árvore pela pontuação (MC → MC.010)."""
+    await _garantir_peca_cols()
     rows = await ajard_query(
-        f"""SELECT COALESCE({_fam_efetiva()},'—') AS familia, COUNT(*)::int AS n
+        f"""SELECT COALESCE({_fam_efetiva()},'—') AS familia, COALESCE(NULLIF(classe,''),'') AS classe, COUNT(*)::int AS n
            FROM manutencao.pecas WHERE ativo=true
-           GROUP BY 1 ORDER BY 1""")
+           GROUP BY 1, 2 ORDER BY 1, 2""")
     return [dict(r) for r in rows]
 
 
