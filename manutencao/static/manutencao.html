@@ -4049,9 +4049,9 @@ async function otMaoObraRender(){
   const setOpts = '<option value="">— todos os setores —</option>' + sets.map(s => '<option value="'+_esc(s.codigo)+'">'+_esc(s.codigo)+' — '+_esc(s.nome||'')+'</option>').join('');
   const colOpts = '<option value="">— colaborador —</option>' + (_mntUserList||[]).map(u => {
     const cf = col[String(u.id)] || {}; const f = fns.find(x => x.codigo === cf.funcao_codigo) || {};
-    return '<option value="'+u.id+'" data-fn="'+_esc(cf.funcao_codigo||'')+'" data-set="'+_esc(f.setor||'')+'" data-custo="'+(cf.custo_hh!=null?cf.custo_hh:'')+'" data-rub="'+_esc(cf.rubrica||'')+'">'+_esc(u.nome||u.login)+(cf.funcao_nome?' · '+_esc(cf.funcao_nome):'')+'</option>';
+    return '<option value="'+u.id+'" data-fn="'+_esc(cf.funcao_codigo||'')+'" data-fnnome="'+_esc(cf.funcao_nome||'')+'" data-set="'+_esc(f.setor||'')+'" data-custo="'+(cf.custo_hh!=null?cf.custo_hh:'')+'" data-rub="'+_esc(cf.rubrica||'')+'">'+_esc(u.nome||u.login)+(cf.funcao_nome?' · '+_esc(cf.funcao_nome):' · (sem função)')+'</option>';
   }).join('');
-  const contaOpts = _tabOpts(_rubFolhas('1'), 'id', 'nome', '', '— conta —');
+  const contaOpts = _rubSelectOpts(_rubFolhas('1'), '', '— conta —');
   const hoje = new Date().toISOString().slice(0,10);
   // ── Planejado ──
   const prevs = _otMo.previstos || [];
@@ -4110,7 +4110,7 @@ async function otMaoObraRender(){
     + (podeLancar ? '<div id="mo-form-mo" class="panel" style="display:none;margin-bottom:4px"><div style="display:flex;gap:6px;flex-wrap:wrap;align-items:flex-end">'
       + '<div class="mfield" style="width:150px">Setor<select id="mo-set" onchange="otMoFiltraSetor(\'mo\')">'+setOpts+'</select></div>'
       + '<div class="mfield" id="mo-user-wrap" style="width:220px">Funcionário<select id="mo-user" onchange="otMoSugerir()">'+colOpts+'</select></div>'
-      + '<div class="mfield" id="mo-fn-wrap" style="width:220px">Função<select id="mo-fn" onchange="otMoFnMudou(\'mo\')">'+fnOpts()+'</select></div>'
+      + '<div class="mfield" style="width:200px;align-self:center"><span id="mo-fn-info" class="muted" style="font-size:10px">função e custo/HH vêm do cadastro do funcionário (Parametrizar › Funções)</span></div>'
       + '<div class="mfield" style="width:120px">Data<input id="mo-data" type="date" min="2000-01-01" max="2100-12-31" value="'+hoje+'"></div>'
       + '<div class="mfield" style="width:70px">Horas<input id="mo-horas" type="number" step="0.25" min="0.25" placeholder="0,00"></div>'
       + '<div class="mfield" style="width:90px">Custo/h<input id="mo-custo" type="number" step="0.01" placeholder="0,00" title="Preenchido pela função; pode ajustar"></div>'
@@ -4128,7 +4128,7 @@ function otMoFiltraSetor(pfx){
   const st = (document.getElementById(pfx+'-set')||{}).value || '';
   const fs = document.getElementById(pfx+'-fn');
   if (fs) { [...fs.options].forEach(o => { if (!o.value) return; o.hidden = !!st && o.dataset.set !== st; }); [...fs.querySelectorAll('optgroup')].forEach(g => { g.hidden = !!st && ![...g.children].some(o => !o.hidden); }); if (fs.selectedOptions[0] && fs.selectedOptions[0].hidden) fs.value = ''; }
-  if (pfx === 'mo') { const us = document.getElementById('mo-user'); if (us) { [...us.options].forEach(o => { if (!o.value) return; o.hidden = !!st && o.dataset.set !== st; }); if (us.selectedOptions[0] && us.selectedOptions[0].hidden) us.value = ''; } }
+  if (pfx === 'mo') { const us = document.getElementById('mo-user'); if (us) { [...us.options].forEach(o => { if (!o.value) return; o.hidden = !!st && !!o.dataset.set && o.dataset.set !== st; }); if (us.selectedOptions[0] && us.selectedOptions[0].hidden) us.value = ''; } }
 }
 function otMoFnMudou(pfx){
   const fs = document.getElementById(pfx+'-fn'), fo = fs && fs.selectedOptions[0];
@@ -4173,6 +4173,8 @@ function otMoSugerir(porFuncao){
   const uo = us && us.selectedOptions[0];
   if (!porFuncao && uo && uo.value) {
     if (uo.dataset.fn && fs) fs.value = uo.dataset.fn;
+    const info = document.getElementById('mo-fn-info');
+    if (info) info.innerHTML = uo.dataset.fnnome ? 'Função: <b>'+_esc(uo.dataset.fnnome)+'</b>'+(uo.dataset.custo?' · R$ '+uo.dataset.custo+'/h':'') : '<span style="color:#B45309">sem função cadastrada — informe o custo/h</span>';
     if (uo.dataset.custo) { c.value = uo.dataset.custo; c.placeholder = ''; }
     else { const sug = _otMo && _otMo.custo_hora_sugerido ? _otMo.custo_hora_sugerido[uo.value] : null; c.value = ''; c.placeholder = sug != null ? sug.toFixed(2) + ' (último usado)' : '0,00'; }
     otMoDicaConta('mo', uo.dataset.rub || (fs && fs.selectedOptions[0] && fs.selectedOptions[0].dataset.rub));
@@ -4631,11 +4633,8 @@ function otAba(aba){
               return linha('Fim', '<input type="datetime-local" id="ot-enc-data" value="'+_esc(s.data)+'" max="'+_esc(otEncLocal(new Date()))+'" style="width:175px;font-size:11px" oninput="otEncGuardar(\'data\',this.value)"> '
                 + '<span class="muted" style="font-size:10px">'+(km?'km':'horím.')+'</span> <input id="ot-enc-hor" inputmode="decimal" value="'+_esc(s.hor)+'" placeholder="'+(cont != null ? 'contador '+cont : 'leitura')+'" style="width:90px;font-size:11px" oninput="otEncGuardar(\'hor\',this.value)">'
                 + (s.horApp ? ' <span class="muted" style="font-size:10px">(do app: '+_esc(s.horApp)+')</span>' : ''), true)
-              + linha('Encerramento', '<textarea id="ot-enc-obs" rows="2" style="width:100%;font-size:11px" placeholder="o que foi feito" oninput="otEncGuardar(\'obs\',this.value)">'+_esc(s.obs)+'</textarea>'
-                + '<div class="muted" style="font-size:10px;margin-top:2px">Custo total: R$ '+(o.custo_total != null ? parseFloat(o.custo_total).toFixed(2) : '0,00')+' (aba Custos) · preencha e clique <b>Encerrar…</b> embaixo</div>'); })()
-          : linha('Fim', fim ? dd(o.data_conclusao) + (o.horimetro_conclusao != null ? ' · horím. ' + o.horimetro_conclusao : '') : '—', true)
-            + linha('Encerramento', (o.observacao_conclusao ? _esc(o.observacao_conclusao) : '—')
-              + (o.custo_total != null ? ' · R$ ' + parseFloat(o.custo_total).toFixed(2) : '')))
+              + ''; })()
+          : linha('Fim', fim ? dd(o.data_conclusao) + (o.horimetro_conclusao != null ? ' · horím. ' + o.horimetro_conclusao : '') : '—', true))
       + (['programada','aberta','em_andamento','aguardando_peca'].includes(o.status)
           ? '<div style="padding:8px 0 0"><button class="btn" onclick="abrirReprogramar()">⚙ Avançado — Programação (data ↔ horímetro pelo ritmo real)</button></div>'
           : '')
@@ -4650,21 +4649,7 @@ function otAba(aba){
       + tempo('TDR','Tempo De Reparação — horas de mão de obra apontadas', o.mo_horas ? String(o.mo_horas).replace('.',',')+' h' : '—', o.mo_horas ? 'soma da aba Mão de Obra' : 'entra com Mão de Obra')
       + '<div class="muted" style="margin-top:6px;line-height:1.5">PDI é o que vira dinheiro: máquina parada = diária perdida. Alimenta o KPI de Disponibilidade no BI.</div>'
       + '</div></div>'
-      // (15/10/2026) O que o mecânico registrou pelo app — relato, horas, horímetro, sinal de concluído, fotos.
-      + '<div class="dsec" style="margin-top:12px">📱 Registros do mecânico (app)</div>'
-      + ((o.apontamentos||[]).length
-          ? '<table style="font-size:11px"><thead><tr><th style="width:95px">Data</th><th style="width:110px">Quem</th><th>O que foi feito</th><th class="r" style="width:50px">Horas</th><th class="r" style="width:70px">Horím./KM</th><th style="width:60px"></th><th style="width:44px"></th></tr></thead><tbody>'
-            + o.apontamentos.map(a => '<tr>'
-              + '<td class="mono">'+dd(a.criado_em)+(a.atualizado_em?' <span class="muted" title="editado">✎</span>':'')+'</td>'
-              + '<td>'+_esc(a.usuario_nome||'')+'</td>'
-              + '<td>'+_esc(a.relato||'')+'</td>'
-              + '<td class="r mono">'+(a.horas!=null?String(a.horas).replace('.',','):'—')+'</td>'
-              + '<td class="r mono">'+(a.horimetro!=null?String(a.horimetro).replace('.',','):'—')+'</td>'
-              + '<td>'+(a.concluido?'<span class="chip ok">✅ concluído</span>':'')+'</td>'
-              + '<td class="muted">'+(a.fotos?'📎 '+a.fotos:'')+'</td></tr>').join('')
-            + '</tbody></table>'
-            + '<div class="muted" style="margin-top:4px">Horas somam na aba Mão de Obra · fotos ficam na aba Documentos · o Encerrar já vem com este relato preenchido.</div>'
-          : '<div class="muted">Nenhum registro pelo app nesta OT.</div>');
+      ;   // (19/10/2026) relato do mecânico saiu daqui → aba Tarefas; horas → Mão de Obra; fotos → Documentos
   }
   if (aba === 'ped'){
     const p = o.pedido;
@@ -6802,6 +6787,31 @@ async function _rubricas(){
   if (_rubCache === null) { try { _rubCache = (await mntFetch('/manutencao/api/param/rubricas')).filter(r => r.ativo !== false); } catch(e){ _rubCache = []; } }
   return _rubCache;
 }
+// (19/10/2026) Plano de contas em menu/submenu (padrão MWW "Rubricas"): optgroup = conta-mãe (1 — Mão de Obra…),
+// opções = folhas; subníveis (6.04.01) aparecem recuados com a conta intermediária como prefixo.
+function _rubSelectOpts(folhas, sel, vazio){
+  const all = _rubCache || [];
+  const nome = c => { const r = all.find(x => String(x.codigo) === String(c)); return r ? r.nome || '' : ''; };
+  const grupos = new Map();
+  (folhas||[]).forEach(f => {
+    const partes = String(f.id).split('.');
+    const raiz = partes[0];
+    if (!grupos.has(raiz)) grupos.set(raiz, []);
+    grupos.get(raiz).push(f);
+  });
+  let html = '<option value="">'+(vazio||'— conta —')+'</option>';
+  [...grupos.keys()].sort((a,b)=>a.localeCompare(b,'pt-BR',{numeric:true})).forEach(raiz => {
+    html += '<optgroup label="'+_esc(raiz+' — '+(nome(raiz)||'Conta '+raiz))+'">';
+    grupos.get(raiz).sort((a,b)=>String(a.id).localeCompare(String(b.id),'pt-BR',{numeric:true})).forEach(f => {
+      const partes = String(f.id).split('.');
+      const meio = partes.length > 2 ? partes.slice(0, -1).join('.') : '';
+      const rot = (meio ? '\u00a0\u00a0\u00a0' : '') + f.id + ' — ' + (nome(f.id) || String(f.nome||'').replace(/^.*? — /,'')) + (meio && nome(meio) ? ' ('+nome(meio)+')' : '');
+      html += '<option value="'+_esc(f.id)+'"'+(String(f.id)===String(sel??'')?' selected':'')+'>'+_esc(rot)+'</option>';
+    });
+    html += '</optgroup>';
+  });
+  return html;
+}
 function _rubFolhas(ramo){
   const all = _rubCache || [];
   return all.filter(r => (!ramo || String(r.codigo).startsWith(ramo + '.')) && !all.some(x => x.codigo !== r.codigo && String(x.codigo).startsWith(r.codigo + '.')))
@@ -6995,7 +7005,7 @@ async function otOutrosRender(){
   const dd = v => v ? _fmtData(v) : '—';
   const podeLancar = ['programada','aberta','em_andamento','aguardando_peca','concluida'].includes(o.status);
   const contas = _rubFolhas('1').filter(r=>String(r.id).startsWith('1.03')).concat(_rubFolhas('3'),_rubFolhas('4'),_rubFolhas('6'),_rubFolhas('7'));
-  const contaOpts = '<option value="">— conta —</option>' + contas.map(r => '<option value="'+_esc(r.id)+'">'+_esc(r.nome)+'</option>').join('');
+  const contaOpts = _rubSelectOpts(contas, '', '— conta —');
   const fornOpts = '<option value="">— fornecedor —</option>' + (_mntFornList||[]).map(f => '<option value="'+f.id+'"'+(String(f.id)===String(o.fornecedor_id||'')?' selected':'')+'>'+_esc(f.nome)+'</option>').join('');
   const mais = (id, titulo) => podeLancar ? '<button class="btn" style="font-size:11px;padding:2px 8px" title="'+titulo+'" onclick="otOutrosForm(\''+id+'\')">⊕ Inserir</button>' : '';
   const x = r => podeLancar ? '<span style="cursor:pointer;color:#B91C1C" title="Remover" onclick="otOutrosExcluir(\''+r.id+'\')">✕</span>' : '';
@@ -7065,6 +7075,15 @@ async function otTarefasRender(){
   try { t = await mntFetch('/manutencao/api/tab/ot-tarefas?ot_id='+o.id); } catch(e){ c.innerHTML = '\u274c '+_esc(e.message); return; }
   const feitas = t.filter(x => x.feita).length;
   const pct = t.length ? Math.round(feitas / t.length * 100) : 0;
+  // (19/10/2026) O que o mecânico registrou pelo app (relato + concluído) mora aqui, junto das tarefas.
+  const aps = (o.apontamentos||[]);
+  const dd = v => { try { return new Date(v).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',year:'2-digit',hour:'2-digit',minute:'2-digit'}); } catch(e){ return '—'; } };
+  const regApp = '<div class="dsec" style="margin-top:12px">📱 O que foi feito — registros do mecânico (app)</div>'
+    + (aps.length
+      ? '<table class="tbl"><thead><tr><th style="width:95px">Data</th><th style="width:120px">Quem</th><th>O que foi feito</th><th style="width:90px"></th></tr></thead><tbody>'
+        + aps.map(a => '<tr><td class="mono muted">'+dd(a.criado_em)+(a.atualizado_em?' <span title="editado">✎</span>':'')+'</td><td>'+_esc(a.usuario_nome||'')+'</td><td>'+_esc(a.relato||'')+'</td><td>'+(a.concluido?'<span class="chip ok">✅ concluído</span>':'')+'</td></tr>').join('')
+        + '</tbody></table><div class="muted" style="font-size:10px;margin-top:4px">Horas estão em Mão de Obra · fotos em Documentos · leitura (horímetro/km) em Gestão › Fim.</div>'
+      : '<div class="muted" style="font-size:11px;padding:4px 6px">Nenhum registro pelo app nesta OT.</div>');
   c.innerHTML = '<div class="dsec">Tarefas \u2014 '+feitas+'/'+t.length+' conclu\u00eddas ('+pct+' %)</div>'
     + '<div style="height:6px;background:#E2E8F0;border-radius:3px;margin:4px 0 8px"><div style="height:6px;width:'+pct+'%;background:#15803D;border-radius:3px"></div></div>'
     + (t.length ? t.map(x => '<div style="display:flex;gap:8px;align-items:center;padding:4px 6px;border-bottom:1px solid #F1F5F9;font-size:11px">'
@@ -7075,7 +7094,8 @@ async function otTarefasRender(){
       : '<div class="muted" style="padding:8px 6px;font-size:11px">Sem tarefas. Importe da FMP ou adicione abaixo.</div>')
     + '<div style="display:flex;gap:6px;margin-top:8px;align-items:flex-end"><div class="mfield" style="flex:1">Nova tarefa<input id="tar-desc" placeholder="ex.: verificar folga do material rodante"></div>'
     + '<button class="btn p" onclick="otTarefaAdd()">\uff0b Adicionar</button>'
-    + (!t.length ? '<button class="btn" onclick="otTarefasDaFmp()">\ud83d\udcc5 Importar da FMP</button>' : '') + '</div>';
+    + (!t.length ? '<button class="btn" onclick="otTarefasDaFmp()">\ud83d\udcc5 Importar da FMP</button>' : '') + '</div>'
+    + regApp;
 }
 async function otTarefaAdd(){
   const d = (document.getElementById('tar-desc')||{}).value || ''; if (!d.trim()){ mostrarToast('Descreva a tarefa','warn'); return; }
