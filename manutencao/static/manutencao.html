@@ -3844,6 +3844,17 @@ function otEncEstado(o){
   return _otEncState[id];
 }
 function otEncGuardar(campo, v){ if (_otAberta) { otEncEstado(_otAberta)[campo] = v; } }
+// (19/10/2026) PDI = TDM: máquina parada do Início real até o Fim informado (um clique; pode ajustar depois)
+function otPdiUsarTdm(){
+  const o = _otAberta; if (!o) return;
+  const h1 = (o.historico||[]).find(x => x.status_para === 'em_andamento');
+  const ini = o.data_inicio_real ? new Date(o.data_inicio_real) : (h1 ? new Date(h1.criado_em) : null);
+  const s = otEncEstado(o); const fim = s.data ? new Date(s.data) : new Date();
+  if (!ini) { mostrarToast('Sem Início real para calcular', 'warn'); return; }
+  const horas = Math.max(0, (fim - ini) / 3600000);
+  const el = document.getElementById('ot-enc-hp'); if (el) el.value = horas.toFixed(1).replace('.', ',');
+  otEncGuardar('hp', horas.toFixed(1));
+}
 // (19/10/2026) Gestão: Início real / leitura no início / Data Limite gravam na hora
 async function otGestaoSalvar(campo, v){
   if (!_otAberta) return;
@@ -4638,9 +4649,11 @@ function otAba(aba){
     const nota = v => '<td style="padding:4px 6px;font-size:10px;color:#64748B;line-height:1.3">'+v+'</td>';
     const rot = (t, forte) => '<td style="width:95px;padding:4px 6px;font-size:10px;font-weight:700;color:'+(forte?'#B91C1C':'#475569')+'">'+t+'</td>';
     const tr = cs => '<tr style="border-bottom:1px solid #F1F5F9">'+cs+'</tr>';
-    const leituraIni = aberta ? inp('ot-ini-hor','text', o.horimetro_inicio != null ? String(o.horimetro_inicio) : '', 'inputmode="decimal" placeholder="registo" onchange="otGestaoSalvar(\'horimetro_inicio\', this.value)"') : n(o.horimetro_inicio);
+    // Registo no Início é automático (MWW: campo cinza) — última leitura conhecida da máquina até o início
+    const leituraIniVal = o.horimetro_inicio != null ? o.horimetro_inicio : o.leitura_inicio;
+    const leituraIni = '<span class="muted" title="Última leitura da máquina até o início (partes, abastecimentos, checklist, OTs)">'+n(leituraIniVal)+'</span>';
     const regTotal = o.horimetro_conclusao != null ? parseFloat(o.horimetro_conclusao) : (aberta && s && s.hor !== '' ? parseFloat(String(s.hor).replace(',', '.')) : (contador != null ? parseFloat(contador) : null));
-    const regBase = o.horimetro_inicio != null ? parseFloat(o.horimetro_inicio) : (u && u.horimetro_na_abertura != null ? parseFloat(u.horimetro_na_abertura) : (o.horimetro_na_abertura != null ? parseFloat(o.horimetro_na_abertura) : null));
+    const regBase = leituraIniVal != null ? parseFloat(leituraIniVal) : (o.horimetro_na_abertura != null ? parseFloat(o.horimetro_na_abertura) : null);
     const regPar = (regTotal != null && regBase != null) ? (regTotal - regBase) : null;
     const tabela = '<table style="width:100%;border-collapse:collapse"><thead><tr style="font-size:10px;color:#475569"><th></th><th style="text-align:left;padding:2px 6px">Data e hora</th><th style="text-align:left;padding:2px 6px">Registo ('+unid+')</th><th style="text-align:left;padding:2px 6px"></th></tr></thead><tbody>'
       + tr(rot('Pedido') + cel(dtl(o.data_abertura)+' '+hl(o.data_abertura)) + cel(n(o.horimetro_na_abertura)) + nota(o.pedido ? 'pedido '+_esc(o.pedido.numero||'') : ''))
@@ -4652,7 +4665,7 @@ function otAba(aba){
           + cel(aberta ? inp('ot-enc-hor','text', s.hor, 'inputmode="decimal" placeholder="'+(contador != null ? 'contador '+contador : 'registo')+'" oninput="otEncGuardar(\'hor\',this.value)"') : n(o.horimetro_conclusao))
           + nota(aberta && s.horApp ? 'do app: '+_esc(s.horApp) : ''))
       + tr(rot('Data Limite') + cel(aberta ? inp('ot-limite','date', o.data_limite ? String(o.data_limite).slice(0,10) : '', 'onchange="otGestaoSalvar(\'data_limite\', this.value)"') : (o.data_limite ? _fmtData(o.data_limite) : '—')) + cel('') + nota('prazo p/ concluir · semáforo das corretivas'))
-      + tr(rot('Reg. Par. / Total') + cel('') + cel((regPar != null ? n(regPar.toFixed(1)) : '—') + ' / ' + (regTotal != null ? n(regTotal) : '—')) + nota('rodado desde o início / registo no fim'))
+      + tr(rot('Reg. Par. / Total') + cel('') + cel((regPar != null ? n(regPar.toFixed(1)) : '—') + ' / ' + (regTotal != null ? n(regTotal) : '—')) + nota('rodado entre Início e Fim / registo no fim'))
       + tr(rot('Encerramento') + cel(o.encerrado_em ? dtl(o.encerrado_em)+' '+hl(o.encerrado_em) : (o.status === 'concluida' && fim ? dtl(fim)+' '+hl(fim) : '—')) + cel('') + nota(o.status === 'concluida' ? '<span class="chip ok">🗂️ Encerrada</span>' : ''))
       + '</tbody></table>';
     const tempo = (sigla, nome, val, nota) => '<div style="display:flex;align-items:baseline;gap:6px;padding:4px 0" title="'+nome+'">'
@@ -4665,10 +4678,10 @@ function otAba(aba){
       + '<div style="font-weight:800;color:#1A2A5E;font-size:11px;margin-bottom:4px">Tempos e Indisponibilidades</div>'
       + tempo('TDE','Tempo De Espera — do pedido ao início', tde, abertura && inicioReal ? 'Pedido → Início' : '')
       + (aberta
-          ? tempo('PDI','Paragem Devido à Intervenção — horas de máquina parada', '<input id="ot-enc-hp" inputmode="decimal" value="'+_esc(s.hp)+'" placeholder="paradas" style="width:60px;font-size:11px" oninput="otEncGuardar(\'hp\',this.value)"> h', '')
+          ? tempo('PDI','Paragem Devido à Intervenção — horas de máquina parada', '<input id="ot-enc-hp" inputmode="decimal" value="'+_esc(s.hp)+'" placeholder="paradas" style="width:60px;font-size:11px" oninput="otEncGuardar(\'hp\',this.value)"> h', (inicioReal ? '<a href="#" style="font-size:10px" onclick="event.preventDefault();otPdiUsarTdm()" title="Máquina parada do Início ao Fim: PDI = TDM">= TDM</a>' : ''))
           : tempo('PDI','Paragem Devido à Intervenção — horas de máquina parada', o.horas_parada != null ? n(o.horas_parada)+' h' : '—', o.horas_parada != null ? 'indisponibilidade' : ''))
       + tempo('TDM','Tempo De Manutenção — Início → Fim', tdm, '')
-      + tempo('TDR','Tempo De Reparação — HH da Mão de Obra', o.mo_horas ? n(o.mo_horas)+' h' : '—', o.mo_horas ? 'aba Mão de Obra' : '')
+      + tempo('TDR','Tempo De Reparação — HH interna (Mão de Obra) + horas de serviço externo (Outros)', (o.mo_horas||o.outros_horas) ? n(((o.mo_horas||0)+(o.outros_horas||0)).toFixed(1))+' h' : '—', (o.mo_horas||o.outros_horas) ? 'MO '+n(o.mo_horas||0)+' + externo '+n(o.outros_horas||0) : '')
       + '<div class="muted" style="margin-top:6px;line-height:1.5">PDI é o que vira dinheiro: máquina parada = diária perdida. Alimenta o KPI de Disponibilidade.</div>'
       + '</div></div>';
   }
@@ -4711,64 +4724,79 @@ function otAba(aba){
   }
 }
 async function abrirReprogramar(){
+  // (19/10/2026) "Programação OT" igual ao ManWinWin: calculadora. Linha CALENDÁRIO (digita a data → calcula o
+  // registo pelo ritmo), linha REGISTO (digita o registo → calcula a data), linha PROGRAMADA (resultado, editável)
+  // e "Data Programada Alterada" marcada sozinha quando foge do que a FMP calcula. Sem motivo obrigatório.
   const o = _otAberta; if (!o) return;
-  let ritmo = null, motivos = [];
+  let ritmo = null;
   try { ritmo = (await mntFetch('/manutencao/api/equipamentos/'+o.equipamento_id+'/ritmo')).fmd_em_uso; } catch(e){}
-  try { motivos = (await mntFetch('/manutencao/api/param/motivos-reprogramacao')).filter(m => m.ativo !== false); } catch(e){}
   const eq = _mntEquipList.find(e => String(e.id) === String(o.equipamento_id)) || {};
-  const atual = parseFloat(eq.horimetro_atual || 0);
-  window._reprog = { ritmo: ritmo, atual: atual, regs: [] };
+  const un = (eq.medicao === 'km' || (o.equipamento_medicao||'') === 'km') ? 'km' : 'h';
+  const atual = parseFloat((un === 'km' ? (eq.km_atual ?? o.equipamento_km) : (eq.horimetro_atual ?? o.equipamento_horimetro)) || 0);
+  window._reprog = { ritmo: ritmo, atual: atual, regs: [], un: un, ref: {} };
   try { const f = await mntFetch('/manutencao/api/equipamentos/'+o.equipamento_id+'/funcionamento'); window._reprog.regs = (f.registos||[]).map(r => ({d: r.data.slice(0,10), l: r.leitura})); } catch(e){}
-  // (10/10/2026) Referências como no "Programação OT" do ManWinWin: o que a FMP diz pelo CALENDÁRIO e pelo
-  // REGISTO, para decidir com os dois números à vista. Vem de /previsoes (mesma regra das preventivas).
-  let refHtml = '';
+  let calD = '', calR = '', regD = '', regR = '', fmpTxt = '';
   if (o.plano_id) {
     try {
       const pv = await mntFetch('/manutencao/api/previsoes');
       const it = (pv.itens || []).find(x => String(x.plano_id) === String(o.plano_id));
       if (it) {
-        const un = it.unidade === 'km' ? 'km' : 'h';
-        // (10/10/2026) Quadro "Programação OT" do ManWinWin: linha CALENDÁRIO (plano por tempo: última + período;
-        // registro projetado pelo ritmo) e linha REGISTRO (plano por leitura: última leitura + período; data
-        // projetada pelo ritmo). A linha vazia é o modo que a FMP não usa. "usar" copia para a linha Programada.
-        const hoje0 = new Date(); hoje0.setHours(0,0,0,0);
-        const diasAte = d => Math.round((new Date(d+'T00:00:00') - hoje0) / 86400000);
-        let calD = '', calR = null, regD = '', regR = null;
-        if (it.modo === 'calendario' && it.proxima_data) { calD = it.proxima_data; if (ritmo) calR = Math.round(atual + diasAte(calD) * ritmo); }
-        if (it.modo !== 'calendario' && it.leitura_alvo != null) { regR = it.leitura_alvo; regD = it.proxima_data || ''; }
+        fmpTxt = 'FMP '+_esc(it.plano_codigo)+' — '+_esc(it.plano_descricao||'')+' · a cada '+(it.periodo_qtd!=null?it.periodo_qtd.toLocaleString('pt-BR'):'?')+' '+_esc(it.periodo||'')
+          + ' · última '+(it.ultima_data ? _fmtData(it.ultima_data) : '—')+(it.ultima_leitura!=null ? ' / '+it.ultima_leitura.toLocaleString('pt-BR')+' '+un : '');
+        if (it.modo === 'calendario' && it.proxima_data) { calD = it.proxima_data; const c = _reprogConv('data', calD); calR = c.r != null ? c.r : ''; }
+        if (it.modo !== 'calendario' && it.leitura_alvo != null) { regR = it.leitura_alvo; const c = _reprogConv('reg', regR); regD = it.proxima_data || c.d || ''; }
         window._reprog.ref = { calD, calR, regD, regR };
-        const fmtR = v => v != null ? Number(v).toLocaleString('pt-BR') + ' ' + un : '—';
-        const usar = qual => '<button class="btn" style="padding:1px 7px;font-size:10px" onclick="reprogUsar(\''+qual+'\')">usar</button>';
-        refHtml = '<div style="font-size:11px;background:#F8FAFC;border:1px solid #E2E8F0;border-radius:6px;padding:8px 10px;margin-bottom:8px">'
-          + '<div style="margin-bottom:6px"><b>FMP</b> '+_esc(it.plano_codigo)+' — '+_esc(it.plano_descricao||'')+' · a cada '+(it.periodo_qtd!=null?it.periodo_qtd.toLocaleString('pt-BR'):'?')+' '+_esc(it.periodo||'')
-          + ' · <b>Última</b> '+(it.ultima_data ? _fmtData(it.ultima_data) : '—')+(it.ultima_leitura!=null ? ' · '+it.ultima_leitura.toLocaleString('pt-BR')+' '+un : '')+'</div>'
-          + '<table style="font-size:11px;width:100%"><thead><tr><th style="width:110px"></th><th>Data</th><th>Registro</th><th style="width:48px"></th></tr></thead><tbody>'
-          + '<tr><td><b>Calendário</b></td><td>'+(calD ? _fmtData(calD) : '—')+'</td><td>'+fmtR(calR)+'</td><td>'+(calD ? usar('cal') : '')+'</td></tr>'
-          + '<tr><td><b>Registro</b></td><td>'+(regD ? '≈ '+_fmtData(regD) : '—')+'</td><td>'+fmtR(regR)+(it.restante!=null && it.modo!=='calendario' ? ' <span class="muted">(faltam '+it.restante.toLocaleString('pt-BR')+')</span>' : '')+'</td><td>'+(regR != null ? usar('reg') : '')+'</td></tr>'
-          + '<tr style="background:#FFF7ED"><td><b>Programada</b></td><td>'+(o.data_prevista ? _fmtData(o.data_prevista) : '—')+'</td><td>'+fmtR(o.horimetro_previsto)+'</td><td>'+(o.prog_alterada ? '<span title="Data programada alterada" style="color:#92400E">✎</span>' : '')+'</td></tr>'
-          + '</tbody></table></div>';
       }
     } catch(e) {}
   }
-  const motOpts = '<option value="">— escolha o motivo * —</option>' + motivos.map(m =>
-    '<option value="'+_esc(m.codigo)+'">'+_esc(m.codigo)+' — '+_esc(m.nome||'')+'</option>').join('');
+  let b = document.getElementById('ot-prog');
+  if (!b){ b = document.createElement('div'); b.id = 'ot-prog'; b.style.cssText = 'position:fixed;inset:0;z-index:9999;background:rgba(15,23,42,.45);display:none;align-items:center;justify-content:center'; document.body.appendChild(b); }
+  const fmtR = v => v === '' || v == null ? '' : Number(v).toLocaleString('pt-BR', {maximumFractionDigits:0});
   const dtPrev = o.data_prevista ? String(o.data_prevista).slice(0,10) : '';
-  document.getElementById('eq-ficha-corpo').innerHTML =
-    '<div style="display:flex;justify-content:space-between;align-items:center"><b style="font-size:14px;color:#1A2A5E">⚙ Programação — '+_esc(o.numero)+'</b>'
-    + '<span style="cursor:pointer;font-size:18px" onclick="verOTReal(\''+o.id+'\')">✕</span></div>'
-    + refHtml
-    + '<div class="pp-sub">'+(ritmo ? 'Ritmo real do '+_esc(eq.codigo||'equipamento')+': <b>'+ritmo+' '+(eq.medicao==='km'?'km':'h')+'/dia</b> (FMD em uso) — um campo calcula o outro'
-                                    : 'Sem FMD (registros insuficientes e sem FMD manual) — conversão automática indisponível, informe manualmente')+'</div>'
-    + '<div class="dsec">Nova previsão</div><div class="mgrid">'
-    + '<div class="mfield">Data prevista<input id="rp-data" type="date" min="2000-01-01" max="2100-12-31" value="'+dtPrev+'" onchange="reprogCalc(\'data\')"></div>'
-    + '<div class="mfield">Horímetro/KM previsto (atual: '+atual+')<input id="rp-horim" type="number" value="'+(o.horimetro_previsto??'')+'" oninput="reprogCalc(\'horim\')"></div>'
-    + '</div><div id="rp-aviso" style="font-size:11px;min-height:15px;margin-top:4px;color:#475569"></div>'
-    + '<label style="display:flex;align-items:center;gap:6px;font-size:11px;margin-top:6px;color:#475569"><input type="checkbox" id="rp-alterada" '+(o.prog_alterada?'checked':'')+' disabled> Data programada alterada <span class="muted">(marca-se sozinha ao gravar; Novo ciclo recalcula pela FMP e desmarca)</span></label>'
-    + '<div class="mfield" style="margin-top:8px">Motivo da reprogramação *<select id="rp-motivo">'+motOpts+'</select></div>'
-    + '<div class="mfield" style="margin-top:8px">Observação<input id="rp-obs" placeholder="opcional"></div>'
-    + '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">'
-    + '<button class="btn" onclick="verOTReal(\''+o.id+'\')">Voltar</button>'
-    + '<button class="btn p" onclick="salvarReprogramacao()">Reprogramar</button></div>';
+  const lin = (rot, c1, c2) => '<tr><td style="padding:6px 8px;font-size:11px;font-weight:700;color:#475569;width:95px">'+rot+'</td><td style="padding:4px 6px">'+c1+'</td><td style="padding:4px 6px">'+c2+'</td></tr>';
+  b.innerHTML = '<div style="background:#fff;border-radius:10px;box-shadow:0 12px 32px rgba(15,23,42,.3);padding:16px;width:520px;max-width:94vw">'
+    + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><b style="color:#1A2A5E">Programação OT — '+_esc(o.numero)+'</b><span style="cursor:pointer;font-size:16px" onclick="document.getElementById(\'ot-prog\').style.display=\'none\'">✕</span></div>'
+    + (fmpTxt ? '<div class="muted" style="font-size:10px;margin-bottom:6px">'+fmpTxt+'</div>' : '')
+    + '<div class="panel"><table style="width:100%;border-collapse:collapse"><thead><tr style="font-size:10px;color:#475569"><th></th><th style="text-align:left;padding:2px 6px">Data</th><th style="text-align:left;padding:2px 6px">Registo ('+un+')</th></tr></thead><tbody>'
+    + lin('Calendário', '<input id="rp-cal-d" type="date" value="'+_esc(calD)+'" min="2000-01-01" max="2100-12-31" style="font-size:11px;width:140px" onchange="reprogLinha(\'cal\')">', '<span id="rp-cal-r" class="mono" style="font-size:11px;color:#475569">'+fmtR(calR)+'</span>')
+    + lin('Registo', '<span id="rp-reg-d" class="mono" style="font-size:11px;color:#475569">'+(regD ? _fmtData(regD) : '')+'</span>', '<input id="rp-reg-r" type="number" value="'+_esc(regR)+'" placeholder="registo alvo" style="font-size:11px;width:120px" oninput="reprogLinha(\'reg\')">')
+    + lin('<span style="color:#B91C1C">Programada</span>', '<input id="rp-data" type="date" value="'+dtPrev+'" min="2000-01-01" max="2100-12-31" style="font-size:11px;width:140px;font-weight:700" onchange="reprogAlterada()">', '<input id="rp-horim" type="number" value="'+(o.horimetro_previsto??'')+'" style="font-size:11px;width:120px;font-weight:700" oninput="reprogAlterada()">')
+    + '</tbody></table>'
+    + '<label style="display:flex;align-items:center;gap:6px;font-size:11px;margin-top:6px;color:#475569"><input type="checkbox" id="rp-alterada" '+(o.prog_alterada?'checked':'')+' disabled> Data Programada Alterada <span class="muted">(marca sozinho quando a Programada foge do que a FMP calcula)</span></label>'
+    + '<div id="rp-aviso" class="muted" style="font-size:10px;min-height:14px;margin-top:4px">'+(ritmo ? 'Ritmo do '+_esc(eq.codigo||'')+': '+ritmo+' '+un+'/dia (FMD) — Calendário calcula o registo, Registo calcula a data.' : 'Sem ritmo (FMD): sem conversão automática, digite a Programada.')+'</div></div>'
+    + '<div class="mfield" style="margin-top:8px">Motivo <span class="muted">(opcional)</span><input id="rp-obs" placeholder="ex.: máquina em obra até sexta"></div>'
+    + '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px"><button class="btn" onclick="document.getElementById(\'ot-prog\').style.display=\'none\'">Cancelar</button><button class="btn p" onclick="salvarReprogramacao()">OK</button></div></div>';
+  b.style.display = 'flex';
+  reprogAlterada();
+}
+// conversão data ↔ registo pelo ritmo (FMD); no passado usa registo real quando há um perto
+function _reprogConv(origem, v){
+  const r = window._reprog || {}; const hoje = new Date(); hoje.setHours(0,0,0,0);
+  const fmt = d => d.toISOString().slice(0,10);
+  if (!r.ritmo) return { d: null, r: null };
+  if (origem === 'reg') { const alvo = parseFloat(v); if (!isFinite(alvo)) return { d: null, r: null }; const dias = Math.ceil((alvo - r.atual) / r.ritmo); return isFinite(dias) ? { d: fmt(new Date(hoje.getTime() + dias*86400000)), r: alvo } : { d: null, r: null }; }
+  if (!v || parseInt(String(v).slice(0,4),10) < 2000) return { d: null, r: null };
+  const dias = Math.round((new Date(v+'T00:00:00') - hoje) / 86400000);
+  if (dias >= 0) return { d: v, r: Math.round(r.atual + dias * r.ritmo) };
+  const regs = (r.regs||[]).filter(x => x.d <= v).sort((a,b) => a.d < b.d ? 1 : -1);
+  const reg = regs[0];
+  if (reg && (new Date(v+'T00:00:00') - new Date(reg.d+'T00:00:00')) / 86400000 <= 7) return { d: v, r: Math.round(reg.l) };
+  return { d: v, r: Math.round(r.atual + dias * r.ritmo) };
+}
+function reprogLinha(qual){
+  const g = id => document.getElementById(id); const fmtR = v => v == null ? '' : Number(v).toLocaleString('pt-BR', {maximumFractionDigits:0});
+  if (qual === 'cal') { const c = _reprogConv('data', g('rp-cal-d').value); g('rp-cal-r').textContent = fmtR(c.r); g('rp-data').value = g('rp-cal-d').value || ''; if (c.r != null) g('rp-horim').value = c.r; }
+  else { const c = _reprogConv('reg', g('rp-reg-r').value); g('rp-reg-d').textContent = c.d ? _fmtData(c.d) : ''; if (c.d) g('rp-data').value = c.d; g('rp-horim').value = g('rp-reg-r').value || ''; }
+  reprogAlterada();
+}
+function reprogAlterada(){
+  const r = (window._reprog||{}).ref || {}; const g = id => document.getElementById(id);
+  const d = (g('rp-data')||{}).value || '', h = (g('rp-horim')||{}).value || '';
+  const igualCal = r.calD && d === r.calD, igualReg = r.regR !== '' && r.regR != null && String(h) === String(r.regR);
+  const temFmp = !!(r.calD || (r.regR !== '' && r.regR != null));
+  const ck = g('rp-alterada'); if (ck) ck.checked = temFmp ? !(igualCal || igualReg) : false;
+  const av = g('rp-aviso'); const hoje = new Date(); hoje.setHours(0,0,0,0);
+  if (av && d && new Date(d+'T00:00:00') < hoje) { av.textContent = 'Data no passado: a OT nasce vencida.'; av.style.color = '#B45309'; }
 }
 // (10/10/2026) Conversão nos DOIS sentidos, como o "Programação OT" do ManWinWin: para a frente projeta pelo
 // ritmo (FMD); para trás consulta — se há registro real naquela data usa o registro, senão retrocede pelo ritmo.
@@ -4783,61 +4811,19 @@ function _dataOk(id, rotulo){
   if (el) el.focus();
   return false;
 }
-function reprogUsar(qual){
-  const r = (window._reprog||{}).ref || {}; const gd = document.getElementById('rp-data'), gh = document.getElementById('rp-horim');
-  if (qual === 'cal') { gd.value = r.calD || ''; gh.value = r.calR != null ? r.calR : ''; }
-  else { gh.value = r.regR != null ? r.regR : ''; gd.value = r.regD || ''; }
-  const av = document.getElementById('rp-aviso'); if (av) { av.textContent = 'Copiado da linha '+(qual==='cal'?'Calendário':'Registro')+' da FMP.'; av.style.color = '#475569'; }
-}
-function reprogCalc(origem){
-  const r = window._reprog || {};
-  const gd = document.getElementById('rp-data'), gh = document.getElementById('rp-horim'), av = document.getElementById('rp-aviso');
-  const hoje = new Date(); hoje.setHours(0,0,0,0);
-  const fmt = d => d.toISOString().slice(0,10);
-  const n = v => Number(v).toLocaleString('pt-BR', {maximumFractionDigits:1});
-  const aviso = (t, cor) => { if (av) { av.textContent = t || ''; av.style.color = cor || '#475569'; } };
-  if (!r.ritmo) { aviso('Sem ritmo (FMD) para converter — informe os dois campos.'); return; }
-  if (origem === 'horim' && gh.value) {
-    const alvo = parseFloat(gh.value);
-    const dias = Math.ceil((alvo - r.atual) / r.ritmo);
-    if (!isFinite(dias)) return;
-    gd.value = fmt(new Date(hoje.getTime() + dias*86400000));
-    if (alvo < r.atual) aviso('Horímetro abaixo do atual ('+n(r.atual)+'): pelo ritmo de '+r.ritmo+'/dia foi há ≈ '+(-dias)+' dia(s) → '+_fmtData(gd.value)+'. Gravar deixa a OT vencida.', '#B45309');
-    else aviso('Faltam '+n(alvo - r.atual)+' ÷ '+r.ritmo+'/dia ≈ '+dias+' dia(s) → '+_fmtData(gd.value));
-  }
-  if (origem === 'data' && gd.value) {
-    if (parseInt(gd.value.slice(0,4),10) < 2000) return; // ano ainda sendo digitado
-    const dias = Math.round((new Date(gd.value+'T00:00:00') - hoje) / 86400000);
-    if (dias >= 0) {
-      gh.value = Math.round(r.atual + dias * r.ritmo);
-      aviso(dias+' dia(s) × '+r.ritmo+'/dia = +'+n(dias*r.ritmo)+' sobre o contador atual ('+n(r.atual)+')');
-      return;
-    }
-    // passado: registro real do dia (ou o último antes dele) vale mais que a projeção
-    const regs = (r.regs||[]).filter(x => x.d <= gd.value).sort((a,b) => a.d < b.d ? 1 : -1);
-    const reg = regs[0];
-    if (reg && (new Date(gd.value+'T00:00:00') - new Date(reg.d+'T00:00:00')) / 86400000 <= 7) {
-      gh.value = Math.round(reg.l);
-      aviso('Registro real de '+_fmtData(reg.d)+': '+n(reg.l)+' (consulta retroativa). Gravar deixa a OT vencida.', '#B45309');
-    } else {
-      gh.value = Math.round(r.atual + dias * r.ritmo);
-      aviso('Estimativa retroativa: '+n(r.atual)+' − '+(-dias)+' dia(s) × '+r.ritmo+'/dia ≈ '+n(r.atual + dias*r.ritmo)+' (sem registro próximo da data). Gravar deixa a OT vencida.', '#B45309');
-    }
-  }
-}
+// (19/10/2026) reprogUsar/reprogCalc substituídas por _reprogConv/reprogLinha (Programação OT em popup)
 async function salvarReprogramacao(){
   const o = _otAberta; if (!o) return;
-  const motivo = document.getElementById('rp-motivo').value;
-  if (!motivo) { mostrarToast('Escolha o motivo da reprogramação', 'warn'); return; }
   if (!_dataOk('rp-data','Data prevista')) return;
   try {
     await mntFetch('/manutencao/api/ots/'+o.id+'/reprogramar', {method:'POST', body: JSON.stringify({
       data_prevista: document.getElementById('rp-data').value || '',
       horimetro_previsto: document.getElementById('rp-horim').value || '',
-      motivo_codigo: motivo,
+      motivo_codigo: 'AJUSTE',
       observacao: document.getElementById('rp-obs').value || '' })});
     mostrarToast('✅ Reprogramada','ok');
-    document.getElementById('eq-ficha').classList.remove('show');
+    const pb = document.getElementById('ot-prog'); if (pb) pb.style.display = 'none';
+    verOTReal(o.id); setTimeout(() => otAba('gestao'), 300);
     carregarOTsReais(); carregarSemaforosReais();
     if (_otwin.eqId) otsDoEquip(_otwin.eqId);
   } catch(e){ mostrarToast('❌ '+e.message,'warn'); }
@@ -7036,9 +7022,9 @@ async function otOutrosRender(){
       + '</tbody><tfoot><tr><td colspan="3">Custo total</td><td class="r">'+money(tot(plan))+'</td><td colspan="2"></td></tr></tfoot></table>'
     : '<div class="muted" style="padding:6px;font-size:11px">Sem previsão de outros custos. Use ⊕ Inserir para prever (ex.: serviço de fornecedor orçado).</div>';
   const tabReal = real.length
-    ? '<table class="tbl"><thead><tr><th style="width:100px">Doc. Custo</th><th style="width:160px">Fornecedor</th><th>Descrição</th><th style="width:80px">Data</th><th class="r" style="width:100px">Custo</th><th style="width:60px">Conta</th><th style="width:22px"></th></tr></thead><tbody>'
-      + real.map(r => '<tr><td>'+_esc(r.documento||'—')+'</td><td>'+(r.fornecedor_nome?'🏭 '+_esc(r.fornecedor_nome):'—')+'</td><td>'+_esc(r.descricao||'')+'</td><td class="muted">'+dd(r.data)+'</td><td class="r"><b style="color:#1A2A5E">'+money(r.valor)+'</b></td><td class="mono muted">'+_esc(r.rubrica||'')+'</td><td>'+x(r)+'</td></tr>').join('')
-      + '</tbody><tfoot><tr><td colspan="4">Custo total</td><td class="r">'+money(tot(real))+'</td><td colspan="2"></td></tr></tfoot></table>'
+    ? '<table class="tbl"><thead><tr><th style="width:95px">Doc. Custo</th><th style="width:150px">Fornecedor</th><th>Descrição</th><th style="width:78px">Data</th><th class="r" style="width:55px">Horas</th><th class="r" style="width:95px">Custo</th><th style="width:55px">Conta</th><th style="width:22px"></th></tr></thead><tbody>'
+      + real.map(r => '<tr><td>'+_esc(r.documento||'—')+'</td><td>'+(r.fornecedor_nome?'🏭 '+_esc(r.fornecedor_nome):'—')+'</td><td>'+_esc(r.descricao||'')+'</td><td class="muted">'+dd(r.data)+'</td><td class="r">'+(r.horas!=null&&parseFloat(r.horas)>0?String(parseFloat(r.horas)).replace('.',','):'—')+'</td><td class="r"><b style="color:#1A2A5E">'+(parseFloat(r.valor)>0?money(r.valor):'<span class="muted" title="sem custo — incluso no material/garantia">incluso</span>')+'</b></td><td class="mono muted">'+_esc(r.rubrica||'')+'</td><td>'+x(r)+'</td></tr>').join('')
+      + '</tbody><tfoot><tr><td colspan="4">Horas / Custo total</td><td class="r">'+String(real.reduce((s,r)=>s+(parseFloat(r.horas)||0),0)).replace('.',',')+'</td><td class="r">'+money(tot(real))+'</td><td colspan="2"></td></tr></tfoot></table>'
     : '<div class="muted" style="padding:6px;font-size:11px">Nenhum custo realizado. Use ⊕ Inserir com o documento de custo (NF/recibo) do fornecedor.</div>';
   const hoje = new Date().toISOString().slice(0,10);
   c.innerHTML =
@@ -7059,7 +7045,8 @@ async function otOutrosRender(){
       + '<div class="mfield" style="width:200px">Fornecedor<select id="oo-r-forn">'+fornOpts+'</select></div>'
       + '<div class="mfield" style="flex:1;min-width:180px">Descrição *<input id="oo-r-desc" placeholder="ex.: troca de bateria no local"></div>'
       + '<div class="mfield" style="width:125px">Data<input id="oo-r-data" type="date" value="'+hoje+'"></div>'
-      + '<div class="mfield" style="width:110px">Custo (R$) *<input id="oo-r-valor" inputmode="decimal" placeholder="0,00"></div>'
+      + '<div class="mfield" style="width:70px">Horas<input id="oo-r-horas" inputmode="decimal" placeholder="0,5" title="tempo do serviço — conta no TDR mesmo sem custo"></div>'
+      + '<div class="mfield" style="width:110px">Custo (R$)<input id="oo-r-valor" inputmode="decimal" placeholder="0 = incluso"></div>'
       + '<div class="mfield" style="width:220px">Conta *<select id="oo-r-rub">'+contaOpts+'</select></div>'
       + '<button class="btn p" onclick="otOutrosSalvar(false)">💾 Inserir</button><button class="btn" onclick="otOutrosForm(\'real\')">Cancelar</button></div></div>'
     + tabReal;
@@ -7074,14 +7061,17 @@ async function otOutrosSalvar(planejado){
   const p = planejado ? 'p' : 'r';
   const g = id => (document.getElementById('oo-'+p+'-'+id)||{}).value || '';
   if (!g('desc').trim()) { mostrarToast('Informe a descrição', 'warn'); return; }
-  const valor = parseFloat(String(g('valor')).replace('.', '').replace(',', '.')) || parseFloat(g('valor')) || 0;
-  if (!(valor > 0)) { mostrarToast('Informe o custo', 'warn'); return; }
+  const valor = parseFloat(String(g('valor')).replace(',', '.')) || 0;
+  const horas = planejado ? null : (parseFloat(String(g('horas')).replace(',', '.')) || null);
+  // (19/10/2026) custo pode ser 0 (serviço incluso no material/garantia) — mas então precisa de horas ou descrição clara
+  if (planejado && !(valor > 0)) { mostrarToast('Informe o custo previsto', 'warn'); return; }
+  if (!planejado && !(valor > 0) && !(horas > 0)) { mostrarToast('Sem custo? Informe ao menos as horas do serviço', 'warn'); return; }
   if (!g('rub')) { mostrarToast('Escolha a conta', 'warn'); return; }
   try {
     await mntFetch('/manutencao/api/tab/ot-outros', {method:'POST', body: JSON.stringify({
       ot_id: _otAberta.id, planejado: !!planejado, fornecedor_id: g('forn') || null, descricao: g('desc').trim(),
       documento: planejado ? null : (g('doc').trim() || null), data: planejado ? null : (g('data') || null),
-      valor, rubrica: g('rub') })});
+      valor, horas, rubrica: g('rub') })});
     mostrarToast('✅ Inserido', 'ok'); otOutrosRender();
   } catch(e){ mostrarToast('❌ '+e.message, 'warn'); }
 }
