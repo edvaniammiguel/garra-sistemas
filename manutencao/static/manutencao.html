@@ -5131,6 +5131,8 @@ async function almFamRenomear(cod){
   } catch(e){ mostrarToast('❌ '+e.message,'warn'); }
 }
 function almArvToggle(raiz){ _almArvAberta[raiz] = !_almArvAberta[raiz]; montarNavAlm(); }
+// (19/10/2026) clique numa CLASSE da árvore: filtra o catálogo pelas famílias dessa classe
+let _almClasseSel = '';
 async function montarNavAlm(){
   await _almoxarifados();
   const nav = document.getElementById('alm-nav'); if (!nav) return;
@@ -5144,24 +5146,30 @@ async function montarNavAlm(){
   let fams = [];
   try { fams = (await mntFetch('/manutencao/api/param/familias')).filter(f => f.ativo !== false); } catch(e){}
   fams.forEach(f => { _almFamNomes[f.codigo] = f.nome || ''; });
+  let classes = [];
+  try { classes = (await mntFetch('/manutencao/api/param/classes-materiais')).filter(c => c.ativo !== false); } catch(e){}
+  const classeNome = {}; classes.forEach(c => { classeNome[String(c.codigo).toUpperCase()] = c.nome || ''; });
   let arv = [];
   try { arv = await mntFetch('/manutencao/api/pecas-arvore'); } catch(e){}
-  const cont = {}; arv.forEach(x => { cont[x.familia] = x.n; });
+  const cont = {}; arv.forEach(x => { cont[x.familia] = (cont[x.familia]||0) + x.n; });
   const contRaiz = {};
   arv.forEach(x => { const r = String(x.familia).split('.')[0]; contRaiz[r] = (contRaiz[r]||0) + x.n; });
-  // Só a Norma VIVA: raízes que existem no acervo (o padrão importado do
-  // ManWinWin com contagem zero fica fora — mora em Parametrizar → Famílias)
-  const raizes = Object.keys(contRaiz).sort();
-  // (30/09/2026) Subfamílias = as cadastradas em Parametrizar → Famílias E as que a própria
-  // codificação das peças carrega (C.AC.010.001 → AC.010), mesmo sem cadastro
+  // (19/10/2026) Árvore em 3 níveis igual ao ManWinWin: Classe → Família → Subfamília.
+  // A classe de cada família vem do cadastro (familias.classe); se faltar, da classe gravada
+  // nas peças daquela família; se ainda faltar, cai em "Sem classe".
+  const famClasse = {};
+  fams.forEach(f => { const r = String(f.codigo).split('.')[0]; if (f.classe && !famClasse[r]) famClasse[r] = String(f.classe).toUpperCase(); });
+  arv.forEach(x => { const r = String(x.familia).split('.')[0]; const c = String(x.classe||'').toUpperCase(); if (c && classeNome[c] !== undefined && !famClasse[r]) famClasse[r] = c; });
+  // Raízes = famílias cadastradas na Norma + as que só existem pela codificação das peças
+  const raizes = [...new Set([...fams.map(f => String(f.codigo).split('.')[0]), ...Object.keys(contRaiz)])].filter(r => r && r !== '—').sort();
   const filhosDe = raiz => {
     const m = new Map();
     fams.filter(f => String(f.codigo).startsWith(raiz + '.')).forEach(f => m.set(String(f.codigo), { codigo: f.codigo, nome: f.nome || '' }));
     arv.filter(x => String(x.familia).startsWith(raiz + '.')).forEach(x => { if (!m.has(String(x.familia))) m.set(String(x.familia), { codigo: x.familia, nome: '', semCadastro: true }); });
     return [...m.values()].sort((a,b)=>String(a.codigo).localeCompare(String(b.codigo)));
   };
-  const item = (cod, rotulo, n, nivel, chev) =>
-    '<div class="pn-item'+(String(_almFamSel)===String(cod)?' on':'')+'" style="padding-left:'+(8+nivel*13)+'px;display:flex;align-items:center;gap:4px" data-fam="'+_esc(String(cod))+'" oncontextmenu="almCtxFam(event,this.dataset.fam)">'
+  const item = (cod, rotulo, n, nivel, chev, extra) =>
+    '<div class="pn-item'+(String(_almFamSel)===String(cod)?' on':'')+'" style="padding-left:'+(8+nivel*13)+'px;display:flex;align-items:center;gap:4px" data-fam="'+_esc(String(cod))+'" '+(extra||'oncontextmenu="almCtxFam(event,this.dataset.fam)"')+'>'
     + (chev !== undefined
         ? '<span style="cursor:pointer;width:12px;display:inline-block" data-r="'+_esc(String(cod))+'" onclick="event.stopPropagation();almArvToggle(this.dataset.r)" ondblclick="event.stopPropagation()">'+(chev?'▾':'▸')+'</span>'
         : '<span style="width:12px;display:inline-block"></span>')
@@ -5191,21 +5199,32 @@ async function montarNavAlm(){
   }
   html += '<div class="pn-grp">🗂 Norma de Materiais</div>'
     + item('', 'Todas as peças', totalN, 0);
-  if (_almArvTodas !== null) { raizes.forEach(r => { _almArvAberta[r] = _almArvTodas; }); _almArvTodas = null; }
-  raizes.forEach(raiz => {
-    const filhos = filhosDe(raiz);
-    const aberto = !!_almArvAberta[raiz];
-    const nome = _almFamNomes[raiz] ? ' — '+_esc(_almFamNomes[raiz]) : '';
-    html += item(raiz, '📁 <b>'+_esc(raiz)+'</b>'+nome, contRaiz[raiz]||0, 0, aberto);
-    if (aberto){
-      if (filhos.length)
-        filhos.forEach(f => {
-          const prof = String(f.codigo).split('.').length - 1;
-          html += item(f.codigo, _esc(String(f.codigo)) + (f.nome ? ' — '+_esc(f.nome) : (f.semCadastro ? ' <span class="muted" title="Subfamília vinda da codificação das peças — dê nome em Parametrizar → Famílias">(sem nome)</span>' : '')), cont[f.codigo]||0, prof);
-        });
-      else
-        html += '<div class="pn-item muted" style="padding-left:34px;font-size:10px;cursor:default">sem subfamílias — cadastre em Parametrizar → Famílias ('+_esc(raiz)+'.010…)</div>';
-    }
+  // agrupar raízes por classe (classes cadastradas primeiro, depois "Sem classe")
+  const porClasse = {}; raizes.forEach(r => { const c = famClasse[r] || ''; (porClasse[c] = porClasse[c] || []).push(r); });
+  const ordemClasses = [...classes.map(c => String(c.codigo).toUpperCase()).filter(c => porClasse[c]), ...Object.keys(porClasse).filter(c => c && classeNome[c] === undefined).sort(), ...(porClasse[''] ? [''] : [])];
+  if (_almArvTodas !== null) { raizes.forEach(r => { _almArvAberta[r] = _almArvTodas; }); ordemClasses.forEach(c => { _almArvAberta['@'+c] = _almArvTodas; }); _almArvTodas = null; }
+  ordemClasses.forEach(cl => {
+    const kc = '@' + cl;
+    if (_almArvAberta[kc] === undefined) _almArvAberta[kc] = true;   // classes começam abertas
+    const abertoC = !!_almArvAberta[kc];
+    const nC = porClasse[cl].reduce((s,r) => s + (contRaiz[r]||0), 0);
+    html += item(kc, cl ? '🗃️ <b>'+_esc(cl)+'</b> — '+_esc(classeNome[cl] || 'classe') : '🗃️ <i>Sem classe</i>', nC, 0, abertoC, 'title="Classe de materiais"');
+    if (!abertoC) return;
+    porClasse[cl].forEach(raiz => {
+      const filhos = filhosDe(raiz);
+      const aberto = !!_almArvAberta[raiz];
+      const nome = _almFamNomes[raiz] ? ' — '+_esc(_almFamNomes[raiz]) : '';
+      html += item(raiz, '📁 <b>'+_esc(raiz)+'</b>'+nome, contRaiz[raiz]||0, 1, aberto);
+      if (aberto){
+        if (filhos.length)
+          filhos.forEach(f => {
+            const prof = String(f.codigo).split('.').length;   // AC.010 → nível 2
+            html += item(f.codigo, _esc(String(f.codigo).split('.').slice(1).join('.')) + (f.nome ? ' — '+_esc(f.nome) : (f.semCadastro ? ' <span class="muted" title="Subfamília vinda da codificação das peças — dê nome em Parametrizar → Famílias">(sem nome)</span>' : '')), cont[f.codigo]||0, prof);
+          });
+        else
+          html += '<div class="pn-item muted" style="padding-left:47px;font-size:10px;cursor:default">sem subfamílias — botão direito na família → Nova subfamília</div>';
+      }
+    });
   });
   nav.innerHTML = html;
 }
@@ -5677,7 +5696,7 @@ function pecaSalvarObs(){
   _pecaPatch({ observacoes: document.getElementById('pc-obs').value }, 'obs');
 }
 async function novaPeca(){ artJanela(null); }
-let _artEdit = null, _artFams = null;
+let _artEdit = null, _artFams = null, _artClasses = null;
 let _artDepois = null;   // (10/10/2026) chamada a partir da baixa na OT: devolve o item criado à janela de origem
 async function artJanela(codigo, opts){
   // réplica da janela "Novo Item" do ManWinWin (print 28/08)
@@ -5687,6 +5706,7 @@ async function artJanela(codigo, opts){
     // (mesmo sem nome cadastrado). Famílias de objetos ficam em tabela própria e não entram aqui.
     try { _artFams = (await mntFetch('/manutencao/api/param/familias')).filter(f => f.ativo !== false); }
     catch(e){ _artFams = []; }
+    try { _artClasses = (await mntFetch('/manutencao/api/param/classes-materiais')).filter(c => c.ativo !== false); } catch(e){ _artClasses = []; }
     try {
       const arv = await mntFetch('/manutencao/api/pecas-arvore');
       const tem = new Set(_artFams.map(f => String(f.codigo)));
@@ -5710,9 +5730,17 @@ async function artJanela(codigo, opts){
   const car = jj(p.caracteristicas);
   const fam = String(p.familia_codigo || '');
   const raizSel = fam.split('.')[0];
+  // (19/10/2026) Estrutura ManWinWin: Classe → Família → Subfamília → Sequência. A classe da peça
+  // vem gravada (p.classe) ou do prefixo do código (G.BT.010.022 → G) ou da família.
+  const famInfo = c => (_artFams||[]).find(f => String(f.codigo) === String(c)) || {};
+  const classeSel = String(p.classe || '').length <= 2 && p.classe ? String(p.classe).toUpperCase()
+    : (/^[A-Za-z]\.[A-Za-z0-9]+\./.test(String(p.codigo||'')) ? String(p.codigo).split('.')[0].toUpperCase() : (famInfo(raizSel).classe || ''));
+  const optsClasse = '<option value="">—</option>' + (_artClasses||[]).map(c =>
+    '<option value="'+_esc(c.codigo)+'"'+(String(c.codigo)===classeSel?' selected':'')+'>'+_esc(c.codigo)+' — '+_esc(c.nome||'')+'</option>').join('');
   const raizes = [...new Set(_artFams.map(f => String(f.codigo).split('.')[0]))].sort();
   const optsRaiz = '<option value="">—</option>' + raizes.map(r =>
-    '<option value="'+_esc(r)+'"'+(r===raizSel?' selected':'')+'>'+_esc(r)+(_almFamNomes[r]?' — '+_esc(_almFamNomes[r]):'')+'</option>').join('');
+    '<option value="'+_esc(r)+'" data-classe="'+_esc(famInfo(r).classe||'')+'"'+(r===raizSel?' selected':'')+'>'+_esc(r)+((famInfo(r).nome||_almFamNomes[r])?' — '+_esc(famInfo(r).nome||_almFamNomes[r]):'')+'</option>').join('');
+  const seqSel = (!_artEdit && /^[A-Za-z]\.[A-Za-z0-9]+\.[0-9]+\.[0-9]+$/.test(String(p.codigo||''))) ? String(p.codigo).split('.')[3] : '';
   let b = document.getElementById('art-jan');
   if (!b){
     b = document.createElement('div'); b.id = 'art-jan';
@@ -5722,10 +5750,14 @@ async function artJanela(codigo, opts){
   const abas = [['id','Identificação'],['cod','Codificação'],['car','Características'],['arm','Estoques'],['obs','Observações']];
   b.innerHTML = '<div style="background:#fff;border-radius:10px;box-shadow:0 12px 32px rgba(15,23,42,.3);padding:16px;width:680px;max-width:96vh;max-height:92vh;overflow:auto">'
     + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><b style="color:#1A2A5E">'+(_artEdit?'🏷 Item — '+_esc(_artEdit):(copiaDe?'🏷 Novo Item — cópia de '+_esc(copiaDe):'🏷 Novo Item'))+'</b><span style="cursor:pointer;font-size:16px" onclick="document.getElementById(\'art-jan\').style.display=\'none\'">✕</span></div>'
-    + '<div style="display:flex;gap:8px;flex-wrap:wrap">'
-    + '<div class="mfield" style="width:150px">Família (Norma)<select id="art-raiz" onchange="artSubs();artProximo()">'+optsRaiz+'</select></div>'
-    + '<div class="mfield" style="width:170px">Sub-Família<select id="art-sub" onchange="artProximo()"></select></div>'
-    + '<div class="mfield" style="width:140px">Código *'+(_artEdit?' (fixo)':'')+'<input id="art-cod" value="'+_esc(p.codigo||'')+'"'+(_artEdit?' readonly style="background:#F8FAFC"':' placeholder="escolha a família" oninput="_artCodAuto=false;artCodCheck()" style="font-weight:800;color:#1A2A5E"')+'></div>'
+    + '<div class="dsec" style="margin-top:0">Estrutura (Classe · Família · Subfamília · Sequência)</div>'
+    + '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end">'
+    + '<div class="mfield" style="width:110px">Classe<select id="art-classe-sel" onchange="artClasseMudou()">'+optsClasse+'</select></div>'
+    + '<div class="mfield" style="width:150px">Família<select id="art-raiz" onchange="artRaizMudou()">'+optsRaiz+'</select></div>'
+    + '<div class="mfield" style="width:170px">Subfamília<select id="art-sub" onchange="artProximo();artIdSync()"></select></div>'
+    + '<div class="mfield" style="width:70px">Seq.<input id="art-seq" value="'+_esc(seqSel)+'" placeholder="auto" maxlength="4" oninput="artSeqMudou()"'+(_artEdit?' readonly style="background:#F8FAFC"':'')+'></div>'
+    + '<div class="mfield" style="width:150px">Código *'+(_artEdit?' (fixo)':' (editável)')+'<input id="art-cod" value="'+_esc(p.codigo||'')+'"'+(_artEdit?' readonly style="background:#F8FAFC"':' placeholder="escolha a família ou digite" oninput="_artCodAuto=false;artCodCheck()" style="font-weight:800;color:#1A2A5E"')+'></div>'
+    + '</div><div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px">'
     + '<div class="mfield" style="width:150px">Cód. Fabricante<input id="art-fab" value="'+_esc(p.codigo_fabricante||'')+'" placeholder="part number"></div>'
     + '<div class="mfield" style="width:70px">UN<input id="art-un" list="art-uns" value="'+_esc(p.unidade||'UN')+'"><datalist id="art-uns"><option>UN</option><option>LT</option><option>KG</option><option>CJ</option><option>M</option><option>PC</option><option>PAR</option></datalist></div>'
     + '<div class="mfield" style="width:110px">Custo Unitário<input id="art-custo" type="number" step="0.01" value="'+(p.custo_medio!=null?parseFloat(p.custo_medio):'')+'"></div>'
@@ -5734,9 +5766,15 @@ async function artJanela(codigo, opts){
     + '<div class="mtabs" style="margin-top:6px">'
     + abas.map(([k,t],i)=>'<div class="mtab'+(i===0?' on':'')+'" id="art-t-'+k+'" onclick="artAba(\''+k+'\')">'+t+'</div>').join('')
     + '</div>'
-    + '<div id="art-p-id" style="padding:8px 2px">'
-      + '<div class="mfield" style="width:220px">Classe<input id="art-classe" value="'+_esc(p.classe||'')+'" placeholder="ex.: Consumível, Rotável…"></div>'
-      + '<div class="muted" style="font-size:10px;margin-top:4px">Família e Sub-Família definidas acima (a Norma pontuada faz o papel Classe→Família→Sub do ManWinWin).</div></div>'
+    + '<div id="art-p-id" style="padding:8px 2px"><div style="display:flex;gap:14px;flex-wrap:wrap">'
+      + '<div style="flex:1;min-width:260px">'
+      + '<div class="mfield">Classe<input id="art-id-classe" readonly style="background:#F8FAFC;font-weight:700;color:#1A2A5E"></div>'
+      + '<div class="mfield" style="margin-top:6px">Família<input id="art-id-fam" readonly style="background:#F8FAFC;font-weight:700;color:#1A2A5E"></div>'
+      + '<div class="mfield" style="margin-top:6px">Subfamília<input id="art-id-sub" readonly style="background:#F8FAFC;font-weight:700;color:#1A2A5E"></div>'
+      + '<input type="hidden" id="art-classe" value="'+_esc(classeSel)+'">'
+      + '</div>'
+      + '<div style="width:200px;height:150px;border:1px solid #CBD5E1;border-radius:6px;display:flex;align-items:center;justify-content:center" class="muted">Figura (em breve)</div>'
+      + '</div><div class="muted" style="font-size:10px;margin-top:6px">A estrutura escolhida acima define Classe → Família → Subfamília (Norma de materiais, padrão ManWinWin).</div></div>'
     + '<div id="art-p-cod" style="display:none;padding:8px 2px">'
       + '<div class="mfield">Código Garra (estrutura Família.Sub.Sequência — proposto ao escolher a família, editável antes de gravar)<input value="'+_esc(p.codigo||'—')+'" readonly style="background:#F8FAFC"></div>'
       + '<div class="mfield" style="margin-top:6px">Cód. Externo (nota do fornecedor / de-para)<input id="art-ext" value="'+_esc(p.codigo_externo||'')+'"></div>'
@@ -5756,6 +5794,7 @@ async function artJanela(codigo, opts){
     + '<button class="btn p" onclick="artOK()">💾 '+(_artEdit?'Salvar alterações':'Criar item')+'</button></div></div>';
   b.style.display = 'flex';
   artSubs(fam);
+  artIdSync();
   if (copiaDe) artProximo();   // cópia: família já escolhida → propõe o próximo código livre
   if (_artEdit){
     try {
@@ -5768,6 +5807,44 @@ async function artJanela(codigo, opts){
   }
 }
 let _artCodAuto = true;
+// (19/10/2026) Estrutura ManWinWin no Novo Item
+function artClasseMudou(){
+  // filtra as famílias pela classe; mantém a família se ela pertence à classe
+  const cl = (document.getElementById('art-classe-sel')||{}).value || '';
+  const raiz = document.getElementById('art-raiz'); if (!raiz) return;
+  [...raiz.options].forEach(o => { if (!o.value) return; const oc = o.dataset.classe || ''; o.hidden = !!(cl && oc && oc !== cl); });
+  const sel = raiz.selectedOptions[0];
+  if (sel && sel.hidden) raiz.value = '';
+  artRaizMudou();
+}
+function artRaizMudou(){
+  const raiz = document.getElementById('art-raiz'), cls = document.getElementById('art-classe-sel');
+  const oc = raiz && raiz.selectedOptions[0] ? (raiz.selectedOptions[0].dataset.classe || '') : '';
+  if (cls && oc && !cls.value) cls.value = oc;          // família traz a classe
+  artSubs(); artProximo(); artIdSync();
+}
+function artSeqMudou(){
+  // sequência digitada à mão → recompõe o código (Classe.Fam.Sub.Seq) e deixa editável
+  const seq = (document.getElementById('art-seq')||{}).value.trim();
+  const pref = artPrefixo(); const el = document.getElementById('art-cod');
+  if (el && pref && seq){ el.value = pref + '.' + seq.padStart(3,'0'); _artCodAuto = false; artCodCheck(); }
+}
+function artPrefixo(){
+  const cl = (document.getElementById('art-classe-sel')||{}).value || '';
+  const fam = (document.getElementById('art-sub')||{}).value || (document.getElementById('art-raiz')||{}).value || '';
+  if (!fam) return '';
+  return (cl ? cl + '.' : '') + fam;
+}
+function artIdSync(){
+  const cl = document.getElementById('art-classe-sel'), raiz = document.getElementById('art-raiz'), sub = document.getElementById('art-sub');
+  const t = (s) => s && s.selectedOptions[0] && s.value ? s.selectedOptions[0].textContent : '—';
+  const set = (id, v) => { const e = document.getElementById(id); if (e) e.value = v; };
+  set('art-id-classe', t(cl)); set('art-id-fam', t(raiz)); set('art-id-sub', t(sub)); set('art-classe', (cl||{}).value || '');
+  // rótulos das características da subfamília (Norma ManWinWin) → preenche os nomes vazios
+  const info = (_artFams||[]).find(f => String(f.codigo) === String((sub||{}).value || '')) || {};
+  const rot = Array.isArray(info.caracteristicas) ? info.caracteristicas : [];
+  if (rot.length){ document.querySelectorAll('#art-p-car .art-ck').forEach((ck,i) => { if (!ck.value.trim() && rot[i]) ck.value = rot[i]; }); }
+}
 async function mwProximoCodigo(dominio, prefixo, sep, largura){
   // gatilho universal dos cadastros: estrutura → próximo número livre (servidor)
   const q = 'dominio='+encodeURIComponent(dominio)+'&prefixo='+encodeURIComponent(prefixo||'')+'&sep='+encodeURIComponent(sep||'.')+'&largura='+(largura||4);
@@ -5780,11 +5857,11 @@ async function mwCodigoExiste(dominio, codigo){
 async function artProximo(){
   if (_artEdit) return;
   const el = document.getElementById('art-cod'); if (!el) return;
-  const pref = (document.getElementById('art-sub')||{}).value || (document.getElementById('art-raiz')||{}).value || '';
+  const pref = artPrefixo();
   if (!pref){ if (_artCodAuto) el.value = ''; return; }
   if (!_artCodAuto && el.value.trim()) return;   // o usuário já escreveu o dele — não sobrescreve
-  const r = await mwProximoCodigo('peca', pref, '.', 4);
-  if (r && r.codigo){ el.value = r.codigo; _artCodAuto = true; artCodCheck(); }
+  const r = await mwProximoCodigo('peca', pref, '.', 3);
+  if (r && r.codigo){ el.value = r.codigo; _artCodAuto = true; artCodCheck(); const sq = document.getElementById('art-seq'); if (sq) sq.value = String(r.codigo).split('.').pop(); }
 }
 let _artCodTimer = null;
 function artCodCheck(){
@@ -5802,7 +5879,8 @@ function artSubs(atual){
   const sub = document.getElementById('art-sub'); if (!sub) return;
   const filhas = (_artFams||[]).filter(f => String(f.codigo).startsWith(raiz + '.'));
   sub.innerHTML = '<option value="">— (só a família)</option>' + filhas.map(f =>
-    '<option value="'+_esc(f.codigo)+'"'+(String(atual||'')===String(f.codigo)?' selected':'')+'>'+_esc(f.codigo)+(f.nome?' — '+_esc(f.nome):'')+'</option>').join('');
+    '<option value="'+_esc(f.codigo)+'"'+(String(atual||'')===String(f.codigo)?' selected':'')+'>'+_esc(String(f.codigo).split('.').slice(1).join('.'))+(f.nome?' — '+_esc(f.nome):'')+'</option>').join('');
+  if (typeof artIdSync === 'function') artIdSync();
 }
 function artAba(k){
   ['id','cod','car','arm','obs'].forEach(x => {
@@ -5902,6 +5980,7 @@ const PARAM_MAP = {
   grupos:    { dom:'sistemas',               titulo:'Grupos / Sistemas',     pk:'codigo' },
   familias:  { dom:'familias',               titulo:'Famílias de materiais', pk:'codigo' },
   famobj:    { dom:'familias-objetos',       titulo:'Famílias de objetos',   pk:'codigo' },
+  classmat:  { dom:'classes-materiais',      titulo:'Classes de materiais (Norma: Classe → Família → Subfamília)', pk:'codigo' },   // (19/10/2026)
   periodos:  { dom:'periodos',               titulo:'Períodos',              pk:'codigo' },
   tipofer:   { dom:'tipos-ferramenta',       titulo:'Tipos de ferramenta',   pk:'codigo' },
   tipodoc: { dom:'tipos-documento', titulo:'Tipos de documento', pk:'codigo' },
@@ -5951,7 +6030,8 @@ const PARAM_GRUPOS = [
     ['planos','fila','Planos preventivos (FMPs)'] ]},
   { t:'📦 Materiais', itens:[
     ['almoxes','almox','Almoxarifados (locais)'],
-    ['familias','dom','Famílias de materiais'],
+    ['classmat','dom','Classes de materiais'],
+    ['familias','dom','Famílias e subfamílias de materiais'],
     ['artigos','alm','Peças (acervo)'],
     ['refforn','fila','Referências de fornecedor'] ]},
   { t:'💰 Custos', itens:[
@@ -6435,6 +6515,8 @@ async function ligarParamPane(paneId){
       + '><td class="bold" style="width:'+(hier?170:90)+'px;padding-left:'+(8+nivel*16)+'px;white-space:nowrap">'
       + seta + (inat?'<s>':'')+_esc(cod)+(inat?'</s>':'')+'</td><td>'
       + (inat?'<s>':'')+_esc(r.nome||'')+(inat?'</s>':'')
+      + (dom === 'familias' && nivel === 0 ? ' <span class="chip pe" style="font-size:9px" title="Classe da Norma (clique em ✏️ para mudar)">'+(r.classe ? 'Classe '+_esc(r.classe) : 'sem classe')+'</span>' : '')
+      + (Array.isArray(r.caracteristicas) && r.caracteristicas.length ? ' <span class="muted" style="font-size:9px" title="Características (rótulos) da subfamília">· '+_esc(r.caracteristicas.filter(Boolean).join(' · '))+'</span>' : '')
       + (inat?' <span class="chip ap" style="font-size:9px">INATIVO</span>':'')+'</td>'
       + '<td class="act" style="width:130px;white-space:nowrap" onclick="event.stopPropagation()">'+btnFilho+botoes+'</td></tr>';
   }).join('') || '<tr><td colspan="3" style="padding:12px;color:#64748B">Nenhum registro.</td></tr>';
@@ -6469,7 +6551,13 @@ async function novoParam(dom, paneId){
   const cod = prompt('Código' + (r && r.codigo ? ' (próximo livre: '+r.codigo+')' : '') + ':', r && r.codigo ? r.codigo : ''); if (!cod) return;
   if (await mwCodigoExiste(dom, cod.trim())){ mostrarToast('❌ Já existe '+cod.trim()+' neste cadastro','warn'); return; }
   const nome = prompt('Descrição de '+cod.trim()+':'); if (!nome) return;
-  try { await mntFetch('/manutencao/api/param/'+dom, {method:'POST', body: JSON.stringify({codigo:cod.trim(), nome:nome.trim()})});
+  const body = {codigo:cod.trim(), nome:nome.trim()};
+  if (dom === 'familias' && !pai){   // (19/10/2026) família raiz pertence a uma CLASSE (C/G…)
+    let cls = []; try { cls = (await mntFetch('/manutencao/api/param/classes-materiais')).filter(c => c.ativo !== false); } catch(e){}
+    const c = prompt('Classe da família '+cod.trim()+' ('+(cls.map(c=>c.codigo+'='+c.nome).join(', ')||'C=Reforma caçamba, G=Genéricos')+'):', 'G'); if (c === null) return;
+    if (c.trim()) body.classe = c.trim().toUpperCase();
+  }
+  try { await mntFetch('/manutencao/api/param/'+dom, {method:'POST', body: JSON.stringify(body)});
     mostrarToast('✅ Cadastrado','ok'); paramCacheLimpar(dom); ligarParamPane(paneId);
   } catch(e){ mostrarToast('❌ '+e.message,'warn'); }
 }
@@ -6488,7 +6576,12 @@ function paramCacheLimpar(dom){
 }
 async function editarParam(dom, cod, nomeAtual, paneId){
   const nome = prompt('Descrição de '+cod+':', nomeAtual); if (nome===null) return;
-  try { await mntFetch('/manutencao/api/param/'+dom+'/'+encodeURIComponent(cod), {method:'PATCH', body: JSON.stringify({nome:nome.trim()})});
+  const body = {nome:nome.trim()};
+  if (dom === 'familias' && !String(cod).includes('.')){
+    const c = prompt('Classe da família '+cod+' (C ou G; vazio = não mudar):', ''); if (c === null) return;
+    if (c.trim()) body.classe = c.trim().toUpperCase();
+  }
+  try { await mntFetch('/manutencao/api/param/'+dom+'/'+encodeURIComponent(cod), {method:'PATCH', body: JSON.stringify(body)});
     mostrarToast('✅ Atualizado','ok'); paramCacheLimpar(dom); ligarParamPane(paneId);
   } catch(e){ mostrarToast('❌ '+e.message,'warn'); }
 }
