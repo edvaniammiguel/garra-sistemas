@@ -846,7 +846,7 @@ function expandirTudo(mod, abrir){
 const MNT_CHIP = { rascunho:['nr','Em criação'], programada:['pr','Programada'], aberta:['nr','Aberta'], em_andamento:['em','Em curso'],
   aguardando_peca:['pr','Aguard. peça'], concluida:['tm','Encerrada'], cancelada:['ap','Cancelada'] };
 // (19/10/2026) Semáforo = SÓ prazo (data/horímetro limite). Urgência vira ícone próprio ao lado do nº da OT.
-const MNT_URG = { urgente:['🚨','Urgente'], alta:['⚠️','Alta'], baixa:['🔽','Baixa'] };
+const MNT_URG = { urgente:['🚨','Urgente'] };   // só urgente ganha ícone
 function otUrgIco(o){ const u = MNT_URG[o.prioridade]; return u ? ' <span title="Prioridade: '+u[1]+'" style="font-size:11px">'+u[0]+'</span>' : ''; }
 let _otsCache = [], _mntEquipList = [], _filtroEquipId = null, _filtroTT = null;
 const _TT_CAT = { A:'Preventivo Sistemático', B:'Preventivo Condicionado', C:'Corretivo', M:'Melhoria' };
@@ -967,7 +967,7 @@ function renderOTs(){
   const linha = o => {
     const [cc, cl] = MNT_CHIP[o.status] || ['nr', o.status];
     const v = o.vencimento;
-    const dot = v ? (v.nivel===0 ? 'r' : v.nivel===1 ? 'y' : 'g') : 'n';   // sem prazo = bolinha vazia (urgência fica no ícone)
+    const dot = v ? (v.nivel===0 ? 'r' : v.nivel===1 ? 'y' : 'g') : 'r';   // sem prazo (corretiva) = já devida = vermelho
     const dp = o.data_prevista ? d(o.data_prevista) : (o.horimetro_previsto != null ? o.horimetro_previsto + ' h·km' : '—');
     const prog = v ? `<span style="color:${v.nivel===0?'#DC2626':v.nivel===1?'#B45309':'#16A34A'};font-size:10px">${_esc(v.texto)}</span>` : dp;
     const ent = (o.equipamento_codigo || '') + (o.equipamento_desc ? ' — ' + o.equipamento_desc : '');
@@ -3467,7 +3467,7 @@ function renderJanelaOTs(){
   const linhas = ots.map(o => {
     const [cc, cl] = MNT_CHIP[o.status] || ['nr', o.status];
     const v = o.vencimento;
-    const dot = v ? (v.nivel===0 ? 'r' : v.nivel===1 ? 'y' : 'g') : 'n';   // sem prazo = bolinha vazia (urgência fica no ícone)
+    const dot = v ? (v.nivel===0 ? 'r' : v.nivel===1 ? 'y' : 'g') : 'r';   // sem prazo (corretiva) = já devida = vermelho
     const prog = v ? '<span style="color:'+(v.nivel===0?'#DC2626':v.nivel===1?'#B45309':'#16A34A')+';font-size:10px">'+_esc(v.texto)+'</span>'
                    : (o.data_prevista ? d(o.data_prevista) : (o.horimetro_previsto != null ? o.horimetro_previsto+' h·km' : '—'));
     const sel = String(_otwin.sel) === String(o.id);
@@ -4073,7 +4073,7 @@ async function otMaoObraRender(){
     : '<div class="muted" style="padding:6px;font-size:11px">Sem previsão. Vem da FMP (mão de obra prevista) ou lance aqui.</div>';
   // ── Realizado ──
   const tabReal = _otMo.itens.length
-    ? '<table class="tbl"><thead><tr><th style="width:70px">Data</th><th>Funcionário / Fornecedor</th><th style="width:78px">Origem</th><th class="r" style="width:60px">HH</th><th class="r" style="width:80px">Custo/HH</th><th class="r" style="width:95px">Custo</th><th style="width:50px">Conta</th><th>Obs.</th><th style="width:22px"></th></tr></thead><tbody>'
+    ? '<table class="tbl"><thead><tr><th style="width:70px">Data</th><th>Funcionário</th><th style="width:78px">Origem</th><th class="r" style="width:60px">HH</th><th class="r" style="width:80px">Custo/HH</th><th class="r" style="width:95px">Custo</th><th style="width:50px">Conta</th><th>Obs.</th><th style="width:22px"></th></tr></thead><tbody>'
       + _otMo.itens.map(x => '<tr>'
         + '<td class="muted">'+dd2(x.data)+'</td>'
         + '<td>'+(x.externo ? '<span title="Terceiro / fornecedor">🏭</span> ' : '')+'<b>'+_esc(x.nome||'—')+'</b>'+(x.externo?' <span class="muted">· externo</span>':'')+'</td>'
@@ -4085,7 +4085,7 @@ async function otMaoObraRender(){
         + '<td class="muted">'+_esc(x.observacao||'')+'</td>'
         + '<td><span style="cursor:pointer;color:#B91C1C" title="Remover" onclick="otMoExcluir(\''+x.id+'\')">✕</span></td></tr>').join('')
       + '</tbody><tfoot><tr><td colspan="3">Mob. HH / Custo total</td><td class="r">'+fmtH(_otMo.total_horas)+'</td><td></td><td class="r">'+money(_otMo.total_custo)+'</td><td colspan="3"></td></tr></tfoot></table>'
-    : '<div class="muted" style="padding:6px;font-size:11px">Nenhuma hora lançada. O mecânico lança pelo app (Registrar execução → Horas) ou aqui.</div>';
+    : '<div class="muted" style="padding:6px;font-size:11px">Nenhuma hora lançada. O mecânico lança pelo app (Registrar execução → Horas) ou aqui. Serviço externo: aba Outros.</div>';
   const desvioH = _otMo.total_horas - totPrevH, desvioC = _otMo.total_custo - totPrevC;
   const comparativo = prevs.length
     ? '<div style="display:flex;gap:18px;padding:6px 8px;font-size:11px" class="panel">'
@@ -4094,8 +4094,6 @@ async function otMaoObraRender(){
       + '<span style="color:'+(desvioH > 0 ? '#B91C1C' : '#15803D')+'"><b>Desvio:</b> '+(desvioH>0?'+':'')+fmtH(desvioH)+' h · '+(desvioC>0?'+':'')+money(desvioC)+'</span></div>'
     : '';
   const semFn = fns.length ? '' : '<div class="muted" style="font-size:10px;margin:4px 0">Sem funções cadastradas — cadastre em Parametrizar › Funções e custo HH (função por setor, custo/HH e conta).</div>';
-  if (_mntFornList === null) { try { _mntFornList = await mntFetch('/manutencao/api/fornecedores'); } catch(e){ _mntFornList = []; } }
-  const fornOpts = '<option value="">— fornecedor do cadastro —</option>' + (_mntFornList||[]).map(f => '<option value="'+f.id+'"'+(String(f.id)===String(o.fornecedor_id||'')?' selected':'')+'>'+_esc(f.nome)+'</option>').join('') + '<option value="_outro">Outro (digitar nome)</option>';
   c.innerHTML =
     '<div class="dsec">Planeado <span class="muted">· '+prevs.length+' previsão(ões) · '+fmtH(totPrevH)+' h · '+money(totPrevC)+'</span></div>'
     + tabPrev
@@ -4110,16 +4108,10 @@ async function otMaoObraRender(){
     + comparativo
     + '<div class="dsec" style="margin-top:8px">Realizado <span class="muted">· '+_otMo.itens.length+' linha(s) · '+fmtH(_otMo.total_horas)+' h · '+money(_otMo.total_custo)+'</span></div>'
     + tabReal
-    + (podeLancar ? '<div class="dsec" style="margin-top:10px">Lançar horas</div>'
-      + '<div style="display:flex;gap:14px;margin:6px 0 4px;font-size:11px">'
-      +   '<label style="display:flex;align-items:center;gap:5px;cursor:pointer"><input type="radio" name="mo-quem" value="interno" checked onchange="otMoQuem()"> Colaborador (interno)</label>'
-      +   '<label style="display:flex;align-items:center;gap:5px;cursor:pointer"><input type="radio" name="mo-quem" value="externo" onchange="otMoQuem()"> 🏭 Terceiro / fornecedor (externo)</label>'
-      + '</div>'
+    + (podeLancar ? '<div class="dsec" style="margin-top:10px">Lançar horas <span class="muted">· mão de obra interna — serviço de terceiros/fornecedor vai na aba Outros (padrão ManWinWin)</span></div>'
       + '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:flex-end">'
       + '<div class="mfield" style="width:150px">Setor<select id="mo-set" onchange="otMoFiltraSetor(\'mo\')">'+setOpts+'</select></div>'
-      + '<div class="mfield" id="mo-user-wrap" style="width:220px">Colaborador<select id="mo-user" onchange="otMoSugerir()">'+colOpts+'</select></div>'
-      + '<div class="mfield" id="mo-forn-wrap" style="width:220px;display:none">Fornecedor<select id="mo-forn" onchange="otMoFornMudou()">'+fornOpts+'</select></div>'
-      + '<div class="mfield" id="mo-nome-wrap" style="width:160px;display:none">Nome<input id="mo-nome" placeholder="terceiro / autônomo"></div>'
+      + '<div class="mfield" id="mo-user-wrap" style="width:220px">Funcionário<select id="mo-user" onchange="otMoSugerir()">'+colOpts+'</select></div>'
       + '<div class="mfield" id="mo-fn-wrap" style="width:220px">Função<select id="mo-fn" onchange="otMoFnMudou(\'mo\')">'+fnOpts()+'</select></div>'
       + '<div class="mfield" style="width:120px">Data<input id="mo-data" type="date" min="2000-01-01" max="2100-12-31" value="'+hoje+'"></div>'
       + '<div class="mfield" style="width:70px">Horas<input id="mo-horas" type="number" step="0.25" min="0.25" placeholder="0,00"></div>'
@@ -4127,10 +4119,6 @@ async function otMaoObraRender(){
       + '<div class="mfield" style="width:220px">Conta * <span id="mo-rub-dica" class="muted" style="font-weight:400"></span><select id="mo-rub">'+contaOpts+'</select></div>'
       + '<div class="mfield" style="flex:1;min-width:140px">Observação<input id="mo-obs" placeholder="opcional"></div>'
       + '<button class="btn p" onclick="otMoLancar()">＋ Lançar</button></div>' + semFn : '');
-}
-function otMoFornMudou(){
-  const v = (document.getElementById('mo-forn')||{}).value || '';
-  const w = document.getElementById('mo-nome-wrap'); if (w) w.style.display = v === '_outro' ? '' : 'none';
 }
 // Setor filtra as funções (organograma) e os colaboradores daquele setor — "todos" mostra tudo
 function otMoFiltraSetor(pfx){
@@ -4175,16 +4163,7 @@ async function otMoPrevExcluir(id){
   try { await mntFetch('/manutencao/api/tab/ot-mo-previsto/'+id, {method:'DELETE'}); otMaoObraRender(); }
   catch(e){ mostrarToast('❌ '+e.message,'warn'); }
 }
-function otMoQuem(){
-  const ext = (document.querySelector('input[name="mo-quem"]:checked')||{}).value === 'externo';
-  document.getElementById('mo-user-wrap').style.display = ext ? 'none' : '';
-  const fw = document.getElementById('mo-forn-wrap'); if (fw) fw.style.display = ext ? '' : 'none';
-  const fnw = document.getElementById('mo-fn-wrap'); if (fnw) { fnw.style.display = ext ? 'none' : ''; if (ext) { const s = document.getElementById('mo-fn'); if (s) s.value = ''; } }
-  document.getElementById('mo-nome-wrap').style.display = (ext && (document.getElementById('mo-forn')||{}).value === '_outro') ? '' : 'none';
-  if (ext) { document.getElementById('mo-user').value = ''; }
-  otMoDicaConta('mo');
-  otMoSugerir(ext);
-}
+// (19/10/2026) otMoQuem removida: mão de obra externa agora é lançada na aba Outros (padrão ManWinWin)
 function otMoSugerir(porFuncao){
   const us = document.getElementById('mo-user'), fs = document.getElementById('mo-fn'), c = document.getElementById('mo-custo');
   if (!c) return;
@@ -4201,16 +4180,12 @@ function otMoSugerir(porFuncao){
 }
 async function otMoLancar(){
   const g = id => (document.getElementById(id)||{}).value || '';
-  const ext = (document.querySelector('input[name="mo-quem"]:checked')||{}).value === 'externo';
-  const fornSel = ext ? (g('mo-forn') || '') : '';
-  if (ext && !fornSel) { mostrarToast('Escolha o fornecedor (ou "Outro" e digite o nome)', 'warn'); return; }
-  if (ext && fornSel === '_outro' && !g('mo-nome').trim()) { mostrarToast('Informe o nome do terceiro', 'warn'); return; }
-  if (!ext && !g('mo-user')) { mostrarToast('Escolha o colaborador', 'warn'); return; }
+  if (!g('mo-user')) { mostrarToast('Escolha o funcionário', 'warn'); return; }
   if (!g('mo-rub')) { mostrarToast('Escolha a conta do plano de contas', 'warn'); document.getElementById('mo-rub').focus(); return; }
   const custo = g('mo-custo') || ((_otMo && _otMo.custo_hora_sugerido && _otMo.custo_hora_sugerido[g('mo-user')]) ?? '');
   try {
     await mntFetch('/manutencao/api/ots/'+_otAberta.id+'/mao-obra', {method:'POST', body: JSON.stringify({
-      usuario_id: ext ? null : (g('mo-user') || null), nome: ext && fornSel === '_outro' ? g('mo-nome').trim() : '', fornecedor_id: ext && fornSel !== '_outro' ? fornSel : null, data: g('mo-data') || null,
+      usuario_id: g('mo-user') || null, nome: '', data: g('mo-data') || null,
       funcao_codigo: g('mo-fn') || null, rubrica: g('mo-rub'),
       horas: g('mo-horas'), custo_hora: custo === '' ? null : custo, observacao: g('mo-obs') })});
     mostrarToast('✅ Horas lançadas','ok'); otMaoObraRender();
@@ -4237,14 +4212,17 @@ async function otCustosRender(){
   const jj = v => { if (!v) return []; if (Array.isArray(v)) return v; try { const a = JSON.parse(v); return Array.isArray(a) ? a : []; } catch(e){ return []; } };
   // (19/10/2026) Grelha ManWinWin: Previsto × Realizado × Diferença × % — Mão de Obra (interna/externa por
   // fornecedor, conforme a aba Mão de Obra), Materiais, Outros, Total. Fornecedor da OT (Origem) entra como externo.
+  // Padrão ManWinWin: Mão de Obra = só interna (funcionários); serviço externo/fornecedor = Outros
   const moInt = (mo.itens||[]).filter(x => !x.externo), moExt = (mo.itens||[]).filter(x => x.externo);
   const sum = (arr, k) => arr.reduce((s,x) => s + (parseFloat(x[k])||0), 0);
-  const porForn = {}; moExt.forEach(x => { const k = x.nome || 'Terceiro'; porForn[k] = (porForn[k]||0) + (x.valor||0); });
+  const porForn = {};
+  (outros||[]).forEach(x => { const k = x.fornecedor_nome || 'sem fornecedor'; porForn[k] = (porForn[k]||0) + (parseFloat(x.valor)||0); });
+  moExt.forEach(x => { const k = (x.nome || 'Terceiro') + ' (MO externa — legado)'; porForn[k] = (porForn[k]||0) + (x.valor||0); });
   const fornOT = (_mntFornList||[]).find(f => String(f.id) === String(o.fornecedor_id||''));
   const prevMO = sum(mo.previstos||[], 'custo');
   const prevMat = jj(plano && plano.pecas).reduce((s,x) => s + nv(x.qtd) * nv(x.custo), 0);
   const prevOut = 0;
-  const realMO = mo.total_custo||0, realMat = cons.total||0, realOut = sum(outros||[], 'valor');
+  const realMO = sum(moInt, 'valor'), realMat = cons.total||0, realOut = sum(outros||[], 'valor') + sum(moExt, 'valor');
   const prevTot = prevMO + prevMat + prevOut, realTot = realMO + realMat + realOut;
   const fech = o.custo_total != null ? parseFloat(o.custo_total) : null;
   const pct = (p, r) => p ? ((r - p) / p * 100).toLocaleString('pt-BR',{maximumFractionDigits:0}) + '%' : '—';
@@ -4256,12 +4234,11 @@ async function otCustosRender(){
   c.innerHTML =
     '<div class="dsec">Custos da OT <span class="muted">· previsto × realizado</span></div>'
     + '<div class="panel"><table class="tbl" style="border:0;background:transparent"><thead><tr><th></th><th class="r" style="width:120px">Previsto</th><th class="r" style="width:120px">Realizado</th><th class="r" style="width:120px">Diferença</th><th class="r" style="width:60px">(%)</th></tr></thead><tbody>'
-    + lin('👥 Mão de Obra', prevMO, realMO, (mo.total_horas||0).toLocaleString('pt-BR')+' h')
-    + (moInt.length ? sub('interna — colaboradores ('+sum(moInt,'horas').toLocaleString('pt-BR')+' h)', sum(moInt,'valor')) : '')
-    + Object.keys(porForn).map(k => sub('🏭 externa — '+_esc(k), porForn[k])).join('')
-    + (fornOT && !porForn[fornOT.nome] ? sub('🏭 '+_esc(fornOT.nome)+' <span class="muted">(fornecedor da OT — sem horas lançadas)</span>', 0) : '')
+    + lin('👥 Mão de Obra', prevMO, realMO, sum(moInt,'horas').toLocaleString('pt-BR')+' h · interna')
     + lin('🔩 Materiais', prevMat, realMat, (cons.itens||[]).length+' baixa(s)'+(plano?' · FMP '+_esc(plano.codigo||''):''))
-    + lin('📄 Outros', prevOut, realOut, (outros||[]).length+' lançamento(s)')
+    + lin('📄 Outros', prevOut, realOut, (outros||[]).length+' lançamento(s) · serviço externo, frete…')
+    + Object.keys(porForn).map(k => sub('🏭 '+_esc(k), porForn[k])).join('')
+    + (fornOT && !porForn[fornOT.nome] ? sub('🏭 '+_esc(fornOT.nome)+' <span class="muted">(fornecedor da OT — sem custo lançado em Outros)</span>', 0) : '')
     + lin('TOTAL', prevTot, realTot, '', true)
     + '</tbody></table></div>'
     + '<div class="dsec" style="margin-top:10px">Fechamento</div>'
@@ -7004,11 +6981,10 @@ async function otOutrosRender(){
   const o = _otAberta; await _rubricas();
   tabJanela({ tab:'ot-outros', inline:'ot-aba-corpo', icone:'\ud83d\udcc4', titulo:'Outros', singular:'custo',
     filtro:'ot_id='+o.id, fixo:{ot_id:o.id},
-    nota:'Custos avulsos da OT que n\u00e3o s\u00e3o pe\u00e7a de estoque nem HH: servi\u00e7o externo, frete, guincho, aluguer de ferramenta. Entram no COU das An\u00e1lises e na aba Custos.',
-    campos:[{k:'data',label:'Data',type:'date',w:'130px',def:_F.hoje}, {k:'descricao',label:'Descri\u00e7\u00e3o',req:true}, _F.forn('fornecedor_id'),
-            {k:'documento',label:'Documento (NF/recibo)',w:'130px'}, {k:'rubrica',label:'Conta',type:'select',opts:()=>_rubFolhas('3').concat(_rubFolhas('4'),_rubFolhas('6'),_rubFolhas('7')),w:'220px',vazio:'— conta —'}, {k:'valor',label:'Valor (R$)',type:'number',step:'0.01',req:true,w:'110px'}],
-    colunas:[{t:'Data',k:'data',date:true},{t:'Descri\u00e7\u00e3o',k:'descricao'},{t:'Fornecedor',fmt:r=>_esc(r.fornecedor_nome||'')},{t:'Doc.',k:'documento'},{t:'Conta',k:'rubrica'},{t:'Valor',k:'valor',money:true,r:true}],
-    rodape: rows => '<div style="text-align:right;font-weight:700;padding:4px 6px;color:#1A2A5E">Total outros: R$ '+rows.reduce((s,r)=>s+(parseFloat(r.valor)||0),0).toLocaleString('pt-BR',{minimumFractionDigits:2})+'</div>' });
+    nota:'Padr\u00e3o ManWinWin: tudo que n\u00e3o \u00e9 pe\u00e7a de estoque nem HH interna entra aqui com o documento de custo \u2014 <b>m\u00e3o de obra externa / servi\u00e7o de fornecedor</b> (conta 1.03), frete, guincho, aluguer de ferramenta. Entram em Outros/CSE das An\u00e1lises e na aba Custos.',
+    campos:[{k:'documento',label:'Doc. Custo (NF/recibo)',w:'130px'}, _F.forn('fornecedor_id'), {k:'descricao',label:'Descri\u00e7\u00e3o',req:true}, {k:'data',label:'Data',type:'date',w:'130px',def:_F.hoje}, {k:'rubrica',label:'Conta',type:'select',opts:()=>_rubFolhas('1').filter(r=>String(r.id).startsWith('1.03')).concat(_rubFolhas('3'),_rubFolhas('4'),_rubFolhas('6'),_rubFolhas('7')),w:'220px',vazio:'— conta —'}, {k:'valor',label:'Valor (R$)',type:'number',step:'0.01',req:true,w:'110px'}],
+    colunas:[{t:'Doc. Custo',k:'documento'},{t:'Fornecedor',fmt:r=>_esc(r.fornecedor_nome||'')},{t:'Descri\u00e7\u00e3o',k:'descricao'},{t:'Data',k:'data',date:true},{t:'Custo',k:'valor',money:true,r:true},{t:'Conta',k:'rubrica'}],
+    rodape: rows => '<div style="text-align:right;font-weight:700;padding:4px 6px;color:#1A2A5E">Custo total: R$ '+rows.reduce((s,r)=>s+(parseFloat(r.valor)||0),0).toLocaleString('pt-BR',{minimumFractionDigits:2})+'</div>' });
 }
 async function otTarefasRender(){
   const o = _otAberta, c = document.getElementById('ot-aba-corpo');
