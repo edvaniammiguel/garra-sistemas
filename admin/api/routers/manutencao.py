@@ -228,6 +228,8 @@ async def _garantir_colunas_ot():
         "ALTER TABLE manutencao.ot ADD COLUMN IF NOT EXISTS horimetro_inicio NUMERIC",
         "ALTER TABLE manutencao.ot ADD COLUMN IF NOT EXISTS data_limite DATE",
         "ALTER TABLE manutencao.ot ADD COLUMN IF NOT EXISTS encerrado_em TIMESTAMPTZ",
+        # (19/10/2026) horas de serviço do interventor EXTERNO (sem custo próprio) — entram no TDR, ficam na Gestão
+        "ALTER TABLE manutencao.ot ADD COLUMN IF NOT EXISTS horas_externo NUMERIC",
     ):
         await ajard_query(ddl, fetch="none")
     # OT que já tem fornecedor é externa (migração idempotente)
@@ -758,13 +760,7 @@ async def detalhe_ot(ot_id: str, _auth=Depends(verificar_manutencao)):
         d["tarefas_planejado_sugerido"] = sug
     mo = await ajard_query("SELECT COALESCE(SUM(horas),0) AS h FROM manutencao.ot_mao_obra WHERE ot_id=%s AND ativo=true", (ot_id,), fetch="one")
     d["mo_horas"] = float(mo["h"]) if mo and mo["h"] is not None else 0.0
-    # (19/10/2026) horas de serviço externo lançadas em Outros (sem custo ou com): entram no TDR
-    try:
-        await _garantir_tabela("ot-outros")
-        oh = await ajard_query("SELECT COALESCE(SUM(horas),0) AS h FROM manutencao.ot_outros WHERE ot_id=%s AND ativo=true AND COALESCE(planejado,false)=false", (ot_id,), fetch="one")
-        d["outros_horas"] = float(oh["h"]) if oh and oh["h"] is not None else 0.0
-    except Exception:
-        d["outros_horas"] = 0.0
+    d["outros_horas"] = float(d.get("horas_externo") or 0)   # (19/10/2026) horas do interventor externo (Gestão)
     d["pedido"] = None
     if d.get("pedido_id"):
         await _garantir_pedidos()
@@ -842,6 +838,12 @@ async def mudar_status_ot(ot_id: str, request: Request, payload=Depends(verifica
            VALUES (%s,%s,%s,%s,%s)""",
         (ot_id, atual, novo, ("↩ REABERTA: " if reabrindo else "") + ((d.get("observacao") or "").strip() or ""), uid), fetch="none")
     if novo == "concluida":
+        # (19/10/2026) Regra Garra: máquina parada = da emissão (Início real) ao Fim informado.
+        # Sem PDI digitado, o sistema calcula sozinho.
+        await ajard_query(
+            """UPDATE manutencao.ot o SET horas_parada = ROUND(GREATEST(0, EXTRACT(EPOCH FROM (o.data_conclusao -
+                     COALESCE(o.data_inicio_real, (SELECT MIN(h.criado_em) FROM manutencao.ot_historico h WHERE h.ot_id=o.id AND h.status_para='em_andamento'), o.data_abertura)))/3600.0)::numeric, 1)
+               WHERE o.id=%s AND o.horas_parada IS NULL AND o.data_conclusao IS NOT NULL""", (ot_id,), fetch="none")
         # (15/09/2026) Fecha o ciclo da FMP: a conclusão vira a nova baseline (data + leitura viva)
         await _garantir_planos_cols()
         await ajard_query(
@@ -940,6 +942,7 @@ async def editar_ot(ot_id: str, request: Request, payload=Depends(verificar_manu
         d["fornecedor_id"] = None
     elif d.get("interventor") == "externo":
         d["setor_interventor"] = None
+        d["responsavel_id"] = None   # (19/10/2026) externo: o responsável é o fornecedor
     if "bloqueada" in d:
         d["bloqueada"] = bool(d["bloqueada"])
     # (19/10/2026) Gestão: Início real / leitura no início / Data Limite
@@ -955,6 +958,12 @@ async def editar_ot(ot_id: str, request: Request, payload=Depends(verificar_manu
             d["horimetro_inicio"] = float(v.replace(",", ".")) if v else None
         except ValueError:
             raise HTTPException(status_code=400, detail="Leitura no início inválida")
+    if "horas_externo" in d:
+        v = str(d["horas_externo"] if d["horas_externo"] is not None else "").strip()
+        try:
+            d["horas_externo"] = float(v.replace(",", ".")) if v else None
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Horas do serviço externo inválidas")
     if "data_limite" in d:
         v = (str(d["data_limite"] or "")).strip()
         try:
@@ -970,7 +979,7 @@ async def editar_ot(ot_id: str, request: Request, payload=Depends(verificar_manu
               "sintoma_codigo", "causa_codigo", "tipo_trabalho", "projecto_id", "plano_id",
               "interventor", "setor_interventor", "contrato", "tdm_previsto", "bloqueada",
               "tarefas_planejado", "tarefas_realizado",
-              "data_inicio_real", "horimetro_inicio", "data_limite"]
+              "data_inicio_real", "horimetro_inicio", "data_limite", "horas_externo"]
     if "projecto_id" in d and d["projecto_id"] == "":
         d["projecto_id"] = None
     updates, params = [], []
@@ -4319,6 +4328,7 @@ async def ot_consumos(ot_id: str, _auth=Depends(verificar_manutencao)):
         fetch="none")
     rows = await ajard_query(
         """SELECT m.id, m.tipo, m.quantidade, m.custo_unitario, m.criado_em, m.observacao, m.rubrica,
+                  m.documento_numero, fo.nome AS fornecedor_nome,
                   p.codigo AS peca_codigo, p.descricao AS peca_descricao, p.unidade,
                   p.custo_medio,
                   ao.codigo AS almox_origem, ad.codigo AS almox_destino,
@@ -4327,6 +4337,7 @@ async def ot_consumos(ot_id: str, _auth=Depends(verificar_manutencao)):
            JOIN manutencao.pecas p ON p.id = m.peca_id
            LEFT JOIN manutencao.almoxarifados ao ON ao.id = m.almox_origem
            LEFT JOIN manutencao.almoxarifados ad ON ad.id = m.almox_destino
+           LEFT JOIN public.fornecedores fo ON fo.id = m.fornecedor_id
            LEFT JOIN public.usuarios_garra u ON u.id = m.usuario_id
            WHERE m.ot_id = %s AND m.tipo IN ('saida', 'entrada', 'aplicacao_direta')
            ORDER BY m.criado_em""", (ot_id,))
@@ -4345,8 +4356,44 @@ async def ot_consumos(ot_id: str, _auth=Depends(verificar_manutencao)):
             "unidade": r["unidade"] or "UN", "quantidade": qtd,
             "custo_unitario": custo, "total": linha,
             "almox": r["almox_origem"] or r["almox_destino"], "rubrica": r["rubrica"],
+            "documento": r.get("documento_numero"), "fornecedor_nome": r.get("fornecedor_nome"),
             "usuario": r["usuario"], "observacao": r["observacao"]})
     return {"itens": itens, "total": round(total, 2)}
+
+
+@router.delete("/manutencao/api/ots/{ot_id}/consumos/{mov_id}")
+async def ot_consumo_excluir(ot_id: str, mov_id: str, payload=Depends(verificar_manutencao)):
+    """(19/10/2026) Excluir um item baixado na OT (padrão MWW ✕ no quadro Realizado).
+    Saída do armazém → devolve a quantidade ao almoxarifado de origem; aplicação
+    direta → só apaga; devolução (entrada) → retira do destino. Fica trilha no histórico."""
+    await garantir_nucleo()
+    o = await ajard_query("SELECT numero, status FROM manutencao.ot WHERE id=%s AND ativo=true", (ot_id,), fetch="one")
+    if not o:
+        raise HTTPException(status_code=404, detail="OT não encontrada")
+    if o["status"] in ("cancelada",):
+        raise HTTPException(status_code=400, detail="OT cancelada")
+    m = await ajard_query(
+        """SELECT m.*, p.codigo AS peca_codigo FROM manutencao.movimentacoes m JOIN manutencao.pecas p ON p.id=m.peca_id
+           WHERE m.id=%s AND m.ot_id=%s AND m.tipo IN ('saida','entrada','aplicacao_direta')""", (mov_id, ot_id), fetch="one")
+    if not m:
+        raise HTTPException(status_code=404, detail="Item não encontrado nesta OT")
+    qtd = float(m["quantidade"] or 0)
+    if m["tipo"] == "saida" and m["almox_origem"]:
+        await ajard_query(
+            """INSERT INTO manutencao.estoque (peca_id, almoxarifado_id, quantidade) VALUES (%s,%s,%s)
+               ON CONFLICT (peca_id, almoxarifado_id) DO UPDATE SET quantidade = manutencao.estoque.quantidade + EXCLUDED.quantidade""",
+            (m["peca_id"], m["almox_origem"], qtd), fetch="none")
+    elif m["tipo"] == "entrada" and m["almox_destino"]:
+        await ajard_query(
+            "UPDATE manutencao.estoque SET quantidade = quantidade - %s WHERE peca_id=%s AND almoxarifado_id=%s",
+            (qtd, m["peca_id"], m["almox_destino"]), fetch="none")
+    await ajard_query("DELETE FROM manutencao.movimentacoes WHERE id=%s", (mov_id,), fetch="none")
+    uid = await _usuario_id(payload)
+    await ajard_query(
+        """INSERT INTO manutencao.ot_historico (ot_id, status_de, status_para, observacao, usuario_id)
+           VALUES (%s,%s,%s,%s,%s)""",
+        (ot_id, o["status"], o["status"], f"Item excluído da OT: {m['peca_codigo']} × {qtd:g} ({m['tipo']})", uid), fetch="none")
+    return {"ok": True}
 
 
 @router.get("/manutencao/api/armazem")
