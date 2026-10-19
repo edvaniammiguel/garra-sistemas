@@ -223,6 +223,11 @@ async def _garantir_colunas_ot():
         # (19/10/2026) Aba Tarefas no padrão ManWinWin: dois textos livres — Planejado (da FMP) e Realizado (do app + gestão)
         "ALTER TABLE manutencao.ot ADD COLUMN IF NOT EXISTS tarefas_planejado TEXT",
         "ALTER TABLE manutencao.ot ADD COLUMN IF NOT EXISTS tarefas_realizado TEXT",
+        # (19/10/2026) Gestão no padrão ManWinWin: Início real editável (+ leitura), Data Limite e carimbo do Encerramento
+        "ALTER TABLE manutencao.ot ADD COLUMN IF NOT EXISTS data_inicio_real TIMESTAMPTZ",
+        "ALTER TABLE manutencao.ot ADD COLUMN IF NOT EXISTS horimetro_inicio NUMERIC",
+        "ALTER TABLE manutencao.ot ADD COLUMN IF NOT EXISTS data_limite DATE",
+        "ALTER TABLE manutencao.ot ADD COLUMN IF NOT EXISTS encerrado_em TIMESTAMPTZ",
     ):
         await ajard_query(ddl, fetch="none")
     # OT que já tem fornecedor é externa (migração idempotente)
@@ -635,8 +640,8 @@ async def listar_ots(status: str = None, equipamento_id: str = None,
                   eq.horimetro_atual AS equipamento_horimetro, eq.medicao AS equipamento_medicao,
                   us.nome AS solicitante_nome, ur.nome AS responsavel_nome,
                   fo.nome AS fornecedor_nome, pd.via AS pedido_via,
-                  (SELECT MIN(h.criado_em) FROM manutencao.ot_historico h
-                    WHERE h.ot_id = ot.id AND h.status_para = 'em_andamento') AS data_inicio_exec,
+                  COALESCE(ot.data_inicio_real, (SELECT MIN(h.criado_em) FROM manutencao.ot_historico h
+                    WHERE h.ot_id = ot.id AND h.status_para = 'em_andamento')) AS data_inicio_exec,
                   (SELECT COUNT(*) FROM manutencao.ot_apontamentos a WHERE a.ot_id=ot.id AND a.ativo=true)::int AS apontamentos,
                   (SELECT bool_or(a.concluido) FROM manutencao.ot_apontamentos a WHERE a.ot_id=ot.id AND a.ativo=true) AS sinal_concluido
            FROM manutencao.ot ot
@@ -657,6 +662,12 @@ async def listar_ots(status: str = None, equipamento_id: str = None,
                 d.get("data_prevista"), d.get("horimetro_previsto"),
                 d.get("equipamento_horimetro"), hoje,
                 "km" if (d.get("equipamento_medicao") or "") == "km" else "h")
+        elif d.get("status") in ("aberta", "em_andamento", "aguardando_peca") and d.get("data_limite"):
+            # (19/10/2026) Data Limite (padrão MWW) dá semáforo real às corretivas: prazo para concluir
+            v = _vencimento_ot(d.get("data_limite"), None, None, hoje)
+            if v:
+                v["texto"] = "limite: " + v["texto"]
+            d["vencimento"] = v
         saida.append(d)
     return saida
 
@@ -766,7 +777,7 @@ async def mudar_status_ot(ot_id: str, request: Request, payload=Depends(verifica
     uid = await _usuario_id(payload)
     extras, params = "", [novo]
     if reabrindo:
-        extras = ", data_conclusao=NULL, data_retorno_operacao=NULL"
+        extras = ", data_conclusao=NULL, data_retorno_operacao=NULL, encerrado_em=NULL"
     dt_conc = None
     hor_conc = None
     if novo == "concluida":
@@ -791,7 +802,7 @@ async def mudar_status_ot(ot_id: str, request: Request, payload=Depends(verifica
             if hor_conc < 0:
                 raise HTTPException(status_code=400, detail="Horímetro/km inválido")
         extras = (", data_conclusao=COALESCE(%s, now()), data_retorno_operacao=COALESCE(%s, now())::date, "
-                  "observacao_conclusao=%s, custo_total=%s, horimetro_conclusao=%s")
+                  "observacao_conclusao=%s, custo_total=%s, horimetro_conclusao=%s, encerrado_em=now()")
         params += [dt_conc, dt_conc, (d.get("observacao") or "").strip() or None, d.get("custo_total"), hor_conc]
         hp = d.get("horas_parada")
         if hp not in (None, ""):
@@ -911,6 +922,25 @@ async def editar_ot(ot_id: str, request: Request, payload=Depends(verificar_manu
         d["setor_interventor"] = None
     if "bloqueada" in d:
         d["bloqueada"] = bool(d["bloqueada"])
+    # (19/10/2026) Gestão: Início real / leitura no início / Data Limite
+    if "data_inicio_real" in d:
+        v = (str(d["data_inicio_real"] or "")).strip()
+        try:
+            d["data_inicio_real"] = datetime.fromisoformat(v.replace("Z", "+00:00")) if v else None
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Data de início inválida")
+    if "horimetro_inicio" in d:
+        v = str(d["horimetro_inicio"] if d["horimetro_inicio"] is not None else "").strip()
+        try:
+            d["horimetro_inicio"] = float(v.replace(",", ".")) if v else None
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Leitura no início inválida")
+    if "data_limite" in d:
+        v = (str(d["data_limite"] or "")).strip()
+        try:
+            d["data_limite"] = datetime.fromisoformat(v).date() if v else None
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Data limite inválida")
     # (10/10/2026) ManWinWin: a programação (data/registro previstos) NÃO se edita na ficha —
     # só pelo Avançado (/reprogramar, com motivo e histórico) ou pelo plano (aplicar-fmp, novo-ciclo).
     for c in ("data_prevista", "horimetro_previsto"):
@@ -919,7 +949,8 @@ async def editar_ot(ot_id: str, request: Request, payload=Depends(verificar_manu
               "fornecedor_id", "custo_total",
               "sintoma_codigo", "causa_codigo", "tipo_trabalho", "projecto_id", "plano_id",
               "interventor", "setor_interventor", "contrato", "tdm_previsto", "bloqueada",
-              "tarefas_planejado", "tarefas_realizado"]
+              "tarefas_planejado", "tarefas_realizado",
+              "data_inicio_real", "horimetro_inicio", "data_limite"]
     if "projecto_id" in d and d["projecto_id"] == "":
         d["projecto_id"] = None
     updates, params = [], []
