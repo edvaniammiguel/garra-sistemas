@@ -4057,7 +4057,7 @@ async function otMaoObraRender(){
   const prevs = _otMo.previstos || [];
   const totPrevH = prevs.reduce((s,x)=>s+(x.hh||0),0), totPrevC = prevs.reduce((s,x)=>s+(x.custo||0),0);
   const fmtH = v => (v||0).toLocaleString('pt-BR',{maximumFractionDigits:2});
-  // (19/10/2026) Layout "clean" ManWinWin: Planeado e Realizado em tabelas com cabeçalho; terceiro = 🏭 fornecedor
+  // (19/10/2026) Layout "clean" ManWinWin: Planejado e Realizado em tabelas com cabeçalho; terceiro = 🏭 fornecedor
   const tabPrev = prevs.length
     ? '<table class="tbl"><thead><tr><th style="width:70px">Origem</th><th>Função</th><th class="r" style="width:60px">HH</th><th class="r" style="width:80px">Custo/HH</th><th class="r" style="width:95px">Custo</th><th style="width:50px">Conta</th><th>Obs.</th><th style="width:22px"></th></tr></thead><tbody>'
       + prevs.map(x => '<tr>'
@@ -4095,21 +4095,19 @@ async function otMaoObraRender(){
     : '';
   const semFn = fns.length ? '' : '<div class="muted" style="font-size:10px;margin:4px 0">Sem funções cadastradas — cadastre em Parametrizar › Funções e custo HH (função por setor, custo/HH e conta).</div>';
   c.innerHTML =
-    '<div class="dsec">Planeado <span class="muted">· '+prevs.length+' previsão(ões) · '+fmtH(totPrevH)+' h · '+money(totPrevC)+'</span></div>'
-    + tabPrev
-    + (podeLancar ? '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:flex-end;padding:6px 0 2px">'
+    '<div class="dsec" style="display:flex;justify-content:space-between;align-items:center"><span>Planejado <span class="muted">· '+prevs.length+' previsão(ões) · '+fmtH(totPrevH)+' h · '+money(totPrevC)+'</span></span>'+(podeLancar?'<button class="btn" style="font-size:11px;padding:2px 8px" onclick="otMoForm(\'mp\')">⊕ Inserir</button>':'')+'</div>'
+    + (podeLancar ? '<div id="mo-form-mp" class="panel" style="display:none;margin-bottom:4px"><div style="display:flex;gap:6px;flex-wrap:wrap;align-items:flex-end">'
       + '<div class="mfield" style="width:150px">Setor<select id="mp-set" onchange="otMoFiltraSetor(\'mp\')">'+setOpts+'</select></div>'
       + '<div class="mfield" style="width:230px">Função<select id="mp-fn" onchange="otMoFnMudou(\'mp\')">'+fnOpts()+'</select></div>'
       + '<div class="mfield" style="width:70px">HH<input id="mp-hh" type="number" step="0.5" min="0.5" placeholder="0,0" oninput="otMoPrevTotal()"></div>'
       + '<div class="mfield" style="width:90px">Custo HH<input id="mp-custo" type="number" step="0.01" placeholder="0,00" oninput="otMoPrevTotal()"></div>'
       + '<div class="mfield" style="width:90px">Custo prev.<div id="mp-tot" style="padding:6px 0;font-weight:700;color:#1A2A5E">—</div></div>'
       + '<div class="mfield" style="width:220px">Conta * <span id="mp-rub-dica" class="muted" style="font-weight:400"></span><select id="mp-rub">'+contaOpts+'</select></div>'
-      + '<button class="btn" onclick="otMoPrevAdd()">＋ Prever</button></div>' : '')
+      + '<button class="btn p" onclick="otMoPrevAdd()">💾 Inserir</button><button class="btn" onclick="otMoForm(\'mp\')">Cancelar</button></div></div>' : '')
+    + tabPrev
     + comparativo
-    + '<div class="dsec" style="margin-top:8px">Realizado <span class="muted">· '+_otMo.itens.length+' linha(s) · '+fmtH(_otMo.total_horas)+' h · '+money(_otMo.total_custo)+'</span></div>'
-    + tabReal
-    + (podeLancar ? '<div class="dsec" style="margin-top:10px">Lançar horas <span class="muted">· mão de obra interna — serviço de terceiros/fornecedor vai na aba Outros (padrão ManWinWin)</span></div>'
-      + '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:flex-end">'
+    + '<div class="dsec" style="margin-top:8px;display:flex;justify-content:space-between;align-items:center"><span>Realizado <span class="muted">· '+_otMo.itens.length+' linha(s) · '+fmtH(_otMo.total_horas)+' h · '+money(_otMo.total_custo)+' · interna — serviço de fornecedor vai em Outros</span></span>'+(podeLancar?'<button class="btn" style="font-size:11px;padding:2px 8px" onclick="otMoForm(\'mo\')">⊕ Inserir</button>':'')+'</div>'
+    + (podeLancar ? '<div id="mo-form-mo" class="panel" style="display:none;margin-bottom:4px"><div style="display:flex;gap:6px;flex-wrap:wrap;align-items:flex-end">'
       + '<div class="mfield" style="width:150px">Setor<select id="mo-set" onchange="otMoFiltraSetor(\'mo\')">'+setOpts+'</select></div>'
       + '<div class="mfield" id="mo-user-wrap" style="width:220px">Funcionário<select id="mo-user" onchange="otMoSugerir()">'+colOpts+'</select></div>'
       + '<div class="mfield" id="mo-fn-wrap" style="width:220px">Função<select id="mo-fn" onchange="otMoFnMudou(\'mo\')">'+fnOpts()+'</select></div>'
@@ -4118,7 +4116,12 @@ async function otMaoObraRender(){
       + '<div class="mfield" style="width:90px">Custo/h<input id="mo-custo" type="number" step="0.01" placeholder="0,00" title="Preenchido pela função; pode ajustar"></div>'
       + '<div class="mfield" style="width:220px">Conta * <span id="mo-rub-dica" class="muted" style="font-weight:400"></span><select id="mo-rub">'+contaOpts+'</select></div>'
       + '<div class="mfield" style="flex:1;min-width:140px">Observação<input id="mo-obs" placeholder="opcional"></div>'
-      + '<button class="btn p" onclick="otMoLancar()">＋ Lançar</button></div>' + semFn : '');
+      + '<button class="btn p" onclick="otMoLancar()">💾 Inserir</button><button class="btn" onclick="otMoForm(\'mo\')">Cancelar</button></div>' + semFn + '</div>' : '')
+    + tabReal;
+}
+function otMoForm(q){
+  const el = document.getElementById('mo-form-'+q); if (!el) return;
+  el.style.display = el.style.display === 'none' ? '' : 'none';
 }
 // Setor filtra as funções (organograma) e os colaboradores daquele setor — "todos" mostra tudo
 function otMoFiltraSetor(pfx){
@@ -6978,13 +6981,83 @@ async function clientesPane(){
 
 /* ══ ABAS DA OT: Outros · Tarefas · Preparação · Leituras · Ferramentas · Documentos ══ */
 async function otOutrosRender(){
-  const o = _otAberta; await _rubricas();
-  tabJanela({ tab:'ot-outros', inline:'ot-aba-corpo', icone:'\ud83d\udcc4', titulo:'Outros', singular:'custo',
-    filtro:'ot_id='+o.id, fixo:{ot_id:o.id},
-    nota:'Padr\u00e3o ManWinWin: tudo que n\u00e3o \u00e9 pe\u00e7a de estoque nem HH interna entra aqui com o documento de custo \u2014 <b>m\u00e3o de obra externa / servi\u00e7o de fornecedor</b> (conta 1.03), frete, guincho, aluguer de ferramenta. Entram em Outros/CSE das An\u00e1lises e na aba Custos.',
-    campos:[{k:'documento',label:'Doc. Custo (NF/recibo)',w:'130px'}, _F.forn('fornecedor_id'), {k:'descricao',label:'Descri\u00e7\u00e3o',req:true}, {k:'data',label:'Data',type:'date',w:'130px',def:_F.hoje}, {k:'rubrica',label:'Conta',type:'select',opts:()=>_rubFolhas('1').filter(r=>String(r.id).startsWith('1.03')).concat(_rubFolhas('3'),_rubFolhas('4'),_rubFolhas('6'),_rubFolhas('7')),w:'220px',vazio:'— conta —'}, {k:'valor',label:'Valor (R$)',type:'number',step:'0.01',req:true,w:'110px'}],
-    colunas:[{t:'Doc. Custo',k:'documento'},{t:'Fornecedor',fmt:r=>_esc(r.fornecedor_nome||'')},{t:'Descri\u00e7\u00e3o',k:'descricao'},{t:'Data',k:'data',date:true},{t:'Custo',k:'valor',money:true,r:true},{t:'Conta',k:'rubrica'}],
-    rodape: rows => '<div style="text-align:right;font-weight:700;padding:4px 6px;color:#1A2A5E">Custo total: R$ '+rows.reduce((s,r)=>s+(parseFloat(r.valor)||0),0).toLocaleString('pt-BR',{minimumFractionDigits:2})+'</div>' });
+  // (19/10/2026) Padrão ManWinWin — aba Outros: dois quadros (Planejado × Realizado) com ⊕ para inserir
+  // no quadro, ✕ para remover. Serviço de terceiros/fornecedor (conta 1.03), frete, guincho, aluguer…
+  const o = _otAberta, c = document.getElementById('ot-aba-corpo');
+  c.innerHTML = '<div class="muted" style="padding:12px">Carregando…</div>';
+  await _rubricas();
+  if (_mntFornList === null) { try { _mntFornList = await mntFetch('/manutencao/api/fornecedores'); } catch(e){ _mntFornList = []; } }
+  let rows = [];
+  try { rows = await mntFetch('/manutencao/api/tab/ot-outros?ot_id='+o.id); } catch(e){ c.innerHTML = '<div class="muted" style="padding:12px">❌ '+_esc(e.message)+'</div>'; return; }
+  const plan = rows.filter(r => r.planejado === true), real = rows.filter(r => r.planejado !== true);
+  const money = v => 'R$ ' + (parseFloat(v)||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
+  const tot = arr => arr.reduce((s,r) => s + (parseFloat(r.valor)||0), 0);
+  const dd = v => v ? _fmtData(v) : '—';
+  const podeLancar = ['programada','aberta','em_andamento','aguardando_peca','concluida'].includes(o.status);
+  const contas = _rubFolhas('1').filter(r=>String(r.id).startsWith('1.03')).concat(_rubFolhas('3'),_rubFolhas('4'),_rubFolhas('6'),_rubFolhas('7'));
+  const contaOpts = '<option value="">— conta —</option>' + contas.map(r => '<option value="'+_esc(r.id)+'">'+_esc(r.nome)+'</option>').join('');
+  const fornOpts = '<option value="">— fornecedor —</option>' + (_mntFornList||[]).map(f => '<option value="'+f.id+'"'+(String(f.id)===String(o.fornecedor_id||'')?' selected':'')+'>'+_esc(f.nome)+'</option>').join('');
+  const mais = (id, titulo) => podeLancar ? '<button class="btn" style="font-size:11px;padding:2px 8px" title="'+titulo+'" onclick="otOutrosForm(\''+id+'\')">⊕ Inserir</button>' : '';
+  const x = r => podeLancar ? '<span style="cursor:pointer;color:#B91C1C" title="Remover" onclick="otOutrosExcluir(\''+r.id+'\')">✕</span>' : '';
+  const tabPlan = plan.length
+    ? '<table class="tbl"><thead><tr><th style="width:60px">Origem</th><th style="width:160px">Fornecedor</th><th>Descrição</th><th class="r" style="width:100px">Custo</th><th style="width:60px">Conta</th><th style="width:22px"></th></tr></thead><tbody>'
+      + plan.map(r => '<tr><td><span class="chip tm" style="font-size:9px">OT</span></td><td>'+_esc(r.fornecedor_nome||'—')+'</td><td>'+_esc(r.descricao||'')+'</td><td class="r"><b style="color:#1A2A5E">'+money(r.valor)+'</b></td><td class="mono muted">'+_esc(r.rubrica||'')+'</td><td>'+x(r)+'</td></tr>').join('')
+      + '</tbody><tfoot><tr><td colspan="3">Custo total</td><td class="r">'+money(tot(plan))+'</td><td colspan="2"></td></tr></tfoot></table>'
+    : '<div class="muted" style="padding:6px;font-size:11px">Sem previsão de outros custos. Use ⊕ Inserir para prever (ex.: serviço de fornecedor orçado).</div>';
+  const tabReal = real.length
+    ? '<table class="tbl"><thead><tr><th style="width:100px">Doc. Custo</th><th style="width:160px">Fornecedor</th><th>Descrição</th><th style="width:80px">Data</th><th class="r" style="width:100px">Custo</th><th style="width:60px">Conta</th><th style="width:22px"></th></tr></thead><tbody>'
+      + real.map(r => '<tr><td>'+_esc(r.documento||'—')+'</td><td>'+(r.fornecedor_nome?'🏭 '+_esc(r.fornecedor_nome):'—')+'</td><td>'+_esc(r.descricao||'')+'</td><td class="muted">'+dd(r.data)+'</td><td class="r"><b style="color:#1A2A5E">'+money(r.valor)+'</b></td><td class="mono muted">'+_esc(r.rubrica||'')+'</td><td>'+x(r)+'</td></tr>').join('')
+      + '</tbody><tfoot><tr><td colspan="4">Custo total</td><td class="r">'+money(tot(real))+'</td><td colspan="2"></td></tr></tfoot></table>'
+    : '<div class="muted" style="padding:6px;font-size:11px">Nenhum custo realizado. Use ⊕ Inserir com o documento de custo (NF/recibo) do fornecedor.</div>';
+  const hoje = new Date().toISOString().slice(0,10);
+  c.innerHTML =
+    '<div class="muted" style="font-size:10px;margin-bottom:4px">Tudo que não é peça de estoque nem HH interna: <b>mão de obra externa / serviço de fornecedor</b> (conta 1.03), frete, guincho, aluguer de ferramenta. Entra em Outros/CSE das Análises e na aba Custos.</div>'
+    + '<div class="dsec" style="display:flex;justify-content:space-between;align-items:center"><span>Planejado <span class="muted">· '+plan.length+' linha(s) · '+money(tot(plan))+'</span></span>'+mais('plan','Inserir previsão no quadro Planejado')+'</div>'
+    + '<div id="oo-form-plan" style="display:none;padding:6px 0 4px" class="panel">'
+      + '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:flex-end">'
+      + '<div class="mfield" style="width:200px">Fornecedor<select id="oo-p-forn">'+fornOpts+'</select></div>'
+      + '<div class="mfield" style="flex:1;min-width:180px">Descrição *<input id="oo-p-desc" placeholder="ex.: serviço de reforma do cilindro (orçamento)"></div>'
+      + '<div class="mfield" style="width:110px">Custo (R$) *<input id="oo-p-valor" inputmode="decimal" placeholder="0,00"></div>'
+      + '<div class="mfield" style="width:220px">Conta *<select id="oo-p-rub">'+contaOpts+'</select></div>'
+      + '<button class="btn p" onclick="otOutrosSalvar(true)">💾 Inserir</button><button class="btn" onclick="otOutrosForm(\'plan\')">Cancelar</button></div></div>'
+    + tabPlan
+    + '<div class="dsec" style="margin-top:10px;display:flex;justify-content:space-between;align-items:center"><span>Realizado <span class="muted">· '+real.length+' linha(s) · '+money(tot(real))+'</span></span>'+mais('real','Inserir custo realizado (documento de custo)')+'</div>'
+    + '<div id="oo-form-real" style="display:none;padding:6px 0 4px" class="panel">'
+      + '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:flex-end">'
+      + '<div class="mfield" style="width:130px">Doc. Custo (NF/recibo)<input id="oo-r-doc" placeholder="NF 1234"></div>'
+      + '<div class="mfield" style="width:200px">Fornecedor<select id="oo-r-forn">'+fornOpts+'</select></div>'
+      + '<div class="mfield" style="flex:1;min-width:180px">Descrição *<input id="oo-r-desc" placeholder="ex.: troca de bateria no local"></div>'
+      + '<div class="mfield" style="width:125px">Data<input id="oo-r-data" type="date" value="'+hoje+'"></div>'
+      + '<div class="mfield" style="width:110px">Custo (R$) *<input id="oo-r-valor" inputmode="decimal" placeholder="0,00"></div>'
+      + '<div class="mfield" style="width:220px">Conta *<select id="oo-r-rub">'+contaOpts+'</select></div>'
+      + '<button class="btn p" onclick="otOutrosSalvar(false)">💾 Inserir</button><button class="btn" onclick="otOutrosForm(\'real\')">Cancelar</button></div></div>'
+    + tabReal;
+}
+function otOutrosForm(q){
+  const el = document.getElementById('oo-form-'+q); if (!el) return;
+  const abrir = el.style.display === 'none';
+  el.style.display = abrir ? '' : 'none';
+  if (abrir) { const f = el.querySelector('input'); if (f) f.focus(); }
+}
+async function otOutrosSalvar(planejado){
+  const p = planejado ? 'p' : 'r';
+  const g = id => (document.getElementById('oo-'+p+'-'+id)||{}).value || '';
+  if (!g('desc').trim()) { mostrarToast('Informe a descrição', 'warn'); return; }
+  const valor = parseFloat(String(g('valor')).replace('.', '').replace(',', '.')) || parseFloat(g('valor')) || 0;
+  if (!(valor > 0)) { mostrarToast('Informe o custo', 'warn'); return; }
+  if (!g('rub')) { mostrarToast('Escolha a conta', 'warn'); return; }
+  try {
+    await mntFetch('/manutencao/api/tab/ot-outros', {method:'POST', body: JSON.stringify({
+      ot_id: _otAberta.id, planejado: !!planejado, fornecedor_id: g('forn') || null, descricao: g('desc').trim(),
+      documento: planejado ? null : (g('doc').trim() || null), data: planejado ? null : (g('data') || null),
+      valor, rubrica: g('rub') })});
+    mostrarToast('✅ Inserido', 'ok'); otOutrosRender();
+  } catch(e){ mostrarToast('❌ '+e.message, 'warn'); }
+}
+async function otOutrosExcluir(id){
+  if (!confirm('Remover esta linha?')) return;
+  try { await mntFetch('/manutencao/api/tab/ot-outros/'+id, {method:'DELETE'}); otOutrosRender(); }
+  catch(e){ mostrarToast('❌ '+e.message, 'warn'); }
 }
 async function otTarefasRender(){
   const o = _otAberta, c = document.getElementById('ot-aba-corpo');
