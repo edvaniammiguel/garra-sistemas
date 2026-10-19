@@ -1447,7 +1447,7 @@ function _pcAcBox(){
   let b = document.getElementById('pc-ac-box');
   if (!b){
     b = document.createElement('div'); b.id = 'pc-ac-box';
-    b.style.cssText = 'position:fixed;z-index:9999;background:#fff;border:1px solid #CBD5E1;border-radius:6px;box-shadow:0 6px 18px rgba(15,23,42,.18);max-height:220px;overflow:auto;display:none;font-size:11px';
+    b.style.cssText = 'position:fixed;z-index:9999;background:#fff;border:1px solid #CBD5E1;border-radius:6px;box-shadow:0 6px 18px rgba(15,23,42,.18);max-height:300px;overflow:auto;display:none;font-size:11px';
     document.body.appendChild(b);
     b.addEventListener('mousedown', ev => {
       const it = ev.target.closest('.pc-ac-it'); if (!it) return;
@@ -1471,7 +1471,8 @@ function pcSugerir(inp){
   const box = _pcAcBox();
   if (q.length < 2){ box.style.display = 'none'; return; }
   _pcAcTimer = setTimeout(async () => {
-    let r; try { r = await mntFetch('/manutencao/api/pecas?busca=' + encodeURIComponent(q) + '&limit=8'); } catch(e){ return; }
+    // (19/10/2026) era limit=8 — peça nova (ex.: G.BT.010.028) ficava fora da lista; agora 40 com rolagem
+    let r; try { r = await mntFetch('/manutencao/api/pecas?busca=' + encodeURIComponent(q) + '&limit=40'); } catch(e){ return; }
     const itens = (r && r.itens) || [];
     const naOT = !!inp.closest('#ot-saida, #ot-aplic');
     if (!itens.length){
@@ -1486,7 +1487,8 @@ function pcSugerir(inp){
       '<div class="pc-ac-it" style="padding:5px 8px;cursor:pointer;border-bottom:1px solid #F1F5F9" data-c="'+_esc(p.codigo)+'" data-d="'+_esc(p.descricao||'')+'" data-u="'+_esc(p.unidade||'UN')+'" data-fam="'+_esc(p.familia_codigo||'')+'" data-v="'+(p.custo_medio != null ? parseFloat(p.custo_medio) : '')+'">'
       + '<b>'+_esc(p.codigo)+'</b> '+_esc(p.descricao||'')
       + (p.custo_medio != null ? ' <span class="muted">R$ '+parseFloat(p.custo_medio).toFixed(2)+'</span>' : '')
-      + '</div>').join('');
+      + '</div>').join('')
+      + (itens.length >= 40 ? '<div class="muted" style="padding:5px 8px;font-size:10px">mostrando 40 — digite mais uma palavra (ex.: "kondor 45") para afinar</div>' : '');
     const rct = inp.getBoundingClientRect();
     box.style.left = rct.left+'px'; box.style.top = (rct.bottom+2)+'px';
     box.style.width = Math.max(rct.width, 340)+'px';
