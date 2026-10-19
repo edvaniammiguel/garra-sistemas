@@ -723,6 +723,21 @@ async def detalhe_ot(ot_id: str, _auth=Depends(verificar_manutencao)):
            FROM manutencao.ot_apontamentos a LEFT JOIN public.usuarios_garra u ON u.id = a.usuario_id
            WHERE a.ot_id=%s AND a.ativo=true ORDER BY a.criado_em""", (ot_id,)) or []
     d["apontamentos"] = [dict(a) for a in aps]
+    # (19/10/2026) Gestão › Início › Registo: automático (padrão MWW, campo cinza) = última leitura da
+    # máquina até o momento do início (partes, abastecimentos, checklist, OTs encerradas)
+    d["leitura_inicio"] = None
+    try:
+        await _garantir_leituras()
+        ini = d.get("data_inicio_real") or (await ajard_query(
+            "SELECT MIN(criado_em) AS t FROM manutencao.ot_historico WHERE ot_id=%s AND status_para='em_andamento'", (ot_id,), fetch="one") or {}).get("t")
+        if ini:
+            lr = await ajard_query(
+                "SELECT leitura FROM operacional.v_leituras WHERE equipamento_id=%s AND data <= %s ORDER BY data DESC LIMIT 1",
+                (d["equipamento_id"], ini), fetch="one")
+            if lr and lr.get("leitura") is not None:
+                d["leitura_inicio"] = float(lr["leitura"])
+    except Exception:
+        pass
     # (19/10/2026) Tarefas › Planejado: se ainda não foi escrito, sugere o checklist antigo (ot_tarefas) ou o
     # procedimento da FMP / modelo da biblioteca — o front mostra como texto editável.
     if not (d.get("tarefas_planejado") or "").strip():
@@ -743,6 +758,13 @@ async def detalhe_ot(ot_id: str, _auth=Depends(verificar_manutencao)):
         d["tarefas_planejado_sugerido"] = sug
     mo = await ajard_query("SELECT COALESCE(SUM(horas),0) AS h FROM manutencao.ot_mao_obra WHERE ot_id=%s AND ativo=true", (ot_id,), fetch="one")
     d["mo_horas"] = float(mo["h"]) if mo and mo["h"] is not None else 0.0
+    # (19/10/2026) horas de serviço externo lançadas em Outros (sem custo ou com): entram no TDR
+    try:
+        await _garantir_tabela("ot-outros")
+        oh = await ajard_query("SELECT COALESCE(SUM(horas),0) AS h FROM manutencao.ot_outros WHERE ot_id=%s AND ativo=true AND COALESCE(planejado,false)=false", (ot_id,), fetch="one")
+        d["outros_horas"] = float(oh["h"]) if oh and oh["h"] is not None else 0.0
+    except Exception:
+        d["outros_horas"] = 0.0
     d["pedido"] = None
     if d.get("pedido_id"):
         await _garantir_pedidos()
@@ -848,9 +870,7 @@ async def reprogramar_ot(ot_id: str, request: Request, payload=Depends(verificar
     motivos-reprogramacao do Parametrizar) e trilha completa no histórico."""
     await _garantir_colunas_ot()
     d = await request.json()
-    motivo = (d.get("motivo_codigo") or "").strip()
-    if not motivo:
-        raise HTTPException(status_code=400, detail="Motivo da reprogramação é obrigatório")
+    motivo = (d.get("motivo_codigo") or "").strip() or "AJUSTE"   # (19/10/2026) motivo passou a ser opcional (padrão MWW)
     ot = await ajard_query(
         "SELECT id, status, data_prevista, horimetro_previsto FROM manutencao.ot WHERE id=%s AND ativo=true",
         (ot_id,), fetch="one")
@@ -1906,7 +1926,8 @@ _TABELAS = {
     "ot-outros": ("manutencao.ot_outros", {
         "ot_id": "UUID", "data": "DATE", "descricao": "TEXT", "fornecedor_id": "UUID", "documento": "TEXT",
         "rubrica": "TEXT", "valor": "NUMERIC(14,2)",
-        "planejado": "BOOLEAN"}),   # (19/10/2026) true = linha do quadro Planejado (previsão); null/false = Realizado
+        "planejado": "BOOLEAN",
+        "horas": "NUMERIC(8,2)"}),   # (19/10/2026) tempo do serviço externo (conta no TDR mesmo sem custo)   # (19/10/2026) true = linha do quadro Planejado (previsão); null/false = Realizado
     "ot-tarefas": ("manutencao.ot_tarefas", {
         "ot_id": "UUID", "ordem": "INT", "descricao": "TEXT", "feita": "BOOLEAN", "feita_por": "UUID",
         "feita_em": "TIMESTAMPTZ", "observacao": "TEXT"}),
