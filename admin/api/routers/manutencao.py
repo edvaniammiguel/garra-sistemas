@@ -1852,7 +1852,8 @@ _TABELAS = {
         "custo_hh": "NUMERIC(12,2)", "rubrica": "TEXT", "observacao": "TEXT"}),
     "ot-outros": ("manutencao.ot_outros", {
         "ot_id": "UUID", "data": "DATE", "descricao": "TEXT", "fornecedor_id": "UUID", "documento": "TEXT",
-        "rubrica": "TEXT", "valor": "NUMERIC(14,2)"}),
+        "rubrica": "TEXT", "valor": "NUMERIC(14,2)",
+        "planejado": "BOOLEAN"}),   # (19/10/2026) true = linha do quadro Planejado (previsão); null/false = Realizado
     "ot-tarefas": ("manutencao.ot_tarefas", {
         "ot_id": "UUID", "ordem": "INT", "descricao": "TEXT", "feita": "BOOLEAN", "feita_por": "UUID",
         "feita_em": "TIMESTAMPTZ", "observacao": "TEXT"}),
