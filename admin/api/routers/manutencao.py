@@ -220,6 +220,9 @@ async def _garantir_colunas_ot():
         # (19/10/2026) Encerramento informa a leitura (horímetro/km) da máquina no fim do serviço:
         # vira baseline da FMP e fonte de leitura do Registo Funcionamento ('ot')
         "ALTER TABLE manutencao.ot ADD COLUMN IF NOT EXISTS horimetro_conclusao NUMERIC",
+        # (19/10/2026) Aba Tarefas no padrão ManWinWin: dois textos livres — Planejado (da FMP) e Realizado (do app + gestão)
+        "ALTER TABLE manutencao.ot ADD COLUMN IF NOT EXISTS tarefas_planejado TEXT",
+        "ALTER TABLE manutencao.ot ADD COLUMN IF NOT EXISTS tarefas_realizado TEXT",
     ):
         await ajard_query(ddl, fetch="none")
     # OT que já tem fornecedor é externa (migração idempotente)
@@ -709,6 +712,24 @@ async def detalhe_ot(ot_id: str, _auth=Depends(verificar_manutencao)):
            FROM manutencao.ot_apontamentos a LEFT JOIN public.usuarios_garra u ON u.id = a.usuario_id
            WHERE a.ot_id=%s AND a.ativo=true ORDER BY a.criado_em""", (ot_id,)) or []
     d["apontamentos"] = [dict(a) for a in aps]
+    # (19/10/2026) Tarefas › Planejado: se ainda não foi escrito, sugere o checklist antigo (ot_tarefas) ou o
+    # procedimento da FMP / modelo da biblioteca — o front mostra como texto editável.
+    if not (d.get("tarefas_planejado") or "").strip():
+        sug = ""
+        try:
+            await _garantir_tabela("ot-tarefas")
+            tl = await ajard_query("SELECT descricao, feita FROM manutencao.ot_tarefas WHERE ot_id=%s AND ativo=true ORDER BY ordem, criado_em", (ot_id,)) or []
+            if tl:
+                sug = "\n".join(("- " + (t["descricao"] or "")) for t in tl)
+            elif d.get("plano_id"):
+                pl = await ajard_query("SELECT procedimento, preparacao_codigo FROM manutencao.planos WHERE id=%s", (d["plano_id"],), fetch="one")
+                sug = (pl or {}).get("procedimento") or ""
+                if not sug.strip() and (pl or {}).get("preparacao_codigo"):
+                    bib = await ajard_query("SELECT tarefas FROM manutencao.biblioteca_preparacoes WHERE codigo=%s", (pl["preparacao_codigo"],), fetch="one")
+                    sug = (bib or {}).get("tarefas") or ""
+        except Exception:
+            sug = ""
+        d["tarefas_planejado_sugerido"] = sug
     mo = await ajard_query("SELECT COALESCE(SUM(horas),0) AS h FROM manutencao.ot_mao_obra WHERE ot_id=%s AND ativo=true", (ot_id,), fetch="one")
     d["mo_horas"] = float(mo["h"]) if mo and mo["h"] is not None else 0.0
     d["pedido"] = None
@@ -897,7 +918,8 @@ async def editar_ot(ot_id: str, request: Request, payload=Depends(verificar_manu
     campos = ["tipo", "prioridade", "descricao", "responsavel_id",
               "fornecedor_id", "custo_total",
               "sintoma_codigo", "causa_codigo", "tipo_trabalho", "projecto_id", "plano_id",
-              "interventor", "setor_interventor", "contrato", "tdm_previsto", "bloqueada"]
+              "interventor", "setor_interventor", "contrato", "tdm_previsto", "bloqueada",
+              "tarefas_planejado", "tarefas_realizado"]
     if "projecto_id" in d and d["projecto_id"] == "":
         d["projecto_id"] = None
     updates, params = [], []
