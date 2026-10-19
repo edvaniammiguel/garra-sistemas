@@ -1099,8 +1099,11 @@ async def listar_pecas(busca: str = None, familia: str = None, limit: int = 100,
     limit = min(max(int(limit or 100), 1), 300)
     where, params = ["ativo=true"], []
     if busca and busca.strip():
-        b = f"%{_sem_acento(busca.strip())}%"
-        where.append("(" + " OR ".join(f"{_sem_acento_sql(c)} ILIKE %s" for c in ("codigo", "descricao", "codigo_externo", "codigo_fabricante")) + ")"); params += [b, b, b, b]
+        # (19/10/2026) cada palavra tem de aparecer (em qualquer campo): "kondor 45" acha
+        # "Bateria Kondor 45 Amp" mesmo com palavras fora de ordem
+        for palavra in _sem_acento(busca.strip()).split():
+            b = f"%{palavra}%"
+            where.append("(" + " OR ".join(f"{_sem_acento_sql(c)} ILIKE %s" for c in ("codigo", "descricao", "codigo_externo", "codigo_fabricante")) + ")"); params += [b, b, b, b]
     if familia and familia.strip().startswith("@"):
         # (19/10/2026) '@G' = toda uma CLASSE da Norma (classe gravada na peça
         # OU prefixo do código OU classe da família cadastrada)
