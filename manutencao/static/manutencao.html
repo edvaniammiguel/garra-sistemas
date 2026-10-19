@@ -2337,14 +2337,14 @@ function neAba(i, el){
 // lista com busca · duplo clique seleciona · ＋ Novo cadastra sem sair da ficha ·
 // Vai Para abre o cadastro completo. Aplicado a Localização, Operador e Fornecedor.
 const _NE_SEL = {
-  loc:  { titulo:'Localiza\u00e7\u00f5es', icone:'\ud83d\udccd', carregar: async()=>{ const r = await mntFetch('/manutencao/api/almoxarifados'); return (Array.isArray(r)?r:(r.itens||[])).map(a=>({id:a.codigo, cod:a.codigo, nome:a.nome})); },
+  loc:  { titulo:'Localiza\u00e7\u00f5es', icone:'\ud83d\udccd', carregar: async()=>{ const r = await mntFetch('/manutencao/api/almoxarifados'); return (Array.isArray(r)?r:(r.itens||[])).filter(a=>a.ativo!==false).map(a=>({id:a.codigo, cod:a.codigo, nome:a.nome})); },
           aplicar: it => { const el=document.getElementById('ne-loc'); if(el) el.value = it.nome; },
           novo: { campos:[['codigo','C\u00f3digo (ex.: A3)','text'],['nome','Nome','text']], post: async d => { await mntFetch('/manutencao/api/almoxarifados',{method:'POST',body:JSON.stringify(d)}); return {id:d.codigo, cod:d.codigo, nome:d.nome}; } },
           vaiPara: () => { showModule('param'); abrirParamPane('almox','almox','Almoxarifados'); } },
   op:   { titulo:'Colaboradores', icone:'\ud83d\udc64', carregar: async()=>{ const r = await mntFetch('/operacional/api/operadores'); return (Array.isArray(r)?r:(r.itens||[])).map(o=>({id:o.id, cod:'', nome:o.nome})); },
           aplicar: it => { const el=document.getElementById('ne-op'); if(!el) return; if(![...el.options].some(o=>o.value===String(it.id))){ const o=document.createElement('option'); o.value=it.id; o.textContent=it.nome; el.appendChild(o);} el.value = it.id; },
           novo: null, vaiPara: () => { window.open('/admin#usuarios','_blank'); } },
-  fam:  { titulo:'Fam\u00edlias', icone:'\ud83d\udcc1', carregar: async()=>{ const r = await mntFetch('/manutencao/api/param/familias'); return (Array.isArray(r)?r:(r.itens||[])).map(f=>({id:f.codigo, cod:f.codigo, nome:f.nome})); },
+  fam:  { titulo:'Fam\u00edlias', icone:'\ud83d\udcc1', carregar: async()=>{ const r = await mntFetch('/manutencao/api/param/familias-objetos'); return (Array.isArray(r)?r:(r.itens||[])).filter(f=>f.ativo!==false).map(f=>({id:f.codigo, cod:f.codigo, nome:f.nome})); },   // (19/10/2026) tabela própria: famílias de objetos ≠ Norma de materiais
           novo: { campos:[['codigo','C\u00f3digo','text'],['nome','Nome','text']], post: async d => { await mntFetch('/manutencao/api/param/familias',{method:'POST',body:JSON.stringify(d)}); return {id:d.codigo, cod:d.codigo, nome:d.nome}; } } },
   comb: { titulo:'Combust\u00edvel \u2014 Materiais/pe\u00e7as', icone:'\u26fd',
           // (18/10/2026) Abre com a fam\u00edlia CB (combust\u00edveis); digitar procura no servidor em todo o cat\u00e1logo (4 mil itens, a lista local era s\u00f3 os 100 primeiros)
@@ -4201,7 +4201,7 @@ function otAplicDireta(){
   b.innerHTML = '<div class="plf-pc-row" style="background:#fff;border-radius:10px;box-shadow:0 12px 32px rgba(15,23,42,.3);padding:16px;width:540px;max-width:94vw">'
     + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><b style="color:#1A2A5E">⚡ Aplicação direta — do cadastro para a OT</b><span style="cursor:pointer;font-size:16px" onclick="document.getElementById(\'ot-aplic\').style.display=\'none\'">✕</span></div>'
     + '<div class="muted" style="font-size:10px;margin-bottom:6px">Consumo sem passar pelo estoque. Peça nova? Preencha código + descrição que ela nasce no cadastro junto.</div>'
-    + '<div class="mfield">Peça (código ou descrição — busca no cadastro; não achou? cadastre na hora)<input class="f" placeholder="ex.: filtro" oninput="pcSugerir(this)" autocomplete="off"></div>'
+    + '<div class="mfield">Peça (código ou descrição — busca no cadastro; não achou? cadastre na hora)<div style="display:flex;gap:4px"><input class="f" style="flex:1" placeholder="ex.: filtro" oninput="pcSugerir(this)" autocomplete="off"><button class="btn" title="Cadastrar peça nova sem sair da OT" onclick="otPecaNova(this.parentElement.querySelector(\'.f\').value.trim())">➕ Cadastrar</button></div></div>'
     + '<div class="saldo muted" style="font-size:10px;min-height:13px;margin:2px 0 4px"></div>'
     + '<div class="mfield">Descrição<input class="d" oninput="pcSugerir(this)" autocomplete="off"></div>'
     + '<div style="display:flex;gap:8px;margin-top:6px">'
@@ -4294,7 +4294,7 @@ function otSaidaAbrir(){
   }
   b.innerHTML = '<div class="plf-pc-row" style="background:#fff;border-radius:10px;box-shadow:0 12px 32px rgba(15,23,42,.3);padding:16px;width:520px;max-width:94vw">'
     + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><b style="color:#1A2A5E">Baixar peça na OT</b><span style="cursor:pointer;font-size:16px" onclick="document.getElementById(\'ot-saida\').style.display=\'none\'">✕</span></div>'
-    + '<div class="mfield">Peça<input class="f" placeholder="código ou descrição — não achou? cadastre na hora" oninput="pcSugerir(this)" autocomplete="off"></div>'
+    + '<div class="mfield">Peça<div style="display:flex;gap:4px"><input class="f" style="flex:1" placeholder="código ou descrição — não achou? cadastre na hora" oninput="pcSugerir(this)" autocomplete="off"><button class="btn" title="Cadastrar peça nova sem sair da OT — já volta preenchida aqui" onclick="otPecaNova(this.parentElement.querySelector(\'.f\').value.trim())">➕ Cadastrar</button></div></div>'
     + '<div class="mfield" style="margin-top:6px">Descrição<input class="d" oninput="pcSugerir(this)" autocomplete="off"></div>'
     + '<div class="saldo" style="display:none"></div>'
     + '<div style="display:flex;gap:8px;margin-top:6px">'
@@ -5683,8 +5683,15 @@ async function artJanela(codigo, opts){
   // réplica da janela "Novo Item" do ManWinWin (print 28/08)
   _artDepois = (opts && typeof opts.depois === 'function') ? opts.depois : null;
   if (_artFams === null) {
+    // (19/10/2026) Norma de materiais = famílias ativas + toda família que já tem peça no catálogo
+    // (mesmo sem nome cadastrado). Famílias de objetos ficam em tabela própria e não entram aqui.
     try { _artFams = (await mntFetch('/manutencao/api/param/familias')).filter(f => f.ativo !== false); }
     catch(e){ _artFams = []; }
+    try {
+      const arv = await mntFetch('/manutencao/api/pecas-arvore');
+      const tem = new Set(_artFams.map(f => String(f.codigo)));
+      arv.forEach(x => { const c = String(x.familia || ''); if (c && !tem.has(c)) { _artFams.push({ codigo: c, nome: '' }); tem.add(c); } });
+    } catch(e){}
   }
   let p = { unidade:'UN', caracteristicas:[], descricao: (opts && opts.descricao) || '' };
   _artEdit = null; _artCodAuto = true;
@@ -5886,6 +5893,7 @@ const PARAM_MAP = {
   tipos:     { dom:'tipos-equipamento',      titulo:'Tipos de Equipamento',  pk:'sigla' },
   grupos:    { dom:'sistemas',               titulo:'Grupos / Sistemas',     pk:'codigo' },
   familias:  { dom:'familias',               titulo:'Famílias de materiais', pk:'codigo' },
+  famobj:    { dom:'familias-objetos',       titulo:'Famílias de objetos',   pk:'codigo' },
   periodos:  { dom:'periodos',               titulo:'Períodos',              pk:'codigo' },
   tipofer:   { dom:'tipos-ferramenta',       titulo:'Tipos de ferramenta',   pk:'codigo' },
   tipodoc: { dom:'tipos-documento', titulo:'Tipos de documento', pk:'codigo' },
@@ -5914,6 +5922,7 @@ const PARAM_GRUPOS = [
     ['horarios','dom','Horários de trabalho'] ]},
   { t:'🏗 Equipamentos', itens:[
     ['tipos','dom','Tipos de equipamento'],
+    ['famobj','dom','Famílias de objetos'],
     ['grupos','dom','Grupos / Sistemas (árvore)'],
     ['equipList','equip','Equipamentos (frota)'] ]},
   { t:'🏭 Fornecedores', itens:[
