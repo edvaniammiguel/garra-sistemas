@@ -76,6 +76,7 @@ tr.sel td{background:#DBEAFE!important;color:#1A2A5E}
 .dot.o{background:#F97316}
 .dot.y{background:#EAB308}
 .dot.g{background:#16A34A}
+.dot.n{background:#fff;border:1.5px solid #CBD5E1;width:7px;height:7px}   /* (19/10/2026) sem prazo definido */
 
 /* ── RODAPÉ (números reais) ── */
 .rodape{height:22px;background:#1A2A5E;color:#CBD5E1;font-size:10px;
@@ -172,9 +173,20 @@ tr.sel td{background:#FDBA74 !important;color:#1A2A5E;font-weight:600}
 .mgrid>*,.mfield,fieldset{min-width:0}
 .mfield input,.mfield select,.mfield textarea{width:100%;max-width:100%;box-sizing:border-box;text-overflow:ellipsis}
 #ot-aba-corpo{overflow-x:hidden}
-.dsec{background:#1A2A5E;color:#E8820C;font-size:10px;font-weight:800;
-      letter-spacing:.05em;text-transform:uppercase;padding:3px 8px;
-      border-radius:3px;margin:10px 0 4px}
+/* (19/10/2026) Seções da ficha no padrão ManWinWin "clean": fundo claro, texto azul, filete laranja.
+   Antes era barra azul-marinho com texto laranja — pesado em telas longas. */
+.dsec{background:#EEF3FA;color:#1A2A5E;font-size:10px;font-weight:800;
+      letter-spacing:.04em;text-transform:uppercase;padding:4px 8px;
+      border:1px solid #D6E0EF;border-left:3px solid #E8820C;
+      border-radius:4px;margin:10px 0 4px}
+.dsec .muted{color:#64748B;font-weight:600;text-transform:none;letter-spacing:0}
+.tbl{width:100%;border-collapse:collapse;font-size:11px;background:#fff;border:1px solid #E2E8F0;border-radius:6px}
+.tbl th{font-size:10px;font-weight:700;color:#475569;text-align:left;padding:5px 6px;background:#F8FAFC;border-bottom:1px solid #E2E8F0}
+.tbl td{padding:5px 6px;border-bottom:1px solid #F1F5F9;vertical-align:middle}
+.tbl tr:last-child td{border-bottom:0}
+.tbl .r{text-align:right}
+.tbl tfoot td{background:#F8FAFC;font-weight:700;color:#1A2A5E;border-top:1px solid #E2E8F0}
+.panel{background:#F7FAFE;border:1px solid #D6E0EF;border-radius:6px;padding:10px 12px}
 
 /* ── TOAST ── */
 #toast{position:fixed;bottom:34px;left:50%;transform:translateX(-50%);
@@ -833,7 +845,9 @@ function expandirTudo(mod, abrir){
 /* ══ ORDENS DE TRABALHO ══ */
 const MNT_CHIP = { rascunho:['nr','Em criação'], programada:['pr','Programada'], aberta:['nr','Aberta'], em_andamento:['em','Em curso'],
   aguardando_peca:['pr','Aguard. peça'], concluida:['tm','Encerrada'], cancelada:['ap','Cancelada'] };
-const MNT_DOT = { urgente:'r', alta:'r', media:'y', baixa:'g' };
+// (19/10/2026) Semáforo = SÓ prazo (data/horímetro limite). Urgência vira ícone próprio ao lado do nº da OT.
+const MNT_URG = { urgente:['🚨','Urgente'], alta:['⚠️','Alta'], baixa:['🔽','Baixa'] };
+function otUrgIco(o){ const u = MNT_URG[o.prioridade]; return u ? ' <span title="Prioridade: '+u[1]+'" style="font-size:11px">'+u[0]+'</span>' : ''; }
 let _otsCache = [], _mntEquipList = [], _filtroEquipId = null, _filtroTT = null;
 const _TT_CAT = { A:'Preventivo Sistemático', B:'Preventivo Condicionado', C:'Corretivo', M:'Melhoria' };
 function montarNavTipos(){
@@ -953,7 +967,7 @@ function renderOTs(){
   const linha = o => {
     const [cc, cl] = MNT_CHIP[o.status] || ['nr', o.status];
     const v = o.vencimento;
-    const dot = v ? (v.nivel===0 ? 'r' : v.nivel===1 ? 'y' : 'g') : (MNT_DOT[o.prioridade] || 'y');
+    const dot = v ? (v.nivel===0 ? 'r' : v.nivel===1 ? 'y' : 'g') : 'n';   // sem prazo = bolinha vazia (urgência fica no ícone)
     const dp = o.data_prevista ? d(o.data_prevista) : (o.horimetro_previsto != null ? o.horimetro_previsto + ' h·km' : '—');
     const prog = v ? `<span style="color:${v.nivel===0?'#DC2626':v.nivel===1?'#B45309':'#16A34A'};font-size:10px">${_esc(v.texto)}</span>` : dp;
     const ent = (o.equipamento_codigo || '') + (o.equipamento_desc ? ' — ' + o.equipamento_desc : '');
@@ -963,7 +977,7 @@ function renderOTs(){
               : `<span class="dot ${dot}"></span>`;
     return `<tr data-id="${o.id}"${String(_mwSel.ots)===String(o.id)?' class="sel"':''} style="cursor:pointer" oncontextmenu="showCtxReal(event,'${o.id}','ot','${_esc(o.numero)}')" onclick="listaSelClick(event,this,'ots')" ondblclick="verOTReal('${o.id}')">
       <td style="text-align:center">${ico}</td>
-      <td class="bold" style="white-space:nowrap">${_esc(o.numero)}</td>
+      <td class="bold" style="white-space:nowrap">${_esc(o.numero)}${otUrgIco(o)}</td>
       <td>${_esc(o.descricao)}</td>
       <td style="max-width:210px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${_esc(ent)}">${_esc(ent)}</td>
       <td class="mono">${_esc(o.tipo_trabalho||'')}</td>
@@ -3453,13 +3467,13 @@ function renderJanelaOTs(){
   const linhas = ots.map(o => {
     const [cc, cl] = MNT_CHIP[o.status] || ['nr', o.status];
     const v = o.vencimento;
-    const dot = v ? (v.nivel===0 ? 'r' : v.nivel===1 ? 'y' : 'g') : (MNT_DOT[o.prioridade] || 'y');
+    const dot = v ? (v.nivel===0 ? 'r' : v.nivel===1 ? 'y' : 'g') : 'n';   // sem prazo = bolinha vazia (urgência fica no ícone)
     const prog = v ? '<span style="color:'+(v.nivel===0?'#DC2626':v.nivel===1?'#B45309':'#16A34A')+';font-size:10px">'+_esc(v.texto)+'</span>'
                    : (o.data_prevista ? d(o.data_prevista) : (o.horimetro_previsto != null ? o.horimetro_previsto+' h·km' : '—'));
     const sel = String(_otwin.sel) === String(o.id);
     return '<tr'+(sel?' class="sel"':'')+' onclick="otwSel(\''+o.id+'\')" ondblclick="verOTReal(\''+o.id+'\')" style="cursor:pointer">'
       + '<td style="text-align:center"><span class="dot '+dot+'"></span></td>'
-      + '<td class="bold" style="white-space:nowrap">'+_esc(o.numero)+'</td><td>'+_esc(o.descricao)+'</td>'
+      + '<td class="bold" style="white-space:nowrap">'+_esc(o.numero)+otUrgIco(o)+'</td><td>'+_esc(o.descricao)+'</td>'
       + '<td class="mono">'+_esc(o.tipo_trabalho || '')+'</td>'
       + '<td><span class="chip '+cc+'">'+cl+'</span></td><td>'+prog+'</td>'
       + '<td>'+d(o.data_abertura)+'</td><td>'+d(o.data_conclusao)+'</td></tr>';
@@ -4042,39 +4056,49 @@ async function otMaoObraRender(){
   // ── Planejado ──
   const prevs = _otMo.previstos || [];
   const totPrevH = prevs.reduce((s,x)=>s+(x.hh||0),0), totPrevC = prevs.reduce((s,x)=>s+(x.custo||0),0);
-  const linhaPrev = x =>
-    '<div style="display:flex;gap:6px;padding:4px 6px;border-bottom:1px solid #F1F5F9;font-size:11px;align-items:center">'
-    + '<span class="chip '+(x.origem==='OT'?'tm':'pr')+'" style="font-size:9px;width:56px;text-align:center">'+_esc(x.origem)+'</span>'
-    + '<b style="flex:1">'+_esc(x.funcao_codigo?x.funcao_codigo+' — ':'')+_esc(x.funcao_nome||'')+'</b>'
-    + '<span style="width:55px;text-align:right">'+x.hh.toLocaleString('pt-BR')+' h</span>'
-    + '<span style="width:75px;text-align:right">'+(x.custo_hh?x.custo_hh.toFixed(2)+'/h':'<span class="muted">—</span>')+'</span>'
-    + '<b style="width:90px;text-align:right;color:#1A2A5E">'+money(x.custo)+'</b>'
-    + '<span style="width:40px" class="muted mono" title="Conta">'+_esc(x.rubrica||'')+'</span>'
-    + '<span style="flex:1" class="muted">'+_esc(x.observacao||'')+'</span>'
-    + (x.id ? '<span style="cursor:pointer;color:#B91C1C" title="Remover previsão" onclick="otMoPrevExcluir(\''+x.id+'\')">✕</span>' : '<span style="width:12px"></span>') + '</div>';
+  const fmtH = v => (v||0).toLocaleString('pt-BR',{maximumFractionDigits:2});
+  // (19/10/2026) Layout "clean" ManWinWin: Planeado e Realizado em tabelas com cabeçalho; terceiro = 🏭 fornecedor
+  const tabPrev = prevs.length
+    ? '<table class="tbl"><thead><tr><th style="width:70px">Origem</th><th>Função</th><th class="r" style="width:60px">HH</th><th class="r" style="width:80px">Custo/HH</th><th class="r" style="width:95px">Custo</th><th style="width:50px">Conta</th><th>Obs.</th><th style="width:22px"></th></tr></thead><tbody>'
+      + prevs.map(x => '<tr>'
+        + '<td><span class="chip '+(x.origem==='OT'?'tm':'pr')+'" style="font-size:9px">'+_esc(x.origem)+'</span></td>'
+        + '<td><b>'+_esc(x.funcao_codigo?x.funcao_codigo+' — ':'')+_esc(x.funcao_nome||'')+'</b></td>'
+        + '<td class="r">'+fmtH(x.hh)+'</td>'
+        + '<td class="r">'+(x.custo_hh?x.custo_hh.toFixed(2):'<span class="muted">—</span>')+'</td>'
+        + '<td class="r"><b style="color:#1A2A5E">'+money(x.custo)+'</b></td>'
+        + '<td class="mono muted">'+_esc(x.rubrica||'')+'</td>'
+        + '<td class="muted">'+_esc(x.observacao||'')+'</td>'
+        + '<td>'+(x.id ? '<span style="cursor:pointer;color:#B91C1C" title="Remover previsão" onclick="otMoPrevExcluir(\''+x.id+'\')">✕</span>' : '')+'</td></tr>').join('')
+      + '</tbody><tfoot><tr><td colspan="2">Mob. HH / Custo total</td><td class="r">'+fmtH(totPrevH)+'</td><td></td><td class="r">'+money(totPrevC)+'</td><td colspan="3"></td></tr></tfoot></table>'
+    : '<div class="muted" style="padding:6px;font-size:11px">Sem previsão. Vem da FMP (mão de obra prevista) ou lance aqui.</div>';
   // ── Realizado ──
-  const linha = x =>
-    '<div style="display:flex;gap:6px;padding:4px 6px;border-bottom:1px solid #F1F5F9;font-size:11px;align-items:center">'
-    + '<span style="width:62px" class="muted">'+dd2(x.data)+'</span>'
-    + '<b style="flex:1">'+_esc(x.nome||'—')+(x.funcao_nome?' <span class="muted" style="font-weight:400">· '+_esc(x.funcao_nome)+'</span>':'')+'</b>'
-    + '<span class="chip '+(x.origem==='mobile'?'em':'tm')+'" style="font-size:9px">'+(x.origem==='mobile'?'📱 app':'🖥 desktop')+'</span>'
-    + '<span style="width:55px;text-align:right">'+x.horas.toLocaleString('pt-BR')+' h</span>'
-    + '<span style="width:75px;text-align:right">'+(x.custo_hora!=null?x.custo_hora.toFixed(2)+'/h':'<span class="muted">sem custo</span>')+'</span>'
-    + '<b style="width:90px;text-align:right;color:#1A2A5E">'+money(x.valor)+'</b>'
-    + '<span style="width:40px" class="muted mono" title="Conta">'+_esc(x.rubrica||'')+'</span>'
-    + '<span style="flex:1" class="muted">'+_esc(x.observacao||'')+'</span>'
-    + '<span style="cursor:pointer;color:#B91C1C" title="Remover" onclick="otMoExcluir(\''+x.id+'\')">✕</span></div>';
+  const tabReal = _otMo.itens.length
+    ? '<table class="tbl"><thead><tr><th style="width:70px">Data</th><th>Funcionário / Fornecedor</th><th style="width:78px">Origem</th><th class="r" style="width:60px">HH</th><th class="r" style="width:80px">Custo/HH</th><th class="r" style="width:95px">Custo</th><th style="width:50px">Conta</th><th>Obs.</th><th style="width:22px"></th></tr></thead><tbody>'
+      + _otMo.itens.map(x => '<tr>'
+        + '<td class="muted">'+dd2(x.data)+'</td>'
+        + '<td>'+(x.externo ? '<span title="Terceiro / fornecedor">🏭</span> ' : '')+'<b>'+_esc(x.nome||'—')+'</b>'+(x.externo?' <span class="muted">· externo</span>':'')+'</td>'
+        + '<td><span class="chip '+(x.origem==='mobile'?'em':'tm')+'" style="font-size:9px">'+(x.origem==='mobile'?'📱 app':'🖥 desktop')+'</span></td>'
+        + '<td class="r">'+fmtH(x.horas)+'</td>'
+        + '<td class="r">'+(x.custo_hora!=null?x.custo_hora.toFixed(2):'<span class="muted">—</span>')+'</td>'
+        + '<td class="r"><b style="color:#1A2A5E">'+money(x.valor)+'</b></td>'
+        + '<td class="mono muted">'+_esc(x.rubrica||'')+'</td>'
+        + '<td class="muted">'+_esc(x.observacao||'')+'</td>'
+        + '<td><span style="cursor:pointer;color:#B91C1C" title="Remover" onclick="otMoExcluir(\''+x.id+'\')">✕</span></td></tr>').join('')
+      + '</tbody><tfoot><tr><td colspan="3">Mob. HH / Custo total</td><td class="r">'+fmtH(_otMo.total_horas)+'</td><td></td><td class="r">'+money(_otMo.total_custo)+'</td><td colspan="3"></td></tr></tfoot></table>'
+    : '<div class="muted" style="padding:6px;font-size:11px">Nenhuma hora lançada. O mecânico lança pelo app (Registrar execução → Horas) ou aqui.</div>';
   const desvioH = _otMo.total_horas - totPrevH, desvioC = _otMo.total_custo - totPrevC;
   const comparativo = prevs.length
-    ? '<div style="display:flex;gap:18px;padding:6px;font-size:11px;background:#F8FAFC;border:1px solid #E2E8F0;border-radius:6px;margin:6px 0">'
-      + '<span><b>Planejado:</b> '+totPrevH.toLocaleString('pt-BR')+' h · '+money(totPrevC)+'</span>'
-      + '<span><b>Realizado:</b> '+_otMo.total_horas.toLocaleString('pt-BR')+' h · '+money(_otMo.total_custo)+'</span>'
-      + '<span style="color:'+(desvioH > 0 ? '#B91C1C' : '#15803D')+'"><b>Desvio:</b> '+(desvioH>0?'+':'')+desvioH.toLocaleString('pt-BR',{maximumFractionDigits:2})+' h · '+(desvioC>0?'+':'')+money(desvioC)+'</span></div>'
+    ? '<div style="display:flex;gap:18px;padding:6px 8px;font-size:11px" class="panel">'
+      + '<span><b>Planejado:</b> '+fmtH(totPrevH)+' h · '+money(totPrevC)+'</span>'
+      + '<span><b>Realizado:</b> '+fmtH(_otMo.total_horas)+' h · '+money(_otMo.total_custo)+'</span>'
+      + '<span style="color:'+(desvioH > 0 ? '#B91C1C' : '#15803D')+'"><b>Desvio:</b> '+(desvioH>0?'+':'')+fmtH(desvioH)+' h · '+(desvioC>0?'+':'')+money(desvioC)+'</span></div>'
     : '';
   const semFn = fns.length ? '' : '<div class="muted" style="font-size:10px;margin:4px 0">Sem funções cadastradas — cadastre em Parametrizar › Funções e custo HH (função por setor, custo/HH e conta).</div>';
+  if (_mntFornList === null) { try { _mntFornList = await mntFetch('/manutencao/api/fornecedores'); } catch(e){ _mntFornList = []; } }
+  const fornOpts = '<option value="">— fornecedor do cadastro —</option>' + (_mntFornList||[]).map(f => '<option value="'+f.id+'"'+(String(f.id)===String(o.fornecedor_id||'')?' selected':'')+'>'+_esc(f.nome)+'</option>').join('') + '<option value="_outro">Outro (digitar nome)</option>';
   c.innerHTML =
-    '<div class="dsec">Planejado — '+prevs.length+' previsão(ões) · '+totPrevH.toLocaleString('pt-BR')+' h · '+money(totPrevC)+'</div>'
-    + (prevs.length ? prevs.map(linhaPrev).join('') : '<div class="muted" style="padding:6px;font-size:11px">Sem previsão. Vem da FMP (mão de obra prevista) ou lance aqui.</div>')
+    '<div class="dsec">Planeado <span class="muted">· '+prevs.length+' previsão(ões) · '+fmtH(totPrevH)+' h · '+money(totPrevC)+'</span></div>'
+    + tabPrev
     + (podeLancar ? '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:flex-end;padding:6px 0 2px">'
       + '<div class="mfield" style="width:150px">Setor<select id="mp-set" onchange="otMoFiltraSetor(\'mp\')">'+setOpts+'</select></div>'
       + '<div class="mfield" style="width:230px">Função<select id="mp-fn" onchange="otMoFnMudou(\'mp\')">'+fnOpts()+'</select></div>'
@@ -4084,16 +4108,17 @@ async function otMaoObraRender(){
       + '<div class="mfield" style="width:220px">Conta * <span id="mp-rub-dica" class="muted" style="font-weight:400"></span><select id="mp-rub">'+contaOpts+'</select></div>'
       + '<button class="btn" onclick="otMoPrevAdd()">＋ Prever</button></div>' : '')
     + comparativo
-    + '<div class="dsec" style="margin-top:8px">Realizado — '+_otMo.itens.length+' linha(s) · '+_otMo.total_horas.toLocaleString('pt-BR')+' h · '+money(_otMo.total_custo)+'</div>'
-    + (_otMo.itens.length ? _otMo.itens.map(linha).join('') : '<div class="muted" style="padding:6px;font-size:11px">Nenhuma hora lançada. O mecânico lança pelo app (Registrar execução → Horas) ou aqui.</div>')
+    + '<div class="dsec" style="margin-top:8px">Realizado <span class="muted">· '+_otMo.itens.length+' linha(s) · '+fmtH(_otMo.total_horas)+' h · '+money(_otMo.total_custo)+'</span></div>'
+    + tabReal
     + (podeLancar ? '<div class="dsec" style="margin-top:10px">Lançar horas</div>'
       + '<div style="display:flex;gap:14px;margin:6px 0 4px;font-size:11px">'
-      +   '<label style="display:flex;align-items:center;gap:5px;cursor:pointer"><input type="radio" name="mo-quem" value="interno" checked onchange="otMoQuem()"> Colaborador</label>'
-      +   '<label style="display:flex;align-items:center;gap:5px;cursor:pointer"><input type="radio" name="mo-quem" value="externo" onchange="otMoQuem()"> Terceiro / autônomo</label>'
+      +   '<label style="display:flex;align-items:center;gap:5px;cursor:pointer"><input type="radio" name="mo-quem" value="interno" checked onchange="otMoQuem()"> Colaborador (interno)</label>'
+      +   '<label style="display:flex;align-items:center;gap:5px;cursor:pointer"><input type="radio" name="mo-quem" value="externo" onchange="otMoQuem()"> 🏭 Terceiro / fornecedor (externo)</label>'
       + '</div>'
       + '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:flex-end">'
       + '<div class="mfield" style="width:150px">Setor<select id="mo-set" onchange="otMoFiltraSetor(\'mo\')">'+setOpts+'</select></div>'
       + '<div class="mfield" id="mo-user-wrap" style="width:220px">Colaborador<select id="mo-user" onchange="otMoSugerir()">'+colOpts+'</select></div>'
+      + '<div class="mfield" id="mo-forn-wrap" style="width:220px;display:none">Fornecedor<select id="mo-forn" onchange="otMoFornMudou()">'+fornOpts+'</select></div>'
       + '<div class="mfield" id="mo-nome-wrap" style="width:160px;display:none">Nome<input id="mo-nome" placeholder="terceiro / autônomo"></div>'
       + '<div class="mfield" id="mo-fn-wrap" style="width:220px">Função<select id="mo-fn" onchange="otMoFnMudou(\'mo\')">'+fnOpts()+'</select></div>'
       + '<div class="mfield" style="width:120px">Data<input id="mo-data" type="date" min="2000-01-01" max="2100-12-31" value="'+hoje+'"></div>'
@@ -4102,6 +4127,10 @@ async function otMaoObraRender(){
       + '<div class="mfield" style="width:220px">Conta * <span id="mo-rub-dica" class="muted" style="font-weight:400"></span><select id="mo-rub">'+contaOpts+'</select></div>'
       + '<div class="mfield" style="flex:1;min-width:140px">Observação<input id="mo-obs" placeholder="opcional"></div>'
       + '<button class="btn p" onclick="otMoLancar()">＋ Lançar</button></div>' + semFn : '');
+}
+function otMoFornMudou(){
+  const v = (document.getElementById('mo-forn')||{}).value || '';
+  const w = document.getElementById('mo-nome-wrap'); if (w) w.style.display = v === '_outro' ? '' : 'none';
 }
 // Setor filtra as funções (organograma) e os colaboradores daquele setor — "todos" mostra tudo
 function otMoFiltraSetor(pfx){
@@ -4149,7 +4178,9 @@ async function otMoPrevExcluir(id){
 function otMoQuem(){
   const ext = (document.querySelector('input[name="mo-quem"]:checked')||{}).value === 'externo';
   document.getElementById('mo-user-wrap').style.display = ext ? 'none' : '';
-  document.getElementById('mo-nome-wrap').style.display = ext ? '' : 'none';
+  const fw = document.getElementById('mo-forn-wrap'); if (fw) fw.style.display = ext ? '' : 'none';
+  const fnw = document.getElementById('mo-fn-wrap'); if (fnw) { fnw.style.display = ext ? 'none' : ''; if (ext) { const s = document.getElementById('mo-fn'); if (s) s.value = ''; } }
+  document.getElementById('mo-nome-wrap').style.display = (ext && (document.getElementById('mo-forn')||{}).value === '_outro') ? '' : 'none';
   if (ext) { document.getElementById('mo-user').value = ''; }
   otMoDicaConta('mo');
   otMoSugerir(ext);
@@ -4171,13 +4202,15 @@ function otMoSugerir(porFuncao){
 async function otMoLancar(){
   const g = id => (document.getElementById(id)||{}).value || '';
   const ext = (document.querySelector('input[name="mo-quem"]:checked')||{}).value === 'externo';
-  if (ext && !g('mo-nome').trim()) { mostrarToast('Informe o nome do terceiro', 'warn'); return; }
+  const fornSel = ext ? (g('mo-forn') || '') : '';
+  if (ext && !fornSel) { mostrarToast('Escolha o fornecedor (ou "Outro" e digite o nome)', 'warn'); return; }
+  if (ext && fornSel === '_outro' && !g('mo-nome').trim()) { mostrarToast('Informe o nome do terceiro', 'warn'); return; }
   if (!ext && !g('mo-user')) { mostrarToast('Escolha o colaborador', 'warn'); return; }
   if (!g('mo-rub')) { mostrarToast('Escolha a conta do plano de contas', 'warn'); document.getElementById('mo-rub').focus(); return; }
   const custo = g('mo-custo') || ((_otMo && _otMo.custo_hora_sugerido && _otMo.custo_hora_sugerido[g('mo-user')]) ?? '');
   try {
     await mntFetch('/manutencao/api/ots/'+_otAberta.id+'/mao-obra', {method:'POST', body: JSON.stringify({
-      usuario_id: ext ? null : (g('mo-user') || null), nome: ext ? g('mo-nome').trim() : '', data: g('mo-data') || null,
+      usuario_id: ext ? null : (g('mo-user') || null), nome: ext && fornSel === '_outro' ? g('mo-nome').trim() : '', fornecedor_id: ext && fornSel !== '_outro' ? fornSel : null, data: g('mo-data') || null,
       funcao_codigo: g('mo-fn') || null, rubrica: g('mo-rub'),
       horas: g('mo-horas'), custo_hora: custo === '' ? null : custo, observacao: g('mo-obs') })});
     mostrarToast('✅ Horas lançadas','ok'); otMaoObraRender();
@@ -4192,26 +4225,51 @@ async function otMoExcluir(id){
 async function otCustosRender(){
   const o = _otAberta, c = document.getElementById('ot-aba-corpo');
   c.innerHTML = '<div class="muted" style="padding:12px">Consolidando custos…</div>';
-  let cons = {itens:[], total:0}, mo = {itens:[], total_horas:0, total_custo:0}, outros = [];
-  try { [cons, mo, outros] = await Promise.all([mntFetch('/manutencao/api/ots/'+o.id+'/consumos'), mntFetch('/manutencao/api/ots/'+o.id+'/mao-obra'), mntFetch('/manutencao/api/tab/ot-outros?ot_id='+o.id)]); }
+  let cons = {itens:[], total:0}, mo = {itens:[], previstos:[], total_horas:0, total_custo:0}, outros = [], plano = null;
+  try { [cons, mo, outros, plano] = await Promise.all([
+      mntFetch('/manutencao/api/ots/'+o.id+'/consumos'), mntFetch('/manutencao/api/ots/'+o.id+'/mao-obra'),
+      mntFetch('/manutencao/api/tab/ot-outros?ot_id='+o.id),
+      o.plano_id ? mntFetch('/manutencao/api/planos/'+o.plano_id).catch(()=>null) : Promise.resolve(null)]); }
   catch(e){ c.innerHTML = '<div class="muted" style="padding:12px">❌ '+_esc(e.message)+'</div>'; return; }
+  if (_mntFornList === null) { try { _mntFornList = await mntFetch('/manutencao/api/fornecedores'); } catch(e){ _mntFornList = []; } }
+  const nv = v => parseFloat(String(v ?? '').replace(',', '.')) || 0;
   const money = v => 'R$ ' + (parseFloat(v)||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
-  const forn = (_mntFornList||[]).find(f => String(f.id) === String(o.fornecedor_id||''));
-  const totOutros = (outros||[]).reduce((a,x)=>a+(parseFloat(x.valor)||0),0);
-  const apurado = (cons.total||0) + (mo.total_custo||0) + totOutros;
+  const jj = v => { if (!v) return []; if (Array.isArray(v)) return v; try { const a = JSON.parse(v); return Array.isArray(a) ? a : []; } catch(e){ return []; } };
+  // (19/10/2026) Grelha ManWinWin: Previsto × Realizado × Diferença × % — Mão de Obra (interna/externa por
+  // fornecedor, conforme a aba Mão de Obra), Materiais, Outros, Total. Fornecedor da OT (Origem) entra como externo.
+  const moInt = (mo.itens||[]).filter(x => !x.externo), moExt = (mo.itens||[]).filter(x => x.externo);
+  const sum = (arr, k) => arr.reduce((s,x) => s + (parseFloat(x[k])||0), 0);
+  const porForn = {}; moExt.forEach(x => { const k = x.nome || 'Terceiro'; porForn[k] = (porForn[k]||0) + (x.valor||0); });
+  const fornOT = (_mntFornList||[]).find(f => String(f.id) === String(o.fornecedor_id||''));
+  const prevMO = sum(mo.previstos||[], 'custo');
+  const prevMat = jj(plano && plano.pecas).reduce((s,x) => s + nv(x.qtd) * nv(x.custo), 0);
+  const prevOut = 0;
+  const realMO = mo.total_custo||0, realMat = cons.total||0, realOut = sum(outros||[], 'valor');
+  const prevTot = prevMO + prevMat + prevOut, realTot = realMO + realMat + realOut;
   const fech = o.custo_total != null ? parseFloat(o.custo_total) : null;
-  const row = (r, v, n) => '<div style="display:flex;justify-content:space-between;padding:5px 6px;border-bottom:1px solid #F1F5F9;font-size:12px"><span>'+r+(n?' <span class="muted" style="font-size:10px">'+n+'</span>':'')+'</span><b style="color:#1A2A5E">'+v+'</b></div>';
+  const pct = (p, r) => p ? ((r - p) / p * 100).toLocaleString('pt-BR',{maximumFractionDigits:0}) + '%' : '—';
+  const dif = (p, r) => { const d = r - p; return '<span style="color:'+(d > 0 ? '#B91C1C' : d < 0 ? '#15803D' : '#475569')+'">'+(d>0?'+':'')+money(d)+'</span>'; };
+  const lin = (rot, p, r, nota, forte) => '<tr'+(forte?' style="font-weight:800;color:#1A2A5E;background:#F8FAFC"':'')+'>'
+    + '<td>'+rot+(nota?' <span class="muted" style="font-weight:400;font-size:10px">'+nota+'</span>':'')+'</td>'
+    + '<td class="r">'+money(p)+'</td><td class="r">'+money(r)+'</td><td class="r">'+dif(p, r)+'</td><td class="r">'+pct(p, r)+'</td></tr>';
+  const sub = (rot, r) => '<tr><td style="padding-left:22px;color:#475569">↳ '+rot+'</td><td class="r muted">—</td><td class="r">'+money(r)+'</td><td></td><td></td></tr>';
   c.innerHTML =
-    '<div class="dsec">Custos apurados nos registros</div>'
-    + row('🔩 Peças (baixas do almoxarifado)', money(cons.total||0), cons.itens.length+' linha(s)')
-    + row('👥 Mão de obra', money(mo.total_custo||0), mo.total_horas.toLocaleString('pt-BR')+' h')
-    + row('📄 Outros custos lançados', money(totOutros), (outros||[]).length+' linha(s)')
-    + row('🏭 Serviço externo', forn ? '<span class="muted" style="font-weight:400">'+_esc(forn.nome)+'</span>' : '<span class="muted" style="font-weight:400">sem fornecedor</span>', forn ? 'valor entra no custo do fechamento' : '')
-    + row('<b>Σ Apurado</b>', money(apurado))
+    '<div class="dsec">Custos da OT <span class="muted">· previsto × realizado</span></div>'
+    + '<div class="panel"><table class="tbl" style="border:0;background:transparent"><thead><tr><th></th><th class="r" style="width:120px">Previsto</th><th class="r" style="width:120px">Realizado</th><th class="r" style="width:120px">Diferença</th><th class="r" style="width:60px">(%)</th></tr></thead><tbody>'
+    + lin('👥 Mão de Obra', prevMO, realMO, (mo.total_horas||0).toLocaleString('pt-BR')+' h')
+    + (moInt.length ? sub('interna — colaboradores ('+sum(moInt,'horas').toLocaleString('pt-BR')+' h)', sum(moInt,'valor')) : '')
+    + Object.keys(porForn).map(k => sub('🏭 externa — '+_esc(k), porForn[k])).join('')
+    + (fornOT && !porForn[fornOT.nome] ? sub('🏭 '+_esc(fornOT.nome)+' <span class="muted">(fornecedor da OT — sem horas lançadas)</span>', 0) : '')
+    + lin('🔩 Materiais', prevMat, realMat, (cons.itens||[]).length+' baixa(s)'+(plano?' · FMP '+_esc(plano.codigo||''):''))
+    + lin('📄 Outros', prevOut, realOut, (outros||[]).length+' lançamento(s)')
+    + lin('TOTAL', prevTot, realTot, '', true)
+    + '</tbody></table></div>'
     + '<div class="dsec" style="margin-top:10px">Fechamento</div>'
-    + row('💰 Custo total informado no fechamento', fech != null ? money(fech) : '<span class="muted" style="font-weight:400">OT ainda não fechada</span>')
-    + (fech != null ? row('Δ fechamento − apurado', '<span style="color:'+(fech-apurado>=0?'#1A2A5E':'#B91C1C')+'">'+money(fech-apurado)+'</span>', 'diferença = itens sem registro') : '')
-    + '<div class="muted" style="font-size:10px;margin-top:8px">Nas Análises: CM usa o custo do fechamento; CPI = peças; CLM = mão de obra; COU = outros; CSE = OTs com fornecedor.</div>';
+    + '<table class="tbl"><tbody>'
+    + '<tr><td>💰 Custo total informado no encerramento</td><td class="r" style="width:120px"><b>'+(fech != null ? money(fech) : '<span class="muted" style="font-weight:400">OT ainda não encerrada</span>')+'</b></td></tr>'
+    + (fech != null ? '<tr><td>Δ encerramento − realizado <span class="muted" style="font-size:10px">(diferença = itens sem registro)</span></td><td class="r">'+dif(realTot, fech)+'</td></tr>' : '')
+    + '</tbody></table>'
+    + '<div class="muted" style="font-size:10px;margin-top:8px">Nas Análises: CM usa o custo do encerramento; CPI = materiais; CLM = mão de obra; COU = outros; CSE = serviço externo (fornecedores).</div>';
 }
 async function otPecasRender(){
   const o = _otAberta, c = document.getElementById('ot-aba-corpo');
