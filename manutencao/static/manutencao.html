@@ -1940,7 +1940,7 @@ const _MW = {
   alm: {
     rotulo:'item',
     novo:"artJanela('')", abrir:"(function(){const i=_mwPrecisa('alm','item'); if(i) abrirPeca(i);})()",
-    repetir:"(function(){const i=_mwPrecisa('alm','item'); if(i) artJanela(i);})()",
+    repetir:"(function(){const i=_mwPrecisa('alm','item'); if(i) artJanela(null,{copiarDe:i});})()",
     excluir:"desativarArtigoMW()", imprimir:"mwImprimir('mod-alm','Materiais')",
     botoes:[
       ['\ud83d\udc41','Ver',[['\ud83d\uddc2 Cat\u00e1logo de Pe\u00e7as',"almLente('mestre')"],['\ud83d\udce6 Estoque',"almLente('armazem')"]]],
@@ -5695,8 +5695,15 @@ async function artJanela(codigo, opts){
   }
   let p = { unidade:'UN', caracteristicas:[], descricao: (opts && opts.descricao) || '' };
   _artEdit = null; _artCodAuto = true;
+  let copiaDe = null;
   if (codigo){
     try { p = await mntFetch('/manutencao/api/peca-ficha?peca_codigo=' + encodeURIComponent(codigo)); _artEdit = codigo; }
+    catch(e){ mostrarToast('❌ '+e.message,'warn'); return; }
+  } else if (opts && opts.copiarDe){
+    // (19/10/2026) Repetir (ManWinWin): item NOVO a partir do marcado — mesma família, unidade,
+    // custo, classe, características e especificação; código novo proposto; descrição para ajustar.
+    try { const o = await mntFetch('/manutencao/api/peca-ficha?peca_codigo=' + encodeURIComponent(opts.copiarDe)); copiaDe = o.codigo;
+          p = Object.assign({}, o, { codigo: '', codigo_fabricante: '', codigo_externo: '', custo_medio: o.custo_medio, descricao: o.descricao || '' }); }
     catch(e){ mostrarToast('❌ '+e.message,'warn'); return; }
   }
   const jj = v => { if (!v) return []; if (Array.isArray(v)) return v; try { const a = JSON.parse(v); return Array.isArray(a) ? a : []; } catch(e){ return []; } };
@@ -5714,7 +5721,7 @@ async function artJanela(codigo, opts){
   }
   const abas = [['id','Identificação'],['cod','Codificação'],['car','Características'],['arm','Estoques'],['obs','Observações']];
   b.innerHTML = '<div style="background:#fff;border-radius:10px;box-shadow:0 12px 32px rgba(15,23,42,.3);padding:16px;width:680px;max-width:96vh;max-height:92vh;overflow:auto">'
-    + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><b style="color:#1A2A5E">'+(_artEdit?'🏷 Item — '+_esc(_artEdit):'🏷 Novo Item')+'</b><span style="cursor:pointer;font-size:16px" onclick="document.getElementById(\'art-jan\').style.display=\'none\'">✕</span></div>'
+    + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><b style="color:#1A2A5E">'+(_artEdit?'🏷 Item — '+_esc(_artEdit):(copiaDe?'🏷 Novo Item — cópia de '+_esc(copiaDe):'🏷 Novo Item'))+'</b><span style="cursor:pointer;font-size:16px" onclick="document.getElementById(\'art-jan\').style.display=\'none\'">✕</span></div>'
     + '<div style="display:flex;gap:8px;flex-wrap:wrap">'
     + '<div class="mfield" style="width:150px">Família (Norma)<select id="art-raiz" onchange="artSubs();artProximo()">'+optsRaiz+'</select></div>'
     + '<div class="mfield" style="width:170px">Sub-Família<select id="art-sub" onchange="artProximo()"></select></div>'
@@ -5749,6 +5756,7 @@ async function artJanela(codigo, opts){
     + '<button class="btn p" onclick="artOK()">💾 '+(_artEdit?'Salvar alterações':'Criar item')+'</button></div></div>';
   b.style.display = 'flex';
   artSubs(fam);
+  if (copiaDe) artProximo();   // cópia: família já escolhida → propõe o próximo código livre
   if (_artEdit){
     try {
       const s = await mntFetch('/manutencao/api/estoque-saldos?peca_codigo=' + encodeURIComponent(_artEdit));
