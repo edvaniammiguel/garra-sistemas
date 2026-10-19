@@ -3844,6 +3844,16 @@ function otEncEstado(o){
   return _otEncState[id];
 }
 function otEncGuardar(campo, v){ if (_otAberta) { otEncEstado(_otAberta)[campo] = v; } }
+// (19/10/2026) Gestão: Início real / leitura no início / Data Limite gravam na hora
+async function otGestaoSalvar(campo, v){
+  if (!_otAberta) return;
+  try {
+    await mntFetch('/manutencao/api/ots/'+_otAberta.id, {method:'PATCH', body: JSON.stringify({ [campo]: v === '' ? null : v })});
+    _otAberta[campo] = v === '' ? null : v;
+    mostrarToast('✓ salvo', 'ok'); carregarOTsReais();
+    if (campo !== 'horimetro_inicio') otAba('gestao');
+  } catch(e){ mostrarToast('❌ '+e.message, 'warn'); }
+}
 // (19/10/2026) Janela "Encerrar OT" (usada só quando a ficha NÃO está aberta — ex.: botão direito na lista): devolve {data_conclusao(ISO), horimetro, custo, horas_parada, obs} ou null
 function otEncerrarDialogo(id){
   return new Promise(async resolve => {
@@ -4603,53 +4613,64 @@ function otAba(aba){
     });
   }
   if (aba === 'gestao'){
-
+    // (19/10/2026) Gestão no padrão ManWinWin: grelha Trabalho (linha × Data/Hora · Registo) + Tempos.
+    // Pedido · Última · Prog. Início · Prog. Fim · Início · Fim · Data Limite · Reg. Par./Total · Encerramento.
+    const aberta = ['programada','aberta','em_andamento','aguardando_peca'].includes(o.status);
     const h1 = (o.historico||[]).find(x => x.status_para === 'em_andamento');
-    const inicioReal = h1 ? new Date(h1.criado_em) : null;
+    const inicioReal = o.data_inicio_real ? new Date(o.data_inicio_real) : (h1 ? new Date(h1.criado_em) : null);
     const abertura = o.data_abertura ? new Date(o.data_abertura) : null;
     const fim = o.data_conclusao ? new Date(o.data_conclusao) : null;
+    const km = (o.equipamento_medicao||'') === 'km', unid = km ? 'km' : 'h';
+    const contador = km ? o.equipamento_km : o.equipamento_horimetro;
+    const s = aberta ? otEncEstado(o) : null;
     const hrs = ms => (ms/3600000).toFixed(1).replace('.',',') + ' h';
     const tde = (abertura && inicioReal) ? hrs(inicioReal - abertura) : '—';
     const tdm = inicioReal ? hrs((fim || new Date()) - inicioReal) + (fim ? '' : ' (em curso)') : '—';
     const u = o.ultima_ot;
-    const linha = (rot, val, forte) => '<div style="display:flex;gap:8px;padding:3px 0;border-bottom:1px solid #F1F5F9">'
-      + '<span style="width:120px;color:'+(forte?'#B91C1C':'#475569')+';font-weight:700;font-size:10px">'+rot+'</span>'
-      + '<span style="font-size:11px">'+val+'</span></div>';
+    const dtl = v => v ? new Date(v).toLocaleDateString('pt-BR') : '—';
+    const hl = v => v ? new Date(v).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}) : '';
+    const n = v => v == null || v === '' ? '—' : String(v).replace('.', ',');
+    // Prog. Fim = Prog. Início + TDM previsto (Origem › Prev. TDM)
+    const progIni = o.data_prevista ? new Date(o.data_prevista + 'T08:00:00') : null;
+    const progFim = progIni && o.tdm_previsto ? new Date(progIni.getTime() + parseFloat(o.tdm_previsto)*3600000) : progIni;
+    const inp = (id, tipo, val, extra) => '<input id="'+id+'" type="'+tipo+'" value="'+_esc(val||'')+'" style="font-size:11px;'+(tipo==='datetime-local'?'width:170px':tipo==='date'?'width:125px':'width:90px')+'" '+(extra||'')+'>';
+    const cel = v => '<td style="padding:4px 6px;font-size:11px;white-space:nowrap">'+v+'</td>';
+    const nota = v => '<td style="padding:4px 6px;font-size:10px;color:#64748B;line-height:1.3">'+v+'</td>';
+    const rot = (t, forte) => '<td style="width:95px;padding:4px 6px;font-size:10px;font-weight:700;color:'+(forte?'#B91C1C':'#475569')+'">'+t+'</td>';
+    const tr = cs => '<tr style="border-bottom:1px solid #F1F5F9">'+cs+'</tr>';
+    const leituraIni = aberta ? inp('ot-ini-hor','text', o.horimetro_inicio != null ? String(o.horimetro_inicio) : '', 'inputmode="decimal" placeholder="registo" onchange="otGestaoSalvar(\'horimetro_inicio\', this.value)"') : n(o.horimetro_inicio);
+    const regTotal = o.horimetro_conclusao != null ? parseFloat(o.horimetro_conclusao) : (aberta && s && s.hor !== '' ? parseFloat(String(s.hor).replace(',', '.')) : (contador != null ? parseFloat(contador) : null));
+    const regBase = o.horimetro_inicio != null ? parseFloat(o.horimetro_inicio) : (u && u.horimetro_na_abertura != null ? parseFloat(u.horimetro_na_abertura) : (o.horimetro_na_abertura != null ? parseFloat(o.horimetro_na_abertura) : null));
+    const regPar = (regTotal != null && regBase != null) ? (regTotal - regBase) : null;
+    const tabela = '<table style="width:100%;border-collapse:collapse"><thead><tr style="font-size:10px;color:#475569"><th></th><th style="text-align:left;padding:2px 6px">Data e hora</th><th style="text-align:left;padding:2px 6px">Registo ('+unid+')</th><th style="text-align:left;padding:2px 6px"></th></tr></thead><tbody>'
+      + tr(rot('Pedido') + cel(dtl(o.data_abertura)+' '+hl(o.data_abertura)) + cel(n(o.horimetro_na_abertura)) + nota(o.pedido ? 'pedido '+_esc(o.pedido.numero||'') : ''))
+      + tr(rot('Última') + cel(u ? dtl(u.data_conclusao) : '<span class="muted">— (primeira deste equipamento)</span>') + cel(u ? n(u.horimetro_na_abertura) : '—') + nota(u ? 'Última OT: <b>'+_esc(u.numero)+'</b>' : ''))
+      + tr(rot('Prog. Início', true) + cel(o.data_prevista ? _fmtData(o.data_prevista) : '—') + cel(n(o.horimetro_previsto)) + nota((aberta ? '<button class="btn" style="font-size:10px;padding:1px 8px" onclick="abrirReprogramar()">Avançado</button>' : '') + (o.prog_alterada ? ' <span style="color:#92400E">✎ alterada</span>' : '')))
+      + tr(rot('Prog. Fim', true) + cel(progFim ? progFim.toLocaleDateString('pt-BR') + (o.tdm_previsto ? ' ' + progFim.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}) : '') : '—') + cel('') + nota(o.tdm_previsto ? '= Prog. Início + '+n(o.tdm_previsto)+' h (Prev. TDM)' : 'informe Prev. TDM na Origem'))
+      + tr(rot('Início', true) + cel(aberta ? inp('ot-ini-data','datetime-local', inicioReal ? otEncLocal(inicioReal) : '', 'max="'+_esc(otEncLocal(new Date()))+'" onchange="otGestaoSalvar(\'data_inicio_real\', this.value ? new Date(this.value).toISOString() : \'\')"') : (inicioReal ? dtl(inicioReal)+' '+hl(inicioReal) : '—')) + cel(leituraIni) + nota(!o.data_inicio_real && h1 ? 'assumido da execução' : ''))
+      + tr(rot('Fim', true) + cel(aberta ? inp('ot-enc-data','datetime-local', s.data, 'max="'+_esc(otEncLocal(new Date()))+'" oninput="otEncGuardar(\'data\',this.value)"') : (fim ? dtl(fim)+' '+hl(fim) : '—'))
+          + cel(aberta ? inp('ot-enc-hor','text', s.hor, 'inputmode="decimal" placeholder="'+(contador != null ? 'contador '+contador : 'registo')+'" oninput="otEncGuardar(\'hor\',this.value)"') : n(o.horimetro_conclusao))
+          + nota(aberta && s.horApp ? 'do app: '+_esc(s.horApp) : ''))
+      + tr(rot('Data Limite') + cel(aberta ? inp('ot-limite','date', o.data_limite ? String(o.data_limite).slice(0,10) : '', 'onchange="otGestaoSalvar(\'data_limite\', this.value)"') : (o.data_limite ? _fmtData(o.data_limite) : '—')) + cel('') + nota('prazo p/ concluir · semáforo das corretivas'))
+      + tr(rot('Reg. Par. / Total') + cel('') + cel((regPar != null ? n(regPar.toFixed(1)) : '—') + ' / ' + (regTotal != null ? n(regTotal) : '—')) + nota('rodado desde o início / registo no fim'))
+      + tr(rot('Encerramento') + cel(o.encerrado_em ? dtl(o.encerrado_em)+' '+hl(o.encerrado_em) : (o.status === 'concluida' && fim ? dtl(fim)+' '+hl(fim) : '—')) + cel('') + nota(o.status === 'concluida' ? '<span class="chip ok">🗂️ Encerrada</span>' : ''))
+      + '</tbody></table>';
     const tempo = (sigla, nome, val, nota) => '<div style="display:flex;align-items:baseline;gap:6px;padding:4px 0" title="'+nome+'">'
       + '<b style="width:38px;color:#1A2A5E">'+sigla+'</b><span class="mono" style="font-size:12px">'+val+'</span>'
       + (nota ? '<span class="muted">'+nota+'</span>' : '') + '</div>';
     c.innerHTML =
       '<div style="display:flex;gap:14px;align-items:flex-start">'
-      + '<div style="flex:1.6"><div class="dsec">Trabalho</div>'
-      + linha('Abertura', dd(o.data_abertura) + ' · horím. ' + (o.horimetro_na_abertura ?? '—'))
-      + linha('Última OT', u ? _esc(u.numero)+' · '+dd(u.data_conclusao)+' · horím. '+(u.horimetro_na_abertura ?? '—') : '— (primeira deste equipamento)')
-      + linha('Prog. Início', (o.data_prevista ? _fmtData(o.data_prevista) : '—')
-              + ' · horím. previsto ' + (o.horimetro_previsto ?? '—') + (o.prog_alterada ? ' <span style="color:#92400E;font-size:10px">✎ alterada</span>' : ''), true)
-      + linha('Início real', inicioReal ? dd(h1.criado_em) : '—', true)
-      + (['programada','aberta','em_andamento','aguardando_peca'].includes(o.status)
-          // (19/10/2026) Encerramento preenchido AQUI, na tela: Fim (data/hora) e leitura da máquina.
-          // O botão "Encerrar…" lê estes campos — sem janela extra.
-          ? (function(){ const s = otEncEstado(o); const km = (o.equipamento_medicao||'') === 'km'; const cont = km ? o.equipamento_km : o.equipamento_horimetro;
-              return linha('Fim', '<input type="datetime-local" id="ot-enc-data" value="'+_esc(s.data)+'" max="'+_esc(otEncLocal(new Date()))+'" style="width:175px;font-size:11px" oninput="otEncGuardar(\'data\',this.value)"> '
-                + '<span class="muted" style="font-size:10px">'+(km?'km':'horím.')+'</span> <input id="ot-enc-hor" inputmode="decimal" value="'+_esc(s.hor)+'" placeholder="'+(cont != null ? 'contador '+cont : 'leitura')+'" style="width:90px;font-size:11px" oninput="otEncGuardar(\'hor\',this.value)">'
-                + (s.horApp ? ' <span class="muted" style="font-size:10px">(do app: '+_esc(s.horApp)+')</span>' : ''), true)
-              + ''; })()
-          : linha('Fim', fim ? dd(o.data_conclusao) + (o.horimetro_conclusao != null ? ' · horím. ' + o.horimetro_conclusao : '') : '—', true))
-      + (['programada','aberta','em_andamento','aguardando_peca'].includes(o.status)
-          ? '<div style="padding:8px 0 0"><button class="btn" onclick="abrirReprogramar()">⚙ Avançado — Programação (data ↔ horímetro pelo ritmo real)</button></div>'
-          : '')
-      + '</div>'
-      + '<div style="flex:1;border:1px solid #E2E8F0;border-radius:6px;padding:8px 12px;background:#F8FAFC">'
+      + '<div style="flex:1;min-width:0"><div class="dsec" style="margin-top:0">Trabalho</div>' + tabela + '</div>'
+      + '<div style="flex:0 0 225px" class="panel">'
       + '<div style="font-weight:800;color:#1A2A5E;font-size:11px;margin-bottom:4px">Tempos e Indisponibilidades</div>'
-      + tempo('TDE','Tempo De Espera — da abertura ao início da intervenção', tde, abertura && inicioReal ? 'assumido das datas' : '')
-      + tempo('TDM','Tempo De Manutenção — duração da intervenção', tdm, inicioReal ? 'assumido das datas' : '')
-      + (['programada','aberta','em_andamento','aguardando_peca'].includes(o.status)
-          ? tempo('PDI','Paragem Devido à Intervenção — horas de máquina parada', '<input id="ot-enc-hp" inputmode="decimal" value="'+_esc(otEncEstado(o).hp)+'" placeholder="h paradas" style="width:70px;font-size:11px" oninput="otEncGuardar(\'hp\',this.value)"> h', 'digite no encerramento')
-          : tempo('PDI','Paragem Devido à Intervenção — horas de máquina parada', o.horas_parada != null ? String(o.horas_parada).replace('.',',')+' h' : '—', o.horas_parada != null ? 'digitado no encerramento' : ''))
-      + tempo('TDR','Tempo De Reparação — horas de mão de obra apontadas', o.mo_horas ? String(o.mo_horas).replace('.',',')+' h' : '—', o.mo_horas ? 'soma da aba Mão de Obra' : 'entra com Mão de Obra')
-      + '<div class="muted" style="margin-top:6px;line-height:1.5">PDI é o que vira dinheiro: máquina parada = diária perdida. Alimenta o KPI de Disponibilidade no BI.</div>'
-      + '</div></div>'
-      ;   // (19/10/2026) relato do mecânico saiu daqui → aba Tarefas; horas → Mão de Obra; fotos → Documentos
+      + tempo('TDE','Tempo De Espera — do pedido ao início', tde, abertura && inicioReal ? 'Pedido → Início' : '')
+      + (aberta
+          ? tempo('PDI','Paragem Devido à Intervenção — horas de máquina parada', '<input id="ot-enc-hp" inputmode="decimal" value="'+_esc(s.hp)+'" placeholder="paradas" style="width:60px;font-size:11px" oninput="otEncGuardar(\'hp\',this.value)"> h', '')
+          : tempo('PDI','Paragem Devido à Intervenção — horas de máquina parada', o.horas_parada != null ? n(o.horas_parada)+' h' : '—', o.horas_parada != null ? 'indisponibilidade' : ''))
+      + tempo('TDM','Tempo De Manutenção — Início → Fim', tdm, '')
+      + tempo('TDR','Tempo De Reparação — HH da Mão de Obra', o.mo_horas ? n(o.mo_horas)+' h' : '—', o.mo_horas ? 'aba Mão de Obra' : '')
+      + '<div class="muted" style="margin-top:6px;line-height:1.5">PDI é o que vira dinheiro: máquina parada = diária perdida. Alimenta o KPI de Disponibilidade.</div>'
+      + '</div></div>';
   }
   if (aba === 'ped'){
     const p = o.pedido;
