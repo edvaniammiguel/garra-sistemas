@@ -3839,7 +3839,7 @@ function otEncEstado(o){
     const comHor = aps.filter(a => a.horimetro != null && a.horimetro !== '').sort((a,b) => parseFloat(b.horimetro)-parseFloat(a.horimetro))[0] || null;
     _otEncState[id] = { data: otEncLocal(ultimo && ultimo.criado_em ? ultimo.criado_em : new Date()),
                         hor: comHor ? String(comHor.horimetro) : '', horApp: comHor ? String(comHor.horimetro) : '',
-                        obs: aps.slice().reverse().map(a => a.relato).filter(Boolean).join(' · '), hp: '' };
+                        obs: (o.tarefas_realizado||'').trim() || aps.slice().reverse().map(a => a.relato).filter(Boolean).join(' · '), hp: '' };   // relato do encerramento = Tarefas › Realizado
   }
   return _otEncState[id];
 }
@@ -7070,47 +7070,41 @@ async function otOutrosExcluir(id){
   catch(e){ mostrarToast('❌ '+e.message, 'warn'); }
 }
 async function otTarefasRender(){
+  // (19/10/2026) Padrão ManWinWin — aba Tarefas simples: dois textos. PLANEJADO (vem da FMP/biblioteca ou escrito
+  // pela gestão) e REALIZADO (vem do que o mecânico registrou no app; a gestão completa e salva).
   const o = _otAberta, c = document.getElementById('ot-aba-corpo');
-  let t = [];
-  try { t = await mntFetch('/manutencao/api/tab/ot-tarefas?ot_id='+o.id); } catch(e){ c.innerHTML = '\u274c '+_esc(e.message); return; }
-  const feitas = t.filter(x => x.feita).length;
-  const pct = t.length ? Math.round(feitas / t.length * 100) : 0;
-  // (19/10/2026) O que o mecânico registrou pelo app (relato + concluído) mora aqui, junto das tarefas.
-  const aps = (o.apontamentos||[]);
-  const dd = v => { try { return new Date(v).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',year:'2-digit',hour:'2-digit',minute:'2-digit'}); } catch(e){ return '—'; } };
-  const regApp = '<div class="dsec" style="margin-top:12px">📱 O que foi feito — registros do mecânico (app)</div>'
-    + (aps.length
-      ? '<table class="tbl"><thead><tr><th style="width:95px">Data</th><th style="width:120px">Quem</th><th>O que foi feito</th><th style="width:90px"></th></tr></thead><tbody>'
-        + aps.map(a => '<tr><td class="mono muted">'+dd(a.criado_em)+(a.atualizado_em?' <span title="editado">✎</span>':'')+'</td><td>'+_esc(a.usuario_nome||'')+'</td><td>'+_esc(a.relato||'')+'</td><td>'+(a.concluido?'<span class="chip ok">✅ concluído</span>':'')+'</td></tr>').join('')
-        + '</tbody></table><div class="muted" style="font-size:10px;margin-top:4px">Horas estão em Mão de Obra · fotos em Documentos · leitura (horímetro/km) em Gestão › Fim.</div>'
-      : '<div class="muted" style="font-size:11px;padding:4px 6px">Nenhum registro pelo app nesta OT.</div>');
-  c.innerHTML = '<div class="dsec">Tarefas \u2014 '+feitas+'/'+t.length+' conclu\u00eddas ('+pct+' %)</div>'
-    + '<div style="height:6px;background:#E2E8F0;border-radius:3px;margin:4px 0 8px"><div style="height:6px;width:'+pct+'%;background:#15803D;border-radius:3px"></div></div>'
-    + (t.length ? t.map(x => '<div style="display:flex;gap:8px;align-items:center;padding:4px 6px;border-bottom:1px solid #F1F5F9;font-size:11px">'
-        + '<input type="checkbox"'+(x.feita?' checked':'')+' onchange="otTarefaMarcar(\''+x.id+'\',this.checked)" style="width:16px;height:16px">'
-        + '<span class="muted" style="width:22px">'+(x.ordem||'')+'</span><span style="flex:1;'+(x.feita?'text-decoration:line-through;color:#64748B':'')+'">'+_esc(x.descricao)+'</span>'
-        + (x.feita ? '<span class="muted">'+_esc(x.feita_por_nome||'')+' \u00b7 '+(x.feita_em?_fmtData(x.feita_em):'')+'</span>' : '')
-        + '<span style="cursor:pointer;color:#B91C1C" onclick="otTarefaExcluir(\''+x.id+'\')">\u2715</span></div>').join('')
-      : '<div class="muted" style="padding:8px 6px;font-size:11px">Sem tarefas. Importe da FMP ou adicione abaixo.</div>')
-    + '<div style="display:flex;gap:6px;margin-top:8px;align-items:flex-end"><div class="mfield" style="flex:1">Nova tarefa<input id="tar-desc" placeholder="ex.: verificar folga do material rodante"></div>'
-    + '<button class="btn p" onclick="otTarefaAdd()">\uff0b Adicionar</button>'
-    + (!t.length ? '<button class="btn" onclick="otTarefasDaFmp()">\ud83d\udcc5 Importar da FMP</button>' : '') + '</div>'
-    + regApp;
+  const aps = (o.apontamentos||[]).slice().sort((x,y) => String(x.criado_em||'').localeCompare(String(y.criado_em||'')));
+  const dd = v => { try { return new Date(v).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',year:'2-digit',hour:'2-digit',minute:'2-digit'}); } catch(e){ return ''; } };
+  const doApp = aps.map(a => '- ' + dd(a.criado_em) + (a.usuario_nome ? ' · ' + a.usuario_nome : '') + ': ' + (a.relato||'') + (a.concluido ? ' ✅' : '')).join('\n');
+  const plan = (o.tarefas_planejado || '').trim() || (o.tarefas_planejado_sugerido || '');
+  const real = (o.tarefas_realizado || '').trim() || doApp;
+  const podeEditar = ['programada','aberta','em_andamento','aguardando_peca','concluida'].includes(o.status);
+  const ro = podeEditar ? '' : ' readonly';
+  c.innerHTML =
+    '<div class="dsec" style="display:flex;justify-content:space-between;align-items:center"><span>Planejado <span class="muted">· o que deve ser feito'+(o.plano_id && !(o.tarefas_planejado||'').trim() ? ' — trazido da FMP' : '')+'</span></span>'
+      + '<span id="tar-st-plan" class="muted" style="font-size:10px"></span></div>'
+    + '<textarea id="tar-plan" rows="9" style="width:100%;font-size:12px;line-height:1.5;font-family:inherit" placeholder="- Trocar filtro diesel\n- Trocar filtro combustível\n** Verificar filtro de ar **"'+ro+' onchange="otTarefasSalvar(\'planejado\')">'+_esc(plan)+'</textarea>'
+    + '<div class="dsec" style="margin-top:10px;display:flex;justify-content:space-between;align-items:center"><span>Realizado <span class="muted">· o que foi feito'+(aps.length ? ' — '+aps.length+' registro(s) do mecânico pelo app 📱' : '')+'</span></span>'
+      + '<span style="display:flex;gap:8px;align-items:center"><span id="tar-st-real" class="muted" style="font-size:10px"></span>'
+      + (aps.length && podeEditar ? '<button class="btn" style="font-size:11px;padding:2px 8px" title="Recarregar o texto com os registros do app" onclick="otTarefasDoApp()">📱 Trazer do app</button>' : '') + '</span></div>'
+    + '<textarea id="tar-real" rows="9" style="width:100%;font-size:12px;line-height:1.5;font-family:inherit" placeholder="Revisão feita na Meta Mecânica, km 420694…"'+ro+' onchange="otTarefasSalvar(\'realizado\')">'+_esc(real)+'</textarea>'
+    + '<div class="muted" style="font-size:10px;margin-top:4px">Salva sozinho ao sair do campo. Horas → Mão de Obra · fotos → Documentos · leitura (horímetro/km) → Gestão › Fim.</div>';
+  window._tarDoApp = doApp;
 }
-async function otTarefaAdd(){
-  const d = (document.getElementById('tar-desc')||{}).value || ''; if (!d.trim()){ mostrarToast('Descreva a tarefa','warn'); return; }
-  const n = document.querySelectorAll('#ot-aba-corpo input[type=checkbox]').length + 1;
-  try { await mntFetch('/manutencao/api/tab/ot-tarefas', {method:'POST', body: JSON.stringify({ot_id:_otAberta.id, ordem:n, descricao:d.trim()})}); otTarefasRender(); }
-  catch(e){ mostrarToast('\u274c '+e.message,'warn'); }
+async function otTarefasSalvar(qual){
+  const id = qual === 'planejado' ? 'tar-plan' : 'tar-real', st = document.getElementById(qual === 'planejado' ? 'tar-st-plan' : 'tar-st-real');
+  const v = (document.getElementById(id)||{}).value || '';
+  try {
+    await mntFetch('/manutencao/api/ots/'+_otAberta.id, {method:'PATCH', body: JSON.stringify({ ['tarefas_'+qual]: v })});
+    _otAberta['tarefas_'+qual] = v;
+    if (st) { st.textContent = '✓ salvo'; setTimeout(() => { st.textContent = ''; }, 2500); }
+  } catch(e){ mostrarToast('❌ '+e.message, 'warn'); }
 }
-async function otTarefaMarcar(id, feita){
-  try { await mntFetch('/manutencao/api/tab/ot-tarefas/'+id, {method:'PATCH', body: JSON.stringify({feita})}); otTarefasRender(); }
-  catch(e){ mostrarToast('\u274c '+e.message,'warn'); }
-}
-async function otTarefaExcluir(id){ try { await mntFetch('/manutencao/api/tab/ot-tarefas/'+id, {method:'DELETE'}); otTarefasRender(); } catch(e){ mostrarToast('\u274c '+e.message,'warn'); } }
-async function otTarefasDaFmp(){
-  try { const r = await mntFetch('/manutencao/api/ots/'+_otAberta.id+'/tarefas/da-fmp', {method:'POST'}); mostrarToast('\u2705 '+r.n+' tarefa(s) importada(s)','ok'); otTarefasRender(); }
-  catch(e){ mostrarToast('\u274c '+e.message,'warn'); }
+function otTarefasDoApp(){
+  const t = document.getElementById('tar-real'); if (!t) return;
+  const atual = t.value.trim();
+  t.value = atual && atual !== window._tarDoApp ? atual + '\n' + window._tarDoApp : window._tarDoApp;
+  otTarefasSalvar('realizado');
 }
 async function otPreparacaoRender(){
   const o = _otAberta, c = document.getElementById('ot-aba-corpo');
