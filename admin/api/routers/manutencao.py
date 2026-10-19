@@ -128,6 +128,7 @@ async def _garantir_leituras():
         return
     from routers.abastecimentos import _ddl as _ddl_abast
     await _ddl_abast()
+    await _garantir_colunas_ot()   # (19/10/2026) a view lê ot.horimetro_conclusao
     # (24/09/2026) Correção de leitura (Registro Funcionamento ▸ ✏️/✕): o documento de
     # origem (parte, checklist, abastecimento) fica intacto; a leitura é corrigida
     # ou excluída só para o FMD/funcionamento, com motivo e trilha no diário.
@@ -156,7 +157,12 @@ async def _garantir_leituras():
           FROM operacional.abastecimentos
          WHERE ativo = true AND leitura IS NOT NULL
            AND COALESCE(divergencia_leitura, false) = false
-           AND COALESCE(destino_tipo,'equipamento') = 'equipamento'"""
+           AND COALESCE(destino_tipo,'equipamento') = 'equipamento'
+        UNION ALL
+        SELECT equipamento_id, data_conclusao AS data, horimetro_conclusao AS leitura,
+               'ot'::text AS fonte, id::text AS ref
+          FROM manutencao.ot
+         WHERE ativo = true AND status = 'concluida' AND horimetro_conclusao IS NOT NULL"""
     _checklist = """
         UNION ALL
         SELECT e.id AS equipamento_id, c.enviado_em AS data,
@@ -211,6 +217,9 @@ async def _garantir_colunas_ot():
         # (10/10/2026) "Data Programada Alterada" do ManWinWin: a programação saiu do cálculo da FMP
         # por decisão humana (Avançado). Recalcular pelo plano (Aplicar FMP) não sobrepõe; Novo ciclo limpa.
         "ALTER TABLE manutencao.ot ADD COLUMN IF NOT EXISTS prog_alterada BOOLEAN DEFAULT false",
+        # (19/10/2026) Encerramento informa a leitura (horímetro/km) da máquina no fim do serviço:
+        # vira baseline da FMP e fonte de leitura do Registo Funcionamento ('ot')
+        "ALTER TABLE manutencao.ot ADD COLUMN IF NOT EXISTS horimetro_conclusao NUMERIC",
     ):
         await ajard_query(ddl, fetch="none")
     # OT que já tem fornecedor é externa (migração idempotente)
@@ -664,6 +673,7 @@ async def detalhe_ot(ot_id: str, _auth=Depends(verificar_manutencao)):
     await _garantir_colunas_ot()
     ot = await ajard_query(
         """SELECT ot.*, eq.codigo AS equipamento_codigo, eq.descricao AS equipamento_desc,
+                  eq.medicao AS equipamento_medicao, eq.horimetro_atual AS equipamento_horimetro, eq.km_atual AS equipamento_km,
                   eq.sistema_codigo, si.nome AS sistema_nome,
                   eq.centro_custo, cc.nome AS centro_custo_nome,
                   ur.nome AS responsavel_nome, fo.nome AS fornecedor_nome
@@ -736,9 +746,32 @@ async def mudar_status_ot(ot_id: str, request: Request, payload=Depends(verifica
     extras, params = "", [novo]
     if reabrindo:
         extras = ", data_conclusao=NULL, data_retorno_operacao=NULL"
+    dt_conc = None
+    hor_conc = None
     if novo == "concluida":
-        extras = ", data_conclusao=now(), data_retorno_operacao=now()::date, observacao_conclusao=%s, custo_total=%s"
-        params += [(d.get("observacao") or "").strip() or None, d.get("custo_total")]
+        # (19/10/2026) Data/hora de conclusão e leitura (horímetro/km) informadas no Encerrar;
+        # sem informar, vale agora / nada.
+        dc = (d.get("data_conclusao") or "").strip()
+        if dc:
+            try:
+                dt_conc = datetime.fromisoformat(dc.replace("Z", "+00:00"))
+            except ValueError:
+                raise HTTPException(status_code=400, detail="Data de conclusão inválida")
+            from datetime import timedelta
+            agora = datetime.now(dt_conc.tzinfo) if dt_conc.tzinfo else datetime.now()
+            if dt_conc > agora + timedelta(minutes=10):
+                raise HTTPException(status_code=400, detail="Data de conclusão não pode ser no futuro")
+        hc = d.get("horimetro")
+        if hc not in (None, ""):
+            try:
+                hor_conc = float(str(hc).replace(",", "."))
+            except ValueError:
+                raise HTTPException(status_code=400, detail="Horímetro/km inválido")
+            if hor_conc < 0:
+                raise HTTPException(status_code=400, detail="Horímetro/km inválido")
+        extras = (", data_conclusao=COALESCE(%s, now()), data_retorno_operacao=COALESCE(%s, now())::date, "
+                  "observacao_conclusao=%s, custo_total=%s, horimetro_conclusao=%s")
+        params += [dt_conc, dt_conc, (d.get("observacao") or "").strip() or None, d.get("custo_total"), hor_conc]
         hp = d.get("horas_parada")
         if hp not in (None, ""):
             try:
@@ -760,9 +793,10 @@ async def mudar_status_ot(ot_id: str, request: Request, payload=Depends(verifica
         await ajard_query(
             """UPDATE manutencao.planos p SET
                       ultima_data = CASE WHEN COALESCE(p.data_fixa,false) AND o.data_prevista IS NOT NULL
-                                         THEN o.data_prevista ELSE now()::date END,
+                                         THEN o.data_prevista ELSE COALESCE(o.data_conclusao::date, now()::date) END,
                       ultima_leitura = CASE WHEN COALESCE(p.registro_fixo,false) AND o.horimetro_previsto IS NOT NULL
-                                            THEN o.horimetro_previsto ELSE e.horimetro_atual END
+                                            THEN o.horimetro_previsto
+                                            ELSE COALESCE(o.horimetro_conclusao, e.horimetro_atual) END
                FROM manutencao.ot o JOIN operacional.equipamentos e ON e.id = o.equipamento_id
                WHERE o.id=%s AND o.plano_id IS NOT NULL AND p.id = o.plano_id""",
             (ot_id,), fetch="none")
@@ -1287,6 +1321,7 @@ async def _garantir_funcoes():
             usuario_id UUID PRIMARY KEY, funcao_codigo TEXT, custo_hh NUMERIC(12,2),
             atualizado_em TIMESTAMPTZ DEFAULT now())""", fetch="none")
     for ddl in ("ALTER TABLE manutencao.ot_mao_obra ADD COLUMN IF NOT EXISTS funcao_codigo TEXT",
+                "ALTER TABLE manutencao.ot_mao_obra ADD COLUMN IF NOT EXISTS fornecedor_id UUID",   # (19/10/2026) terceiro = fornecedor do cadastro
                 "ALTER TABLE manutencao.ot_mao_obra ADD COLUMN IF NOT EXISTS rubrica TEXT"):
         await ajard_query(ddl, fetch="none")
     # (10/10/2026) ORGANOGRAMA da empresa (ManWinWin): setor › função › pessoas. Funções reais da Garra,
@@ -1420,10 +1455,12 @@ async def colaborador_funcao(usuario_id: str, request: Request, payload=Depends(
 async def ot_mao_obra_listar(ot_id: str, _auth=Depends(verificar_manutencao)):
     await _garantir_funcoes()
     rows = await ajard_query(
-        """SELECT m.id, m.usuario_id, COALESCE(u.nome, m.nome) AS nome, m.data, m.horas,
-                  m.custo_hora, m.observacao, m.origem, m.criado_em, m.funcao_codigo, m.rubrica, f.nome AS funcao_nome
+        """SELECT m.id, m.usuario_id, COALESCE(u.nome, fo.nome, m.nome) AS nome, m.data, m.horas,
+                  m.custo_hora, m.observacao, m.origem, m.criado_em, m.funcao_codigo, m.rubrica, f.nome AS funcao_nome,
+                  m.fornecedor_id, fo.nome AS fornecedor_nome
            FROM manutencao.ot_mao_obra m
            LEFT JOIN public.usuarios_garra u ON u.id = m.usuario_id
+           LEFT JOIN public.fornecedores fo ON fo.id = m.fornecedor_id
            LEFT JOIN manutencao.funcoes f ON f.codigo = m.funcao_codigo
            WHERE m.ot_id=%s AND m.ativo=true
            ORDER BY m.data DESC, m.criado_em DESC""", (ot_id,)) or []
@@ -1436,7 +1473,8 @@ async def ot_mao_obra_listar(ot_id: str, _auth=Depends(verificar_manutencao)):
                       "nome": r["nome"], "data": r["data"].isoformat() if r["data"] else None,
                       "horas": h, "custo_hora": ch, "valor": v, "observacao": r["observacao"],
                       "origem": r["origem"], "funcao_codigo": r["funcao_codigo"], "funcao_nome": r["funcao_nome"],
-                      "rubrica": r["rubrica"]})
+                      "rubrica": r["rubrica"], "externo": r["usuario_id"] is None,
+                      "fornecedor_id": str(r["fornecedor_id"]) if r.get("fornecedor_id") else None, "fornecedor_nome": r.get("fornecedor_nome")})
     # sugestão de custo/hora por colaborador = último usado (fallback quando não há função apontada)
     sug = await ajard_query(
         """SELECT DISTINCT ON (usuario_id) usuario_id, custo_hora
@@ -1493,8 +1531,12 @@ async def ot_mao_obra_criar(ot_id: str, request: Request, payload=Depends(verifi
     uid = await _usuario_id(payload)
     usuario_id = (d.get("usuario_id") or "").strip() or None
     nome = (d.get("nome") or "").strip() or None
+    fornecedor_id = (d.get("fornecedor_id") or "").strip() or None   # (19/10/2026) terceiro do cadastro
+    if fornecedor_id and not nome:
+        fo = await ajard_query("SELECT nome FROM public.fornecedores WHERE id=%s", (fornecedor_id,), fetch="one")
+        nome = fo["nome"] if fo else None
     if not usuario_id and not nome:
-        raise HTTPException(status_code=400, detail="Informe o colaborador")
+        raise HTTPException(status_code=400, detail="Informe o colaborador ou o fornecedor")
     data = (d.get("data") or "").strip() or None
     # (10/10/2026) função → custo/HH e conta automáticos quando não vierem preenchidos
     await _garantir_funcoes()
@@ -1514,10 +1556,10 @@ async def ot_mao_obra_criar(ot_id: str, request: Request, payload=Depends(verifi
             rubrica = rubrica or f["rubrica"]
     rubrica = rubrica or ("1.01" if usuario_id else "1.03")
     row = await ajard_query_id(
-        """INSERT INTO manutencao.ot_mao_obra (ot_id, usuario_id, nome, data, horas, custo_hora, observacao, origem, criado_por, funcao_codigo, rubrica)
-           VALUES (%s,%s,%s,COALESCE(%s::date, now()::date),%s,%s,%s,%s,%s,%s,%s)""",
+        """INSERT INTO manutencao.ot_mao_obra (ot_id, usuario_id, nome, data, horas, custo_hora, observacao, origem, criado_por, funcao_codigo, rubrica, fornecedor_id)
+           VALUES (%s,%s,%s,COALESCE(%s::date, now()::date),%s,%s,%s,%s,%s,%s,%s,%s)""",
         (ot_id, usuario_id, nome, data, horas, custo,
-         (d.get("observacao") or "").strip() or None, (d.get("origem") or "desktop"), uid, funcao, rubrica))
+         (d.get("observacao") or "").strip() or None, (d.get("origem") or "desktop"), uid, funcao, rubrica, fornecedor_id))
     return {"ok": True, "id": str(row["id"]) if row else None}
 
 
@@ -4634,7 +4676,7 @@ async def equip_funcionamento(eq_id: str, _auth=Depends(verificar_manutencao)):
             "projecao_30d": proj_30, "gerado_em": _date.today().isoformat()}
 
 
-_FONTES_LEITURA = {"parte", "abastecimento", "checklist"}
+_FONTES_LEITURA = {"parte", "abastecimento", "checklist", "ot"}   # (19/10/2026) 'ot' = leitura no Encerrar da OT
 _dmy = lambda v: v.strftime("%d/%m/%Y") if v else "—"
 
 
