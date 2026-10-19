@@ -3843,7 +3843,16 @@ function otEncEstado(o){
   }
   return _otEncState[id];
 }
-function otEncGuardar(campo, v){ if (_otAberta) { otEncEstado(_otAberta)[campo] = v; } }
+function otEncGuardar(campo, v){
+  if (!_otAberta) return;
+  otEncEstado(_otAberta)[campo] = v;
+  if (campo === 'data') {   // PDI automático acompanha o Fim digitado
+    const o = _otAberta, h1 = (o.historico||[]).find(x => x.status_para === 'em_andamento');
+    const ini = o.data_inicio_real ? new Date(o.data_inicio_real) : (h1 ? new Date(h1.criado_em) : null);
+    const hp = document.getElementById('ot-enc-hp');
+    if (hp && ini && v) hp.placeholder = Math.max(0, (new Date(v) - ini) / 3600000).toFixed(1).replace('.', ',');
+  }
+}
 // (19/10/2026) PDI = TDM: máquina parada do Início real até o Fim informado (um clique; pode ajustar depois)
 function otPdiUsarTdm(){
   const o = _otAberta; if (!o) return;
@@ -3861,6 +3870,7 @@ async function otGestaoSalvar(campo, v){
   try {
     await mntFetch('/manutencao/api/ots/'+_otAberta.id, {method:'PATCH', body: JSON.stringify({ [campo]: v === '' ? null : v })});
     _otAberta[campo] = v === '' ? null : v;
+    if (campo === 'horas_externo') _otAberta.outros_horas = parseFloat(String(v).replace(',', '.')) || 0;
     mostrarToast('✓ salvo', 'ok'); carregarOTsReais();
     if (campo !== 'horimetro_inicio') otAba('gestao');
   } catch(e){ mostrarToast('❌ '+e.message, 'warn'); }
@@ -3950,7 +3960,11 @@ async function mntStatusReal(id, novo){
       if (String(s.hor).trim() !== '' && isNaN(parseFloat(String(s.hor).replace(',', '.')))){ otAba('gestao'); mostrarToast('🔢 Leitura (horímetro/km) inválida', 'warn'); return; }
       const km = (_otAberta.equipamento_medicao||'') === 'km';
       const dtTxt = new Date(s.data).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',year:'2-digit',hour:'2-digit',minute:'2-digit'});
-      if (!confirm('Encerrar '+(_otAberta.numero||'a OT')+'?\n\nFim: '+dtTxt+'\n'+(km?'Km':'Horímetro')+': '+(String(s.hor).trim() || '— (não informado)')+'\nHoras paradas: '+(String(s.hp).trim() || '—')+'\nCusto total: R$ '+(_otAberta.custo_total != null ? parseFloat(_otAberta.custo_total).toFixed(2) : '0,00'))) return;
+      const h1c = (_otAberta.historico||[]).find(x => x.status_para === 'em_andamento');
+      const iniC = _otAberta.data_inicio_real ? new Date(_otAberta.data_inicio_real) : (h1c ? new Date(h1c.criado_em) : null);
+      const pdiAuto = iniC ? Math.max(0, (new Date(s.data) - iniC) / 3600000).toFixed(1).replace('.', ',') : null;
+      if (!confirm('Encerrar '+(_otAberta.numero||'a OT')+'?\n\nFim: '+dtTxt+'\n'+(km?'Km':'Horímetro')+': '+(String(s.hor).trim() || '— (não informado)')+'\nMáquina parada (PDI): '+(String(s.hp).trim() || (pdiAuto != null ? pdiAuto+' h (Início → Fim)' : '—'))+'\nCusto total: R$ '+(_otAberta.custo_total != null ? parseFloat(_otAberta.custo_total).toFixed(2) : '0,00'))) return;
+      // PDI: sem valor digitado, o servidor calcula Início (emissão) → Fim
       dados = { data_conclusao: new Date(s.data).toISOString(), horimetro: n(s.hor), custo: _otAberta.custo_total != null ? parseFloat(_otAberta.custo_total) : null, horas_parada: n(s.hp), obs: String(s.obs||'').trim() || null };
     } else {
       dados = await otEncerrarDialogo(id); if (!dados) return;
@@ -4305,12 +4319,13 @@ async function otPecasRender(){
     '<div style="display:flex;gap:6px;padding:4px 6px;border-bottom:1px solid #F1F5F9;font-size:11px;align-items:center">'
     + '<span style="width:62px" class="muted">'+dd2(x.data)+'</span>'
     + '<span class="chip '+(x.tipo==='saida'?'em':x.tipo==='aplicacao_direta'?'pr':'tm')+'" style="font-size:9px" title="'+(x.rubrica?'Conta '+_esc(x.rubrica):'')+'">'+(x.tipo==='saida'?'Estoque':x.tipo==='aplicacao_direta'?'Fornecedor':'Devolução')+(x.rubrica?' · '+_esc(x.rubrica):'')+'</span>'
-    + '<b style="width:100px">'+_esc(x.peca_codigo)+'</b><span style="flex:1">'+_esc(x.peca_descricao||'')+'</span>'
+    + '<b style="width:100px">'+_esc(x.peca_codigo)+'</b><span style="flex:1">'+_esc(x.peca_descricao||'')+(x.documento||x.fornecedor_nome ? ' <span class="muted">· '+_esc([x.documento, x.fornecedor_nome].filter(Boolean).join(' · '))+'</span>' : '')+'</span>'
     + '<span style="width:50px;text-align:right">'+x.quantidade+'</span>'
     + '<span style="width:35px">'+_esc(x.unidade)+'</span>'
     + '<span style="width:70px;text-align:right">'+x.custo_unitario.toFixed(2)+'</span>'
     + '<b style="width:85px;text-align:right;color:'+(x.total>=0?'#1A2A5E':'#15803D')+'">'+x.total.toFixed(2)+'</b>'
-    + '<span style="width:60px" class="muted">'+_esc(x.almox||'')+'</span></div>';
+    + '<span style="width:60px" class="muted">'+_esc(x.almox||'')+'</span>'
+    + (['programada','aberta','em_andamento','aguardando_peca','concluida'].includes(o.status) ? '<span style="cursor:pointer;color:#B91C1C;width:14px" title="Excluir este item" onclick="otConsumoExcluir(\''+x.id+'\',\''+_esc(x.peca_codigo)+'\')">✕</span>' : '<span style="width:14px"></span>')+'</div>';
   const delta = cons.total - totPl;
   const podeBaixar = ['programada','aberta','em_andamento','aguardando_peca'].includes(o.status);
   c.innerHTML =
@@ -4401,7 +4416,7 @@ function otPecaNova(texto){
   const ehCod = /^[A-Za-z]\.[A-Za-z0-9]+\./.test(texto);
   artJanela(null, { descricao: ehCod ? '' : texto, depois: p => {
     const b = document.getElementById('ot-saida') || document.getElementById('ot-aplic'); if (!b) return;
-    const row = b.querySelector('.plf-pc-row'); if (!row) return;
+    const row = b._rowAtiva || b.querySelector('.plf-pc-row'); if (!row) return;
     row.querySelector('.f').value = p.codigo; row.querySelector('.d').value = p.descricao;
     row.querySelector('.c').value = p.unidade || 'UN';
     if (p.custo_medio) row.querySelector('.v').value = p.custo_medio;
@@ -4412,118 +4427,162 @@ function otPecaNova(texto){
     mostrarToast('✅ ' + p.codigo + ' cadastrado — continue a baixa', 'ok');
   }});
 }
+// (19/10/2026) "Novo Registo Artigo" igual ao ManWinWin: Documento de custo (NF + fornecedor) · Aplicação Directa
+// (compra) OU Saída Armazém (estoque) · vários ITENS no mesmo documento · ✕ por item no Realizado.
 function otSaidaModo(m){
   const b = document.getElementById('ot-saida'); if (!b) return;
   const hid = b.querySelector('input[name="sai-modo"]'); if (hid) hid.value = m || '';
   const direta = m === 'direta';
-  b.querySelector('.alm-wrap').style.display = m === 'estoque' ? '' : 'none';   // sem conta escolhida: nada aparece
-  b.querySelector('.ref-wrap').style.display = direta ? '' : 'none';
-  b.querySelector('.c').readOnly = !direta; b.querySelector('.c').style.background = direta ? '' : '#F8FAFC';
-  b.querySelector('.btn-ok').textContent = !m ? 'Confirmar' : direta ? 'Confirmar (aplicação direta)' : 'Confirmar (saída do estoque)';
-  if (m === 'estoque') otSaidaChecar(); else { const av = b.querySelector('.aviso'); if (av && /Saldo em/.test(av.textContent)) av.textContent = ''; }
+  const dw = b.querySelector('.doc-wrap'), aw = b.querySelector('.alm-wrap');
+  if (dw) dw.style.display = direta ? '' : 'none';
+  if (aw) aw.style.display = direta ? 'none' : '';
+  b.querySelectorAll('.plf-pc-row').forEach(row => { const c = row.querySelector('.c'); if (c) { c.readOnly = !direta; c.style.background = direta ? '' : '#F8FAFC'; } otSaidaRubRow(row); });
+  const ok = b.querySelector('.btn-ok'); if (ok) ok.textContent = direta ? 'Confirmar (aplicação directa)' : 'Confirmar (saída do armazém)';
+  otSaidaChecar();
+}
+function otSaidaLinhaHtml(){
+  return '<div class="plf-pc-row" style="border:1px solid #E2E8F0;border-radius:6px;padding:6px 8px;margin-top:6px;background:#fff">'
+    + '<div style="display:flex;gap:6px;align-items:flex-end">'
+    + '<div class="mfield" style="flex:1.1">Peça<div style="display:flex;gap:4px"><input class="f" style="flex:1" placeholder="código ou descrição" oninput="pcSugerir(this)" onfocus="this.closest(\'#ot-saida\')._rowAtiva=this.closest(\'.plf-pc-row\')" autocomplete="off"><button class="btn" title="Cadastrar peça nova sem sair da OT" onclick="document.getElementById(\'ot-saida\')._rowAtiva=this.closest(\'.plf-pc-row\');otPecaNova(this.parentElement.querySelector(\'.f\').value.trim())">➕</button></div></div>'
+    + '<div class="mfield" style="flex:1.3">Descrição<input class="d" oninput="pcSugerir(this)" onfocus="this.closest(\'#ot-saida\')._rowAtiva=this.closest(\'.plf-pc-row\')" autocomplete="off"></div>'
+    + '<div class="mfield" style="width:62px">Quant.<input class="h" type="number" step="0.5" oninput="pcTotLinha(this);otSaidaChecar()"></div>'
+    + '<div class="mfield" style="width:48px">UN<input class="c" value="UN"></div>'
+    + '<div class="mfield" style="width:80px">Custo un.<input class="v" type="number" step="0.01" oninput="pcTotLinha(this)"></div>'
+    + '<div class="mfield" style="width:78px">Total<div class="t" style="padding:6px 0;font-weight:700;color:#1A2A5E">—</div></div>'
+    + '<span style="cursor:pointer;color:#B91C1C;padding:0 2px 8px;font-size:14px" title="Remover este item" onclick="otSaidaRemLinha(this)">✕</span>'
+    + '</div>'
+    + '<div style="display:flex;gap:6px;align-items:center;margin-top:4px"><div class="mfield" style="flex:1">Conta <span class="rub-dica muted" style="font-weight:400"></span><select class="rub"><option value="">— conta —</option></select></div><div class="saldo muted" style="flex:1;font-size:10px;display:none"></div></div>'
+    + '<div class="aviso" style="font-size:10px;min-height:12px;color:#B45309"></div>'
+    + '</div>';
+}
+function otSaidaAddLinha(){
+  const b = document.getElementById('ot-saida'); if (!b) return;
+  const cont = b.querySelector('.itens'); cont.insertAdjacentHTML('beforeend', otSaidaLinhaHtml());
+  const row = cont.lastElementChild; b._rowAtiva = row;
+  const s = row.querySelector('.rub'); if (s) s.innerHTML = _rubSelectOpts(_rubFolhas('2'), '', '— conta —');
+  otSaidaModo((b.querySelector('input[name="sai-modo"]')||{}).value || 'direta');
+  row.querySelector('.f').focus();
+}
+function otSaidaRemLinha(el){
+  const b = document.getElementById('ot-saida'); const row = el.closest('.plf-pc-row'); if (!row) return;
+  if (b.querySelectorAll('.plf-pc-row').length === 1) { row.querySelectorAll('input').forEach(i => { if (i.classList.contains('c')) i.value = 'UN'; else i.value = ''; }); row.querySelector('.t').textContent = '—'; return; }
+  row.remove();
 }
 function otSaidaAbrir(){
-  // (10/10/2026) Janela enxuta: peça · quantidade/custo · DE ONDE veio. A conta (2.01–2.06, padrão
-  // ManWinWin) o servidor decide pela origem + classe da peça — nada disso aparece para o usuário.
   const alms = (_otPc.alms || []).filter(a=>a.ativo!==false);
+  const o = _otAberta || {};
   let b = document.getElementById('ot-saida');
   if (!b){
     b = document.createElement('div'); b.id = 'ot-saida';
     b.style.cssText = 'position:fixed;inset:0;z-index:9998;background:rgba(15,23,42,.45);display:none;align-items:center;justify-content:center';
     document.body.appendChild(b);
   }
-  b.innerHTML = '<div class="plf-pc-row" style="background:#fff;border-radius:10px;box-shadow:0 12px 32px rgba(15,23,42,.3);padding:16px;width:520px;max-width:94vw">'
-    + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><b style="color:#1A2A5E">Baixar peça na OT</b><span style="cursor:pointer;font-size:16px" onclick="document.getElementById(\'ot-saida\').style.display=\'none\'">✕</span></div>'
-    + '<div class="mfield">Peça<div style="display:flex;gap:4px"><input class="f" style="flex:1" placeholder="código ou descrição — não achou? cadastre na hora" oninput="pcSugerir(this)" autocomplete="off"><button class="btn" title="Cadastrar peça nova sem sair da OT — já volta preenchida aqui" onclick="otPecaNova(this.parentElement.querySelector(\'.f\').value.trim())">➕ Cadastrar</button></div></div>'
-    + '<div class="mfield" style="margin-top:6px">Descrição<input class="d" oninput="pcSugerir(this)" autocomplete="off"></div>'
-    + '<div class="saldo" style="display:none"></div>'
-    + '<div style="display:flex;gap:8px;margin-top:6px">'
-    + '<div class="mfield" style="width:80px">Quant.<input class="h" type="number" step="0.5" oninput="pcTotLinha(this);otSaidaChecar()"></div>'
-    + '<div class="mfield" style="width:60px">UN<input class="c" value="UN" readonly style="background:#F8FAFC"></div>'
-    + '<div class="mfield" style="width:100px">Custo un.<input class="v" type="number" step="0.01" oninput="pcTotLinha(this)"></div>'
-    + '<div class="mfield" style="flex:1">Total<div class="t" style="padding:6px 0;font-weight:700;color:#1A2A5E">—</div></div></div>'
-    // (10/10/2026) A RUBRICA (Parametrizar › Plano de contas, ramo 2) é a única escolha: "Saída estoque" = baixa no
-    // estoque (pede almoxarifado) · "Aplicação direta" = veio de fora (pede NF). Sugerida pelo tipo da peça.
-    + '<div class="dsec" style="margin-top:10px">Saída</div>'
-    + '<div style="display:grid;grid-template-columns:1.4fr 1fr;gap:8px;margin-top:6px">'
-    +   '<div class="mfield">Conta * <span class="rub-dica muted" style="font-weight:400"></span><select class="rub" onchange="otSaidaRubManual(this)"><option value="">— carregando —</option></select></div>'
-    +   '<div class="mfield alm-wrap" style="display:none">Estoque<select class="alm" onchange="otSaidaChecar()">'
-    +     alms.map(a=>'<option value="'+_esc(a.codigo)+'">'+_esc(a.codigo)+' — '+_esc(a.nome||'')+'</option>').join('')
-    +   '</select></div>'
-    +   '<div class="mfield ref-wrap" style="display:none">NF / notinha (opcional)<input class="ref" placeholder="ex.: NF 887"></div>'
+  const fornOpts = '<option value="">— fornecedor —</option>' + (_mntFornList||[]).map(f => '<option value="'+f.id+'"'+(String(f.id)===String(o.fornecedor_id||'')?' selected':'')+'>'+_esc(f.nome)+'</option>').join('');
+  b.innerHTML = '<div style="background:#fff;border-radius:10px;box-shadow:0 12px 32px rgba(15,23,42,.3);padding:16px;width:760px;max-width:96vw;max-height:92vh;overflow:auto">'
+    + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><b style="color:#1A2A5E">Novo registo de peça — '+_esc(o.numero||'')+'</b><span style="cursor:pointer;font-size:16px" onclick="document.getElementById(\'ot-saida\').style.display=\'none\'">✕</span></div>'
+    + '<div style="display:flex;gap:16px;font-size:11px;margin-bottom:6px">'
+    +   '<label style="display:flex;align-items:center;gap:5px;cursor:pointer"><input type="radio" name="sai-tipo" value="direta" checked onchange="otSaidaModo(\'direta\')"> Aplicação Directa <span class="muted">(compra para a OT, não passa pelo estoque)</span></label>'
+    +   '<label style="display:flex;align-items:center;gap:5px;cursor:pointer"><input type="radio" name="sai-tipo" value="estoque" onchange="otSaidaModo(\'estoque\')"> Saída Armazém <span class="muted">(baixa do estoque)</span></label>'
     + '</div>'
-    + '<input type="hidden" name="sai-modo" value="">'
-    + '<div class="aviso" style="font-size:11px;min-height:14px;margin-top:6px;color:#B45309"></div>'
-    + '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:8px">'
-    + '<button class="btn" onclick="document.getElementById(\'ot-saida\').style.display=\'none\'">Cancelar</button>'
-    + '<button class="btn p btn-ok" onclick="otSaidaOK()">Confirmar baixa</button></div></div>';
+    + '<div class="panel doc-wrap"><div class="dsec" style="margin-top:0">Documento de custo</div><div style="display:flex;gap:8px;flex-wrap:wrap">'
+    +   '<div class="mfield" style="width:150px">Doc. Custo (NF/recibo)<input class="ref" placeholder="ex.: NF 887"></div>'
+    +   '<div class="mfield" style="flex:1;min-width:220px">Fornecedor<select class="forn">'+fornOpts+'</select></div>'
+    + '</div></div>'
+    + '<div class="panel alm-wrap" style="display:none"><div class="dsec" style="margin-top:0">Armazém</div>'
+    +   '<div class="mfield" style="width:260px">Almoxarifado de origem<select class="alm" onchange="otSaidaChecar()">'+alms.map(a=>'<option value="'+_esc(a.codigo)+'">'+_esc(a.codigo)+' — '+_esc(a.nome||'')+'</option>').join('')+'</select></div></div>'
+    + '<div class="dsec" style="display:flex;justify-content:space-between;align-items:center"><span>Itens <span class="muted">· vários itens do mesmo documento</span></span><button class="btn" style="font-size:11px;padding:2px 8px" onclick="otSaidaAddLinha()">⊕ Outro item</button></div>'
+    + '<div class="itens"></div>'
+    + '<input type="hidden" name="sai-modo" value="direta">'
+    + '<div style="display:flex;justify-content:space-between;align-items:center;margin-top:10px"><span class="tot-geral" style="font-weight:700;color:#1A2A5E"></span>'
+    + '<span style="display:flex;gap:8px"><button class="btn" onclick="document.getElementById(\'ot-saida\').style.display=\'none\'">Cancelar</button>'
+    + '<button class="btn p btn-ok" onclick="otSaidaOK()">Confirmar</button></span></div></div>';
   b.style.display = 'flex';
-  _rubricas().then(() => { const s = b.querySelector('.rub'); if (s) { s.innerHTML = _tabOpts(_rubFolhas('2'), 'id', 'nome', '', '— conta —'); otSaidaModo(null); } });
+  _rubricas().then(() => { otSaidaAddLinha(); });
 }
-// sugere a conta a partir de origem (estoque/direto) + classe da peça; só troca se o usuário não escolheu outra
-// conta → de onde sai: "Aplicação direta" (2.04–2.06 ou nome com "direct") = de fora; o resto = estoque
-function _rubEhDireta(cod){
-  const r = (_rubCache||[]).find(x => x.codigo === cod) || {};
-  return /direct|direta/i.test(r.nome||'') || /^2\.0[4-6]$/.test(cod||'');
-}
-function otSaidaRubManual(s){ otSaidaModo(!s.value ? null : _rubEhDireta(s.value) ? 'direta' : 'estoque'); }
-// (10/10/2026) A conta NÃO vem pré-selecionada: o usuário escolhe (obrigatório). A regra de sugestão só
-// aparece como dica ao lado ("sugestão: 2.02 — …") — nunca decide por ele.
-function otSaidaRubrica(forcar, origem){
-  const b = document.getElementById('ot-saida'); if (!b) return;
-  const s = b.querySelector('.rub'), dica = b.querySelector('.rub-dica'); if (!s) return;
-  const row = b.querySelector('.plf-pc-row');
-  const sug = _rubSugerir(origem || 'estoque', row._familia || '', b.querySelector('.d').value);
+function otSaidaRubRow(row){
+  // conta sugerida pela origem + classe da peça (editável)
+  const b = document.getElementById('ot-saida'); if (!b || !row) return;
+  const modo = (b.querySelector('input[name="sai-modo"]')||{}).value || 'direta';
+  const s = row.querySelector('.rub'), dica = row.querySelector('.rub-dica'); if (!s) return;
+  const sug = _rubSugerir(modo === 'direta' ? 'direta' : 'estoque', row._familia || '', (row.querySelector('.d')||{}).value || '');
   const r = (_rubCache||[]).find(x => x.codigo === sug);
-  if (dica) dica.textContent = r ? '(sugestão: ' + sug + ' — ' + (r.nome||'') + ')' : '';
+  if (r && (!s.value || s.dataset.auto === '1')) { s.value = sug; s.dataset.auto = '1'; }
+  s.onchange = () => { s.dataset.auto = '0'; };
+  if (dica) dica.textContent = r ? '(sugestão: '+sug+')' : '';
 }
-// quantidade × saldo do almoxarifado escolhido: sem saldo, sugere aplicação direta antes de o servidor barrar
+function otSaidaRubrica(forcar, origem){ const b = document.getElementById('ot-saida'); if (!b) return; const row = b._rowAtiva || b.querySelector('.plf-pc-row'); if (row) otSaidaRubRow(row); }
+// quantidade × saldo do almoxarifado escolhido (modo armazém): avisa por item antes de o servidor barrar
 function otSaidaChecar(){
   const b = document.getElementById('ot-saida'); if (!b) return;
-  const row = b.querySelector('.plf-pc-row'), av = b.querySelector('.aviso');
   const modo = (b.querySelector('input[name="sai-modo"]')||{}).value;
-  if (modo !== 'estoque' || !row._saldos) { av.textContent = ''; return; }
-  const alm = b.querySelector('.alm').value, qtd = parseFloat(String(b.querySelector('.h').value).replace(',','.'))||0;
-  const s = row._saldos[alm] || 0;
-  av.textContent = qtd > s ? 'Saldo em '+alm+' é '+s.toLocaleString('pt-BR')+' — faltam '+(qtd-s).toLocaleString('pt-BR')+'. Se a peça veio de fora, escolha a conta de aplicação direta.' : '';
+  const alm = (b.querySelector('.alm')||{}).value;
+  let tot = 0;
+  b.querySelectorAll('.plf-pc-row').forEach(row => {
+    const av = row.querySelector('.aviso'); const q = parseFloat(String((row.querySelector('.h')||{}).value||'').replace(',', '.')) || 0;
+    const v = parseFloat((row.querySelector('.v')||{}).value) || 0; tot += q * v;
+    if (!av) return;
+    if (modo !== 'estoque' || !row._saldos) { if (/Saldo em/.test(av.textContent)) av.textContent = ''; return; }
+    const s = row._saldos[alm] != null ? row._saldos[alm] : 0;
+    av.textContent = q > s ? 'Saldo em '+alm+': '+s.toLocaleString('pt-BR')+' — insuficiente para '+q.toLocaleString('pt-BR')+' (confirmar vira aplicação directa)' : (row._saldos && Object.keys(row._saldos).length ? 'Saldo em '+alm+': '+s.toLocaleString('pt-BR') : '');
+  });
+  const tg = b.querySelector('.tot-geral'); if (tg) tg.textContent = tot > 0 ? 'Total: R$ ' + tot.toFixed(2) : '';
 }
 async function otSaidaOK(){
   const b = document.getElementById('ot-saida'); if (!b) return;
-  const q = cls => b.querySelector('.'+cls);
-  const peca = q('f').value.trim();
-  const qtd = parseFloat(String(q('h').value).replace(',', '.')) || 0;
-  if (!peca){ mostrarToast('Informe a peça','warn'); return; }
-  if (qtd <= 0){ mostrarToast('Quantidade deve ser positiva','warn'); return; }
-  const modo = (b.querySelector('input[name="sai-modo"]')||{}).value;
-  if (!modo || !(q('rub')||{}).value) { mostrarToast('Escolha a conta do plano de contas', 'warn'); q('rub') && q('rub').focus(); return; }
+  const modo = (b.querySelector('input[name="sai-modo"]')||{}).value || 'direta';
   const direta = modo === 'direta';
-  const aplicar = async () => {
+  const rows = [...b.querySelectorAll('.plf-pc-row')];
+  const itens = [];
+  for (const row of rows) {
+    const g = cls => (row.querySelector('.'+cls)||{}).value || '';
+    const peca = g('f').trim(); const qtd = parseFloat(String(g('h')).replace(',', '.')) || 0;
+    if (!peca && !g('d').trim() && !qtd) continue;   // linha vazia
+    if (!peca) { mostrarToast('Informe a peça em todos os itens', 'warn'); row.querySelector('.f').focus(); return; }
+    if (qtd <= 0) { mostrarToast('Quantidade deve ser positiva ('+peca+')', 'warn'); row.querySelector('.h').focus(); return; }
+    if (!g('rub')) { mostrarToast('Escolha a conta de '+peca, 'warn'); row.querySelector('.rub').focus(); return; }
+    itens.push({ peca, descricao: g('d').trim(), quantidade: qtd, un: g('c').trim() || 'UN', custo_unitario: g('v'), conta: g('rub') || null, _row: row });
+  }
+  if (!itens.length) { mostrarToast('Informe ao menos um item', 'warn'); return; }
+  const ref = (b.querySelector('.ref')||{}).value?.trim() || '', forn = (b.querySelector('.forn')||{}).value || null;
+  const aplicar = async (lista) => {
     const r = await mntFetch('/manutencao/api/entradas', { method:'POST', body: JSON.stringify({
-      documento_tipo: 'aplicacao_direta', documento_numero: (q('ref')||{}).value?.trim() || '', ot_id: _otAberta.id,
-      observacao: 'Aplicação direta OT '+_otAberta.numero,
-      itens: [{ peca, descricao: q('d').value.trim(), quantidade: qtd, un: q('c').value.trim() || 'UN', custo_unitario: q('v').value, conta: (q('rub')||{}).value || null }] })});
-    mostrarToast('⚡ Aplicado na OT'+(r.total?' · R$ '+r.total.toFixed(2):''), 'ok');
+      documento_tipo: 'aplicacao_direta', documento_numero: ref, fornecedor_id: forn, ot_id: _otAberta.id,
+      observacao: 'Aplicação direta OT '+_otAberta.numero + (ref ? ' · '+ref : ''),
+      itens: lista.map(i => ({ peca: i.peca, descricao: i.descricao, quantidade: i.quantidade, un: i.un, custo_unitario: i.custo_unitario, conta: i.conta })) })});
+    mostrarToast('⚡ '+lista.length+' item(ns) aplicado(s) na OT'+(r.total?' · R$ '+r.total.toFixed(2):''), 'ok');
   };
   try {
-    if (direta) { await aplicar(); }
+    if (direta) { await aplicar(itens); }
     else {
-      try {
-        const r = await mntFetch('/manutencao/api/estoque/movimentar', { method:'POST', body: JSON.stringify({
-          tipo:'saida', peca, origem: q('alm').value, quantidade: qtd,
-          custo_unitario: q('v').value, ot_id: _otAberta.id, conta: (q('rub')||{}).value || null,
-          observacao: 'Consumo OT '+_otAberta.numero })});
-        mostrarToast('✅ Baixa registrada — saldo restante: '+(r.saldo_origem ?? '—'), 'ok');
-      } catch(e) {
-        // (10/10/2026) sem saldo / sem registro no almoxarifado: resolve na hora como aplicação direta
-        if (/saldo insuficiente|sem saldo|não cadastrada|nao cadastrada|não há saldo/i.test(e.message)
-            && confirm('Sem saldo de '+peca+' em '+q('alm').value+'.\n\nLançar como APLICAÇÃO DIRECTA (veio de fora, sem passar pelo estoque)?')) {
-          await aplicar();
-        } else throw e;
+      const alm = (b.querySelector('.alm')||{}).value;
+      const semSaldo = [];
+      for (const i of itens) {
+        try {
+          await mntFetch('/manutencao/api/estoque/movimentar', { method:'POST', body: JSON.stringify({
+            tipo:'saida', peca: i.peca, origem: alm, quantidade: i.quantidade, custo_unitario: i.custo_unitario,
+            ot_id: _otAberta.id, conta: i.conta, observacao: 'Consumo OT '+_otAberta.numero })});
+          i._row.remove();
+        } catch(e) {
+          if (/saldo insuficiente|sem saldo|não cadastrada|nao cadastrada|não há saldo/i.test(e.message)) semSaldo.push(i); else throw e;
+        }
       }
+      if (semSaldo.length) {
+        if (confirm('Sem saldo em '+alm+' para: '+semSaldo.map(i=>i.peca).join(', ')+'.\n\nLançar esses como APLICAÇÃO DIRECTA (vieram de fora, sem passar pelo estoque)?')) await aplicar(semSaldo);
+        else { otPecasRender(); mostrarToast('Itens sem saldo ficaram na janela', 'warn'); return; }
+      } else mostrarToast('✅ Baixa registrada', 'ok');
     }
     b.style.display = 'none';
     otPecasRender();
   } catch(e){ mostrarToast('❌ '+e.message, 'warn'); }
+}
+async function otConsumoExcluir(id, cod){
+  if (!confirm('Excluir o item '+cod+' desta OT?\n\nSaída do armazém volta ao estoque; aplicação directa só é apagada.')) return;
+  try { await mntFetch('/manutencao/api/ots/'+_otAberta.id+'/consumos/'+id, {method:'DELETE'}); mostrarToast('🗑️ Item excluído', 'ok'); otPecasRender(); }
+  catch(e){ mostrarToast('❌ '+e.message, 'warn'); }
+}
+function _rubEhDireta(cod){
+  const r = (_rubCache||[]).find(x => x.codigo === cod) || {};
+  return /direct|direta/i.test(r.nome||'') || /^2\.0[4-6]$/.test(cod||'');
 }
 async function otAbrirEm(id, aba){ await verOTReal(id); otAba(aba); }
 let _setIntCache = null;
@@ -4538,6 +4597,9 @@ function otInterventor(){
   const sw = document.getElementById('oe-setor-wrap'), fw = document.getElementById('oe-forn-wrap');
   if (sw) sw.style.display = ext ? 'none' : '';
   if (fw) fw.style.display = ext ? '' : 'none';
+  // (19/10/2026) Externo: o responsável é o fornecedor — o campo Responsável (interno) some e é limpo
+  const rw = document.getElementById('oe-resp-wrap'); if (rw) rw.style.display = ext ? 'none' : '';
+  if (ext) { const rs = document.getElementById('oe-resp'); if (rs) rs.value = ''; }
 }
 function otAba(aba){
   document.querySelectorAll('.mtab').forEach(t=>t.classList.remove('on'));
@@ -4590,7 +4652,7 @@ function otAba(aba){
       +   '</div>'
       +   '<div class="mfield" id="oe-setor-wrap">Setor<select id="oe-setor" data-val="'+_esc(o.setor_interventor||'')+'"><option value="">— carregando —</option></select></div>'
       +   '<div class="mfield" id="oe-forn-wrap">Fornecedor<select id="oe-forn">'+foOpts+'</select></div>'
-      +   '<div class="mfield" style="margin-top:6px">Responsável<select id="oe-resp">'+usOpts+'</select></div>'
+      +   '<div class="mfield" id="oe-resp-wrap" style="margin-top:6px">Responsável<select id="oe-resp">'+usOpts+'</select></div>'
       + '</fieldset>'
       + '<div style="display:flex;gap:12px;align-items:flex-end">'
       +   '<div class="mfield" style="width:120px">Prev. TDM (h)<input id="oe-tdm" type="number" step="0.5" min="0" value="'+(o.tdm_previsto??'')+'" title="Tempo de manutenção previsto, em horas"></div>'
@@ -4678,10 +4740,14 @@ function otAba(aba){
       + '<div style="font-weight:800;color:#1A2A5E;font-size:11px;margin-bottom:4px">Tempos e Indisponibilidades</div>'
       + tempo('TDE','Tempo De Espera — do pedido ao início', tde, abertura && inicioReal ? 'Pedido → Início' : '')
       + (aberta
-          ? tempo('PDI','Paragem Devido à Intervenção — horas de máquina parada', '<input id="ot-enc-hp" inputmode="decimal" value="'+_esc(s.hp)+'" placeholder="paradas" style="width:60px;font-size:11px" oninput="otEncGuardar(\'hp\',this.value)"> h', (inicioReal ? '<a href="#" style="font-size:10px" onclick="event.preventDefault();otPdiUsarTdm()" title="Máquina parada do Início ao Fim: PDI = TDM">= TDM</a>' : ''))
+          ? (function(){ const fimS = s.data ? new Date(s.data) : new Date(); const auto = inicioReal ? Math.max(0, (fimS - inicioReal) / 3600000) : null;
+              return tempo('PDI','Paragem Devido à Intervenção — máquina parada da emissão (Início) ao Fim', '<input id="ot-enc-hp" inputmode="decimal" value="'+_esc(s.hp)+'" placeholder="'+(auto != null ? auto.toFixed(1).replace('.', ',') : 'paradas')+'" style="width:60px;font-size:11px" oninput="otEncGuardar(\'hp\',this.value)"> h', auto != null ? 'Início → Fim (automático; digite só para corrigir)' : ''); })()
           : tempo('PDI','Paragem Devido à Intervenção — horas de máquina parada', o.horas_parada != null ? n(o.horas_parada)+' h' : '—', o.horas_parada != null ? 'indisponibilidade' : ''))
       + tempo('TDM','Tempo De Manutenção — Início → Fim', tdm, '')
-      + tempo('TDR','Tempo De Reparação — HH interna (Mão de Obra) + horas de serviço externo (Outros)', (o.mo_horas||o.outros_horas) ? n(((o.mo_horas||0)+(o.outros_horas||0)).toFixed(1))+' h' : '—', (o.mo_horas||o.outros_horas) ? 'MO '+n(o.mo_horas||0)+' + externo '+n(o.outros_horas||0) : '')
+      + tempo('TDR','Tempo De Reparação — HH interna (Mão de Obra) + horas do serviço externo', (o.mo_horas||o.outros_horas) ? n(((o.mo_horas||0)+(o.outros_horas||0)).toFixed(1))+' h' : '—', (o.mo_horas ? 'MO '+n(o.mo_horas) : '') + (o.outros_horas ? (o.mo_horas?' + ':'')+'externo '+n(o.outros_horas) : ''))
+      + ((o.interventor === 'externo' || o.fornecedor_id) && aberta
+          ? '<div style="display:flex;align-items:center;gap:6px;padding:2px 0 2px 44px;font-size:10px;color:#475569">🏭 serviço externo: <input id="ot-hext" inputmode="decimal" value="'+(o.horas_externo != null ? _esc(String(o.horas_externo).replace('.',',')) : '')+'" placeholder="horas" style="width:60px;font-size:11px" onchange="otGestaoSalvar(\'horas_externo\', this.value)"> h <span class="muted">(tempo do fornecedor, mesmo sem custo)</span></div>'
+          : '')
       + '<div class="muted" style="margin-top:6px;line-height:1.5">PDI é o que vira dinheiro: máquina parada = diária perdida. Alimenta o KPI de Disponibilidade.</div>'
       + '</div></div>';
   }
@@ -4763,7 +4829,8 @@ async function abrirReprogramar(){
     + lin('<span style="color:#B91C1C">Programada</span>', '<input id="rp-data" type="date" value="'+dtPrev+'" min="2000-01-01" max="2100-12-31" style="font-size:11px;width:140px;font-weight:700" onchange="reprogAlterada()">', '<input id="rp-horim" type="number" value="'+(o.horimetro_previsto??'')+'" style="font-size:11px;width:120px;font-weight:700" oninput="reprogAlterada()">')
     + '</tbody></table>'
     + '<label style="display:flex;align-items:center;gap:6px;font-size:11px;margin-top:6px;color:#475569"><input type="checkbox" id="rp-alterada" '+(o.prog_alterada?'checked':'')+' disabled> Data Programada Alterada <span class="muted">(marca sozinho quando a Programada foge do que a FMP calcula)</span></label>'
-    + '<div id="rp-aviso" class="muted" style="font-size:10px;min-height:14px;margin-top:4px">'+(ritmo ? 'Ritmo do '+_esc(eq.codigo||'')+': '+ritmo+' '+un+'/dia (FMD) — Calendário calcula o registo, Registo calcula a data.' : 'Sem ritmo (FMD): sem conversão automática, digite a Programada.')+'</div></div>'
+    + '<div style="display:flex;gap:8px;align-items:center;margin-top:8px;font-size:11px"><b style="color:#475569">Ritmo</b> <input id="rp-ritmo" type="number" step="0.1" min="0" value="'+(ritmo != null ? ritmo : '')+'" style="width:70px;font-size:11px" oninput="reprogRitmo()" placeholder="'+un+'/dia"> <span class="muted">'+un+'/dia · '+(ritmo != null ? 'FMD real do '+_esc(eq.codigo||'equipamento') : 'sem FMD (sem leituras) — informe um ritmo estimado para a calculadora funcionar')+' · contador atual '+atual.toLocaleString('pt-BR')+' '+un+'</span></div>'
+    + '<div id="rp-aviso" style="font-size:10px;min-height:14px;margin-top:4px;color:#B45309"></div></div>'
     + '<div class="mfield" style="margin-top:8px">Motivo <span class="muted">(opcional)</span><input id="rp-obs" placeholder="ex.: máquina em obra até sexta"></div>'
     + '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px"><button class="btn" onclick="document.getElementById(\'ot-prog\').style.display=\'none\'">Cancelar</button><button class="btn p" onclick="salvarReprogramacao()">OK</button></div></div>';
   b.style.display = 'flex';
@@ -4783,10 +4850,15 @@ function _reprogConv(origem, v){
   if (reg && (new Date(v+'T00:00:00') - new Date(reg.d+'T00:00:00')) / 86400000 <= 7) return { d: v, r: Math.round(reg.l) };
   return { d: v, r: Math.round(r.atual + dias * r.ritmo) };
 }
+function reprogRitmo(){
+  const v = parseFloat((document.getElementById('rp-ritmo')||{}).value); if (window._reprog) window._reprog.ritmo = v > 0 ? v : null;
+  const g = id => document.getElementById(id);
+  if (g('rp-cal-d') && g('rp-cal-d').value) reprogLinha('cal'); else if (g('rp-reg-r') && g('rp-reg-r').value) reprogLinha('reg');
+}
 function reprogLinha(qual){
   const g = id => document.getElementById(id); const fmtR = v => v == null ? '' : Number(v).toLocaleString('pt-BR', {maximumFractionDigits:0});
-  if (qual === 'cal') { const c = _reprogConv('data', g('rp-cal-d').value); g('rp-cal-r').textContent = fmtR(c.r); g('rp-data').value = g('rp-cal-d').value || ''; if (c.r != null) g('rp-horim').value = c.r; }
-  else { const c = _reprogConv('reg', g('rp-reg-r').value); g('rp-reg-d').textContent = c.d ? _fmtData(c.d) : ''; if (c.d) g('rp-data').value = c.d; g('rp-horim').value = g('rp-reg-r').value || ''; }
+  if (qual === 'cal') { const c = _reprogConv('data', g('rp-cal-d').value); g('rp-cal-r').textContent = c.r != null ? fmtR(c.r) : '—'; g('rp-data').value = g('rp-cal-d').value || ''; g('rp-horim').value = c.r != null ? c.r : ''; }
+  else { const c = _reprogConv('reg', g('rp-reg-r').value); g('rp-reg-d').textContent = c.d ? _fmtData(c.d) : '—'; g('rp-data').value = c.d || ''; g('rp-horim').value = g('rp-reg-r').value || ''; }
   reprogAlterada();
 }
 function reprogAlterada(){
@@ -4796,7 +4868,7 @@ function reprogAlterada(){
   const temFmp = !!(r.calD || (r.regR !== '' && r.regR != null));
   const ck = g('rp-alterada'); if (ck) ck.checked = temFmp ? !(igualCal || igualReg) : false;
   const av = g('rp-aviso'); const hoje = new Date(); hoje.setHours(0,0,0,0);
-  if (av && d && new Date(d+'T00:00:00') < hoje) { av.textContent = 'Data no passado: a OT nasce vencida.'; av.style.color = '#B45309'; }
+  if (av) av.textContent = (d && new Date(d+'T00:00:00') < hoje) ? 'Data no passado: a OT nasce vencida.' : (!(window._reprog||{}).ritmo ? 'Sem ritmo: Calendário ↔ Registo não se convertem. Informe o ritmo acima ou digite a Programada.' : '');
 }
 // (10/10/2026) Conversão nos DOIS sentidos, como o "Programação OT" do ManWinWin: para a frente projeta pelo
 // ritmo (FMD); para trás consulta — se há registro real naquela data usa o registro, senão retrocede pelo ritmo.
@@ -7022,9 +7094,9 @@ async function otOutrosRender(){
       + '</tbody><tfoot><tr><td colspan="3">Custo total</td><td class="r">'+money(tot(plan))+'</td><td colspan="2"></td></tr></tfoot></table>'
     : '<div class="muted" style="padding:6px;font-size:11px">Sem previsão de outros custos. Use ⊕ Inserir para prever (ex.: serviço de fornecedor orçado).</div>';
   const tabReal = real.length
-    ? '<table class="tbl"><thead><tr><th style="width:95px">Doc. Custo</th><th style="width:150px">Fornecedor</th><th>Descrição</th><th style="width:78px">Data</th><th class="r" style="width:55px">Horas</th><th class="r" style="width:95px">Custo</th><th style="width:55px">Conta</th><th style="width:22px"></th></tr></thead><tbody>'
-      + real.map(r => '<tr><td>'+_esc(r.documento||'—')+'</td><td>'+(r.fornecedor_nome?'🏭 '+_esc(r.fornecedor_nome):'—')+'</td><td>'+_esc(r.descricao||'')+'</td><td class="muted">'+dd(r.data)+'</td><td class="r">'+(r.horas!=null&&parseFloat(r.horas)>0?String(parseFloat(r.horas)).replace('.',','):'—')+'</td><td class="r"><b style="color:#1A2A5E">'+(parseFloat(r.valor)>0?money(r.valor):'<span class="muted" title="sem custo — incluso no material/garantia">incluso</span>')+'</b></td><td class="mono muted">'+_esc(r.rubrica||'')+'</td><td>'+x(r)+'</td></tr>').join('')
-      + '</tbody><tfoot><tr><td colspan="4">Horas / Custo total</td><td class="r">'+String(real.reduce((s,r)=>s+(parseFloat(r.horas)||0),0)).replace('.',',')+'</td><td class="r">'+money(tot(real))+'</td><td colspan="2"></td></tr></tfoot></table>'
+    ? '<table class="tbl"><thead><tr><th style="width:100px">Doc. Custo</th><th style="width:160px">Fornecedor</th><th>Descrição</th><th style="width:80px">Data</th><th class="r" style="width:100px">Custo</th><th style="width:60px">Conta</th><th style="width:22px"></th></tr></thead><tbody>'
+      + real.map(r => '<tr><td>'+_esc(r.documento||'—')+'</td><td>'+(r.fornecedor_nome?'🏭 '+_esc(r.fornecedor_nome):'—')+'</td><td>'+_esc(r.descricao||'')+'</td><td class="muted">'+dd(r.data)+'</td><td class="r"><b style="color:#1A2A5E">'+money(r.valor)+'</b></td><td class="mono muted">'+_esc(r.rubrica||'')+'</td><td>'+x(r)+'</td></tr>').join('')
+      + '</tbody><tfoot><tr><td colspan="4">Custo total</td><td class="r">'+money(tot(real))+'</td><td colspan="2"></td></tr></tfoot></table>'
     : '<div class="muted" style="padding:6px;font-size:11px">Nenhum custo realizado. Use ⊕ Inserir com o documento de custo (NF/recibo) do fornecedor.</div>';
   const hoje = new Date().toISOString().slice(0,10);
   c.innerHTML =
@@ -7045,8 +7117,7 @@ async function otOutrosRender(){
       + '<div class="mfield" style="width:200px">Fornecedor<select id="oo-r-forn">'+fornOpts+'</select></div>'
       + '<div class="mfield" style="flex:1;min-width:180px">Descrição *<input id="oo-r-desc" placeholder="ex.: troca de bateria no local"></div>'
       + '<div class="mfield" style="width:125px">Data<input id="oo-r-data" type="date" value="'+hoje+'"></div>'
-      + '<div class="mfield" style="width:70px">Horas<input id="oo-r-horas" inputmode="decimal" placeholder="0,5" title="tempo do serviço — conta no TDR mesmo sem custo"></div>'
-      + '<div class="mfield" style="width:110px">Custo (R$)<input id="oo-r-valor" inputmode="decimal" placeholder="0 = incluso"></div>'
+      + '<div class="mfield" style="width:110px">Custo (R$) *<input id="oo-r-valor" inputmode="decimal" placeholder="0,00"></div>'
       + '<div class="mfield" style="width:220px">Conta *<select id="oo-r-rub">'+contaOpts+'</select></div>'
       + '<button class="btn p" onclick="otOutrosSalvar(false)">💾 Inserir</button><button class="btn" onclick="otOutrosForm(\'real\')">Cancelar</button></div></div>'
     + tabReal;
@@ -7062,10 +7133,9 @@ async function otOutrosSalvar(planejado){
   const g = id => (document.getElementById('oo-'+p+'-'+id)||{}).value || '';
   if (!g('desc').trim()) { mostrarToast('Informe a descrição', 'warn'); return; }
   const valor = parseFloat(String(g('valor')).replace(',', '.')) || 0;
-  const horas = planejado ? null : (parseFloat(String(g('horas')).replace(',', '.')) || null);
-  // (19/10/2026) custo pode ser 0 (serviço incluso no material/garantia) — mas então precisa de horas ou descrição clara
-  if (planejado && !(valor > 0)) { mostrarToast('Informe o custo previsto', 'warn'); return; }
-  if (!planejado && !(valor > 0) && !(horas > 0)) { mostrarToast('Sem custo? Informe ao menos as horas do serviço', 'warn'); return; }
+  const horas = null;
+  // Outros = só quando existe valor; o tempo do serviço externo fica na Gestão (TDR externo)
+  if (!(valor > 0)) { mostrarToast('Informe o custo — tempo sem custo vai na aba Gestão (TDR externo)', 'warn'); return; }
   if (!g('rub')) { mostrarToast('Escolha a conta', 'warn'); return; }
   try {
     await mntFetch('/manutencao/api/tab/ot-outros', {method:'POST', body: JSON.stringify({
