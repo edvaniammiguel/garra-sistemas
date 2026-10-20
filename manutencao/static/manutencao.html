@@ -4588,23 +4588,29 @@ async function otConsumoEditar(it){
   const direta = it.tipo === 'aplicacao_direta';
   const fornSel = (_mntFornList||[]).find(f => f.nome === it.forn);
   const fornOpts = '<option value="">— fornecedor —</option>' + (_mntFornList||[]).map(f => '<option value="'+f.id+'"'+(fornSel && String(f.id)===String(fornSel.id)?' selected':'')+'>'+_esc(f.nome)+'</option>').join('');
-  b.innerHTML = '<div class="plf-pc-row" style="background:#fff;border-radius:10px;box-shadow:0 12px 32px rgba(15,23,42,.3);padding:16px;width:620px;max-width:94vw">'
+  b.innerHTML = '<div class="plf-pc-row" style="background:#fff;border-radius:10px;box-shadow:0 12px 32px rgba(15,23,42,.3);padding:16px;width:640px;max-width:94vw">'
     + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><b style="color:#1A2A5E">Editar item</b><span style="cursor:pointer;font-size:16px" onclick="document.getElementById(\'ot-cons-edit\').style.display=\'none\'">✕</span></div>'
     + '<div class="muted" style="font-size:11px;margin-bottom:6px">'+(direta ? 'Aplicação directa' : it.tipo === 'saida' ? 'Saída do armazém '+_esc(it.alm)+' — trocar peça ou quantidade acerta o estoque' : 'Devolução')+'</div>'
+    // 1) Documento de custo e fornecedor (padrão MWW: o documento vem primeiro)
+    + '<div class="panel"><div class="dsec" style="margin-top:0">Documento de custo</div><div style="display:flex;gap:8px;flex-wrap:wrap">'
+    + '<div class="mfield" style="width:150px">Doc. Custo (NF/requisição)<input id="ce-doc" value="'+_esc(it.doc)+'"></div>'
+    + '<div class="mfield" style="flex:1;min-width:200px">Fornecedor<select id="ce-forn">'+fornOpts+'</select></div>'
+    + '</div></div>'
+    // 2) Item
+    + '<div class="dsec">Item</div>'
     + '<div style="display:flex;gap:6px;align-items:flex-end">'
     + '<div class="mfield" style="width:170px">Peça<input class="f" id="ce-peca" value="'+_esc(it.peca)+'" oninput="pcSugerir(this)" onfocus="document.getElementById(\'ot-cons-edit\')._rowAtiva=this.closest(\'.plf-pc-row\')" autocomplete="off"></div>'
     + '<div class="mfield" style="flex:1">Descrição<input class="d" value="'+_esc(it.desc)+'" oninput="pcSugerir(this)" autocomplete="off"></div>'
     + '<div class="mfield" style="width:50px">UN<input class="c" value="'+_esc(it.un)+'" readonly style="background:#F8FAFC"></div>'
     + '</div>'
-    + '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">'
+    + '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;align-items:flex-end">'
     + '<div class="mfield" style="width:90px">Quant.<input class="h" id="ce-q" type="number" step="0.5" value="'+_esc(it.q)+'" oninput="pcTotLinha(this)"></div>'
     + '<div class="mfield" style="width:110px">Custo un.<input class="v" id="ce-v" type="number" step="0.01" value="'+_esc(it.v)+'" oninput="pcTotLinha(this)"></div>'
     + '<div class="mfield" style="width:90px">Total<div class="t" style="padding:6px 0;font-weight:700;color:#1A2A5E">'+((parseFloat(it.q)||0)*(parseFloat(it.v)||0)).toFixed(2)+'</div></div>'
-    + '<div class="mfield" style="width:130px">Doc. Custo (NF)<input id="ce-doc" value="'+_esc(it.doc)+'"></div>'
-    + '<div class="mfield" style="flex:1;min-width:180px">Fornecedor<select id="ce-forn">'+fornOpts+'</select></div>'
-    + '<div class="mfield" style="width:100%">Conta<select id="ce-rub">'+_rubSelectOpts(_rubFolhas('2'), it.rub, '— conta —')+'</select></div>'
-    + '<div class="mfield" style="width:100%">Observação<input id="ce-obs" value="'+_esc(it.obs)+'"></div>'
-    + '</div><div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px"><button class="btn" onclick="document.getElementById(\'ot-cons-edit\').style.display=\'none\'">Cancelar</button><button class="btn p" onclick="otConsumoSalvar(\''+it.id+'\')">💾 Salvar</button></div></div>';
+    + '<div class="mfield" style="flex:1;min-width:220px">Conta<select id="ce-rub">'+_rubSelectOpts(_rubFolhas('2'), it.rub, '— conta —')+'</select></div>'
+    + '</div>'
+    + '<div class="mfield" style="margin-top:6px">Observação<input id="ce-obs" value="'+_esc(it.obs)+'"></div>'
+    + '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px"><button class="btn" onclick="document.getElementById(\'ot-cons-edit\').style.display=\'none\'">Cancelar</button><button class="btn p" onclick="otConsumoSalvar(\''+it.id+'\')">💾 Salvar</button></div></div>';
   b.style.display = 'flex';
 }
 async function otConsumoSalvar(id){
