@@ -625,8 +625,10 @@ async def _inserir_ot(d, eq, uid, numero, ano, seq):
 
 
 @router.get("/manutencao/api/ots")
-async def listar_ots(status: str = None, equipamento_id: str = None,
+async def listar_ots(status: str = None, equipamento_id: str = None, fechadas_dias: int = 90,
                      _auth=Depends(verificar_manutencao)):
+    """(20/10/2026) Lista de trabalho: OTs vivas sempre; encerradas/canceladas só as dos últimos
+    `fechadas_dias` (padrão 90; 0 = todas). O histórico completo fica na ficha do equipamento e na busca."""
     await _garantir_colunas_ot(); await _garantir_apontamentos()
     where, params = ["ot.ativo=true"], []
     if status:
@@ -634,6 +636,9 @@ async def listar_ots(status: str = None, equipamento_id: str = None,
         where.append("ot.status=%s")
     else:
         where.append("ot.status <> 'rascunho'")
+        if fechadas_dias and int(fechadas_dias) > 0 and not equipamento_id:
+            params.append(int(fechadas_dias))
+            where.append("(ot.status NOT IN ('concluida','cancelada') OR COALESCE(ot.encerrado_em, ot.data_conclusao, ot.atualizado_em) >= now() - make_interval(days => %s))")
     if equipamento_id:
         params.append(equipamento_id)
         where.append("ot.equipamento_id=%s")
@@ -5040,6 +5045,7 @@ async def meus_pedidos(payload=Depends(verificar_pedir_ot)):
            LEFT JOIN operacional.equipamentos eq ON eq.id = p.equipamento_id
            LEFT JOIN manutencao.ot o ON o.id = p.ot_id
            WHERE p.solicitante_id = %s AND p.ativo = true
+             AND (p.status = 'aberto' OR p.data_pedido >= now() - interval '60 days')
            ORDER BY p.data_pedido DESC LIMIT 60""", (uid,))
     return [dict(r) for r in rows]
 
