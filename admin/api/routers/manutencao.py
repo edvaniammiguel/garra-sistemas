@@ -514,7 +514,7 @@ async def converter_pedido(pid: str, request: Request, payload=Depends(verificar
         "equipamento_id": str(eq_id),
         "descricao": d.get("descricao") or ped["descricao"],
         "prioridade": d.get("prioridade") or mapa_pri.get(ped["grau_urgencia"], "media"),
-        "tipo_trabalho": d.get("tipo_trabalho"),
+        "tipo_trabalho": d.get("tipo_trabalho") or "C1",   # (20/10/2026) pedido = avaria → C1 por padrão
         "fornecedor_id": d.get("fornecedor_id"),
         "responsavel_id": d.get("responsavel_id"),
         # (20/10/2026) MWW: ao virar OT já nasce com Prog. Início (= hoje, ou a data escolhida na triagem);
@@ -993,6 +993,11 @@ async def editar_ot(ot_id: str, request: Request, payload=Depends(verificar_manu
               "data_inicio_real", "horimetro_inicio", "data_limite", "horas_externo"]
     if "projecto_id" in d and d["projecto_id"] == "":
         d["projecto_id"] = None
+    # (20/10/2026) Um campo só (MWW): Tipo de Trabalho manda; a classe (tipo) deriva da letra
+    if d.get("tipo_trabalho"):
+        d["tipo_trabalho"] = str(d["tipo_trabalho"]).strip().upper()
+        d["tipo"] = {"A": "preventiva", "B": "preventiva", "C": "corretiva",
+                     "M": "melhoria", "R": "reforma"}.get(d["tipo_trabalho"][0], d.get("tipo") or "corretiva")
     updates, params = [], []
     for c in campos:
         if c in d:
@@ -4739,6 +4744,74 @@ async def _entrada_core(d, payload):
     return {"ok": True, "documento": doc_num or doc_tipo, "itens": len(lancados),
             "total": round(total_doc, 2), "itens_nf": round(soma_itens, 2),
             "acrescimos": round(acrescimos, 2), "desconto": round(desconto, 2)}
+
+
+# ══ (20/10/2026) ARTIGOS SUBSTITUTOS (padrão ManWinWin › Materiais › Substitutos) ══
+# Tabela manutencao.peca_substitutos (peca_codigo → substituto_codigo + restrições). Lista enriquecida
+# com descrição, saldo e custo do substituto; o reverso ("este item substitui…") viaja junto.
+# A OT usa: peça sem saldo → sugere substituto com saldo.
+async def _subst_enriquecer(rows, chave):
+    out = []
+    for r in rows:
+        cod = r[chave]
+        p = await ajard_query(
+            """SELECT p.codigo, p.descricao, p.unidade, p.custo_medio,
+                      COALESCE((SELECT SUM(e.quantidade) FROM manutencao.estoque e WHERE e.peca_id=p.id),0) AS saldo
+               FROM manutencao.pecas p WHERE p.codigo=%s""", (cod,), fetch="one")
+        d = dict(r)
+        d["descricao"] = (p or {}).get("descricao") or "(item não cadastrado)"
+        d["unidade"] = (p or {}).get("unidade")
+        d["custo_medio"] = float(p["custo_medio"]) if p and p.get("custo_medio") is not None else None
+        d["saldo"] = float(p["saldo"]) if p else 0.0
+        out.append(d)
+    return out
+
+
+@router.get("/manutencao/api/pecas/{codigo}/substitutos")
+async def peca_substitutos(codigo: str, _auth=Depends(verificar_manutencao)):
+    tab, _ = await _garantir_tabela("substitutos")
+    p = await ajard_query("SELECT codigo, descricao FROM manutencao.pecas WHERE codigo=%s", (codigo,), fetch="one")
+    if not p:
+        raise HTTPException(status_code=404, detail="Item não encontrado")
+    diretos = await ajard_query(
+        f"SELECT id, peca_codigo, substituto_codigo, observacao, criado_em FROM {tab} WHERE ativo=true AND peca_codigo=%s ORDER BY criado_em", (codigo,)) or []
+    reversos = await ajard_query(
+        f"SELECT id, peca_codigo, substituto_codigo, observacao, criado_em FROM {tab} WHERE ativo=true AND substituto_codigo=%s ORDER BY criado_em", (codigo,)) or []
+    return {"item": dict(p),
+            "substitutos": await _subst_enriquecer(diretos, "substituto_codigo"),
+            "substitui": await _subst_enriquecer(reversos, "peca_codigo")}
+
+
+@router.post("/manutencao/api/pecas/{codigo}/substitutos")
+async def peca_substituto_add(codigo: str, request: Request, payload=Depends(verificar_manutencao)):
+    tab, _ = await _garantir_tabela("substitutos")
+    d = await request.json()
+    sub = (d.get("substituto_codigo") or "").strip()
+    if not sub:
+        raise HTTPException(status_code=400, detail="Informe o código do substituto")
+    if sub == codigo:
+        raise HTTPException(status_code=400, detail="Um item não substitui a si mesmo")
+    for c in (codigo, sub):
+        if not await ajard_query("SELECT 1 FROM manutencao.pecas WHERE codigo=%s", (c,), fetch="one"):
+            raise HTTPException(status_code=404, detail=f"Item {c} não está no Catálogo")
+    uid = await _usuario_id(payload)
+    obs = (d.get("observacao") or "").strip() or None
+    pares = [(codigo, sub)] + ([(sub, codigo)] if d.get("bidirecional") else [])
+    for a, b in pares:
+        ja = await ajard_query(f"SELECT id FROM {tab} WHERE ativo=true AND peca_codigo=%s AND substituto_codigo=%s", (a, b), fetch="one")
+        if ja:
+            continue
+        await ajard_query(
+            f"INSERT INTO {tab} (peca_codigo, substituto_codigo, observacao, criado_por) VALUES (%s,%s,%s,%s)",
+            (a, b, obs, uid), fetch="none")
+    return {"ok": True}
+
+
+@router.delete("/manutencao/api/substitutos/{rid}")
+async def peca_substituto_del(rid: str, _auth=Depends(verificar_manutencao)):
+    tab, _ = await _garantir_tabela("substitutos")
+    await ajard_query(f"UPDATE {tab} SET ativo=false, atualizado_em=now() WHERE id=%s", (rid,), fetch="none")
+    return {"ok": True}
 
 
 # ══ (11/10/2026) PONTOS DE LEITURA DO OBJETO — janela própria (menu de serviços › Pontos de leitura) ══
