@@ -5162,8 +5162,8 @@ async def meus_pedidos(payload=Depends(verificar_pedir_ot)):
            LEFT JOIN operacional.equipamentos eq ON eq.id = p.equipamento_id
            LEFT JOIN manutencao.ot o ON o.id = p.ot_id
            WHERE p.solicitante_id = %s AND p.ativo = true
-             AND (p.status = 'aberto' OR p.data_pedido >= now() - interval '60 days')
-           ORDER BY p.data_pedido DESC LIMIT 60""", (uid,))
+             AND (p.status = 'aberto' OR p.data_pedido >= now() - interval '30 days')
+           ORDER BY p.data_pedido DESC LIMIT 40""", (uid,))   # (20/10/2026) app: histórico curto (30 d); o completo fica na gestão
     return [dict(r) for r in rows]
 
 
