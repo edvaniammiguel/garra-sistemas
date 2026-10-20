@@ -4326,7 +4326,7 @@ async function otPecasRender(){
     + '<b style="width:85px;text-align:right;color:'+(x.total>=0?'#1A2A5E':'#15803D')+'">'+x.total.toFixed(2)+'</b>'
     + '<span style="width:60px" class="muted">'+_esc(x.almox||'')+'</span>'
     + (['programada','aberta','em_andamento','aguardando_peca','concluida'].includes(o.status)
-        ? '<span style="cursor:pointer;width:16px" title="Editar este item" data-i="'+_esc(JSON.stringify({id:x.id,tipo:x.tipo,peca:x.peca_codigo,desc:x.peca_descricao||'',q:x.quantidade,v:x.custo_unitario,doc:x.documento||'',forn:x.fornecedor_nome||'',rub:x.rubrica||''}))+'" onclick="otConsumoEditar(JSON.parse(this.dataset.i))">✏️</span>'
+        ? '<span style="cursor:pointer;width:16px" title="Editar este item" data-i="'+_esc(JSON.stringify({id:x.id,tipo:x.tipo,peca:x.peca_codigo,desc:x.peca_descricao||'',un:x.unidade||'UN',q:x.quantidade,v:x.custo_unitario,doc:x.documento||'',forn:x.fornecedor_nome||'',rub:x.rubrica||'',obs:x.observacao||'',alm:x.almox||''}))+'" onclick="otConsumoEditar(JSON.parse(this.dataset.i))">✏️</span>'
           + '<span style="cursor:pointer;color:#B91C1C;width:14px" title="Excluir este item" onclick="otConsumoExcluir(\''+x.id+'\',\''+_esc(x.peca_codigo)+'\')">✕</span>'
         : '<span style="width:30px"></span>')+'</div>';
   const delta = cons.total - totPl;
@@ -4580,6 +4580,7 @@ async function otSaidaOK(){
 }
 // (19/10/2026) ✏️ editar item baixado: quantidade · custo · documento · fornecedor · conta
 async function otConsumoEditar(it){
+  // (19/10/2026) edita TODOS os campos do item: peça (com busca), quantidade, custo, documento, fornecedor, conta, observação
   await _rubricas();
   if (_mntFornList === null) { try { _mntFornList = await mntFetch('/manutencao/api/fornecedores'); } catch(e){ _mntFornList = []; } }
   let b = document.getElementById('ot-cons-edit');
@@ -4587,21 +4588,29 @@ async function otConsumoEditar(it){
   const direta = it.tipo === 'aplicacao_direta';
   const fornSel = (_mntFornList||[]).find(f => f.nome === it.forn);
   const fornOpts = '<option value="">— fornecedor —</option>' + (_mntFornList||[]).map(f => '<option value="'+f.id+'"'+(fornSel && String(f.id)===String(fornSel.id)?' selected':'')+'>'+_esc(f.nome)+'</option>').join('');
-  b.innerHTML = '<div style="background:#fff;border-radius:10px;box-shadow:0 12px 32px rgba(15,23,42,.3);padding:16px;width:520px;max-width:94vw">'
-    + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><b style="color:#1A2A5E">Editar item — '+_esc(it.peca)+'</b><span style="cursor:pointer;font-size:16px" onclick="document.getElementById(\'ot-cons-edit\').style.display=\'none\'">✕</span></div>'
-    + '<div class="muted" style="font-size:11px;margin-bottom:6px">'+_esc(it.desc)+' · '+(direta ? 'aplicação directa' : it.tipo === 'saida' ? 'saída do armazém (mudar a quantidade acerta o estoque)' : 'devolução')+'</div>'
-    + '<div style="display:flex;gap:8px;flex-wrap:wrap">'
-    + '<div class="mfield" style="width:90px">Quant.<input id="ce-q" type="number" step="0.5" value="'+_esc(it.q)+'"></div>'
-    + '<div class="mfield" style="width:110px">Custo un.<input id="ce-v" type="number" step="0.01" value="'+_esc(it.v)+'"></div>'
-    + (direta ? '<div class="mfield" style="width:130px">Doc. Custo<input id="ce-doc" value="'+_esc(it.doc)+'"></div><div class="mfield" style="flex:1;min-width:160px">Fornecedor<select id="ce-forn">'+fornOpts+'</select></div>' : '')
+  b.innerHTML = '<div class="plf-pc-row" style="background:#fff;border-radius:10px;box-shadow:0 12px 32px rgba(15,23,42,.3);padding:16px;width:620px;max-width:94vw">'
+    + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><b style="color:#1A2A5E">Editar item</b><span style="cursor:pointer;font-size:16px" onclick="document.getElementById(\'ot-cons-edit\').style.display=\'none\'">✕</span></div>'
+    + '<div class="muted" style="font-size:11px;margin-bottom:6px">'+(direta ? 'Aplicação directa' : it.tipo === 'saida' ? 'Saída do armazém '+_esc(it.alm)+' — trocar peça ou quantidade acerta o estoque' : 'Devolução')+'</div>'
+    + '<div style="display:flex;gap:6px;align-items:flex-end">'
+    + '<div class="mfield" style="width:170px">Peça<input class="f" id="ce-peca" value="'+_esc(it.peca)+'" oninput="pcSugerir(this)" onfocus="document.getElementById(\'ot-cons-edit\')._rowAtiva=this.closest(\'.plf-pc-row\')" autocomplete="off"></div>'
+    + '<div class="mfield" style="flex:1">Descrição<input class="d" value="'+_esc(it.desc)+'" oninput="pcSugerir(this)" autocomplete="off"></div>'
+    + '<div class="mfield" style="width:50px">UN<input class="c" value="'+_esc(it.un)+'" readonly style="background:#F8FAFC"></div>'
+    + '</div>'
+    + '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">'
+    + '<div class="mfield" style="width:90px">Quant.<input class="h" id="ce-q" type="number" step="0.5" value="'+_esc(it.q)+'" oninput="pcTotLinha(this)"></div>'
+    + '<div class="mfield" style="width:110px">Custo un.<input class="v" id="ce-v" type="number" step="0.01" value="'+_esc(it.v)+'" oninput="pcTotLinha(this)"></div>'
+    + '<div class="mfield" style="width:90px">Total<div class="t" style="padding:6px 0;font-weight:700;color:#1A2A5E">'+((parseFloat(it.q)||0)*(parseFloat(it.v)||0)).toFixed(2)+'</div></div>'
+    + '<div class="mfield" style="width:130px">Doc. Custo (NF)<input id="ce-doc" value="'+_esc(it.doc)+'"></div>'
+    + '<div class="mfield" style="flex:1;min-width:180px">Fornecedor<select id="ce-forn">'+fornOpts+'</select></div>'
     + '<div class="mfield" style="width:100%">Conta<select id="ce-rub">'+_rubSelectOpts(_rubFolhas('2'), it.rub, '— conta —')+'</select></div>'
-    + '</div><div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px"><button class="btn" onclick="document.getElementById(\'ot-cons-edit\').style.display=\'none\'">Cancelar</button><button class="btn p" onclick="otConsumoSalvar(\''+it.id+'\','+(direta?'true':'false')+')">💾 Salvar</button></div></div>';
+    + '<div class="mfield" style="width:100%">Observação<input id="ce-obs" value="'+_esc(it.obs)+'"></div>'
+    + '</div><div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px"><button class="btn" onclick="document.getElementById(\'ot-cons-edit\').style.display=\'none\'">Cancelar</button><button class="btn p" onclick="otConsumoSalvar(\''+it.id+'\')">💾 Salvar</button></div></div>';
   b.style.display = 'flex';
 }
-async function otConsumoSalvar(id, direta){
+async function otConsumoSalvar(id){
   const g = i => (document.getElementById(i)||{}).value;
-  const body = { quantidade: g('ce-q'), custo_unitario: g('ce-v'), rubrica: g('ce-rub') || null };
-  if (direta) { body.documento_numero = g('ce-doc') || ''; body.fornecedor_id = g('ce-forn') || null; }
+  const body = { peca: (g('ce-peca')||'').trim(), quantidade: g('ce-q'), custo_unitario: g('ce-v'), rubrica: g('ce-rub') || null,
+                 documento_numero: g('ce-doc') || '', fornecedor_id: g('ce-forn') || null, observacao: g('ce-obs') || '' };
   try { await mntFetch('/manutencao/api/ots/'+_otAberta.id+'/consumos/'+id, {method:'PATCH', body: JSON.stringify(body)});
     document.getElementById('ot-cons-edit').style.display = 'none'; mostrarToast('✅ Item atualizado', 'ok'); otPecasRender();
   } catch(e){ mostrarToast('❌ '+e.message, 'warn'); }
