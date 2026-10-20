@@ -4605,7 +4605,9 @@ async def _entrada_core(d, payload):
     if not itens:
         raise HTTPException(status_code=400, detail="Documento sem itens")
     for _col, _ddl in (("documento_tipo", "TEXT"), ("documento_numero", "TEXT"),
-                       ("fornecedor_id", "UUID"), ("oc_numero", "TEXT")):
+                       ("fornecedor_id", "UUID"), ("oc_numero", "TEXT"),
+                       # (20/10/2026) fechamento com a NF: custo digitado × custo que entrou (com IPI/frete rateado)
+                       ("custo_nf", "NUMERIC"), ("acrescimo_rateado", "NUMERIC"), ("total_nf", "NUMERIC")):
         await ajard_query(
             f"ALTER TABLE manutencao.movimentacoes ADD COLUMN IF NOT EXISTS {_col} {_ddl}",
             fetch="none")
@@ -4635,8 +4637,30 @@ async def _entrada_core(d, payload):
             return float(str(v).replace(",", "."))
         except (TypeError, ValueError):
             return None
-    lancados, total_doc = [], 0.0
+    # ── (20/10/2026) FECHAMENTO COM A NF ──────────────────────────────────────
+    # acrescimos = IPI + frete + outras despesas da nota; desconto; total_nf = valor da nota.
+    # Como a Garra não recupera IPI, acréscimos são custo da peça: rateio proporcional ao
+    # valor de cada item (ERP/ManWinWin). custo_unitario = custo que entrou no estoque;
+    # custo_nf = o digitado da nota. Com total_nf informado, a entrada só passa se fechar.
+    acrescimos = _num(d.get("acrescimos")) or 0.0
+    desconto = _num(d.get("desconto")) or 0.0
+    total_nf = _num(d.get("total_nf"))
+    soma_itens = 0.0
     for it in itens:
+        q_, c_ = _num(it.get("quantidade")) or 0, _num(it.get("custo_unitario"))
+        soma_itens += q_ * (c_ or 0)
+    if total_nf is not None:
+        esperado = round(soma_itens + acrescimos - desconto, 2)
+        if abs(esperado - total_nf) > 0.05:
+            raise HTTPException(status_code=400, detail=(
+                f"A entrada não fecha com a NF: itens R$ {soma_itens:.2f} + acréscimos R$ {acrescimos:.2f} "
+                f"− desconto R$ {desconto:.2f} = R$ {esperado:.2f}, mas o total da NF é R$ {total_nf:.2f} "
+                f"(diferença R$ {total_nf - esperado:+.2f})."))
+    fator = ((acrescimos - desconto) / soma_itens) if soma_itens > 0 else 0.0
+    rateio_acum, n_itens = 0.0, len(itens)
+
+    lancados, total_doc = [], 0.0
+    for idx, it in enumerate(itens):
         cod = (it.get("peca") or "").strip()
         qtd = _num(it.get("quantidade")) or 0
         if qtd <= 0:
@@ -4656,7 +4680,17 @@ async def _entrada_core(d, payload):
                 (cod, desc, (it.get("un") or "UN").strip().upper() or "UN", _num(it.get("custo_unitario")),
                  (it.get("familia_codigo") or "").strip() or None))
             p = {"id": p["id"], "custo_medio": _num(it.get("custo_unitario"))}
-        custo = _num(it.get("custo_unitario"))
+        custo_nf = _num(it.get("custo_unitario"))
+        custo = custo_nf
+        rateado = None
+        if custo is not None and fator:
+            # último item absorve o resíduo de arredondamento para a soma bater com a NF
+            if idx == n_itens - 1:
+                rateado = round((acrescimos - desconto) - rateio_acum, 2)
+            else:
+                rateado = round(qtd * custo * fator, 2)
+                rateio_acum += rateado
+            custo = round((qtd * custo + rateado) / qtd, 4)
         if custo is None:
             custo = float(p["custo_medio"]) if p["custo_medio"] is not None else None
         if doc_tipo != "aplicacao_direta":
@@ -4684,17 +4718,21 @@ async def _entrada_core(d, payload):
         await ajard_query("""
             INSERT INTO manutencao.movimentacoes
                 (tipo, peca_id, almox_destino, quantidade, ot_id, usuario_id, observacao,
-                 custo_unitario, documento_tipo, documento_numero, fornecedor_id, oc_numero, rubrica)
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+                 custo_unitario, documento_tipo, documento_numero, fornecedor_id, oc_numero, rubrica,
+                 custo_nf, acrescimo_rateado, total_nf)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
             (tipo_mov, p["id"], destino, qtd,
              (ot_id if doc_tipo == "aplicacao_direta" else None), uid,
              (d.get("observacao") or "").strip() or None, custo,
              doc_tipo, doc_num or None, d.get("fornecedor_id") or None,
-             (d.get("oc_numero") or "").strip() or None, rub), fetch="none")
+             (d.get("oc_numero") or "").strip() or None, rub,
+             (round(custo_nf, 4) if custo_nf is not None else None), rateado,
+             (round(total_nf, 2) if total_nf is not None else None)), fetch="none")
         total_doc += qtd * (custo or 0)
         lancados.append(cod)
     return {"ok": True, "documento": doc_num or doc_tipo, "itens": len(lancados),
-            "total": round(total_doc, 2)}
+            "total": round(total_doc, 2), "itens_nf": round(soma_itens, 2),
+            "acrescimos": round(acrescimos, 2), "desconto": round(desconto, 2)}
 
 
 # ══ (11/10/2026) PONTOS DE LEITURA DO OBJETO — janela própria (menu de serviços › Pontos de leitura) ══
