@@ -2597,6 +2597,11 @@ function renderSidebar(perfil, perms) {
       <div class="sb-item" onclick="abrirModuloUrl('/abastecimento/notas', true)">
         <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1Z"/><path d="M14 8H8"/><path d="M16 12H8"/><path d="M13 16H8"/></svg>
         Notas de Abastecimento
+      </div>` : '') +
+      ((temPerm('manutencao_notas') || temPerm('manutencao')) ? `
+      <div class="sb-item" onclick="abrirModuloUrl('/manutencao/notas', true)">
+        <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h8M8 17h5"/></svg>
+        Notas a lançar (OTs + abastec.)
       </div>` : '') + `
     </div><div class="sb-divider"></div>`;
 
