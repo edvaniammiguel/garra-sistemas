@@ -4332,20 +4332,20 @@ async function otPecasRender(){
   const delta = cons.total - totPl;
   const podeBaixar = ['programada','aberta','em_andamento','aguardando_peca'].includes(o.status);
   c.innerHTML =
-    '<div class="dsec">Planejado — herdado da FMP'+(_otPc.plano ? ' '+_esc(_otPc.plano.codigo) : '')+'</div>'
+    '<div class="dsec">Planejado <span class="muted">· peças previstas'+(_otPc.plano ? ' — FMP '+_esc(_otPc.plano.codigo) : '')+'</span></div>'
     + (pl.length
         ? pl.map(linhaPl).join('') + '<div style="text-align:right;font-weight:700;padding:4px 6px;color:#1A2A5E">Total previsto: '+money(totPl)+'</div>'
         : '<div class="muted" style="padding:8px 6px;font-size:11px">'+(_otPc.plano ? 'FMP sem peças detalhadas.' : 'OT sem FMP vinculada — sem previsto.')+'</div>')
-    + '<div class="dsec" style="margin-top:10px">Realizado — baixas do Almoxarifado</div>'
+    + '<div class="dsec" style="margin-top:10px;display:flex;justify-content:space-between;align-items:center"><span>Realizado <span class="muted">· peças aplicadas na OT (armazém ou compra directa)</span></span>'
+    +   (podeBaixar ? '<button class="btn" style="font-size:11px;padding:2px 8px" onclick="otSaidaAbrir()">⊕ Inserir peça</button>' : '') + '</div>'
     + (cons.itens.length
         ? cons.itens.map(linhaRe).join('') + '<div style="text-align:right;font-weight:700;padding:4px 6px;color:#1A2A5E">Total realizado: '+money(cons.total)+'</div>'
-        : '<div class="muted" style="padding:8px 6px;font-size:11px">Nenhum consumo lançado ainda.</div>')
+        : '<div class="muted" style="padding:8px 6px;font-size:11px">Nenhuma peça aplicada ainda — use ⊕ Inserir peça.</div>')
     + (pl.length && cons.itens.length
         ? '<div style="text-align:right;padding:2px 6px;font-size:11px;font-weight:700;color:'+(delta>0?'#B91C1C':'#15803D')+'">Δ realizado − previsto: '+money(delta)+'</div>' : '')
-    + (podeBaixar
+    + (podeBaixar && pl.length
         ? '<div style="margin-top:8px;display:flex;gap:8px">'
-          + '<button class="btn p" onclick="otSaidaAbrir()">＋ Baixar peça (estoque ou fornecedor)</button>'
-          + '<button class="btn" title="Peças previstas na FMP que o estoque e as OCs abertas não cobrem → OC em rascunho no Compras, amarrada a esta OT" onclick="ocDaOT()">🛒 Gerar OC (faltantes)</button>'
+          + '<button class="btn" title="Peças previstas na FMP que o estoque e as OCs abertas não cobrem → OC em rascunho no Compras, amarrada a esta OT" onclick="ocDaOT()">🛒 Gerar OC (faltantes da FMP)</button>'
           + '</div>'
         : '');
 }
@@ -4482,7 +4482,7 @@ function otSaidaAbrir(){
   }
   const fornOpts = '<option value="">— fornecedor —</option>' + (_mntFornList||[]).map(f => '<option value="'+f.id+'"'+(String(f.id)===String(o.fornecedor_id||'')?' selected':'')+'>'+_esc(f.nome)+'</option>').join('');
   b.innerHTML = '<div style="background:#fff;border-radius:10px;box-shadow:0 12px 32px rgba(15,23,42,.3);padding:16px;width:760px;max-width:96vw;max-height:92vh;overflow:auto">'
-    + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><b style="color:#1A2A5E">Novo registo de peça — '+_esc(o.numero||'')+'</b><span style="cursor:pointer;font-size:16px" onclick="document.getElementById(\'ot-saida\').style.display=\'none\'">✕</span></div>'
+    + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><b style="color:#1A2A5E">Inserir peça — '+_esc(o.numero||'')+'</b><span style="cursor:pointer;font-size:16px" onclick="document.getElementById(\'ot-saida\').style.display=\'none\'">✕</span></div>'
     + '<div style="display:flex;gap:16px;font-size:11px;margin-bottom:6px">'
     +   '<label style="display:flex;align-items:center;gap:5px;cursor:pointer"><input type="radio" name="sai-tipo" value="direta" checked onchange="otSaidaModo(\'direta\')"> Aplicação Directa <span class="muted">(compra para a OT, não passa pelo estoque)</span></label>'
     +   '<label style="display:flex;align-items:center;gap:5px;cursor:pointer"><input type="radio" name="sai-tipo" value="estoque" onchange="otSaidaModo(\'estoque\')"> Saída Armazém <span class="muted">(baixa do estoque)</span></label>'
