@@ -80,7 +80,7 @@
       <b>Novo pedido</b>
       <span class="muted" id="quem"></span>
     </div>
-    <label>Máquina / veículo</label>
+    <label>Equipamento</label>
     <select id="pd-eq"><option value="">— escolher —</option></select>
     <label>O que está acontecendo? *</label>
     <textarea id="pd-desc" placeholder="ex.: vazamento de óleo no comando; freio baixo; barulho na esteira…"></textarea>
@@ -89,7 +89,7 @@
     <div class="urg">
       <button id="u-normal" onclick="urg('normal')">🟢 Normal</button>
       <button id="u-alta" onclick="urg('alta')">🟠 Alta</button>
-      <button id="u-urgente" onclick="urg('urgente')">🔴 Urgente<br><span style="font-weight:400;font-size:10px">máquina parada</span></button>
+      <button id="u-urgente" onclick="urg('urgente')">🔴 Urgente<br><span style="font-weight:400;font-size:10px">equipamento parado</span></button>
     </div>
     <button class="btn p" onclick="enviar()">📨 Enviar pedido</button>
     <div class="muted" style="margin-top:8px;text-align:center">O pedido cai na triagem da manutenção, que abre a OT.</div>
@@ -119,7 +119,7 @@
       <b>OTs em aberto</b>
       <label class="muted" style="display:flex;align-items:center;gap:4px;margin:0;font-size:12px"><input type="checkbox" id="ots-so-minhas" onchange="renderOts()" style="width:18px;height:18px"> só as minhas</label>
     </div>
-    <input id="ots-busca" placeholder="🔍 máquina, nº da OT ou serviço" oninput="renderOts()" style="margin-top:8px">
+    <input id="ots-busca" placeholder="🔍 equipamento, nº da OT ou serviço" oninput="renderOts()" style="margin-top:8px">
     <div id="ots-lista" class="muted" style="margin-top:8px">Carregando…</div>
   </div>
 
@@ -298,7 +298,7 @@ function renderOts(){
 }
 const ST_PED = { aberto:['#64748B','⏳ Na triagem'], convertido:['#1D4ED8','🔧 Virou OT'], recusado:['#B91C1C','✖ Recusado'] };
 const ST_OT = { programada:'📅 Programada', aberta:'📂 Aberta', em_andamento:'▶️ Em execução',
-                aguardando_peca:'⏸️ Aguardando peça', concluida:'✅ Concluída', cancelada:'✖ Cancelada' };
+                aguardando_peca:'⏸️ Aguardando peça', concluida:'🗂️ Encerrada', cancelada:'✖ Cancelada' };
 async function carregarMinhas(){
   const el = document.getElementById('minhas-lista');
   try {
