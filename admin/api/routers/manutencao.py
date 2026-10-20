@@ -4361,6 +4361,51 @@ async def ot_consumos(ot_id: str, _auth=Depends(verificar_manutencao)):
     return {"itens": itens, "total": round(total, 2)}
 
 
+@router.patch("/manutencao/api/ots/{ot_id}/consumos/{mov_id}")
+async def ot_consumo_editar(ot_id: str, mov_id: str, request: Request, payload=Depends(verificar_manutencao)):
+    """(19/10/2026) Editar um item baixado na OT (✏️ no Realizado): quantidade, custo unitário,
+    documento, fornecedor e conta. Saída do armazém: a diferença de quantidade acerta o estoque."""
+    await garantir_nucleo()
+    d = await request.json()
+    m = await ajard_query(
+        "SELECT * FROM manutencao.movimentacoes WHERE id=%s AND ot_id=%s AND tipo IN ('saida','entrada','aplicacao_direta')",
+        (mov_id, ot_id), fetch="one")
+    if not m:
+        raise HTTPException(status_code=404, detail="Item não encontrado nesta OT")
+    sets, params = [], []
+    def _num(v):
+        try:
+            return float(str(v).replace(",", ".")) if v not in (None, "") else None
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Número inválido")
+    if "quantidade" in d:
+        q = _num(d["quantidade"])
+        if q is None or q <= 0:
+            raise HTTPException(status_code=400, detail="Quantidade deve ser positiva")
+        delta = q - float(m["quantidade"] or 0)
+        if m["tipo"] == "saida" and m["almox_origem"] and delta:
+            if delta > 0:
+                s = await ajard_query("SELECT COALESCE(quantidade,0) AS q FROM manutencao.estoque WHERE peca_id=%s AND almoxarifado_id=%s", (m["peca_id"], m["almox_origem"]), fetch="one")
+                if float((s or {}).get("q") or 0) < delta:
+                    raise HTTPException(status_code=400, detail="Saldo insuficiente no almoxarifado para aumentar a quantidade")
+            await ajard_query("UPDATE manutencao.estoque SET quantidade = quantidade - %s WHERE peca_id=%s AND almoxarifado_id=%s",
+                              (delta, m["peca_id"], m["almox_origem"]), fetch="none")
+        sets.append("quantidade=%s"); params.append(q)
+    if "custo_unitario" in d:
+        sets.append("custo_unitario=%s"); params.append(_num(d["custo_unitario"]))
+    if "documento_numero" in d:
+        sets.append("documento_numero=%s"); params.append((d.get("documento_numero") or "").strip() or None)
+    if "fornecedor_id" in d:
+        sets.append("fornecedor_id=%s"); params.append((d.get("fornecedor_id") or "").strip() or None)
+    if "rubrica" in d:
+        sets.append("rubrica=%s"); params.append((d.get("rubrica") or "").strip() or None)
+    if not sets:
+        return {"ok": True}
+    params.append(mov_id)
+    await ajard_query(f"UPDATE manutencao.movimentacoes SET {', '.join(sets)} WHERE id=%s", params, fetch="none")
+    return {"ok": True}
+
+
 @router.delete("/manutencao/api/ots/{ot_id}/consumos/{mov_id}")
 async def ot_consumo_excluir(ot_id: str, mov_id: str, payload=Depends(verificar_manutencao)):
     """(19/10/2026) Excluir um item baixado na OT (padrão MWW ✕ no quadro Realizado).
