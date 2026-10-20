@@ -1354,7 +1354,7 @@ async function plFicha(pid, aba){
   }
   if (aba === 'fe'){
     const ls = pad(d.fe, 2, 'fe');
-    c.innerHTML = grade('Ferramentas — separar antes, máquina não espera','fe',ls,
+    c.innerHTML = grade('Ferramentas — separar antes, equipamento não espera','fe',ls,
       '<span style="flex:1">Ferramenta</span><span style="width:70px">Qtd</span>',
       x => '<div class="plf-fe-row" style="display:flex;gap:6px;margin:3px 0">'
         + '<input class="f" style="flex:1" value="'+_esc(x.tipo||'')+'" placeholder="ex.: Torquímetro calibrado">'
@@ -3916,14 +3916,14 @@ function otEncerrarDialogo(id){
       + '<div style="display:flex;gap:8px;flex-wrap:wrap">'
       + '<div class="mfield" style="width:200px">Data/hora de conclusão *<input id="ote-data" type="datetime-local" value="'+dtSug+'" max="'+_local(new Date())+'"></div>'
       + '<div class="mfield" style="width:160px">'+(km?'Km':'Horímetro')+' na conclusão ('+unid+')<input id="ote-hor" inputmode="decimal" value="'+_esc(horSug)+'" placeholder="'+(contador != null ? 'contador: '+contador : 'leitura')+'"></div>'
-      + '<div class="mfield" style="flex:1;min-width:150px;align-self:flex-end"><span class="muted" style="font-size:10px">'+(contador != null ? 'Contador atual da máquina: <b>'+_esc(contador)+' '+unid+'</b>' : 'Máquina sem contador registrado')+(comHor ? ' · do app: '+_esc(comHor.horimetro) : '')+'</span></div>'
+      + '<div class="mfield" style="flex:1;min-width:150px;align-self:flex-end"><span class="muted" style="font-size:10px">'+(contador != null ? 'Contador atual do equipamento: <b>'+_esc(contador)+' '+unid+'</b>' : 'Equipamento sem contador registrado')+(comHor ? ' · do app: '+_esc(comHor.horimetro) : '')+'</span></div>'
       + '</div>'
       + '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px">'
       + '<div class="mfield" style="width:160px">Custo total (R$) <span class="muted" style="font-weight:400">(apurado: peças + MO + outros)</span><input id="ote-custo" inputmode="decimal" value="'+_esc(custoSug)+'"></div>'
-      + '<div class="mfield" style="width:220px">Máquina parada (PDI, h) <span class="muted" style="font-weight:400">(vazio = Início → Fim)</span><input id="ote-hp" inputmode="decimal" placeholder="'+(iniD ? Math.max(0,(new Date(dtSug) - iniD)/3600000).toFixed(1).replace('.',',') : 'paradas')+'"></div>'
+      + '<div class="mfield" style="width:220px">Equipamento parado (PDI, h) <span class="muted" style="font-weight:400">(vazio = Início → Fim)</span><input id="ote-hp" inputmode="decimal" placeholder="'+(iniD ? Math.max(0,(new Date(dtSug) - iniD)/3600000).toFixed(1).replace('.',',') : 'paradas')+'"></div>'
       + '</div>'
       + '<div class="mfield" style="margin-top:6px">O que foi feito'+(rel?' <span class="muted" style="font-size:10px">(veio do app — edite se quiser)</span>':'')+'<textarea id="ote-obs" rows="4" style="width:100%">'+_esc(rel)+'</textarea></div>'
-      + '<div class="muted" style="font-size:10px;margin-top:4px">A leitura informada vira a última leitura da máquina (Registo Funcionamento, fonte OT) e a baseline da preventiva vinculada.</div>'
+      + '<div class="muted" style="font-size:10px;margin-top:4px">A leitura informada vira a última leitura do equipamento (Registo Funcionamento, fonte OT) e a baseline da preventiva vinculada.</div>'
       + '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px"><button class="btn" id="ote-cancel">Cancelar</button><button class="btn p" id="ote-ok">✔ Encerrar OT</button></div>'
       + '</div>';
     b.style.display = 'flex';
@@ -3977,7 +3977,7 @@ async function mntStatusReal(id, novo){
       const h1c = (_otAberta.historico||[]).find(x => x.status_para === 'em_andamento');
       const iniC = _otAberta.data_inicio_real ? new Date(_otAberta.data_inicio_real) : (h1c ? new Date(h1c.criado_em) : null);
       const pdiAuto = iniC ? Math.max(0, (new Date(s.data) - iniC) / 3600000).toFixed(1).replace('.', ',') : null;
-      if (!confirm('Encerrar '+(_otAberta.numero||'a OT')+'?\n\nFim: '+dtTxt+'\n'+(km?'Km':'Horímetro')+': '+(String(s.hor).trim() || '— (não informado)')+'\nMáquina parada (PDI): '+(String(s.hp).trim() || (pdiAuto != null ? pdiAuto+' h (Início → Fim)' : '—'))+'\nCusto total (apurado): R$ '+(custoFech != null ? custoFech.toFixed(2) : '0,00'))) return;
+      if (!confirm('Encerrar '+(_otAberta.numero||'a OT')+'?\n\nFim: '+dtTxt+'\n'+(km?'Km':'Horímetro')+': '+(String(s.hor).trim() || '— (não informado)')+'\nEquipamento parado (PDI): '+(String(s.hp).trim() || (pdiAuto != null ? pdiAuto+' h (Início → Fim)' : '—'))+'\nCusto total (apurado): R$ '+(custoFech != null ? custoFech.toFixed(2) : '0,00'))) return;
       // PDI: sem valor digitado, o servidor calcula Início (emissão) → Fim
       dados = { data_conclusao: new Date(s.data).toISOString(), horimetro: n(s.hor), custo: custoFech, horas_parada: n(s.hp), obs: String(s.obs||'').trim() || null };
     } else {
@@ -4773,7 +4773,7 @@ function otAba(aba){
     const tr = cs => '<tr style="border-bottom:1px solid #F1F5F9">'+cs+'</tr>';
     // Registo no Início é automático (MWW: campo cinza) — última leitura conhecida da máquina até o início
     const leituraIniVal = o.horimetro_inicio != null ? o.horimetro_inicio : o.leitura_inicio;
-    const leituraIni = '<span class="muted" title="Última leitura da máquina até o início (partes, abastecimentos, checklist, OTs)">'+n(leituraIniVal)+'</span>';
+    const leituraIni = '<span class="muted" title="Última leitura do equipamento até o início (partes, abastecimentos, checklist, OTs)">'+n(leituraIniVal)+'</span>';
     const regTotal = o.horimetro_conclusao != null ? parseFloat(o.horimetro_conclusao) : (aberta && s && s.hor !== '' ? parseFloat(String(s.hor).replace(',', '.')) : (contador != null ? parseFloat(contador) : null));
     const regBase = leituraIniVal != null ? parseFloat(leituraIniVal) : (o.horimetro_na_abertura != null ? parseFloat(o.horimetro_na_abertura) : null);
     const regPar = (regTotal != null && regBase != null) ? (regTotal - regBase) : null;
@@ -4801,14 +4801,14 @@ function otAba(aba){
       + tempo('TDE','Tempo De Espera — do pedido ao início', tde, abertura && inicioReal ? 'Pedido → Início' : '')
       + (aberta
           ? (function(){ const fimS = s.data ? new Date(s.data) : new Date(); const auto = inicioReal ? Math.max(0, (fimS - inicioReal) / 3600000) : null;
-              return tempo('PDI','Paragem Devido à Intervenção — máquina parada da emissão (Início) ao Fim', '<input id="ot-enc-hp" inputmode="decimal" value="'+_esc(s.hp)+'" placeholder="'+(auto != null ? auto.toFixed(1).replace('.', ',') : 'paradas')+'" style="width:60px;font-size:11px" oninput="otEncGuardar(\'hp\',this.value)"> h', auto != null ? 'Início → Fim (automático; digite só para corrigir)' : ''); })()
-          : tempo('PDI','Paragem Devido à Intervenção — horas de máquina parada', o.horas_parada != null ? n(o.horas_parada)+' h' : '—', o.horas_parada != null ? 'indisponibilidade' : ''))
+              return tempo('PDI','Paragem Devido à Intervenção — equipamento parado da emissão (Início) ao Fim', '<input id="ot-enc-hp" inputmode="decimal" value="'+_esc(s.hp)+'" placeholder="'+(auto != null ? auto.toFixed(1).replace('.', ',') : 'paradas')+'" style="width:60px;font-size:11px" oninput="otEncGuardar(\'hp\',this.value)"> h', auto != null ? 'Início → Fim (automático; digite só para corrigir)' : ''); })()
+          : tempo('PDI','Paragem Devido à Intervenção — horas de equipamento parado', o.horas_parada != null ? n(o.horas_parada)+' h' : '—', o.horas_parada != null ? 'indisponibilidade' : ''))
       + tempo('TDM','Tempo De Manutenção — Início → Fim', tdm, '')
       + tempo('TDR','Tempo De Reparação — HH interna (Mão de Obra) + horas do serviço externo', (o.mo_horas||o.outros_horas) ? n(((o.mo_horas||0)+(o.outros_horas||0)).toFixed(1))+' h' : '—', (o.mo_horas ? 'MO '+n(o.mo_horas) : '') + (o.outros_horas ? (o.mo_horas?' + ':'')+'externo '+n(o.outros_horas) : ''))
       + ((o.interventor === 'externo' || o.fornecedor_id) && aberta
           ? '<div style="display:flex;align-items:center;gap:6px;padding:2px 0 2px 44px;font-size:10px;color:#475569">🏭 serviço externo: <input id="ot-hext" inputmode="decimal" value="'+(o.horas_externo != null ? _esc(String(o.horas_externo).replace('.',',')) : '')+'" placeholder="horas" style="width:60px;font-size:11px" onchange="otGestaoSalvar(\'horas_externo\', this.value)"> h <span class="muted">(tempo do fornecedor, mesmo sem custo)</span></div>'
           : '')
-      + '<div class="muted" style="margin-top:6px;line-height:1.5">PDI é o que vira dinheiro: máquina parada = diária perdida. Alimenta o KPI de Disponibilidade.</div>'
+      + '<div class="muted" style="margin-top:6px;line-height:1.5">PDI é o que vira dinheiro: equipamento parado = diária perdida. Alimenta o KPI de Disponibilidade.</div>'
       + '</div></div>';
   }
   if (aba === 'ped'){
@@ -4891,7 +4891,7 @@ async function abrirReprogramar(){
     + '<label style="display:flex;align-items:center;gap:6px;font-size:11px;margin-top:6px;color:#475569"><input type="checkbox" id="rp-alterada" '+(o.prog_alterada?'checked':'')+' disabled> Data Programada Alterada <span class="muted">(marca sozinho quando a Programada foge do que a FMP calcula)</span></label>'
     + '<div style="display:flex;gap:8px;align-items:center;margin-top:8px;font-size:11px"><b style="color:#475569">Ritmo</b> <input id="rp-ritmo" type="number" step="0.1" min="0" value="'+(ritmo != null ? ritmo : '')+'" style="width:70px;font-size:11px" oninput="reprogRitmo()" placeholder="'+un+'/dia"> <span class="muted">'+un+'/dia · '+(ritmo != null ? 'FMD real do '+_esc(eq.codigo||'equipamento') : 'sem FMD (sem leituras) — informe um ritmo estimado para a calculadora funcionar')+' · contador atual '+atual.toLocaleString('pt-BR')+' '+un+'</span></div>'
     + '<div id="rp-aviso" style="font-size:10px;min-height:14px;margin-top:4px;color:#B45309"></div></div>'
-    + '<div class="mfield" style="margin-top:8px">Motivo <span class="muted">(opcional)</span><input id="rp-obs" placeholder="ex.: máquina em obra até sexta"></div>'
+    + '<div class="mfield" style="margin-top:8px">Motivo <span class="muted">(opcional)</span><input id="rp-obs" placeholder="ex.: equipamento em obra até sexta"></div>'
     + '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px"><button class="btn" onclick="document.getElementById(\'ot-prog\').style.display=\'none\'">Cancelar</button><button class="btn p" onclick="salvarReprogramacao()">OK</button></div></div>';
   b.style.display = 'flex';
   reprogAlterada();
@@ -5109,7 +5109,7 @@ function fichaAba(aba, alvo){
       +   fld('Reg. Par. ('+unid+')','<input id="fo-par" type="number" step="0.01" value="'+_esc(fm.reg_par ?? '')+'">')
       + '</div><div style="display:flex;gap:14px;align-items:center;margin-top:6px">'
       +   chk('fo-calc', !(fm.calc === false && parseFloat(fm.valor) > 0), 'Calcular por registros') + '<span id="fi-ritmo" class="muted" style="font-size:11px">calculando…</span></div>'
-      +   '<div style="margin-top:6px">'+chk('fo-os-alim', e.os_alimenta_manutencao !== false, 'OS do cliente alimenta o horímetro de manutenção (desmarque se a máquina tem dois horímetros)')+'</div>'
+      +   '<div style="margin-top:6px">'+chk('fo-os-alim', e.os_alimenta_manutencao !== false, 'OS do cliente alimenta o horímetro de manutenção (desmarque se o equipamento tem dois horímetros)')+'</div>'
       +   fld('Obj. Contador','<input id="fo-contador" value="'+_esc(fm.contador||'')+'" placeholder="objeto cujo contador alimenta este (opcional)">')
       + '</div></div>'
       + '<div style="display:flex;gap:14px;margin-top:10px">'
@@ -5220,7 +5220,7 @@ function fichaAba(aba, alvo){
       + '<div class="mfield" style="width:170px">Categoria do ficheiro<select id="fn-cat">'+catOpts+'</select></div>'
       + '<div class="mfield" style="flex:1;min-width:180px">Ficheiro (opcional, até 15 MB)<input type="file" id="fn-file" style="font-size:11px"></div>'
       + '<button class="btn p" onclick="fichaNovaNota()">➕ Registrar</button></div>'
-      + '<div class="muted" style="font-size:10px;margin-top:4px">Com ficheiro, a nota também entra na pasta de documentos da máquina (categoria ajuda a achar: NF, CRLV, seguro…). Fotos e notinhas das OTs já vão para lá automaticamente.</div>';
+      + '<div class="muted" style="font-size:10px;margin-top:4px">Com ficheiro, a nota também entra na pasta de documentos do equipamento (categoria ajuda a achar: NF, CRLV, seguro…). Fotos e notinhas das OTs já vão para lá automaticamente.</div>';
   }
 }
 async function _fichaPatch(body, aba){
@@ -6473,7 +6473,7 @@ async function bibEditor(aba){
   }
   if (aba === 'fe'){
     const ls = pad(d.fe, 2, 'fe');
-    c.innerHTML = grade('Ferramentas — separar antes, máquina não espera','fe',ls,
+    c.innerHTML = grade('Ferramentas — separar antes, equipamento não espera','fe',ls,
       '<span style="flex:1">Ferramenta</span><span style="width:70px">Qtd</span>',
       x => '<div class="bb-fe-row" style="display:flex;gap:6px;margin:3px 0">'
         + '<input class="f" style="flex:1" value="'+_esc(x.tipo||'')+'" placeholder="ex.: Torquímetro calibrado">'
