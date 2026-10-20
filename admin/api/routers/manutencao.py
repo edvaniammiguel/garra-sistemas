@@ -4378,6 +4378,24 @@ async def ot_consumo_editar(ot_id: str, mov_id: str, request: Request, payload=D
             return float(str(v).replace(",", ".")) if v not in (None, "") else None
         except ValueError:
             raise HTTPException(status_code=400, detail="Número inválido")
+    # trocar a peça: saída do armazém devolve a antiga ao estoque e baixa a nova
+    if (d.get("peca") or "").strip() and (d.get("peca") or "").strip() != (await ajard_query("SELECT codigo FROM manutencao.pecas WHERE id=%s", (m["peca_id"],), fetch="one") or {}).get("codigo"):
+        nova = await ajard_query("SELECT id FROM manutencao.pecas WHERE codigo=%s AND ativo=true", ((d.get("peca") or "").strip(),), fetch="one")
+        if not nova:
+            raise HTTPException(status_code=404, detail="Peça não encontrada: " + (d.get("peca") or "").strip())
+        q_old = float(m["quantidade"] or 0)
+        if m["tipo"] == "saida" and m["almox_origem"]:
+            q_new = _num(d.get("quantidade")) if d.get("quantidade") not in (None, "") else q_old
+            s = await ajard_query("SELECT COALESCE(quantidade,0) AS q FROM manutencao.estoque WHERE peca_id=%s AND almoxarifado_id=%s", (nova["id"], m["almox_origem"]), fetch="one")
+            if float((s or {}).get("q") or 0) < q_new:
+                raise HTTPException(status_code=400, detail="Saldo insuficiente da nova peça no almoxarifado")
+            await ajard_query("""INSERT INTO manutencao.estoque (peca_id, almoxarifado_id, quantidade) VALUES (%s,%s,%s)
+                                 ON CONFLICT (peca_id, almoxarifado_id) DO UPDATE SET quantidade = manutencao.estoque.quantidade + EXCLUDED.quantidade""",
+                              (m["peca_id"], m["almox_origem"], q_old), fetch="none")
+            await ajard_query("UPDATE manutencao.estoque SET quantidade = quantidade - %s WHERE peca_id=%s AND almoxarifado_id=%s",
+                              (q_new, nova["id"], m["almox_origem"]), fetch="none")
+            sets.append("quantidade=%s"); params.append(q_new); d.pop("quantidade", None)
+        sets.append("peca_id=%s"); params.append(nova["id"])
     if "quantidade" in d:
         q = _num(d["quantidade"])
         if q is None or q <= 0:
@@ -4399,6 +4417,8 @@ async def ot_consumo_editar(ot_id: str, mov_id: str, request: Request, payload=D
         sets.append("fornecedor_id=%s"); params.append((d.get("fornecedor_id") or "").strip() or None)
     if "rubrica" in d:
         sets.append("rubrica=%s"); params.append((d.get("rubrica") or "").strip() or None)
+    if "observacao" in d:
+        sets.append("observacao=%s"); params.append((d.get("observacao") or "").strip() or None)
     if not sets:
         return {"ok": True}
     params.append(mov_id)
