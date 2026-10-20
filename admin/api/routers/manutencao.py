@@ -5564,3 +5564,264 @@ async def desmontar(comp_id: str, request: Request, payload=Depends(verificar_ma
         "UPDATE operacional.equipamentos SET equipamento_pai=NULL, posicao=NULL, atualizado_em=now() WHERE id=%s",
         (comp_id,), fetch="none")
     return {"ok": True, "componente": comp["codigo"]}
+
+
+# ══ (20/10/2026) NOTAS DE MANUTENÇÃO — balcão financeiro das notinhas das OTs ══
+# Mesmo padrão de /abastecimento/notas: a Luana vê a foto da notinha que o mecânico
+# mandou pelo app (ou anexada na OT), DIGITA o valor ao conferir, marca "lançada na MAIS".
+_NOTAS_OT_OK = False
+
+
+async def _garantir_notas_ot():
+    global _NOTAS_OT_OK
+    if _NOTAS_OT_OK:
+        return
+    await _garantir_mao_obra()
+    for col, tipo in (("ot_id", "UUID"), ("categoria", "TEXT"), ("apontamento_id", "UUID"),
+                      ("valor_nota", "NUMERIC(14,2)"), ("numero_nota", "TEXT"),
+                      ("lancada_mais", "BOOLEAN DEFAULT false"), ("lancada_por", "UUID"), ("lancada_em", "TIMESTAMPTZ")):
+        await ajard_query(f"ALTER TABLE manutencao.equipamento_documentos ADD COLUMN IF NOT EXISTS {col} {tipo}", fetch="none")
+    _NOTAS_OT_OK = True
+
+
+async def verificar_notas_ot(payload=Depends(verificar_token)):
+    """Gate do balcão: perfis livres + módulo manutencao_notas (ou manutencao / abastecimento_notas)."""
+    if (payload.get("perfil") or "").lower() in {"admin", "gestor", "bruna", "luana"}:
+        return payload
+    if await _tem_modulo(payload, {"manutencao_notas", "manutencao", "abastecimento_notas"}):
+        return payload
+    raise HTTPException(status_code=403, detail="Sem permissão para Notas de Manutenção")
+
+
+@router.get("/manutencao/api/notas-financeiro")
+async def notas_ot_listar(mes: str = None, fornecedor: str = None, pendentes: int = 0, payload=Depends(verificar_notas_ot)):
+    await _garantir_notas_ot()
+    from datetime import date as _date
+    mes = (mes or _date.today().strftime("%Y-%m"))[:7]
+    where, params = ["d.ativo=true", "d.categoria='nota_fiscal'", "d.ot_id IS NOT NULL",
+                     "to_char(d.criado_em AT TIME ZONE 'America/Sao_Paulo','YYYY-MM')=%s"], [mes]
+    if fornecedor:
+        where.append("o.fornecedor_id=%s"); params.append(fornecedor)
+    if pendentes:
+        where.append("COALESCE(d.lancada_mais,false)=false")
+    rows = await ajard_query(
+        f"""SELECT d.id, d.criado_em, d.path, d.descricao, d.valor_nota, d.numero_nota, d.lancada_mais, d.lancada_em,
+                   o.numero AS ot_numero, o.id AS ot_id, o.status AS ot_status, o.fornecedor_id,
+                   eq.codigo AS equipamento_codigo, eq.descricao AS equipamento_desc,
+                   fo.nome AS fornecedor_nome, u.nome AS usuario_nome,
+                   (SELECT nome FROM public.usuarios_garra x WHERE x.id=d.lancada_por) AS lancada_por_nome,
+                   (SELECT COALESCE(SUM(m.quantidade*COALESCE(m.custo_unitario,0)),0) FROM manutencao.movimentacoes m
+                     WHERE m.ot_id=o.id AND m.tipo='aplicacao_direta') AS compras_ot,
+                   (SELECT COALESCE(SUM(x.valor),0) FROM manutencao.ot_outros x WHERE x.ot_id=o.id AND x.ativo=true AND COALESCE(x.planejado,false)=false) AS outros_ot
+            FROM manutencao.equipamento_documentos d
+            JOIN manutencao.ot o ON o.id=d.ot_id
+            JOIN operacional.equipamentos eq ON eq.id=o.equipamento_id
+            LEFT JOIN public.fornecedores fo ON fo.id=o.fornecedor_id
+            LEFT JOIN public.usuarios_garra u ON u.id=d.usuario_id
+            WHERE {' AND '.join(where)}
+            ORDER BY d.criado_em DESC""", params) or []
+    urls = storage_urls([r["path"] for r in rows if r.get("path")])
+    notas, totais = [], {}
+    for r in rows:
+        d = dict(r)
+        d["id"] = str(d["id"]); d["ot_id"] = str(d["ot_id"]); d["fornecedor_id"] = str(d["fornecedor_id"]) if d.get("fornecedor_id") else None
+        d["data"] = d["criado_em"].isoformat() if d.get("criado_em") else None
+        d["lancada_em"] = d["lancada_em"].isoformat() if d.get("lancada_em") else None
+        d["foto_url"] = urls.get(d.pop("path"), "")
+        d.pop("criado_em", None)
+        for k in ("valor_nota", "compras_ot", "outros_ot"):
+            d[k] = float(d[k]) if d.get(k) is not None else None
+        notas.append(d)
+        k = d.get("fornecedor_nome") or "— sem fornecedor na OT"
+        t = totais.setdefault(k, {"fornecedor": k, "notas": 0, "valor": 0.0, "pendentes": 0, "sem_valor": 0})
+        t["notas"] += 1; t["valor"] += d["valor_nota"] or 0
+        if not d.get("lancada_mais"): t["pendentes"] += 1
+        if d.get("valor_nota") is None: t["sem_valor"] += 1
+    return {"mes": mes, "notas": notas, "totais": sorted(totais.values(), key=lambda x: x["fornecedor"])}
+
+
+@router.patch("/manutencao/api/notas-financeiro/{doc_id}")
+async def notas_ot_conferir(doc_id: str, request: Request, payload=Depends(verificar_notas_ot)):
+    """Conferência: valor digitado, nº da nota e carimbo 'lançada na MAIS' (quem/quando)."""
+    await _garantir_notas_ot()
+    d = await request.json()
+    sets, params = [], []
+    if "valor_nota" in d:
+        v = d.get("valor_nota")
+        try:
+            sets.append("valor_nota=%s"); params.append(float(str(v).replace(".", "").replace(",", ".")) if isinstance(v, str) and "," in v else (float(v) if v not in (None, "") else None))
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Valor inválido")
+    if "numero_nota" in d:
+        sets.append("numero_nota=%s"); params.append((d.get("numero_nota") or "").strip() or None)
+    if "lancada" in d:
+        uid = await _usuario_id(payload)
+        if d.get("lancada"):
+            sets += ["lancada_mais=true", "lancada_por=%s", "lancada_em=now()"]; params.append(uid)
+        else:
+            sets += ["lancada_mais=false", "lancada_por=NULL", "lancada_em=NULL"]
+    if not sets:
+        return {"ok": True}
+    params.append(doc_id)
+    await ajard_query(f"UPDATE manutencao.equipamento_documentos SET {', '.join(sets)} WHERE id=%s AND categoria='nota_fiscal'", params, fetch="none")
+    return {"ok": True}
+
+
+@router.get("/manutencao/api/notas-financeiro/excel")
+async def notas_ot_excel(mes: str = None, fornecedor: str = None, payload=Depends(verificar_notas_ot)):
+    from fastapi.responses import Response
+    import io
+    import openpyxl
+    from openpyxl.styles import Font, Alignment, PatternFill
+    dados = await notas_ot_listar(mes=mes, fornecedor=fornecedor, pendentes=0, payload=payload)
+    mes = dados["mes"]
+    wb = openpyxl.Workbook(); ws = wb.active; ws.title = f"Notas OT {mes}"
+    azul = PatternFill("solid", fgColor="1A2A5E"); branco = Font(color="FFFFFF", bold=True)
+    ws.append(["Data", "OT", "Equipamento", "Fornecedor", "Nº nota", "Descrição (mecânico)", "Valor (R$)", "Quem enviou", "Lançada na MAIS", "Foto (7 dias)"])
+    for c in ws[1]:
+        c.fill = azul; c.font = branco; c.alignment = Alignment(horizontal="center")
+    brutos = await ajard_query("SELECT id, path FROM manutencao.equipamento_documentos WHERE categoria='nota_fiscal' AND ot_id IS NOT NULL AND ativo=true") or []
+    caminho = {str(r["id"]): r["path"] for r in brutos}
+    for n in dados["notas"]:
+        raw = caminho.get(n["id"]); foto = storage_url(raw, 7 * 24 * 3600) if raw else ""
+        ws.append([(n["data"] or "")[:16].replace("T", " "), n["ot_numero"], f"{n['equipamento_codigo']} — {n.get('equipamento_desc') or ''}",
+                   n.get("fornecedor_nome") or "", n.get("numero_nota") or "", n.get("descricao") or "", n.get("valor_nota"),
+                   n.get("usuario_nome") or "", "SIM" if n.get("lancada_mais") else "não", foto])
+    ws.append([]); ws.append(["TOTAIS DO MÊS POR FORNECEDOR"]); ws[ws.max_row][0].font = Font(bold=True)
+    ws.append(["Fornecedor", "Notas", "Valor (R$)", "Pendentes de lançar", "Sem valor conferido"])
+    for t in dados["totais"]:
+        ws.append([t["fornecedor"], t["notas"], t["valor"], t["pendentes"], t["sem_valor"]])
+    for col, w in zip("ABCDEFGHIJ", (15, 14, 34, 26, 12, 40, 11, 16, 13, 60)):
+        ws.column_dimensions[col].width = w
+    buf = io.BytesIO(); wb.save(buf)
+    return Response(buf.getvalue(), media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    headers={"Content-Disposition": f'attachment; filename="notas-manutencao-{mes}.xlsx"'})
+
+
+@router.get("/manutencao/notas", response_class=HTMLResponse)
+async def pagina_notas_ot():
+    """(20/10/2026) Balcão único da Luana: notinhas das OTs (manutenção) e dos abastecimentos
+    na mesma lista, com filtro de ORIGEM (Todas · OTs · Abastecimento), competência, fornecedor,
+    só pendentes. Valor da nota de OT é digitado ao conferir; abastecimento já vem calculado."""
+    return HTMLResponse(r"""<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Garra — Notas a lançar</title>
+<style>
+:root{--azul:#1A2A5E;--lar:#F97316}
+*{box-sizing:border-box}body{font-family:system-ui,Segoe UI,Roboto,sans-serif;margin:0;background:#F1F5F9;color:#0F172A}
+header{background:var(--azul);color:#fff;padding:10px 16px;display:flex;justify-content:space-between;align-items:center}
+header b{font-size:15px}header .l{color:var(--lar);font-weight:900}
+main{max-width:1300px;margin:14px auto;padding:0 12px}
+.filtros{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;background:#fff;border:1px solid #E2E8F0;border-radius:10px;padding:10px}
+.f{display:flex;flex-direction:column;font-size:11px;color:#475569;font-weight:700;gap:3px}
+input,select,button{font:inherit;padding:6px 8px;border:1px solid #CBD5E1;border-radius:7px;background:#fff}
+button{cursor:pointer}.p{background:var(--azul);color:#fff;border-color:var(--azul);font-weight:700}
+.cards{display:flex;gap:10px;flex-wrap:wrap;margin:12px 0}
+.card{background:#fff;border:1px solid #E2E8F0;border-radius:10px;padding:10px 14px;min-width:200px}
+.card b{color:var(--azul)}.card .v{font-size:17px;font-weight:900;color:var(--azul)}
+.card .pend{color:#B91C1C;font-weight:800;font-size:11px}
+table{width:100%;border-collapse:collapse;background:#fff;border:1px solid #E2E8F0;border-radius:10px;overflow:hidden;font-size:12px}
+th{background:#F8FAFC;text-align:left;padding:7px 8px;font-size:10px;text-transform:uppercase;color:#475569;border-bottom:2px solid #E2E8F0}
+td{padding:6px 8px;border-bottom:1px solid #F1F5F9;vertical-align:middle}
+tr.ok td{background:#F0FDF4}
+.r{text-align:right;font-variant-numeric:tabular-nums}
+.chip{font-size:10px;padding:1px 6px;border-radius:8px;background:#FEF3C7;color:#92400E;font-weight:700}
+.org{font-size:10px;padding:1px 7px;border-radius:8px;font-weight:800;white-space:nowrap}
+.org.ot{background:#DBEAFE;color:#1E40AF}.org.ab{background:#DCFCE7;color:#166534}
+a{color:var(--azul);font-weight:700;text-decoration:none}
+.muted{color:#64748B}
+td input{width:95px;text-align:right;padding:4px 6px}
+img.th{height:44px;border-radius:5px;border:1px solid #E2E8F0;vertical-align:middle;cursor:zoom-in}
+#toast{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:var(--azul);color:#fff;padding:10px 16px;border-radius:9px;display:none;font-weight:700;z-index:9}
+</style></head><body>
+<header>
+ <span style="display:flex;align-items:center;gap:10px">
+  <img src="/static/icons/logo.png" alt="Garra" style="height:34px;object-fit:contain;filter:brightness(0) invert(1)" onerror="this.style.display='none';document.getElementById('hd-fb').style.display='inline'">
+  <b id="hd-fb" style="display:none"><span class="l">GARRA</span></b>
+  <b>Notas a lançar — Manutenção e Abastecimento</b>
+ </span>
+ <span id="quem" style="font-size:12px"></span></header>
+<main>
+ <div class="filtros">
+  <div class="f">Origem<select id="f-orig" onchange="carregar()"><option value="todas">Todas</option><option value="ot">Só OTs (manutenção)</option><option value="ab">Só abastecimentos</option></select></div>
+  <div class="f">Competência<input type="month" id="f-mes"></div>
+  <div class="f">Fornecedor / posto<select id="f-forn"><option value="">— todos —</option></select></div>
+  <div class="f">&nbsp;<label style="font-weight:400"><input type="checkbox" id="f-pend" checked> só pendentes de lançar</label></div>
+  <button class="p" onclick="carregar()">🔍 Buscar</button>
+  <button onclick="excel()">📊 Excel da competência</button>
+  <span class="muted" style="font-size:11px;flex:1;text-align:right">OT: confira a foto e <b>digite o valor</b> · Abastecimento: valor já calculado · marque ✔ ao lançar na MAIS</span>
+ </div>
+ <div class="cards" id="cards"></div>
+ <div style="overflow:auto"><table><thead><tr>
+  <th>Origem</th><th>Data</th><th>Referência</th><th>Equipamento</th><th>Fornecedor / posto</th><th>Foto</th><th>Descrição</th>
+  <th>Nº nota / cupom</th><th class="r">Valor (R$)</th><th>Quem</th><th style="width:130px">Lançada na MAIS</th>
+ </tr></thead><tbody id="corpo"><tr><td colspan="11" class="muted" style="padding:14px">Carregando…</td></tr></tbody></table></div>
+</main>
+<div id="toast"></div>
+<script>
+const $=i=>document.getElementById(i);
+(function(){const u=new URL(location.href);const sso=u.searchParams.get('sso')||u.searchParams.get('token');
+ if(sso&&sso.length>10){sessionStorage.setItem('garra_notas_token',sso);history.replaceState(null,'',u.pathname);}})();
+function tok(){return sessionStorage.getItem('garra_notas_token')||sessionStorage.getItem('garra_mnt_token')||localStorage.getItem('garra_adm_token')||'';}
+async function api(u,o){const r=await fetch(u,Object.assign({},o,{headers:Object.assign({'Content-Type':'application/json','Authorization':'Bearer '+tok()},(o&&o.headers)||{})}));
+ if(r.status===401){document.body.innerHTML='<div style="padding:40px;text-align:center">🔒 Sessão expirada — abra o <a href="/admin">Admin</a> e clique em Notas de Manutenção</div>';throw new Error('401');}
+ if(r.status===403){throw new Error('403');}
+ const j=await r.json().catch(()=>({})); if(!r.ok)throw new Error(j.detail||('Erro '+r.status)); return j;}
+function toast(m){const t=$('toast');t.textContent=m;t.style.display='block';clearTimeout(t._h);t._h=setTimeout(()=>t.style.display='none',3500);}
+const esc=x=>String(x??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const fN=(v,d)=>v==null?'—':Number(v).toLocaleString('pt-BR',{minimumFractionDigits:d??2,maximumFractionDigits:d??2});
+let LINHAS=[];
+async function carregar(){
+ const mes=$('f-mes').value||new Date().toISOString().slice(0,7), orig=$('f-orig').value, pend=$('f-pend').checked;
+ const forn=$('f-forn').value;   // "ot:<id>" ou "ab:<id>"
+ LINHAS=[]; const erros=[];
+ if(orig!=='ab'){ try{ const r=await api('/manutencao/api/notas-financeiro?mes='+mes+(pend?'&pendentes=1':'')+(forn.startsWith('ot:')?'&fornecedor='+forn.slice(3):''));
+   (r.notas||[]).forEach(n=>LINHAS.push({orig:'ot',id:n.id,data:n.data,ref:n.ot_numero,eq:n.equipamento_codigo+' — '+(n.equipamento_desc||''),forn:n.fornecedor_nome||'',fornId:n.fornecedor_id?'ot:'+n.fornecedor_id:'',foto:n.foto_url,desc:n.descricao||'',num:n.numero_nota||'',valor:n.valor_nota,editavel:true,quem:n.usuario_nome||'',lanc:n.lancada_mais,lancPor:n.lancada_por_nome,lancEm:n.lancada_em,naOT:(n.compras_ot||0)+(n.outros_ot||0)}));
+ }catch(e){ if(e.message==='401')return; erros.push('OTs: '+(e.message==='403'?'sem permissão':e.message)); } }
+ if(orig!=='ot'){ try{ const r=await api('/operacional/api/abastecimentos/notas?mes='+mes+(pend?'&pendentes=1':'')+(forn.startsWith('ab:')?'&posto='+forn.slice(3):''));
+   (r.notas||[]).forEach(n=>LINHAS.push({orig:'ab',id:n.id,data:n.data,ref:'Cupom '+(n.numero_cupom||'—'),eq:n.equipamentos||'',forn:n.posto||'',fornId:n.fornecedor_id?'ab:'+n.fornecedor_id:'',foto:n.foto_nota_url,desc:(n.combustivel||'')+' · '+fN(n.litros_total)+' L × '+fN(n.preco_litro,3),num:n.numero_cupom||'',valor:n.valor_total,editavel:false,quem:n.usuario_nome||'',lanc:n.lancada_mais,lancPor:n.lancada_por_nome,lancEm:n.lancada_em}));
+ }catch(e){ if(e.message==='401')return; erros.push('Abastecimento: '+(e.message==='403'?'sem permissão':e.message)); } }
+ LINHAS.sort((a,b)=>String(b.data||'').localeCompare(String(a.data||'')));
+ if(!$('f-forn').value){ const m={}; LINHAS.forEach(l=>{ if(l.fornId) m[l.fornId]=(l.orig==='ab'?'⛽ ':'🔧 ')+l.forn; });
+   $('f-forn').innerHTML='<option value="">— todos —</option>'+Object.entries(m).sort((a,b)=>a[1].localeCompare(b[1])).map(([id,n])=>'<option value="'+id+'">'+esc(n)+'</option>').join(''); }
+ const tot={}; LINHAS.forEach(l=>{ const k=(l.orig==='ab'?'⛽ ':'🔧 ')+(l.forn||'— sem fornecedor'); const t=tot[k]=tot[k]||{k,n:0,v:0,p:0,s:0}; t.n++; t.v+=l.valor||0; if(!l.lanc)t.p++; if(l.editavel&&l.valor==null)t.s++; });
+ $('cards').innerHTML=Object.values(tot).sort((a,b)=>a.k.localeCompare(b.k)).map(t=>'<div class="card"><b>'+esc(t.k)+'</b><div class="v">R$ '+fN(t.v)+'</div><div class="muted" style="font-size:11px">'+t.n+' nota(s)'+(t.p?' · <span class="pend">'+t.p+' pendente(s)</span>':'')+(t.s?' · '+t.s+' sem valor':'')+'</div></div>').join('')
+   +(erros.length?'<div class="card" style="border-color:#FCA5A5;color:#B91C1C;font-size:11px">'+esc(erros.join(' · '))+'</div>':'');
+ $('corpo').innerHTML=LINHAS.map(l=>'<tr class="'+(l.lanc?'ok':'')+'">'
+  +'<td><span class="org '+l.orig+'">'+(l.orig==='ab'?'⛽ Abastec.':'🔧 OT')+'</span></td>'
+  +'<td style="white-space:nowrap">'+(l.data||'').slice(0,16).replace('T',' ')+'</td>'
+  +'<td><b>'+esc(l.ref)+'</b></td><td style="font-size:11px">'+esc(l.eq)+'</td>'
+  +'<td>'+(l.forn?'<b>'+esc(l.forn)+'</b>':'<span class="chip">sem fornecedor</span>')+'</td>'
+  +'<td>'+(l.foto?'<a href="'+esc(l.foto)+'" target="_blank" title="Abrir foto"><img class="th" src="'+esc(l.foto)+'"></a>':'<span class="chip">sem foto</span>')+'</td>'
+  +'<td style="font-size:11px">'+esc(l.desc)+'</td>'
+  +'<td>'+(l.editavel?'<input style="width:90px;text-align:left" value="'+esc(l.num)+'" placeholder="nº" onchange="salvar(\''+l.id+'\',{numero_nota:this.value})">':esc(l.num))+'</td>'
+  +'<td class="r">'+(l.editavel?'<input inputmode="decimal" value="'+(l.valor!=null?fN(l.valor):'')+'" placeholder="0,00" onchange="salvar(\''+l.id+'\',{valor_nota:this.value})" title="Na OT já lançado: R$ '+fN(l.naOT)+'">':'<b>'+fN(l.valor)+'</b>')+'</td>'
+  +'<td style="font-size:11px">'+esc(l.quem)+'</td>'
+  +'<td><label style="cursor:pointer;font-size:11px;font-weight:700;color:'+(l.lanc?'#15803D':'#B91C1C')+'"><input type="checkbox" '+(l.lanc?'checked':'')+' data-id="'+l.id+'" data-orig="'+l.orig+'" onchange="marcar(this)"> '
+    +(l.lanc?('✔ '+esc((l.lancPor||'').split(' ')[0])+' '+(l.lancEm?new Date(l.lancEm).toLocaleDateString('pt-BR'):'')):'lançar')+'</label></td></tr>').join('')
+  ||'<tr><td colspan="11" class="muted" style="padding:14px">Nenhuma nota'+(pend?' pendente':'')+' na competência.</td></tr>';
+}
+async function salvar(id,body){
+ try{await api('/manutencao/api/notas-financeiro/'+id,{method:'PATCH',body:JSON.stringify(body)});toast('✓ salvo');}
+ catch(e){toast('❌ '+e.message);}
+}
+async function marcar(ck){
+ const id=ck.dataset.id, orig=ck.dataset.orig; const tr=ck.closest('tr'); const v=tr.querySelector('td.r input');
+ if(ck.checked && v && !v.value.trim()){ck.checked=false;toast('Digite o valor da nota antes de marcar como lançada');v.focus();return;}
+ try{
+  if(orig==='ab') await api('/operacional/api/abastecimentos/notas/'+id+'/lancada',{method:'PATCH',body:JSON.stringify({lancada:ck.checked})});
+  else await api('/manutencao/api/notas-financeiro/'+id,{method:'PATCH',body:JSON.stringify({lancada:ck.checked})});
+  toast(ck.checked?'✔ Marcada como lançada na MAIS':'Desmarcada');carregar();}
+ catch(e){ck.checked=!ck.checked;toast('❌ '+e.message);}
+}
+function excel(){
+ const mes=$('f-mes').value||new Date().toISOString().slice(0,7), orig=$('f-orig').value;
+ const baixar=(u,nome)=>fetch(u,{headers:{'Authorization':'Bearer '+tok()}}).then(r=>{if(!r.ok)throw new Error('Erro '+r.status);return r.blob();})
+  .then(b=>{const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=nome;a.click();}).catch(e=>toast('❌ '+e.message));
+ if(orig!=='ab') baixar('/manutencao/api/notas-financeiro/excel?mes='+mes,'notas-manutencao-'+mes+'.xlsx');
+ if(orig!=='ot') baixar('/operacional/api/abastecimentos/notas/excel?mes='+mes,'notas-abastecimento-'+mes+'.xlsx');
+}
+(function(){ $('f-mes').value=new Date().toISOString().slice(0,7);
+ try{const p=JSON.parse(atob(tok().split('.')[1].replace(/-/g,'+').replace(/_/g,'/')));$('quem').textContent=p.nome||p.login||'';}catch(e){}
+ carregar(); })();
+</script></body></html>""")
