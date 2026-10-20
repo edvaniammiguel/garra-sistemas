@@ -517,8 +517,11 @@ async def converter_pedido(pid: str, request: Request, payload=Depends(verificar
         "tipo_trabalho": d.get("tipo_trabalho"),
         "fornecedor_id": d.get("fornecedor_id"),
         "responsavel_id": d.get("responsavel_id"),
-        "data_prevista": d.get("data_prevista"),
+        # (20/10/2026) MWW: ao virar OT já nasce com Prog. Início (= hoje, ou a data escolhida na triagem);
+        # Prog. Fim deriva (Prog. Início + Prev. TDM). Início só no Emitir; Fim só no Encerrar.
+        "data_prevista": d.get("data_prevista") or _date.today().isoformat(),
         "horimetro_previsto": d.get("horimetro_previsto"),
+        "_nasce_aberta": True,
         "pedido_id": str(pid),
         "origem": {"mobile": "mobile-mecanico", "checklist": "checklist-nc"}.get(
             (ped.get("via") or "").lower(), "pedido-desktop"),
@@ -583,7 +586,7 @@ async def _inserir_ot(d, eq, uid, numero, ano, seq):
         hor_prev = None
     # (23/09/2026) MWW: OT criada pela janela nasce PROGRAMADA (número reservado, não emitida);
     # vira em curso no Emitir. Só a conversão de pedido nasce aberta.
-    programada = bool(data_prev or hor_prev is not None)
+    programada = bool(data_prev or hor_prev is not None) and not d.get("_nasce_aberta")
     status_ini = "rascunho" if d.get("rascunho") else ("programada" if programada else "aberta")
     tt = (d.get("tipo_trabalho") or "").strip().upper() or None
     _classe = {"A": "preventiva", "B": "preventiva", "C": "corretiva",
@@ -801,6 +804,9 @@ async def mudar_status_ot(ot_id: str, request: Request, payload=Depends(verifica
     extras, params = "", [novo]
     if reabrindo:
         extras = ", data_conclusao=NULL, data_retorno_operacao=NULL, encerrado_em=NULL"
+    elif novo == "em_andamento":
+        # (20/10/2026) Emitir = Início real da OT (MWW). Só preenche se ainda não havia.
+        extras = ", data_inicio_real=COALESCE(data_inicio_real, now())"
     dt_conc = None
     hor_conc = None
     if novo == "concluida":
