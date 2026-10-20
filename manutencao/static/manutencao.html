@@ -4325,7 +4325,10 @@ async function otPecasRender(){
     + '<span style="width:70px;text-align:right">'+x.custo_unitario.toFixed(2)+'</span>'
     + '<b style="width:85px;text-align:right;color:'+(x.total>=0?'#1A2A5E':'#15803D')+'">'+x.total.toFixed(2)+'</b>'
     + '<span style="width:60px" class="muted">'+_esc(x.almox||'')+'</span>'
-    + (['programada','aberta','em_andamento','aguardando_peca','concluida'].includes(o.status) ? '<span style="cursor:pointer;color:#B91C1C;width:14px" title="Excluir este item" onclick="otConsumoExcluir(\''+x.id+'\',\''+_esc(x.peca_codigo)+'\')">✕</span>' : '<span style="width:14px"></span>')+'</div>';
+    + (['programada','aberta','em_andamento','aguardando_peca','concluida'].includes(o.status)
+        ? '<span style="cursor:pointer;width:16px" title="Editar este item" data-i="'+_esc(JSON.stringify({id:x.id,tipo:x.tipo,peca:x.peca_codigo,desc:x.peca_descricao||'',q:x.quantidade,v:x.custo_unitario,doc:x.documento||'',forn:x.fornecedor_nome||'',rub:x.rubrica||''}))+'" onclick="otConsumoEditar(JSON.parse(this.dataset.i))">✏️</span>'
+          + '<span style="cursor:pointer;color:#B91C1C;width:14px" title="Excluir este item" onclick="otConsumoExcluir(\''+x.id+'\',\''+_esc(x.peca_codigo)+'\')">✕</span>'
+        : '<span style="width:30px"></span>')+'</div>';
   const delta = cons.total - totPl;
   const podeBaixar = ['programada','aberta','em_andamento','aguardando_peca'].includes(o.status);
   c.innerHTML =
@@ -4573,6 +4576,34 @@ async function otSaidaOK(){
     }
     b.style.display = 'none';
     otPecasRender();
+  } catch(e){ mostrarToast('❌ '+e.message, 'warn'); }
+}
+// (19/10/2026) ✏️ editar item baixado: quantidade · custo · documento · fornecedor · conta
+async function otConsumoEditar(it){
+  await _rubricas();
+  if (_mntFornList === null) { try { _mntFornList = await mntFetch('/manutencao/api/fornecedores'); } catch(e){ _mntFornList = []; } }
+  let b = document.getElementById('ot-cons-edit');
+  if (!b){ b = document.createElement('div'); b.id = 'ot-cons-edit'; b.style.cssText = 'position:fixed;inset:0;z-index:9999;background:rgba(15,23,42,.45);display:none;align-items:center;justify-content:center'; document.body.appendChild(b); }
+  const direta = it.tipo === 'aplicacao_direta';
+  const fornSel = (_mntFornList||[]).find(f => f.nome === it.forn);
+  const fornOpts = '<option value="">— fornecedor —</option>' + (_mntFornList||[]).map(f => '<option value="'+f.id+'"'+(fornSel && String(f.id)===String(fornSel.id)?' selected':'')+'>'+_esc(f.nome)+'</option>').join('');
+  b.innerHTML = '<div style="background:#fff;border-radius:10px;box-shadow:0 12px 32px rgba(15,23,42,.3);padding:16px;width:520px;max-width:94vw">'
+    + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><b style="color:#1A2A5E">Editar item — '+_esc(it.peca)+'</b><span style="cursor:pointer;font-size:16px" onclick="document.getElementById(\'ot-cons-edit\').style.display=\'none\'">✕</span></div>'
+    + '<div class="muted" style="font-size:11px;margin-bottom:6px">'+_esc(it.desc)+' · '+(direta ? 'aplicação directa' : it.tipo === 'saida' ? 'saída do armazém (mudar a quantidade acerta o estoque)' : 'devolução')+'</div>'
+    + '<div style="display:flex;gap:8px;flex-wrap:wrap">'
+    + '<div class="mfield" style="width:90px">Quant.<input id="ce-q" type="number" step="0.5" value="'+_esc(it.q)+'"></div>'
+    + '<div class="mfield" style="width:110px">Custo un.<input id="ce-v" type="number" step="0.01" value="'+_esc(it.v)+'"></div>'
+    + (direta ? '<div class="mfield" style="width:130px">Doc. Custo<input id="ce-doc" value="'+_esc(it.doc)+'"></div><div class="mfield" style="flex:1;min-width:160px">Fornecedor<select id="ce-forn">'+fornOpts+'</select></div>' : '')
+    + '<div class="mfield" style="width:100%">Conta<select id="ce-rub">'+_rubSelectOpts(_rubFolhas('2'), it.rub, '— conta —')+'</select></div>'
+    + '</div><div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px"><button class="btn" onclick="document.getElementById(\'ot-cons-edit\').style.display=\'none\'">Cancelar</button><button class="btn p" onclick="otConsumoSalvar(\''+it.id+'\','+(direta?'true':'false')+')">💾 Salvar</button></div></div>';
+  b.style.display = 'flex';
+}
+async function otConsumoSalvar(id, direta){
+  const g = i => (document.getElementById(i)||{}).value;
+  const body = { quantidade: g('ce-q'), custo_unitario: g('ce-v'), rubrica: g('ce-rub') || null };
+  if (direta) { body.documento_numero = g('ce-doc') || ''; body.fornecedor_id = g('ce-forn') || null; }
+  try { await mntFetch('/manutencao/api/ots/'+_otAberta.id+'/consumos/'+id, {method:'PATCH', body: JSON.stringify(body)});
+    document.getElementById('ot-cons-edit').style.display = 'none'; mostrarToast('✅ Item atualizado', 'ok'); otPecasRender();
   } catch(e){ mostrarToast('❌ '+e.message, 'warn'); }
 }
 async function otConsumoExcluir(id, cod){
