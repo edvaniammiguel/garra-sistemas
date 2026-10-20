@@ -1969,11 +1969,11 @@ const _MW = {
       ['\ud83d\udc41','Ver',[['\ud83d\uddc2 Cat\u00e1logo de Pe\u00e7as',"almLente('mestre')"],['\ud83d\udce6 Estoque',"almLente('armazem')"]]],
       ['\ud83d\udcca','An\u00e1lises',[['\ud83d\udcca An\u00e1lise ABC',"anABC()"],['\u26a0 Estoque baixo',"almVistaBaixo()"]]],
       ['\ud83d\udce5','Receber',"recebimentosJanela()"],
+      ['\ud83d\udd01','Substitutos',"(function(){const i=_mwPrecisa('alm','item'); if(i) substitutosJanela(i);})()"],
       ['\u22ef','Mais',[['\u2699\ufe0f Parametrizar',"showModule('param')"]]],
       ['\ud83d\udd27','Ferramentas',[
         {sub:'\ud83d\udcd2 Registros', itens:[['\ud83d\udce5 Entrada',"almMovAbrir('entrada')"],['\ud83d\udce4 Sa\u00edda',"almMovAbrir('saida')"],['\u21c4 Transfer\u00eancia',"almMovAbrir('transferencia')"],['\ud83e\uddee Ajuste de saldo',"almMovAbrir('ajuste')"]]},
-        ['\ud83d\udccb Invent\u00e1rio',"inventarioJanela()"],
-        ['\ud83d\udd01 Substitutos',"substitutosJanela()"]]]
+        ['\ud83d\udccb Invent\u00e1rio',"inventarioJanela()"]]]
     ],
     busca:'alm-busca'
   }
@@ -3673,6 +3673,16 @@ async function abrirNovaOT(equipId, modelo){
   document.getElementById('eq-ficha').classList.add('show');
   novaAba('origem');
 }
+// (20/10/2026) classe derivada do Tipo de Trabalho (A/B preventiva · C corretiva · M melhoria · R reforma)
+function otTipoDerivado(){
+  const sel = document.getElementById('oe-tt'), chip = document.getElementById('oe-tipo-chip'), hid = document.getElementById('oe-tipo');
+  if (!sel || !chip) return;
+  const map = {A:'preventiva', B:'preventiva', C:'corretiva', M:'melhoria', R:'reforma'};
+  const cls = sel.value ? (map[sel.value.charAt(0).toUpperCase()] || (hid && hid.value) || 'corretiva') : ((hid && hid.value) || '');
+  if (hid && sel.value) hid.value = cls;
+  chip.textContent = cls ? cls.charAt(0).toUpperCase() + cls.slice(1) : '';
+  chip.title = 'Classe da OT — deriva do Tipo de Trabalho';
+}
 function _novaSync(){
   const g = id => document.getElementById(id);
   const d = _novaDraft; if (!d) return;
@@ -4430,8 +4440,24 @@ async function pcSaldoInfo(row, cod){
       if (best && parseFloat(best.quantidade) > 0) alm.value = best.almox;
     }
     if (el.style.display !== 'none') el.innerHTML = its.length ? 'Saldo: ' + its.map(x => '<b>'+_esc(x.almox)+'</b> '+parseFloat(x.quantidade||0).toLocaleString('pt-BR')).join(' · ') : '<span style="color:#B45309">Sem saldo em nenhum almoxarifado</span>';
-    if (row.closest('#ot-saida')) { otSaidaRubrica(true, tot ? 'estoque' : 'direta'); if (!tot) row.querySelector('.aviso').textContent = 'Sem saldo no estoque — se veio de fora, escolha uma conta de aplicação direta.'; else otSaidaChecar(); }
+    if (row.closest('#ot-saida')) { otSaidaRubrica(true, tot ? 'estoque' : 'direta'); if (!tot) { row.querySelector('.aviso').textContent = 'Sem saldo no estoque — se veio de fora, escolha uma conta de aplicação direta.'; otSaidaSubstituto(row, cod); } else otSaidaChecar(); }
   } catch(e){}
+}
+// (20/10/2026) Peça sem saldo na OT → oferece o substituto cadastrado que tem saldo (padrão MWW)
+async function otSaidaSubstituto(row, cod){
+  try {
+    const d = await mntFetch('/manutencao/api/pecas/'+encodeURIComponent(cod)+'/substitutos');
+    const com = (d.substitutos||[]).filter(x => x.saldo > 0);
+    const av = row.querySelector('.aviso'); if (!av || !com.length) return;
+    av.innerHTML = '<span style="color:#1A2A5E">🔁 Substituto com saldo: </span>' + com.map(x =>
+      '<a href="#" style="font-weight:700" data-c="'+_esc(x.substituto_codigo)+'" data-d="'+_esc(x.descricao||'')+'" data-u="'+_esc(x.unidade||'UN')+'" onclick="event.preventDefault();otSaidaUsarSubst(this)">'+_esc(x.substituto_codigo)+'</a> ('+_esc(x.descricao||'')+' · saldo '+x.saldo.toLocaleString('pt-BR')+(x.observacao?' · '+_esc(x.observacao):'')+')').join(' · ');
+  } catch(e){}
+}
+function otSaidaUsarSubst(a){
+  const row = a.closest('.plf-pc-row'); if (!row) return;
+  row.querySelector('.f').value = a.dataset.c; row.querySelector('.d').value = a.dataset.d; row.querySelector('.c').value = a.dataset.u || 'UN';
+  row.querySelector('.aviso').textContent = '';
+  pcSaldoInfo(row, a.dataset.c);
 }
 // (10/10/2026) Peça fora do cadastro: abre o cadastro COMPLETO do item (mesma janela de Materiais › Novo item —
 // identificação, codificação, características, estoques, observações) e, ao criar, volta para a baixa já preenchida.
@@ -4701,16 +4727,17 @@ function otAba(aba){
       + '<div class="mfield">C. Custo'+ro(o.centro_custo ? o.centro_custo+' — '+(o.centro_custo_nome||'') : '')+'</div>'
       + '<div class="mfield">Projeto<select id="oe-proj">'+_tabOpts(_projList||[],'id','nome',o.projecto_id,'— nenhum —')+'</select></div>'
       + '<div class="mfield">FMP (plano de manutenção)<div style="display:flex;gap:4px"><select id="oe-fmp" data-val="'+_esc(String(o.plano_id||''))+'" style="flex:1" onchange="otAplicarFMP(true)" title="Escolher a FMP aplica a ficha à OT (descrição, tipo de trabalho, programação, tarefas)"><option value="">— carregando —</option></select></div></div>'
-      + '<div class="mfield">Tipo Trab.'+ro(o.tipo_trabalho)+'</div>'
+      // (20/10/2026) Um campo só (MWW): Tipo Trab. é o select; a classe (Corretiva/Preventiva…) deriva da letra
+      + '<div class="mfield">Tipo Trab.<div style="display:flex;gap:6px;align-items:center"><select id="oe-tt" style="flex:1" onchange="otTipoDerivado()"><option value="">— escolha —</option>'
+        + (_mntTiposTrab||[]).filter(t => (t.codigo||'').length > 1).map(t => '<option value="'+_esc(t.codigo)+'"'+(o.tipo_trabalho===t.codigo?' selected':'')+'>'+_esc(t.codigo)+' — '+_esc(t.nome||'')+'</option>').join('')
+        + '</select><span id="oe-tipo-chip" class="chip pr" style="white-space:nowrap"></span></div></div>'
       + '</div>'
       // ── coluna direita ──
       + '<div style="display:flex;flex-direction:column;gap:6px">'
       + '<div class="mgrid"><div class="mfield">Grau Urgência<select id="oe-prior">'
         + ['baixa','media','alta','urgente'].map(p=>'<option value="'+p+'"'+(o.prioridade===p?' selected':'')+'>'+p.charAt(0).toUpperCase()+p.slice(1)+'</option>').join('')
         + '</select></div>'
-      + '<div class="mfield">Tipo<select id="oe-tipo">'
-        + ['corretiva','preventiva','reforma','melhoria'].map(t=>'<option value="'+t+'"'+(o.tipo===t?' selected':'')+'>'+t.charAt(0).toUpperCase()+t.slice(1)+'</option>').join('')
-        + '</select></div></div>'
+      + '<input type="hidden" id="oe-tipo" value="'+_esc(o.tipo||'corretiva')+'"></div>'
       + '<div class="mfield">Contrato<input id="oe-contrato" value="'+_esc(o.contrato||'')+'" placeholder="nº / referência do contrato (opcional)"></div>'
       + '<fieldset style="border:1px solid #CBD5E1;border-radius:6px;padding:8px 10px;margin:2px 0 0"><legend style="font-size:10px;font-weight:700;color:#475569;padding:0 4px">Interventor</legend>'
       +   '<div style="display:flex;gap:18px;justify-content:center;margin-bottom:8px;font-size:11px">'
@@ -4750,6 +4777,12 @@ function otAba(aba){
       el.innerHTML = '<option value="">— escolha o setor —</option>' + lst.map(s => '<option value="'+_esc(s.codigo)+'"'+(s.codigo===v?' selected':'')+'>'+_esc(s.codigo)+' — '+_esc(s.nome||'')+'</option>').join('')
         + (v && !lst.some(s => s.codigo===v) ? '<option value="'+_esc(v)+'" selected>'+_esc(v)+' (inativo)</option>' : '');
       if (!lst.length) el.innerHTML = '<option value="">— cadastre em Parametrizar › Setores Interventor —</option>';
+    });
+    // (20/10/2026) Tipo Trab.: garante a lista carregada e mostra a classe derivada
+    _tiposTrab().then(lst => {
+      const el = document.getElementById('oe-tt'); if (!el) return;
+      if (el.options.length <= 1 && lst.length) el.innerHTML = '<option value="">— escolha —</option>' + lst.filter(t => (t.codigo||'').length > 1).map(t => '<option value="'+_esc(t.codigo)+'"'+(o.tipo_trabalho===t.codigo?' selected':'')+'>'+_esc(t.codigo)+' — '+_esc(t.nome||'')+'</option>').join('');
+      otTipoDerivado();
     });
   }
   if (aba === 'gestao'){
@@ -5050,6 +5083,7 @@ async function salvarOrigem(fechar, promover){
       // (10/10/2026) 'Tipo' da Origem é a classe (corretiva/preventiva/…); a sigla do Tipo de Trabalho (A1, C1…)
       // só vem da FMP ou da Nova OT — este select gravava 'preventiva' em tipo_trabalho e a lista mostrava por extenso
       tipo: g('oe-tipo').value,
+      tipo_trabalho: g('oe-tt') ? (g('oe-tt').value || null) : undefined,
       prioridade: g('oe-prior').value,
       interventor: interv,
       fornecedor_id: interv === 'externo' ? (g('oe-forn').value || null) : null,
@@ -5930,7 +5964,7 @@ async function abrirPeca(codigo){
 }
 async function pecaAba(aba){
   const p = _pcFicha; if (!p) return;
-  const ABAS = [['ident','Identificação'],['carac','Características'],['arm','Estoques'],['obs','Observações']];
+  const ABAS = [['ident','Identificação'],['carac','Características'],['arm','Estoques'],['subst','Substitutos'],['obs','Observações']];
   document.querySelector('#eq-ficha .modal').classList.remove('larga');
   document.getElementById('eq-ficha-corpo').innerHTML =
     fichaTopo({icone:'🔩', titulo:'Ficha do Item', codigo:p.codigo, descricao:p.descricao, id:p.codigo, fn:'abrirPeca', tipo:'peca',
@@ -5965,6 +5999,18 @@ async function pecaAba(aba){
         + '<input class="pcc-r" value="'+_esc(x.r||'')+'" placeholder="RÓTULO" style="width:190px;text-transform:uppercase">'
         + '<input class="pcc-v" value="'+_esc(x.v||'')+'" placeholder="valor" style="flex:1"></div>').join('')
       + '</div><div style="display:flex;justify-content:flex-end;margin-top:10px"><button class="btn p" onclick="pecaSalvarCarac()">💾 Salvar</button></div>';
+  }
+  if (aba === 'subst'){
+    try {
+      const d = await mntFetch('/manutencao/api/pecas/'+encodeURIComponent(p.codigo)+'/substitutos');
+      const n = v => v == null ? '—' : parseFloat(v).toLocaleString('pt-BR');
+      const lin = (r, k) => '<tr><td class="bold mono">'+_esc(r[k])+'</td><td>'+_esc(r.descricao||'')+'</td><td class="r mono" style="color:'+(r.saldo>0?'#15803D':'#B45309')+'">'+n(r.saldo)+'</td><td>'+_esc(r.observacao||'')+'</td></tr>';
+      const tb = rows => '<div style="background:#fff;border:1px solid #E2E8F0;border-radius:6px;overflow:hidden"><table><thead><tr><th style="width:150px">Artigo</th><th>Descrição</th><th class="r" style="width:80px">Saldo</th><th style="width:200px">Restrições</th></tr></thead><tbody>'+rows+'</tbody></table></div>';
+      c.innerHTML = '<div class="dsec">Substitutos deste artigo — quando falta, a OT sugere o equivalente com saldo</div>'
+        + (d.substitutos.length ? tb(d.substitutos.map(r => lin(r,'substituto_codigo')).join('')) : '<div class="muted">Nenhum substituto cadastrado.</div>')
+        + (d.substitui.length ? '<div class="dsec" style="margin-top:8px">Este artigo substitui</div>' + tb(d.substitui.map(r => lin(r,'peca_codigo')).join('')) : '')
+        + '<div style="display:flex;justify-content:flex-end;margin-top:10px"><button class="btn p" data-c="'+_esc(p.codigo)+'" onclick="substitutosJanela(this.dataset.c)">🔁 Gerir substitutos</button></div>';
+    } catch(e){ c.innerHTML = '<span class="muted">⚠ '+_esc(e.message)+'</span>'; }
   }
   if (aba === 'arm'){
     try {
@@ -7115,14 +7161,66 @@ function guiasJanela(equipId){
     colunas:[{t:'N\u00famero',k:'numero'},{t:'Objeto',fmt:r=>_esc(r.equipamento_codigo||r.peca_codigo||'')},{t:'Destino',fmt:r=>_esc(r.fornecedor_nome||'')},{t:'Sa\u00edda',k:'data_saida',date:true},{t:'Prev.',k:'data_retorno_prevista',date:true},{t:'Retorno',k:'data_retorno',date:true},{t:'Motivo',k:'motivo'},
              {t:'Status',fmt:r=>{ const atr = !r.data_retorno && r.data_retorno_prevista && r.data_retorno_prevista < new Date().toISOString().slice(0,10); return '<span class="chip '+(r.data_retorno?'tm':(atr?'em':'pr'))+'">'+_esc(r.status||'')+(atr?' \u00b7 atrasada':'')+'</span>'; }}] });
 }
-/* ── Substitutos (item equivalente) ── */
-function substitutosJanela(peca){
-  const cod = peca || _mwSel.alm || '';
-  tabJanela({ tab:'substitutos', icone:'\ud83d\udd01', titulo:'Itens substitutos'+(cod?' \u2014 '+cod:''), singular:'substituto',
-    filtro: cod ? 'peca_codigo='+encodeURIComponent(cod) : '',
-    nota:'Equival\u00eancias: quando falta o item, a OT pode baixar o substituto. Sem item selecionado a lista mostra todas as equival\u00eancias.',
-    campos:[{k:'peca_codigo',label:'Item',req:true,w:'150px',def:cod}, {k:'substituto_codigo',label:'Substituto (c\u00f3digo)',req:true,w:'150px'}, {k:'observacao',label:'Observa\u00e7\u00e3o'}],
-    colunas:[{t:'Item',k:'peca_codigo'},{t:'Substituto',k:'substituto_codigo'},{t:'Observa\u00e7\u00e3o',k:'observacao'}] });
+/* ── (20/10/2026) Substitutos — janela própria no padrão MWW "Artigos Substitutos":
+   Artigo (código — descrição) · grelha Substituto | Descrição | Saldo | Custo | Restrições · ⊕ inserir com busca. ── */
+let _subCod = null;
+async function substitutosJanela(peca){
+  const cod = peca || _mwSel.alm || _pecaAberta || '';
+  if (!cod){ mostrarToast('Selecione um item no Catálogo', 'warn'); return; }
+  _subCod = cod;
+  let d;
+  try { d = await mntFetch('/manutencao/api/pecas/'+encodeURIComponent(cod)+'/substitutos'); } catch(e){ mostrarToast('❌ '+e.message,'warn'); return; }
+  let b = document.getElementById('sub-win');
+  if (!b){
+    b = document.createElement('div'); b.id = 'sub-win';
+    b.style.cssText = 'position:fixed;inset:0;z-index:9998;background:rgba(15,23,42,.45);display:none;align-items:center;justify-content:center';
+    document.body.appendChild(b);
+  }
+  b.innerHTML = '<div style="background:#fff;border-radius:10px;box-shadow:0 12px 32px rgba(15,23,42,.3);padding:16px;width:760px;max-width:96vw;max-height:92vh;overflow:auto">'
+    + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><b style="color:#1A2A5E">🔁 Artigos Substitutos</b><span style="cursor:pointer;font-size:16px" onclick="document.getElementById(\'sub-win\').style.display=\'none\'">✕</span></div>'
+    + '<div style="display:flex;gap:8px;align-items:center;margin-bottom:8px"><span class="chip" style="background:#EEF2FF;color:#1A2A5E;font-weight:700">Artigo</span>'
+    + '<input value="'+_esc(d.item.codigo)+' — '+_esc(d.item.descricao||'')+'" readonly style="flex:1;background:#F8FAFC;font-weight:700"></div>'
+    + '<div id="sub-corpo"></div>'
+    + '<div class="dsec" style="margin-top:10px">⊕ Inserir substituto <span class="muted" style="font-weight:400">— digite código ou descrição e escolha na lista</span></div>'
+    + '<div class="plf-pc-row" style="display:flex;gap:6px;align-items:center;margin:4px 0">'
+    + '<input class="f" style="width:150px" placeholder="código" oninput="pcSugerir(this)" autocomplete="off">'
+    + '<input class="d" style="flex:1" placeholder="descrição" oninput="pcSugerir(this)" autocomplete="off">'
+    + '<input class="c" type="hidden"><input class="v" type="hidden"><input class="h" type="hidden">'
+    + '<input id="sub-obs" style="width:200px" placeholder="restrições (ex.: só em emergência)">'
+    + '<label style="font-size:10px;white-space:nowrap"><input type="checkbox" id="sub-bi" checked> nos dois sentidos</label>'
+    + '<button class="btn p" onclick="substitutoAdd()">Inserir</button></div>'
+    + '</div>';
+  b.style.display = 'flex';
+  substitutosRender(d);
+}
+function substitutosRender(d){
+  const c = document.getElementById('sub-corpo'); if (!c) return;
+  const n = v => v == null ? '—' : parseFloat(v).toLocaleString('pt-BR');
+  const linha = (r, codK, rev) => '<tr><td class="bold mono" style="cursor:pointer" title="Abrir ficha" onclick="abrirPeca(\''+_esc(r[codK])+'\')">'+_esc(r[codK])+'</td>'
+    + '<td>'+_esc(r.descricao||'')+'</td><td class="r mono" style="color:'+(r.saldo>0?'#15803D':'#B45309')+'">'+n(r.saldo)+' '+_esc(r.unidade||'')+'</td>'
+    + '<td class="r mono">'+(r.custo_medio != null ? 'R$ '+parseFloat(r.custo_medio).toFixed(2) : '—')+'</td>'
+    + '<td>'+_esc(r.observacao||'')+'</td>'
+    + '<td class="act"><span style="cursor:pointer;color:#B91C1C;font-weight:700" title="Remover" onclick="substitutoDel(\''+r.id+'\')">✕</span></td></tr>';
+  const tab = (tit, rows, codK, vazio) => '<div class="dsec">'+tit+' <span class="muted" style="font-weight:400">('+rows.length+')</span></div>'
+    + (rows.length ? '<div style="background:#fff;border:1px solid #E2E8F0;border-radius:6px;overflow:hidden"><table><thead><tr><th style="width:150px">Artigo</th><th>Descrição</th><th class="r" style="width:90px">Saldo</th><th class="r" style="width:90px">Custo</th><th style="width:180px">Restrições</th><th style="width:30px"></th></tr></thead><tbody>'
+        + rows.map(r => linha(r, codK)).join('') + '</tbody></table></div>' : '<div class="muted" style="padding:4px 2px">'+vazio+'</div>');
+  c.innerHTML = tab('Substitutos deste artigo', d.substitutos, 'substituto_codigo', 'Nenhum substituto — quando faltar este item, a OT não terá alternativa.')
+    + (d.substitui.length ? tab('Este artigo substitui', d.substitui, 'peca_codigo', '') : '');
+}
+async function substitutoAdd(){
+  const b = document.getElementById('sub-win'); if (!b || !_subCod) return;
+  const cod = b.querySelector('.plf-pc-row .f').value.trim();
+  if (!cod){ mostrarToast('Escolha o item substituto na lista', 'warn'); return; }
+  try {
+    await mntFetch('/manutencao/api/pecas/'+encodeURIComponent(_subCod)+'/substitutos', { method:'POST', body: JSON.stringify({
+      substituto_codigo: cod, observacao: document.getElementById('sub-obs').value.trim(), bidirecional: document.getElementById('sub-bi').checked }) });
+    mostrarToast('🔁 Substituto inserido', 'ok');
+    substitutosJanela(_subCod);
+  } catch(e){ mostrarToast('❌ '+e.message, 'warn'); }
+}
+async function substitutoDel(id){
+  if (!confirm('Remover esta equivalência?')) return;
+  try { await mntFetch('/manutencao/api/substitutos/'+id, { method:'DELETE' }); substitutosJanela(_subCod); } catch(e){ mostrarToast('❌ '+e.message, 'warn'); }
 }
 /* ── Referências de fornecedor (Parametrização) ── */
 function referenciasPane(){
