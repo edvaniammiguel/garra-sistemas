@@ -19,6 +19,7 @@ MODULOS_DISPONIVEIS = [
     {"id": "ot_executar",         "label": "Manutenção — Executar OT", "desc": "Vê todas as OTs em aberto no app e registra execução em qualquer uma (mecânicos)"},
     {"id": "abastecimento",       "label": "Abastecimento (mobile)", "desc": "Registrar abastecimento com fotos — leitura alimenta FMD/preventivas"},
     {"id": "abastecimento_notas", "label": "Notas de Abastecimento", "desc": "Conferência financeira das notinhas (foto, valores, lançado na MAIS) — sem acesso à Manutenção"},
+    {"id": "manutencao_notas",    "label": "Notas de Manutenção", "desc": "Conferência financeira das notinhas das OTs (foto, valor digitado, lançado na MAIS) — sem acesso à Manutenção"},
     # (13/10/2026) Compras estava só na lista do front, que é SOBRESCRITA por esta
     # ao abrir Permissões — os 4 módulos sumiam do painel e uma exceção dada a um
     # operador não tinha onde ser revogada. Esta lista é a fonte da verdade.
@@ -29,9 +30,9 @@ MODULOS_DISPONIVEIS = [
 ]
 
 PERFIL_MODULOS_PADRAO = {
-    "admin":     ["admin_master","jardinagem_desktop","jardinagem_mobile","operacional_mobile","checklist","checklist_logistica","abastecimento","abastecimento_notas","compras_solicitar","compras_aprovar","compras_alcadas","compras_ver_todas"],
-    "gestor":    ["admin_master","jardinagem_desktop","operacional_mobile","abastecimento","abastecimento_notas","compras_solicitar","compras_aprovar","compras_alcadas","compras_ver_todas"],
-    "luana":     ["admin_master","jardinagem_desktop","operacional_mobile","abastecimento_notas","compras_solicitar","compras_aprovar","compras_alcadas","compras_ver_todas"],
+    "admin":     ["admin_master","jardinagem_desktop","jardinagem_mobile","operacional_mobile","checklist","checklist_logistica","abastecimento","abastecimento_notas","manutencao_notas","compras_solicitar","compras_aprovar","compras_alcadas","compras_ver_todas"],
+    "gestor":    ["admin_master","jardinagem_desktop","operacional_mobile","abastecimento","abastecimento_notas","manutencao_notas","compras_solicitar","compras_aprovar","compras_alcadas","compras_ver_todas"],
+    "luana":     ["admin_master","jardinagem_desktop","operacional_mobile","abastecimento_notas","manutencao_notas","compras_solicitar","compras_aprovar","compras_alcadas","compras_ver_todas"],
     "bruna":     ["admin_master","checklist","manutencao","pedir_ot","ot_executar","abastecimento","compras_solicitar","compras_aprovar"],
     "operador":  ["operacional_mobile","checklist","abastecimento"],
     "motorista": ["operacional_mobile","checklist","abastecimento"],
