@@ -303,9 +303,6 @@ button:disabled, select:disabled, input:disabled, [aria-disabled=true] { cursor:
         <label><input type="checkbox" value="aguardando_peca" checked onchange="renderOTs()"> Aguard. peça <b data-c="aguardando_peca"></b></label>
         <label><input type="checkbox" value="concluida" onchange="renderOTs()"> Encerradas <b data-c="concluida"></b></label>
         <label><input type="checkbox" value="cancelada" onchange="renderOTs()"> Canceladas <b data-c="cancelada"></b></label>
-        <select id="ots-fechadas" title="Até quando as encerradas/canceladas ficam na lista (o histórico completo continua na ficha do equipamento)" onchange="otsFechadasMudou()" style="font-size:11px">
-          <option value="90">últimos 90 dias</option><option value="180">6 meses</option><option value="365">1 ano</option><option value="0">todas</option>
-        </select>
         <span style="border-left:1px solid #CBD5E1;height:14px"></span>
         <label title="OTs internas sem responsável definido"><input type="checkbox" id="ots-f-semresp" onchange="renderOTs()"> Sem responsável <b id="ots-c-semresp"></b></label>
         <label title="Mecânico sinalizou serviço concluído pelo app — falta a gestão encerrar"><input type="checkbox" id="ots-f-sinal" onchange="renderOTs()"> ✅ Sinalizadas p/ encerrar <b id="ots-c-sinal"></b></label>
@@ -897,14 +894,12 @@ function ttRotulo(){
   return _filtroTT + (t && t.nome ? ' — ' + t.nome : '');
 }
 
-function otsFechadasMudou(){ const v = (document.getElementById('ots-fechadas')||{}).value || '90'; localStorage.setItem('garra_ots_fechadas', v); carregarOTsReais(); }
 async function carregarOTsReais(){
   try {
     await _tiposTrab();
     // (20/10/2026) encerradas/canceladas só as recentes (select "últimos 90 dias…"); OT antiga: procure pelo nº
-    const fd = localStorage.getItem('garra_ots_fechadas') || '90';
-    const selFd = document.getElementById('ots-fechadas'); if (selFd && selFd.value !== fd) selFd.value = fd;
-    _otsCache = await mntFetch('/manutencao/api/ots?fechadas_dias=' + encodeURIComponent(fd));
+    // (20/10/2026) Gestão vê tudo — os checkboxes de estado já limitam a tela; o recorte por tempo fica só no app
+    _otsCache = await mntFetch('/manutencao/api/ots?fechadas_dias=0');
     renderOTs();
     montarNavTipos();
     atualizarBadgePedidos();
