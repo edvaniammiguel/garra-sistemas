@@ -4611,6 +4611,9 @@ async def listar_movimentacoes(almox: str = None, limit: int = 120, de: str = No
     for _col, _ddl in (("documento_tipo", "TEXT"), ("documento_numero", "TEXT"), ("fornecedor_id", "UUID"),
                        ("lote", "UUID"), ("estorno_de", "UUID"), ("estornado_em", "TIMESTAMPTZ")):
         await ajard_query(f"ALTER TABLE manutencao.movimentacoes ADD COLUMN IF NOT EXISTS {_col} {_ddl}", fetch="none")
+    # (21/10/2026) legado 'nf'/'notinha' → códigos do domínio (01/02); 'aplicacao_direta' → 03 BALCAO
+    await ajard_query("""UPDATE manutencao.movimentacoes SET documento_tipo = CASE documento_tipo WHEN 'nf' THEN '01' WHEN 'notinha' THEN '02' ELSE '03' END
+                         WHERE documento_tipo IN ('nf','notinha','aplicacao_direta')""", fetch="none")
     limit = min(max(int(limit or 120), 1), 2000)
     cond, params = ["1=1"], []
     if almox:

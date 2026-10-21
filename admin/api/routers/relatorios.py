@@ -65,6 +65,11 @@ class _F:
         self.tipo_trabalho = (q.get("tipo_trabalho") or "").strip().upper() or None
         self.setor = (q.get("setor") or "").strip().upper() or None
         self.familia = (q.get("familia") or "").strip() or None
+        # (21/10/2026) filtros dos relatórios de Entradas
+        self.item = (q.get("item") or "").strip() or None            # código ou descrição da peça
+        self.fornecedor_id = (q.get("fornecedor_id") or "").strip() or None
+        self.documento = (q.get("documento") or "").strip() or None  # nº NF/cupom
+        self.almox = (q.get("almox") or "").strip() or None
 
     def rotulo(self, com_periodo=True):
         p = [f"Período {self.de.strftime('%d/%m/%Y')} a {self.ate.strftime('%d/%m/%Y')}"] if com_periodo else ["Fotografia de hoje"]
@@ -73,6 +78,10 @@ class _F:
         if self.tipo_trabalho: p.append(f"Tipo de trabalho {self.tipo_trabalho}")
         if self.setor: p.append(f"Setor {self.setor}")
         if self.familia: p.append(f"Família {self.familia}")
+        if self.item: p.append(f"Item '{self.item}'")
+        if self.fornecedor_id: p.append("Fornecedor filtrado")
+        if self.documento: p.append(f"Documento '{self.documento}'")
+        if self.almox: p.append(f"Almoxarifado {self.almox}")
         return " · ".join(p)
 
     # cláusula para o objeto (e = operacional.equipamentos) — sistema pega o ramo inteiro
@@ -672,6 +681,145 @@ COL_PONTOS = [("objeto", "Objeto", "txt"), ("obj_desc", "Descrição", "txt"), (
 
 # ═════════════════════════════ CATÁLOGO ═══════════════════════════════════
 # filtros: periodo · sistema · objeto · tipo_trabalho · setor · familia  (o front mostra só os aceitos)
+# ═════════════════════════════ ENTRADAS (21/10/2026) ═════════════════════════════
+def _where_entradas(F, params):
+    w = ["m.tipo = 'entrada'", "m.criado_em >= %s", "m.criado_em < %s"]
+    params += [F.de, F.ate + _td(days=1)]
+    if F.item:
+        w.append("(unaccent(p.codigo) ILIKE unaccent(%s) OR unaccent(p.descricao) ILIKE unaccent(%s))"); params += [f"%{F.item}%"] * 2
+    if F.familia:
+        w.append("(p.familia_codigo = %s OR p.familia_codigo LIKE %s)"); params += [F.familia, F.familia + ".%"]
+    if F.fornecedor_id:
+        w.append("m.fornecedor_id = %s"); params.append(F.fornecedor_id)
+    if F.documento:
+        w.append("m.documento_numero ILIKE %s"); params.append(f"%{F.documento}%")
+    if F.almox:
+        w.append("ad.codigo = %s"); params.append(F.almox)
+    return " AND ".join(w)
+
+
+_SQL_ENTRADAS = """
+    SELECT m.id, m.criado_em, m.quantidade, m.custo_unitario, m.custo_nf, m.acrescimo_rateado, m.total_nf,
+           m.documento_tipo, m.documento_numero, m.oc_numero, m.estornado_em, m.lote,
+           COALESCE(m.lote::text, COALESCE(m.documento_numero,'') || '|' || m.criado_em::date::text) AS lote_chave,
+           COALESCE((SELECT td.nome FROM manutencao.tipos_documento td WHERE td.codigo = m.documento_tipo),
+                    CASE m.documento_tipo WHEN 'nf' THEN 'NOTA FISCAL' WHEN 'notinha' THEN 'CUPOM' WHEN 'aplicacao_direta' THEN 'BALCAO' ELSE m.documento_tipo END) AS doc_nome,
+           p.codigo, p.descricao, p.unidade, p.familia_codigo,
+           fo.nome AS fornecedor, ad.codigo AS almox, u.nome AS usuario
+      FROM manutencao.movimentacoes m
+      JOIN manutencao.pecas p ON p.id = m.peca_id
+      LEFT JOIN public.fornecedores fo ON fo.id = m.fornecedor_id
+      LEFT JOIN manutencao.almoxarifados ad ON ad.id = m.almox_destino
+      LEFT JOIN public.usuarios_garra u ON u.id = m.usuario_id
+     WHERE {where}
+     ORDER BY m.criado_em DESC, p.codigo"""
+
+
+async def _entradas_rows(F):
+    try:
+        await ajard_query("CREATE EXTENSION IF NOT EXISTS unaccent", fetch="none")
+    except Exception:
+        pass
+    params = []
+    where = _where_entradas(F, params)
+    return await ajard_query(_SQL_ENTRADAS.format(where=where), tuple(params)) or []
+
+
+async def rel_entradas_itens(F):
+    """Cada item que entrou no estoque: documento, fornecedor, quantidade, custo da nota × custo que entrou."""
+    out = []
+    for r in await _entradas_rows(F):
+        q = _f(r["quantidade"]); cu = _f(r["custo_unitario"])
+        out.append({"data": r["criado_em"], "documento": ((r["doc_nome"] or r["documento_tipo"] or "") + " " + (r["documento_numero"] or "")).strip(),
+                    "fornecedor": r["fornecedor"] or "", "item": r["codigo"], "descricao": r["descricao"], "familia": r["familia_codigo"] or "",
+                    "unidade": r["unidade"] or "", "qtd": _r2(q), "custo_nf": _r2(r["custo_nf"]) if r["custo_nf"] is not None else _r2(cu),
+                    "custo_unit": _r2(cu), "valor": _r2(q * cu), "almox": r["almox"] or "", "oc": r["oc_numero"] or "",
+                    "situacao": "estornada" if r["estornado_em"] else "", "quem": r["usuario"] or ""})
+    return out
+
+COL_ENTRADAS = [("data", "Data", "datahora"), ("documento", "Documento", "txt"), ("fornecedor", "Fornecedor", "txt"), ("item", "Item", "txt"),
+                ("descricao", "Descrição", "txt"), ("familia", "Família", "txt"), ("unidade", "Un.", "txt"), ("qtd", "Qtd", "num", "sum"),
+                ("custo_nf", "Custo NF (R$)", "moeda"), ("custo_unit", "Custo c/ rateio (R$)", "moeda"), ("valor", "Valor (R$)", "moeda", "sum"),
+                ("almox", "Almox.", "txt"), ("oc", "OC", "txt"), ("situacao", "Situação", "txt"), ("quem", "Quem", "txt")]
+
+
+async def rel_entradas_documentos(F):
+    """Uma linha por documento (NF/cupom): itens, quantidade, valor dos itens e total da nota."""
+    agg = {}
+    for r in await _entradas_rows(F):
+        k = r["lote_chave"]
+        a = agg.setdefault(k, {"data": r["criado_em"], "documento": ((r["doc_nome"] or r["documento_tipo"] or "") + " " + (r["documento_numero"] or "")).strip(),
+                               "fornecedor": r["fornecedor"] or "", "almox": r["almox"] or "", "oc": r["oc_numero"] or "", "itens": 0, "qtd": 0.0,
+                               "valor_itens": 0.0, "acrescimos": 0.0, "total_nf": _f(r["total_nf"]) if r["total_nf"] is not None else None,
+                               "situacao": "estornada" if r["estornado_em"] else "", "quem": r["usuario"] or ""})
+        q = _f(r["quantidade"])
+        a["itens"] += 1; a["qtd"] += q
+        a["valor_itens"] += q * (_f(r["custo_nf"]) if r["custo_nf"] is not None else _f(r["custo_unitario"]))
+        a["acrescimos"] += _f(r["acrescimo_rateado"])
+        if not r["estornado_em"]:
+            a["situacao"] = ""
+    out = []
+    for a in sorted(agg.values(), key=lambda x: x["data"], reverse=True):
+        a["valor_itens"] = _r2(a["valor_itens"]); a["acrescimos"] = _r2(a["acrescimos"]); a["qtd"] = _r2(a["qtd"])
+        a["total"] = _r2(a["total_nf"]) if a["total_nf"] is not None else _r2(a["valor_itens"] + a["acrescimos"])
+        a.pop("total_nf", None)
+        out.append(a)
+    return out
+
+COL_ENTRADAS_DOC = [("data", "Data", "datahora"), ("documento", "Documento", "txt"), ("fornecedor", "Fornecedor", "txt"), ("almox", "Almox.", "txt"),
+                    ("oc", "OC", "txt"), ("itens", "Itens", "int", "sum"), ("qtd", "Qtd", "num", "sum"), ("valor_itens", "Itens (R$)", "moeda", "sum"),
+                    ("acrescimos", "IPI/frete (R$)", "moeda", "sum"), ("total", "Total (R$)", "moeda", "sum"), ("situacao", "Situação", "txt"), ("quem", "Quem", "txt")]
+
+
+async def rel_entradas_fornecedor(F):
+    """Compras por fornecedor no período: documentos, itens, valor, peso no total e último documento."""
+    agg = {}
+    for r in await _entradas_rows(F):
+        if r["estornado_em"]:
+            continue
+        k = r["fornecedor"] or "— sem fornecedor —"
+        a = agg.setdefault(k, {"fornecedor": k, "docs": set(), "itens": set(), "qtd": 0.0, "valor": 0.0, "ultimo": None})
+        a["docs"].add(r["lote_chave"]); a["itens"].add(r["codigo"]); a["qtd"] += _f(r["quantidade"])
+        a["valor"] += _f(r["quantidade"]) * _f(r["custo_unitario"])
+        if a["ultimo"] is None or r["criado_em"] > a["ultimo"]:
+            a["ultimo"] = r["criado_em"]
+    tot = sum(a["valor"] for a in agg.values()) or 0.0
+    return [{"fornecedor": a["fornecedor"], "documentos": len(a["docs"]), "itens": len(a["itens"]), "qtd": _r2(a["qtd"]), "valor": _r2(a["valor"]),
+             "pct": round(a["valor"] / tot, 4) if tot else 0.0, "ultimo": a["ultimo"]}
+            for a in sorted(agg.values(), key=lambda x: -x["valor"])]
+
+COL_ENTRADAS_FORN = [("fornecedor", "Fornecedor", "txt"), ("documentos", "Documentos", "int", "sum"), ("itens", "Itens distintos", "int"),
+                     ("qtd", "Qtd", "num", "sum"), ("valor", "Valor (R$)", "moeda", "sum"), ("pct", "% do total", "pct"), ("ultimo", "Última compra", "datahora")]
+
+
+async def rel_entradas_item(F):
+    """Histórico de compra por item: quantas vezes entrou, quantidade, custo médio ponderado, menor/maior custo, último fornecedor."""
+    agg = {}
+    for r in await _entradas_rows(F):
+        if r["estornado_em"]:
+            continue
+        k = r["codigo"]
+        a = agg.setdefault(k, {"item": k, "descricao": r["descricao"], "familia": r["familia_codigo"] or "", "unidade": r["unidade"] or "",
+                               "entradas": 0, "qtd": 0.0, "valor": 0.0, "menor": None, "maior": None, "ultimo_forn": r["fornecedor"] or "", "ultima": r["criado_em"], "docs": set()})
+        q = _f(r["quantidade"]); cu = _f(r["custo_unitario"])
+        a["entradas"] += 1; a["qtd"] += q; a["valor"] += q * cu; a["docs"].add(r["lote_chave"])
+        a["menor"] = cu if a["menor"] is None else min(a["menor"], cu)
+        a["maior"] = cu if a["maior"] is None else max(a["maior"], cu)
+        if r["criado_em"] > a["ultima"]:
+            a["ultima"] = r["criado_em"]; a["ultimo_forn"] = r["fornecedor"] or ""
+    out = []
+    for a in sorted(agg.values(), key=lambda x: -x["valor"]):
+        out.append({"item": a["item"], "descricao": a["descricao"], "familia": a["familia"], "unidade": a["unidade"], "documentos": len(a["docs"]),
+                    "qtd": _r2(a["qtd"]), "valor": _r2(a["valor"]), "custo_medio": _r2(a["valor"] / a["qtd"]) if a["qtd"] else 0.0,
+                    "menor": _r2(a["menor"] or 0), "maior": _r2(a["maior"] or 0), "ultimo_forn": a["ultimo_forn"], "ultima": a["ultima"]})
+    return out
+
+COL_ENTRADAS_ITEM = [("item", "Item", "txt"), ("descricao", "Descrição", "txt"), ("familia", "Família", "txt"), ("unidade", "Un.", "txt"),
+                     ("documentos", "Documentos", "int", "sum"), ("qtd", "Qtd comprada", "num", "sum"), ("valor", "Valor (R$)", "moeda", "sum"),
+                     ("custo_medio", "Custo médio (R$)", "moeda"), ("menor", "Menor custo (R$)", "moeda"), ("maior", "Maior custo (R$)", "moeda"),
+                     ("ultimo_forn", "Último fornecedor", "txt"), ("ultima", "Última compra", "datahora")]
+
+
 RELATORIOS = {
     "custo-objeto":        {"grupo": "Custos", "titulo": "Custo de manutenção por objeto", "sub": "peças + mão de obra + outros das OTs abertas no período; R$ por hora/km operado", "fn": rel_custo_objeto, "cols": COL_CUSTO_OBJETO, "filtros": ["periodo", "sistema", "objeto", "tipo_trabalho", "setor"]},
     "custo-sistema":       {"grupo": "Custos", "titulo": "Custo por sistema", "sub": "onde o dinheiro vai, por ramo da organização", "fn": rel_custo_sistema, "cols": COL_CUSTO_SISTEMA, "filtros": ["periodo", "sistema", "tipo_trabalho", "setor"]},
@@ -685,6 +833,10 @@ RELATORIOS = {
     "preventivas-vencidas": {"grupo": "Preventivas", "titulo": "Preventivas vencidas e a vencer", "sub": "lista de ação imediata", "fn": rel_preventivas_vencidas, "cols": COL_ADERENCIA, "filtros": ["sistema", "objeto"]},
     "indisponibilidade":   {"grupo": "Disponibilidade", "titulo": "Indisponibilidade por objeto", "sub": "horas paradas, MTTR, MTBF e disponibilidade (jornada 8 h/dia)", "fn": rel_indisponibilidade, "cols": COL_INDISP, "filtros": ["periodo", "sistema", "objeto"]},
     "hh":                  {"grupo": "Mão de obra", "titulo": "HH por setor › função › pessoa", "sub": "horas e custo realizados × planejado por função", "fn": rel_hh, "cols": COL_HH, "filtros": ["periodo", "sistema", "objeto", "setor"]},
+    "entradas-documentos": {"grupo": "Entradas", "titulo": "Entradas por documento", "sub": "uma linha por NF/cupom: itens, IPI/frete e total — o que entrou no período", "fn": rel_entradas_documentos, "cols": COL_ENTRADAS_DOC, "filtros": ["periodo", "fornecedor", "documento", "almox"]},
+    "entradas-itens":      {"grupo": "Entradas", "titulo": "Entradas por item (detalhe)", "sub": "cada peça que entrou: documento, fornecedor, quantidade, custo da nota × custo com rateio", "fn": rel_entradas_itens, "cols": COL_ENTRADAS, "filtros": ["periodo", "item", "familia", "fornecedor", "documento", "almox"]},
+    "entradas-item-resumo": {"grupo": "Entradas", "titulo": "Histórico de compra por item", "sub": "quantas vezes comprou, quantidade, custo médio, menor/maior custo e último fornecedor", "fn": rel_entradas_item, "cols": COL_ENTRADAS_ITEM, "filtros": ["periodo", "item", "familia", "fornecedor"]},
+    "entradas-fornecedor": {"grupo": "Entradas", "titulo": "Compras por fornecedor", "sub": "valor comprado de cada fornecedor no período e peso no total", "fn": rel_entradas_fornecedor, "cols": COL_ENTRADAS_FORN, "filtros": ["periodo", "item", "familia", "fornecedor"]},
     "consumo-pecas":       {"grupo": "Materiais", "titulo": "Consumo de peças", "sub": "cada saída/aplicação (e devolução) com OT, objeto, conta e fornecedor", "fn": rel_consumo_pecas, "cols": COL_CONSUMO, "filtros": ["periodo", "sistema", "objeto", "familia"]},
     "consumo-familia":     {"grupo": "Materiais", "titulo": "Consumo por família", "sub": "peso de filtros, pneus, óleos… no gasto com peças", "fn": rel_consumo_familia, "cols": COL_CONSUMO_FAM, "filtros": ["periodo", "sistema", "objeto"]},
     "estoque-baixo":       {"grupo": "Materiais", "titulo": "Estoque baixo / sugestão de compra", "sub": "itens abaixo do mínimo com quantidade e valor sugeridos", "fn": rel_estoque_baixo, "cols": COL_ESTOQUE_BAIXO, "filtros": []},
@@ -692,7 +844,7 @@ RELATORIOS = {
     "utilizacao":          {"grupo": "Utilização", "titulo": "Horas/km por objeto e mês", "sub": "quanto cada máquina rodou (base do R$/h e do FMD)", "fn": rel_utilizacao, "cols": COL_UTIL, "filtros": ["periodo", "sistema", "objeto"]},
     "pontos":              {"grupo": "Utilização", "titulo": "Pontos de leitura", "sub": "situação dos pontos com limiares 🟡🟠🔴", "fn": rel_pontos, "cols": COL_PONTOS, "filtros": ["sistema", "objeto"]},
 }
-_ORDEM_GRUPOS = ["Custos", "Trabalhos", "Preventivas", "Disponibilidade", "Mão de obra", "Materiais", "Utilização"]
+_ORDEM_GRUPOS = ["Custos", "Trabalhos", "Preventivas", "Disponibilidade", "Mão de obra", "Materiais", "Entradas", "Utilização"]
 
 
 def _cols_json(cols):
