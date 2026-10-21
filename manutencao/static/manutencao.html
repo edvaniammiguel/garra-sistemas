@@ -5816,13 +5816,17 @@ function entradaPosFechar(r){
     document.body.appendChild(b);
   }
   const semLoc = new Set((r.sem_local||[]).map(x => x.codigo));
-  const linhas = (r.codigos||[]).map(c => '<label class="plf-pc-row" style="display:flex;gap:8px;align-items:center;margin:3px 0;cursor:pointer">'
+  // (21/10/2026) quantidade de etiquetas por item: padrão 1 (uma por prateleira/caixa); "= qtd da entrada" marca uma por unidade
+  const qtdEnt = r.quantidades || {};
+  const linhas = (r.codigos||[]).map(c => '<div class="plf-pc-row" style="display:flex;gap:8px;align-items:center;margin:3px 0">'
     + '<input type="checkbox" class="etq" value="'+_esc(c)+'" checked><span class="mono bold" style="width:140px">'+_esc(c)+'</span>'
-    + '<span class="muted" style="font-size:10px">'+(semLoc.has(c) ? '📍 sem endereço — etiqueta sai com Local: —' : 'endereçado')+'</span></label>').join('');
+    + '<span class="muted" style="font-size:10px;flex:1">'+(semLoc.has(c) ? '📍 sem endereço — etiqueta sai com Local: —' : 'endereçado')+'</span>'
+    + '<span class="muted" style="font-size:10px">× </span><input class="etq-n" type="number" min="1" max="50" value="1" data-ent="'+(qtdEnt[c]||1)+'" style="width:52px" title="quantas etiquetas deste item (entrou '+(qtdEnt[c]||1)+')"></div>').join('');
   b.innerHTML = '<div style="background:#fff;border-radius:10px;box-shadow:0 12px 32px rgba(15,23,42,.3);padding:16px;width:520px;max-width:96vw">'
     + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><b style="color:#1A2A5E">🏷 Etiquetas da entrada '+_esc(r.documento||'')+' · '+_esc(r.destino)+'</b><span style="cursor:pointer;font-size:16px" onclick="document.getElementById(\'ent-pos\').style.display=\'none\'">✕</span></div>'
-    + '<div class="dsec">Itens do documento <span class="muted" style="font-weight:400">— desmarque o que não quer etiquetar agora</span></div>'
+    + '<div class="dsec">Itens do documento <span class="muted" style="font-weight:400">— desmarque o que não quer etiquetar agora · ajuste a quantidade de etiquetas</span></div>'
     + '<div id="ent-pos-itens">'+linhas+'</div>'
+    + '<div style="display:flex;gap:10px;font-size:10px;margin-top:4px"><a href="#" onclick="event.preventDefault();document.querySelectorAll(\'#ent-pos-itens .etq-n\').forEach(i=>i.value=1)">1 por item</a><a href="#" onclick="event.preventDefault();document.querySelectorAll(\'#ent-pos-itens .etq-n\').forEach(i=>i.value=i.dataset.ent)">1 por unidade (qtd da entrada)</a></div>'
     + '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">'
     + '<button class="btn" onclick="document.getElementById(\'ent-pos\').style.display=\'none\'">Agora não</button>'
     + '<button class="btn p" id="ent-pos-ok" onclick="entradaPosOK()">🏷 Imprimir etiquetas</button></div></div>';
@@ -5830,7 +5834,8 @@ function entradaPosFechar(r){
 }
 function entradaPosOK(){
   const b = document.getElementById('ent-pos'); if (!b) return;
-  const cods = [...b.querySelectorAll('#ent-pos-itens .etq:checked')].map(x => x.value);
+  const cods = [...b.querySelectorAll('#ent-pos-itens .plf-pc-row')].filter(row => row.querySelector('.etq').checked)
+    .map(row => { const n = Math.max(1, parseInt(row.querySelector('.etq-n').value || '1', 10)); return row.querySelector('.etq').value + (n > 1 ? '*' + n : ''); });
   b.style.display = 'none';
   if (!cods.length){ mostrarToast('Nenhum item marcado', 'warn'); return; }
   window.open('/manutencao/etiquetas?codigos='+encodeURIComponent(cods.join(',')), '_blank');
