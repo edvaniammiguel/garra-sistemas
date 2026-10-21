@@ -13,3 +13,4 @@ python-dotenv>=1.0.1
 webauthn>=2.0.0
 icalendar>=5.0.0
 reportlab>=4.0
+segno>=1.6
