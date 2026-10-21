@@ -6124,7 +6124,7 @@ body.semguia .et{border-color:transparent}
 @media print{body{background:#fff}.bar{display:none}.folha{margin:0;padding:0;min-height:auto;page-break-after:always}.et{border-color:transparent}}
 </style></head><body>
 <div class="bar"><b>🏷 Etiquetas de itens</b> <span id="info"></span> <span style="flex:1"></span>
-<label style="margin-right:12px">quantidade: <select id="modo" onchange="render()" style="font-size:12px;padding:3px 6px;border-radius:5px;border:0"><option value="url">como pedido (1 por item)</option><option value="exist">1 por unidade em estoque</option></select></label>
+<label style="margin-right:12px">quantidade: <select id="modo" onchange="render()" style="font-size:12px;padding:3px 6px;border-radius:5px;border:0"><option value="url">1 por item</option><option value="exist">1 por unidade em estoque</option></select></label>
 <label><input type="checkbox" id="guia" checked onchange="document.body.classList.toggle('semguia',!this.checked)"> guias (não imprimem)</label>
 <button onclick="window.print()">🖨 Imprimir</button></div>
 <div id="folhas"></div>
@@ -6138,7 +6138,9 @@ const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;',
   const base=await r.json();
   window._base=base;
   // (21/10/2026) quantidade: pela URL (CÓDIGO*n, padrão 1) ou 1 por unidade em estoque (lote pelo Estoque)
-  if(base.some(it=>(it.qtd||1)>1)) document.getElementById('modo').options[0].text='como pedido na entrada';
+  // (21/10/2026) quantidade já definida na entrada (CÓDIGO*n) → sem seletor; o seletor só vale para lote pelo Estoque
+  const vindoDaEntrada=/\*\d+/.test(location.search);
+  if(vindoDaEntrada){ const lb=document.getElementById('modo').closest('label'); if(lb) lb.style.display='none'; }
   window.render=function(){
   const modo=document.getElementById('modo').value;
   const itens=[]; base.forEach(it=>{ const n=modo==='exist'?Math.max(1,Math.min(50,it.existencia||1)):(it.qtd||1); for(let k=0;k<n;k++) itens.push(it); });
