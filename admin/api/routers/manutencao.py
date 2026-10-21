@@ -4392,7 +4392,7 @@ async def ot_consumos(ot_id: str, _auth=Depends(verificar_manutencao)):
         fetch="none")
     rows = await ajard_query(
         """SELECT m.id, m.tipo, m.quantidade, m.custo_unitario, m.criado_em, m.observacao, m.rubrica,
-                  m.documento_numero, fo.nome AS fornecedor_nome,
+                  m.documento_numero, m.documento_tipo, fo.nome AS fornecedor_nome,
                   p.codigo AS peca_codigo, p.descricao AS peca_descricao, p.unidade,
                   p.custo_medio,
                   ao.codigo AS almox_origem, ad.codigo AS almox_destino,
@@ -4420,7 +4420,7 @@ async def ot_consumos(ot_id: str, _auth=Depends(verificar_manutencao)):
             "unidade": r["unidade"] or "UN", "quantidade": qtd,
             "custo_unitario": custo, "total": linha,
             "almox": r["almox_origem"] or r["almox_destino"], "rubrica": r["rubrica"],
-            "documento": r.get("documento_numero"), "fornecedor_nome": r.get("fornecedor_nome"),
+            "documento": r.get("documento_numero"), "documento_tipo": r.get("documento_tipo"), "fornecedor_nome": r.get("fornecedor_nome"),
             "usuario": r["usuario"], "observacao": r["observacao"]})
     return {"itens": itens, "total": round(total, 2)}
 
@@ -4477,6 +4477,8 @@ async def ot_consumo_editar(ot_id: str, mov_id: str, request: Request, payload=D
         sets.append("custo_unitario=%s"); params.append(_num(d["custo_unitario"]))
     if "documento_numero" in d:
         sets.append("documento_numero=%s"); params.append((d.get("documento_numero") or "").strip() or None)
+    if "documento_tipo" in d and (d.get("documento_tipo") or "").strip():   # (21/10/2026) código do domínio Tipos de documento
+        sets.append("documento_tipo=%s"); params.append(str(d["documento_tipo"]).strip())
     if "fornecedor_id" in d:
         sets.append("fornecedor_id=%s"); params.append((d.get("fornecedor_id") or "").strip() or None)
     if "rubrica" in d:
@@ -4631,6 +4633,7 @@ async def listar_movimentacoes(almox: str = None, limit: int = 120, de: str = No
     rows = await ajard_query(
         f"""SELECT m.id, m.tipo, m.quantidade, m.custo_unitario, m.criado_em, m.observacao,
                    m.documento_tipo, m.documento_numero, m.estornado_em, m.estorno_de,
+                   (SELECT td.nome FROM manutencao.tipos_documento td WHERE td.codigo = m.documento_tipo) AS documento_tipo_nome,
                    COALESCE(m.lote::text, COALESCE(m.documento_numero,'') || '|' || m.criado_em::date::text) AS lote_chave,
                    (SELECT nome FROM public.fornecedores f WHERE f.id = m.fornecedor_id) AS fornecedor_nome,
                    p.codigo AS peca_codigo, p.descricao AS peca_descricao, p.unidade,
@@ -4735,12 +4738,25 @@ async def _entrada_core(d, payload):
     · elo com Ordem de Compra por oc_numero (amarração forte na
       unificação Compras↔OT).
     Peça inexistente com descrição no item → cadastrada na hora."""
-    doc_tipo = (d.get("documento_tipo") or "").strip()
-    if doc_tipo not in ("nf", "notinha", "aplicacao_direta"):
-        raise HTTPException(status_code=400, detail="Tipo de documento inválido")
+    # (21/10/2026) Tipo de documento vem do domínio Parametrizar › Custos › Tipos de documento (01 NF, 02 CUPOM…).
+    # O DESTINO (almoxarifado × aplicação direta na OT) é outro campo. Valores antigos continuam aceitos:
+    # 'nf'→01, 'notinha'→02, 'aplicacao_direta'→destino OT com documento 02.
+    _LEGADO = {"nf": "01", "notinha": "02", "aplicacao_direta": None}
+    bruto = (d.get("documento_tipo") or "").strip()
+    destino_tipo = (d.get("destino_tipo") or "").strip() or ("ot" if bruto == "aplicacao_direta" else "almox")
+    if destino_tipo not in ("almox", "ot"):
+        raise HTTPException(status_code=400, detail="Destino inválido (almox | ot)")
+    doc_cod = _LEGADO.get(bruto, bruto) if bruto else None
+    if doc_cod:
+        ok = await ajard_query("SELECT codigo FROM manutencao.tipos_documento WHERE codigo=%s AND COALESCE(ativo,true)", (doc_cod,), fetch="one")
+        if not ok:
+            raise HTTPException(status_code=400, detail=f"Tipo de documento '{doc_cod}' não está em Parametrizar › Custos › Tipos de documento")
+    elif destino_tipo == "almox":
+        raise HTTPException(status_code=400, detail="Informe o tipo de documento")
+    doc_tipo = "aplicacao_direta" if destino_tipo == "ot" else "entrada"   # ramo interno (mantém a lógica abaixo)
     doc_num = (d.get("documento_numero") or "").strip()
-    if doc_tipo in ("nf", "notinha") and not doc_num:
-        raise HTTPException(status_code=400, detail="Informe o número da NF/notinha")
+    if destino_tipo == "almox" and not doc_num:
+        raise HTTPException(status_code=400, detail="Informe o número do documento")
     itens = d.get("itens") or []
     itens = [i for i in itens if (i.get("peca") or "").strip()]
     if not itens:
@@ -4874,7 +4890,7 @@ async def _entrada_core(d, payload):
             (tipo_mov, p["id"], destino, qtd,
              (ot_id if doc_tipo == "aplicacao_direta" else None), uid,
              (d.get("observacao") or "").strip() or None, custo,
-             doc_tipo, doc_num or None, d.get("fornecedor_id") or None,
+             (doc_cod or "02"), doc_num or None, d.get("fornecedor_id") or None,
              (d.get("oc_numero") or "").strip() or None, rub,
              (round(custo_nf, 4) if custo_nf is not None else None), rateado,
              (round(total_nf, 2) if total_nf is not None else None), lote), fetch="none")
@@ -4896,7 +4912,7 @@ async def _entrada_core(d, payload):
             quantidades[c_] = quantidades.get(c_, 0) + int(float(str(it.get("quantidade") or 0).replace(",", ".")))
         except ValueError:
             pass
-    return {"ok": True, "documento": doc_num or doc_tipo, "itens": len(lancados), "codigos": lancados, "quantidades": quantidades, "lote": lote,
+    return {"ok": True, "documento": doc_num or (doc_cod or "aplicação direta"), "itens": len(lancados), "codigos": lancados, "quantidades": quantidades, "lote": lote,
             "destino": (d.get("destino") or "").strip() or None, "sem_local": sem_local,
             "total": round(total_doc, 2), "itens_nf": round(soma_itens, 2),
             "acrescimos": round(acrescimos, 2), "desconto": round(desconto, 2)}
