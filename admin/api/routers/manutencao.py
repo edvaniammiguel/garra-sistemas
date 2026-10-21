@@ -5943,6 +5943,7 @@ async def etiquetas_itens(codigos: str = None, familia: str = None, almox: str =
                    upper(COALESCE(NULLIF(p.classe,''),
                          CASE WHEN p.codigo ~ '^[A-Za-z]\\.' THEN split_part(p.codigo,'.',1) ELSE NULL END,
                          (SELECT f.classe FROM manutencao.familias f WHERE f.codigo = split_part({fe},'.',1) LIMIT 1))) AS classe,
+                   COALESCE((SELECT SUM(e.quantidade) FROM manutencao.estoque e WHERE e.peca_id=p.id),0) AS existencia,
                    (SELECT string_agg(CASE WHEN upper(COALESCE(e.localizacao,'')) LIKE upper(a.codigo)||' %%' THEN e.localizacao
                                            ELSE a.codigo || CASE WHEN COALESCE(e.localizacao,'')<>'' THEN ' ' || e.localizacao ELSE '' END END, ' · ' ORDER BY a.codigo)
                       FROM manutencao.estoque e JOIN manutencao.almoxarifados a ON a.id=e.almoxarifado_id
@@ -5989,7 +5990,7 @@ async def etiquetas_itens(codigos: str = None, familia: str = None, almox: str =
                     "classe": r.get("classe") or "", "classe_nome": classes.get(r.get("classe") or "", ""),
                     "familia_codigo": r["familia_codigo"] or "", "familia": fam_txt,
                     "compativel": eqs, "aplicacao": aplic, "locais": r["locais"] or "", "qr_svg": qr,
-                    "qtd": qtds.get(r["codigo"], 1)})
+                    "qtd": qtds.get(r["codigo"], 1), "existencia": int(float(r["existencia"] or 0))})
     return out
 
 
@@ -6024,6 +6025,7 @@ body.semguia .et{border-color:transparent}
 @media print{body{background:#fff}.bar{display:none}.folha{margin:0;padding:0;min-height:auto;page-break-after:always}.et{border-color:transparent}}
 </style></head><body>
 <div class="bar"><b>🏷 Etiquetas de itens</b> <span id="info"></span> <span style="flex:1"></span>
+<label style="margin-right:12px">quantidade: <select id="modo" onchange="render()" style="font-size:12px;padding:3px 6px;border-radius:5px;border:0"><option value="url">como pedido (1 por item)</option><option value="exist">1 por unidade em estoque</option></select></label>
 <label><input type="checkbox" id="guia" checked onchange="document.body.classList.toggle('semguia',!this.checked)"> guias (não imprimem)</label>
 <button onclick="window.print()">🖨 Imprimir</button></div>
 <div id="folhas"></div>
@@ -6035,7 +6037,12 @@ const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;',
   const r=await fetch('/manutencao/api/etiquetas-itens'+qs,{headers:{Authorization:'Bearer '+tok()}});
   if(!r.ok){document.getElementById('info').textContent='Erro '+r.status+' — abra pela tela de Materiais (login)';return;}
   const base=await r.json();
-  const itens=[]; base.forEach(it=>{ for(let k=0;k<(it.qtd||1);k++) itens.push(it); });
+  window._base=base;
+  // (21/10/2026) quantidade: pela URL (CÓDIGO*n, padrão 1) ou 1 por unidade em estoque (lote pelo Estoque)
+  if(base.some(it=>(it.qtd||1)>1)) document.getElementById('modo').options[0].text='como pedido na entrada';
+  window.render=function(){
+  const modo=document.getElementById('modo').value;
+  const itens=[]; base.forEach(it=>{ const n=modo==='exist'?Math.max(1,Math.min(50,it.existencia||1)):(it.qtd||1); for(let k=0;k<n;k++) itens.push(it); });
   document.getElementById('info').textContent=itens.length+' etiqueta(s) ('+base.length+' item(ns)) · '+Math.ceil(itens.length/10)+' folha(s) · molde Letter 2×5 (10,2 × 5,05 cm)';
   let html='';
   for(let i=0;i<itens.length;i+=10){
@@ -6055,6 +6062,8 @@ const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;',
     }).join('')+'</div>';
   }
   document.getElementById('folhas').innerHTML=html;
+  };
+  render();
 })();
 </script></body></html>""")
 
