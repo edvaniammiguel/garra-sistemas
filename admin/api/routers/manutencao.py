@@ -4605,6 +4605,9 @@ async def listar_movimentacoes(almox: str = None, limit: int = 120,
     await ajard_query(
         "ALTER TABLE manutencao.movimentacoes ADD COLUMN IF NOT EXISTS custo_unitario NUMERIC",
         fetch="none")
+    for _col, _ddl in (("documento_tipo", "TEXT"), ("documento_numero", "TEXT"), ("fornecedor_id", "UUID"),
+                       ("lote", "UUID"), ("estorno_de", "UUID"), ("estornado_em", "TIMESTAMPTZ")):
+        await ajard_query(f"ALTER TABLE manutencao.movimentacoes ADD COLUMN IF NOT EXISTS {_col} {_ddl}", fetch="none")
     limit = min(max(int(limit or 120), 1), 300)
     cond, params = ["1=1"], []
     if almox:
@@ -4612,6 +4615,9 @@ async def listar_movimentacoes(almox: str = None, limit: int = 120,
         params += [almox, almox]
     rows = await ajard_query(
         f"""SELECT m.id, m.tipo, m.quantidade, m.custo_unitario, m.criado_em, m.observacao,
+                   m.documento_tipo, m.documento_numero, m.estornado_em, m.estorno_de,
+                   COALESCE(m.lote::text, COALESCE(m.documento_numero,'') || '|' || m.criado_em::date::text) AS lote_chave,
+                   (SELECT nome FROM public.fornecedores f WHERE f.id = m.fornecedor_id) AS fornecedor_nome,
                    p.codigo AS peca_codigo, p.descricao AS peca_descricao, p.unidade,
                    ao.codigo AS origem, ad.codigo AS destino,
                    o.numero AS ot_numero, u.nome AS usuario
@@ -4624,6 +4630,61 @@ async def listar_movimentacoes(almox: str = None, limit: int = 120,
             WHERE {' AND '.join(cond)}
             ORDER BY m.criado_em DESC LIMIT {limit}""", tuple(params))
     return {"itens": [dict(r) for r in rows]}
+
+
+@router.post("/manutencao/api/entradas/estornar")
+async def estornar_entrada(request: Request, payload=Depends(verificar_manutencao)):
+    """(21/10/2026) ESTORNO DE DOCUMENTO (padrão MWW "anular"): desfaz uma entrada inteira.
+    Regra: só se nenhum item já saiu (saldo atual no destino ≥ quantidade que entrou).
+    Nada é apagado: cada item ganha um movimento contrário tipo 'estorno' (ligado ao original,
+    motivo obrigatório), o saldo volta e o custo médio é recalculado. Permissão: Painel de Gestão."""
+    from core.permissions import tem_modulo
+    if not await tem_modulo(payload, {"admin_master"}):
+        raise HTTPException(status_code=403, detail="Estornar entrada exige o Painel de Gestão")
+    d = await request.json()
+    chave = (d.get("lote") or "").strip()
+    motivo = (d.get("motivo") or "").strip()
+    if not chave:
+        raise HTTPException(status_code=400, detail="Informe a entrada (lote)")
+    if len(motivo) < 5:
+        raise HTTPException(status_code=400, detail="Motivo do estorno é obrigatório (mínimo 5 caracteres)")
+    for _col, _ddl in (("lote", "UUID"), ("estorno_de", "UUID"), ("estornado_em", "TIMESTAMPTZ")):
+        await ajard_query(f"ALTER TABLE manutencao.movimentacoes ADD COLUMN IF NOT EXISTS {_col} {_ddl}", fetch="none")
+    rows = await ajard_query(
+        """SELECT m.id, m.peca_id, m.almox_destino, m.quantidade, m.custo_unitario, m.documento_numero,
+                  p.codigo, p.descricao, p.custo_medio,
+                  COALESCE((SELECT e.quantidade FROM manutencao.estoque e WHERE e.peca_id=m.peca_id AND e.almoxarifado_id=m.almox_destino),0) AS saldo_destino,
+                  COALESCE((SELECT SUM(e.quantidade) FROM manutencao.estoque e WHERE e.peca_id=m.peca_id),0) AS saldo_total
+           FROM manutencao.movimentacoes m JOIN manutencao.pecas p ON p.id=m.peca_id
+           WHERE m.tipo='entrada' AND m.estornado_em IS NULL
+             AND COALESCE(m.lote::text, COALESCE(m.documento_numero,'') || '|' || m.criado_em::date::text) = %s""", (chave,)) or []
+    if not rows:
+        raise HTTPException(status_code=404, detail="Entrada não encontrada ou já estornada")
+    faltam = [f"{r['codigo']} (entrou {float(r['quantidade']):g}, saldo {float(r['saldo_destino']):g})"
+              for r in rows if float(r["saldo_destino"]) < float(r["quantidade"])]
+    if faltam:
+        raise HTTPException(status_code=400, detail="Não dá para estornar: já houve saída de " + "; ".join(faltam) + ". Corrija as baixas primeiro.")
+    uid = await _usuario_id(payload)
+    doc = rows[0]["documento_numero"] or "sem nº"
+    for r in rows:
+        q = float(r["quantidade"]); custo = float(r["custo_unitario"]) if r["custo_unitario"] is not None else None
+        await ajard_query("UPDATE manutencao.estoque SET quantidade = quantidade - %s WHERE peca_id=%s AND almoxarifado_id=%s",
+                          (q, r["peca_id"], r["almox_destino"]), fetch="none")
+        # custo médio: desfaz a ponderação desta entrada sobre o que resta
+        if custo is not None and r["custo_medio"] is not None:
+            st, cm = float(r["saldo_total"]), float(r["custo_medio"])
+            resta = st - q
+            if resta > 0:
+                novo = (st * cm - q * custo) / resta
+                if novo > 0:
+                    await ajard_query("UPDATE manutencao.pecas SET custo_medio=%s WHERE id=%s", (round(novo, 4), r["peca_id"]), fetch="none")
+        await ajard_query(
+            """INSERT INTO manutencao.movimentacoes (tipo, peca_id, almox_origem, quantidade, usuario_id, observacao, custo_unitario,
+                                                     documento_tipo, documento_numero, estorno_de)
+               VALUES ('estorno',%s,%s,%s,%s,%s,%s,'estorno',%s,%s)""",
+            (r["peca_id"], r["almox_destino"], q, uid, f"Estorno da entrada {doc}: {motivo}", custo, r["documento_numero"], r["id"]), fetch="none")
+        await ajard_query("UPDATE manutencao.movimentacoes SET estornado_em=now() WHERE id=%s", (r["id"],), fetch="none")
+    return {"ok": True, "itens": len(rows), "documento": doc}
 
 
 @router.post("/manutencao/api/entradas")
@@ -4672,7 +4733,9 @@ async def _entrada_core(d, payload):
     for _col, _ddl in (("documento_tipo", "TEXT"), ("documento_numero", "TEXT"),
                        ("fornecedor_id", "UUID"), ("oc_numero", "TEXT"),
                        # (20/10/2026) fechamento com a NF: custo digitado × custo que entrou (com IPI/frete rateado)
-                       ("custo_nf", "NUMERIC"), ("acrescimo_rateado", "NUMERIC"), ("total_nf", "NUMERIC")):
+                       ("custo_nf", "NUMERIC"), ("acrescimo_rateado", "NUMERIC"), ("total_nf", "NUMERIC"),
+                       # (21/10/2026) estorno de documento: lote = uma entrada; estorno_de aponta o movimento original
+                       ("lote", "UUID"), ("estorno_de", "UUID"), ("estornado_em", "TIMESTAMPTZ")):
         await ajard_query(
             f"ALTER TABLE manutencao.movimentacoes ADD COLUMN IF NOT EXISTS {_col} {_ddl}",
             fetch="none")
@@ -4723,6 +4786,8 @@ async def _entrada_core(d, payload):
                 f"(diferença R$ {total_nf - esperado:+.2f})."))
     fator = ((acrescimos - desconto) / soma_itens) if soma_itens > 0 else 0.0
     rateio_acum, n_itens = 0.0, len(itens)
+    import uuid as _uuid
+    lote = str(_uuid.uuid4())
 
     lancados, total_doc = [], 0.0
     for idx, it in enumerate(itens):
@@ -4789,15 +4854,15 @@ async def _entrada_core(d, payload):
             INSERT INTO manutencao.movimentacoes
                 (tipo, peca_id, almox_destino, quantidade, ot_id, usuario_id, observacao,
                  custo_unitario, documento_tipo, documento_numero, fornecedor_id, oc_numero, rubrica,
-                 custo_nf, acrescimo_rateado, total_nf)
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+                 custo_nf, acrescimo_rateado, total_nf, lote)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
             (tipo_mov, p["id"], destino, qtd,
              (ot_id if doc_tipo == "aplicacao_direta" else None), uid,
              (d.get("observacao") or "").strip() or None, custo,
              doc_tipo, doc_num or None, d.get("fornecedor_id") or None,
              (d.get("oc_numero") or "").strip() or None, rub,
              (round(custo_nf, 4) if custo_nf is not None else None), rateado,
-             (round(total_nf, 2) if total_nf is not None else None)), fetch="none")
+             (round(total_nf, 2) if total_nf is not None else None), lote), fetch="none")
         total_doc += qtd * (custo or 0)
         lancados.append(cod)
     # (21/10/2026) itens que entraram no almoxarifado sem endereço (C-P-N): o front obriga a endereçar
@@ -4816,7 +4881,7 @@ async def _entrada_core(d, payload):
             quantidades[c_] = quantidades.get(c_, 0) + int(float(str(it.get("quantidade") or 0).replace(",", ".")))
         except ValueError:
             pass
-    return {"ok": True, "documento": doc_num or doc_tipo, "itens": len(lancados), "codigos": lancados, "quantidades": quantidades,
+    return {"ok": True, "documento": doc_num or doc_tipo, "itens": len(lancados), "codigos": lancados, "quantidades": quantidades, "lote": lote,
             "destino": (d.get("destino") or "").strip() or None, "sem_local": sem_local,
             "total": round(total_doc, 2), "itens_nf": round(soma_itens, 2),
             "acrescimos": round(acrescimos, 2), "desconto": round(desconto, 2)}
