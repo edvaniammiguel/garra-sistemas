@@ -4399,7 +4399,7 @@ async function otPecasRender(){
         : '');
 }
 function otAplicDireta(){
-  if (_tiposDoc === null) { _tiposDocumento().then(() => { const b = document.getElementById('ot-aplic'); if (b) b.querySelectorAll('select.doctipo').forEach(sl => { sl.innerHTML = _tiposDocOpts('02'); }); }); }
+  if (_tiposDoc === null) { _tiposDocumento().then(() => { const b = document.getElementById('ot-aplic'); if (b) b.querySelectorAll('select.doctipo').forEach(sl => { sl.innerHTML = _tiposDocOpts('03'); }); }); }
   let b = document.getElementById('ot-aplic');
   if (!b){
     b = document.createElement('div'); b.id = 'ot-aplic';
@@ -4417,7 +4417,7 @@ function otAplicDireta(){
     + '<div class="mfield" style="width:60px">UN<input class="c" value="UN"></div>'
     + '<div class="mfield" style="width:100px">Custo un.<input class="v" type="number" step="0.01" oninput="pcTotLinha(this)"></div>'
     + '<div class="mfield" style="flex:1">Total<div class="t" style="padding:6px 0;font-weight:700;color:#1A2A5E">—</div></div></div>'
-    + '<div style="display:flex;gap:8px;margin-top:6px"><div class="mfield" style="width:170px">Tipo de documento<select class="doctipo">'+_tiposDocOpts('02')+'</select></div>'
+    + '<div style="display:flex;gap:8px;margin-top:6px"><div class="mfield" style="width:170px">Tipo de documento<select class="doctipo">'+_tiposDocOpts('03')+'</select></div>'
     + '<div class="mfield" style="flex:1">Nº documento (NF/cupom/oficina — opcional)<input class="ref" placeholder="ex.: 887 · Oficina NS"></div></div>'
     + '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">'
     + '<button class="btn" onclick="document.getElementById(\'ot-aplic\').style.display=\'none\'">Cancelar</button>'
@@ -4433,7 +4433,7 @@ async function otAplicOK(){
   if (qtd <= 0){ mostrarToast('Quantidade deve ser positiva','warn'); return; }
   try {
     const r = await mntFetch('/manutencao/api/entradas', { method:'POST', body: JSON.stringify({
-      documento_tipo: (q('doctipo')||{}).value || '02', destino_tipo: 'ot',
+      documento_tipo: (q('doctipo')||{}).value || '03', destino_tipo: 'ot',
       documento_numero: q('ref').value.trim(),
       ot_id: _otAberta.id,
       observacao: 'Aplicação direta OT '+_otAberta.numero,
@@ -4581,7 +4581,7 @@ function otSaidaRemLinha(el){
   row.remove();
 }
 function otSaidaAbrir(){
-  if (_tiposDoc === null) { _tiposDocumento().then(() => { const b = document.getElementById('ot-saida'); if (b) b.querySelectorAll('select.doctipo').forEach(sl => { sl.innerHTML = _tiposDocOpts('02'); }); }); }
+  if (_tiposDoc === null) { _tiposDocumento().then(() => { const b = document.getElementById('ot-saida'); if (b) b.querySelectorAll('select.doctipo').forEach(sl => { sl.innerHTML = _tiposDocOpts('03'); }); }); }
   const alms = (_otPc.alms || []).filter(a=>a.ativo!==false);
   const o = _otAberta || {};
   let b = document.getElementById('ot-saida');
@@ -4598,7 +4598,7 @@ function otSaidaAbrir(){
     +   '<label style="display:flex;align-items:center;gap:5px;cursor:pointer"><input type="radio" name="sai-tipo" value="estoque" onchange="otSaidaModo(\'estoque\')"> Saída Armazém <span class="muted">(baixa do estoque)</span></label>'
     + '</div>'
     + '<div class="panel doc-wrap"><div class="dsec" style="margin-top:0">Documento de custo</div><div style="display:flex;gap:8px;flex-wrap:wrap">'
-    +   '<div class="mfield" style="width:150px">Tipo de documento<select class="doctipo">'+_tiposDocOpts('02')+'</select></div>'
+    +   '<div class="mfield" style="width:150px">Tipo de documento<select class="doctipo">'+_tiposDocOpts('03')+'</select></div>'
     +   '<div class="mfield" style="width:130px">Nº documento<input class="ref" placeholder="ex.: 887"></div>'
     +   '<div class="mfield" style="flex:1;min-width:220px">Fornecedor<select class="forn">'+fornOpts+'</select></div>'
     + '</div></div>'
@@ -4660,7 +4660,7 @@ async function otSaidaOK(){
   const ref = (b.querySelector('.ref')||{}).value?.trim() || '', forn = (b.querySelector('.forn')||{}).value || null;
   const aplicar = async (lista) => {
     const r = await mntFetch('/manutencao/api/entradas', { method:'POST', body: JSON.stringify({
-      documento_tipo: ((b.querySelector('.doctipo')||{}).value || '02'), destino_tipo: 'ot', documento_numero: ref, fornecedor_id: forn, ot_id: _otAberta.id,
+      documento_tipo: ((b.querySelector('.doctipo')||{}).value || '03'), destino_tipo: 'ot', documento_numero: ref, fornecedor_id: forn, ot_id: _otAberta.id,
       observacao: 'Aplicação direta OT '+_otAberta.numero + (ref ? ' · '+ref : ''),
       itens: lista.map(i => ({ peca: i.peca, descricao: i.descricao, quantidade: i.quantidade, un: i.un, custo_unitario: i.custo_unitario, conta: i.conta })) })});
     mostrarToast('⚡ '+lista.length+' item(ns) aplicado(s) na OT'+(r.total?' · R$ '+r.total.toFixed(2):''), 'ok');
@@ -4707,7 +4707,7 @@ async function otConsumoEditar(it){
     + '<div class="muted" style="font-size:11px;margin-bottom:6px">'+(direta ? 'Aplicação directa' : it.tipo === 'saida' ? 'Saída do armazém '+_esc(it.alm)+' — trocar peça ou quantidade acerta o estoque' : 'Devolução')+'</div>'
     // 1) Documento de custo e fornecedor (padrão MWW: o documento vem primeiro)
     + '<div class="panel"><div class="dsec" style="margin-top:0">Documento de custo</div><div style="display:flex;gap:8px;flex-wrap:wrap">'
-    + '<div class="mfield" style="width:160px">Tipo de documento<select id="ce-doctipo">'+_tiposDocOpts(it.doctipo||'02')+'</select></div>'
+    + '<div class="mfield" style="width:160px">Tipo de documento<select id="ce-doctipo">'+_tiposDocOpts(it.doctipo||'03')+'</select></div>'
     + '<div class="mfield" style="width:130px">Nº documento<input id="ce-doc" value="'+_esc(it.doc)+'"></div>'
     + '<div class="mfield" style="flex:1;min-width:200px">Fornecedor<select id="ce-forn">'+fornOpts+'</select></div>'
     + '</div></div>'
@@ -5746,17 +5746,17 @@ async function entradaAbrir(){
   b.innerHTML = '<div style="background:#fff;border-radius:10px;box-shadow:0 12px 32px rgba(15,23,42,.3);padding:16px;width:720px;max-width:96vw;max-height:92vh;overflow:auto">'
     + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><b style="color:#1A2A5E">📥 Entrada de Materiais — por documento</b><span style="cursor:pointer;font-size:16px" onclick="document.getElementById(\'ent-doc\').style.display=\'none\'">✕</span></div>'
     + '<div style="display:flex;gap:8px;flex-wrap:wrap">'
-    + '<div class="mfield" style="width:200px">Destino<select id="ent-dest-tipo" onchange="entradaTipo()">'
-      + '<option value="almox">📦 Almoxarifado (estoque)</option><option value="ot">⚡ Aplicação direta (oficina → OT)</option></select></div>'
-    + '<div class="mfield" style="width:170px">Tipo de documento<select id="ent-tipo">'+_tiposDocOpts('01')+'</select></div>'
+    + '<div class="mfield" style="width:190px">Tipo de documento<select id="ent-tipo">'+_tiposDocOpts('01')+'</select></div>'
     + '<div class="mfield" style="width:130px">Nº documento<input id="ent-num" placeholder="ex.: 12345"></div>'
     + '<div class="mfield" style="flex:1;min-width:180px">Fornecedor<select id="ent-forn"><option value="">— nenhum —</option>'
       + (_mntFornList||[]).map(f=>'<option value="'+f.id+'">'+_esc(f.nome)+'</option>').join('')+'</select></div>'
     + '<div class="mfield" style="width:120px">OC nº<input id="ent-oc" placeholder="opcional"></div>'
     + '</div>'
     + '<div style="display:flex;gap:8px;margin-top:4px">'
-    + '<div class="mfield" id="ent-dest-w" style="flex:1">Almoxarifado de destino<select id="ent-dest">'
-      + alms.map(a=>'<option value="'+_esc(a.codigo)+'"'+(a.codigo===_almFiltro?' selected':'')+'>'+_esc(a.codigo)+' — '+_esc(a.nome||'')+'</option>').join('')+'</select></div>'
+    // (21/10/2026) um só campo de destino: almoxarifado OU aplicação direta na OT (sem campo "Destino" separado)
+    + '<div class="mfield" id="ent-dest-w" style="flex:1">Destino<select id="ent-dest" onchange="entradaTipo()">'
+      + alms.map(a=>'<option value="'+_esc(a.codigo)+'"'+(a.codigo===_almFiltro?' selected':'')+'>📦 '+_esc(a.codigo)+' — '+_esc(a.nome||'')+'</option>').join('')
+      + '<option value="__ot">⚡ Aplicação direta (oficina → OT, não passa pelo estoque)</option></select></div>'
     + '<div class="mfield" id="ent-ot-w" style="flex:1;display:none">OT que consumiu (obrigatório) <select id="ent-ot"><option value="">— escolher —</option>'
       + (_entOTs||[]).map(o=>'<option value="'+o.id+'">'+_esc(o.numero)+' — '+_esc(o.equipamento_codigo||'')+' · '+_esc((o.descricao||'').slice(0,40))+'</option>').join('')+'</select></div>'
     + '<div class="mfield" style="flex:1">Observação<input id="ent-obs" placeholder="ex.: serviço oficina NS…"></div>'
@@ -5813,9 +5813,9 @@ function entradaEnter(ev){
   if (prox){ prox.focus(); if (prox.select) prox.select(); }
 }
 function entradaTipo(){
-  const direta = document.getElementById('ent-dest-tipo').value === 'ot';
-  document.getElementById('ent-dest-w').style.display = direta ? 'none' : '';
+  const direta = document.getElementById('ent-dest').value === '__ot';
   document.getElementById('ent-ot-w').style.display = direta ? '' : 'none';
+  const t = document.getElementById('ent-tipo'); if (direta && t && [...t.options].some(o => o.value === '03')) t.value = '03';   // oficina → BALCAO
 }
 function entradaItem(){
   const c = document.getElementById('ent-itens'); if (!c) return;
@@ -5862,7 +5862,7 @@ function entradaTotal(){
 }
 async function entradaOK(){
   const g = id => document.getElementById(id);
-  const tipo = g('ent-dest-tipo').value === 'ot' ? 'aplicacao_direta' : 'almox';
+  const tipo = g('ent-dest').value === '__ot' ? 'aplicacao_direta' : 'almox';
   const itens = [];
   document.querySelectorAll('#ent-itens .plf-pc-row').forEach(r => {
     const q = cls => r.querySelector('.'+cls).value.trim();
@@ -5907,17 +5907,18 @@ function entradaPosFechar(r){
     document.body.appendChild(b);
   }
   const semLoc = new Set((r.sem_local||[]).map(x => x.codigo));
-  // (21/10/2026) quantidade de etiquetas por item: padrão 1 (uma por prateleira/caixa); "= qtd da entrada" marca uma por unidade
+  // (21/10/2026) quantidade de etiquetas por item: padrão = quantidade que ENTROU (uma por unidade — serve para conferir
+  // peça a peça o que chegou); "1 por item" é a alternativa para quem etiqueta só a prateleira
   const qtdEnt = r.quantidades || {};
   const linhas = (r.codigos||[]).map(c => '<div class="plf-pc-row" style="display:flex;gap:8px;align-items:center;margin:3px 0">'
     + '<input type="checkbox" class="etq" value="'+_esc(c)+'" checked><span class="mono bold" style="width:140px">'+_esc(c)+'</span>'
     + '<span class="muted" style="font-size:10px;flex:1">'+(semLoc.has(c) ? '📍 sem endereço — etiqueta sai com Local: —' : 'endereçado')+'</span>'
-    + '<span class="muted" style="font-size:10px">× </span><input class="etq-n" type="number" min="1" max="50" value="1" data-ent="'+(qtdEnt[c]||1)+'" style="width:52px" title="quantas etiquetas deste item (entrou '+(qtdEnt[c]||1)+')"></div>').join('');
+    + '<span class="muted" style="font-size:10px">× </span><input class="etq-n" type="number" min="1" max="200" value="'+Math.max(1, Math.min(200, qtdEnt[c]||1))+'" data-ent="'+(qtdEnt[c]||1)+'" style="width:56px" title="quantas etiquetas deste item (entrou '+(qtdEnt[c]||1)+')"></div>').join('');
   b.innerHTML = '<div style="background:#fff;border-radius:10px;box-shadow:0 12px 32px rgba(15,23,42,.3);padding:16px;width:520px;max-width:96vw">'
     + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><b style="color:#1A2A5E">🏷 Etiquetas da entrada '+_esc(r.documento||'')+' · '+_esc(r.destino)+'</b><span style="cursor:pointer;font-size:16px" onclick="document.getElementById(\'ent-pos\').style.display=\'none\'">✕</span></div>'
-    + '<div class="dsec">Itens do documento <span class="muted" style="font-weight:400">— desmarque o que não quer etiquetar agora · ajuste a quantidade de etiquetas</span></div>'
+    + '<div class="dsec">Itens do documento <span class="muted" style="font-weight:400">— uma etiqueta por unidade que entrou (confere peça a peça) · desmarque ou ajuste a quantidade</span></div>'
     + '<div id="ent-pos-itens">'+linhas+'</div>'
-    + '<div style="display:flex;gap:10px;font-size:10px;margin-top:4px"><a href="#" onclick="event.preventDefault();document.querySelectorAll(\'#ent-pos-itens .etq-n\').forEach(i=>i.value=1)">1 por item</a><a href="#" onclick="event.preventDefault();document.querySelectorAll(\'#ent-pos-itens .etq-n\').forEach(i=>i.value=i.dataset.ent)">1 por unidade (qtd da entrada)</a></div>'
+    + '<div style="display:flex;gap:10px;font-size:10px;margin-top:4px"><a href="#" onclick="event.preventDefault();document.querySelectorAll(\'#ent-pos-itens .etq-n\').forEach(i=>i.value=i.dataset.ent)">1 por unidade (qtd da entrada)</a><a href="#" onclick="event.preventDefault();document.querySelectorAll(\'#ent-pos-itens .etq-n\').forEach(i=>i.value=1)">1 por item</a></div>'
     + '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">'
     + '<button class="btn" onclick="document.getElementById(\'ent-pos\').style.display=\'none\'">Agora não</button>'
     + '<button class="btn p" id="ent-pos-ok" onclick="entradaPosOK()">🏷 Imprimir etiquetas</button></div></div>';
@@ -6361,14 +6362,10 @@ async function artJanela(codigo, opts){
     + abas.map(([k,t],i)=>'<div class="mtab'+(i===0?' on':'')+'" id="art-t-'+k+'" onclick="artAba(\''+k+'\')">'+t+'</div>').join('')
     + '</div>'
     + '<div id="art-p-id" style="padding:8px 2px"><div style="display:flex;gap:14px;flex-wrap:wrap">'
-      + '<div style="flex:1;min-width:260px">'
-      + '<div class="mfield">Classe<input id="art-id-classe" readonly style="background:#F8FAFC;font-weight:700;color:#1A2A5E"></div>'
-      + '<div class="mfield" style="margin-top:6px">Família<input id="art-id-fam" readonly style="background:#F8FAFC;font-weight:700;color:#1A2A5E"></div>'
-      + '<div class="mfield" style="margin-top:6px">Subfamília<input id="art-id-sub" readonly style="background:#F8FAFC;font-weight:700;color:#1A2A5E"></div>'
+      // (21/10/2026) sem repetir Classe/Família/Subfamília (já estão na Estrutura, acima)
       + '<input type="hidden" id="art-classe" value="'+_esc(classeSel)+'">'
-      + '</div>'
-      + '<div style="width:200px;height:150px;border:1px solid #CBD5E1;border-radius:6px;display:flex;align-items:center;justify-content:center" class="muted">Figura (em breve)</div>'
-      + '</div><div class="muted" style="font-size:10px;margin-top:6px">A estrutura escolhida acima define Classe → Família → Subfamília (Norma de materiais, padrão ManWinWin).</div></div>'
+      + '<div class="muted" style="font-size:11px">Identificação = Estrutura (Classe → Família → Subfamília → Sequência) + Cód. Fabricante + Descrição, preenchidos acima. O código Garra proposto aparece na aba Codificação.</div>'
+      + '</div></div>'
     + '<div id="art-p-cod" style="display:none;padding:8px 2px">'
       + '<div class="mfield">Código Garra (estrutura Família.Sub.Sequência — proposto ao escolher a família, editável antes de gravar)<input value="'+_esc(p.codigo||'—')+'" readonly style="background:#F8FAFC"></div>'
       + '<div class="mfield" style="margin-top:6px">Cód. Externo (nota do fornecedor / de-para)<input id="art-ext" value="'+_esc(p.codigo_externo||'')+'"></div>'
