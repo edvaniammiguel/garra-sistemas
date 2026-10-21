@@ -3208,6 +3208,9 @@ function xlsListaAtual(aba){
 async function relatoriosJanela(nome){
   if (!_relCat) { try { _relCat = await mntFetch('/manutencao/api/relatorios'); } catch(e){ mostrarToast('❌ ' + e.message, 'warn'); return; } }
   await _sistemas(); if (!_mntEquipList.length) { try { await carregarEquipReais(); } catch(e){} }
+  // (21/10/2026) listas dos filtros de Entradas (fornecedor, almoxarifado)
+  if (!_mntFornList || !_mntFornList.length) { try { _mntFornList = await mntFetch('/manutencao/api/fornecedores'); } catch(e){ _mntFornList = _mntFornList || []; } }
+  if (!_almList) { try { const a = await mntFetch('/manutencao/api/almoxarifados'); _almList = Array.isArray(a) ? a : (a.almoxarifados || []); } catch(e){ _almList = []; } }
   await _tiposTrab();
   const setores = await _setoresInterventor();
   if (!_relF.ate) { const h = new Date(); _relF.ate = h.toISOString().slice(0,10); const d = new Date(h); d.setFullYear(d.getFullYear()-1); _relF.de = d.toISOString().slice(0,10); }
@@ -3244,6 +3247,11 @@ function relEscolher(nome){
   if (f.includes('tipo_trabalho')) h += fld('Tipo trab.', '<select id="rf-tt">' + opt([{v:'A',t:'A — Preventivo sistemático'},{v:'B',t:'B — Preventivo condicionado'},{v:'C',t:'C — Corretivo'},{v:'M',t:'M — Melhoria'}].concat((D.tipos||[]).map(x => ({v: x.codigo, t: x.codigo + ' — ' + (x.nome||'')}))), F.tipo_trabalho, '— todos —') + '</select>', 170);
   if (f.includes('setor')) h += fld('Setor', '<select id="rf-setor">' + opt((D.setores||[]).map(x => ({v: x.codigo, t: x.codigo + ' — ' + (x.nome||'')})), F.setor, '— todos —') + '</select>', 150);
   if (f.includes('familia')) h += fld('Família', '<input id="rf-fam" value="' + _esc(F.familia) + '" placeholder="ex.: AC ou AC.010">', 120);
+  // (21/10/2026) filtros dos relatórios de Entradas
+  if (f.includes('item')) h += fld('Item', '<input id="rf-item" value="' + _esc(F.item||'') + '" placeholder="código ou descrição">', 170);
+  if (f.includes('fornecedor')) h += fld('Fornecedor', '<select id="rf-forn">' + opt((_mntFornList||[]).map(x => ({v: x.id, t: x.nome})), F.fornecedor_id, '— todos —') + '</select>', 200);
+  if (f.includes('documento')) h += fld('Documento', '<input id="rf-doc" value="' + _esc(F.documento||'') + '" placeholder="nº NF / cupom">', 120);
+  if (f.includes('almox')) h += fld('Almoxarifado', '<select id="rf-almox">' + opt((_almList||[]).map(x => ({v: x.codigo, t: x.codigo + ' — ' + (x.nome||'')})), F.almox, '— todos —') + '</select>', 150);
   h += '<div style="display:flex;gap:6px;margin-left:auto;padding-bottom:2px"><button class="btn p" onclick="relGerar()">▶ Gerar</button>'
     + '<button class="btn" onclick="relPDF()">📄 PDF</button><button class="btn" style="background:#107C41;color:#fff;border-color:#107C41" onclick="relExcel()">⬇ Excel</button></div>';
   document.getElementById('rel-filtros').innerHTML = h;
@@ -3260,7 +3268,8 @@ function _relQuery(){
   const g = id => (document.getElementById(id) || {}).value || '';
   const anoOk = v => !v || (parseInt(v.slice(0,4),10) >= 2000 && parseInt(v.slice(0,4),10) <= 2100);
   if (!anoOk(g('rf-de')) || !anoOk(g('rf-ate'))) { mostrarToast('⚠️ Data com ano inválido — digite o ano completo', 'warn'); return null; }
-  Object.assign(_relF, { de: g('rf-de') || _relF.de, ate: g('rf-ate') || _relF.ate, sistema: g('rf-sis'), equipamento_id: g('rf-eq'), tipo_trabalho: g('rf-tt'), setor: g('rf-setor'), familia: g('rf-fam') });
+  Object.assign(_relF, { de: g('rf-de') || _relF.de, ate: g('rf-ate') || _relF.ate, sistema: g('rf-sis'), equipamento_id: g('rf-eq'), tipo_trabalho: g('rf-tt'), setor: g('rf-setor'), familia: g('rf-fam'),
+                         item: g('rf-item'), fornecedor_id: g('rf-forn'), documento: g('rf-doc'), almox: g('rf-almox') });
   const cfg = _relCfg(_relAtual) || {filtros: []}; const q = [];
   const add = (k, v) => { if (v) q.push(k + '=' + encodeURIComponent(v)); };
   if (cfg.filtros.includes('periodo')) { add('de', _relF.de); add('ate', _relF.ate); }
@@ -3269,6 +3278,10 @@ function _relQuery(){
   if (cfg.filtros.includes('tipo_trabalho')) add('tipo_trabalho', _relF.tipo_trabalho);
   if (cfg.filtros.includes('setor')) add('setor', _relF.setor);
   if (cfg.filtros.includes('familia')) add('familia', _relF.familia);
+  if (cfg.filtros.includes('item')) add('item', _relF.item);
+  if (cfg.filtros.includes('fornecedor')) add('fornecedor_id', _relF.fornecedor_id);
+  if (cfg.filtros.includes('documento')) add('documento', _relF.documento);
+  if (cfg.filtros.includes('almox')) add('almox', _relF.almox);
   return q.join('&');
 }
 async function relGerar(){
