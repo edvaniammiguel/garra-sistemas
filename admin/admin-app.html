@@ -2572,7 +2572,10 @@ function renderSidebar(perfil, perms) {
         Manual do Colaborador
       </div>`;
 
-  html += `</div><div class="sb-divider"></div>
+  // (21/10/2026) OS, Controle Mensal, Agenda e Cadastros são o "Painel de gestão" = módulo Admin Master.
+  // Antes eram liberados pelo PERFIL (gestor/luana) e a exceção "Bloqueado" na tela de Permissões não valia.
+  const painelGestao = isAdmin || temPerm('admin_master');
+  html += `</div><div class="sb-divider"></div>` + (painelGestao ? `
     <div class="sb-section">
       <span class="sb-label">Gestão Administrativa</span>
       <div class="sb-item" onclick="navTo('os',this)">
@@ -2582,8 +2585,10 @@ function renderSidebar(perfil, perms) {
       <div class="sb-item" onclick="navTo('controle-mensal',this)">
         <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
         Controle Mensal
-      </div>` +
-      ((isAdmin || perfil === 'gestor' || perfil === 'luana') ? `
+      </div>` : `
+    <div class="sb-section">
+      <span class="sb-label">Gestão Administrativa</span>`) +
+      ((painelGestao) ? `
       <div class="sb-item" onclick="navTo('agenda',this)">
         <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><path d="M8 14l2 2 4-4"/></svg>
         Agenda <span class="sb-badge" id="sb-agenda-count">–</span>
@@ -2605,8 +2610,8 @@ function renderSidebar(perfil, perms) {
       </div>` : '') + `
     </div><div class="sb-divider"></div>`;
 
-  // Cadastros — admin/gestor/luana
-  if (isAdmin || perfil === 'gestor' || perfil === 'luana') {
+  // Cadastros — painel de gestão (Admin Master)
+  if (painelGestao) {
     html += `<div class="sb-section"><span class="sb-label">Cadastros</span>
       <div class="sb-item" onclick="navTo('clientes',this)">
         <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
@@ -2731,7 +2736,7 @@ const MODULOS_DASHBOARD = [
   {
     id: 'pedir_ot',
     icon: '📨', nome: 'Pedir OT', desc: 'Pedido de manutenção · Minhas · Apontar execução',
-    status: 'dev', badge: 'badge-orange',
+    status: 'teste', badge: 'badge-orange',
     url: '/manutencao/pedido',
     externo: true,
   },
@@ -2798,7 +2803,9 @@ async function renderModulos(usuarioId, perfil) {
     return padrao.includes(id);
   };
 
-  const cards = MODULOS_DASHBOARD.map(m => {
+  // (21/10/2026) ordem dos quadrantes: Produção → Em teste → Em desenvolvimento → Planejado (dentro do grupo, ordem do cadastro)
+  const ORDEM_STATUS = { producao: 0, teste: 1, dev: 2, planejado: 3 };
+  const cards = MODULOS_DASHBOARD.slice().sort((a, b) => (ORDEM_STATUS[a.status] ?? 9) - (ORDEM_STATUS[b.status] ?? 9)).map(m => {
     // Verificar permissão usando a função temPerm definida acima
     const hasAccess = temPerm(m.id);
 
