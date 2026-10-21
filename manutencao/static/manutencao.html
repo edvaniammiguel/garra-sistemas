@@ -1968,7 +1968,8 @@ const _MW = {
       ['\u22ef','Mais',[['\u2699\ufe0f Parametrizar',"showModule('param')"]]],
       ['\ud83d\udd27','Ferramentas',[
         {sub:'\ud83d\udcd2 Registros', itens:[['\ud83d\udce5 Entrada',"almMovAbrir('entrada')"],['\ud83d\udce4 Sa\u00edda',"almMovAbrir('saida')"],['\u21c4 Transfer\u00eancia',"almMovAbrir('transferencia')"],['\ud83e\uddee Ajuste de saldo',"almMovAbrir('ajuste')"]]},
-        ['\ud83d\udccb Invent\u00e1rio',"inventarioJanela()"]]]
+        ['\ud83d\udccb Invent\u00e1rio',"inventarioJanela()"],
+        ['\ud83c\udff7 Etiquetas de itens',"etiquetasItens()"]]]
     ],
     busca:'alm-busca'
   }
@@ -3678,6 +3679,18 @@ function otTipoDerivado(){
   chip.textContent = cls ? cls.charAt(0).toUpperCase() + cls.slice(1) : '';
   chip.title = 'Classe da OT — deriva do Tipo de Trabalho';
 }
+// (20/10/2026) Etiquetas de item no molde da Edvania (Letter 2×5): item marcado, família/classe filtrada ou almoxarifado atual
+function etiquetasItens(){
+  const sel = _mwSel.alm || '', fam = _almFamSel || '', alm = (_almLente === 'armazem' && _almFiltro && _almFiltro !== '_todos') ? _almFiltro : '';
+  const ops = [];
+  if (sel) ops.push(['1', 'Item marcado: '+sel, '/manutencao/etiquetas?codigos='+encodeURIComponent(sel)]);
+  if (fam) ops.push(['2', 'Família/classe filtrada: '+fam, '/manutencao/etiquetas?familia='+encodeURIComponent(fam)]);
+  if (alm) ops.push(['3', 'Almoxarifado '+alm+' (itens com existência)', '/manutencao/etiquetas?almox='+encodeURIComponent(alm)]);
+  if (!ops.length){ mostrarToast('Marque um item, filtre uma família ou escolha um almoxarifado', 'warn'); return; }
+  if (ops.length === 1){ window.open(ops[0][2], '_blank'); return; }
+  const r = prompt('Etiquetas de itens — o que imprimir?\n'+ops.map(o => o[0]+') '+o[1]).join('\n'), ops[0][0]);
+  const op = ops.find(o => o[0] === String(r||'').trim()); if (op) window.open(op[2], '_blank');
+}
 function _novaSync(){
   const g = id => document.getElementById(id);
   const d = _novaDraft; if (!d) return;
@@ -4435,8 +4448,33 @@ async function pcSaldoInfo(row, cod){
       if (best && parseFloat(best.quantidade) > 0) alm.value = best.almox;
     }
     if (el.style.display !== 'none') el.innerHTML = its.length ? 'Saldo: ' + its.map(x => '<b>'+_esc(x.almox)+'</b> '+parseFloat(x.quantidade||0).toLocaleString('pt-BR')).join(' · ') : '<span style="color:#B45309">Sem saldo em nenhum almoxarifado</span>';
-    if (row.closest('#ot-saida')) { otSaidaRubrica(true, tot ? 'estoque' : 'direta'); if (!tot) { row.querySelector('.aviso').textContent = 'Sem saldo no estoque — se veio de fora, escolha uma conta de aplicação direta.'; otSaidaSubstituto(row, cod); } else otSaidaChecar(); }
+    if (row.closest('#ot-saida')) { otSaidaRubrica(true, tot ? 'estoque' : 'direta'); if (!tot) { row.querySelector('.aviso').textContent = 'Sem saldo no estoque — se veio de fora, escolha uma conta de aplicação direta.'; otSaidaSubstituto(row, cod); } else { otSaidaChecar(); otSaidaComprometido(row, cod); } }
   } catch(e){}
+}
+// (20/10/2026) COMPROMETIDO: item previsto em OT programada (FMP). A urgência não é bloqueada —
+// equipamento parado vale mais que preventiva agendada — mas a gestão vê o impacto e pode gerar a OC na hora.
+async function otSaidaComprometido(row, cod){
+  try {
+    const c = await mntFetch('/manutencao/api/pecas/'+encodeURIComponent(cod)+'/comprometido');
+    row._comp = c;
+    const av = row.querySelector('.aviso'); if (!av || !c.comprometido) return;
+    const lst = (c.ots||[]).map(o => o.numero+' ('+o.equipamento+(o.data_prevista ? ' · '+_fmtData(o.data_prevista) : '')+')').join(', ');
+    av.innerHTML = '<span style="color:#B45309">📌 '+c.comprometido.toLocaleString('pt-BR')+' previsto(s) em OT programada: '+_esc(lst)+' — disponível hoje: <b>'+c.disponivel.toLocaleString('pt-BR')+'</b></span>';
+  } catch(e){}
+}
+async function otSaidaRepor(itens){
+  // itens baixados cuja saída deixou o disponível negativo → OC de reposição em rascunho no Compras
+  const falta = [];
+  for (const i of itens) {
+    const c = i._row && i._row._comp; if (!c) continue;
+    const deficit = (c.comprometido + i.quantidade) - c.saldo;
+    if (deficit > 0) falta.push({ peca_id: c.peca_id, descricao: c.codigo+' — '+(c.descricao||''), quantidade: Math.ceil(deficit), unidade: c.unidade||'UN', valor_unit: c.custo_medio||0, _ots: (c.ots||[]).map(o=>o.numero).join(', ') });
+  }
+  if (!falta.length) return;
+  const lista = falta.map(f => '• '+f.descricao+' — repor '+f.quantidade+' '+f.unidade+' (previsto em '+f._ots+')').join('\n');
+  if (!confirm('Esta baixa consumiu peça prevista em OT programada:\n\n'+lista+'\n\nGerar solicitação de compra (OC em rascunho no Compras) para repor?')) return;
+  await _criarOCs({'': falta.map(f => ({ peca_id: f.peca_id, descricao: f.descricao, quantidade: f.quantidade, unidade: f.unidade, valor_unit: f.valor_unit }))},
+    { ot_id: _otAberta.id, prioridade: 'normal' }, 'ot');
 }
 // (20/10/2026) Peça sem saldo na OT → oferece o substituto cadastrado que tem saldo (padrão MWW)
 async function otSaidaSubstituto(row, cod){
@@ -4600,13 +4638,13 @@ async function otSaidaOK(){
     if (direta) { await aplicar(itens); }
     else {
       const alm = (b.querySelector('.alm')||{}).value;
-      const semSaldo = [];
+      const semSaldo = [], baixados = [];
       for (const i of itens) {
         try {
           await mntFetch('/manutencao/api/estoque/movimentar', { method:'POST', body: JSON.stringify({
             tipo:'saida', peca: i.peca, origem: alm, quantidade: i.quantidade, custo_unitario: i.custo_unitario,
             ot_id: _otAberta.id, conta: i.conta, observacao: 'Consumo OT '+_otAberta.numero })});
-          i._row.remove();
+          baixados.push(i); i._row.remove();
         } catch(e) {
           if (/saldo insuficiente|sem saldo|não cadastrada|nao cadastrada|não há saldo/i.test(e.message)) semSaldo.push(i); else throw e;
         }
@@ -4615,6 +4653,9 @@ async function otSaidaOK(){
         if (confirm('Sem saldo em '+alm+' para: '+semSaldo.map(i=>i.peca).join(', ')+'.\n\nLançar esses como APLICAÇÃO DIRECTA (vieram de fora, sem passar pelo estoque)?')) await aplicar(semSaldo);
         else { otPecasRender(); mostrarToast('Itens sem saldo ficaram na janela', 'warn'); return; }
       } else mostrarToast('✅ Baixa registrada', 'ok');
+      b.style.display = 'none'; otPecasRender();
+      await otSaidaRepor(baixados);   // (20/10/2026) comprometido → OC de reposição
+      return;
     }
     b.style.display = 'none';
     otPecasRender();
@@ -5534,7 +5575,7 @@ async function almVistaBaixo(){
   _almVista = 'baixo';
   montarNavAlm();
   const th = document.getElementById('alm-thead');
-  if (th) th.innerHTML = '<th style="width:26px"><input type="checkbox" title="marcar todos" onchange="document.querySelectorAll(\'#alm-tbody .eb-ck\').forEach(c=>c.checked=this.checked)"></th><th style="width:100px">Código</th><th>Descrição</th><th style="width:60px">Local</th><th class="r" style="width:56px">Saldo</th><th class="r" style="width:56px">Mín</th><th class="r" style="width:56px">Máx</th><th class="r" style="width:70px">Em pedido</th><th class="r" style="width:70px">A conferir</th><th class="r" style="width:70px">Sugestão</th><th style="width:150px">Fornecedor ref.</th>';
+  if (th) th.innerHTML = '<th style="width:26px"><input type="checkbox" title="marcar todos" onchange="document.querySelectorAll(\'#alm-tbody .eb-ck\').forEach(c=>c.checked=this.checked)"></th><th style="width:100px">Código</th><th>Descrição</th><th style="width:60px">Local</th><th class="r" style="width:56px">Saldo</th><th class="r" style="width:60px" title="Previsto nas OTs programadas">Comprom.</th><th class="r" style="width:56px">Mín</th><th class="r" style="width:56px">Máx</th><th class="r" style="width:70px">Em pedido</th><th class="r" style="width:70px">A conferir</th><th class="r" style="width:70px">Sugestão</th><th style="width:150px">Fornecedor ref.</th>';
   renderEstoqueBaixo();
 }
 async function almVistaMov(){
@@ -5800,6 +5841,7 @@ function almLente(l){
       + '<th style="width:56px">Unid.</th><th style="width:90px" class="r">Custo médio</th>'
     : '<th style="width:100px">Código</th><th>Descrição</th><th style="width:60px">🏬 Local</th>'
       + '<th style="width:90px">Endereço</th><th style="width:74px" class="r">Existência</th>'
+      + '<th style="width:64px" class="r" title="Previsto nas OTs programadas (itens da FMP)">Comprom.</th><th style="width:64px" class="r" title="Existência − comprometido">Dispon.</th>'
       + '<th style="width:50px" class="r">Mín</th><th style="width:46px">UN</th><th style="width:90px" class="r">Custo médio</th>';
   _almVista = 'lista';
   const ops = document.getElementById('alm-ops');
@@ -5859,12 +5901,12 @@ async function renderEstoqueBaixo(){
       + '<td class="bold" style="cursor:pointer" onclick="mwSel(\'alm\',\''+_esc(b.codigo).replace(/'/g,'&#39;')+'\');abrirPeca(\''+_esc(b.codigo).replace(/'/g,'&#39;')+'\')">'+_esc(b.codigo)+'</td>'
       + '<td>'+_esc(b.descricao)+(b.ocs_abertas&&b.ocs_abertas.length?' <span class="chip pr" title="'+_esc(b.ocs_abertas.join(', '))+'">já em OC</span>':'')+'</td>'
       + '<td class="muted">'+_esc(b.almox)+(b.localizacao?' · '+_esc(b.localizacao):'')+'</td>'
-      + '<td class="r mono" style="color:#B91C1C">'+n(b.quantidade)+'</td><td class="r mono">'+n(b.minimo)+'</td><td class="r mono">'+(b.maximo!=null?n(b.maximo):'<span class="muted" title="sem máximo: alvo = 2× mínimo">'+n(b.alvo)+'*</span>')+'</td>'
+      + '<td class="r mono" style="color:#B91C1C">'+n(b.quantidade)+'</td><td class="r mono muted" title="disponível '+n(b.disponivel)+'">'+(b.comprometido?n(b.comprometido):'—')+'</td><td class="r mono">'+n(b.minimo)+'</td><td class="r mono">'+(b.maximo!=null?n(b.maximo):'<span class="muted" title="sem máximo: alvo = 2× mínimo">'+n(b.alvo)+'*</span>')+'</td>'
       + '<td class="r mono">'+(b.em_pedido?n(b.em_pedido):'<span class="muted">—</span>')+'</td><td class="r mono">'+(b.a_conferir?n(b.a_conferir):'<span class="muted">—</span>')+'</td>'
       + '<td class="r mono"><b>'+n(b.sugestao)+'</b> '+_esc(b.unidade||'')+'</td>'
       + '<td style="font-size:10px">'+(b.ref_fornecedor_nome?_esc(b.ref_fornecedor_nome)+(b.preco_sugerido!=null?' · R$ '+n(b.preco_sugerido):''):'<span class="muted">sem referência'+(b.preco_sugerido!=null?' · médio R$ '+n(b.preco_sugerido):'')+'</span>')+'</td></tr>'
-    ).join('') || '<tr><td colspan="11" style="padding:14px;color:#16A34A">✔ Nenhuma peça abaixo do mínimo.</td></tr>';
-    if (rows.length) tb.innerHTML += '<tr><td colspan="11" style="padding:8px"><div style="display:flex;justify-content:space-between;align-items:center"><span class="muted" style="font-size:10px">Sugestão = máximo − saldo − em pedido − a conferir. Itens com sugestão &gt; 0 já vêm marcados. A OC nasce em <b>rascunho</b> no Compras, uma por fornecedor de referência (sem referência → OC sem fornecedor, para cotar).</span><button class="btn p" onclick="ocSugerida()">🛒 Gerar OC sugerida</button></div></td></tr>';
+    ).join('') || '<tr><td colspan="12" style="padding:14px;color:#16A34A">✔ Nenhuma peça abaixo do mínimo.</td></tr>';
+    if (rows.length) tb.innerHTML += '<tr><td colspan="12" style="padding:8px"><div style="display:flex;justify-content:space-between;align-items:center"><span class="muted" style="font-size:10px">Sugestão = máximo − saldo − em pedido − a conferir. Itens com sugestão &gt; 0 já vêm marcados. A OC nasce em <b>rascunho</b> no Compras, uma por fornecedor de referência (sem referência → OC sem fornecedor, para cotar).</span><button class="btn p" onclick="ocSugerida()">🛒 Gerar OC sugerida</button></div></td></tr>';
   } catch(e){ mostrarToast('❌ '+e.message,'warn'); }
 }
 let _setorCompras = null;
@@ -5942,10 +5984,12 @@ async function carregarArmazem(q){
       <td><span class="chip pe" style="font-size:9px">${_esc(x.almox)}</span></td>
       <td class="mono">${_esc(x.localizacao || '—')}</td>
       <td class="r mono"${abaixo(x) ? ' style="color:#B91C1C;font-weight:700"' : ''}>${parseFloat(x.quantidade)}</td>
+      <td class="r mono muted">${x.comprometido ? parseFloat(x.comprometido) : '—'}</td>
+      <td class="r mono"${(parseFloat(x.quantidade) - (parseFloat(x.comprometido)||0)) < (parseFloat(x.minimo)||0) && x.minimo != null ? ' style="color:#B45309;font-weight:700"' : ''}>${parseFloat(x.quantidade) - (parseFloat(x.comprometido)||0)}</td>
       <td class="r muted">${x.minimo != null ? parseFloat(x.minimo) : '—'}</td>
       <td>${_esc(x.unidade || '')}</td>
       <td class="r mono">${x.custo_medio != null ? 'R$ ' + parseFloat(x.custo_medio).toFixed(2) : '—'}</td>
-    </tr>`).join('') || '<tr><td colspan="8" style="padding:14px;color:#64748B">Nenhuma existência' + (_almFiltro !== '_todos' ? ' neste local' : '') + ' — dê entrada de peças para povoar.</td></tr>';
+    </tr>`).join('') || '<tr><td colspan="10" style="padding:14px;color:#64748B">Nenhuma existência' + (_almFiltro !== '_todos' ? ' neste local' : '') + ' — dê entrada de peças para povoar.</td></tr>';
   } catch(e){ mostrarToast('❌ '+e.message, 'warn'); }
 }
 let _pcFicha = null;
@@ -6027,7 +6071,13 @@ async function pecaAba(aba){
           + '<button class="btn" title="Máximo (alvo de reposição)" onclick="pecaMaximo(\''+_esc(s.almox)+'\',\''+(s.maximo!=null?s.maximo:'')+'\')">🔝</button>'
           + '</td></tr>').join('')
         + '</tbody></table></div>'
-        + '<div style="display:flex;justify-content:flex-end;margin-top:10px"><button class="btn p" onclick="pecaMovimentar()">↔ Movimentar</button></div>';
+        + '<div id="pc-comp" class="muted" style="font-size:11px;margin-top:6px"></div>'
+        + '<div style="display:flex;justify-content:flex-end;gap:8px;margin-top:10px"><button class="btn" data-c="'+_esc(p.codigo)+'" onclick="window.open(\'/manutencao/etiquetas?codigos=\'+encodeURIComponent(this.dataset.c),\'_blank\')">🏷 Etiqueta</button><button class="btn p" onclick="pecaMovimentar()">↔ Movimentar</button></div>';
+      mntFetch('/manutencao/api/pecas/'+encodeURIComponent(p.codigo)+'/comprometido').then(k => {
+        const el = document.getElementById('pc-comp'); if (!el) return;
+        el.innerHTML = 'Existência <b>'+k.saldo.toLocaleString('pt-BR')+'</b> · comprometido em OTs programadas <b>'+k.comprometido.toLocaleString('pt-BR')+'</b>'
+          + (k.ots.length ? ' ('+_esc(k.ots.map(o=>o.numero+' '+o.equipamento).join(', '))+')' : '') + ' · <b style="color:'+(k.disponivel<0?'#B91C1C':'#15803D')+'">disponível '+k.disponivel.toLocaleString('pt-BR')+'</b>';
+      }).catch(()=>{});
     } catch(e){ c.innerHTML = '<span class="muted">⚠ '+_esc(e.message)+'</span>'; }
   }
   if (aba === 'obs'){
@@ -7712,6 +7762,8 @@ document.addEventListener('DOMContentLoaded', function(){
   atualizarDatasOT(false).finally(function(){ carregarSemaforosReais(); carregarOTsReais(); });
   carregarEquipReais();
   mntFetch('/manutencao/api/fornecedores').then(f => { _mntFornList = f; }).catch(()=>{ _mntFornList = []; });
+  // (20/10/2026) QR da etiqueta: /manutencao?peca=CÓDIGO abre Materiais já na ficha do item
+  try { const pc = new URLSearchParams(location.search).get('peca'); if (pc) { history.replaceState(null, '', location.pathname); showModule('alm'); setTimeout(() => { mwSel('alm', pc); abrirPeca(pc); }, 600); } } catch(e){}
 });
 </script>
 </body>
