@@ -5609,41 +5609,89 @@ async function almVistaMov(){
   _almVista = 'mov';
   montarNavAlm();
   const th = document.getElementById('alm-thead');
-  if (th) th.innerHTML = '<th style="width:96px">Data</th><th style="width:86px">Tipo</th>'
-    + '<th style="width:100px">Peça</th><th>Descrição</th><th style="width:56px" class="r">Qtd</th>'
+  if (th) th.innerHTML = '<th style="width:96px">Data</th><th style="width:96px">Tipo</th>'
+    + '<th style="width:150px">Documento / Peça</th><th>Descrição</th><th style="width:56px" class="r">Qtd</th>'
     + '<th style="width:56px">Origem</th><th style="width:56px">Destino</th>'
-    + '<th style="width:80px" class="r">Custo un.</th><th style="width:96px">OT</th><th style="width:110px">Quem</th>';
+    + '<th style="width:90px" class="r">Custo / Total</th><th style="width:96px">OT</th><th style="width:110px">Quem</th>';
   const tb = document.getElementById('alm-tbody'); if (!tb) return;
+  // (21/10/2026) barra de filtros do extrato (período · documento · peça · tipo · OT) — um documento por linha, ▸ abre os itens
+  let fb = document.getElementById('mov-filtros');
+  if (!fb) {
+    fb = document.createElement('div'); fb.id = 'mov-filtros';
+    fb.style.cssText = 'display:flex;gap:6px;align-items:flex-end;flex-wrap:wrap;padding:6px 0 8px';
+    const hoje = new Date(), de = new Date(hoje); de.setMonth(de.getMonth() - 3);
+    fb.innerHTML = '<div class="mfield" style="width:120px">De<input id="mv-de" type="date" value="'+de.toISOString().slice(0,10)+'"></div>'
+      + '<div class="mfield" style="width:120px">Até<input id="mv-ate" type="date" value="'+hoje.toISOString().slice(0,10)+'"></div>'
+      + '<div class="mfield" style="width:120px">Documento<input id="mv-doc" placeholder="nº NF / notinha"></div>'
+      + '<div class="mfield" style="width:170px">Peça<input id="mv-peca" placeholder="código ou descrição"></div>'
+      + '<div class="mfield" style="width:130px">Tipo<select id="mv-tipo"><option value="">todos</option><option value="entrada">📥 Entrada</option><option value="saida">📤 Saída</option><option value="aplicacao_direta">⚡ Aplic. direta</option><option value="transferencia">⇄ Transferência</option><option value="ajuste">🧮 Ajuste</option><option value="estorno">↩ Estorno</option></select></div>'
+      + '<div class="mfield" style="width:110px">OT<input id="mv-ot" placeholder="OT-2026-…"></div>'
+      + '<button class="btn p" onclick="almVistaMov()">Filtrar</button>'
+      + '<button class="btn" onclick="[\'mv-doc\',\'mv-peca\',\'mv-ot\'].forEach(i=>document.getElementById(i).value=\'\');document.getElementById(\'mv-tipo\').value=\'\';almVistaMov()">Limpar</button>'
+      + '<span id="mv-info" class="muted" style="font-size:10px;margin-left:auto"></span>';
+    fb.querySelectorAll('input').forEach(i => i.addEventListener('keydown', ev => { if (ev.key === 'Enter') almVistaMov(); }));
+    const tabela = tb.closest('table'); tabela.parentNode.insertBefore(fb, tabela);
+  }
+  fb.style.display = 'flex'; fb.style.padding = '8px 10px 6px';
   try {
-    const qs = (_almFiltro && _almFiltro !== '_todos' && _almFiltro !== '_baixo') ? '?almox=' + encodeURIComponent(_almFiltro) : '';
-    const r = await mntFetch('/manutencao/api/movimentacoes' + qs);
+    const g = id => (document.getElementById(id)||{}).value || '';
+    const qs = [];
+    if (_almFiltro && _almFiltro !== '_todos' && _almFiltro !== '_baixo') qs.push('almox=' + encodeURIComponent(_almFiltro));
+    if (g('mv-de')) qs.push('de=' + g('mv-de')); if (g('mv-ate')) qs.push('ate=' + g('mv-ate'));
+    if (g('mv-doc')) qs.push('documento=' + encodeURIComponent(g('mv-doc'))); if (g('mv-peca')) qs.push('peca=' + encodeURIComponent(g('mv-peca')));
+    if (g('mv-tipo')) qs.push('tipo=' + g('mv-tipo')); if (g('mv-ot')) qs.push('ot=' + encodeURIComponent(g('mv-ot')));
+    qs.push('limit=2000');
+    const r = await mntFetch('/manutencao/api/movimentacoes?' + qs.join('&'));
     const TIPO = { entrada:['tm','📥 Entrada'], saida:['em','📤 Saída'], transferencia:['pr','⇄ Transf.'], ajuste:['pe','🧮 Ajuste'], aplicacao_direta:['nr','⚡ Aplic. direta'], estorno:['em','↩ Estorno'] };
     const dd = v => { if(!v) return '—'; try{ return new Date(v).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}); }catch(e){ return '—'; } };
-    // (21/10/2026) entradas agrupadas por documento (lote) com ↩ Estornar; linhas estornadas ficam riscadas
-    const vistos = new Set();
-    tb.innerHTML = (r.itens || []).map(m => {
+    const n2 = v => v == null ? '—' : parseFloat(v).toFixed(2);
+    // agrupa por documento (lote) os movimentos de documento: entrada e estorno; o resto fica linha a linha
+    const grupos = [], porChave = {};
+    (r.itens || []).forEach(m => {
+      const agrupa = (m.tipo === 'entrada' || m.tipo === 'estorno') && m.lote_chave;
+      if (!agrupa) { grupos.push({ solto: m }); return; }
+      const k = m.tipo + '|' + m.lote_chave;
+      if (!porChave[k]) { porChave[k] = { cab: m, itens: [] }; grupos.push(porChave[k]); }
+      porChave[k].itens.push(m);
+    });
+    const linhaItem = (m, sub) => {
       const t = TIPO[m.tipo] || ['nr', m.tipo];
-      let cab = '';
-      if (m.tipo === 'entrada' && m.lote_chave && !vistos.has(m.lote_chave)) {
-        vistos.add(m.lote_chave);
-        const grupo = (r.itens||[]).filter(x => x.tipo === 'entrada' && x.lote_chave === m.lote_chave);
-        const tot = grupo.reduce((a,x) => a + parseFloat(x.quantidade||0) * parseFloat(x.custo_unitario||0), 0);
-        const estornada = grupo.every(x => x.estornado_em);
-        cab = '<tr style="background:#F8FAFC"><td colspan="10" style="padding:5px 8px;font-size:11px;color:#1A2A5E"><b>📥 '+_esc(m.documento_tipo==='notinha'?'Notinha':'NF')+' '+_esc(m.documento_numero||'s/ nº')+'</b>'
-          + (m.fornecedor_nome ? ' · '+_esc(m.fornecedor_nome) : '') + ' · '+grupo.length+' item(ns) · R$ '+tot.toFixed(2)
-          + (estornada ? ' <span class="chip em">↩ estornada</span>' : ' <button class="btn" style="font-size:10px;padding:1px 8px;margin-left:8px" data-l="'+_esc(m.lote_chave)+'" data-d="'+_esc(m.documento_numero||'')+'" onclick="entradaEstornar(this.dataset.l,this.dataset.d)">↩ Estornar entrada</button>')
-          + '</td></tr>';
-      }
-      const risc = m.estornado_em ? ' style="text-decoration:line-through;color:#94A3B8"' : '';
-      return cab + '<tr'+risc+'><td class="muted">'+dd(m.criado_em)+'</td>'
-        + '<td><span class="chip '+t[0]+'" style="font-size:9px">'+t[1]+'</span></td>'
-        + '<td class="bold">'+_esc(m.peca_codigo)+'</td><td>'+_esc(m.peca_descricao||'')+'</td>'
+      const risc = m.estornado_em ? 'text-decoration:line-through;color:#94A3B8;' : '';
+      return '<tr style="'+risc+(sub?'background:#FAFBFF':'')+'"><td class="muted">'+(sub?'':dd(m.criado_em))+'</td>'
+        + '<td>'+(sub?'':'<span class="chip '+t[0]+'" style="font-size:9px">'+t[1]+'</span>')+'</td>'
+        + '<td class="bold" style="'+(sub?'padding-left:22px':'')+'">'+_esc(m.peca_codigo)+'</td><td>'+_esc(m.peca_descricao||'')+'</td>'
         + '<td class="r">'+parseFloat(m.quantidade)+'</td>'
         + '<td>'+_esc(m.origem||'—')+'</td><td>'+_esc(m.destino||'—')+'</td>'
-        + '<td class="r mono">'+(m.custo_unitario!=null?parseFloat(m.custo_unitario).toFixed(2):'—')+'</td>'
+        + '<td class="r mono">'+n2(m.custo_unitario)+'</td>'
         + '<td class="mono">'+_esc(m.ot_numero||'—')+'</td><td class="muted">'+_esc(m.usuario||'—')+'</td></tr>';
-    }).join('') || '<tr><td colspan="10" style="padding:14px;color:#64748B">Nenhum movimento registrado ainda.</td></tr>';
+    };
+    let nDocs = 0;
+    tb.innerHTML = grupos.map((gp, gi) => {
+      if (gp.solto) return linhaItem(gp.solto, false);
+      nDocs++;
+      const m = gp.cab, t = TIPO[m.tipo] || ['nr', m.tipo];
+      const tot = gp.itens.reduce((a,x) => a + parseFloat(x.quantidade||0) * parseFloat(x.custo_unitario||0), 0);
+      const estornada = m.tipo === 'entrada' && gp.itens.every(x => x.estornado_em);
+      const rot = (m.documento_tipo === 'notinha' ? 'Notinha ' : m.tipo === 'estorno' ? 'Estorno ' : 'NF ') + (m.documento_numero || 's/ nº');
+      const acao = m.tipo === 'entrada' ? (estornada ? '<span class="chip em" style="font-size:9px">↩ estornada</span>'
+        : '<button class="btn" style="font-size:10px;padding:1px 8px" data-l="'+_esc(m.lote_chave)+'" data-d="'+_esc(m.documento_numero||'')+'" onclick="event.stopPropagation();entradaEstornar(this.dataset.l,this.dataset.d)">↩ Estornar</button>') : '';
+      return '<tr style="cursor:pointer;background:#F8FAFC" onclick="movToggle(\'mvg'+gi+'\',this)">'
+        + '<td class="muted">'+dd(m.criado_em)+'</td><td><span class="chip '+t[0]+'" style="font-size:9px">'+t[1]+'</span></td>'
+        + '<td class="bold" style="white-space:nowrap"><span class="mv-seta" style="display:inline-block;width:12px;color:#64748B">▸</span>'+_esc(rot)+'</td>'
+        + '<td>'+_esc(m.fornecedor_nome||'')+' <span class="muted">· '+gp.itens.length+' item(ns)</span> '+acao+'</td>'
+        + '<td class="r">'+gp.itens.reduce((a,x)=>a+parseFloat(x.quantidade||0),0)+'</td>'
+        + '<td>'+_esc(gp.itens[0].origem||'—')+'</td><td>'+_esc(gp.itens[0].destino||'—')+'</td>'
+        + '<td class="r mono"><b>'+tot.toFixed(2)+'</b></td><td class="mono">—</td><td class="muted">'+_esc(m.usuario||'—')+'</td></tr>'
+        + gp.itens.map(x => linhaItem(x, true).replace('<tr style="', '<tr class="mvg'+gi+'" style="display:none;')).join('');
+    }).join('') || '<tr><td colspan="10" style="padding:14px;color:#64748B">Nenhum movimento no período/filtro.</td></tr>';
+    const inf = document.getElementById('mv-info'); if (inf) inf.textContent = (r.itens||[]).length + ' movimento(s) · ' + nDocs + ' documento(s)' + ((r.itens||[]).length >= 2000 ? ' · limite 2000 — refine o período' : '');
   } catch(e){ mostrarToast('❌ '+e.message,'warn'); }
+}
+function movToggle(cls, tr){
+  const rows = document.querySelectorAll('#alm-tbody tr.'+cls); if (!rows.length) return;
+  const abre = rows[0].style.display === 'none';
+  rows.forEach(r => r.style.display = abre ? '' : 'none');
+  const seta = tr.querySelector('.mv-seta'); if (seta) seta.textContent = abre ? '▾' : '▸';
 }
 // (21/10/2026) Estorno de documento: desfaz a entrada inteira (movimentos contrários, saldo e custo médio)
 async function entradaEstornar(lote, doc){
@@ -5918,6 +5966,7 @@ async function almMovOK(){
   } catch(e){ mostrarToast('❌ '+e.message, 'warn'); }
 }
 function almLente(l){
+  const fbm = document.getElementById('mov-filtros'); if (fbm) fbm.style.display = 'none';
   _almLente = l;
   const bm = document.getElementById('alm-l-mestre'), ba = document.getElementById('alm-l-armazem');
   if (bm) bm.className = 'btn' + (l === 'mestre' ? ' p' : '');
