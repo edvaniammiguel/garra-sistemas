@@ -7852,6 +7852,22 @@ async function desativarArtigoMW(){
 }
 
 /* ══ INICIALIZAÇÃO ══ */
+// (21/10/2026) Ctrl+A na tela central = marca todas as linhas da lista visível (Materiais, OTs, Frota) — depois
+// Etiquetas / Imprimir / Excel agem sobre as marcadas. Dentro de campo de texto o Ctrl+A continua selecionando texto.
+document.addEventListener('keydown', function(ev){
+  if (!(ev.ctrlKey || ev.metaKey) || String(ev.key).toLowerCase() !== 'a') return;
+  const a = document.activeElement, tag = a ? a.tagName : '';
+  if (['INPUT','TEXTAREA','SELECT'].includes(tag) || (a && a.isContentEditable)) return;
+  if (document.querySelector('.modal-bg.show, #eq-ficha.show, #art-jan[style*="flex"], #ent-doc[style*="flex"], #ot-saida[style*="flex"]')) return;
+  const alvo = [['alm','#alm-tbody tr[data-cod]'], ['ots','#ots-tbody tr[data-id]'], ['frota','#frota-centro tr[data-id]']]
+    .map(([aba, sel]) => [aba, [...document.querySelectorAll(sel)].filter(t => t.offsetParent !== null)]).find(([, trs]) => trs.length);
+  if (!alvo) return;
+  ev.preventDefault();
+  const [aba, trs] = alvo;
+  trs.forEach(t => t.classList.add('sel'));
+  const ult = trs[trs.length - 1]; mwSel(aba, ult.dataset.cod || ult.dataset.id); _listaUltimoSel[aba] = ult.dataset.cod || ult.dataset.id;
+  mostrarToast('☑ '+trs.length+' linha(s) marcada(s) — Etiquetas, Imprimir e Excel agem sobre elas', 'ok');
+});
 document.addEventListener('DOMContentLoaded', function(){
   // (13/10/2026) sincroniza as OTs programadas com a previsão viva antes de montar as listas
   atualizarDatasOT(false).finally(function(){ carregarSemaforosReais(); carregarOTsReais(); });
