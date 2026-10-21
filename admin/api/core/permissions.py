@@ -6,7 +6,7 @@ from .db import ajard_query
 # ═══════════════════════════════════════════════════════════════════════════
 
 MODULOS_DISPONIVEIS = [
-    {"id": "admin_master",        "label": "Admin Master",          "desc": "Painel de gestão"},
+    {"id": "admin_master",        "label": "Painel de Gestão",      "desc": "Admin: Ordens de Serviço, Controle Mensal, Agenda e Cadastros (não é o perfil Master)"},
     {"id": "jardinagem_desktop",  "label": "Jardinagem Desktop",    "desc": "Relatórios e fotos"},
     {"id": "jardinagem_mobile",   "label": "Jardinagem Mobile",     "desc": "Campo — fotos e KM"},
     {"id": "operacional_mobile",  "label": "Operacional Mobile",    "desc": "OS e horímetro"},
@@ -31,7 +31,7 @@ MODULOS_DISPONIVEIS = [
 
 PERFIL_MODULOS_PADRAO = {
     "admin":     ["admin_master","jardinagem_desktop","jardinagem_mobile","operacional_mobile","checklist","checklist_logistica","abastecimento","abastecimento_notas","manutencao_notas","compras_solicitar","compras_aprovar","compras_alcadas","compras_ver_todas"],
-    "gestor":    ["admin_master","jardinagem_desktop","operacional_mobile","abastecimento","abastecimento_notas","manutencao_notas","compras_solicitar","compras_aprovar","compras_alcadas","compras_ver_todas"],
+    "gestor":    ["admin_master","jardinagem_desktop","operacional_mobile","manutencao","abastecimento","abastecimento_notas","manutencao_notas","compras_solicitar","compras_aprovar","compras_alcadas","compras_ver_todas"],
     "luana":     ["admin_master","jardinagem_desktop","operacional_mobile","abastecimento_notas","manutencao_notas","compras_solicitar","compras_aprovar","compras_alcadas","compras_ver_todas"],
     "bruna":     ["admin_master","checklist","manutencao","pedir_ot","ot_executar","abastecimento","compras_solicitar","compras_aprovar"],
     "operador":  ["operacional_mobile","checklist","abastecimento"],
@@ -54,6 +54,37 @@ CREATE TABLE IF NOT EXISTS public.perfis_customizados (
     atualizado_em TIMESTAMP DEFAULT NOW()
 )
 """
+
+async def tem_modulo(payload, modulos) -> bool:
+    """(21/10/2026) Resolução OFICIAL de permissão para TODAS as rotas (antes vivia em
+    routers/manutencao._tem_modulo e cada router tinha a sua lista de perfis "livres",
+    que passava por cima da tela de Permissões — brecha por URL direta).
+    Ordem: exceção individual (permissoes_colaborador) > padrão do perfil (perfis_customizados).
+    Perfil admin = Master: tudo. Qualquer módulo do conjunto libera."""
+    modulos = set(modulos)
+    perfil_tok = (payload.get("perfil") or "").lower()
+    if perfil_tok == "admin":
+        return True
+    u = await ajard_query(
+        "SELECT id, perfil FROM public.usuarios_garra WHERE login=%s AND ativo=true",
+        (payload.get("sub", ""),), fetch="one")
+    if not u:
+        return False
+    perfil = (u.get("perfil") or perfil_tok or "").lower()
+    if perfil == "admin":
+        return True
+    rows = await ajard_query(
+        "SELECT modulo, permitido FROM public.permissoes_colaborador WHERE usuario_id=%s", (u["id"],))
+    individuais = {r["modulo"]: r["permitido"] for r in (rows or [])}
+    padrao = set(await perfil_modulos_padrao(perfil))
+    for m in modulos:
+        if m in individuais:
+            if individuais[m]:
+                return True
+        elif m in padrao:
+            return True
+    return False
+
 
 async def perfil_modulos_padrao(perfil: str):
     """Fonte da verdade: banco. Se o perfil não existir lá (ex: banco fora do ar),

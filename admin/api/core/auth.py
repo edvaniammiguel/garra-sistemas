@@ -113,10 +113,12 @@ def verificar_admin(payload=Depends(verificar_token)):
         raise HTTPException(status_code=403, detail="Acesso restrito a administradores")
     return payload
 
-def verificar_gestor(payload=Depends(verificar_token)):
-    """Exige login válido E perfil de gestão (admin, gestor ou luana)."""
-    perfil = payload.get("perfil")
-    if perfil not in ("admin", "gestor", "luana"):
-        raise HTTPException(status_code=403, detail="Acesso restrito a gestores")
-    return payload
+async def verificar_gestor(payload=Depends(verificar_token)):
+    """(21/10/2026) "Gestão" = módulo Painel de Gestão (admin_master) na tela de Permissões,
+    não mais a lista fixa de perfis (admin/gestor/luana) — a exceção "Bloqueado" passa a valer
+    por URL direta. Perfil admin (Master) sempre passa."""
+    from core.permissions import tem_modulo
+    if await tem_modulo(payload, {"admin_master"}):
+        return payload
+    raise HTTPException(status_code=403, detail="Acesso restrito à gestão (módulo Painel de Gestão)")
 
