@@ -4809,7 +4809,14 @@ async def _entrada_core(d, payload):
                WHERE e.almoxarifado_id=%s AND p.codigo = ANY(%s) AND COALESCE(e.localizacao,'')=''
                ORDER BY p.codigo""", (destino, lancados)) or []
         sem_local = [dict(r) for r in rows]
-    return {"ok": True, "documento": doc_num or doc_tipo, "itens": len(lancados), "codigos": lancados,
+    quantidades = {}
+    for it in itens:
+        c_ = (it.get("peca") or "").strip()
+        try:
+            quantidades[c_] = quantidades.get(c_, 0) + int(float(str(it.get("quantidade") or 0).replace(",", ".")))
+        except ValueError:
+            pass
+    return {"ok": True, "documento": doc_num or doc_tipo, "itens": len(lancados), "codigos": lancados, "quantidades": quantidades,
             "destino": (d.get("destino") or "").strip() or None, "sem_local": sem_local,
             "total": round(total_doc, 2), "itens_nf": round(soma_itens, 2),
             "acrescimos": round(acrescimos, 2), "desconto": round(desconto, 2)}
@@ -5903,8 +5910,21 @@ async def etiquetas_itens(codigos: str = None, familia: str = None, almox: str =
     base = (str(request.base_url).rstrip("/") if request else "") + "/manutencao?peca="
     await _garantir_peca_cols()
     cond, params = ["p.ativo=true"], []
+    qtds = {}
     if codigos:
-        lst = [c.strip() for c in codigos.split(",") if c.strip()]
+        # (21/10/2026) "CÓDIGO*3" = 3 etiquetas daquele item (uma por unidade quando faz sentido)
+        lst = []
+        for tok_ in codigos.split(","):
+            tok_ = tok_.strip()
+            if not tok_:
+                continue
+            cod, _, n = tok_.partition("*")
+            cod = cod.strip()
+            try:
+                qtds[cod] = max(1, min(50, int(n))) if n else 1
+            except ValueError:
+                qtds[cod] = 1
+            lst.append(cod)
         cond.append("p.codigo = ANY(%s)"); params.append(lst)
     if familia and familia.startswith("@"):
         cond.append(_classe_cond("p")); params += _classe_params(familia)
@@ -5923,7 +5943,8 @@ async def etiquetas_itens(codigos: str = None, familia: str = None, almox: str =
                    upper(COALESCE(NULLIF(p.classe,''),
                          CASE WHEN p.codigo ~ '^[A-Za-z]\\.' THEN split_part(p.codigo,'.',1) ELSE NULL END,
                          (SELECT f.classe FROM manutencao.familias f WHERE f.codigo = split_part({fe},'.',1) LIMIT 1))) AS classe,
-                   (SELECT string_agg(a.codigo || CASE WHEN COALESCE(e.localizacao,'')<>'' THEN ' ' || e.localizacao ELSE '' END, ' · ' ORDER BY a.codigo)
+                   (SELECT string_agg(CASE WHEN upper(COALESCE(e.localizacao,'')) LIKE upper(a.codigo)||' %%' THEN e.localizacao
+                                           ELSE a.codigo || CASE WHEN COALESCE(e.localizacao,'')<>'' THEN ' ' || e.localizacao ELSE '' END END, ' · ' ORDER BY a.codigo)
                       FROM manutencao.estoque e JOIN manutencao.almoxarifados a ON a.id=e.almoxarifado_id
                      WHERE e.peca_id=p.id AND a.ativo=true) AS locais
             FROM manutencao.pecas p WHERE {' AND '.join(cond)} ORDER BY p.codigo LIMIT 300""", tuple(params)) or []
@@ -5967,7 +5988,8 @@ async def etiquetas_itens(codigos: str = None, familia: str = None, almox: str =
                     "part_number": r["codigo_fabricante"] or r["codigo_externo"] or "",
                     "classe": r.get("classe") or "", "classe_nome": classes.get(r.get("classe") or "", ""),
                     "familia_codigo": r["familia_codigo"] or "", "familia": fam_txt,
-                    "compativel": eqs, "aplicacao": aplic, "locais": r["locais"] or "", "qr_svg": qr})
+                    "compativel": eqs, "aplicacao": aplic, "locais": r["locais"] or "", "qr_svg": qr,
+                    "qtd": qtds.get(r["codigo"], 1)})
     return out
 
 
@@ -6012,8 +6034,9 @@ const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;',
   const qs=location.search||'';
   const r=await fetch('/manutencao/api/etiquetas-itens'+qs,{headers:{Authorization:'Bearer '+tok()}});
   if(!r.ok){document.getElementById('info').textContent='Erro '+r.status+' — abra pela tela de Materiais (login)';return;}
-  const itens=await r.json();
-  document.getElementById('info').textContent=itens.length+' etiqueta(s) · '+Math.ceil(itens.length/10)+' folha(s) · molde Letter 2×5 (10,2 × 5,05 cm)';
+  const base=await r.json();
+  const itens=[]; base.forEach(it=>{ for(let k=0;k<(it.qtd||1);k++) itens.push(it); });
+  document.getElementById('info').textContent=itens.length+' etiqueta(s) ('+base.length+' item(ns)) · '+Math.ceil(itens.length/10)+' folha(s) · molde Letter 2×5 (10,2 × 5,05 cm)';
   let html='';
   for(let i=0;i<itens.length;i+=10){
     html+='<div class="folha">'+itens.slice(i,i+10).map((it,j)=>{
