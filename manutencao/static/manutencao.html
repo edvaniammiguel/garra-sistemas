@@ -3689,9 +3689,11 @@ function otTipoDerivado(){
 }
 // (20/10/2026) Etiquetas de item no molde da Edvania (Letter 2×5): item marcado, família/classe filtrada ou almoxarifado atual
 function etiquetasItens(){
-  const sel = _mwSel.alm || '', fam = _almFamSel || '', alm = (_almLente === 'armazem' && _almFiltro && _almFiltro !== '_todos') ? _almFiltro : '';
+  // (21/10/2026) itens MARCADOS na lista (clique, Ctrl+clique, Shift+clique) — vários de uma vez
+  const marcados = [...document.querySelectorAll('#alm-tbody tr[data-cod].sel')].map(t => t.dataset.cod).filter((v,i,a) => a.indexOf(v) === i);
+  const sel = marcados.length ? marcados.join(',') : (_mwSel.alm || ''), fam = _almFamSel || '', alm = (_almLente === 'armazem' && _almFiltro && _almFiltro !== '_todos') ? _almFiltro : '';
   const ops = [];
-  if (sel) ops.push(['1', 'Item marcado: '+sel, '/manutencao/etiquetas?codigos='+encodeURIComponent(sel)]);
+  if (sel) ops.push(['1', (marcados.length > 1 ? marcados.length+' itens marcados' : 'Item marcado: '+sel), '/manutencao/etiquetas?codigos='+encodeURIComponent(sel)]);
   if (fam) ops.push(['2', 'Família/classe filtrada: '+fam, '/manutencao/etiquetas?familia='+encodeURIComponent(fam)]);
   if (alm) ops.push(['3', 'Almoxarifado '+alm+' (itens com existência)', '/manutencao/etiquetas?almox='+encodeURIComponent(alm)]);
   if (!ops.length){ mostrarToast('Marque um item, filtre uma família ou escolha um almoxarifado', 'warn'); return; }
