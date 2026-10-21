@@ -5617,11 +5617,25 @@ async function almVistaMov(){
   try {
     const qs = (_almFiltro && _almFiltro !== '_todos' && _almFiltro !== '_baixo') ? '?almox=' + encodeURIComponent(_almFiltro) : '';
     const r = await mntFetch('/manutencao/api/movimentacoes' + qs);
-    const TIPO = { entrada:['tm','📥 Entrada'], saida:['em','📤 Saída'], transferencia:['pr','⇄ Transf.'], ajuste:['pe','🧮 Ajuste'], aplicacao_direta:['nr','⚡ Aplic. direta'] };
+    const TIPO = { entrada:['tm','📥 Entrada'], saida:['em','📤 Saída'], transferencia:['pr','⇄ Transf.'], ajuste:['pe','🧮 Ajuste'], aplicacao_direta:['nr','⚡ Aplic. direta'], estorno:['em','↩ Estorno'] };
     const dd = v => { if(!v) return '—'; try{ return new Date(v).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}); }catch(e){ return '—'; } };
+    // (21/10/2026) entradas agrupadas por documento (lote) com ↩ Estornar; linhas estornadas ficam riscadas
+    const vistos = new Set();
     tb.innerHTML = (r.itens || []).map(m => {
       const t = TIPO[m.tipo] || ['nr', m.tipo];
-      return '<tr><td class="muted">'+dd(m.criado_em)+'</td>'
+      let cab = '';
+      if (m.tipo === 'entrada' && m.lote_chave && !vistos.has(m.lote_chave)) {
+        vistos.add(m.lote_chave);
+        const grupo = (r.itens||[]).filter(x => x.tipo === 'entrada' && x.lote_chave === m.lote_chave);
+        const tot = grupo.reduce((a,x) => a + parseFloat(x.quantidade||0) * parseFloat(x.custo_unitario||0), 0);
+        const estornada = grupo.every(x => x.estornado_em);
+        cab = '<tr style="background:#F8FAFC"><td colspan="10" style="padding:5px 8px;font-size:11px;color:#1A2A5E"><b>📥 '+_esc(m.documento_tipo==='notinha'?'Notinha':'NF')+' '+_esc(m.documento_numero||'s/ nº')+'</b>'
+          + (m.fornecedor_nome ? ' · '+_esc(m.fornecedor_nome) : '') + ' · '+grupo.length+' item(ns) · R$ '+tot.toFixed(2)
+          + (estornada ? ' <span class="chip em">↩ estornada</span>' : ' <button class="btn" style="font-size:10px;padding:1px 8px;margin-left:8px" data-l="'+_esc(m.lote_chave)+'" data-d="'+_esc(m.documento_numero||'')+'" onclick="entradaEstornar(this.dataset.l,this.dataset.d)">↩ Estornar entrada</button>')
+          + '</td></tr>';
+      }
+      const risc = m.estornado_em ? ' style="text-decoration:line-through;color:#94A3B8"' : '';
+      return cab + '<tr'+risc+'><td class="muted">'+dd(m.criado_em)+'</td>'
         + '<td><span class="chip '+t[0]+'" style="font-size:9px">'+t[1]+'</span></td>'
         + '<td class="bold">'+_esc(m.peca_codigo)+'</td><td>'+_esc(m.peca_descricao||'')+'</td>'
         + '<td class="r">'+parseFloat(m.quantidade)+'</td>'
@@ -5630,6 +5644,16 @@ async function almVistaMov(){
         + '<td class="mono">'+_esc(m.ot_numero||'—')+'</td><td class="muted">'+_esc(m.usuario||'—')+'</td></tr>';
     }).join('') || '<tr><td colspan="10" style="padding:14px;color:#64748B">Nenhum movimento registrado ainda.</td></tr>';
   } catch(e){ mostrarToast('❌ '+e.message,'warn'); }
+}
+// (21/10/2026) Estorno de documento: desfaz a entrada inteira (movimentos contrários, saldo e custo médio)
+async function entradaEstornar(lote, doc){
+  const motivo = prompt('Estornar a entrada '+(doc||'')+' por completo?\n\nO saldo volta, o custo médio é recalculado e a entrada fica marcada como estornada. Só é possível se nenhum item já saiu.\n\nMotivo (obrigatório):');
+  if (motivo === null) return;
+  try {
+    const r = await mntFetch('/manutencao/api/entradas/estornar', { method:'POST', body: JSON.stringify({ lote, motivo }) });
+    mostrarToast('↩ Entrada '+_esc(r.documento)+' estornada ('+r.itens+' item(ns))', 'ok');
+    almVistaMov();
+  } catch(e){ mostrarToast('❌ '+e.message, 'warn'); }
 }
 let _entOTs = null;
 async function entradaAbrir(){
