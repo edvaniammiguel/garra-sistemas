@@ -234,6 +234,12 @@ async def _garantir_colunas_ot():
         await ajard_query(ddl, fetch="none")
     # OT que já tem fornecedor é externa (migração idempotente)
     await ajard_query("UPDATE manutencao.ot SET interventor='externo' WHERE fornecedor_id IS NOT NULL AND COALESCE(interventor,'interno')='interno' AND setor_interventor IS NULL", fetch="none")
+    # (21/10/2026) Datas previstas com ano digitado pela metade (0202-10-15 → "vencida há 666209 d"), gravadas
+    # antes do _data_ok: limpa e deixa o Atualizar datas OT recalcular pela FMP (sem FMP fica "sem data" = 🔴)
+    await ajard_query("""UPDATE manutencao.ot SET data_prevista=NULL, prog_alterada=false
+                         WHERE data_prevista IS NOT NULL AND EXTRACT(YEAR FROM data_prevista) < 2000""", fetch="none")
+    await ajard_query("""UPDATE manutencao.ot SET data_limite=NULL
+                         WHERE data_limite IS NOT NULL AND EXTRACT(YEAR FROM data_limite) < 2000""", fetch="none")
     # (10/10/2026) Saneia tipo_trabalho gravado por extenso pela Origem ('preventiva'…): volta a sigla da FMP, ou limpa
     await ajard_query("""UPDATE manutencao.ot o SET tipo_trabalho = (SELECT p.tipo_trabalho FROM manutencao.planos p WHERE p.id = o.plano_id)
                          WHERE lower(COALESCE(o.tipo_trabalho,'')) IN ('corretiva','preventiva','reforma','melhoria')""", fetch="none")
@@ -724,6 +730,19 @@ async def detalhe_ot(ot_id: str, _auth=Depends(verificar_manutencao)):
     d = dict(ot)
     d["historico"] = [dict(h) for h in hist]
     d["ultima_ot"] = dict(ultima) if ultima else None
+    # (21/10/2026) OT ainda não emitida: o registo do Pedido é o contador vivo da máquina até a abertura —
+    # se a leitura de origem (abastecimento) foi corrigida, a OT acompanha. Depois de emitida, é foto fixa.
+    if d.get("status") in ("programada", "aberta", "rascunho"):
+        try:
+            await _garantir_leituras()
+            lp = await ajard_query(
+                "SELECT MAX(leitura) AS l FROM operacional.v_leituras WHERE equipamento_id=%s AND data <= %s",
+                (d["equipamento_id"], d["data_abertura"]), fetch="one")
+            if lp and lp.get("l") is not None and (d.get("horimetro_na_abertura") is None or float(lp["l"]) != float(d["horimetro_na_abertura"])):
+                await ajard_query("UPDATE manutencao.ot SET horimetro_na_abertura=%s WHERE id=%s", (float(lp["l"]), ot_id), fetch="none")
+                d["horimetro_na_abertura"] = float(lp["l"])
+        except Exception:
+            pass
     # (15/10/2026) Registros do mecânico pelo app (relato, horas, horímetro, concluído, fotos)
     # viajam com a ficha — a gestão vê na aba Gestão sem caçar no histórico.
     await _garantir_apontamentos()
@@ -5086,6 +5105,14 @@ async def _leitura_gravar(eq_id, fonte, ref, r, nova, anulada, motivo, payload):
                motivo=EXCLUDED.motivo, usuario_id=EXCLUDED.usuario_id, criado_em=now()""",
         (eq_id, fonte, ref, r["data"], r["leitura_original"], nova, anulada, motivo, uid), fetch="none")
     orig = float(r["leitura_original"] or 0)
+    # (21/10/2026) contador do equipamento acompanha a correção: se ele era esta leitura, volta ao maior registo válido
+    eqm = await ajard_query("SELECT medicao FROM operacional.equipamentos WHERE id=%s", (eq_id,), fetch="one")
+    campo = "km_atual" if (eqm and (eqm.get("medicao") or "") == "km") else "horimetro_atual"
+    await ajard_query(
+        f"""UPDATE operacional.equipamentos e SET {campo} = sub.m, atualizado_em = now()
+              FROM (SELECT MAX(leitura) AS m FROM operacional.v_leituras WHERE equipamento_id=%s) sub
+             WHERE e.id=%s AND COALESCE(e.{campo},0) = %s AND sub.m IS NOT NULL AND sub.m <> COALESCE(e.{campo},0)""",
+        (eq_id, eq_id, orig), fetch="none")
     txt = (f"✕ Leitura excluída ({fonte} {_dmy(r['data'])}): {orig:g}" if anulada
            else f"✏️ Leitura corrigida ({fonte} {_dmy(r['data'])}): {orig:g} → {nova:g}")
     await ajard_query(

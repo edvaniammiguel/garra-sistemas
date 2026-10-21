@@ -1347,6 +1347,23 @@ async def listar(equipamento_id: str = None, limite: int = 30, meus: int = 0, pa
     return out
 
 
+
+async def _recalcular_contador(eq_id, campo, leitura_antiga):
+    """(21/10/2026) O contador do equipamento só subia (COALESCE(campo,0) < leitura): uma leitura
+    errada para cima (ex.: 1.426.128 km) ficava gravada para sempre, mesmo depois de corrigir o
+    abastecimento. Se o contador era exatamente a leitura errada, volta ao MAIOR registo válido
+    (operacional.v_leituras já reflete correções/exclusões)."""
+    if leitura_antiga is None:
+        return
+    try:
+        await ajard_query(
+            f"""UPDATE operacional.equipamentos e SET {campo} = sub.m, atualizado_em = now()
+                  FROM (SELECT MAX(leitura) AS m FROM operacional.v_leituras WHERE equipamento_id=%s) sub
+                 WHERE e.id=%s AND COALESCE(e.{campo},0) = %s AND sub.m IS NOT NULL AND sub.m <> COALESCE(e.{campo},0)""",
+            (eq_id, eq_id, float(leitura_antiga)), fetch="none")
+    except Exception:
+        pass   # v_leituras ainda não criada neste ambiente: nada a recalcular
+
 @router.patch("/operacional/api/abastecimentos/{item_id}")
 async def editar_abastecimento(item_id: str, request: Request, payload=Depends(verificar_abastecimento)):
     """(01/09/2026) Edição de um registro já efetivado (duplo clique no desktop).
@@ -1405,8 +1422,10 @@ async def editar_abastecimento(item_id: str, request: Request, payload=Depends(v
              leitura=%s, leitura_fonte=%s, divergencia_leitura=%s, combustivel=%s, rubrica=%s, observacao=%s
            WHERE id=%s""",
         (data, litros, preco, valor, leitura, fonte, div, comb, rubrica, obs, item_id), fetch="none")
+    campo = "km_atual" if eq.get("medicao") == "km" else "horimetro_atual"
+    if it.get("leitura") is not None and (leitura is None or float(it["leitura"]) != float(leitura)):
+        await _recalcular_contador(eq["id"], campo, it.get("leitura"))   # (21/10/2026) leitura corrigida para baixo
     if leitura is not None and not div:
-        campo = "km_atual" if eq.get("medicao") == "km" else "horimetro_atual"
         await ajard_query(
             f"""UPDATE operacional.equipamentos SET {campo}=%s, atualizado_em=now()
                 WHERE id=%s AND COALESCE({campo},0) < %s""", (leitura, eq["id"], leitura), fetch="none")
@@ -1498,8 +1517,13 @@ async def excluir(ab_id: str, payload=Depends(verificar_token)):
     if (payload.get("perfil") or "").lower() not in ("admin", "gestor"):
         raise HTTPException(status_code=403, detail="Só gestão exclui abastecimento")
     r = await ajard_query(
-        "UPDATE operacional.abastecimentos SET ativo=false WHERE id=%s RETURNING nota_id", (ab_id,))
+        "UPDATE operacional.abastecimentos SET ativo=false WHERE id=%s RETURNING nota_id, equipamento_id, leitura", (ab_id,))
     nota_id = r and r[0]["nota_id"]
+    if r and r[0].get("equipamento_id") and r[0].get("leitura") is not None:
+        # (21/10/2026) excluiu o abastecimento que puxou o contador para cima → contador volta ao maior registo válido
+        eq = await ajard_query("SELECT medicao FROM operacional.equipamentos WHERE id=%s", (r[0]["equipamento_id"],))
+        campo = "km_atual" if (eq and (eq[0].get("medicao") or "") == "km") else "horimetro_atual"
+        await _recalcular_contador(r[0]["equipamento_id"], campo, r[0]["leitura"])
     if nota_id:
         vivos = await ajard_query(
             "SELECT COUNT(*) AS n FROM operacional.abastecimentos WHERE nota_id=%s AND ativo=true", (nota_id,))
