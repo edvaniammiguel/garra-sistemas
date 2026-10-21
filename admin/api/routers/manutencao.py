@@ -3079,6 +3079,58 @@ async def _em_pedido_por_peca():
     return pedido, pend, ocs
 
 
+# ══ (20/10/2026) COMPROMETIDO (padrão MWW) ═══════════════════════════════════════════════════
+# Quantidade prevista nas OTs PROGRAMADAS (itens da FMP) que ainda vai sair do estoque.
+# Disponível = existência − comprometido. A etiqueta não reserva nada: a reserva vive aqui.
+async def _comprometido_por_peca():
+    import json as _json
+    rows = await ajard_query(
+        """SELECT o.numero, o.data_prevista, eq.codigo AS equipamento, p.pecas
+           FROM manutencao.ot o
+           JOIN manutencao.planos p ON p.id = o.plano_id
+           JOIN operacional.equipamentos eq ON eq.id = o.equipamento_id
+           WHERE o.ativo=true AND o.status='programada' AND p.pecas IS NOT NULL""") or []
+    out = {}
+    for r in rows:
+        itens = r["pecas"]
+        if isinstance(itens, str):
+            try:
+                itens = _json.loads(itens)
+            except Exception:
+                itens = []
+        for it in itens or []:
+            cod = str(it.get("peca") or it.get("codigo") or "").strip()
+            if not cod:
+                continue
+            try:
+                q = float(str(it.get("qtd") or it.get("quantidade") or 0).replace(",", "."))
+            except ValueError:
+                q = 0.0
+            if q <= 0:
+                continue
+            d = out.setdefault(cod, {"qtd": 0.0, "ots": []})
+            d["qtd"] += q
+            d["ots"].append({"numero": r["numero"], "equipamento": r["equipamento"], "qtd": q,
+                             "data_prevista": r["data_prevista"].isoformat() if r.get("data_prevista") else None})
+    return out
+
+
+@router.get("/manutencao/api/pecas/{codigo}/comprometido")
+async def peca_comprometido(codigo: str, _auth=Depends(verificar_manutencao)):
+    """Existência, comprometido (OTs programadas) e disponível de um item — usado na baixa da OT."""
+    p = await ajard_query(
+        """SELECT p.id, p.codigo, p.descricao, p.unidade, p.custo_medio,
+                  COALESCE((SELECT SUM(e.quantidade) FROM manutencao.estoque e WHERE e.peca_id=p.id),0) AS saldo
+           FROM manutencao.pecas p WHERE p.codigo=%s""", (codigo,), fetch="one")
+    if not p:
+        raise HTTPException(status_code=404, detail="Item não encontrado")
+    c = (await _comprometido_por_peca()).get(codigo, {"qtd": 0.0, "ots": []})
+    saldo = float(p["saldo"] or 0)
+    return {"peca_id": str(p["id"]), "codigo": p["codigo"], "descricao": p["descricao"], "unidade": p["unidade"],
+            "custo_medio": float(p["custo_medio"]) if p["custo_medio"] is not None else None,
+            "saldo": saldo, "comprometido": round(c["qtd"], 3), "disponivel": round(saldo - c["qtd"], 3), "ots": c["ots"]}
+
+
 @router.get("/manutencao/api/estoque-baixo")
 async def estoque_baixo(_auth=Depends(verificar_manutencao)):
     """Peças abaixo do mínimo — com o que já está a caminho (OCs vivas +
@@ -3099,20 +3151,27 @@ async def estoque_baixo(_auth=Depends(verificar_manutencao)):
            LEFT JOIN LATERAL (SELECT fornecedor_id, preco, prazo_dias, referencia FROM manutencao.peca_fornecedores r
                               WHERE r.peca_codigo = p.codigo AND r.ativo=true AND r.fornecedor_id IS NOT NULL
                               ORDER BY r.preco NULLS LAST, r.atualizado_em DESC LIMIT 1) rf ON true
-           WHERE e.minimo IS NOT NULL AND e.quantidade < e.minimo
+           WHERE e.minimo IS NOT NULL
            ORDER BY (e.minimo - e.quantidade) DESC""") or []
     pedido, pend, ocs = await _em_pedido_por_peca()
+    comp = await _comprometido_por_peca()   # (20/10/2026) abaixo do mínimo = DISPONÍVEL (existência − comprometido) < mínimo
     out = []
     for r in rows:
         d = _tab_row(r)
         k = str(r["peca_id"])
+        cq = float(comp.get(r["codigo"], {}).get("qtd", 0.0))
+        disp_total = float(r["saldo_total"] or 0) - cq
+        if not (float(r["quantidade"] or 0) < float(r["minimo"] or 0) or disp_total < float(r["minimo"] or 0)):
+            continue
+        d["comprometido"] = round(cq, 3)
+        d["disponivel"] = round(disp_total, 3)
         d["em_pedido"] = round(pedido.get(k, 0.0), 3)
         d["a_conferir"] = round(pend.get(k, 0.0), 3)
         d["ocs_abertas"] = ocs.get(k, [])
         saldo = float(r["quantidade"] or 0); mn = float(r["minimo"] or 0)
         alvo = float(r["maximo"]) if r.get("maximo") is not None else mn * 2
         d["alvo"] = alvo
-        d["sugestao"] = round(max(0.0, alvo - saldo - d["em_pedido"] - d["a_conferir"]), 3)
+        d["sugestao"] = round(max(0.0, alvo - min(saldo, disp_total) - d["em_pedido"] - d["a_conferir"]), 3)
         d["preco_sugerido"] = float(r["ref_preco"]) if r.get("ref_preco") is not None else (float(r["custo_medio"]) if r.get("custo_medio") is not None else None)
         out.append(d)
     return out
@@ -4528,7 +4587,13 @@ async def lente_armazem(almox: str = None, busca: str = None, familia: str = Non
             WHERE {' AND '.join(cond)}
             ORDER BY p.codigo, a.codigo
             LIMIT 800""", tuple(params))
-    return {"itens": [dict(r) for r in rows]}
+    comp = await _comprometido_por_peca()   # (20/10/2026) coluna Comprometido / Disponível
+    itens = []
+    for r in rows:
+        d = dict(r)
+        d["comprometido"] = round(float(comp.get(d["codigo"], {}).get("qtd", 0.0)), 3)
+        itens.append(d)
+    return {"itens": itens}
 
 
 @router.get("/manutencao/api/pecas-arvore")
@@ -5813,6 +5878,127 @@ async def notas_ot_excel(mes: str = None, fornecedor: str = None, payload=Depend
     buf = io.BytesIO(); wb.save(buf)
     return Response(buf.getvalue(), media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     headers={"Content-Disposition": f'attachment; filename="notas-manutencao-{mes}.xlsx"'})
+
+
+# ══ (20/10/2026) ETIQUETAS DE ITEM — molde da Edvania (Letter, 2 col × 5 lin, 10,2 × 5,05 cm, vão 0,5 cm) ══
+# Conteúdo: código Garra · descrição · part number · compatível com (equipamentos das FMPs) · UN · local · QR.
+# Sem saldo, sem custo, sem substituto (mudam; o QR leva à ficha onde isso vive).
+@router.get("/manutencao/api/etiquetas-itens")
+async def etiquetas_itens(codigos: str = None, familia: str = None, almox: str = None, request: Request = None, _auth=Depends(verificar_manutencao)):
+    import json as _json
+    try:
+        import segno as _segno   # QR gerado no servidor (sem CDN); requirements: segno>=1.6
+    except Exception:
+        _segno = None
+    base = (str(request.base_url).rstrip("/") if request else "") + "/manutencao?peca="
+    await _garantir_peca_cols()
+    cond, params = ["p.ativo=true"], []
+    if codigos:
+        lst = [c.strip() for c in codigos.split(",") if c.strip()]
+        cond.append("p.codigo = ANY(%s)"); params.append(lst)
+    if familia and familia.startswith("@"):
+        cond.append(_classe_cond("p")); params += _classe_params(familia)
+    elif familia:
+        fe = _fam_efetiva("p")
+        cond.append(f"({fe} = %s OR {fe} LIKE %s)"); params += [familia, familia + ".%"]
+    if almox:
+        cond.append("EXISTS (SELECT 1 FROM manutencao.estoque e JOIN manutencao.almoxarifados a ON a.id=e.almoxarifado_id WHERE e.peca_id=p.id AND a.codigo=%s)")
+        params.append(almox)
+    rows = await ajard_query(
+        f"""SELECT p.id, p.codigo, p.descricao, p.unidade, p.codigo_fabricante, p.codigo_externo, p.caracteristicas,
+                   (SELECT string_agg(a.codigo || CASE WHEN COALESCE(e.localizacao,'')<>'' THEN ' ' || e.localizacao ELSE '' END, ' · ' ORDER BY a.codigo)
+                      FROM manutencao.estoque e JOIN manutencao.almoxarifados a ON a.id=e.almoxarifado_id
+                     WHERE e.peca_id=p.id AND a.ativo=true) AS locais
+            FROM manutencao.pecas p WHERE {' AND '.join(cond)} ORDER BY p.codigo LIMIT 300""", tuple(params)) or []
+    # compatibilidade: equipamentos cujas FMPs preveem o item
+    pl = await ajard_query(
+        """SELECT eq.codigo AS equipamento, p.pecas FROM manutencao.planos p
+           JOIN operacional.equipamentos eq ON eq.id = p.equipamento_id
+           WHERE p.ativo=true AND p.pecas IS NOT NULL""") or []
+    compat = {}
+    for r in pl:
+        itens = r["pecas"]
+        if isinstance(itens, str):
+            try:
+                itens = _json.loads(itens)
+            except Exception:
+                itens = []
+        for it in itens or []:
+            cod = str(it.get("peca") or it.get("codigo") or "").strip()
+            if cod:
+                compat.setdefault(cod, set()).add(r["equipamento"])
+    out = []
+    for r in rows:
+        car = r["caracteristicas"]
+        if isinstance(car, str):
+            try:
+                car = _json.loads(car)
+            except Exception:
+                car = []
+        aplic = [x.get("v") for x in (car or []) if str(x.get("r") or "").strip().upper().startswith("APLIC") and x.get("v")]
+        eqs = sorted(compat.get(r["codigo"], set()))
+        qr = None
+        if _segno:
+            try:
+                qr = _segno.make(base + r["codigo"], error="m").svg_inline(scale=4, border=0, dark="#0F172A")
+            except Exception:
+                qr = None
+        out.append({"codigo": r["codigo"], "descricao": r["descricao"] or "", "unidade": r["unidade"] or "UN",
+                    "part_number": r["codigo_fabricante"] or r["codigo_externo"] or "",
+                    "compativel": eqs, "aplicacao": aplic, "locais": r["locais"] or "", "qr_svg": qr})
+    return out
+
+
+@router.get("/manutencao/etiquetas", response_class=HTMLResponse)
+async def pagina_etiquetas():
+    return HTMLResponse(r"""<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Garra — Etiquetas de itens</title>
+<style>
+@page{size:Letter;margin:1.0cm 0.35cm 0.9cm 0.35cm}
+*{box-sizing:border-box}body{margin:0;font-family:Arial,Helvetica,sans-serif;color:#0F172A;background:#E2E8F0}
+.bar{position:sticky;top:0;background:#1A2A5E;color:#fff;padding:8px 14px;display:flex;gap:10px;align-items:center;font-size:13px}
+.bar button{background:#F97316;color:#fff;border:0;border-radius:6px;padding:6px 14px;font-weight:700;cursor:pointer}
+.folha{width:21.59cm;min-height:27.94cm;margin:10px auto;background:#fff;padding:1.0cm 0.35cm 0.9cm 0.35cm;display:grid;grid-template-columns:10.2cm 10.2cm;column-gap:0.5cm;grid-auto-rows:5.05cm;align-content:start}
+.et{width:10.2cm;height:5.05cm;border:1px dashed #CBD5E1;padding:0.25cm 0.3cm;display:grid;grid-template-columns:1fr 2.9cm;column-gap:0.25cm;overflow:hidden;page-break-inside:avoid}
+.et .cod{font-size:20pt;font-weight:900;color:#1A2A5E;letter-spacing:.3px;line-height:1.05}
+.et .desc{font-size:11pt;font-weight:700;margin-top:2px;line-height:1.15;max-height:2.4em;overflow:hidden}
+.et .pn{font-size:8.5pt;color:#334155;margin-top:3px}
+.et .cmp{font-size:8.5pt;color:#334155;margin-top:2px;max-height:2.3em;overflow:hidden}
+.et .rod{position:relative;margin-top:auto;display:flex;justify-content:space-between;align-items:flex-end;font-size:9pt}
+.et .loc{font-weight:900;color:#F97316;font-size:11pt}
+.et .q{display:flex;flex-direction:column;align-items:center;justify-content:center}
+.et .q svg,.et .q img,.et .q canvas{width:2.6cm;height:2.6cm}
+.et .q small{font-size:6.5pt;color:#64748B;margin-top:2px}
+.et .esq{display:flex;flex-direction:column;min-width:0}
+body.semguia .et{border-color:transparent}
+@media print{body{background:#fff}.bar{display:none}.folha{margin:0;padding:0;min-height:auto;page-break-after:always}.et{border-color:transparent}}
+</style></head><body>
+<div class="bar"><b>🏷 Etiquetas de itens</b> <span id="info"></span> <span style="flex:1"></span>
+<label><input type="checkbox" id="guia" checked onchange="document.body.classList.toggle('semguia',!this.checked)"> guias (não imprimem)</label>
+<button onclick="window.print()">🖨 Imprimir</button></div>
+<div id="folhas"></div>
+<script>
+function tok(){return sessionStorage.getItem('garra_mnt_token')||localStorage.getItem('garra_adm_token')||'';}
+const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+(async()=>{
+  const qs=location.search||'';
+  const r=await fetch('/manutencao/api/etiquetas-itens'+qs,{headers:{Authorization:'Bearer '+tok()}});
+  if(!r.ok){document.getElementById('info').textContent='Erro '+r.status+' — abra pela tela de Materiais (login)';return;}
+  const itens=await r.json();
+  document.getElementById('info').textContent=itens.length+' etiqueta(s) · '+Math.ceil(itens.length/10)+' folha(s) · molde Letter 2×5 (10,2 × 5,05 cm)';
+  let html='';
+  for(let i=0;i<itens.length;i+=10){
+    html+='<div class="folha">'+itens.slice(i,i+10).map((it,j)=>{
+      const cmp=(it.compativel||[]).concat(it.aplicacao||[]).filter((v,k,a)=>a.indexOf(v)===k);
+      return '<div class="et"><div class="esq"><div class="cod">'+esc(it.codigo)+'</div><div class="desc">'+esc(it.descricao)+'</div>'
+        +(it.part_number?'<div class="pn">Part number: <b>'+esc(it.part_number)+'</b></div>':'')
+        +(cmp.length?'<div class="cmp">Compatível: '+esc(cmp.join(' · '))+'</div>':'')
+        +'<div class="rod"><span class="loc">'+esc(it.locais||'')+'</span><span>UN: <b>'+esc(it.unidade)+'</b></span></div></div>'
+        +'<div class="q">'+(it.qr_svg||'<div class="muted" style="font-size:7pt">QR indisponível</div>')+'<small>'+esc(it.codigo)+'</small></div></div>';
+    }).join('')+'</div>';
+  }
+  document.getElementById('folhas').innerHTML=html;
+})();
+</script></body></html>""")
 
 
 @router.get("/manutencao/notas", response_class=HTMLResponse)
