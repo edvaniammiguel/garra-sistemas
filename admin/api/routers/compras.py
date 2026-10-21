@@ -25,7 +25,8 @@ from core.storage import storage_upload, storage_url
 
 router = APIRouter()
 
-_PERFIS_COMPRAS = {"admin", "gestor", "luana"}
+# (21/10/2026) sem lista de perfis "livres": só a tela de Permissões decide (admin = Master)
+from core.permissions import tem_modulo as _tem_modulo_core
 
 _TRANSICOES = {
     "rascunho":         {"solicitada", "cancelada"},
@@ -47,17 +48,8 @@ async def _usuario_id(payload):
 
 
 async def _tem_permissao(payload, modulo):
-    """Perfil liberado OU permissão concedida em permissoes_colaborador."""
-    if (payload.get("perfil") or "").lower() in _PERFIS_COMPRAS:
-        return True
-    uid = await _usuario_id(payload)
-    if not uid:
-        return False
-    p = await ajard_query(
-        """SELECT permitido FROM public.permissoes_colaborador
-           WHERE usuario_id=%s AND modulo=%s""",
-        (uid, modulo), fetch="one")
-    return bool(p and p.get("permitido"))
+    """Resolvedor oficial: exceção individual > padrão do perfil (perfis_customizados); admin = tudo."""
+    return await _tem_modulo_core(payload, {modulo})
 
 
 async def verificar_compras(payload=Depends(verificar_token)):
@@ -76,8 +68,6 @@ async def verificar_compras(payload=Depends(verificar_token)):
 async def verificar_compras_solicitante(payload=Depends(verificar_token)):
     """Criar OC exige a permissão de Solicitar (ou perfil de gestão).
     'Visão geral' sozinha vê e confere — não abre OCs."""
-    if (payload.get("perfil") or "").lower() in _PERFIS_COMPRAS:
-        return payload
     if await _tem_permissao(payload, "compras_solicitar"):
         return payload
     raise HTTPException(status_code=403, detail="Sem permissão para criar OCs — peça à central de cotações")
@@ -108,8 +98,6 @@ async def _ve_todas(payload):
       financeiro — vê e confere tudo, SEM poder aprovar (alçada continua
       mandando) e sem editar/excluir OC alheia.
     Solicitante comum segue vendo apenas as próprias."""
-    if (payload.get("perfil") or "").lower() in _PERFIS_COMPRAS:
-        return True
     if await _tem_permissao(payload, "compras_aprovar"):
         return True
     return await _tem_permissao(payload, "compras_ver_todas")

@@ -19,49 +19,19 @@ from core.permissions import perfil_modulos_padrao
 
 router = APIRouter()
 
-_PERFIS_MANUTENCAO = {"admin", "gestor", "luana", "bruna"}
-
-async def _tem_modulo(payload, modulos: set) -> bool:
-    """(29/08/2026) Resolução OFICIAL de permissão, igual ao Admin Master:
-    exceção individual (permissoes_colaborador) SOBREPÕE o padrão do perfil
-    (perfis_customizados via matriz Por Perfil). Qualquer módulo do conjunto
-    libera; negativa individual explícita bloqueia aquele módulo."""
-    u = await ajard_query(
-        "SELECT id, perfil FROM public.usuarios_garra WHERE login=%s AND ativo=true",
-        (payload.get("sub", ""),), fetch="one")
-    if not u:
-        return False
-    rows = await ajard_query(
-        "SELECT modulo, permitido FROM public.permissoes_colaborador WHERE usuario_id=%s",
-        (u["id"],))
-    individuais = {r["modulo"]: r["permitido"] for r in (rows or [])}
-    padrao = set(await perfil_modulos_padrao(u["perfil"] or (payload.get("perfil") or "").lower()))
-    for m in modulos:
-        if m in individuais:
-            if individuais[m]:
-                return True
-        elif m in padrao:
-            return True
-    return False
+# (21/10/2026) Sem lista de perfis "livres": a tela de Permissões é a única fonte (admin = Master).
+from core.permissions import tem_modulo as _tem_modulo
 
 
 async def verificar_manutencao(payload=Depends(verificar_token)):
-    """Gate do módulo Manutenção: perfil liberado OU módulo 'manutencao'
-    (matriz Por Perfil do Admin Master + exceções individuais)."""
-    if (payload.get("perfil") or "").lower() in _PERFIS_MANUTENCAO:
-        return payload
+    """Gate do módulo Manutenção Desktop: módulo 'manutencao' (perfil padrão + exceções)."""
     if await _tem_modulo(payload, {"manutencao"}):
         return payload
     raise HTTPException(status_code=403, detail="Sem permissão para o módulo Manutenção")
 
 async def verificar_pedir_ot(payload=Depends(verificar_token)):
-    """(28/08/2026) Gate do CANAL EXTERNO (mobile do mecânico): perfil da
-    manutenção OU permissão 'pedir_ot' (ou 'manutencao') na
-    permissoes_colaborador. Regra do cadastro: função MECÂNICO nasce com
-    pedir_ot + checklist marcados (auto-default aplicado no Admin Master)."""
-    if (payload.get("perfil") or "").lower() in _PERFIS_MANUTENCAO:
-        return payload
-    if await _tem_modulo(payload, {"pedir_ot", "manutencao"}):
+    """Gate do CANAL EXTERNO (app Pedir OT): pedir_ot, ot_executar ou manutencao."""
+    if await _tem_modulo(payload, {"pedir_ot", "ot_executar", "manutencao"}):
         return payload
     raise HTTPException(status_code=403,
                         detail="Sem permissão para pedir OT — marque o módulo na matriz de Permissões (perfil Mecânica já vem com ele)")
@@ -4765,6 +4735,11 @@ async def _entrada_core(d, payload):
             (cod,), fetch="one")
         desc_it = (it.get("descricao") or "").strip()
         if not p:
+            # (21/10/2026) Regra: peça nova entra pelo CADASTRO COMPLETO (código, família, características) —
+            # a entrada por NF/notinha não cria item "de passagem". Só a aplicação direta da OT ainda aceita
+            # (o app do mecânico cadastra pela janela completa antes).
+            if doc_tipo != "aplicacao_direta":
+                raise HTTPException(status_code=400, detail=f"Peça {cod} não está no Catálogo — cadastre pelo ➕ da lista de sugestões (cadastro completo) e lance a entrada em seguida")
             desc = desc_it
             if not desc:
                 raise HTTPException(status_code=404, detail=f"Peça {cod} não cadastrada — informe a descrição para cadastrar na hora")
@@ -4825,7 +4800,17 @@ async def _entrada_core(d, payload):
              (round(total_nf, 2) if total_nf is not None else None)), fetch="none")
         total_doc += qtd * (custo or 0)
         lancados.append(cod)
-    return {"ok": True, "documento": doc_num or doc_tipo, "itens": len(lancados),
+    # (21/10/2026) itens que entraram no almoxarifado sem endereço (C-P-N): o front obriga a endereçar
+    # antes de fechar — peça nova precisa de lugar na prateleira — e já oferece a etiqueta.
+    sem_local = []
+    if destino is not None:
+        rows = await ajard_query(
+            """SELECT p.codigo, p.descricao FROM manutencao.estoque e JOIN manutencao.pecas p ON p.id=e.peca_id
+               WHERE e.almoxarifado_id=%s AND p.codigo = ANY(%s) AND COALESCE(e.localizacao,'')=''
+               ORDER BY p.codigo""", (destino, lancados)) or []
+        sem_local = [dict(r) for r in rows]
+    return {"ok": True, "documento": doc_num or doc_tipo, "itens": len(lancados), "codigos": lancados,
+            "destino": (d.get("destino") or "").strip() or None, "sem_local": sem_local,
             "total": round(total_doc, 2), "itens_nf": round(soma_itens, 2),
             "acrescimos": round(acrescimos, 2), "desconto": round(desconto, 2)}
 
@@ -5334,7 +5319,7 @@ async def _apont_do_usuario(ap_id, ot_id, payload):
                            (ap_id, ot_id), fetch="one")
     if not ap:
         raise HTTPException(status_code=404, detail="Apontamento não encontrado")
-    gestor = (payload.get("perfil") or "").lower() in _PERFIS_MANUTENCAO
+    gestor = await _tem_modulo(payload, {"manutencao"})   # (21/10/2026) gestão = módulo, não perfil
     if not gestor and str(ap["usuario_id"]) != str(uid):
         raise HTTPException(status_code=403, detail="Só quem registrou pode alterar este apontamento")
     return o, uid, ap
@@ -5383,7 +5368,7 @@ async def ot_apontamentos_listar(ot_id: str, payload=Depends(verificar_pedir_ot)
     fotos de cada registro. `meu` = pode editar/excluir."""
     await _garantir_apontamentos()
     o, uid = await _ot_mobile_pode(ot_id, payload)
-    gestor = (payload.get("perfil") or "").lower() in _PERFIS_MANUTENCAO
+    gestor = await _tem_modulo(payload, {"manutencao"})   # (21/10/2026) gestão = módulo, não perfil
     rows = await ajard_query(
         """SELECT a.*, u.nome AS usuario_nome
            FROM manutencao.ot_apontamentos a LEFT JOIN public.usuarios_garra u ON u.id = a.usuario_id
@@ -5492,8 +5477,6 @@ async def _ot_mobile_pode(ot_id, payload):
 
 
 async def _e_executor(payload) -> bool:
-    if (payload.get("perfil") or "").lower() in _PERFIS_MANUTENCAO:
-        return True
     return await _tem_modulo(payload, {"ot_executar", "manutencao"})
 
 
@@ -5616,7 +5599,7 @@ async def ot_foto_execucao_excluir(ot_id: str, doc_id: str, payload=Depends(veri
                           (doc_id, ot_id), fetch="one")
     if not f:
         raise HTTPException(status_code=404, detail="Foto não encontrada")
-    gestor = (payload.get("perfil") or "").lower() in _PERFIS_MANUTENCAO
+    gestor = await _tem_modulo(payload, {"manutencao"})   # (21/10/2026) gestão = módulo, não perfil
     if not gestor and str(f["usuario_id"]) != str(uid):
         raise HTTPException(status_code=403, detail="Só quem enviou a foto pode removê-la")
     await ajard_query("UPDATE manutencao.equipamento_documentos SET ativo=false WHERE id=%s", (doc_id,), fetch="none")
@@ -5931,12 +5914,20 @@ async def etiquetas_itens(codigos: str = None, familia: str = None, almox: str =
     if almox:
         cond.append("EXISTS (SELECT 1 FROM manutencao.estoque e JOIN manutencao.almoxarifados a ON a.id=e.almoxarifado_id WHERE e.peca_id=p.id AND a.codigo=%s)")
         params.append(almox)
+    fe = _fam_efetiva("p")
     rows = await ajard_query(
         f"""SELECT p.id, p.codigo, p.descricao, p.unidade, p.codigo_fabricante, p.codigo_externo, p.caracteristicas,
+                   {fe} AS familia_codigo,
+                   (SELECT f.nome FROM manutencao.familias f WHERE f.codigo = split_part({fe},'.',1) LIMIT 1) AS familia_nome,
+                   (SELECT f.nome FROM manutencao.familias f WHERE f.codigo = {fe} AND {fe} LIKE '%%.%%' LIMIT 1) AS subfamilia_nome,
+                   upper(COALESCE(NULLIF(p.classe,''),
+                         CASE WHEN p.codigo ~ '^[A-Za-z]\\.' THEN split_part(p.codigo,'.',1) ELSE NULL END,
+                         (SELECT f.classe FROM manutencao.familias f WHERE f.codigo = split_part({fe},'.',1) LIMIT 1))) AS classe,
                    (SELECT string_agg(a.codigo || CASE WHEN COALESCE(e.localizacao,'')<>'' THEN ' ' || e.localizacao ELSE '' END, ' · ' ORDER BY a.codigo)
                       FROM manutencao.estoque e JOIN manutencao.almoxarifados a ON a.id=e.almoxarifado_id
                      WHERE e.peca_id=p.id AND a.ativo=true) AS locais
             FROM manutencao.pecas p WHERE {' AND '.join(cond)} ORDER BY p.codigo LIMIT 300""", tuple(params)) or []
+    classes = {r["codigo"]: r["nome"] for r in (await ajard_query("SELECT codigo, nome FROM manutencao.classes_materiais") or [])}
     # compatibilidade: equipamentos cujas FMPs preveem o item
     pl = await ajard_query(
         """SELECT eq.codigo AS equipamento, p.pecas FROM manutencao.planos p
@@ -5970,8 +5961,12 @@ async def etiquetas_itens(codigos: str = None, familia: str = None, almox: str =
                 qr = _segno.make(base + r["codigo"], error="m").svg_inline(scale=4, border=0, dark="#0F172A")
             except Exception:
                 qr = None
+        fam_txt = (r["familia_codigo"] or "") + (" — " + r["familia_nome"] if r.get("familia_nome") else "") \
+                  + (" › " + r["subfamilia_nome"] if r.get("subfamilia_nome") else "")
         out.append({"codigo": r["codigo"], "descricao": r["descricao"] or "", "unidade": r["unidade"] or "UN",
                     "part_number": r["codigo_fabricante"] or r["codigo_externo"] or "",
+                    "classe": r.get("classe") or "", "classe_nome": classes.get(r.get("classe") or "", ""),
+                    "familia_codigo": r["familia_codigo"] or "", "familia": fam_txt,
                     "compativel": eqs, "aplicacao": aplic, "locais": r["locais"] or "", "qr_svg": qr})
     return out
 
@@ -5985,17 +5980,24 @@ async def pagina_etiquetas():
 .bar{position:sticky;top:0;background:#1A2A5E;color:#fff;padding:8px 14px;display:flex;gap:10px;align-items:center;font-size:13px}
 .bar button{background:#F97316;color:#fff;border:0;border-radius:6px;padding:6px 14px;font-weight:700;cursor:pointer}
 .folha{width:21.59cm;min-height:27.94cm;margin:10px auto;background:#fff;padding:1.0cm 0.35cm 0.9cm 0.35cm;display:grid;grid-template-columns:10.2cm 10.2cm;column-gap:0.5cm;grid-auto-rows:5.05cm;align-content:start}
-.et{width:10.2cm;height:5.05cm;border:1px dashed #CBD5E1;padding:0.25cm 0.3cm;display:grid;grid-template-columns:1fr 2.9cm;column-gap:0.25cm;overflow:hidden;page-break-inside:avoid}
-.et .cod{font-size:20pt;font-weight:900;color:#1A2A5E;letter-spacing:.3px;line-height:1.05}
-.et .desc{font-size:11pt;font-weight:700;margin-top:2px;line-height:1.15;max-height:2.4em;overflow:hidden}
-.et .pn{font-size:8.5pt;color:#334155;margin-top:3px}
-.et .cmp{font-size:8.5pt;color:#334155;margin-top:2px;max-height:2.3em;overflow:hidden}
-.et .rod{position:relative;margin-top:auto;display:flex;justify-content:space-between;align-items:flex-end;font-size:9pt}
-.et .loc{font-weight:900;color:#F97316;font-size:11pt}
-.et .q{display:flex;flex-direction:column;align-items:center;justify-content:center}
-.et .q svg,.et .q img,.et .q canvas{width:2.6cm;height:2.6cm}
-.et .q small{font-size:6.5pt;color:#64748B;margin-top:2px}
+.et{width:10.2cm;height:5.05cm;border:1px dashed #CBD5E1;padding:0.22cm 0.3cm 0.18cm;display:grid;grid-template-columns:1fr 2.6cm;column-gap:0.25cm;overflow:hidden;page-break-inside:avoid}
 .et .esq{display:flex;flex-direction:column;min-width:0}
+.et .fam{font-size:7.5pt;color:#64748B;letter-spacing:.3px;text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.et .fam b{color:#1A2A5E}
+.et .cod{font-size:20pt;font-weight:900;color:#1A2A5E;line-height:1.05;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.et .desc{font-size:10.5pt;font-weight:700;margin-top:2px;line-height:1.15;max-height:2.3em;overflow:hidden}
+.et .pn{font-size:12.5pt;font-weight:900;color:#0F172A;margin-top:2px;line-height:1.15;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.et .pn small{font-size:7.5pt;font-weight:700;color:#64748B;letter-spacing:.3px;margin-right:4px}
+.et .pn.vz{font-weight:400;color:#A0AEC0;font-size:8pt}
+.et .lin{font-size:8pt;color:#334155;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.et .lin b{color:#0F172A}
+.et .lin.vz{color:#A0AEC0}.et .lin.vz b{color:#A0AEC0;font-weight:400}
+.et .rod{display:flex;justify-content:space-between;align-items:baseline;margin-top:auto;font-size:8.5pt;padding-top:3px;border-top:1px solid #E2E8F0}
+.et .loc{font-weight:900;color:#F97316;font-size:11.5pt}
+.et .loc.vz{color:#A0AEC0;font-weight:400;font-size:8.5pt}
+.et .q{display:flex;flex-direction:column;align-items:center;justify-content:center}
+.et .q svg,.et .q img,.et .q canvas{width:2.5cm;height:2.5cm}
+.et .q small{font-size:6.5pt;color:#64748B;margin-top:1px}
 body.semguia .et{border-color:transparent}
 @media print{body{background:#fff}.bar{display:none}.folha{margin:0;padding:0;min-height:auto;page-break-after:always}.et{border-color:transparent}}
 </style></head><body>
@@ -6016,11 +6018,17 @@ const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;',
   for(let i=0;i<itens.length;i+=10){
     html+='<div class="folha">'+itens.slice(i,i+10).map((it,j)=>{
       const cmp=(it.compativel||[]).concat(it.aplicacao||[]).filter((v,k,a)=>a.indexOf(v)===k);
-      return '<div class="et"><div class="esq"><div class="cod">'+esc(it.codigo)+'</div><div class="desc">'+esc(it.descricao)+'</div>'
-        +(it.part_number?'<div class="pn">Part number: <b>'+esc(it.part_number)+'</b></div>':'')
-        +(cmp.length?'<div class="cmp">Compatível: '+esc(cmp.join(' · '))+'</div>':'')
-        +'<div class="rod"><span class="loc">'+esc(it.locais||'')+'</span><span>UN: <b>'+esc(it.unidade)+'</b></span></div></div>'
-        +'<div class="q">'+(it.qr_svg||'<div class="muted" style="font-size:7pt">QR indisponível</div>')+'<small>'+esc(it.codigo)+'</small></div></div>';
+      const v = (x) => x ? '<b>'+esc(x)+'</b>' : '<b>—</b>';
+      const cls = (x) => 'lin'+(x ? '' : ' vz');
+      const pn = (it.part_number && it.part_number.replace(/\\s/g,'').toUpperCase()!==it.codigo.replace(/\\s/g,'').toUpperCase()) ? it.part_number : '';
+      // PADRÃO FIXO: Classe · Família › Subfamília | Código | Descrição | Part number | Compatível | Local | UN — sempre presentes
+      return '<div class="et"><div class="esq">'
+        +'<div class="fam"><b>'+esc(it.familia_codigo||'—')+'</b>'+(it.familia&&it.familia.indexOf(' — ')>0?' · '+esc(it.familia.split(' — ')[1]):'')+'</div>'
+        +'<div class="cod">'+esc(it.codigo)+'</div><div class="desc">'+esc(it.descricao||'—')+'</div>'
+        +'<div class="pn'+(pn?'':' vz')+'"><small>P/N</small>'+(pn?esc(pn):'—')+'</div>'
+        +'<div class="'+cls(cmp.length)+'">Compatível: '+v(cmp.join(' · '))+'</div>'
+        +'<div class="rod"><span class="loc'+(it.locais?'':' vz')+'">'+(it.locais?esc(it.locais):'Local: —')+'</span><span>UN: <b>'+esc(it.unidade)+'</b></span></div></div>'
+        +'<div class="q">'+(it.qr_svg||'<div style="font-size:7pt;color:#94A3B8">QR indisponível</div>')+'<small>'+esc(it.codigo)+'</small></div></div>';
     }).join('')+'</div>';
   }
   document.getElementById('folhas').innerHTML=html;

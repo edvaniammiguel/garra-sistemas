@@ -335,8 +335,8 @@ async def listar_motoristas(db=Depends(get_db), _auth=Depends(verificar_token)):
 
 # ─── (09/07/2026) Menor privilégio: escrita na logística exige a permissão ───
 async def _exigir_logistica(db, payload):
-    perfil = (payload.get("perfil") or "").lower()
-    if perfil in ("admin", "gestor"):
+    from core.permissions import tem_modulo
+    if await tem_modulo(payload, {"admin_master"}):   # (21/10/2026) módulo, não perfil
         return
     ident = payload.get("sub") or payload.get("login") or ""
     ok = await db.fetchval(
@@ -504,8 +504,10 @@ async def checklist_manifest():
 # ══════════════════════════════════════════════════════════════
 
 def _eh_gestor_ck(payload) -> bool:
-    """Gestão do checklist: perfil global admin/gestor OU papel manager do módulo."""
-    return payload.get("perfil") in ("admin", "gestor") or payload.get("perfil_checklist") == "manager"
+    """Gestão do checklist: perfil Master (admin) OU papel manager do módulo.
+    (21/10/2026) 'gestor' saiu da lista fixa — gestão do checklist é pelo papel manager
+    (Admin › Usuários › perfil do checklist), que a tela de Permissões controla."""
+    return payload.get("perfil") == "admin" or payload.get("perfil_checklist") == "manager"
 
 
 @router.get("/checklist/ranking")

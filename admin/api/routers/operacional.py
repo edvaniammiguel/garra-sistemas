@@ -14,7 +14,9 @@ from core.config import OPERACIONAL_DIR
 from core.db import ajard_query, ajard_query_id, get_db
 from core.storage import storage_upload
 from core.helpers import enviar_email_smtp
-from core.auth import verificar_token, verificar_gestor, verificar_admin
+from core.auth import verificar_token, verificar_admin
+from core.gates import exigir_painel_gestao   # (21/10/2026) OS/cadastros pelo módulo Painel de Gestão, não por perfil
+from core.permissions import tem_modulo
 
 router = APIRouter()
 
@@ -311,7 +313,7 @@ async def op_listar_regimes(_auth=Depends(verificar_token)):
     return [dict(r) for r in (rows or [])]
 
 @router.post("/operacional/api/regimes-cobranca")
-async def op_criar_regime(request: Request, payload=Depends(verificar_gestor)):
+async def op_criar_regime(request: Request, payload=Depends(exigir_painel_gestao)):
     d = await request.json()
     nome = (d.get("nome") or "").strip().lower()
     descricao = (d.get("descricao") or "").strip()
@@ -332,7 +334,7 @@ async def op_criar_regime(request: Request, payload=Depends(verificar_gestor)):
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.patch("/operacional/api/regimes-cobranca/{reg_id}")
-async def op_editar_regime(reg_id: str, request: Request, payload=Depends(verificar_gestor)):
+async def op_editar_regime(reg_id: str, request: Request, payload=Depends(exigir_painel_gestao)):
     d = await request.json()
     updates = []
     valores = []
@@ -363,7 +365,7 @@ async def op_editar_regime(reg_id: str, request: Request, payload=Depends(verifi
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.delete("/operacional/api/regimes-cobranca/{reg_id}")
-async def op_remover_regime(reg_id: str, payload=Depends(verificar_gestor)):
+async def op_remover_regime(reg_id: str, payload=Depends(exigir_painel_gestao)):
     try:
         await ajard_query("UPDATE operacional.regimes_cobranca SET ativo=false WHERE id=%s", (reg_id,), fetch="none")
         return {"ok": True}
@@ -430,7 +432,7 @@ def _ano_int(v):
 
 
 @router.post("/operacional/api/equipamentos")
-async def op_criar_equipamento(request: Request, payload=Depends(verificar_gestor)):
+async def op_criar_equipamento(request: Request, payload=Depends(exigir_painel_gestao)):
     """Cria equipamento — sincroniza em operacional.equipamentos + checklist.frota."""
     d = await request.json()
     codigo    = (d.get("codigo") or "").strip()
@@ -489,11 +491,25 @@ async def op_criar_equipamento(request: Request, payload=Depends(verificar_gesto
         return dict(row) if row else {"codigo": codigo}
     except Exception as e:
         if "duplicate" in str(e).lower():
+            # (10/10/2026) Diz ONDE está o duplicado, em vez de só "já existe"
+            try:
+                ex = await ajard_query(
+                    """SELECT e.codigo, e.descricao, e.ativo, e.categoria, e.sistema_codigo AS sistema
+                       FROM operacional.equipamentos e
+                       WHERE upper(trim(e.codigo)) = upper(trim(%s)) ORDER BY e.ativo DESC LIMIT 1""", (codigo,), fetch="one")
+            except Exception:
+                ex = None
+            if ex:
+                onde = ("sistema " + ex["sistema"]) if ex.get("sistema") else "sem grupo na árvore (nó 'Sem grupo')"
+                raise HTTPException(status_code=409, detail=(
+                    f"Código já existe: {ex['codigo']} — {ex['descricao'] or ''} "
+                    f"({'ativo' if ex['ativo'] else 'inativo'}, categoria {ex['categoria'] or '—'}, {onde}). "
+                    f"Procure por '{ex['codigo']}' na barra da Frota ou mude o número."))
             raise HTTPException(status_code=409, detail="Código já existe")
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.patch("/operacional/api/equipamentos/{eq_id}")
-async def op_editar_equipamento(eq_id: str, request: Request, payload=Depends(verificar_gestor)):
+async def op_editar_equipamento(eq_id: str, request: Request, payload=Depends(exigir_painel_gestao)):
     """Edita equipamento — sincroniza com checklist.frota."""
     d = await request.json()
     updates = []
@@ -535,7 +551,7 @@ async def op_editar_equipamento(eq_id: str, request: Request, payload=Depends(ve
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.delete("/operacional/api/equipamentos/{eq_id}")
-async def op_remover_equipamento(eq_id: str, payload=Depends(verificar_gestor)):
+async def op_remover_equipamento(eq_id: str, payload=Depends(exigir_painel_gestao)):
     """Soft delete — desativa em ambas as tabelas."""
     try:
         row = await ajard_query(
@@ -559,7 +575,7 @@ async def op_listar_clientes(_auth=Depends(verificar_token)):
     return [dict(r) for r in (rows or [])]
 
 @router.post("/operacional/api/clientes")
-async def op_criar_cliente(request: Request, payload=Depends(verificar_gestor)):
+async def op_criar_cliente(request: Request, payload=Depends(exigir_painel_gestao)):
     """Cria novo cliente."""
     d = await request.json()
     nome = (d.get("nome") or "").strip()
@@ -585,7 +601,7 @@ async def op_criar_cliente(request: Request, payload=Depends(verificar_gestor)):
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.patch("/operacional/api/clientes/{cli_id}")
-async def op_editar_cliente(cli_id: str, request: Request, payload=Depends(verificar_gestor)):
+async def op_editar_cliente(cli_id: str, request: Request, payload=Depends(exigir_painel_gestao)):
     """Edita cliente."""
     d = await request.json()
     updates = []
@@ -615,7 +631,7 @@ async def op_editar_cliente(cli_id: str, request: Request, payload=Depends(verif
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.delete("/operacional/api/clientes/{cli_id}")
-async def op_remover_cliente(cli_id: str, payload=Depends(verificar_gestor)):
+async def op_remover_cliente(cli_id: str, payload=Depends(exigir_painel_gestao)):
     """Soft delete cliente."""
     try:
         await ajard_query(
@@ -638,7 +654,7 @@ async def op_listar_operadores(_auth=Depends(verificar_token)):
     return [dict(r) for r in (rows or [])]
 
 @router.get("/operacional/api/proximo-numero")
-async def op_proximo_numero(_auth=Depends(verificar_gestor)):
+async def op_proximo_numero(_auth=Depends(exigir_painel_gestao)):
     """Retorna o próximo número de OS disponível para o ano atual."""
     ano = datetime.utcnow().year
     row = await ajard_query(
@@ -648,7 +664,7 @@ async def op_proximo_numero(_auth=Depends(verificar_gestor)):
     return {"numero": row["numero"], "ano": ano}
 
 @router.post("/operacional/api/os")
-async def op_criar_os(request: Request, payload=Depends(verificar_gestor)):
+async def op_criar_os(request: Request, payload=Depends(exigir_painel_gestao)):
     """Cria nova OS. Somente admin, gestor ou luana."""
     d = await request.json()
 
@@ -816,7 +832,7 @@ async def op_listar_os(
     saida = [dict(r) for r in (rows or [])]
     # (21/07/2026) observacao_gestao pode conter condições financeiras —
     # menor privilégio: só admin/gestor/luana recebem o campo.
-    if (_auth.get("perfil") or "").lower() not in ("admin", "gestor", "luana"):
+    if not await tem_modulo(_auth, {"admin_master"}):
         for r in saida:
             r.pop("observacao_gestao", None)
     return saida
@@ -860,7 +876,7 @@ async def op_detalhe_os(os_id: str, _auth=Depends(verificar_token)):
     )
 
     os_dict = dict(row)
-    if (_auth.get("perfil") or "").lower() not in ("admin", "gestor", "luana"):
+    if not await tem_modulo(_auth, {"admin_master"}):
         os_dict.pop("observacao_gestao", None)
     os_dict["partes_diarias"] = [dict(p) for p in (partes or [])]
     precos_cat = await ajard_query(
@@ -870,7 +886,7 @@ async def op_detalhe_os(os_id: str, _auth=Depends(verificar_token)):
     return os_dict
 
 @router.patch("/operacional/api/os/{os_id}")
-async def op_atualizar_os(os_id: str, request: Request, payload=Depends(verificar_gestor)):
+async def op_atualizar_os(os_id: str, request: Request, payload=Depends(exigir_painel_gestao)):
     """Atualiza OS — útil para inserir codigo_erp retroativo, mudar status, etc."""
     d = await request.json()
 
@@ -967,7 +983,7 @@ async def op_remover_os(os_id: str, payload=Depends(verificar_token)):
     if (qtd or {}).get("n", 0) > 0:
         raise HTTPException(status_code=400,
             detail=f"Esta OS tem {qtd['n']} registro(s) de trabalho — exclua os registros primeiro ou use Concluir.")
-    if perfil not in ("admin", "gestor"):
+    if not await tem_modulo(payload, {"admin_master"}):
         user = await ajard_query(
             "SELECT id FROM public.usuarios_garra WHERE login=%s", (login,), fetch="one")
         uid = str((user or {}).get("id") or "")
@@ -1156,7 +1172,7 @@ async def op_listar_partes(os_id: str, _auth=Depends(verificar_token)):
 
     # Perfil do solicitante — operador/motorista NÃO vê horas cobradas (valores)
     perfil = _auth.get("perfil", "")
-    eh_gestor = perfil in ("admin", "gestor", "luana", "bruna")
+    eh_gestor = await tem_modulo(_auth, {"admin_master", "manutencao"})
 
     if not eh_gestor:
         # Menor privilégio (decisão 05/07/2026): operador vê SOMENTE os
@@ -1234,7 +1250,7 @@ async def op_listar_partes(os_id: str, _auth=Depends(verificar_token)):
             "precos_categoria": [dict(r) for r in (_pc or [])]}
 
 @router.patch("/operacional/api/partes/{parte_id}")
-async def op_atualizar_parte(parte_id: str, request: Request, payload=Depends(verificar_gestor)):
+async def op_atualizar_parte(parte_id: str, request: Request, payload=Depends(exigir_painel_gestao)):
     """Luana/Admin atualiza parte diária — ajusta horas cobradas, diárias, observação."""
     d = await request.json()
     existente = await ajard_query(
@@ -1300,7 +1316,7 @@ async def op_atualizar_parte(parte_id: str, request: Request, payload=Depends(ve
     return dict(row)
 
 @router.delete("/operacional/api/partes/{parte_id}")
-async def op_remover_parte(parte_id: str, _auth=Depends(verificar_gestor)):
+async def op_remover_parte(parte_id: str, _auth=Depends(exigir_painel_gestao)):
     """Soft delete de parte diária."""
     existente = await ajard_query(
         "SELECT fechado FROM operacional.partes_diarias WHERE id=%s AND ativo=true",
@@ -1317,7 +1333,7 @@ async def op_remover_parte(parte_id: str, _auth=Depends(verificar_gestor)):
     return {"ok": True, "id": parte_id}
 
 @router.post("/operacional/api/os/{os_id}/fechar")
-async def op_fechar_os(os_id: str, request: Request, payload=Depends(verificar_gestor)):
+async def op_fechar_os(os_id: str, request: Request, payload=Depends(exigir_painel_gestao)):
     """Fecha OS após revisão pela Luana. Congela todas as partes diárias."""
     os_row = await ajard_query(
         "SELECT * FROM operacional.ordens_servico WHERE id=%s AND ativo=true",
@@ -1498,7 +1514,7 @@ async def op_fechar_os(os_id: str, request: Request, payload=Depends(verificar_g
 
 @router.post("/operacional/api/os/{os_id}/partes/lote")
 async def op_lancar_diarias_lote(os_id: str, request: Request,
-                                 payload=Depends(verificar_gestor)):
+                                 payload=Depends(exigir_painel_gestao)):
     """(24/07/2026) Diárias em LOTE — locação seca (equipamento sem
     motorista, ninguém no campo para registrar). Cria 1 diária por dia no
     período (máx. 30 dias). Idempotente: dias que já têm diária ATIVA do
@@ -1589,7 +1605,7 @@ async def op_lancar_diarias_lote(os_id: str, request: Request,
             "de": dt_ini.isoformat(), "ate": dt_fim.isoformat()}
 
 @router.post("/operacional/api/os/{os_id}/reabrir")
-async def op_reabrir_os(os_id: str, payload=Depends(verificar_gestor)):
+async def op_reabrir_os(os_id: str, payload=Depends(exigir_painel_gestao)):
     """(20/07/2026) Reabre OS concluída — caminho de volta sancionado.
     O fechamento congela as partes (fechado=true) por integridade do
     faturamento; antes desta rota, um registro errado numa OS fechada era
@@ -1640,7 +1656,7 @@ async def op_concluir_os_operador(os_id: str, request: Request, payload=Depends(
         raise HTTPException(status_code=404, detail="OS não encontrada")
 
     # Verificar se o operador é dono da OS ou admin/gestor
-    if user["perfil"] not in ("admin","gestor","luana") and str(os_row.get("operador_id")) != str(user["id"]):
+    if not await tem_modulo(payload, {"admin_master"}) and str(os_row.get("operador_id")) != str(user["id"]):
         raise HTTPException(status_code=403, detail="Você não é o operador desta OS")
 
     if os_row.get("status") in ("concluida_completa","concluida_sem_erp","cancelada","aguardando_fechamento"):
@@ -1690,7 +1706,7 @@ async def op_liberar_os(os_id: str, payload=Depends(verificar_token)):
         raise HTTPException(status_code=404, detail="OS não encontrada")
 
     # Só o operador dono (ou admin/gestor) pode liberar
-    if user["perfil"] not in ("admin","gestor","luana") and str(os_row.get("operador_id")) != str(user["id"]):
+    if not await tem_modulo(payload, {"admin_master"}) and str(os_row.get("operador_id")) != str(user["id"]):
         raise HTTPException(status_code=403, detail="Você não é o operador desta OS")
 
     if os_row.get("status") in ("concluida_completa","concluida_sem_erp","cancelada"):
@@ -1708,7 +1724,7 @@ async def op_liberar_os(os_id: str, payload=Depends(verificar_token)):
     return {"ok": True, "numero": os_row.get("numero"), "liberada": True}
 
 @router.get("/operacional/api/os/{os_id}/revisao")
-async def op_revisao_os(os_id: str, _auth=Depends(verificar_gestor)):
+async def op_revisao_os(os_id: str, _auth=Depends(exigir_painel_gestao)):
     """Tela de revisão antes de fechar: OS + partes + totais consolidados."""
     os_detail = await op_detalhe_os(os_id, _auth=_auth)
     partes_data = await op_listar_partes(os_id, _auth=_auth)
@@ -1846,8 +1862,8 @@ async def op_criar_os_avulsa(req: Request, payload=Depends(verificar_token)):
         raise HTTPException(status_code=404, detail="Usuário não encontrado")
     
     # Perfis autorizados
-    if user["perfil"] not in ("operador", "motorista", "admin", "gestor", "luana"):
-        raise HTTPException(status_code=403, detail="Perfil sem permissão para criar OS avulsa")
+    if not await tem_modulo(payload, {"operacional_mobile", "admin_master"}):   # (21/10/2026) módulo, não perfil
+        raise HTTPException(status_code=403, detail="Sem permissão para criar OS avulsa (módulo Operacional Mobile)")
     
     body = await req.json()
     obra            = (body.get("obra") or "").strip()
@@ -1929,7 +1945,7 @@ async def op_criar_os_avulsa(req: Request, payload=Depends(verificar_token)):
     return {"ok": True, "os": dict(nova) if nova else {"numero": numero}}
 
 @router.get("/operacional/api/controle-mensal/periodos")
-async def op_controle_mensal_periodos(db=Depends(get_db), _auth=Depends(verificar_gestor)):
+async def op_controle_mensal_periodos(db=Depends(get_db), _auth=Depends(exigir_painel_gestao)):
     """Lista os meses que têm partes diárias salvas, agrupados por ano.
     Alimenta o menu suspenso de períodos do Controle Mensal (asyncpg — regra #44)."""
     rows = await db.fetch("""
@@ -2194,7 +2210,7 @@ async def op_paradas_motivos(_auth=Depends(verificar_token)):
 
 
 @router.post("/operacional/api/paradas")
-async def op_parada_criar(request: Request, payload=Depends(verificar_gestor)):
+async def op_parada_criar(request: Request, payload=Depends(exigir_painel_gestao)):
     """Lança parada para uma ou várias máquinas (ex.: chuva na obra toda)."""
     await _garantir_paradas()
     d = await request.json()
@@ -2217,7 +2233,7 @@ async def op_parada_criar(request: Request, payload=Depends(verificar_gestor)):
 
 
 @router.patch("/operacional/api/paradas/{parada_id}")
-async def op_parada_editar(parada_id: str, request: Request, _auth=Depends(verificar_gestor)):
+async def op_parada_editar(parada_id: str, request: Request, _auth=Depends(exigir_painel_gestao)):
     await _garantir_paradas()
     atual = await ajard_query("SELECT * FROM operacional.paradas WHERE id=%s AND ativo=true", (parada_id,), fetch="one")
     if not atual:
@@ -2237,7 +2253,7 @@ async def op_parada_editar(parada_id: str, request: Request, _auth=Depends(verif
 
 
 @router.delete("/operacional/api/paradas/{parada_id}")
-async def op_parada_excluir(parada_id: str, _auth=Depends(verificar_gestor)):
+async def op_parada_excluir(parada_id: str, _auth=Depends(exigir_painel_gestao)):
     await ajard_query("UPDATE operacional.paradas SET ativo=false WHERE id=%s", (parada_id,), fetch="none")
     return {"ok": True}
 
@@ -2248,7 +2264,7 @@ async def op_controle_mensal(
     mes: int = None,
     equipamento_id: str = None,
     operador_id: str = None,
-    _auth=Depends(verificar_gestor)
+    _auth=Depends(exigir_painel_gestao)
 ):
     """Retorna partes diárias do mês (ou do ANO inteiro, se mes ausente)
     para preview do controle mensal / exportação anual.
@@ -2465,7 +2481,7 @@ async def op_controle_mensal_excel(
     view: str = "equipamento",
     equipamento_id: str = None,
     operador_id: str = None,
-    _auth=Depends(verificar_gestor)
+    _auth=Depends(exigir_painel_gestao)
 ):
     """Gera Excel do controle mensal (ou ANUAL, se mes ausente) —
     1 aba por equipamento ou por colaborador."""
@@ -3109,7 +3125,7 @@ def _agenda_segmentos_mensais(d_ini, d_fim):
 
 
 @router.post("/operacional/api/agenda/sincronizar")
-async def op_agenda_sincronizar(payload=Depends(verificar_gestor)):
+async def op_agenda_sincronizar(payload=Depends(exigir_painel_gestao)):
     """Varre as agendas ICS cadastradas nos equipamentos e grava/atualiza
     os eventos pendentes. Só meses do atual em diante entram."""
     import asyncio, requests as _rq
@@ -3168,7 +3184,7 @@ async def op_agenda_sincronizar(payload=Depends(verificar_gestor)):
 
 @router.get("/operacional/api/agenda/eventos")
 async def op_agenda_listar(status: Optional[str] = "pendente",
-                           payload=Depends(verificar_gestor)):
+                           payload=Depends(exigir_painel_gestao)):
     rows = await ajard_query(
         """SELECT ae.id, ae.uid_google, ae.mes_ref, ae.titulo, ae.descricao,
                   ae.data_inicio, ae.data_fim, ae.status, ae.os_id,
@@ -3184,7 +3200,7 @@ async def op_agenda_listar(status: Optional[str] = "pendente",
 
 
 @router.post("/operacional/api/agenda/eventos/{ev_id}/ignorar")
-async def op_agenda_ignorar(ev_id: str, payload=Depends(verificar_gestor)):
+async def op_agenda_ignorar(ev_id: str, payload=Depends(exigir_painel_gestao)):
     row = await ajard_query(
         """UPDATE operacional.agenda_eventos SET status='ignorado', atualizado_em=now()
            WHERE id=%s AND status='pendente' RETURNING id""",
@@ -3197,7 +3213,7 @@ async def op_agenda_ignorar(ev_id: str, payload=Depends(verificar_gestor)):
 
 @router.post("/operacional/api/agenda/eventos/{ev_id}/confirmar")
 async def op_agenda_confirmar(ev_id: str, request: Request,
-                              payload=Depends(verificar_gestor)):
+                              payload=Depends(exigir_painel_gestao)):
     """Vincula o evento à OS criada pela gestão (fluxo: modal pré-preenchido
     → salvarOS → esta rota marca o evento como confirmado)."""
     d = await request.json()

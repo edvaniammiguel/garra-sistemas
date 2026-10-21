@@ -51,27 +51,18 @@ def storage_url(path, segundos=None):
 
 router = APIRouter()
 
-_PERFIS_LIVRES = {"admin", "gestor", "bruna", "luana"}
+# (21/10/2026) Sem perfis "livres": só a tela de Permissões decide (admin = Master).
+from core.permissions import tem_modulo as _tem_modulo
 
 async def verificar_abastecimento(payload=Depends(verificar_token)):
-    """Gate do módulo 'abastecimento' — matriz Por Perfil + exceções
-    individuais (mesmo resolvedor oficial do Manutenção)."""
-    if (payload.get("perfil") or "").lower() in _PERFIS_LIVRES:
-        return payload
-    from routers.manutencao import _tem_modulo
-    if await _tem_modulo(payload, {"abastecimento"}):
+    """Gate do módulo 'abastecimento' (perfil padrão + exceções individuais)."""
+    if await _tem_modulo(payload, {"abastecimento", "manutencao"}):
         return payload
     raise HTTPException(status_code=403, detail="Sem permissão para Abastecimento")
 
 async def verificar_notas(payload=Depends(verificar_token)):
-    """(01/09/2026) Gate da conferência financeira das notas — o balcão da
-    Luana: vê fotos e valores e marca 'lançada na MAIS' SEM entrar na
-    Manutenção. Perfis livres + módulo abastecimento_notas (ou manutencao —
-    Bruna também enxerga)."""
-    if (payload.get("perfil") or "").lower() in _PERFIS_LIVRES:
-        return payload
-    from routers.manutencao import _tem_modulo
-    if await _tem_modulo(payload, {"abastecimento_notas", "manutencao"}):
+    """Gate da conferência financeira das notas: abastecimento_notas, manutencao_notas ou manutencao."""
+    if await _tem_modulo(payload, {"abastecimento_notas", "manutencao_notas", "manutencao"}):
         return payload
     raise HTTPException(status_code=403, detail="Sem permissão para Notas de Abastecimento")
 
@@ -1514,8 +1505,8 @@ async def excluir(ab_id: str, payload=Depends(verificar_token)):
     """Soft delete do item. Se era o último item vivo da nota, a nota também
     sai de cena — cupom volta a poder ser lançado."""
     await _ddl()
-    if (payload.get("perfil") or "").lower() not in ("admin", "gestor"):
-        raise HTTPException(status_code=403, detail="Só gestão exclui abastecimento")
+    if not await _tem_modulo(payload, {"admin_master"}):   # (21/10/2026) Painel de Gestão, não perfil
+        raise HTTPException(status_code=403, detail="Só a gestão (Painel de Gestão) exclui abastecimento")
     r = await ajard_query(
         "UPDATE operacional.abastecimentos SET ativo=false WHERE id=%s RETURNING nota_id, equipamento_id, leitura", (ab_id,))
     nota_id = r and r[0]["nota_id"]
