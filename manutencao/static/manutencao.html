@@ -4375,7 +4375,7 @@ async function otPecasRender(){
     + '<b style="width:85px;text-align:right;color:'+(x.total>=0?'#1A2A5E':'#15803D')+'">'+x.total.toFixed(2)+'</b>'
     + '<span style="width:60px" class="muted">'+_esc(x.almox||'')+'</span>'
     + (['programada','aberta','em_andamento','aguardando_peca','concluida'].includes(o.status)
-        ? '<span style="cursor:pointer;width:16px" title="Editar este item" data-i="'+_esc(JSON.stringify({id:x.id,tipo:x.tipo,peca:x.peca_codigo,desc:x.peca_descricao||'',un:x.unidade||'UN',q:x.quantidade,v:x.custo_unitario,doc:x.documento||'',forn:x.fornecedor_nome||'',rub:x.rubrica||'',obs:x.observacao||'',alm:x.almox||''}))+'" onclick="otConsumoEditar(JSON.parse(this.dataset.i))">✏️</span>'
+        ? '<span style="cursor:pointer;width:16px" title="Editar este item" data-i="'+_esc(JSON.stringify({id:x.id,tipo:x.tipo,peca:x.peca_codigo,desc:x.peca_descricao||'',un:x.unidade||'UN',q:x.quantidade,v:x.custo_unitario,doc:x.documento||'',doctipo:x.documento_tipo||'',forn:x.fornecedor_nome||'',rub:x.rubrica||'',obs:x.observacao||'',alm:x.almox||''}))+'" onclick="otConsumoEditar(JSON.parse(this.dataset.i))">✏️</span>'
           + '<span style="cursor:pointer;color:#B91C1C;width:14px" title="Excluir este item" onclick="otConsumoExcluir(\''+x.id+'\',\''+_esc(x.peca_codigo)+'\')">✕</span>'
         : '<span style="width:30px"></span>')+'</div>';
   const delta = cons.total - totPl;
@@ -4399,6 +4399,7 @@ async function otPecasRender(){
         : '');
 }
 function otAplicDireta(){
+  if (_tiposDoc === null) { _tiposDocumento().then(() => { const b = document.getElementById('ot-aplic'); if (b) b.querySelectorAll('select.doctipo').forEach(sl => { sl.innerHTML = _tiposDocOpts('02'); }); }); }
   let b = document.getElementById('ot-aplic');
   if (!b){
     b = document.createElement('div'); b.id = 'ot-aplic';
@@ -4416,7 +4417,8 @@ function otAplicDireta(){
     + '<div class="mfield" style="width:60px">UN<input class="c" value="UN"></div>'
     + '<div class="mfield" style="width:100px">Custo un.<input class="v" type="number" step="0.01" oninput="pcTotLinha(this)"></div>'
     + '<div class="mfield" style="flex:1">Total<div class="t" style="padding:6px 0;font-weight:700;color:#1A2A5E">—</div></div></div>'
-    + '<div class="mfield" style="margin-top:6px">Referência (NF/notinha/oficina — opcional)<input class="ref" placeholder="ex.: NF 887 · Oficina NS"></div>'
+    + '<div style="display:flex;gap:8px;margin-top:6px"><div class="mfield" style="width:170px">Tipo de documento<select class="doctipo">'+_tiposDocOpts('02')+'</select></div>'
+    + '<div class="mfield" style="flex:1">Nº documento (NF/cupom/oficina — opcional)<input class="ref" placeholder="ex.: 887 · Oficina NS"></div></div>'
     + '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">'
     + '<button class="btn" onclick="document.getElementById(\'ot-aplic\').style.display=\'none\'">Cancelar</button>'
     + '<button class="btn p" onclick="otAplicOK()">Aplicar na OT</button></div></div>';
@@ -4431,7 +4433,7 @@ async function otAplicOK(){
   if (qtd <= 0){ mostrarToast('Quantidade deve ser positiva','warn'); return; }
   try {
     const r = await mntFetch('/manutencao/api/entradas', { method:'POST', body: JSON.stringify({
-      documento_tipo: 'aplicacao_direta',
+      documento_tipo: (q('doctipo')||{}).value || '02', destino_tipo: 'ot',
       documento_numero: q('ref').value.trim(),
       ot_id: _otAberta.id,
       observacao: 'Aplicação direta OT '+_otAberta.numero,
@@ -4579,6 +4581,7 @@ function otSaidaRemLinha(el){
   row.remove();
 }
 function otSaidaAbrir(){
+  if (_tiposDoc === null) { _tiposDocumento().then(() => { const b = document.getElementById('ot-saida'); if (b) b.querySelectorAll('select.doctipo').forEach(sl => { sl.innerHTML = _tiposDocOpts('02'); }); }); }
   const alms = (_otPc.alms || []).filter(a=>a.ativo!==false);
   const o = _otAberta || {};
   let b = document.getElementById('ot-saida');
@@ -4595,7 +4598,8 @@ function otSaidaAbrir(){
     +   '<label style="display:flex;align-items:center;gap:5px;cursor:pointer"><input type="radio" name="sai-tipo" value="estoque" onchange="otSaidaModo(\'estoque\')"> Saída Armazém <span class="muted">(baixa do estoque)</span></label>'
     + '</div>'
     + '<div class="panel doc-wrap"><div class="dsec" style="margin-top:0">Documento de custo</div><div style="display:flex;gap:8px;flex-wrap:wrap">'
-    +   '<div class="mfield" style="width:150px">Doc. Custo (NF/recibo)<input class="ref" placeholder="ex.: NF 887"></div>'
+    +   '<div class="mfield" style="width:150px">Tipo de documento<select class="doctipo">'+_tiposDocOpts('02')+'</select></div>'
+    +   '<div class="mfield" style="width:130px">Nº documento<input class="ref" placeholder="ex.: 887"></div>'
     +   '<div class="mfield" style="flex:1;min-width:220px">Fornecedor<select class="forn">'+fornOpts+'</select></div>'
     + '</div></div>'
     + '<div class="panel alm-wrap" style="display:none"><div class="dsec" style="margin-top:0">Armazém</div>'
@@ -4656,7 +4660,7 @@ async function otSaidaOK(){
   const ref = (b.querySelector('.ref')||{}).value?.trim() || '', forn = (b.querySelector('.forn')||{}).value || null;
   const aplicar = async (lista) => {
     const r = await mntFetch('/manutencao/api/entradas', { method:'POST', body: JSON.stringify({
-      documento_tipo: 'aplicacao_direta', documento_numero: ref, fornecedor_id: forn, ot_id: _otAberta.id,
+      documento_tipo: ((b.querySelector('.doctipo')||{}).value || '02'), destino_tipo: 'ot', documento_numero: ref, fornecedor_id: forn, ot_id: _otAberta.id,
       observacao: 'Aplicação direta OT '+_otAberta.numero + (ref ? ' · '+ref : ''),
       itens: lista.map(i => ({ peca: i.peca, descricao: i.descricao, quantidade: i.quantidade, un: i.un, custo_unitario: i.custo_unitario, conta: i.conta })) })});
     mostrarToast('⚡ '+lista.length+' item(ns) aplicado(s) na OT'+(r.total?' · R$ '+r.total.toFixed(2):''), 'ok');
@@ -4703,7 +4707,8 @@ async function otConsumoEditar(it){
     + '<div class="muted" style="font-size:11px;margin-bottom:6px">'+(direta ? 'Aplicação directa' : it.tipo === 'saida' ? 'Saída do armazém '+_esc(it.alm)+' — trocar peça ou quantidade acerta o estoque' : 'Devolução')+'</div>'
     // 1) Documento de custo e fornecedor (padrão MWW: o documento vem primeiro)
     + '<div class="panel"><div class="dsec" style="margin-top:0">Documento de custo</div><div style="display:flex;gap:8px;flex-wrap:wrap">'
-    + '<div class="mfield" style="width:150px">Doc. Custo (NF/requisição)<input id="ce-doc" value="'+_esc(it.doc)+'"></div>'
+    + '<div class="mfield" style="width:160px">Tipo de documento<select id="ce-doctipo">'+_tiposDocOpts(it.doctipo||'02')+'</select></div>'
+    + '<div class="mfield" style="width:130px">Nº documento<input id="ce-doc" value="'+_esc(it.doc)+'"></div>'
     + '<div class="mfield" style="flex:1;min-width:200px">Fornecedor<select id="ce-forn">'+fornOpts+'</select></div>'
     + '</div></div>'
     // 2) Item
@@ -4726,7 +4731,7 @@ async function otConsumoEditar(it){
 async function otConsumoSalvar(id){
   const g = i => (document.getElementById(i)||{}).value;
   const body = { peca: (g('ce-peca')||'').trim(), quantidade: g('ce-q'), custo_unitario: g('ce-v'), rubrica: g('ce-rub') || null,
-                 documento_numero: g('ce-doc') || '', fornecedor_id: g('ce-forn') || null, observacao: g('ce-obs') || '' };
+                 documento_numero: g('ce-doc') || '', documento_tipo: g('ce-doctipo') || '', fornecedor_id: g('ce-forn') || null, observacao: g('ce-obs') || '' };
   try { await mntFetch('/manutencao/api/ots/'+_otAberta.id+'/consumos/'+id, {method:'PATCH', body: JSON.stringify(body)});
     document.getElementById('ot-cons-edit').style.display = 'none'; mostrarToast('✅ Item atualizado', 'ok'); otPecasRender();
   } catch(e){ mostrarToast('❌ '+e.message, 'warn'); }
@@ -5672,7 +5677,8 @@ async function almVistaMov(){
       const m = gp.cab, t = TIPO[m.tipo] || ['nr', m.tipo];
       const tot = gp.itens.reduce((a,x) => a + parseFloat(x.quantidade||0) * parseFloat(x.custo_unitario||0), 0);
       const estornada = m.tipo === 'entrada' && gp.itens.every(x => x.estornado_em);
-      const rot = (m.documento_tipo === 'notinha' ? 'Notinha ' : m.tipo === 'estorno' ? 'Estorno ' : 'NF ') + (m.documento_numero || 's/ nº');
+      const nomeDoc = m.documento_tipo_nome || ({nf:'NF', notinha:'Notinha', aplicacao_direta:'Aplic. direta'}[m.documento_tipo] || m.documento_tipo || 'Doc.');
+      const rot = (m.tipo === 'estorno' ? 'Estorno ' : nomeDoc + ' ') + (m.documento_numero || 's/ nº');
       const acao = m.tipo === 'entrada' ? (estornada ? '<span class="chip em" style="font-size:9px">↩ estornada</span>'
         : '<button class="btn" style="font-size:10px;padding:1px 8px" data-l="'+_esc(m.lote_chave)+'" data-d="'+_esc(m.documento_numero||'')+'" onclick="event.stopPropagation();entradaEstornar(this.dataset.l,this.dataset.d)">↩ Estornar</button>') : '';
       return '<tr style="cursor:pointer;background:#F8FAFC" onclick="movToggle(\'mvg'+gi+'\',this)">'
@@ -5703,8 +5709,20 @@ async function entradaEstornar(lote, doc){
     almVistaMov();
   } catch(e){ mostrarToast('❌ '+e.message, 'warn'); }
 }
+// (21/10/2026) Tipos de documento = domínio Parametrizar › Custos › Tipos de documento (01 NF, 02 CUPOM, 03 BALCAO…)
+let _tiposDoc = null;
+async function _tiposDocumento(){
+  if (_tiposDoc === null) { try { _tiposDoc = (await mntFetch('/manutencao/api/param/tipos-documento')).filter(t => t.ativo !== false); } catch(e){ _tiposDoc = []; } }
+  return _tiposDoc;
+}
+function _tiposDocOpts(sel){
+  const lst = _tiposDoc || [];
+  if (!lst.length) return '<option value="">— cadastre em Parametrizar › Custos › Tipos de documento —</option>';
+  return lst.map(t => '<option value="'+_esc(t.codigo)+'"'+(String(t.codigo)===String(sel||'')?' selected':'')+'>'+_esc(t.codigo)+' — '+_esc(t.nome||'')+'</option>').join('');
+}
 let _entOTs = null;
 async function entradaAbrir(){
+  await _tiposDocumento();
   const alms = _almList || [];
   if (!_mntFornList || !_mntFornList.length) {
     try { _mntFornList = await mntFetch('/manutencao/api/fornecedores'); } catch(e){ _mntFornList = _mntFornList || []; }
@@ -5728,9 +5746,9 @@ async function entradaAbrir(){
   b.innerHTML = '<div style="background:#fff;border-radius:10px;box-shadow:0 12px 32px rgba(15,23,42,.3);padding:16px;width:720px;max-width:96vw;max-height:92vh;overflow:auto">'
     + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><b style="color:#1A2A5E">📥 Entrada de Materiais — por documento</b><span style="cursor:pointer;font-size:16px" onclick="document.getElementById(\'ent-doc\').style.display=\'none\'">✕</span></div>'
     + '<div style="display:flex;gap:8px;flex-wrap:wrap">'
-    + '<div class="mfield" style="width:190px">Tipo de documento<select id="ent-tipo" onchange="entradaTipo()">'
-      + '<option value="nf">📄 Nota Fiscal</option><option value="notinha">🧾 Notinha / recibo</option>'
-      + '<option value="aplicacao_direta">⚡ Aplicação direta (oficina → OT)</option></select></div>'
+    + '<div class="mfield" style="width:200px">Destino<select id="ent-dest-tipo" onchange="entradaTipo()">'
+      + '<option value="almox">📦 Almoxarifado (estoque)</option><option value="ot">⚡ Aplicação direta (oficina → OT)</option></select></div>'
+    + '<div class="mfield" style="width:170px">Tipo de documento<select id="ent-tipo">'+_tiposDocOpts('01')+'</select></div>'
     + '<div class="mfield" style="width:130px">Nº documento<input id="ent-num" placeholder="ex.: 12345"></div>'
     + '<div class="mfield" style="flex:1;min-width:180px">Fornecedor<select id="ent-forn"><option value="">— nenhum —</option>'
       + (_mntFornList||[]).map(f=>'<option value="'+f.id+'">'+_esc(f.nome)+'</option>').join('')+'</select></div>'
@@ -5795,9 +5813,9 @@ function entradaEnter(ev){
   if (prox){ prox.focus(); if (prox.select) prox.select(); }
 }
 function entradaTipo(){
-  const t = document.getElementById('ent-tipo').value;
-  document.getElementById('ent-dest-w').style.display = (t === 'aplicacao_direta') ? 'none' : '';
-  document.getElementById('ent-ot-w').style.display = (t === 'aplicacao_direta') ? '' : 'none';
+  const direta = document.getElementById('ent-dest-tipo').value === 'ot';
+  document.getElementById('ent-dest-w').style.display = direta ? 'none' : '';
+  document.getElementById('ent-ot-w').style.display = direta ? '' : 'none';
 }
 function entradaItem(){
   const c = document.getElementById('ent-itens'); if (!c) return;
@@ -5844,14 +5862,15 @@ function entradaTotal(){
 }
 async function entradaOK(){
   const g = id => document.getElementById(id);
-  const tipo = g('ent-tipo').value;
+  const tipo = g('ent-dest-tipo').value === 'ot' ? 'aplicacao_direta' : 'almox';
   const itens = [];
   document.querySelectorAll('#ent-itens .plf-pc-row').forEach(r => {
     const q = cls => r.querySelector('.'+cls).value.trim();
     if (q('f')) itens.push({ peca: q('f'), descricao: q('d'), quantidade: q('h'), un: q('c'), custo_unitario: q('v') });
   });
   if (!itens.length){ mostrarToast('Adicione ao menos um item','warn'); return; }
-  const body = { documento_tipo: tipo, documento_numero: g('ent-num').value.trim(),
+  if (!g('ent-tipo').value){ mostrarToast('Cadastre um tipo de documento em Parametrizar › Custos › Tipos de documento','warn'); return; }
+  const body = { documento_tipo: g('ent-tipo').value, destino_tipo: tipo === 'aplicacao_direta' ? 'ot' : 'almox', documento_numero: g('ent-num').value.trim(),
                  fornecedor_id: g('ent-forn').value || null, oc_numero: g('ent-oc').value.trim(),
                  observacao: g('ent-obs').value.trim(), itens,
                  acrescimos: g('ent-acr').value || null, desconto: g('ent-desc').value || null,
