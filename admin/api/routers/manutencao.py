@@ -4598,7 +4598,8 @@ async def pecas_arvore(_auth=Depends(verificar_manutencao)):
 
 
 @router.get("/manutencao/api/movimentacoes")
-async def listar_movimentacoes(almox: str = None, limit: int = 120,
+async def listar_movimentacoes(almox: str = None, limit: int = 120, de: str = None, ate: str = None,
+                               documento: str = None, peca: str = None, tipo: str = None, ot: str = None,
                                _auth=Depends(verificar_manutencao)):
     """(28/08/2026) Extrato de movimentações do Almoxarifado — Entradas,
     Saídas, Transferências e Ajustes, com peça, locais, custo, OT e autor."""
@@ -4608,11 +4609,25 @@ async def listar_movimentacoes(almox: str = None, limit: int = 120,
     for _col, _ddl in (("documento_tipo", "TEXT"), ("documento_numero", "TEXT"), ("fornecedor_id", "UUID"),
                        ("lote", "UUID"), ("estorno_de", "UUID"), ("estornado_em", "TIMESTAMPTZ")):
         await ajard_query(f"ALTER TABLE manutencao.movimentacoes ADD COLUMN IF NOT EXISTS {_col} {_ddl}", fetch="none")
-    limit = min(max(int(limit or 120), 1), 300)
+    limit = min(max(int(limit or 120), 1), 2000)
     cond, params = ["1=1"], []
     if almox:
         cond.append("(ao.codigo = %s OR ad.codigo = %s)")
         params += [almox, almox]
+    # (21/10/2026) filtros do extrato: período, documento, peça, tipo, OT
+    if de:
+        cond.append("m.criado_em >= %s::date"); params.append(de[:10])
+    if ate:
+        cond.append("m.criado_em < (%s::date + 1)"); params.append(ate[:10])
+    if documento:
+        cond.append("m.documento_numero ILIKE %s"); params.append(f"%{documento.strip()}%")
+    if peca:
+        cond.append(f"({_sem_acento_sql('p.codigo')} ILIKE %s OR {_sem_acento_sql('p.descricao')} ILIKE %s)")
+        params += [f"%{_sem_acento(peca)}%"] * 2
+    if tipo:
+        cond.append("m.tipo = %s"); params.append(tipo)
+    if ot:
+        cond.append("o.numero ILIKE %s"); params.append(f"%{ot.strip()}%")
     rows = await ajard_query(
         f"""SELECT m.id, m.tipo, m.quantidade, m.custo_unitario, m.criado_em, m.observacao,
                    m.documento_tipo, m.documento_numero, m.estornado_em, m.estorno_de,
