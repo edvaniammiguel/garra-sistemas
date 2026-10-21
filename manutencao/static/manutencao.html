@@ -1490,9 +1490,17 @@ function pcSugerir(inp){
     // (19/10/2026) era limit=8 — peça nova (ex.: G.BT.010.028) ficava fora da lista; agora 40 com rolagem
     let r; try { r = await mntFetch('/manutencao/api/pecas?busca=' + encodeURIComponent(q) + '&limit=40'); } catch(e){ return; }
     const itens = (r && r.itens) || [];
-    const naOT = !!inp.closest('#ot-saida, #ot-aplic');
+    const naOT = !!inp.closest('#ot-saida, #ot-aplic'), naEnt = !!inp.closest('#ent-doc');
     if (!itens.length){
-      if (!naOT) { box.style.display = 'none'; return; }
+      if (!naOT && !naEnt) { box.style.display = 'none'; return; }
+      if (naEnt) {
+        // (21/10/2026) Entrada: peça nova só pelo cadastro completo (regra: cadastrar + endereçar antes de entrar)
+        inp.closest('#ent-doc')._rowAtiva = inp.closest('.plf-pc-row');
+        box.innerHTML = '<div style="padding:7px 8px;cursor:pointer;color:#B45309" onmousedown="event.preventDefault();entPecaNova(\''+_esc(q).replace(/'/g,'&#39;')+'\')">➕ "'+_esc(q)+'" não está no Catálogo — <b>cadastrar agora (cadastro completo)</b> e voltar para a entrada</div>';
+        const rct = inp.getBoundingClientRect();
+        box.style.left = rct.left+'px'; box.style.top = (rct.bottom+2)+'px'; box.style.width = Math.max(rct.width, 340)+'px';
+        box.style.display = 'block'; box._alvo = inp; return;
+      }
       // (10/10/2026) peça não cadastrada: cadastra e aplica sem sair da OT
       box.innerHTML = '<div style="padding:7px 8px;cursor:pointer;color:#B45309" onmousedown="event.preventDefault();otPecaNova(\''+_esc(q).replace(/'/g,'&#39;')+'\')">➕ "'+_esc(q)+'" não está no cadastro — <b>cadastrar agora e aplicar na OT</b></div>';
       const rct = inp.getBoundingClientRect();
@@ -1965,11 +1973,11 @@ const _MW = {
       ['\ud83d\udcca','An\u00e1lises',[['\ud83d\udcca An\u00e1lise ABC',"anABC()"],['\u26a0 Estoque baixo',"almVistaBaixo()"]]],
       ['\ud83d\udce5','Receber',"recebimentosJanela()"],
       ['\ud83d\udd01','Substitutos',"(function(){const i=_mwPrecisa('alm','item'); if(i) substitutosJanela(i);})()"],
+      ['\ud83c\udff7','Etiquetas',"etiquetasItens()"],
       ['\u22ef','Mais',[['\u2699\ufe0f Parametrizar',"showModule('param')"]]],
       ['\ud83d\udd27','Ferramentas',[
         {sub:'\ud83d\udcd2 Registros', itens:[['\ud83d\udce5 Entrada',"almMovAbrir('entrada')"],['\ud83d\udce4 Sa\u00edda',"almMovAbrir('saida')"],['\u21c4 Transfer\u00eancia',"almMovAbrir('transferencia')"],['\ud83e\uddee Ajuste de saldo',"almMovAbrir('ajuste')"]]},
-        ['\ud83d\udccb Invent\u00e1rio',"inventarioJanela()"],
-        ['\ud83c\udff7 Etiquetas de itens',"etiquetasItens()"]]]
+        ['\ud83d\udccb Invent\u00e1rio',"inventarioJanela()"]]]
     ],
     busca:'alm-busca'
   }
@@ -4492,6 +4500,23 @@ function otSaidaUsarSubst(a){
   row.querySelector('.aviso').textContent = '';
   pcSaldoInfo(row, a.dataset.c);
 }
+// (21/10/2026) Entrada por documento: peça nova → cadastro completo → volta preenchida na linha
+function entPecaNova(texto){
+  _pcAcBox().style.display = 'none';
+  const ehCod = /^[A-Za-z]\.[A-Za-z0-9]+\./.test(texto);
+  const ent = document.getElementById('ent-doc'); if (ent) ent.style.zIndex = 9990;   // janela de cadastro por cima
+  artJanela(null, { descricao: ehCod ? '' : texto, depois: p => {
+    const b = document.getElementById('ent-doc'); if (!b) return;
+    b.style.zIndex = 9998;
+    const row = b._rowAtiva || b.querySelector('#ent-itens .plf-pc-row'); if (!row) return;
+    row.querySelector('.f').value = p.codigo; row.querySelector('.d').value = p.descricao;
+    row.querySelector('.c').value = p.unidade || 'UN';
+    if (p.custo_medio && !row.querySelector('.v').value) row.querySelector('.v').value = p.custo_medio;
+    pcTotLinha(row.querySelector('.h')); entradaTotal();
+    const h = row.querySelector('.h'); if (h) { h.focus(); h.select(); }
+    mostrarToast('✅ ' + p.codigo + ' cadastrado — informe quantidade e custo', 'ok');
+  }});
+}
 // (10/10/2026) Peça fora do cadastro: abre o cadastro COMPLETO do item (mesma janela de Materiais › Novo item —
 // identificação, codificação, características, estoques, observações) e, ao criar, volta para a baixa já preenchida.
 function otPecaNova(texto){
@@ -5651,7 +5676,7 @@ async function entradaAbrir(){
     + '<div class="mfield" style="width:140px">Total da NF<input id="ent-tnf" type="number" step="0.01" placeholder="valor da nota" style="font-weight:700"></div>'
     + '<div id="ent-fecha" class="muted" style="flex:1;font-size:11px;padding-bottom:6px"></div>'
     + '</div>'
-    + '<div class="dsec" style="margin-top:8px">Itens do documento <span class="muted" style="font-weight:400">— peça não cadastrada? preencha código + descrição que ela nasce na entrada</span></div>'
+    + '<div class="dsec" style="margin-top:8px">Itens do documento <span class="muted" style="font-weight:400">— peça nova: use o ➕ da lista de sugestões (cadastro completo, com localização); ao confirmar, as etiquetas da entrada ficam disponíveis</span></div>'
     + '<div style="display:flex;gap:6px;font-size:9px;color:#64748B;font-weight:700;padding:0 2px"><span style="width:130px">Código</span><span style="flex:1">Descrição</span><span style="width:64px">Qtd</span><span style="width:46px">UN</span><span style="width:84px">Custo un.</span><span style="width:80px;text-align:right">Total</span><span style="width:14px"></span></div>'
     + '<div id="ent-itens"></div>'
     + '<div style="display:flex;justify-content:space-between;margin-top:6px;align-items:center">'
@@ -5775,7 +5800,38 @@ async function entradaOK(){
     document.getElementById('ent-doc').style.display = 'none';
     _entOTs = null;
     if (_almVista === 'mov') almVistaMov(); else almLente('armazem');
+    // (21/10/2026) peça nova precisa de lugar na prateleira: endereça o que entrou sem endereço e oferece a etiqueta
+    if (r.destino && r.codigos && r.codigos.length) entradaPosFechar(r);
   } catch(e){ mostrarToast('❌ '+e.message, 'warn'); }
+}
+// (21/10/2026) Pós-entrada: lista dos itens do documento com caixa de seleção → etiquetas (com ou sem endereço).
+// Endereço não é obrigatório aqui: se não souber onde vai ficar, define depois no Estoque (📍) e gera a etiqueta do item.
+function entradaPosFechar(r){
+  let b = document.getElementById('ent-pos');
+  if (!b){
+    b = document.createElement('div'); b.id = 'ent-pos';
+    b.style.cssText = 'position:fixed;inset:0;z-index:9998;background:rgba(15,23,42,.45);display:none;align-items:center;justify-content:center';
+    document.body.appendChild(b);
+  }
+  const semLoc = new Set((r.sem_local||[]).map(x => x.codigo));
+  const linhas = (r.codigos||[]).map(c => '<label class="plf-pc-row" style="display:flex;gap:8px;align-items:center;margin:3px 0;cursor:pointer">'
+    + '<input type="checkbox" class="etq" value="'+_esc(c)+'" checked><span class="mono bold" style="width:140px">'+_esc(c)+'</span>'
+    + '<span class="muted" style="font-size:10px">'+(semLoc.has(c) ? '📍 sem endereço — etiqueta sai com Local: —' : 'endereçado')+'</span></label>').join('');
+  b.innerHTML = '<div style="background:#fff;border-radius:10px;box-shadow:0 12px 32px rgba(15,23,42,.3);padding:16px;width:520px;max-width:96vw">'
+    + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><b style="color:#1A2A5E">🏷 Etiquetas da entrada '+_esc(r.documento||'')+' · '+_esc(r.destino)+'</b><span style="cursor:pointer;font-size:16px" onclick="document.getElementById(\'ent-pos\').style.display=\'none\'">✕</span></div>'
+    + '<div class="dsec">Itens do documento <span class="muted" style="font-weight:400">— desmarque o que não quer etiquetar agora</span></div>'
+    + '<div id="ent-pos-itens">'+linhas+'</div>'
+    + '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">'
+    + '<button class="btn" onclick="document.getElementById(\'ent-pos\').style.display=\'none\'">Agora não</button>'
+    + '<button class="btn p" id="ent-pos-ok" onclick="entradaPosOK()">🏷 Imprimir etiquetas</button></div></div>';
+  b.style.display = 'flex';
+}
+function entradaPosOK(){
+  const b = document.getElementById('ent-pos'); if (!b) return;
+  const cods = [...b.querySelectorAll('#ent-pos-itens .etq:checked')].map(x => x.value);
+  b.style.display = 'none';
+  if (!cods.length){ mostrarToast('Nenhum item marcado', 'warn'); return; }
+  window.open('/manutencao/etiquetas?codigos='+encodeURIComponent(cods.join(',')), '_blank');
 }
 function almMovAbrir(tipo){
   const NOMES = { entrada:'📥 Entrada de peça', saida:'📤 Saída de peça', transferencia:'⇄ Transferência entre almoxarifados', ajuste:'🧮 Ajuste de saldo (contagem física)' };
@@ -5855,6 +5911,30 @@ function almLente(l){
   carregarPecasReais();
 }
 function buscarPecas(){ clearTimeout(_almT); _almT = setTimeout(carregarPecasReais, 350); }
+// (21/10/2026) Estoque: endereço direto na grelha (entrada urgente deixa sem local; aqui se resolve) + etiqueta pelo botão direito
+async function estoqueEndereco(tr){
+  const loc = prompt('Endereço de '+tr.dataset.cod+' no '+tr.dataset.alm+' (Prateleira-Nicho, ex.: P-02-N-03):', tr.dataset.loc || '');
+  if (loc === null) return;
+  try {
+    await mntFetch('/manutencao/api/estoque-meta', {method:'PATCH', body: JSON.stringify({peca: tr.dataset.cod, almoxarifado: tr.dataset.alm, localizacao: loc.trim().toUpperCase()})});
+    mostrarToast('📍 Endereço salvo', 'ok'); carregarArmazem((document.getElementById('alm-busca')||{}).value || '');
+  } catch(e){ mostrarToast('❌ '+e.message, 'warn'); }
+}
+function estoqueCtx(ev, tr){
+  ev.preventDefault(); ev.stopPropagation();
+  mwSel('alm', tr.dataset.cod);
+  const m = _ctxMenuEl();
+  const it = (ico, txt, fn) => '<div onclick="'+fn+'" style="padding:7px 14px;cursor:pointer;display:flex;gap:8px;align-items:center" onmouseover="this.style.background=\'#F0F4FF\'" onmouseout="this.style.background=\'\'">'+ico+' '+txt+'</div>';
+  const c = _esc(tr.dataset.cod).replace(/'/g,'&#39;');
+  m.innerHTML = '<div style="padding:6px 14px;font-weight:800;color:#1A2A5E;border-bottom:1px solid #E2E8F0">'+_esc(tr.dataset.cod)+' · '+_esc(tr.dataset.alm)+'</div>'
+    + it('🏷','Imprimir etiqueta', "window.open('/manutencao/etiquetas?codigos='+encodeURIComponent('"+c+"'),'_blank')")
+    + it('📍','Endereçar…', "estoqueEndereco(document.querySelector('#alm-tbody tr[data-cod=\\'"+c+"\\'][data-alm=\\'"+_esc(tr.dataset.alm)+"\\']'))")
+    + it('📋','Abrir ficha', "abrirPeca('"+c+"')")
+    + it('🔁','Substitutos', "substitutosJanela('"+c+"')");
+  m.style.left = Math.min(ev.clientX, window.innerWidth-230)+'px';
+  m.style.top  = Math.min(ev.clientY, window.innerHeight-200)+'px';
+  m.style.display = 'block';
+}
 async function carregarPecasReais(){
   const tb = document.getElementById('alm-tbody'); if (!tb) return;
   const q = (document.getElementById('alm-busca').value || '').trim();
@@ -5978,11 +6058,11 @@ async function carregarArmazem(q){
     if ((document.getElementById('alm-zerados')||{}).checked) qs.push('incluir_zerados=1');
     const r = await mntFetch('/manutencao/api/armazem' + (qs.length ? '?' + qs.join('&') : ''));
     const abaixo = x => x.minimo != null && parseFloat(x.quantidade) < parseFloat(x.minimo);
-    tb.innerHTML = (r.itens || []).map(x => `<tr data-cod="${_esc(x.codigo)}"${String(_mwSel.alm)===String(x.codigo)?' class="sel"':''} style="cursor:pointer" onclick="listaSelClick(event,this,'alm')" ondblclick="abrirPeca(this.dataset.cod)">
+    tb.innerHTML = (r.itens || []).map(x => `<tr data-cod="${_esc(x.codigo)}" data-alm="${_esc(x.almox)}" data-loc="${_esc(x.localizacao||'')}"${String(_mwSel.alm)===String(x.codigo)?' class="sel"':''} style="cursor:pointer" onclick="listaSelClick(event,this,'alm')" ondblclick="abrirPeca(this.dataset.cod)" oncontextmenu="estoqueCtx(event,this)">
       <td class="bold">${_esc(x.codigo)}</td>
       <td>${_esc(x.descricao)}</td>
       <td><span class="chip pe" style="font-size:9px">${_esc(x.almox)}</span></td>
-      <td class="mono">${_esc(x.localizacao || '—')}</td>
+      <td class="mono" title="clique para endereçar" onclick="event.stopPropagation();estoqueEndereco(this.closest('tr'))" style="cursor:text;${x.localizacao?'':'color:#B45309'}">${_esc(x.localizacao || '📍 definir')}</td>
       <td class="r mono"${abaixo(x) ? ' style="color:#B91C1C;font-weight:700"' : ''}>${parseFloat(x.quantidade)}</td>
       <td class="r mono muted">${x.comprometido ? parseFloat(x.comprometido) : '—'}</td>
       <td class="r mono"${(parseFloat(x.quantidade) - (parseFloat(x.comprometido)||0)) < (parseFloat(x.minimo)||0) && x.minimo != null ? ' style="color:#B45309;font-weight:700"' : ''}>${parseFloat(x.quantidade) - (parseFloat(x.comprometido)||0)}</td>
@@ -6202,7 +6282,14 @@ async function artJanela(codigo, opts){
             + '<input class="art-ck" style="width:200px" placeholder="característica" value="'+_esc(c.k||'')+'">'
             + '<input class="art-cv" style="flex:1" placeholder="valor" value="'+_esc(c.v||'')+'"></div>';
         }).join('') + '</div>'
-    + '<div id="art-p-arm" style="display:none;padding:8px 2px"><div id="art-arm-lista" class="muted" style="font-size:11px">'+(_artEdit?'Carregando existências…':'Existências nascem nas Entradas — após criar, dê entrada por documento no Almoxarifado.')+'</div></div>'
+    + '<div id="art-p-arm" style="display:none;padding:8px 2px">'
+      // (21/10/2026) peça nova: já define onde vai ficar (opcional — em branco fica "📍 definir" no Estoque)
+      + (_artEdit ? '' : '<div class="dsec" style="margin-top:0">Localização <span class="muted" style="font-weight:400">— onde a peça vai ficar (pode deixar em branco e definir depois)</span></div>'
+          + '<div style="display:flex;gap:8px;margin-bottom:8px"><div class="mfield" style="width:220px">Almoxarifado<select id="art-loc-alm">'
+          + (_almList||[]).map(a=>'<option value="'+_esc(a.codigo)+'"'+(a.codigo===_almFiltro?' selected':'')+'>'+_esc(a.codigo)+' — '+_esc(a.nome||'')+'</option>').join('')
+          + '</select></div><div class="mfield" style="width:160px">Endereço (P-N)<input id="art-loc" placeholder="P-02-N-03" style="text-transform:uppercase"></div>'
+          + '<div class="mfield" style="width:90px">Mínimo<input id="art-loc-min" type="number" step="1" placeholder="—"></div></div>')
+      + '<div id="art-arm-lista" class="muted" style="font-size:11px">'+(_artEdit?'Carregando existências…':'Existências nascem nas Entradas — após criar, dê entrada por documento no Almoxarifado.')+'</div></div>'
     + '<div id="art-p-obs" style="display:none;padding:8px 2px"><textarea id="art-obs" rows="7" style="width:100%" placeholder="observações livres…">'+_esc(p.observacoes||'')+'</textarea></div>'
     + '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">'
     + '<button class="btn" onclick="document.getElementById(\'art-jan\').style.display=\'none\'">Cancelar</button>'
@@ -6328,6 +6415,12 @@ async function artOK(){
     } else {
       body.codigo = cod;
       await mntFetch('/manutencao/api/pecas', { method:'POST', body: JSON.stringify(body) });
+      // (21/10/2026) localização informada no cadastro → linha de estoque zerada com endereço/mínimo
+      const loc = g('art-loc').trim().toUpperCase(), lmin = g('art-loc-min').trim(), lalm = g('art-loc-alm');
+      if ((loc || lmin) && lalm) {
+        const meta = { peca: cod, almoxarifado: lalm }; if (loc) meta.localizacao = loc; if (lmin) meta.minimo = lmin;
+        try { await mntFetch('/manutencao/api/estoque-meta', { method:'PATCH', body: JSON.stringify(meta) }); } catch(e){ mostrarToast('Item criado, mas o endereço não foi salvo: '+e.message, 'warn'); }
+      }
       mostrarToast('✅ Item criado','ok');
     }
     document.getElementById('art-jan').style.display = 'none';
