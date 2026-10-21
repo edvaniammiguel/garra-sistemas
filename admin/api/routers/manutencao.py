@@ -4741,7 +4741,7 @@ async def _entrada_core(d, payload):
     # (21/10/2026) Tipo de documento vem do domínio Parametrizar › Custos › Tipos de documento (01 NF, 02 CUPOM…).
     # O DESTINO (almoxarifado × aplicação direta na OT) é outro campo. Valores antigos continuam aceitos:
     # 'nf'→01, 'notinha'→02, 'aplicacao_direta'→destino OT com documento 02.
-    _LEGADO = {"nf": "01", "notinha": "02", "aplicacao_direta": None}
+    _LEGADO = {"nf": "01", "notinha": "02", "aplicacao_direta": None}   # OT sem tipo informado → 03 BALCAO
     bruto = (d.get("documento_tipo") or "").strip()
     destino_tipo = (d.get("destino_tipo") or "").strip() or ("ot" if bruto == "aplicacao_direta" else "almox")
     if destino_tipo not in ("almox", "ot"):
@@ -4890,7 +4890,7 @@ async def _entrada_core(d, payload):
             (tipo_mov, p["id"], destino, qtd,
              (ot_id if doc_tipo == "aplicacao_direta" else None), uid,
              (d.get("observacao") or "").strip() or None, custo,
-             (doc_cod or "02"), doc_num or None, d.get("fornecedor_id") or None,
+             (doc_cod or "03"), doc_num or None, d.get("fornecedor_id") or None,
              (d.get("oc_numero") or "").strip() or None, rub,
              (round(custo_nf, 4) if custo_nf is not None else None), rateado,
              (round(total_nf, 2) if total_nf is not None else None), lote), fetch="none")
@@ -6017,7 +6017,7 @@ async def etiquetas_itens(codigos: str = None, familia: str = None, almox: str =
             cod, _, n = tok_.partition("*")
             cod = cod.strip()
             try:
-                qtds[cod] = max(1, min(50, int(n))) if n else 1
+                qtds[cod] = max(1, min(200, int(n))) if n else 1
             except ValueError:
                 qtds[cod] = 1
             lst.append(cod)
