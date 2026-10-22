@@ -849,6 +849,28 @@ async def mudar_status_ot(ot_id: str, request: Request, payload=Depends(verifica
         """INSERT INTO manutencao.ot_historico (ot_id, status_de, status_para, observacao, usuario_id)
            VALUES (%s,%s,%s,%s,%s)""",
         (ot_id, atual, novo, ("↩ REABERTA: " if reabrindo else "") + ((d.get("observacao") or "").strip() or ""), uid), fetch="none")
+    # (22/10/2026) OT cancelada → as OCs vivas dela (rascunho/solicitada/aprovada/enviada) que a gestão marcou
+    # são canceladas junto, com trilha no Compras. OC já recebida não se mexe (custo aconteceu).
+    if novo == "cancelada" and d.get("cancelar_ocs"):
+        num = await ajard_query("SELECT numero FROM manutencao.ot WHERE id=%s", (ot_id,), fetch="one")
+        motivo = f"{(num or {}).get('numero') or 'OT'} cancelada: {(d.get('observacao') or '').strip()}"
+        canceladas = []
+        for oc_id in d["cancelar_ocs"]:
+            oc = await ajard_query(
+                "SELECT id, numero, status FROM compras.ordens_compra WHERE id=%s AND ot_id=%s AND ativo=true",
+                (oc_id, ot_id), fetch="one")
+            if not oc or oc["status"] not in ("rascunho", "solicitada", "aprovada", "enviada", "recebida_parcial"):
+                continue
+            await ajard_query("UPDATE compras.ordens_compra SET status='cancelada', atualizado_em=now() WHERE id=%s", (oc_id,), fetch="none")
+            await ajard_query(
+                """INSERT INTO compras.oc_historico (oc_id, status_de, status_para, observacao, usuario_id)
+                   VALUES (%s,%s,'cancelada',%s,%s)""", (oc_id, oc["status"], motivo, uid), fetch="none")
+            canceladas.append(oc["numero"])
+        if canceladas:
+            await ajard_query(
+                """INSERT INTO manutencao.ot_historico (ot_id, status_de, status_para, observacao, usuario_id)
+                   VALUES (%s,%s,%s,%s,%s)""",
+                (ot_id, novo, novo, "🛒 OC(s) cancelada(s) junto com a OT: " + ", ".join(canceladas), uid), fetch="none")
     if novo == "concluida":
         # (19/10/2026) Regra Garra: máquina parada = da emissão (Início real) ao Fim informado.
         # Sem PDI digitado, o sistema calcula sozinho.
