@@ -72,7 +72,7 @@ tr.sel td{background:#DBEAFE!important;color:#1A2A5E}
 .chip.ap{background:#D1FAE5;color:#065F46}
 .chip.pe{background:#FFF7ED;color:#9A3412}
 .dot{display:inline-block;width:8px;height:8px;border-radius:50%;flex-shrink:0}
-/* (22/10/2026) OT em curso = ▶ num círculo (padrão ManWinWin "Em Curso"), no lugar do semáforo */
+/* (22/10/2026) OT aberta ou em curso = ▶ num círculo (padrão ManWinWin "Em Curso"); semáforo por prazo só nas programadas/aguard. peça */
 .ot-play{display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;border-radius:50%;border:1.5px solid #1A2A5E;color:#1A2A5E;font-size:7px;line-height:1;padding-left:1px;background:#fff}
 .dot.r{background:#DC2626}
 .dot.o{background:#F97316}
@@ -978,7 +978,7 @@ function renderOTs(){
     // (16/10/2026) Padrão ManWinWin: semáforo só em OT viva; encerrada vira arquivo fechado, cancelada vira ✕.
     const ico = o.status === 'concluida' ? '<span title="Encerrada" style="font-size:13px;line-height:1">🗂️</span>'
               : o.status === 'cancelada' ? '<span title="Cancelada" style="color:#94A3B8;font-weight:900;font-size:12px">✕</span>'
-              : o.status === 'em_andamento' ? '<span class="ot-play" title="Em curso (emitida)">▶</span>'
+              : (o.status === 'em_andamento' || o.status === 'aberta') ? '<span class="ot-play" title="'+(o.status==='aberta'?'Aberta':'Em curso (emitida)')+'">▶</span>'
               : `<span class="dot ${dot}"></span>`;
     return `<tr data-id="${o.id}"${String(_mwSel.ots)===String(o.id)?' class="sel"':''} style="cursor:pointer" oncontextmenu="showCtxReal(event,'${o.id}','ot','${_esc(o.numero)}')" onclick="listaSelClick(event,this,'ots')" ondblclick="verOTReal('${o.id}')">
       <td style="text-align:center">${ico}</td>
@@ -3554,7 +3554,7 @@ function renderJanelaOTs(){
                    : (o.data_prevista ? d(o.data_prevista) : (o.horimetro_previsto != null ? o.horimetro_previsto+' h·km' : '—'));
     const sel = String(_otwin.sel) === String(o.id);
     return '<tr'+(sel?' class="sel"':'')+' onclick="otwSel(\''+o.id+'\')" ondblclick="verOTReal(\''+o.id+'\')" style="cursor:pointer">'
-      + '<td style="text-align:center">'+(o.status === 'em_andamento' ? '<span class="ot-play" title="Em curso (emitida)">▶</span>' : o.status === 'concluida' ? '🗂️' : o.status === 'cancelada' ? '<span style="color:#94A3B8;font-weight:900">✕</span>' : '<span class="dot '+dot+'"></span>')+'</td>'
+      + '<td style="text-align:center">'+((o.status === 'em_andamento' || o.status === 'aberta') ? '<span class="ot-play" title="'+(o.status==='aberta'?'Aberta':'Em curso (emitida)')+'">▶</span>' : o.status === 'concluida' ? '🗂️' : o.status === 'cancelada' ? '<span style="color:#94A3B8;font-weight:900">✕</span>' : '<span class="dot '+dot+'"></span>')+'</td>'
       + '<td class="bold" style="white-space:nowrap">'+_esc(o.numero)+otUrgIco(o)+'</td><td>'+_esc(o.descricao)+'</td>'
       + '<td class="mono">'+_esc(o.tipo_trabalho || '')+'</td>'
       + '<td><span class="chip '+cc+'">'+cl+'</span></td><td>'+prog+'</td>'
