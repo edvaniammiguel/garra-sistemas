@@ -2290,6 +2290,9 @@ async function novoEquipMW(copiarDe, editar){
     + '<div style="display:flex;justify-content:flex-end;gap:8px;margin-top:10px;border-top:1px solid #E2E8F0;padding-top:8px">'
     + '<button class="btn p" style="min-width:90px" onclick="neSalvar(true)">OK</button><button class="btn" onclick="fichaFechar()">Cancelar</button><button class="btn" onclick="neSalvar(false)">Aplicar</button></div>';
   document.getElementById('eq-ficha').classList.add('show');
+  // (22/10/2026) Janela aberta com Tipo já definido (edição/repetir/tipo vindo da árvore): o select Sistema
+  // já nasce filtrado pelo ramo do tipo — antes só filtrava ao digitar a Estrutura.
+  { const tp0 = tipoIni ? (_mwDom.tipos||[]).find(t => String(t.sigla).toUpperCase() === String(tipoIni).toUpperCase()) : null; if (tp0) neSistemaFiltrar(tp0, editar ? (base.sistema_codigo || '') : ''); }
   if (editar && copiarDe) {
     // código é identidade histórica: não se edita
     const cod = document.getElementById('ne-cod'); if (cod) { cod.value = base.codigo || ''; cod.readOnly = true; cod.style.background = '#f1f3f8'; }
@@ -2543,7 +2546,7 @@ function _neAplicarTipo(tp){
   if (d && !d.value) d.placeholder = tp.nome || '';
 }
 function _neNorm(t){ return String(t||'').toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^A-Z0-9 ]/g,' ').replace(/\s+/g,' ').trim(); }
-function neSistemaFiltrar(tp){
+function neSistemaFiltrar(tp, gravado){
   const sis = document.getElementById('ne-sis'); if (!sis) return;
   const todos = (_mwDom.sistemas||[]).filter(x => x.ativo !== false);
   const atual = sis.value;
@@ -2556,6 +2559,8 @@ function neSistemaFiltrar(tp){
     raiz = cands.length ? cands[0].codigo : null;
   }
   const lista = raiz ? todos.filter(x => x.codigo === raiz || String(x.codigo).startsWith(raiz + '.')) : todos;
+  // objeto já gravado fora do ramo (carga antiga): o valor gravado fica na lista, marcado, para não trocar sem querer
+  if (gravado && raiz && !lista.some(x => x.codigo === gravado)){ const g = todos.find(x => x.codigo === gravado); if (g) lista.unshift(Object.assign({}, g, { nome: (g.nome||'') + ' (fora da família — reclassificar)' })); }
   sis.innerHTML = '<option value="">\u2014</option>' + lista.map(x => '<option value="'+_esc(x.codigo)+'">'+_esc(x.codigo)+(x.nome ? ' \u2014 '+_esc(x.nome) : '')+'</option>').join('');
   // mantém o valor se ainda está na lista; senão, o nó marcado na árvore (se for do ramo) ou a raiz do ramo
   if (atual && lista.some(x => x.codigo === atual)) sis.value = atual;
