@@ -1963,7 +1963,8 @@ _TABELAS = {
         "ot_id": "UUID", "data": "DATE", "descricao": "TEXT", "fornecedor_id": "UUID", "documento": "TEXT",
         "rubrica": "TEXT", "valor": "NUMERIC(14,2)",
         "planejado": "BOOLEAN",
-        "horas": "NUMERIC(8,2)"}),   # (19/10/2026) tempo do serviço externo (conta no TDR mesmo sem custo)   # (19/10/2026) true = linha do quadro Planejado (previsão); null/false = Realizado
+        "horas": "NUMERIC(8,2)",
+        "oc_id": "UUID", "oc_numero": "TEXT"}),   # (22/10/2026) OC de serviço gerada a partir da linha Planejada   # (19/10/2026) tempo do serviço externo (conta no TDR mesmo sem custo)   # (19/10/2026) true = linha do quadro Planejado (previsão); null/false = Realizado
     "ot-tarefas": ("manutencao.ot_tarefas", {
         "ot_id": "UUID", "ordem": "INT", "descricao": "TEXT", "feita": "BOOLEAN", "feita_por": "UUID",
         "feita_em": "TIMESTAMPTZ", "observacao": "TEXT"}),
@@ -5852,6 +5853,26 @@ def _vidas(renovs, montagens, aquisicao, valor_aquisicao):
     tot_km = round(sum(v["km"] for v in vidas), 1)
     tot_custo = round(sum(v["custo"] for v in vidas), 2)
     return vidas, {"km": tot_km, "custo": tot_custo, "custo_km": round(tot_custo / tot_km, 3) if tot_km > 0 and tot_custo else None}
+
+
+@router.get("/manutencao/api/ots/{ot_id}/ocs")
+async def ot_ocs(ot_id: str, _auth=Depends(verificar_manutencao)):
+    """(22/10/2026) Ordens de compra amarradas à OT (peças da FMP ou serviço da aba Outros):
+    número, status da alçada, valor, fornecedor e itens — alimenta o chip na aba Outros e o
+    aviso do Emitir/Encerrar ("serviço externo sem OC aprovada")."""
+    try:
+        rows = await ajard_query(
+            """SELECT oc.id, oc.numero, oc.status, oc.valor_total, oc.fornecedor_id, oc.origem,
+                      (SELECT nome FROM public.fornecedores f WHERE f.id = oc.fornecedor_id) AS fornecedor_nome,
+                      (SELECT string_agg(i.descricao, ' · ' ORDER BY i.ordem) FROM compras.oc_itens i WHERE i.oc_id = oc.id) AS itens,
+                      oc.data_aprovacao, oc.criado_em
+               FROM compras.ordens_compra oc
+               WHERE oc.ot_id = %s AND oc.ativo = true
+               ORDER BY oc.criado_em""", (ot_id,))
+    except Exception:
+        return []
+    return [dict(r, id=str(r["id"]), fornecedor_id=str(r["fornecedor_id"]) if r["fornecedor_id"] else None,
+                 valor_total=float(r["valor_total"] or 0)) for r in rows]
 
 
 @router.get("/manutencao/api/equipamentos/{eq_id}/subsistemas")
