@@ -277,15 +277,27 @@ async def listar_fornecedores(_auth=Depends(verificar_manutencao)):
     return [dict(r) for r in rows]
 
 
+_FORN_COLS_OK = False
+async def _garantir_forn_cols():
+    """(22/10/2026) Colunas do cadastro de fornecedor viajam no código (lab sem `tipo`/`observacao` dava 500)."""
+    global _FORN_COLS_OK
+    if _FORN_COLS_OK:
+        return
+    for col, tp in (("tipo", "TEXT"), ("observacao", "TEXT"), ("ativo", "BOOLEAN DEFAULT true"), ("telefone", "TEXT"), ("email", "TEXT"), ("cnpj", "TEXT")):
+        await ajard_query(f"ALTER TABLE public.fornecedores ADD COLUMN IF NOT EXISTS {col} {tp}", fetch="none")
+    _FORN_COLS_OK = True
+
+
 @router.post("/manutencao/api/fornecedores")
 async def criar_fornecedor(request: Request, payload=Depends(verificar_manutencao)):
+    await _garantir_forn_cols()
     d = await request.json()
     nome = (d.get("nome") or "").strip()
     if not nome:
         raise HTTPException(status_code=400, detail="Nome é obrigatório")
     row = await ajard_query_id(
-        """INSERT INTO public.fornecedores (nome, cnpj, telefone, email, tipo, observacao)
-           VALUES (%s,%s,%s,%s,%s,%s)""",
+        """INSERT INTO public.fornecedores (nome, cnpj, telefone, email, tipo, observacao, ativo)
+           VALUES (%s,%s,%s,%s,%s,%s,true)""",
         (nome, d.get("cnpj"), d.get("telefone"), d.get("email"),
          d.get("tipo", "pecas"), d.get("observacao")))
     return dict(row)
@@ -1153,6 +1165,16 @@ async def semaforos_frota(_auth=Depends(verificar_manutencao)):
     for eq in equipes.values():
         if eq["proxima"] is not None:
             eq["proxima"] = eq["proxima"][1]
+    # (22/10/2026) componentes: nº de renovações (recapagens) × limite → chip ⚠ na Frota
+    comps = [k for k, e in equipes.items() if (e.get("categoria") or "") == "componente"]
+    if comps:
+        tipos_ren = await _tipos_renovacao()
+        ren_map = await _renovacoes_por_objeto(tipos_ren, comps)
+        for k in comps:
+            rs = ren_map.get(str(k), [])
+            lim = _limite_renovacao(tipos_ren, rs)
+            equipes[k]["n_renov"] = len(rs); equipes[k]["renov_limite"] = lim
+            equipes[k]["no_limite"] = bool(lim and len(rs) >= lim)
     lista = sorted(equipes.values(), key=lambda x: (ordem[x["status"]], x["codigo"]))
     return lista
 
@@ -3406,6 +3428,10 @@ async def _garantir_dominios():
             fetch="none")
     await ajard_query("ALTER TABLE manutencao.familias ADD COLUMN IF NOT EXISTS classe TEXT", fetch="none")
     await ajard_query("ALTER TABLE manutencao.familias ADD COLUMN IF NOT EXISTS caracteristicas JSONB", fetch="none")
+    # (22/10/2026) Renovações: tipo de trabalho que "renova a vida" do componente (recapagem de pneu,
+    # retífica de motor, reforma de bomba). Contagem = OTs encerradas desse tipo no objeto; nada é digitado.
+    await ajard_query("ALTER TABLE manutencao.tipos_manutencao ADD COLUMN IF NOT EXISTS renova_vida BOOLEAN", fetch="none")
+    await ajard_query("ALTER TABLE manutencao.tipos_manutencao ADD COLUMN IF NOT EXISTS max_por_objeto INTEGER", fetch="none")
     # (26/09/2026) Hierarquia ManWinWin dos Tipos de Trabalho (domínio "tipos-manutencao",
     # o que alimenta a árvore de OTs): a letra é a pasta, o subtipo (A1, C1, C2…) é o
     # que a OT/FMP recebe. Idempotente: só insere o que falta; nomes existentes ficam.
@@ -3688,6 +3714,14 @@ async def editar_dominio(dominio: str, codigo: str, request: Request, payload=De
         sets.append("rubrica=%s"); params.append((d.get("rubrica") or "").strip() or None)
     if "classe" in d and tabela == "manutencao.familias":
         sets.append("classe=%s"); params.append((d.get("classe") or "").strip().upper() or None)
+    if tabela == "manutencao.tipos_manutencao":   # (22/10/2026) renovação de vida + limite por objeto
+        if "renova_vida" in d:
+            sets.append("renova_vida=%s"); params.append(None if d.get("renova_vida") is None else bool(d.get("renova_vida")))
+        if "max_por_objeto" in d:
+            mx = d.get("max_por_objeto")
+            try: mx = int(mx) if str(mx).strip() != "" else None
+            except Exception: mx = None
+            sets.append("max_por_objeto=%s"); params.append(mx)
     if not sets:
         raise HTTPException(status_code=400, detail="Nada a alterar")
     params.append(codigo)
@@ -5742,6 +5776,84 @@ def _leitura_de(eq):
     return float(v) if v is not None else None
 
 
+# ══ (22/10/2026) RENOVAÇÕES — recapagem / retífica / reforma contadas pela OT ══
+# Regra (decisão 22/10): a ficha do Objeto não muda. "Recapado 2×" = 2 OTs ENCERRADAS no pneu
+# com Tipo de Trabalho que renova a vida (flag no domínio; sem flag, vale a letra R).
+async def _tipos_renovacao():
+    await _garantir_dominios()
+    rows = await ajard_query(
+        """SELECT codigo, nome, renova_vida, max_por_objeto FROM manutencao.tipos_manutencao
+           WHERE COALESCE(renova_vida, left(upper(codigo),1) = 'R') AND ativo IS DISTINCT FROM false""")
+    return {r["codigo"]: dict(r) for r in rows}
+
+
+async def _renovacoes_por_objeto(tipos, ids=None):
+    """{equipamento_id: [renovações…]} — OTs encerradas dos tipos que renovam, em ordem cronológica."""
+    if not tipos:
+        return {}
+    cond = "AND o.equipamento_id = ANY(%s::uuid[])" if ids else ""
+    params = (list(tipos.keys()), [str(i) for i in ids]) if ids else (list(tipos.keys()),)
+    rows = await ajard_query(
+        f"""SELECT o.id, o.equipamento_id, o.numero, o.tipo_trabalho, o.custo_total,
+                   COALESCE(o.data_conclusao, o.encerrado_em, o.data_abertura) AS data,
+                   COALESCE((SELECT f.nome FROM public.fornecedores f WHERE f.id = o.fornecedor_id),
+                            (SELECT f2.nome FROM manutencao.ot_outros x JOIN public.fornecedores f2 ON f2.id = x.fornecedor_id
+                              WHERE x.ot_id = o.id AND x.ativo IS DISTINCT FROM false AND x.fornecedor_id IS NOT NULL
+                              ORDER BY x.valor DESC NULLS LAST LIMIT 1)) AS fornecedor_nome
+            FROM manutencao.ot o
+            WHERE o.ativo = true AND o.status = 'concluida' AND o.tipo_trabalho = ANY(%s::text[]) {cond}
+            ORDER BY COALESCE(o.data_conclusao, o.encerrado_em, o.data_abertura)""", params)
+    out = {}
+    for r in rows:
+        out.setdefault(str(r["equipamento_id"]), []).append({
+            "ot_id": str(r["id"]), "numero": r["numero"], "tipo": r["tipo_trabalho"],
+            "nome": (tipos.get(r["tipo_trabalho"]) or {}).get("nome"),
+            "data": r["data"].isoformat() if r["data"] else None, "_data": r["data"],
+            "fornecedor": r["fornecedor_nome"], "custo": float(r["custo_total"] or 0)})
+    return out
+
+
+def _limite_renovacao(tipos, renovs):
+    """Limite que vale para o objeto: o menor max_por_objeto entre os tipos já usados nele
+    (sem renovação ainda → menor limite definido entre os tipos que renovam)."""
+    usados = {r["tipo"] for r in (renovs or [])} or set(tipos.keys())
+    lims = [tipos[t]["max_por_objeto"] for t in usados if t in tipos and tipos[t].get("max_por_objeto")]
+    return min(lims) if lims else None
+
+
+def _vidas(renovs, montagens, aquisicao, valor_aquisicao):
+    """Fatia o histórico de montagens pelas renovações: Vida 0 (novo) até a 1ª OT R,
+    Vida 1 até a 2ª… Cada período montado conta na vida em que foi DESMONTADO (ou na
+    vida atual se ainda montado) — por isso o POP manda desmontar antes de recapar."""
+    cortes = [r["_data"] for r in renovs]
+    vidas = []
+    for i in range(len(cortes) + 1):
+        ini = aquisicao if i == 0 else cortes[i - 1]
+        fim = cortes[i] if i < len(cortes) else None
+        vidas.append({"n": i, "rotulo": "Novo" if i == 0 else f"{i}ª renovação",
+                      "inicio": ini.isoformat() if ini else None, "fim": fim.isoformat() if fim else None,
+                      "km": 0.0, "onde": [], "fornecedor": None if i == 0 else renovs[i - 1]["fornecedor"],
+                      "ot": None if i == 0 else renovs[i - 1]["numero"],
+                      "custo": float(valor_aquisicao or 0) if i == 0 else renovs[i - 1]["custo"], "em_uso": fim is None})
+    for m in montagens:
+        ref = m.get("_desmontagem")
+        idx = len(cortes)
+        if ref is not None:
+            idx = next((k for k, c in enumerate(cortes) if ref <= c), len(cortes))
+        v = vidas[idx]
+        if m.get("rodado"):
+            v["km"] += m["rodado"]
+        rot = (m.get("pai") or "") + ((" · " + m["posicao"]) if m.get("posicao") else "")
+        if rot and rot not in v["onde"]:
+            v["onde"].append(rot)
+    for v in vidas:
+        v["km"] = round(v["km"], 1)
+        v["custo_km"] = round(v["custo"] / v["km"], 3) if v["km"] > 0 and v["custo"] else None
+    tot_km = round(sum(v["km"] for v in vidas), 1)
+    tot_custo = round(sum(v["custo"] for v in vidas), 2)
+    return vidas, {"km": tot_km, "custo": tot_custo, "custo_km": round(tot_custo / tot_km, 3) if tot_km > 0 and tot_custo else None}
+
+
 @router.get("/manutencao/api/equipamentos/{eq_id}/subsistemas")
 async def subsistemas(eq_id: str, _auth=Depends(verificar_manutencao)):
     """Janela de duas faces: PAI → filhos montados (posição, sistema, OTs
@@ -5749,8 +5861,9 @@ async def subsistemas(eq_id: str, _auth=Depends(verificar_manutencao)):
     await _garantir_montagens()
     eu = await ajard_query(
         """SELECT e.id, e.codigo, e.descricao, e.categoria, e.medicao,
-                  e.horimetro_atual, e.km_atual, e.posicao,
-                  p.id AS pai_id, p.codigo AS pai_codigo, p.descricao AS pai_desc
+                  e.horimetro_atual, e.km_atual, e.posicao, e.data_aquisicao, e.valor_aquisicao,
+                  p.id AS pai_id, p.codigo AS pai_codigo, p.descricao AS pai_desc,
+                  p.medicao AS pai_medicao, p.horimetro_atual AS pai_horimetro, p.km_atual AS pai_km
            FROM operacional.equipamentos e
            LEFT JOIN operacional.equipamentos p ON p.id = e.equipamento_pai
            WHERE e.id=%s""", (eq_id,), fetch="one")
@@ -5776,29 +5889,52 @@ async def subsistemas(eq_id: str, _auth=Depends(verificar_manutencao)):
            ORDER BY m.data_montagem DESC LIMIT 30""", (eq_id,))
     vida = 0.0
     historico = []
+    # (22/10/2026) período EM CURSO também conta: leitura atual do pai − leitura na montagem
+    leit_pai_atual = _leitura_de({"medicao": eu["pai_medicao"], "horimetro_atual": eu["pai_horimetro"], "km_atual": eu["pai_km"]}) if eu["pai_id"] else None
     for h in hist:
         rodado = None
         if h["leitura_pai_montagem"] is not None and h["leitura_pai_desmontagem"] is not None:
             rodado = float(h["leitura_pai_desmontagem"]) - float(h["leitura_pai_montagem"])
-            if rodado > 0:
-                vida += rodado
+        elif h["leitura_pai_montagem"] is not None and h["data_desmontagem"] is None and leit_pai_atual is not None:
+            rodado = leit_pai_atual - float(h["leitura_pai_montagem"])
+        if rodado is not None and rodado > 0:
+            vida += rodado
         historico.append({
             "pai": h["pai_codigo"], "posicao": h["posicao"],
             "montagem": h["data_montagem"].isoformat() if h["data_montagem"] else None,
             "desmontagem": h["data_desmontagem"].isoformat() if h["data_desmontagem"] else None,
-            "rodado": rodado})
+            "_desmontagem": h["data_desmontagem"],
+            "rodado": rodado, "em_curso": h["data_desmontagem"] is None})
+    # (22/10/2026) renovações (OTs R encerradas) e vidas do componente
+    tipos_ren = await _tipos_renovacao()
+    renovs = (await _renovacoes_por_objeto(tipos_ren, [eq_id])).get(str(eu["id"]), [])
+    vidas, vidas_total = _vidas(renovs, historico, eu["data_aquisicao"], eu["valor_aquisicao"])
+    for h in historico:
+        h.pop("_desmontagem", None)
+    for r in renovs:
+        r.pop("_data", None)
+    limite = _limite_renovacao(tipos_ren, renovs)
     livres = await ajard_query(
         """SELECT id, codigo, descricao FROM operacional.equipamentos
            WHERE categoria='componente' AND ativo=true
              AND (equipamento_pai IS NULL OR equipamento_pai <> %s)
            ORDER BY codigo LIMIT 200""", (eq_id,))
+    # contagem de renovações nos filhos e nos livres (chip ⚠ e rótulo do select)
+    ren_map = await _renovacoes_por_objeto(tipos_ren, [str(f["id"]) for f in filhos] + [str(c["id"]) for c in livres])
+    def _ren_info(oid):
+        rs = ren_map.get(str(oid), [])
+        lim = _limite_renovacao(tipos_ren, rs)
+        return {"n_renov": len(rs), "limite": lim, "no_limite": bool(lim and len(rs) >= lim)}
     return {"eu": {"id": str(eu["id"]), "codigo": eu["codigo"], "descricao": eu["descricao"],
                    "categoria": eu["categoria"], "posicao": eu["posicao"],
                    "pai": ({"id": str(eu["pai_id"]), "codigo": eu["pai_codigo"],
                             "descricao": eu["pai_desc"]} if eu["pai_id"] else None)},
-            "filhos": [dict(f, id=str(f["id"])) for f in filhos],
+            "filhos": [dict(f, id=str(f["id"]), **_ren_info(f["id"])) for f in filhos],
             "historico": historico, "vida_acumulada": round(vida, 1),
-            "componentes_livres": [dict(c, id=str(c["id"])) for c in livres]}
+            "renovacoes": renovs, "vidas": vidas, "vidas_total": vidas_total,
+            "n_renov": len(renovs), "limite": limite, "no_limite": bool(limite and len(renovs) >= limite),
+            "tipos_renovacao": [{"codigo": k, "nome": v["nome"], "max": v["max_por_objeto"]} for k, v in tipos_ren.items()],
+            "componentes_livres": [dict(c, id=str(c["id"]), **_ren_info(c["id"])) for c in livres]}
 
 
 @router.post("/manutencao/api/equipamentos/{pai_id}/montar")
@@ -5819,6 +5955,17 @@ async def montar(pai_id: str, request: Request, payload=Depends(verificar_manute
         raise HTTPException(status_code=404, detail="Pai ou componente não encontrado")
     if str(pai["id"]) == str(comp["id"]):
         raise HTTPException(status_code=400, detail="Um equipamento não monta nele mesmo")
+    # (22/10/2026) componente no limite de renovações (ex.: 3 recapagens) → confirma antes de montar
+    obs_extra = None
+    tipos_ren = await _tipos_renovacao()
+    rs = (await _renovacoes_por_objeto(tipos_ren, [comp_id])).get(str(comp["id"]), [])
+    lim = _limite_renovacao(tipos_ren, rs)
+    if lim and len(rs) >= lim:
+        if not d.get("forcar"):
+            raise HTTPException(status_code=409, detail={
+                "codigo": "limite_renovacao", "componente": comp["codigo"], "n_renov": len(rs), "limite": lim,
+                "mensagem": f"{comp['codigo']} já tem {len(rs)} renovação(ões) (limite {lim}). Montar mesmo assim?"})
+        obs_extra = f"montado acima do limite ({len(rs)}/{lim} renovações)"
     uid = await _usuario_id(payload)
     if comp["equipamento_pai"]:
         antigo = await ajard_query(
@@ -5837,7 +5984,7 @@ async def montar(pai_id: str, request: Request, payload=Depends(verificar_manute
              (equipamento_id, pai_id, posicao, leitura_pai_montagem, usuario_id, observacao)
            VALUES (%s,%s,%s,%s,%s,%s)""",
         (comp_id, pai_id, posicao, _leitura_de(dict(pai)), uid,
-         (d.get("observacao") or "").strip() or None), fetch="none")
+         " · ".join([x for x in [(d.get("observacao") or "").strip(), obs_extra] if x]) or None), fetch="none")
     return {"ok": True, "componente": comp["codigo"], "pai": pai["codigo"]}
 
 
