@@ -5980,7 +5980,7 @@ function entradaEnter(ev){
     box.style.display = 'none';
   }
   const dlg = document.getElementById('ent-doc');
-  const campos = Array.from(dlg.querySelectorAll('input, select')).filter(c => c.offsetParent !== null);
+  const campos = Array.from(dlg.querySelectorAll('input, select')).filter(c => c.offsetParent !== null && !c.readOnly);   // (22/10/2026) UN bloqueada não entra na navegação
   const i = campos.indexOf(el);
   let prox = campos[i + 1];
   if (!prox){ entradaItem(); prox = dlg.querySelector('#ent-itens .plf-pc-row:last-child .f'); }
@@ -5991,16 +5991,27 @@ function entradaTipo(){
   document.getElementById('ent-ot-w').style.display = direta ? '' : 'none';
   const t = document.getElementById('ent-tipo'); if (direta && t && [...t.options].some(o => o.value === '03')) t.value = '03';   // oficina → BALCAO
 }
+// (22/10/2026) código digitado à mão (sem clicar na sugestão): busca a unidade (e descrição) no cadastro
+async function entUnidadeCad(inp){
+  const row = inp.closest('.plf-pc-row'); const cod = (inp.value||'').trim().toUpperCase(); if (!row || !cod) return;
+  try {
+    const r = await mntFetch('/manutencao/api/pecas?busca='+encodeURIComponent(cod)+'&limit=10');
+    const p = ((r && r.itens) || []).find(x => String(x.codigo).toUpperCase() === cod);
+    if (p){ row.querySelector('.c').value = p.unidade || 'UN'; const d = row.querySelector('.d'); if (d && !d.value) d.value = p.descricao || ''; }
+  } catch(e){}
+}
 function entradaItem(){
   const c = document.getElementById('ent-itens'); if (!c) return;
   const div = document.createElement('div');
   div.className = 'plf-pc-row';
   div.style.cssText = 'display:flex;gap:6px;margin:3px 0;align-items:center';
   div.innerHTML =
-    '<input class="f" style="width:130px" placeholder="código" oninput="pcSugerir(this)" autocomplete="off">'
+    '<input class="f" style="width:130px" placeholder="código" oninput="pcSugerir(this)" onchange="entUnidadeCad(this)" autocomplete="off">'
     + '<input class="d" style="flex:1" placeholder="descrição" oninput="pcSugerir(this)" autocomplete="off">'
     + '<input class="h" type="number" step="0.5" style="width:64px" oninput="pcTotLinha(this)">'
-    + '<input class="c" style="width:46px" value="UN">'
+    // (22/10/2026) UN vem do cadastro da peça (preenchida ao escolher na lista) e não se edita na entrada —
+    // o Enter pulava para cá e a quantidade/valor acabava digitada na unidade ("320")
+    + '<input class="c" style="width:46px;background:#F1F5F9;color:#475569" value="UN" readonly tabindex="-1" title="Unidade do cadastro da peça — altere no Catálogo, não na entrada">'
     + '<input class="v" type="number" step="0.01" style="width:84px" oninput="pcTotLinha(this)">'
     + '<span class="t" style="width:80px;text-align:right;font-weight:700;color:#1A2A5E;font-size:11px">—</span>'
     + '<span style="cursor:pointer;color:#B91C1C;font-weight:700" onclick="this.parentElement.remove();entradaTotal()">✕</span>';
