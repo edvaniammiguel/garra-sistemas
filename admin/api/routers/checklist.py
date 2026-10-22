@@ -110,13 +110,14 @@ async def listar_envios(usuario: Optional[str]=None, cl_id: Optional[str]=None, 
     where, params = "WHERE e.arquivado=FALSE", []
     # Menor privilégio (05/07/2026): operador/motorista só vê os PRÓPRIOS envios,
     # independente do parâmetro. Gestor/admin filtram livremente.
-    if not _eh_gestor_ck(_auth):
+    _g = await _eh_gestor_ck(_auth)
+    if not _g:
         usuario = _auth.get("sub", "")
     if usuario: params.append(usuario); where += f" AND e.usuario_login=${len(params)}"
     if cl_id:   params.append(cl_id);   where += f" AND e.cl_id=${len(params)}"
     params.append(limit)
     rows = await db.fetch(f"{_SQL_ENVIO} {where} ORDER BY e.enviado_em DESC LIMIT ${len(params)}", *params)
-    return [_envio_saida(r, _eh_gestor_ck(_auth)) for r in rows]
+    return [_envio_saida(r, _g) for r in rows]
 
 
 @router.get("/checklist/envios/{envio_id}")
@@ -126,9 +127,9 @@ async def obter_envio(envio_id: str, db=Depends(get_db), _auth=Depends(verificar
     row = await db.fetchrow(f"{_SQL_ENVIO} WHERE e.envio_id=$1", envio_id)
     if not row:
         raise HTTPException(status_code=404, detail="Envio não encontrado.")
-    if not _eh_gestor_ck(_auth) and row["usuario_login"] != _auth.get("sub", ""):
+    if not await _eh_gestor_ck(_auth) and row["usuario_login"] != _auth.get("sub", ""):
         raise HTTPException(status_code=403, detail="Envio de outro colaborador.")
-    d = _envio_saida(row, _eh_gestor_ck(_auth))
+    d = _envio_saida(row, await _eh_gestor_ck(_auth))
     ret = await db.fetch(
         """SELECT x.id::text AS id, x.tipo, x.texto, x.autor_login,
                   COALESCE(u.nome, x.autor_login) AS autor_nome, x.criado_em, x.lido_em
@@ -143,7 +144,7 @@ async def obter_envio(envio_id: str, db=Depends(get_db), _auth=Depends(verificar
 @router.post("/checklist/envios/{envio_id}/retornos")
 async def enviar_retorno(envio_id: str, request: Request, db=Depends(get_db), _auth=Depends(verificar_token)):
     """Mensagem da gestão sobre um envio."""
-    if not _eh_gestor_ck(_auth):
+    if not await _eh_gestor_ck(_auth):
         raise HTTPException(status_code=403, detail="Apenas a gestão responde envios.")
     await _garantir_retornos(db)
     d = await request.json()
@@ -173,7 +174,7 @@ async def marcar_visto(envio_id: str, db=Depends(get_db), _auth=Depends(verifica
             "UPDATE checklist.retornos SET lido_em=now() WHERE envio_id=$1 AND ativo AND lido_em IS NULL",
             envio_id)
         return {"ok": True, "papel": "autor"}
-    if not _eh_gestor_ck(_auth):
+    if not await _eh_gestor_ck(_auth):
         raise HTTPException(status_code=403, detail="Envio de outro colaborador.")
     await db.execute(
         """INSERT INTO checklist.retornos (envio_id, tipo, autor_login)
@@ -503,11 +504,23 @@ async def checklist_manifest():
 # uma fonte única: agrega checklist.envios (com período opcional).
 # ══════════════════════════════════════════════════════════════
 
-def _eh_gestor_ck(payload) -> bool:
-    """Gestão do checklist: perfil Master (admin) OU papel manager do módulo.
-    (21/10/2026) 'gestor' saiu da lista fixa — gestão do checklist é pelo papel manager
-    (Admin › Usuários › perfil do checklist), que a tela de Permissões controla."""
-    return payload.get("perfil") == "admin" or payload.get("perfil_checklist") == "manager"
+async def _eh_gestor_ck(payload) -> bool:
+    """Gestão do checklist (vê e trata os envios de todos): perfil Master (admin), OU papel
+    manager do checklist (Admin › Usuários › perfil do checklist — lido do BANCO, não só do token:
+    o token central não carrega perfil_checklist, e a Bruna ficou sem a tela em 21/10),
+    OU módulo 'checklist_gestao' na tela de Permissões (22/10/2026)."""
+    if payload.get("perfil") == "admin" or payload.get("perfil_checklist") == "manager":
+        return True
+    from core.db import ajard_query
+    from core.permissions import tem_modulo
+    try:
+        u = await ajard_query("SELECT perfil_checklist FROM public.usuarios_garra WHERE login=%s AND ativo=true",
+                              (payload.get("sub", ""),), fetch="one")
+        if u and (u.get("perfil_checklist") or "") == "manager":
+            return True
+    except Exception:
+        pass
+    return await tem_modulo(payload, {"checklist_gestao"})
 
 
 @router.get("/checklist/ranking")
@@ -558,7 +571,7 @@ async def checklist_ranking(inicio: str = None, fim: str = None,
     result = [dict(r) for r in rows]
     # Menor privilégio (06/07/2026): ranking COMPARATIVO é ferramenta de gestão.
     # Colaborador recebe apenas a PRÓPRIA linha (pontos/envios dele).
-    if not _eh_gestor_ck(_auth):
+    if not await _eh_gestor_ck(_auth):
         eu = _auth.get("sub", "")
         result = [r for r in result if r["login"] == eu]
     return result
@@ -567,7 +580,7 @@ async def checklist_ranking(inicio: str = None, fim: str = None,
 @router.post("/checklist/pontos-ajuste")
 async def checklist_ajustar_pontos(request: Request, _auth=Depends(verificar_token), db=Depends(get_db)):
     """Gestor aplica penalidade (pts negativo) ou bônus a um colaborador."""
-    if not _eh_gestor_ck(_auth):
+    if not await _eh_gestor_ck(_auth):
         raise HTTPException(status_code=403, detail="Apenas gestores podem ajustar pontos.")
     d = await request.json()
     login = (d.get("login") or "").strip()
@@ -604,7 +617,7 @@ async def checklist_get_pontos_config(_auth=Depends(verificar_token), db=Depends
 
 @router.put("/checklist/pontos-config")
 async def checklist_put_pontos_config(request: Request, _auth=Depends(verificar_token), db=Depends(get_db)):
-    if not _eh_gestor_ck(_auth):
+    if not await _eh_gestor_ck(_auth):
         raise HTTPException(status_code=403, detail="Apenas gestores.")
     d = await request.json()
     import json as _json
@@ -623,7 +636,7 @@ async def checklist_put_pontos_config(request: Request, _auth=Depends(verificar_
 @router.get("/checklist/pontos-ajustes")
 async def checklist_listar_ajustes(_auth=Depends(verificar_token), db=Depends(get_db)):
     """Extrato dos ajustes manuais de pontos — só gestão."""
-    if not _eh_gestor_ck(_auth):
+    if not await _eh_gestor_ck(_auth):
         raise HTTPException(status_code=403, detail="Apenas gestores.")
     rows = await db.fetch(
         """SELECT a.usuario_login AS login, COALESCE(u.nome, a.usuario_login) AS nome,
@@ -650,7 +663,7 @@ _ATALHOS_SEED = [
 
 @router.get("/checklist/retornos-config")
 async def checklist_get_retornos_config(_auth=Depends(verificar_token), db=Depends(get_db)):
-    if not _eh_gestor_ck(_auth):
+    if not await _eh_gestor_ck(_auth):
         raise HTTPException(status_code=403, detail="Apenas gestores.")
     await db.execute(
         """INSERT INTO checklist.config (chave, valor, atualizado_em)
@@ -662,7 +675,7 @@ async def checklist_get_retornos_config(_auth=Depends(verificar_token), db=Depen
 
 @router.put("/checklist/retornos-config")
 async def checklist_put_retornos_config(request: Request, _auth=Depends(verificar_token), db=Depends(get_db)):
-    if not _eh_gestor_ck(_auth):
+    if not await _eh_gestor_ck(_auth):
         raise HTTPException(status_code=403, detail="Apenas gestores.")
     d = await request.json()
     atalhos = []
