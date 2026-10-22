@@ -3926,12 +3926,12 @@ async function otGravarCabecalho(){
   o.descricao = d;
 }
 async function otStatusGravando(id, novo){
-  try { if (otCabecalhoSujo()) await otGravarCabecalho(); }
-  catch(e){ mostrarToast('❌ Descrição não gravada: '+e.message,'warn'); return; }
+  if (_otAberta && String(_otAberta.id) === String(id) && document.getElementById('oe-prior')){ if (!(await otOrigemAutoGravar())) return; }
+  else { try { if (otCabecalhoSujo()) await otGravarCabecalho(); } catch(e){ mostrarToast('❌ Descrição não gravada: '+e.message,'warn'); return; } }
   await mntStatusReal(id, novo);
 }
 function otFechar(){
-  if (otCabecalhoSujo() && confirm('A descrição da OT foi alterada e não foi gravada.\n\nGravar antes de fechar?')) { salvarOrigem(true); return; }
+  if ((otCabecalhoSujo() || otOrigemSuja()) && confirm('A OT foi alterada e não foi gravada.\n\nGravar antes de fechar?')) { salvarOrigem(true); return; }
   document.getElementById('eq-ficha').classList.remove('show');
 }
 // (19/10/2026) Encerramento na própria ficha (aba Gestão): estado por OT, com defaults vindos do app
@@ -4847,7 +4847,46 @@ function otInterventor(){
   const rw = document.getElementById('oe-resp-wrap'); if (rw) rw.style.display = ext ? 'none' : '';
   if (ext) { const rs = document.getElementById('oe-resp'); if (rs) rs.value = ''; }
 }
-function otAba(aba){
+// (22/10/2026) Origem grava sozinha ao trocar de aba / clicar num botão de estado: fornecedor, interventor,
+// urgência, responsável… não somem mais. Compara com o que está gravado e só dispara o PATCH se mudou.
+function _otOrigemColeta(){
+  const g = id => document.getElementById(id);
+  if (!_otAberta || !g('oe-prior')) return null;
+  const interv = (document.querySelector('input[name="oe-interv"]:checked')||{}).value || 'interno';
+  return {
+    descricao: (g('ot-descricao')||{}).value?.trim() || '',
+    tipo: g('oe-tipo') ? g('oe-tipo').value : undefined,
+    tipo_trabalho: g('oe-tt') ? (g('oe-tt').value || null) : undefined,
+    prioridade: g('oe-prior').value, interventor: interv,
+    fornecedor_id: interv === 'externo' ? (g('oe-forn').value || null) : null,
+    setor_interventor: interv === 'interno' ? (g('oe-setor').value || null) : null,
+    responsavel_id: g('oe-resp').value || null,
+    contrato: g('oe-contrato').value.trim(), tdm_previsto: g('oe-tdm').value.trim(),
+    bloqueada: g('oe-bloq').checked, projecto_id: g('oe-proj').value || '' };
+}
+function otOrigemSuja(){
+  const b = _otOrigemColeta(), o = _otAberta; if (!b || !o) return false;
+  const eq = (x, y) => String(x ?? '') === String(y ?? '');
+  const desc = (o.descricao||'') === '(a descrever)' ? '' : (o.descricao||'');
+  return !(eq(b.descricao, desc.trim()) && eq(b.prioridade, o.prioridade) && eq(b.interventor, o.interventor || 'interno')
+    && eq(b.fornecedor_id, o.fornecedor_id) && eq(b.setor_interventor, o.setor_interventor) && eq(b.responsavel_id, o.responsavel_id)
+    && eq(b.contrato, o.contrato) && eq(b.tdm_previsto, o.tdm_previsto) && eq(!!b.bloqueada, !!o.bloqueada)
+    && eq(b.projecto_id, o.projecto_id) && (b.tipo_trabalho === undefined || eq(b.tipo_trabalho, o.tipo_trabalho)));
+}
+async function otOrigemAutoGravar(){
+  if (!otOrigemSuja()) return true;
+  const b = _otOrigemColeta(), o = _otAberta;
+  if (!b.descricao) delete b.descricao;              // descrição vazia não apaga a gravada
+  if (b.interventor === 'externo' && !b.fornecedor_id){ mostrarToast('Interventor externo: escolha o fornecedor (Origem não gravada)', 'warn'); return false; }
+  try {
+    await mntFetch('/manutencao/api/ots/'+o.id, {method:'PATCH', body: JSON.stringify(b)});
+    Object.assign(o, b, b.descricao ? {} : {});
+    mostrarToast('💾 Origem gravada', 'ok');
+    return true;
+  } catch(e){ mostrarToast('❌ Origem não gravada: '+e.message, 'warn'); return false; }
+}
+async function otAba(aba){
+  if (aba !== 'origem') await otOrigemAutoGravar();
   document.querySelectorAll('.mtab').forEach(t=>t.classList.remove('on'));
   const tabEl = document.getElementById('mt-'+(aba==='hist'?'hist':aba));
   if (tabEl) tabEl.classList.add('on');
