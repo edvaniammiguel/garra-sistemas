@@ -187,6 +187,9 @@ async def _garantir_colunas_ot():
         # (10/10/2026) "Data Programada Alterada" do ManWinWin: a programação saiu do cálculo da FMP
         # por decisão humana (Avançado). Recalcular pelo plano (Aplicar FMP) não sobrepõe; Novo ciclo limpa.
         "ALTER TABLE manutencao.ot ADD COLUMN IF NOT EXISTS prog_alterada BOOLEAN DEFAULT false",
+        # (22/10/2026) Peças PREVISTAS da própria OT (corretiva sem FMP, ou previsão ajustada): mesmo formato
+        # de planos.pecas [{peca, descricao, qtd, un, custo}]. NULL = vale a FMP. Entra no comprometido e nos faltantes.
+        "ALTER TABLE manutencao.ot ADD COLUMN IF NOT EXISTS pecas_previstas JSONB",
         # (19/10/2026) Encerramento informa a leitura (horímetro/km) da máquina no fim do serviço:
         # vira baseline da FMP e fonte de leitura do Registo Funcionamento ('ot')
         "ALTER TABLE manutencao.ot ADD COLUMN IF NOT EXISTS horimetro_conclusao NUMERIC",
@@ -3119,11 +3122,12 @@ async def _em_pedido_por_peca():
 async def _comprometido_por_peca():
     import json as _json
     rows = await ajard_query(
-        """SELECT o.numero, o.data_prevista, eq.codigo AS equipamento, p.pecas
+        """SELECT o.numero, o.data_prevista, eq.codigo AS equipamento, COALESCE(o.pecas_previstas, p.pecas) AS pecas
            FROM manutencao.ot o
-           JOIN manutencao.planos p ON p.id = o.plano_id
+           LEFT JOIN manutencao.planos p ON p.id = o.plano_id
            JOIN operacional.equipamentos eq ON eq.id = o.equipamento_id
-           WHERE o.ativo=true AND o.status='programada' AND p.pecas IS NOT NULL""") or []
+           WHERE o.ativo=true AND o.status IN ('programada','aberta','aguardando_peca')
+             AND COALESCE(o.pecas_previstas, p.pecas) IS NOT NULL""") or []
     out = {}
     for r in rows:
         itens = r["pecas"]
@@ -3221,12 +3225,18 @@ async def oc_existe(numero: str, _auth=Depends(verificar_manutencao)):
 async def ot_faltantes(ot_id: str, _auth=Depends(verificar_manutencao)):
     """Peças previstas na FMP da OT que o estoque não cobre → itens da OC.
     faltante = previsto − saldo total − em pedido − a conferir."""
-    o = await ajard_query("SELECT plano_id, equipamento_id, numero FROM manutencao.ot WHERE id=%s", (ot_id,), fetch="one")
+    o = await ajard_query("SELECT plano_id, equipamento_id, numero, pecas_previstas FROM manutencao.ot WHERE id=%s", (ot_id,), fetch="one")
     if not o:
         raise HTTPException(status_code=404, detail="OT não encontrada")
     import json as _json
     prev = []
-    if o.get("plano_id"):
+    if o.get("pecas_previstas"):          # (22/10/2026) previsão da própria OT vale sobre a FMP
+        raw = o["pecas_previstas"]
+        try:
+            prev = raw if isinstance(raw, list) else (_json.loads(raw) if raw else [])
+        except Exception:
+            prev = []
+    elif o.get("plano_id"):
         pl = await ajard_query("SELECT pecas FROM manutencao.planos WHERE id=%s", (o["plano_id"],), fetch="one")
         raw = (pl or {}).get("pecas")
         try:
@@ -3254,6 +3264,45 @@ async def ot_faltantes(ot_id: str, _auth=Depends(verificar_manutencao)):
                       "faltante": round(falta, 3), "preco": float(p["custo_medio"]) if p["custo_medio"] is not None else _mo_num(x.get("custo")),
                       "ocs": ocs.get(k, [])})
     return {"ot": o["numero"], "equipamento_id": str(o["equipamento_id"]) if o.get("equipamento_id") else None, "itens": itens}
+
+
+@router.get("/manutencao/api/ots/{ot_id}/pecas-previstas")
+async def ot_pecas_previstas(ot_id: str, _auth=Depends(verificar_manutencao)):
+    """(22/10/2026) Previsão de peças da OT: a da própria OT (origem 'ot') ou, se não houver, a da FMP."""
+    import json as _json
+    o = await ajard_query("SELECT plano_id, pecas_previstas FROM manutencao.ot WHERE id=%s", (ot_id,), fetch="one")
+    if not o:
+        raise HTTPException(status_code=404, detail="OT não encontrada")
+    def _lst(raw):
+        try: return raw if isinstance(raw, list) else (_json.loads(raw) if raw else [])
+        except Exception: return []
+    if o.get("pecas_previstas") is not None:
+        return {"origem": "ot", "itens": _lst(o["pecas_previstas"])}
+    if o.get("plano_id"):
+        pl = await ajard_query("SELECT codigo, pecas FROM manutencao.planos WHERE id=%s", (o["plano_id"],), fetch="one")
+        return {"origem": "fmp", "fmp": (pl or {}).get("codigo"), "itens": _lst((pl or {}).get("pecas"))}
+    return {"origem": None, "itens": []}
+
+
+@router.put("/manutencao/api/ots/{ot_id}/pecas-previstas")
+async def ot_pecas_previstas_gravar(ot_id: str, request: Request, payload=Depends(verificar_manutencao)):
+    """Substitui a lista prevista da OT. Lista vazia com FMP → volta a valer a FMP (NULL)."""
+    import json as _json
+    d = await request.json()
+    itens = []
+    for x in d.get("itens") or []:
+        cod = (x.get("peca") or "").strip()
+        if not cod: continue
+        itens.append({"peca": cod, "descricao": (x.get("descricao") or "").strip(), "qtd": _mo_num(x.get("qtd")) or 0,
+                      "un": (x.get("un") or "UN").strip(), "custo": _mo_num(x.get("custo"))})
+    o = await ajard_query("SELECT status FROM manutencao.ot WHERE id=%s AND ativo=true", (ot_id,), fetch="one")
+    if not o:
+        raise HTTPException(status_code=404, detail="OT não encontrada")
+    if o["status"] in ("concluida", "cancelada"):
+        raise HTTPException(status_code=400, detail="OT encerrada/cancelada: previsão não se altera")
+    await ajard_query("UPDATE manutencao.ot SET pecas_previstas=%s, atualizado_em=now() WHERE id=%s",
+                      (_json.dumps(itens) if (itens or not d.get("voltar_fmp")) else None, ot_id), fetch="none")
+    return {"ok": True, "n": len(itens)}
 
 
 @router.get("/manutencao/api/recebimentos")
