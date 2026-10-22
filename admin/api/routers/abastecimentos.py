@@ -129,6 +129,8 @@ _COLUNAS_NOTA = [
     ("texto_livre", "TEXT"),
     ("extracao", "JSONB"),
     ("status_conferencia", "TEXT DEFAULT 'pendente'"),  # fase B: conferida | divergente
+    ("conferido_por", "UUID"),                            # (22/10/2026) conferência da manutenção (tela única)
+    ("conferido_em", "TIMESTAMPTZ"),
     ("usuario_id", "UUID"),
     ("usuario_nome", "TEXT"),
     ("criado_em", "TIMESTAMPTZ DEFAULT now()"),
@@ -1289,15 +1291,23 @@ async def registrar_do_galao(request: Request, payload=Depends(verificar_abastec
 
 
 @router.get("/operacional/api/abastecimentos")
-async def listar(equipamento_id: str = None, limite: int = 30, meus: int = 0, payload=Depends(verificar_token)):
+async def listar(equipamento_id: str = None, limite: int = 30, meus: int = 0, de: str = None, ate: str = None,
+                 pendentes: int = 0, payload=Depends(verificar_token)):
     """Lista no formato da tela ManWinWin (Doc. Custo, produto, data, leitura,
-    litros, custo, objeto, entidade, rubrica) + fonte/flags."""
+    litros, custo, objeto, entidade, rubrica) + fonte/flags.
+    (22/10/2026) de/ate (datas) e pendentes=1 (status_conferencia da nota) → tela única de conferência."""
     await _ddl()
-    limite = max(1, min(int(limite or 30), 300))
+    limite = max(1, min(int(limite or 30), 1000))
     filtro, params = "", []
     if equipamento_id:
         filtro += " AND a.equipamento_id=%s"
         params.append(equipamento_id)
+    if de:
+        filtro += " AND a.data >= %s::date"; params.append(de)
+    if ate:
+        filtro += " AND a.data < (%s::date + 1)"; params.append(ate)
+    if pendentes:
+        filtro += " AND COALESCE(n.status_conferencia,'pendente') = 'pendente'"
     if meus:
         uid = _uid(payload)
         if uid:
@@ -1305,13 +1315,15 @@ async def listar(equipamento_id: str = None, limite: int = 30, meus: int = 0, pa
         else:
             filtro += " AND a.usuario_nome=%s"; params.append(payload.get("nome") or payload.get("login"))
     r = await ajard_query(
-        f"""SELECT a.id, a.nota_id, a.data, a.litros, a.valor_total, a.leitura, a.leitura_fonte,
+        f"""SELECT a.id, a.nota_id, a.equipamento_id, a.data, a.litros, a.valor_total, a.leitura, a.leitura_fonte,
                    a.medicao, a.divergencia_leitura, a.divergencia_placa, a.usuario_nome,
                    a.observacao, a.origem, a.destino_tipo, a.combustivel, a.rubrica,
                    a.centro_custo, a.preco_litro, a.consumo_medio, a.alerta_consumo,
                    a.sem_funcionamento,
                    e.codigo AS equipamento, e.descricao AS equipamento_desc,
                    n.numero_cupom, n.foto_nota, n.foto_leitura, fo.nome AS posto, n.fornecedor_id,
+                   COALESCE(n.status_conferencia,'pendente') AS status_conferencia, n.conferido_em,
+                   (SELECT nome FROM public.usuarios_garra u WHERE u.id = n.conferido_por) AS conferido_por_nome,
                    (SELECT COUNT(*) FROM operacional.abastecimentos b WHERE b.nota_id=a.nota_id AND b.ativo=true) AS n_itens,
                    g.codigo AS galao_codigo, c.nome AS combustivel_nome
             FROM operacional.abastecimentos a
@@ -1328,14 +1340,38 @@ async def listar(equipamento_id: str = None, limite: int = 30, meus: int = 0, pa
         for k in ("litros", "valor_total", "leitura", "preco_litro", "consumo_medio"):
             x[k] = _f(x.get(k))
         x["data"] = x["data"].isoformat() if x.get("data") else None
-        for k in ("id", "nota_id", "fornecedor_id"):
+        for k in ("id", "nota_id", "fornecedor_id", "equipamento_id"):
             x[k] = str(x[k]) if x.get(k) else None
         x["n_itens"] = int(x.get("n_itens") or 1)
         # links assinados (1 h) para conferência da foto no desktop
         x["foto_nota_url"] = storage_url(x["foto_nota"]) if x.get("foto_nota") else None
         x["foto_leitura_url"] = storage_url(x["foto_leitura"]) if x.get("foto_leitura") else None
+        x["conferido_em"] = x["conferido_em"].isoformat() if x.get("conferido_em") else None
         out.append(x)
     return out
+
+
+@router.post("/operacional/api/abastecimentos/notas/conferir")
+async def notas_conferir(request: Request, payload=Depends(verificar_abastecimento)):
+    """(22/10/2026) Conferência da manutenção, em lote: {nota_ids:[…], status:'conferida'|'pendente'|'divergente'}.
+    Marca quem e quando. Não mexe nos valores — corrigir é pela janela do equipamento."""
+    await _ddl()
+    d = await request.json()
+    ids = [str(i) for i in (d.get("nota_ids") or []) if i]
+    st = (d.get("status") or "conferida").strip()
+    if st not in ("conferida", "pendente", "divergente"):
+        raise HTTPException(status_code=400, detail="status inválido")
+    if not ids:
+        raise HTTPException(status_code=400, detail="Informe as notas")
+    uid = _uid(payload)
+    if not uid:   # token central: sub = login → resolve o id no cadastro
+        u = await ajard_query("SELECT id FROM public.usuarios_garra WHERE login=%s AND ativo=true", (payload.get("sub") or payload.get("login") or "",), fetch="one")
+        uid = str(u["id"]) if u else None
+    await ajard_query(
+        """UPDATE operacional.abastecimento_notas
+           SET status_conferencia=%s, conferido_por=%s, conferido_em=CASE WHEN %s='pendente' THEN NULL ELSE now() END
+           WHERE id = ANY(%s::uuid[])""", (st, uid if st != "pendente" else None, st, ids), fetch="none")
+    return {"ok": True, "n": len(ids), "status": st}
 
 
 
