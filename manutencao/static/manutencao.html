@@ -637,7 +637,7 @@ function renderCentroEquip(){
         + '<td class="mono muted" style="font-size:10px">'+_esc(e.sistema_codigo||'—')+'</td>'
         + '<td style="font-size:10px">'+(e.operador_nome?_esc(e.operador_nome):'<span class="muted">—</span>')+'</td>'
         + '<td class="mono r">'+hor+'</td>'
-        + '<td>'+((abertas+' '+progrs).trim()||'<span class="chip tm">Nenhuma</span>')+'</td>'
+        + '<td>'+((abertas+' '+progrs+' '+_renovChip(e)).trim()||'<span class="chip tm">Nenhuma</span>')+'</td>'
         + '<td>'+situDe(e)+'</td></tr>';
     }).join('');
   } else {
@@ -667,7 +667,7 @@ function renderCentroEquip(){
           + '<td style="padding-left:22px;white-space:nowrap"><span style="color:#94A3B8">└</span> 🛞 <b>'+_esc(f.codigo)+'</b></td>'
           // posição só quando acrescenta algo (antes repetia a descrição: "Pneu dianteiro direito · Pneu dianteiro direito")
           + '<td>'+_esc(f.descricao||'')+(f.posicao && String(f.posicao).trim().toLowerCase() !== String(f.descricao||'').trim().toLowerCase() ? ' <span class="muted">·</span> <b style="color:#1A2A5E">'+_esc(f.posicao)+'</b>' : '')+'</td>'
-          + '<td class="muted" style="font-size:10px">subsistema</td></tr>';
+          + '<td class="muted" style="font-size:10px">subsistema '+_renovChip(f, true)+'</td></tr>';
       }).join('');
       return linha;
     }).join('');
@@ -1828,6 +1828,13 @@ function showCtxReal(ev, id, tipo, rotulo){
   m.style.top  = Math.min(ev.clientY, window.innerHeight-220)+'px';
   m.style.display = 'block';
 }
+// (22/10/2026) Chip de renovações (recapagens) do componente: "2 recap." · "⚠ 3/3 recap." quando no limite
+function _renovChip(e, mini){
+  if (!e || (e.categoria||'') !== 'componente' || !(e.n_renov > 0 || e.no_limite)) return '';
+  const lim = e.renov_limite || e.limite;
+  const t = (e.n_renov||0) + (lim ? '/'+lim : '') + ' renov.';
+  return '<span class="chip '+(e.no_limite?'nr':'pe')+'" style="font-size:'+(mini?8:9)+'px;padding:0 4px" title="Renovações (recapagem/reforma) = OTs encerradas do tipo R'+(lim?' · limite '+lim:'')+'">'+(e.no_limite?'⚠ ':'')+t+'</span>';
+}
 /* ══ DIAGRAMA DE PNEUS — gabaritos por categoria (portado do protótipo v5.0) ══ */
 const _PNEU_EIXOS = {
   dian:  {rot:'Eixo dianteiro', slots:[{k:'dian-esq',l:'Dianteiro esquerdo'},{k:'dian-dir',l:'Dianteiro direito'}]},
@@ -1863,7 +1870,8 @@ function _pneuDiagrama(eu, filhos){
   const tire = sl => {
     const f = ocup[sl.k];
     if (f){
-      const ot = f.ots_abertas ? '<div class="chip nr" style="font-size:8px;padding:0 4px">'+f.ots_abertas+' OT</div>' : '';
+      const ot = (f.ots_abertas ? '<div class="chip nr" style="font-size:8px;padding:0 4px">'+f.ots_abertas+' OT</div>' : '')
+        + (f.no_limite ? '<div class="chip nr" style="font-size:8px;padding:0 4px" title="No limite de renovações">⚠ '+f.n_renov+'/'+f.limite+'</div>' : '');
       return '<div data-c="'+f.id+'" onclick="equipSubsistemas(this.dataset.c)" title="'+_esc(sl.l)+' — '+_esc(f.codigo)+' · clique: ficha do componente" '
         + 'style="width:52px;height:64px;border:2px solid #1A7A45;background:rgba(26,122,69,.08);border-radius:8px;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;font-size:9px;font-weight:700;color:#1A7A45;text-align:center;gap:1px;padding:2px">'
         + '🛞<div>'+_esc(f.codigo.replace('PNEU-',''))+'</div>'+ot+'</div>';
@@ -2239,7 +2247,7 @@ async function novoEquipMW(copiarDe, editar){
     + '<div class="ne-pane on" id="ne-p0"><div style="display:flex;gap:14px">'
     + '<div style="flex:1;display:flex;flex-direction:column;gap:4px">'
     + fld('Pai', '<select id="ne-pai"><option value="">(nenhum \u2014 objeto de topo)</option>'+pais.map(e=>'<option value="'+e.id+'"'+(String(e.id)===String(base.equipamento_pai||'')?' selected':'')+'>'+_esc(e.codigo)+' \u2014 '+_esc(e.descricao||'')+'</option>').join('')+'</select>')
-    + fld('Sistema', sel('ne-sis', _mwDom.sistemas, sisAtivo, 'codigo','nome'))
+    + fld('Sistema', '<div style="display:flex;gap:4px;align-items:center">'+sel('ne-sis', _mwDom.sistemas, sisAtivo, 'codigo','nome')+'</div>')
     + fld('C. Custo', sel('ne-cc', _mwDom.ccs, base.centro_custo, 'codigo','nome'))
     + fld('Localiza\u00e7\u00e3o', '<div style="display:flex;gap:4px">'+inp('ne-loc', base.localizacao, 'almoxarifado / local')+'<button class="btn" title="Localiza\u00e7\u00f5es (almoxarifados) \u2014 escolher ou criar" onclick="neSeletor(\'loc\')">\u2026</button></div>')
     + fld('Operador/motorista', '<div style="display:flex;gap:4px">'+sel('ne-op', _mwDom.operadores, base.operador_responsavel_id, 'id','nome')+'<button class="btn" title="Colaboradores \u2014 escolher ou cadastrar" onclick="neSeletor(\'op\')">\u2026</button></div>')
@@ -2526,15 +2534,34 @@ function _neAplicarTipo(tp){
     cat.value = /CAMINH|CARRET|REBOQ/.test(n) ? 'caminhao' : /PNEU/.test(n) ? 'componente' : /VEIC|APOIO|PICK|CARRO/.test(n) ? 'apoio' : /GAL/.test(n) ? 'galao' : 'maquina';
   const med = document.getElementById('ne-med');
   if (med) med.value = /CAMINH|CARRET|REBOQ|VEIC|APOIO|PICK|CARRO/.test(n) ? 'km' : 'horimetro';
-  // Sistema: o nó da árvore cujo nome casa com o tipo (01.00.01.01 - ESCAVADEIRA HIDRAULICA)
-  const sis = document.getElementById('ne-sis');
-  if (sis && !sis.value){
-    const alvo = (_mwDom.sistemas||[]).find(x => { const sn = (x.nome||'').toUpperCase(); return sn && (sn.indexOf(n) >= 0 || n.indexOf(sn) >= 0); });
-    if (alvo) sis.value = alvo.codigo;
-  }
+  // (22/10/2026) Sistema: o select mostra SÓ o ramo da família do tipo (PNEU → 02.00.05 Pneus e as subpastas
+  // Veículo leve / Caminhão / Máquina). Tipo sem pasta correspondente → lista completa (sem botão "todos": a
+  // pasta é obrigatória — decisão Edvania 22/10).
+  neSistemaFiltrar(tp);
   // Descrição sugerida em cinza? Não: placeholder apenas (fantasma Classe 1)
   const d = document.getElementById('ne-desc');
   if (d && !d.value) d.placeholder = tp.nome || '';
+}
+function _neNorm(t){ return String(t||'').toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^A-Z0-9 ]/g,' ').replace(/\s+/g,' ').trim(); }
+function neSistemaFiltrar(tp){
+  const sis = document.getElementById('ne-sis'); if (!sis) return;
+  const todos = (_mwDom.sistemas||[]).filter(x => x.ativo !== false);
+  const atual = sis.value;
+  let raiz = null;
+  if (tp){
+    const n = _neNorm(tp.nome || tp.sigla); const n1 = n.split(' ')[0];
+    // nó mais raso cujo nome contém o nome do tipo (ou a 1ª palavra: PNEU ↔ "Pneus", CAMINHAO ↔ "Caminhao Basculante")
+    const cands = todos.filter(x => { const sn = _neNorm(x.nome); return sn && (sn.indexOf(n) >= 0 || n.indexOf(sn) >= 0 || (n1.length >= 4 && sn.indexOf(n1) >= 0)); })
+      .sort((a,b) => String(a.codigo).length - String(b.codigo).length || String(a.codigo).localeCompare(String(b.codigo)));
+    raiz = cands.length ? cands[0].codigo : null;
+  }
+  const lista = raiz ? todos.filter(x => x.codigo === raiz || String(x.codigo).startsWith(raiz + '.')) : todos;
+  sis.innerHTML = '<option value="">\u2014</option>' + lista.map(x => '<option value="'+_esc(x.codigo)+'">'+_esc(x.codigo)+(x.nome ? ' \u2014 '+_esc(x.nome) : '')+'</option>').join('');
+  // mantém o valor se ainda está na lista; senão, o nó marcado na árvore (se for do ramo) ou a raiz do ramo
+  if (atual && lista.some(x => x.codigo === atual)) sis.value = atual;
+  else if (raiz && typeof _arvNoAtivo === 'string' && lista.some(x => x.codigo === _arvNoAtivo)) sis.value = _arvNoAtivo;
+  else if (raiz) sis.value = raiz;
+  sis.title = raiz ? 'Só o ramo '+raiz+' (família do tipo)' : 'Tipo sem pasta correspondente em Sistemas — cadastre a pasta em Parametrizar';
 }
 function neProximo(){
   const sig = (document.getElementById('ne-sigla').value||'').toUpperCase().trim();
@@ -2690,8 +2717,20 @@ async function equipSubsistemas(id){
           + (eu.posicao ? ' \u00b7 posi\u00e7\u00e3o: <b>'+_esc(eu.posicao)+'</b>' : '')
           + ' <button class="btn" style="margin-left:8px" data-c="'+eu.id+'" onclick="subDesmontar(this.dataset.c)">\u2934 Desmontar</button></div>'
         : '<div class="muted" style="padding:6px 4px">Solto (n\u00e3o montado). Use a janela do equipamento-pai para montar.</div>')
-      + '<div class="dsec" style="margin-top:8px">Vida acumulada (soma dos per\u00edodos montado)</div>'
-      + '<div style="padding:4px;font-weight:800;color:#1A2A5E;font-size:15px">'+(r.vida_acumulada||0).toLocaleString('pt-BR')+' h/km rodados</div>'
+      + '<div class="dsec" style="margin-top:8px">Vida acumulada (soma dos per\u00edodos montado, inclusive o atual)</div>'
+      + '<div style="padding:4px;font-weight:800;color:#1A2A5E;font-size:15px">'+(r.vida_acumulada||0).toLocaleString('pt-BR')+' h/km rodados'
+      + (r.n_renov ? ' <span class="chip '+(r.no_limite?'nr':'pe')+'" style="font-size:10px;margin-left:8px">'+(r.no_limite?'\u26a0 ':'')+r.n_renov+(r.limite?'/'+r.limite:'')+' renova\u00e7'+(r.n_renov>1?'\u00f5es':'\u00e3o')+'</span>' : '')+'</div>'
+      // (22/10/2026) Vidas = hist\u00f3rico fatiado pelas OTs de renova\u00e7\u00e3o (recapagem/reforma); nada digitado na ficha
+      + '<div class="dsec" style="margin-top:8px">Vidas (novo \u2192 1\u00aa renova\u00e7\u00e3o \u2192 2\u00aa\u2026) <span class="muted" style="font-weight:400;font-size:10px">renova\u00e7\u00e3o = OT encerrada com Tipo Trab. '+_esc((r.tipos_renovacao||[]).map(t=>t.codigo).filter(c=>String(c).length>1).join('/')||'R1')+' neste objeto</span></div>'
+      + ((r.vidas||[]).length
+        ? '<table><thead><tr><th>Vida</th><th>In\u00edcio</th><th>Fim</th><th class="r">Rodou</th><th>Onde rodou</th><th>OT / fornecedor</th><th class="r">Custo</th><th class="r">R$/km</th></tr></thead><tbody>'
+          + r.vidas.map(v=>'<tr'+(v.em_uso?' style="background:#F0FDF4"':'')+'><td><b>'+_esc(v.rotulo)+'</b></td><td>'+dd(v.inicio)+'</td><td>'+(v.fim?dd(v.fim):'<span class="chip em" style="font-size:9px">em uso</span>')+'</td>'
+            + '<td class="r mono">'+(v.km||0).toLocaleString('pt-BR')+'</td><td style="font-size:10px">'+_esc((v.onde||[]).join(' · ')||'\u2014')+'</td>'
+            + '<td style="font-size:10px">'+(v.ot?'<b>'+_esc(v.ot)+'</b>'+(v.fornecedor?' \u00b7 '+_esc(v.fornecedor):''):'<span class="muted">compra</span>')+'</td>'
+            + '<td class="r mono">'+(v.custo?v.custo.toLocaleString('pt-BR',{minimumFractionDigits:2}):'\u2014')+'</td><td class="r mono">'+(v.custo_km!=null?v.custo_km.toLocaleString('pt-BR',{minimumFractionDigits:3}):'\u2014')+'</td></tr>').join('')
+          + '<tr style="font-weight:800;background:#F8FAFC"><td>Total</td><td></td><td></td><td class="r mono">'+((r.vidas_total||{}).km||0).toLocaleString('pt-BR')+'</td><td></td><td></td><td class="r mono">'+(((r.vidas_total||{}).custo)?r.vidas_total.custo.toLocaleString('pt-BR',{minimumFractionDigits:2}):'\u2014')+'</td><td class="r mono">'+((r.vidas_total||{}).custo_km!=null?r.vidas_total.custo_km.toLocaleString('pt-BR',{minimumFractionDigits:3}):'\u2014')+'</td></tr>'
+          + '</tbody></table>'
+        : '')
       + '<div class="dsec" style="margin-top:8px">Hist\u00f3rico de montagens</div>'
       + (r.historico.length
         ? '<table><thead><tr><th>Pai</th><th>Posi\u00e7\u00e3o</th><th>Montou</th><th>Desmontou</th><th class="r">Rodou</th></tr></thead><tbody>'
@@ -2702,7 +2741,7 @@ async function equipSubsistemas(id){
     corpo += '<div class="dsec">Subsistemas montados</div>'
       + (r.filhos.length
         ? '<table><thead><tr><th>Posi\u00e7\u00e3o</th><th>C\u00f3digo</th><th>Descri\u00e7\u00e3o</th><th>Sistema</th><th>OTs</th><th></th></tr></thead><tbody>'
-          + r.filhos.map(f=>'<tr><td><b>'+_esc(f.posicao||'\u2014')+'</b></td><td class="bold">'+_esc(f.codigo)+'</td><td>'+_esc(f.descricao||'')+'</td><td class="muted">'+_esc(f.sistema_nome||'')+'</td>'
+          + r.filhos.map(f=>'<tr><td><b>'+_esc(f.posicao||'\u2014')+'</b></td><td class="bold">'+_esc(f.codigo)+' '+_renovChip(f,true)+'</td><td>'+_esc(f.descricao||'')+'</td><td class="muted">'+_esc(f.sistema_nome||'')+'</td>'
             + '<td>'+(f.ots_abertas?'<span class="chip nr">'+f.ots_abertas+'</span>':'\u2014')+'</td>'
             + '<td><button class="btn" data-c="'+f.id+'" onclick="equipSubsistemas(this.dataset.c)">\ud83d\udd0d</button> '
             + '<button class="btn" data-c="'+f.id+'" onclick="subDesmontar(this.dataset.c,\''+eu.id+'\')">\u2934</button></td></tr>').join('')
@@ -2712,7 +2751,7 @@ async function equipSubsistemas(id){
       + '<div class="dsec" style="margin-top:10px">\u2795 Montar componente</div>'
       + '<div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;padding:4px 0">'
       + '<div class="mfield" style="flex:1;min-width:220px">Componente<select id="sub-comp">'
-      + r.componentes_livres.map(c=>'<option value="'+c.id+'">'+_esc(c.codigo)+' \u2014 '+_esc((c.descricao||'').slice(0,40))+'</option>').join('')
+      + r.componentes_livres.map(c=>'<option value="'+c.id+'">'+_esc(c.codigo)+' \u2014 '+_esc((c.descricao||'').slice(0,40))+(c.n_renov?' \u00b7 '+(c.no_limite?'\u26a0 ':'')+c.n_renov+(c.limite?'/'+c.limite:'')+' renov.':'')+'</option>').join('')
       + '</select></div>'
       + '<div class="mfield" style="width:200px">Posi\u00e7\u00e3o<input id="sub-pos" placeholder="ex.: traseiro interno dir"></div>'
       + '<button class="btn p" data-p="'+eu.id+'" onclick="subMontar(this.dataset.p)">Montar</button></div>'
@@ -2724,17 +2763,28 @@ async function equipSubsistemas(id){
     + corpo;
   document.getElementById('eq-ficha').classList.add('show');
 }
-async function subMontar(paiId){
+async function subMontar(paiId, forcar){
   const comp = (document.getElementById('sub-comp')||{}).value;
   const pos = (document.getElementById('sub-pos')||{}).value || '';
   if (!comp){ mostrarToast('Escolha o componente','warn'); return; }
+  // (22/10/2026) componente no limite de renova\u00e7\u00f5es: o back devolve 409 e a gest\u00e3o confirma (n\u00e3o bloqueia)
+  const opt = (document.getElementById('sub-comp')||{}).selectedOptions; const rot = opt && opt[0] ? opt[0].textContent : '';
+  if (!forcar && /\u26a0/.test(rot)){
+    if (!confirm('\u26a0 '+rot.split(' \u2014 ')[0]+' est\u00e1 no limite de renova\u00e7\u00f5es ('+(rot.split('\u26a0 ')[1]||'')+').\nMontar mesmo assim? Fica registrado no hist\u00f3rico da montagem.')) return;
+    forcar = true;
+  }
   try {
     const r = await mntFetch('/manutencao/api/equipamentos/'+paiId+'/montar',
-      { method:'POST', body: JSON.stringify({ componente_id: comp, posicao: pos }) });
+      { method:'POST', body: JSON.stringify({ componente_id: comp, posicao: pos, forcar: !!forcar }) });
     mostrarToast('\ud83d\udede '+r.componente+' montado em '+r.pai, 'ok');
     equipSubsistemas(paiId);
     carregarSemaforosReais();
-  } catch(e){ mostrarToast('\u274c '+e.message,'warn'); }
+  } catch(e){
+    if (!forcar && /limite_renovacao|Montar mesmo assim/.test(e.message||'')){
+      if (confirm('\u26a0 '+(e.message||'').replace(/^.*mensagem[^A-Za-z0-9]*/,'')+'\nFica registrado no hist\u00f3rico da montagem.')) return subMontar(paiId, true);
+      return;
+    }
+    mostrarToast('\u274c '+e.message,'warn'); }
 }
 async function subDesmontar(compId, voltarPara){
   if (!confirm('Desmontar o componente? O hist\u00f3rico fecha com a leitura atual do pai.')) return;
@@ -6604,8 +6654,7 @@ const PARAM_MAP = {
   condpag: { dom:'condicoes-pagamento', titulo:'Condições de pagamento', pk:'codigo' },
   horarios: { dom:'horarios-trabalho', titulo:'Horários de trabalho', pk:'codigo' },
   contas:  { dom:'rubricas',               titulo:'Plano de contas (hierarquia por pontuação)', pk:'codigo' },
-  tipoOT:    { dom:'tipos-trabalho',         titulo:'Tipos de OT',           pk:'codigo' },
-  tiposman:  { dom:'tipos-manutencao',       titulo:'Tipos de Manutenção',   pk:'codigo' },
+  tiposman:  { dom:'tipos-manutencao',       titulo:'Tipos de Manutenção — pasta (letra) › subtipo · clique na pasta e ＋ Novo cria dentro dela',   pk:'codigo' },
   setint:    { dom:'setores-interventor',    titulo:'Setores Interventor',   pk:'codigo' },
   sintomas:  { dom:'sintomas',               titulo:'Sintomas e Causas',     pk:'codigo', extra:'causas', extraTitulo:'Causas' },
   motivos:   { dom:'motivos-reprogramacao',  titulo:'Motivos de Reprogramação', pk:'codigo' },
@@ -6633,8 +6682,7 @@ const PARAM_GRUPOS = [
     ['fornec','forn','Fornecedores'],
     ['condpag','dom','Condições de pagamento'] ]},
   { t:'🔧 Trabalhos (OTs)', itens:[
-    ['tipoOT','dom','Tipos de OT'],
-    ['tiposman','dom','Tipos de Manutenção'],
+    ['tiposman','dom','Tipos de Manutenção (Tipos Trabalho)'],   // (22/10/2026) 'Tipos de OT' (tipos_trabalho) era lista morta — um domínio só, em pastas
     ['setint','dom','Setores (interventor)'],
     ['sintomas','dom','Sintomas e Causas'],
     ['motivos','dom','Motivos de Reprogramação'],
@@ -7097,6 +7145,12 @@ async function panePontos(){
 }
 let _ppFechados = new Set(), _ppSel = {};
 function ppAlternar(k, paneId){ _ppFechados.has(k) ? _ppFechados.delete(k) : _ppFechados.add(k); ligarParamPane(paneId); }
+// (22/10/2026) Hierarquia dos domínios: ponto = nível (01.00.02) · Tipos de Manutenção = a LETRA é a pasta
+// (A, B, C, M, R) e o subtipo (A1, C2, R1) é o filho — igual ao "Tipos Trabalho" do ManWinWin.
+function _ppHier(dom){ return ['sistemas','familias','rubricas','centros-custo','tipos-manutencao'].includes(dom); }
+function _ppNivel(dom, cod){ return dom === 'tipos-manutencao' ? (String(cod).length > 1 ? 1 : 0) : String(cod).split('.').length - 1; }
+function _ppAncestrais(dom, cod){ return dom === 'tipos-manutencao' ? (String(cod).length > 1 ? [String(cod).charAt(0).toUpperCase()] : []) : String(cod).split('.').slice(0,-1).map((_, k, arr) => arr.slice(0, k+1).join('.')); }
+function _ppEhFilho(dom, filho, pai){ return dom === 'tipos-manutencao' ? (String(filho).length > 1 && String(filho).charAt(0).toUpperCase() === String(pai).toUpperCase() && String(filho).toUpperCase() !== String(pai).toUpperCase()) : String(filho).startsWith(String(pai) + '.'); }
 function ppMarcar(dom, cod, tr){
   _ppSel[dom] = _ppSel[dom] === String(cod) ? null : String(cod);   // 2º clique desmarca (＋ Novo volta à raiz)
   const tb = tr.closest('tbody'); if (tb) tb.querySelectorAll('tr').forEach(x => x.classList.toggle('sel', x === tr && !!_ppSel[dom]));
@@ -7116,10 +7170,10 @@ async function ligarParamPane(paneId){
         + '<button class="btn" title="Desativar (some dos formulários, fica na história)" onclick="toggleParam(\''+dom+'\',\''+_esc(cod)+'\',\''+paneId+'\',false)">🚫</button>';
     // (30/09/2026) Domínios hierárquicos (ponto = nível): linha recuada por nível, setinha ▾/▸ para
     // recolher o ramo, e ➕ que abre "Novo Sistema" já DENTRO daquele nó (janela ManWinWin)
-    const hier = ['sistemas','familias','rubricas','centros-custo'].includes(dom);
-    const nivel = hier ? String(cod).split('.').length - 1 : 0;
-    const temFilhos = hier && rows.some(x => String(x[pk] ?? x.codigo).startsWith(String(cod) + '.'));
-    if (hier && String(cod).split('.').slice(0,-1).some((_, k, arr) => _ppFechados.has(dom + ':' + arr.slice(0, k+1).join('.')))) return '';
+    const hier = _ppHier(dom);
+    const nivel = hier ? _ppNivel(dom, cod) : 0;
+    const temFilhos = hier && rows.some(x => _ppEhFilho(dom, String(x[pk] ?? x.codigo), String(cod)));
+    if (hier && _ppAncestrais(dom, cod).some(a => _ppFechados.has(dom + ':' + a))) return '';
     const seta = hier ? (temFilhos
       ? '<span class="pn-arr" data-k="'+_esc(dom+':'+cod)+'" onclick="event.stopPropagation();ppAlternar(this.dataset.k,\''+paneId+'\')" title="Expandir / recolher" style="'+(_ppFechados.has(dom+':'+cod)?'':'transform:rotate(90deg)')+'">▶</span> '
       : '<span class="pn-arr" style="visibility:hidden">▶</span> ') : '';
@@ -7130,9 +7184,10 @@ async function ligarParamPane(paneId){
     return '<tr'+(selRow?' class="sel"':'')+' style="'+(inat?'opacity:.55;':'')+(hier?'cursor:pointer':'')+'"'
       + (hier ? ' data-c="'+_esc(cod)+'" onclick="ppMarcar(\''+dom+'\',this.dataset.c,this)" title="Clique = marca · ＋ Novo cria dentro do marcado"' : '')
       + '><td class="bold" style="width:'+(hier?170:90)+'px;padding-left:'+(8+nivel*16)+'px;white-space:nowrap">'
-      + seta + (inat?'<s>':'')+_esc(cod)+(inat?'</s>':'')+'</td><td>'
+      + seta + (dom === 'tipos-manutencao' ? (nivel === 0 ? '📁 ' : '📄 ') : '') + (inat?'<s>':'')+_esc(cod)+(inat?'</s>':'')+'</td><td>'
       + (inat?'<s>':'')+_esc(r.nome||'')+(inat?'</s>':'')
       + (dom === 'familias' && nivel === 0 ? ' <span class="chip pe" style="font-size:9px" title="Classe da Norma (clique em ✏️ para mudar)">'+(r.classe ? 'Classe '+_esc(r.classe) : 'sem classe')+'</span>' : '')
+      + (dom === 'tipos-manutencao' && (r.renova_vida === true || (r.renova_vida == null && String(cod).toUpperCase().startsWith('R'))) ? ' <span class="chip pe" style="font-size:9px" title="OT encerrada deste tipo conta uma renovação (recapagem/reforma) no objeto — ✏️ para mudar">🔁 renova vida'+(r.max_por_objeto ? ' · máx. '+r.max_por_objeto : '')+'</span>' : '')
       + (Array.isArray(r.caracteristicas) && r.caracteristicas.length ? ' <span class="muted" style="font-size:9px" title="Características (rótulos) da subfamília">· '+_esc(r.caracteristicas.filter(Boolean).join(' · '))+'</span>' : '')
       + (inat?' <span class="chip ap" style="font-size:9px">INATIVO</span>':'')+'</td>'
       + '<td class="act" style="width:130px;white-space:nowrap" onclick="event.stopPropagation()">'+btnFilho+botoes+'</td></tr>';
@@ -7161,7 +7216,31 @@ async function novoParam(dom, paneId){
   // (30/09/2026) Sistemas: janela "Novo Sistema" (ManWinWin) na raiz; o ➕ de cada linha cria dentro do nó
   if (dom === 'sistemas') { await _sistemas(); sisNovo(_ppSel[dom] || '_todos', function(){ ligarParamPane(paneId); }); return; }
   // estrutura é o gatilho: o nó marcado na lista é o pai (ou informa; vazio = raiz) e o sistema propõe o próximo filho
-  const arvore = ['sistemas','familias','rubricas','centros-custo'].includes(dom);
+  // (22/10/2026) Tipos de Manutenção no padrão MWW: nada marcado → nova PASTA (letra); pasta marcada → subtipo dentro dela
+  if (dom === 'tipos-manutencao'){
+    const rows = await mntFetch('/manutencao/api/param/'+dom);
+    const pasta = (_ppSel[dom] || '').toUpperCase();
+    let cod, nome;
+    if (!pasta){
+      cod = prompt('Nova PASTA (uma letra, ex.: R — Renovação). Para criar um subtipo, marque a pasta na lista e clique ＋ Novo:', ''); if (!cod) return;
+      cod = cod.trim().toUpperCase().charAt(0);
+      if (!/^[A-Z]$/.test(cod)){ mostrarToast('A pasta é uma letra (A, B, C, M, R…)','warn'); return; }
+      nome = prompt('Descrição da pasta '+cod+':'); if (!nome) return;
+    } else {
+      const letra = pasta.charAt(0);
+      let maior = 0; rows.forEach(x => { const m = new RegExp('^'+letra+'(\\d+)$','i').exec(String(x.codigo||'')); if (m) maior = Math.max(maior, parseInt(m[1],10)); });
+      cod = prompt('Novo subtipo dentro de '+letra+' (próximo livre: '+letra+(maior+1)+'):', letra+(maior+1)); if (!cod) return;
+      cod = cod.trim().toUpperCase();
+      if (cod.charAt(0) !== letra || cod.length < 2){ mostrarToast('O subtipo precisa começar com a letra da pasta ('+letra+')','warn'); return; }
+      nome = prompt('Descrição de '+cod+' (ex.: Recapagem, Retífica, Reforma caçamba):'); if (!nome) return;
+    }
+    if (rows.some(x => String(x.codigo).toUpperCase() === cod)){ mostrarToast('❌ Já existe '+cod,'warn'); return; }
+    try { await mntFetch('/manutencao/api/param/'+dom, {method:'POST', body: JSON.stringify({codigo:cod, nome:nome.trim()})});
+      mostrarToast('✅ '+cod+' cadastrado','ok'); paramCacheLimpar(dom); ligarParamPane(paneId);
+    } catch(e){ mostrarToast('❌ '+e.message,'warn'); }
+    return;
+  }
+  const arvore = _ppHier(dom);
   let pai = '';
   if (arvore){ pai = prompt('Código pai (vazio = nível raiz):', _ppSel[dom] || ''); if (pai === null) return; pai = pai.trim(); }
   const r = await mwProximoCodigo(dom, pai, pai ? '.' : '', 2);
@@ -7197,6 +7276,15 @@ async function editarParam(dom, cod, nomeAtual, paneId){
   if (dom === 'familias' && !String(cod).includes('.')){
     const c = prompt('Classe da família '+cod+' (C ou G; vazio = não mudar):', ''); if (c === null) return;
     if (c.trim()) body.classe = c.trim().toUpperCase();
+  }
+  // (22/10/2026) Tipo de Manutenção que RENOVA a vida do componente (recapagem, retífica, reforma) + limite por objeto
+  if (dom === 'tipos-manutencao'){
+    const rv = prompt('Este tipo renova a vida do componente (recapagem/retífica/reforma)? s/n\n(vazio = regra padrão: letra R renova)', String(cod).toUpperCase().startsWith('R') ? 's' : 'n'); if (rv === null) return;
+    body.renova_vida = rv.trim() === '' ? null : /^s/i.test(rv.trim());
+    if (body.renova_vida !== false){
+      const mx = prompt('Máximo de renovações por objeto (ex.: 3 recapagens; vazio = sem limite):', ''); if (mx === null) return;
+      body.max_por_objeto = mx.trim() === '' ? null : parseInt(mx, 10);
+    }
   }
   try { await mntFetch('/manutencao/api/param/'+dom+'/'+encodeURIComponent(cod), {method:'PATCH', body: JSON.stringify(body)});
     mostrarToast('✅ Atualizado','ok'); paramCacheLimpar(dom); ligarParamPane(paneId);
