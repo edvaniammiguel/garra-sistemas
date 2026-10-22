@@ -2398,8 +2398,9 @@ const _NE_SEL = {
           vaiPara: () => { showModule('param'); abrirParamPane('forn','forn','Fornecedores'); } }
 };
 let _neSelItens = [];
-async function neSeletor(tipo, alvo){
-  const cfg = _NE_SEL[tipo]; if(!cfg) return; _neSelAlvo = alvo || null; _neSelTipo = tipo;
+let _neSelCb = null;   // (22/10/2026) callback opcional: quem abriu o seletor recebe o item escolhido/cadastrado
+async function neSeletor(tipo, alvo, cb){
+  const cfg = _NE_SEL[tipo]; if(!cfg) return; _neSelAlvo = alvo || null; _neSelTipo = tipo; _neSelCb = (typeof cb === 'function') ? cb : null;
   try { _neSelItens = await cfg.carregar(); } catch(e){ mostrarToast('\u274c '+e.message,'warn'); return; }
   _neSelItens.sort((a,b)=>String(a.nome||'').localeCompare(String(b.nome||'')));
   const linhas = _neSelItens.map((it,i)=>'<tr data-i="'+i+'" data-busca="'+_esc((it.cod+' '+it.nome).toLowerCase())+'" onclick="neSelMarcar('+i+')" ondblclick="neSelEscolher(\''+tipo+'\','+i+')">'
@@ -2448,6 +2449,7 @@ function neSelConfirmar(tipo){ const tr=document.querySelector('#ne-sel-lista tr
 let _neSelAlvo = null;
 function neSelEscolher(tipo,i){ const it=_neSelItens[i]; if(!it) return; _neSelAplicar(tipo, it); document.getElementById('ne-sel')?.remove(); }
 function _neSelAplicar(tipo, it){
+  if (_neSelCb){ const f = _neSelCb; _neSelCb = null; f(it); return; }
   const alvo = _neSelAlvo || { loc:'ne-loc', op:'ne-op', forn:'ne-forn' };
   if (tipo === 'loc') { const el=document.getElementById(alvo.loc); if(el) el.value = it.nome; return; }
   if (tipo === 'fam' || tipo === 'comb') { const el=document.getElementById(alvo[tipo]); if(el) el.value = (it.cod ? it.cod+' \u2014 ' : '')+it.nome; const h=document.getElementById(alvo[tipo]+'-id'); if(h) h.value = it.id; return; }
@@ -2919,12 +2921,14 @@ async function abLerFotos(){
 async function abPostoMudou(sel){
   if (sel.value !== '__novo') return;
   sel.value = '';
-  const nome = prompt('Nome do posto (como est\u00e1 na notinha):'); if (!nome) return;
-  const cnpj = prompt('CNPJ do posto (opcional \u2014 evita duplicar cadastro):', '') || '';
-  try {
-    const r = await mntFetch('/operacional/api/abastecimentos/postos', {method:'POST', body: JSON.stringify({nome, cnpj})});
-    abPostosAtualizar(sel, r.postos, r.id); mostrarToast('\u2705 Posto pronto: '+nome,'ok');
-  } catch(e){ mostrarToast('\u274c '+e.message,'warn'); }
+  // (22/10/2026) "Outro posto" abre a BASE de fornecedores (procurar / ➕ Novo) — nada de digitar nome solto:
+  // o escolhido vira posto (eh_posto) sem duplicar cadastro
+  neSeletor('forn', null, async it => {
+    try {
+      const r = await mntFetch('/operacional/api/abastecimentos/postos', {method:'POST', body: JSON.stringify({nome: it.nome, cnpj: it.cod || ''})});
+      abPostosAtualizar(sel, r.postos, r.id); fornCacheLimpar(); mostrarToast('\u2705 Posto pronto: '+it.nome,'ok');
+    } catch(e){ mostrarToast('\u274c '+e.message,'warn'); }
+  });
 }
 async function abPostoRenomear(){
   const sel = document.getElementById('ab-posto'); if (!sel || !sel.value || sel.value === '__novo'){ mostrarToast('Selecione o posto primeiro','warn'); return; }
@@ -3633,6 +3637,32 @@ function otwRepetir(){
   abrirNovaOT(_otwin.eqId, o);
 }
 // (24/09/2026) Motivo obrigatório (mín. 5 caracteres) — cancelar OT, corrigir/excluir leitura; o backend também barra
+// (22/10/2026) Pausa "Aguardando": motivo do domínio + observação; com faltantes, oferece gerar a OC junto.
+async function otPausaDialogo(otId){
+  let motivos = []; try { motivos = (await mntFetch('/manutencao/api/param/motivos-pendente')).filter(m => m.ativo !== false); } catch(e){}
+  if (!motivos.length) motivos = [{codigo:'PEC', nome:'Aguardando peça'},{codigo:'FOR', nome:'Aguardando fornecedor / serviço externo'},{codigo:'APR', nome:'Aguardando aprovação (OC / financeiro)'},{codigo:'OUT', nome:'Outro'}];
+  let falt = []; try { const f = await mntFetch('/manutencao/api/ots/'+otId+'/faltantes'); falt = (f.itens||[]).filter(x => x.faltante > 0); } catch(e){}
+  return new Promise(res => {
+    let b = document.getElementById('ot-pausa');
+    if (!b){ b = document.createElement('div'); b.id = 'ot-pausa'; b.style.cssText = 'position:fixed;inset:0;z-index:9998;background:rgba(15,23,42,.45);display:flex;align-items:center;justify-content:center'; document.body.appendChild(b); }
+    b.style.display = 'flex';
+    b.innerHTML = '<div style="background:#fff;border-radius:10px;box-shadow:0 12px 32px rgba(15,23,42,.3);padding:16px;width:520px;max-width:94vw">'
+      + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><b style="color:#1A2A5E">⏸️ Colocar a OT em espera</b><span style="cursor:pointer;font-size:16px" id="otp-x">✕</span></div>'
+      + '<div class="mfield">Motivo *<select id="otp-mot">'+motivos.map(m => '<option value="'+_esc(m.codigo)+'">'+_esc(m.codigo)+' — '+_esc(m.nome)+'</option>').join('')+'</select></div>'
+      + '<div class="mfield" style="margin-top:6px">Observação<input id="otp-obs" placeholder="ex.: rolamento 6205 sem estoque, OC pedida ao fornecedor X"></div>'
+      + (falt.length
+          ? '<div class="panel" style="margin-top:8px;padding:8px"><div style="font-weight:700;color:#B45309;font-size:11px">Peças previstas sem cobertura (estoque + OCs):</div>'
+            + '<div style="font-size:11px;margin:4px 0">'+falt.map(x => '• '+_esc(x.codigo)+' — falta '+x.faltante+' '+_esc(x.unidade||'UN')).join('<br>')+'</div>'
+            + '<label style="font-size:11px;display:flex;gap:6px;align-items:center"><input type="checkbox" id="otp-oc" checked> 🛒 gerar a OC dos faltantes agora (amarrada a esta OT)</label></div>'
+          : '<div class="muted" style="font-size:10px;margin-top:8px">Sem peça prevista descoberta. Se a espera é por peça, preveja-a na aba Peças (⊕ Inserir peça) para o sistema acompanhar a chegada.</div>')
+      + '<div class="muted" style="font-size:10px;margin-top:8px">O tempo em espera fica registrado (início → retomada) e é descontado do TDM na Gestão. O PDI (equipamento parado) continua contando.</div>'
+      + '<div style="display:flex;justify-content:flex-end;gap:8px;margin-top:10px"><button class="btn" id="otp-canc">Cancelar</button><button class="btn p" id="otp-ok">⏸️ Colocar em espera</button></div></div>';
+    const fechar = v => { b.style.display = 'none'; res(v); };
+    b.querySelector('#otp-x').onclick = () => fechar(null); b.querySelector('#otp-canc').onclick = () => fechar(null);
+    b.querySelector('#otp-ok').onclick = () => fechar({ motivo_codigo: b.querySelector('#otp-mot').value, observacao: b.querySelector('#otp-obs').value.trim(), gerar_oc: !!(b.querySelector('#otp-oc') && b.querySelector('#otp-oc').checked) });
+    setTimeout(() => b.querySelector('#otp-obs').focus(), 30);
+  });
+}
 function _pedirMotivo(pergunta){
   let m = '';
   while (true) {
@@ -4112,13 +4142,20 @@ async function mntStatusReal(id, novo){
     const _o3 = _otsCache.find(o => String(o.id) === String(id));
     if (_o3 && ['concluida','cancelada'].includes(_o3.status)) { obs = _pedirMotivo('Reabrir esta OT'); if (!obs) return; }
   }
+  // (22/10/2026) Aguardando: motivo obrigatório (Motivos de OT Pendente) + faltantes → OC na hora
+  let pausa = null;
+  if (novo === 'aguardando_peca'){
+    pausa = await otPausaDialogo(id); if (!pausa) return;
+    obs = pausa.observacao || null;
+  }
   if (novo === 'em_andamento' || novo === 'concluida'){
     const av = await _otAvisoOC(id, novo === 'em_andamento' ? 'Emitir' : 'Encerrar');
     if (av === false) return;
     if (av) obs = (obs ? obs + ' · ' : '') + av;
   }
   try {
-    await mntFetch('/manutencao/api/ots/'+id+'/status', {method:'PATCH', body: JSON.stringify(Object.assign({status:novo, observacao:obs, custo_total:custo, horas_parada:horasParada}, (typeof extraEnc !== 'undefined' && extraEnc) || {}, extraCancel || {}))});
+    await mntFetch('/manutencao/api/ots/'+id+'/status', {method:'PATCH', body: JSON.stringify(Object.assign({status:novo, observacao:obs, custo_total:custo, horas_parada:horasParada}, (typeof extraEnc !== 'undefined' && extraEnc) || {}, extraCancel || {}, pausa ? {motivo_codigo: pausa.motivo_codigo} : {}))});
+    if (pausa && pausa.gerar_oc){ if (!_otAberta || String(_otAberta.id) !== String(id)) await verOTReal(id); await ocDaOT(); }
     mostrarToast('✅ OT atualizada','ok'); delete _otEncState[String(id)];
     carregarOTsReais(); carregarSemaforosReais();
   } catch(e){ mostrarToast('❌ '+e.message,'warn'); }
@@ -5090,13 +5127,23 @@ async function otAba(aba){
           ? (function(){ const fimS = s.data ? new Date(s.data) : new Date(); const auto = inicioReal ? Math.max(0, (fimS - inicioReal) / 3600000) : null;
               return tempo('PDI','Paragem Devido à Intervenção — equipamento parado da emissão (Início) ao Fim', '<input id="ot-enc-hp" inputmode="decimal" value="'+_esc(s.hp)+'" placeholder="'+(auto != null ? auto.toFixed(1).replace('.', ',') : 'paradas')+'" style="width:60px;font-size:11px" oninput="otEncGuardar(\'hp\',this.value)"> h', auto != null ? 'Início → Fim (automático; digite só para corrigir)' : ''); })()
           : tempo('PDI','Paragem Devido à Intervenção — horas de equipamento parado', o.horas_parada != null ? n(o.horas_parada)+' h' : '—', o.horas_parada != null ? 'indisponibilidade' : ''))
-      + tempo('TDM','Tempo De Manutenção — Início → Fim', tdm, '')
+      + tempo('TDM','Tempo De Manutenção — Início → Fim', tdm, '<span id="ot-tdm-pausas"></span>')
       + tempo('TDR','Tempo De Reparação — HH interna (Mão de Obra) + horas do serviço externo', (o.mo_horas||o.outros_horas) ? n(((o.mo_horas||0)+(o.outros_horas||0)).toFixed(1))+' h' : '—', (o.mo_horas ? 'MO '+n(o.mo_horas) : '') + (o.outros_horas ? (o.mo_horas?' + ':'')+'externo '+n(o.outros_horas) : ''))
       + ((o.interventor === 'externo' || o.fornecedor_id) && aberta
           ? '<div style="display:flex;align-items:center;gap:6px;padding:2px 0 2px 44px;font-size:10px;color:#475569">🏭 serviço externo: <input id="ot-hext" inputmode="decimal" value="'+(o.horas_externo != null ? _esc(String(o.horas_externo).replace('.',',')) : '')+'" placeholder="horas" style="width:60px;font-size:11px" onchange="otGestaoSalvar(\'horas_externo\', this.value)"> h <span class="muted">(tempo do fornecedor, mesmo sem custo)</span></div>'
           : '')
       + '<div class="muted" style="margin-top:6px;line-height:1.5">PDI é o que vira dinheiro: equipamento parado = diária perdida. Alimenta o KPI de Disponibilidade.</div>'
+      + '<div id="ot-pausas-box"></div>'
       + '</div></div>';
+    // (22/10/2026) pausas "aguardando" (motivo, início → retomada, horas) e TDM líquido
+    mntFetch('/manutencao/api/ots/'+o.id+'/pausas').then(p => {
+      const box = document.getElementById('ot-pausas-box'), tp = document.getElementById('ot-tdm-pausas'); if (!box) return;
+      if (!(p.itens||[]).length) return;
+      const dh = v => { try { return new Date(v).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}); } catch(e){ return '—'; } };
+      box.innerHTML = '<div style="font-weight:800;color:#1A2A5E;font-size:11px;margin:8px 0 2px">⏸ Esperas · '+n(p.horas_total.toFixed(1))+' h</div>'
+        + p.itens.map(x => '<div style="font-size:10px;padding:2px 0;border-top:1px solid #F1F5F9"><b>'+_esc(x.motivo||x.motivo_codigo||'')+'</b>'+(x.observacao?' — '+_esc(x.observacao):'')+'<br><span class="muted">'+dh(x.inicio)+' → '+(x.fim?dh(x.fim):'<b style="color:#B45309">em espera</b>')+' · '+n(x.horas.toFixed(1))+' h</span></div>').join('');
+      if (tp && inicioReal){ const bruto = ((fim || new Date()) - inicioReal)/3600000; const liq = Math.max(0, bruto - p.horas_total); tp.textContent = '− '+n(p.horas_total.toFixed(1))+' h espera = '+n(liq.toFixed(1))+' h líquido'; }
+    }).catch(()=>{});
   }
   if (aba === 'ped'){
     const p = o.pedido;
@@ -7110,6 +7157,13 @@ async function paneFornecedores(){
 }
 async function novoFornecedor(){
   const nome = prompt('Nome do fornecedor:'); if (!nome) return;
+  // (22/10/2026) parecido já cadastrado? avisa antes de criar outro (duplicidade é a praga do cadastro)
+  try {
+    const lista = _mntFornList || await mntFetch('/manutencao/api/fornecedores');
+    const n = nome.trim().toLowerCase().replace(/[^a-z0-9]/g,'');
+    const parecidos = (lista||[]).filter(f => { const x = String(f.nome||'').toLowerCase().replace(/[^a-z0-9]/g,''); return x && n && (x.includes(n.slice(0,6)) || n.includes(x.slice(0,6))); }).slice(0,5);
+    if (parecidos.length && !confirm('Já existem cadastros parecidos:\n• '+parecidos.map(f=>f.nome).join('\n• ')+'\n\nCriar mesmo assim "'+nome.trim()+'"?')) return;
+  } catch(e){}
   const tel = prompt('Telefone/WhatsApp (opcional):') || null;
   try { await mntFetch('/manutencao/api/fornecedores', {method:'POST', body: JSON.stringify({nome:nome.trim(), telefone:tel})});
     fornCacheLimpar(); mostrarToast('✅ Fornecedor cadastrado','ok'); paneFornecedores();
@@ -8120,6 +8174,10 @@ async function recebimentoConferir(id){
   try {
     const r = await mntFetch('/manutencao/api/recebimentos/'+id+'/conferir', {method:'POST', body: JSON.stringify({quantidade: g('q'), almox: g('a'), observacao: g('o')})});
     mostrarToast('\u2705 Conferido \u2014 saldo atualizado'+(r.diferenca?' (diferen\u00e7a '+r.diferenca+')':''),'ok'); recebimentosJanela('pendente'); carregarPecasReais();
+    // (22/10/2026) a OT estava parada esperando esta peça → oferece retomar
+    if (r.ot_aguardando && confirm('📦 Peça da '+r.ot_aguardando.numero+' chegou — a OT está em espera (aguardando peça).\n\nRetomar a OT agora (volta a Em curso)?')){
+      await mntStatusReal(r.ot_aguardando.id, 'em_andamento');
+    }
   } catch(e){ mostrarToast('\u274c '+e.message,'warn'); }
 }
 async function recebimentoRejeitar(id){
