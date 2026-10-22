@@ -4095,6 +4095,11 @@ async function mntStatusReal(id, novo){
     const _o3 = _otsCache.find(o => String(o.id) === String(id));
     if (_o3 && ['concluida','cancelada'].includes(_o3.status)) { obs = _pedirMotivo('Reabrir esta OT'); if (!obs) return; }
   }
+  if (novo === 'em_andamento' || novo === 'concluida'){
+    const av = await _otAvisoOC(id, novo === 'em_andamento' ? 'Emitir' : 'Encerrar');
+    if (av === false) return;
+    if (av) obs = (obs ? obs + ' · ' : '') + av;
+  }
   try {
     await mntFetch('/manutencao/api/ots/'+id+'/status', {method:'PATCH', body: JSON.stringify(Object.assign({status:novo, observacao:obs, custo_total:custo, horas_parada:horasParada}, (typeof extraEnc !== 'undefined' && extraEnc) || {}))});
     mostrarToast('✅ OT atualizada','ok'); delete _otEncState[String(id)];
@@ -7190,7 +7195,6 @@ async function ligarParamPane(paneId){
       + seta + (dom === 'tipos-manutencao' ? (nivel === 0 ? '📁 ' : '📄 ') : '') + (inat?'<s>':'')+_esc(cod)+(inat?'</s>':'')+'</td><td>'
       + (inat?'<s>':'')+_esc(r.nome||'')+(inat?'</s>':'')
       + (dom === 'familias' && nivel === 0 ? ' <span class="chip pe" style="font-size:9px" title="Classe da Norma (clique em ✏️ para mudar)">'+(r.classe ? 'Classe '+_esc(r.classe) : 'sem classe')+'</span>' : '')
-      + (dom === 'tipos-manutencao' && (r.renova_vida === true || (r.renova_vida == null && String(cod).toUpperCase().startsWith('R'))) ? ' <span class="chip pe" style="font-size:9px" title="OT encerrada deste tipo conta uma renovação (recapagem/reforma) no objeto — ✏️ para mudar">🔁 renova vida'+(r.max_por_objeto ? ' · máx. '+r.max_por_objeto : '')+'</span>' : '')
       + (Array.isArray(r.caracteristicas) && r.caracteristicas.length ? ' <span class="muted" style="font-size:9px" title="Características (rótulos) da subfamília">· '+_esc(r.caracteristicas.filter(Boolean).join(' · '))+'</span>' : '')
       + (inat?' <span class="chip ap" style="font-size:9px">INATIVO</span>':'')+'</td>'
       + '<td class="act" style="width:130px;white-space:nowrap" onclick="event.stopPropagation()">'+btnFilho+botoes+'</td></tr>';
@@ -7280,14 +7284,11 @@ async function editarParam(dom, cod, nomeAtual, paneId){
     const c = prompt('Classe da família '+cod+' (C ou G; vazio = não mudar):', ''); if (c === null) return;
     if (c.trim()) body.classe = c.trim().toUpperCase();
   }
-  // (22/10/2026) Tipo de Manutenção que RENOVA a vida do componente (recapagem, retífica, reforma) + limite por objeto
-  if (dom === 'tipos-manutencao'){
-    const rv = prompt('Este tipo renova a vida do componente (recapagem/retífica/reforma)? s/n\n(vazio = regra padrão: letra R renova)', String(cod).toUpperCase().startsWith('R') ? 's' : 'n'); if (rv === null) return;
-    body.renova_vida = rv.trim() === '' ? null : /^s/i.test(rv.trim());
-    if (body.renova_vida !== false){
-      const mx = prompt('Máximo de renovações por objeto (ex.: 3 recapagens; vazio = sem limite):', ''); if (mx === null) return;
-      body.max_por_objeto = mx.trim() === '' ? null : parseInt(mx, 10);
-    }
+  // (22/10/2026) Pasta R = renovação (recapagem, retífica, reforma) — regra pela letra, sem flag na tela.
+  // Só o subtipo (R1, R2…) tem limite por objeto; a pergunta aparece só nele.
+  if (dom === 'tipos-manutencao' && /^R.+/i.test(String(cod))){
+    const mx = prompt('Máximo de renovações por objeto para '+cod+' (ex.: 3 recapagens; vazio = sem limite):', ''); if (mx === null) return;
+    body.max_por_objeto = mx.trim() === '' ? null : parseInt(mx, 10);
   }
   try { await mntFetch('/manutencao/api/param/'+dom+'/'+encodeURIComponent(cod), {method:'PATCH', body: JSON.stringify(body)});
     mostrarToast('✅ Atualizado','ok'); paramCacheLimpar(dom); ligarParamPane(paneId);
@@ -7647,6 +7648,21 @@ async function otOutrosRender(){
   let rows = [];
   try { rows = await mntFetch('/manutencao/api/tab/ot-outros?ot_id='+o.id); } catch(e){ c.innerHTML = '<div class="muted" style="padding:12px">❌ '+_esc(e.message)+'</div>'; return; }
   const plan = rows.filter(r => r.planejado === true), real = rows.filter(r => r.planejado !== true);
+  // (22/10/2026) OC de serviço: a linha Planejada gera a OC no Compras (alçada decide na hora ou vai ao financeiro);
+  // o chip mostra o status; ✔ Realizar copia para Realizado com o documento e dá a OC como recebida.
+  let ocs = []; try { ocs = await mntFetch('/manutencao/api/ots/'+o.id+'/ocs'); } catch(e){ ocs = []; }
+  const ocDe = r => r.oc_id ? (ocs.find(x => String(x.id) === String(r.oc_id)) || {numero:r.oc_numero, status:'?'}) : null;
+  const jaRealizada = r => r.oc_id ? real.some(x => String(x.oc_id) === String(r.oc_id)) : real.some(x => x.descricao === r.descricao && x.fornecedor_id === r.fornecedor_id);
+  const ocCol = r => {
+    const oc = ocDe(r);
+    let h = '';
+    if (oc) h += _ocChip(oc);
+    else if (podeLancar) h += '<button class="btn" style="font-size:10px;padding:1px 6px" title="Gera a ordem de compra deste serviço no Compras, amarrada a esta OT, e pede aprovação (alçada)" onclick="otOutrosGerarOC(\''+r.id+'\')">🛒 Gerar OC</button>';
+    if (podeLancar && !jaRealizada(r) && (!oc || ['aprovada','enviada','recebida_parcial','recebida'].includes(oc.status)))
+      h += ' <button class="btn" style="font-size:10px;padding:1px 6px" title="Serviço feito: copia para Realizado com o documento e dá a OC como recebida" onclick="otOutrosRealizar(\''+r.id+'\')">✔ Realizar</button>';
+    if (jaRealizada(r)) h += ' <span class="chip tm" style="font-size:9px">realizado</span>';
+    return h;
+  };
   const money = v => 'R$ ' + (parseFloat(v)||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
   const tot = arr => arr.reduce((s,r) => s + (parseFloat(r.valor)||0), 0);
   const dd = v => v ? _fmtData(v) : '—';
@@ -7657,13 +7673,13 @@ async function otOutrosRender(){
   const mais = (id, titulo) => podeLancar ? '<button class="btn" style="font-size:11px;padding:2px 8px" title="'+titulo+'" onclick="otOutrosForm(\''+id+'\')">⊕ Inserir</button>' : '';
   const x = r => podeLancar ? '<span style="cursor:pointer;color:#B91C1C" title="Remover" onclick="otOutrosExcluir(\''+r.id+'\')">✕</span>' : '';
   const tabPlan = plan.length
-    ? '<table class="tbl"><thead><tr><th style="width:60px">Origem</th><th style="width:160px">Fornecedor</th><th>Descrição</th><th class="r" style="width:100px">Custo</th><th style="width:60px">Conta</th><th style="width:22px"></th></tr></thead><tbody>'
-      + plan.map(r => '<tr><td><span class="chip tm" style="font-size:9px">OT</span></td><td>'+_esc(r.fornecedor_nome||'—')+'</td><td>'+_esc(r.descricao||'')+'</td><td class="r"><b style="color:#1A2A5E">'+money(r.valor)+'</b></td><td class="mono muted">'+_esc(r.rubrica||'')+'</td><td>'+x(r)+'</td></tr>').join('')
-      + '</tbody><tfoot><tr><td colspan="3">Custo total</td><td class="r">'+money(tot(plan))+'</td><td colspan="2"></td></tr></tfoot></table>'
+    ? '<table class="tbl"><thead><tr><th style="width:60px">Origem</th><th style="width:160px">Fornecedor</th><th>Descrição</th><th class="r" style="width:100px">Custo</th><th style="width:60px">Conta</th><th style="width:230px">Ordem de compra</th><th style="width:22px"></th></tr></thead><tbody>'
+      + plan.map(r => '<tr><td><span class="chip tm" style="font-size:9px">OT</span></td><td>'+_esc(r.fornecedor_nome||'—')+'</td><td>'+_esc(r.descricao||'')+'</td><td class="r"><b style="color:#1A2A5E">'+money(r.valor)+'</b></td><td class="mono muted">'+_esc(r.rubrica||'')+'</td><td style="white-space:nowrap">'+ocCol(r)+'</td><td>'+x(r)+'</td></tr>').join('')
+      + '</tbody><tfoot><tr><td colspan="3">Custo total</td><td class="r">'+money(tot(plan))+'</td><td colspan="3"></td></tr></tfoot></table>'
     : '<div class="muted" style="padding:6px;font-size:11px">Sem previsão de outros custos. Use ⊕ Inserir para prever (ex.: serviço de fornecedor orçado).</div>';
   const tabReal = real.length
     ? '<table class="tbl"><thead><tr><th style="width:100px">Doc. Custo</th><th style="width:160px">Fornecedor</th><th>Descrição</th><th style="width:80px">Data</th><th class="r" style="width:100px">Custo</th><th style="width:60px">Conta</th><th style="width:22px"></th></tr></thead><tbody>'
-      + real.map(r => '<tr><td>'+_esc(r.documento||'—')+'</td><td>'+(r.fornecedor_nome?'🏭 '+_esc(r.fornecedor_nome):'—')+'</td><td>'+_esc(r.descricao||'')+'</td><td class="muted">'+dd(r.data)+'</td><td class="r"><b style="color:#1A2A5E">'+money(r.valor)+'</b></td><td class="mono muted">'+_esc(r.rubrica||'')+'</td><td>'+x(r)+'</td></tr>').join('')
+      + real.map(r => '<tr><td>'+_esc(r.documento||'—')+(r.oc_numero?' <span class="chip tm" style="font-size:9px" title="Ordem de compra">'+_esc(r.oc_numero)+'</span>':'')+'</td><td>'+(r.fornecedor_nome?'🏭 '+_esc(r.fornecedor_nome):'—')+'</td><td>'+_esc(r.descricao||'')+'</td><td class="muted">'+dd(r.data)+'</td><td class="r"><b style="color:#1A2A5E">'+money(r.valor)+'</b></td><td class="mono muted">'+_esc(r.rubrica||'')+'</td><td>'+x(r)+'</td></tr>').join('')
       + '</tbody><tfoot><tr><td colspan="4">Custo total</td><td class="r">'+money(tot(real))+'</td><td colspan="2"></td></tr></tfoot></table>'
     : '<div class="muted" style="padding:6px;font-size:11px">Nenhum custo realizado. Use ⊕ Inserir com o documento de custo (NF/recibo) do fornecedor.</div>';
   const hoje = new Date().toISOString().slice(0,10);
@@ -7689,6 +7705,76 @@ async function otOutrosRender(){
       + '<div class="mfield" style="width:220px">Conta *<select id="oo-r-rub">'+contaOpts+'</select></div>'
       + '<button class="btn p" onclick="otOutrosSalvar(false)">💾 Inserir</button><button class="btn" onclick="otOutrosForm(\'real\')">Cancelar</button></div></div>'
     + tabReal;
+}
+function _ocChip(oc){
+  const m = { rascunho:['pe','📝 rascunho'], solicitada:['pe','⏳ aguardando aprovação'], aprovada:['tm','✔ aprovada'], enviada:['tm','✔ aprovada · enviada'],
+              recebida_parcial:['tm','📦 recebida parcial'], recebida:['tm','📦 recebida'], rejeitada:['nr','✖ rejeitada'], cancelada:['nr','✖ cancelada'] };
+  const [cls, rot] = m[oc.status] || ['pe', oc.status || '?'];
+  return '<span class="chip '+cls+'" style="font-size:9px" title="'+_esc(oc.itens||'')+(oc.fornecedor_nome?' · '+_esc(oc.fornecedor_nome):'')+'">'+_esc(oc.numero||'OC')+' · '+rot+'</span>';
+}
+// (22/10/2026) Linha Planejada → OC de serviço no Compras (1 item, unidade SV), já solicitada: cabe na alçada
+// de quem pediu → aprovada na hora; senão entra na fila do financeiro. A linha guarda oc_id/oc_numero.
+async function otOutrosGerarOC(linhaId){
+  const o = _otAberta;
+  let rows = []; try { rows = await mntFetch('/manutencao/api/tab/ot-outros?ot_id='+o.id); } catch(e){}
+  const r = rows.find(x => String(x.id) === String(linhaId)); if (!r){ mostrarToast('Linha não encontrada','warn'); return; }
+  if (!r.fornecedor_id){ mostrarToast('Informe o fornecedor na linha (remova e insira de novo com fornecedor)','warn'); return; }
+  const setor = await _setorManutencao();
+  if (!setor){ mostrarToast('Compras sem setor cadastrado — cadastre em Compras ▸ Parametrização','warn'); return; }
+  const valor = parseFloat(r.valor)||0;
+  if (!confirm('Gerar ordem de compra para:\n'+(r.fornecedor_nome||'')+' — '+r.descricao+' — R$ '+valor.toLocaleString('pt-BR',{minimumFractionDigits:2})+'\n\nA OC nasce amarrada à '+o.numero+' e já pede aprovação (alçada).')) return;
+  try {
+    const oc = await _fxCompras('/compras/api/ocs', {method:'POST', body: JSON.stringify({
+      setor_codigo: setor, fornecedor_id: r.fornecedor_id, origem: 'ot_servico', ot_id: o.id, equipamento_id: o.equipamento_id,
+      prioridade: (o.prioridade==='urgente'||o.prioridade==='alta') ? 'urgente' : 'normal',
+      observacao: 'Serviço externo da '+o.numero+' ('+(o.equipamento_codigo||'')+')',
+      itens: [{ descricao: r.descricao, quantidade: 1, unidade: 'SV', valor_unit: valor }] })});
+    let st = 'rascunho';
+    try { const a = await _fxCompras('/compras/api/ocs/'+oc.id+'/solicitar', {method:'POST', body:'{}'}); st = (a && a.status) || 'solicitada'; }
+    catch(e){ mostrarToast('OC criada, mas não foi possível solicitar aprovação: '+e.message,'warn'); }
+    await mntFetch('/manutencao/api/tab/ot-outros/'+r.id, {method:'PATCH', body: JSON.stringify({ oc_id: oc.id, oc_numero: oc.numero || null })});
+    mostrarToast(st === 'aprovada' ? '✅ '+(oc.numero||'OC')+' aprovada na hora (dentro da alçada)' : '🛒 '+(oc.numero||'OC')+' criada — aguardando aprovação do financeiro', 'ok');
+    otOutrosRender();
+  } catch(e){ mostrarToast('❌ '+e.message,'warn'); }
+}
+// (22/10/2026) Serviço feito: Planejado → Realizado (documento + data + valor pago) e a OC vira recebida.
+async function otOutrosRealizar(linhaId){
+  const o = _otAberta;
+  let rows = []; try { rows = await mntFetch('/manutencao/api/tab/ot-outros?ot_id='+o.id); } catch(e){}
+  const r = rows.find(x => String(x.id) === String(linhaId)); if (!r){ mostrarToast('Linha não encontrada','warn'); return; }
+  const doc = prompt('Documento de custo (NF / cupom / recibo) de '+(r.fornecedor_nome||'')+':', r.documento || ''); if (doc === null) return;
+  const v = prompt('Valor pago (R$):', String(parseFloat(r.valor)||0).replace('.', ',')); if (v === null) return;
+  const valor = parseFloat(String(v).replace(/\./g,'').replace(',', '.')) || 0;
+  if (!(valor > 0)){ mostrarToast('Informe o valor pago','warn'); return; }
+  try {
+    await mntFetch('/manutencao/api/tab/ot-outros', {method:'POST', body: JSON.stringify({
+      ot_id: o.id, planejado: false, fornecedor_id: r.fornecedor_id || null, descricao: r.descricao, documento: doc.trim() || null,
+      data: new Date().toISOString().slice(0,10), valor, rubrica: r.rubrica || null, oc_id: r.oc_id || null, oc_numero: r.oc_numero || null })});
+    if (r.oc_id){
+      try {
+        let oc = await _fxCompras('/compras/api/ocs/'+r.oc_id);
+        if (oc.status === 'aprovada'){ await _fxCompras('/compras/api/ocs/'+r.oc_id+'/enviar', {method:'POST', body:'{}'}); oc = await _fxCompras('/compras/api/ocs/'+r.oc_id); }
+        if (['enviada','recebida_parcial'].includes(oc.status)){
+          const itens = (oc.itens||[]).map(i => ({ item_id: i.id, qtd_recebida: Math.max(0, (parseFloat(i.quantidade)||0) - (parseFloat(i.qtd_recebida)||0)) })).filter(i => i.qtd_recebida > 0);
+          if (itens.length) await _fxCompras('/compras/api/ocs/'+r.oc_id+'/receber', {method:'POST', body: JSON.stringify({ nf_numero: doc.trim() || null, itens })});
+        } else if (!['recebida'].includes(oc.status)) mostrarToast('Realizado gravado; a OC está "'+oc.status+'" — o financeiro ainda não aprovou','warn');
+      } catch(e){ mostrarToast('Realizado gravado, mas a OC não foi baixada: '+e.message,'warn'); }
+    }
+    mostrarToast('✅ Serviço realizado lançado','ok'); otOutrosRender();
+  } catch(e){ mostrarToast('❌ '+e.message,'warn'); }
+}
+// (22/10/2026) Aviso (não bloqueio): serviço externo previsto sem OC aprovada ao Emitir / Encerrar.
+async function _otAvisoOC(id, acao){
+  let plan = [], ocs = [];
+  try { plan = (await mntFetch('/manutencao/api/tab/ot-outros?ot_id='+id)).filter(r => r.planejado === true); } catch(e){ return null; }
+  if (!plan.length) return null;
+  try { ocs = await mntFetch('/manutencao/api/ots/'+id+'/ocs'); } catch(e){}
+  const ok = new Set(['aprovada','enviada','recebida_parcial','recebida']);
+  const pend = plan.filter(r => { const oc = r.oc_id ? ocs.find(x => String(x.id) === String(r.oc_id)) : null; return !oc || !ok.has(oc.status); })
+    .map(r => (r.fornecedor_nome||'')+' — '+r.descricao+(r.oc_numero ? ' ('+r.oc_numero+')' : ' (sem OC)'));
+  if (!pend.length) return null;
+  if (!confirm('⚠ Serviço externo sem ordem de compra aprovada:\n• '+pend.join('\n• ')+'\n\n'+acao+' mesmo assim? Fica registrado no histórico da OT.')) return false;
+  return acao+' com serviço externo sem OC aprovada: '+pend.join('; ');
 }
 function otOutrosForm(q){
   const el = document.getElementById('oo-form-'+q); if (!el) return;
