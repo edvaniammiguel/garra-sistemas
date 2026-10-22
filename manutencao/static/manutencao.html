@@ -4426,26 +4426,32 @@ async function otPecasRender(){
   const o = _otAberta, c = document.getElementById('ot-aba-corpo');
   c.innerHTML = '<div class="muted" style="padding:12px">Carregando peças…</div>';
   try {
-    const [plano, cons, alms] = await Promise.all([
+    const [plano, cons, alms, prev] = await Promise.all([
       o.plano_id ? mntFetch('/manutencao/api/planos/'+o.plano_id) : Promise.resolve(null),
       mntFetch('/manutencao/api/ots/'+o.id+'/consumos'),
-      _otPc.alms ? Promise.resolve(_otPc.alms) : mntFetch('/manutencao/api/almoxarifados')
+      _otPc.alms ? Promise.resolve(_otPc.alms) : mntFetch('/manutencao/api/almoxarifados'),
+      mntFetch('/manutencao/api/ots/'+o.id+'/pecas-previstas').catch(() => ({origem:null, itens:[]}))   // (22/10/2026) previsão da OT
     ]);
-    _otPc = { plano, cons, alms };
+    _otPc = { plano, cons, alms, prev };
   } catch(e){ c.innerHTML = '<div class="muted" style="padding:12px">❌ '+_esc(e.message)+'</div>'; return; }
   const nv = v => parseFloat(String(v ?? '').replace(',', '.')) || 0;
   const money = v => 'R$ ' + (v).toFixed(2);
   const jj = v => { if (!v) return []; if (Array.isArray(v)) return v; try { const a = JSON.parse(v); return Array.isArray(a) ? a : []; } catch(e){ return []; } };
-  const pl = _otPc.plano ? jj(_otPc.plano.pecas) : [];
+  // (22/10/2026) Planejado = previsão da OT (editável: ⊕ Inserir peça / ✕) ou, sem ela, as peças da FMP
+  const prevOT = _otPc.prev || {origem:null, itens:[]};
+  const pl = prevOT.origem === 'ot' ? (prevOT.itens||[]) : (_otPc.plano ? jj(_otPc.plano.pecas) : []);
+  const origemPl = prevOT.origem === 'ot' ? 'previsão desta OT' : (_otPc.plano ? 'FMP '+_esc(_otPc.plano.codigo) : '');
+  const podePrever = ['programada','aberta','em_andamento','aguardando_peca'].includes(o.status);
   const totPl = pl.reduce((s,x) => s + nv(x.qtd) * nv(x.custo), 0);
-  const linhaPl = x => {
+  const linhaPl = (x, i) => {
     const t = nv(x.qtd) * nv(x.custo);
-    return '<div style="display:flex;gap:6px;padding:4px 6px;border-bottom:1px solid #F1F5F9;font-size:11px">'
+    return '<div style="display:flex;gap:6px;padding:4px 6px;border-bottom:1px solid #F1F5F9;font-size:11px;align-items:center">'
       + '<b style="width:110px">'+_esc(x.peca||'—')+'</b><span style="flex:1">'+_esc(x.descricao||'')+'</span>'
       + '<span style="width:55px;text-align:right">'+_esc(String(x.qtd??''))+'</span>'
       + '<span style="width:35px">'+_esc(x.un||'UN')+'</span>'
       + '<span style="width:80px;text-align:right">'+(nv(x.custo)?nv(x.custo).toFixed(2):'—')+'</span>'
-      + '<b style="width:85px;text-align:right;color:#1A2A5E">'+(t>0?t.toFixed(2):'—')+'</b></div>';
+      + '<b style="width:85px;text-align:right;color:#1A2A5E">'+(t>0?t.toFixed(2):'—')+'</b>'
+      + (podePrever ? '<span style="cursor:pointer;color:#B91C1C;width:14px" title="Remover da previsão" onclick="otPrevRemover('+i+')">✕</span>' : '<span style="width:14px"></span>')+'</div>';
   };
   const cons = _otPc.cons || { itens: [], total: 0 };
   const dd2 = v => { if(!v) return '—'; try{ return _fmtData(v); }catch(e){ return '—'; } };
@@ -4466,10 +4472,21 @@ async function otPecasRender(){
   const delta = cons.total - totPl;
   const podeBaixar = ['programada','aberta','em_andamento','aguardando_peca'].includes(o.status);
   c.innerHTML =
-    '<div class="dsec">Planejado <span class="muted">· peças previstas'+(_otPc.plano ? ' — FMP '+_esc(_otPc.plano.codigo) : '')+'</span></div>'
+    '<div class="dsec" style="display:flex;justify-content:space-between;align-items:center"><span>Planejado <span class="muted">· peças previstas'+(origemPl ? ' — '+origemPl : '')+'</span></span>'
+    +   (podePrever ? '<button class="btn" style="font-size:11px;padding:2px 8px" title="Prever peça nesta OT (entra no comprometido do estoque e nos faltantes da OC)" onclick="otPrevForm()">⊕ Inserir peça</button>' : '') + '</div>'
+    + '<div id="ot-prev-form" class="panel plf-pc-row" style="display:none;padding:6px;margin:4px 0">'
+    +   '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:flex-end">'
+    +   '<div class="mfield" style="width:160px">Peça (código)<input class="f" placeholder="código ou nome" oninput="pcSugerir(this)" autocomplete="off"></div>'
+    +   '<div class="mfield" style="flex:1;min-width:160px">Descrição<input class="d" oninput="pcSugerir(this)" autocomplete="off"></div>'
+    +   '<div class="mfield" style="width:70px">Qtd<input class="h" type="number" step="any" min="0" value="1" oninput="pcTotLinha(this)"></div>'
+    +   '<div class="mfield" style="width:55px">UN<input class="c" value="UN"></div>'
+    +   '<div class="mfield" style="width:90px">Custo un.<input class="v" type="number" step="any" min="0" oninput="pcTotLinha(this)"></div>'
+    +   '<span class="t muted" style="width:80px;font-size:11px">—</span>'
+    +   '<button class="btn p" onclick="otPrevInserir()">💾 Inserir</button><button class="btn" onclick="otPrevForm()">Cancelar</button></div>'
+    +   '<div class="muted" style="font-size:10px;margin-top:4px">A previsão comprometeu o estoque (Dispon. = saldo − comprometido). Peça sem saldo: 🛒 Gerar OC (faltantes) abaixo.</div></div>'
     + (pl.length
         ? pl.map(linhaPl).join('') + '<div style="text-align:right;font-weight:700;padding:4px 6px;color:#1A2A5E">Total previsto: '+money(totPl)+'</div>'
-        : '<div class="muted" style="padding:8px 6px;font-size:11px">'+(_otPc.plano ? 'FMP sem peças detalhadas.' : 'OT sem FMP vinculada — sem previsto.')+'</div>')
+        : '<div class="muted" style="padding:8px 6px;font-size:11px">'+(_otPc.plano ? 'FMP sem peças detalhadas.' : 'Sem peças previstas — use ⊕ Inserir peça para prever (corretiva) ou vincule uma FMP.')+'</div>')
     + '<div class="dsec" style="margin-top:10px;display:flex;justify-content:space-between;align-items:center"><span>Realizado <span class="muted">· peças aplicadas na OT (armazém ou compra directa)</span></span>'
     +   (podeBaixar ? '<button class="btn" style="font-size:11px;padding:2px 8px" onclick="otSaidaAbrir()">⊕ Inserir peça</button>' : '') + '</div>'
     + (cons.itens.length
@@ -4479,9 +4496,42 @@ async function otPecasRender(){
         ? '<div style="text-align:right;padding:2px 6px;font-size:11px;font-weight:700;color:'+(delta>0?'#B91C1C':'#15803D')+'">Δ realizado − previsto: '+money(delta)+'</div>' : '')
     + (podeBaixar && pl.length
         ? '<div style="margin-top:8px;display:flex;gap:8px">'
-          + '<button class="btn" title="Peças previstas na FMP que o estoque e as OCs abertas não cobrem → OC em rascunho no Compras, amarrada a esta OT" onclick="ocDaOT()">🛒 Gerar OC (faltantes da FMP)</button>'
+          + '<button class="btn" title="Peças previstas que o estoque e as OCs abertas não cobrem → OC no Compras, amarrada a esta OT" onclick="ocDaOT()">🛒 Gerar OC (faltantes)</button>'
           + '</div>'
         : '');
+}
+// (22/10/2026) Previsão de peças da OT (quadro Planejado editável)
+function otPrevForm(){
+  const el = document.getElementById('ot-prev-form'); if (!el) return;
+  const abrir = el.style.display === 'none'; el.style.display = abrir ? '' : 'none';
+  if (abrir){ const f = el.querySelector('.f'); if (f){ f.value=''; el.querySelector('.d').value=''; el.querySelector('.v').value=''; el.querySelector('.h').value='1'; f.focus(); } }
+}
+async function _otPrevGravar(itens, voltarFmp){
+  await mntFetch('/manutencao/api/ots/'+_otAberta.id+'/pecas-previstas', {method:'PUT', body: JSON.stringify({ itens, voltar_fmp: !!voltarFmp })});
+  _otPc.prev = null; otPecasRender(); carregarSemaforosReais && carregarSemaforosReais();
+}
+async function otPrevInserir(){
+  const el = document.getElementById('ot-prev-form'); if (!el) return;
+  const g = c => (el.querySelector('.'+c)||{}).value || '';
+  const peca = g('f').trim().toUpperCase(); if (!peca){ mostrarToast('Informe a peça','warn'); return; }
+  const qtd = parseFloat(String(g('h')).replace(',', '.')) || 0; if (!(qtd > 0)){ mostrarToast('Quantidade maior que zero','warn'); return; }
+  const prev = _otPc.prev || {origem:null, itens:[]};
+  // começa da lista efetiva (previsão da OT ou cópia da FMP) e acrescenta/soma
+  const base = prev.origem === 'ot' ? (prev.itens||[]).slice() : (_otPc.plano ? (Array.isArray(_otPc.plano.pecas) ? _otPc.plano.pecas.slice() : (()=>{ try { return JSON.parse(_otPc.plano.pecas||'[]'); } catch(e){ return []; } })()) : []);
+  const ja = base.find(x => String(x.peca||'').toUpperCase() === peca);
+  if (ja) ja.qtd = (parseFloat(ja.qtd)||0) + qtd;
+  else base.push({ peca, descricao: g('d').trim(), qtd, un: g('c').trim() || 'UN', custo: parseFloat(String(g('v')).replace(',', '.')) || null });
+  try { await _otPrevGravar(base, false); mostrarToast('✅ Peça prevista','ok'); }
+  catch(e){ mostrarToast('❌ '+e.message,'warn'); }
+}
+async function otPrevRemover(i){
+  const prev = _otPc.prev || {origem:null, itens:[]};
+  const base = prev.origem === 'ot' ? (prev.itens||[]).slice() : (_otPc.plano ? (Array.isArray(_otPc.plano.pecas) ? _otPc.plano.pecas.slice() : (()=>{ try { return JSON.parse(_otPc.plano.pecas||'[]'); } catch(e){ return []; } })()) : []);
+  const x = base[i]; if (!x) return;
+  if (!confirm('Remover '+(x.peca||'')+' da previsão desta OT?'+(prev.origem !== 'ot' && _otPc.plano ? '\n(A FMP não muda — só a previsão desta OT.)' : ''))) return;
+  base.splice(i, 1);
+  try { await _otPrevGravar(base, false); }
+  catch(e){ mostrarToast('❌ '+e.message,'warn'); }
 }
 function otAplicDireta(){
   if (_tiposDoc === null) { _tiposDocumento().then(() => { const b = document.getElementById('ot-aplic'); if (b) b.querySelectorAll('select.doctipo').forEach(sl => { sl.innerHTML = _tiposDocOpts('03'); }); }); }
@@ -7738,7 +7788,9 @@ async function otOutrosRender(){
   const hoje = new Date().toISOString().slice(0,10);
   c.innerHTML =
     '<div class="muted" style="font-size:10px;margin-bottom:4px">Tudo que não é peça de estoque nem HH interna: <b>mão de obra externa / serviço de fornecedor</b> (conta 1.03), frete, guincho, aluguer de ferramenta. Entra em Outros/CSE das Análises e na aba Custos.</div>'
-    + '<div class="dsec" style="display:flex;justify-content:space-between;align-items:center"><span>Planejado <span class="muted">· '+plan.length+' linha(s) · '+money(tot(plan))+'</span></span>'+mais('plan','Inserir previsão no quadro Planejado')+'</div>'
+    + '<div class="dsec" style="display:flex;justify-content:space-between;align-items:center"><span>Planejado <span class="muted">· '+plan.length+' linha(s) · '+money(tot(plan))+'</span></span><span style="display:flex;gap:6px">'
+      + (podeLancar && plan.some(r => !r.oc_id) ? '<button class="btn" style="font-size:11px;padding:2px 8px" title="Uma OC por fornecedor com TODAS as linhas previstas que ainda não têm OC (valor total da OT)" onclick="otOutrosGerarOCTodas()">🛒 Gerar OC da OT ('+plan.filter(r=>!r.oc_id).length+')</button>' : '')
+      + mais('plan','Inserir previsão no quadro Planejado')+'</span></div>'
     + '<div id="oo-form-plan" style="display:none;padding:6px 0 4px" class="panel">'
       + '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:flex-end">'
       + '<div class="mfield" style="width:200px">Fornecedor<select id="oo-p-forn">'+fornOpts+'</select></div>'
@@ -7767,6 +7819,23 @@ function _ocChip(oc){
 }
 // (22/10/2026) Linha Planejada → OC de serviço no Compras (1 item, unidade SV), já solicitada: cabe na alçada
 // de quem pediu → aprovada na hora; senão entra na fila do financeiro. A linha guarda oc_id/oc_numero.
+async function _otOutrosCriarOC(linhas, setor){
+  // linhas do MESMO fornecedor → uma OC com um item por linha; cada linha guarda oc_id/oc_numero
+  const o = _otAberta, f = linhas[0];
+  const oc = await _fxCompras('/compras/api/ocs', {method:'POST', body: JSON.stringify({
+    setor_codigo: setor, fornecedor_id: f.fornecedor_id, origem: 'ot_servico', ot_id: o.id, equipamento_id: o.equipamento_id,
+    prioridade: (o.prioridade==='urgente'||o.prioridade==='alta') ? 'urgente' : 'normal',
+    observacao: 'Serviço externo da '+o.numero+' ('+(o.equipamento_codigo||'')+')',
+    itens: linhas.map(r => ({ descricao: r.descricao, quantidade: 1, unidade: 'SV', valor_unit: parseFloat(r.valor)||0 })) })});
+  let st = 'rascunho';
+  try { const a = await _fxCompras('/compras/api/ocs/'+oc.id+'/solicitar', {method:'POST', body:'{}'}); st = (a && a.status) || 'solicitada'; }
+  catch(e){ mostrarToast('OC criada, mas não foi possível solicitar aprovação: '+e.message,'warn'); }
+  for (const r of linhas) await mntFetch('/manutencao/api/tab/ot-outros/'+r.id, {method:'PATCH', body: JSON.stringify({ oc_id: oc.id, oc_numero: oc.numero || null })});
+  return { numero: oc.numero || 'OC', status: st, total: linhas.reduce((s,r) => s + (parseFloat(r.valor)||0), 0) };
+}
+function _ocResumoToast(res){
+  res.forEach(x => mostrarToast((x.status === 'aprovada' ? '✅ '+x.numero+' aprovada na hora (dentro da alçada)' : '🛒 '+x.numero+' criada — aguardando aprovação do financeiro')+' · R$ '+x.total.toLocaleString('pt-BR',{minimumFractionDigits:2}), 'ok'));
+}
 async function otOutrosGerarOC(linhaId){
   const o = _otAberta;
   let rows = []; try { rows = await mntFetch('/manutencao/api/tab/ot-outros?ot_id='+o.id); } catch(e){}
@@ -7776,19 +7845,28 @@ async function otOutrosGerarOC(linhaId){
   if (!setor){ mostrarToast('Compras sem setor cadastrado — cadastre em Compras ▸ Parametrização','warn'); return; }
   const valor = parseFloat(r.valor)||0;
   if (!confirm('Gerar ordem de compra para:\n'+(r.fornecedor_nome||'')+' — '+r.descricao+' — R$ '+valor.toLocaleString('pt-BR',{minimumFractionDigits:2})+'\n\nA OC nasce amarrada à '+o.numero+' e já pede aprovação (alçada).')) return;
-  try {
-    const oc = await _fxCompras('/compras/api/ocs', {method:'POST', body: JSON.stringify({
-      setor_codigo: setor, fornecedor_id: r.fornecedor_id, origem: 'ot_servico', ot_id: o.id, equipamento_id: o.equipamento_id,
-      prioridade: (o.prioridade==='urgente'||o.prioridade==='alta') ? 'urgente' : 'normal',
-      observacao: 'Serviço externo da '+o.numero+' ('+(o.equipamento_codigo||'')+')',
-      itens: [{ descricao: r.descricao, quantidade: 1, unidade: 'SV', valor_unit: valor }] })});
-    let st = 'rascunho';
-    try { const a = await _fxCompras('/compras/api/ocs/'+oc.id+'/solicitar', {method:'POST', body:'{}'}); st = (a && a.status) || 'solicitada'; }
-    catch(e){ mostrarToast('OC criada, mas não foi possível solicitar aprovação: '+e.message,'warn'); }
-    await mntFetch('/manutencao/api/tab/ot-outros/'+r.id, {method:'PATCH', body: JSON.stringify({ oc_id: oc.id, oc_numero: oc.numero || null })});
-    mostrarToast(st === 'aprovada' ? '✅ '+(oc.numero||'OC')+' aprovada na hora (dentro da alçada)' : '🛒 '+(oc.numero||'OC')+' criada — aguardando aprovação do financeiro', 'ok');
-    otOutrosRender();
-  } catch(e){ mostrarToast('❌ '+e.message,'warn'); }
+  try { _ocResumoToast([await _otOutrosCriarOC([r], setor)]); otOutrosRender(); }
+  catch(e){ mostrarToast('❌ '+e.message,'warn'); }
+}
+// (22/10/2026) OC no total da OT: todas as linhas previstas sem OC, agrupadas por fornecedor (uma OC por fornecedor)
+async function otOutrosGerarOCTodas(){
+  const o = _otAberta;
+  let rows = []; try { rows = await mntFetch('/manutencao/api/tab/ot-outros?ot_id='+o.id); } catch(e){}
+  const plan = rows.filter(r => r.planejado === true && !r.oc_id);
+  if (!plan.length){ mostrarToast('Todas as linhas previstas já têm OC','warn'); return; }
+  const semForn = plan.filter(r => !r.fornecedor_id);
+  if (semForn.length){ mostrarToast(semForn.length+' linha(s) sem fornecedor — informe o fornecedor antes de gerar a OC','warn'); return; }
+  const setor = await _setorManutencao();
+  if (!setor){ mostrarToast('Compras sem setor cadastrado — cadastre em Compras ▸ Parametrização','warn'); return; }
+  const grupos = {}; plan.forEach(r => (grupos[r.fornecedor_id] = grupos[r.fornecedor_id] || []).push(r));
+  const money = v => 'R$ '+(v||0).toLocaleString('pt-BR',{minimumFractionDigits:2});
+  const resumo = Object.values(grupos).map(ls => '• '+(ls[0].fornecedor_nome||'')+': '+ls.length+' item(ns) — '+money(ls.reduce((s,r)=>s+(parseFloat(r.valor)||0),0))).join('\n');
+  const total = plan.reduce((s,r)=>s+(parseFloat(r.valor)||0),0);
+  if (!confirm('Gerar '+Object.keys(grupos).length+' ordem(ns) de compra para a '+o.numero+' (total '+money(total)+'):\n'+resumo+'\n\nCada OC nasce amarrada à OT e já pede aprovação (alçada).')) return;
+  const res = [];
+  try { for (const ls of Object.values(grupos)) res.push(await _otOutrosCriarOC(ls, setor)); }
+  catch(e){ mostrarToast('❌ '+e.message,'warn'); }
+  _ocResumoToast(res); otOutrosRender();
 }
 // (22/10/2026) Serviço feito: Planejado → Realizado (documento + data + valor pago) e a OC vira recebida.
 async function otOutrosRealizar(linhaId){
@@ -7808,7 +7886,9 @@ async function otOutrosRealizar(linhaId){
         let oc = await _fxCompras('/compras/api/ocs/'+r.oc_id);
         if (oc.status === 'aprovada'){ await _fxCompras('/compras/api/ocs/'+r.oc_id+'/enviar', {method:'POST', body:'{}'}); oc = await _fxCompras('/compras/api/ocs/'+r.oc_id); }
         if (['enviada','recebida_parcial'].includes(oc.status)){
-          const itens = (oc.itens||[]).map(i => ({ item_id: i.id, qtd_recebida: Math.max(0, (parseFloat(i.quantidade)||0) - (parseFloat(i.qtd_recebida)||0)) })).filter(i => i.qtd_recebida > 0);
+          // OC com vários itens (OC da OT): dá baixa só no item desta linha (mesma descrição); se não achar, em todos
+          let its = (oc.itens||[]).filter(i => String(i.descricao||'').trim() === String(r.descricao||'').trim()); if (!its.length) its = oc.itens||[];
+          const itens = its.map(i => ({ item_id: i.id, qtd_recebida: Math.max(0, (parseFloat(i.quantidade)||0) - (parseFloat(i.qtd_recebida)||0)) })).filter(i => i.qtd_recebida > 0);
           if (itens.length) await _fxCompras('/compras/api/ocs/'+r.oc_id+'/receber', {method:'POST', body: JSON.stringify({ nf_numero: doc.trim() || null, itens })});
         } else if (!['recebida'].includes(oc.status)) mostrarToast('Realizado gravado; a OC está "'+oc.status+'" — o financeiro ainda não aprovou','warn');
       } catch(e){ mostrarToast('Realizado gravado, mas a OC não foi baixada: '+e.message,'warn'); }
