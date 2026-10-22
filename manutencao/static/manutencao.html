@@ -4051,7 +4051,7 @@ function otEncerrarDialogo(id){
   });
 }
 async function mntStatusReal(id, novo){
-  let obs = null, custo = null;
+  let obs = null, custo = null, extraCancel = null;
   let horasParada = null;
   if (novo === 'concluida'){
     // (12/09/2026) Validação imprescindível só aqui: descrição real do serviço.
@@ -4095,6 +4095,15 @@ async function mntStatusReal(id, novo){
   if (novo === 'cancelada'){
     if (!confirm('⚠️ Isto CANCELA a OT (não é cancelar a edição).\n\nContinuar?')) return;
     obs = _pedirMotivo('Cancelar esta OT'); if (!obs) return;
+    // (22/10/2026) OCs vivas da OT acompanham o cancelamento (a OC aprovada sem OT seria dinheiro sem destino)
+    try {
+      const vivas = (await mntFetch('/manutencao/api/ots/'+id+'/ocs')).filter(x => ['rascunho','solicitada','aprovada','enviada','recebida_parcial'].includes(x.status));
+      if (vivas.length){
+        const lista = vivas.map(x => '• '+x.numero+' — '+(x.itens||'')+' — R$ '+(x.valor_total||0).toLocaleString('pt-BR',{minimumFractionDigits:2})+' ('+x.status+')').join('\n');
+        if (confirm('Esta OT tem ordem(ns) de compra em aberto:\n'+lista+'\n\nCancelar também a(s) OC(s)? (OK = cancelar junto · Cancelar = deixar a OC como está)'))
+          extraCancel = { cancelar_ocs: vivas.map(x => x.id) };
+      }
+    } catch(e){}
   }
   if (novo === 'em_andamento'){
     const _o3 = _otsCache.find(o => String(o.id) === String(id));
@@ -4106,7 +4115,7 @@ async function mntStatusReal(id, novo){
     if (av) obs = (obs ? obs + ' · ' : '') + av;
   }
   try {
-    await mntFetch('/manutencao/api/ots/'+id+'/status', {method:'PATCH', body: JSON.stringify(Object.assign({status:novo, observacao:obs, custo_total:custo, horas_parada:horasParada}, (typeof extraEnc !== 'undefined' && extraEnc) || {}))});
+    await mntFetch('/manutencao/api/ots/'+id+'/status', {method:'PATCH', body: JSON.stringify(Object.assign({status:novo, observacao:obs, custo_total:custo, horas_parada:horasParada}, (typeof extraEnc !== 'undefined' && extraEnc) || {}, extraCancel || {}))});
     mostrarToast('✅ OT atualizada','ok'); delete _otEncState[String(id)];
     carregarOTsReais(); carregarSemaforosReais();
   } catch(e){ mostrarToast('❌ '+e.message,'warn'); }
