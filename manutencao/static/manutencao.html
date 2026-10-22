@@ -1948,7 +1948,8 @@ const _MW = {
         ['\ud83d\udcdc Hist\u00f3rico Completo OTs',"(function(){const i=_mwPrecisa('frota','objeto'); if(i) otsDoEquip(i,true);})()"],
         ['\u270f\ufe0f M\u00faltipla Edi\u00e7\u00e3o Objetos',"multiEdicao('frota')"],
         ['\ud83d\ude9a Guias Transporte',"guiasJanela(_mwSel.frota)"],
-        ['\ud83d\udcce Documentos (todos os objetos e OTs)',"(function(){ showModule('param'); abrirParamPane('docs','fila','Documentos de equipamentos'); })()"]]]   // (22/10/2026) tela única estava escondida em Parametrizar › Sistema
+        ['\ud83d\udcce Documentos (todos os objetos e OTs)',"(function(){ showModule('param'); abrirParamPane('docs','fila','Documentos de equipamentos'); })()"],   // (22/10/2026) tela única estava escondida em Parametrizar › Sistema
+        ['\u26fd Confer\u00eancia de abastecimentos (toda a frota)',"abConferenciaJanela()"]]]   // (22/10/2026) rotina diária da Bruna: um dia, todos os equipamentos, ✔ conferido
     ],
     busca:'arv-busca'
   },
@@ -2949,6 +2950,78 @@ async function abPostoRenomear(){
       }
     } else mostrarToast('\u274c '+e.message,'warn');
   }
+}
+/* ══ (22/10/2026) CONFERÊNCIA DE ABASTECIMENTOS — toda a frota numa tela ══
+   Filtro por dia (Hoje/Ontem/7 dias/período), só pendentes; alertas da nota (sequência, placa, cupom
+   repetido, consumo); ✔ por nota e "Conferir todos sem alerta"; duplo clique abre a janela do
+   equipamento para corrigir. Status vive em abastecimento_notas.status_conferencia. */
+let _abcf = { de:null, ate:null, pend:true, itens:[] };
+function _abcfDia(n){ const d = new Date(); d.setDate(d.getDate()+n); return d.toISOString().slice(0,10); }
+async function abConferenciaJanela(de, ate, pend){
+  if (de !== undefined) _abcf.de = de; if (ate !== undefined) _abcf.ate = ate; if (pend !== undefined) _abcf.pend = pend;
+  if (!_abcf.de){ _abcf.de = _abcfDia(-1); _abcf.ate = _abcfDia(0); }
+  let lista = [];
+  try { lista = await mntFetch('/operacional/api/abastecimentos?limite=1000&de='+_abcf.de+'&ate='+_abcf.ate+(_abcf.pend?'&pendentes=1':'')); }
+  catch(e){ mostrarToast('\u274c '+e.message,'warn'); return; }
+  _abcf.itens = lista;
+  // uma linha por NOTA (rateio = vários itens, mesma nota): agrupa
+  const notas = {}; lista.forEach(x => { const k = x.nota_id || x.id; (notas[k] = notas[k] || {k, itens:[], x}).itens.push(x); });
+  const linhas = Object.values(notas).sort((a,b) => String(b.x.data).localeCompare(String(a.x.data)));
+  const money = v => 'R$ '+(parseFloat(v)||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
+  const dh = v => { try { return new Date(v).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}); } catch(e){ return '\u2014'; } };
+  const alertas = x => { const a = []; if (x.divergencia_leitura) a.push('leitura fora da sequ\u00eancia'); if (x.divergencia_placa) a.push('placa diferente'); if (x.alerta_consumo) a.push('consumo fora do normal'); if (!x.foto_nota) a.push('sem foto da nota'); return a; };
+  const tot = { n: linhas.length, l: 0, v: 0, pend: 0, al: 0 };
+  linhas.forEach(n => { n.itens.forEach(i => { tot.l += parseFloat(i.litros)||0; tot.v += parseFloat(i.valor_total)||0; }); if (n.x.nota_id && n.x.status_conferencia !== 'conferida') tot.pend++; n.al = n.itens.flatMap(alertas); if (n.al.length) tot.al++; });
+  const btnDia = (rot, de2, ate2) => '<button class="btn'+(_abcf.de===de2&&_abcf.ate===ate2?' p':'')+'" style="font-size:11px;padding:2px 8px" onclick="abConferenciaJanela(\''+de2+'\',\''+ate2+'\')">'+rot+'</button>';
+  const corpo = '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:6px">'
+    + btnDia('Hoje', _abcfDia(0), _abcfDia(0)) + btnDia('Ontem', _abcfDia(-1), _abcfDia(-1)) + btnDia('Ontem + hoje', _abcfDia(-1), _abcfDia(0)) + btnDia('7 dias', _abcfDia(-6), _abcfDia(0))
+    + '<span class="mfield" style="margin-left:8px">de <input type="date" id="abcf-de" value="'+_abcf.de+'" style="font-size:11px"></span><span class="mfield">at\u00e9 <input type="date" id="abcf-ate" value="'+_abcf.ate+'" style="font-size:11px"></span>'
+    + '<button class="btn" style="font-size:11px" onclick="abConferenciaJanela(document.getElementById(\'abcf-de\').value, document.getElementById(\'abcf-ate\').value)">Aplicar</button>'
+    + '<label style="font-size:11px;margin-left:8px"><input type="checkbox" '+(_abcf.pend?'checked':'')+' onchange="abConferenciaJanela(undefined,undefined,this.checked)"> s\u00f3 pendentes</label>'
+    + '<span style="flex:1"></span>'
+    + (tot.pend ? '<button class="btn p" style="font-size:11px" title="Marca como conferidas todas as notas pendentes SEM alerta deste per\u00edodo" onclick="abConferirLote()">\u2714 Conferir todas sem alerta ('+linhas.filter(n => n.x.status_conferencia!=='conferida' && !n.al.length).length+')</button>' : '')
+    + '</div>'
+    + '<div class="panel" style="display:flex;gap:18px;font-size:11px;padding:6px 10px;margin-bottom:6px"><span><b>'+tot.n+'</b> nota(s)</span><span><b>'+tot.l.toLocaleString('pt-BR',{maximumFractionDigits:1})+'</b> L</span><span><b>'+money(tot.v)+'</b></span><span style="color:#B45309"><b>'+tot.pend+'</b> pendente(s)</span><span style="color:#DC2626"><b>'+tot.al+'</b> com alerta</span></div>'
+    + (linhas.length
+      ? '<table class="tbl"><thead><tr><th style="width:26px"></th><th style="width:92px">Data</th><th>Equipamento</th><th class="r" style="width:80px">Leitura</th><th class="r" style="width:60px">Litros</th><th class="r" style="width:56px">R$/L</th><th class="r" style="width:80px">Valor</th><th style="width:120px">Posto</th><th style="width:70px">Cupom</th><th>Alertas</th><th style="width:90px">Quem</th><th style="width:40px">Nota</th><th style="width:110px">Confer\u00eancia</th></tr></thead><tbody>'
+        + linhas.map(n => { const x = n.x; const conf = x.status_conferencia === 'conferida'; const legado = !x.nota_id;   // importado sem nota: nada a conferir
+            const eqs = n.itens.map(i => '<b>'+_esc(i.equipamento||i.galao_codigo||'')+'</b>'+(n.itens.length>1?'':' <span class="muted">'+_esc(i.equipamento_desc||'')+'</span>')).join(' + ');
+            const leit = n.itens.map(i => (i.leitura!=null ? i.leitura.toLocaleString('pt-BR') : '\u2014')+(i.leitura_fonte==='ocr'?'':'')).join(' / ');
+            const litros = n.itens.reduce((s,i)=>s+(parseFloat(i.litros)||0),0), valor = n.itens.reduce((s,i)=>s+(parseFloat(i.valor_total)||0),0);
+            return '<tr style="'+(conf?'opacity:.6':'')+';cursor:pointer" ondblclick="equipAbastecimentos(\''+_esc(n.itens[0].equipamento_id||'')+'\')" title="Duplo clique: janela do equipamento (corrigir)">'
+              + '<td>'+(legado?'':'<input type="checkbox" class="abcf-ck" value="'+_esc(n.k)+'" '+(conf?'disabled':'')+'>')+'</td>'
+              + '<td class="muted">'+dh(x.data)+'</td><td>'+eqs+'</td><td class="r mono">'+leit+'</td><td class="r mono">'+litros.toLocaleString('pt-BR',{maximumFractionDigits:2})+'</td><td class="r mono">'+(x.preco_litro!=null?x.preco_litro.toFixed(3):'\u2014')+'</td><td class="r mono"><b>'+money(valor)+'</b></td>'
+              + '<td style="font-size:10px">'+_esc(x.posto||'\u2014')+'</td><td class="mono">'+_esc(x.numero_cupom||'\u2014')+'</td>'
+              + '<td style="font-size:10px">'+(n.al.length ? n.al.map(a=>'<span class="chip nr" style="font-size:9px">\u26a0 '+_esc(a)+'</span>').join(' ') : '<span class="chip tm" style="font-size:9px">ok</span>')+'</td>'
+              + '<td style="font-size:10px">'+_esc(x.usuario_nome||'')+'</td>'
+              + '<td>'+(x.foto_nota_url?'<a href="'+_esc(x.foto_nota_url)+'" target="_blank" title="Foto da nota">\ud83e\uddfe</a>':'')+(x.foto_leitura_url?' <a href="'+_esc(x.foto_leitura_url)+'" target="_blank" title="Foto do painel">\ud83d\udd50</a>':'')+'</td>'
+              + '<td>'+(legado ? '<span class="chip ap" style="font-size:9px" title="Registro sem nota (carga/legado)">sem nota</span>' : conf ? '<span class="chip tm" style="font-size:9px" title="'+_esc(x.conferido_por_nome||'')+' '+dh(x.conferido_em)+'">\u2714 conferida</span> <span style="cursor:pointer" title="Voltar a pendente" onclick="event.stopPropagation();abConferir([\''+_esc(n.k)+'\'],\'pendente\')">\u21a9</span>'
+                              : '<button class="btn" style="font-size:10px;padding:1px 6px" onclick="event.stopPropagation();abConferir([\''+_esc(n.k)+'\'],\'conferida\')">\u2714 Conferir</button>')+'</td></tr>'; }).join('')
+        + '</tbody></table>'
+      : '<div class="muted" style="padding:12px">Nenhum abastecimento no per\u00edodo'+(_abcf.pend?' pendente de confer\u00eancia':'')+'.</div>');
+  document.querySelector('#eq-ficha .modal').classList.add('larga');
+  document.getElementById('eq-ficha-corpo').innerHTML =
+    '<div style="display:flex;justify-content:space-between;align-items:center"><b style="font-size:14px;color:#1A2A5E">\u26fd Confer\u00eancia de abastecimentos \u2014 toda a frota</b><span style="cursor:pointer;font-size:18px" onclick="fichaFechar()">\u2715</span></div>'
+    + '<div class="muted" style="font-size:10px;margin:2px 0 8px">Rotina di\u00e1ria: filtro Ontem, resolver as notas com \u26a0 (duplo clique corrige na janela do equipamento), depois \u2714 Conferir todas sem alerta. Conferida = validada pela manuten\u00e7\u00e3o; o financeiro v\u00ea no balc\u00e3o de Notas.</div>'
+    + corpo;
+  document.getElementById('eq-ficha').classList.add('show');
+}
+async function abConferir(ids, status){
+  try { await mntFetch('/operacional/api/abastecimentos/notas/conferir', {method:'POST', body: JSON.stringify({nota_ids: ids, status: status||'conferida'})});
+    mostrarToast((status==='pendente'?'\u21a9 ':'\u2714 ')+ids.length+' nota(s)','ok'); abConferenciaJanela();
+  } catch(e){ mostrarToast('\u274c '+e.message,'warn'); }
+}
+async function abConferirLote(){
+  const marc = Array.from(document.querySelectorAll('.abcf-ck:checked')).map(c => c.value);
+  let ids = marc;
+  if (!ids.length){
+    // sem marcação: todas as pendentes SEM alerta do período
+    const notas = {}; _abcf.itens.forEach(x => { const k = x.nota_id || x.id; (notas[k] = notas[k] || {k, x, itens:[]}).itens.push(x); });
+    ids = Object.values(notas).filter(n => n.x.nota_id && n.x.status_conferencia !== 'conferida' && !n.itens.some(i => i.divergencia_leitura || i.divergencia_placa || i.alerta_consumo || !i.foto_nota)).map(n => n.k);
+  }
+  if (!ids.length){ mostrarToast('Nada a conferir sem alerta \u2014 trate as notas com \u26a0 uma a uma','warn'); return; }
+  if (!confirm('Marcar '+ids.length+' nota(s) como conferida(s)?')) return;
+  abConferir(ids, 'conferida');
 }
 function abPostosAtualizar(sel, postos, marcar){
   sel.innerHTML = '<option value="">\u2014 posto \u2014</option>'+(postos||[]).map(p=>'<option value="'+p.id+'">'+_esc(p.nome)+'</option>').join('')+'<option value="__novo">\uff0b Outro posto (cadastrar)\u2026</option>';
