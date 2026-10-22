@@ -6341,34 +6341,44 @@ async def pagina_etiquetas():
 .bar{position:sticky;top:0;background:#1A2A5E;color:#fff;padding:8px 14px;display:flex;gap:10px;align-items:center;font-size:13px}
 .bar button{background:#F97316;color:#fff;border:0;border-radius:6px;padding:6px 14px;font-weight:700;cursor:pointer}
 .folha{width:21.59cm;min-height:27.94cm;margin:10px auto;background:#fff;padding:1.0cm 0.35cm 0.9cm 0.35cm;display:grid;grid-template-columns:10.2cm 10.2cm;column-gap:0.5cm;grid-auto-rows:5.05cm;align-content:start}
-.et{width:10.2cm;height:5.05cm;border:1px dashed #CBD5E1;padding:0.22cm 0.3cm 0.18cm;display:grid;grid-template-columns:1fr 2.6cm;column-gap:0.25cm;overflow:hidden;page-break-inside:avoid}
+/* (22/10/2026) zona de segurança: conteúdo afastado 0,35 cm das bordas da etiqueta — a impressora desloca
+   a folha 1–3 mm e cortava a Localização (última linha). Ajuste fino de deslocamento pela barra (mm). */
+.et{width:10.2cm;height:5.05cm;border:1px dashed #CBD5E1;padding:0.32cm 0.45cm 0.38cm 0.4cm;display:grid;grid-template-columns:1fr 2.4cm;column-gap:0.25cm;overflow:hidden;page-break-inside:avoid}
 .et .esq{display:flex;flex-direction:column;min-width:0}
 .et .fam{font-size:7.5pt;color:#64748B;letter-spacing:.3px;text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .et .fam b{color:#1A2A5E}
-.et .cod{font-size:20pt;font-weight:900;color:#1A2A5E;line-height:1.05;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.et .desc{font-size:10.5pt;font-weight:700;margin-top:2px;line-height:1.15;max-height:2.3em;overflow:hidden}
-.et .pn{font-size:12.5pt;font-weight:900;color:#0F172A;margin-top:2px;line-height:1.15;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.et .cod{font-size:18pt;font-weight:900;color:#1A2A5E;line-height:1.05;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.et .desc{font-size:10pt;font-weight:700;margin-top:2px;line-height:1.15;max-height:2.3em;overflow:hidden}
+.et .pn{font-size:11.5pt;font-weight:900;color:#0F172A;margin-top:2px;line-height:1.15;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .et .pn small{font-size:7.5pt;font-weight:700;color:#64748B;letter-spacing:.3px;margin-right:4px}
 .et .pn.vz{font-weight:400;color:#A0AEC0;font-size:8pt}
 .et .lin{font-size:8pt;color:#334155;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .et .lin b{color:#0F172A}
 .et .lin.vz{color:#A0AEC0}.et .lin.vz b{color:#A0AEC0;font-weight:400}
-.et .rod{display:flex;justify-content:space-between;align-items:baseline;margin-top:auto;font-size:8.5pt;padding-top:3px;border-top:1px solid #E2E8F0}
-.et .loc{font-weight:900;color:#F97316;font-size:11.5pt}
+.et .rod{display:flex;justify-content:space-between;align-items:baseline;margin-top:auto;font-size:8.5pt;padding-top:2px;border-top:1px solid #E2E8F0}
+.et .loc{font-weight:900;color:#F97316;font-size:11pt}
 .et .loc.vz{color:#A0AEC0;font-weight:400;font-size:8.5pt}
 .et .q{display:flex;flex-direction:column;align-items:center;justify-content:center}
-.et .q svg,.et .q img,.et .q canvas{width:2.5cm;height:2.5cm}
+.et .q svg,.et .q img,.et .q canvas{width:2.3cm;height:2.3cm}
 .et .q small{font-size:6.5pt;color:#64748B;margin-top:1px}
 body.semguia .et{border-color:transparent}
-@media print{body{background:#fff}.bar{display:none}.folha{margin:0;padding:0;min-height:auto;page-break-after:always}.et{border-color:transparent}}
+@media print{body{background:#fff}.bar{display:none}.folha{margin:0;padding:0;min-height:auto;page-break-after:always;position:relative;top:var(--dy,0mm);left:var(--dx,0mm)}.et{border-color:transparent}}
 </style></head><body>
 <div class="bar"><b>🏷 Etiquetas de itens</b> <span id="info"></span> <span style="flex:1"></span>
 <label style="margin-right:12px">quantidade: <select id="modo" onchange="render()" style="font-size:12px;padding:3px 6px;border-radius:5px;border:0"><option value="url">1 por item</option><option value="exist">1 por unidade em estoque</option></select></label>
 <label><input type="checkbox" id="guia" checked onchange="document.body.classList.toggle('semguia',!this.checked)"> guias (não imprimem)</label>
+<label title="Se a impressão sai deslocada no molde, corrija aqui (mm). Negativo sobe/vai à esquerda. Fica gravado neste computador." style="margin-left:12px">ajuste ↕ <input id="dy" type="number" step="0.5" style="width:52px" onchange="ajuste()"> mm ↔ <input id="dx" type="number" step="0.5" style="width:52px" onchange="ajuste()"> mm</label>
 <button onclick="window.print()">🖨 Imprimir</button></div>
 <div id="folhas"></div>
 <script>
 function tok(){return sessionStorage.getItem('garra_mnt_token')||localStorage.getItem('garra_adm_token')||'';}
+// (22/10/2026) deslocamento de impressão (compensa a margem física da impressora) — por computador
+function ajuste(){
+  const dy=parseFloat(document.getElementById('dy').value)||0, dx=parseFloat(document.getElementById('dx').value)||0;
+  document.documentElement.style.setProperty('--dy', dy+'mm'); document.documentElement.style.setProperty('--dx', dx+'mm');
+  try{ localStorage.setItem('garra_etq_ajuste', JSON.stringify({dy,dx})); }catch(e){}
+}
+try{ const a=JSON.parse(localStorage.getItem('garra_etq_ajuste')||'{}'); document.addEventListener('DOMContentLoaded',()=>{ document.getElementById('dy').value=a.dy||0; document.getElementById('dx').value=a.dx||0; ajuste(); }); }catch(e){}
 const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 (async()=>{
   const qs=location.search||'';
