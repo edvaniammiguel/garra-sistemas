@@ -2388,7 +2388,7 @@ const _NE_SEL = {
           novo: { campos:[['codigo','C\u00f3digo','text'],['descricao','Descri\u00e7\u00e3o','text'],['unidade','Unidade (L)','text']], post: async d => { const r = await mntFetch('/manutencao/api/pecas',{method:'POST',body:JSON.stringify(d)}); return {id:(r&&r.id)||'', cod:d.codigo, nome:d.descricao}; } } },
   forn: { titulo:'Fornecedores', icone:'\ud83c\udfed', carregar: async()=>{ const r = await mntFetch('/manutencao/api/fornecedores'); return (Array.isArray(r)?r:(r.itens||[])).map(f=>({id:f.id, cod:f.cnpj||'', nome:f.nome})); },
           aplicar: it => { const el=document.getElementById('ne-forn'); if(!el) return; if(![...el.options].some(o=>o.value===String(it.id))){ const o=document.createElement('option'); o.value=it.id; o.textContent=it.nome; el.appendChild(o);} el.value = it.id; },
-          novo: { campos:[['nome','Nome','text'],['cnpj','CNPJ','text'],['telefone','Telefone','text'],['email','E-mail','email']], post: async d => { const r = await mntFetch('/manutencao/api/fornecedores',{method:'POST',body:JSON.stringify(d)}); return {id:(r&&r.id)||'', cod:d.cnpj||'', nome:d.nome}; } },
+          novo: { campos:[['nome','Nome','text'],['cnpj','CNPJ','text'],['telefone','Telefone','text'],['email','E-mail','email']], post: async d => { const r = await mntFetch('/manutencao/api/fornecedores',{method:'POST',body:JSON.stringify(d)}); fornCacheLimpar(); return {id:(r&&r.id)||'', cod:d.cnpj||'', nome:d.nome}; } },
           vaiPara: () => { showModule('param'); abrirParamPane('forn','forn','Fornecedores'); } }
 };
 let _neSelItens = [];
@@ -3661,6 +3661,9 @@ function otwLimpar(){
 }
 
 let _mntFornList = null, _mntUserList = null, _novaDraft = null;
+// (22/10/2026) Fornecedor criado/renomeado/desativado em qualquer tela → zera os caches que montam os selects
+// (OT Outros/Mão de Obra, Entrada, Novo Objeto, relatórios). Antes o novo só aparecia depois do F5.
+function fornCacheLimpar(){ _mntFornList = null; _mwDom = null; }
 /* ══ NOVA OT — modelo ManWinWin: nº visível, régua de abas, Origem completa ══ */
 let _pickerItens = [], _pickerCb = null;
 function abrirPicker(titulo, itens, cb){
@@ -6987,18 +6990,18 @@ async function novoFornecedor(){
   const nome = prompt('Nome do fornecedor:'); if (!nome) return;
   const tel = prompt('Telefone/WhatsApp (opcional):') || null;
   try { await mntFetch('/manutencao/api/fornecedores', {method:'POST', body: JSON.stringify({nome:nome.trim(), telefone:tel})});
-    mostrarToast('✅ Fornecedor cadastrado','ok'); paneFornecedores();
+    fornCacheLimpar(); mostrarToast('✅ Fornecedor cadastrado','ok'); paneFornecedores();
   } catch(e){ mostrarToast('❌ '+e.message,'warn'); }
 }
 async function renomearFornecedor(id, nomeAtual){
   const nome = prompt('Nome:', nomeAtual); if (nome===null) return;
-  try { await mntFetch('/manutencao/api/fornecedores/'+id, {method:'PATCH', body: JSON.stringify({nome:nome.trim()})});
+  try { await mntFetch('/manutencao/api/fornecedores/'+id, {method:'PATCH', body: JSON.stringify({nome:nome.trim()})}); fornCacheLimpar();
     mostrarToast('✅ Atualizado','ok'); paneFornecedores();
   } catch(e){ mostrarToast('❌ '+e.message,'warn'); }
 }
 async function desativarFornecedor(id, nome){
   if (!confirm('Desativar '+nome+'?\n\nSoft delete — some das listas, OTs antigas seguem íntegras.')) return;
-  try { await mntFetch('/manutencao/api/fornecedores/'+id, {method:'PATCH', body: JSON.stringify({ativo:false})});
+  try { await mntFetch('/manutencao/api/fornecedores/'+id, {method:'PATCH', body: JSON.stringify({ativo:false})}); fornCacheLimpar();
     mostrarToast('🚫 '+nome+' desativado','ok'); paneFornecedores();
   } catch(e){ mostrarToast('❌ '+e.message,'warn'); }
 }
