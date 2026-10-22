@@ -12,6 +12,7 @@ MODULOS_DISPONIVEIS = [
     {"id": "operacional_mobile",  "label": "Operacional Mobile",    "desc": "OS e horímetro"},
     {"id": "checklist",           "label": "Checklist",             "desc": "Checklist de máquinas"},
     {"id": "checklist_logistica", "label": "Logística (Checklist)", "desc": "Aba de carros de apoio dentro do Checklist"},
+    {"id": "checklist_gestao",    "label": "Gestão do Checklist",   "desc": "Vê e trata os envios de todos os operadores (não só os próprios)"},
     {"id": "manutencao",          "label": "Manutenção Desktop",    "desc": "Módulo completo — frota, OTs, materiais (gestão)"},
     {"id": "pedir_ot",            "label": "Manutenção — Pedir OT", "desc": "Solicitar OT pelo mobile e acompanhar as próprias (operadores e mecânicos)"},
     # (14/10/2026) Separa quem só PEDE (operador) de quem EXECUTA (mecânico): a aba
@@ -31,9 +32,9 @@ MODULOS_DISPONIVEIS = [
 
 PERFIL_MODULOS_PADRAO = {
     "admin":     ["admin_master","jardinagem_desktop","jardinagem_mobile","operacional_mobile","checklist","checklist_logistica","abastecimento","abastecimento_notas","manutencao_notas","compras_solicitar","compras_aprovar","compras_alcadas","compras_ver_todas"],
-    "gestor":    ["admin_master","jardinagem_desktop","operacional_mobile","manutencao","abastecimento","abastecimento_notas","manutencao_notas","compras_solicitar","compras_aprovar","compras_alcadas","compras_ver_todas"],
+    "gestor":    ["admin_master","jardinagem_desktop","operacional_mobile","checklist_gestao","manutencao","abastecimento","abastecimento_notas","manutencao_notas","compras_solicitar","compras_aprovar","compras_alcadas","compras_ver_todas"],
     "luana":     ["admin_master","jardinagem_desktop","operacional_mobile","abastecimento_notas","manutencao_notas","compras_solicitar","compras_aprovar","compras_alcadas","compras_ver_todas"],
-    "bruna":     ["admin_master","checklist","manutencao","pedir_ot","ot_executar","abastecimento","compras_solicitar","compras_aprovar"],
+    "bruna":     ["admin_master","checklist","checklist_gestao","manutencao","pedir_ot","ot_executar","abastecimento","compras_solicitar","compras_aprovar"],
     "operador":  ["operacional_mobile","checklist","abastecimento"],
     "motorista": ["operacional_mobile","checklist","abastecimento"],
     "campo":     ["jardinagem_mobile"],
