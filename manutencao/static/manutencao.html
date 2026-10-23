@@ -2852,7 +2852,7 @@ async function equipAbastecimentos(id){
     + '<td style="font-size:10px;white-space:nowrap">'+(!a.nota_id ? '<span class="muted">\u2014</span>'
         : a.status_conferencia === 'conferida' ? '<span class="chip tm" style="font-size:9px" title="'+_esc(a.conferido_por_nome||'')+'">\u2714 conferida</span> <span style="cursor:pointer" title="Voltar a pendente" onclick="event.stopPropagation();abConferir([\''+a.nota_id+'\'],\'pendente\',\''+id+'\')">\u21a9</span>'
         : '<button class="btn" style="font-size:10px;padding:1px 6px" title="Marcar como conferida pela manuten\u00e7\u00e3o" onclick="event.stopPropagation();abConferir([\''+a.nota_id+'\'],\'conferida\',\''+id+'\')">\u2714 Conferir</button>')
-      + (a.lancada_mais ? ' <span class="chip tm" style="font-size:9px" title="Lan\u00e7ada na MAIS">\ud83d\udcd2</span>' : '')+'</td></tr>').join('');
+      +'</td></tr>').join('');
   const litrosTot = lista.reduce((t,a)=>t+(a.litros||0),0);
   const ctx = _abCtx;
   const optPostos = '<option value="">\u2014 posto \u2014</option>'+(ctx.postos||[]).map(p=>'<option value="'+p.id+'">'+_esc(p.nome)+'</option>').join('')+'<option value="__novo">\uff0b Outro posto (cadastrar)\u2026</option>';
@@ -3001,7 +3001,7 @@ async function abConferenciaJanela(de, ate, pend){
               + '<td>'+(legado ? '<span class="chip ap" style="font-size:9px" title="Registro sem nota (carga/legado)">sem nota</span>'
                               : conf ? '<span class="chip tm" style="font-size:9px" title="'+_esc(x.conferido_por_nome||'')+' '+dh(x.conferido_em)+'">\u2714 conferida</span>'
                               : '<span class="chip pe" style="font-size:9px">\u23f3 a conferir</span>')
-                   + (x.lancada_mais ? ' <span class="chip tm" style="font-size:9px" title="Lan\u00e7ada na MAIS pelo financeiro">\ud83d\udcd2 lan\u00e7ada</span>' : '')+'</td></tr>'; }).join('')
+                   +'</td></tr>'; }).join('')
         + '</tbody></table>'
       : '<div class="muted" style="padding:12px">Nenhum abastecimento no per\u00edodo'+(_abcf.pend?' pendente de confer\u00eancia':'')+'.</div>');
   document.querySelector('#eq-ficha .modal').classList.add('larga');
