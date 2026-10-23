@@ -1306,9 +1306,11 @@ async function carregarConfig(){
   }catch(e){ el.innerHTML='<div class="vazio">'+e.message+'</div>'; }
 
   try{
-    const sets=await api('/compras/api/setores');
-    document.getElementById('set-lista').innerHTML=sets.map(s=>
-      `<div class="alc-row" style="grid-template-columns:80px 1fr auto"><b>${s.codigo}</b><span><span class="dot" style="background:${s.cor||'#64748B'};display:inline-block;margin-right:6px"></span>${s.nome}</span><button class="del" title="Desativar" onclick="desativarSetor('${s.codigo}','${s.nome}')">✕</button></div>`).join('');
+    // (23/10/2026) ✏️ editar nome/cor · ✕ desativar · ♻️ reativar (desativados aparecem riscados no fim)
+    const sets=await api('/compras/api/setores?inativos=1');
+    document.getElementById('set-lista').innerHTML=sets.map(s=> s.ativo===false
+      ? `<div class="alc-row" style="grid-template-columns:80px 1fr auto;opacity:.55"><b><s>${s.codigo}</s></b><span><s>${s.nome}</s> <small>desativado</small></span><button class="del" title="Reativar" style="color:#15803D" onclick="reativarSetor('${s.codigo}','${s.nome.replace(/'/g,"&#39;")}')">♻️</button></div>`
+      : `<div class="alc-row" style="grid-template-columns:80px 1fr auto auto;gap:6px"><b>${s.codigo}</b><span><span class="dot" style="background:${s.cor||'#64748B'};display:inline-block;margin-right:6px"></span>${s.nome}</span><button class="del" title="Editar nome e cor" style="color:#1A2A5E" onclick="editarSetor('${s.codigo}','${s.nome.replace(/'/g,"&#39;")}','${s.cor||'#64748B'}')">✏️</button><button class="del" title="Desativar" onclick="desativarSetor('${s.codigo}','${s.nome.replace(/'/g,"&#39;")}')">✕</button></div>`).join('');
   }catch(e){}
   try{
     const conds=await api('/compras/api/condicoes');
@@ -1317,6 +1319,20 @@ async function carregarConfig(){
   }catch(e){}
 }
 
+async function editarSetor(cod, nome, cor){ return guard(async ()=>{
+  const n = prompt('Nome do setor '+cod+':', nome); if (n === null) return;
+  const c = prompt('Cor (hex, ex.: #F97316 — vazio mantém):', cor||''); if (c === null) return;
+  const body = { nome: (n.trim()||nome) };
+  if (c.trim() && /^#?[0-9a-fA-F]{6}$/.test(c.trim())) body.cor = (c.trim().startsWith('#')?'':'#')+c.trim();
+  try{ await api('/compras/api/setores/'+cod,{method:'PATCH',body:JSON.stringify(body)});
+    toast('Setor atualizado','ok'); SETORES=await api('/compras/api/setores'); renderSetorChips(); carregarConfig();
+  }catch(e){ toast(e.message,'err'); }
+}, window.event); }
+async function reativarSetor(cod, nome){ return guard(async ()=>{
+  try{ await api('/compras/api/setores/'+cod,{method:'PATCH',body:JSON.stringify({ativo:true})});
+    toast('Setor reativado','ok'); SETORES=await api('/compras/api/setores'); renderSetorChips(); carregarConfig();
+  }catch(e){ toast(e.message,'err'); }
+}, window.event); }
 async function desativarSetor(cod, nome){ return guard(async ()=>{
   if(!confirm('Desativar o setor '+nome+'? Some dos selects; OCs antigas continuam no histórico.')) return;
   try{ await api('/compras/api/setores/'+cod,{method:'PATCH',body:JSON.stringify({ativo:false})});
