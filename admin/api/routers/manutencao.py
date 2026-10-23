@@ -116,12 +116,17 @@ async def _garantir_leituras():
             usuario_id UUID,
             criado_em TIMESTAMPTZ DEFAULT now(),
             UNIQUE (fonte, ref))""", fetch="none")
+    await ajard_query("ALTER TABLE operacional.equipamentos ADD COLUMN IF NOT EXISTS os_alimenta_manutencao BOOLEAN DEFAULT true", fetch="none")
     _parte = """
-        SELECT equipamento_id, data,
-               GREATEST(COALESCE(horimetro_final,0), COALESCE(km_final,0)) AS leitura,
-               'parte'::text AS fonte, id::text AS ref
-          FROM operacional.partes_diarias
-         WHERE COALESCE(ativo, true) = true
+        SELECT p.equipamento_id, p.data,
+               GREATEST(COALESCE(p.horimetro_final,0), COALESCE(p.km_final,0)) AS leitura,
+               'parte'::text AS fonte, p.id::text AS ref
+          FROM operacional.partes_diarias p
+          JOIN operacional.equipamentos eq ON eq.id = p.equipamento_id
+         WHERE COALESCE(p.ativo, true) = true
+           -- (23/10/2026) equipamento com DOIS horímetros (os_alimenta_manutencao = false): a parte diária é o
+           -- contador COMERCIAL e não entra nas leituras de manutenção (FMD, OT, Registro Funcionamento)
+           AND COALESCE(eq.os_alimenta_manutencao, true) = true
         UNION ALL
         SELECT equipamento_id, data, leitura, 'abastecimento'::text AS fonte, id::text AS ref
           FROM operacional.abastecimentos
@@ -805,6 +810,16 @@ async def mudar_status_ot(ot_id: str, request: Request, payload=Depends(verifica
     if reabrindo and len((d.get("observacao") or "").strip()) < 5:
         raise HTTPException(status_code=400, detail="Motivo da reabertura é obrigatório (mínimo 5 caracteres)")
     uid = await _usuario_id(payload)
+    # (22/10/2026) Aguardando peça/fornecedor: motivo do domínio Motivos de OT Pendente é obrigatório e abre uma pausa
+    motivo_row = None
+    if novo == "aguardando_peca":
+        await _garantir_pausas()
+        mc = (d.get("motivo_codigo") or "").strip().upper()
+        if not mc:
+            raise HTTPException(status_code=400, detail="Informe o motivo da espera (Parametrizar › Motivos de OT Pendente)")
+        motivo_row = await ajard_query("SELECT codigo, nome FROM manutencao.motivos_pendente WHERE codigo=%s AND ativo IS DISTINCT FROM false", (mc,), fetch="one")
+        if not motivo_row:
+            raise HTTPException(status_code=400, detail=f"Motivo '{mc}' não existe em Motivos de OT Pendente")
     extras, params = "", [novo]
     if reabrindo:
         extras = ", data_conclusao=NULL, data_retorno_operacao=NULL, encerrado_em=NULL"
@@ -851,7 +866,15 @@ async def mudar_status_ot(ot_id: str, request: Request, payload=Depends(verifica
     await ajard_query(
         """INSERT INTO manutencao.ot_historico (ot_id, status_de, status_para, observacao, usuario_id)
            VALUES (%s,%s,%s,%s,%s)""",
-        (ot_id, atual, novo, ("↩ REABERTA: " if reabrindo else "") + ((d.get("observacao") or "").strip() or ""), uid), fetch="none")
+        (ot_id, atual, novo, ("↩ REABERTA: " if reabrindo else "") + ("⏸ " + motivo_row["nome"] + ((" — " + (d.get("observacao") or "").strip()) if (d.get("observacao") or "").strip() else "") if motivo_row else ((d.get("observacao") or "").strip() or "")), uid), fetch="none")
+    # (22/10/2026) pausa: abre ao entrar em aguardando; fecha ao sair (retomar, encerrar, cancelar)
+    if motivo_row:
+        await ajard_query(
+            """INSERT INTO manutencao.ot_pausas (ot_id, motivo_codigo, motivo_nome, observacao, usuario_id) VALUES (%s,%s,%s,%s,%s)""",
+            (ot_id, motivo_row["codigo"], motivo_row["nome"], (d.get("observacao") or "").strip() or None, uid), fetch="none")
+    elif atual == "aguardando_peca":
+        await _garantir_pausas()
+        await ajard_query("UPDATE manutencao.ot_pausas SET fim=now(), retomado_por=%s WHERE ot_id=%s AND fim IS NULL", (uid, ot_id), fetch="none")
     # (22/10/2026) OT cancelada → as OCs vivas dela (rascunho/solicitada/aprovada/enviada) que a gestão marcou
     # são canceladas junto, com trilha no Compras. OC já recebida não se mexe (custo aconteceu).
     if novo == "cancelada" and d.get("cancelar_ocs"):
@@ -3355,7 +3378,13 @@ async def recebimento_conferir(rid: str, request: Request, payload=Depends(verif
             """INSERT INTO manutencao.ot_historico (ot_id, status_de, status_para, observacao, usuario_id)
                SELECT id, status, status, %s, %s FROM manutencao.ot WHERE id=%s""",
             (f"📦 Peça {r['codigo']} conferida no almoxarifado {alm} ({qtd:g}) — OC {r.get('oc_numero') or ''}", uid, r["ot_id"]), fetch="none")
-    return {"ok": True, "entrada": res, "diferenca": round(qtd - float(r["quantidade"]), 3)}
+    # (22/10/2026) OT parada esperando esta peça → devolve o aviso para a tela oferecer "retomar"
+    ot_ag = None
+    if r.get("ot_id"):
+        oa = await ajard_query("SELECT id, numero, status FROM manutencao.ot WHERE id=%s", (r["ot_id"],), fetch="one")
+        if oa and oa["status"] == "aguardando_peca":
+            ot_ag = {"id": str(oa["id"]), "numero": oa["numero"]}
+    return {"ok": True, "entrada": res, "diferenca": round(qtd - float(r["quantidade"]), 3), "ot_aguardando": ot_ag}
 
 
 @router.post("/manutencao/api/recebimentos/{rid}/rejeitar")
@@ -3504,6 +3533,12 @@ async def _garantir_dominios():
     # retífica de motor, reforma de bomba). Contagem = OTs encerradas desse tipo no objeto; nada é digitado.
     await ajard_query("ALTER TABLE manutencao.tipos_manutencao ADD COLUMN IF NOT EXISTS renova_vida BOOLEAN", fetch="none")
     await ajard_query("ALTER TABLE manutencao.tipos_manutencao ADD COLUMN IF NOT EXISTS max_por_objeto INTEGER", fetch="none")
+    # (22/10/2026) Motivos de OT Pendente nascem com o padrão (usados na pausa "Aguardando")
+    await ajard_query("""
+        INSERT INTO manutencao.motivos_pendente (codigo, nome) VALUES
+          ('PEC','Aguardando peça'), ('FOR','Aguardando fornecedor / serviço externo'),
+          ('APR','Aguardando aprovação (OC / financeiro)'), ('EQP','Aguardando liberação do equipamento'), ('OUT','Outro')
+        ON CONFLICT (codigo) DO NOTHING""", fetch="none")
     # (26/09/2026) Hierarquia ManWinWin dos Tipos de Trabalho (domínio "tipos-manutencao",
     # o que alimenta a árvore de OTs): a letra é a pasta, o subtipo (A1, C1, C2…) é o
     # que a OT/FMP recebe. Idempotente: só insere o que falta; nomes existentes ficam.
@@ -5926,6 +5961,42 @@ def _vidas(renovs, montagens, aquisicao, valor_aquisicao):
     return vidas, {"km": tot_km, "custo": tot_custo, "custo_km": round(tot_custo / tot_km, 3) if tot_km > 0 and tot_custo else None}
 
 
+# ══ (22/10/2026) PAUSAS "AGUARDANDO" — motivo obrigatório (Motivos de OT Pendente), início/fim, tempo parado ══
+_PAUSAS_OK = False
+async def _garantir_pausas():
+    global _PAUSAS_OK
+    if _PAUSAS_OK:
+        return
+    await ajard_query("""
+        CREATE TABLE IF NOT EXISTS manutencao.ot_pausas (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          ot_id UUID NOT NULL,
+          motivo_codigo TEXT, motivo_nome TEXT, observacao TEXT,
+          inicio TIMESTAMPTZ NOT NULL DEFAULT now(), fim TIMESTAMPTZ,
+          usuario_id UUID, retomado_por UUID)""", fetch="none")
+    await _garantir_dominios()
+    _PAUSAS_OK = True
+
+
+async def _pausas_de(ot_id):
+    await _garantir_pausas()
+    rows = await ajard_query(
+        """SELECT p.id, p.motivo_codigo, p.motivo_nome, p.observacao, p.inicio, p.fim,
+                  (SELECT nome FROM public.usuarios_garra u WHERE u.id = p.usuario_id) AS usuario_nome,
+                  EXTRACT(EPOCH FROM (COALESCE(p.fim, now()) - p.inicio))/3600.0 AS horas
+           FROM manutencao.ot_pausas p WHERE p.ot_id=%s ORDER BY p.inicio""", (ot_id,)) or []
+    out = [{"id": str(r["id"]), "motivo_codigo": r["motivo_codigo"], "motivo": r["motivo_nome"], "observacao": r["observacao"],
+            "inicio": r["inicio"].isoformat() if r["inicio"] else None, "fim": r["fim"].isoformat() if r["fim"] else None,
+            "usuario": r["usuario_nome"], "horas": round(float(r["horas"] or 0), 2), "em_curso": r["fim"] is None} for r in rows]
+    return out, round(sum(x["horas"] for x in out), 2)
+
+
+@router.get("/manutencao/api/ots/{ot_id}/pausas")
+async def ot_pausas(ot_id: str, _auth=Depends(verificar_manutencao)):
+    itens, total = await _pausas_de(ot_id)
+    return {"itens": itens, "horas_total": total, "aberta": next((x for x in itens if x["em_curso"]), None)}
+
+
 @router.get("/manutencao/api/ots/{ot_id}/ocs")
 async def ot_ocs(ot_id: str, _auth=Depends(verificar_manutencao)):
     """(22/10/2026) Ordens de compra amarradas à OT (peças da FMP ou serviço da aba Outros):
@@ -6116,33 +6187,37 @@ async def _garantir_notas_ot():
     await _garantir_mao_obra()
     for col, tipo in (("ot_id", "UUID"), ("categoria", "TEXT"), ("apontamento_id", "UUID"),
                       ("valor_nota", "NUMERIC(14,2)"), ("numero_nota", "TEXT"),
-                      ("lancada_mais", "BOOLEAN DEFAULT false"), ("lancada_por", "UUID"), ("lancada_em", "TIMESTAMPTZ")):
+                      ("lancada_mais", "BOOLEAN DEFAULT false"), ("lancada_por", "UUID"), ("lancada_em", "TIMESTAMPTZ"),
+                      # (22/10/2026) "não é nota": some do balcão do financeiro, fica na OT (nunca apaga)
+                      ("oculta_financeiro", "BOOLEAN DEFAULT false"), ("oculta_por", "UUID"), ("oculta_em", "TIMESTAMPTZ"), ("oculta_motivo", "TEXT")):
         await ajard_query(f"ALTER TABLE manutencao.equipamento_documentos ADD COLUMN IF NOT EXISTS {col} {tipo}", fetch="none")
     _NOTAS_OT_OK = True
 
 
 async def verificar_notas_ot(payload=Depends(verificar_token)):
-    """Gate do balcão: perfis livres + módulo manutencao_notas (ou manutencao / abastecimento_notas)."""
-    if (payload.get("perfil") or "").lower() in {"admin", "gestor", "bruna", "luana"}:
-        return payload
+    """Gate do balcão: módulo manutencao_notas (ou manutencao / abastecimento_notas). (22/10/2026) sem lista de perfis livres."""
     if await _tem_modulo(payload, {"manutencao_notas", "manutencao", "abastecimento_notas"}):
         return payload
     raise HTTPException(status_code=403, detail="Sem permissão para Notas de Manutenção")
 
 
 @router.get("/manutencao/api/notas-financeiro")
-async def notas_ot_listar(mes: str = None, fornecedor: str = None, pendentes: int = 0, payload=Depends(verificar_notas_ot)):
+async def notas_ot_listar(mes: str = None, fornecedor: str = None, pendentes: int = 0, ocultas: int = 0, payload=Depends(verificar_notas_ot)):
     await _garantir_notas_ot()
     from datetime import date as _date
     mes = (mes or _date.today().strftime("%Y-%m"))[:7]
     where, params = ["d.ativo=true", "d.categoria='nota_fiscal'", "d.ot_id IS NOT NULL",
                      "to_char(d.criado_em AT TIME ZONE 'America/Sao_Paulo','YYYY-MM')=%s"], [mes]
+    # (22/10/2026) removidas da visão do financeiro ("não é nota") só aparecem com ocultas=1
+    where.append("COALESCE(d.oculta_financeiro,false)=true" if ocultas else "COALESCE(d.oculta_financeiro,false)=false")
     if fornecedor:
         where.append("o.fornecedor_id=%s"); params.append(fornecedor)
     if pendentes:
         where.append("COALESCE(d.lancada_mais,false)=false")
     rows = await ajard_query(
         f"""SELECT d.id, d.criado_em, d.path, d.descricao, d.valor_nota, d.numero_nota, d.lancada_mais, d.lancada_em,
+                   d.oculta_financeiro, d.oculta_motivo, d.oculta_em,
+                   (SELECT nome FROM public.usuarios_garra x WHERE x.id=d.oculta_por) AS oculta_por_nome,
                    o.numero AS ot_numero, o.id AS ot_id, o.status AS ot_status, o.fornecedor_id,
                    eq.codigo AS equipamento_codigo, eq.descricao AS equipamento_desc,
                    fo.nome AS fornecedor_nome, u.nome AS usuario_nome,
@@ -6164,6 +6239,7 @@ async def notas_ot_listar(mes: str = None, fornecedor: str = None, pendentes: in
         d["id"] = str(d["id"]); d["ot_id"] = str(d["ot_id"]); d["fornecedor_id"] = str(d["fornecedor_id"]) if d.get("fornecedor_id") else None
         d["data"] = d["criado_em"].isoformat() if d.get("criado_em") else None
         d["lancada_em"] = d["lancada_em"].isoformat() if d.get("lancada_em") else None
+        d["oculta_em"] = d["oculta_em"].isoformat() if d.get("oculta_em") else None
         d["foto_url"] = urls.get(d.pop("path"), "")
         d.pop("criado_em", None)
         for k in ("valor_nota", "compras_ot", "outros_ot"):
@@ -6197,6 +6273,13 @@ async def notas_ot_conferir(doc_id: str, request: Request, payload=Depends(verif
             sets += ["lancada_mais=true", "lancada_por=%s", "lancada_em=now()"]; params.append(uid)
         else:
             sets += ["lancada_mais=false", "lancada_por=NULL", "lancada_em=NULL"]
+    if "ocultar" in d:   # (22/10/2026) "não é nota" — some da visão do financeiro; o arquivo continua na OT
+        uid = await _usuario_id(payload)
+        if d.get("ocultar"):
+            sets += ["oculta_financeiro=true", "oculta_por=%s", "oculta_em=now()", "oculta_motivo=%s"]
+            params += [uid, (d.get("motivo") or "não é documento de custo").strip()[:200]]
+        else:
+            sets += ["oculta_financeiro=false", "oculta_por=NULL", "oculta_em=NULL", "oculta_motivo=NULL"]
     if not sets:
         return {"ok": True}
     params.append(doc_id)
@@ -6467,6 +6550,7 @@ img.th{height:44px;border-radius:5px;border:1px solid #E2E8F0;vertical-align:mid
   <div class="f">Competência<input type="month" id="f-mes"></div>
   <div class="f">Fornecedor / posto<select id="f-forn"><option value="">— todos —</option></select></div>
   <div class="f">&nbsp;<label style="font-weight:400"><input type="checkbox" id="f-pend" checked> só pendentes de lançar</label></div>
+  <div class="f">&nbsp;<label style="font-weight:400" title="Fotos que a Luana marcou como 'não é nota' (ficam na OT, só saem daqui)"><input type="checkbox" id="f-ocul" onchange="carregar()"> ver removidas da visão</label></div>
   <button class="p" onclick="carregar()">🔍 Buscar</button>
   <button onclick="excel()">📊 Excel da competência</button>
   <span class="muted" style="font-size:11px;flex:1;text-align:right">OT: confira a foto e <b>digite o valor</b> · Abastecimento: valor já calculado · marque ✔ ao lançar na MAIS</span>
@@ -6474,8 +6558,8 @@ img.th{height:44px;border-radius:5px;border:1px solid #E2E8F0;vertical-align:mid
  <div class="cards" id="cards"></div>
  <div style="overflow:auto"><table><thead><tr>
   <th>Origem</th><th>Data</th><th>Referência</th><th>Equipamento</th><th>Fornecedor / posto</th><th>Foto</th><th>Descrição</th>
-  <th>Nº nota / cupom</th><th class="r">Valor (R$)</th><th>Quem</th><th style="width:130px">Lançada na MAIS</th>
- </tr></thead><tbody id="corpo"><tr><td colspan="11" class="muted" style="padding:14px">Carregando…</td></tr></tbody></table></div>
+  <th>Nº nota / cupom</th><th class="r">Valor (R$)</th><th>Quem</th><th style="width:118px" title="Abastecimento: conferido pela manutenção (Bruna) antes de lançar">Conf. manutenção</th><th style="width:130px">Lançada na MAIS</th><th style="width:36px"></th>
+ </tr></thead><tbody id="corpo"><tr><td colspan="13" class="muted" style="padding:14px">Carregando…</td></tr></tbody></table></div>
 </main>
 <div id="toast"></div>
 <script>
@@ -6492,14 +6576,14 @@ const esc=x=>String(x??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&g
 const fN=(v,d)=>v==null?'—':Number(v).toLocaleString('pt-BR',{minimumFractionDigits:d??2,maximumFractionDigits:d??2});
 let LINHAS=[];
 async function carregar(){
- const mes=$('f-mes').value||new Date().toISOString().slice(0,7), orig=$('f-orig').value, pend=$('f-pend').checked;
+ const mes=$('f-mes').value||new Date().toISOString().slice(0,7), orig=$('f-orig').value, pend=$('f-pend').checked, ocul=$('f-ocul')&&$('f-ocul').checked;
  const forn=$('f-forn').value;   // "ot:<id>" ou "ab:<id>"
  LINHAS=[]; const erros=[];
- if(orig!=='ab'){ try{ const r=await api('/manutencao/api/notas-financeiro?mes='+mes+(pend?'&pendentes=1':'')+(forn.startsWith('ot:')?'&fornecedor='+forn.slice(3):''));
-   (r.notas||[]).forEach(n=>LINHAS.push({orig:'ot',id:n.id,data:n.data,ref:n.ot_numero,eq:n.equipamento_codigo+' — '+(n.equipamento_desc||''),forn:n.fornecedor_nome||'',fornId:n.fornecedor_id?'ot:'+n.fornecedor_id:'',foto:n.foto_url,desc:n.descricao||'',num:n.numero_nota||'',valor:n.valor_nota,editavel:true,quem:n.usuario_nome||'',lanc:n.lancada_mais,lancPor:n.lancada_por_nome,lancEm:n.lancada_em,naOT:(n.compras_ot||0)+(n.outros_ot||0)}));
+ if(orig!=='ab'){ try{ const r=await api('/manutencao/api/notas-financeiro?mes='+mes+(pend&&!ocul?'&pendentes=1':'')+(ocul?'&ocultas=1':'')+(forn.startsWith('ot:')?'&fornecedor='+forn.slice(3):''));
+   (r.notas||[]).forEach(n=>LINHAS.push({orig:'ot',id:n.id,data:n.data,ref:n.ot_numero,eq:n.equipamento_codigo+' — '+(n.equipamento_desc||''),forn:n.fornecedor_nome||'',fornId:n.fornecedor_id?'ot:'+n.fornecedor_id:'',foto:n.foto_url,desc:n.descricao||'',num:n.numero_nota||'',valor:n.valor_nota,editavel:!n.oculta_financeiro,quem:n.usuario_nome||'',lanc:n.lancada_mais,lancPor:n.lancada_por_nome,lancEm:n.lancada_em,naOT:(n.compras_ot||0)+(n.outros_ot||0),oculta:!!n.oculta_financeiro,ocultaPor:n.oculta_por_nome,ocultaMotivo:n.oculta_motivo}));
  }catch(e){ if(e.message==='401')return; erros.push('OTs: '+(e.message==='403'?'sem permissão':e.message)); } }
- if(orig!=='ot'){ try{ const r=await api('/operacional/api/abastecimentos/notas?mes='+mes+(pend?'&pendentes=1':'')+(forn.startsWith('ab:')?'&posto='+forn.slice(3):''));
-   (r.notas||[]).forEach(n=>LINHAS.push({orig:'ab',id:n.id,data:n.data,ref:'Cupom '+(n.numero_cupom||'—'),eq:n.equipamentos||'',forn:n.posto||'',fornId:n.fornecedor_id?'ab:'+n.fornecedor_id:'',foto:n.foto_nota_url,desc:(n.combustivel||'')+' · '+fN(n.litros_total)+' L × '+fN(n.preco_litro,3),num:n.numero_cupom||'',valor:n.valor_total,editavel:false,quem:n.usuario_nome||'',lanc:n.lancada_mais,lancPor:n.lancada_por_nome,lancEm:n.lancada_em}));
+ if(orig!=='ot' && !ocul){ try{ const r=await api('/operacional/api/abastecimentos/notas?mes='+mes+(pend?'&pendentes=1':'')+(forn.startsWith('ab:')?'&posto='+forn.slice(3):''));
+   (r.notas||[]).forEach(n=>LINHAS.push({orig:'ab',id:n.id,data:n.data,ref:'Cupom '+(n.numero_cupom||'—'),eq:n.equipamentos||'',forn:n.posto||'',fornId:n.fornecedor_id?'ab:'+n.fornecedor_id:'',foto:n.foto_nota_url,desc:(n.combustivel||'')+' · '+fN(n.litros_total)+' L × '+fN(n.preco_litro,3),num:n.numero_cupom||'',valor:n.valor_total,editavel:false,quem:n.usuario_nome||'',lanc:n.lancada_mais,lancPor:n.lancada_por_nome,lancEm:n.lancada_em,conf:n.status_conferencia,confPor:n.conferido_por_nome,confEm:n.conferido_em}));
  }catch(e){ if(e.message==='401')return; erros.push('Abastecimento: '+(e.message==='403'?'sem permissão':e.message)); } }
  LINHAS.sort((a,b)=>String(b.data||'').localeCompare(String(a.data||'')));
  if(!$('f-forn').value){ const m={}; LINHAS.forEach(l=>{ if(l.fornId) m[l.fornId]=(l.orig==='ab'?'⛽ ':'🔧 ')+l.forn; });
@@ -6517,9 +6601,18 @@ async function carregar(){
   +'<td>'+(l.editavel?'<input style="width:90px;text-align:left" value="'+esc(l.num)+'" placeholder="nº" onchange="salvar(\''+l.id+'\',{numero_nota:this.value})">':esc(l.num))+'</td>'
   +'<td class="r">'+(l.editavel?'<input inputmode="decimal" value="'+(l.valor!=null?fN(l.valor):'')+'" placeholder="0,00" onchange="salvar(\''+l.id+'\',{valor_nota:this.value})" title="Na OT já lançado: R$ '+fN(l.naOT)+'">':'<b>'+fN(l.valor)+'</b>')+'</td>'
   +'<td style="font-size:11px">'+esc(l.quem)+'</td>'
-  +'<td><label style="cursor:pointer;font-size:11px;font-weight:700;color:'+(l.lanc?'#15803D':'#B91C1C')+'"><input type="checkbox" '+(l.lanc?'checked':'')+' data-id="'+l.id+'" data-orig="'+l.orig+'" onchange="marcar(this)"> '
-    +(l.lanc?('✔ '+esc((l.lancPor||'').split(' ')[0])+' '+(l.lancEm?new Date(l.lancEm).toLocaleDateString('pt-BR'):'')):'lançar')+'</label></td></tr>').join('')
-  ||'<tr><td colspan="11" class="muted" style="padding:14px">Nenhuma nota'+(pend?' pendente':'')+' na competência.</td></tr>';
+  +'<td style="font-size:11px">'+(l.orig==='ab' ? (l.conf==='conferida' ? '<span style="color:#15803D;font-weight:700" title="'+esc(l.confPor||'')+' '+(l.confEm?new Date(l.confEm).toLocaleDateString('pt-BR'):'')+'">✔ conferida</span>' : '<span style="color:#B45309" title="A manutenção ainda não conferiu esta nota (Frota › Ferramentas › Conferência de abastecimentos)">⏳ não conferida</span>') : (l.oculta ? '<span class="chip" title="'+esc(l.ocultaMotivo||'')+'">removida · '+esc((l.ocultaPor||'').split(' ')[0])+'</span>' : '<span class="muted">—</span>'))+'</td>'
+  +'<td>'+(l.oculta ? '<span class="muted" style="font-size:11px">fora da visão</span>' : '<label style="cursor:pointer;font-size:11px;font-weight:700;color:'+(l.lanc?'#15803D':'#B91C1C')+'"><input type="checkbox" '+(l.lanc?'checked':'')+' data-id="'+l.id+'" data-orig="'+l.orig+'" onchange="marcar(this)"> '
+    +(l.lanc?('✔ '+esc((l.lancPor||'').split(' ')[0])+' '+(l.lancEm?new Date(l.lancEm).toLocaleDateString('pt-BR'):'')):'lançar')+'</label>')+'</td>'
+  +'<td>'+(l.orig==='ot' ? (l.oculta ? '<span style="cursor:pointer" title="Voltar para o balcão" onclick="ocultar(\''+l.id+'\',false)">↩</span>' : (l.lanc?'':'<span style="cursor:pointer" title="Não é nota (foto do serviço no campo errado): some daqui, continua na OT" onclick="ocultar(\''+l.id+'\',true)">🚫</span>')) : '')+'</td></tr>').join('')
+  ||'<tr><td colspan="13" class="muted" style="padding:14px">Nenhuma nota'+(pend?' pendente':'')+(ocul?' removida':'')+' na competência.</td></tr>';
+}
+async function ocultar(id,sim){
+ let motivo='';
+ if(sim){ motivo=prompt('Remover da visão do financeiro (a foto continua na OT, nada é apagado).\nMotivo:', 'foto do serviço, não é documento de custo'); if(motivo===null) return; }
+ else if(!confirm('Devolver esta foto ao balcão de notas?')) return;
+ try{ await api('/manutencao/api/notas-financeiro/'+id,{method:'PATCH',body:JSON.stringify({ocultar:!!sim, motivo})}); toast(sim?'🚫 Removida da visão (continua na OT)':'↩ De volta ao balcão'); carregar(); }
+ catch(e){ toast('❌ '+e.message); }
 }
 async function salvar(id,body){
  try{await api('/manutencao/api/notas-financeiro/'+id,{method:'PATCH',body:JSON.stringify(body)});toast('✓ salvo');}
