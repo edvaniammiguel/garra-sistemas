@@ -3632,7 +3632,8 @@ function renderJanelaOTs(){
       + '<td class="bold" style="white-space:nowrap">'+_esc(o.numero)+otUrgIco(o)+'</td><td>'+_esc(o.descricao)+'</td>'
       + '<td class="mono">'+_esc(o.tipo_trabalho || '')+'</td>'
       + '<td><span class="chip '+cc+'">'+cl+'</span></td><td>'+prog+'</td>'
-      + '<td>'+d(o.data_abertura)+'</td><td>'+d(o.data_conclusao)+'</td></tr>';
+      // (23/10/2026) Início = data do Emitir (igual à lista principal); programada/aberta fica em branco
+      + '<td>'+d(o.data_inicio_exec || o.data_inicio_real)+'</td><td>'+d(o.data_conclusao)+'</td></tr>';
   }).join('');
   const nav = (idx+1) + ' / ' + _mntEquipList.length;
   document.getElementById('eq-ficha-corpo').innerHTML =
