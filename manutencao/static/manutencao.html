@@ -3627,7 +3627,7 @@ function renderJanelaOTs(){
     const prog = v ? '<span style="color:'+(v.nivel===0?'#DC2626':v.nivel===1?'#B45309':'#16A34A')+';font-size:10px">'+_esc(v.texto)+'</span>'
                    : (o.data_prevista ? d(o.data_prevista) : (o.horimetro_previsto != null ? o.horimetro_previsto+' h·km' : '—'));
     const sel = String(_otwin.sel) === String(o.id);
-    return '<tr'+(sel?' class="sel"':'')+' onclick="otwSel(\''+o.id+'\')" ondblclick="verOTReal(\''+o.id+'\')" style="cursor:pointer">'
+    return '<tr'+(sel?' class="sel"':'')+' onclick="otwSel(\''+o.id+'\')" ondblclick="_otVoltarEq=_otwin.eqId; verOTReal(\''+o.id+'\')" style="cursor:pointer">'
       + '<td style="text-align:center">'+((o.status === 'em_andamento' || o.status === 'aberta') ? '<span class="ot-play" title="'+(o.status==='aberta'?'Aberta':'Em curso (emitida)')+'">▶</span>' : o.status === 'concluida' ? '🗂️' : o.status === 'cancelada' ? '<span style="color:#94A3B8;font-weight:900">✕</span>' : '<span class="dot '+dot+'"></span>')+'</td>'
       + '<td class="bold" style="white-space:nowrap">'+_esc(o.numero)+otUrgIco(o)+'</td><td>'+_esc(o.descricao)+'</td>'
       + '<td class="mono">'+_esc(o.tipo_trabalho || '')+'</td>'
@@ -3699,7 +3699,13 @@ function otwManterDrop(elId){
 function otwSel(id){ _otwin.sel = id; renderJanelaOTs(); }
 function otwAbrir(){
   if (!_otwin.sel) { mostrarToast('Selecione uma OT na lista', 'warn'); return; }
-  verOTReal(_otwin.sel);
+  _otVoltarEq = _otwin.eqId; verOTReal(_otwin.sel);
+}
+// (23/10/2026) OT aberta a partir da janela de OTs do equipamento: fechar (✕, Encerrar, Cancelar) volta para ela
+let _otVoltarEq = null;
+function otVoltarEquip(){
+  if (!_otVoltarEq) return false;
+  const id = _otVoltarEq; _otVoltarEq = null; otsDoEquip(id, false); return true;
 }
 function otwRepetir(){
   if (!_otwin.sel) { mostrarToast('Selecione uma OT para repetir', 'warn'); return; }
@@ -4036,6 +4042,7 @@ async function otStatusGravando(id, novo){
 }
 function otFechar(){
   if ((otCabecalhoSujo() || otOrigemSuja()) && confirm('A OT foi alterada e não foi gravada.\n\nGravar antes de fechar?')) { salvarOrigem(true); return; }
+  if (otVoltarEquip()) return;
   document.getElementById('eq-ficha').classList.remove('show');
 }
 // (19/10/2026) Encerramento na própria ficha (aba Gestão): estado por OT, com defaults vindos do app
@@ -4272,7 +4279,7 @@ async function verOTReal(id){
       + '<div class="mtab" id="mt-hist" onclick="otAba(\'hist\')">Histórico</div>'
       + '</div><div id="ot-aba-corpo"></div>'
       + (function(){
-          const st = o.status, fecha = ";document.getElementById('eq-ficha').classList.remove('show')";
+          const st = o.status, fecha = ";if(!otVoltarEquip())document.getElementById('eq-ficha').classList.remove('show')";
           const b = (rot, ac, p) => '<button class="btn'+(p?' p':'')+'" onclick="'+ac.replace(/'/g,'&#39;')+'">'+rot+'</button>';
           let acoes = '';
           if (st === 'rascunho')
@@ -5174,7 +5181,8 @@ async function otAba(aba){
     const leituraIni = '<span class="muted" title="Última leitura do equipamento até o início (partes, abastecimentos, checklist, OTs)">'+n(leituraIniVal)+'</span>';
     const regTotal = o.horimetro_conclusao != null ? parseFloat(o.horimetro_conclusao) : (emCurso && s && s.hor !== '' ? parseFloat(String(s.hor).replace(',', '.')) : (contador != null ? parseFloat(contador) : null));
     const regBase = leituraIniVal != null ? parseFloat(leituraIniVal) : (o.horimetro_na_abertura != null ? parseFloat(o.horimetro_na_abertura) : null);
-    const regPar = (regTotal != null && regBase != null) ? (regTotal - regBase) : null;
+    // (23/10/2026) Reg. Par. só entre Início e Fim: antes de emitir mostrava contador − registo do pedido (dava negativo)
+    const regPar = (regTotal != null && regBase != null && (emCurso || !aberta)) ? (regTotal - regBase) : null;
     const tabela = '<table style="width:100%;border-collapse:collapse"><thead><tr style="font-size:10px;color:#475569"><th></th><th style="text-align:left;padding:2px 6px">Data e hora</th><th style="text-align:left;padding:2px 6px">Registo ('+unid+')</th><th style="text-align:left;padding:2px 6px"></th></tr></thead><tbody>'
       + tr(rot('Pedido') + cel(dtl(o.data_abertura)+' '+hl(o.data_abertura)) + cel(n(o.horimetro_na_abertura)) + nota(o.pedido ? 'pedido '+_esc(o.pedido.numero||'') : ''))
       + tr(rot('Última') + cel(u ? dtl(u.data_conclusao) : '<span class="muted">— (primeira deste equipamento)</span>') + cel(u ? n(u.horimetro_na_abertura) : '—') + nota(u ? 'Última OT: <b>'+_esc(u.numero)+'</b>' : ''))
@@ -5464,7 +5472,7 @@ async function salvarOrigem(fechar, promover){
     await mntFetch('/manutencao/api/ots/'+o.id, {method:'PATCH', body: JSON.stringify(body)});
     if (promover) await mntFetch('/manutencao/api/ots/'+o.id+'/status', {method:'PATCH', body: JSON.stringify({status: promover})});
     mostrarToast('✅ OT gravada','ok');
-    if (fechar) document.getElementById('eq-ficha').classList.remove('show'); else { await verOTReal(o.id); }
+    if (fechar) { if (!otVoltarEquip()) document.getElementById('eq-ficha').classList.remove('show'); } else { await verOTReal(o.id); }
     carregarOTsReais(); carregarSemaforosReais();
   } catch(e){ mostrarToast('❌ '+e.message,'warn'); }
 }
