@@ -205,9 +205,10 @@ async def _recalcular_total(oc_id):
 # ── SETORES (parametrização — Regra 63) ───────────────────────
 
 @router.get("/compras/api/setores")
-async def listar_setores(_auth=Depends(verificar_compras)):
+async def listar_setores(inativos: int = 0, _auth=Depends(verificar_compras)):
+    """(23/10/2026) inativos=1 → lista também os desativados (tela de parametrização: editar/reativar)."""
     rows = await ajard_query(
-        "SELECT * FROM compras.setores WHERE ativo=true ORDER BY nome")
+        "SELECT * FROM compras.setores " + ("" if inativos else "WHERE ativo=true ") + "ORDER BY ativo DESC, nome")
     return [dict(r) for r in rows]
 
 
