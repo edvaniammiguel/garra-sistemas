@@ -407,6 +407,8 @@ async def notas_listar(mes: str = None, posto: str = None, pendentes: int = 0,
                    n.preco_litro, n.valor_total, n.foto_nota, n.foto_leitura, n.usuario_nome,
                    n.lancada_mais, n.lancada_em, n.fornecedor_id, fo.nome AS posto, fo.cnpj,
                    (SELECT nome FROM public.usuarios_garra u WHERE u.id=n.lancada_por) AS lancada_por_nome,
+                   COALESCE(n.status_conferencia,'pendente') AS status_conferencia, n.conferido_em,
+                   (SELECT nome FROM public.usuarios_garra u WHERE u.id=n.conferido_por) AS conferido_por_nome,
                    (SELECT string_agg(e.codigo || ' (' || round(a.litros::numeric, 2)::text || ' L)', ' + ' ORDER BY e.codigo)
                       FROM operacional.abastecimentos a JOIN operacional.equipamentos e ON e.id=a.equipamento_id
                      WHERE a.nota_id=n.id AND a.ativo=true) AS equipamentos
@@ -425,6 +427,7 @@ async def notas_listar(mes: str = None, posto: str = None, pendentes: int = 0,
             d[k] = float(d[k]) if d.get(k) is not None else None
         d["data"] = d["data"].isoformat() if d.get("data") else None
         d["lancada_em"] = d["lancada_em"].isoformat() if d.get("lancada_em") else None
+        d["conferido_em"] = d["conferido_em"].isoformat() if d.get("conferido_em") else None
         d["foto_nota_url"] = storage_url(d.pop("foto_nota")) if d.get("foto_nota") else None
         d["foto_leitura_url"] = storage_url(d.pop("foto_leitura")) if d.get("foto_leitura") else None
         p = d.get("posto") or "(sem posto)"
@@ -1322,7 +1325,7 @@ async def listar(equipamento_id: str = None, limite: int = 30, meus: int = 0, de
                    a.sem_funcionamento,
                    e.codigo AS equipamento, e.descricao AS equipamento_desc,
                    n.numero_cupom, n.foto_nota, n.foto_leitura, fo.nome AS posto, n.fornecedor_id,
-                   COALESCE(n.status_conferencia,'pendente') AS status_conferencia, n.conferido_em,
+                   COALESCE(n.status_conferencia,'pendente') AS status_conferencia, n.conferido_em, n.lancada_mais,
                    (SELECT nome FROM public.usuarios_garra u WHERE u.id = n.conferido_por) AS conferido_por_nome,
                    (SELECT COUNT(*) FROM operacional.abastecimentos b WHERE b.nota_id=a.nota_id AND b.ativo=true) AS n_itens,
                    g.codigo AS galao_codigo, c.nome AS combustivel_nome
