@@ -4228,6 +4228,8 @@ async function mntStatusReal(id, novo){
     if (pausa && pausa.gerar_oc){ if (!_otAberta || String(_otAberta.id) !== String(id)) await verOTReal(id); await ocDaOT(); }
     mostrarToast('✅ OT atualizada','ok'); delete _otEncState[String(id)];
     carregarOTsReais(); carregarSemaforosReais();
+    // (23/10/2026) ficha aberta nesta OT e ainda viva → recarrega no lugar (Emitir/Retomar/Aguardando não saem da tela)
+    if (['em_andamento','aguardando_peca'].includes(novo) && _otAberta && String(_otAberta.id) === String(id) && document.getElementById('eq-ficha').classList.contains('show')) await verOTReal(id);
   } catch(e){ mostrarToast('❌ '+e.message,'warn'); }
 }
 let _otAberta = null;
@@ -4275,19 +4277,20 @@ async function verOTReal(id){
           if (st === 'rascunho')
             acoes = b('🖨 Emitir', "salvarOrigem(true,'em_andamento')")
               + ' ' + b('✖️ Cancelar', "otDescartar('"+o.id+"')");
+          // (23/10/2026) Emitir, Aguardando e Retomar ficam na ficha (recarregada com o estado novo); Encerrar/Cancelar fecham
           else if (st === 'programada')
-            acoes = b('🖨 Emitir', "otStatusGravando('"+o.id+"','em_andamento')"+fecha, true)
+            acoes = b('🖨 Emitir', "otStatusGravando('"+o.id+"','em_andamento')", true)
               + (o.plano_id ? ' ' + b('🔁 Novo ciclo', "otNovoCiclo('"+o.id+"')") : '')
               + ' ' + b('✖️ Cancelar OT…', "otStatusGravando('"+o.id+"','cancelada')"+fecha);
           else if (st === 'aberta')
-            acoes = b('🖨 Emitir', "otStatusGravando('"+o.id+"','em_andamento')"+fecha, true)
+            acoes = b('🖨 Emitir', "otStatusGravando('"+o.id+"','em_andamento')", true)
               + ' ' + b('✖️ Cancelar OT…', "otStatusGravando('"+o.id+"','cancelada')"+fecha);
           else if (st === 'em_andamento')
             acoes = b('✔️ Encerrar…', "otStatusGravando('"+o.id+"','concluida')"+fecha, true)
-              + ' ' + b('⏸️ Aguardando peça', "otStatusGravando('"+o.id+"','aguardando_peca')"+fecha)
+              + ' ' + b('⏸️ Aguardando peça', "otStatusGravando('"+o.id+"','aguardando_peca')")
               + ' ' + b('✖️ Cancelar OT…', "otStatusGravando('"+o.id+"','cancelada')"+fecha);
           else if (st === 'aguardando_peca')
-            acoes = b('▶️ Retomar', "otStatusGravando('"+o.id+"','em_andamento')"+fecha, true)
+            acoes = b('▶️ Retomar', "otStatusGravando('"+o.id+"','em_andamento')", true)
               + ' ' + b('✔️ Encerrar…', "otStatusGravando('"+o.id+"','concluida')"+fecha)
               + ' ' + b('✖️ Cancelar OT…', "otStatusGravando('"+o.id+"','cancelada')"+fecha);
           else if (st === 'concluida' || st === 'cancelada')
