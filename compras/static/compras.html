@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>Compras · Garra Sistemas</title>
+<script src="/operacional/static/js/sino.js"></script>
 <style>
 :root{
   --blue:#1A2A5E; --blue2:#001F4D; --orange:#E8820C; --orange2:#D4700A;
@@ -302,9 +303,12 @@ button:disabled, select:disabled, input:disabled, fieldset:disabled *, [aria-dis
 
 <script>
 /* ══ SSO (Regra 60, padrão módulo Manutenção) ══ */
+let _OC_ABRIR = null;   // (24/10/2026) /compras?oc=ID vindo de um aviso
 (function(){
   try{
-    const sso = new URLSearchParams(location.search).get('sso');
+    const q = new URLSearchParams(location.search);
+    _OC_ABRIR = q.get('oc');
+    const sso = q.get('sso');
     if (sso && sso.length > 10) {
       sessionStorage.setItem('garra_oc_token', sso);
       history.replaceState(null,'',location.pathname);
@@ -393,6 +397,11 @@ window.addEventListener('load', async ()=>{
 
   await revalidarGates();
   carregarResumo(); carregarLista(); carregarApoios();
+  // (24/10/2026) sino de avisos (só fora do app — embutido, o cabeçalho é o do shell)
+  try { if (!document.documentElement.classList.contains('embedded')) GarraSino.init({ token: ocToken, alvo: document.getElementById('hdr-user'), antes: true, abrir: function(link){
+    try { const u = new URL(link, location.origin); const oc = u.searchParams.get('oc'); if (u.pathname.indexOf('/compras') === 0 && oc) { abrirDetalhe(oc); return true; } } catch(e) {} return false; } }); } catch(e) {}
+  // (24/10/2026) link de notificação: /compras?oc=ID abre direto a OC
+  try { if (_OC_ABRIR) { history.replaceState(null,'',location.pathname); abrirDetalhe(_OC_ABRIR); _OC_ABRIR = null; } } catch(e){}
 });
 
 /* Permissões sempre renovadas do servidor (mesmo princípio do permsDB do
