@@ -2321,11 +2321,32 @@ function abrirPainelConta() {
         </div>
       </div>
 
+      <!-- 1b. AVISOS (notificações do usuário) -->
+      <div style="padding:16px 20px;border-bottom:1px solid var(--border)">
+        <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px">Avisos</div>
+        <div id="notif-lista-mob"><div style="font-size:12px;color:var(--muted);text-align:center">Carregando...</div></div>
+      </div>
+
       <!-- 2. MURAL -->
       <div style="padding:16px 20px;border-bottom:1px solid var(--border)">
         <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px">Mural</div>
         <div id="mural-avisos-mob" style="margin-bottom:12px"><div style="font-size:12px;color:var(--muted);text-align:center">Carregando...</div></div>
         <button onclick="document.getElementById('modal-conta').remove();abrirCartilhaMobile()" style="width:100%;padding:11px;background:var(--blue);color:#fff;border:none;border-radius:8px;font-weight:700;font-size:13px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px">📖 Manual do colaborador</button>
+      </div>
+
+      <!-- 2a. NOTIFICAÇÕES NESTE APARELHO -->
+      <div style="padding:16px 20px;border-bottom:1px solid var(--border)">
+        <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px">Notificações</div>
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px">
+          <div>
+            <div style="font-size:13px;font-weight:700;color:var(--blue)">Receber avisos neste aparelho</div>
+            <div id="push-status-txt" style="font-size:11px;color:var(--muted);margin-top:2px">…</div>
+          </div>
+          <div id="push-switch" onclick="alternarPush()" style="width:52px;height:30px;border-radius:15px;background:#CBD5E1;position:relative;cursor:pointer;flex-shrink:0;transition:background .2s">
+            <div id="push-switch-knob" style="width:24px;height:24px;border-radius:50%;background:#fff;position:absolute;top:3px;left:3px;transition:left .2s;box-shadow:0 1px 3px rgba(0,0,0,.3)"></div>
+          </div>
+        </div>
+        <div id="notif-prefs-mob"></div>
       </div>
 
       <!-- 2b. BIOMETRIA (só aparece em aparelho com suporte) -->
@@ -2371,6 +2392,9 @@ function abrirPainelConta() {
 
     </div>`;
   document.body.appendChild(modal);
+  carregarAvisosMobile();
+  atualizarSwitchPush();
+  carregarPrefsNotif();
   carregarMuralMobile();
   marcarMuralLido();
   bioSuportada().then(ok => {
@@ -2380,19 +2404,143 @@ function abrirPainelConta() {
 }
 
 // (09/07/2026) Badge de avisos não lidos — Fase 1 das notificações
+var _muralNaoLidos = 0, _notifPendentes = 0;
+function _pintarBadgeAvatar() {
+  var b = document.getElementById('mural-badge'); if (!b) return;
+  var n = _muralNaoLidos + _notifPendentes;
+  b.textContent = n > 9 ? '9+' : n;
+  b.style.display = n > 0 ? 'block' : 'none';
+  // (24/10/2026) número no ícone do app na tela inicial (Android/iOS instalado)
+  try { if ('setAppBadge' in navigator) { _notifPendentes > 0 ? navigator.setAppBadge(_notifPendentes) : navigator.clearAppBadge(); } } catch(e) {}
+}
 function atualizarBadgeMural() {
   var token = localStorage.getItem('garra_token') || ''; if (!token) return;
   fetch('/api/mural/nao-lidos', {headers:{'Authorization':'Bearer '+token}})
     .then(function(r){ return r.ok ? r.json() : null; })
-    .then(function(d){
-      var b = document.getElementById('mural-badge');
-      if (!b || !d) return;
-      var n = d.nao_lidos || 0;
-      b.textContent = n > 9 ? '9+' : n;
-      b.style.display = n > 0 ? 'block' : 'none';
-    }).catch(function(){});
+    .then(function(d){ if (d) { _muralNaoLidos = d.nao_lidos || 0; _pintarBadgeAvatar(); } }).catch(function(){});
+  fetch('/api/notificacoes?limite=1', {headers:{'Authorization':'Bearer '+token}})
+    .then(function(r){ return r.ok ? r.json() : null; })
+    .then(function(d){ if (d) { _notifPendentes = d.pendentes || 0; _pintarBadgeAvatar(); } }).catch(function(){});
 }
-setInterval(atualizarBadgeMural, 300000); // revalida a cada 5 min
+setInterval(atualizarBadgeMural, 120000); // revalida a cada 2 min
+document.addEventListener('visibilitychange', function(){ if (!document.hidden) atualizarBadgeMural(); });
+
+// ══════════════════════════════════════════════════════════════════════════
+// (24/10/2026) NOTIFICAÇÕES — lista em Minha conta, push neste aparelho, preferências
+// ══════════════════════════════════════════════════════════════════════════
+function _notifToast(msg, tipo) {
+  var t = document.getElementById('notif-toast');
+  if (!t) { t = document.createElement('div'); t.id = 'notif-toast'; t.style.cssText = 'position:fixed;left:12px;right:12px;bottom:90px;padding:12px 14px;border-radius:10px;font-weight:700;font-size:13px;color:#fff;z-index:500;text-align:center;display:none'; document.body.appendChild(t); }
+  t.textContent = msg; t.style.background = tipo === 'warn' ? '#B45309' : '#15803D'; t.style.display = 'block';
+  clearTimeout(t._h); t._h = setTimeout(function(){ t.style.display = 'none'; }, 3500);
+}
+function _notifApi(path, opts) {
+  var token = localStorage.getItem('garra_token') || '';
+  opts = opts || {}; opts.headers = Object.assign({'Content-Type':'application/json','Authorization':'Bearer '+token}, opts.headers || {});
+  return fetch(path, opts).then(function(r){ return r.json().then(function(j){ if (!r.ok) throw new Error(j.detail || ('Erro '+r.status)); return j; }); });
+}
+function _notifIcone(t){ return ({pedido_novo:'📨',pedido_urgente:'🔴',ot_urgente:'🔴',ot_concluida:'✔',abast_divergente:'⛽',preventiva:'🟡',peca_chegou:'📦',oc_aprovar:'🛒',ot_atribuida:'🔧',nota_lancar:'🧾',teste:'🔔'})[t] || '🔔'; }
+function _notifTit(t){ return String(t||'').replace(/^[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{2B50}\u{2705}\u{274C}\u{FE0F}]+\s*/u, ''); }
+function _notifQuando(iso){ if (!iso) return ''; var d = new Date(iso), dif = (Date.now() - d.getTime())/60000; if (dif < 1) return 'agora'; if (dif < 60) return Math.round(dif)+' min'; if (dif < 1440) return Math.round(dif/60)+' h'; return d.toLocaleDateString('pt-BR'); }
+function carregarAvisosMobile() {
+  var el = document.getElementById('notif-lista-mob'); if (!el) return;
+  _notifApi('/api/notificacoes?limite=30').then(function(d){
+    _notifPendentes = d.pendentes || 0; _pintarBadgeAvatar();
+    var its = d.itens || [];
+    if (!its.length) { el.innerHTML = '<div style="font-size:12px;color:var(--muted);text-align:center">Nenhum aviso para você.</div>'; return; }
+    el.innerHTML = its.map(function(a){
+      return '<div onclick="abrirAviso(\''+a.id+'\',\''+(a.link||'').replace(/\'/g,'')+'\')" style="display:flex;gap:10px;align-items:flex-start;background:'+(a.lida?'#fff':'#FFF7ED')+';border-left:3px solid '+(a.lida?'#CBD5E1':'var(--orange)')+';border-radius:0 6px 6px 0;padding:10px 12px;margin-bottom:8px;cursor:pointer">'
+        + '<span style="font-size:18px;line-height:1">'+_notifIcone(a.tipo)+'</span><div style="flex:1;min-width:0">'
+        + '<div style="font-size:12px;font-weight:'+(a.lida?'600':'800')+';color:var(--blue)">'+_notifTit(a.titulo)+'</div>'
+        + (a.texto ? '<div style="font-size:12px;color:var(--text);margin-top:2px">'+a.texto+'</div>' : '')
+        + '<div style="font-size:10px;color:var(--muted);margin-top:3px">'+_notifQuando(a.criado_em)+'</div></div></div>';
+    }).join('') + (d.pendentes ? '<button onclick="marcarAvisosLidos()" style="width:100%;padding:8px;background:none;border:1px solid var(--border);border-radius:8px;font-size:12px;color:var(--muted);cursor:pointer">Marcar todos como lidos</button>' : '');
+  }).catch(function(){ el.innerHTML = '<div style="font-size:12px;color:var(--muted);text-align:center">Avisos indisponíveis agora.</div>'; });
+}
+function marcarAvisosLidos() { _notifApi('/api/notificacoes/lidas', {method:'POST', body:'{}'}).then(function(){ carregarAvisosMobile(); }).catch(function(){}); }
+function abrirAviso(id, link) {
+  _notifApi('/api/notificacoes/lidas', {method:'POST', body: JSON.stringify({ids:[id]})}).then(function(d){ _notifPendentes = d.pendentes || 0; _pintarBadgeAvatar(); }).catch(function(){});
+  var m = document.getElementById('modal-conta'); if (m) m.remove();
+  if (link) abrirLinkApp(link);
+}
+// Abre um link de aviso dentro do shell: /manutencao/mobile?… → aba Manutenção; /compras?… → aba Compras; /manutencao/pedido?… → Pedir OT
+function abrirLinkApp(link) {
+  try {
+    var u = new URL(link, location.origin), q = u.search ? u.search.slice(1) : '';
+    if (u.pathname.indexOf('/manutencao/mobile') === 0) { ir('MG'); _iframeExtra('mg', '/manutencao/mobile', q); }
+    else if (u.pathname.indexOf('/compras') === 0) { ir('OC'); _iframeExtra('oc', '/compras', q); }
+    else if (u.pathname.indexOf('/manutencao/pedido') === 0) { ir('OT'); _iframeExtra('ot', '/manutencao/pedido', q); }
+    else if (u.pathname.indexOf('/abastecimento') === 0) { ir('AB'); }
+    else if (u.pathname.indexOf('/manutencao') === 0 || u.pathname.indexOf('/admin') === 0) { window.open(link, '_blank'); }
+  } catch(e) {}
+}
+function _iframeExtra(chave, path, q) {
+  var sec = document.getElementById('sec-ext'), iframe = sec && sec.querySelector('iframe'); if (!iframe) return;
+  var token = localStorage.getItem('garra_token') || '';
+  iframe.src = path + '?sso=' + encodeURIComponent(token) + '&origem=mobile&embedded=1' + (q ? '&' + q : '');
+  iframe.dataset.chave = chave;
+}
+// clique na notificação do sistema (service worker) → abre a tela certa
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.addEventListener('message', function(e){ if (e.data && e.data.type === 'GARRA_ABRIR' && e.data.link) abrirLinkApp(e.data.link); });
+}
+// app aberto a partir de uma notificação com a janela fechada: /mobile?abrir=<link>
+function _abrirPendenteDaNotificacao() {
+  try { var l = new URLSearchParams(location.search).get('abrir'); if (l) { history.replaceState(null, '', location.pathname); setTimeout(function(){ abrirLinkApp(l); }, 600); } } catch(e) {}
+}
+
+// ── push neste aparelho ──
+function _b64ToU8(b64){ var p = '='.repeat((4 - b64.length % 4) % 4); var s = (b64 + p).replace(/-/g,'+').replace(/_/g,'/'); var raw = atob(s); return Uint8Array.from([].map.call(raw, function(c){ return c.charCodeAt(0); })); }
+function pushSuportado(){ return 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window; }
+async function pushAssinar(silencioso) {
+  if (!pushSuportado()) { if (!silencioso) _notifToast('Este navegador não suporta notificações. No iPhone, adicione o app à tela de início.', 'warn'); return false; }
+  try {
+    var perm = Notification.permission;
+    if (perm !== 'granted') { if (silencioso) return false; perm = await Notification.requestPermission(); }
+    if (perm !== 'granted') { if (!silencioso) _notifToast('Permissão de notificação negada neste aparelho', 'warn'); return false; }
+    var v = await _notifApi('/api/notificacoes/vapid'); if (!v.publica) { if (!silencioso) _notifToast('Push não disponível no servidor', 'warn'); return false; }
+    var reg = await navigator.serviceWorker.ready;
+    var sub = await reg.pushManager.getSubscription();
+    if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: _b64ToU8(v.publica) });
+    var j = sub.toJSON();
+    await _notifApi('/api/notificacoes/assinar', { method:'POST', body: JSON.stringify({ endpoint: j.endpoint, keys: j.keys, aparelho: navigator.userAgent.slice(0, 180) }) });
+    localStorage.setItem('garra_push_on', '1');
+    return true;
+  } catch(e) { if (!silencioso) _notifToast('Não foi possível ativar: ' + e.message, 'warn'); return false; }
+}
+async function pushCancelar() {
+  try { var reg = await navigator.serviceWorker.ready; var sub = await reg.pushManager.getSubscription();
+    if (sub) { await _notifApi('/api/notificacoes/assinar', { method:'DELETE', body: JSON.stringify({ endpoint: sub.endpoint }) }); await sub.unsubscribe(); } } catch(e) {}
+  localStorage.removeItem('garra_push_on');
+}
+async function pushEstado() {
+  if (!pushSuportado()) return 'nao_suportado';
+  if (Notification.permission === 'denied') return 'negado';
+  try { var reg = await navigator.serviceWorker.ready; var sub = await reg.pushManager.getSubscription(); return sub ? 'ativo' : 'inativo'; } catch(e) { return 'inativo'; }
+}
+async function alternarPush() {
+  var est = await pushEstado();
+  if (est === 'ativo') await pushCancelar(); else await pushAssinar(false);
+  atualizarSwitchPush();
+}
+async function atualizarSwitchPush() {
+  var sw = document.getElementById('push-switch'), knob = document.getElementById('push-switch-knob'), txt = document.getElementById('push-status-txt'); if (!sw) return;
+  var est = await pushEstado(), on = est === 'ativo';
+  sw.style.background = on ? 'var(--green,#16A34A)' : '#CBD5E1'; knob.style.left = on ? '25px' : '3px';
+  txt.textContent = { ativo: 'Ativado neste aparelho', inativo: 'Desativado neste aparelho', negado: 'Bloqueado nas configurações do navegador', nao_suportado: 'Não suportado aqui — no iPhone, adicione o app à tela de início' }[est];
+}
+async function carregarPrefsNotif() {
+  var el = document.getElementById('notif-prefs-mob'); if (!el) return;
+  try {
+    var prefs = await _notifApi('/api/notificacoes/prefs');
+    if (!prefs.length) { el.innerHTML = ''; return; }
+    el.innerHTML = '<div style="font-size:11px;color:var(--muted);margin:10px 0 6px">O que avisar:</div>' + prefs.map(function(p){
+      return '<label style="display:flex;align-items:center;gap:10px;padding:7px 0;border-top:1px solid var(--border);font-size:13px;color:var(--blue);cursor:pointer"><input type="checkbox" '+(p.ativo?'checked':'')+' onchange="salvarPrefNotif(\''+p.tipo+'\',this.checked)" style="width:18px;height:18px"> '+_notifIcone(p.tipo)+' '+p.nome+'</label>';
+    }).join('') + '<button onclick="enviarTesteNotif()" style="margin-top:10px;width:100%;padding:9px;background:none;border:1px solid var(--border);border-radius:8px;font-size:12px;color:var(--blue);font-weight:700;cursor:pointer">🔔 Enviar um aviso de teste</button>';
+  } catch(e) { el.innerHTML = ''; }
+}
+function salvarPrefNotif(tipo, on) { var b = {}; b[tipo] = on; _notifApi('/api/notificacoes/prefs', { method:'PUT', body: JSON.stringify(b) }).catch(function(){ _notifToast('Não foi possível salvar', 'warn'); }); }
+function enviarTesteNotif() { _notifApi('/api/notificacoes/teste', { method:'POST', body:'{}' }).then(function(){ _notifToast('Aviso de teste enviado'); setTimeout(carregarAvisosMobile, 800); }).catch(function(e){ _notifToast(e.message, 'warn'); }); }
 
 function marcarMuralLido() {
   var token = localStorage.getItem('garra_token') || ''; if (!token) return;
@@ -2969,6 +3117,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     aplicarPermissoesPerfil();
     abrirAbaInicial();
     carregarOSApp();
+    if (localStorage.getItem('garra_push_on') === '1') pushAssinar(true);   // (24/10/2026) renova a assinatura de push
+    _abrirPendenteDaNotificacao();
     // Pré-carregar listas em background para uso offline
     if (typeof preCarregarListasOffline === 'function') {
       preCarregarListasOffline();

@@ -13,7 +13,7 @@
  * 4. Imagens/ícones: cache-first com limite de tamanho
  */
 
-const CACHE_NAME = 'garra-operacional-v22';
+const CACHE_NAME = 'garra-operacional-v23';
 const ASSETS_CACHE = 'garra-assets-v72';
 const OFFLINE_PAGE = '/operacional/offline.html';
 
@@ -330,4 +330,40 @@ self.addEventListener('message', (e) => {
       e.ports[0].postMessage({ cleared: true });
     });
   }
+});
+
+// ============================================================
+// (24/10/2026) NOTIFICAÇÕES — Web Push + badge no ícone do app
+// payload: {titulo, texto, link, tipo, pendentes}
+// ============================================================
+
+self.addEventListener('push', (e) => {
+  let d = {};
+  try { d = e.data ? e.data.json() : {}; } catch (err) { d = { titulo: 'Garra Sistemas', texto: e.data ? e.data.text() : '' }; }
+  const titulo = d.titulo || 'Garra Sistemas';
+  const opts = {
+    body: d.texto || '',
+    icon: '/static/icons/icon-192.png',
+    badge: '/static/icons/icon-192.png',
+    tag: d.tipo ? ('garra-' + d.tipo + '-' + Date.now()) : undefined,
+    data: { link: d.link || '/mobile' },
+    vibrate: [120, 60, 120]
+  };
+  e.waitUntil(Promise.all([
+    self.registration.showNotification(titulo, opts),
+    (async () => { try { if (self.registration.setAppBadge !== undefined || 'setAppBadge' in self.navigator) { const n = Number(d.pendentes || 0); n > 0 ? await self.navigator.setAppBadge(n) : await self.navigator.clearAppBadge(); } } catch (err) {} })()
+  ]));
+});
+
+self.addEventListener('notificationclick', (e) => {
+  e.notification.close();
+  const link = (e.notification.data && e.notification.data.link) || '/mobile';
+  // o app abre o link dentro do shell (aba certa + tela certa)
+  const alvo = '/mobile?abrir=' + encodeURIComponent(link);
+  e.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(lista => {
+    for (const c of lista) {
+      if (c.url.includes('/mobile') && 'focus' in c) { c.postMessage({ type: 'GARRA_ABRIR', link }); return c.focus(); }
+    }
+    return self.clients.openWindow(alvo);
+  }));
 });
