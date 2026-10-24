@@ -4,6 +4,7 @@
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
 <meta name="theme-color" content="#1A2A5E"/>
+<script src="/operacional/static/js/sino.js"></script>
 <title>Garra — Admin Master</title>
 <link rel="icon" href="https://garra-sistemas.onrender.com/static/icons/favicon.ico"/>
 <style>
@@ -1424,6 +1425,7 @@ async function iniciarApp(user) {
   // Header
   const nome = user.nome || user.login;
   document.getElementById('hd-username').textContent = nome;
+  try { if (!document.querySelector('.gs-sino')) GarraSino.init({ token: Token.get, alvo: document.querySelector('.hd-user'), antes: true }); } catch(e) {}   // (24/10/2026) sino de avisos
   document.getElementById('hd-avatar').textContent = nome.charAt(0).toUpperCase();
   // Badge por perfil
   const badge = document.getElementById('hd-badge');
@@ -1834,7 +1836,7 @@ async function reativarUsuario(login, nome) {
    PERMISSÕES — Híbrido completo: perfil + exceções
 ══════════════════════════════════════════════ */
 const MODULOS = [
-  { id:'admin_master',        label:'Admin Master',        desc:'Painel de gestão' },
+  { id:'admin_master',        label:'Painel de Gestão',    desc:'Admin: Ordens de Serviço, Controle Mensal, Agenda e Cadastros (não é o perfil Master)' },
   { id:'jardinagem_desktop',  label:'Jardinagem Desktop',  desc:'Relatórios e fotos' },
   { id:'jardinagem_mobile',   label:'Jardinagem Mobile',   desc:'Campo — fotos e KM' },
   { id:'operacional_mobile',  label:'Operacional Mobile',  desc:'OS e horímetro' },
