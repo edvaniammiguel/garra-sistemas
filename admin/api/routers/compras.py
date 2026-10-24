@@ -27,6 +27,7 @@ router = APIRouter()
 
 # (21/10/2026) sem lista de perfis "livres": só a tela de Permissões decide (admin = Master)
 from core.permissions import tem_modulo as _tem_modulo_core
+from core.notificacoes import notificar as _notificar   # (24/10/2026) aviso de OC para aprovar
 
 _TRANSICOES = {
     "rascunho":         {"solicitada", "cancelada"},
@@ -644,6 +645,15 @@ async def solicitar_aprovacao(oc_id: str, payload=Depends(verificar_compras)):
         # Teto mensal esgotado → segue pra fila de quem pode (sem erro)
         await _trilha(oc_id, "solicitada", "solicitada",
                       "Teto mensal do solicitante atingido — encaminhada para aprovação", uid)
+    info = await ajard_query(
+        """SELECT oc.numero, oc.valor_total, COALESCE(fo.nome, oc.fornecedor_avulso) AS fornecedor, us.nome AS solicitante, ot.numero AS ot_numero
+           FROM compras.ordens_compra oc LEFT JOIN public.fornecedores fo ON fo.id=oc.fornecedor_id
+           LEFT JOIN public.usuarios_garra us ON us.id=oc.solicitante_id LEFT JOIN manutencao.ot ot ON ot.id=oc.ot_id WHERE oc.id=%s""", (oc_id,), fetch="one")
+    if info:
+        await _notificar("oc_aprovar", f"🛒 {info['numero']} aguarda aprovação",
+                         f"R$ {float(info['valor_total'] or 0):,.2f} · {info['fornecedor'] or ''}".replace(",", "X").replace(".", ",").replace("X", ".")
+                         + (f" · {info['ot_numero']}" if info.get("ot_numero") else "") + (f" · pedido de {info['solicitante']}" if info.get("solicitante") else ""),
+                         f"/compras?oc={oc_id}", excluir=[uid])
     return {"ok": True, "status": "solicitada", "auto_aprovada": False}
 
 

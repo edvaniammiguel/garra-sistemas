@@ -53,6 +53,7 @@ router = APIRouter()
 
 # (21/10/2026) Sem perfis "livres": só a tela de Permissões decide (admin = Master).
 from core.permissions import tem_modulo as _tem_modulo
+from core.notificacoes import notificar as _notificar   # (24/10/2026) aviso de leitura divergente
 
 async def verificar_abastecimento(payload=Depends(verificar_token)):
     """Gate do módulo 'abastecimento' (perfil padrão + exceções individuais)."""
@@ -1169,6 +1170,10 @@ async def _gravar_item(nota_id, eq, litros, it, comb, rubrica, preco_litro, data
             f"""UPDATE operacional.equipamentos SET {campo}=%s, atualizado_em=now()
                 WHERE id=%s AND COALESCE({campo},0) < %s""", (leitura, eq["id"], leitura), fetch="none")
 
+    if div_leitura:
+        await _notificar("abast_divergente", f"⛽ {eq['codigo']} · leitura divergente",
+                         f"{(payload.get('nome') or payload.get('login') or '')} lançou {leitura if leitura is not None else '—'} (última conhecida {ultima if ultima is not None else '—'})",
+                         "/manutencao/mobile?aba=ab", excluir=[_uid(payload)])
     return {"id": str(r[0]["id"]), "equipamento": eq["codigo"], "galao": False, "litros": litros,
             "leitura": leitura, "leitura_fonte": fonte, "medicao": eq.get("medicao"),
             "ultima_conhecida": ultima, "divergencia_leitura": div_leitura, "divergencia_placa": div_placa,

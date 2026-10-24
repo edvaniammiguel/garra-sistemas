@@ -21,6 +21,7 @@ router = APIRouter()
 
 # (21/10/2026) Sem lista de perfis "livres": a tela de Permissões é a única fonte (admin = Master).
 from core.permissions import tem_modulo as _tem_modulo
+from core.notificacoes import notificar as _notificar   # (24/10/2026) avisos app/desktop/push
 
 
 async def verificar_manutencao(payload=Depends(verificar_token)):
@@ -351,7 +352,35 @@ async def _inserir_pedido(d: dict, descricao: str, uid):
          d.get("equipamento_id"), d.get("solicitante_id"),
          (d.get("cliente_nome") or "").strip() or None, (d.get("contato") or "").strip() or None,
          (d.get("origem") or "manual"), d.get("nc_ref"), uid))
+    await _avisar_pedido(row, numero, descricao, d)
     return row, numero
+
+
+async def _avisar_pedido(row, numero, descricao, d):
+    """(24/10/2026) Pedido novo → aviso: urgente vai para quem triagem urgências (gestão + manutenção);
+    os demais só para quem acompanha todos os pedidos (Bruna). Quem pediu não recebe o próprio aviso."""
+    eq = None
+    if d.get("equipamento_id"):
+        eq = await ajard_query("SELECT codigo FROM operacional.equipamentos WHERE id=%s", (d["equipamento_id"],), fetch="one")
+    cod = (eq or {}).get("codigo") or "sem equipamento"
+    urg = (d.get("grau_urgencia") or "normal").lower() == "urgente"
+    link = f"/manutencao/mobile?pedido={row['id']}"
+    texto = f"{cod} · {descricao[:120]}"
+    excluir = [d.get("solicitante_id")] if d.get("solicitante_id") else None
+    ja = []
+    if urg:
+        dest = await _notificar_dest("pedido_urgente")
+        ja = [u["id"] for u in dest]
+        await _notificar("pedido_urgente", f"🔴 Pedido URGENTE {numero}", texto, link, excluir=excluir)
+    await _notificar("pedido_novo", f"Pedido {numero}" + (" (urgente)" if urg else ""), texto, link, excluir=(excluir or []) + ja)
+
+
+async def _notificar_dest(tipo):
+    from core.notificacoes import destinatarios
+    try:
+        return await destinatarios(tipo)
+    except Exception:
+        return []
 
 
 @router.post("/manutencao/api/pedidos")
@@ -620,6 +649,9 @@ async def _inserir_ot(d, eq, uid, numero, ano, seq):
         await ajard_query(
             "UPDATE manutencao.ot SET pedido_id=%s WHERE id=%s",
             (d["pedido_id"], row["id"]), fetch="none")
+    if (d.get("prioridade") or "").lower() == "urgente" and status_ini != "rascunho":
+        await _notificar("ot_urgente", f"🔴 OT urgente {numero}", f"{eq.get('codigo') or ''} · {descricao[:120]}",
+                         f"/manutencao/mobile?ot={row['id']}", excluir=[uid])
     return dict(row)
 
 
@@ -863,6 +895,11 @@ async def mudar_status_ot(ot_id: str, request: Request, payload=Depends(verifica
     await ajard_query(
         f"UPDATE manutencao.ot SET status=%s, atualizado_em=now(){extras} WHERE id=%s",
         params, fetch="none")
+    if novo == "em_andamento" and atual in ("aberta", "programada", "rascunho"):
+        oi = await ajard_query("SELECT o.numero, o.descricao, o.responsavel_id, e.codigo FROM manutencao.ot o JOIN operacional.equipamentos e ON e.id=o.equipamento_id WHERE o.id=%s", (ot_id,), fetch="one")
+        if oi and oi.get("responsavel_id") and str(oi["responsavel_id"]) != str(uid):
+            await _notificar("ot_atribuida", f"🔧 {oi['numero']} emitida para você", f"{oi['codigo']} · {(oi['descricao'] or '')[:120]}",
+                             f"/manutencao/pedido?ot={ot_id}", apenas=[oi["responsavel_id"]])
     await ajard_query(
         """INSERT INTO manutencao.ot_historico (ot_id, status_de, status_para, observacao, usuario_id)
            VALUES (%s,%s,%s,%s,%s)""",
@@ -3384,6 +3421,11 @@ async def recebimento_conferir(rid: str, request: Request, payload=Depends(verif
         oa = await ajard_query("SELECT id, numero, status FROM manutencao.ot WHERE id=%s", (r["ot_id"],), fetch="one")
         if oa and oa["status"] == "aguardando_peca":
             ot_ag = {"id": str(oa["id"]), "numero": oa["numero"]}
+            resp = await ajard_query("SELECT responsavel_id FROM manutencao.ot WHERE id=%s", (oa["id"],), fetch="one")
+            tit, txt, lnk = f"📦 Peça da {oa['numero']} chegou", f"{r['codigo']} conferida ({qtd:g}) — OT em espera pode retomar", f"/manutencao/mobile?ot={oa['id']}"
+            await _notificar("peca_chegou", tit, txt, lnk, excluir=[uid])
+            if resp and resp.get("responsavel_id"):
+                await _notificar("peca_chegou", tit, txt, f"/manutencao/pedido?ot={oa['id']}", apenas=[resp["responsavel_id"]], excluir=[uid])
     return {"ok": True, "entrada": res, "diferenca": round(qtd - float(r["quantidade"]), 3), "ot_aguardando": ot_ag}
 
 
@@ -4154,6 +4196,14 @@ async def _calcular_previsoes():
             item["status"] = "programada"
         itens.append(item)
 
+    for it in itens:
+        if it["status"] in ("vencida", "a_vencer"):
+            alvo = it.get("leitura_alvo") if it.get("leitura_alvo") is not None else it.get("proxima_data")
+            txt = (f"faltam {it['restante']:g} {it['unidade']}" if it["status"] == "a_vencer" else f"passou {abs(it['restante'] or 0):g} {it['unidade']}") if it["modo"] == "leitura" else \
+                  (f"vence em {it['restante']} d" if it["status"] == "a_vencer" else f"venceu há {abs(it['restante'] or 0)} d")
+            await _notificar("preventiva", f"{'🟡' if it['status'] == 'a_vencer' else '🔴'} {it['eq_codigo']} · {it['plano_codigo']} {it['status'].replace('_', ' ')}",
+                             f"{it['plano_descricao'] or ''} · {txt}", f"/manutencao/mobile?eq={it['equipamento_id']}",
+                             chave=f"prev:{it['plano_id']}:{alvo}:{it['status']}")
     peso = {"vencida": 0, "a_vencer": 1, "programada": 2, "ok": 3, "sem_base": 4, "sem_periodo": 5}
     itens.sort(key=lambda x: (peso.get(x["status"], 9), x["proxima_data"] or "9999", x["eq_codigo"]))
     return {"gerado_em": hoje.isoformat(), "total": len(itens),
@@ -5606,6 +5656,10 @@ async def ot_apontamento(ot_id: str, request: Request, payload=Depends(verificar
         """INSERT INTO manutencao.ot_apontamentos (ot_id, usuario_id, relato, horas, horimetro, concluido, mao_obra_id, historico_id)
            VALUES (%s,%s,%s,%s,%s,%s,%s,%s)""",
         (ot_id, uid, relato, horas, hor, concluido, mo_id, h["id"] if h else None))
+    if concluido:
+        eqc = await ajard_query("SELECT e.codigo FROM manutencao.ot o JOIN operacional.equipamentos e ON e.id=o.equipamento_id WHERE o.id=%s", (ot_id,), fetch="one")
+        await _notificar("ot_concluida", f"✔ {o['numero']} concluída pelo mecânico", f"{(eqc or {}).get('codigo') or ''} · {relato[:120]}",
+                         f"/manutencao/mobile?ot={ot_id}", excluir=[uid])
     return {"ok": True, "numero": o["numero"], "id": str(ap["id"]) if ap else None}
 
 
@@ -5818,6 +5872,9 @@ async def ot_fotos_execucao(ot_id: str, fotos: list[UploadFile] = File(...), tip
                VALUES (%s,%s,%s,%s,%s)""",
             (ot_id, o["status"], o["status"], f"📎 {len(salvas)} foto(s) — {rotulo} (mobile)" + (f": {descricao.strip()}" if descricao and descricao.strip() else ""), uid),
             fetch="none")
+    if salvas and cat == _FOTO_CATEGORIAS["nota"][0]:
+        await _notificar("nota_lancar", f"🧾 Nota da {o['numero']}", f"{len(salvas)} foto(s) de nota" + (f": {descricao.strip()[:100]}" if descricao and descricao.strip() else ""),
+                         f"/manutencao?notas=1", excluir=[uid])
     return {"ok": True, "numero": o["numero"], "salvas": len(salvas), "fotos": salvas}
 
 
