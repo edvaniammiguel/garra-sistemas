@@ -126,12 +126,15 @@
 
 <script>
 const API = '';
+// (24/10/2026) link vindo de um aviso: ?pedido=ID · ?ot=ID · ?eq=ID · ?aba=ab|ots|eq|ped (lido antes de limpar a URL)
+const ABRIR = (function(){ try { const q = new URLSearchParams(location.search); return { pedido: q.get('pedido'), ot: q.get('ot'), eq: q.get('eq'), aba: q.get('aba') }; } catch(e) { return {}; } })();
 (function(){
   try {
     const sso = new URLSearchParams(location.search).get('sso');
     if (sso && sso.length > 10) { localStorage.setItem('garra_tok_gestao', sso); history.replaceState(null, '', location.pathname + (location.search.includes('embedded=1') ? '?embedded=1' : '')); }
   } catch(e) {}
 })();
+
 let TOK = localStorage.getItem('garra_tok_gestao') || localStorage.getItem('garra_token') || '';
 
 function toast(msg, tipo){ const t = document.getElementById('toast'); t.textContent = msg; t.className = 'toast ' + (tipo || 'ok'); t.style.display = 'block'; setTimeout(() => t.style.display = 'none', 3500); }
@@ -165,11 +168,11 @@ async function entrar(){
 
 // ── abas ──
 let ABA = 'ped';
-function aba(a){
+async function aba(a){
   ABA = a;
   ['ped','ots','eq','ab'].forEach(k => { document.getElementById('aba-' + k).classList.toggle('on', k === a); document.getElementById('tela-' + k).classList.toggle('on', k === a); });
   try { localStorage.setItem('garra_gestao_aba', a); } catch(e) {}
-  if (a === 'ped') pedCarregar(); if (a === 'ots') otCarregar(); if (a === 'eq') eqCarregar(); if (a === 'ab') abCarregar();
+  if (a === 'ped') return pedCarregar(); if (a === 'ots') return otCarregar(); if (a === 'eq') return eqCarregar(); if (a === 'ab') return abCarregar();
 }
 function sheet(html){ document.getElementById('sheet').innerHTML = html; document.getElementById('sheet-bg').classList.add('on'); document.getElementById('sheet').scrollTop = 0; }
 function sheetFechar(){ document.getElementById('sheet-bg').classList.remove('on'); }
@@ -448,7 +451,12 @@ async function abConferir(ids, k, status){
 async function iniciar(){
   await dominios();
   let a = 'ped'; try { a = localStorage.getItem('garra_gestao_aba') || 'ped'; } catch(e) {}
-  aba(a);
+  if (ABRIR.aba && ['ped','ots','eq','ab'].includes(ABRIR.aba)) a = ABRIR.aba;
+  if (ABRIR.pedido) a = 'ped'; else if (ABRIR.ot) a = 'ots'; else if (ABRIR.eq) a = 'eq';
+  await aba(a);
+  if (ABRIR.ot) otAbrir(ABRIR.ot);
+  else if (ABRIR.eq) eqAbrir(ABRIR.eq);
+  else if (ABRIR.pedido) { try { if (!PEDIDOS.find(x => x.id === ABRIR.pedido)) { const [c, r] = await Promise.all([api('/manutencao/api/pedidos?status=convertido'), api('/manutencao/api/pedidos?status=recusado')]); PEDIDOS = PEDIDOS.concat(c, r); } } catch(e) {} pedAbrir(ABRIR.pedido); }
   // contadores das outras abas
   api('/manutencao/api/pedidos?status=aberto').then(l => document.getElementById('n-ped').textContent = l.length || '').catch(() => {});
   api('/manutencao/api/ots').then(l => { OTS = l; document.getElementById('n-ots').textContent = l.filter(o => ['aberta', 'em_andamento', 'aguardando_peca'].includes(o.status)).length || ''; }).catch(() => {});

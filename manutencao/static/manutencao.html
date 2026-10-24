@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Garra Sistemas — Manutenção</title>
+<script src="/operacional/static/js/sino.js"></script>
 <style>
 /* ══ MANUTENÇÃO v2.0 (24/08/2026) — produção limpa ══
    Só telas ligadas ao backend real. Identidade Garra (navy/laranja). */
@@ -455,6 +456,11 @@ function mostrarToast(msg, tipo){
     const p = JSON.parse(atob(mntToken().split('.')[1].replace(/-/g,'+').replace(/_/g,'/')));
     document.getElementById('tb-user').innerHTML = '<b>'+_esc(p.nome || p.sub || '')+'</b> — Manutenção';
   } catch(e) {}
+  // (24/10/2026) sino de avisos: OT do aviso abre aqui mesmo; o resto abre em nova aba
+  try { GarraSino.init({ token: mntToken, alvo: document.getElementById('tb-user'), antes: true, abrir: function(link){
+    try { const u = new URL(link, location.origin); const ot = u.searchParams.get('ot');
+      if (ot && typeof verOTReal === 'function') { verOTReal(ot); return true; } } catch(e) {}
+    return false; } }); } catch(e) {}
 })();
 // (10/10/2026) REGRA ÚNICA de data no módulo: 'AAAA-MM-DD' (só data, ex.: data prevista) é lida como
 // data LOCAL — new Date('2026-10-10') é meia-noite UTC e, no Brasil (UTC-3), virava 09/10. Timestamps
