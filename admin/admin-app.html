@@ -2600,15 +2600,10 @@ function renderSidebar(perfil, perms) {
         <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>
         Compras (OC)
       </div>` : '') +
-      ((temPerm('abastecimento_notas') || temPerm('manutencao')) ? `
-      <div class="sb-item" onclick="abrirModuloUrl('/abastecimento/notas', true)">
-        <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1Z"/><path d="M14 8H8"/><path d="M16 12H8"/><path d="M13 16H8"/></svg>
-        Notas de Abastecimento
-      </div>` : '') +
-      ((temPerm('manutencao_notas') || temPerm('manutencao')) ? `
+      ((temPerm('abastecimento_notas') || temPerm('manutencao_notas') || temPerm('manutencao')) ? `
       <div class="sb-item" onclick="abrirModuloUrl('/manutencao/notas', true)">
-        <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h8M8 17h5"/></svg>
-        Notas a lançar (OTs + abastec.)
+        <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1Z"/><path d="M14 8H8"/><path d="M16 12H8"/><path d="M13 16H8"/></svg>
+        Notas a lançar
       </div>` : '') + `
     </div><div class="sb-divider"></div>`;
 
@@ -2750,10 +2745,11 @@ const MODULOS_DASHBOARD = [
     externo: true,
   },
   {
-    id: 'abastecimento_notas',
-    icon: '🧾', nome: 'Notas de Abastecimento', desc: 'Conferência financeira · foto da notinha · lançado na MAIS · Excel',
-    status: 'dev', badge: 'badge-orange',
-    url: '/abastecimento/notas',
+    // (24/10/2026) balcão único das notinhas (OTs + abastecimento) — substituiu a tela só de abastecimento
+    id: 'abastecimento_notas', ids: ['abastecimento_notas', 'manutencao_notas'],
+    icon: '🧾', nome: 'Notas a lançar', desc: 'OTs + abastecimento · foto da notinha · lançada na MAIS · Excel',
+    status: 'teste', badge: 'badge-orange',
+    url: '/manutencao/notas',
     externo: true,
   },
   {
@@ -2808,8 +2804,8 @@ async function renderModulos(usuarioId, perfil) {
   // (21/10/2026) ordem dos quadrantes: Produção → Em teste → Em desenvolvimento → Planejado (dentro do grupo, ordem do cadastro)
   const ORDEM_STATUS = { producao: 0, teste: 1, dev: 2, planejado: 3 };
   const cards = MODULOS_DASHBOARD.slice().sort((a, b) => (ORDEM_STATUS[a.status] ?? 9) - (ORDEM_STATUS[b.status] ?? 9)).map(m => {
-    // Verificar permissão usando a função temPerm definida acima
-    const hasAccess = temPerm(m.id);
+    // Verificar permissão usando a função temPerm definida acima (ids = qualquer um libera)
+    const hasAccess = (m.ids || [m.id]).some(temPerm);
 
     // Se não tem permissão e não é admin → não mostra
     if (!hasAccess && !isAdmin) return '';
