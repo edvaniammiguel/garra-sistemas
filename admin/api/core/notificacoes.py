@@ -29,7 +29,7 @@ EVENTOS = {
     "peca_chegou":     {"modulo": "manutencao",     "padrao": {"bruna"},                       "nome": "Peça de OT em espera foi recebida"},
     "oc_aprovar":      {"modulo": "compras_aprovar", "padrao": {"admin", "gestor", "luana"},   "nome": "Ordem de compra aguardando aprovação"},
     "ot_atribuida":    {"modulo": "ot_executar",    "padrao": {"bruna", "mecanico", "mecanica"}, "nome": "OT emitida para mim (responsável)"},
-    "nota_lancar":     {"modulo": "manutencao_notas", "padrao": {"luana"},                     "nome": "Nota fiscal nova para lançar"},
+    "nota_lancar":     {"modulo": ("abastecimento_notas", "manutencao_notas"), "padrao": {"luana"}, "nome": "Nota nova para lançar (abastecimento e OT)"},
 }
 
 _OK = False
@@ -141,9 +141,11 @@ async def _tem_modulo_usuario(u, modulo, individuais):
     if perfil == "admin":
         return True
     ind = individuais.get(str(u["id"]), {})
-    if modulo in ind:
-        return bool(ind[modulo])
-    return modulo in set(await perfil_modulos_padrao(perfil))
+    padrao = set(await perfil_modulos_padrao(perfil))
+    for m in (modulo if isinstance(modulo, (tuple, list, set)) else (modulo,)):
+        if (bool(ind[m]) if m in ind else (m in padrao)):
+            return True
+    return False
 
 
 async def prefs_de(usuario_id, perfil):
