@@ -402,6 +402,7 @@ input,select,textarea{font-family:inherit;outline:none;border:none}
     <button class="nav-btn" onclick="ir('Log')" style="display:none"><span class="nav-icon">🚗</span><span class="nav-label">Logística</span></button>
     <button class="nav-btn" onclick="ir('OC')" style="display:none"><span class="nav-icon">🛒</span><span class="nav-label">Compras</span></button>
     <button class="nav-btn" onclick="ir('OT')" style="display:none"><span class="nav-icon">📨</span><span class="nav-label">Pedir OT</span></button>
+    <button class="nav-btn" onclick="ir('MG')" style="display:none"><span class="nav-icon">🔧</span><span class="nav-label">Manutenção</span></button>
     <button class="nav-btn" onclick="ir('AB')" style="display:none"><span class="nav-icon nav-svg"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 22V5a2 2 0 0 1 2-2h7a2 2 0 0 1 2 2v17"/><path d="M2 22h13"/><rect x="6" y="6" width="5" height="4" rx="1"/><path d="M14 11h1.5a2 2 0 0 1 2 2v4.5a1.5 1.5 0 0 0 3 0V9.8a2 2 0 0 0-.6-1.4L18 6.5"/></svg></span><span class="nav-label">Abastecer</span></button>
   </div>
 </div>
@@ -793,11 +794,12 @@ function abrirJardinagemSSO() {
 }
 
 function ir(nome) {
+  try { if (nome !== 'Jard') localStorage.setItem('garra_mobile_aba', nome); } catch(e){}
   document.querySelectorAll('.mod-section').forEach(s => s.classList.remove('active'));
   const bottomNavs = document.querySelectorAll('.bottom-nav .nav-btn');
   bottomNavs.forEach(b => b.classList.remove('active'));
   // aba ativa sempre visível na barra rolável
-  try { const ix = ['Jard','Op','Check','Log','OC','OT','AB'].indexOf(nome);
+  try { const ix = ['Jard','Op','Check','Log','OC','OT','MG','AB'].indexOf(nome);
         if (bottomNavs[ix]) bottomNavs[ix].scrollIntoView({behavior:'smooth', block:'nearest', inline:'center'}); } catch(e){}
 
   // FAB de Nova OS visível só na aba Operacional
@@ -835,9 +837,15 @@ function ir(nome) {
     bottomNavs[5].classList.add('active');
     document.getElementById('app-modulo').textContent = 'Pedir OT';
     carregarIframeExterno('ot', '/manutencao/pedido');
-  } else if (nome === 'AB') {
+  } else if (nome === 'MG') {
+    // (24/10/2026) Gestão da manutenção (triagem de pedidos, OTs, frota, conferência) embutida no shell
     document.getElementById('sec-ext').classList.add('active');
     bottomNavs[6].classList.add('active');
+    document.getElementById('app-modulo').textContent = 'Manutenção';
+    carregarIframeExterno('mg', '/manutencao/mobile');
+  } else if (nome === 'AB') {
+    document.getElementById('sec-ext').classList.add('active');
+    bottomNavs[7].classList.add('active');
     document.getElementById('app-modulo').textContent = 'Abastecimento';
     carregarIframeExterno('ab', '/abastecimento');
   }
@@ -2986,15 +2994,16 @@ function aplicarPermissoesPerfil() {
     { aba: 3, id: 'checklist_logistica' },
     { aba: 4, id: 'compras_solicitar', ids: ['compras_solicitar','compras_aprovar','compras_ver_todas'] },
     { aba: 5, id: 'pedir_ot' },
-    { aba: 6, id: 'abastecimento' },
+    { aba: 6, id: 'manutencao' },
+    { aba: 7, id: 'abastecimento' },
   ];
 
   // Padrão por perfil (usado quando permsDB não define o módulo)
   const padrao = {
-    admin:     ['jardinagem_mobile','operacional_mobile','checklist','checklist_logistica','compras_solicitar','abastecimento'],
-    gestor:    ['jardinagem_mobile','operacional_mobile','checklist','checklist_logistica','compras_solicitar','abastecimento'],
+    admin:     ['jardinagem_mobile','operacional_mobile','checklist','checklist_logistica','compras_solicitar','manutencao','abastecimento'],
+    gestor:    ['jardinagem_mobile','operacional_mobile','checklist','checklist_logistica','compras_solicitar','manutencao','abastecimento'],
     luana:     ['jardinagem_mobile','operacional_mobile','checklist','compras_solicitar'],
-    bruna:     ['operacional_mobile','checklist','compras_solicitar','pedir_ot','abastecimento'],
+    bruna:     ['operacional_mobile','checklist','compras_solicitar','pedir_ot','manutencao','abastecimento'],
     operador:  ['operacional_mobile','checklist','abastecimento'],
     motorista: ['operacional_mobile','checklist','abastecimento'],
     campo:     ['jardinagem_mobile'],
@@ -3024,7 +3033,7 @@ function aplicarPermissoesPerfil() {
 function abrirAbaInicial() {
   if (!USUARIO) return;
   const navs = document.querySelectorAll('.bottom-nav .nav-btn');
-  const abas = ['Jard', 'Op', 'Check', 'Log', 'OC', 'OT', 'AB'];
+  const abas = ['Jard', 'Op', 'Check', 'Log', 'OC', 'OT', 'MG', 'AB'];
 
   // Veio do botão "Módulos" da jardinagem → NÃO reabrir jardinagem (evita loop)
   const veioDaJardinagem = new URLSearchParams(location.search).get('from') === 'jardinagem';
@@ -3064,21 +3073,19 @@ function abrirAbaInicial() {
     }
   }
 
-  // Abre na primeira aba visível, priorizando Op > Jard > Check > Log
-  const prioridade = ['Op', 'Jard', 'Check', 'Log'];
+  // (19/10/2026) Jardinagem é um salto para outro app, não uma aba: só abre sozinha quando é o
+  // ÚNICO módulo (tratado acima). Com mais módulos, abre na última aba usada ou na prioridade
+  // Op > Check > OT > AB > Log > OC — nunca na Jardinagem (operador de teste caía lá direto).
+  const visivel = nome => { const idx = abas.indexOf(nome); return idx >= 0 && navs[idx] && navs[idx].style.display !== 'none'; };
+  let ultima = null; try { ultima = localStorage.getItem('garra_mobile_aba'); } catch(e){}
+  if (ultima && ultima !== 'Jard' && visivel(ultima)) { ir(ultima); return; }
+  const prioridade = ['Op', 'Check', 'OT', 'AB', 'Log', 'OC'];
   for (const nome of prioridade) {
-    const idx = abas.indexOf(nome);
-    if (idx >= 0 && navs[idx] && navs[idx].style.display !== 'none') {
-      ir(nome);
-      return;
-    }
+    if (visivel(nome)) { ir(nome); return; }
   }
-  // Fallback: primeira visível
+  // Fallback: primeira visível que não seja a Jardinagem; se só sobrou ela, mostra a aba sem abrir o app
   for (let i = 0; i < navs.length; i++) {
-    if (navs[i].style.display !== 'none') {
-      ir(abas[i]);
-      return;
-    }
+    if (navs[i].style.display !== 'none' && abas[i] !== 'Jard') { ir(abas[i]); return; }
   }
 }
 
