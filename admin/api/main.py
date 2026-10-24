@@ -836,6 +836,8 @@ from routers.abastecimentos import router as abastecimentos_router  # 29/08 — 
 app.include_router(abastecimentos_router)
 from routers.manutencao_mobile import router as manutencao_mobile_router  # (24/10/2026) Manutenção no celular (gestão)
 app.include_router(manutencao_mobile_router)
+from routers.notificacoes import router as notificacoes_router  # (24/10/2026) avisos: app (badge/push) + sino desktop
+app.include_router(notificacoes_router)
 
 @app.on_event("startup")
 async def criar_tabela_checklist_config():
