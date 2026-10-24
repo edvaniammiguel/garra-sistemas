@@ -880,114 +880,12 @@ async def _resolver(extr):
 
 
 # ── PÁGINA MOBILE ───────────────────────────────────────────────────
-@router.get("/abastecimento/notas", response_class=HTMLResponse)
+@router.get("/abastecimento/notas")
 async def pagina_notas():
-    """(01/09/2026) Balcão financeiro das notinhas — feito para a Luana lançar
-    contas a pagar na MAIS Soluções sem entrar na Manutenção: mês, posto,
-    foto, valores, carimbo 'lançada' e Excel da competência."""
-    return HTMLResponse("""<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Garra — Notas de Abastecimento</title>
-<style>
-:root{--azul:#1A2A5E;--lar:#F97316}
-*{box-sizing:border-box}body{font-family:system-ui,Segoe UI,Roboto,sans-serif;margin:0;background:#F1F5F9;color:#0F172A}
-header{background:var(--azul);color:#fff;padding:10px 16px;display:flex;justify-content:space-between;align-items:center}
-header b{font-size:15px}header .l{color:var(--lar);font-weight:900}
-main{max-width:1200px;margin:14px auto;padding:0 12px}
-.filtros{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;background:#fff;border:1px solid #E2E8F0;border-radius:10px;padding:10px}
-.f{display:flex;flex-direction:column;font-size:11px;color:#475569;font-weight:700;gap:3px}
-input,select,button{font:inherit;padding:6px 8px;border:1px solid #CBD5E1;border-radius:7px;background:#fff}
-button{cursor:pointer}.p{background:var(--azul);color:#fff;border-color:var(--azul);font-weight:700}
-.cards{display:flex;gap:10px;flex-wrap:wrap;margin:12px 0}
-.card{background:#fff;border:1px solid #E2E8F0;border-radius:10px;padding:10px 14px;min-width:200px}
-.card b{color:var(--azul)}.card .v{font-size:17px;font-weight:900;color:var(--azul)}
-.card .pend{color:#B91C1C;font-weight:800;font-size:11px}
-table{width:100%;border-collapse:collapse;background:#fff;border:1px solid #E2E8F0;border-radius:10px;overflow:hidden;font-size:12px}
-th{background:#F8FAFC;text-align:left;padding:7px 8px;font-size:10px;text-transform:uppercase;color:#475569;border-bottom:2px solid #E2E8F0}
-td{padding:6px 8px;border-bottom:1px solid #F1F5F9;vertical-align:middle}
-tr.ok td{background:#F0FDF4}
-.r{text-align:right;font-variant-numeric:tabular-nums}
-.chip{font-size:10px;padding:1px 6px;border-radius:8px;background:#FEF3C7;color:#92400E;font-weight:700}
-a{color:var(--azul);font-weight:700;text-decoration:none}
-.muted{color:#64748B}
-#toast{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:var(--azul);color:#fff;padding:10px 16px;border-radius:9px;display:none;font-weight:700;z-index:9}
-</style></head><body>
-<header>
- <span style="display:flex;align-items:center;gap:10px">
-  <img src="/static/icons/logo.png" alt="Garra Terraplenagem" style="height:34px;object-fit:contain;filter:brightness(0) invert(1)" onerror="this.style.display='none';document.getElementById('hd-fb').style.display='inline'"/>
-  <b id="hd-fb" style="display:none"><span class="l">GARRA</span></b>
-  <b>Notas de Abastecimento</b>
- </span>
- <span id="quem" style="font-size:12px"></span></header>
-<main>
- <div class="filtros">
-  <div class="f">Competência<input type="month" id="f-mes"></div>
-  <div class="f">Posto<select id="f-posto"><option value="">— todos —</option></select></div>
-  <div class="f">&nbsp;<label style="font-weight:400"><input type="checkbox" id="f-pend"> só pendentes de lançar</label></div>
-  <button class="p" onclick="carregar()">🔍 Buscar</button>
-  <button onclick="excel()">📊 Excel da competência</button>
-  <span class="muted" style="font-size:11px;flex:1;text-align:right">Fatura do posto fecha dia 15 · marque ✔ ao lançar na MAIS · foto abre em nova aba (link 1 h)</span>
- </div>
- <div class="cards" id="cards"></div>
- <div style="overflow:auto"><table><thead><tr>
-  <th>Data</th><th>Posto</th><th>Cupom</th><th>Combustível</th><th>Equipamentos (rateio)</th>
-  <th class="r">Litros</th><th class="r">R$/L</th><th class="r">Valor</th><th>Fotos</th><th>Quem</th><th style="width:130px">Lançada na MAIS</th>
- </tr></thead><tbody id="corpo"><tr><td colspan="11" class="muted" style="padding:14px">Carregando…</td></tr></tbody></table></div>
-</main>
-<div id="toast"></div>
-<script>
-const $=i=>document.getElementById(i);
-(function(){const u=new URL(location.href);const sso=u.searchParams.get('sso')||u.searchParams.get('token');
- if(sso&&sso.length>10){sessionStorage.setItem('garra_notas_token',sso);history.replaceState(null,'',u.pathname);}})();
-function tok(){return sessionStorage.getItem('garra_notas_token')||localStorage.getItem('garra_adm_token')||'';}
-async function api(u,o){const r=await fetch(u,Object.assign({},o,{headers:Object.assign({'Content-Type':'application/json','Authorization':'Bearer '+tok()},(o&&o.headers)||{})}));
- if(r.status===401){document.body.innerHTML='<div style="padding:40px;text-align:center">🔒 Sessão expirada — abra o <a href="/admin">Admin</a> e clique em Notas de Abastecimento</div>';throw new Error('401');}
- if(r.status===403){document.body.innerHTML='<div style="padding:40px;text-align:center">Sem permissão para Notas de Abastecimento — peça ao administrador (Admin ▸ Permissões ▸ Notas de Abastecimento)</div>';throw new Error('403');}
- const j=await r.json().catch(()=>({})); if(!r.ok)throw new Error(j.detail||('Erro '+r.status)); return j;}
-function toast(m){const t=$('toast');t.textContent=m;t.style.display='block';clearTimeout(t._h);t._h=setTimeout(()=>t.style.display='none',3500);}
-const esc=x=>String(x??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-const fN=(v,d)=>v==null?'—':Number(v).toLocaleString('pt-BR',{minimumFractionDigits:d??2,maximumFractionDigits:d??2});
-let DADOS=null;
-async function carregar(){
- const mes=$('f-mes').value||new Date().toISOString().slice(0,7);
- const q='mes='+mes+($('f-posto').value?'&posto='+$('f-posto').value:'')+($('f-pend').checked?'&pendentes=1':'');
- try{DADOS=await api('/operacional/api/abastecimentos/notas?'+q);}
- catch(e){if(e.message!=='401'&&e.message!=='403'){$('corpo').innerHTML='<tr><td colspan="11" style="padding:14px;color:#B91C1C;font-weight:700">❌ '+esc(e.message)+'</td></tr>';toast('❌ '+e.message);}return;}
- const sel=$('f-posto'),atual=sel.value; const postos={};
- DADOS.notas.forEach(n=>{if(n.fornecedor_id)postos[n.fornecedor_id]=n.posto;});
- if(!atual){sel.innerHTML='<option value="">— todos —</option>'+Object.entries(postos).map(([id,n])=>'<option value="'+id+'">'+esc(n)+'</option>').join('');}
- $('cards').innerHTML=(DADOS.totais||[]).map(t=>'<div class="card"><b>'+esc(t.posto)+'</b><div class="v">R$ '+fN(t.valor)+'</div><div class="muted" style="font-size:11px">'+t.notas+' nota(s) · '+fN(t.litros)+' L'+(t.pendentes?' · <span class="pend">'+t.pendentes+' pendente(s)</span>':' · ✔ tudo lançado')+'</div></div>').join('')||'<div class="muted">Nenhuma nota na competência.</div>';
- $('corpo').innerHTML=(DADOS.notas||[]).map(n=>'<tr class="'+(n.lancada_mais?'ok':'')+'">'
-  +'<td style="white-space:nowrap">'+(n.data||'').slice(0,16).replace('T',' ')+'</td>'
-  +'<td><b>'+esc(n.posto||'—')+'</b></td><td>'+esc(n.numero_cupom||'—')+'</td>'
-  +'<td>'+esc(n.combustivel||'')+' <span class="muted" style="font-size:10px">'+esc(n.rubrica||'')+'</span></td>'
-  +'<td style="font-size:11px">'+esc(n.equipamentos||'—')+'</td>'
-  +'<td class="r">'+fN(n.litros_total)+'</td><td class="r">'+fN(n.preco_litro,3)+'</td><td class="r"><b>'+fN(n.valor_total)+'</b></td>'
-  +'<td>'+(n.foto_nota_url?'<a href="'+esc(n.foto_nota_url)+'" target="_blank" title="Foto da nota">🧾</a> ':'<span class="chip">sem foto</span> ')
-        +(n.foto_leitura_url?'<a href="'+esc(n.foto_leitura_url)+'" target="_blank" title="Foto do horímetro/KM">🕐</a>':'')+'</td>'
-  +'<td style="font-size:11px">'+esc(n.usuario_nome||'')+'</td>'
-  +'<td><label style="cursor:pointer;font-size:11px;font-weight:700;color:'+(n.lancada_mais?'#15803D':'#B91C1C')+'"><input type="checkbox" '+(n.lancada_mais?'checked':'')+' data-id="'+n.id+'" onchange="marcar(this)"> '
-    +(n.lancada_mais?('✔ '+esc((n.lancada_por_nome||'').split(' ')[0])+' '+(n.lancada_em?new Date(n.lancada_em).toLocaleDateString('pt-BR'):'')):'lançar')+'</label></td></tr>').join('')
-  ||'<tr><td colspan="11" class="muted" style="padding:14px">Nenhuma nota'+($('f-pend').checked?' pendente':'')+' na competência.</td></tr>';
-}
-async function marcar(ck){
- const id=ck.dataset.id;
- try{await api('/operacional/api/abastecimentos/notas/'+id+'/lancada',{method:'PATCH',body:JSON.stringify({lancada:ck.checked})});
-  toast(ck.checked?'✔ Marcada como lançada na MAIS':'Desmarcada');carregar();}
- catch(e){ck.checked=!ck.checked;toast('❌ '+e.message);}
-}
-function excel(){
- const mes=$('f-mes').value||new Date().toISOString().slice(0,7);
- const q='mes='+mes+($('f-posto').value?'&posto='+$('f-posto').value:'');
- fetch('/operacional/api/abastecimentos/notas/excel?'+q,{headers:{'Authorization':'Bearer '+tok()}})
-  .then(r=>{if(!r.ok)throw new Error('Erro '+r.status);return r.blob();})
-  .then(b=>{const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='notas-abastecimento-'+mes+'.xlsx';a.click();})
-  .catch(e=>toast('❌ '+e.message));
-}
-(function(){ $('f-mes').value=new Date().toISOString().slice(0,7);
- try{const p=JSON.parse(atob(tok().split('.')[1].replace(/-/g,'+').replace(/_/g,'/')));$('quem').textContent=p.nome||p.login||'';}catch(e){}
- carregar(); })();
-</script></body></html>""")
+    """(24/10/2026) A tela só de notas de posto (01/09) foi absorvida pelo balcão único /manutencao/notas
+    (OTs + abastecimento). Link/favorito antigo continua funcionando."""
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse(url="/manutencao/notas", status_code=307)
 
 
 @router.get("/abastecimento", response_class=HTMLResponse)
@@ -1266,7 +1164,7 @@ async def _registrar_nota(request, payload):
         eqs = ", ".join(x.get("equipamento") or "" for x in saida if x.get("equipamento"))
         await _notificar("nota_lancar", f"⛽ Nota de abastecimento" + (f" · cupom {cupom}" if cupom else ""),
                          f"{(posto or {}).get('nome') or (n.get('posto_nome') or 'posto')} · {litros_total:g} L" + (f" · R$ {valor_total:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".") if valor_total else "") + (f" · {eqs}" if eqs else ""),
-                         "/abastecimento/notas", excluir=[_uid(payload)])
+                         "/manutencao/notas", excluir=[_uid(payload)])
     except Exception:
         pass
     return {"nota_id": nota_id, "cupom": cupom, "combustivel": comb, "rubrica": rubrica,
