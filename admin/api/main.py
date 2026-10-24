@@ -834,6 +834,8 @@ from routers.compras import router as compras_router  # v28 — Ordens de Compra
 app.include_router(compras_router)
 from routers.abastecimentos import router as abastecimentos_router  # 29/08 — reconstruído
 app.include_router(abastecimentos_router)
+from routers.manutencao_mobile import router as manutencao_mobile_router  # (24/10/2026) Manutenção no celular (gestão)
+app.include_router(manutencao_mobile_router)
 
 @app.on_event("startup")
 async def criar_tabela_checklist_config():
