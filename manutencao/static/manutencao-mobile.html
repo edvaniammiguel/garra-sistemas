@@ -1,0 +1,460 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Garra — Manutenção</title>
+<style>
+  :root{--azul:#1A2A5E;--laranja:#E8730C;--cinza:#64748B;--fundo:#F1F5F9;--borda:#E2E8F0}
+  *{box-sizing:border-box;font-family:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif}
+  body{margin:0;background:var(--fundo);color:#0F172A}
+  header{background:var(--azul);color:#fff;padding:12px 16px;display:flex;align-items:center;gap:10px}
+  header b{font-size:16px} header .l{color:var(--laranja);font-weight:800}
+  .abas{position:sticky;top:0;z-index:5;display:flex;background:#fff;border-bottom:1px solid var(--borda)}
+  .abas button{flex:1;padding:12px 2px;border:none;background:none;font-weight:700;font-size:12px;color:var(--cinza);border-bottom:3px solid transparent;position:relative}
+  .abas button.on{color:var(--laranja);border-bottom-color:var(--laranja)}
+  .abas .n{position:absolute;top:3px;right:6px;background:#B91C1C;color:#fff;border-radius:10px;font-size:10px;padding:1px 6px;min-width:18px}
+  .abas .n:empty{display:none}
+  main{padding:12px;max-width:560px;margin:0 auto;padding-bottom:40px}
+  .tela{display:none}.tela.on{display:block}
+  .filtros{display:flex;gap:6px;margin-bottom:10px;overflow-x:auto;padding-bottom:2px}
+  .filtros button{white-space:nowrap;padding:7px 12px;border-radius:999px;border:1.5px solid #CBD5E1;background:#fff;font-weight:700;font-size:12px;color:#334155}
+  .filtros button.on{background:var(--azul);border-color:var(--azul);color:#fff}
+  .busca{width:100%;padding:11px 12px;border:1px solid #CBD5E1;border-radius:10px;font-size:15px;margin-bottom:10px;background:#fff}
+  .card{background:#fff;border-radius:12px;box-shadow:0 1px 6px rgba(15,23,42,.08);padding:12px 14px;margin-bottom:10px}
+  .card.clk{cursor:pointer}
+  .card.clk:active{background:#F8FAFC}
+  .lin{display:flex;align-items:center;gap:8px}
+  .lin .t{font-weight:800;color:var(--azul);font-size:15px;flex:1;min-width:0}
+  .eq{font-weight:700;font-size:14px;margin-top:2px}
+  .desc{font-size:13px;color:#334155;margin-top:4px;white-space:pre-wrap;word-break:break-word}
+  .meta{font-size:12px;color:var(--cinza);margin-top:6px;display:flex;flex-wrap:wrap;gap:4px 10px}
+  .chip{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:800;background:#E2E8F0;color:#334155;white-space:nowrap}
+  .chip.r{background:#FEE2E2;color:#991B1B}.chip.o{background:#FFEDD5;color:#9A3412}.chip.g{background:#DCFCE7;color:#166534}
+  .chip.b{background:#DBEAFE;color:#1E40AF}.chip.a{background:#FEF3C7;color:#92400E}.chip.c{background:#E2E8F0;color:#475569}
+  .sem{width:26px;height:26px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:13px;font-weight:900;color:#fff;flex:none}
+  .sem.s0{background:#DC2626}.sem.s1{background:#F59E0B}.sem.s2{background:#16A34A}.sem.play{background:#1A2A5E}.sem.pause{background:#9A3412}.sem.ok{background:#64748B}.sem.none{background:#CBD5E1;color:#334155}
+  .vazio{text-align:center;color:var(--cinza);padding:30px 10px;font-size:14px}
+  .acoes{display:flex;gap:8px;margin-top:10px}
+  .btn{flex:1;padding:12px;border:none;border-radius:10px;font-size:14px;font-weight:800;cursor:pointer;background:#E2E8F0;color:#0F172A}
+  .btn.p{background:var(--laranja);color:#fff}.btn.s{background:var(--azul);color:#fff}.btn.ok{background:#15803D;color:#fff}.btn.no{background:#fff;border:1.5px solid #CBD5E1}
+  .btn:disabled{opacity:.5}
+  label{display:block;font-size:12px;font-weight:700;color:var(--cinza);margin:10px 0 4px}
+  input,select,textarea{width:100%;padding:11px;border:1px solid #CBD5E1;border-radius:8px;font-size:15px;background:#fff}
+  textarea{min-height:80px;resize:vertical}
+  /* folha que sobe de baixo */
+  .sheet-bg{position:fixed;inset:0;background:rgba(15,23,42,.45);display:none;align-items:flex-end;z-index:20}
+  .sheet-bg.on{display:flex}
+  .sheet{background:#fff;width:100%;max-height:92dvh;border-radius:16px 16px 0 0;overflow-y:auto;padding:14px 16px 24px;max-width:560px;margin:0 auto}
+  @media(min-width:700px){.sheet-bg{align-items:center}.sheet{border-radius:16px;max-height:88vh}}
+  .sheet h2{font-size:17px;color:var(--azul);margin:0 0 4px;display:flex;align-items:center;gap:8px}
+  .sheet h3{font-size:12px;text-transform:uppercase;letter-spacing:.4px;color:var(--cinza);margin:16px 0 6px;border-bottom:1px solid var(--borda);padding-bottom:4px}
+  .kv{display:grid;grid-template-columns:1fr 1fr;gap:6px 10px;font-size:13px}
+  .kv div b{display:block;font-size:11px;color:var(--cinza);font-weight:700}
+  .fechar{margin-left:auto;background:none;border:none;font-size:22px;color:var(--cinza);cursor:pointer;padding:0 4px}
+  .item{border:1px solid var(--borda);border-radius:10px;padding:8px 10px;margin-top:6px;font-size:13px;background:#F8FAFC}
+  .item .r{white-space:pre-wrap;word-break:break-word}
+  .item .m{font-size:11px;color:var(--cinza);margin-top:3px}
+  .fotos{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+  .fotos img{width:68px;height:68px;object-fit:cover;border-radius:8px;border:1px solid var(--borda)}
+  .toast{position:fixed;left:12px;right:12px;bottom:16px;padding:14px;border-radius:10px;font-weight:700;color:#fff;display:none;z-index:99;text-align:center}
+  .toast.ok{background:#15803D}.toast.erro{background:#B91C1C}
+  .spin{display:inline-block;width:16px;height:16px;border:2px solid #CBD5E1;border-top-color:var(--laranja);border-radius:50%;animation:g .8s linear infinite;vertical-align:middle}
+  @keyframes g{to{transform:rotate(360deg)}}
+  .num{font-variant-numeric:tabular-nums}
+  .tot{display:flex;justify-content:space-between;font-size:13px;color:#334155;margin-top:4px}
+  #tela-login{display:none}
+</style>
+</head>
+<body>
+<script>(function(){ const q=new URLSearchParams(location.search); if (q.get('embedded')==='1') document.documentElement.classList.add('embedded'); })();</script>
+<style>.embedded header{display:none !important}</style>
+<header><span style="font-size:20px">🔧</span><span><b class="l">GARRA</b> <b>· Manutenção</b></span><a href="/mobile?from=manutencao" style="margin-left:auto;color:#fff;text-decoration:none;font-size:13px;opacity:.9">← Apps</a></header>
+
+<div class="abas" id="abas">
+  <button id="aba-ped" class="on" onclick="aba('ped')">📨 Pedidos<span class="n" id="n-ped"></span></button>
+  <button id="aba-ots" onclick="aba('ots')">🔧 OTs<span class="n" id="n-ots"></span></button>
+  <button id="aba-eq" onclick="aba('eq')">🚜 Frota</button>
+  <button id="aba-ab" onclick="aba('ab')">⛽ Conferir<span class="n" id="n-ab"></span></button>
+</div>
+
+<main>
+  <div class="card" id="tela-login">
+    <b style="color:var(--azul)">Entrar</b>
+    <label>Login</label><input id="lg-user" autocomplete="username">
+    <label>Senha</label><input id="lg-pass" type="password" autocomplete="current-password">
+    <button class="btn p" style="width:100%;margin-top:12px" onclick="entrar()">Entrar</button>
+  </div>
+
+  <!-- PEDIDOS -->
+  <div class="tela on" id="tela-ped">
+    <div class="filtros">
+      <button class="on" data-f="aberto" onclick="pedFiltro('aberto',this)">Abertos</button>
+      <button data-f="tratados" onclick="pedFiltro('tratados',this)">Tratados</button>
+    </div>
+    <div id="ped-lista"><div class="vazio"><span class="spin"></span></div></div>
+  </div>
+
+  <!-- OTs -->
+  <div class="tela" id="tela-ots">
+    <input class="busca" id="ot-busca" placeholder="🔍 nº da OT, equipamento, descrição…" oninput="otRender()">
+    <div class="filtros">
+      <button class="on" data-f="vivas" onclick="otFiltro('vivas',this)">Em aberto</button>
+      <button data-f="em_andamento" onclick="otFiltro('em_andamento',this)">Em curso</button>
+      <button data-f="aguardando_peca" onclick="otFiltro('aguardando_peca',this)">Aguardando</button>
+      <button data-f="programada" onclick="otFiltro('programada',this)">Programadas</button>
+      <button data-f="concluida" onclick="otFiltro('concluida',this)">Encerradas</button>
+    </div>
+    <div id="ot-lista"><div class="vazio"><span class="spin"></span></div></div>
+  </div>
+
+  <!-- FROTA -->
+  <div class="tela" id="tela-eq">
+    <input class="busca" id="eq-busca" placeholder="🔍 código ou descrição" oninput="eqRender()">
+    <div id="eq-lista"><div class="vazio"><span class="spin"></span></div></div>
+  </div>
+
+  <!-- CONFERÊNCIA DE ABASTECIMENTOS -->
+  <div class="tela" id="tela-ab">
+    <div class="meta" style="margin:0 0 8px">Notas de abastecimento ainda não conferidas, por equipamento. Toque para ver as fotos e conferir.</div>
+    <div id="ab-lista"><div class="vazio"><span class="spin"></span></div></div>
+  </div>
+</main>
+
+<div class="sheet-bg" id="sheet-bg" onclick="if(event.target===this)sheetFechar()"><div class="sheet" id="sheet"></div></div>
+<div class="toast" id="toast"></div>
+
+<script>
+const API = '';
+(function(){
+  try {
+    const sso = new URLSearchParams(location.search).get('sso');
+    if (sso && sso.length > 10) { localStorage.setItem('garra_tok_gestao', sso); history.replaceState(null, '', location.pathname + (location.search.includes('embedded=1') ? '?embedded=1' : '')); }
+  } catch(e) {}
+})();
+let TOK = localStorage.getItem('garra_tok_gestao') || localStorage.getItem('garra_token') || '';
+
+function toast(msg, tipo){ const t = document.getElementById('toast'); t.textContent = msg; t.className = 'toast ' + (tipo || 'ok'); t.style.display = 'block'; setTimeout(() => t.style.display = 'none', 3500); }
+function esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function fData(v){ if (!v) return '—'; const s = String(v); const [a, m, d] = s.slice(0,10).split('-'); return d && m && a ? `${d}/${m}/${a}` : s; }
+function fDataHora(v){ if (!v) return '—'; const d = new Date(v); return isNaN(d) ? String(v) : d.toLocaleDateString('pt-BR') + ' ' + d.toLocaleTimeString('pt-BR', {hour:'2-digit', minute:'2-digit'}); }
+function fNum(v, dec){ if (v == null || v === '') return '—'; return Number(v).toLocaleString('pt-BR', {maximumFractionDigits: dec == null ? 1 : dec}); }
+function mostrarLogin(on){ document.getElementById('tela-login').style.display = on ? 'block' : 'none'; document.getElementById('abas').style.display = on ? 'none' : 'flex'; document.querySelectorAll('.tela').forEach(t => t.style.display = on ? 'none' : ''); }
+
+async function api(caminho, opts){
+  opts = opts || {};
+  opts.headers = Object.assign({ 'Content-Type': 'application/json' }, opts.headers || {});
+  if (TOK) opts.headers['Authorization'] = 'Bearer ' + TOK;
+  const r = await fetch(API + caminho, opts);
+  if (r.status === 401) { TOK = ''; localStorage.removeItem('garra_tok_gestao'); mostrarLogin(true); throw new Error('Sessão expirada — entre de novo'); }
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.detail || ('Erro ' + r.status));
+  return j;
+}
+async function entrar(){
+  const login = document.getElementById('lg-user').value.trim(), senha = document.getElementById('lg-pass').value;
+  if (!login || !senha) { toast('Preencha login e senha', 'erro'); return; }
+  try {
+    const r = await fetch(API + '/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ login, senha }) });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || !j.token) throw new Error(j.detail || 'Login inválido');
+    TOK = j.token; localStorage.setItem('garra_tok_gestao', TOK);
+    mostrarLogin(false); iniciar();
+  } catch(e) { toast('❌ ' + e.message, 'erro'); }
+}
+
+// ── abas ──
+let ABA = 'ped';
+function aba(a){
+  ABA = a;
+  ['ped','ots','eq','ab'].forEach(k => { document.getElementById('aba-' + k).classList.toggle('on', k === a); document.getElementById('tela-' + k).classList.toggle('on', k === a); });
+  try { localStorage.setItem('garra_gestao_aba', a); } catch(e) {}
+  if (a === 'ped') pedCarregar(); if (a === 'ots') otCarregar(); if (a === 'eq') eqCarregar(); if (a === 'ab') abCarregar();
+}
+function sheet(html){ document.getElementById('sheet').innerHTML = html; document.getElementById('sheet-bg').classList.add('on'); document.getElementById('sheet').scrollTop = 0; }
+function sheetFechar(){ document.getElementById('sheet-bg').classList.remove('on'); }
+
+// ── domínios ──
+let TIPOS = [], MOTIVOS = [], EQS = [];
+async function dominios(){
+  try { TIPOS = (await api('/manutencao/api/param/tipos-manutencao')).filter(t => t.ativo !== false && String(t.codigo).length > 1); } catch(e) { TIPOS = []; }
+  try { MOTIVOS = (await api('/manutencao/api/param/motivos-pendente')).filter(m => m.ativo !== false); } catch(e) { MOTIVOS = []; }
+  try { EQS = await api('/manutencao/api/equipamentos-basico'); } catch(e) { EQS = []; }
+}
+const URG = { urgente: ['r', '🔴 Urgente'], alta: ['o', '🟠 Alta'], normal: ['g', '🟢 Normal'], baixa: ['c', '⚪ Baixa'] };
+const PRIO = { urgente: ['r', 'Urgente'], alta: ['o', 'Alta'], media: ['g', 'Normal'], baixa: ['c', 'Baixa'] };
+const VIA = { mobile: '📱 app do mecânico', checklist: '✓ checklist (NC)', sistema: '🖥 desktop', manual: '🖥 desktop' };
+const ST = { programada: ['b', 'Programada'], aberta: ['a', 'Aberta'], em_andamento: ['g', 'Em curso'], aguardando_peca: ['o', 'Aguard. peça'], concluida: ['c', 'Encerrada'], cancelada: ['r', 'Cancelada'], rascunho: ['c', 'Rascunho'] };
+
+// ═══ PEDIDOS ═══
+let PED_F = 'aberto', PEDIDOS = [];
+function pedFiltro(f, b){ PED_F = f; document.querySelectorAll('#tela-ped .filtros button').forEach(x => x.classList.toggle('on', x === b)); pedCarregar(); }
+async function pedCarregar(){
+  const el = document.getElementById('ped-lista');
+  try {
+    if (PED_F === 'aberto') PEDIDOS = await api('/manutencao/api/pedidos?status=aberto');
+    else { const [c, r] = await Promise.all([api('/manutencao/api/pedidos?status=convertido'), api('/manutencao/api/pedidos?status=recusado')]); PEDIDOS = c.concat(r).sort((a, b) => String(b.data_pedido).localeCompare(String(a.data_pedido))).slice(0, 60); }
+    if (PED_F === 'aberto') document.getElementById('n-ped').textContent = PEDIDOS.length || '';
+    if (!PEDIDOS.length) { el.innerHTML = '<div class="vazio">' + (PED_F === 'aberto' ? '✅ Nenhum pedido aguardando triagem.' : 'Nenhum pedido tratado.') + '</div>'; return; }
+    el.innerHTML = PEDIDOS.map(p => {
+      const u = URG[p.grau_urgencia] || URG.normal;
+      return `<div class="card clk" onclick="pedAbrir('${p.id}')">
+        <div class="lin"><span class="t">${esc(p.numero)}</span><span class="chip ${u[0]}">${u[1]}</span>${p.status !== 'aberto' ? `<span class="chip ${p.status === 'convertido' ? 'b' : 'r'}">${p.status === 'convertido' ? ('→ ' + esc(p.ot_numero || 'OT')) : 'Recusado'}</span>` : ''}</div>
+        <div class="eq">${p.equipamento_codigo ? esc(p.equipamento_codigo) + ' — ' + esc(p.equipamento_desc || '') : '<span style="color:#B91C1C">⚠ sem equipamento</span>'}</div>
+        <div class="desc">${esc(p.descricao)}</div>
+        <div class="meta"><span>${VIA[(p.via || '').toLowerCase()] || esc(p.via || '')}</span><span>${esc(p.solicitante_nome || '')}</span><span>${fDataHora(p.data_pedido)}</span></div>
+      </div>`;
+    }).join('');
+  } catch(e) { el.innerHTML = '<div class="vazio">❌ ' + esc(e.message) + '</div>'; }
+}
+async function pedAbrir(id){
+  const p = PEDIDOS.find(x => x.id === id); if (!p) return;
+  const u = URG[p.grau_urgencia] || URG.normal;
+  const aberto = p.status === 'aberto';
+  const eqSel = `<select id="pc-eq">${p.equipamento_id ? '' : '<option value="">— escolher —</option>'}${EQS.map(e => `<option value="${e.id}" ${e.id === p.equipamento_id ? 'selected' : ''}>${esc(e.codigo)} — ${esc(e.descricao || '')}</option>`).join('')}</select>`;
+  const tipoSel = `<select id="pc-tipo">${TIPOS.map(t => `<option value="${esc(t.codigo)}" ${t.codigo === 'C1' ? 'selected' : ''}>${esc(t.codigo)} — ${esc(t.nome)}</option>`).join('')}</select>`;
+  const prioSel = `<select id="pc-prio">${Object.entries(PRIO).map(([k, v]) => `<option value="${k}" ${k === ({ urgente: 'urgente', alta: 'alta', normal: 'media', baixa: 'baixa' }[p.grau_urgencia] || 'media') ? 'selected' : ''}>${v[1]}</option>`).join('')}</select>`;
+  sheet(`<h2>${esc(p.numero)} <span class="chip ${u[0]}">${u[1]}</span><button class="fechar" onclick="sheetFechar()">×</button></h2>
+    <div class="meta"><span>${VIA[(p.via || '').toLowerCase()] || esc(p.via || '')}</span><span>${esc(p.solicitante_nome || '')}</span><span>${fDataHora(p.data_pedido)}</span></div>
+    <h3>Pedido</h3><div class="desc" style="font-size:14px">${esc(p.descricao)}</div>
+    <div id="pc-nc"></div>
+    ${aberto ? `<h3>Virar OT</h3>
+      <label>Equipamento</label>${eqSel}
+      <label>Tipo de trabalho</label>${tipoSel}
+      <label>Prioridade</label>${prioSel}
+      <label>Prog. Início</label><input type="date" id="pc-data" value="${new Date().toISOString().slice(0,10)}">
+      <div class="acoes"><button class="btn no" onclick="pedRecusar('${p.id}')">✕ Recusar</button><button class="btn ok" id="pc-ok" onclick="pedConverter('${p.id}')">✔ Virar OT</button></div>`
+    : `<h3>Resultado</h3><div class="item">${p.status === 'convertido' ? 'Convertido em <b>' + esc(p.ot_numero || 'OT') + '</b>' : 'Recusado: ' + esc(p.motivo_recusa || '')}</div>
+       ${p.status === 'convertido' && p.ot_id ? `<div class="acoes"><button class="btn s" onclick="sheetFechar();otAbrir('${p.ot_id}')">Abrir a OT</button></div>` : ''}`}`);
+  // evidência do checklist (fotos dos itens não conformes)
+  if ((p.via || '').toLowerCase() === 'checklist') {
+    try {
+      const nc = await api('/manutencao/api/pedidos/' + id + '/fotos-nc');
+      const el = document.getElementById('pc-nc'); if (!el) return;
+      if (nc.itens && nc.itens.length) el.innerHTML = '<h3>Itens não conformes · ' + esc(nc.checklist || '') + '</h3>' + nc.itens.map(i => `<div class="item"><div class="r"><b>${esc(i.item)}</b>${i.obs ? ' — ' + esc(i.obs) : ''}</div>${i.foto_url ? `<div class="fotos"><a href="${i.foto_url}" target="_blank"><img src="${i.foto_url}"></a></div>` : ''}</div>`).join('');
+    } catch(e) {}
+  }
+}
+async function pedConverter(id){
+  const eq = document.getElementById('pc-eq').value;
+  if (!eq) { toast('Escolha o equipamento', 'erro'); return; }
+  const b = document.getElementById('pc-ok'); b.disabled = true;
+  try {
+    const r = await api('/manutencao/api/pedidos/' + id + '/converter', { method: 'POST', body: JSON.stringify({ equipamento_id: eq, tipo_trabalho: document.getElementById('pc-tipo').value, prioridade: document.getElementById('pc-prio').value, data_prevista: document.getElementById('pc-data').value || null }) });
+    toast('✅ ' + (r.numero || 'OT') + ' criada'); sheetFechar(); pedCarregar(); OTS = [];
+  } catch(e) { toast('❌ ' + e.message, 'erro'); b.disabled = false; }
+}
+async function pedRecusar(id){
+  const motivo = prompt('Motivo da recusa (obrigatório):'); if (motivo == null) return;
+  if (!motivo.trim()) { toast('Informe o motivo', 'erro'); return; }
+  try { await api('/manutencao/api/pedidos/' + id + '/recusar', { method: 'POST', body: JSON.stringify({ motivo: motivo.trim() }) }); toast('Pedido recusado'); sheetFechar(); pedCarregar(); }
+  catch(e) { toast('❌ ' + e.message, 'erro'); }
+}
+
+// ═══ OTs ═══
+let OT_F = 'vivas', OTS = [];
+function otFiltro(f, b){ OT_F = f; document.querySelectorAll('#tela-ots .filtros button').forEach(x => x.classList.toggle('on', x === b)); otRender(); }
+function otSem(o){
+  if (o.status === 'concluida') return '<span class="sem ok">✓</span>';
+  if (o.status === 'cancelada') return '<span class="sem none">✕</span>';
+  if (o.status === 'aguardando_peca') return '<span class="sem pause">⏸</span>';
+  if (o.status === 'em_andamento' || o.status === 'aberta') return '<span class="sem play">▶</span>';
+  const v = o.vencimento; if (!v) return '<span class="sem s0" title="sem data">!</span>';
+  return `<span class="sem s${v.nivel}">${['!','•','•'][v.nivel]}</span>`;
+}
+async function otCarregar(force){
+  const el = document.getElementById('ot-lista');
+  if (OTS.length && !force) { otRender(); return; }
+  try { OTS = await api('/manutencao/api/ots'); otRender(); }
+  catch(e) { el.innerHTML = '<div class="vazio">❌ ' + esc(e.message) + '</div>'; }
+}
+function otRender(){
+  const el = document.getElementById('ot-lista');
+  const q = (document.getElementById('ot-busca').value || '').trim().toLowerCase();
+  const vivas = ['aberta', 'em_andamento', 'aguardando_peca', 'programada'];
+  document.getElementById('n-ots').textContent = OTS.filter(o => o.status === 'aberta' || o.status === 'em_andamento' || o.status === 'aguardando_peca').length || '';
+  let l = OTS.filter(o => OT_F === 'vivas' ? vivas.includes(o.status) : o.status === OT_F);
+  if (q) l = l.filter(o => [o.numero, o.equipamento_codigo, o.equipamento_desc, o.descricao, o.responsavel_nome, o.fornecedor_nome].some(x => String(x || '').toLowerCase().includes(q)));
+  if (!l.length) { el.innerHTML = '<div class="vazio">Nenhuma OT aqui.</div>'; return; }
+  el.innerHTML = l.map(o => {
+    const s = ST[o.status] || ['c', o.status];
+    return `<div class="card clk" onclick="otAbrir('${o.id}')">
+      <div class="lin">${otSem(o)}<span class="t">${esc(o.numero)}</span><span class="chip">${esc(o.tipo_trabalho || '')}</span><span class="chip ${s[0]}">${s[1]}</span></div>
+      <div class="eq">${esc(o.equipamento_codigo)} — ${esc(o.equipamento_desc || '')}</div>
+      <div class="desc">${esc((o.descricao || '').slice(0, 160))}${(o.descricao || '').length > 160 ? '…' : ''}</div>
+      <div class="meta">${o.vencimento ? '<span>' + esc(o.vencimento.texto) + '</span>' : ''}<span>Prog. ${fData(o.data_prevista)}</span>${o.data_inicio_exec ? '<span>Início ' + fData(o.data_inicio_exec) + '</span>' : ''}${o.data_conclusao ? '<span>Fim ' + fData(o.data_conclusao) + '</span>' : ''}${o.responsavel_nome ? '<span>👤 ' + esc(o.responsavel_nome) + '</span>' : ''}${o.fornecedor_nome ? '<span>🏭 ' + esc(o.fornecedor_nome) + '</span>' : ''}${o.apontamentos ? '<span>📝 ' + o.apontamentos + ' registro(s)' + (o.sinal_concluido ? ' · mecânico concluiu' : '') + '</span>' : ''}</div>
+    </div>`;
+  }).join('');
+}
+let OT_ATUAL = null, OT_VOLTAR = null;
+async function otAbrir(id, voltar){
+  OT_VOLTAR = voltar || null;
+  sheet('<div class="vazio"><span class="spin"></span></div>');
+  try {
+    const [o, cons, ocs, pausas] = await Promise.all([
+      api('/manutencao/api/ots/' + id),
+      api('/manutencao/api/ots/' + id + '/consumos').catch(() => ({ itens: [], total: 0 })),
+      api('/manutencao/api/ots/' + id + '/ocs').catch(() => []),
+      api('/manutencao/api/ots/' + id + '/pausas').then(x => x.itens || []).catch(() => []),
+    ]);
+    OT_ATUAL = o;
+    const s = ST[o.status] || ['c', o.status];
+    const un = (o.equipamento_medicao || '') === 'km' ? 'km' : 'h';
+    const pr = PRIO[o.prioridade] || PRIO.media;
+    const tarefas = (o.tarefas_planejado || '').trim() || (o.tarefas_planejado_sugerido || '').trim();
+    const aps = (o.apontamentos || []).map(a => `<div class="item"><div class="r">${esc(a.relato || '')}</div><div class="m">${esc(a.usuario_nome || '')} · ${fDataHora(a.criado_em)}${a.horas != null ? ' · ' + fNum(a.horas) + ' h' : ''}${a.horimetro != null ? ' · ' + fNum(a.horimetro) + ' ' + un : ''}${a.fotos ? ' · 📷 ' + a.fotos : ''}${a.concluido ? ' · <b style="color:#15803D">✔ concluído</b>' : ''}</div></div>`).join('');
+    const pecas = (cons.itens || []).map(c => `<div class="item"><div class="r"><b>${esc(c.peca_codigo || '')}</b> ${esc(c.peca_descricao || '')}</div><div class="m">${fNum(c.quantidade, 2)} ${esc(c.unidade || '')}${c.custo_unitario != null ? ' × R$ ' + fNum(c.custo_unitario, 2) : ''}${c.fornecedor_nome ? ' · ' + esc(c.fornecedor_nome) : ''}${c.documento_numero ? ' · doc ' + esc(c.documento_numero) : ''}</div></div>`).join('');
+    const ocsH = (ocs || []).map(c => `<div class="item"><div class="r"><b>${esc(c.numero)}</b> · ${esc(c.fornecedor_nome || '')}</div><div class="m">${esc(c.status)}${c.valor_total != null ? ' · R$ ' + fNum(c.valor_total, 2) : ''}${c.itens ? ' · ' + esc(c.itens) : ''}</div></div>`).join('');
+    const pausasH = (pausas || []).map(p => `<div class="item"><div class="r">⏸ ${esc(p.motivo || p.motivo_codigo || '')}${p.observacao ? ' — ' + esc(p.observacao) : ''}</div><div class="m">${fDataHora(p.inicio)} → ${p.fim ? fDataHora(p.fim) : '<b>em espera</b>'} · ${fNum(p.horas)} h${p.usuario ? ' · ' + esc(p.usuario) : ''}</div></div>`).join('');
+    const hist = (o.historico || []).slice(-8).reverse().map(h => `<div class="item"><div class="r">${esc((ST[h.status_de] || [0, h.status_de || '—'])[1])} → <b>${esc((ST[h.status_para] || [0, h.status_para])[1])}</b>${h.observacao ? ' · ' + esc(h.observacao) : ''}</div><div class="m">${esc(h.usuario_nome || '')} · ${fDataHora(h.criado_em)}</div></div>`).join('');
+    const acoes = [];
+    if (['aberta', 'programada'].includes(o.status)) acoes.push('<button class="btn s" onclick="otStatus(\'em_andamento\')">▶ Emitir</button>');
+    if (o.status === 'em_andamento') { acoes.push('<button class="btn no" onclick="otPausar()">⏸ Aguardando</button>'); acoes.push('<button class="btn ok" onclick="otEncerrarForm()">✔ Encerrar</button>'); }
+    if (o.status === 'aguardando_peca') { acoes.push('<button class="btn s" onclick="otStatus(\'em_andamento\')">▶ Retomar</button>'); acoes.push('<button class="btn ok" onclick="otEncerrarForm()">✔ Encerrar</button>'); }
+    sheet(`<h2>${otSem(o)} ${esc(o.numero)} <span class="chip ${s[0]}">${s[1]}</span><button class="fechar" onclick="otFechar()">×</button></h2>
+      <div class="eq">${esc(o.equipamento_codigo)} — ${esc(o.equipamento_desc || '')}</div>
+      <div class="desc" style="font-size:14px;margin-top:6px">${esc(o.descricao || '')}</div>
+      <h3>Origem</h3>
+      <div class="kv">
+        <div><b>Tipo de trabalho</b>${esc(o.tipo_trabalho || '—')}</div><div><b>Prioridade</b><span class="chip ${pr[0]}">${pr[1]}</span></div>
+        <div><b>Interventor</b>${o.interventor === 'externo' ? '🏭 ' + esc(o.fornecedor_nome || 'externo') : '🔧 interno' + (o.setor_interventor ? ' · ' + esc(o.setor_interventor) : '')}</div><div><b>Responsável</b>${esc(o.responsavel_nome || '—')}</div>
+        <div><b>Solicitante</b>${esc((o.pedido && o.pedido.solicitante_nome) || o.solicitante_nome || '—')}${o.pedido ? '<br><span style="font-size:11px">' + esc(o.pedido.numero) + ' · ' + (VIA[(o.pedido.via || '').toLowerCase()] || '') + '</span>' : ''}</div><div><b>Contador na abertura</b><span class="num">${fNum(o.horimetro_na_abertura)} ${un}</span></div>
+        <div><b>Abertura</b>${fData(o.data_abertura)}</div><div><b>Prog. Início</b>${fData(o.data_prevista)}${o.horimetro_previsto != null ? ' · ' + fNum(o.horimetro_previsto) + ' ' + un : ''}</div>
+        <div><b>Início</b>${fDataHora(o.data_inicio_real)}</div><div><b>Data limite</b>${fData(o.data_limite)}</div>
+        ${o.status === 'concluida' ? `<div><b>Fim</b>${fDataHora(o.data_conclusao)}</div><div><b>Contador no fim</b><span class="num">${fNum(o.horimetro_conclusao)} ${un}</span></div>` : ''}
+      </div>
+      <h3>Tarefas</h3>
+      ${tarefas ? '<div class="item"><div class="r">' + esc(tarefas) + '</div></div>' : '<div class="meta">Sem tarefas planejadas.</div>'}
+      <h3>Realizado (registros do mecânico)</h3>${aps || '<div class="meta">Nenhum registro ainda.</div>'}
+      ${o.observacao_conclusao ? '<div class="item"><div class="r"><b>Encerramento:</b> ' + esc(o.observacao_conclusao) + '</div></div>' : ''}
+      <h3>Peças aplicadas</h3>${pecas || '<div class="meta">Nenhuma peça aplicada.</div>'}${cons.total ? '<div class="tot"><span>Total peças</span><b>R$ ' + fNum(cons.total, 2) + '</b></div>' : ''}
+      <div class="tot"><span>Mão de obra interna</span><b>${fNum(o.mo_horas)} h</b></div>${o.outros_horas ? '<div class="tot"><span>Horas externo</span><b>' + fNum(o.outros_horas) + ' h</b></div>' : ''}
+      ${ocsH ? '<h3>Ordens de compra</h3>' + ocsH : ''}
+      ${pausasH ? '<h3>Pausas</h3>' + pausasH : ''}
+      <h3>Histórico</h3>${hist || '<div class="meta">—</div>'}
+      <div id="ot-form"></div>
+      ${acoes.length ? '<div class="acoes" id="ot-acoes">' + acoes.join('') + '</div>' : ''}`);
+  } catch(e) { sheet('<h2>OT<button class="fechar" onclick="otFechar()">×</button></h2><div class="vazio">❌ ' + esc(e.message) + '</div>'); }
+}
+function otFechar(){ sheetFechar(); if (OT_VOLTAR) { const v = OT_VOLTAR; OT_VOLTAR = null; v(); } }
+async function otStatus(novo, extra){
+  if (!OT_ATUAL) return;
+  try {
+    await api('/manutencao/api/ots/' + OT_ATUAL.id + '/status', { method: 'PATCH', body: JSON.stringify(Object.assign({ status: novo }, extra || {})) });
+    toast('✅ ' + (ST[novo] || [0, novo])[1]);
+    const id = OT_ATUAL.id, v = OT_VOLTAR; OTS = []; otCarregar(true); otAbrir(id, v);
+  } catch(e) { toast('❌ ' + e.message, 'erro'); }
+}
+function otPausar(){
+  const f = document.getElementById('ot-form');
+  f.innerHTML = `<h3>Aguardando peça / fornecedor</h3>
+    <label>Motivo</label><select id="of-motivo">${MOTIVOS.map(m => `<option value="${esc(m.codigo)}">${esc(m.codigo)} — ${esc(m.nome)}</option>`).join('')}</select>
+    <label>Observação</label><textarea id="of-obs" placeholder="o que falta, OC, fornecedor…"></textarea>
+    <div class="acoes"><button class="btn no" onclick="document.getElementById('ot-form').innerHTML=''">Cancelar</button><button class="btn p" onclick="otStatus('aguardando_peca',{motivo_codigo:document.getElementById('of-motivo').value,observacao:document.getElementById('of-obs').value})">⏸ Confirmar</button></div>`;
+  f.scrollIntoView({ behavior: 'smooth' });
+}
+function otEncerrarForm(){
+  const un = (OT_ATUAL.equipamento_medicao || '') === 'km' ? 'km' : 'h';
+  const ult = (OT_ATUAL.apontamentos || []).filter(a => a.horimetro != null).slice(-1)[0];
+  const f = document.getElementById('ot-form');
+  f.innerHTML = `<h3>Encerrar OT</h3>
+    <label>Contador da máquina no fim (${un})</label><input id="of-hor" inputmode="decimal" value="${ult ? ult.horimetro : (OT_ATUAL.equipamento_horimetro || '')}">
+    <label>Observação de encerramento</label><textarea id="of-obs" placeholder="opcional"></textarea>
+    <div class="acoes"><button class="btn no" onclick="document.getElementById('ot-form').innerHTML=''">Cancelar</button><button class="btn ok" onclick="otStatus('concluida',{horimetro:document.getElementById('of-hor').value||null,observacao:document.getElementById('of-obs').value})">✔ Encerrar</button></div>`;
+  f.scrollIntoView({ behavior: 'smooth' });
+}
+
+// ═══ FROTA ═══
+let PREV = null;
+async function eqCarregar(){
+  if (!EQS.length) { try { EQS = await api('/manutencao/api/equipamentos-basico'); } catch(e) { document.getElementById('eq-lista').innerHTML = '<div class="vazio">❌ ' + esc(e.message) + '</div>'; return; } }
+  if (!PREV) { try { PREV = await api('/manutencao/api/previsoes'); } catch(e) { PREV = { itens: [] }; } }
+  eqRender();
+}
+const PST = { vencida: ['r', 'Vencida'], a_vencer: ['a', 'A vencer'], programada: ['b', 'Programada'], ok: ['g', 'Em dia'], sem_base: ['c', 'Sem última execução'], sem_periodo: ['c', 'Sem período'] };
+function eqRender(){
+  const q = (document.getElementById('eq-busca').value || '').trim().toLowerCase();
+  const l = EQS.filter(e => !q || (e.codigo + ' ' + (e.descricao || '')).toLowerCase().includes(q));
+  const el = document.getElementById('eq-lista');
+  if (!l.length) { el.innerHTML = '<div class="vazio">Nenhum equipamento.</div>'; return; }
+  el.innerHTML = l.map(e => {
+    const its = (PREV && PREV.itens || []).filter(i => i.equipamento_id === e.id);
+    const nv = its.filter(i => i.status === 'vencida').length, na = its.filter(i => i.status === 'a_vencer').length;
+    return `<div class="card clk" onclick="eqAbrir('${e.id}')"><div class="lin"><span class="t">${esc(e.codigo)}</span>${nv ? '<span class="chip r">' + nv + ' vencida' + (nv > 1 ? 's' : '') + '</span>' : ''}${na ? '<span class="chip a">' + na + ' a vencer</span>' : ''}</div><div class="desc">${esc(e.descricao || '')}</div></div>`;
+  }).join('');
+}
+async function eqAbrir(id){
+  sheet('<div class="vazio"><span class="spin"></span></div>');
+  try {
+    const [d, r, ots] = await Promise.all([api('/manutencao/api/equipamentos/' + id + '/detalhe'), api('/manutencao/api/equipamentos/' + id + '/ritmo').catch(() => null), api('/manutencao/api/ots?equipamento_id=' + id).catch(() => [])]);
+    const un = (d.medicao || '') === 'km' ? 'km' : 'h';
+    const atual = un === 'km' ? d.km_atual : d.horimetro_atual;
+    const its = (PREV && PREV.itens || []).filter(i => i.equipamento_id === id);
+    const fmps = its.map(i => { const s = PST[i.status] || ['c', i.status]; return `<div class="item"><div class="lin"><span class="r" style="flex:1"><b>${esc(i.plano_codigo)}</b> ${esc(i.plano_descricao || '')}</span><span class="chip ${s[0]}">${s[1]}</span></div><div class="m">${i.modo === 'leitura' ? `última ${fNum(i.ultima_leitura)} ${un} · alvo ${fNum(i.leitura_alvo)} ${un} · ${i.restante != null ? (i.restante < 0 ? 'passou ' + fNum(-i.restante) : 'faltam ' + fNum(i.restante)) + ' ' + un : ''}` : `última ${fData(i.ultima_data)} · ${i.restante != null ? (i.restante < 0 ? 'venceu há ' + (-i.restante) + ' d' : 'em ' + i.restante + ' d') : ''}`}${i.proxima_data ? ' · prev. ' + fData(i.proxima_data) : ''}${i.ot ? ' · ' + esc(i.ot.numero) : ''}</div></div>`; }).join('');
+    const otsH = (ots || []).slice(0, 15).map(o => { const s = ST[o.status] || ['c', o.status]; return `<div class="item clk" style="cursor:pointer" onclick="otAbrir('${o.id}',()=>eqAbrir('${id}'))"><div class="lin">${otSem(o)}<span class="r" style="flex:1"><b>${esc(o.numero)}</b> ${esc((o.descricao || '').slice(0, 70))}</span><span class="chip ${s[0]}">${s[1]}</span></div><div class="m">${esc(o.tipo_trabalho || '')} · ${fData(o.data_prevista)}${o.data_conclusao ? ' → ' + fData(o.data_conclusao) : ''}</div></div>`; }).join('');
+    sheet(`<h2>${esc(d.codigo)}<button class="fechar" onclick="sheetFechar()">×</button></h2>
+      <div class="desc" style="font-size:14px">${esc(d.descricao || '')}</div>
+      <div class="kv" style="margin-top:8px">
+        <div><b>Contador atual</b><span class="num" style="font-size:18px;font-weight:800;color:var(--azul)">${fNum(atual)} ${un}</span></div>
+        <div><b>Média (FMD)</b>${r && r.fmd_em_uso ? fNum(r.fmd_em_uso, 2) + ' ' + un + '/dia' + (r.fmd_manual ? ' (manual)' : '') : '—'}</div>
+        <div><b>Última leitura</b>${r && r.ultima_data ? fData(r.ultima_data) + ' · ' + fNum(r.ultima_leitura) + ' ' + un : '—'}</div>
+        <div><b>Registros (90 d)</b>${r ? r.dias_com_uso + ' dia(s)' : '—'}</div>
+        ${d.pai_codigo ? '<div><b>Montado em</b>' + esc(d.pai_codigo) + '</div>' : ''}${d.componentes && d.componentes.length ? '<div><b>Componentes</b>' + d.componentes.length + '</div>' : ''}
+      </div>
+      <h3>Preventivas (FMP)</h3>${fmps || '<div class="meta">Sem planos cadastrados.</div>'}
+      <h3>OTs</h3>${otsH || '<div class="meta">Sem OTs.</div>'}`);
+  } catch(e) { sheet('<h2>Equipamento<button class="fechar" onclick="sheetFechar()">×</button></h2><div class="vazio">❌ ' + esc(e.message) + '</div>'); }
+}
+
+// ═══ CONFERÊNCIA DE ABASTECIMENTOS ═══
+let ABS = [];
+async function abCarregar(){
+  const el = document.getElementById('ab-lista');
+  try {
+    ABS = (await api('/operacional/api/abastecimentos?pendentes=1&limite=500')).filter(a => a.nota_id);
+    const grupos = {};
+    ABS.forEach(a => { const k = a.equipamento_id || a.galao_codigo || '—'; (grupos[k] = grupos[k] || { k, cod: a.equipamento || a.galao_codigo || '—', desc: a.equipamento_desc || '', itens: [] }).itens.push(a); });
+    const g = Object.values(grupos).sort((a, b) => a.cod.localeCompare(b.cod));
+    const notas = new Set(ABS.map(a => a.nota_id)).size;
+    document.getElementById('n-ab').textContent = notas || '';
+    if (!g.length) { el.innerHTML = '<div class="vazio">✅ Tudo conferido.</div>'; return; }
+    el.innerHTML = g.map(x => `<div class="card clk" onclick="abAbrir('${x.k}')"><div class="lin"><span class="t">${esc(x.cod)}</span><span class="chip a">${new Set(x.itens.map(i => i.nota_id)).size} nota(s)</span></div><div class="desc">${esc(x.desc)}</div><div class="meta"><span>${fNum(x.itens.reduce((s, i) => s + (i.litros || 0), 0))} L</span><span>${fData(x.itens[x.itens.length - 1].data)} → ${fData(x.itens[0].data)}</span></div></div>`).join('');
+  } catch(e) { el.innerHTML = '<div class="vazio">❌ ' + esc(e.message) + '</div>'; }
+}
+function abAbrir(k){
+  const its = ABS.filter(a => (a.equipamento_id || a.galao_codigo || '—') === k);
+  if (!its.length) { sheetFechar(); return; }
+  const un = (its[0].medicao || '') === 'km' ? 'km' : 'h';
+  const notas = [...new Set(its.map(i => i.nota_id))];
+  sheet(`<h2>⛽ ${esc(its[0].equipamento || its[0].galao_codigo || '')}<button class="fechar" onclick="sheetFechar()">×</button></h2>
+    <div class="desc">${esc(its[0].equipamento_desc || '')}</div>
+    ${its.map(a => `<div class="item"><div class="lin"><span class="r" style="flex:1"><b>${fData(a.data)}</b> · ${fNum(a.litros, 2)} L${a.valor_total ? ' · R$ ' + fNum(a.valor_total, 2) : ''}</span>${a.divergencia_leitura ? '<span class="chip r">leitura ÷</span>' : ''}${a.alerta_consumo ? '<span class="chip o">consumo</span>' : ''}</div>
+      <div class="m">${[a.leitura != null ? 'leitura ' + fNum(a.leitura) + ' ' + un + (a.leitura_fonte ? ' (' + esc(a.leitura_fonte) + ')' : '') : '', esc(a.posto || ''), a.numero_cupom ? 'cupom ' + esc(a.numero_cupom) : '', esc(a.usuario_nome || ''), a.n_itens > 1 ? 'nota com ' + a.n_itens + ' itens' : ''].filter(Boolean).join(' · ')}</div>
+      ${a.foto_nota_url || a.foto_leitura_url ? '<div class="fotos">' + (a.foto_nota_url ? `<a href="${a.foto_nota_url}" target="_blank"><img src="${a.foto_nota_url}"></a>` : '') + (a.foto_leitura_url ? `<a href="${a.foto_leitura_url}" target="_blank"><img src="${a.foto_leitura_url}"></a>` : '') + '</div>' : ''}
+      <div class="acoes" style="margin-top:8px"><button class="btn ok" style="padding:8px" onclick="abConferir(['${a.nota_id}'],'${k}')">✔ Conferir</button><button class="btn no" style="padding:8px" onclick="abConferir(['${a.nota_id}'],'${k}','divergente')">⚠ Divergente</button></div>
+    </div>`).join('')}
+    <div class="acoes"><button class="btn ok" onclick="abConferir(${JSON.stringify(notas).replace(/"/g, '&quot;')},'${k}')">✔ Conferir todas (${notas.length})</button></div>`);
+}
+async function abConferir(ids, k, status){
+  try {
+    await api('/operacional/api/abastecimentos/notas/conferir', { method: 'POST', body: JSON.stringify({ nota_ids: ids, status: status || 'conferida' }) });
+    toast(status === 'divergente' ? '⚠ Marcada como divergente' : '✅ Conferida');
+    await abCarregar();
+    if (ABS.some(a => (a.equipamento_id || a.galao_codigo || '—') === k)) abAbrir(k); else sheetFechar();
+  } catch(e) { toast('❌ ' + e.message, 'erro'); }
+}
+
+// ═══ início ═══
+async function iniciar(){
+  await dominios();
+  let a = 'ped'; try { a = localStorage.getItem('garra_gestao_aba') || 'ped'; } catch(e) {}
+  aba(a);
+  // contadores das outras abas
+  api('/manutencao/api/pedidos?status=aberto').then(l => document.getElementById('n-ped').textContent = l.length || '').catch(() => {});
+  api('/manutencao/api/ots').then(l => { OTS = l; document.getElementById('n-ots').textContent = l.filter(o => ['aberta', 'em_andamento', 'aguardando_peca'].includes(o.status)).length || ''; }).catch(() => {});
+  api('/operacional/api/abastecimentos?pendentes=1&limite=500').then(l => document.getElementById('n-ab').textContent = new Set(l.filter(a => a.nota_id).map(a => a.nota_id)).size || '').catch(() => {});
+}
+if (TOK) { mostrarLogin(false); iniciar(); } else mostrarLogin(true);
+</script>
+</body>
+</html>
