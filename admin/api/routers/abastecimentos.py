@@ -1260,6 +1260,15 @@ async def _registrar_nota(request, payload):
     for eq, litros, it in itens:
         saida.append(await _gravar_item(nota_id, eq, litros, it, comb, rubrica, preco_litro, data,
                                         payload, fotos=fotos))
+    # (24/10/2026) nota nova → quem lança na MAIS (Luana) é avisado na hora; abre direto no Balcão de Notas
+    try:
+        posto = await ajard_query("SELECT nome FROM public.fornecedores WHERE id=%s", (fornecedor_id,), fetch="one") if fornecedor_id else None
+        eqs = ", ".join(x.get("equipamento") or "" for x in saida if x.get("equipamento"))
+        await _notificar("nota_lancar", f"⛽ Nota de abastecimento" + (f" · cupom {cupom}" if cupom else ""),
+                         f"{(posto or {}).get('nome') or (n.get('posto_nome') or 'posto')} · {litros_total:g} L" + (f" · R$ {valor_total:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".") if valor_total else "") + (f" · {eqs}" if eqs else ""),
+                         "/abastecimento/notas", excluir=[_uid(payload)])
+    except Exception:
+        pass
     return {"nota_id": nota_id, "cupom": cupom, "combustivel": comb, "rubrica": rubrica,
             "litros_total": litros_total, "valor_total": valor_total, "preco_litro": preco_litro,
             "itens": saida}
