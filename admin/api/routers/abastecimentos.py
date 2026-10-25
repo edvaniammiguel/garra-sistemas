@@ -53,7 +53,7 @@ router = APIRouter()
 
 # (21/10/2026) Sem perfis "livres": só a tela de Permissões decide (admin = Master).
 from core.permissions import tem_modulo as _tem_modulo
-from core.notificacoes import notificar as _notificar   # (24/10/2026) aviso de leitura divergente
+from core.notificar import notificar as _notificar   # (24/10/2026) aviso de leitura divergente
 
 async def verificar_abastecimento(payload=Depends(verificar_token)):
     """Gate do módulo 'abastecimento' (perfil padrão + exceções individuais)."""

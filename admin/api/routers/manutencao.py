@@ -21,7 +21,7 @@ router = APIRouter()
 
 # (21/10/2026) Sem lista de perfis "livres": a tela de Permissões é a única fonte (admin = Master).
 from core.permissions import tem_modulo as _tem_modulo
-from core.notificacoes import notificar as _notificar   # (24/10/2026) avisos app/desktop/push
+from core.notificar import notificar as _notificar   # (24/10/2026) avisos app/desktop/push
 
 
 async def verificar_manutencao(payload=Depends(verificar_token)):
@@ -376,7 +376,7 @@ async def _avisar_pedido(row, numero, descricao, d):
 
 
 async def _notificar_dest(tipo):
-    from core.notificacoes import destinatarios
+    from core.notificar import destinatarios
     try:
         return await destinatarios(tipo)
     except Exception:

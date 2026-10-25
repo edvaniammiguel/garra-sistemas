@@ -27,7 +27,7 @@ router = APIRouter()
 
 # (21/10/2026) sem lista de perfis "livres": só a tela de Permissões decide (admin = Master)
 from core.permissions import tem_modulo as _tem_modulo_core
-from core.notificacoes import notificar as _notificar   # (24/10/2026) aviso de OC para aprovar
+from core.notificar import notificar as _notificar   # (24/10/2026) aviso de OC para aprovar
 
 _TRANSICOES = {
     "rascunho":         {"solicitada", "cancelada"},

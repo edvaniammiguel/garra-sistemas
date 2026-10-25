@@ -13,6 +13,7 @@ from fastapi.responses import RedirectResponse, FileResponse, HTMLResponse, Redi
 from core.config import OPERACIONAL_DIR
 from core.db import ajard_query, ajard_query_id, get_db
 from core.storage import storage_upload
+from core.notificar import notificar as _notificar   # (24/10/2026) avisos de OS (app/desktop/push)
 from core.helpers import enviar_email_smtp
 from core.auth import verificar_token, verificar_admin
 from core.gates import exigir_painel_gestao   # (21/10/2026) OS/cadastros pelo módulo Painel de Gestão, não por perfil
@@ -762,6 +763,10 @@ async def op_criar_os(request: Request, payload=Depends(exigir_painel_gestao)):
                            VALUES (%s,%s,%s,%s)
                            ON CONFLICT (os_id, categoria, tipo_medicao) DO UPDATE SET valor_unitario=EXCLUDED.valor_unitario""",
                         (os_row["id"], cat, med, float(val)), fetch="none")
+        if operador_id and str(operador_id) != str(criado_por_id):
+            eqc = await ajard_query("SELECT codigo FROM operacional.equipamentos WHERE id=%s", (equipamento_id,), fetch="one") if equipamento_id else None
+            await _notificar("os_atribuida", f"📋 OS {numero} aberta para você", f"{obra}" + (f" · {(eqc or {}).get('codigo')}" if eqc else "") + (f" · início {data_inicio}" if data_inicio else ""),
+                             "/mobile?aba=Op", apenas=[operador_id])
         return dict(os_row)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erro ao criar OS: {str(e)}")
@@ -956,8 +961,13 @@ async def op_atualizar_os(os_id: str, request: Request, payload=Depends(exigir_p
     params.append(datetime.utcnow())
     params.append(os_id)
 
+    antes = await ajard_query("SELECT operador_id, numero, obra FROM operacional.ordens_servico WHERE id=%s", (os_id,), fetch="one")
     sql = f"UPDATE operacional.ordens_servico SET {', '.join(updates)} WHERE id = %s"
     await ajard_query(sql, tuple(params), fetch="none")
+    # (24/10/2026) OS passou para outro operador → avisa o novo
+    novo_op = d.get("operador_id") if isinstance(d, dict) else None
+    if novo_op and antes and str(antes.get("operador_id") or "") != str(novo_op):
+        await _notificar("os_atribuida", f"📋 OS {antes['numero']} aberta para você", antes.get("obra") or "", "/mobile?aba=Op", apenas=[novo_op])
 
     # Retornar atualizado
     return await op_detalhe_os(os_id, _auth=payload)
@@ -1942,6 +1952,8 @@ async def op_criar_os_avulsa(req: Request, payload=Depends(verificar_token)):
             if existente:
                 return {"ok": True, "os": dict(existente), "dedup": True}
         raise HTTPException(status_code=500, detail=f"Erro ao criar OS: {str(e)}")
+    await _notificar("os_campo", f"📋 OS {numero} aberta no celular", f"{(user or {}).get('nome') or login} · {obra}" + (f" · {cliente_nome}" if cliente_nome else ""),
+                     "/admin", excluir=[(user or {}).get("id")])
     return {"ok": True, "os": dict(nova) if nova else {"numero": numero}}
 
 @router.get("/operacional/api/controle-mensal/periodos")

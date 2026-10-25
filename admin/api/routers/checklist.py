@@ -290,7 +290,7 @@ async def salvar_envio(e: EnvioCreate, db=Depends(get_db), _auth=Depends(verific
                     "VALUES ($1,$2,$3,'checklist','alta',$4,$5,$6,'checklist-nc',$7,$6)",
                     ano, int(seq), numero, desc, eq_id, sol_id, e.envio_id)
                 try:
-                    from core.notificacoes import notificar as _notificar
+                    from core.notificar import notificar as _notificar
                     pid = await db.fetchval("SELECT id FROM manutencao.pedidos WHERE numero=$1", numero)
                     eqc = await db.fetchval("SELECT codigo FROM operacional.equipamentos WHERE id=$1", eq_id) if eq_id else None
                     await _notificar("pedido_novo", f"Pedido {numero} (checklist)", f"{eqc or 'sem equipamento'} · {desc[:120]}",
