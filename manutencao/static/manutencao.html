@@ -916,6 +916,16 @@ async function carregarOTsReais(){
     if (st) st.textContent = '⚠ ' + e.message;
   }
 }
+// (25/10/2026) Coluna Programada no padrão ManWinWin: só a data (ou leitura prevista); o semáforo fica só na 1ª coluna;
+// "vencida há N d · passou N h" / "vence em N d · faltam N h" vai para o tooltip (mouse em cima).
+function otProgCelula(o){
+  const v = o.vencimento;
+  const d = x => { if (!x) return '—'; try { return _fmtData(x); } catch(e){ return '—'; } };
+  const dp = o.data_prevista ? d(o.data_prevista) : (o.horimetro_previsto != null ? o.horimetro_previsto + ' h·km' : '—');
+  if (!v) return dp;
+  const tip = v.texto + ((o.data_prevista && o.horimetro_previsto != null) ? ' · previsto ' + o.horimetro_previsto + ' h·km' : '');
+  return '<span style="cursor:help;white-space:nowrap" title="'+_esc(tip)+'">'+dp+'</span>';
+}
 function renderOTs(){
   const tb = document.getElementById('ots-tbody');
   const st = document.getElementById('ots-strip');
@@ -978,8 +988,7 @@ function renderOTs(){
     const [cc, cl] = MNT_CHIP[o.status] || ['nr', o.status];
     const v = o.vencimento;
     const dot = v ? (v.nivel===0 ? 'r' : v.nivel===1 ? 'y' : 'g') : 'r';   // sem prazo (corretiva) = já devida = vermelho
-    const dp = o.data_prevista ? d(o.data_prevista) : (o.horimetro_previsto != null ? o.horimetro_previsto + ' h·km' : '—');
-    const prog = v ? `<span style="color:${v.nivel===0?'#DC2626':v.nivel===1?'#B45309':'#16A34A'};font-size:10px">${_esc(v.texto)}</span>` : dp;
+    const prog = otProgCelula(o);
     const ent = (o.equipamento_codigo || '') + (o.equipamento_desc ? ' — ' + o.equipamento_desc : '');
     // (16/10/2026) Padrão ManWinWin: semáforo só em OT viva; encerrada vira arquivo fechado, cancelada vira ✕.
     const ico = o.status === 'concluida' ? '<span title="Encerrada" style="font-size:13px;line-height:1">🗂️</span>'
@@ -3630,8 +3639,7 @@ function renderJanelaOTs(){
     const [cc, cl] = MNT_CHIP[o.status] || ['nr', o.status];
     const v = o.vencimento;
     const dot = v ? (v.nivel===0 ? 'r' : v.nivel===1 ? 'y' : 'g') : 'r';   // sem prazo (corretiva) = já devida = vermelho
-    const prog = v ? '<span style="color:'+(v.nivel===0?'#DC2626':v.nivel===1?'#B45309':'#16A34A')+';font-size:10px">'+_esc(v.texto)+'</span>'
-                   : (o.data_prevista ? d(o.data_prevista) : (o.horimetro_previsto != null ? o.horimetro_previsto+' h·km' : '—'));
+    const prog = otProgCelula(o);
     const sel = String(_otwin.sel) === String(o.id);
     return '<tr'+(sel?' class="sel"':'')+' onclick="otwSel(\''+o.id+'\')" ondblclick="_otVoltarEq=_otwin.eqId; verOTReal(\''+o.id+'\')" style="cursor:pointer">'
       + '<td style="text-align:center">'+((o.status === 'em_andamento' || o.status === 'aberta') ? '<span class="ot-play" title="'+(o.status==='aberta'?'Aberta':'Em curso (emitida)')+'">▶</span>' : o.status === 'concluida' ? '🗂️' : o.status === 'cancelada' ? '<span style="color:#94A3B8;font-weight:900">✕</span>' : '<span class="dot '+dot+'"></span>')+'</td>'
