@@ -1149,7 +1149,8 @@ async def semaforos_frota(_auth=Depends(verificar_manutencao)):
                   e.categoria, e.equipamento_pai, e.posicao,
                   (SELECT COUNT(*)::int FROM operacional.equipamentos f
                     WHERE f.equipamento_pai = e.id AND f.ativo = true) AS n_filhos,
-                  e.sistema_codigo, e.tipo_sigla,
+                  e.sistema_codigo, e.tipo_sigla, e.centro_custo,
+                  (SELECT cc.nome FROM manutencao.centros_custo cc WHERE cc.codigo = e.centro_custo) AS centro_custo_nome,
                   (SELECT u.nome FROM public.usuarios_garra u WHERE u.id = e.operador_responsavel_id) AS operador_nome,
                   p.codigo AS ponto, p.leitura_atual, p.limiar_atencao,
                   p.limiar_urgente, p.limiar_maximo,
