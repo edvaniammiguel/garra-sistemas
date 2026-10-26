@@ -215,7 +215,19 @@ async def salvar_envio(e: EnvioCreate, db=Depends(get_db), _auth=Depends(verific
             elif _txt.count(".") >= 1 and all(len(p) == 3 for p in _txt.split(".")[1:]):
                 _txt = _txt.replace(".", "")
             _val = float(_txt) if _txt else None
+            # (26/10/2026) leitura muito fora da última conhecida → excluída do cálculo + aviso; não empurra o cadastro
+            _susp = False
             if _val and _val > 0:
+                try:
+                    from core import leituras as _leituras
+                    _eqid = await db.fetchval("SELECT id FROM operacional.equipamentos WHERE upper(trim(codigo)) = upper($1) AND ativo=TRUE", _ident)
+                    if _eqid:
+                        _susp = await _leituras.verificar(_eqid, "checklist", e.envio_id, _val, None,
+                                                          quem=getattr(e, "usuario_nome", None) or getattr(e, "usuario_login", None),
+                                                          origem=f"checklist {getattr(e, 'cl_label', None) or getattr(e, 'cl_id', '')}")
+                except Exception:
+                    log.exception("checklist %s: verificação de leitura suspeita falhou", e.envio_id)
+            if _val and _val > 0 and not _susp:
                 await db.execute(
                     "UPDATE operacional.equipamentos "
                     "   SET km_atual = CASE WHEN medicao='km' AND COALESCE(km_atual,0) < $1 THEN $1 ELSE km_atual END, "

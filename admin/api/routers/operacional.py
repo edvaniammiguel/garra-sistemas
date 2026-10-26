@@ -14,6 +14,7 @@ from core.config import OPERACIONAL_DIR
 from core.db import ajard_query, ajard_query_id, get_db
 from core.storage import storage_upload
 from core.notificar import notificar as _notificar   # (24/10/2026) avisos de OS (app/desktop/push)
+from core import leituras as _leituras   # (26/10/2026) leitura suspeita (salto/recuo) na parte diária
 from core.helpers import enviar_email_smtp
 from core.auth import verificar_token, verificar_admin
 from core.gates import exigir_painel_gestao   # (21/10/2026) OS/cadastros pelo módulo Painel de Gestão, não por perfil
@@ -1122,10 +1123,16 @@ async def op_criar_parte(os_id: str, request: Request, payload=Depends(verificar
              criado_por_id,
              horas_cobradas_padrao, client_id)
         )
+        # (26/10/2026) Leitura muito fora da última conhecida → excluída do cálculo + aviso; não empurra o cadastro
+        _susp = False
+        if parte and equipamento_id and (h_fin is not None or km_fin is not None):
+            _osn = await ajard_query("SELECT numero, obra FROM operacional.ordens_servico WHERE id=%s", (os_id,), fetch="one")
+            _susp = await _leituras.verificar(equipamento_id, "parte", parte["id"], h_fin if h_fin is not None else km_fin, data,
+                                              quem=(payload.get("nome") or login), origem=f"OS {(_osn or {}).get('numero') or ''} · parte diária de {data}")
         # (18/09/2026) Duas pistas de leitura: a OS do cliente alimenta SEMPRE o contador
         # comercial e alimenta o de manutenção só se o objecto permitir (os_alimenta_manutencao —
         # máquina com dois horímetros desliga). Ambos "nunca recuam".
-        if h_fin is not None and equipamento_id:
+        if h_fin is not None and equipamento_id and not _susp:
             await ajard_query(
                 """UPDATE operacional.equipamentos SET
                      horimetro_comercial = GREATEST(COALESCE(horimetro_comercial,0), %s),
@@ -1135,7 +1142,7 @@ async def op_criar_parte(os_id: str, request: Request, payload=Depends(verificar
                    WHERE id=%s""",
                 (h_fin, h_fin, equipamento_id), fetch="none"
             )
-        if km_fin is not None and equipamento_id:
+        if km_fin is not None and equipamento_id and not _susp:
             await ajard_query(
                 """UPDATE operacional.equipamentos SET
                      km_comercial = GREATEST(COALESCE(km_comercial,0), %s),

@@ -5334,6 +5334,36 @@ async def equip_funcionamento(eq_id: str, _auth=Depends(verificar_manutencao)):
              "ref": r["ref"], "corrigida": bool(r["corrigida"]),
              "leitura_original": float(r["leitura_original"] or 0)}
             for r in rows if float(r["leitura"] or 0) > 0]
+    # (26/10/2026) ⚠ salto/recuo em relação à leitura anterior (regra de core/leituras) e quem lançou / de onde veio
+    try:
+        from core import leituras as _lei
+        asc = sorted(regs, key=lambda x: (x["data"], x["leitura"]))
+        for i, x in enumerate(asc):
+            x["salto"] = _lei.salto(x["leitura"], asc[i-1]["leitura"], eq.get("medicao")) if i else None
+    except Exception as _e:
+        print(f"[Funcionamento] salto indisponível: {_e}")
+    quem = {}
+    ids = lambda f: [x["ref"] for x in regs if x["fonte"] == f]
+    for fonte, sql, fmt in (
+        ("parte", """SELECT p.id::text AS ref, COALESCE(u.nome, p.operador_nome_avulso) AS nome, os.numero
+                     FROM operacional.partes_diarias p LEFT JOIN public.usuarios_garra u ON u.id = p.operador_id
+                     LEFT JOIN operacional.ordens_servico os ON os.id = p.os_id WHERE p.id = ANY(%s::uuid[])""",
+         lambda q: ((q.get("nome") or "") + (" · OS " + q["numero"] if q.get("numero") else "")).strip(" ·")),
+        ("checklist", "SELECT envio_id::text AS ref, usuario_nome AS nome, cl_label FROM checklist.envios WHERE envio_id::text = ANY(%s::text[])",
+         lambda q: ((q.get("nome") or "") + (" · " + q["cl_label"] if q.get("cl_label") else "")).strip(" ·")),
+        ("abastecimento", "SELECT id::text AS ref, usuario_nome AS nome FROM operacional.abastecimentos WHERE id = ANY(%s::uuid[])",
+         lambda q: q.get("nome") or ""),
+        ("ot", "SELECT id::text AS ref, numero AS nome FROM manutencao.ot WHERE id = ANY(%s::uuid[])", lambda q: q.get("nome") or ""),
+    ):
+        if not ids(fonte):
+            continue
+        try:
+            for q in await ajard_query(sql, (ids(fonte),)) or []:
+                quem[(fonte, q["ref"])] = fmt(q)
+        except Exception as _e:
+            print(f"[Funcionamento] quem ({fonte}) indisponível: {_e}")
+    for x in regs:
+        x["quem"] = quem.get((x["fonte"], x["ref"]), "")
     anuladas = await ajard_query(
         """SELECT data::date AS d, fonte, ref, leitura_original, motivo
            FROM manutencao.leituras_correcao
