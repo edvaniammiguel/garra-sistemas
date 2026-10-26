@@ -610,7 +610,7 @@ function renderCentroEquip(){
             : cod === '_todos' ? '🏢 Organização — todos'
             : cod === '_sem' ? '❔ Sem grupo definido'
             : ((_arvSistemas.find(s=>s.codigo===cod)||{}).nome ? cod+' — '+(_arvSistemas.find(s=>s.codigo===cod)||{}).nome : cod);
-  // (25/10/2026) Padrão ManWinWin — Lista Objectos (Objecto · Descrição · Operador · Entidade) e Árvore Objectos
+  // (25/10/2026) Padrão ManWinWin — Lista Objectos (Objecto · Descrição · Operador · Centro de custo) e Árvore Objectos
   // (Objecto · Descrição, filhos pela setinha). Sem semáforo aqui: estado da manutenção fica nas OTs e na ficha.
   const todos = _eqsDoNo(cod).filter(eqCasa);
   const filhosDe = id => _semCache.filter(f => String(f.equipamento_pai) === String(id));
@@ -626,7 +626,7 @@ function renderCentroEquip(){
   if (_ftModo === 'lista'){
     colspan = 5;
     thead = '<th style="width:26px"></th><th style="width:200px">Objeto</th><th>Descrição</th>'
-      + '<th style="width:240px">Operador</th><th style="width:220px">Entidade</th>';
+      + '<th style="width:240px">Operador</th><th style="width:220px">Centro de custo</th>';
     linhas = eqs.map(e => {
       const marca = e.categoria === 'componente' ? (e.equipamento_pai
           ? ' <span class="muted" style="font-size:9px">→ '+_esc(paiDe(e))+(e.posicao?' · '+_esc(e.posicao):'')+'</span>'
@@ -5188,11 +5188,11 @@ async function otAba(aba){
       + tr(rot('Última') + cel(u ? dtl(u.data_conclusao) : '<span class="muted">— (primeira deste equipamento)</span>') + cel(u ? n(u.horimetro_na_abertura) : '—') + nota(u ? 'Última OT: <b>'+_esc(u.numero)+'</b>' : ''))
       + tr(rot('Prog. Início', true) + cel(o.data_prevista ? _fmtData(o.data_prevista) : '—') + cel(n(o.horimetro_previsto)) + nota((aberta ? '<button class="btn" style="font-size:10px;padding:1px 8px" onclick="abrirReprogramar()">Avançado</button>' : '') + (o.prog_alterada ? ' <span style="color:#92400E">✎ alterada</span>' : '')))
       + tr(rot('Prog. Fim', true) + cel(progFim ? progFim.toLocaleDateString('pt-BR') + (o.tdm_previsto ? ' ' + progFim.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}) : '') : '—') + cel('') + nota(o.tdm_previsto ? '= Prog. Início + '+n(o.tdm_previsto)+' h (Prev. TDM)' : 'informe Prev. TDM na Origem'))
-      + tr(rot('Início', true) + cel(emCurso ? inp('ot-ini-data','datetime-local', inicioReal ? otEncLocal(inicioReal) : '', 'max="'+_esc(otEncLocal(new Date()))+'" onchange="otGestaoSalvar(\'data_inicio_real\', this.value ? new Date(this.value).toISOString() : \'\')"') : (inicioReal ? dtl(inicioReal)+' '+hl(inicioReal) : '—')) + cel(emCurso || !aberta ? leituraIni : '') + nota(!aberta ? '' : (!emCurso ? 'preenchido ao Emitir' : (!o.data_inicio_real && h1 ? 'assumido da execução' : ''))))
+      + tr(rot('Início', true) + cel(emCurso ? inp('ot-ini-data','datetime-local', inicioReal ? otEncLocal(inicioReal) : '', 'max="'+_esc(otEncLocal(new Date()))+'" onblur="if(this.value!==this.defaultValue)otGestaoSalvar(\'data_inicio_real\', this.value ? new Date(this.value).toISOString() : \'\')"') : (inicioReal ? dtl(inicioReal)+' '+hl(inicioReal) : '—')) + cel(emCurso || !aberta ? leituraIni : '') + nota(!aberta ? '' : (!emCurso ? 'preenchido ao Emitir' : (!o.data_inicio_real && h1 ? 'assumido da execução' : ''))))
       + tr(rot('Fim', true) + cel(emCurso ? inp('ot-enc-data','datetime-local', s.data, 'max="'+_esc(otEncLocal(new Date()))+'" oninput="otEncGuardar(\'data\',this.value)"') : (fim ? dtl(fim)+' '+hl(fim) : '—'))
           + cel(emCurso ? inp('ot-enc-hor','text', s.hor, 'inputmode="decimal" placeholder="'+(contador != null ? 'contador '+contador : 'registo')+'" oninput="otEncGuardar(\'hor\',this.value)"') : n(o.horimetro_conclusao))
           + nota(emCurso ? (s.horApp ? 'do app: '+_esc(s.horApp) : '') : (aberta ? 'preenchido ao Encerrar' : '')))
-      + tr(rot('Data Limite') + cel(aberta ? inp('ot-limite','date', o.data_limite ? String(o.data_limite).slice(0,10) : '', 'onchange="otGestaoSalvar(\'data_limite\', this.value)"') : (o.data_limite ? _fmtData(o.data_limite) : '—')) + cel('') + nota('prazo p/ concluir · semáforo das corretivas'))
+      + tr(rot('Data Limite') + cel(aberta ? inp('ot-limite','date', o.data_limite ? String(o.data_limite).slice(0,10) : '', 'onblur="if(this.value!==this.defaultValue)otGestaoSalvar(\'data_limite\', this.value)"') : (o.data_limite ? _fmtData(o.data_limite) : '—')) + cel('') + nota('prazo p/ concluir · semáforo das corretivas'))
       + tr(rot('Reg. Par. / Total') + cel('') + cel((regPar != null ? n(regPar.toFixed(1)) : '—') + ' / ' + (regTotal != null ? n(regTotal) : '—')) + nota('rodado entre Início e Fim / registo no fim'))
       + tr(rot('Encerramento') + cel(o.encerrado_em ? dtl(o.encerrado_em)+' '+hl(o.encerrado_em) : (o.status === 'concluida' && fim ? dtl(fim)+' '+hl(fim) : '—')) + cel('') + nota(o.status === 'concluida' ? '<span class="chip ok">🗂️ Encerrada</span>' : ''))
       + '</tbody></table>';
@@ -7875,10 +7875,32 @@ async function docsTodosPane(q){
 async function planosTodosPane(){
   let pl = [];
   try { pl = await mntFetch('/manutencao/api/planos-todos'); } catch(e){ mostrarToast('\u274c '+e.message,'warn'); return; }
-  document.getElementById('pp-pane').innerHTML = '<div class="pp-title">Planos preventivos (FMPs)</div><div class="pp-sub">Todas as FMPs da frota. Duplo clique abre os planos do objeto. Modelos reutiliz\u00e1veis ficam na Biblioteca de Prepara\u00e7\u00f5es.</div>'
-    + '<div style="max-height:420px;overflow:auto;margin-top:8px"><table style="font-size:11px"><thead><tr><th>Objeto</th><th>FMP</th><th>Descri\u00e7\u00e3o</th><th>Per\u00edodo</th><th class="r">TDM (h)</th></tr></thead><tbody>'
-    + (pl.length ? pl.map(p => '<tr style="cursor:pointer" ondblclick="abrirPlanosEquip(\''+p.equipamento_id+'\')"><td class="bold">'+_esc(p.equipamento_codigo)+'</td><td>'+_esc(p.codigo)+'</td><td>'+_esc(p.descricao||'')+'</td><td>'+_esc(p.periodo_codigo||'')+'</td><td class="r mono">'+(p.tdm_horas??'')+'</td></tr>').join('')
-      : '<tr><td colspan="5" class="muted" style="padding:10px">Nenhuma FMP cadastrada. Crie pela Frota \u25b8 Mais \u25b8 Planos Manuten\u00e7\u00e3o.</td></tr>') + '</tbody></table></div>';
+  // (26/10/2026) só objetos ativos na lista principal; período pelo nome + qtd; última execução; procura;
+  // período que não existe em Parametrizar › Períodos fica em vermelho; planos de objetos inativos dobrados embaixo
+  window._fmpTodos = pl;
+  const ativos = pl.filter(p => p.equipamento_ativo !== false), inativos = pl.filter(p => p.equipamento_ativo === false);
+  const un = p => (p.medicao === 'km' ? 'km' : 'h');
+  const per = p => p.periodo_nome
+      ? _esc(p.periodo_nome).replace(' (horímetro/km)', '')
+      : '<span style="color:#DC2626;font-weight:700" title="Código não cadastrado em Parametrizar › Períodos — a FMP não vence">'+_esc(p.periodo_codigo || '—')+' — não cadastrado</span>';
+  const qtd = p => p.periodo_qtd != null ? Number(p.periodo_qtd).toLocaleString('pt-BR') + (String(p.periodo_codigo) === '6' ? ' ' + un(p) : '') : '<span class="muted">—</span>';
+  const ult = p => (p.ultima_data ? _fmtData(p.ultima_data) : '') + (p.ultima_leitura != null ? (p.ultima_data ? ' · ' : '') + Number(p.ultima_leitura).toLocaleString('pt-BR') + ' ' + un(p) : '') || '<span class="muted">—</span>';
+  const linha = p => '<tr style="cursor:pointer" ondblclick="abrirPlanosEquip(\''+p.equipamento_id+'\')"><td class="bold">'+_esc(p.equipamento_codigo)+'</td><td>'+_esc(p.codigo)+'</td><td>'+_esc(p.descricao||'')+'</td><td>'+per(p)+'</td><td class="r">'+qtd(p)+'</td><td>'+ult(p)+'</td><td class="r">'+(p.tdm_horas!=null?p.tdm_horas:'')+'</td></tr>';
+  const semPer = ativos.filter(p => !p.periodo_nome).length;
+  window._fmpRender = function(){
+    const q = ((document.getElementById('fmp-busca')||{}).value || '').trim().toLowerCase();
+    const casa = p => !q || [p.equipamento_codigo, p.codigo, p.descricao, p.equipamento_desc].some(v => String(v||'').toLowerCase().includes(q));
+    const a = ativos.filter(casa), i = inativos.filter(casa);
+    document.getElementById('fmp-corpo').innerHTML = (a.length ? a.map(linha).join('') : '<tr><td colspan="7" class="muted" style="padding:10px">'+(q ? 'Nada encontrado.' : 'Nenhuma FMP cadastrada. Crie pela Frota \u25b8 Mais \u25b8 Planos Manuten\u00e7\u00e3o.')+'</td></tr>');
+    document.getElementById('fmp-n').textContent = a.length + ' FMP(s) · ' + new Set(a.map(p => p.equipamento_codigo)).size + ' objeto(s)';
+    const bi = document.getElementById('fmp-inat'); if (bi) bi.innerHTML = i.map(linha).join('');
+  };
+  document.getElementById('pp-pane').innerHTML = '<div class="pp-title">Planos preventivos (FMPs) <span class="muted" id="fmp-n" style="font-weight:400;font-size:11px"></span></div><div class="pp-sub">Todas as FMPs dos objetos ativos. Duplo clique abre os planos do objeto. Modelos reutiliz\u00e1veis ficam na Biblioteca de Prepara\u00e7\u00f5es.'
+    + (semPer ? ' <b style="color:#DC2626">' + semPer + ' FMP(s) com per\u00edodo n\u00e3o cadastrado</b> \u2014 corrija na ficha do objeto.' : '') + '</div>'
+    + '<div style="display:flex;gap:8px;align-items:center;margin-top:8px"><input id="fmp-busca" placeholder="\ud83d\udd0d objeto, FMP ou descri\u00e7\u00e3o" style="width:320px;font-size:12px" oninput="_fmpRender()"></div>'
+    + '<div style="margin-top:8px;max-height:calc(100vh - 330px);overflow:auto"><table style="font-size:11px"><thead><tr><th style="width:90px">Objeto</th><th style="width:60px">FMP</th><th>Descri\u00e7\u00e3o</th><th style="width:150px">Per\u00edodo</th><th class="r" style="width:80px">Qtd</th><th style="width:170px">\u00daltima execu\u00e7\u00e3o</th><th class="r" style="width:60px">TDM (h)</th></tr></thead><tbody id="fmp-corpo"></tbody></table></div>'
+    + (inativos.length ? '<details style="margin-top:10px"><summary style="cursor:pointer;font-size:11px;color:#64748B">\ud83d\udeab ' + inativos.length + ' FMP(s) de objetos <b>inativos</b> (c\u00f3digos antigos da importa\u00e7\u00e3o) \u2014 n\u00e3o entram nas previs\u00f5es</summary><div style="max-height:260px;overflow:auto;margin-top:6px"><table style="font-size:11px"><tbody id="fmp-inat"></tbody></table></div></details>' : '');
+  _fmpRender();
 }
 async function clientesPane(){
   let cl = [];
