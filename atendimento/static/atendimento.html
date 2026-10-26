@@ -687,7 +687,7 @@ async function abrirConfig(aba){
   document.querySelectorAll('#cfg-abas .filtro').forEach(b => b.classList.toggle('ativo', b.dataset.a === ABA));
   await recarregarConfig();
 }
-function fecharConfig(){ document.getElementById('cfg').classList.remove('vis'); clearInterval(_tSim); carregarLista(); pintarConexao(); }
+function fecharConfig(){ document.getElementById('cfg').classList.remove('vis'); clearInterval(_tSim); clearTimeout(_tCon); carregarLista(); pintarConexao(); }
 async function recarregarConfig(){
   try { CFG = await api('/whatsapp/api/config'); USUARIOS = CFG.usuarios; } catch(e) { toast(e.message, 'err'); return; }
   document.getElementById('aba-sim').classList.toggle('oculto', !CFG.simulacao);
@@ -695,7 +695,7 @@ async function recarregarConfig(){
 }
 document.getElementById('cfg-abas').addEventListener('click', e => {
   const b = e.target.closest('.filtro'); if (!b) return;
-  document.querySelectorAll('#cfg-abas .filtro').forEach(x => x.classList.remove('ativo')); b.classList.add('ativo'); ABA = b.dataset.a; clearInterval(_tSim); renderAba();
+  document.querySelectorAll('#cfg-abas .filtro').forEach(x => x.classList.remove('ativo')); b.classList.add('ativo'); ABA = b.dataset.a; clearInterval(_tSim); clearTimeout(_tCon); renderAba();
 });
 function optsUsuarios(sel){ return '<option value="">—</option>' + CFG.usuarios.map(u => `<option value="${u.id}" ${u.id === sel ? 'selected' : ''}>${esc(u.nome)}</option>`).join(''); }
 function optsSetores(sel){ return CFG.setores.map(s => `<option value="${s.id}" ${s.id === sel ? 'selected' : ''}>${esc(s.nome)}</option>`).join(''); }
@@ -704,10 +704,16 @@ function renderAba(){
   ({conexao: abaConexao, setores: abaSetores, acessos: abaAcessos, menu: abaMenu, textos: abaTextos, respostas: abaRespostas, simulador: abaSimulador}[ABA] || abaConexao)(el);
 }
 
-async function abaConexao(el){
-  el.innerHTML = '<div class="panel">Consultando…</div>';
+let _tCon = null;
+async function abaConexao(el, silencioso){
+  clearTimeout(_tCon);
+  if (!silencioso) el.innerHTML = '<div class="panel">Consultando…</div>';
   let c; try { c = await api('/whatsapp/api/conexao'); } catch(e) { el.innerHTML = `<div class="panel">${esc(e.message)}</div>`; return; }
+  if (ABA !== 'conexao' || !document.getElementById('cfg').classList.contains('vis')) return;
   const ok = c.estado === 'open';
+  /* (26/10/2026) enquanto não conecta, a tela se atualiza sozinha a cada 4 s — o QR lido vira "Conectado" sem clicar */
+  if (!ok && !c.simulacao) _tCon = setTimeout(() => abaConexao(document.getElementById('cfg-corpo'), true), 4000);
+  else if (ok && silencioso) { toast('WhatsApp conectado'); pintarConexao(); }
   el.innerHTML = `<div class="dsec">Número do WhatsApp</div><div class="panel">
     <p><strong>Estado:</strong> ${c.simulacao ? '🟣 Modo simulação (laboratório — nada sai para o WhatsApp)' : ok ? '🟢 Conectado' : '🔴 ' + esc(c.estado)}</p>
     <p class="hint">Instância: ${esc(c.instancia)}. Abra o WhatsApp no celular deste número pelo menos 1 vez a cada 14 dias, senão a sessão cai.</p>
