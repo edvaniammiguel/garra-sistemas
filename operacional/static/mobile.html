@@ -404,6 +404,7 @@ input,select,textarea{font-family:inherit;outline:none;border:none}
     <button class="nav-btn" onclick="ir('OT')" style="display:none"><span class="nav-icon">📨</span><span class="nav-label">Pedir OT</span></button>
     <button class="nav-btn" onclick="ir('MG')" style="display:none"><span class="nav-icon">🔧</span><span class="nav-label">Manutenção</span></button>
     <button class="nav-btn" onclick="ir('AB')" style="display:none"><span class="nav-icon nav-svg"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 22V5a2 2 0 0 1 2-2h7a2 2 0 0 1 2 2v17"/><path d="M2 22h13"/><rect x="6" y="6" width="5" height="4" rx="1"/><path d="M14 11h1.5a2 2 0 0 1 2 2v4.5a1.5 1.5 0 0 0 3 0V9.8a2 2 0 0 0-.6-1.4L18 6.5"/></svg></span><span class="nav-label">Abastecer</span></button>
+    <button class="nav-btn" onclick="ir('AT')" style="display:none"><span class="nav-icon">💬</span><span class="nav-label">Atendimento</span></button>
   </div>
 </div>
 
@@ -799,7 +800,7 @@ function ir(nome) {
   const bottomNavs = document.querySelectorAll('.bottom-nav .nav-btn');
   bottomNavs.forEach(b => b.classList.remove('active'));
   // aba ativa sempre visível na barra rolável
-  try { const ix = ['Jard','Op','Check','Log','OC','OT','MG','AB'].indexOf(nome);
+  try { const ix = ['Jard','Op','Check','Log','OC','OT','MG','AB','AT'].indexOf(nome);
         if (bottomNavs[ix]) bottomNavs[ix].scrollIntoView({behavior:'smooth', block:'nearest', inline:'center'}); } catch(e){}
 
   // FAB de Nova OS visível só na aba Operacional
@@ -848,6 +849,12 @@ function ir(nome) {
     bottomNavs[7].classList.add('active');
     document.getElementById('app-modulo').textContent = 'Abastecimento';
     carregarIframeExterno('ab', '/abastecimento');
+  } else if (nome === 'AT') {
+    // (26/10/2026) Atendimento WhatsApp (Inbox das atendentes) embutido no shell
+    document.getElementById('sec-ext').classList.add('active');
+    bottomNavs[8].classList.add('active');
+    document.getElementById('app-modulo').textContent = 'Atendimento';
+    carregarIframeExterno('at', '/atendimento');
   }
 }
 
@@ -2488,6 +2495,7 @@ function abrirLinkApp(link) {
     else if (u.pathname.indexOf('/compras') === 0) { ir('OC'); _iframeExtra('oc', '/compras', q); }
     else if (u.pathname.indexOf('/manutencao/pedido') === 0) { ir('OT'); _iframeExtra('ot', '/manutencao/pedido', q); }
     else if (u.pathname.indexOf('/abastecimento') === 0) { ir('AB'); }
+    else if (u.pathname.indexOf('/atendimento') === 0) { ir('AT'); _iframeExtra('at', '/atendimento', q); }
     else if (u.pathname === '/mobile') { var a = u.searchParams.get('aba'); if (a) ir(a); }
     else if (u.pathname.indexOf('/manutencao') === 0 || u.pathname.indexOf('/admin') === 0) { window.open(link, '_blank'); }
   } catch(e) {}
@@ -3164,11 +3172,12 @@ function aplicarPermissoesPerfil() {
     { aba: 5, id: 'pedir_ot' },
     { aba: 6, id: 'manutencao' },
     { aba: 7, id: 'abastecimento' },
+    { aba: 8, id: 'atendimento', ids: ['atendimento','atendimento_gestao'] },
   ];
 
   // Padrão por perfil (usado quando permsDB não define o módulo)
   const padrao = {
-    admin:     ['jardinagem_mobile','operacional_mobile','checklist','checklist_logistica','compras_solicitar','manutencao','abastecimento'],
+    admin:     ['jardinagem_mobile','operacional_mobile','checklist','checklist_logistica','compras_solicitar','manutencao','abastecimento','atendimento'],
     gestor:    ['jardinagem_mobile','operacional_mobile','checklist','checklist_logistica','compras_solicitar','manutencao','abastecimento'],
     luana:     ['jardinagem_mobile','operacional_mobile','checklist','compras_solicitar'],
     bruna:     ['operacional_mobile','checklist','compras_solicitar','pedir_ot','manutencao','abastecimento'],
@@ -3201,7 +3210,7 @@ function aplicarPermissoesPerfil() {
 function abrirAbaInicial() {
   if (!USUARIO) return;
   const navs = document.querySelectorAll('.bottom-nav .nav-btn');
-  const abas = ['Jard', 'Op', 'Check', 'Log', 'OC', 'OT', 'MG', 'AB'];
+  const abas = ['Jard', 'Op', 'Check', 'Log', 'OC', 'OT', 'MG', 'AB', 'AT'];
 
   // Veio do botão "Módulos" da jardinagem → NÃO reabrir jardinagem (evita loop)
   const veioDaJardinagem = new URLSearchParams(location.search).get('from') === 'jardinagem';

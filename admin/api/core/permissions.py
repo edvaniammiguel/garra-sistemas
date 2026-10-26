@@ -28,6 +28,10 @@ MODULOS_DISPONIVEIS = [
     {"id": "compras_aprovar",   "label": "Compras — Aprovar",     "desc": "Aprovar/rejeitar OCs (limitado pela alçada)"},
     {"id": "compras_alcadas",   "label": "Compras — Alçadas",     "desc": "Configurar alçadas, setores e condições (gestão)"},
     {"id": "compras_ver_todas", "label": "Compras — Visão geral", "desc": "Vê todas as OCs e confere recebimentos/devoluções (financeiro, recebedor) — sem aprovar"},
+    # (26/10/2026) Atendimento WhatsApp (substitui o BotConversa). Quem atende qual setor fica na tela de
+    # configuração do próprio módulo; aqui é só a porta de entrada.
+    {"id": "atendimento",        "label": "Atendimento WhatsApp",           "desc": "Inbox do número interno — responde os setores em que está cadastrado (app e desktop)"},
+    {"id": "atendimento_gestao", "label": "Atendimento WhatsApp — Gerência", "desc": "Vê e atende todos os setores, configura menu e textos, libera acesso entre setores, conexão"},
 ]
 
 PERFIL_MODULOS_PADRAO = {

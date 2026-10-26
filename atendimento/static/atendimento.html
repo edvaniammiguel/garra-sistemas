@@ -1,0 +1,878 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#1A2A5E">
+<title>Atendimento — Garra</title>
+<link rel="icon" href="/static/icons/favicon-32.png">
+<script>(function(){ if (new URLSearchParams(location.search).get('embedded')==='1') document.documentElement.classList.add('embedded'); })();</script>
+<!-- (26/10/2026) Atendimento WhatsApp — Inbox das atendentes + configuração (Gerência). Substitui o BotConversa.
+     APIs em admin/api/routers/whatsapp_atendimento.py. Desktop: lista + conversa lado a lado. Celular: telas separadas. -->
+<style>
+:root{
+  --blue:#1A2A5E;--blue2:#1E3A8A;--orange:#E8820C;--orange2:#D4700A;
+  --bg:#F0F4FF;--card:#FFFFFF;--border:#CBD5E1;--text:#1E293B;--muted:#64748B;
+  --green:#16A34A;--red:#DC2626;--radius:12px;
+  --bolha-out:#E7F0FF;--bolha-in:#FFFFFF;--bolha-bot:#F1F5F9;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{font-family:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;background:var(--bg);color:var(--text);font-size:14px;overflow:hidden}
+button{font-family:inherit;cursor:pointer;border:none;background:none;color:inherit}
+input,select,textarea{font-family:inherit;font-size:14px}
+.oculto{display:none!important}
+
+header{background:var(--blue);border-bottom:3px solid var(--orange);padding:0 16px;display:flex;align-items:center;justify-content:space-between;height:56px;gap:10px}
+.hl{display:flex;align-items:center;gap:10px;min-width:0}
+.logo{height:32px;object-fit:contain;filter:brightness(0) invert(1)}
+.logo-txt{font-size:18px;font-weight:900;color:var(--orange)}
+.modulo{color:#fff;font-size:13px;font-weight:700;white-space:nowrap}
+.hr{display:flex;align-items:center;gap:8px;color:#fff}
+.con{font-size:11px;font-weight:700;padding:4px 10px;border-radius:99px;background:#64748B;color:#fff;white-space:nowrap;cursor:default}
+.con.ok{background:var(--green)}.con.mal{background:var(--red);cursor:pointer}.con.sim{background:#7C3AED}
+.btn-hd{background:rgba(255,255,255,.15);color:#fff;border-radius:8px;padding:7px 10px;font-size:13px;font-weight:700}
+
+.shell{display:flex;height:calc(100dvh - 56px)}
+.embedded .shell{height:100dvh}
+.embedded header{display:none}
+.lista{width:100%;background:var(--card);display:flex;flex-direction:column;border-right:1.5px solid var(--border);min-width:0}
+.conversa{display:none;flex:1;flex-direction:column;background:#F6F8FC;min-width:0}
+.shell.aberta .lista{display:none}
+.shell.aberta .conversa{display:flex}
+
+.topo-lista{display:flex;gap:8px;padding:10px 12px 6px;align-items:center}
+.topo-lista input{flex:1;padding:10px 12px;border:1.5px solid var(--border);border-radius:8px;background:#fff;min-width:0}
+.btn-ic{width:40px;height:40px;border-radius:8px;border:1.5px solid var(--border);background:#fff;color:var(--blue);font-size:18px;font-weight:800;flex-shrink:0}
+.btn-ic.lar{background:var(--orange);border-color:var(--orange);color:#fff}
+.filtros{display:flex;gap:6px;padding:4px 12px 10px;overflow-x:auto;scrollbar-width:none;border-bottom:1.5px solid var(--border)}
+.filtros::-webkit-scrollbar{display:none}
+.filtro{flex:0 0 auto;font-size:12px;font-weight:700;padding:6px 12px;border-radius:99px;border:1.5px solid var(--border);color:var(--muted);background:#fff}
+.filtro.ativo{background:var(--blue);border-color:var(--blue);color:#fff}
+.filtro .n{margin-left:4px;font-weight:800}
+.itens{flex:1;overflow-y:auto}
+.item{display:flex;gap:10px;padding:12px;border-bottom:1px solid #E2E8F0;align-items:center;cursor:pointer}
+.item:hover{background:#F8FAFF}.item.sel{background:#EEF3FF}
+.av{width:42px;height:42px;border-radius:50%;background:#DBEAFE;color:var(--blue);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:14px;flex-shrink:0}
+.it-c{flex:1;min-width:0}
+.l1,.l2{display:flex;justify-content:space-between;gap:8px;align-items:center}
+.l2{margin-top:2px}
+.nome{font-weight:700;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hora{font-size:11px;color:var(--muted);flex-shrink:0}.hora.nova{color:var(--green);font-weight:700}
+.prev{font-size:13px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tags{display:flex;gap:4px;align-items:center;flex-shrink:0}
+.nl{background:var(--green);color:#fff;font-size:11px;font-weight:800;min-width:20px;height:20px;border-radius:10px;display:flex;align-items:center;justify-content:center;padding:0 6px}
+.badge{font-size:10px;font-weight:700;padding:3px 8px;border-radius:99px;display:inline-block;white-space:nowrap;background:#E0E7FF;color:#3730A3}
+.b-comercial{background:#DBEAFE;color:#1D4ED8}.b-financeiro{background:#F3E8FF;color:#7E22CE}
+.b-gerencia{background:#E0E7FF;color:#3730A3}.b-manutencao{background:#FFF7ED;color:#C2410C}
+.b-pend{background:#FEF3C7;color:#B45309}.b-ok{background:#DCFCE7;color:#16A34A}.b-ler{background:#F1F5F9;color:#475569}
+.vazio{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;color:var(--muted);gap:6px;text-align:center;padding:24px}
+.vazio .g{font-size:40px}
+
+.cv-head{background:#fff;border-bottom:1.5px solid var(--border);padding:8px 10px;display:flex;align-items:center;gap:10px}
+.cv-voltar{font-size:22px;color:var(--blue);padding:4px 6px}
+.cv-info{flex:1;min-width:0}
+.cv-nome{font-weight:800;color:var(--blue);font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cv-sub{font-size:12px;color:var(--muted);display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.cv-sub a{color:var(--blue2);cursor:pointer;text-decoration:underline}
+.cv-acoes{display:flex;gap:6px}
+.btn-a{font-size:12px;font-weight:700;padding:8px 10px;border-radius:8px;border:1.5px solid var(--border);color:var(--blue);background:#fff;white-space:nowrap}
+.btn-a.lar{background:var(--orange);border-color:var(--orange);color:#fff}
+.lg{display:none}
+
+.msgs{flex:1;overflow-y:auto;padding:12px 12px 6px;display:flex;flex-direction:column;gap:4px}
+.dia{align-self:center;font-size:11px;font-weight:700;color:var(--muted);background:#fff;border:1px solid var(--border);border-radius:99px;padding:3px 10px;margin:8px 0}
+.evento{align-self:center;font-size:12px;color:var(--muted);background:#EEF2F7;border-radius:8px;padding:5px 10px;margin:6px 0;text-align:center;max-width:92%}
+.evento.lock{background:#F8FAFC;border:1px dashed var(--border)}
+.b{max-width:82%;padding:7px 10px 4px;border-radius:10px;font-size:14px;line-height:1.4;position:relative;word-wrap:break-word;overflow-wrap:anywhere}
+.b.in{align-self:flex-start;background:var(--bolha-in);border:1px solid #E2E8F0;border-top-left-radius:2px}
+.b.out{align-self:flex-end;background:var(--bolha-out);border:1px solid #C7D7F5;border-top-right-radius:2px}
+.b.bot{align-self:flex-end;background:var(--bolha-bot);border:1px dashed #CBD5E1;color:#475569;font-size:13px}
+.b.cel{align-self:flex-end;background:#FFFBEB;border:1px solid #FDE68A}
+.b .ass{font-weight:800;color:var(--blue);font-size:12px;margin-bottom:2px}
+.b.bot .ass,.b.cel .ass{color:var(--muted)}
+.b .meta{display:flex;justify-content:flex-end;gap:4px;font-size:10px;color:var(--muted);margin-top:2px;align-items:center}
+.tq{font-weight:800}.tq.lida{color:#3B82F6}.tq.erro{color:var(--red)}
+.cita{border-left:3px solid var(--orange);background:rgba(26,42,94,.05);padding:4px 8px;border-radius:0 6px 6px 0;font-size:12px;color:var(--muted);margin-bottom:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.reacao{position:absolute;bottom:-12px;right:8px;background:#fff;border:1px solid var(--border);border-radius:99px;font-size:12px;padding:0 5px}
+.b.com-reacao{margin-bottom:12px}
+.b img.foto{max-width:240px;max-height:260px;border-radius:8px;display:block;cursor:zoom-in;background:#E2E8F0;min-height:60px}
+.b img.fig{width:110px;height:110px;object-fit:contain}
+.b video{max-width:240px;border-radius:8px;display:block}
+.b audio{width:230px;height:36px;display:block}
+.doc{display:flex;align-items:center;gap:8px;background:rgba(26,42,94,.05);border-radius:8px;padding:8px;min-width:200px;color:inherit;text-decoration:none}
+.doc .ic{width:34px;height:40px;background:var(--blue);color:#fff;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;flex-shrink:0}
+.carregando{font-size:12px;color:var(--muted);padding:6px 0}
+.acoes-msg{display:flex;gap:4px;margin-top:4px;flex-wrap:wrap}
+.acoes-msg button{font-size:13px;background:#fff;border:1px solid var(--border);border-radius:99px;padding:2px 8px}
+
+.resp-a{display:none;background:#fff;border-top:1.5px solid var(--border);padding:6px 12px;align-items:center;gap:8px}
+.resp-a.vis{display:flex}.resp-a .cita{flex:1;margin:0}
+.rapidas{display:flex;gap:6px;padding:6px 12px 0;overflow-x:auto;scrollbar-width:none;background:#fff;border-top:1.5px solid var(--border)}
+.rapidas::-webkit-scrollbar{display:none}
+.rapida{flex:0 0 auto;font-size:12px;color:var(--blue);border:1.5px dashed var(--border);border-radius:99px;padding:4px 10px;background:#fff}
+.compor{background:#fff;padding:8px 10px calc(8px + env(safe-area-inset-bottom));display:flex;align-items:flex-end;gap:6px}
+.compor .ic{font-size:22px;padding:6px;color:var(--muted)}
+.compor textarea{flex:1;resize:none;border:1.5px solid var(--border);border-radius:20px;padding:9px 14px;max-height:120px;line-height:1.35;min-width:0}
+.enviar{width:44px;height:44px;border-radius:50%;background:var(--orange);color:#fff;font-size:20px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.enviar.grav{background:var(--red)}
+.gravando{display:flex;align-items:center;gap:10px;flex:1;color:var(--red);font-weight:700;padding:0 6px}
+.emojis{display:none;flex-wrap:wrap;gap:4px;padding:8px 12px;background:#fff;border-top:1px solid #E2E8F0}
+.emojis.vis{display:flex}.emojis button{font-size:22px;padding:2px 4px}
+.fechado{background:#fff;border-top:1.5px solid var(--border);padding:12px;display:flex;gap:10px;align-items:center;justify-content:space-between;font-size:13px;color:var(--muted)}
+
+.fundo{position:fixed;inset:0;background:rgba(0,0,0,.45);display:none;z-index:300;align-items:flex-end;justify-content:center}
+.fundo.vis{display:flex}
+.sheet{background:#fff;width:100%;max-width:520px;border-radius:14px 14px 0 0;padding:18px 16px calc(16px + env(safe-area-inset-bottom));max-height:92dvh;overflow-y:auto}
+.sheet h3{font-size:16px;font-weight:800;color:var(--blue);margin-bottom:4px}
+.sheet p.sub{font-size:13px;color:var(--muted);margin-bottom:12px}
+.op{display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:12px;border:1.5px solid var(--border);border-radius:10px;margin-bottom:8px;font-size:14px;background:#fff}
+.op:hover{border-color:var(--blue)}.op small{display:block;color:var(--muted);font-size:12px}
+.op.sel{border-color:var(--orange);background:#FFF7ED}
+.campo{margin-bottom:10px}
+.campo label{font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:5px}
+.campo input,.campo select,.campo textarea{width:100%;padding:10px;border:1.5px solid var(--border);border-radius:8px;background:#fff}
+.chk{display:flex;gap:8px;align-items:center;font-size:13px;margin:6px 0 12px}
+.rodape{display:flex;gap:8px;justify-content:flex-end;margin-top:6px}
+.btn-out{border:1.5px solid var(--blue);color:var(--blue);border-radius:8px;padding:10px 16px;font-weight:700;font-size:13px;background:#fff}
+.btn-pri{background:var(--orange);color:#fff;border-radius:8px;padding:10px 18px;font-weight:700;font-size:13px}
+.btn-pri:disabled,.btn-out:disabled{opacity:.5;cursor:wait}
+.btn-mini{font-size:12px;font-weight:700;padding:5px 9px;border-radius:6px;border:1.5px solid var(--border);background:#fff;color:var(--blue)}
+.btn-mini.del{color:var(--red)}
+.erro-campo{color:var(--red);font-size:12px;margin-top:4px}
+
+.cfg{position:fixed;inset:0;background:var(--bg);z-index:250;display:none;flex-direction:column}
+.cfg.vis{display:flex}
+.cfg-head{background:#fff;border-bottom:1.5px solid var(--border);padding:10px 14px;display:flex;align-items:center;gap:10px}
+.cfg-head h2{font-size:16px;font-weight:800;color:var(--blue);flex:1}
+.cfg-abas{display:flex;gap:6px;padding:8px 12px;overflow-x:auto;background:#fff;border-bottom:1.5px solid var(--border);scrollbar-width:none}
+.cfg-corpo{flex:1;overflow-y:auto;padding:14px;max-width:980px;width:100%;margin:0 auto}
+.dsec{background:#EEF3FF;color:var(--blue);font-weight:800;font-size:13px;padding:8px 12px;border-radius:8px;margin:14px 0 8px}
+.panel{background:#fff;border:1.5px solid var(--border);border-radius:var(--radius);padding:14px;margin-bottom:12px}
+.grade{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px}
+.tbl{width:100%;border-collapse:collapse;font-size:13px}
+.tbl th{text-align:left;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;padding:6px;border-bottom:1.5px solid var(--border)}
+.tbl td{padding:8px 6px;border-bottom:1px solid #E2E8F0;vertical-align:top}
+.hint{font-size:12px;color:var(--muted);margin-top:4px}
+.qr{display:block;max-width:260px;margin:12px auto;border:1.5px solid var(--border);border-radius:8px}
+.sim-fone{background:#E5DDD5;border-radius:12px;padding:10px;height:340px;overflow-y:auto;display:flex;flex-direction:column;gap:6px}
+.sim-fone .s{max-width:85%;padding:6px 9px;border-radius:8px;font-size:13px;white-space:pre-wrap;background:#fff;align-self:flex-start}
+.sim-fone .s.eu{background:#DCF8C6;align-self:flex-end}
+
+.zoom{position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:400;display:none;align-items:center;justify-content:center}
+.zoom.vis{display:flex}.zoom img{max-width:96vw;max-height:92dvh}
+.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--blue);color:#fff;padding:10px 16px;border-radius:8px;font-size:13px;font-weight:600;display:none;z-index:500;max-width:90vw}
+.toast.err{background:var(--red)}
+
+@media (min-width:900px){
+  .lista{width:370px;flex-shrink:0;display:flex!important}
+  .conversa{display:flex}
+  .cv-voltar{display:none}
+  .lg{display:inline}
+  .fundo{align-items:center}.sheet{border-radius:14px}
+}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="hl">
+    <img src="/static/icons/logo.png" alt="Garra Terraplenagem" class="logo" onerror="this.outerHTML='<span class=logo-txt>GARRA</span>'">
+    <span class="modulo">Atendimento</span>
+  </div>
+  <div class="hr" id="hdr-dir">
+    <span class="con" id="con" title="Conexão do WhatsApp">…</span>
+    <button class="btn-hd oculto" id="btn-cfg" onclick="abrirConfig()">⚙<span class="lg"> Configurar</span></button>
+  </div>
+</header>
+
+<div class="shell" id="shell">
+  <aside class="lista">
+    <div class="topo-lista">
+      <input id="busca" placeholder="Buscar nome ou telefone" oninput="buscaMudou()">
+      <button class="btn-ic oculto" id="btn-cfg-emb" onclick="abrirConfig()" aria-label="Configurar">⚙</button>
+      <button class="btn-ic lar" onclick="abrirNova()" aria-label="Nova conversa">＋</button>
+    </div>
+    <div class="filtros" id="filtros">
+      <button class="filtro ativo" data-f="minhas">Minhas<span class="n" id="n-minhas"></span></button>
+      <button class="filtro" data-f="todas">Todas<span class="n" id="n-todas"></span></button>
+      <button class="filtro" data-f="pend">Pendentes<span class="n" id="n-pend"></span></button>
+      <button class="filtro" data-f="enc">Encerradas</button>
+      <button class="filtro oculto" data-f="sem" id="f-sem">Sem setor<span class="n" id="n-sem"></span></button>
+    </div>
+    <div class="itens" id="itens"><div class="vazio"><span>Carregando…</span></div></div>
+  </aside>
+  <section class="conversa" id="conversa">
+    <div class="vazio"><div class="g">💬</div><strong style="color:var(--blue)">Selecione uma conversa</strong><span>As conversas dos seus setores aparecem na lista.</span></div>
+  </section>
+</div>
+
+<!-- Transferir -->
+<div class="fundo" id="sh-transf" onclick="if(event.target===this)fechar()">
+  <div class="sheet">
+    <h3>Transferir atendimento</h3>
+    <p class="sub">A conversa vai para o responsável do setor escolhido, com o histórico deste atendimento.</p>
+    <div id="transf-lista"></div>
+    <label class="chk"><input type="checkbox" id="transf-sil"> Transferir sem avisar o colaborador</label>
+    <div class="rodape"><button class="btn-out" onclick="fechar()">Cancelar</button></div>
+  </div>
+</div>
+
+<!-- Encerrar / pendente -->
+<div class="fundo" id="sh-enc" onclick="if(event.target===this)fechar()">
+  <div class="sheet">
+    <h3>Encerrar atendimento</h3>
+    <p class="sub" id="enc-txt"></p>
+    <button class="op" onclick="marcarPendente()">⏳ <span>Deixar pendente<small>Aguardando o colaborador — a conversa continua na lista Pendentes</small></span></button>
+    <label class="chk"><input type="checkbox" id="enc-avisar" checked> Enviar a mensagem de encerramento</label>
+    <div class="rodape"><button class="btn-out" onclick="fechar()">Voltar</button><button class="btn-pri" onclick="encerrar(event)">Encerrar</button></div>
+  </div>
+</div>
+
+<!-- Nova conversa -->
+<div class="fundo" id="sh-nova" onclick="if(event.target===this)fechar()">
+  <div class="sheet">
+    <h3>Nova conversa</h3>
+    <p class="sub">Você inicia a conversa pelo número da Garra, no setor escolhido.</p>
+    <div class="campo"><label>Contato ou telefone (DDD + número)</label><input id="nova-tel" placeholder="Ex.: Lincoln ou 37 99999-0000" oninput="buscarContatos()" autocomplete="off"></div>
+    <div id="nova-sug"></div>
+    <div class="campo"><label>Setor</label><select id="nova-setor"></select></div>
+    <label class="chk"><input type="checkbox" id="nova-saudar" checked> Mandar a saudação ("Olá … Aqui é …. Tudo bem?")</label>
+    <div class="erro-campo" id="nova-erro"></div>
+    <div class="rodape"><button class="btn-out" onclick="fechar()">Cancelar</button><button class="btn-pri" onclick="criarNova(event)">Iniciar</button></div>
+  </div>
+</div>
+
+<!-- Colocar no setor (Sem setor) -->
+<div class="fundo" id="sh-setor" onclick="if(event.target===this)fechar()">
+  <div class="sheet">
+    <h3>Colocar no setor</h3>
+    <p class="sub">Esta pessoa escreveu e não escolheu setor. As mensagens dos últimos 3 dias entram no atendimento.</p>
+    <div id="setor-lista"></div>
+    <div class="rodape"><button class="btn-out" onclick="fechar()">Cancelar</button></div>
+  </div>
+</div>
+
+<!-- Vincular contato -->
+<div class="fundo" id="sh-vinc" onclick="if(event.target===this)fechar()">
+  <div class="sheet">
+    <h3>Vincular ao cadastro</h3>
+    <p class="sub">O nome do cadastro passa a aparecer no lugar do nome do WhatsApp.</p>
+    <div class="campo"><label>Colaborador</label><select id="vinc-usuario"></select></div>
+    <div class="rodape"><button class="btn-out" onclick="fechar()">Cancelar</button><button class="btn-pri" onclick="salvarVinculo(event)">Salvar</button></div>
+  </div>
+</div>
+
+<!-- Configuração (Gerência) -->
+<div class="cfg" id="cfg">
+  <div class="cfg-head"><button class="cv-voltar" style="display:block" onclick="fecharConfig()">←</button><h2>Configurar atendimento</h2></div>
+  <div class="cfg-abas" id="cfg-abas">
+    <button class="filtro ativo" data-a="conexao">Conexão</button>
+    <button class="filtro" data-a="setores">Setores e atendentes</button>
+    <button class="filtro" data-a="acessos">Acesso entre setores</button>
+    <button class="filtro" data-a="menu">Menu</button>
+    <button class="filtro" data-a="textos">Textos do bot</button>
+    <button class="filtro" data-a="respostas">Respostas rápidas</button>
+    <button class="filtro oculto" data-a="simulador" id="aba-sim">Simulador</button>
+  </div>
+  <div class="cfg-corpo" id="cfg-corpo"></div>
+</div>
+
+<div class="zoom" id="zoom" onclick="this.classList.remove('vis')"><img id="zoom-img" alt=""></div>
+<div class="toast" id="toast"></div>
+
+<script src="/operacional/static/js/sino.js"></script>
+<script>
+/* ══ SSO (padrão dos módulos: ?sso=token → sessionStorage) ══ */
+let _ABRIR_AT = null, _ABRIR_CFG = null;
+(function(){
+  try {
+    const q = new URLSearchParams(location.search);
+    _ABRIR_AT = q.get('at'); _ABRIR_CFG = q.get('config');
+    const sso = q.get('sso');
+    if (sso && sso.length > 10) sessionStorage.setItem('garra_at_token', sso);
+    if (sso || _ABRIR_AT || _ABRIR_CFG) history.replaceState(null, '', location.pathname + (document.documentElement.classList.contains('embedded') ? '?embedded=1' : ''));
+  } catch(e) {}
+})();
+function tk(){ return sessionStorage.getItem('garra_at_token') || localStorage.getItem('garra_token') || ''; }
+if (!tk()) location.replace('/mobile');
+const EMB = document.documentElement.classList.contains('embedded');
+
+async function api(path, opts){
+  opts = opts || {};
+  const h = Object.assign({'Authorization': 'Bearer ' + tk()}, opts.body && !(opts.body instanceof FormData) ? {'Content-Type': 'application/json'} : {}, opts.headers || {});
+  const r = await fetch(path, Object.assign({}, opts, {headers: h}));
+  if (r.status === 401) { toast('Sessão expirada — entre de novo', 'err'); setTimeout(()=>location.replace(EMB ? '/mobile' : '/admin'), 1500); throw new Error('401'); }
+  const j = await r.json().catch(()=>({}));
+  if (!r.ok) { const e = new Error(j.detail || ('Erro ' + r.status)); e.status = r.status; throw e; }
+  return j;
+}
+function post(path, corpo){ return api(path, {method: 'POST', body: JSON.stringify(corpo || {})}); }
+
+function esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function fmt(s){
+  return esc(s).replace(/\*([^*\n]+)\*/g, '<strong>$1</strong>').replace(/(^|\s)_([^_\n]+)_/g, '$1<em>$2</em>')
+    .replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" target="_blank" rel="noopener">$1</a>').replace(/\n/g, '<br>');
+}
+function ini(n){ const p = String(n || '?').trim().split(/\s+/); return ((p[0] || '?')[0] + (p.length > 1 ? p[p.length - 1][0] : '')).toUpperCase(); }
+function hm(iso){ return iso ? new Date(iso).toLocaleTimeString('pt-BR', {hour: '2-digit', minute: '2-digit'}) : ''; }
+function quando(iso){
+  if (!iso) return ''; const d = new Date(iso), hoje = new Date();
+  if (d.toDateString() === hoje.toDateString()) return hm(iso);
+  const ontem = new Date(hoje); ontem.setDate(hoje.getDate() - 1);
+  if (d.toDateString() === ontem.toDateString()) return 'ontem';
+  return d.toLocaleDateString('pt-BR', {day: '2-digit', month: '2-digit'});
+}
+function diaRotulo(iso){ const q = quando(iso); return q.includes(':') ? 'Hoje' : (q === 'ontem' ? 'Ontem' : new Date(iso).toLocaleDateString('pt-BR')); }
+function fone(t){ const d = String(t || ''); return d.length >= 12 ? `(${d.slice(2,4)}) ${d.slice(4, d.length - 4)}-${d.slice(-4)}` : d; }
+function primeiro(n){ return String(n || '').trim().split(/\s+/)[0] || ''; }
+const ICONE = {imagem: '📷 Foto', video: '🎥 Vídeo', audio: '🎤 Áudio', documento: '📄 Documento', figurinha: '🏷 Figurinha', localizacao: '📍 Localização', contato: '👤 Contato'};
+function previa(u){ if (!u) return ''; const t = u.texto ? u.texto.replace(/\n/g, ' ').replace(/[*_]/g, '') : ''; return (u.origem === 'bot' ? '🤖 ' : '') + (ICONE[u.tipo] && u.tipo !== 'texto' ? ICONE[u.tipo] + (t ? ' · ' + t : '') : t); }
+
+function toast(msg, tipo){ const t = document.getElementById('toast'); t.textContent = msg; t.className = 'toast ' + (tipo || ''); t.style.display = 'block'; clearTimeout(t._h); t._h = setTimeout(()=>t.style.display = 'none', 3200); }
+let _busy = false;
+async function guard(fn, ev){
+  if (_busy) return; _busy = true;
+  const b = ev && ev.target && ev.target.closest ? ev.target.closest('button') : null; if (b) b.disabled = true;
+  try { await fn(); } catch(e) { toast(e.message, 'err'); } finally { _busy = false; if (b) b.disabled = false; }
+}
+function abrirSheet(id){ document.getElementById(id).classList.add('vis'); }
+function fechar(){ document.querySelectorAll('.fundo').forEach(f => f.classList.remove('vis')); }
+
+/* ══ ESTADO ══ */
+let EU = null, FILTRO = 'minhas', BUSCA = '', ITENS = [], TEL = null, CONV = null, MSGS = new Map(), DESDE = null;
+let RESP = [], CITADO = null, SEL_MSG = null, _tPoll = null, _tLista = null, _totalNL = -1;
+
+function classeSetor(nome){ return 'b-' + String(nome || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().split(/\s+/)[0]; }
+function nomeC(nome, tel){ return nome && nome !== tel ? nome : fone(tel); }
+
+/* ══ LISTA ══ */
+async function carregarLista(){
+  try {
+    if (FILTRO === 'sem') { renderSem(await api('/whatsapp/api/sem-setor')); await contadores(); return; }
+    const d = await api('/whatsapp/api/conversas?filtro=' + FILTRO + '&q=' + encodeURIComponent(BUSCA));
+    ITENS = d.itens; renderLista(); pintarContadores(d.contadores);
+    const total = (d.itens || []).reduce((s, i) => s + (i.nao_lidas || 0), 0);
+    if (_totalNL >= 0 && total > _totalNL && document.visibilityState === 'visible') bip();
+    _totalNL = total;
+  } catch(e) { if (e.message !== '401') document.getElementById('itens').innerHTML = `<div class="vazio">${esc(e.message)}</div>`; }
+}
+async function contadores(){ try { const d = await api('/whatsapp/api/conversas?filtro=minhas'); pintarContadores(d.contadores); } catch(e) {} }
+function pintarContadores(c){
+  c = c || {};
+  for (const k of ['minhas', 'todas', 'pend', 'sem']) { const el = document.getElementById('n-' + k); if (el) el.textContent = (k === 'sem' ? c.sem_setor : c[k]) || ''; }
+}
+function renderLista(){
+  const el = document.getElementById('itens');
+  if (!ITENS.length) { el.innerHTML = `<div class="vazio"><span>${FILTRO === 'minhas' ? 'Nenhuma conversa com você agora.' : 'Nenhuma conversa aqui.'}</span></div>`; return; }
+  el.innerHTML = ITENS.map(c => {
+    const st = c.status === 'pendente' ? '<span class="badge b-pend">Pendente</span>' : c.status === 'encerrado' ? '<span class="badge b-ok">Encerrado</span>'
+      : `<span class="badge ${classeSetor(c.setor_nome)}">${esc(c.setor_nome)}</span>`;
+    const ler = c.so_leitura_participou || !c.pode_atender ? '<span class="badge b-ler">Leitura</span>' : '';
+    const quem = FILTRO !== 'minhas' && c.atendente_nome && c.status !== 'encerrado' ? ' · ' + esc(primeiro(c.atendente_nome)) : '';
+    return `<div class="item ${TEL === c.telefone ? 'sel' : ''}" onclick="abrirConversa('${esc(c.telefone)}')">
+      <div class="av">${esc(ini(nomeC(c.contato_nome, c.telefone)))}</div>
+      <div class="it-c"><div class="l1"><span class="nome">${esc(nomeC(c.contato_nome, c.telefone))}</span><span class="hora ${c.nao_lidas ? 'nova' : ''}">${quando(c.ultima_atividade_em)}</span></div>
+      <div class="l2"><span class="prev">${esc(previa(c.ultima))}${quem}</span><span class="tags">${ler}${st}${c.nao_lidas ? `<span class="nl">${c.nao_lidas}</span>` : ''}</span></div></div></div>`;
+  }).join('');
+}
+function renderSem(lista){
+  const el = document.getElementById('itens');
+  if (!lista.length) { el.innerHTML = '<div class="vazio"><span>Ninguém esperando setor.</span></div>'; return; }
+  el.innerHTML = lista.map(c => `<div class="item" onclick="abrirConversa('${esc(c.telefone)}')">
+    <div class="av">${esc(ini(nomeC(c.contato_nome, c.telefone)))}</div><div class="it-c"><div class="l1"><span class="nome">${esc(nomeC(c.contato_nome, c.telefone))}</span><span class="hora">${quando(c.em)}</span></div>
+    <div class="l2"><span class="prev">${esc(previa({tipo: c.tipo, texto: c.texto}))}</span><span class="tags"><button class="btn-mini" onclick="event.stopPropagation();abrirSetor('${esc(c.telefone)}')">Colocar no setor</button></span></div></div></div>`).join('');
+}
+let _tBusca = null;
+function buscaMudou(){ clearTimeout(_tBusca); _tBusca = setTimeout(()=>{ BUSCA = document.getElementById('busca').value; carregarLista(); }, 300); }
+document.getElementById('filtros').addEventListener('click', e => {
+  const b = e.target.closest('.filtro'); if (!b) return;
+  document.querySelectorAll('#filtros .filtro').forEach(x => x.classList.remove('ativo')); b.classList.add('ativo');
+  FILTRO = b.dataset.f; carregarLista();
+});
+
+/* ══ CONVERSA ══ */
+async function abrirConversa(tel){
+  TEL = tel; CONV = null; MSGS = new Map(); DESDE = null; CITADO = null; SEL_MSG = null;
+  document.getElementById('shell').classList.add('aberta');
+  document.getElementById('conversa').innerHTML = '<div class="vazio"><span>Carregando…</span></div>';
+  renderLista();
+  await atualizarConversa(true);
+}
+function voltar(){ TEL = null; CONV = null; document.getElementById('shell').classList.remove('aberta'); renderLista(); carregarLista(); }
+
+async function atualizarConversa(inicial){
+  if (!TEL) return;
+  const tel = TEL;
+  let d;
+  try { d = await api('/whatsapp/api/conversa/' + tel + (DESDE && !inicial ? '?desde=' + encodeURIComponent(DESDE) : '')); }
+  catch(e) { if (inicial) document.getElementById('conversa').innerHTML = `<div class="vazio">${esc(e.message)}</div>`; return; }
+  if (tel !== TEL) return;
+  const antes = MSGS.size, mudouEstado = !CONV || JSON.stringify(CONV.aberto) !== JSON.stringify(d.aberto) || CONV.eventos.length !== d.eventos.length;
+  let novaEntrada = false;
+  for (const m of d.mensagens) { if (!MSGS.has(m.id) && m.direcao === 'in') novaEntrada = true; MSGS.set(m.id, m); if (!DESDE || m.atualizado_em > DESDE) DESDE = m.atualizado_em; }
+  if (!DESDE) DESDE = d.agora;
+  CONV = d;
+  if (inicial || mudouEstado) renderConversa(); else if (MSGS.size !== antes || d.mensagens.length) renderMsgs(true);
+  if ((inicial || novaEntrada) && d.aberto && d.aberto.pode_atender) post('/whatsapp/api/conversa/' + tel + '/lida').then(()=>{ if (!inicial) carregarLista(); }).catch(()=>{});
+}
+
+function renderConversa(){
+  const d = CONV, ab = d.aberto, c = d.contato;
+  const meu = ab && EU && ab.atribuido_a === EU.id;
+  const st = ab ? (ab.status === 'pendente' ? '<span class="badge b-pend">Pendente</span>' : '') : '<span class="badge b-ok">Sem atendimento aberto</span>';
+  const setorBadge = ab ? `<span class="badge ${classeSetor(ab.setor_nome)}">${esc(ab.setor_nome)}</span>` : '';
+  const quem = ab && ab.atendente_nome ? `<span>${esc(primeiro(ab.atendente_nome))}</span>` : '';
+  let acoes = '';
+  if (ab && ab.pode_atender) {
+    if (!meu) acoes += `<button class="btn-a" onclick="assumir(event)" aria-label="Assumir">✋<span class="lg"> Assumir</span></button>`;
+    acoes += `<button class="btn-a" onclick="abrirTransf()" aria-label="Transferir">⇄<span class="lg"> Transferir</span></button>`;
+    acoes += `<button class="btn-a lar" onclick="abrirEnc()" aria-label="Encerrar">✔<span class="lg"> Encerrar</span></button>`;
+  }
+  const vinc = EU.gestao ? ` · <a onclick="abrirVinculo()">${c.usuario_id ? 'cadastro ✓' : 'vincular ao cadastro'}</a>` : '';
+  let rodape;
+  if (ab && ab.pode_atender) {
+    rodape = `
+    <div class="resp-a" id="resp-a"><div class="cita" id="resp-cita"></div><button onclick="cancelarCita()" style="font-size:18px;color:var(--muted)" aria-label="Cancelar resposta">×</button></div>
+    <div class="emojis" id="emojis">${['👍','🙏','😊','👏','✅','⚠️','🔧','🚚','⏳','❤️','😅','👀','🧡','📍','📷'].map(e => `<button onclick="addEmoji('${e}')">${e}</button>`).join('')}</div>
+    <div class="rapidas">${RESP.map(r => `<button class="rapida" onclick="usarRapida('${r.id}')">${esc(r.atalho)}</button>`).join('')}</div>
+    <div class="compor" id="compor">
+      <button class="ic" onclick="document.getElementById('emojis').classList.toggle('vis')" aria-label="Emoji">😊</button>
+      <button class="ic" onclick="document.getElementById('arq').click()" aria-label="Anexar">📎</button>
+      <input type="file" id="arq" class="oculto" accept="image/*,video/*,application/pdf,.doc,.docx,.xls,.xlsx,audio/*" onchange="enviarArquivo(this)">
+      <textarea id="txt" rows="1" placeholder="Mensagem" oninput="digitou(this)" onkeydown="teclou(event)"></textarea>
+      <button class="enviar" id="btn-env" onclick="enviarOuGravar()" aria-label="Enviar ou gravar áudio">🎤</button>
+    </div>`;
+  } else if (ab) {
+    rodape = `<div class="fechado"><span>Atendimento de <strong>${esc(ab.setor_nome)}</strong>${ab.atendente_nome ? ' com ' + esc(primeiro(ab.atendente_nome)) : ''} — só leitura para você.</span></div>`;
+  } else {
+    rodape = `<div class="fechado"><span>Nenhum atendimento aberto com este contato.</span><button class="btn-pri" onclick="abrirNova('${esc(c.telefone)}', '${esc(c.nome)}')">Iniciar conversa</button></div>`;
+    if (EU.gestao && FILTRO === 'sem') rodape = `<div class="fechado"><span>Escreveu e não escolheu setor.</span><button class="btn-pri" onclick="abrirSetor('${esc(c.telefone)}')">Colocar no setor</button></div>`;
+  }
+  document.getElementById('conversa').innerHTML = `
+    <div class="cv-head">
+      <button class="cv-voltar" onclick="voltar()" aria-label="Voltar">←</button>
+      <div class="av" style="width:36px;height:36px;font-size:13px">${esc(ini(nomeC(c.nome, c.telefone)))}</div>
+      <div class="cv-info"><div class="cv-nome">${esc(nomeC(c.nome, c.telefone))}</div>
+        <div class="cv-sub">${setorBadge}${st}${quem}<span>${esc(fone(c.telefone))}${vinc}</span></div></div>
+      <div class="cv-acoes">${acoes}</div>
+    </div>
+    <div class="msgs" id="msgs"></div>${rodape}`;
+  renderMsgs(false);
+}
+
+function linhaTempo(){
+  const itens = [];
+  for (const m of MSGS.values()) itens.push({t: m.criado_em, k: 'm', m});
+  for (const e of CONV.eventos) {
+    const txt = e.tipo === 'aberto' ? `▶ Atendimento aberto${e.para_setor ? ' em ' + e.para_setor : ''}${e.para_nome ? ' · ' + primeiro(e.para_nome) : ''}`
+      : e.tipo === 'transferido' ? `⇄ ${primeiro(e.de_nome) || 'Bot'} direcionou para ${primeiro(e.para_nome) || e.para_setor || ''}${e.para_setor ? ' (' + e.para_setor + ')' : ''}${e.observacao === 'silencioso' ? ' · sem aviso' : ''}`
+      : e.tipo === 'encerrado' ? `✔ ${e.de_nome ? primeiro(e.de_nome) + ' encerrou' : 'Colaborador encerrou (MENU)'}`
+      : e.tipo === 'pendente' ? `⏳ ${primeiro(e.de_nome)} marcou pendente${e.observacao ? ' — ' + e.observacao : ''}`
+      : e.tipo === 'assumido' ? `✋ ${primeiro(e.para_nome)} assumiu a conversa` : e.tipo === 'respondeu_pendencia' ? '↩ Colaborador respondeu a pendência' : null;
+    if (txt) itens.push({t: e.criado_em, k: 'e', txt});
+  }
+  for (const b of CONV.bloqueados) itens.push({t: b.aberto_em, k: 'e', txt: `🔒 Atendimento com ${b.setor_nome} em ${new Date(b.aberto_em).toLocaleDateString('pt-BR')}`, lock: true});
+  return itens.sort((a, b) => a.t < b.t ? -1 : a.t > b.t ? 1 : 0);
+}
+function renderMsgs(manterRolagem){
+  const el = document.getElementById('msgs'); if (!el) return;
+  const noFim = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+  let dia = '', html = '';
+  for (const it of linhaTempo()) {
+    const dr = diaRotulo(it.t); if (dr !== dia) { dia = dr; html += `<div class="dia">${dr}</div>`; }
+    html += it.k === 'e' ? `<div class="evento ${it.lock ? 'lock' : ''}">${esc(it.txt)}</div>` : bolha(it.m);
+  }
+  el.innerHTML = html || '<div class="vazio"><span>Sem mensagens.</span></div>';
+  if (!manterRolagem || noFim) el.scrollTop = el.scrollHeight;
+}
+function porProvider(pid){ for (const m of MSGS.values()) if (m.provider_msg_id === pid) return m; return null; }
+function bolha(m){
+  const cls = m.origem === 'bot' ? 'bot' : m.origem === 'celular' ? 'cel' : m.direcao === 'in' ? 'in' : 'out';
+  let h = '';
+  if (m.origem === 'bot') h += '<div class="ass">🤖 Bot</div>';
+  else if (m.origem === 'celular') h += '<div class="ass">📱 Pelo celular da Garra</div>';
+  else if (m.origem === 'atendente') h += `<div class="ass">${esc(m.assinatura || m.usuario_nome || '')}:</div>`;
+  if (m.citado_provider_id) { const c = porProvider(m.citado_provider_id); h += `<div class="cita">${c ? esc((c.texto || ICONE[c.tipo] || '').slice(0, 90)) : 'Mensagem citada'}</div>`; }
+  h += midiaHtml(m);
+  if (m.texto) h += `<div>${fmt(m.texto)}</div>`;
+  const tique = m.direcao === 'out' ? (m.status === 'lida' ? '<span class="tq lida">✓✓</span>' : m.status === 'entregue' ? '<span class="tq">✓✓</span>'
+    : m.status === 'erro' ? `<span class="tq erro" title="${esc(m.erro || '')}">⚠ não enviada</span>` : m.status === 'pendente' ? '<span class="tq">🕓</span>' : '<span class="tq">✓</span>') : '';
+  h += `<div class="meta">${hm(m.criado_em)} ${tique}</div>`;
+  if (m.reacao) h += `<span class="reacao">${esc(m.reacao)}</span>`;
+  if (SEL_MSG === m.id && CONV.aberto && CONV.aberto.pode_atender && m.provider_msg_id)
+    h += `<div class="acoes-msg"><button onclick="event.stopPropagation();citar('${m.id}')">↩ Responder</button>${['👍','🙏','❤️','😂','✅'].map(e => `<button onclick="event.stopPropagation();reagir('${m.id}','${e}')">${e}</button>`).join('')}</div>`;
+  return `<div class="b ${cls} ${m.reacao ? 'com-reacao' : ''}" onclick="selMsg('${m.id}')">${h}</div>`;
+}
+function midiaHtml(m){
+  if (!['imagem','video','audio','documento','figurinha'].includes(m.tipo)) return '';
+  if (!m.tem_midia) return `<div class="carregando">${ICONE[m.tipo]}${m.erro ? ' — não foi possível baixar' : ' — carregando…'}</div>`;
+  const src = '/whatsapp/api/midia/' + m.id + '?t=' + encodeURIComponent(tk());
+  if (m.tipo === 'imagem') return `<img class="foto" src="${src}" loading="lazy" alt="Foto" onclick="event.stopPropagation();zoom(this.src)">`;
+  if (m.tipo === 'figurinha') return `<img class="fig" src="${src}" loading="lazy" alt="Figurinha">`;
+  if (m.tipo === 'audio') return `<audio controls preload="none" src="${src}"></audio>`;
+  if (m.tipo === 'video') return `<video controls preload="none" src="${src}"></video>`;
+  const ext = (m.nome_arquivo || '').split('.').pop().toUpperCase().slice(0, 4) || 'DOC';
+  return `<a class="doc" href="${src}" target="_blank" rel="noopener" onclick="event.stopPropagation()"><span class="ic">${esc(ext)}</span><span><strong style="font-size:13px">${esc(m.nome_arquivo || 'Documento')}</strong><br><span style="font-size:11px;color:var(--muted)">Abrir</span></span></a>`;
+}
+function selMsg(id){ SEL_MSG = SEL_MSG === id ? null : id; renderMsgs(true); }
+function zoom(src){ document.getElementById('zoom-img').src = src; document.getElementById('zoom').classList.add('vis'); }
+
+/* ══ ESCREVER ══ */
+let _tDig = 0;
+function digitou(t){
+  t.style.height = 'auto'; t.style.height = Math.min(t.scrollHeight, 120) + 'px';
+  document.getElementById('btn-env').textContent = t.value.trim() ? '➤' : '🎤';
+  if (Date.now() - _tDig > 8000 && t.value.trim()) { _tDig = Date.now(); post('/whatsapp/api/conversa/' + TEL + '/digitando').catch(()=>{}); }
+}
+function teclou(e){ if (e.key === 'Enter' && !e.shiftKey && innerWidth >= 900) { e.preventDefault(); enviarOuGravar(); } }
+function addEmoji(e){ const t = document.getElementById('txt'); t.value += e; digitou(t); t.focus(); }
+function usarRapida(id){ const r = RESP.find(x => x.id === id); if (!r) return; const t = document.getElementById('txt'); t.value = r.texto; digitou(t); t.focus(); }
+function citar(id){
+  const m = MSGS.get(id); if (!m) return; CITADO = m; SEL_MSG = null;
+  document.getElementById('resp-cita').textContent = (m.texto || ICONE[m.tipo] || '').slice(0, 120);
+  document.getElementById('resp-a').classList.add('vis'); renderMsgs(true); document.getElementById('txt').focus();
+}
+function cancelarCita(){ CITADO = null; const r = document.getElementById('resp-a'); if (r) r.classList.remove('vis'); }
+async function enviarOuGravar(){
+  if (GRAV) return pararGravacao(true);
+  const t = document.getElementById('txt'), x = t.value.trim();
+  if (!x) return iniciarGravacao();
+  const tel = TEL, cit = CITADO;
+  t.value = ''; digitou(t); cancelarCita();
+  try { await post('/whatsapp/api/conversa/' + tel + '/enviar', {texto: x, citado_id: cit ? cit.id : null}); }
+  catch(e) { toast(e.message, 'err'); if (!t.value) { t.value = x; digitou(t); } }
+  atualizarConversa(); carregarLista();
+}
+async function enviarArquivo(inp){
+  const f = inp.files[0]; inp.value = ''; if (!f) return;
+  if (f.size > 16 * 1024 * 1024) { toast('Arquivo maior que 16 MB', 'err'); return; }
+  const t = document.getElementById('txt'), leg = t.value.trim();
+  const fd = new FormData(); fd.append('arquivo', f, f.name); fd.append('legenda', leg); fd.append('voz', '0');
+  toast('Enviando ' + f.name + '…');
+  try { await api('/whatsapp/api/conversa/' + TEL + '/midia', {method: 'POST', body: fd}); t.value = ''; digitou(t); toast('Enviado'); }
+  catch(e) { toast(e.message, 'err'); }
+  atualizarConversa();
+}
+/* áudio de voz: toque no microfone grava; toque de novo envia; × cancela */
+let GRAV = null;
+async function iniciarGravacao(){
+  if (!navigator.mediaDevices || !window.MediaRecorder) { toast('Este navegador não grava áudio', 'err'); return; }
+  let stream;
+  try { stream = await navigator.mediaDevices.getUserMedia({audio: true}); } catch(e) { toast('Permita o microfone para gravar', 'err'); return; }
+  const tipo = ['audio/ogg;codecs=opus', 'audio/webm;codecs=opus', 'audio/webm', 'audio/mp4'].find(x => MediaRecorder.isTypeSupported(x)) || '';
+  const rec = new MediaRecorder(stream, tipo ? {mimeType: tipo} : undefined), partes = [];
+  rec.ondataavailable = e => { if (e.data.size) partes.push(e.data); };
+  GRAV = {rec, stream, partes, ini: Date.now(), enviar: false, tipo: rec.mimeType || tipo || 'audio/webm'};
+  rec.onstop = async () => {
+    stream.getTracks().forEach(t => t.stop());
+    const g = GRAV; GRAV = null; renderCompor();
+    if (!g.enviar || !partes.length) return;
+    const blob = new Blob(partes, {type: g.tipo}), ext = g.tipo.includes('ogg') ? 'ogg' : g.tipo.includes('mp4') ? 'm4a' : 'webm';
+    const fd = new FormData(); fd.append('arquivo', blob, 'audio.' + ext); fd.append('voz', '1');
+    try { await api('/whatsapp/api/conversa/' + TEL + '/midia', {method: 'POST', body: fd}); } catch(e) { toast(e.message, 'err'); }
+    atualizarConversa();
+  };
+  rec.start(); renderCompor();
+  GRAV.timer = setInterval(()=>{ const s = Math.round((Date.now() - (GRAV ? GRAV.ini : Date.now())) / 1000); const el = document.getElementById('grav-t'); if (el) el.textContent = Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); }, 500);
+}
+function pararGravacao(enviar){ if (!GRAV) return; clearInterval(GRAV.timer); GRAV.enviar = enviar; GRAV.rec.stop(); }
+function renderCompor(){
+  const c = document.getElementById('compor'); if (!c) return;
+  const t = document.getElementById('txt'), b = document.getElementById('btn-env');
+  let g = document.getElementById('grav');
+  if (GRAV) {
+    t.classList.add('oculto'); c.querySelectorAll('.ic').forEach(x => x.classList.add('oculto'));
+    if (!g) { g = document.createElement('div'); g.id = 'grav'; g.className = 'gravando'; g.innerHTML = '<button onclick="pararGravacao(false)" aria-label="Cancelar" style="font-size:20px;color:var(--muted)">×</button>● Gravando <span id="grav-t">0:00</span>'; c.insertBefore(g, b); }
+    b.textContent = '➤'; b.classList.add('grav');
+  } else {
+    if (g) g.remove(); t.classList.remove('oculto'); c.querySelectorAll('.ic').forEach(x => x.classList.remove('oculto'));
+    b.classList.remove('grav'); b.textContent = t.value.trim() ? '➤' : '🎤';
+  }
+}
+
+/* ══ AÇÕES ══ */
+async function reagir(id, e){ SEL_MSG = null; try { await post('/whatsapp/api/mensagem/' + id + '/reagir', {emoji: e}); } catch(x) { toast(x.message, 'err'); } atualizarConversa(); }
+function abrirTransf(){
+  const ab = CONV.aberto;
+  document.getElementById('transf-lista').innerHTML = EU.setores.filter(s => s.id !== ab.setor_id).map(s =>
+    `<button class="op" onclick="transferir(event,'${s.id}')">⇄ <span>${esc(s.nome)}${s.restrito ? ' 🔒' : ''}<small>Vai para o responsável do setor</small></span></button>`).join('');
+  document.getElementById('transf-sil').checked = false; abrirSheet('sh-transf');
+}
+function transferir(ev, setorId){
+  guard(async () => {
+    await post('/whatsapp/api/conversa/' + TEL + '/transferir', {setor_id: setorId, silencioso: document.getElementById('transf-sil').checked});
+    fechar(); toast('Transferido'); await atualizarConversa(true); carregarLista();
+  }, ev);
+}
+function abrirEnc(){
+  document.getElementById('enc-txt').textContent = `O colaborador recebe: "${primeiro(EU.nome)} encerrou atendimento. Se precisar de mais alguma coisa é só chamar. 🙂"`;
+  document.getElementById('enc-avisar').checked = true; abrirSheet('sh-enc');
+}
+function encerrar(ev){
+  guard(async () => {
+    await post('/whatsapp/api/conversa/' + TEL + '/encerrar', {avisar: document.getElementById('enc-avisar').checked});
+    fechar(); toast('Atendimento encerrado'); await atualizarConversa(true); carregarLista();
+  }, ev);
+}
+function marcarPendente(){
+  guard(async () => { await post('/whatsapp/api/conversa/' + TEL + '/pendente', {motivo: 'Aguardando o colaborador'}); fechar(); toast('Marcado como pendente'); await atualizarConversa(true); carregarLista(); });
+}
+function assumir(ev){ guard(async () => { await post('/whatsapp/api/conversa/' + TEL + '/assumir'); toast('A conversa agora é sua'); await atualizarConversa(true); carregarLista(); }, ev); }
+
+function abrirNova(tel, nome){
+  const s = document.getElementById('nova-setor');
+  s.innerHTML = EU.setores.filter(x => x.nivel === 'atender').map(x => `<option value="${x.id}">${esc(x.nome)}</option>`).join('');
+  document.getElementById('nova-tel').value = tel ? (nome ? nome + ' · ' : '') + tel : ''; document.getElementById('nova-tel').dataset.tel = tel || '';
+  document.getElementById('nova-sug').innerHTML = ''; document.getElementById('nova-erro').textContent = '';
+  abrirSheet('sh-nova'); if (!tel) document.getElementById('nova-tel').focus();
+}
+let _tCont = null;
+function buscarContatos(){
+  const inp = document.getElementById('nova-tel'); inp.dataset.tel = ''; document.getElementById('nova-erro').textContent = '';
+  clearTimeout(_tCont); const q = inp.value.trim(); if (q.length < 2) { document.getElementById('nova-sug').innerHTML = ''; return; }
+  _tCont = setTimeout(async () => {
+    try { const l = await api('/whatsapp/api/contatos?q=' + encodeURIComponent(q));
+      document.getElementById('nova-sug').innerHTML = l.slice(0, 6).map(c => `<button class="op" onclick="escolherContato('${esc(c.telefone)}','${esc(c.nome)}')">👤 <span>${esc(c.nome)}<small>${esc(fone(c.telefone))}</small></span></button>`).join('');
+    } catch(e) {}
+  }, 250);
+}
+function escolherContato(tel, nome){ const i = document.getElementById('nova-tel'); i.value = nome + ' · ' + tel; i.dataset.tel = tel; document.getElementById('nova-sug').innerHTML = ''; }
+function criarNova(ev){
+  const inp = document.getElementById('nova-tel'), tel = inp.dataset.tel || inp.value.replace(/\D/g, '');
+  const err = document.getElementById('nova-erro');
+  if (tel.length < 10) { err.textContent = 'Escolha um contato ou digite DDD + número'; return; }
+  if (!document.getElementById('nova-setor').value) { err.textContent = 'Você não atende nenhum setor'; return; }
+  guard(async () => {
+    const r = await post('/whatsapp/api/conversas/nova', {telefone: tel, setor_id: document.getElementById('nova-setor').value, saudar: document.getElementById('nova-saudar').checked});
+    fechar(); await carregarLista(); abrirConversa(r.telefone);
+  }, ev);
+}
+function abrirSetor(tel){
+  document.getElementById('setor-lista').innerHTML = EU.setores.map(s => `<button class="op" onclick="colocarSetor(event,'${esc(tel)}','${s.id}')">▶ <span>${esc(s.nome)}</span></button>`).join('');
+  abrirSheet('sh-setor');
+}
+function colocarSetor(ev, tel, setorId){
+  guard(async () => { await post('/whatsapp/api/conversa/' + tel + '/abrir', {setor_id: setorId}); fechar(); toast('Atendimento aberto'); FILTRO = 'todas';
+    document.querySelectorAll('#filtros .filtro').forEach(x => x.classList.toggle('ativo', x.dataset.f === 'todas')); await carregarLista(); abrirConversa(tel); }, ev);
+}
+let USUARIOS = null;
+async function abrirVinculo(){
+  if (!USUARIOS) USUARIOS = (await api('/whatsapp/api/config')).usuarios;
+  const s = document.getElementById('vinc-usuario');
+  s.innerHTML = '<option value="">— sem vínculo —</option>' + USUARIOS.map(u => `<option value="${u.id}" ${u.id === CONV.contato.usuario_id ? 'selected' : ''}>${esc(u.nome)}</option>`).join('');
+  abrirSheet('sh-vinc');
+}
+function salvarVinculo(ev){ guard(async () => { await post('/whatsapp/api/contatos/' + TEL + '/vincular', {usuario_id: document.getElementById('vinc-usuario').value || null}); fechar(); await atualizarConversa(true); carregarLista(); }, ev); }
+
+/* ══ SOM ══ */
+function bip(){ try { const a = new (window.AudioContext || window.webkitAudioContext)(), o = a.createOscillator(), g = a.createGain(); o.frequency.value = 880; g.gain.value = .08; o.connect(g); g.connect(a.destination); o.start(); o.stop(a.currentTime + .18); } catch(e) {} }
+
+/* ══ CONEXÃO (cabeçalho) ══ */
+async function pintarConexao(){
+  const el = document.getElementById('con');
+  if (!EU.gestao) { el.classList.add('oculto'); return; }
+  try {
+    const c = await api('/whatsapp/api/conexao');
+    el.className = 'con ' + (c.estado === 'open' ? 'ok' : c.simulacao ? 'sim' : 'mal');
+    el.textContent = c.estado === 'open' ? '● WhatsApp conectado' : c.simulacao ? '● Modo simulação' : '● WhatsApp desconectado';
+    el.onclick = c.estado === 'open' || c.simulacao ? null : () => abrirConfig('conexao');
+  } catch(e) { el.className = 'con mal'; el.textContent = '● Sem conexão'; }
+}
+
+/* ══ CONFIGURAÇÃO (Gerência) ══ */
+let CFG = null, ABA = 'conexao';
+async function abrirConfig(aba){
+  if (aba) ABA = aba;
+  document.getElementById('cfg').classList.add('vis');
+  document.querySelectorAll('#cfg-abas .filtro').forEach(b => b.classList.toggle('ativo', b.dataset.a === ABA));
+  await recarregarConfig();
+}
+function fecharConfig(){ document.getElementById('cfg').classList.remove('vis'); clearInterval(_tSim); carregarLista(); pintarConexao(); }
+async function recarregarConfig(){
+  try { CFG = await api('/whatsapp/api/config'); USUARIOS = CFG.usuarios; } catch(e) { toast(e.message, 'err'); return; }
+  document.getElementById('aba-sim').classList.toggle('oculto', !CFG.simulacao);
+  renderAba();
+}
+document.getElementById('cfg-abas').addEventListener('click', e => {
+  const b = e.target.closest('.filtro'); if (!b) return;
+  document.querySelectorAll('#cfg-abas .filtro').forEach(x => x.classList.remove('ativo')); b.classList.add('ativo'); ABA = b.dataset.a; clearInterval(_tSim); renderAba();
+});
+function optsUsuarios(sel){ return '<option value="">—</option>' + CFG.usuarios.map(u => `<option value="${u.id}" ${u.id === sel ? 'selected' : ''}>${esc(u.nome)}</option>`).join(''); }
+function optsSetores(sel){ return CFG.setores.map(s => `<option value="${s.id}" ${s.id === sel ? 'selected' : ''}>${esc(s.nome)}</option>`).join(''); }
+function renderAba(){
+  const el = document.getElementById('cfg-corpo');
+  ({conexao: abaConexao, setores: abaSetores, acessos: abaAcessos, menu: abaMenu, textos: abaTextos, respostas: abaRespostas, simulador: abaSimulador}[ABA] || abaConexao)(el);
+}
+
+async function abaConexao(el){
+  el.innerHTML = '<div class="panel">Consultando…</div>';
+  let c; try { c = await api('/whatsapp/api/conexao'); } catch(e) { el.innerHTML = `<div class="panel">${esc(e.message)}</div>`; return; }
+  const ok = c.estado === 'open';
+  el.innerHTML = `<div class="dsec">Número do WhatsApp</div><div class="panel">
+    <p><strong>Estado:</strong> ${c.simulacao ? '🟣 Modo simulação (laboratório — nada sai para o WhatsApp)' : ok ? '🟢 Conectado' : '🔴 ' + esc(c.estado)}</p>
+    <p class="hint">Instância: ${esc(c.instancia)}. Abra o WhatsApp no celular deste número pelo menos 1 vez a cada 14 dias, senão a sessão cai.</p>
+    ${c.simulacao ? '<p class="hint">Para ligar de verdade, preencha EVOLUTION_URL, EVOLUTION_APIKEY e WHATSAPP_WEBHOOK_TOKEN.</p>' : `
+    <div class="rodape" style="justify-content:flex-start;margin-top:12px">
+      ${ok ? '<button class="btn-out" onclick="desconectar(event)">Desconectar</button>' : '<button class="btn-pri" onclick="conectar(event)">Conectar / mostrar QR Code</button>'}
+      <button class="btn-out" onclick="abaConexao(document.getElementById('cfg-corpo'))">Atualizar</button></div>
+    <div id="qr-area">${c.qrcode ? `<img class="qr" src="${esc(c.qrcode)}" alt="QR Code"><p class="hint" style="text-align:center">No celular do número: WhatsApp › Aparelhos conectados › Conectar um aparelho.</p>` : ''}</div>`}
+  </div><p class="hint" style="margin-top:8px">${esc(c.aviso)}</p>`;
+}
+function conectar(ev){ guard(async () => { const r = await post('/whatsapp/api/conexao/conectar'); toast(r.estado === 'open' ? 'Conectado' : 'Leia o QR Code no celular do número'); await abaConexao(document.getElementById('cfg-corpo')); }, ev); }
+function desconectar(ev){ if (!confirm('Desconectar o WhatsApp do atendimento? O bot para de responder até ler o QR de novo.')) return; guard(async () => { await post('/whatsapp/api/conexao/desconectar'); await abaConexao(document.getElementById('cfg-corpo')); }, ev); }
+
+function abaSetores(el){
+  el.innerHTML = CFG.setores.map(s => `<div class="dsec">${esc(s.nome)}${s.restrito ? ' 🔒 restrito' : ''}</div><div class="panel" data-setor="${s.id}">
+    <div class="grade">
+      <div class="campo"><label>Nome na lista</label><input data-k="nome" value="${esc(s.nome)}"></div>
+      <div class="campo"><label>Nome na mensagem</label><input data-k="nome_msg" value="${esc(s.nome_msg)}"></div>
+      <div class="campo"><label>Responsável (recebe as novas)</label><select data-k="responsavel_id">${optsUsuarios(s.responsavel_id)}</select></div>
+      <div class="campo"><label>Ordem</label><input data-k="ordem" type="number" value="${s.ordem}"></div>
+    </div>
+    <label class="chk"><input type="checkbox" data-k="restrito" ${s.restrito ? 'checked' : ''}> Setor restrito (liberação só com motivo)</label>
+    <table class="tbl"><thead><tr><th>Atende o setor</th><th>Assinatura nas mensagens</th><th></th></tr></thead><tbody>
+      ${s.atendentes.map(a => `<tr data-u="${a.usuario_id}"><td>${esc(a.nome)}</td><td><input class="ass" value="${esc(a.assinatura || '')}" style="width:100%;padding:6px;border:1.5px solid var(--border);border-radius:6px"></td><td><button class="btn-mini del" onclick="this.closest('tr').remove()">Tirar</button></td></tr>`).join('')}
+      <tr class="novo"><td><select class="nu" style="width:100%;padding:6px;border:1.5px solid var(--border);border-radius:6px">${optsUsuarios('')}</select></td><td><input class="na" placeholder="Ex.: Manutenção - BRUNA" style="width:100%;padding:6px;border:1.5px solid var(--border);border-radius:6px"></td><td></td></tr>
+    </tbody></table>
+    <div class="rodape"><button class="btn-pri" onclick="salvarSetor(event,'${s.id}')">Salvar setor</button></div></div>`).join('')
+    + `<div class="dsec">Novo setor</div><div class="panel"><div class="grade"><div class="campo"><label>Nome</label><input id="ns-nome"></div>
+       <div class="campo"><label>Responsável</label><select id="ns-resp">${optsUsuarios('')}</select></div></div>
+       <div class="rodape"><button class="btn-out" onclick="novoSetor(event)">Criar setor</button></div></div>`;
+}
+function salvarSetor(ev, id){
+  const p = document.querySelector(`[data-setor="${id}"]`), v = k => p.querySelector(`[data-k="${k}"]`);
+  const lista = [...p.querySelectorAll('tr[data-u]')].map(tr => ({usuario_id: tr.dataset.u, assinatura: tr.querySelector('.ass').value}));
+  const nu = p.querySelector('.nu').value; if (nu) lista.push({usuario_id: nu, assinatura: p.querySelector('.na').value});
+  guard(async () => {
+    await post('/whatsapp/api/config/setores', {id, nome: v('nome').value, nome_msg: v('nome_msg').value, responsavel_id: v('responsavel_id').value || null, ordem: v('ordem').value, restrito: v('restrito').checked});
+    await api('/whatsapp/api/config/setores/' + id + '/atendentes', {method: 'PUT', body: JSON.stringify(lista)});
+    toast('Setor salvo'); await recarregarConfig(); await carregarEu();
+  }, ev);
+}
+function novoSetor(ev){ guard(async () => { await post('/whatsapp/api/config/setores', {nome: document.getElementById('ns-nome').value, responsavel_id: document.getElementById('ns-resp').value || null, ordem: 9}); toast('Setor criado'); await recarregarConfig(); await carregarEu(); }, ev); }
+
+function abaAcessos(el){
+  el.innerHTML = `<div class="dsec">Liberar setor para uma pessoa</div><div class="panel"><div class="grade">
+      <div class="campo"><label>Pessoa</label><select id="ac-u">${optsUsuarios('')}</select></div>
+      <div class="campo"><label>Setor</label><select id="ac-s">${optsSetores('')}</select></div>
+      <div class="campo"><label>Nível</label><select id="ac-n"><option value="ver">Ver (só lê)</option><option value="atender">Atender (lê e responde)</option></select></div>
+      <div class="campo"><label>Até (opcional)</label><input id="ac-ate" type="date"></div></div>
+      <div class="campo"><label>Motivo (obrigatório em setor restrito)</label><input id="ac-m" placeholder="Ex.: cobrir férias da Bruna"></div>
+      <div class="rodape"><button class="btn-pri" onclick="liberar(event)">Liberar</button></div></div>
+    <div class="dsec">Liberações ativas</div><div class="panel">${CFG.acessos.length ? `<table class="tbl"><thead><tr><th>Pessoa</th><th>Setor</th><th>Nível</th><th>Até</th><th>Motivo</th><th></th></tr></thead><tbody>
+      ${CFG.acessos.map(a => `<tr><td>${esc(a.usuario_nome)}</td><td>${esc(a.setor_nome)}</td><td>${a.nivel === 'ver' ? 'Ver' : 'Atender'}</td><td>${a.valido_ate ? new Date(a.valido_ate).toLocaleDateString('pt-BR') + (a.expirado ? ' (expirou)' : '') : 'Sem prazo'}</td><td>${esc(a.motivo || '')}<div class="hint">por ${esc(a.concedido_por_nome || '')} em ${new Date(a.concedido_em).toLocaleDateString('pt-BR')}</div></td><td><button class="btn-mini del" onclick="revogar(event,'${a.id}')">Revogar</button></td></tr>`).join('')}
+      </tbody></table>` : '<span class="hint">Nenhuma liberação. Cada pessoa vê só os setores em que atende.</span>'}</div>
+    <p class="hint">Quem atende cada setor fica em "Setores e atendentes". A Gerência (módulo Atendimento — Gerência) vê tudo.</p>`;
+}
+function liberar(ev){ guard(async () => { await post('/whatsapp/api/config/acessos', {usuario_id: document.getElementById('ac-u').value, setor_id: document.getElementById('ac-s').value, nivel: document.getElementById('ac-n').value, valido_ate: document.getElementById('ac-ate').value || null, motivo: document.getElementById('ac-m').value}); toast('Acesso liberado'); await recarregarConfig(); }, ev); }
+function revogar(ev, id){ if (!confirm('Revogar este acesso?')) return; guard(async () => { await api('/whatsapp/api/config/acessos/' + id, {method: 'DELETE'}); toast('Revogado'); await recarregarConfig(); }, ev); }
+
+function abaMenu(el){
+  const linha = o => `<div class="panel" data-op="${o.id || ''}"><div class="grade">
+      <div class="campo"><label>Número</label><input data-k="numero" type="number" value="${o.numero || ''}"></div>
+      <div class="campo" style="grid-column:span 2"><label>Texto da opção</label><input data-k="rotulo" value="${esc(o.rotulo || '')}"></div>
+      <div class="campo"><label>O que faz</label><select data-k="tipo" onchange="this.closest('.panel').querySelector('.so-setor').classList.toggle('oculto', this.value!=='setor');this.closest('.panel').querySelector('.so-texto').classList.toggle('oculto', this.value!=='texto')">
+        <option value="setor" ${o.tipo === 'setor' ? 'selected' : ''}>Abre atendimento no setor</option><option value="texto" ${o.tipo === 'texto' ? 'selected' : ''}>Responde um texto</option></select></div></div>
+      <div class="campo so-setor ${o.tipo === 'setor' ? '' : 'oculto'}"><label>Setor</label><select data-k="setor_id">${optsSetores(o.setor_id)}</select></div>
+      <div class="campo so-texto ${o.tipo === 'texto' ? '' : 'oculto'}"><label>Resposta</label><textarea data-k="resposta" rows="4">${esc(o.resposta || '')}</textarea></div>
+      <div class="rodape">${o.id ? `<button class="btn-mini del" onclick="excluirOpcao(event,'${o.id}')">Excluir</button>` : ''}<button class="btn-pri" onclick="salvarOpcao(event,this)">Salvar</button></div></div>`;
+  el.innerHTML = `<div class="dsec">Menu principal (o que o colaborador vê)</div>${CFG.opcoes.map(linha).join('')}<div class="dsec">Nova opção</div>${linha({tipo: 'setor'})}`;
+}
+function salvarOpcao(ev, btn){
+  const p = btn.closest('.panel'), v = k => p.querySelector(`[data-k="${k}"]`).value;
+  guard(async () => { await post('/whatsapp/api/config/opcoes', {id: p.dataset.op || null, numero: v('numero'), rotulo: v('rotulo'), tipo: v('tipo'), setor_id: v('setor_id'), resposta: v('resposta')}); toast('Menu salvo'); await recarregarConfig(); }, ev);
+}
+function excluirOpcao(ev, id){ if (!confirm('Excluir esta opção do menu?')) return; guard(async () => { await api('/whatsapp/api/config/opcoes/' + id, {method: 'DELETE'}); await recarregarConfig(); }, ev); }
+
+const TEXTOS = [
+  ['saudacao', 'Saudação + menu', 'Use {saudacao} (Bom dia/Boa tarde/Boa noite), {nome} e {menu}.'],
+  ['abertura_setor', 'Ao abrir o setor', '{atendente} e {setor}.'],
+  ['retorno_aberto', 'Colaborador volta com atendimento aberto', '{atendente} e {menu}. Aparece depois de "Retorno (horas)" sem conversa.'],
+  ['midia_direcionar', 'Foto/áudio sem setor', '{saudacao}, {nome} e {setores}.'],
+  ['encerramento', 'Encerramento', '{atendente}.'],
+  ['iniciar_conversa', 'Atendente inicia a conversa', '{nome} e {atendente}.'],
+  ['opcao_invalida', 'Opção inválida', ''],
+  ['rodape', 'Rodapé depois de uma resposta de texto', ''],
+  ['fora_horario', 'Fora do horário', '{horario}.'],
+  ['horario_texto', 'Horário (texto para o colaborador)', ''],
+  ['horario', 'Horário (grade)', 'Dia 1=segunda … 7=domingo: {"1":"07:00-17:30", …}. Dia ausente = fechado.'],
+  ['retorno_horas', 'Retorno (horas)', 'Depois de quantas horas sem conversa o bot pergunta se é para outro setor.'],
+  ['sessao_minutos', 'Sessão do menu (minutos)', ''],
+  ['retencao_meses', 'Guardar histórico (meses)', ''],
+];
+function abaTextos(el){
+  el.innerHTML = `<div class="dsec">Textos que o bot manda</div><div class="panel">${TEXTOS.map(([k, n, h]) => `<div class="campo"><label>${esc(n)}</label>
+    ${['retorno_horas', 'sessao_minutos', 'retencao_meses'].includes(k) ? `<input data-p="${k}" type="number" value="${esc(CFG.parametros[k])}">` : `<textarea data-p="${k}" rows="${k === 'horario' ? 2 : 4}">${esc(CFG.parametros[k])}</textarea>`}
+    ${h ? `<div class="hint">${esc(h)}</div>` : ''}</div>`).join('')}<div class="rodape"><button class="btn-pri" onclick="salvarTextos(event)">Salvar textos</button></div></div>`;
+}
+function salvarTextos(ev){ const d = {}; document.querySelectorAll('[data-p]').forEach(i => d[i.dataset.p] = i.value); guard(async () => { await api('/whatsapp/api/config/parametros', {method: 'PUT', body: JSON.stringify(d)}); toast('Textos salvos'); await recarregarConfig(); }, ev); }
+
+function abaRespostas(el){
+  el.innerHTML = `<div class="dsec">Respostas rápidas (botões acima do campo de mensagem)</div><div class="panel"><table class="tbl"><thead><tr><th>Botão</th><th>Texto</th><th></th></tr></thead><tbody>
+    ${CFG.respostas.map(r => `<tr><td>${esc(r.atalho)}</td><td>${esc(r.texto)}</td><td><button class="btn-mini del" onclick="excluirResposta(event,'${r.id}')">Excluir</button></td></tr>`).join('')}</tbody></table>
+    <div class="grade" style="margin-top:12px"><div class="campo"><label>Botão</label><input id="rr-a" placeholder="Ex.: Pix"></div><div class="campo" style="grid-column:span 2"><label>Texto</label><input id="rr-t"></div></div>
+    <div class="rodape"><button class="btn-pri" onclick="novaResposta(event)">Adicionar</button></div></div>`;
+}
+function novaResposta(ev){ guard(async () => { await post('/whatsapp/api/config/respostas', {atalho: document.getElementById('rr-a').value, texto: document.getElementById('rr-t').value}); await recarregarConfig(); await carregarRespostas(); }, ev); }
+function excluirResposta(ev, id){ guard(async () => { await api('/whatsapp/api/config/respostas/' + id, {method: 'DELETE'}); await recarregarConfig(); await carregarRespostas(); }, ev); }
+
+/* Simulador: o "celular do colaborador" no laboratório (EVOLUTION_URL vazio) */
+let _tSim = null;
+function abaSimulador(el){
+  el.innerHTML = `<div class="dsec">Simulador — celular do colaborador</div><div class="panel">
+    <div class="grade"><div class="campo"><label>Telefone</label><input id="sim-tel" value="5537999990001"></div><div class="campo"><label>Nome no WhatsApp</label><input id="sim-nome" value="Lincoln Teste"></div></div>
+    <div class="sim-fone" id="sim-fone"></div>
+    <div class="compor" style="padding:8px 0 0"><select id="sim-tipo" style="padding:9px;border:1.5px solid var(--border);border-radius:8px"><option value="texto">Texto</option><option value="imagem">Foto</option><option value="audio">Áudio</option></select>
+      <textarea id="sim-txt" rows="1" placeholder="Mensagem do colaborador (ex.: oi, 4, MENU)"></textarea><button class="enviar" onclick="simular(event)">➤</button></div>
+    <label class="chk"><input type="checkbox" id="sim-cel"> Mandar como se fosse o celular da Garra respondendo direto (pausa o bot)</label>
+    <p class="hint">À esquerda: o que o bot e as atendentes mandaram. À direita: o colaborador. Abra a conversa na lista para responder como atendente.</p></div>`;
+  pintarSim(); _tSim = setInterval(pintarSim, 2500);
+}
+let SIM_LOCAL = [];
+async function pintarSim(){
+  const el = document.getElementById('sim-fone'); if (!el) { clearInterval(_tSim); return; }
+  const tel = document.getElementById('sim-tel').value.replace(/\D/g, '');
+  try {
+    const saidas = await api('/whatsapp/api/simuladas?telefone=' + tel);
+    const todos = saidas.map(s => ({em: s.em, eu: false, t: s.texto || s.tipo})).concat(SIM_LOCAL.filter(s => s.tel === tel)).sort((a, b) => a.em - b.em);
+    const fim = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+    el.innerHTML = todos.map(s => `<div class="s ${s.eu ? 'eu' : ''}">${fmt(s.t)}</div>`).join('');
+    if (fim) el.scrollTop = el.scrollHeight;
+  } catch(e) {}
+}
+function simular(ev){
+  const tel = document.getElementById('sim-tel').value.replace(/\D/g, ''), tipo = document.getElementById('sim-tipo').value, txt = document.getElementById('sim-txt').value;
+  const em = Date.now() / 1000;
+  guard(async () => {
+    await post('/whatsapp/api/simular', {telefone: tel, nome: document.getElementById('sim-nome').value, texto: txt, tipo, do_celular: document.getElementById('sim-cel').checked});
+    SIM_LOCAL.push({tel, em, eu: !document.getElementById('sim-cel').checked, t: tipo === 'texto' ? txt : (tipo === 'imagem' ? '📷 Foto ' : '🎤 Áudio ') + txt});
+    document.getElementById('sim-txt').value = ''; setTimeout(pintarSim, 400); carregarLista();
+  }, ev);
+}
+
+/* ══ BOOT ══ */
+async function carregarEu(){ EU = await api('/whatsapp/api/eu'); }
+async function carregarRespostas(){ try { RESP = await api('/whatsapp/api/respostas'); } catch(e) { RESP = []; } }
+window.addEventListener('load', async () => {
+  try { await carregarEu(); }
+  catch(e) {
+    document.getElementById('itens').innerHTML = `<div class="vazio"><div class="g">🔒</div><strong>${e.status === 403 ? 'Sem acesso ao Atendimento' : 'Não foi possível carregar'}</strong><span>${esc(e.message)}</span></div>`;
+    return;
+  }
+  if (EU.gestao) { document.getElementById(EMB ? 'btn-cfg-emb' : 'btn-cfg').classList.remove('oculto'); document.getElementById('f-sem').classList.remove('oculto'); }
+  await carregarRespostas();
+  pintarConexao(); await carregarLista();
+  if (_ABRIR_AT) { try { const r = await api('/whatsapp/api/atendimento/' + _ABRIR_AT); abrirConversa(r.telefone); } catch(e) { toast(e.message, 'err'); } }
+  if (_ABRIR_CFG && EU.gestao) abrirConfig(_ABRIR_CFG);
+  else if (!_ABRIR_AT && innerWidth >= 900 && ITENS.length) abrirConversa(ITENS[0].telefone);
+  _tLista = setInterval(()=>{ if (document.visibilityState === 'visible') carregarLista(); }, 5000);
+  _tPoll = setInterval(()=>{ if (document.visibilityState === 'visible' && TEL) atualizarConversa(); }, 4000);
+  setInterval(()=>{ if (document.visibilityState === 'visible') pintarConexao(); }, 60000);
+  document.addEventListener('visibilitychange', ()=>{ if (document.visibilityState === 'visible') { carregarLista(); if (TEL) atualizarConversa(); } });
+  try { if (!EMB) GarraSino.init({token: tk, alvo: document.getElementById('con'), antes: true, abrir: function(link){
+    try { const u = new URL(link, location.origin); const at = u.searchParams.get('at'); if (u.pathname.indexOf('/atendimento') === 0 && at) { api('/whatsapp/api/atendimento/' + at).then(r => abrirConversa(r.telefone)); return true; } } catch(e) {} return false; } }); } catch(e) {}
+});
+</script>
+</body>
+</html>

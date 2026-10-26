@@ -33,6 +33,10 @@ EVENTOS = {
     "leitura_suspeita": {"modulo": "manutencao",    "padrao": {"bruna"},                       "nome": "Leitura de horímetro/km suspeita (salto ou recuo)"},
     "os_atribuida":    {"modulo": "operacional_mobile", "padrao": {"operador", "motorista"}, "nome": "OS aberta para mim no sistema (Operacional)"},
     "os_campo":        {"modulo": "admin_master",     "padrao": {"admin", "gestor"},             "nome": "OS aberta pelo operador no celular"},
+    # (26/10/2026) Atendimento WhatsApp — os dois primeiros vão só para a atendente da conversa (apenas=[…])
+    "atendimento_novo":    {"modulo": ("atendimento", "atendimento_gestao"), "padrao": set(), "nome": "WhatsApp: conversa nova ou transferida para mim"},
+    "atendimento_msg":     {"modulo": ("atendimento", "atendimento_gestao"), "padrao": set(), "nome": "WhatsApp: mensagem nova numa conversa minha"},
+    "atendimento_conexao": {"modulo": "atendimento_gestao", "padrao": {"admin", "gestor"},   "nome": "WhatsApp do atendimento desconectado"},
 }
 
 _OK = False

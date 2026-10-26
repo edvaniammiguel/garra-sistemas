@@ -838,6 +838,8 @@ from routers.manutencao_mobile import router as manutencao_mobile_router  # (24/
 app.include_router(manutencao_mobile_router)
 from routers.notificacoes import router as notificacoes_router  # (24/10/2026) avisos: app (badge/push) + sino desktop
 app.include_router(notificacoes_router)
+from routers.whatsapp_atendimento import router as whatsapp_atendimento_router  # (26/10/2026) Atendimento WhatsApp (substitui o BotConversa)
+app.include_router(whatsapp_atendimento_router)
 
 @app.on_event("startup")
 async def criar_tabela_checklist_config():
