@@ -30,6 +30,7 @@ EVENTOS = {
     "oc_aprovar":      {"modulo": "compras_aprovar", "padrao": {"admin", "gestor", "luana"},   "nome": "Ordem de compra aguardando aprovação"},
     "ot_atribuida":    {"modulo": "ot_executar",    "padrao": {"bruna", "mecanico", "mecanica"}, "nome": "OT emitida para mim (responsável)"},
     "nota_lancar":     {"modulo": ("abastecimento_notas", "manutencao_notas"), "padrao": {"luana"}, "nome": "Nota nova para lançar (abastecimento e OT)"},
+    "leitura_suspeita": {"modulo": "manutencao",    "padrao": {"bruna"},                       "nome": "Leitura de horímetro/km suspeita (salto ou recuo)"},
     "os_atribuida":    {"modulo": "operacional_mobile", "padrao": {"operador", "motorista"}, "nome": "OS aberta para mim no sistema (Operacional)"},
     "os_campo":        {"modulo": "admin_master",     "padrao": {"admin", "gestor"},             "nome": "OS aberta pelo operador no celular"},
 }
@@ -86,14 +87,14 @@ async def _garantir():
 # Estado inicial por LOGIN (uma vez; depois cada um ajusta em Minha conta › Notificações). Necessário porque
 # na Garra a Bruna e o Gilson são os dois "gestor" — o perfil não diz quem faz a triagem da manutenção.
 _SEED_LOGIN = {
-    "bruna":  {"pedido_novo": True, "pedido_urgente": True, "ot_concluida": True, "abast_divergente": True, "preventiva": True, "peca_chegou": True, "ot_urgente": False, "oc_aprovar": False},
+    "bruna":  {"pedido_novo": True, "pedido_urgente": True, "ot_concluida": True, "abast_divergente": True, "preventiva": True, "peca_chegou": True, "leitura_suspeita": True, "ot_urgente": False, "oc_aprovar": False},
     "gilson": {"pedido_urgente": True, "ot_urgente": True, "oc_aprovar": True, "pedido_novo": False},
     "luana":  {"nota_lancar": True, "oc_aprovar": True},
 }
 
 
 async def _semear_prefs():
-    ja = await ajard_query("SELECT 1 FROM public.notificacao_marcas WHERE chave='seed:prefs:v1'", fetch="one")
+    ja = await ajard_query("SELECT 1 FROM public.notificacao_marcas WHERE chave='seed:prefs:v2'", fetch="one")
     if ja:
         return
     for login, prefs in _SEED_LOGIN.items():
@@ -102,7 +103,7 @@ async def _semear_prefs():
             continue
         for tipo, ativo in prefs.items():
             await ajard_query("INSERT INTO public.notificacao_prefs (usuario_id, tipo, ativo) VALUES (%s,%s,%s) ON CONFLICT DO NOTHING", (u["id"], tipo, ativo), fetch="none")
-    await ajard_query("INSERT INTO public.notificacao_marcas (chave) VALUES ('seed:prefs:v1') ON CONFLICT DO NOTHING", fetch="none")
+    await ajard_query("INSERT INTO public.notificacao_marcas (chave) VALUES ('seed:prefs:v2') ON CONFLICT DO NOTHING", fetch="none")
 
 
 # ── VAPID ──
