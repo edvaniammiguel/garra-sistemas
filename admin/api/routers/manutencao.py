@@ -1182,6 +1182,7 @@ async def semaforos_frota(_auth=Depends(verificar_manutencao)):
             "id": str(r["id"]), "codigo": r["codigo"], "descricao": r["descricao"],
             "horimetro": vivo, "medicao": r["medicao"],
             "sistema_codigo": r.get("sistema_codigo"), "tipo_sigla": r.get("tipo_sigla"),
+            "centro_custo": r.get("centro_custo"), "centro_custo_nome": r.get("centro_custo_nome"),
             "operador_nome": r.get("operador_nome"),
             "categoria": r.get("categoria"),
             "equipamento_pai": str(r["equipamento_pai"]) if r.get("equipamento_pai") else None,
@@ -2519,11 +2520,15 @@ async def _garantir_planos_cols():
 async def planos_todos(_auth=Depends(verificar_manutencao)):
     """Parametrização ▸ Planos preventivos: todas as FMPs da frota."""
     await _garantir_planos_cols()
+    await _garantir_dominios()
     rows = await ajard_query(
-        """SELECT p.id, p.codigo, p.descricao, p.periodo_codigo, p.tempo_horas AS tdm_horas, p.ativo, p.equipamento_id,
-                  e.codigo AS equipamento_codigo, e.descricao AS equipamento_desc
+        """SELECT p.id, p.codigo, p.descricao, p.periodo_codigo, p.periodo_qtd, p.tempo_horas AS tdm_horas, p.ativo, p.equipamento_id,
+                  p.ultima_data, p.ultima_leitura, per.nome AS periodo_nome,
+                  e.codigo AS equipamento_codigo, e.descricao AS equipamento_desc, e.medicao,
+                  COALESCE(e.ativo, true) AS equipamento_ativo
            FROM manutencao.planos p JOIN operacional.equipamentos e ON e.id = p.equipamento_id
-           WHERE COALESCE(p.ativo,true)=true ORDER BY e.codigo, p.codigo""") or []
+           LEFT JOIN manutencao.periodos per ON per.codigo = p.periodo_codigo
+           WHERE COALESCE(p.ativo,true)=true ORDER BY COALESCE(e.ativo,true) DESC, e.codigo, p.codigo""") or []
     return [_tab_row(r) for r in rows]
 
 
