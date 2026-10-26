@@ -1472,7 +1472,7 @@ function _plfSync(){
   const g = id => document.getElementById(id);
   const d = _plfDraft; if (!d) return;
   if (g('plf-desc')) {
-    d.desc = g('plf-desc').value; d.tdm = g('plf-tdm').value; d.custo = g('plf-custo').value;
+    d.desc = g('plf-desc').value; d.tdm = g('plf-tdm').value;
     if (g('plf-prox')) d.prox = g('plf-prox').value;
     if (g('plf-dfixa')) { d.dfixa = g('plf-dfixa').checked; d.rfixo = g('plf-rfixo').checked; }
     const reg = (document.querySelector('input[name="plf-modo"]:checked')||{}).value === 'reg';
