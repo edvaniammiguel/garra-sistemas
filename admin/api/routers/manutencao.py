@@ -3710,10 +3710,11 @@ async def criar_plano(request: Request, payload=Depends(verificar_manutencao)):
     row = await ajard_query_id(
         """INSERT INTO manutencao.planos
               (equipamento_id, codigo, descricao, tipo_trabalho, periodo_codigo, periodo_qtd,
-               tempo_horas, custo_previsto, procedimento)
-           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+               tempo_horas, custo_previsto, procedimento, plano_proximo_codigo)
+           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
         (eq_id, codigo, desc, tt, (d.get("periodo_codigo") or "").strip() or None,
-         qtd, tdm, custo, (d.get("procedimento") or "").strip() or None))
+         qtd, tdm, custo, (d.get("procedimento") or "").strip() or None,
+         (d.get("plano_proximo_codigo") or "").strip() or None))
     return dict(row)
 
 
