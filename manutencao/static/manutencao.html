@@ -74,6 +74,7 @@ tr.sel td{background:#DBEAFE!important;color:#1A2A5E}
 .chip.pe{background:#FFF7ED;color:#9A3412}
 .dot{display:inline-block;width:8px;height:8px;border-radius:50%;flex-shrink:0}
 /* (22/10/2026) OT aberta ou em curso = ▶ num círculo (padrão ManWinWin "Em Curso"); semáforo por prazo só nas programadas/aguard. peça */
+.eq-play{display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;border-radius:50%;border:1.5px solid #16A34A;color:#16A34A;font-size:7px;line-height:1;padding-left:1px;background:#fff}
 .ot-play{display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;border-radius:50%;border:1.5px solid #1A2A5E;color:#1A2A5E;font-size:7px;line-height:1;padding-left:1px;background:#fff}
 .dot.r{background:#DC2626}
 .dot.o{background:#F97316}
@@ -537,7 +538,6 @@ async function renderArvore(){
   const q = ((document.getElementById('arv-busca')||{}).value || '').trim().toLowerCase();
   if (_arvAbertos === null) _arvAbertos = new Set();
   const nivel = cod => cod.split('.').length - 1;
-  const ordem = {vermelho:0, laranja:1, amarelo:2, verde:3};
   // (10/10/2026) Procurar (barra e árvore) acha OBJETOS, não só nomes de sistema: "EH" mostra os ramos que
   // têm EH-xx e o centro lista os objetos encontrados (padrão ManWinWin)
   const eqCasa = e => !q || [e.codigo, e.descricao, e.placa, e.marca, e.modelo].some(v => String(v||'').toLowerCase().includes(q));
@@ -551,7 +551,6 @@ async function renderArvore(){
         if (!_arvAbertos.has(partes.slice(0,k).join('.'))) return;
     }
     const eqs = _eqsDoNo(s.codigo);
-    const verm = eqs.filter(e=>e.status==='vermelho').length;
     const aberto = q ? true : _arvAbertos.has(s.codigo);
     const temFilhos = _arvSistemas.some(x => x.codigo.startsWith(s.codigo + '.'));
     const ativo = _arvNoAtivo === s.codigo, sel = _arvSel === s.codigo && !ativo;
@@ -561,7 +560,7 @@ async function renderArvore(){
           ? '<span class="pn-arr" data-cod="'+_esc(s.codigo)+'" onclick="event.stopPropagation();arvAlternar(this.dataset.cod)" ondblclick="event.stopPropagation()" title="Expandir / recolher" style="'+(aberto?'transform:rotate(90deg)':'')+(ativo?';color:#E8820C':'')+'">▶</span> '
           : '<span class="pn-arr" style="visibility:hidden">▶</span> ')
       + '<span class="mono" style="font-size:9px;color:'+(ativo?'#93C5FD':'#94A3B8')+'">'+_esc(s.codigo)+'</span> '+_esc(s.nome)
-      + ' <span class="muted"'+(ativo?' style="color:#CBD5E1"':'')+'>('+eqs.length+(verm?' · '+verm+'🔴':'')+')</span></div>';
+      + ' <span class="muted"'+(ativo?' style="color:#CBD5E1"':'')+'>('+eqs.length+')</span></div>';
   });
   const semGrupo = _eqsDoNo('_sem').filter(eqCasa);
   if (semGrupo.length)
@@ -609,50 +608,38 @@ function renderCentroEquip(){
             : cod === '_todos' ? '🏢 Organização — todos'
             : cod === '_sem' ? '❔ Sem grupo definido'
             : ((_arvSistemas.find(s=>s.codigo===cod)||{}).nome ? cod+' — '+(_arvSistemas.find(s=>s.codigo===cod)||{}).nome : cod);
-  const ordem = {vermelho:0, laranja:1, amarelo:2, verde:3};
+  // (25/10/2026) Padrão ManWinWin — Lista Objectos (Objecto · Descrição · Operador · Entidade) e Árvore Objectos
+  // (Objecto · Descrição, filhos pela setinha). Sem semáforo aqui: estado da manutenção fica nas OTs e na ficha.
   const todos = _eqsDoNo(cod).filter(eqCasa);
   const filhosDe = id => _semCache.filter(f => String(f.equipamento_pai) === String(id));
   const paiDe = e => (_semCache.find(x=>String(x.id)===String(e.equipamento_pai))||{}).codigo || '?';
-  const dotOf = st => ({vermelho:'r',laranja:'o',amarelo:'y',verde:'g'})[st] || 'g';
-  const situDe = e => e.proxima ? '<span style="font-size:10px;color:'+(e.status==='vermelho'?'#DC2626':'#B45309')+'">'+_esc(e.proxima)+'</span>'
-             : (e.motivo ? '<span style="font-size:10px;color:#B45309">'+_esc(e.motivo)+'</span>' : '<span class="chip em">Em dia</span>');
+  const play = '<span class="eq-play" title="Objeto ativo">▶</span>';
   const tr0 = e => '<tr data-id="'+e.id+'" data-cod="'+_esc(e.codigo)+'" '
       + 'onclick="frotaSelClick(event,this)" '
       + 'ondblclick="verEquipReal(this.dataset.id)" '
       + 'oncontextmenu="showCtxReal(event,this.dataset.id,\'equip\',this.dataset.cod)">';
   const eqs = ((_ftModo === 'lista' || q) ? todos.slice() : todos.filter(e => !e.equipamento_pai))   // procura: lista plana, filhos (pneus) também aparecem
-      .sort((a,b)=> (ordem[a.status]-ordem[b.status]) || a.codigo.localeCompare(b.codigo));
+      .sort((a,b)=> a.codigo.localeCompare(b.codigo));
   let thead, linhas, colspan;
   if (_ftModo === 'lista'){
-    colspan = 9;
-    thead = '<th style="width:26px"></th><th style="width:96px">Equip.</th><th>Descrição</th>'
-      + '<th style="width:52px">Tipo</th><th style="width:86px">Sistema</th>'
-      + '<th style="width:150px">Responsável</th>'
-      + '<th class="r" style="width:82px">Horímetro</th><th style="width:110px">OTs</th>'
-      + '<th>Próxima manutenção</th>';
+    colspan = 5;
+    thead = '<th style="width:26px"></th><th style="width:200px">Objeto</th><th>Descrição</th>'
+      + '<th style="width:240px">Operador</th><th style="width:220px">Entidade</th>';
     linhas = eqs.map(e => {
-      const hor = e.horimetro ? Math.round(e.horimetro).toLocaleString('pt-BR') + (e.medicao==='km'?' km':' h') : '—';
-      const abertas = e.ots_abertas > 0 ? '<span class="chip em">'+e.ots_abertas+' aberta'+(e.ots_abertas>1?'s':'')+'</span>' : '';
-      const progrs = e.ots_programadas > 0 ? '<span class="chip pr">'+e.ots_programadas+' progr.</span>' : '';
       const marca = e.categoria === 'componente' ? (e.equipamento_pai
           ? ' <span class="muted" style="font-size:9px">→ '+_esc(paiDe(e))+(e.posicao?' · '+_esc(e.posicao):'')+'</span>'
           : ' <span class="muted" style="font-size:9px">solto</span>') : '';
+      const ent = e.centro_custo ? _esc(e.centro_custo)+(e.centro_custo_nome?' - '+_esc(e.centro_custo_nome):'') : '';
       return tr0(e)
-        + '<td style="text-align:center"><span class="dot '+dotOf(e.status)+'"></span></td>'
-        + '<td class="bold">'+(e.categoria==='componente'?'🛞 ':'')+_esc(e.codigo)+marca+'</td>'
+        + '<td style="text-align:center">'+play+'</td>'
+        + '<td class="bold" style="white-space:nowrap">'+(e.categoria==='componente'?'🛞 ':'')+_esc(e.codigo)+marca+'</td>'
         + '<td>'+_esc(e.descricao||'')+'</td>'
-        + '<td class="muted" style="font-size:10px">'+_esc(e.tipo_sigla||'—')+'</td>'
-        + '<td class="mono muted" style="font-size:10px">'+_esc(e.sistema_codigo||'—')+'</td>'
-        + '<td style="font-size:10px">'+(e.operador_nome?_esc(e.operador_nome):'<span class="muted">—</span>')+'</td>'
-        + '<td class="mono r">'+hor+'</td>'
-        + '<td>'+((abertas+' '+progrs+' '+_renovChip(e)).trim()||'<span class="chip tm">Nenhuma</span>')+'</td>'
-        + '<td>'+situDe(e)+'</td></tr>';
+        + '<td>'+(e.operador_nome?_esc(e.operador_nome):'')+'</td>'
+        + '<td>'+ent+'</td></tr>';
     }).join('');
   } else {
-    colspan = 4;
-    // (11/10/2026) Coluna Equip. com folga para o filho recuado (🛞 PNEU-0032) não quebrar em duas linhas
-    thead = '<th style="width:26px"></th><th style="width:150px">Equip.</th><th>Descrição</th>'
-      + '<th style="width:190px">Situação</th>';
+    colspan = 3;
+    thead = '<th style="width:26px"></th><th style="width:150px">Objeto</th><th>Descrição</th>';
     linhas = eqs.map(e => {
       const aberto = _ftAbertos.has(String(e.id));
       const chev = (e.n_filhos > 0)
@@ -660,22 +647,19 @@ function renderCentroEquip(){
           + 'onclick="event.stopPropagation();ftToggle(this.dataset.i)" ondblclick="event.stopPropagation()">'+(aberto?'▾':'▸')+'</span> '
         : (e.categoria === 'componente' ? '🛞 ' : '');
       let linha = tr0(e)
-        + '<td style="text-align:center"><span class="dot '+dotOf(e.status)+'"></span></td>'
+        + '<td style="text-align:center">'+play+'</td>'
         + '<td class="bold" style="white-space:nowrap">'+chev+_esc(e.codigo)
         + (e.n_filhos > 0 ? ' <span class="muted" style="font-size:9px">('+e.n_filhos+')</span>' : '')
         + (e.categoria === 'componente' && !e.equipamento_pai ? ' <span class="muted" style="font-size:9px">solto</span>' : '')
-        + '</td><td>'+_esc(e.descricao||'')+'</td>'
-        + '<td>'+situDe(e)+'</td></tr>';
+        + '</td><td>'+_esc(e.descricao||'')+'</td></tr>';
       if (aberto) linha += filhosDe(e.id).map(f => {
         return '<tr data-id="'+f.id+'" data-cod="'+_esc(f.codigo)+'" style="background:#F8FAFC" '
           + 'onclick="frotaSelClick(event,this)" '
           + 'ondblclick="verEquipReal(this.dataset.id)" '
           + 'oncontextmenu="showCtxReal(event,this.dataset.id,\'equip\',this.dataset.cod)">'
-          + '<td style="text-align:center"><span class="dot '+dotOf(f.status)+'" style="width:7px;height:7px"></span></td>'
+          + '<td style="text-align:center">'+play+'</td>'
           + '<td style="padding-left:22px;white-space:nowrap"><span style="color:#94A3B8">└</span> 🛞 <b>'+_esc(f.codigo)+'</b></td>'
-          // posição só quando acrescenta algo (antes repetia a descrição: "Pneu dianteiro direito · Pneu dianteiro direito")
-          + '<td>'+_esc(f.descricao||'')+(f.posicao && String(f.posicao).trim().toLowerCase() !== String(f.descricao||'').trim().toLowerCase() ? ' <span class="muted">·</span> <b style="color:#1A2A5E">'+_esc(f.posicao)+'</b>' : '')+'</td>'
-          + '<td class="muted" style="font-size:10px">subsistema '+_renovChip(f, true)+'</td></tr>';
+          + '<td>'+_esc(f.descricao||'')+(f.posicao && String(f.posicao).trim().toLowerCase() !== String(f.descricao||'').trim().toLowerCase() ? ' <span class="muted">·</span> <b style="color:#1A2A5E">'+_esc(f.posicao)+'</b>' : '')+' '+_renovChip(f, true)+'</td></tr>';
       }).join('');
       return linha;
     }).join('');
