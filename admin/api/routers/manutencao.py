@@ -743,12 +743,28 @@ async def detalhe_ot(ot_id: str, _auth=Depends(verificar_manutencao)):
            FROM manutencao.ot_historico h
            LEFT JOIN public.usuarios_garra u ON u.id = h.usuario_id
            WHERE h.ot_id=%s ORDER BY h.criado_em""", (ot_id,))
-    ultima = await ajard_query(
-        """SELECT numero, data_conclusao, horimetro_na_abertura
-           FROM manutencao.ot
-           WHERE equipamento_id=%s AND status='concluida' AND ativo=true AND id<>%s
-           ORDER BY data_conclusao DESC LIMIT 1""",
-        (ot["equipamento_id"], ot_id), fetch="one")
+    # (26/10/2026) "Última" = última execução DA MESMA FMP (mesma periodicidade): OT encerrada do mesmo plano;
+    # sem OT, a última execução informada na ficha da FMP; só OT sem plano usa a última OT encerrada do objeto.
+    # Registo = leitura no fim (horimetro_conclusao), não o registo do pedido.
+    ultima = None
+    if ot.get("plano_id"):
+        ultima = await ajard_query(
+            """SELECT numero, data_conclusao, COALESCE(horimetro_conclusao, horimetro_na_abertura) AS horimetro_na_abertura
+               FROM manutencao.ot
+               WHERE plano_id=%s AND status='concluida' AND ativo=true AND id<>%s
+               ORDER BY data_conclusao DESC LIMIT 1""", (ot["plano_id"], ot_id), fetch="one")
+        if not ultima:
+            pl = await ajard_query("SELECT codigo, ultima_data, ultima_leitura FROM manutencao.planos WHERE id=%s", (ot["plano_id"],), fetch="one")
+            if pl and (pl.get("ultima_data") or pl.get("ultima_leitura") is not None):
+                ultima = {"numero": f"FMP {pl['codigo']} · última execução", "data_conclusao": pl.get("ultima_data"),
+                          "horimetro_na_abertura": pl.get("ultima_leitura")}
+    else:
+        ultima = await ajard_query(
+            """SELECT numero, data_conclusao, COALESCE(horimetro_conclusao, horimetro_na_abertura) AS horimetro_na_abertura
+               FROM manutencao.ot
+               WHERE equipamento_id=%s AND status='concluida' AND ativo=true AND id<>%s
+               ORDER BY data_conclusao DESC LIMIT 1""",
+            (ot["equipamento_id"], ot_id), fetch="one")
     d = dict(ot)
     d["historico"] = [dict(h) for h in hist]
     d["ultima_ot"] = dict(ultima) if ultima else None
