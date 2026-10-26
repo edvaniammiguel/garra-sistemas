@@ -462,8 +462,9 @@ function mostrarToast(msg, tipo){
   } catch(e) {}
   // (24/10/2026) sino de avisos: OT do aviso abre aqui mesmo; o resto abre em nova aba
   try { GarraSino.init({ token: mntToken, alvo: document.getElementById('tb-user'), antes: true, abrir: function(link){
-    try { const u = new URL(link, location.origin); const ot = u.searchParams.get('ot');
-      if (ot && typeof verOTReal === 'function') { verOTReal(ot); return true; } } catch(e) {}
+    try { const u = new URL(link, location.origin); const ot = u.searchParams.get('ot'), fq = u.searchParams.get('func');
+      if (ot && typeof verOTReal === 'function') { verOTReal(ot); return true; }
+      if (fq && typeof equipFuncionamento === 'function') { equipFuncionamento(fq); return true; } } catch(e) {}
     return false; } }); } catch(e) {}
 })();
 // (10/10/2026) REGRA ÚNICA de data no módulo: 'AAAA-MM-DD' (só data, ex.: data prevista) é lida como
@@ -3493,10 +3494,13 @@ async function equipFuncionamento(id){
     + '</div>'
     + '<div class="dsec">Registros (partes di\u00e1rias + checklists + abastecimentos \u00b7 '+r.n_registos+' em 90 dias)</div>'
     + '<div class="muted" style="font-size:10px;margin:2px 0 4px">\u270f\ufe0f corrige / \u2715 exclui s\u00f3 a leitura (FMD e previs\u00f5es) \u2014 parte, checklist e nota de abastecimento continuam como est\u00e3o. Motivo obrigat\u00f3rio, vai ao di\u00e1rio.</div>'
-    + '<div style="max-height:280px;overflow:auto"><table><thead><tr><th>Data</th><th>Fonte</th><th class="r">Leitura ('+un+')</th><th></th></tr></thead><tbody>'
+    + ((r.registos||[]).some(x=>x.salto) ? '<div style="margin:4px 0 6px;padding:6px 10px;background:#FEF2F2;border:1px solid #FCA5A5;border-radius:6px;font-size:11px;color:#991B1B">\u26a0 H\u00e1 leitura(s) com <b>salto</b> ou <b>recuo</b> em rela\u00e7\u00e3o \u00e0 anterior \u2014 confira quem lan\u00e7ou e exclua (\u2715) se for erro de digita\u00e7\u00e3o.</div>' : '')
+    + '<div style="max-height:280px;overflow:auto"><table><thead><tr><th>Data</th><th>Fonte</th><th>Quem / OS</th><th class="r">Leitura ('+un+')</th><th></th></tr></thead><tbody>'
     + r.registos.map(x=>{ const a = "'"+id+"','"+_esc(x.fonte)+"','"+_esc(x.ref)+"'";
-        return '<tr><td>'+dd(x.data)+'</td><td class="muted" style="font-size:10px">'+(x.fonte==='abastecimento'?'\u26fd ':'')+(x.fonte==='parte'?'\ud83d\udccb ':'')+_esc(x.fonte||'')+'</td>'
-        + '<td class="r mono">'+x.leitura.toLocaleString('pt-BR')+(x.corrigida?' <span class="chip w" style="font-size:9px" title="Corrigida \u2014 original '+x.leitura_original.toLocaleString('pt-BR')+'">corrigida</span>':'')+'</td>'
+        const sus = x.salto ? ' style="background:#FEF2F2"' : '';
+        return '<tr'+sus+'><td>'+dd(x.data)+'</td><td class="muted" style="font-size:10px">'+(x.fonte==='abastecimento'?'\u26fd ':'')+(x.fonte==='parte'?'\ud83d\udccb ':'')+_esc(x.fonte||'')+'</td>'
+        + '<td style="font-size:10px;color:#475569">'+_esc(x.quem||'')+'</td>'
+        + '<td class="r mono">'+(x.salto ? '<span title="'+(x.salto==='acima'?'Salto acima do limite em rela\u00e7\u00e3o \u00e0 leitura anterior':'Recuo em rela\u00e7\u00e3o \u00e0 leitura anterior')+'" style="color:#DC2626;font-weight:800">\u26a0 </span>' : '')+x.leitura.toLocaleString('pt-BR')+(x.corrigida?' <span class="chip w" style="font-size:9px" title="Corrigida \u2014 original '+x.leitura_original.toLocaleString('pt-BR')+'">corrigida</span>':'')+'</td>'
         + '<td style="white-space:nowrap;text-align:right"><span style="cursor:pointer" title="Corrigir leitura" onclick="funcLeituraAlterar('+a+','+x.leitura+')">\u270f\ufe0f</span> '
         + (x.corrigida?'<span style="cursor:pointer" title="Voltar ao original ('+x.leitura_original.toLocaleString('pt-BR')+')" onclick="funcLeituraRestaurar('+a+')">\u21ba</span> ':'')
         + '<span style="cursor:pointer;color:#B91C1C" title="Excluir leitura" onclick="funcLeituraExcluir('+a+','+x.leitura+')">\u2715</span></td></tr>'; }).join('')
@@ -8523,6 +8527,7 @@ document.addEventListener('DOMContentLoaded', function(){
   carregarEquipReais();
   mntFetch('/manutencao/api/fornecedores').then(f => { _mntFornList = f; }).catch(()=>{ _mntFornList = []; });
   // (20/10/2026) QR da etiqueta: /manutencao?peca=CÓDIGO abre Materiais já na ficha do item
+  try { const fq = new URLSearchParams(location.search).get('func'); if (fq) { history.replaceState(null, '', location.pathname); setTimeout(() => equipFuncionamento(fq), 900); } } catch(e){}
   try { const pc = new URLSearchParams(location.search).get('peca'); if (pc) { history.replaceState(null, '', location.pathname); showModule('alm'); setTimeout(() => { mwSel('alm', pc); abrirPeca(pc); }, 600); } } catch(e){}
 });
 </script>
