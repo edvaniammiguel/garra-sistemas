@@ -75,6 +75,8 @@ tr.sel td{background:#DBEAFE!important;color:#1A2A5E}
 .dot{display:inline-block;width:8px;height:8px;border-radius:50%;flex-shrink:0}
 /* (22/10/2026) OT aberta ou em curso = ▶ num círculo (padrão ManWinWin "Em Curso"); semáforo por prazo só nas programadas/aguard. peça */
 .eq-play{display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;border-radius:50%;border:1.5px solid #16A34A;color:#16A34A;font-size:7px;line-height:1;padding-left:1px;background:#fff}
+.eq-play.sub{border-color:#D4A017;color:#D4A017}
+.eq-chev{display:inline-block;width:12px;color:#94A3B8;font-size:11px;cursor:pointer;user-select:none;text-align:center}
 .ot-play{display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;border-radius:50%;border:1.5px solid #1A2A5E;color:#1A2A5E;font-size:7px;line-height:1;padding-left:1px;background:#fff}
 .dot.r{background:#DC2626}
 .dot.o{background:#F97316}
@@ -613,7 +615,7 @@ function renderCentroEquip(){
   const todos = _eqsDoNo(cod).filter(eqCasa);
   const filhosDe = id => _semCache.filter(f => String(f.equipamento_pai) === String(id));
   const paiDe = e => (_semCache.find(x=>String(x.id)===String(e.equipamento_pai))||{}).codigo || '?';
-  const play = '<span class="eq-play" title="Objeto ativo">▶</span>';
+  const play = (e) => '<span class="eq-play'+(e && e.n_filhos > 0 ? ' sub' : '')+'" title="'+(e && e.n_filhos > 0 ? 'Objeto com subsistemas' : 'Objeto ativo')+'">▶</span>';
   const tr0 = e => '<tr data-id="'+e.id+'" data-cod="'+_esc(e.codigo)+'" '
       + 'onclick="frotaSelClick(event,this)" '
       + 'ondblclick="verEquipReal(this.dataset.id)" '
@@ -631,7 +633,7 @@ function renderCentroEquip(){
           : ' <span class="muted" style="font-size:9px">solto</span>') : '';
       const ent = e.centro_custo ? _esc(e.centro_custo)+(e.centro_custo_nome?' - '+_esc(e.centro_custo_nome):'') : '';
       return tr0(e)
-        + '<td style="text-align:center">'+play+'</td>'
+        + '<td style="text-align:center">'+play(e)+'</td>'
         + '<td class="bold" style="white-space:nowrap">'+(e.categoria==='componente'?'🛞 ':'')+_esc(e.codigo)+marca+'</td>'
         + '<td>'+_esc(e.descricao||'')+'</td>'
         + '<td>'+(e.operador_nome?_esc(e.operador_nome):'')+'</td>'
@@ -639,16 +641,16 @@ function renderCentroEquip(){
     }).join('');
   } else {
     colspan = 3;
-    thead = '<th style="width:26px"></th><th style="width:150px">Objeto</th><th>Descrição</th>';
+    thead = '<th style="width:40px"></th><th style="width:150px">Objeto</th><th>Descrição</th>';
     linhas = eqs.map(e => {
       const aberto = _ftAbertos.has(String(e.id));
       const chev = (e.n_filhos > 0)
-        ? '<span style="cursor:pointer;font-weight:800;color:#1A2A5E" data-i="'+e.id+'" '
-          + 'onclick="event.stopPropagation();ftToggle(this.dataset.i)" ondblclick="event.stopPropagation()">'+(aberto?'▾':'▸')+'</span> '
-        : (e.categoria === 'componente' ? '🛞 ' : '');
+        ? '<span class="eq-chev" data-i="'+e.id+'" title="'+(aberto?'Fechar':'Abrir')+' subsistemas" '
+          + 'onclick="event.stopPropagation();ftToggle(this.dataset.i)" ondblclick="event.stopPropagation()">'+(aberto?'˅':'›')+'</span>'
+        : '<span class="eq-chev"></span>';
       let linha = tr0(e)
-        + '<td style="text-align:center">'+play+'</td>'
-        + '<td class="bold" style="white-space:nowrap">'+chev+_esc(e.codigo)
+        + '<td style="text-align:center;white-space:nowrap">'+chev+play(e)+'</td>'
+        + '<td class="bold" style="white-space:nowrap">'+(e.categoria === 'componente' ? '🛞 ' : '')+_esc(e.codigo)
         + (e.n_filhos > 0 ? ' <span class="muted" style="font-size:9px">('+e.n_filhos+')</span>' : '')
         + (e.categoria === 'componente' && !e.equipamento_pai ? ' <span class="muted" style="font-size:9px">solto</span>' : '')
         + '</td><td>'+_esc(e.descricao||'')+'</td></tr>';
@@ -657,7 +659,7 @@ function renderCentroEquip(){
           + 'onclick="frotaSelClick(event,this)" '
           + 'ondblclick="verEquipReal(this.dataset.id)" '
           + 'oncontextmenu="showCtxReal(event,this.dataset.id,\'equip\',this.dataset.cod)">'
-          + '<td style="text-align:center">'+play+'</td>'
+          + '<td style="text-align:center;white-space:nowrap"><span class="eq-chev"></span>'+play(f)+'</td>'
           + '<td style="padding-left:22px;white-space:nowrap"><span style="color:#94A3B8">└</span> 🛞 <b>'+_esc(f.codigo)+'</b></td>'
           + '<td>'+_esc(f.descricao||'')+(f.posicao && String(f.posicao).trim().toLowerCase() !== String(f.descricao||'').trim().toLowerCase() ? ' <span class="muted">·</span> <b style="color:#1A2A5E">'+_esc(f.posicao)+'</b>' : '')+' '+_renovChip(f, true)+'</td></tr>';
       }).join('');
