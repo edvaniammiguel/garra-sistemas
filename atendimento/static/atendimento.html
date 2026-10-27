@@ -36,9 +36,10 @@ header{background:var(--blue);border-bottom:3px solid var(--orange);padding:0 16
 .shell{display:flex;height:calc(100dvh - 56px)}
 .embedded .shell{height:100dvh}
 .embedded header{display:none}
-.lista{width:100%;background:var(--card);display:flex;flex-direction:column;border-right:1.5px solid var(--border);min-width:0}
+/* (26/10/2026) .lista-conv e .cont-nl (não .lista/.nl): o painel de avisos (sino.js) usa essas classes e herdava display:flex e altura de 20 px — os avisos se sobrepunham */
+.lista-conv{width:100%;background:var(--card);display:flex;flex-direction:column;border-right:1.5px solid var(--border);min-width:0}
 .conversa{display:none;flex:1;flex-direction:column;background:#F6F8FC;min-width:0}
-.shell.aberta .lista{display:none}
+.shell.aberta .lista-conv{display:none}
 .shell.aberta .conversa{display:flex}
 
 .topo-lista{display:flex;gap:8px;padding:10px 12px 6px;align-items:center}
@@ -60,7 +61,7 @@ header{background:var(--blue);border-bottom:3px solid var(--orange);padding:0 16
 .hora{font-size:11px;color:var(--muted);flex-shrink:0}.hora.nova{color:var(--green);font-weight:700}
 .prev{font-size:13px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .tags{display:flex;gap:4px;align-items:center;flex-shrink:0}
-.nl{background:var(--green);color:#fff;font-size:11px;font-weight:800;min-width:20px;height:20px;border-radius:10px;display:flex;align-items:center;justify-content:center;padding:0 6px}
+.cont-nl{background:var(--green);color:#fff;font-size:11px;font-weight:800;min-width:20px;height:20px;border-radius:10px;display:flex;align-items:center;justify-content:center;padding:0 6px}
 .badge{font-size:10px;font-weight:700;padding:3px 8px;border-radius:99px;display:inline-block;white-space:nowrap;background:#E0E7FF;color:#3730A3}
 .b-comercial{background:#DBEAFE;color:#1D4ED8}.b-financeiro{background:#F3E8FF;color:#7E22CE}
 .b-gerencia{background:#E0E7FF;color:#3730A3}.b-manutencao{background:#FFF7ED;color:#C2410C}
@@ -164,7 +165,7 @@ header{background:var(--blue);border-bottom:3px solid var(--orange);padding:0 16
 .toast.err{background:var(--red)}
 
 @media (min-width:900px){
-  .lista{width:370px;flex-shrink:0;display:flex!important}
+  .lista-conv{width:370px;flex-shrink:0;display:flex!important}
   .conversa{display:flex}
   .cv-voltar{display:none}
   .lg{display:inline}
@@ -186,7 +187,7 @@ header{background:var(--blue);border-bottom:3px solid var(--orange);padding:0 16
 </header>
 
 <div class="shell" id="shell">
-  <aside class="lista">
+  <aside class="lista-conv">
     <div class="topo-lista">
       <input id="busca" placeholder="Buscar nome ou telefone" oninput="buscaMudou()">
       <button class="btn-ic oculto" id="btn-cfg-emb" onclick="abrirConfig()" aria-label="Configurar">⚙</button>
@@ -340,6 +341,8 @@ function fechar(){ document.querySelectorAll('.fundo').forEach(f => f.classList.
 
 /* ══ ESTADO ══ */
 let EU = null, FILTRO = 'minhas', BUSCA = '', ITENS = [], TEL = null, CONV = null, MSGS = new Map(), DESDE = null;
+let AT_SEL = null;   /* (26/10/2026) atendimento em que estou respondendo — o colaborador pode ter um aberto por setor */
+function AT(){ return CONV && CONV.atual ? CONV.atual.id : null; }
 let RESP = [], CITADO = null, SEL_MSG = null, _tPoll = null, _tLista = null, _totalNL = -1;
 
 function classeSetor(nome){ return 'b-' + String(nome || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().split(/\s+/)[0]; }
@@ -369,10 +372,10 @@ function renderLista(){
       : `<span class="badge ${classeSetor(c.setor_nome)}">${esc(c.setor_nome)}</span>`;
     const ler = c.so_leitura_participou || !c.pode_atender ? '<span class="badge b-ler">Leitura</span>' : '';
     const quem = FILTRO !== 'minhas' && c.atendente_nome && c.status !== 'encerrado' ? ' · ' + esc(primeiro(c.atendente_nome)) : '';
-    return `<div class="item ${TEL === c.telefone ? 'sel' : ''}" onclick="abrirConversa('${esc(c.telefone)}')">
+    return `<div class="item ${TEL === c.telefone && (!AT_SEL || AT_SEL === c.id) ? 'sel' : ''}" onclick="abrirConversa('${esc(c.telefone)}','${c.id}')">
       <div class="av">${esc(ini(nomeC(c.contato_nome, c.telefone)))}</div>
       <div class="it-c"><div class="l1"><span class="nome">${esc(nomeC(c.contato_nome, c.telefone))}</span><span class="hora ${c.nao_lidas ? 'nova' : ''}">${quando(c.ultima_atividade_em)}</span></div>
-      <div class="l2"><span class="prev">${esc(previa(c.ultima))}${quem}</span><span class="tags">${ler}${st}${c.nao_lidas ? `<span class="nl">${c.nao_lidas}</span>` : ''}</span></div></div></div>`;
+      <div class="l2"><span class="prev">${esc(previa(c.ultima))}${quem}</span><span class="tags">${ler}${st}${c.nao_lidas ? `<span class="cont-nl">${c.nao_lidas}</span>` : ''}</span></div></div></div>`;
   }).join('');
 }
 function renderSem(lista){
@@ -391,8 +394,8 @@ document.getElementById('filtros').addEventListener('click', e => {
 });
 
 /* ══ CONVERSA ══ */
-async function abrirConversa(tel){
-  TEL = tel; CONV = null; MSGS = new Map(); DESDE = null; CITADO = null; SEL_MSG = null;
+async function abrirConversa(tel, atId){
+  TEL = tel; AT_SEL = atId || null; CONV = null; MSGS = new Map(); DESDE = null; CITADO = null; SEL_MSG = null;
   document.getElementById('shell').classList.add('aberta');
   document.getElementById('conversa').innerHTML = '<div class="vazio"><span>Carregando…</span></div>';
   renderLista();
@@ -407,18 +410,26 @@ async function atualizarConversa(inicial){
   try { d = await api('/whatsapp/api/conversa/' + tel + (DESDE && !inicial ? '?desde=' + encodeURIComponent(DESDE) : '')); }
   catch(e) { if (inicial) document.getElementById('conversa').innerHTML = `<div class="vazio">${esc(e.message)}</div>`; return; }
   if (tel !== TEL) return;
-  const antes = MSGS.size, mudouEstado = !CONV || JSON.stringify(CONV.aberto) !== JSON.stringify(d.aberto) || CONV.eventos.length !== d.eventos.length;
+  const antes = MSGS.size, mudouEstado = !CONV || JSON.stringify(CONV.abertos) !== JSON.stringify(d.abertos) || CONV.eventos.length !== d.eventos.length;
   let novaEntrada = false;
   for (const m of d.mensagens) { if (!MSGS.has(m.id) && m.direcao === 'in') novaEntrada = true; MSGS.set(m.id, m); if (!DESDE || m.atualizado_em > DESDE) DESDE = m.atualizado_em; }
   if (!DESDE) DESDE = d.agora;
+  d.atual = (d.abertos || []).find(a => a.id === AT_SEL && (a.visivel || a.pode_atender)) || d.aberto;
+  AT_SEL = d.atual ? d.atual.id : null;
   CONV = d;
   if (inicial || mudouEstado) renderConversa(); else if (MSGS.size !== antes || d.mensagens.length) renderMsgs(true);
-  if ((inicial || novaEntrada) && d.aberto && d.aberto.pode_atender) post('/whatsapp/api/conversa/' + tel + '/lida').then(()=>{ if (!inicial) carregarLista(); }).catch(()=>{});
+  if ((inicial || novaEntrada) && (d.abertos || []).some(a => a.pode_atender)) post('/whatsapp/api/conversa/' + tel + '/lida').then(()=>{ if (!inicial) carregarLista(); }).catch(()=>{});
 }
 
 function renderConversa(){
-  const d = CONV, ab = d.aberto, c = d.contato;
+  const d = CONV, ab = d.atual, c = d.contato;
   const meu = ab && EU && ab.atribuido_a === EU.id;
+  /* vários atendimentos abertos (um por setor): chips para escolher em qual responder + aviso dos outros */
+  const outrosAb = (d.abertos || []).filter(a => !ab || a.id !== ab.id);
+  const meusAb = (d.abertos || []).filter(a => a.pode_atender || a.visivel);
+  const chips = meusAb.length > 1 ? `<div class="filtros" style="background:#fff;border-bottom:1.5px solid var(--border)"><span style="font-size:12px;color:var(--muted);align-self:center">Atendimento:</span>${meusAb.map(a =>
+      `<button class="filtro ${ab && a.id === ab.id ? 'ativo' : ''}" onclick="trocarAt('${a.id}')">${esc(a.setor_nome)}${a.atendente_nome ? ' · ' + esc(primeiro(a.atendente_nome)) : ''}</button>`).join('')}</div>` : '';
+  const aviso = outrosAb.length && meusAb.length <= 1 ? `<div class="evento" style="margin:6px auto 0">Também aberto: ${outrosAb.map(a => esc(a.setor_nome) + (a.atendente_nome ? ' (' + esc(primeiro(a.atendente_nome)) + ')' : '')).join(', ')}</div>` : '';
   const st = ab ? (ab.status === 'pendente' ? '<span class="badge b-pend">Pendente</span>' : '') : '<span class="badge b-ok">Sem atendimento aberto</span>';
   const setorBadge = ab ? `<span class="badge ${classeSetor(ab.setor_nome)}">${esc(ab.setor_nome)}</span>` : '';
   const quem = ab && ab.atendente_nome ? `<span>${esc(primeiro(ab.atendente_nome))}</span>` : '';
@@ -455,7 +466,7 @@ function renderConversa(){
       <div class="cv-info"><div class="cv-nome">${esc(nomeC(c.nome, c.telefone))}</div>
         <div class="cv-sub">${setorBadge}${st}${quem}<span>${esc(fone(c.telefone))}${vinc}</span></div></div>
       <div class="cv-acoes">${acoes}</div>
-    </div>
+    </div>${chips}${aviso}
     <div class="msgs" id="msgs"></div>${rodape}`;
   renderMsgs(false);
 }
@@ -499,7 +510,7 @@ function bolha(m){
     : m.status === 'erro' ? `<span class="tq erro" title="${esc(m.erro || '')}">⚠ não enviada</span>` : m.status === 'pendente' ? '<span class="tq">🕓</span>' : '<span class="tq">✓</span>') : '';
   h += `<div class="meta">${hm(m.criado_em)} ${tique}</div>`;
   if (m.reacao) h += `<span class="reacao">${esc(m.reacao)}</span>`;
-  if (SEL_MSG === m.id && CONV.aberto && CONV.aberto.pode_atender && m.provider_msg_id)
+  if (SEL_MSG === m.id && CONV.atual && CONV.atual.pode_atender && m.provider_msg_id)
     h += `<div class="acoes-msg"><button onclick="event.stopPropagation();citar('${m.id}')">↩ Responder</button>${['👍','🙏','❤️','😂','✅'].map(e => `<button onclick="event.stopPropagation();reagir('${m.id}','${e}')">${e}</button>`).join('')}</div>`;
   return `<div class="b ${cls} ${m.reacao ? 'com-reacao' : ''}" onclick="selMsg('${m.id}')">${h}</div>`;
 }
@@ -514,6 +525,7 @@ function midiaHtml(m){
   const ext = (m.nome_arquivo || '').split('.').pop().toUpperCase().slice(0, 4) || 'DOC';
   return `<a class="doc" href="${src}" target="_blank" rel="noopener" onclick="event.stopPropagation()"><span class="ic">${esc(ext)}</span><span><strong style="font-size:13px">${esc(m.nome_arquivo || 'Documento')}</strong><br><span style="font-size:11px;color:var(--muted)">Abrir</span></span></a>`;
 }
+function trocarAt(id){ AT_SEL = id; CITADO = null; renderConversa(); renderLista(); }
 function selMsg(id){ SEL_MSG = SEL_MSG === id ? null : id; renderMsgs(true); }
 function zoom(src){ document.getElementById('zoom-img').src = src; document.getElementById('zoom').classList.add('vis'); }
 
@@ -539,7 +551,7 @@ async function enviarOuGravar(){
   if (!x) return iniciarGravacao();
   const tel = TEL, cit = CITADO;
   t.value = ''; digitou(t); cancelarCita();
-  try { await post('/whatsapp/api/conversa/' + tel + '/enviar', {texto: x, citado_id: cit ? cit.id : null}); }
+  try { await post('/whatsapp/api/conversa/' + tel + '/enviar', {texto: x, citado_id: cit ? cit.id : null, at_id: AT()}); }
   catch(e) { toast(e.message, 'err'); if (!t.value) { t.value = x; digitou(t); } }
   atualizarConversa(); carregarLista();
 }
@@ -547,7 +559,7 @@ async function enviarArquivo(inp){
   const f = inp.files[0]; inp.value = ''; if (!f) return;
   if (f.size > 16 * 1024 * 1024) { toast('Arquivo maior que 16 MB', 'err'); return; }
   const t = document.getElementById('txt'), leg = t.value.trim();
-  const fd = new FormData(); fd.append('arquivo', f, f.name); fd.append('legenda', leg); fd.append('voz', '0');
+  const fd = new FormData(); fd.append('arquivo', f, f.name); fd.append('legenda', leg); fd.append('voz', '0'); fd.append('at_id', AT() || '');
   toast('Enviando ' + f.name + '…');
   try { await api('/whatsapp/api/conversa/' + TEL + '/midia', {method: 'POST', body: fd}); t.value = ''; digitou(t); toast('Enviado'); }
   catch(e) { toast(e.message, 'err'); }
@@ -568,7 +580,7 @@ async function iniciarGravacao(){
     const g = GRAV; GRAV = null; renderCompor();
     if (!g.enviar || !partes.length) return;
     const blob = new Blob(partes, {type: g.tipo}), ext = g.tipo.includes('ogg') ? 'ogg' : g.tipo.includes('mp4') ? 'm4a' : 'webm';
-    const fd = new FormData(); fd.append('arquivo', blob, 'audio.' + ext); fd.append('voz', '1');
+    const fd = new FormData(); fd.append('arquivo', blob, 'audio.' + ext); fd.append('voz', '1'); fd.append('at_id', AT() || '');
     try { await api('/whatsapp/api/conversa/' + TEL + '/midia', {method: 'POST', body: fd}); } catch(e) { toast(e.message, 'err'); }
     atualizarConversa();
   };
@@ -591,16 +603,16 @@ function renderCompor(){
 }
 
 /* ══ AÇÕES ══ */
-async function reagir(id, e){ SEL_MSG = null; try { await post('/whatsapp/api/mensagem/' + id + '/reagir', {emoji: e}); } catch(x) { toast(x.message, 'err'); } atualizarConversa(); }
+async function reagir(id, e){ SEL_MSG = null; try { await post('/whatsapp/api/mensagem/' + id + '/reagir', {emoji: e, at_id: AT()}); } catch(x) { toast(x.message, 'err'); } atualizarConversa(); }
 function abrirTransf(){
-  const ab = CONV.aberto;
+  const ab = CONV.atual;
   document.getElementById('transf-lista').innerHTML = EU.setores.filter(s => s.id !== ab.setor_id).map(s =>
     `<button class="op" onclick="transferir(event,'${s.id}')">⇄ <span>${esc(s.nome)}${s.restrito ? ' 🔒' : ''}<small>Vai para o responsável do setor</small></span></button>`).join('');
   document.getElementById('transf-sil').checked = false; abrirSheet('sh-transf');
 }
 function transferir(ev, setorId){
   guard(async () => {
-    await post('/whatsapp/api/conversa/' + TEL + '/transferir', {setor_id: setorId, silencioso: document.getElementById('transf-sil').checked});
+    await post('/whatsapp/api/conversa/' + TEL + '/transferir', {setor_id: setorId, silencioso: document.getElementById('transf-sil').checked, at_id: AT()});
     fechar(); toast('Transferido'); await atualizarConversa(true); carregarLista();
   }, ev);
 }
@@ -610,14 +622,14 @@ function abrirEnc(){
 }
 function encerrar(ev){
   guard(async () => {
-    await post('/whatsapp/api/conversa/' + TEL + '/encerrar', {avisar: document.getElementById('enc-avisar').checked});
+    await post('/whatsapp/api/conversa/' + TEL + '/encerrar', {avisar: document.getElementById('enc-avisar').checked, at_id: AT()});
     fechar(); toast('Atendimento encerrado'); await atualizarConversa(true); carregarLista();
   }, ev);
 }
 function marcarPendente(){
-  guard(async () => { await post('/whatsapp/api/conversa/' + TEL + '/pendente', {motivo: 'Aguardando o colaborador'}); fechar(); toast('Marcado como pendente'); await atualizarConversa(true); carregarLista(); });
+  guard(async () => { await post('/whatsapp/api/conversa/' + TEL + '/pendente', {motivo: 'Aguardando o colaborador', at_id: AT()}); fechar(); toast('Marcado como pendente'); await atualizarConversa(true); carregarLista(); });
 }
-function assumir(ev){ guard(async () => { await post('/whatsapp/api/conversa/' + TEL + '/assumir'); toast('A conversa agora é sua'); await atualizarConversa(true); carregarLista(); }, ev); }
+function assumir(ev){ guard(async () => { await post('/whatsapp/api/conversa/' + TEL + '/assumir', {at_id: AT()}); toast('A conversa agora é sua'); await atualizarConversa(true); carregarLista(); }, ev); }
 
 function abrirNova(tel, nome){
   const s = document.getElementById('nova-setor');
@@ -793,6 +805,7 @@ function excluirOpcao(ev, id){ if (!confirm('Excluir esta opção do menu?')) re
 const TEXTOS = [
   ['saudacao', 'Saudação + menu', 'Use {saudacao} (Bom dia/Boa tarde/Boa noite), {nome} e {menu}.'],
   ['abertura_setor', 'Ao abrir o setor', '{atendente} e {setor}.'],
+  ['paralelo', 'Escolheu outro setor com atendimento ainda aberto', '{outros} = quem continua com ele, ex.: Bruna (Manutenção).'],
   ['retorno_aberto', 'Colaborador volta com atendimento aberto', '{atendente} e {menu}. Aparece depois de "Retorno (horas)" sem conversa.'],
   ['midia_direcionar', 'Foto/áudio sem setor', '{saudacao}, {nome} e {setores}.'],
   ['encerramento', 'Encerramento', '{atendente}.'],
@@ -868,15 +881,15 @@ window.addEventListener('load', async () => {
   if (EU.gestao) { document.getElementById(EMB ? 'btn-cfg-emb' : 'btn-cfg').classList.remove('oculto'); document.getElementById('f-sem').classList.remove('oculto'); }
   await carregarRespostas();
   pintarConexao(); await carregarLista();
-  if (_ABRIR_AT) { try { const r = await api('/whatsapp/api/atendimento/' + _ABRIR_AT); abrirConversa(r.telefone); } catch(e) { toast(e.message, 'err'); } }
+  if (_ABRIR_AT) { try { const r = await api('/whatsapp/api/atendimento/' + _ABRIR_AT); abrirConversa(r.telefone, _ABRIR_AT); } catch(e) { toast(e.message, 'err'); } }
   if (_ABRIR_CFG && EU.gestao) abrirConfig(_ABRIR_CFG);
-  else if (!_ABRIR_AT && innerWidth >= 900 && ITENS.length) abrirConversa(ITENS[0].telefone);
+  else if (!_ABRIR_AT && innerWidth >= 900 && ITENS.length) abrirConversa(ITENS[0].telefone, ITENS[0].id);
   _tLista = setInterval(()=>{ if (document.visibilityState === 'visible') carregarLista(); }, 5000);
   _tPoll = setInterval(()=>{ if (document.visibilityState === 'visible' && TEL) atualizarConversa(); }, 4000);
   setInterval(()=>{ if (document.visibilityState === 'visible') pintarConexao(); }, 60000);
   document.addEventListener('visibilitychange', ()=>{ if (document.visibilityState === 'visible') { carregarLista(); if (TEL) atualizarConversa(); } });
   try { if (!EMB) GarraSino.init({token: tk, alvo: document.getElementById('con'), antes: true, abrir: function(link){
-    try { const u = new URL(link, location.origin); const at = u.searchParams.get('at'); if (u.pathname.indexOf('/atendimento') === 0 && at) { api('/whatsapp/api/atendimento/' + at).then(r => abrirConversa(r.telefone)); return true; } } catch(e) {} return false; } }); } catch(e) {}
+    try { const u = new URL(link, location.origin); const at = u.searchParams.get('at'); if (u.pathname.indexOf('/atendimento') === 0 && at) { api('/whatsapp/api/atendimento/' + at).then(r => abrirConversa(r.telefone, at)); return true; } } catch(e) {} return false; } }); } catch(e) {}
 });
 </script>
 </body>

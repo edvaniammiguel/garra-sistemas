@@ -285,7 +285,14 @@ async def conversa(telefone: str, desde: Optional[str] = None, payload=Depends(v
         d.pop("midia_caminho", None)
         d["tem_midia"] = bool(m.get("midia_caminho"))
         msgs.append(d)
-    aberto = next((a for a in ats if a["status"] != "encerrado"), None)
+    # (26/10/2026) vários abertos (um por setor): padrão = o meu > um que eu atendo > o primeiro que eu vejo
+    abertos = [dict(_limpo({k: a[k] for k in ("id", "numero", "setor_id", "setor_nome", "status", "atribuido_a",
+                                              "atendente_nome", "motivo_pendencia")}),
+                    pode_atender=_pode_atender(p, a), visivel=str(a["id"]) in janelas)
+               for a in sorted((a for a in ats if a["status"] != "encerrado"), key=lambda a: a["ultima_atividade_em"], reverse=True)]
+    aberto = (next((a for a in abertos if a["pode_atender"] and str(a["atribuido_a"]) == p["id"]), None)
+              or next((a for a in abertos if a["pode_atender"]), None)
+              or next((a for a in abertos if a["visivel"]), None))
     eventos = await M.q(
         """SELECT e.atendimento_id, e.tipo, e.criado_em, e.observacao, ud.nome AS de_nome, up.nome AS para_nome,
                   sp.nome AS para_setor
@@ -299,9 +306,8 @@ async def conversa(telefone: str, desde: Optional[str] = None, payload=Depends(v
                                                         "motivo_pendencia", "restrito")}),
                               visivel=str(a["id"]) in janelas) for a in ats],
         "bloqueados": bloqueados,
-        "aberto": dict(_limpo({k: aberto[k] for k in ("id", "numero", "setor_id", "setor_nome", "status", "atribuido_a",
-                                                     "atendente_nome", "motivo_pendencia")}),
-                       pode_atender=_pode_atender(p, aberto), visivel=str(aberto["id"]) in janelas) if aberto else None,
+        "aberto": aberto,
+        "abertos": abertos,
         "mensagens": msgs,
         "eventos": [_limpo(e) for e in eventos],
         "agora": datetime.now(timezone.utc).isoformat(),
@@ -311,12 +317,12 @@ async def conversa(telefone: str, desde: Optional[str] = None, payload=Depends(v
 @router.post("/whatsapp/api/conversa/{telefone}/lida")
 async def marcar_lida(telefone: str, payload=Depends(verificar_token)):
     p = await _perfil(payload)
-    at = await M.atendimento_aberto(telefone)
-    if not at or not _pode_atender(p, at):
+    meus = [str(a["id"]) for a in await M.atendimentos_abertos(telefone) if _pode_atender(p, a)]
+    if not meus:
         return {"ok": True}
     rows = await M.q(
         """UPDATE whatsapp.mensagens SET lida_em=now(), atualizado_em=now()
-           WHERE atendimento_id=%s AND direcao='in' AND lida_em IS NULL RETURNING provider_msg_id""", (at["id"],)) or []
+           WHERE atendimento_id::text = ANY(%s) AND direcao='in' AND lida_em IS NULL RETURNING provider_msg_id""", (meus,)) or []
     asyncio.create_task(P.marcar_lidas(telefone, [r["provider_msg_id"] for r in rows if r["provider_msg_id"]]))
     return {"ok": True}
 
@@ -328,13 +334,26 @@ async def digitando(telefone: str, payload=Depends(verificar_token)):
     return {"ok": True}
 
 
-async def _aberto_para_atender(p, telefone):
-    at = await M.atendimento_aberto(telefone)
-    if not at:
+async def _aberto_para_atender(p, telefone, at_id=None):
+    """Atendimento aberto em que a pessoa vai agir. Com vários abertos (um por setor), a tela manda `at_id`;
+    sem ele vale o que está com ela ou o único que ela atende."""
+    if at_id:
+        at = await M.atendimento_por_id(at_id)
+        if not at or at["telefone"] != telefone or at["status"] == "encerrado":
+            raise HTTPException(status_code=409, detail="Este atendimento já foi encerrado")
+        if not _pode_atender(p, at):
+            raise HTTPException(status_code=403, detail=f"Atendimento do setor {at['setor_nome']} — você não pode responder")
+        return at
+    abertos = await M.atendimentos_abertos(telefone)
+    if not abertos:
         raise HTTPException(status_code=409, detail="Não há atendimento aberto com este contato")
-    if not _pode_atender(p, at):
-        raise HTTPException(status_code=403, detail=f"Atendimento do setor {at['setor_nome']} — você não pode responder")
-    return at
+    meus = [a for a in abertos if _pode_atender(p, a)]
+    if not meus:
+        raise HTTPException(status_code=403, detail=f"Atendimento do setor {abertos[0]['setor_nome']} — você não pode responder")
+    comigo = [a for a in meus if str(a.get("atribuido_a")) == p["id"]]
+    if len(comigo) == 1 or len(meus) == 1:
+        return (comigo or meus)[0]
+    raise HTTPException(status_code=409, detail="Há mais de um atendimento aberto — escolha em qual responder")
 
 
 async def _primeira_resposta(p, at):
@@ -351,7 +370,7 @@ async def enviar(telefone: str, request: Request, payload=Depends(verificar_toke
     texto = (d.get("texto") or "").strip()
     if not texto:
         raise HTTPException(status_code=400, detail="Mensagem vazia")
-    at = await _aberto_para_atender(p, telefone)
+    at = await _aberto_para_atender(p, telefone, d.get("at_id"))
     ass = _assinatura(p, at["setor_id"])
     citado = None
     if d.get("citado_id"):
@@ -368,6 +387,7 @@ async def enviar(telefone: str, request: Request, payload=Depends(verificar_toke
                             usuario_id=p["id"], assinatura=ass, citado_provider_id=(citado or {}).get("id"),
                             status=status, erro=erro)
     await _primeira_resposta(p, at)
+    await M.marcar_ativo(telefone, at["id"])        # a próxima mensagem do colaborador volta para quem respondeu
     if erro:
         raise HTTPException(status_code=502, detail=f"Não saiu para o WhatsApp: {erro}")
     return _limpo(row)
@@ -375,9 +395,9 @@ async def enviar(telefone: str, request: Request, payload=Depends(verificar_toke
 
 @router.post("/whatsapp/api/conversa/{telefone}/midia")
 async def enviar_midia(telefone: str, arquivo: UploadFile = File(...), legenda: str = Form(""), voz: str = Form("0"),
-                       payload=Depends(verificar_token)):
+                       at_id: str = Form(""), payload=Depends(verificar_token)):
     p = await _perfil(payload)
-    at = await _aberto_para_atender(p, telefone)
+    at = await _aberto_para_atender(p, telefone, at_id or None)
     dados = await arquivo.read()
     if len(dados) > LIMITE_UPLOAD:
         raise HTTPException(status_code=413, detail="Arquivo maior que 16 MB")
@@ -404,6 +424,7 @@ async def enviar_midia(telefone: str, arquivo: UploadFile = File(...), legenda: 
     await M.q("""UPDATE whatsapp.mensagens SET provider_msg_id=%s, midia_caminho=%s, status=%s, erro=%s, atualizado_em=now()
                          WHERE id=%s""", (pid, salvo, status, erro, row["id"]), fetch="none")
     await _primeira_resposta(p, at)
+    await M.marcar_ativo(telefone, at["id"])
     if erro:
         raise HTTPException(status_code=502, detail=f"Não saiu para o WhatsApp: {erro}")
     return {"ok": True, "id": str(row["id"])}
@@ -416,7 +437,9 @@ async def reagir(msg_id: str, request: Request, payload=Depends(verificar_token)
     m = await M.q("SELECT * FROM whatsapp.mensagens WHERE id=%s", (msg_id,), fetch="one")
     if not m or not m["provider_msg_id"]:
         raise HTTPException(status_code=404, detail="Mensagem não encontrada")
-    await _aberto_para_atender(p, m["telefone"])
+    alvo = m["atendimento_id"] if m["atendimento_id"] and \
+        (await M.q("SELECT 1 FROM whatsapp.atendimentos WHERE id=%s AND status<>'encerrado'", (m["atendimento_id"],), fetch="one")) else d.get("at_id")
+    await _aberto_para_atender(p, m["telefone"], alvo)
     emoji = (d.get("emoji") or "")[:8]
     await P.reagir(m["telefone"], m["provider_msg_id"], m["direcao"] == "out", emoji)
     await M.q("UPDATE whatsapp.mensagens SET reacao=%s, atualizado_em=now() WHERE id=%s", (emoji or None, msg_id), fetch="none")
@@ -455,7 +478,7 @@ async def midia(msg_id: str, t: str = ""):
 async def transferir(telefone: str, request: Request, payload=Depends(verificar_token)):
     p = await _perfil(payload)
     d = await request.json()
-    at = await _aberto_para_atender(p, telefone)
+    at = await _aberto_para_atender(p, telefone, d.get("at_id"))
     s = await M.setor(d.get("setor_id"))
     if not s or not s["ativo"]:
         raise HTTPException(status_code=400, detail="Setor inválido")
@@ -470,10 +493,11 @@ async def transferir(telefone: str, request: Request, payload=Depends(verificar_
 
 
 @router.post("/whatsapp/api/conversa/{telefone}/assumir")
-async def assumir(telefone: str, payload=Depends(verificar_token)):
+async def assumir(telefone: str, request: Request, payload=Depends(verificar_token)):
     """Gerência (ou quem atende o setor) puxa a conversa para si, sem mudar o setor."""
     p = await _perfil(payload)
-    at = await _aberto_para_atender(p, telefone)
+    d = await request.json() if (request.headers.get("content-length") or "0") != "0" else {}
+    at = await _aberto_para_atender(p, telefone, d.get("at_id"))
     await M.q("UPDATE whatsapp.atendimentos SET atribuido_a=%s WHERE id=%s", (p["id"], at["id"]), fetch="none")
     await M.evento(at["id"], "assumido", de_usuario_id=at.get("atribuido_a"), para_usuario_id=p["id"])
     return {"ok": True}
@@ -483,7 +507,7 @@ async def assumir(telefone: str, payload=Depends(verificar_token)):
 async def encerrar(telefone: str, request: Request, payload=Depends(verificar_token)):
     p = await _perfil(payload)
     d = await request.json() if (request.headers.get("content-length") or "0") != "0" else {}
-    at = await _aberto_para_atender(p, telefone)
+    at = await _aberto_para_atender(p, telefone, d.get("at_id"))
     await M.encerrar(at, p["id"], avisar_colaborador=d.get("avisar", True) is not False)
     return {"ok": True}
 
@@ -492,7 +516,7 @@ async def encerrar(telefone: str, request: Request, payload=Depends(verificar_to
 async def pendente(telefone: str, request: Request, payload=Depends(verificar_token)):
     p = await _perfil(payload)
     d = await request.json() if (request.headers.get("content-length") or "0") != "0" else {}
-    at = await _aberto_para_atender(p, telefone)
+    at = await _aberto_para_atender(p, telefone, d.get("at_id"))
     motivo = (d.get("motivo") or "Aguardando o colaborador").strip()[:200]
     await M.q("UPDATE whatsapp.atendimentos SET status='pendente', motivo_pendencia=%s WHERE id=%s",
                       (motivo, at["id"]), fetch="none")
@@ -513,7 +537,7 @@ async def nova_conversa(request: Request, payload=Depends(verificar_token)):
     setor_id = d.get("setor_id")
     if not setor_id or (not p["gestao"] and str(setor_id) not in p["atender"]):
         raise HTTPException(status_code=403, detail="Escolha um setor que você atende")
-    at = await M.atendimento_aberto(tel)
+    at = next((a for a in await M.atendimentos_abertos(tel) if str(a["setor_id"]) == str(setor_id)), None)
     if at:
         raise HTTPException(status_code=409, detail=f"Já existe atendimento aberto com este contato em {at['setor_nome']}"
                                                     + (f" ({M.primeiro_nome(at['atendente_nome'])})" if at.get("atendente_nome") else ""))
@@ -531,8 +555,8 @@ async def abrir_de_sem_setor(telefone: str, request: Request, payload=Depends(ve
     """Gerência coloca num setor quem escreveu e não escolheu (lista Sem setor)."""
     await _gestao(payload)
     d = await request.json()
-    if await M.atendimento_aberto(telefone):
-        raise HTTPException(status_code=409, detail="Já há atendimento aberto")
+    if any(str(a["setor_id"]) == str(d.get("setor_id")) for a in await M.atendimentos_abertos(telefone)):
+        raise HTTPException(status_code=409, detail="Já há atendimento aberto neste setor")
     await M.abrir_atendimento(telefone, d.get("setor_id"), aberto_por="gestao", anexar_desde_min=3 * 24 * 60)
     return {"ok": True}
 

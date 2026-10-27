@@ -126,6 +126,7 @@ CREATE TABLE IF NOT EXISTS whatsapp.sessoes (
     midias_pendentes UUID[] NOT NULL DEFAULT '{}',
     bot_pausado_ate TIMESTAMPTZ,
     ultima_interacao TIMESTAMPTZ NOT NULL DEFAULT now());
+ALTER TABLE whatsapp.sessoes ADD COLUMN IF NOT EXISTS atendimento_ativo UUID;
 
 CREATE TABLE IF NOT EXISTS whatsapp.atendimentos (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -144,7 +145,9 @@ CREATE TABLE IF NOT EXISTS whatsapp.atendimentos (
     ultima_atividade_em TIMESTAMPTZ NOT NULL DEFAULT now(),
     encerrado_por UUID,
     encerrado_em TIMESTAMPTZ);
-CREATE UNIQUE INDEX IF NOT EXISTS ux_wa_atend_aberto ON whatsapp.atendimentos (telefone) WHERE status <> 'encerrado';
+-- (26/10/2026) atendimentos em paralelo: um aberto POR SETOR (antes era um por contato)
+DROP INDEX IF EXISTS whatsapp.ux_wa_atend_aberto;
+CREATE UNIQUE INDEX IF NOT EXISTS ux_wa_atend_aberto_setor ON whatsapp.atendimentos (telefone, setor_id) WHERE status <> 'encerrado';
 CREATE INDEX IF NOT EXISTS ix_wa_atend_lista ON whatsapp.atendimentos (status, ultima_atividade_em DESC);
 
 CREATE TABLE IF NOT EXISTS whatsapp.atendimento_eventos (
@@ -201,6 +204,7 @@ CREATE TABLE IF NOT EXISTS whatsapp.parametros (
 PARAMETROS_PADRAO = {
     "saudacao": "{saudacao}, {nome}!\nDigite *apenas o número* de uma das opções abaixo, por favor:\n\n{menu}",
     "abertura_setor": "Olá, você está falando com {atendente} da {setor}. Aguarde um instante que já vou te atender.",
+    "paralelo": "Seu atendimento com {outros} continua aberto.",
     "rodape": "Se precisar de algo mais, digite o número do setor que deseja falar ou \"MENU\" para reiniciar atendimento.",
     "retorno_aberto": "Seu atendimento está atribuído à {atendente}. Se precisar falar em outro setor, *digite o número*, por favor:\n\n{menu}\n\n👉🏻 Mas se sua mensagem é realmente para {atendente}, basta registrar sua solicitação abaixo.",
     "midia_direcionar": "{saudacao}, {nome}! 😊\nPra quem devo direcionar esse(s) arquivo(s) enviados?\n\n{setores}\n\nDigite apenas o número.",
@@ -393,12 +397,52 @@ async def sessao_set(telefone, **campos):
                       (*campos.values(), telefone), fetch="none")
 
 
-async def atendimento_aberto(telefone):
-    return await q(
-        """SELECT a.*, s.nome AS setor_nome, s.nome_msg, u.nome AS atendente_nome
+_SQL_AT = """SELECT a.*, s.nome AS setor_nome, s.nome_msg, u.nome AS atendente_nome
            FROM whatsapp.atendimentos a JOIN whatsapp.setores s ON s.id=a.setor_id
-           LEFT JOIN public.usuarios_garra u ON u.id=a.atribuido_a
-           WHERE a.telefone=%s AND a.status<>'encerrado'""", (telefone,), fetch="one")
+           LEFT JOIN public.usuarios_garra u ON u.id=a.atribuido_a"""
+
+
+async def atendimentos_abertos(telefone):
+    """(26/10/2026) Um colaborador pode ter vários atendimentos abertos — um por setor. Mais recente primeiro."""
+    return await q(_SQL_AT + " WHERE a.telefone=%s AND a.status<>'encerrado' ORDER BY a.ultima_atividade_em DESC",
+                   (telefone,)) or []
+
+
+async def atendimento_por_id(at_id):
+    return await q(_SQL_AT + " WHERE a.id=%s", (at_id,), fetch="one")
+
+
+async def ativo(telefone, abertos=None, citado=None):
+    """Para qual atendimento vai a mensagem do colaborador:
+    1. o da mensagem que ele respondeu em cima (citação);
+    2. o ativo da sessão — último setor que ele escolheu ou última atendente que respondeu;
+    3. o de atividade mais recente."""
+    abertos = abertos if abertos is not None else await atendimentos_abertos(telefone)
+    if not abertos:
+        return None
+    if citado:
+        m = await q("SELECT atendimento_id FROM whatsapp.mensagens WHERE provider_msg_id=%s", (citado,), fetch="one")
+        hit = next((a for a in abertos if m and a["id"] == m["atendimento_id"]), None)
+        if hit:
+            return hit
+    s = await q("SELECT atendimento_ativo FROM whatsapp.sessoes WHERE telefone=%s", (telefone,), fetch="one")
+    return next((a for a in abertos if s and a["id"] == s["atendimento_ativo"]), None) or abertos[0]
+
+
+async def marcar_ativo(telefone, at_id):
+    await sessao(telefone)
+    await q("UPDATE whatsapp.sessoes SET atendimento_ativo=%s WHERE telefone=%s", (at_id, telefone), fetch="none")
+
+
+async def soltar(row):
+    """Mensagem de controle do menu (MENU, número escolhido) não fica no atendimento de outro setor."""
+    await q("UPDATE whatsapp.mensagens SET atendimento_id=NULL, atualizado_em=now() WHERE id=%s", (row["id"],), fetch="none")
+
+
+async def anexar_soltas(telefone, at_id, minutos):
+    await q("""UPDATE whatsapp.mensagens SET atendimento_id=%s, atualizado_em=now()
+               WHERE telefone=%s AND atendimento_id IS NULL AND criado_em > now() - (%s || ' minutes')::interval""",
+            (at_id, telefone, str(minutos)), fetch="none")
 
 
 async def setor(setor_id):
@@ -495,10 +539,8 @@ async def abrir_atendimento(telefone, setor_id, aberto_por="colaborador", usuari
            VALUES (%s,%s,%s,%s,%s,%s,%s) RETURNING *""",
         (telefone, setor_id, atribuido, aberto_por, fora, "em_atendimento" if aberto_por == "atendente" else "aberto",
          agora() if aberto_por == "atendente" else None), fetch="one")
-    await q(
-        """UPDATE whatsapp.mensagens SET atendimento_id=%s, atualizado_em=now()
-           WHERE telefone=%s AND atendimento_id IS NULL AND criado_em > now() - (%s || ' minutes')::interval""",
-        (at["id"], telefone, str(anexar_desde_min)), fetch="none")
+    await anexar_soltas(telefone, at["id"], anexar_desde_min)
+    await marcar_ativo(telefone, at["id"])
     await evento(at["id"], "aberto", de_usuario_id=usuario_id, para_usuario_id=atribuido, para_setor_id=setor_id,
                  observacao=aberto_por)
     at.update(setor_nome=s["nome"], nome_msg=s["nome_msg"], responsavel_nome=s.get("responsavel_nome"))
@@ -506,20 +548,39 @@ async def abrir_atendimento(telefone, setor_id, aberto_por="colaborador", usuari
 
 
 async def transferir(at, para_setor_id, para_usuario_id=None, por_usuario_id=None, silencioso=False):
+    """Se o colaborador já tem atendimento aberto no setor de destino, as mensagens são JUNTADAS nele
+    (um aberto por setor) e este é encerrado; senão o próprio atendimento muda de setor."""
     s = await setor(para_setor_id)
-    destino = para_usuario_id or s["responsavel_id"]
-    await q(
-        """UPDATE whatsapp.atendimentos SET setor_id=%s, atribuido_a=%s, status='aberto', ultima_atividade_em=now()
-           WHERE id=%s""", (para_setor_id, destino, at["id"]), fetch="none")
-    await evento(at["id"], "transferido", de_usuario_id=por_usuario_id or at.get("atribuido_a"), para_usuario_id=destino,
-                 de_setor_id=at["setor_id"], para_setor_id=para_setor_id,
-                 observacao="silencioso" if silencioso else None)
+    de = por_usuario_id or at.get("atribuido_a")
+    ja = await q("""SELECT id, numero, atribuido_a FROM whatsapp.atendimentos
+                    WHERE telefone=%s AND setor_id=%s AND status<>'encerrado' AND id<>%s""",
+                 (at["telefone"], para_setor_id, at["id"]), fetch="one")
+    if ja:
+        alvo, destino = ja["id"], para_usuario_id or ja["atribuido_a"] or s["responsavel_id"]
+        await q("UPDATE whatsapp.mensagens SET atendimento_id=%s, atualizado_em=now() WHERE atendimento_id=%s",
+                (alvo, at["id"]), fetch="none")
+        await q("""UPDATE whatsapp.atendimentos SET status='encerrado', encerrado_por=%s, encerrado_em=now(),
+                   ultima_atividade_em=now() WHERE id=%s""", (de, at["id"]), fetch="none")
+        await q("UPDATE whatsapp.atendimentos SET atribuido_a=%s, ultima_atividade_em=now() WHERE id=%s", (destino, alvo), fetch="none")
+        await evento(at["id"], "unido", de_usuario_id=de, para_setor_id=para_setor_id, observacao=f"juntado ao atendimento #{ja['numero']}")
+        await evento(alvo, "transferido", de_usuario_id=de, para_usuario_id=destino, de_setor_id=at["setor_id"],
+                     para_setor_id=para_setor_id, observacao="silencioso" if silencioso else "juntado")
+    else:
+        alvo, destino = at["id"], para_usuario_id or s["responsavel_id"]
+        await q(
+            """UPDATE whatsapp.atendimentos SET setor_id=%s, atribuido_a=%s, status='aberto', ultima_atividade_em=now()
+               WHERE id=%s""", (para_setor_id, destino, alvo), fetch="none")
+        await evento(alvo, "transferido", de_usuario_id=de, para_usuario_id=destino,
+                     de_setor_id=at["setor_id"], para_setor_id=para_setor_id,
+                     observacao="silencioso" if silencioso else None)
+    await marcar_ativo(at["telefone"], alvo)
     nome_dest = await _nome_usuario(destino)
     if not silencioso:
         await enviar_bot(at["telefone"], preencher(await par("abertura_setor"), atendente=primeiro_nome(nome_dest) or s["nome"],
-                                                   setor=s["nome_msg"]), at["id"])
+                                                   setor=s["nome_msg"]), alvo)
     c = await contato(at["telefone"])
-    await _avisar("atendimento_novo", at["id"], f"⇄ Conversa transferida: {c['nome']}", f"Agora em {s['nome']}", destino)
+    await _avisar("atendimento_novo", alvo, f"⇄ Conversa transferida: {c['nome']}", f"Agora em {s['nome']}", destino)
+    return alvo
 
 
 async def encerrar(at, por_usuario_id=None, avisar_colaborador=True):
@@ -530,7 +591,11 @@ async def encerrar(at, por_usuario_id=None, avisar_colaborador=True):
     if avisar_colaborador and por_usuario_id:
         nome = await _nome_usuario(por_usuario_id)
         await enviar_bot(at["telefone"], preencher(await par("encerramento"), atendente=primeiro_nome(nome)), at["id"])
-    await sessao_set(at["telefone"], aguardando=None, menu_atual_id=None, bot_pausado_ate=None)
+    restantes = await atendimentos_abertos(at["telefone"])
+    await q("UPDATE whatsapp.sessoes SET atendimento_ativo=%s WHERE telefone=%s AND atendimento_ativo=%s",
+            (restantes[0]["id"] if restantes else None, at["telefone"], at["id"]), fetch="none")
+    if not restantes:
+        await sessao_set(at["telefone"], aguardando=None, menu_atual_id=None, bot_pausado_ate=None)
 
 
 async def _nome_usuario(uid):
@@ -660,7 +725,7 @@ async def _mensagem_recebida(d):
         # Saiu pelo próprio celular do número (não pelo sistema): entra no histórico e o bot se cala.
         if await q("SELECT 1 FROM whatsapp.mensagens WHERE provider_msg_id=%s", (pid,), fetch="one"):
             return
-        at = await atendimento_aberto(telefone)
+        at = await ativo(telefone)
         row = await registrar(telefone, "out", "celular", tipo=tipo, texto=texto, provider_msg_id=pid,
                               atendimento_id=at["id"] if at else None, mimetype=extra.get("mimetype"),
                               nome_arquivo=extra.get("nome_arquivo"), citado_provider_id=extra.get("citado"),
@@ -672,7 +737,8 @@ async def _mensagem_recebida(d):
         return
 
     c = await contato(telefone, d.get("pushName"))
-    at = await atendimento_aberto(telefone)
+    abertos = await atendimentos_abertos(telefone)
+    at = await ativo(telefone, abertos, extra.get("citado"))
     row = await registrar(telefone, "in", "colaborador", tipo=tipo, texto=texto, provider_msg_id=pid,
                           atendimento_id=at["id"] if at else None, mimetype=extra.get("mimetype"),
                           nome_arquivo=extra.get("nome_arquivo"), citado_provider_id=extra.get("citado"))
@@ -680,11 +746,12 @@ async def _mensagem_recebida(d):
         return                                   # webhook repetido
     if extra.get("midia"):
         asyncio.create_task(baixar_e_guardar(row))
-    await decidir(c, row, at)
+    await decidir(c, row, at, abertos)
 
 
-async def decidir(c, row, at):
-    """Máquina de estados: o que o bot responde a uma mensagem do colaborador."""
+async def decidir(c, row, at, abertos):
+    """Máquina de estados: o que o bot responde a uma mensagem do colaborador.
+    `at` = atendimento para onde a mensagem foi (ativo); `abertos` = todos os abertos do colaborador (um por setor)."""
     telefone = c["telefone"]
     s = await sessao(telefone)
     texto = (row.get("texto") or "").strip()
@@ -694,31 +761,28 @@ async def decidir(c, row, at):
     menu = await menu_principal()
     ops = await opcoes(menu["id"]) if menu else []
 
-    # MENU reinicia de qualquer ponto
+    # MENU mostra o menu de qualquer ponto — NÃO encerra atendimento aberto (26/10/2026): a atendente
+    # pode ainda não ter lido; ele continua na lista dela até ela encerrar.
     if sem_acento(texto) == "menu" and not eh_midia:
-        if at:
-            await encerrar(at)
-        await sessao_set(telefone, aguardando=None, menu_atual_id=menu["id"] if menu else None, midias_pendentes=[],
-                         bot_pausado_ate=None)
+        if abertos:
+            await soltar(row)
+        await sessao_set(telefone, aguardando="menu" if abertos else None, menu_atual_id=menu["id"] if menu else None,
+                         midias_pendentes=[], bot_pausado_ate=None)
         await enviar_bot(telefone, preencher(await par("saudacao"), saudacao=saudacao_hora(), nome=nome, menu=texto_menu(ops)))
         return
 
-    # ── com atendimento aberto ──
-    if at:
-        if s.get("aguardando") == "troca_setor" and numero is not None:
-            op = next((o for o in ops if o["numero"] == numero), None)
+    # ── com atendimento(s) aberto(s) ──
+    if abertos:
+        if s.get("aguardando") in ("menu", "troca_setor"):
             await sessao_set(telefone, aguardando=None)
-            if op and op["tipo"] == "setor" and op["setor_id"]:
-                if op["setor_id"] != at["setor_id"]:
-                    await transferir(at, op["setor_id"])
+            op = next((o for o in ops if o["numero"] == numero), None) if numero is not None else None
+            if op:
+                await soltar(row)
+                if op["tipo"] == "setor" and op["setor_id"]:
+                    await escolher_setor(c, op["setor_id"], abertos)
                 else:
-                    await avisar_nova_msg(at, c["nome"], texto)
+                    await enviar_bot(telefone, (op["resposta"] or "") + "\n\n" + await par("rodape"))
                 return
-            if op and op["tipo"] == "texto":
-                await enviar_bot(telefone, (op["resposta"] or "") + "\n\n" + await par("rodape"), at["id"])
-                return
-        if s.get("aguardando") == "troca_setor":
-            await sessao_set(telefone, aguardando=None)
         else:
             ultima = await q(
                 """SELECT max(criado_em) AS t FROM whatsapp.mensagens WHERE atendimento_id=%s AND id<>%s""",
@@ -756,7 +820,7 @@ async def decidir(c, row, at):
         setores = await setores_ativos()
         if 1 <= numero <= len(setores):
             await sessao_set(telefone, aguardando=None, midias_pendentes=[])
-            await _abrir_e_avisar(c, setores[numero - 1]["id"], minutos=24 * 60)
+            await escolher_setor(c, setores[numero - 1]["id"], [], minutos=24 * 60)
             return
 
     # ── número do menu ──
@@ -769,7 +833,7 @@ async def decidir(c, row, at):
         if op:
             if op["tipo"] == "setor" and op["setor_id"]:
                 await sessao_set(telefone, aguardando=None, menu_atual_id=None)
-                await _abrir_e_avisar(c, op["setor_id"])
+                await escolher_setor(c, op["setor_id"], [])
             elif op["tipo"] == "submenu" and op["submenu_id"]:
                 sub = await opcoes(op["submenu_id"])
                 await sessao_set(telefone, menu_atual_id=op["submenu_id"])
@@ -791,10 +855,24 @@ async def decidir(c, row, at):
     await enviar_bot(telefone, preencher(await par("saudacao"), saudacao=saudacao_hora(), nome=nome, menu=texto_menu(ops)))
 
 
-async def _abrir_e_avisar(c, setor_id, minutos=30):
-    at = await abrir_atendimento(c["telefone"], setor_id, anexar_desde_min=minutos)
+async def escolher_setor(c, setor_id, abertos, minutos=30):
+    """Colaborador escolheu um setor. Já tem atendimento aberto nele → volta para ele (vira o ativo).
+    Senão abre um novo — os de outros setores CONTINUAM abertos, cada um na lista da sua atendente."""
+    telefone = c["telefone"]
+    existente = next((a for a in abertos if a["setor_id"] == setor_id), None)
+    if existente:
+        await anexar_soltas(telefone, existente["id"], minutos)
+        await marcar_ativo(telefone, existente["id"])
+        atend = primeiro_nome(existente.get("atendente_nome")) or existente["setor_nome"]
+        await enviar_bot(telefone, preencher(await par("abertura_setor"), atendente=atend, setor=existente["nome_msg"]), existente["id"])
+        await avisar_nova_msg(existente, c["nome"], "voltou a chamar pelo menu")
+        return
+    at = await abrir_atendimento(telefone, setor_id, anexar_desde_min=minutos)
+    if abertos:
+        outros = " e ".join(f"{primeiro_nome(a.get('atendente_nome')) or a['setor_nome']} ({a['setor_nome']})" for a in abertos)
+        await enviar_bot(telefone, preencher(await par("paralelo"), outros=outros), at["id"])
     atend = primeiro_nome(await _nome_usuario(at["atribuido_a"])) or at["setor_nome"]
-    await enviar_bot(c["telefone"], preencher(await par("abertura_setor"), atendente=atend, setor=at["nome_msg"]), at["id"])
+    await enviar_bot(telefone, preencher(await par("abertura_setor"), atendente=atend, setor=at["nome_msg"]), at["id"])
     if at["fora_horario"]:
         await enviar_bot(c["telefone"], preencher(await par("fora_horario"), horario=await par("horario_texto")), at["id"])
     await _avisar("atendimento_novo", at["id"], f"💬 Nova conversa: {c['nome']}", f"{at['setor_nome']} — pelo menu do WhatsApp",
