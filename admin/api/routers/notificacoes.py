@@ -1,4 +1,4 @@
-"""(24/10/2026) Notificações — API usada pelo app (badge, lista em Minha conta, assinatura de push,
+"""(24/10/2026, 27/10/2026) Notificações — API usada pelo app (badge, lista em Minha conta, assinatura de push,
 preferências) e pelo sino dos módulos desktop. Regras e envio em core/notificar.py."""
 from fastapi import APIRouter, Depends, HTTPException, Request
 from core.auth import verificar_token
@@ -38,6 +38,21 @@ async def marcar_lidas(request: Request, payload=Depends(verificar_token)):
         await ajard_query("UPDATE public.notificacoes SET lida=true WHERE usuario_id=%s AND id = ANY(%s::uuid[])", (u["id"], ids), fetch="none")
     else:
         await ajard_query("UPDATE public.notificacoes SET lida=true WHERE usuario_id=%s AND lida=false", (u["id"],), fetch="none")
+    return {"ok": True, "pendentes": await N.pendentes(u["id"])}
+
+
+@router.delete("/api/notificacoes")
+async def apagar(request: Request, payload=Depends(verificar_token)):
+    """(27/10/2026) Limpar: {ids:[…]} apaga esses avisos (lidos ou não); sem ids apaga todos os já lidos
+    do usuário — os pendentes ficam até serem abertos. Só mexe nos avisos do próprio usuário."""
+    u = await _uid(payload)
+    await N._garantir()
+    d = await request.json() if (request.headers.get("content-length") or "0") != "0" else {}
+    ids = [str(i) for i in ((d or {}).get("ids") or []) if i]
+    if ids:
+        await ajard_query("DELETE FROM public.notificacoes WHERE usuario_id=%s AND id = ANY(%s::uuid[])", (u["id"], ids), fetch="none")
+    else:
+        await ajard_query("DELETE FROM public.notificacoes WHERE usuario_id=%s AND lida=true", (u["id"],), fetch="none")
     return {"ok": True, "pendentes": await N.pendentes(u["id"])}
 
 
