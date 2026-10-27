@@ -1,4 +1,4 @@
-/* (24/10/2026) Sino de notificações — módulos desktop (Admin, Manutenção, Compras).
+/* (24/10/2026, 27/10/2026) Sino de notificações — módulos desktop (Admin, Manutenção, Compras).
  * Uso: <script src="/operacional/static/js/sino.js"></script> e, depois do login,
  *   GarraSino.init({ token: () => '…jwt…', alvo: elementoOuSeletor, antes: true|false });
  * Faz: contador no sino + "(n)" no título da aba, lista com link, marcar lido, e "Receber neste computador"
@@ -11,13 +11,17 @@
   .gs-painel{position:fixed;top:54px;right:12px;width:360px;max-width:calc(100vw - 24px);max-height:70vh;overflow:auto;background:#fff;color:#0F172A;border-radius:12px;box-shadow:0 10px 30px rgba(15,23,42,.25);z-index:9999;display:none;font-family:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;font-size:13px}
   .gs-painel.on{display:block}
   .gs-painel .cab{display:flex;align-items:center;gap:8px;padding:10px 14px;border-bottom:1px solid #E2E8F0;font-weight:800;color:#1A2A5E}
-  .gs-painel .cab button{margin-left:auto;background:none;border:1px solid #CBD5E1;border-radius:6px;padding:4px 8px;font-size:11px;cursor:pointer;color:#475569}
+  .gs-painel .cab button{background:none;border:1px solid #CBD5E1;border-radius:6px;padding:4px 8px;font-size:11px;cursor:pointer;color:#475569}
+  .gs-painel .cab button.todas{margin-left:auto}
   .gs-painel .it{display:flex;gap:10px;padding:10px 14px;border-bottom:1px solid #F1F5F9;cursor:pointer}
   .gs-painel .it:hover{background:#F8FAFC}
   .gs-painel .it.nl{background:#FFF7ED}
   .gs-painel .it .t{font-weight:800;color:#1A2A5E}
   .gs-painel .it .x{color:#334155;margin-top:2px}
   .gs-painel .it .q{color:#64748B;font-size:11px;margin-top:3px}
+  .gs-painel .it .del{color:#94A3B8;font-size:13px;padding:0 2px;align-self:flex-start;visibility:hidden}
+  .gs-painel .it:hover .del{visibility:visible}
+  .gs-painel .it .del:hover{color:#DC2626}
   .gs-painel .vazio{padding:24px;text-align:center;color:#64748B}
   .gs-painel .rodape{padding:10px 14px;border-top:1px solid #E2E8F0;display:flex;align-items:center;gap:8px;color:#475569;font-size:12px}
   .gs-painel .rodape label{display:flex;align-items:center;gap:6px;cursor:pointer}`;
@@ -47,15 +51,35 @@
   function render(itens) {
     const lista = painel.querySelector('.lista');
     if (!itens.length) { lista.innerHTML = '<div class="vazio">Nenhum aviso para você.</div>'; return; }
-    lista.innerHTML = itens.map(a => `<div class="it ${a.lida ? '' : 'nl'}" data-id="${a.id}" data-link="${esc(a.link || '')}"><span style="font-size:18px">${ICO[a.tipo] || '🔔'}</span><div style="flex:1;min-width:0"><div class="t">${esc(tit(a.titulo))}</div>${a.texto ? '<div class="x">' + esc(a.texto) + '</div>' : ''}<div class="q">${quando(a.criado_em)}</div></div></div>`).join('');
+    lista.innerHTML = itens.map(a => `<div class="it ${a.lida ? '' : 'nl'}" data-id="${a.id}" data-link="${esc(a.link || '')}"><span style="font-size:18px">${ICO[a.tipo] || '🔔'}</span><div style="flex:1;min-width:0"><div class="t">${esc(tit(a.titulo))}</div>${a.texto ? '<div class="x">' + esc(a.texto) + '</div>' : ''}<div class="q">${quando(a.criado_em)}</div></div><span class="del" title="Apagar este aviso">✕</span></div>`).join('');
     lista.querySelectorAll('.it').forEach(el => el.onclick = () => abrir(el.dataset.id, el.dataset.link));
+    lista.querySelectorAll('.it .del').forEach(el => el.onclick = e => { e.stopPropagation(); apagar([el.parentNode.dataset.id]); });
+  }
+  // (27/10/2026) Os avisos nascem com o link do app (/manutencao/mobile?ot=…). No computador o mesmo
+  // aviso tem de abrir a tela de mesa: traduz o link e entra pelo SSO do módulo, como o Admin faz.
+  function linkDesktop(link) {
+    try {
+      const u = new URL(link, location.origin), q = u.search || '';
+      if (u.pathname === '/manutencao/mobile') { const a = u.searchParams.get('aba'); return a === 'ab' ? '/manutencao?abast=1' : '/manutencao' + q; }
+      if (u.pathname === '/manutencao/pedido') return '/manutencao' + q;
+      if (u.pathname === '/manutencao' && u.searchParams.get('notas')) return '/manutencao/notas';
+      if (u.pathname === '/mobile') return '/admin';
+      return u.pathname + q;
+    } catch (e) { return link; }
+  }
+  function abrirDesktop(link) {
+    const l = linkDesktop(link), t = cfg.token() || '';
+    const sso = t && l.indexOf('/admin') !== 0 ? (l.indexOf('?') >= 0 ? '&' : '?') + 'sso=' + encodeURIComponent(t) + '&nc=' + Date.now() : '';
+    window.open(l + sso, '_blank');
   }
   async function abrir(id, link) {
     try { const d = await api('/api/notificacoes/lidas', { method: 'POST', body: JSON.stringify({ ids: [id] }) }); pintar(d.pendentes); } catch (e) { }
     painel.classList.remove('on');
-    if (link) { if (cfg.abrir && cfg.abrir(link) === true) return; window.open(link, '_blank'); }
+    if (link) { if (cfg.abrir && cfg.abrir(link) === true) return; abrirDesktop(link); }
   }
   async function lerTodas() { try { const d = await api('/api/notificacoes/lidas', { method: 'POST', body: '{}' }); pintar(d.pendentes); atualizar(true); } catch (e) { } }
+  // (27/10/2026) limpar: ✕ apaga um aviso; "limpar lidos" apaga todos os já lidos (os pendentes ficam)
+  async function apagar(ids) { try { const d = await api('/api/notificacoes', { method: 'DELETE', body: JSON.stringify(ids ? { ids } : {}) }); pintar(d.pendentes); atualizar(true); } catch (e) { } }
 
   // ── push neste computador (mesmo SW do app, escopo /) ──
   function b64(b) { const p = '='.repeat((4 - b.length % 4) % 4); const s = (b + p).replace(/-/g, '+').replace(/_/g, '/'); const raw = atob(s); return Uint8Array.from([].map.call(raw, c => c.charCodeAt(0))); }
@@ -95,10 +119,11 @@
     sino = document.createElement('span'); sino.className = 'gs-sino'; sino.title = 'Avisos'; sino.innerHTML = '🔔<span class="n"></span>';
     c.antes ? alvo.parentNode.insertBefore(sino, alvo) : alvo.appendChild(sino);
     painel = document.createElement('div'); painel.className = 'gs-painel';
-    painel.innerHTML = `<div class="cab">🔔 Avisos <button class="todas">marcar todos lidos</button></div><div class="lista"><div class="vazio">…</div></div>
+    painel.innerHTML = `<div class="cab">🔔 Avisos <button class="todas">marcar todos lidos</button><button class="limpar" title="Apaga os avisos já lidos">limpar lidos</button></div><div class="lista"><div class="vazio">…</div></div>
       <div class="rodape"><label><input type="checkbox" class="push-cb"> Receber neste computador</label><span class="push-st" style="margin-left:auto"></span></div>`;
     document.body.appendChild(painel);
     painel.querySelector('.todas').onclick = lerTodas;
+    painel.querySelector('.limpar').onclick = () => apagar(null);
     painel.querySelector('.push-cb').onchange = e => ligarPush(e.target.checked);
     sino.onclick = e => { e.stopPropagation(); const on = painel.classList.toggle('on'); if (on) { atualizar(true); montarRodape(); } };
     document.addEventListener('click', e => { if (painel.classList.contains('on') && !painel.contains(e.target)) painel.classList.remove('on'); });
@@ -106,5 +131,5 @@
     clearInterval(timer); timer = setInterval(() => atualizar(painel.classList.contains('on')), 90000);
     document.addEventListener('visibilitychange', () => { if (!document.hidden) atualizar(painel.classList.contains('on')); });
   }
-  window.GarraSino = { init, atualizar: () => atualizar(painel && painel.classList.contains('on')) };
+  window.GarraSino = { init, linkDesktop, atualizar: () => atualizar(painel && painel.classList.contains('on')) };
 })();
