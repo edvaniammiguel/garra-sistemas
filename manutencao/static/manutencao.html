@@ -428,7 +428,8 @@ button:disabled, select:disabled, input:disabled, [aria-disabled=true] { cursor:
 /* ══ SSO por aba (Regra 60) — módulo abre SOMENTE pelo Admin ══ */
 (function(){
   try {
-    const sso = new URLSearchParams(location.search).get('sso');
+    window._LINK_Q = new URLSearchParams(location.search);   // (27/10/2026) guarda ?ot= ?eq= ?pedido= ?func= ?peca= antes de limpar a URL
+    const sso = window._LINK_Q.get('sso');
     if (sso && sso.length > 10) {
       sessionStorage.setItem('garra_mnt_token', sso);
       history.replaceState(null, '', location.pathname);
@@ -462,9 +463,8 @@ function mostrarToast(msg, tipo){
   } catch(e) {}
   // (24/10/2026) sino de avisos: OT do aviso abre aqui mesmo; o resto abre em nova aba
   try { GarraSino.init({ token: mntToken, alvo: document.getElementById('tb-user'), antes: true, abrir: function(link){
-    try { const u = new URL(link, location.origin); const ot = u.searchParams.get('ot'), fq = u.searchParams.get('func');
-      if (ot && typeof verOTReal === 'function') { verOTReal(ot); return true; }
-      if (fq && typeof equipFuncionamento === 'function') { equipFuncionamento(fq); return true; } } catch(e) {}
+    // (27/10/2026) aviso clicado dentro do módulo abre a tela aqui mesmo (OT, pedido, equipamento, funcionamento)
+    try { const u = new URL(GarraSino.linkDesktop(link), location.origin); if (u.pathname !== '/manutencao') return false; return abrirDeLink(u.searchParams); } catch(e) {}
     return false; } }); } catch(e) {}
 })();
 // (10/10/2026) REGRA ÚNICA de data no módulo: 'AAAA-MM-DD' (só data, ex.: data prevista) é lida como
@@ -1664,7 +1664,7 @@ async function abrirPedidos(){
   const linhas = lista.map(p => {
     const [uc, ul] = URG[p.grau_urgencia] || ['em', p.grau_urgencia];
     const quem = p.solicitante_nome ? '👷 '+_esc(p.solicitante_nome) : (p.cliente_nome ? '🏢 '+_esc(p.cliente_nome) : '—');
-    return '<tr><td class="bold" style="white-space:nowrap">'+_esc(p.numero)+'</td><td style="white-space:nowrap">'+dd(p.data_pedido)+'</td>'
+    return '<tr data-pid="'+p.id+'"><td class="bold" style="white-space:nowrap">'+_esc(p.numero)+'</td><td style="white-space:nowrap">'+dd(p.data_pedido)+'</td>'
       + '<td>'+viaChip(p.via)+(p.nc_ref ? ' <span class="muted" style="font-size:9px" title="NC do checklist · envio '+_esc(p.nc_ref)+'">NC</span>' : '')+'</td><td><span class="chip '+uc+'">'+ul+'</span></td>'
       + '<td class="bold">'+_esc(p.equipamento_codigo||'—')+'</td><td>'+quem+'</td>'
       + '<td>'+_esc(p.descricao)+'</td>'
@@ -8521,14 +8521,31 @@ document.addEventListener('keydown', function(ev){
   const ult = trs[trs.length - 1]; mwSel(aba, ult.dataset.cod || ult.dataset.id); _listaUltimoSel[aba] = ult.dataset.cod || ult.dataset.id;
   mostrarToast('☑ '+trs.length+' linha(s) marcada(s) — Etiquetas, Imprimir e Excel agem sobre elas', 'ok');
 });
+// (27/10/2026) abre a tela certa a partir dos parâmetros de um link de aviso; devolve true se tratou
+function abrirDeLink(q){
+  const ot = q.get('ot'), ped = q.get('pedido'), eq = q.get('eq'), fq = q.get('func');
+  if (ot) { verOTReal(ot); return true; }
+  if (fq) { equipFuncionamento(fq); return true; }
+  if (eq) { verEquipReal(eq); return true; }
+  if (ped) { abrirPedidoDeLink(ped); return true; }
+  if (q.get('abast')) { showModule('frota'); mostrarToast('Conferência de abastecimento: abra o equipamento → aba Abastecimento', 'ok'); return true; }
+  return false;
+}
+async function abrirPedidoDeLink(pid){
+  await abrirPedidos();
+  const tr = document.querySelector('tr[data-pid="'+pid+'"]');
+  if (!tr) { mostrarToast('Esse pedido já foi convertido ou recusado', 'warn'); return; }
+  tr.style.background = '#FFF7ED'; tr.scrollIntoView({ block: 'center' });
+}
 document.addEventListener('DOMContentLoaded', function(){
   // (13/10/2026) sincroniza as OTs programadas com a previsão viva antes de montar as listas
   atualizarDatasOT(false).finally(function(){ carregarSemaforosReais(); carregarOTsReais(); });
   carregarEquipReais();
   mntFetch('/manutencao/api/fornecedores').then(f => { _mntFornList = f; }).catch(()=>{ _mntFornList = []; });
   // (20/10/2026) QR da etiqueta: /manutencao?peca=CÓDIGO abre Materiais já na ficha do item
-  try { const fq = new URLSearchParams(location.search).get('func'); if (fq) { history.replaceState(null, '', location.pathname); setTimeout(() => equipFuncionamento(fq), 900); } } catch(e){}
-  try { const pc = new URLSearchParams(location.search).get('peca'); if (pc) { history.replaceState(null, '', location.pathname); showModule('alm'); setTimeout(() => { mwSel('alm', pc); abrirPeca(pc); }, 600); } } catch(e){}
+  // (27/10/2026) links de aviso no computador: ?ot= ?pedido= ?eq= ?func= ?abast=1 (vindos do sino do Admin)
+  try { const q = window._LINK_Q || new URLSearchParams(location.search); if (['ot','pedido','eq','func','abast'].some(k => q.get(k))) { history.replaceState(null, '', location.pathname); setTimeout(() => abrirDeLink(q), 900); } } catch(e){}
+  try { const pc = (window._LINK_Q || new URLSearchParams(location.search)).get('peca'); if (pc) { history.replaceState(null, '', location.pathname); showModule('alm'); setTimeout(() => { mwSel('alm', pc); abrirPeca(pc); }, 600); } } catch(e){}
 });
 </script>
 </body>
