@@ -714,6 +714,7 @@ button:disabled, select:disabled, input:disabled, [aria-disabled=true] { cursor:
               <button class="btn btn-primary" id="btn-fechar-os" style="padding:6px 14px;font-size:12px;background:var(--green)" onclick="confirmarFechamento()">✓ Fechar OS</button>
               <button class="btn btn-secondary" id="btn-reabrir-os" style="padding:6px 14px;font-size:12px;display:none" onclick="reabrirOS()">↺ Reabrir OS</button>
               <button class="btn btn-secondary" id="btn-lote-diarias" style="padding:6px 14px;font-size:12px" onclick="abrirModalLote()">📅 Diárias em lote</button>
+              <button class="btn btn-secondary" style="padding:6px 14px;font-size:12px" onclick="abrirMedicaoDia()">📤 Medição do dia</button>
             </div>
           </div>
 
@@ -1300,6 +1301,36 @@ button:disabled, select:disabled, input:disabled, [aria-disabled=true] { cursor:
       <button class="btn btn-secondary" onclick="document.getElementById('modal-parada').classList.add('hidden')">Cancelar</button>
       <button class="btn btn-primary" onclick="cmParadaSalvar()">Salvar</button>
     </div>
+  </div>
+</div>
+
+<!-- (28/10/2026) MEDIÇÃO DO DIA — imagem para o cliente + envios registrados -->
+<div id="modal-medicao" class="modal-backdrop hidden">
+  <div class="modal-card" style="max-width:560px">
+    <div class="modal-title">📤 Medição do dia — <span id="med-os"></span></div>
+    <div class="field-row">
+      <div class="field"><label>Data</label><select id="med-data" onchange="gerarPreviaMedicao()"></select></div>
+      <div class="field" id="med-valores-box"><label>Valores</label>
+        <select id="med-valores" onchange="gerarPreviaMedicao()">
+          <option value="0">Sem valores</option>
+          <option value="1">Com valores</option>
+        </select></div>
+    </div>
+    <div id="med-previa" style="text-align:center;background:#F8FAFC;border-radius:8px;padding:10px;min-height:120px"></div>
+    <div id="med-destino" style="font-size:12px;color:var(--muted);margin-top:8px"></div>
+    <div id="med-confirmar" class="hidden" style="margin-top:12px;background:#FFF7ED;border:1.5px solid var(--orange);border-radius:8px;padding:12px;font-size:13px">
+      <strong>Colou (Ctrl+V) e enviou a imagem no WhatsApp Web?</strong>
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:10px">
+        <button class="btn btn-secondary" onclick="medConfirmarEnvio(false)">Não enviei</button>
+        <button class="btn btn-primary" onclick="medConfirmarEnvio(true)">Sim, registrar envio</button>
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="document.getElementById('modal-medicao').classList.add('hidden')">Fechar</button>
+      <button class="btn btn-primary" id="med-btn-enviar" onclick="enviarMedicao()">📤 Enviar ao cliente</button>
+    </div>
+    <div style="margin-top:16px;font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase">Envios desta OS</div>
+    <div id="med-envios" style="font-size:13px;margin-top:6px"></div>
   </div>
 </div>
 
@@ -3657,6 +3688,200 @@ function _vuSugeridoOS(p, P) {
   return ehPrincipal ? _vuNum(P.hora) : null;
 }
 function _vuNum(v) { return (v != null && parseFloat(v) > 0) ? parseFloat(v) : null; }
+
+/* ══════════════════════════════════════════════
+   (28/10/2026) MEDIÇÃO DO DIA — imagem PNG para o cliente.
+   Quantidade e preço saem do MOTOR OFICIAL (_qtdParte/_vuLinhaOuCascata);
+   o servidor desenha a imagem com equipamento/operador/leituras do banco.
+   O envio só é registrado depois que o compartilhamento concluiu.
+══════════════════════════════════════════════ */
+let _medBlob = null, _medPayload = null;
+const _MED_STATUS = { enviada:'Enviada', confirmada:'Confirmada', contestada:'Contestada' };
+
+// (28/10/2026) Celular → compartilhar nativo (app do WhatsApp). Computador →
+// copia a imagem e abre o WhatsApp Web na conversa do cliente (Ctrl+V), sem a
+// janela de compartilhar do Windows.
+function _medCelular() {
+  const ua = navigator.userAgentData;
+  return ua ? !!ua.mobile : /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+}
+
+function _medTelefone() {
+  let n = String((_osAtual && _osAtual.cliente_telefone) || '').replace(/\D/g, '').replace(/^0+/, '');
+  if (n.length === 10 || n.length === 11) n = '55' + n;
+  return /^55\d{10,11}$/.test(n) ? n : '';
+}
+
+function _medEmpreito() {
+  return !!_precosOS(_osAtual).empreito;
+}
+
+function _medLinhas(partes, comValores) {
+  const P = _precosOS(_osAtual);
+  return partes.map(p => {
+    const med = (p.tipo_medicao || 'horimetro').toLowerCase();
+    const unidade = med === 'metros' ? 'm' : med === 'diaria' ? 'diaria' : med === 'viagem' ? 'viagem'
+      : med === 'km' ? ((parseFloat(p.qtd_viagens) || 0) > 0 ? 'viagem' : 'km') : 'h';
+    const l = { parte_id: p.id, qtd: _qtdParte(p), unidade, equipamento: p.equipamento_codigo || '—' };
+    if (comValores) l.unit = _vuLinhaOuCascata(p, P);
+    return l;
+  });
+}
+
+async function abrirMedicaoDia() {
+  const datas = [...new Set((_partesAtual || []).map(p => String(p.data || '').slice(0, 10)).filter(Boolean))].sort().reverse();
+  if (!datas.length) { toast('Nenhum registro nesta OS', 'error'); return; }
+  document.getElementById('med-os').textContent = _osAtual.numero;
+  document.getElementById('med-data').innerHTML = datas.map(d =>
+    `<option value="${d}">${d.split('-').reverse().join('/')}</option>`).join('');
+  document.getElementById('med-valores').value = '0';
+  document.getElementById('med-valores-box').style.display = _medEmpreito() ? 'none' : '';
+  const tel = _medTelefone();
+  document.getElementById('med-destino').innerHTML = _medCelular() ? ''
+    : tel ? `WhatsApp Web: conversa do cliente <strong>+${tel.slice(0, 2)} ${tel.slice(2, 4)} ${tel.slice(4)}</strong>`
+    : 'Cliente sem telefone válido no cadastro — o WhatsApp Web abre para você escolher a conversa.';
+  document.getElementById('modal-medicao').classList.remove('hidden');
+  carregarEnviosMedicao();
+  gerarPreviaMedicao();
+}
+
+async function gerarPreviaMedicao() {
+  const box = document.getElementById('med-previa');
+  const data = document.getElementById('med-data').value;
+  const comValores = !_medEmpreito() && document.getElementById('med-valores').value === '1';
+  const partes = (_partesAtual || []).filter(p => String(p.data || '').slice(0, 10) === data);
+  const linhas = _medLinhas(partes, comValores);
+  _medBlob = null; _medPayload = null;
+  _medAguardando(false);
+  const semPreco = comValores ? linhas.filter(l => l.unit == null).map(l => l.equipamento) : [];
+  if (semPreco.length) {
+    box.innerHTML = `<div style="color:var(--red);padding:30px 10px;font-weight:600">⚠️ Sem preço: ${esc(semPreco.join(', '))}<br><span style="font-weight:400;color:var(--muted)">Defina o Vlr Unit. na tabela de partes ou envie sem valores.</span></div>`;
+    return;
+  }
+  box.innerHTML = '<div class="loading"><span class="spin"></span></div>';
+  const payload = { data, com_valores: comValores, linhas: linhas.map(({ equipamento, ...l }) => l) };
+  try {
+    const r = await fetch(API + '/operacional/api/os/' + _osAtual.id + '/medicao-dia', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + (Token.get() || '') },
+      body: JSON.stringify(payload),
+    });
+    if (r.status === 401) { doLogout(); return; }
+    if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e.detail || 'Erro ' + r.status); }
+    _medBlob = await r.blob();
+    _medPayload = payload;
+    const img = document.createElement('img');
+    img.src = URL.createObjectURL(_medBlob);
+    img.onload = () => URL.revokeObjectURL(img.src);
+    img.alt = 'Prévia da medição';
+    img.style.cssText = 'max-width:100%;max-height:55vh;border:1px solid var(--border);border-radius:8px';
+    box.innerHTML = '';
+    box.appendChild(img);
+  } catch (e) {
+    box.innerHTML = `<div style="color:var(--red);padding:30px 10px">${esc(e.message)}</div>`;
+  }
+}
+
+async function enviarMedicao() {
+  if (!_medBlob || !_medPayload) { toast('A imagem ainda não está pronta', 'error'); return; }
+  const nome = `medicao-${_osAtual.numero}-${_medPayload.data}.png`;
+  const arquivo = new File([_medBlob], nome, { type: 'image/png' });
+  if (_medCelular() && navigator.canShare && navigator.canShare({ files: [arquivo] })) {
+    try {
+      await navigator.share({ files: [arquivo], title: 'Medição ' + _osAtual.numero });
+    } catch (e) {
+      if (e.name === 'AbortError') return;
+      toast('Não foi possível compartilhar: ' + e.message, 'error'); return;
+    }
+  } else {
+    let copiou = false;
+    try {
+      await navigator.clipboard.write([new ClipboardItem({ 'image/png': _medBlob })]);
+      copiou = true;
+    } catch (e) {
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(_medBlob);
+      a.download = nome;
+      a.click();
+      URL.revokeObjectURL(a.href);
+    }
+    const tel = _medTelefone();
+    window.open('https://web.whatsapp.com/' + (tel ? 'send?phone=' + tel : ''), 'garra_whatsapp');
+    toast(copiou ? 'Imagem copiada — na conversa do WhatsApp Web, Ctrl+V e Enviar'
+                 : 'Imagem baixada — anexe na conversa do WhatsApp Web');
+    // (28/10/2026) No computador o sistema não sabe se a imagem foi colada:
+    // só registra quando a pessoa confirma (evita envio registrado sem envio).
+    _medAguardando(true);
+    return;
+  }
+  await _medRegistrar();
+}
+
+function _medAguardando(sim) {
+  document.getElementById('med-confirmar').classList.toggle('hidden', !sim);
+  document.getElementById('med-btn-enviar').style.display = sim ? 'none' : '';
+}
+
+async function medConfirmarEnvio(enviou) {
+  _medAguardando(false);
+  if (enviou) await _medRegistrar();
+}
+
+async function _medRegistrar() {
+  try {
+    await apiFetch('/operacional/api/os/' + _osAtual.id + '/medicoes-enviadas',
+      { method: 'POST', body: JSON.stringify(_medPayload) });
+    toast('Envio registrado', 'success');
+    carregarEnviosMedicao();
+  } catch (e) {
+    toast('Imagem enviada, mas o registro falhou: ' + e.message, 'error');
+  }
+}
+
+async function carregarEnviosMedicao() {
+  const el = document.getElementById('med-envios');
+  el.innerHTML = '<div class="loading"><span class="spin"></span></div>';
+  try {
+    const lista = await apiFetch('/operacional/api/os/' + _osAtual.id + '/medicoes-enviadas');
+    if (!lista.length) { el.innerHTML = '<div style="color:var(--muted)">Nenhum envio registrado.</div>'; return; }
+    el.innerHTML = lista.map(m => {
+      const dia = String(m.data).slice(0, 10).split('-').reverse().join('/');
+      const quando = new Date(m.enviado_em).toLocaleString('pt-BR', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' });
+      const valor = m.com_valores ? 'R$ ' + parseFloat(m.total || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 }) : 'sem valores';
+      const cor = m.status === 'confirmada' ? 'var(--green, #16A34A)' : m.status === 'contestada' ? 'var(--red)' : 'var(--muted)';
+      return `<div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--border)">
+        <div style="flex:1;min-width:0">
+          <strong>${dia}</strong> · ${valor}<br>
+          <span style="font-size:11px;color:var(--muted)">enviada ${quando} por ${esc(m.enviado_por_nome || '–')}${m.status_por_nome && m.status !== 'enviada' ? ' · marcada por ' + esc(m.status_por_nome) : ''}</span>
+          ${m.motivo ? `<div style="font-size:12px;color:var(--red)">Motivo: ${esc(m.motivo)}</div>` : ''}
+        </div>
+        <select style="font-size:12px;color:${cor};font-weight:600" onchange="mudarStatusMedicao('${esc(m.id)}', this)" data-atual="${m.status}">
+          ${Object.entries(_MED_STATUS).map(([k, v]) => `<option value="${k}" ${k === m.status ? 'selected' : ''}>${v}</option>`).join('')}
+        </select>
+      </div>`;
+    }).join('');
+  } catch (e) {
+    el.innerHTML = `<div style="color:var(--red)">${esc(e.message)}</div>`;
+  }
+}
+
+async function mudarStatusMedicao(medId, sel) {
+  const status = sel.value;
+  let motivo = null;
+  if (status === 'contestada') {
+    motivo = (prompt('Motivo da contestação do cliente:') || '').trim();
+    if (!motivo) { sel.value = sel.dataset.atual; return; }
+  }
+  try {
+    await apiFetch('/operacional/api/medicoes-enviadas/' + medId,
+      { method: 'PATCH', body: JSON.stringify({ status, motivo }) });
+    toast('Status atualizado', 'success');
+    carregarEnviosMedicao();
+  } catch (e) {
+    sel.value = sel.dataset.atual;
+    toast(e.message, 'error');
+  }
+}
 
 // (11/09/2026) VALOR DE REFERÊNCIA da linha — SÓ para a Apuração de
 // Referência do empreito, NUNCA para a fatura. Cascata oficial primeiro;
