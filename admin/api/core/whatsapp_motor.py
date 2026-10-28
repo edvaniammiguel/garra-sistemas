@@ -205,7 +205,7 @@ PARAMETROS_PADRAO = {
     "saudacao": "{saudacao}, {nome}!\nDigite *apenas o número* de uma das opções abaixo, por favor:\n\n{menu}",
     "abertura_setor": "Olá, você está falando com {atendente} da {setor}. Aguarde um instante que já vou te atender.",
     "paralelo": "Seu atendimento com {outros} continua aberto.",
-    "rodape": "Se precisar de algo mais, digite o número do setor que deseja falar ou \"MENU\" para reiniciar atendimento.",
+    "rodape": "Se precisar de algo mais, digite o número do setor que deseja falar ou *0* para ver o menu.",
     "retorno_aberto": "Seu atendimento está atribuído à {atendente}. Se precisar falar em outro setor, *digite o número*, por favor:\n\n{menu}\n\n👉🏻 Mas se sua mensagem é realmente para {atendente}, basta registrar sua solicitação abaixo.",
     "midia_direcionar": "{saudacao}, {nome}! 😊\nPra quem devo direcionar esse(s) arquivo(s) enviados?\n\n{setores}\n\nDigite apenas o número.",
     "encerramento": "{atendente} encerrou atendimento.\n\nSe precisar de mais alguma coisa é só chamar. 🙂",
@@ -763,7 +763,10 @@ async def decidir(c, row, at, abertos):
 
     # MENU mostra o menu de qualquer ponto — NÃO encerra atendimento aberto (26/10/2026): a atendente
     # pode ainda não ter lido; ele continua na lista dela até ela encerrar.
-    if sem_acento(texto) == "menu" and not eh_midia:
+    # (27/10/2026) Atalhos: 0, # e * valem como MENU — mais fácil para o operador no campo.
+    # O 0 só não vale dentro de um submenu com sessão viva, onde ele já é "voltar" (tratado adiante).
+    em_submenu = s.get("menu_atual_id") and menu and s["menu_atual_id"] != menu["id"]
+    if sem_acento(texto) in ("menu", "#", "*") or (texto == "0" and not em_submenu):
         if abertos:
             await soltar(row)
         await sessao_set(telefone, aguardando="menu" if abertos else None, menu_atual_id=menu["id"] if menu else None,
