@@ -849,6 +849,7 @@ async def op_detalhe_os(os_id: str, _auth=Depends(verificar_token)):
     row = await ajard_query(
         """SELECT os.*,
                   COALESCE(c.nome, os.cliente_nome_avulso) AS cliente_nome,
+                  c.telefone AS cliente_telefone,
                   ts.nome AS tipo_servico_nome,
                   COALESCE((SELECT MAX(p2.horimetro_final)
                               FROM operacional.partes_diarias p2
@@ -3248,3 +3249,340 @@ async def op_agenda_confirmar(ev_id: str, request: Request,
     if not row:
         raise HTTPException(status_code=404, detail="Evento não encontrado ou já tratado")
     return {"ok": True}
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# (28/10/2026) MEDIÇÃO DO DIA — imagem PNG para o cliente + registro de envios
+# Só a gestão envia (Painel de Gestão). Valores: o front manda qtd/unidade/
+# preço unitário calculados pelo MOTOR OFICIAL de preços (_qtdParte +
+# _vuLinhaOuCascata do admin-app) — fonte única, sem cópia da cascata aqui.
+# O servidor confere que as partes são da OS e do dia (todas, nenhuma a mais)
+# e tira do banco tudo o que é identidade da medição (equipamento, operador,
+# horímetro/KM). Status do envio: enviada → confirmada | contestada (motivo).
+# ═══════════════════════════════════════════════════════════════════════════
+import hashlib as _hashlib
+from datetime import timezone as _tz
+
+_MEDICOES_OK = False
+_MED_STATUS = ("enviada", "confirmada", "contestada")
+_MED_UNIDADES = ("h", "m", "viagem", "diaria", "km")
+_FUSO_BR = _tz(timedelta(hours=-3))
+
+
+def _med_fontes():
+    import importlib.util
+    spec = importlib.util.find_spec("reportlab")
+    rl = os.path.join(os.path.dirname(spec.origin), "fonts") if spec and spec.origin else ""
+    win = os.path.join(os.environ.get("WINDIR", r"C:\Windows"), "Fonts")
+    return {
+        False: [os.path.join(rl, "Vera.ttf"), os.path.join(win, "arial.ttf"),
+                "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"],
+        True:  [os.path.join(rl, "VeraBd.ttf"), os.path.join(win, "arialbd.ttf"),
+                "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"],
+    }
+
+
+_MED_FONTES = _med_fontes()
+
+
+async def _garantir_medicoes():
+    global _MEDICOES_OK
+    if _MEDICOES_OK:
+        return
+    await ajard_query("""
+        CREATE TABLE IF NOT EXISTS operacional.medicoes_enviadas (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            os_id UUID NOT NULL,
+            data DATE NOT NULL,
+            com_valores BOOLEAN NOT NULL DEFAULT false,
+            total NUMERIC(14,2),
+            snapshot JSONB NOT NULL,
+            hash TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'enviada'
+                CHECK (status IN ('enviada','confirmada','contestada')),
+            motivo TEXT,
+            enviado_por UUID,
+            enviado_por_nome TEXT,
+            enviado_em TIMESTAMPTZ NOT NULL DEFAULT now(),
+            status_por_nome TEXT,
+            status_em TIMESTAMPTZ,
+            ativo BOOLEAN NOT NULL DEFAULT true)""", fetch="none")
+    await ajard_query(
+        "CREATE INDEX IF NOT EXISTS ix_medicoes_enviadas_os ON operacional.medicoes_enviadas (os_id, data)",
+        fetch="none")
+    _MEDICOES_OK = True
+
+
+async def _usuario_logado(_auth):
+    row = await ajard_query("SELECT id, nome FROM public.usuarios_garra WHERE login=%s",
+                            (_auth.get("sub", ""),), fetch="one")
+    return (row["id"], row["nome"]) if row else (None, _auth.get("sub", ""))
+
+
+def _num_br(v, casas=2):
+    s = f"{float(v):,.{casas}f}"
+    return s.replace(",", "_").replace(".", ",").replace("_", ".")
+
+
+def _qtd_br(qtd, unidade):
+    inteiro = abs(qtd - round(qtd)) < 1e-9
+    n = _num_br(qtd, 0 if inteiro else 1)
+    if unidade == "viagem":
+        return f"{n} {'viagem' if qtd == 1 else 'viagens'}"
+    if unidade == "diaria":
+        return f"{n} {'diária' if qtd == 1 else 'diárias'}"
+    return f"{n} {unidade}"
+
+
+async def _medicao_montar(os_id: str, d: dict) -> dict:
+    """Valida o pedido e devolve os dados da medição (base do PNG e do snapshot)."""
+    try:
+        dia = datetime.strptime(str(d.get("data") or ""), "%Y-%m-%d").date()
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Data inválida")
+    com_valores = bool(d.get("com_valores"))
+
+    os_row = await ajard_query(
+        """SELECT os.numero, os.obra, os.regime_cobranca,
+                  COALESCE(c.nome, os.cliente_nome_avulso) AS cliente_nome
+           FROM operacional.ordens_servico os
+           LEFT JOIN public.clientes_garra c ON c.id = os.cliente_id
+           WHERE os.id = %s AND os.ativo = true""", (os_id,), fetch="one")
+    if not os_row:
+        raise HTTPException(status_code=404, detail="OS não encontrada")
+    regime = (os_row["regime_cobranca"] or "").strip()
+    if com_valores and "empreit" in regime.lower():
+        raise HTTPException(status_code=400, detail="OS por empreitada: a medição do dia vai sem valores")
+
+    partes = await ajard_query(
+        """SELECT pd.id, pd.horimetro_inicial, pd.horimetro_final, pd.km_inicial, pd.km_final,
+                  pd.hora_inicio, pd.hora_fim,
+                  COALESCE(e.codigo, pd.equipamento_terceiro) AS equipamento_codigo,
+                  e.descricao AS equipamento_descricao,
+                  COALESCE(u.nome, pd.operador_nome_avulso) AS operador_nome
+           FROM operacional.partes_diarias pd
+           LEFT JOIN operacional.equipamentos e ON e.id = pd.equipamento_id
+           LEFT JOIN public.usuarios_garra u    ON u.id = pd.operador_id
+           WHERE pd.os_id = %s AND pd.data = %s AND pd.ativo = true
+           ORDER BY pd.criado_em ASC""", (os_id, dia), fetch="all")
+    if not partes:
+        raise HTTPException(status_code=404, detail="Nenhum registro nesta data")
+
+    enviadas = {str(l.get("parte_id")): l for l in (d.get("linhas") or [])}
+    if set(enviadas) != {str(p["id"]) for p in partes}:
+        raise HTTPException(status_code=409, detail="Os registros do dia mudaram — abra a medição de novo")
+
+    def _f(v):
+        return None if v is None else float(v)
+
+    linhas, parcial, total = [], False, 0.0
+    for p in partes:
+        l = enviadas[str(p["id"])]
+        try:
+            qtd = float(l.get("qtd") or 0)
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=400, detail="Quantidade inválida")
+        unidade = l.get("unidade")
+        if qtd < 0 or unidade not in _MED_UNIDADES:
+            raise HTTPException(status_code=400, detail="Quantidade ou unidade inválida")
+        hi, hf, ki, kf = (_f(p["horimetro_inicial"]), _f(p["horimetro_final"]),
+                          _f(p["km_inicial"]), _f(p["km_final"]))
+        # (28/10/2026) PARCIAL só quando falta a leitura que É a base da medição
+        # (hora → horímetro, km → KM); metros/viagem/diária não dependem dela.
+        if (unidade == "h" and hi is not None and hf is None) or (unidade == "km" and ki is not None and kf is None):
+            parcial = True
+        linha = {
+            "parte_id": str(p["id"]),
+            "equipamento": p["equipamento_codigo"] or "—",
+            "descricao": p["equipamento_descricao"] or "",
+            "operador": p["operador_nome"] or "",
+            "horimetro": [hi, hf], "km": [ki, kf],
+            "horario": [str(p["hora_inicio"])[:5] if p["hora_inicio"] else None,
+                        str(p["hora_fim"])[:5] if p["hora_fim"] else None],
+            "qtd": round(qtd, 2), "unidade": unidade,
+        }
+        if com_valores:
+            try:
+                unit = float(l.get("unit") or 0)
+            except (TypeError, ValueError):
+                unit = 0
+            if unit <= 0:
+                raise HTTPException(status_code=400,
+                                    detail=f"{linha['equipamento']}: sem preço definido — ajuste antes de enviar com valores")
+            linha["unit"] = round(unit, 2)
+            linha["valor"] = round(qtd * unit, 2)
+            total += linha["valor"]
+        linhas.append(linha)
+
+    return {
+        "os_numero": os_row["numero"], "cliente": os_row["cliente_nome"] or "",
+        "obra": os_row["obra"] or "", "regime": regime,
+        "data": dia.isoformat(), "com_valores": com_valores, "parcial": parcial,
+        "linhas": linhas, "total": round(total, 2) if com_valores else None,
+    }
+
+
+def _medicao_png(m: dict) -> bytes:
+    """Desenha a medição (1080 px de largura, altura conforme o nº de linhas)."""
+    from PIL import Image, ImageDraw, ImageFont
+
+    def fonte(tam, negrito=False):
+        # (28/10/2026) Fonte sem depender de pacote instalado: Vera do reportlab
+        # (produção) → Arial do Windows (localhost) → DejaVu (Linux) → padrão do Pillow.
+        for caminho in _MED_FONTES[negrito]:
+            try:
+                return ImageFont.truetype(caminho, tam)
+            except OSError:
+                continue
+        return ImageFont.load_default(tam)
+
+    AZUL, LARANJA, CINZA, LINHA, FUNDO = (26, 42, 94), (232, 130, 12), (100, 116, 139), (226, 232, 240), (248, 250, 252)
+    W, M = 1080, 56
+    f_tit, f_os, f_txt, f_peq, f_val = fonte(40, True), fonte(46, True), fonte(30), fonte(26), fonte(32, True)
+
+    def cortar(draw, texto, f, largura):
+        if draw.textlength(texto, font=f) <= largura:
+            return texto
+        while texto and draw.textlength(texto + "…", font=f) > largura:
+            texto = texto[:-1]
+        return texto + "…"
+
+    def detalhes(l):
+        # (28/10/2026) Só a base da medição que o cliente confere: hora →
+        # horímetro (ou horário, sem horímetro); km → KM. Sem nome de operador
+        # (fica no registro interno) e sem leitura que não mede a linha.
+        hi, hf = l["horimetro"]
+        ki, kf = l["km"]
+        if l["unidade"] == "h":
+            if hi is not None:
+                return [f"Horímetro inicial {_num_br(hi, 1)} · final {_num_br(hf, 1) if hf is not None else 'pendente'}"]
+            if l["horario"][0] and l["horario"][1]:
+                return [f"Horário {l['horario'][0]} às {l['horario'][1]}"]
+        if l["unidade"] == "km" and ki is not None:
+            return [f"KM inicial {_num_br(ki, 0)} · final {_num_br(kf, 0) if kf is not None else 'pendente'}"]
+        return []
+
+    alturas = [70 + 40 * len(detalhes(l)) + (46 if m["com_valores"] else 0) + 24 for l in m["linhas"]]
+    H = 230 + 150 + (80 if m["parcial"] else 0) + sum(a + 20 for a in alturas) + 150 + 110
+    img = Image.new("RGB", (W, H), "white")
+    dr = ImageDraw.Draw(img)
+
+    try:
+        logo = Image.open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "core", "logo-garra.png")).convert("RGB")
+        logo.thumbnail((340, 160))
+        img.paste(logo, (M, 40))
+    except OSError:
+        dr.text((M, 80), "GARRA", font=fonte(64, True), fill=AZUL)
+    dia = datetime.strptime(m["data"], "%Y-%m-%d").strftime("%d/%m/%Y")
+    dr.text((W - M, 78), "MEDIÇÃO DIÁRIA", font=fonte(28), fill=CINZA, anchor="ra")
+    dr.text((W - M, 118), dia, font=f_tit, fill=AZUL, anchor="ra")
+    dr.rectangle((0, 214, W, 222), fill=LARANJA)
+
+    y = 252
+    dr.text((M, y), m["os_numero"], font=f_os, fill=AZUL)
+    y += 64
+    cli = " · ".join(x for x in (m["cliente"], m["obra"]) if x)
+    dr.text((M, y), cortar(dr, cli, f_txt, W - 2 * M), font=f_txt, fill=CINZA)
+    y = 380
+
+    if m["parcial"]:
+        dr.rounded_rectangle((M, y, W - M, y + 60), radius=12, fill=(254, 243, 199))
+        dr.text((M + 24, y + 30), "PARCIAL — há leitura final pendente neste dia", font=f_peq, fill=(146, 64, 14), anchor="lm")
+        y += 80
+
+    for l, alt in zip(m["linhas"], alturas):
+        dr.rounded_rectangle((M, y, W - M, y + alt), radius=16, outline=LINHA, width=3)
+        x0, x1 = M + 28, W - M - 28
+        qtd = _qtd_br(l["qtd"], l["unidade"])
+        larg_qtd = dr.textlength(qtd, font=f_val)
+        titulo = l["equipamento"] + (f" · {l['descricao']}" if l["descricao"] else "")
+        dr.text((x0, y + 24), cortar(dr, titulo, f_val, x1 - x0 - larg_qtd - 30), font=f_val, fill=AZUL)
+        dr.text((x1, y + 24), qtd, font=f_val, fill=LARANJA, anchor="ra")
+        yy = y + 76
+        for t in detalhes(l):
+            dr.text((x0, yy), cortar(dr, t, f_peq, x1 - x0), font=f_peq, fill=CINZA)
+            yy += 40
+        if m["com_valores"]:
+            dr.text((x0, yy + 6), f"{qtd} × R$ {_num_br(l['unit'])}", font=f_peq, fill=CINZA)
+            dr.text((x1, yy + 2), f"R$ {_num_br(l['valor'])}", font=fonte(30, True), fill=AZUL, anchor="ra")
+        y += alt + 20
+
+    y += 10
+    dr.rounded_rectangle((M, y, W - M, y + 120), radius=16, fill=FUNDO)
+    if m["com_valores"]:
+        dr.text((M + 28, y + 60), "Total do dia", font=f_txt, fill=AZUL, anchor="lm")
+        dr.text((W - M - 28, y + 60), f"R$ {_num_br(m['total'])}", font=fonte(40, True), fill=AZUL, anchor="rm")
+    else:
+        somas = {}
+        for l in m["linhas"]:
+            somas[l["unidade"]] = somas.get(l["unidade"], 0) + l["qtd"]
+        resumo = " · ".join(_qtd_br(v, u) for u, v in somas.items())
+        dr.text((M + 28, y + 60), "Total do dia", font=f_txt, fill=AZUL, anchor="lm")
+        dr.text((W - M - 28, y + 60), cortar(dr, resumo, fonte(34, True), 640), font=fonte(34, True), fill=AZUL, anchor="rm")
+
+    agora = datetime.now(_FUSO_BR).strftime("%d/%m/%Y %H:%M")
+    dr.line((M, H - 90, W - M, H - 90), fill=LINHA, width=2)
+    dr.text((W // 2, H - 50), f"Garra Terraplenagem e Caçambas · gerado em {agora}", font=fonte(24), fill=CINZA, anchor="mm")
+
+    buf = io.BytesIO()
+    img.save(buf, "PNG", optimize=True)
+    return buf.getvalue()
+
+
+@router.post("/operacional/api/os/{os_id}/medicao-dia")
+async def op_medicao_dia_png(os_id: str, request: Request, payload=Depends(exigir_painel_gestao)):
+    """Prévia/arquivo da medição do dia. Não registra envio."""
+    m = await _medicao_montar(os_id, await request.json())
+    return Response(content=_medicao_png(m), media_type="image/png",
+                    headers={"Cache-Control": "no-store"})
+
+
+@router.post("/operacional/api/os/{os_id}/medicoes-enviadas")
+async def op_medicao_registrar(os_id: str, request: Request, payload=Depends(exigir_painel_gestao)):
+    """Registra o envio feito (chamada depois que o compartilhamento concluiu)."""
+    await _garantir_medicoes()
+    m = await _medicao_montar(os_id, await request.json())
+    snapshot = json.dumps(m, ensure_ascii=False, sort_keys=True)
+    uid, nome = await _usuario_logado(payload)
+    row = await ajard_query(
+        """INSERT INTO operacional.medicoes_enviadas
+               (os_id, data, com_valores, total, snapshot, hash, enviado_por, enviado_por_nome)
+           VALUES (%s, %s, %s, %s, %s::jsonb, %s, %s, %s)
+           RETURNING id, data, com_valores, total, status, enviado_por_nome, enviado_em""",
+        (os_id, m["data"], m["com_valores"], m["total"], snapshot,
+         _hashlib.sha256(snapshot.encode()).hexdigest(), uid, nome), fetch="one")
+    return dict(row)
+
+
+@router.get("/operacional/api/os/{os_id}/medicoes-enviadas")
+async def op_medicoes_listar(os_id: str, payload=Depends(exigir_painel_gestao)):
+    await _garantir_medicoes()
+    rows = await ajard_query(
+        """SELECT id, data, com_valores, total, status, motivo, enviado_por_nome, enviado_em,
+                  status_por_nome, status_em
+           FROM operacional.medicoes_enviadas
+           WHERE os_id = %s AND ativo = true
+           ORDER BY data DESC, enviado_em DESC""", (os_id,), fetch="all")
+    return [dict(r) for r in (rows or [])]
+
+
+@router.patch("/operacional/api/medicoes-enviadas/{med_id}")
+async def op_medicao_status(med_id: str, request: Request, payload=Depends(exigir_painel_gestao)):
+    await _garantir_medicoes()
+    d = await request.json()
+    status = d.get("status")
+    motivo = (d.get("motivo") or "").strip() or None
+    if status not in _MED_STATUS:
+        raise HTTPException(status_code=400, detail="Status inválido")
+    if status == "contestada" and not motivo:
+        raise HTTPException(status_code=400, detail="Informe o motivo da contestação")
+    _, nome = await _usuario_logado(payload)
+    row = await ajard_query(
+        """UPDATE operacional.medicoes_enviadas
+           SET status = %s, motivo = %s, status_por_nome = %s, status_em = now()
+           WHERE id = %s AND ativo = true
+           RETURNING id, status, motivo, status_por_nome, status_em""",
+        (status, motivo if status == "contestada" else None, nome, med_id), fetch="one")
+    if not row:
+        raise HTTPException(status_code=404, detail="Envio não encontrado")
+    return dict(row)
