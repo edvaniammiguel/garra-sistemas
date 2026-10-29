@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
 <meta name="theme-color" content="#1A2A5E"/>
 <script src="/operacional/static/js/sino.js"></script>
+<script src="/operacional/static/js/garra-periodo.js"></script>
 <title>Garra — Admin Master</title>
 <link rel="icon" href="https://garra-sistemas.onrender.com/static/icons/favicon.ico"/>
 <style>
@@ -680,9 +681,11 @@ button:disabled, select:disabled, input:disabled, [aria-disabled=true] { cursor:
               </select>
             </div>
             <div class="users-filter">
-              <select id="os-filter-mes" onchange="filtrarOS()">
-                <option value="">Todos os meses</option>
-              </select>
+              <!-- (29/10/2026) Período (campo único) no lugar do select de mês -->
+              <input type="text" id="os-filter-periodo" data-periodo-de="os-filter-de" data-periodo-ate="os-filter-ate"
+                     placeholder="📅 Período (data de início)" style="padding:7px 10px;border:1.5px solid var(--border);border-radius:var(--r2);font-size:13px;width:215px"/>
+              <input type="hidden" id="os-filter-de" onchange="filtrarOS()"/>
+              <input type="hidden" id="os-filter-ate" onchange="filtrarOS()"/>
             </div>
             <div class="users-filter">
               <select id="os-filter-regime" onchange="filtrarOS()">
@@ -957,12 +960,10 @@ button:disabled, select:disabled, input:disabled, [aria-disabled=true] { cursor:
     </div>
     <div class="field-row">
       <div class="field">
-        <label>De <span style="color:var(--red)">*</span></label>
-        <input type="date" id="lote-de" onchange="lotePrevia()"/>
-      </div>
-      <div class="field">
-        <label>Até <span style="color:var(--red)">*</span></label>
-        <input type="date" id="lote-ate" onchange="lotePrevia()"/>
+        <label>Período <span style="color:var(--red)">*</span></label>
+        <input type="text" id="lote-periodo" data-periodo-de="lote-de" data-periodo-ate="lote-ate"/>
+        <input type="hidden" id="lote-de" onchange="lotePrevia()"/>
+        <input type="hidden" id="lote-ate" onchange="lotePrevia()"/>
       </div>
       <div class="field">
         <label>Vlr unit. (opcional)</label>
@@ -4132,6 +4133,7 @@ function abrirModalLote(prefill) {
     const _dn = document.getElementById('lote-diarista-nome');
     if (_dn) _dn.value = '';
   }
+  GarraPeriodo.atualizar('lote-periodo');   // (29/10/2026) campo de período mostra o que foi preenchido
   document.getElementById('lote-error').classList.add('hidden');
   lotePrevia();
   document.getElementById('modal-lote').classList.remove('hidden');
@@ -4723,21 +4725,6 @@ function popularFiltrosOS() {
   preencher('os-filter-colab',
     lista.map(o => [o.operador_id, o.operador_nome]),
     '<option value="_sem">🚨 Sem responsável</option>');
-  const _MESES_PT = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
-  const _rotMes = (ym) => {
-    const [aa, mm] = ym.split('-');
-    return `${_MESES_PT[parseInt(mm,10)-1] || mm}/${aa}`;
-  };
-  const _mesSel = document.getElementById('os-filter-mes');
-  if (_mesSel && _mesSel.options.length) {
-    const atualM = _mesSel.value;
-    const meses = [...new Set(lista.map(o => (o.data_inicio || '').slice(0, 7)).filter(Boolean))]
-      .sort().reverse();
-    _mesSel.innerHTML = _mesSel.options[0].outerHTML +
-      meses.map(m => `<option value="${m}">📅 ${_rotMes(m)}</option>`).join('');
-    _mesSel.value = atualM;
-    if (_mesSel.selectedIndex === -1) _mesSel.value = '';
-  }
   preencher('os-filter-regime',
     lista.map(o => [o.regime_cobranca, o.regime_cobranca ? ('💰 ' + o.regime_cobranca) : null]));
 }
@@ -4751,6 +4738,8 @@ function renderTabelaOS(lista) {
   const status  = document.getElementById('os-filter-status')?.value||'';
   const cli     = document.getElementById('os-filter-cliente')?.value||'';
   const origem  = document.getElementById('os-filter-origem')?.value||'';
+  const _fDe    = document.getElementById('os-filter-de')?.value||'';
+  const _fAte   = document.getElementById('os-filter-ate')?.value||'';
 
   const filtrada = lista.filter(os => {
     if (status === '_abertas') {
@@ -4769,8 +4758,10 @@ function renderTabelaOS(lista) {
     if (_fCo === '_sem') {
       if (os.operador_id) return false;
     } else if (_fCo && os.operador_id !== _fCo) return false;
-    const _fMes = document.getElementById('os-filter-mes')?.value || '';
-    if (_fMes && (os.data_inicio || '').slice(0, 7) !== _fMes) return false;
+    // (29/10/2026) Período pela data de início da OS (inclusive nas pontas)
+    const _dIni = (os.data_inicio || '').slice(0, 10);
+    if (_fDe && (!_dIni || _dIni < _fDe)) return false;
+    if (_fAte && (!_dIni || _dIni > _fAte)) return false;
     const _fReg = document.getElementById('os-filter-regime')?.value || '';
     if (_fReg && os.regime_cobranca !== _fReg) return false;
     const _fFlag = document.getElementById('os-filter-flag')?.value || '';
