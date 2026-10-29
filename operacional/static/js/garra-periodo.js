@@ -13,6 +13,10 @@
  *   <input type="text" id="x-periodo" data-periodo-de="x-de" data-periodo-ate="x-ate">
  *   <input type="hidden" id="x-de" onchange="..."><input type="hidden" id="x-ate" onchange="...">
  * Mudou os hidden por código?  GarraPeriodo.atualizar('x-periodo')
+ *
+ * (29/10/2026) DIA ÚNICO: <input type="text" id="y-campo" data-periodo-unico="y-data"> + hidden y-data.
+ * Um clique escolhe o dia; sem atalhos. GarraPeriodo.permitir('y-campo', ['2026-10-27', …])
+ * deixa clicáveis só esses dias (ex.: dias com registro na OS).
  */
 (function () {
   if (window.GarraPeriodo) return;
@@ -38,6 +42,9 @@
 .gp-dia{height:30px;display:flex;align-items:center;justify-content:center;font-size:13px;cursor:pointer;border-radius:6px}
 .gp-dia:hover{background:#F1F5F9}
 .gp-fora{visibility:hidden}
+.gp-off{color:#CBD5E1;cursor:default}
+.gp-off:hover{background:none}
+.gp-com{font-weight:700;background:#FFF4E6}
 .gp-hoje{font-weight:800;text-decoration:underline}
 .gp-meio{background:#FDE7CC;border-radius:0;color:#7A3E00}
 .gp-borda{background:${LARANJA};color:#fff;font-weight:700}
@@ -71,6 +78,7 @@ input.gp-invalido{border-color:#DC2626 !important}`;
 
   let pop = null, ativo = null;          // um calendário só na página, do campo aberto
   let base = null, ini = null, fim = null; // mês visível + seleção em andamento
+  let permitidos = null;                   // dia único: dias clicáveis (Set ISO) ou null = todos
 
   function montarPopup() {
     const st = document.createElement('style');
@@ -97,6 +105,8 @@ input.gp-invalido{border-color:#DC2626 !important}`;
     for (let d = 1; d <= new Date(y, m + 1, 0).getDate(); d++) {
       const dt = new Date(y, m, d), t = dt.getTime();
       let c = 'gp-dia';
+      if (permitidos && !permitidos.has(iso(dt))) { s += `<div class="gp-dia gp-off">${d}</div>`; continue; }
+      if (permitidos) c += ' gp-com';
       if (t === h.getTime()) c += ' gp-hoje';
       if ((ini && t === ini.getTime()) || (fim && t === fim.getTime())) c += ' gp-borda';
       else if (ini && fim && t > ini.getTime() && t < fim.getTime()) c += ' gp-meio';
@@ -108,15 +118,17 @@ input.gp-invalido{border-color:#DC2626 !important}`;
   function desenhar() {
     const doisMeses = window.innerWidth >= 640;
     const prox = new Date(base.getFullYear(), base.getMonth() + 1, 1);
+    const unico = ativo.unico;
     const n = ini && fim ? Math.round((fim - ini) / 864e5) + 1 : 0;
-    const msg = !ini ? 'Clique no primeiro dia.' : !fim ? 'Agora clique no último dia.'
+    const msg = unico ? (permitidos ? 'Só os dias com registro podem ser escolhidos.' : 'Clique no dia.')
+      : !ini ? 'Clique no primeiro dia.' : !fim ? 'Agora clique no último dia.'
       : n + (n === 1 ? ' dia selecionado' : ' dias selecionados');
     pop.innerHTML =
-      `<div class="gp-atalhos">${ATALHOS.map((a, i) => `<button type="button" data-gp-atalho="${i}">${a[0]}</button>`).join('')}</div>` +
+      (unico ? '' : `<div class="gp-atalhos">${ATALHOS.map((a, i) => `<button type="button" data-gp-atalho="${i}">${a[0]}</button>`).join('')}</div>`) +
       `<div class="gp-corpo"><button type="button" class="gp-nav" data-gp-nav="-1" aria-label="Mês anterior">‹</button>` +
       htmlMes(base) + (doisMeses ? htmlMes(prox) : '') +
       `<button type="button" class="gp-nav" data-gp-nav="1" aria-label="Próximo mês">›</button></div>` +
-      `<div class="gp-rodape"><span>${msg}</span><button type="button" class="gp-limpar" data-gp-limpar>Limpar</button></div>`;
+      `<div class="gp-rodape"><span>${msg}</span>${unico ? '' : '<button type="button" class="gp-limpar" data-gp-limpar>Limpar</button>'}</div>`;
   }
 
   function posicionar() {
@@ -130,6 +142,7 @@ input.gp-invalido{border-color:#DC2626 !important}`;
   function abrir(inst) {
     if (!pop) montarPopup();
     ativo = inst;
+    permitidos = inst.permitidos;
     ini = deIso(inst.de.value);
     fim = deIso(inst.ate.value);
     const ref = ini || hoje();
@@ -156,7 +169,7 @@ input.gp-invalido{border-color:#DC2626 !important}`;
     inst.mostrar();
     if (mudou) {
       inst.de.dispatchEvent(new Event('change', { bubbles: true }));
-      inst.ate.dispatchEvent(new Event('change', { bubbles: true }));
+      if (inst.ate !== inst.de) inst.ate.dispatchEvent(new Event('change', { bubbles: true }));
     }
   }
 
@@ -168,6 +181,7 @@ input.gp-invalido{border-color:#DC2626 !important}`;
     const at = e.target.closest('[data-gp-atalho]');
     if (dia) {
       const d = deIso(dia.dataset.gpDia);
+      if (inst.unico) { aplicar(inst, d, d); fechar(); return; }
       if (!ini || fim) { ini = d; fim = null; desenhar(); return; }
       aplicar(inst, ini, d);
       fechar();
@@ -186,18 +200,20 @@ input.gp-invalido{border-color:#DC2626 !important}`;
 
   function digitado(inst) {
     const txt = inst.campo.value.trim();
-    if (!txt) { aplicar(inst, null, null); return true; }
+    if (!txt) { if (inst.unico) return false; aplicar(inst, null, null); return true; }
     const partes = txt.split(/\s*(?:-|–|até|a)\s*/i).filter(Boolean);
     const a = deBr(partes[0]), b = partes.length > 1 ? deBr(partes[1]) : a;
     if (!a || !b || partes.length > 2) return false;
+    if (inst.unico && (partes.length > 1 || (inst.permitidos && !inst.permitidos.has(iso(a))))) return false;
     aplicar(inst, a, b);
     return true;
   }
 
-  function anexar(campo, de, ate) {
+  function anexar(campo, de, ate, opcoes) {
     if (!campo || !de || !ate || campo._garraPeriodo) return campo && campo._garraPeriodo;
+    const unico = !!(opcoes && opcoes.unico);
     const inst = {
-      campo, de, ate,
+      campo, de, ate, unico, permitidos: null,
       mostrar() {
         const a = deIso(de.value), b = deIso(ate.value);
         campo.value = a ? (br(a) + (b && b.getTime() !== a.getTime() ? ' - ' + br(b) : '')) : '';
@@ -205,7 +221,7 @@ input.gp-invalido{border-color:#DC2626 !important}`;
       },
     };
     campo.setAttribute('autocomplete', 'off');
-    if (!campo.placeholder) campo.placeholder = 'dd/mm/aaaa - dd/mm/aaaa';
+    if (!campo.placeholder) campo.placeholder = unico ? 'dd/mm/aaaa' : 'dd/mm/aaaa - dd/mm/aaaa';
     campo.addEventListener('click', () => { if (ativo !== inst) abrir(inst); });
     campo.addEventListener('focus', () => { if (ativo !== inst) abrir(inst); });
     campo.addEventListener('input', () => campo.classList.remove('gp-invalido'));
@@ -226,6 +242,15 @@ input.gp-invalido{border-color:#DC2626 !important}`;
   function anexarTodos(raiz) {
     (raiz || document).querySelectorAll('input[data-periodo-de]').forEach(c =>
       anexar(c, document.getElementById(c.dataset.periodoDe), document.getElementById(c.dataset.periodoAte)));
+    (raiz || document).querySelectorAll('input[data-periodo-unico]').forEach(c => {
+      const h = document.getElementById(c.dataset.periodoUnico);
+      anexar(c, h, h, { unico: true });
+    });
+  }
+
+  function permitir(idCampo, listaIso) {
+    const c = document.getElementById(idCampo);
+    if (c && c._garraPeriodo) c._garraPeriodo.permitidos = listaIso ? new Set(listaIso) : null;
   }
 
   function atualizar(idCampo) {
@@ -233,7 +258,7 @@ input.gp-invalido{border-color:#DC2626 !important}`;
     if (c && c._garraPeriodo) c._garraPeriodo.mostrar();
   }
 
-  window.GarraPeriodo = { anexar, anexarTodos, atualizar };
+  window.GarraPeriodo = { anexar, anexarTodos, atualizar, permitir };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', () => anexarTodos());
   else anexarTodos();
 })();
