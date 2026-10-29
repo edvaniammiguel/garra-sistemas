@@ -1310,7 +1310,9 @@ button:disabled, select:disabled, input:disabled, [aria-disabled=true] { cursor:
   <div class="modal-card" style="max-width:560px">
     <div class="modal-title">📤 Medição do dia — <span id="med-os"></span></div>
     <div class="field-row">
-      <div class="field"><label>Data</label><select id="med-data" onchange="gerarPreviaMedicao()"></select></div>
+      <div class="field"><label>Data</label>
+        <input type="text" id="med-data-campo" data-periodo-unico="med-data"/>
+        <input type="hidden" id="med-data" onchange="gerarPreviaMedicao()"/></div>
       <div class="field" id="med-valores-box"><label>Valores</label>
         <select id="med-valores" onchange="gerarPreviaMedicao()">
           <option value="0">Sem valores</option>
@@ -3733,8 +3735,10 @@ async function abrirMedicaoDia() {
   const datas = [...new Set((_partesAtual || []).map(p => String(p.data || '').slice(0, 10)).filter(Boolean))].sort().reverse();
   if (!datas.length) { toast('Nenhum registro nesta OS', 'error'); return; }
   document.getElementById('med-os').textContent = _osAtual.numero;
-  document.getElementById('med-data').innerHTML = datas.map(d =>
-    `<option value="${d}">${d.split('-').reverse().join('/')}</option>`).join('');
+  // (29/10/2026) Calendário (dia único): só os dias com registro são clicáveis
+  document.getElementById('med-data').value = datas[0];
+  GarraPeriodo.permitir('med-data-campo', datas);
+  GarraPeriodo.atualizar('med-data-campo');
   document.getElementById('med-valores').value = '0';
   document.getElementById('med-valores-box').style.display = _medEmpreito() ? 'none' : '';
   const tel = _medTelefone();
