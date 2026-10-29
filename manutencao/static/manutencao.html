@@ -443,7 +443,13 @@ async function mntFetch(path, opts){
     headers: Object.assign({'Content-Type':'application/json','Authorization':'Bearer '+mntToken()}, (opts&&opts.headers)||{})
   }));
   if (r.status === 401) { throw new Error('🔒 Sessão expirada — volte na aba Admin Master e clique em Manutenção novamente'); }
-  if (r.status === 403) { alert('Seu usuário não tem permissão para o módulo Manutenção. Solicite acesso ao administrador.'); location.replace('/admin'); throw new Error('403'); }
+  if (r.status === 403) {
+    // (29/10/2026) 403 de uma ação específica (ex.: cadastrar equipamento) mostra o motivo do servidor e mantém a tela;
+    // só o 403 do próprio módulo Manutenção (gate de entrada) manda de volta ao Admin.
+    const j3 = await r.json().catch(()=> ({})); const det = j3.detail || '';
+    if (/módulo Manutenção/.test(det) || !det) { alert('Seu usuário não tem permissão para o módulo Manutenção. Solicite acesso ao administrador.'); location.replace('/admin'); throw new Error('403'); }
+    throw new Error('🔒 ' + det);
+  }
   const j = await r.json().catch(()=> ({}));
   if (!r.ok) throw new Error(j.detail || ('Erro '+r.status));
   return j;
