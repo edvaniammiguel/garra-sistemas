@@ -3448,16 +3448,10 @@ def _medicao_png(m: dict) -> bytes:
         return texto + "…"
 
     def detalhes(l):
-        # (28/10/2026) Só a base da medição que o cliente confere: hora →
-        # horímetro (ou horário, sem horímetro); km → KM. Sem nome de operador
-        # (fica no registro interno) e sem leitura que não mede a linha.
-        hi, hf = l["horimetro"]
+        # (29/10/2026) Sem horímetro na imagem do cliente (decisão da gestão):
+        # a linha por hora mostra só a quantidade. Leituras e operador ficam no
+        # registro interno do envio. Linha por km mantém o KM inicial/final.
         ki, kf = l["km"]
-        if l["unidade"] == "h":
-            if hi is not None:
-                return [f"Horímetro inicial {_num_br(hi, 1)} · final {_num_br(hf, 1) if hf is not None else 'pendente'}"]
-            if l["horario"][0] and l["horario"][1]:
-                return [f"Horário {l['horario'][0]} às {l['horario'][1]}"]
         if l["unidade"] == "km" and ki is not None:
             return [f"KM inicial {_num_br(ki, 0)} · final {_num_br(kf, 0) if kf is not None else 'pendente'}"]
         return []
@@ -3487,7 +3481,7 @@ def _medicao_png(m: dict) -> bytes:
 
     if m["parcial"]:
         dr.rounded_rectangle((M, y, W - M, y + 60), radius=12, fill=(254, 243, 199))
-        dr.text((M + 24, y + 30), "PARCIAL — há leitura final pendente neste dia", font=f_peq, fill=(146, 64, 14), anchor="lm")
+        dr.text((M + 24, y + 30), "PARCIAL — medição do dia ainda em fechamento", font=f_peq, fill=(146, 64, 14), anchor="lm")
         y += 80
 
     for l, alt in zip(m["linhas"], alturas):
