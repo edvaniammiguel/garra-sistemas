@@ -3463,43 +3463,20 @@ def _medicao_png(m: dict) -> bytes:
             texto = texto[:-1]
         return texto + "…"
 
-    # (30/10/2026) Período: uma LINHA por equipamento×unidade(×preço), somando os
-    # dias — o cliente lê o total do período, não registro a registro. Num dia só
-    # cada grupo tem 1 registro e a imagem fica igual à de antes.
+    # (30/10/2026) Período: as medições LINHA A LINHA, POR DIA, como foram
+    # registradas (decisão da Edvania) — o dia entra no título de cada linha;
+    # nada de somatório por equipamento. Num dia só a imagem fica como antes.
     periodo = m["data_de"] != m["data_ate"]
-    grupos, linhas_img = {}, []
-    for l in m["linhas"]:
-        k = (l["equipamento"], l["descricao"], l["unidade"], l.get("unit"))
-        g = grupos.get(k)
-        if not g:
-            g = dict(l)
-            g["qtd"] = 0.0
-            g["_dias"] = set()
-            g["_n"] = 0
-            if m["com_valores"]:
-                g["valor"] = 0.0
-            grupos[k] = g
-            linhas_img.append(g)
-        g["qtd"] = round(g["qtd"] + l["qtd"], 2)
-        if m["com_valores"]:
-            g["valor"] = round(g["valor"] + l["valor"], 2)
-        g["_dias"].add(l.get("data"))
-        g["_n"] += 1
-        if g["_n"] > 1:
-            g["km"] = [None, None]   # KM inicial/final só faz sentido num registro só
+    linhas_img = m["linhas"]
 
     def detalhes(l):
         # (29/10/2026) Sem horímetro na imagem do cliente (decisão da gestão):
         # a linha por hora mostra só a quantidade. Leituras e operador ficam no
         # registro interno do envio. Linha por km mantém o KM inicial/final.
-        out = []
         ki, kf = l["km"]
         if l["unidade"] == "km" and ki is not None:
-            out.append(f"KM inicial {_num_br(ki, 0)} · final {_num_br(kf, 0) if kf is not None else 'pendente'}")
-        if periodo:
-            n = len(l["_dias"])
-            out.append(f"{n} {'dia' if n == 1 else 'dias'} no período")
-        return out
+            return [f"KM inicial {_num_br(ki, 0)} · final {_num_br(kf, 0) if kf is not None else 'pendente'}"]
+        return []
 
     alturas = [70 + 40 * len(detalhes(l)) + (46 if m["com_valores"] else 0) + 24 for l in linhas_img]
     H = 230 + 150 + (80 if m["parcial"] else 0) + sum(a + 20 for a in alturas) + 150 + 110
@@ -3535,7 +3512,8 @@ def _medicao_png(m: dict) -> bytes:
         x0, x1 = M + 28, W - M - 28
         qtd = _qtd_br(l["qtd"], l["unidade"])
         larg_qtd = dr.textlength(qtd, font=f_val)
-        titulo = l["equipamento"] + (f" · {l['descricao']}" if l["descricao"] else "")
+        _dia_linha = datetime.strptime(l["data"], "%Y-%m-%d").strftime("%d/%m") + " · " if periodo else ""
+        titulo = _dia_linha + l["equipamento"] + (f" · {l['descricao']}" if l["descricao"] else "")
         dr.text((x0, y + 24), cortar(dr, titulo, f_val, x1 - x0 - larg_qtd - 30), font=f_val, fill=AZUL)
         dr.text((x1, y + 24), qtd, font=f_val, fill=LARANJA, anchor="ra")
         yy = y + 76
