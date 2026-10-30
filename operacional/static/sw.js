@@ -13,7 +13,7 @@
  * 4. Imagens/ícones: cache-first com limite de tamanho
  */
 
-const CACHE_NAME = 'garra-operacional-v23';
+const CACHE_NAME = 'garra-operacional-v24';   // (30/10/2026) JS/CSS passam a network-first
 const ASSETS_CACHE = 'garra-assets-v73';  // (26/10/2026) aba Atendimento no app
 const OFFLINE_PAGE = '/operacional/offline.html';
 
@@ -131,9 +131,12 @@ self.addEventListener('fetch', (e) => {
     return;
   }
 
-  // 3. JS/CSS — stale-while-revalidate: cache na hora + atualização em background
+  // 3. JS/CSS — (30/10/2026) network-first com cache de reserva. Era stale-while-revalidate:
+  //    depois de um deploy o navegador rodava o JS ANTIGO do cache e só atualizava em segundo
+  //    plano — o admin chamava GarraPeriodo.permitir() que o arquivo velho não tinha e a
+  //    Medição do dia quebrava até o 2º recarregamento. Agora a rede manda; sem rede, usa o cache.
   if (url.pathname.endsWith('.js') || url.pathname.endsWith('.css')) {
-    return e.respondWith(staleWhileRevalidateAssets(e));
+    return e.respondWith(networkFirstAssets(request));
   }
 
   // 3b. Ícones/SVG/manifest — cache-first (imutáveis na prática)
@@ -220,27 +223,17 @@ async function networkFirstAPI(request) {
 // Stale-while-revalidate: responde do cache IMEDIATAMENTE (abertura
 // instantânea) e busca a versão nova em background, atualizando o cache
 // para a próxima abertura. Se não há cache (1ª visita), espera a rede.
-async function staleWhileRevalidateAssets(event) {
-  const request = event.request;
+async function networkFirstAssets(request) {
   const cache = await caches.open(ASSETS_CACHE);
-  const cached = await cache.match(request);
-
-  const atualizar = fetch(request)
-    .then(response => {
-      if (response.ok) cache.put(request, response.clone());
-      return response;
-    })
-    .catch(() => null);
-
-  if (cached) {
-    // Garante que a atualização em background termina mesmo após responder
-    event.waitUntil(atualizar);
-    return cached;
+  try {
+    const response = await fetch(request);
+    if (response.ok) cache.put(request, response.clone());
+    return response;
+  } catch (err) {
+    const cached = await cache.match(request);
+    if (cached) return cached;
+    throw err;
   }
-
-  const fresco = await atualizar;
-  if (fresco) return fresco;
-  return new Response('Asset não disponível', { status: 404 });
 }
 
 async function cacheFirstAssets(request) {
