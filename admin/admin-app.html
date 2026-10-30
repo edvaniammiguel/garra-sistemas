@@ -5,7 +5,9 @@
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
 <meta name="theme-color" content="#1A2A5E"/>
 <script src="/operacional/static/js/sino.js"></script>
-<script src="/operacional/static/js/garra-periodo.js"></script>
+<!-- (29/10/2026) ?v= muda a cada nova versão do garra-periodo.js: o service worker guarda JS em cache
+     e entregaria a versão anterior na primeira abertura depois do deploy -->
+<script src="/operacional/static/js/garra-periodo.js?v=20261029-2"></script>
 <title>Garra — Admin Master</title>
 <link rel="icon" href="https://garra-sistemas.onrender.com/static/icons/favicon.ico"/>
 <style>
@@ -717,7 +719,7 @@ button:disabled, select:disabled, input:disabled, [aria-disabled=true] { cursor:
               <button class="btn btn-primary" id="btn-fechar-os" style="padding:6px 14px;font-size:12px;background:var(--green)" onclick="confirmarFechamento()">✓ Fechar OS</button>
               <button class="btn btn-secondary" id="btn-reabrir-os" style="padding:6px 14px;font-size:12px;display:none" onclick="reabrirOS()">↺ Reabrir OS</button>
               <button class="btn btn-secondary" id="btn-lote-diarias" style="padding:6px 14px;font-size:12px" onclick="abrirModalLote()">📅 Diárias em lote</button>
-              <button class="btn btn-secondary" style="padding:6px 14px;font-size:12px" onclick="abrirMedicaoDia()">📤 Medição do dia</button>
+              <button class="btn btn-secondary" style="padding:6px 14px;font-size:12px" onclick="abrirMedicaoDia()">📤 Enviar medição</button>
             </div>
           </div>
 
@@ -1308,11 +1310,12 @@ button:disabled, select:disabled, input:disabled, [aria-disabled=true] { cursor:
 <!-- (28/10/2026) MEDIÇÃO DO DIA — imagem para o cliente + envios registrados -->
 <div id="modal-medicao" class="modal-backdrop hidden">
   <div class="modal-card" style="max-width:560px">
-    <div class="modal-title">📤 Medição do dia — <span id="med-os"></span></div>
+    <div class="modal-title">📤 Enviar medição — <span id="med-os"></span></div>
     <div class="field-row">
-      <div class="field"><label>Data</label>
-        <input type="text" id="med-data-campo" data-periodo-unico="med-data"/>
-        <input type="hidden" id="med-data" onchange="gerarPreviaMedicao()"/></div>
+      <div class="field"><label>Período</label>
+        <input type="text" id="med-data-campo" data-periodo-de="med-de" data-periodo-ate="med-ate"/>
+        <input type="hidden" id="med-de"/>
+        <input type="hidden" id="med-ate" onchange="gerarPreviaMedicao()"/></div>
       <div class="field" id="med-valores-box"><label>Valores</label>
         <select id="med-valores" onchange="gerarPreviaMedicao()">
           <option value="0">Sem valores</option>
@@ -3735,8 +3738,10 @@ async function abrirMedicaoDia() {
   const datas = [...new Set((_partesAtual || []).map(p => String(p.data || '').slice(0, 10)).filter(Boolean))].sort().reverse();
   if (!datas.length) { toast('Nenhum registro nesta OS', 'error'); return; }
   document.getElementById('med-os').textContent = _osAtual.numero;
-  // (29/10/2026) Calendário (dia único): só os dias com registro são clicáveis
-  document.getElementById('med-data').value = datas[0];
+  // (30/10/2026) Período: um dia só (clicar o mesmo dia 2×) ou vários dias da
+  // medição numa imagem. Só os dias com registro ficam clicáveis no calendário.
+  document.getElementById('med-de').value = datas[0];
+  document.getElementById('med-ate').value = datas[0];
   GarraPeriodo.permitir('med-data-campo', datas);
   GarraPeriodo.atualizar('med-data-campo');
   document.getElementById('med-valores').value = '0';
@@ -3752,9 +3757,13 @@ async function abrirMedicaoDia() {
 
 async function gerarPreviaMedicao() {
   const box = document.getElementById('med-previa');
-  const data = document.getElementById('med-data').value;
+  const de = document.getElementById('med-de').value;
+  const ate = document.getElementById('med-ate').value;
   const comValores = !_medEmpreito() && document.getElementById('med-valores').value === '1';
-  const partes = (_partesAtual || []).filter(p => String(p.data || '').slice(0, 10) === data);
+  const partes = (_partesAtual || []).filter(p => {
+    const d = String(p.data || '').slice(0, 10);
+    return d && d >= de && d <= ate;
+  });
   const linhas = _medLinhas(partes, comValores);
   _medBlob = null; _medPayload = null;
   _medAguardando(false);
@@ -3764,7 +3773,8 @@ async function gerarPreviaMedicao() {
     return;
   }
   box.innerHTML = '<div class="loading"><span class="spin"></span></div>';
-  const payload = { data, com_valores: comValores, linhas: linhas.map(({ equipamento, ...l }) => l) };
+  if (!partes.length) { box.innerHTML = '<div style="color:var(--muted);padding:30px 10px">Nenhum registro no período.</div>'; return; }
+  const payload = { data_de: de, data_ate: ate, com_valores: comValores, linhas: linhas.map(({ equipamento, ...l }) => l) };
   try {
     const r = await fetch(API + '/operacional/api/os/' + _osAtual.id + '/medicao-dia', {
       method: 'POST',
@@ -3789,7 +3799,8 @@ async function gerarPreviaMedicao() {
 
 async function enviarMedicao() {
   if (!_medBlob || !_medPayload) { toast('A imagem ainda não está pronta', 'error'); return; }
-  const nome = `medicao-${_osAtual.numero}-${_medPayload.data}.png`;
+  const nome = `medicao-${_osAtual.numero}-${_medPayload.data_de}` +
+    (_medPayload.data_ate !== _medPayload.data_de ? `_${_medPayload.data_ate}` : '') + '.png';
   const arquivo = new File([_medBlob], nome, { type: 'image/png' });
   if (_medCelular() && navigator.canShare && navigator.canShare({ files: [arquivo] })) {
     try {
@@ -3850,7 +3861,8 @@ async function carregarEnviosMedicao() {
     const lista = await apiFetch('/operacional/api/os/' + _osAtual.id + '/medicoes-enviadas');
     if (!lista.length) { el.innerHTML = '<div style="color:var(--muted)">Nenhum envio registrado.</div>'; return; }
     el.innerHTML = lista.map(m => {
-      const dia = String(m.data).slice(0, 10).split('-').reverse().join('/');
+      const _fmtBr = d => String(d).slice(0, 10).split('-').reverse().join('/');
+      const dia = _fmtBr(m.data) + (m.data_fim && String(m.data_fim).slice(0,10) !== String(m.data).slice(0,10) ? ' a ' + _fmtBr(m.data_fim) : '');
       const quando = new Date(m.enviado_em).toLocaleString('pt-BR', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' });
       const valor = m.com_valores ? 'R$ ' + parseFloat(m.total || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 }) : 'sem valores';
       const cor = m.status === 'confirmada' ? 'var(--green, #16A34A)' : m.status === 'contestada' ? 'var(--red)' : 'var(--muted)';
