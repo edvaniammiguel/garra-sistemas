@@ -7,7 +7,7 @@
 <script src="/operacional/static/js/sino.js"></script>
 <!-- (29/10/2026) ?v= muda a cada nova versão do garra-periodo.js: o service worker guarda JS em cache
      e entregaria a versão anterior na primeira abertura depois do deploy -->
-<script src="/operacional/static/js/garra-periodo.js?v=20261030-3"></script>
+<script src="/operacional/static/js/garra-periodo.js?v=20261030-4"></script>
 <title>Garra — Admin Master</title>
 <link rel="icon" href="https://garra-sistemas.onrender.com/static/icons/favicon.ico"/>
 <style>
@@ -3759,6 +3759,7 @@ async function gerarPreviaMedicao() {
   const box = document.getElementById('med-previa');
   const de = document.getElementById('med-de').value;
   const ate = document.getElementById('med-ate').value;
+  if (!de || !ate) { _medBlob = null; _medPayload = null; _medAguardando(false); box.innerHTML = '<div style="color:var(--muted);padding:30px 10px">Escolha o período no calendário.</div>'; return; }
   const comValores = !_medEmpreito() && document.getElementById('med-valores').value === '1';
   const partes = (_partesAtual || []).filter(p => {
     const d = String(p.data || '').slice(0, 10);
