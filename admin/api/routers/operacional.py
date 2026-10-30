@@ -3297,6 +3297,7 @@ async def _garantir_medicoes():
             id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
             os_id UUID NOT NULL,
             data DATE NOT NULL,
+            data_fim DATE,
             com_valores BOOLEAN NOT NULL DEFAULT false,
             total NUMERIC(14,2),
             snapshot JSONB NOT NULL,
@@ -3312,6 +3313,10 @@ async def _garantir_medicoes():
             ativo BOOLEAN NOT NULL DEFAULT true)""", fetch="none")
     await ajard_query(
         "CREATE INDEX IF NOT EXISTS ix_medicoes_enviadas_os ON operacional.medicoes_enviadas (os_id, data)",
+        fetch="none")
+    # (30/10/2026) Medição por período: fim do intervalo (igual a data num dia só)
+    await ajard_query(
+        "ALTER TABLE operacional.medicoes_enviadas ADD COLUMN IF NOT EXISTS data_fim DATE",
         fetch="none")
     _MEDICOES_OK = True
 
@@ -3338,11 +3343,17 @@ def _qtd_br(qtd, unidade):
 
 
 async def _medicao_montar(os_id: str, d: dict) -> dict:
-    """Valida o pedido e devolve os dados da medição (base do PNG e do snapshot)."""
+    """Valida o pedido e devolve os dados da medição (base do PNG e do snapshot).
+    (30/10/2026) Aceita período: data_de/data_ate (iguais = medição de um dia)."""
     try:
-        dia = datetime.strptime(str(d.get("data") or ""), "%Y-%m-%d").date()
+        dia_de = datetime.strptime(str(d.get("data_de") or d.get("data") or ""), "%Y-%m-%d").date()
+        dia_ate = datetime.strptime(str(d.get("data_ate") or d.get("data") or ""), "%Y-%m-%d").date()
     except ValueError:
         raise HTTPException(status_code=400, detail="Data inválida")
+    if dia_ate < dia_de:
+        dia_de, dia_ate = dia_ate, dia_de
+    if (dia_ate - dia_de).days > 92:
+        raise HTTPException(status_code=400, detail="Período acima de 92 dias — divida o envio")
     com_valores = bool(d.get("com_valores"))
 
     os_row = await ajard_query(
@@ -3358,7 +3369,7 @@ async def _medicao_montar(os_id: str, d: dict) -> dict:
         raise HTTPException(status_code=400, detail="OS por empreitada: a medição do dia vai sem valores")
 
     partes = await ajard_query(
-        """SELECT pd.id, pd.horimetro_inicial, pd.horimetro_final, pd.km_inicial, pd.km_final,
+        """SELECT pd.id, pd.data, pd.horimetro_inicial, pd.horimetro_final, pd.km_inicial, pd.km_final,
                   pd.hora_inicio, pd.hora_fim,
                   COALESCE(e.codigo, pd.equipamento_terceiro) AS equipamento_codigo,
                   e.descricao AS equipamento_descricao,
@@ -3366,10 +3377,10 @@ async def _medicao_montar(os_id: str, d: dict) -> dict:
            FROM operacional.partes_diarias pd
            LEFT JOIN operacional.equipamentos e ON e.id = pd.equipamento_id
            LEFT JOIN public.usuarios_garra u    ON u.id = pd.operador_id
-           WHERE pd.os_id = %s AND pd.data = %s AND pd.ativo = true
-           ORDER BY pd.criado_em ASC""", (os_id, dia), fetch="all")
+           WHERE pd.os_id = %s AND pd.data BETWEEN %s AND %s AND pd.ativo = true
+           ORDER BY pd.data ASC, pd.criado_em ASC""", (os_id, dia_de, dia_ate), fetch="all")
     if not partes:
-        raise HTTPException(status_code=404, detail="Nenhum registro nesta data")
+        raise HTTPException(status_code=404, detail="Nenhum registro neste período")
 
     enviadas = {str(l.get("parte_id")): l for l in (d.get("linhas") or [])}
     if set(enviadas) != {str(p["id"]) for p in partes}:
@@ -3396,6 +3407,7 @@ async def _medicao_montar(os_id: str, d: dict) -> dict:
             parcial = True
         linha = {
             "parte_id": str(p["id"]),
+            "data": str(p["data"])[:10],
             "equipamento": p["equipamento_codigo"] or "—",
             "descricao": p["equipamento_descricao"] or "",
             "operador": p["operador_nome"] or "",
@@ -3420,7 +3432,8 @@ async def _medicao_montar(os_id: str, d: dict) -> dict:
     return {
         "os_numero": os_row["numero"], "cliente": os_row["cliente_nome"] or "",
         "obra": os_row["obra"] or "", "regime": regime,
-        "data": dia.isoformat(), "com_valores": com_valores, "parcial": parcial,
+        "data_de": dia_de.isoformat(), "data_ate": dia_ate.isoformat(),
+        "com_valores": com_valores, "parcial": parcial,
         "linhas": linhas, "total": round(total, 2) if com_valores else None,
     }
 
@@ -3450,16 +3463,45 @@ def _medicao_png(m: dict) -> bytes:
             texto = texto[:-1]
         return texto + "…"
 
+    # (30/10/2026) Período: uma LINHA por equipamento×unidade(×preço), somando os
+    # dias — o cliente lê o total do período, não registro a registro. Num dia só
+    # cada grupo tem 1 registro e a imagem fica igual à de antes.
+    periodo = m["data_de"] != m["data_ate"]
+    grupos, linhas_img = {}, []
+    for l in m["linhas"]:
+        k = (l["equipamento"], l["descricao"], l["unidade"], l.get("unit"))
+        g = grupos.get(k)
+        if not g:
+            g = dict(l)
+            g["qtd"] = 0.0
+            g["_dias"] = set()
+            g["_n"] = 0
+            if m["com_valores"]:
+                g["valor"] = 0.0
+            grupos[k] = g
+            linhas_img.append(g)
+        g["qtd"] = round(g["qtd"] + l["qtd"], 2)
+        if m["com_valores"]:
+            g["valor"] = round(g["valor"] + l["valor"], 2)
+        g["_dias"].add(l.get("data"))
+        g["_n"] += 1
+        if g["_n"] > 1:
+            g["km"] = [None, None]   # KM inicial/final só faz sentido num registro só
+
     def detalhes(l):
         # (29/10/2026) Sem horímetro na imagem do cliente (decisão da gestão):
         # a linha por hora mostra só a quantidade. Leituras e operador ficam no
         # registro interno do envio. Linha por km mantém o KM inicial/final.
+        out = []
         ki, kf = l["km"]
         if l["unidade"] == "km" and ki is not None:
-            return [f"KM inicial {_num_br(ki, 0)} · final {_num_br(kf, 0) if kf is not None else 'pendente'}"]
-        return []
+            out.append(f"KM inicial {_num_br(ki, 0)} · final {_num_br(kf, 0) if kf is not None else 'pendente'}")
+        if periodo:
+            n = len(l["_dias"])
+            out.append(f"{n} {'dia' if n == 1 else 'dias'} no período")
+        return out
 
-    alturas = [70 + 40 * len(detalhes(l)) + (46 if m["com_valores"] else 0) + 24 for l in m["linhas"]]
+    alturas = [70 + 40 * len(detalhes(l)) + (46 if m["com_valores"] else 0) + 24 for l in linhas_img]
     H = 230 + 150 + (80 if m["parcial"] else 0) + sum(a + 20 for a in alturas) + 150 + 110
     img = Image.new("RGB", (W, H), "white")
     dr = ImageDraw.Draw(img)
@@ -3470,9 +3512,10 @@ def _medicao_png(m: dict) -> bytes:
         img.paste(logo, (M, 40))
     except OSError:
         dr.text((M, 80), "GARRA", font=fonte(64, True), fill=AZUL)
-    dia = datetime.strptime(m["data"], "%Y-%m-%d").strftime("%d/%m/%Y")
-    dr.text((W - M, 78), "MEDIÇÃO DIÁRIA", font=fonte(28), fill=CINZA, anchor="ra")
-    dr.text((W - M, 118), dia, font=f_tit, fill=AZUL, anchor="ra")
+    d1 = datetime.strptime(m["data_de"], "%Y-%m-%d").strftime("%d/%m/%Y")
+    d2 = datetime.strptime(m["data_ate"], "%Y-%m-%d").strftime("%d/%m/%Y")
+    dr.text((W - M, 78), "MEDIÇÃO DO PERÍODO" if periodo else "MEDIÇÃO DIÁRIA", font=fonte(28), fill=CINZA, anchor="ra")
+    dr.text((W - M, 118), f"{d1} a {d2}" if periodo else d1, font=fonte(34, True) if periodo else f_tit, fill=AZUL, anchor="ra")
     dr.rectangle((0, 214, W, 222), fill=LARANJA)
 
     y = 252
@@ -3484,10 +3527,10 @@ def _medicao_png(m: dict) -> bytes:
 
     if m["parcial"]:
         dr.rounded_rectangle((M, y, W - M, y + 60), radius=12, fill=(254, 243, 199))
-        dr.text((M + 24, y + 30), "PARCIAL — medição do dia ainda em fechamento", font=f_peq, fill=(146, 64, 14), anchor="lm")
+        dr.text((M + 24, y + 30), "PARCIAL — medição ainda em fechamento", font=f_peq, fill=(146, 64, 14), anchor="lm")
         y += 80
 
-    for l, alt in zip(m["linhas"], alturas):
+    for l, alt in zip(linhas_img, alturas):
         dr.rounded_rectangle((M, y, W - M, y + alt), radius=16, outline=LINHA, width=3)
         x0, x1 = M + 28, W - M - 28
         qtd = _qtd_br(l["qtd"], l["unidade"])
@@ -3506,15 +3549,16 @@ def _medicao_png(m: dict) -> bytes:
 
     y += 10
     dr.rounded_rectangle((M, y, W - M, y + 120), radius=16, fill=FUNDO)
+    rotulo_total = "Total do período" if periodo else "Total do dia"
     if m["com_valores"]:
-        dr.text((M + 28, y + 60), "Total do dia", font=f_txt, fill=AZUL, anchor="lm")
+        dr.text((M + 28, y + 60), rotulo_total, font=f_txt, fill=AZUL, anchor="lm")
         dr.text((W - M - 28, y + 60), f"R$ {_num_br(m['total'])}", font=fonte(40, True), fill=AZUL, anchor="rm")
     else:
         somas = {}
         for l in m["linhas"]:
             somas[l["unidade"]] = somas.get(l["unidade"], 0) + l["qtd"]
         resumo = " · ".join(_qtd_br(v, u) for u, v in somas.items())
-        dr.text((M + 28, y + 60), "Total do dia", font=f_txt, fill=AZUL, anchor="lm")
+        dr.text((M + 28, y + 60), rotulo_total, font=f_txt, fill=AZUL, anchor="lm")
         dr.text((W - M - 28, y + 60), cortar(dr, resumo, fonte(34, True), 640), font=fonte(34, True), fill=AZUL, anchor="rm")
 
     agora = datetime.now(_FUSO_BR).strftime("%d/%m/%Y %H:%M")
@@ -3543,10 +3587,10 @@ async def op_medicao_registrar(os_id: str, request: Request, payload=Depends(exi
     uid, nome = await _usuario_logado(payload)
     row = await ajard_query(
         """INSERT INTO operacional.medicoes_enviadas
-               (os_id, data, com_valores, total, snapshot, hash, enviado_por, enviado_por_nome)
-           VALUES (%s, %s, %s, %s, %s::jsonb, %s, %s, %s)
-           RETURNING id, data, com_valores, total, status, enviado_por_nome, enviado_em""",
-        (os_id, m["data"], m["com_valores"], m["total"], snapshot,
+               (os_id, data, data_fim, com_valores, total, snapshot, hash, enviado_por, enviado_por_nome)
+           VALUES (%s, %s, %s, %s, %s, %s::jsonb, %s, %s, %s)
+           RETURNING id, data, data_fim, com_valores, total, status, enviado_por_nome, enviado_em""",
+        (os_id, m["data_de"], m["data_ate"], m["com_valores"], m["total"], snapshot,
          _hashlib.sha256(snapshot.encode()).hexdigest(), uid, nome), fetch="one")
     return dict(row)
 
@@ -3555,7 +3599,7 @@ async def op_medicao_registrar(os_id: str, request: Request, payload=Depends(exi
 async def op_medicoes_listar(os_id: str, payload=Depends(exigir_painel_gestao)):
     await _garantir_medicoes()
     rows = await ajard_query(
-        """SELECT id, data, com_valores, total, status, motivo, enviado_por_nome, enviado_em,
+        """SELECT id, data, data_fim, com_valores, total, status, motivo, enviado_por_nome, enviado_em,
                   status_por_nome, status_em
            FROM operacional.medicoes_enviadas
            WHERE os_id = %s AND ativo = true
