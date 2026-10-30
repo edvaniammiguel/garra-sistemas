@@ -220,7 +220,8 @@ input.gp-invalido{border-color:#DC2626 !important}`;
     campo._gpDig = dig;
     campo.value = _fmtDig(dig.slice(0, 8)) + (dig.length >= 8 && !inst.unico ? ' - ' + _fmtDig(dig.slice(8)) : '');
     campo.classList.remove('gp-invalido');
-    if (ativo !== inst) return;
+    // Digitar com o calendário fechado (ex.: logo após Limpar) reabre ele
+    if (ativo !== inst) abrir(inst);
     if (dig.length >= 8) {
       const a = deBr(_fmtDig(dig.slice(0, 8)));
       if (!a) { campo.classList.add('gp-invalido'); return; }
@@ -241,7 +242,7 @@ input.gp-invalido{border-color:#DC2626 !important}`;
   function digitado(inst) {
     const txt = inst.campo.value.trim();
     if (!txt) { if (inst.unico) return false; aplicar(inst, null, null); return true; }
-    const partes = txt.split(/\s*(?:-|–|até|a)\s*/i).filter(Boolean);
+    const partes = txt.split(/\s*(?:-|–|até|a)\s*|\s+/i).filter(Boolean);
     const a = deBr(partes[0]), b = partes.length > 1 ? deBr(partes[1]) : a;
     if (!a || !b || partes.length > 2) return false;
     if (inst.unico && (partes.length > 1 || (inst.permitidos && !inst.permitidos.has(iso(a))))) return false;
