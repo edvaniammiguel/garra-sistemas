@@ -61,9 +61,15 @@ input.gp-invalido{border-color:#DC2626 !important}`;
     return m ? new Date(+m[1], +m[2] - 1, +m[3]) : null;
   };
   const deBr = s => {
-    const m = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec((s || '').trim());
+    // (30/10/2026) Aceita dd/mm, dd/mm/aa e dd/mm/aaaa — sem ano = ano atual.
+    // Só números também vale: 2710 / 271026 / 27102026 ganham as barras aqui.
+    let t = (s || '').trim();
+    if (/^\d{4}$|^\d{6}$|^\d{8}$/.test(t)) t = t.slice(0, 2) + '/' + t.slice(2, 4) + (t.length > 4 ? '/' + t.slice(4) : '');
+    const m = /^(\d{1,2})\/(\d{1,2})(?:\/(\d{2}|\d{4}))?$/.exec(t);
     if (!m) return null;
-    const d = new Date(+m[3], +m[2] - 1, +m[1]);
+    let ano = m[3] ? +m[3] : new Date().getFullYear();
+    if (ano < 100) ano += 2000;
+    const d = new Date(ano, +m[2] - 1, +m[1]);
     return d.getMonth() === +m[2] - 1 ? d : null;   // 31/02 não vira 03/03
   };
 
@@ -198,6 +204,40 @@ input.gp-invalido{border-color:#DC2626 !important}`;
     }
   }
 
+  // ── (30/10/2026) MÁSCARA DE DIGITAÇÃO — o único filtro do campo ──
+  // Só os números valem: as barras e o " - " entram sozinhos enquanto digita.
+  // Data completa (dd/mm/aaaa) → " - " aparece e a 2ª data pode ser digitada
+  // OU clicada no calendário; 2ª completa → período aplicado na hora.
+  const _fmtDig = d =>
+    d.slice(0, 2) + (d.length > 2 ? '/' + d.slice(2, 4) : '') + (d.length > 4 ? '/' + d.slice(4) : '');
+
+  function mascarar(inst, e) {
+    const campo = inst.campo;
+    const del = !!(e && e.inputType && e.inputType.indexOf('delete') === 0);
+    let dig = campo.value.replace(/\D/g, '').slice(0, inst.unico ? 8 : 16);
+    // Apagar que só tirou barra/traço: tira também o último número, senão trava
+    if (del && dig === campo._gpDig && dig) dig = dig.slice(0, -1);
+    campo._gpDig = dig;
+    campo.value = _fmtDig(dig.slice(0, 8)) + (dig.length >= 8 && !inst.unico ? ' - ' + _fmtDig(dig.slice(8)) : '');
+    campo.classList.remove('gp-invalido');
+    if (ativo !== inst) return;
+    if (dig.length >= 8) {
+      const a = deBr(_fmtDig(dig.slice(0, 8)));
+      if (!a) { campo.classList.add('gp-invalido'); return; }
+      if (inst.unico || dig.length === 16) {
+        const b = dig.length === 16 ? deBr(_fmtDig(dig.slice(8))) : a;
+        if (!b) { campo.classList.add('gp-invalido'); return; }
+        aplicar(inst, a, b);
+        fechar();
+        return;
+      }
+      // 1ª data fechada: vira o início no calendário — o próximo clique encerra
+      ini = a; fim = null;
+      base = new Date(a.getFullYear(), a.getMonth(), 1);
+      desenhar();
+    }
+  }
+
   function digitado(inst) {
     const txt = inst.campo.value.trim();
     if (!txt) { if (inst.unico) return false; aplicar(inst, null, null); return true; }
@@ -217,14 +257,25 @@ input.gp-invalido{border-color:#DC2626 !important}`;
       mostrar() {
         const a = deIso(de.value), b = deIso(ate.value);
         campo.value = a ? (br(a) + (b && b.getTime() !== a.getTime() ? ' - ' + br(b) : '')) : '';
+        campo._gpDig = campo.value.replace(/\D/g, '');
         campo.classList.remove('gp-invalido');
       },
     };
     campo.setAttribute('autocomplete', 'off');
     if (!campo.placeholder) campo.placeholder = unico ? 'dd/mm/aaaa' : 'dd/mm/aaaa - dd/mm/aaaa';
-    campo.addEventListener('click', () => { if (ativo !== inst) abrir(inst); });
-    campo.addEventListener('focus', () => { if (ativo !== inst) abrir(inst); });
-    campo.addEventListener('input', () => campo.classList.remove('gp-invalido'));
+    campo.addEventListener('click', () => {
+      if (ativo !== inst) { abrir(inst); campo.select(); }   // reabrir clicando também seleciona
+    });
+    campo.addEventListener('focus', () => {
+      if (ativo !== inst) abrir(inst);
+      campo.select();   // (30/10/2026) digitar substitui o valor antigo, sem misturar
+      campo._gpSelecionar = true;
+    });
+    campo.addEventListener('mouseup', e => {
+      // o mouseup do clique que deu o foco desfaria o select() — segura só esse
+      if (campo._gpSelecionar) { e.preventDefault(); campo._gpSelecionar = false; }
+    });
+    campo.addEventListener('input', e => mascarar(inst, e));
     campo.addEventListener('keydown', e => {
       if (e.key !== 'Enter') return;
       e.preventDefault();
