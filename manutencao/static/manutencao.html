@@ -2670,6 +2670,7 @@ async function neSalvar(fechar){
     if (id) await neEnviarFoto(id);
     mostrarToast('\u2705 '+codigo+(eraEdicao?' gravado':(fechar?' criado':' gravado \u2014 continue preenchendo')),'ok');
     if (fechar){ fichaFechar(); await carregarSemaforosReais(); if (id && !eraEdicao){ _mwSel.frota = id; verEquipReal(id); } }
+    else { carregarSemaforosReais(); }   // (31/10/2026) Aplicar: árvore e contagens refletem na hora (Sistema trocado "sumia" até o F5)
   } catch(e){
     // (10/10/2026) Código já existe (ex.: objeto criado pelo Admin sem ficha): em vez de jogar fora o que foi
     // digitado, oferece aplicar esta janela ao objeto existente — vira edição e grava tudo (ficha + blocos MWW)
