@@ -160,6 +160,7 @@
     </label>
     </div>
     <button class="btn p" id="ap-btn" onclick="apEnviar()">💾 Registrar na OT</button>
+    <button class="btn" id="ap-so-concluir" style="display:none;background:#fff;border:2px solid #15803D;color:#15803D" onclick="document.getElementById('ap-fim').checked=true;apEnviar()">✅ Só concluir (já registrado antes)</button>
     <button class="btn" id="ap-cancel" style="display:none;background:#fff;border:2px solid var(--laranja);color:#1A2A5E" onclick="apCancelarEdicao()">✖ Cancelar edição</button>
     <button class="btn" style="background:#fff;border:2px solid #CBD5E1" onclick="verAba(AP_VOLTA)">Voltar</button>
     <!-- (14/10/2026) Tudo que já foi registrado nesta OT: o mecânico confere antes de
@@ -341,6 +342,9 @@ async function apCarregarLista(){
     ['ap-form','ap-btn','ap-cancel'].forEach(i => { const e = document.getElementById(i); if (e) e.style.display = fechada ? 'none' : (i === 'ap-cancel' ? (AP_EDIT ? '' : 'none') : ''); });
     const av = document.getElementById('ap-fechada'); if (av) av.style.display = fechada ? '' : 'none';
     if (fechada && AP_EDIT) AP_EDIT = null;
+    // (02/11/2026) atalho "Só concluir" quando a OT já tem registro com horas e ainda não foi sinalizada
+    const sc = document.getElementById('ap-so-concluir');
+    if (sc) sc.style.display = (!fechada && AP_ITENS.some(a => a.horas != null && a.horas > 0) && !AP_ITENS.some(a => a.concluido)) ? '' : 'none';
     if (!AP_ITENS.length){ el.innerHTML = 'Nada registrado ainda.'; return; }
     el.innerHTML = AP_ITENS.map(a => {
       const tags = [];
@@ -473,11 +477,16 @@ async function apEnviar(){
   const hor = elHor.value === '' ? null : parseFloat(elHor.value.replace(',', '.'));
   // (14/10/2026) Validação: relato sempre; horas obrigatórias ao concluir (sem elas a OT
   // fecha sem custo de mão de obra); horímetro opcional, mas se vier tem de ser número > 0.
-  if (relato.length < 10){ toast('Descreva o que foi feito (pelo menos 10 letras)', 'erro'); document.getElementById('ap-relato').focus(); return; }
+  // (02/11/2026) "Só concluir": a OT já tem registro com horas (de qualquer mecânico) e o mecânico volta
+  // só para marcar ✅ — não precisa escrever nem informar horas de novo; o servidor grava o relato padrão.
+  const jaTemHoras = !AP_EDIT && AP_ITENS.some(a => a.horas != null && a.horas > 0);
+  const soConcluir = concluido && jaTemHoras && horas === null && relato.length < 10;
+  if (!soConcluir && relato.length < 10){ toast('Descreva o que foi feito (pelo menos 10 letras)', 'erro'); document.getElementById('ap-relato').focus(); return; }
   if (horas !== null && (isNaN(horas) || horas <= 0 || horas > 24)){ toast('Horas trabalhadas: informe entre 0,25 e 24', 'erro'); elHoras.focus(); return; }
-  if (concluido && horas === null){ toast('Para concluir, informe as horas trabalhadas', 'erro'); elHoras.focus(); return; }
+  if (concluido && horas === null && !jaTemHoras){ toast('Para concluir, informe as horas trabalhadas', 'erro'); elHoras.focus(); return; }
   if (hor !== null && (isNaN(hor) || hor <= 0)){ toast('Horímetro/KM inválido', 'erro'); elHor.focus(); return; }
   if (!concluido && horas === null && !confirm('Registrar sem horas trabalhadas?')) { elHoras.focus(); return; }
+  if (soConcluir && !confirm('Sinalizar esta OT como concluída, sem novo registro?')) return;
   const btn = document.getElementById('ap-btn'), pg = document.getElementById('ap-prog');
   try {
     if (btn) btn.disabled = true;
