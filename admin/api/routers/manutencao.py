@@ -5629,17 +5629,25 @@ async def _garantir_apontamentos():
 _OT_STATUS_APONTAVEL = ("em_andamento", "aguardando_peca", "aberta", "programada")
 
 
-def _apont_validar(d):
+RELATO_SO_CONCLUIR = "Serviço concluído — equipamento liberado (sinalizado sem novo registro)"
+
+
+def _apont_validar(d, ja_tem_horas=False):
+    """(02/11/2026) `ja_tem_horas`: a OT já tem registro com horas (de qualquer mecânico). Nesse caso
+    marcar ✅ concluído dispensa texto e horas — o mecânico volta no dia seguinte só para sinalizar."""
     relato = (d.get("relato") or "").strip()
+    horas = _mo_num(d.get("horas"))
+    concluido = bool(d.get("concluido"))
+    so_concluir = concluido and ja_tem_horas and not horas and len(relato) < 10
+    if so_concluir:
+        relato = RELATO_SO_CONCLUIR
     if len(relato) < 10:
         raise HTTPException(status_code=400, detail="Descreva o que foi feito (pelo menos 10 letras)")
-    horas = _mo_num(d.get("horas"))
     # (14/10/2026) Mesma regra do app: ao sinalizar concluído, horas obrigatórias
     # (custo de MO da OT); horas fora de 0–24 é digitação errada.
     if horas is not None and (horas <= 0 or horas > 24):
         raise HTTPException(status_code=400, detail="Horas trabalhadas: informe entre 0,25 e 24")
-    concluido = bool(d.get("concluido"))
-    if concluido and not horas:
+    if concluido and not horas and not ja_tem_horas:
         raise HTTPException(status_code=400, detail="Para sinalizar concluído, informe as horas trabalhadas")
     hor = _mo_num(d.get("horimetro"))
     if hor is not None and hor <= 0:
@@ -5675,6 +5683,14 @@ async def _apont_do_usuario(ap_id, ot_id, payload):
     return o, uid, ap
 
 
+async def _ot_ja_tem_horas(ot_id):
+    """(02/11/2026) True se a OT já tem apontamento ativo com horas — permite "só concluir"."""
+    r = await ajard_query(
+        "SELECT COALESCE(SUM(horas),0) AS h FROM manutencao.ot_apontamentos WHERE ot_id=%s AND ativo=true",
+        (ot_id,), fetch="one")
+    return float((r or {}).get("h") or 0) > 0
+
+
 @router.post("/manutencao/api/ots/{ot_id}/apontamento")
 async def ot_apontamento(ot_id: str, request: Request, payload=Depends(verificar_pedir_ot)):
     """(28/08/2026) Mecânico alimenta o FECHAMENTO sem fechar: relato do
@@ -5685,7 +5701,7 @@ async def ot_apontamento(ot_id: str, request: Request, payload=Depends(verificar
     para ligar as fotos e para editar/excluir depois."""
     await _garantir_apontamentos()
     d = await request.json()
-    relato, horas, hor, concluido = _apont_validar(d)
+    relato, horas, hor, concluido = _apont_validar(d, await _ot_ja_tem_horas(ot_id))
     o, uid = await _ot_mobile_pode(ot_id, payload)
     if o["status"] not in _OT_STATUS_APONTAVEL:
         raise HTTPException(status_code=400, detail="OT já encerrada — apontamento indisponível")
