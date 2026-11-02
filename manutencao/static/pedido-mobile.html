@@ -256,13 +256,17 @@ function novo(){
   verAba('novo');
 }
 let AP_OT = null;
+let EXECUTOR = false;   // (02/11/2026) tem o módulo Executar OT? decide se a aba 🔧 OTs existe
+function abaOtsVisivel(){ const b = document.getElementById('aba-ots'); if (b) b.style.display = EXECUTOR ? '' : 'none'; }
 function verAba(a){
   document.getElementById('abas').style.display = 'flex';
   [['novo','tela-pedido'],['minhas','tela-minhas'],['ots','tela-ots']].forEach(([k, t]) => {
     const b = document.getElementById('aba-' + k);
     b.className = 'btn ' + (a === k ? 's' : '');
+    // (02/11/2026) cssText apagava o display:none da aba OTs — operador sem Executar OT via a aba ao trocar de guia
     b.style.cssText = 'margin-top:0' + (a === k ? '' : ';background:#fff;border:2px solid #CBD5E1;color:#0F172A');
   });
+  abaOtsVisivel();
   tela({ novo:'tela-pedido', minhas:'tela-minhas', ots:'tela-ots' }[a]);
   if (a === 'minhas') carregarMinhas();
   if (a === 'ots') carregarOts();
@@ -271,7 +275,7 @@ const PRIO = { urgente:['#B91C1C','🔴 Urgente'], alta:['#C2410C','🟠 Alta'],
 let OTS = [];
 async function carregarOts(){
   const el = document.getElementById('ots-lista');
-  try { const r = await api('/manutencao/api/ots-abertas-mobile'); OTS = r.ots || []; document.getElementById('aba-ots').style.display = r.executor ? '' : 'none'; renderOts(); }
+  try { const r = await api('/manutencao/api/ots-abertas-mobile'); OTS = r.ots || []; EXECUTOR = !!r.executor; abaOtsVisivel(); if (!EXECUTOR) { verAba('minhas'); return; } renderOts(); }
   catch(e){ el.innerHTML = '❌ ' + e.message; }
 }
 function renderOts(){
@@ -511,7 +515,7 @@ async function apEnviar(){
 }
 (async () => {
   if (TOK){
-    try { await carregarFrota(); urg('normal'); verAba('novo'); api('/manutencao/api/ots-abertas-mobile').then(r => { document.getElementById('aba-ots').style.display = r.executor ? '' : 'none'; }).catch(() => {}); return; }
+    try { await carregarFrota(); urg('normal'); verAba('novo'); api('/manutencao/api/ots-abertas-mobile').then(r => { EXECUTOR = !!r.executor; abaOtsVisivel(); }).catch(() => {}); return; }
     catch(e){}
   }
   tela('tela-login');
