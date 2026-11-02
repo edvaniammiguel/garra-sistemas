@@ -4440,7 +4440,7 @@ async function otMaoObraRender(){
         + '<td class="r"><b style="color:#1A2A5E">'+money(x.valor)+'</b></td>'
         + '<td class="mono muted">'+_esc(x.rubrica||'')+'</td>'
         + '<td class="muted">'+_esc(x.observacao||'')+'</td>'
-        + '<td><span style="cursor:pointer;color:#B91C1C" title="Remover" onclick="otMoExcluir(\''+x.id+'\')">✕</span></td></tr>').join('')
+        + '<td style="white-space:nowrap">'+(x.usuario_id ? '<span style="cursor:pointer;margin-right:6px" title="Editar funcionário, horas, custo/h, conta" onclick="otMoEditar(\''+x.id+'\')">✏️</span>' : '')+'<span style="cursor:pointer;color:#B91C1C" title="Remover" onclick="otMoExcluir(\''+x.id+'\')">✕</span></td></tr>').join('')
       + '</tbody><tfoot><tr><td colspan="3">Mob. HH / Custo total</td><td class="r">'+fmtH(_otMo.total_horas)+'</td><td></td><td class="r">'+money(_otMo.total_custo)+'</td><td colspan="3"></td></tr></tfoot></table>'
     : '<div class="muted" style="padding:6px;font-size:11px">Nenhuma hora lançada. O mecânico lança pelo app (Registrar execução → Horas) ou aqui. Serviço externo: aba Outros.</div>';
   const desvioH = _otMo.total_horas - totPrevH, desvioC = _otMo.total_custo - totPrevC;
@@ -4473,8 +4473,22 @@ async function otMaoObraRender(){
       + '<div class="mfield" style="width:90px">Custo/h<input id="mo-custo" type="number" step="0.01" placeholder="0,00" title="Preenchido pela função; pode ajustar"></div>'
       + '<div class="mfield" style="width:220px">Conta * <span id="mo-rub-dica" class="muted" style="font-weight:400"></span><select id="mo-rub">'+contaOpts+'</select></div>'
       + '<div class="mfield" style="flex:1;min-width:140px">Observação<input id="mo-obs" placeholder="opcional"></div>'
-      + '<button class="btn p" onclick="otMoLancar()">💾 Inserir</button><button class="btn" onclick="otMoForm(\'mo\')">Cancelar</button></div>' + semFn + '</div>' : '')
+      + '<button class="btn p" id="mo-btn" onclick="otMoLancar()">💾 Inserir</button><button class="btn" onclick="otMoForm(\'mo\')">Cancelar</button></div>' + semFn + '</div>' : '')
     + tabReal;
+  _moEditId = null;
+}
+// (02/11/2026) ✏️ na linha realizada: abre o mesmo painel do ⊕ Inserir preenchido; Inserir vira "Salvar alteração"
+let _moEditId = null;
+function otMoEditar(id){
+  const x = (_otMo.itens||[]).find(i => i.id === id); if (!x) return;
+  const el = document.getElementById('mo-form-mo'); if (!el) { mostrarToast('OT encerrada — reabra para alterar', 'warn'); return; }
+  el.style.display = '';
+  const set = (i, v) => { const e = document.getElementById(i); if (e) e.value = v == null ? '' : v; };
+  set('mo-user', x.usuario_id || ''); set('mo-fn', x.funcao_codigo || ''); set('mo-data', x.data ? String(x.data).slice(0,10) : '');
+  set('mo-horas', x.horas); set('mo-custo', x.custo_hora != null ? x.custo_hora : ''); set('mo-rub', x.rubrica || ''); set('mo-obs', x.observacao || '');
+  _moEditId = id;
+  const b = document.getElementById('mo-btn'); if (b) b.textContent = '💾 Salvar alteração';
+  el.scrollIntoView({ block: 'nearest' });
 }
 function otMoForm(q){
   const el = document.getElementById('mo-form-'+q); if (!el) return;
@@ -4546,6 +4560,12 @@ async function otMoLancar(){
   if (!g('mo-rub')) { mostrarToast('Escolha a conta do plano de contas', 'warn'); document.getElementById('mo-rub').focus(); return; }
   const custo = g('mo-custo') || ((_otMo && _otMo.custo_hora_sugerido && _otMo.custo_hora_sugerido[g('mo-user')]) ?? '');
   try {
+    if (_moEditId) {   // (02/11/2026) edição de linha existente
+      await mntFetch('/manutencao/api/mao-obra/'+_moEditId, {method:'PATCH', body: JSON.stringify({
+        usuario_id: g('mo-user'), data: g('mo-data') || null, funcao_codigo: g('mo-fn') || null, rubrica: g('mo-rub'),
+        horas: g('mo-horas'), custo_hora: custo === '' ? null : custo, observacao: g('mo-obs') })});
+      mostrarToast('✅ Mão de obra alterada','ok'); _moEditId = null; otMaoObraRender(); return;
+    }
     await mntFetch('/manutencao/api/ots/'+_otAberta.id+'/mao-obra', {method:'POST', body: JSON.stringify({
       usuario_id: g('mo-user') || null, nome: '', data: g('mo-data') || null,
       funcao_codigo: g('mo-fn') || null, rubrica: g('mo-rub'),
