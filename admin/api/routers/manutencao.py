@@ -1775,6 +1775,43 @@ async def ot_mao_obra_criar(ot_id: str, request: Request, payload=Depends(verifi
     return {"ok": True, "id": str(row["id"]) if row else None}
 
 
+@router.patch("/manutencao/api/mao-obra/{mo_id}")
+async def ot_mao_obra_editar(mo_id: str, request: Request, payload=Depends(verificar_manutencao)):
+    """(02/11/2026) Edita uma linha de mão de obra realizada (inclusive as que vieram do app):
+    funcionário, data, horas, custo/h, conta, observação. Linha sem custo/h (mecânico sem função
+    cadastrada) é corrigida aqui pela gestão."""
+    await _garantir_mao_obra(); await _garantir_funcoes()
+    d = await request.json()
+    sets, params = [], []
+    if "usuario_id" in d:
+        uid_novo = (d.get("usuario_id") or "").strip() or None
+        if not uid_novo:
+            raise HTTPException(status_code=400, detail="Escolha o funcionário")
+        sets.append("usuario_id=%s"); params.append(uid_novo)
+        cf = (await _colaboradores_funcao()).get(uid_novo) or {}
+        if cf.get("funcao_codigo") and not (d.get("funcao_codigo") or "").strip():
+            d["funcao_codigo"] = cf.get("funcao_codigo")
+    if "horas" in d:
+        horas = _mo_num(d.get("horas"))
+        if not horas or horas <= 0 or horas > 24:
+            raise HTTPException(status_code=400, detail="Horas trabalhadas: informe entre 0,25 e 24")
+        sets.append("horas=%s"); params.append(horas)
+    if "custo_hora" in d:
+        sets.append("custo_hora=%s"); params.append(_mo_num(d.get("custo_hora")))
+    if "data" in d and (d.get("data") or "").strip():
+        sets.append("data=%s::date"); params.append(d["data"].strip())
+    for c in ("funcao_codigo", "rubrica", "observacao"):
+        if c in d:
+            sets.append(f"{c}=%s"); params.append((d.get(c) or "").strip() or None)
+    if not sets:
+        raise HTTPException(status_code=400, detail="Nada a alterar")
+    params.append(mo_id)
+    r = await ajard_query(f"UPDATE manutencao.ot_mao_obra SET {', '.join(sets)} WHERE id=%s AND ativo=true RETURNING id", tuple(params), fetch="one")
+    if not r:
+        raise HTTPException(status_code=404, detail="Linha de mão de obra não encontrada")
+    return {"ok": True}
+
+
 @router.delete("/manutencao/api/mao-obra/{mo_id}")
 async def ot_mao_obra_excluir(mo_id: str, _auth=Depends(verificar_manutencao)):
     await _garantir_mao_obra()
