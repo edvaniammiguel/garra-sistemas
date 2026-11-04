@@ -28,7 +28,7 @@ window.GUIAS_MANUTENCAO = {
       { alvo: () => document.querySelector('#eq-ficha button[title="Recusar"]'),
         titulo: '✕ Recusar',
         texto: 'Recusar pede o <b>motivo</b>, que vai para o aplicativo de quem pediu. Use quando for duplicado, já resolvido ou não for manutenção.' },
-      { alvo: '#oe-resp', posicao: 'esquerda',
+      { posicao: 'direita',
         antes: async () => {
           document.getElementById('eq-ficha').classList.remove('show');
           let ots = [];
@@ -37,8 +37,12 @@ window.GUIAS_MANUTENCAO = {
             ots = l.filter(o => ordem.includes(o.status)).sort((a, b) => ordem.indexOf(a.status) - ordem.indexOf(b.status)); } catch (e) { }
           if (ots.length) { await verOTReal(ots[0].id); await new Promise(r => setTimeout(r, 700)); const t = document.querySelector('#eq-ficha .mtab'); if (t) t.click(); await new Promise(r => setTimeout(r, 300)); }
         },
+        titulo: 'Tipo de trabalho',
+        texto: 'Na ficha da OT, aba <b>Origem</b>: o <b>Tipo Trab.</b> é um campo só — <b>C1</b> reparação de avaria, <b>C2</b> corretiva deferida, <b>A1</b> preventiva sistemática, <b>B1</b> condicionada, <b>M1</b> melhoria. A classe Corretiva/Preventiva ao lado é derivada dele. Pedido convertido já nasce C1.',
+        alvo: '#oe-tt' },
+      { alvo: '#oe-resp', posicao: 'esquerda',
         titulo: 'Definir o responsável',
-        texto: 'Na ficha da OT, aba <b>Origem</b>: escolha o <b>Tipo de Trabalho</b> (A1 preventiva, C1 avaria…) e o <b>Responsável</b> — o mecânico que vai executar. Se ficar vazio, o primeiro mecânico que registrar pelo app assume a OT.' },
+        texto: '<b>Responsável</b> — o mecânico que vai executar (Intervenção interna). Se ficar vazio, o primeiro mecânico que registrar pelo app assume a OT. Intervenção <b>Externa</b> troca este campo pelo Fornecedor.' },
       { alvo: () => [...document.querySelectorAll('#eq-ficha button')].find(b => /Emitir/.test(b.textContent)) || [...document.querySelectorAll('#eq-ficha button')].find(b => /Encerrar/.test(b.textContent)),
         titulo: '🖨 Emitir',
         texto: 'Emitir passa a OT para <b>Em curso</b>, grava o Início real e a OT aparece para o mecânico na aba OTs do aplicativo. Atenção: <b>✖ Cancelar OT</b> cancela a ordem — para fechar a ficha sem gravar use o ✕ do canto.' },
