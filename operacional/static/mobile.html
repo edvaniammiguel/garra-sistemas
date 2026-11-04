@@ -2493,7 +2493,7 @@ function abrirLinkApp(link) {
     if (u.pathname.indexOf('/manutencao/mobile') === 0) { ir('MG'); _iframeExtra('mg', '/manutencao/mobile', q); }
     else if (u.pathname.indexOf('/compras') === 0) { ir('OC'); _iframeExtra('oc', '/compras', q); }
     else if (u.pathname.indexOf('/manutencao/pedido') === 0) { ir('OT'); _iframeExtra('ot', '/manutencao/pedido', q); }
-    else if (u.pathname.indexOf('/abastecimento') === 0) { ir('AB'); }
+    else if (u.pathname.indexOf('/abastecimento') === 0) { ir('AB'); if (q) _iframeExtra('ab', '/abastecimento', q); }   // (04/11/2026) ?guia=… chega ao iframe
     else if (u.pathname === '/mobile') { var a = u.searchParams.get('aba'); if (a) ir(a); }
     else if (u.pathname.indexOf('/manutencao') === 0 || u.pathname.indexOf('/admin') === 0) { window.open(link, '_blank'); }
   } catch(e) {}
