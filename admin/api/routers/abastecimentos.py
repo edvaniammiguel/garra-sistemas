@@ -1541,7 +1541,8 @@ input.ruim{border-color:#DC2626;background:#FEF2F2}
   if (sso && sso.length > 10) { localStorage.setItem('garra_tok_abast', sso); }
   if (q.get('embedded') === '1') document.documentElement.classList.add('embedded');
   if (sso && sso.length > 10) document.documentElement.classList.add('sso');
-  if (sso || q.get('embedded')) history.replaceState(null, '', location.pathname);
+  window._GUIA_Q = q.get('guia');   // (04/11/2026) ?guia=abastecer → tour guiado depois de carregar
+  if (sso || q.get('embedded') || q.get('guia')) history.replaceState(null, '', location.pathname);
 } catch(e) {} })();</script>
 <style>.embedded h1{display:none !important}.embedded body{padding-top:6px}.sso #tela-login{display:none !important}</style>
 <h1><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 22V5a2 2 0 0 1 2-2h7a2 2 0 0 1 2 2v17"/><path d="M2 22h13"/><rect x="6" y="6" width="5" height="4" rx="1"/><path d="M14 11h1.5a2 2 0 0 1 2 2v4.5a1.5 1.5 0 0 0 3 0V9.8a2 2 0 0 0-.6-1.4L18 6.5"/></svg> Abastecimento <span>Garra</span></h1>
@@ -1554,6 +1555,7 @@ input.ruim{border-color:#DC2626;background:#FEF2F2}
 </div>
 
 <div class="hide" id="tela-form">
+  <div class="muted" style="text-align:right;margin:0 0 6px"><a href="#" onclick="guiaAbrir('abastecer');return false" style="color:#16A34A;font-weight:700">▶ Como fazer (demonstração)</a></div>
   <div class="card">
     <div class="foto" id="box-nota">
       <span class="ic" id="ic-nota"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1Z"/><path d="M14 8H8"/><path d="M16 12H8"/><path d="M13 16H8"/></svg></span>
@@ -1928,5 +1930,7 @@ async function carregarHist(){
 })();
 
 if (TOK) iniciar();
-</script></body></html>
+</script><script src="/operacional/static/js/guia.js"></script>
+<script src="/operacional/static/js/guias-abastecimento.js"></script>
+</body></html>
 """
