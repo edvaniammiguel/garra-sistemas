@@ -5,6 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Garra Sistemas — Manutenção</title>
 <script src="/operacional/static/js/sino.js"></script>
+<script src="/operacional/static/js/guia.js"></script>
+<script src="/operacional/static/js/guias-manutencao.js"></script>
 <style>
 /* ══ MANUTENÇÃO v2.0 (24/08/2026) — produção limpa ══
    Só telas ligadas ao backend real. Identidade Garra (navy/laranja). */
@@ -234,7 +236,8 @@ button:disabled, select:disabled, input:disabled, [aria-disabled=true] { cursor:
   <div class="tbn" id="tn-ots" onclick="showModule('ots')">🔧 Ordens de Trabalho</div>
   <div class="tbn" id="tn-alm" onclick="showModule('alm')">🧰 Materiais</div>
   <div class="tbn" id="tn-param" onclick="showModule('param')">⚙️ Parametrizar</div>
-  <div class="tb-user" id="tb-user"><b>—</b></div>
+  <div class="tbn" id="tn-guia" onclick="guiaMenu(event)" title="Demonstrações guiadas na tela real (modo demonstração: nada é gravado)" style="margin-left:auto;background:#16A34A;color:#fff">▶ Como fazer</div>
+  <div class="tb-user" id="tb-user" style="margin-left:0"><b>—</b></div>
 </div>
 
 <!-- ══ FROTA — Árvore de Objetos (esquerda) + centro sob demanda ══ -->
@@ -6727,13 +6730,20 @@ async function artJanela(codigo, opts){
   }
   const jj = v => { if (!v) return []; if (Array.isArray(v)) return v; try { const a = JSON.parse(v); return Array.isArray(a) ? a : []; } catch(e){ return []; } };
   const car = jj(p.caracteristicas);
+  // (03/11/2026) Novo item nasce na pasta marcada na árvore (Norma de Materiais): classe (@C), família (AC)
+  // ou subfamília (MC.100) já vêm selecionadas — antes a janela abria sempre em branco.
+  let classeArv = '';
+  if (!_artEdit && !copiaDe && !p.familia_codigo && _almFamSel) {
+    if (String(_almFamSel).startsWith('@')) classeArv = String(_almFamSel).slice(1).toUpperCase();
+    else p.familia_codigo = String(_almFamSel);
+  }
   const fam = String(p.familia_codigo || '');
   const raizSel = fam.split('.')[0];
   // (19/10/2026) Estrutura ManWinWin: Classe → Família → Subfamília → Sequência. A classe da peça
   // vem gravada (p.classe) ou do prefixo do código (G.BT.010.022 → G) ou da família.
   const famInfo = c => (_artFams||[]).find(f => String(f.codigo) === String(c)) || {};
   const classeSel = String(p.classe || '').length <= 2 && p.classe ? String(p.classe).toUpperCase()
-    : (/^[A-Za-z]\.[A-Za-z0-9]+\./.test(String(p.codigo||'')) ? String(p.codigo).split('.')[0].toUpperCase() : (famInfo(raizSel).classe || ''));
+    : (/^[A-Za-z]\.[A-Za-z0-9]+\./.test(String(p.codigo||'')) ? String(p.codigo).split('.')[0].toUpperCase() : (famInfo(raizSel).classe || classeArv || ''));
   const optsClasse = '<option value="">—</option>' + (_artClasses||[]).map(c =>
     '<option value="'+_esc(c.codigo)+'"'+(String(c.codigo)===classeSel?' selected':'')+'>'+_esc(c.codigo)+' — '+_esc(c.nome||'')+'</option>').join('');
   const raizes = [...new Set(_artFams.map(f => String(f.codigo).split('.')[0]))].sort();
@@ -6797,7 +6807,8 @@ async function artJanela(codigo, opts){
   b.style.display = 'flex';
   artSubs(fam);
   artIdSync();
-  if (copiaDe) artProximo();   // cópia: família já escolhida → propõe o próximo código livre
+  if (copiaDe || (!_artEdit && fam)) artProximo();   // cópia ou pasta da árvore: família já escolhida → propõe o próximo código livre
+  if (!_artEdit && classeArv && !fam) artClasseMudou();   // (03/11/2026) só a classe marcada: lista só as famílias dela
   if (_artEdit){
     try {
       const s = await mntFetch('/manutencao/api/estoque-saldos?peca_codigo=' + encodeURIComponent(_artEdit));
@@ -8572,6 +8583,8 @@ document.addEventListener('DOMContentLoaded', function(){
   // (20/10/2026) QR da etiqueta: /manutencao?peca=CÓDIGO abre Materiais já na ficha do item
   // (27/10/2026) links de aviso no computador: ?ot= ?pedido= ?eq= ?func= ?abast=1 (vindos do sino do Admin)
   try { const q = window._LINK_Q || new URLSearchParams(location.search); if (['ot','pedido','eq','func','abast'].some(k => q.get(k))) { history.replaceState(null, '', location.pathname); setTimeout(() => abrirDeLink(q), 900); } } catch(e){}
+  // (04/11/2026) ?guia=triagem abre a demonstração guiada direto
+  try { const gq = (window._LINK_Q || new URLSearchParams(location.search)).get('guia'); if (gq) { history.replaceState(null, '', location.pathname); setTimeout(() => guiaAbrir(gq), 1500); } } catch(e){}
   try { const pc = (window._LINK_Q || new URLSearchParams(location.search)).get('peca'); if (pc) { history.replaceState(null, '', location.pathname); showModule('alm'); setTimeout(() => { mwSel('alm', pc); abrirPeca(pc); }, 600); } } catch(e){}
 });
 </script>
