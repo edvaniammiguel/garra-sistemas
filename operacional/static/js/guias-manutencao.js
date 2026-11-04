@@ -79,15 +79,25 @@ window.GUIAS_MANUTENCAO = {
       { alvo: () => document.querySelector('#eq-ficha table.tbl tbody tr'), titulo: 'Abrir a nota',
         texto: 'Clique na linha: abre a janela de abastecimentos <b>do equipamento</b>, com a foto da nota e do painel, para conferir ou corrigir. Ao fechar, você volta a esta lista.' },
       { alvo: '#ab-posto', posicao: 'esquerda',
-        antes: async () => { const it = (_abcf.itens || []).find(x => x.equipamento_id); if (it) { _abcfVoltar = true; await equipAbastecimentos(it.equipamento_id); await new Promise(r => setTimeout(r, 700)); } },
+        antes: async () => { const it = (_abcf.itens || []).find(x => x.equipamento_id); if (it) { _abcfVoltar = true; window._gcfEq = it.equipamento_id; await equipAbastecimentos(it.equipamento_id); await new Promise(r => setTimeout(r, 700)); } },
         titulo: 'Corrigir ou lançar pelo computador',
         texto: 'Aqui você <b>corrige</b> o que a foto leu errado (posto, cupom, litros, leitura) ou <b>lança uma nota</b> que não veio pelo app. Posto novo: o botão ao lado renomeia e acerta o CNPJ. Lembre: o cupom é único por posto.' },
       { alvo: () => document.querySelector('#eq-ficha button[title^="Marcar como conferida"]') || document.querySelector('#eq-ficha [title="Voltar a pendente"]') || [...document.querySelectorAll('#eq-ficha th')].find(t => /CONFER/i.test(t.textContent)), titulo: '✔ Conferir',
-        texto: 'Olhou a foto, bateu com os números? <b>✔ Conferir</b> na nota. Marcou errado? ↩ volta a pendente. Na lista da frota há também <b>"Conferir todos sem alerta"</b> para o dia tranquilo.' },
+        texto: 'Olhou a foto, bateu com os números? <b>✔ Conferir</b> na nota. Marcou errado? ↩ volta a pendente. Na lista da frota há também <b>"Conferir todos sem alerta"</b> para o dia tranquilo. E quando o alerta é de <b>horímetro/KM</b>? Dois casos, a seguir.' },
+      { alvo: () => document.querySelector('#eq-ficha tr[ondblclick*="abEditar"]') || document.querySelector('#eq-ficha table tbody tr'), titulo: 'Conflito de horímetro / KM — caso 1: o erro está na nota',
+        texto: 'Alerta <b>"leitura fora da sequência"</b>: a leitura da nota ficou <b>menor que a anterior</b> ou deu um salto grande. Primeiro olhe a <b>foto do painel</b>. Se o operador (ou a leitura automática) errou o número, <b>dê duplo clique no registro</b> — os campos de cima são preenchidos para editar.' },
+      { alvo: '#ab-leitura', posicao: 'esquerda',
+        antes: async () => { try { const i = (typeof _abLista !== 'undefined' ? _abLista : []).findIndex(a => a.destino_tipo !== 'galao' && a.origem !== 'galao'); if (i >= 0 && typeof abEditar === 'function') abEditar(i, window._gcfEq); } catch (e) { } },
+        titulo: 'Digite a leitura certa e salve',
+        texto: 'Corrija o campo <b>Leitura</b> (horímetro em horas; KM nos caminhões) com o número do painel e clique em <b>💾 Salvar alterações</b>. O sistema recalcula o consumo e, se a leitura voltou para a sequência, o alerta some. Litros, preço e cupom corrigem-se do mesmo jeito. Nota rateada entre vários equipamentos: posto e cupom só pelo app.' },
+      { alvo: () => document.querySelector('#eq-ficha tr[style*="FEF2F2"]') || document.querySelector('#eq-ficha table tbody tr'), posicao: 'esquerda',
+        antes: async () => { try { try { _abEdit = null; } catch (e2) { } await equipFuncionamento(window._gcfEq); await new Promise(r => setTimeout(r, 600)); } catch (e) { } },
+        titulo: 'Caso 2: a nota está certa, a leitura anterior é que está errada',
+        texto: 'Se a foto confirma a leitura da nota, o problema é um registro <b>anterior</b> absurdo (ex.: 19.000 em vez de 1.900) — ele vira "última leitura conhecida" e rejeita todas as corretas depois dele. Abra o <b>📈 Registro Funcionamento</b> (botão direito no equipamento): as linhas em <b>vermelho ⚠</b> têm salto ou recuo. <b>✏️</b> corrige só a leitura, <b>✕</b> exclui só a leitura (a parte, o checklist ou a nota continuam como estão). Motivo obrigatório — vai ao diário; <b>↺</b> desfaz. Depois volte à nota e marque ✔ conferida.' },
       { alvo: () => [...document.querySelectorAll('#eq-ficha .mono')].find(e => /FMD|h|km/.test(e.textContent)) || document.querySelector('#eq-ficha .muted'), titulo: 'A leitura vira preventiva',
         texto: 'O horímetro/KM da nota entra no <b>Registro de Funcionamento</b> e no <b>FMD-R</b> (média por dia) — é isso que move as revisões. Leitura divergente é guardada, mas <b>não atualiza</b> o equipamento até você conferir. Equipamento sem leitura há mais de 7 dias não gira preventiva: cobre a foto.' },
       { titulo: 'Pronto! ✅',
-        texto: 'Rotina diária: <b>Frota › Ferramentas › Conferência</b> → ontem + hoje → olhar alertas → corrigir → ✔ conferir. Dia 15 fecha a competência das notas de posto e elas vão para o balcão <b>Notas a lançar</b> (financeiro). O passo a passo completo está no <b>POP-MNT-04</b>.' },
+        texto: 'Rotina diária: <b>Frota › Ferramentas › Conferência</b> → ontem + hoje → olhar alertas → corrigir → ✔ conferir. Conflito de horímetro/KM: erro na nota → duplo clique e corrija; erro na leitura anterior → Registro Funcionamento, ✏️ ou ✕ com motivo. Dia 15 fecha a competência das notas de posto e elas vão para o balcão <b>Notas a lançar</b> (financeiro). O passo a passo completo está no <b>POP-MNT-04</b>.' },
     ],
   },
 };
@@ -95,7 +105,7 @@ window.GUIAS_MANUTENCAO = {
 // Abertura: botão ▶ Como fazer na barra superior e deep link ?guia=<nome>
 window.guiaAbrir = function (nome) {
   const g = window.GUIAS_MANUTENCAO[nome]; if (!g || !window.GarraGuia) return;
-  g.aoSair = () => { try { document.getElementById('eq-ficha').classList.remove('show'); } catch (e) { } };
+  g.aoSair = () => { try { _abEdit = null; } catch (e) { } try { document.getElementById('eq-ficha').classList.remove('show'); } catch (e) { } };
   GarraGuia.iniciar(g);
 };
 window.guiaMenu = function (ev) {
