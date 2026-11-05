@@ -136,7 +136,10 @@
     <button type="button" class="btn-ditar" data-ditar="ap-relato">🎤 Ditar</button>
     <label>Horas trabalhadas neste serviço (mão de obra)</label>
     <input id="ap-horas" type="number" step="0.25" min="0" inputmode="decimal" placeholder="ex.: 2,5">
-    <label>Horímetro/KM no serviço (opcional)</label>
+    <!-- (05/11/2026) Não barra, mas é importante: a preventiva e o custo por h/km dependem desta leitura.
+         O rótulo muda para Horímetro ou KM conforme a medição do equipamento da OT. -->
+    <label><span id="ap-hor-rot">Horímetro/KM</span> no serviço <span style="color:#B45309;font-weight:800">⚠ importante</span></label>
+    <div class="muted" style="margin:-4px 0 4px;font-size:12px">Leia no painel da máquina. Sem ela, a preventiva e o custo por hora/km ficam sem referência.</div>
     <input id="ap-hor" type="number" step="0.1" inputmode="decimal">
     <!-- (14/10/2026) Fotos: notinhas (cupom/NF de peça ou serviço comprado) e fotos do serviço.
          Comprimidas no aparelho (~1600 px, JPEG), sobem para o Storage e ficam na aba Documentos da OT. -->
@@ -239,6 +242,7 @@ async function entrar(){
 async function carregarFrota(){
   try {
     const eqs = await api('/manutencao/api/equipamentos-basico');
+    eqs.forEach(e => { FROTA_MED[e.codigo] = (e.medicao || 'h'); });   // (05/11/2026) h/km por equipamento
     document.getElementById('pd-eq').innerHTML = '<option value="">— escolher —</option>'
       + eqs.map(e => '<option value="' + e.id + '">' + e.codigo + ' — ' + (e.descricao || '') + '</option>').join('');
   } catch(e){ toast('❌ ' + e.message, 'erro'); }
@@ -454,8 +458,12 @@ async function apSubirFotos(tipo, apId){
 function _esc(s){ return String(s || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\n/g, ' '); }
 function _h(s){ return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
 let AP_VOLTA = 'minhas';
+const FROTA_MED = {};      // (05/11/2026) codigo → 'h' | 'km'
+let AP_MED = 'h';
 function apAbrir(otId, otNum, eq, desc){
   AP_OT = otId; AP_VOLTA = document.getElementById('tela-ots').style.display !== 'none' ? 'ots' : 'minhas';
+  AP_MED = (FROTA_MED[eq] === 'km') ? 'km' : 'h';
+  const rot = document.getElementById('ap-hor-rot'); if (rot) rot.textContent = AP_MED === 'km' ? 'KM' : 'Horímetro';
   AP_FOTOS = { nota: [], servico: [] }; apFotosRender('nota'); apFotosRender('servico');
   const pg = document.getElementById('ap-prog'); if (pg) pg.textContent = '';
   // (14/10/2026) OT + equipamento na mesma linha: com várias OTs abertas o mecânico
@@ -494,6 +502,9 @@ async function apEnviar(){
   if (concluido && horas === null && !jaTemHoras){ toast('Para concluir, informe as horas trabalhadas', 'erro'); elHoras.focus(); return; }
   if (hor !== null && (isNaN(hor) || hor <= 0)){ toast('Horímetro/KM inválido', 'erro'); elHor.focus(); return; }
   if (!concluido && horas === null && !confirm('Registrar sem horas trabalhadas?')) { elHoras.focus(); return; }
+  // (05/11/2026) Ao CONCLUIR sem leitura: avisa (não barra). Cancelar = volta ao campo; OK = conclui assim mesmo.
+  if (concluido && hor === null && !AP_ITENS.some(a => a.horimetro != null)
+      && !confirm('⚠ ' + (AP_MED === 'km' ? 'KM' : 'Horímetro') + ' não informado.\n\nÉ muito importante: a preventiva e o custo por ' + AP_MED + ' desta máquina dependem dessa leitura.\n\nConcluir mesmo assim?')) { elHor.focus(); return; }
   if (soConcluir && !confirm('Sinalizar esta OT como concluída, sem novo registro?')) return;
   const btn = document.getElementById('ap-btn'), pg = document.getElementById('ap-prog');
   try {

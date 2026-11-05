@@ -5617,9 +5617,9 @@ async def equipamentos_basico(_auth=Depends(verificar_pedir_ot)):
     """Frota enxuta para o mobile do mecânico (qualquer logado): só o
     necessário para escolher a máquina do pedido."""
     rows = await ajard_query(
-        """SELECT id, codigo, descricao FROM operacional.equipamentos
+        """SELECT id, codigo, descricao, medicao FROM operacional.equipamentos
            WHERE ativo=true AND COALESCE(categoria,'') <> 'apoio'
-           ORDER BY codigo""")
+           ORDER BY codigo""")   # (05/11/2026) medicao (h/km): o app rotula "Horímetro" ou "KM" no registro de execução
     return [dict(r) for r in rows]
 
 

@@ -129,7 +129,7 @@ function _gpPassos(executor) {
   P.push({ alvo: '#ap-horas', titulo: 'Horas trabalhadas',
     texto: 'As horas de <b>mão de obra deste serviço</b> (ex.: 2,5). Vão para a OT como custo de mão de obra interna. <b>Obrigatórias ao concluir</b> — sem elas a OT fecha sem custo. Registro parcial pode ir sem horas (o app pergunta antes).' });
   P.push({ alvo: '#ap-hor', titulo: 'Horímetro / KM no serviço',
-    texto: 'Mesmo marcado como opcional, <b>informe sempre</b> a leitura do painel na hora do serviço: é com ela que a gestão fecha a OT e que a próxima preventiva é calculada. Só deixe em branco se o painel estiver sem leitura — e escreva isso no relato.' });
+    texto: 'O campo mostra <b>Horímetro</b> ou <b>KM</b> conforme a máquina. Não barra o registro, mas é <b>muito importante</b>: é com essa leitura que a gestão fecha a OT e que a próxima preventiva é calculada. Ao concluir sem ela, o app avisa. Só deixe em branco se o painel estiver sem leitura — e escreva isso no relato.' });
   P.push({ alvo: () => document.querySelector('#tela-apont .fbtn'), titulo: 'Notinhas × fotos do serviço',
     texto: 'Dois campos separados, não misture. <b>🧾 Notinhas</b>: cupom ou nota de peça/serviço comprado na rua — é por ela que o financeiro lança a despesa. <b>🔧 Fotos do serviço</b>: peça trocada, antes/depois. <b>📷 Tirar foto</b> abre a câmera; <b>🖼 Galeria</b> pega fotos já tiradas (até 10 por tipo).' });
   P.push({ alvo: () => _gpUniao([document.getElementById('ap-fim') && document.getElementById('ap-fim').closest('label'), document.getElementById('ap-btn'), _gpVisivel('ap-so-concluir')]) || document.getElementById('ap-btn'),

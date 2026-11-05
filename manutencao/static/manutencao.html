@@ -4203,7 +4203,7 @@ function otEncerrarDialogo(id){
       + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><b style="color:#1A2A5E">🗂️ Encerrar '+_esc(o.numero||'OT')+' — '+_esc(o.equipamento_codigo||'')+'</b><span id="ote-x" style="cursor:pointer;font-size:16px">✕</span></div>'
       + '<div style="display:flex;gap:8px;flex-wrap:wrap">'
       + '<div class="mfield" style="width:200px">Data/hora de conclusão *<input id="ote-data" type="datetime-local" value="'+dtSug+'" max="'+_local(new Date())+'"></div>'
-      + '<div class="mfield" style="width:160px">'+(km?'Km':'Horímetro')+' na conclusão ('+unid+')<input id="ote-hor" inputmode="decimal" value="'+_esc(horSug)+'" placeholder="'+(contador != null ? 'contador: '+contador : 'leitura')+'"></div>'
+      + '<div class="mfield" style="width:190px">'+(km?'Km':'Horímetro')+' na conclusão ('+unid+') <span style="color:#B45309;font-weight:800" title="Não barra o encerramento, mas a preventiva e o custo por '+unid+' dependem desta leitura">⚠ importante</span><input id="ote-hor" inputmode="decimal" value="'+_esc(horSug)+'" placeholder="'+(contador != null ? 'contador: '+contador : 'leitura')+'"></div>'
       + '<div class="mfield" style="flex:1;min-width:150px;align-self:flex-end"><span class="muted" style="font-size:10px">'+(contador != null ? 'Contador atual do equipamento: <b>'+_esc(contador)+' '+unid+'</b>' : 'Equipamento sem contador registrado')+(comHor ? ' · do app: '+_esc(comHor.horimetro) : '')+'</span></div>'
       + '</div>'
       + '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px">'
@@ -4226,6 +4226,9 @@ function otEncerrarDialogo(id){
       const hor = g('ote-hor');
       if (hor !== '' && isNaN(parseFloat(hor.replace(',', '.')))) { mostrarToast('🔢 Leitura inválida', 'warn'); return; }
       if (hor !== '' && contador != null && parseFloat(hor.replace(',', '.')) < parseFloat(contador) * 0.5) { if (!confirm('A leitura '+hor+' está bem abaixo do contador atual ('+contador+' '+unid+'). Confirmar mesmo assim?')) return; }
+      // (05/11/2026) Leitura vazia não barra o encerramento (decisão Edvania), mas avisa: sem ela a preventiva
+      // e o custo por hora/km do equipamento ficam sem referência. OK = encerra assim mesmo; Cancelar = volta ao campo.
+      if (hor === '' && !confirm('⚠ '+(km?'KM':'Horímetro')+' na conclusão não informado.\n\nÉ muito importante: a preventiva e o custo por '+unid+' deste equipamento dependem dessa leitura.\n\nEncerrar mesmo assim?')) { const e = document.getElementById('ote-hor'); if (e) e.focus(); return; }
       fechar({ data_conclusao: new Date(dt).toISOString(), horimetro: hor === '' ? null : parseFloat(hor.replace(',', '.')),
                custo: n(g('ote-custo')), horas_parada: n(g('ote-hp')), obs: g('ote-obs') || null });
     };
