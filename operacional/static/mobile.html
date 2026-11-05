@@ -384,6 +384,8 @@ input,select,textarea{font-family:inherit;outline:none;border:none}
         <button id="op-tab-os" class="nav-btn" style="border-bottom:3px solid var(--orange);color:var(--orange);flex:1;padding:12px" onclick="opTab('os')">📋 Minhas OS</button>
         <button id="op-tab-hist" class="nav-btn" style="border-bottom:3px solid transparent;color:var(--muted);flex:1;padding:12px" onclick="opTab('hist')">🕐 Histórico</button>
       </div>
+      <!-- (05/11/2026) Tour guiado (GarraGuia): link discreto no topo da aba OS — abre o menu dos roteiros -->
+      <div id="guia-link-op" style="text-align:right;padding:6px 14px 0"><a href="#" onclick="guiaMenu(event);return false" style="color:#16A34A;font-size:12px;font-weight:700;text-decoration:none">▶ Como fazer</a></div>
       <div id="os-lista"></div>
       <!-- Botão flutuante + Nova OS -->
       <button id="btn-nova-os-fab" onclick="abrirModalNovaOS()" style="position:fixed;bottom:90px;right:16px;width:56px;height:56px;border-radius:50%;background:var(--orange);color:#fff;border:none;font-size:28px;font-weight:bold;box-shadow:0 4px 14px rgba(232,130,12,.4);cursor:pointer;z-index:50;display:none">+</button>
@@ -872,10 +874,12 @@ function carregarIframeExterno(chave, path) {
 }
 
 // Carrega o iframe do checklist com SSO e aba alvo
-function carregarIframeChecklist(tab) {
+function carregarIframeChecklist(tab, extra) {
+  // (05/11/2026) extra = query adicional (ex.: "guia=operador") — tour guiado dentro do iframe; com extra o iframe
+  // recarrega sempre, para o ?guia= chegar mesmo que a aba já esteja aberta.
   const sec = document.getElementById('sec-check');
   const token = localStorage.getItem('garra_token') || '';
-  const url = `/checklist?sso=${encodeURIComponent(token)}&tab=${tab}&embedded=1`;
+  const url = `/checklist?sso=${encodeURIComponent(token)}&tab=${tab}&embedded=1` + (extra ? '&' + extra : '');
   // Recria iframe só se aba mudou ou ainda não existe
   let iframe = sec.querySelector('iframe');
   if (!iframe) {
@@ -885,7 +889,7 @@ function carregarIframeChecklist(tab) {
     sec.innerHTML = '';
     sec.appendChild(iframe);
   }
-  if (iframe.dataset.tab !== tab) {
+  if (iframe.dataset.tab !== tab || extra) {
     iframe.src = url;
     iframe.dataset.tab = tab;
   }
@@ -2349,6 +2353,8 @@ function abrirPainelConta() {
         <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px">Mural</div>
         <div id="mural-avisos-mob" style="margin-bottom:12px"><div style="font-size:12px;color:var(--muted);text-align:center">Carregando...</div></div>
         <button onclick="document.getElementById('modal-conta').remove();abrirCartilhaMobile()" style="width:100%;padding:11px;background:var(--blue);color:#fff;border:none;border-radius:8px;font-weight:700;font-size:13px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px">📖 Manual do colaborador</button>
+        <!-- (05/11/2026) Tour guiado (GarraGuia) — demonstrações na tela real -->
+        <button id="btn-guia-conta" onclick="document.getElementById('modal-conta').remove();guiaMenu(event)" style="width:100%;margin-top:8px;padding:11px;background:#16A34A;color:#fff;border:none;border-radius:8px;font-weight:700;font-size:13px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px">▶ Como fazer — demonstrações</button>
       </div>
 
       <!-- 2a. NOTIFICAÇÕES NESTE APARELHO -->
@@ -2494,7 +2500,11 @@ function abrirLinkApp(link) {
     else if (u.pathname.indexOf('/compras') === 0) { ir('OC'); _iframeExtra('oc', '/compras', q); }
     else if (u.pathname.indexOf('/manutencao/pedido') === 0) { ir('OT'); _iframeExtra('ot', '/manutencao/pedido', q); }
     else if (u.pathname.indexOf('/abastecimento') === 0) { ir('AB'); if (q) _iframeExtra('ab', '/abastecimento', q); }   // (04/11/2026) ?guia=… chega ao iframe
-    else if (u.pathname === '/mobile') { var a = u.searchParams.get('aba'); if (a) ir(a); }
+    else if (u.pathname === '/checklist') {   // (05/11/2026) /checklist?guia=operador|gestor|logistica&tab=… → aba Checklist (ou Logística) com o tour
+      var gq = u.searchParams.get('guia'), tb = u.searchParams.get('tab') === 'logistica' || gq === 'logistica' ? 'logistica' : 'checklist';
+      ir(tb === 'logistica' ? 'Log' : 'Check'); if (gq) carregarIframeChecklist(tb, 'guia=' + encodeURIComponent(gq));
+    }
+    else if (u.pathname === '/mobile') { var a = u.searchParams.get('aba'); if (a) ir(a); var g = u.searchParams.get('guia'); if (g && window.guiaAbrir) setTimeout(function(){ guiaAbrir(g); }, 800); }   // (05/11/2026) ?guia= abre o tour
     else if (u.pathname.indexOf('/manutencao') === 0 || u.pathname.indexOf('/admin') === 0) { window.open(link, '_blank'); }
   } catch(e) {}
 }
@@ -2509,8 +2519,10 @@ if ('serviceWorker' in navigator) {
   navigator.serviceWorker.addEventListener('message', function(e){ if (e.data && e.data.type === 'GARRA_ABRIR' && e.data.link) abrirLinkApp(e.data.link); });
 }
 // app aberto a partir de uma notificação com a janela fechada: /mobile?abrir=<link>
+// (05/11/2026) /mobile?guia=parte|app — o tour guiado lê window._GUIA_Q (capturado antes do replaceState)
+try { window._GUIA_Q = new URLSearchParams(location.search).get('guia'); } catch(e) { window._GUIA_Q = null; }
 function _abrirPendenteDaNotificacao() {
-  try { var l = new URLSearchParams(location.search).get('abrir'); if (l) { history.replaceState(null, '', location.pathname); setTimeout(function(){ abrirLinkApp(l); }, 600); } } catch(e) {}
+  try { var p = new URLSearchParams(location.search), l = p.get('abrir'); if (l || p.get('guia')) history.replaceState(null, '', location.pathname); if (l) { setTimeout(function(){ abrirLinkApp(l); }, 600); } } catch(e) {}
 }
 
 // ── push neste aparelho ──
@@ -3495,6 +3507,9 @@ async function entrarComDigital(automatico) {
 
 <!-- Offline UI e outros scripts -->
 <script src="/operacional/static/js/offline-ui.js"></script>
+<!-- (05/11/2026) Tour guiado "▶ Como fazer" (GarraGuia): roteiros Parte diária e Conhecendo o app -->
+<script src="/operacional/static/js/guia.js"></script>
+<script src="/operacional/static/js/guias-app.js"></script>
 
 </body>
 </html>

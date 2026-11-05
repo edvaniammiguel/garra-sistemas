@@ -2428,7 +2428,8 @@ const _NE_SEL = {
           // (18/10/2026) Abre com a fam\u00edlia CB (combust\u00edveis); digitar procura no servidor em todo o cat\u00e1logo (4 mil itens, a lista local era s\u00f3 os 100 primeiros)
           carregar: async()=>{ const r = await mntFetch('/manutencao/api/pecas?familia=CB&limit=300'); return (Array.isArray(r)?r:(r.itens||[])).map(x=>({id:x.id||x.codigo, cod:x.codigo, nome:x.descricao})); },
           buscar: async(q)=>{ const r = await mntFetch('/manutencao/api/pecas?busca='+encodeURIComponent(q)+'&limit=300'); return (Array.isArray(r)?r:(r.itens||[])).map(x=>({id:x.id||x.codigo, cod:x.codigo, nome:x.descricao})); },
-          novo: { campos:[['codigo','C\u00f3digo','text'],['descricao','Descri\u00e7\u00e3o','text'],['unidade','Unidade (L)','text']], post: async d => { const r = await mntFetch('/manutencao/api/pecas',{method:'POST',body:JSON.stringify(d)}); return {id:(r&&r.id)||'', cod:d.codigo, nome:d.descricao}; } } },
+          // (05/11/2026) unidade tem de existir no cadastro (Parametrizar \u203a Unidades); vazio = L
+          novo: { campos:[['codigo','C\u00f3digo','text'],['descricao','Descri\u00e7\u00e3o','text'],['unidade','Unidade (sigla cadastrada, ex.: L)','text']], post: async d => { d.unidade = (d.unidade || 'L').toUpperCase(); const r = await mntFetch('/manutencao/api/pecas',{method:'POST',body:JSON.stringify(d)}); return {id:(r&&r.id)||'', cod:d.codigo, nome:d.descricao}; } } },
   forn: { titulo:'Fornecedores', icone:'\ud83c\udfed', carregar: async()=>{ const r = await mntFetch('/manutencao/api/fornecedores'); return (Array.isArray(r)?r:(r.itens||[])).map(f=>({id:f.id, cod:f.cnpj||'', nome:f.nome})); },
           aplicar: it => { const el=document.getElementById('ne-forn'); if(!el) return; if(![...el.options].some(o=>o.value===String(it.id))){ const o=document.createElement('option'); o.value=it.id; o.textContent=it.nome; el.appendChild(o);} el.value = it.id; },
           novo: { campos:[['nome','Nome','text'],['cnpj','CNPJ','text'],['telefone','Telefone','text'],['email','E-mail','email']], post: async d => { const r = await mntFetch('/manutencao/api/fornecedores',{method:'POST',body:JSON.stringify(d)}); fornCacheLimpar(); return {id:(r&&r.id)||'', cod:d.cnpj||'', nome:d.nome}; } },
@@ -6700,9 +6701,34 @@ function pecaSalvarObs(){
 async function novaPeca(){ artJanela(null); }
 let _artEdit = null, _artFams = null, _artClasses = null;
 let _artDepois = null;   // (10/10/2026) chamada a partir da baixa na OT: devolve o item criado à janela de origem
+// (05/11/2026) Unidades de medida: lista única (Parametrizar › Materiais › Unidades) — a ficha escolhe, não digita
+let _artUnids = null;
+async function artUnidades(force){
+  if (_artUnids === null || force) {
+    try { _artUnids = (await mntFetch('/manutencao/api/param/unidades')).filter(u => u.ativo !== false); } catch(e){ _artUnids = [{codigo:'UN',nome:'Unidade'}]; }
+  }
+  return _artUnids;
+}
+function artUnidOpts(sel){
+  sel = String(sel || 'UN').toUpperCase();
+  const lista = (_artUnids || []).slice();
+  if (!lista.some(u => u.codigo === sel)) lista.push({ codigo: sel, nome: '(não cadastrada)' });   // ficha antiga nunca perde a unidade
+  return lista.map(u => '<option value="'+_esc(u.codigo)+'"'+(u.codigo===sel?' selected':'')+'>'+_esc(u.codigo)+(u.nome&&u.nome!==u.codigo?' — '+_esc(u.nome):'')+'</option>').join('');
+}
+async function artUnidRecarregar(){ const s = document.getElementById('art-un'); if (!s) return; const v = s.value; await artUnidades(true); s.innerHTML = artUnidOpts(v); }
+function artUnidParam(){
+  // abre Parametrizar › Unidades de medida; ao voltar à ficha, a lista é relida (botão ↻ ou ao reabrir)
+  const j = document.getElementById('art-jan'); if (j) j.style.display = 'none';
+  showModule('param'); montarParamNav();
+  const grp = PARAM_GRUPOS.findIndex(g => g.itens.some(i => i[0] === 'unidades'));
+  if (grp >= 0 && !document.getElementById('pg-body-'+grp).classList.contains('open')) togglePGrp(grp);
+  abrirParamPane('unidades', 'dom', 'Unidades de medida');
+  mostrarToast('Cadastre a unidade e volte à ficha da peça (Materiais) — a lista é recarregada ao reabrir.', 'ok');
+}
 async function artJanela(codigo, opts){
   // réplica da janela "Novo Item" do ManWinWin (print 28/08)
   _artDepois = (opts && typeof opts.depois === 'function') ? opts.depois : null;
+  await artUnidades(true);   // (05/11/2026) sempre fresca: pode ter sido cadastrada agora em Parametrizar
   if (_artFams === null) {
     // (19/10/2026) Norma de materiais = famílias ativas + toda família que já tem peça no catálogo
     // (mesmo sem nome cadastrado). Famílias de objetos ficam em tabela própria e não entram aqui.
@@ -6768,7 +6794,9 @@ async function artJanela(codigo, opts){
     + '<div class="mfield" style="width:150px">Código *'+(_artEdit?' (fixo)':' (editável)')+'<input id="art-cod" value="'+_esc(p.codigo||'')+'"'+(_artEdit?' readonly style="background:#F8FAFC"':' placeholder="escolha a família ou digite" oninput="_artCodAuto=false;artCodCheck()" style="font-weight:800;color:#1A2A5E"')+'></div>'
     + '</div><div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px">'
     + '<div class="mfield" style="width:150px">Cód. Fabricante<input id="art-fab" value="'+_esc(p.codigo_fabricante||'')+'" placeholder="part number"></div>'
-    + '<div class="mfield" style="width:70px">UN<input id="art-un" list="art-uns" value="'+_esc(p.unidade||'UN')+'"><datalist id="art-uns"><option>UN</option><option>LT</option><option>KG</option><option>CJ</option><option>M</option><option>PC</option><option>PAR</option></datalist></div>'
+    // (05/11/2026) unidade escolhida da lista cadastrada (antes: texto livre com sugestões) · ⚙ abre o cadastro
+    + '<div class="mfield" style="width:190px">Unidade<div style="display:flex;gap:4px"><select id="art-un" style="flex:1" title="Unidade de medida — Parametrizar › Materiais › Unidades">'+artUnidOpts(p.unidade)+'</select>'
+    + '<button class="btn" type="button" title="Cadastrar / editar unidades (Parametrizar)" onclick="artUnidParam()" style="padding:0 7px">⚙</button></div></div>'
     + '<div class="mfield" style="width:110px">Custo Unitário<input id="art-custo" type="number" step="0.01" value="'+(p.custo_medio!=null?parseFloat(p.custo_medio):'')+'"></div>'
     + '</div>'
     + '<div class="mfield">Descrição *<input id="art-desc" value="'+_esc(p.descricao||'')+'"></div>'
@@ -7000,6 +7028,7 @@ const PARAM_MAP = {
   familias:  { dom:'familias',               titulo:'Famílias de materiais', pk:'codigo' },
   famobj:    { dom:'familias-objetos',       titulo:'Famílias de objetos',   pk:'codigo' },
   classmat:  { dom:'classes-materiais',      titulo:'Classes de materiais (Norma: Classe → Família → Subfamília)', pk:'codigo' },   // (19/10/2026)
+  unidades:  { dom:'unidades',               titulo:'Unidades de medida das peças (sigla · nome) — a ficha da peça só aceita o que está aqui', pk:'codigo' },   // (05/11/2026)
   periodos:  { dom:'periodos',               titulo:'Períodos',              pk:'codigo' },
   tipofer:   { dom:'tipos-ferramenta',       titulo:'Tipos de ferramenta',   pk:'codigo' },
   tipodoc: { dom:'tipos-documento', titulo:'Tipos de documento', pk:'codigo' },
@@ -7049,6 +7078,7 @@ const PARAM_GRUPOS = [
     ['almoxes','almox','Almoxarifados (locais)'],
     ['classmat','dom','Classes de materiais'],
     ['familias','dom','Famílias e subfamílias de materiais'],
+    ['unidades','dom','Unidades de medida (UN, PC, JG, KIT, L…)'],   // (05/11/2026)
     ['artigos','alm','Peças (acervo)'],
     ['refforn','fila','Referências de fornecedor'] ]},
   { t:'💰 Custos', itens:[

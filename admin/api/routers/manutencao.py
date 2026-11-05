@@ -3016,6 +3016,17 @@ async def _garantir_peca_cols():
     _PECA_COLS_OK = True
 
 
+async def _validar_unidade(u):
+    """(05/11/2026) Unidade da peça tem de existir (ativa) em manutencao.unidades — Parametrizar › Materiais."""
+    u = (u or "UN").strip().upper()
+    await _garantir_dominios()
+    ok = await ajard_query("SELECT 1 FROM manutencao.unidades WHERE codigo=%s AND coalesce(ativo,true)", (u,), fetch="one")
+    if not ok:
+        raise HTTPException(status_code=400,
+                            detail=f"Unidade '{u}' não cadastrada — cadastre em Parametrizar › Materiais › Unidades de medida")
+    return u
+
+
 _CODIGO_DOMINIOS = {
     "peca": "manutencao.pecas",
     "equipamento": "operacional.equipamentos",
@@ -3076,12 +3087,13 @@ async def criar_peca(request: Request, payload=Depends(verificar_manutencao)):
     except ValueError:
         pass
     import json as _json
+    unid = await _validar_unidade(d.get("unidade"))   # (05/11/2026)
     row = await ajard_query_id(
         """INSERT INTO manutencao.pecas
              (codigo, descricao, unidade, familia_codigo, custo_medio,
               codigo_externo, classe, espec_compra, caracteristicas, observacoes, codigo_fabricante)
            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
-        (cod, desc, (d.get("unidade") or "UN").strip().upper(),
+        (cod, desc, unid,
          (d.get("familia_codigo") or "").strip() or None, custo,
          (d.get("codigo_externo") or "").strip() or None,
          (d.get("classe") or "").strip() or None,
@@ -3114,8 +3126,8 @@ async def editar_peca(request: Request, payload=Depends(verificar_manutencao)):
     for c in ["descricao", "unidade", "familia_codigo", "codigo_externo", "observacoes", "classe", "espec_compra", "codigo_fabricante"]:
         if c in d:
             v = (str(d[c]).strip() or None) if d[c] is not None else None
-            if c == "unidade" and v:
-                v = v.upper()
+            if c == "unidade":
+                v = await _validar_unidade(v)   # (05/11/2026) só unidade cadastrada
             sets.append(f"{c}=%s"); params.append(v)
     if "custo_medio" in d:
         try:
@@ -3613,7 +3625,19 @@ _DOMINIOS_PARAM = {
     "tipos-documento": "manutencao.tipos_documento",
     "condicoes-pagamento": "manutencao.condicoes_pagamento",
     "horarios-trabalho": "manutencao.horarios_trabalho",
+    # (05/11/2026) Unidades de medida das peças (UN, PC, JG, KIT, L…): lista única em vez de texto
+    # livre — quem cadastra escolhe o que já existe, sem puxar da memória se é "KIT", "CJ" ou "JG".
+    "unidades": "manutencao.unidades",
 }
+
+# (05/11/2026) carga inicial das unidades; siglas já usadas em pecas.unidade entram sozinhas (migração)
+_UNIDADES_PADRAO = [
+    ("UN", "Unidade"), ("PC", "Peça"), ("PAR", "Par"), ("JG", "Jogo"), ("KIT", "Kit"), ("CJ", "Conjunto"),
+    ("L", "Litro"), ("ML", "Mililitro"), ("KG", "Quilograma"), ("G", "Grama"), ("TON", "Tonelada"),
+    ("M", "Metro"), ("CM", "Centímetro"), ("M2", "Metro quadrado"), ("M3", "Metro cúbico"),
+    ("CX", "Caixa"), ("PCT", "Pacote"), ("RL", "Rolo"), ("GL", "Galão"), ("BD", "Balde"), ("TB", "Tambor"),
+    ("TUBO", "Tubo / bisnaga"), ("FR", "Frasco"), ("SC", "Saco"), ("FD", "Fardo"), ("H", "Hora"), ("SV", "Serviço"),
+]
 
 _DOM_OK = False
 async def _garantir_dominios():
@@ -3657,6 +3681,15 @@ async def _garantir_dominios():
             WHEN 'melhoria' THEN 'M1' WHEN 'reforma' THEN 'M1' ELSE 'C1' END
         WHERE tipo_trabalho IS NULL
            OR tipo_trabalho NOT IN (SELECT codigo FROM manutencao.tipos_manutencao)""", fetch="none")
+    # (05/11/2026) Unidades de medida: padrão + tudo que já está gravado nas peças (nunca quebra ficha antiga)
+    for _u, _n in _UNIDADES_PADRAO:
+        await ajard_query("INSERT INTO manutencao.unidades (codigo, nome) VALUES (%s,%s) ON CONFLICT (codigo) DO NOTHING",
+                          (_u, _n), fetch="none")
+    await ajard_query("""
+        INSERT INTO manutencao.unidades (codigo, nome)
+        SELECT DISTINCT upper(trim(unidade)), upper(trim(unidade)) FROM manutencao.pecas
+         WHERE coalesce(trim(unidade),'') <> ''
+        ON CONFLICT (codigo) DO NOTHING""", fetch="none")
     # (27/09/2026) PT-BR: "planeado" → "planejado" no status dos projetos (valor gravado)
     await _garantir_tabela("projectos")
     await ajard_query("UPDATE manutencao.projectos SET status='planejado' WHERE status='planeado'", fetch="none")
@@ -3951,6 +3984,13 @@ async def excluir_dominio(dominio: str, codigo: str, payload=Depends(verificar_m
     if not tabela:
         raise HTTPException(status_code=404, detail="Domínio não parametrizável")
     pk = "sigla" if "tipos_equipamento" in tabela else "codigo"
+    if tabela == "manutencao.unidades":
+        # (05/11/2026) Integridade: unidade em uso em alguma peça nunca é apagada (não há FK — a regra vive aqui)
+        uso = await ajard_query("SELECT count(*) AS n FROM manutencao.pecas WHERE upper(trim(unidade))=%s",
+                                (codigo.strip().upper(),), fetch="one")
+        if uso and int(uso["n"] or 0) > 0:
+            raise HTTPException(status_code=409,
+                                detail=f"Unidade {codigo.upper()} em uso em {uso['n']} peça(s) — não pode ser excluída. Use Desativar.")
     import asyncpg as _apg
     try:
         await ajard_query(f"DELETE FROM {tabela} WHERE {pk}=%s", (codigo,), fetch="none")
@@ -3991,6 +4031,8 @@ async def upsert_dominio(dominio: str, request: Request, payload=Depends(verific
     if not cod or not nome:
         raise HTTPException(status_code=400, detail="Código e nome são obrigatórios")
     pk = "sigla" if "tipos_equipamento" in tabela else "codigo"
+    if tabela == "manutencao.unidades":   # (05/11/2026) sigla sempre maiúscula, sem espaços
+        cod = cod.upper().replace(" ", "")
     await ajard_query(
         f"""INSERT INTO {tabela} ({pk}, nome) VALUES (%s,%s)
             ON CONFLICT ({pk}) DO UPDATE SET nome=EXCLUDED.nome""",
@@ -6699,6 +6741,7 @@ a{color:var(--azul);font-weight:700;text-decoration:none}
 td input{width:95px;text-align:right;padding:4px 6px}
 img.th{height:44px;border-radius:5px;border:1px solid #E2E8F0;vertical-align:middle;cursor:zoom-in}
 #toast{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:var(--azul);color:#fff;padding:10px 16px;border-radius:9px;display:none;font-weight:700;z-index:9}
+body:has(.gg-ctl) header{padding-right:170px} /* (05/11/2026) controles do tour (🔊 1x ▶) no canto direito */
 </style></head><body>
 <header>
  <span style="display:flex;align-items:center;gap:10px">
@@ -6706,7 +6749,10 @@ img.th{height:44px;border-radius:5px;border:1px solid #E2E8F0;vertical-align:mid
   <b id="hd-fb" style="display:none"><span class="l">GARRA</span></b>
   <b>Notas a lançar — Manutenção e Abastecimento</b>
  </span>
- <span id="quem" style="font-size:12px"></span></header>
+ <span style="display:flex;align-items:center;gap:10px">
+  <!-- (05/11/2026) tour guiado desta tela (guias-notas.js) -->
+  <button onclick="guiaAbrir('lancar')" title="Demonstração guiada desta tela" style="background:#16A34A;border-color:#16A34A;color:#fff;font-weight:700">▶ Como fazer</button>
+  <span id="quem" style="font-size:12px"></span></span></header>
 <main>
  <div class="filtros">
   <div class="f">Origem<select id="f-orig" onchange="carregar()"><option value="todas">Todas</option><option value="ot">Só OTs (manutenção)</option><option value="ab">Só abastecimentos</option></select></div>
@@ -6728,7 +6774,8 @@ img.th{height:44px;border-radius:5px;border:1px solid #E2E8F0;vertical-align:mid
 <script>
 const $=i=>document.getElementById(i);
 (function(){const u=new URL(location.href);const sso=u.searchParams.get('sso')||u.searchParams.get('token');
- if(sso&&sso.length>10){sessionStorage.setItem('garra_notas_token',sso);history.replaceState(null,'',u.pathname);}})();
+ window._GUIA_Q=u.searchParams.get('guia');   /* (05/11/2026) ?guia=lancar → tour guiado depois da 1ª busca (capturado antes do replaceState) */
+ if((sso&&sso.length>10)||window._GUIA_Q){if(sso&&sso.length>10)sessionStorage.setItem('garra_notas_token',sso);history.replaceState(null,'',u.pathname);}})();
 function tok(){return sessionStorage.getItem('garra_notas_token')||sessionStorage.getItem('garra_mnt_token')||localStorage.getItem('garra_adm_token')||'';}
 async function api(u,o){const r=await fetch(u,Object.assign({},o,{headers:Object.assign({'Content-Type':'application/json','Authorization':'Bearer '+tok()},(o&&o.headers)||{})}));
  if(r.status===401){document.body.innerHTML='<div style="padding:40px;text-align:center">🔒 Sessão expirada — abra o <a href="/admin">Admin</a> e clique em Notas de Manutenção</div>';throw new Error('401');}
@@ -6800,4 +6847,8 @@ function excel(){
 (function(){ $('f-mes').value=new Date().toISOString().slice(0,7);
  try{const p=JSON.parse(atob(tok().split('.')[1].replace(/-/g,'+').replace(/_/g,'/')));$('quem').textContent=p.nome||p.login||'';}catch(e){}
  carregar(); })();
-</script></body></html>""")
+</script>
+<!-- (05/11/2026) tour guiado "▶ Como fazer" — motor + roteiro desta tela -->
+<script src="/operacional/static/js/guia.js"></script>
+<script src="/operacional/static/js/guias-notas.js"></script>
+</body></html>""")

@@ -80,6 +80,8 @@
       <b>Novo pedido</b>
       <span class="muted" id="quem"></span>
     </div>
+    <!-- (05/11/2026) Tour guiado (GarraGuia) — guias-pedido.js -->
+    <div class="muted" style="text-align:right;margin:2px 0 0"><a href="#" onclick="guiaAbrir('pedir');return false" style="color:#16A34A;font-weight:700">▶ Como fazer (demonstração)</a></div>
     <label>Equipamento</label>
     <select id="pd-eq"><option value="">— escolher —</option></select>
     <label>O que está acontecendo? *</label>
@@ -177,7 +179,9 @@
 const API = '';
 (function(){
   try {
-    const sso = new URLSearchParams(location.search).get('sso');
+    const _q = new URLSearchParams(location.search);
+    window._GUIA_Q = _q.get('guia');   // (05/11/2026) ?guia=pedir → tour guiado depois de entrar (antes do replaceState)
+    const sso = _q.get('sso');
     if (sso && sso.length > 10) {
       localStorage.setItem('garra_tok_pedido', sso);
       history.replaceState(null, '', location.pathname);
@@ -556,5 +560,8 @@ async function apEnviar(){
   });
 })();
 </script>
+<!-- (05/11/2026) Tour guiado "▶ Como fazer" — motor + roteiro desta tela -->
+<script src="/operacional/static/js/guia.js"></script>
+<script src="/operacional/static/js/guias-pedido.js"></script>
 </body>
 </html>

@@ -32,6 +32,12 @@ header{background:var(--blue);border-bottom:3px solid var(--orange);padding:0 16
 .con{font-size:11px;font-weight:700;padding:4px 10px;border-radius:99px;background:#64748B;color:#fff;white-space:nowrap;cursor:default}
 .con.ok{background:var(--green)}.con.mal{background:var(--red);cursor:pointer}.con.sim{background:#7C3AED}
 .btn-hd{background:rgba(255,255,255,.15);color:#fff;border-radius:8px;padding:7px 10px;font-size:13px;font-weight:700}
+/* (05/11/2026) ▶ Como fazer — tour guiado (guias-atendimento.js): verde no cabeçalho (computador); no celular, onde o cabeçalho some, um ▶ ao lado da busca */
+.btn-hd.guia{background:#16A34A}
+.so-emb{display:none}.embedded .so-emb{display:inline-block;color:#16A34A;border-color:#16A34A}
+/* enquanto o tour roda, os controles dele (🔊 1x ▶) ficam no canto superior direito: abre espaço para não cobrir ⚙ Configurar / ＋ */
+body:has(.gg-ctl) #hdr-dir{padding-right:150px}
+html.embedded body:has(.gg-ctl) .topo-lista{padding-top:58px}
 
 .shell{display:flex;height:calc(100dvh - 56px)}
 .embedded .shell{height:100dvh}
@@ -182,6 +188,7 @@ header{background:var(--blue);border-bottom:3px solid var(--orange);padding:0 16
   </div>
   <div class="hr" id="hdr-dir">
     <span class="con" id="con" title="Conexão do WhatsApp">…</span>
+    <button class="btn-hd guia" id="btn-guia" onclick="guiaAbrir('atender')" title="Demonstração guiada desta tela">▶<span class="lg"> Como fazer</span></button>
     <button class="btn-hd oculto" id="btn-cfg" onclick="abrirConfig()">⚙<span class="lg"> Configurar</span></button>
   </div>
 </header>
@@ -190,6 +197,7 @@ header{background:var(--blue);border-bottom:3px solid var(--orange);padding:0 16
   <aside class="lista-conv">
     <div class="topo-lista">
       <input id="busca" placeholder="Buscar nome ou telefone" oninput="buscaMudou()">
+      <button class="btn-ic so-emb" id="btn-guia-emb" onclick="guiaAbrir('atender')" aria-label="Como fazer (demonstração)" title="Como fazer (demonstração)">▶</button>
       <button class="btn-ic oculto" id="btn-cfg-emb" onclick="abrirConfig()" aria-label="Configurar">⚙</button>
       <button class="btn-ic lar" onclick="abrirNova()" aria-label="Nova conversa">＋</button>
     </div>
@@ -289,9 +297,10 @@ let _ABRIR_AT = null, _ABRIR_CFG = null;
   try {
     const q = new URLSearchParams(location.search);
     _ABRIR_AT = q.get('at'); _ABRIR_CFG = q.get('config');
+    window._GUIA_Q = q.get('guia');   // (05/11/2026) ?guia=atender → tour guiado depois de carregar (antes do replaceState)
     const sso = q.get('sso');
     if (sso && sso.length > 10) sessionStorage.setItem('garra_at_token', sso);
-    if (sso || _ABRIR_AT || _ABRIR_CFG) history.replaceState(null, '', location.pathname + (document.documentElement.classList.contains('embedded') ? '?embedded=1' : ''));
+    if (sso || _ABRIR_AT || _ABRIR_CFG || window._GUIA_Q) history.replaceState(null, '', location.pathname + (document.documentElement.classList.contains('embedded') ? '?embedded=1' : ''));
   } catch(e) {}
 })();
 function tk(){ return sessionStorage.getItem('garra_at_token') || localStorage.getItem('garra_token') || ''; }
@@ -892,5 +901,8 @@ window.addEventListener('load', async () => {
     try { const u = new URL(link, location.origin); const at = u.searchParams.get('at'); if (u.pathname.indexOf('/atendimento') === 0 && at) { api('/whatsapp/api/atendimento/' + at).then(r => abrirConversa(r.telefone, at)); return true; } } catch(e) {} return false; } }); } catch(e) {}
 });
 </script>
+<!-- (05/11/2026) tour guiado "▶ Como fazer" — motor + roteiro desta tela -->
+<script src="/operacional/static/js/guia.js"></script>
+<script src="/operacional/static/js/guias-atendimento.js"></script>
 </body>
 </html>

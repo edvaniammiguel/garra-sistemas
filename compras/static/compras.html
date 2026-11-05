@@ -134,10 +134,15 @@ button:disabled, select:disabled, input:disabled, fieldset:disabled *, [aria-dis
   <span class="badge-fila" id="badge-fila">0</span>
   <span style="flex:1"></span>
   <span id="hdr-user" style="font-size:12px;opacity:.85"></span>
+  <!-- (05/11/2026) tours guiados (GarraGuia) — menu com os roteiros da tela -->
+  <button onclick="guiaMenu(event)" title="Demonstração guiada da tela" style="background:#16A34A;border:none;color:#fff;border-radius:8px;padding:7px 11px;font-size:12px;font-weight:700;cursor:pointer;margin-left:8px">▶ Como fazer</button>
   <span style="font-size:10px;opacity:.6;margin-left:8px">v1.33</span>
 </header>
 
 <div class="wrap">
+  <!-- (05/11/2026) no app do celular o cabeçalho é do shell: link discreto para o tour -->
+  <div class="guia-link" style="display:none;text-align:right;margin:-4px 0 8px"><a href="#" onclick="guiaMenu(event);return false" style="color:#16A34A;font-weight:700;font-size:12px">▶ Como fazer (demonstração)</a></div>
+  <style>.embedded .guia-link{display:block !important}</style>
   <div class="tabs">
     <button class="on" id="tab-lista" onclick="irTab('lista')">📋 OCs</button>
     <button id="tab-nova" onclick="irTab('nova')">＋ Nova OC</button>
@@ -308,11 +313,12 @@ let _OC_ABRIR = null;   // (24/10/2026) /compras?oc=ID vindo de um aviso
   try{
     const q = new URLSearchParams(location.search);
     _OC_ABRIR = q.get('oc');
+    window._GUIA_Q = q.get('guia');   // (05/11/2026) ?guia=solicitar|aprovar → tour guiado depois de carregar
     const sso = q.get('sso');
     if (sso && sso.length > 10) {
       sessionStorage.setItem('garra_oc_token', sso);
       history.replaceState(null,'',location.pathname);
-    }
+    } else if (q.get('guia')) history.replaceState(null,'',location.pathname);
   }catch(e){}
 })();
 function ocToken(){
@@ -1398,5 +1404,8 @@ async function _criarSetor(){
   }catch(e){ toast(e.message,'err'); }
 }
 </script>
+<!-- (05/11/2026) tour guiado "▶ Como fazer" — motor + roteiros desta tela -->
+<script src="/operacional/static/js/guia.js"></script>
+<script src="/operacional/static/js/guias-compras.js"></script>
 </body>
 </html>

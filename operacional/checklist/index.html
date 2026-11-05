@@ -58,6 +58,7 @@
 <script>
   // SSO inline — executa antes do DOM carregar para evitar flash de login
   (function() {
+    window._GUIA_Q = new URLSearchParams(location.search).get('guia');   // (05/11/2026) ?guia=operador|gestor|logistica → tour guiado (guias-checklist.js)
     const sso = new URLSearchParams(location.search).get('sso');
     if (sso && sso.length > 10) {
       // Adicionar CSS para ocultar login imediatamente
@@ -120,6 +121,8 @@
       <span>📦 <strong id="pending-count">0</strong> aguardando sincronização</span>
       <button onclick="syncNow()">Sincronizar agora</button>
     </div>
+    <!-- (05/11/2026) Tour guiado (GarraGuia): link discreto no topo do painel do colaborador -->
+    <div id="guia-link-driver" style="text-align:right;margin:-4px 0 2px"><a href="#" onclick="guiaAbrir('operador');return false" style="color:#16A34A;font-size:12px;font-weight:700;text-decoration:none">▶ Como fazer (demonstração)</a></div>
     <h3 class="section-title">Selecionar Check List</h3>
     <div class="checklist-cards" id="driver-cl-cards"></div>
     <h3 class="section-title">Meus Últimos Envios</h3>
@@ -163,6 +166,8 @@
     <button class="tab" onclick="mgrTab('checklists',this)">Check Lists</button>
   </div>
   <div class="mgr-content">
+    <!-- (05/11/2026) Tour guiado (GarraGuia): link no topo do painel da gestão — abre o menu dos roteiros (gestor / logística) -->
+    <div id="guia-link-mgr" style="text-align:right;padding:8px 14px 0"><a href="#" onclick="guiaMenu(event);return false" style="color:#16A34A;font-size:12px;font-weight:700;text-decoration:none">▶ Como fazer (demonstração)</a></div>
 
     <!-- OVERVIEW -->
     <div id="tab-overview" class="tab-panel active">
@@ -593,6 +598,8 @@
     <button class="tab" onclick="supTab('report',this)">🖨 Relatório</button>
   </div>
   <div class="mgr-content">
+    <!-- (05/11/2026) Tour guiado (GarraGuia): link no topo do painel superior — roteiro da Logística (só com a permissão) -->
+    <div id="guia-link-sup" style="text-align:right;padding:8px 14px 0"><a href="#" onclick="guiaMenu(event);return false" style="color:#16A34A;font-size:12px;font-weight:700;text-decoration:none">▶ Como fazer (demonstração)</a></div>
     <div id="sup-tab-logistics" class="tab-panel active">
       <div class="tab-action-bar">
         <button class="btn-primary" onclick="openLogModal()">+ Novo Registro</button>
@@ -815,6 +822,9 @@
 <script src="js/data.js"></script>
 <script src="js/app.js"></script>
 <script src="js/logistics.js"></script>
+<!-- (05/11/2026) Tour guiado "▶ Como fazer" (GarraGuia) — roteiros operador / gestor / logística -->
+<script src="/operacional/static/js/guia.js"></script>
+<script src="/operacional/static/js/guias-checklist.js"></script>
 
 <script>
   document.addEventListener('DOMContentLoaded', async function() {

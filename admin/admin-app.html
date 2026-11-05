@@ -9,7 +9,7 @@
      e entregaria a versão anterior na primeira abertura depois do deploy -->
 <script src="/operacional/static/js/garra-periodo.js?v=20261030-4"></script>
 <title>Garra — Admin Master</title>
-<link rel="icon" href="https://garra-sistemas.onrender.com/static/icons/favicon.ico"/>
+<link rel="icon" href="/static/icons/favicon.ico"/>
 <style>
 /* ══════════════════════════════════════════════
    DESIGN SYSTEM — GARRA TERRAPLENAGEM
@@ -389,6 +389,8 @@ button:disabled, select:disabled, input:disabled, [aria-disabled=true] { cursor:
         <span class="dot dot-online"></span>
         <span id="hd-online-count">0 online</span>
       </div>
+      <!-- (05/11/2026) Tours guiados (GarraGuia): menu com os roteiros desta tela -->
+      <button type="button" id="btn-guia" onclick="guiaMenu(event)" title="Demonstração guiada desta tela" style="background:#16A34A;color:#fff;border:none;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap">▶ Como fazer</button>
       <div class="hd-user" onclick="abrirPainelContaAdmin()" style="cursor:pointer">
         <div class="hd-avatar" id="hd-avatar">A</div>
         <span class="hd-username" id="hd-username">Admin</span>
@@ -1344,12 +1346,15 @@ button:disabled, select:disabled, input:disabled, [aria-disabled=true] { cursor:
 <div id="toast" class="hidden"></div>
 
 <script>
+// (05/11/2026) ?guia=<nome> — deep link do tour guiado; capturado antes de qualquer outra coisa (guias-admin.js lê)
+window._GUIA_Q = new URLSearchParams(location.search).get('guia');
 /* ══════════════════════════════════════════════
    CONFIGURAÇÃO
 ══════════════════════════════════════════════ */
-const API = (location.hostname === 'localhost' || location.hostname === '127.0.0.1')
+// (03/11/2026) a API é sempre a mesma origem da página (domínio próprio, .onrender.com ou localhost)
+const API = (location.protocol === 'file:' || location.port === '5500')   // só o Live Server do VS Code aponta para o uvicorn à parte
   ? 'http://localhost:8000'
-  : 'https://garra-sistemas.onrender.com';
+  : location.origin;
 
 /* ══════════════════════════════════════════════
    TOKEN
@@ -6268,5 +6273,8 @@ function cmBaixarExcel(url, nomeArquivo) {
     .catch(e => alert('Erro: ' + e.message));
 }
 </script>
+<!-- (05/11/2026) Tour guiado "▶ Como fazer" — motor + roteiros desta tela (usuarios, painel) -->
+<script src="/operacional/static/js/guia.js"></script>
+<script src="/operacional/static/js/guias-admin.js"></script>
 </body>
 </html>

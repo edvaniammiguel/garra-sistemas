@@ -79,6 +79,8 @@
 </div>
 
 <main>
+  <!-- (05/11/2026) tour guiado (GarraGuia) — link discreto, escondido no login -->
+  <div id="lk-guia" class="meta" style="justify-content:flex-end;margin:0 0 8px;display:none"><a href="#" onclick="guiaAbrir('gestor');return false" style="color:#16A34A;font-weight:700;text-decoration:none">▶ Como fazer (demonstração)</a></div>
   <div class="card" id="tela-login">
     <b style="color:var(--azul)">Entrar</b>
     <label>Login</label><input id="lg-user" autocomplete="username">
@@ -128,6 +130,7 @@
 const API = '';
 // (24/10/2026) link vindo de um aviso: ?pedido=ID · ?ot=ID · ?eq=ID · ?aba=ab|ots|eq|ped (lido antes de limpar a URL)
 const ABRIR = (function(){ try { const q = new URLSearchParams(location.search); return { pedido: q.get('pedido'), ot: q.get('ot'), eq: q.get('eq'), aba: q.get('aba') }; } catch(e) { return {}; } })();
+window._GUIA_Q = (function(){ try { return new URLSearchParams(location.search).get('guia'); } catch(e) { return null; } })();   // (05/11/2026) ?guia=gestor → tour guiado depois de carregar (lido ANTES de limpar a URL)
 (function(){
   try {
     const sso = new URLSearchParams(location.search).get('sso');
@@ -142,7 +145,7 @@ function esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&
 function fData(v){ if (!v) return '—'; const s = String(v); const [a, m, d] = s.slice(0,10).split('-'); return d && m && a ? `${d}/${m}/${a}` : s; }
 function fDataHora(v){ if (!v) return '—'; const d = new Date(v); return isNaN(d) ? String(v) : d.toLocaleDateString('pt-BR') + ' ' + d.toLocaleTimeString('pt-BR', {hour:'2-digit', minute:'2-digit'}); }
 function fNum(v, dec){ if (v == null || v === '') return '—'; return Number(v).toLocaleString('pt-BR', {maximumFractionDigits: dec == null ? 1 : dec}); }
-function mostrarLogin(on){ document.getElementById('tela-login').style.display = on ? 'block' : 'none'; document.getElementById('abas').style.display = on ? 'none' : 'flex'; document.querySelectorAll('.tela').forEach(t => t.style.display = on ? 'none' : ''); }
+function mostrarLogin(on){ document.getElementById('tela-login').style.display = on ? 'block' : 'none'; document.getElementById('abas').style.display = on ? 'none' : 'flex'; document.querySelectorAll('.tela').forEach(t => t.style.display = on ? 'none' : ''); const lk = document.getElementById('lk-guia'); if (lk) lk.style.display = on ? 'none' : ''; /* (05/11/2026) link do tour */ }
 
 async function api(caminho, opts){
   opts = opts || {};
@@ -464,5 +467,7 @@ async function iniciar(){
 }
 if (TOK) { mostrarLogin(false); iniciar(); } else mostrarLogin(true);
 </script>
+<script src="/operacional/static/js/guia.js"></script><!-- (05/11/2026) tour guiado -->
+<script src="/operacional/static/js/guias-gestor.js"></script>
 </body>
 </html>
