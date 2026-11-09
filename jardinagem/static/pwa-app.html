@@ -1399,8 +1399,16 @@ function carregarMuralJard() {
     .then(function(r){return r.json();})
     .then(function(avisos){
       if (!avisos.length) { el.innerHTML = '<div style="font-size:12px;color:var(--mut);text-align:center">Nenhum aviso no momento.</div>'; return; }
-      // (09/11/2026) imagem do card + ✔ Li e entendi (mesma regra do app principal)
-      el.innerHTML = avisos.map(function(a){
+      // (09/11/2026) imagem do card + ✔ Li e entendi (mesma regra do app principal); destaque = pendentes + últimos 7 dias
+      var corte = Date.now() - 7*24*3600*1000, recentes = [], antigos = [];
+      avisos.forEach(function(a){
+        var pend = a.exige_confirmacao && !a.confirmado_em;
+        var ref = a.confirmado_em ? new Date(a.confirmado_em).getTime() : new Date(a.criado_em).getTime();
+        (pend || ref >= corte) ? recentes.push(a) : antigos.push(a);
+      });
+      var mostrar = window._muralVerTodos ? avisos : recentes;
+      if (!mostrar.length && antigos.length) mostrar = antigos.slice(0, 1);
+      el.innerHTML = mostrar.map(function(a){
         var pend = a.exige_confirmacao && !a.confirmado_em;
         return '<div style="background:#fff;border-left:3px solid ' + (pend ? 'var(--or)' : '#CBD5E1') + ';border-radius:0 6px 6px 0;padding:10px 12px;margin-bottom:8px">'
           + '<div style="font-size:12px;font-weight:800;color:var(--bl)">' + a.titulo + '</div>'
@@ -1412,6 +1420,11 @@ function carregarMuralJard() {
               : '<button onclick="muralConfirmarJard(' + a.id + ', this)" style="margin-top:8px;width:100%;padding:10px;background:#16A34A;color:#fff;border:none;border-radius:8px;font-weight:800;font-size:13px">✔ Li e entendi</button>') : '')
           + '</div>';
       }).join("");
+      if (!window._muralVerTodos && mostrar.length !== avisos.length) {
+        el.innerHTML += '<button onclick="window._muralVerTodos=true;carregarMuralJard()" style="width:100%;padding:9px;background:#fff;border:1.5px solid #CBD5E1;border-radius:8px;color:#475569;font-size:12px;font-weight:700">Ver anteriores (' + (avisos.length - mostrar.length) + ')</button>';
+      } else if (window._muralVerTodos && antigos.length) {
+        el.innerHTML += '<button onclick="window._muralVerTodos=false;carregarMuralJard()" style="width:100%;padding:9px;background:#fff;border:1.5px solid #CBD5E1;border-radius:8px;color:#475569;font-size:12px;font-weight:700">Mostrar só os recentes</button>';
+      }
     })
     .catch(function(){ el.innerHTML = '<div style="font-size:12px;color:var(--mut);text-align:center">Nenhum aviso no momento.</div>'; });
 }
