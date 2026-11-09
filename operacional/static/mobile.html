@@ -2330,7 +2330,11 @@ function abrirPainelConta() {
       <!-- HEADER -->
       <div style="padding:16px 20px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--border)">
         <div style="font-size:15px;font-weight:800;color:var(--blue)">Minha conta</div>
-        <button onclick="document.getElementById('modal-conta').remove()" style="background:none;border:none;font-size:22px;color:var(--muted);cursor:pointer">✕</button>
+        <!-- (09/11/2026) tour guiado vira link discreto no topo (era botão grande no Mural) -->
+        <div style="display:flex;align-items:center;gap:12px">
+          <a id="btn-guia-conta" href="#" onclick="event.preventDefault();document.getElementById('modal-conta').remove();guiaMenu(event)" style="color:#16A34A;font-size:12px;font-weight:700;text-decoration:none">▶ Como fazer</a>
+          <button onclick="document.getElementById('modal-conta').remove()" style="background:none;border:none;font-size:22px;color:var(--muted);cursor:pointer">✕</button>
+        </div>
       </div>
 
       <!-- 1. INFO USUÁRIO -->
@@ -2353,8 +2357,6 @@ function abrirPainelConta() {
         <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px">Mural</div>
         <div id="mural-avisos-mob" style="margin-bottom:12px"><div style="font-size:12px;color:var(--muted);text-align:center">Carregando...</div></div>
         <button onclick="document.getElementById('modal-conta').remove();abrirCartilhaMobile()" style="width:100%;padding:11px;background:var(--blue);color:#fff;border:none;border-radius:8px;font-weight:700;font-size:13px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px">📖 Manual do colaborador</button>
-        <!-- (05/11/2026) Tour guiado (GarraGuia) — demonstrações na tela real -->
-        <button id="btn-guia-conta" onclick="document.getElementById('modal-conta').remove();guiaMenu(event)" style="width:100%;margin-top:8px;padding:11px;background:#16A34A;color:#fff;border:none;border-radius:8px;font-weight:700;font-size:13px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px">▶ Como fazer — demonstrações</button>
       </div>
 
       <!-- 2a. NOTIFICAÇÕES NESTE APARELHO -->

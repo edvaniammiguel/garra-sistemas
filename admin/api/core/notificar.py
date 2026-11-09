@@ -18,6 +18,8 @@ from core.permissions import perfil_modulos_padrao
 
 log = logging.getLogger("notificacoes")
 
+# (09/11/2026) ligado por padrão para todo perfil (Mural é de todos) — a pessoa pode desligar nas preferências
+_TODOS_PERFIS = frozenset({"admin", "gestor", "luana", "bruna", "mecanico", "mecanica", "operador", "motorista", "campo", "comercial", "financeiro"})
 # tipo → {modulo (quem pode), padrao (perfis com o tipo ligado), nome (tela de preferências)}
 EVENTOS = {
     "pedido_novo":     {"modulo": "manutencao",     "padrao": {"bruna"},                       "nome": "Pedido de OT novo (qualquer urgência)"},
@@ -39,8 +41,8 @@ EVENTOS = {
     "atendimento_conexao": {"modulo": "atendimento_gestao", "padrao": {"admin", "gestor"},   "nome": "WhatsApp do atendimento desconectado"},
     # (09/11/2026) Mural: lembrete de aviso ainda não confirmado ("Li e entendi") — vai só para quem está
     # pendente (apenas=[…]); módulo "*" = qualquer colaborador com login, não depende de módulo.
-    "mural_confirmar": {"modulo": "*",               "padrao": set(),                          "nome": "Aviso do Mural aguardando minha confirmação de leitura"},
-    "mural_novo":      {"modulo": "*",               "padrao": set(),                          "nome": "Novo aviso / alerta de segurança publicado no Mural"},
+    "mural_confirmar": {"modulo": "*",               "padrao": _TODOS_PERFIS,                  "nome": "Aviso do Mural aguardando minha confirmação de leitura"},
+    "mural_novo":      {"modulo": "*",               "padrao": _TODOS_PERFIS,                  "nome": "Novo aviso / alerta de segurança publicado no Mural"},
 }
 
 _OK = False
