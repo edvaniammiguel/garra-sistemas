@@ -17,81 +17,158 @@ from core.models import MuralCreate, CartilhaBloco
 
 router = APIRouter()
 
+# ═══════════════════════════════════════════════════════════════════════════
+# MURAL DE AVISOS
+# (09/11/2026) Cards de segurança/orientação: imagem + legenda no mesmo aviso, botão "✔ Li e entendi"
+# por aviso (registro login/data — igual à lista do DDS), lista de quem leu/não leu para a gestão,
+# validade (some do painel, fica no histórico), lembrete 48 h a quem não confirmou e permissão
+# "Mural — Publicar" (módulo mural_publicar) em vez de "só admin".
+# ═══════════════════════════════════════════════════════════════════════════
+from core.permissions import tem_modulo as _tem_modulo
+from core.notificar import notificar as _notificar
+
+_MURAL_V2_OK = False
+
+async def _garantir_mural_v2():
+    """Colunas novas + tabela de confirmações. Idempotente, roda 1x por processo."""
+    global _MURAL_V2_OK
+    if _MURAL_V2_OK:
+        return
+    for sql in (
+        "ALTER TABLE public.mural_avisos ADD COLUMN IF NOT EXISTS destinatario TEXT DEFAULT ''",
+        "ALTER TABLE public.mural_avisos ADD COLUMN IF NOT EXISTS imagem_path TEXT DEFAULT ''",
+        "ALTER TABLE public.mural_avisos ADD COLUMN IF NOT EXISTS exige_confirmacao BOOLEAN DEFAULT true",
+        "ALTER TABLE public.mural_avisos ADD COLUMN IF NOT EXISTS valido_ate DATE",
+        """CREATE TABLE IF NOT EXISTS public.mural_confirmacoes (
+               id SERIAL PRIMARY KEY,
+               aviso_id INTEGER NOT NULL REFERENCES public.mural_avisos(id) ON DELETE CASCADE,
+               usuario_login TEXT NOT NULL,
+               usuario_id UUID,
+               confirmado_em TIMESTAMPTZ NOT NULL DEFAULT now(),
+               UNIQUE (aviso_id, usuario_login))""",
+        "CREATE INDEX IF NOT EXISTS mural_confirmacoes_login_idx ON public.mural_confirmacoes (usuario_login)",
+    ):
+        try:
+            await ajard_query(sql, fetch="none")
+        except Exception as e:
+            print(f"[mural v2] {e}")
+    _MURAL_V2_OK = True
+
+
+async def verificar_mural_publicar(payload=Depends(verificar_token)):
+    """(09/11/2026) Quem publica no Mural: admin (Master) ou módulo mural_publicar (perfil/exceção)."""
+    if not await _tem_modulo(payload, ["mural_publicar"]):
+        raise HTTPException(status_code=403, detail="Sem permissão para publicar no Mural (módulo Mural — Publicar avisos)")
+    return payload
+
+
+def _login_de(payload):
+    return payload.get("login") or payload.get("sub", "")
+
+
+def _aviso_para(r, perfil, login):
+    """Regra única de visibilidade: destinatário individual > perfis > todos."""
+    dest = (r.get("destinatario") or "").strip()
+    perfis_list = [p.strip() for p in (r.get("perfis") or "").split(",") if p.strip()]
+    if dest:
+        return dest == login
+    if perfis_list:
+        return perfil in perfis_list
+    return True
+
+
+async def _publico_do_aviso(r):
+    """Usuários ativos que devem ver o aviso (para a lista de pendentes)."""
+    dest = (r.get("destinatario") or "").strip()
+    perfis_list = [p.strip() for p in (r.get("perfis") or "").split(",") if p.strip()]
+    us = await ajard_query("SELECT id, login, nome, perfil, email FROM public.usuarios_garra WHERE ativo=true ORDER BY nome") or []
+    if dest:
+        return [u for u in us if u["login"] == dest or (u.get("email") or "") == dest]
+    if perfis_list:
+        return [u for u in us if (u.get("perfil") or "") in perfis_list]
+    return list(us)
+
+
 @router.get("/api/mural")
 async def listar_mural(todos: int = 0, payload=Depends(verificar_token)):
     """Lista avisos ativos para o perfil/login do usuário.
-    (09/07/2026) todos=1 + admin/gestor → modo GESTÃO: lista completa sem
-    filtro de destinatário/perfil (histórico da tela de administração)."""
-    ignorar = bool(todos) and (payload.get("perfil", "") in ("admin", "gestor"))
+    (09/07/2026) todos=1 → modo GESTÃO: lista completa sem filtro (tela de administração).
+    (09/11/2026) modo gestão exige mural_publicar; traz contagem de confirmações e inclui vencidos."""
+    ignorar = bool(todos) and await _tem_modulo(payload, ["mural_publicar"])
     return await _avisos_visiveis(payload, ignorar_filtros=ignorar)
+
 
 async def _avisos_visiveis(payload, ignorar_filtros=False):
     """(09/07/2026) Filtro de visibilidade em FONTE ÚNICA — usado pela listagem
     e pelo contador de não-lidos (sem duplicar regra)."""
+    await _garantir_mural_v2()
     perfil = payload.get("perfil", "")
-    login = payload.get("login") or payload.get("sub", "")
-    try:
-        rows = await ajard_query(
-            "SELECT id, titulo, mensagem, perfis, destinatario, criado_em, criado_por "
-            "FROM public.mural_avisos WHERE ativo=true ORDER BY criado_em DESC",
-            fetch="all"
-        ) or []
-    except Exception:
-        # Coluna destinatario pode não existir ainda — migrar e tentar de novo
-        try:
-            await ajard_query("ALTER TABLE public.mural_avisos ADD COLUMN IF NOT EXISTS destinatario TEXT DEFAULT ''", fetch="none")
-        except Exception:
-            pass
-        rows = await ajard_query(
-            "SELECT id, titulo, mensagem, perfis, destinatario, criado_em, criado_por "
-            "FROM public.mural_avisos WHERE ativo=true ORDER BY criado_em DESC",
-            fetch="all"
-        ) or []
+    login = _login_de(payload)
+    rows = await ajard_query(
+        "SELECT a.id, a.titulo, a.mensagem, a.perfis, a.destinatario, a.criado_em, a.criado_por, "
+        "       a.imagem_path, coalesce(a.exige_confirmacao,true) AS exige_confirmacao, a.valido_ate, "
+        "       (SELECT count(*) FROM public.mural_confirmacoes c WHERE c.aviso_id=a.id)::int AS confirmacoes, "
+        "       (SELECT c.confirmado_em FROM public.mural_confirmacoes c WHERE c.aviso_id=a.id AND c.usuario_login=%s) AS confirmado_em "
+        "FROM public.mural_avisos a WHERE a.ativo=true ORDER BY a.criado_em DESC",
+        (login,), fetch="all") or []
+    hoje = datetime.now().date()
     result = []
     for r in rows:
-        dest = (r.get("destinatario") or "").strip()
-        perfis_str = (r.get("perfis") or "").strip()
-        perfis_list = [p.strip() for p in perfis_str.split(",") if p.strip()]
+        vencido = bool(r.get("valido_ate")) and r["valido_ate"] < hoje
         if not ignorar_filtros:
-            # Destinatário individual → só ele vê
-            if dest:
-                if dest != login:
-                    continue
-            # Filtro por perfil → só os listados
-            elif perfis_list:
-                if perfil not in perfis_list:
-                    continue
-        # Sem filtro → todos veem
+            if vencido or not _aviso_para(r, perfil, login):
+                continue
+        img = r.get("imagem_path") or ""
+        img_url = ""
+        if img:
+            try:
+                from core.storage import storage_url
+                img_url = storage_url(img)
+            except Exception:
+                img_url = ""
         result.append({
             "id": r["id"],
             "titulo": r["titulo"],
             "mensagem": r["mensagem"],
-            "perfis": perfis_str,
-            "destinatario": dest,
+            "perfis": (r.get("perfis") or "").strip(),
+            "destinatario": (r.get("destinatario") or "").strip(),
             "criado_em": r["criado_em"].isoformat() if r["criado_em"] else "",
             "criado_por": r.get("criado_por") or "",
+            "imagem_path": img,
+            "imagem_url": img_url,
+            "exige_confirmacao": bool(r.get("exige_confirmacao")),
+            "valido_ate": r["valido_ate"].isoformat() if r.get("valido_ate") else "",
+            "vencido": vencido,
+            "confirmado_em": r["confirmado_em"].isoformat() if r.get("confirmado_em") else "",
+            "confirmacoes": int(r.get("confirmacoes") or 0),
         })
     return result
+
 
 # ─── (09/07/2026) Badge de não-lidos do Mural — Fase 1 das notificações ──────
 @router.get("/api/mural/nao-lidos")
 async def mural_nao_lidos(payload=Depends(verificar_token)):
-    """Quantos avisos visíveis o usuário ainda não leu (nunca leu = todos)."""
-    login = payload.get("login") or payload.get("sub", "")
+    """Quantos avisos visíveis o usuário ainda não leu.
+    (09/11/2026) aviso com confirmação conta até o "Li e entendi"; os demais seguem o marco de leitura."""
+    login = _login_de(payload)
     avisos = await _avisos_visiveis(payload)
     lido_em = await ajard_query(
         "SELECT lido_em FROM public.mural_leituras WHERE usuario_login=%s",
         (login,), fetch="one")
     marco = (lido_em or {}).get("lido_em")
-    if not marco:
-        return {"nao_lidos": len(avisos)}
-    marco_iso = marco.isoformat()
-    return {"nao_lidos": sum(1 for a in avisos if (a.get("criado_em") or "") > marco_iso)}
+    marco_iso = marco.isoformat() if marco else ""
+    n = 0
+    for a in avisos:
+        if a["exige_confirmacao"]:
+            n += 0 if a["confirmado_em"] else 1
+        else:
+            n += 1 if (not marco_iso or (a.get("criado_em") or "") > marco_iso) else 0
+    return {"nao_lidos": n}
 
 @router.post("/api/mural/lido")
 async def mural_marcar_lido(payload=Depends(verificar_token)):
-    """Marca o mural como lido AGORA para o usuário (abriu o painel)."""
-    login = payload.get("login") or payload.get("sub", "")
+    """Marca o mural como lido AGORA para o usuário (abriu o painel) — vale para avisos sem confirmação."""
+    login = _login_de(payload)
     await ajard_query(
         """INSERT INTO public.mural_leituras (usuario_login, lido_em)
            VALUES (%s, now())
@@ -99,32 +176,180 @@ async def mural_marcar_lido(payload=Depends(verificar_token)):
         (login,), fetch="none")
     return {"ok": True}
 
-@router.post("/api/mural")
-async def criar_aviso_mural(dados: MuralCreate, payload=Depends(verificar_admin)):
-    """Admin cria aviso no mural."""
+
+@router.post("/api/mural/{aviso_id}/confirmar")
+async def mural_confirmar(aviso_id: int, payload=Depends(verificar_token)):
+    """(09/11/2026) ✔ Li e entendi — registra login + data/hora. Só para aviso que a pessoa vê; idempotente."""
+    await _garantir_mural_v2()
+    login = _login_de(payload)
+    r = await ajard_query("SELECT * FROM public.mural_avisos WHERE id=%s AND ativo=true", (aviso_id,), fetch="one")
+    if not r:
+        raise HTTPException(status_code=404, detail="Aviso não encontrado")
+    if not _aviso_para(r, payload.get("perfil", ""), login):
+        raise HTTPException(status_code=403, detail="Este aviso não é para o seu perfil")
+    u = await ajard_query("SELECT id FROM public.usuarios_garra WHERE login=%s AND ativo=true", (login,), fetch="one")
     await ajard_query(
-        "INSERT INTO public.mural_avisos (titulo, mensagem, perfis, destinatario, criado_por) VALUES (%s, %s, %s, %s, %s)",
-        (dados.titulo, dados.mensagem, dados.perfis, dados.destinatario, payload.get("nome", "")), fetch="none"
+        """INSERT INTO public.mural_confirmacoes (aviso_id, usuario_login, usuario_id)
+           VALUES (%s,%s,%s) ON CONFLICT (aviso_id, usuario_login) DO NOTHING""",
+        (aviso_id, login, (u or {}).get("id")), fetch="none")
+    c = await ajard_query("SELECT confirmado_em FROM public.mural_confirmacoes WHERE aviso_id=%s AND usuario_login=%s",
+                          (aviso_id, login), fetch="one")
+    return {"ok": True, "confirmado_em": c["confirmado_em"].isoformat() if c else ""}
+
+
+@router.get("/api/mural/{aviso_id}/confirmacoes")
+async def mural_confirmacoes(aviso_id: int, payload=Depends(verificar_mural_publicar)):
+    """(09/11/2026) Quem confirmou (nome, login, quando) e quem ainda não (sobre o público do aviso)."""
+    await _garantir_mural_v2()
+    r = await ajard_query("SELECT * FROM public.mural_avisos WHERE id=%s", (aviso_id,), fetch="one")
+    if not r:
+        raise HTTPException(status_code=404, detail="Aviso não encontrado")
+    publico = await _publico_do_aviso(r)
+    conf = await ajard_query(
+        "SELECT usuario_login, confirmado_em FROM public.mural_confirmacoes WHERE aviso_id=%s ORDER BY confirmado_em",
+        (aviso_id,)) or []
+    quando = {c["usuario_login"]: c["confirmado_em"] for c in conf}
+    confirmaram, pendentes = [], []
+    for u in publico:
+        item = {"login": u["login"], "nome": u["nome"], "perfil": u.get("perfil") or ""}
+        if u["login"] in quando:
+            item["quando"] = quando[u["login"]].isoformat()
+            confirmaram.append(item)
+        else:
+            pendentes.append(item)
+    # confirmou mas já não está no público (mudou de perfil / desativado): entra no histórico mesmo assim
+    vistos = {c["login"] for c in confirmaram}
+    for c in conf:
+        if c["usuario_login"] not in vistos:
+            confirmaram.append({"login": c["usuario_login"], "nome": c["usuario_login"], "perfil": "", "quando": c["confirmado_em"].isoformat(), "fora_do_publico": True})
+    confirmaram.sort(key=lambda x: x.get("quando") or "")
+    return {"aviso_id": aviso_id, "titulo": r["titulo"], "total": len(publico),
+            "confirmaram": confirmaram, "pendentes": pendentes}
+
+
+@router.post("/api/mural/imagem")
+async def mural_imagem(request: Request, payload=Depends(verificar_mural_publicar)):
+    """(09/11/2026) Sobe a imagem do card para o Storage (garra-fotos:mural/…) e devolve o path.
+    JPG/PNG/WebP até 8 MB (o Admin já reduz para ~1600 px antes de enviar)."""
+    form = await request.form()
+    f = form.get("imagem")
+    if f is None:
+        raise HTTPException(status_code=400, detail="Envie o campo 'imagem'")
+    dados = await f.read()
+    if not dados:
+        raise HTTPException(status_code=400, detail="Imagem vazia")
+    if len(dados) > 8 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="Imagem acima de 8 MB")
+    ct = (f.content_type or "image/jpeg").lower()
+    if ct not in ("image/jpeg", "image/png", "image/webp"):
+        raise HTTPException(status_code=400, detail="Formato não aceito — use JPG, PNG ou WebP")
+    ext = {"image/jpeg": "jpg", "image/png": "png", "image/webp": "webp"}[ct]
+    import uuid as _uuid
+    from core.storage import storage_upload, storage_url
+    path = f"mural/{datetime.now():%Y/%m}/{_uuid.uuid4().hex}.{ext}"
+    try:
+        sp = storage_upload(dados, path, content_type=ct)
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Não foi possível salvar a imagem no Storage: {e}")
+    url = ""
+    try:
+        url = storage_url(sp)
+    except Exception:
+        pass
+    return {"ok": True, "imagem_path": sp, "imagem_url": url}
+
+
+def _valido_ate(dados):
+    v = (dados.valido_ate or "").strip()
+    if not v:
+        return None
+    try:
+        return datetime.strptime(v[:10], "%Y-%m-%d").date()
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Validade inválida — use AAAA-MM-DD")
+
+
+@router.post("/api/mural")
+async def criar_aviso_mural(dados: MuralCreate, payload=Depends(verificar_mural_publicar)):
+    """Publica aviso no mural (admin ou módulo mural_publicar)."""
+    await _garantir_mural_v2()
+    await ajard_query(
+        """INSERT INTO public.mural_avisos (titulo, mensagem, perfis, destinatario, criado_por, imagem_path, exige_confirmacao, valido_ate)
+           VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
+        (dados.titulo, dados.mensagem, dados.perfis, dados.destinatario, payload.get("nome", ""),
+         dados.imagem_path or "", bool(dados.exige_confirmacao), _valido_ate(dados)), fetch="none"
     )
     return {"ok": True}
 
 @router.put("/api/mural/{aviso_id}")
-async def editar_aviso_mural(aviso_id: int, dados: MuralCreate, payload=Depends(verificar_admin)):
-    """Admin edita um aviso existente."""
+async def editar_aviso_mural(aviso_id: int, dados: MuralCreate, payload=Depends(verificar_mural_publicar)):
+    """Edita um aviso existente (confirmações já feitas são mantidas)."""
+    await _garantir_mural_v2()
     await ajard_query(
-        "UPDATE public.mural_avisos SET titulo=%s, mensagem=%s, perfis=%s, destinatario=%s WHERE id=%s",
-        (dados.titulo, dados.mensagem, dados.perfis, dados.destinatario, aviso_id), fetch="none"
+        """UPDATE public.mural_avisos SET titulo=%s, mensagem=%s, perfis=%s, destinatario=%s,
+                  imagem_path=%s, exige_confirmacao=%s, valido_ate=%s WHERE id=%s""",
+        (dados.titulo, dados.mensagem, dados.perfis, dados.destinatario,
+         dados.imagem_path or "", bool(dados.exige_confirmacao), _valido_ate(dados), aviso_id), fetch="none"
     )
     return {"ok": True}
 
 @router.delete("/api/mural/{aviso_id}")
-async def desativar_aviso_mural(aviso_id: int, payload=Depends(verificar_admin)):
-    """Admin desativa aviso (soft delete)."""
+async def desativar_aviso_mural(aviso_id: int, payload=Depends(verificar_mural_publicar)):
+    """Desativa aviso (soft delete) — confirmações ficam no histórico."""
     await ajard_query(
         "UPDATE public.mural_avisos SET ativo=false WHERE id=%s",
         (aviso_id,), fetch="none"
     )
     return {"ok": True}
+
+
+# ─── (09/11/2026) Lembrete 48 h: quem não confirmou recebe aviso no sino/push; repete a cada 48 h ─────
+async def mural_lembretes_pendentes():
+    """Roda a cada hora (startup). Para cada aviso ativo, não vencido, com confirmação exigida e publicado
+    há 48 h+: notifica cada pendente 1x por janela de 48 h (chave idempotente em notificacao_marcas)."""
+    await _garantir_mural_v2()
+    rows = await ajard_query(
+        """SELECT * FROM public.mural_avisos
+            WHERE ativo=true AND coalesce(exige_confirmacao,true)
+              AND criado_em <= now() - interval '48 hours'
+              AND (valido_ate IS NULL OR valido_ate >= current_date)""") or []
+    n = 0
+    for r in rows:
+        publico = await _publico_do_aviso(r)
+        conf = await ajard_query("SELECT usuario_login FROM public.mural_confirmacoes WHERE aviso_id=%s", (r["id"],)) or []
+        ja = {c["usuario_login"] for c in conf}
+        janela = int((datetime.now() - r["criado_em"].replace(tzinfo=None)).total_seconds() // (48 * 3600))
+        for u in publico:
+            if u["login"] in ja:
+                continue
+            n += await _notificar("mural_confirmar", f"📌 Aviso aguardando sua confirmação",
+                                  f"{r['titulo']} — abra Minha conta › Mural e toque em ✔ Li e entendi",
+                                  "/mobile?conta=1", apenas=[u["id"]], chave=f"mural:{r['id']}:{u['id']}:{janela}") or 0
+    return n
+
+
+async def _mural_lembretes_loop():
+    import asyncio
+    await asyncio.sleep(90)   # deixa o startup terminar
+    while True:
+        try:
+            await mural_lembretes_pendentes()
+        except Exception as e:
+            print(f"[mural lembretes] {e}")
+        await asyncio.sleep(3600)
+
+
+@router.on_event("startup")
+async def _mural_lembretes_startup():
+    import asyncio
+    asyncio.create_task(_mural_lembretes_loop())
+
+
+@router.post("/api/mural/lembretes/rodar")
+async def mural_lembretes_rodar(payload=Depends(verificar_mural_publicar)):
+    """Dispara os lembretes agora (botão na tela de gestão / teste)."""
+    return {"ok": True, "enviados": await mural_lembretes_pendentes()}
+
 
 @router.get("/api/cartilha")
 async def listar_cartilha(payload=Depends(verificar_token)):

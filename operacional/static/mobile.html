@@ -2504,7 +2504,7 @@ function abrirLinkApp(link) {
       var gq = u.searchParams.get('guia'), tb = u.searchParams.get('tab') === 'logistica' || gq === 'logistica' ? 'logistica' : 'checklist';
       ir(tb === 'logistica' ? 'Log' : 'Check'); if (gq) carregarIframeChecklist(tb, 'guia=' + encodeURIComponent(gq));
     }
-    else if (u.pathname === '/mobile') { var a = u.searchParams.get('aba'); if (a) ir(a); var g = u.searchParams.get('guia'); if (g && window.guiaAbrir) setTimeout(function(){ guiaAbrir(g); }, 800); }   // (05/11/2026) ?guia= abre o tour
+    else if (u.pathname === '/mobile') { var a = u.searchParams.get('aba'); if (a) ir(a); var g = u.searchParams.get('guia'); if (g && window.guiaAbrir) setTimeout(function(){ guiaAbrir(g); }, 800); if (u.searchParams.get('conta')) setTimeout(abrirPainelConta, 300); }   // (05/11/2026) ?guia= abre o tour · (09/11/2026) ?conta=1 abre Minha conta (lembrete do Mural)
     else if (u.pathname.indexOf('/manutencao') === 0 || u.pathname.indexOf('/admin') === 0) { window.open(link, '_blank'); }
   } catch(e) {}
 }
@@ -2593,16 +2593,33 @@ function carregarMuralMobile() {
     .then(function(r){return r.json();})
     .then(function(avisos){
       if (!avisos.length) { el.innerHTML = '<div style="font-size:12px;color:var(--muted);text-align:center">Nenhum aviso no momento.</div>'; return; }
+      // (09/11/2026) card = imagem + legenda no mesmo aviso; ✔ Li e entendi registra a leitura (login + data/hora)
       el.innerHTML = avisos.map(function(a){
-        return '<div style="background:#fff;border-left:3px solid var(--orange);border-radius:0 6px 6px 0;padding:10px 12px;margin-bottom:8px">'
+        var pend = a.exige_confirmacao && !a.confirmado_em;
+        return '<div id="mural-av-' + a.id + '" style="background:#fff;border-left:3px solid ' + (pend ? 'var(--orange)' : '#CBD5E1') + ';border-radius:0 6px 6px 0;padding:10px 12px;margin-bottom:8px">'
           + '<div style="font-size:12px;font-weight:800;color:var(--blue)">' + a.titulo + '</div>'
-          + '<div style="font-size:12px;color:var(--text);margin-top:3px">' + a.mensagem + '</div>'
+          + (a.imagem_url ? '<img src="' + a.imagem_url + '" alt="" onclick="muralImagemCheia(this.src)" style="width:100%;border-radius:6px;margin-top:6px;display:block">' : '')
+          + '<div style="font-size:12px;color:var(--text);margin-top:4px;white-space:pre-line">' + a.mensagem + '</div>'
+          + (a.exige_confirmacao ? (a.confirmado_em
+              ? '<div style="font-size:11px;color:#15803D;margin-top:6px">✔ Você confirmou em ' + new Date(a.confirmado_em).toLocaleDateString('pt-BR') + '</div>'
+              : '<button onclick="muralConfirmar(' + a.id + ', this)" style="margin-top:8px;width:100%;padding:10px;background:#16A34A;color:#fff;border:none;border-radius:8px;font-weight:800;font-size:13px;cursor:pointer">✔ Li e entendi</button>') : '')
           + '</div>';
       }).join("");
     })
     .catch(function(){ el.innerHTML = '<div style="font-size:12px;color:var(--muted);text-align:center">Nenhum aviso no momento.</div>'; });
 }
 
+// (09/11/2026) confirmação de leitura do Mural
+function muralConfirmar(id, btn) {
+  if (btn) { btn.disabled = true; btn.textContent = 'Registrando…'; }
+  _notifApi('/api/mural/' + id + '/confirmar', {method:'POST', body:'{}'}).then(function(){
+    _notifToast('Leitura confirmada. Obrigado!', 'ok'); carregarMuralMobile(); atualizarBadgeMural();
+  }).catch(function(e){ if (btn) { btn.disabled = false; btn.textContent = '✔ Li e entendi'; } _notifToast(e.message || 'Não foi possível confirmar', 'warn'); });
+}
+function muralImagemCheia(src) {
+  var m = document.createElement('div'); m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.92);z-index:600;display:flex;align-items:center;justify-content:center;padding:10px';
+  m.innerHTML = '<img src="' + src + '" style="max-width:100%;max-height:100%;border-radius:6px">'; m.onclick = function(){ m.remove(); }; document.body.appendChild(m);
+}
 async function salvarNovaSenha() {
   const err = document.getElementById('conta-err');
   const ok = document.getElementById('conta-ok');

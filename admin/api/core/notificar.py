@@ -37,6 +37,9 @@ EVENTOS = {
     "atendimento_novo":    {"modulo": ("atendimento", "atendimento_gestao"), "padrao": set(), "nome": "WhatsApp: conversa nova ou transferida para mim"},
     "atendimento_msg":     {"modulo": ("atendimento", "atendimento_gestao"), "padrao": set(), "nome": "WhatsApp: mensagem nova numa conversa minha"},
     "atendimento_conexao": {"modulo": "atendimento_gestao", "padrao": {"admin", "gestor"},   "nome": "WhatsApp do atendimento desconectado"},
+    # (09/11/2026) Mural: lembrete de aviso ainda não confirmado ("Li e entendi") — vai só para quem está
+    # pendente (apenas=[…]); módulo "*" = qualquer colaborador com login, não depende de módulo.
+    "mural_confirmar": {"modulo": "*",               "padrao": set(),                          "nome": "Aviso do Mural aguardando minha confirmação de leitura"},
 }
 
 _OK = False
@@ -145,7 +148,7 @@ async def _usuarios_ativos():
 
 async def _tem_modulo_usuario(u, modulo, individuais):
     perfil = (u.get("perfil") or "").lower()
-    if perfil == "admin":
+    if perfil == "admin" or modulo == "*":   # (09/11/2026) "*" = evento para qualquer colaborador
         return True
     ind = individuais.get(str(u["id"]), {})
     padrao = set(await perfil_modulos_padrao(perfil))

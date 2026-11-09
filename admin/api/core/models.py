@@ -80,6 +80,10 @@ class MuralCreate(BaseModel):
     mensagem: str
     perfis: str = ""  # "" = todos, ou "operador,campo,motorista"
     destinatario: str = ""  # "" = usa perfis, ou "gilson@garra.local" = só ele
+    # (09/11/2026) card com imagem, confirmação "Li e entendi" e validade
+    imagem_path: str = ""          # path no Storage (garra-fotos:mural/…) devolvido por POST /api/mural/imagem
+    exige_confirmacao: bool = True # mostra o botão ✔ Li e entendi e conta quem confirmou
+    valido_ate: str = ""           # "AAAA-MM-DD" — depois dessa data some do painel (fica no histórico)
 
 class CartilhaBloco(BaseModel):
     ordem: int = 0

@@ -554,6 +554,30 @@ button:disabled, select:disabled, input:disabled, [aria-disabled=true] { cursor:
               <label style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;display:block;margin-bottom:4px">Mensagem</label>
               <textarea id="mural-mensagem" rows="3" placeholder="Texto do aviso..." style="width:100%;padding:10px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;box-sizing:border-box;font-family:inherit;resize:vertical"></textarea>
             </div>
+            <!-- (09/11/2026) card com imagem no mesmo aviso: título + imagem + legenda (mensagem) -->
+            <div style="margin-bottom:10px">
+              <label style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;display:block;margin-bottom:4px">Imagem do card (opcional — JPG/PNG)</label>
+              <input type="hidden" id="mural-imagem-path" value="">
+              <div id="mural-imagem-drop" onclick="document.getElementById('mural-imagem-file').click()" ondragover="event.preventDefault();this.style.borderColor='var(--orange)'" ondragleave="this.style.borderColor='var(--border)'" ondrop="event.preventDefault();this.style.borderColor='var(--border)';muralImagemEscolhida(event.dataTransfer.files[0])"
+                   style="border:1.5px dashed var(--border);border-radius:8px;padding:14px;text-align:center;cursor:pointer;background:#fff;font-size:13px;color:var(--muted)">
+                <span id="mural-imagem-dica">Clique ou arraste a imagem aqui</span>
+                <img id="mural-imagem-prev" alt="" style="display:none;max-width:100%;max-height:260px;border-radius:6px;margin:6px auto 0">
+              </div>
+              <input type="file" id="mural-imagem-file" accept="image/*" style="display:none" onchange="muralImagemEscolhida(this.files[0])">
+              <div style="display:flex;gap:8px;margin-top:6px;align-items:center">
+                <span id="mural-imagem-status" style="font-size:12px;color:var(--muted)"></span>
+                <button type="button" id="mural-imagem-rm" onclick="muralImagemRemover()" class="btn-sm" style="display:none;padding:3px 10px;font-size:11px;color:var(--red);border-color:var(--red)">Remover imagem</button>
+              </div>
+            </div>
+            <div style="display:flex;gap:18px;flex-wrap:wrap;margin-bottom:12px;align-items:center">
+              <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer" title="Mostra o botão ✔ Li e entendi e registra quem confirmou (nome, data e hora)">
+                <input type="checkbox" id="mural-exige" checked> Pedir confirmação de leitura (✔ Li e entendi)
+              </label>
+              <label style="display:flex;align-items:center;gap:6px;font-size:13px" title="Depois desta data o aviso some do painel dos colaboradores, mas fica aqui no histórico com as confirmações">
+                Exibir até <input type="date" id="mural-valido-ate" style="padding:6px 8px;border:1.5px solid var(--border);border-radius:6px;font-size:13px">
+                <span style="font-size:11px;color:var(--muted)">(vazio = sem validade)</span>
+              </label>
+            </div>
             <div style="margin-bottom:14px">
               <label style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;display:block;margin-bottom:6px">Enviar para</label>
               <div style="display:flex;gap:16px;margin-bottom:10px">
@@ -588,6 +612,8 @@ button:disabled, select:disabled, input:disabled, [aria-disabled=true] { cursor:
 
           <!-- Lista de avisos -->
           <div id="mural-lista"><div style="color:var(--muted);font-size:13px;padding:20px;text-align:center">Carregando...</div></div>
+          <!-- (09/11/2026) Quem leu / não leu — abre pelo contador de cada aviso -->
+          <div id="mural-leitores" style="display:none;margin-top:14px;background:var(--bg);border:1.5px solid var(--border);border-radius:8px;padding:14px"></div>
         </div>
       </section>
 
@@ -2258,19 +2284,28 @@ async function carregarMuralAvatarAdmin() {
   const el = document.getElementById('mural-avisos-admin');
   if (!el) return;
   try {
-    const avisos = await apiFetch('/api/mural?todos=1');
+    const avisos = await apiFetch('/api/mural');   // (09/11/2026) só o que é para mim (a gestão completa fica na seção Mural)
     if (!avisos.length) { el.innerHTML = '<div style="font-size:12px;color:var(--muted);text-align:center">Nenhum aviso no momento.</div>'; return; }
-    el.innerHTML = avisos.map(a =>
-      '<div style="background:var(--bg);border-left:3px solid var(--orange);border-radius:0 6px 6px 0;padding:10px 12px;margin-bottom:8px">'
+    // (09/11/2026) imagem do card + ✔ Li e entendi (o admin também confirma os avisos dele)
+    el.innerHTML = avisos.filter(a => !a.vencido).map(a =>
+      '<div style="background:var(--bg);border-left:3px solid ' + (a.exige_confirmacao && !a.confirmado_em ? 'var(--orange)' : '#CBD5E1') + ';border-radius:0 6px 6px 0;padding:10px 12px;margin-bottom:8px">'
       + '<div style="font-size:12px;font-weight:800;color:var(--blue)">' + a.titulo + '</div>'
-      + '<div style="font-size:12px;color:var(--text);margin-top:3px">' + a.mensagem + '</div>'
+      + (a.imagem_url ? '<img src="' + a.imagem_url + '" alt="" onclick="window.open(this.src,\'_blank\')" style="max-width:100%;border-radius:6px;margin-top:6px;cursor:zoom-in;display:block">' : '')
+      + '<div style="font-size:12px;color:var(--text);margin-top:3px;white-space:pre-line">' + a.mensagem + '</div>'
+      + (a.exige_confirmacao ? (a.confirmado_em
+          ? '<div style="font-size:11px;color:#16A34A;margin-top:6px">✔ Você confirmou em ' + new Date(a.confirmado_em).toLocaleDateString('pt-BR') + '</div>'
+          : '<button onclick="muralConfirmarAdmin(' + a.id + ')" style="margin-top:8px;padding:7px 12px;background:#16A34A;color:#fff;border:none;border-radius:6px;font-weight:700;font-size:12px;cursor:pointer">✔ Li e entendi</button>') : '')
       + '</div>'
-    ).join('');
+    ).join('') || '<div style="font-size:12px;color:var(--muted);text-align:center">Nenhum aviso no momento.</div>';
   } catch(e) {
     el.innerHTML = '<div style="font-size:12px;color:var(--muted);text-align:center">Nenhum aviso no momento.</div>';
   }
 }
 
+async function muralConfirmarAdmin(id) {
+  try { await apiFetch('/api/mural/' + id + '/confirmar', { method: 'POST', body: '{}' }); carregarMuralAvatarAdmin(); }
+  catch (e) { toast(e.message || 'Erro ao confirmar', 'error'); }
+}
 async function salvarNovaSenhaAdmin() {
   const err = document.getElementById('ctaadm-err');
   const ok = document.getElementById('ctaadm-ok');
@@ -2469,6 +2504,10 @@ function abrirFormMural(aviso) {
       document.getElementById('mural-usuario-select').value = aviso.destinatario;
     }
   });
+  // (09/11/2026) imagem, confirmação e validade
+  muralImagemSet(aviso ? (aviso.imagem_path || '') : '', aviso ? (aviso.imagem_url || '') : '');
+  document.getElementById('mural-exige').checked = aviso ? aviso.exige_confirmacao !== false : true;
+  document.getElementById('mural-valido-ate').value = aviso && aviso.valido_ate ? aviso.valido_ate.slice(0,10) : '';
   document.getElementById('mural-form-titulo').textContent = aviso ? 'Editar aviso' : 'Novo aviso';
   document.getElementById('mural-btn-salvar').textContent = aviso ? 'Salvar alterações' : 'Publicar';
   document.getElementById('mural-titulo').focus();
@@ -2524,24 +2563,103 @@ async function salvarAvisoMural() {
     destinatario = document.getElementById('mural-usuario-select').value;
     if (!destinatario) { toast('Selecione um colaborador','error'); return; }
   }
-  if (!titulo || !mensagem) { toast('Preencha título e mensagem','error'); return; }
+  if (!titulo || !mensagem) { toast('Preencha título e mensagem (legenda)','error'); return; }
+  if (_muralImgEnviando) { toast('Aguarde a imagem terminar de subir','error'); return; }
+  // (09/11/2026) imagem + confirmação + validade vão no mesmo aviso
+  const corpo = { titulo, mensagem, perfis, destinatario,
+    imagem_path: document.getElementById('mural-imagem-path').value || '',
+    exige_confirmacao: document.getElementById('mural-exige').checked,
+    valido_ate: document.getElementById('mural-valido-ate').value || '' };
   try {
     if (editId) {
-      await apiFetch('/api/mural/'+editId, {
-        method: 'PUT',
-        body: JSON.stringify({ titulo, mensagem, perfis, destinatario })
-      });
+      await apiFetch('/api/mural/'+editId, { method: 'PUT', body: JSON.stringify(corpo) });
       toast('Aviso atualizado!','success');
     } else {
-      await apiFetch('/api/mural', {
-        method: 'POST',
-        body: JSON.stringify({ titulo, mensagem, perfis, destinatario })
-      });
+      await apiFetch('/api/mural', { method: 'POST', body: JSON.stringify(corpo) });
       toast('Aviso publicado!','success');
     }
     fecharFormMural();
     carregarMuralAdmin();
   } catch(e) { toast(e.message || 'Erro ao salvar','error'); }
+}
+// ── (09/11/2026) Imagem do card: reduz para 1600 px no navegador e sobe para o Storage ──
+let _muralImgEnviando = false;
+function muralImagemSet(path, url) {
+  document.getElementById('mural-imagem-path').value = path || '';
+  const prev = document.getElementById('mural-imagem-prev'), dica = document.getElementById('mural-imagem-dica'), rm = document.getElementById('mural-imagem-rm');
+  if (url) { prev.src = url; prev.style.display = 'block'; dica.style.display = 'none'; rm.style.display = 'inline-block'; }
+  else { prev.src = ''; prev.style.display = 'none'; dica.style.display = 'inline'; rm.style.display = 'none'; }
+  document.getElementById('mural-imagem-status').textContent = '';
+}
+function muralImagemRemover() { muralImagemSet('', ''); }
+function _muralReduzir(file) {
+  return new Promise((res, rej) => {
+    const img = new Image(); const u = URL.createObjectURL(file);
+    img.onload = () => {
+      const max = 1600, k = Math.min(1, max / Math.max(img.width, img.height));
+      const c = document.createElement('canvas'); c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
+      c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+      URL.revokeObjectURL(u);
+      const png = /png/i.test(file.type) && file.size < 1500000;   // PNG pequeno (texto nítido) fica PNG; o resto vira JPEG
+      c.toBlob(b => b ? res(b) : rej(new Error('Falha ao processar a imagem')), png ? 'image/png' : 'image/jpeg', 0.86);
+    };
+    img.onerror = () => { URL.revokeObjectURL(u); rej(new Error('Arquivo não é uma imagem válida')); };
+    img.src = u;
+  });
+}
+async function muralImagemEscolhida(file) {
+  if (!file) return;
+  if (!/^image\//.test(file.type)) { toast('Escolha um arquivo de imagem (JPG/PNG)', 'error'); return; }
+  const st = document.getElementById('mural-imagem-status');
+  try {
+    _muralImgEnviando = true; st.textContent = 'Enviando imagem…';
+    const blob = await _muralReduzir(file);
+    const fd = new FormData(); fd.append('imagem', blob, 'card.' + (blob.type === 'image/png' ? 'png' : 'jpg'));
+    const r = await fetch(API + '/api/mural/imagem', { method: 'POST', headers: { Authorization: 'Bearer ' + Token.get() }, body: fd });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.detail || 'Erro ' + r.status);
+    muralImagemSet(j.imagem_path, j.imagem_url || URL.createObjectURL(blob));
+    st.textContent = 'Imagem pronta (' + Math.round(blob.size / 1024) + ' KB)';
+  } catch (e) { st.textContent = ''; toast(e.message || 'Não foi possível enviar a imagem', 'error'); }
+  finally { _muralImgEnviando = false; document.getElementById('mural-imagem-file').value = ''; }
+}
+// ── (09/11/2026) Quem leu / quem falta ──
+async function muralQuemLeu(id) {
+  const el = document.getElementById('mural-leitores'); if (!el) return;
+  el.style.display = 'block'; el.innerHTML = '<div style="font-size:13px;color:var(--muted)">Carregando…</div>';
+  try {
+    const d = await apiFetch('/api/mural/' + id + '/confirmacoes');
+    const fmt = iso => { const x = new Date(iso); return x.toLocaleDateString('pt-BR') + ' ' + x.toLocaleTimeString('pt-BR', {hour:'2-digit', minute:'2-digit'}); };
+    const pct = d.total ? Math.round(100 * d.confirmaram.filter(c => !c.fora_do_publico).length / d.total) : 0;
+    el.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+        <div style="font-size:14px;font-weight:800;color:var(--blue)">Confirmação de leitura — ${d.titulo}</div>
+        <div style="display:flex;gap:8px"><button class="btn-sm" onclick="muralLeitoresExportar(${id})" style="padding:4px 10px;font-size:11px">⬇ Excel</button>
+        <button class="btn-sm" onclick="document.getElementById('mural-leitores').style.display='none'" style="padding:4px 10px;font-size:11px">Fechar</button></div></div>
+      <div style="font-size:13px;margin:8px 0 12px"><b>${d.confirmaram.filter(c=>!c.fora_do_publico).length}</b> de <b>${d.total}</b> confirmaram (${pct}%)
+        <div style="height:8px;background:#E2E8F0;border-radius:4px;margin-top:6px;overflow:hidden"><div style="width:${pct}%;height:100%;background:#16A34A"></div></div></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+        <div><div style="font-size:11px;font-weight:700;color:#16A34A;text-transform:uppercase;margin-bottom:6px">✔ Confirmaram (${d.confirmaram.length})</div>
+          ${d.confirmaram.length ? d.confirmaram.map(c => `<div style="font-size:13px;padding:4px 0;border-bottom:1px solid var(--border)">${c.nome}${c.fora_do_publico ? ' <span style="font-size:10px;color:var(--muted)">(fora do público atual)</span>' : ''}<span style="float:right;font-size:11px;color:var(--muted)">${fmt(c.quando)}</span></div>`).join('') : '<div style="font-size:12px;color:var(--muted)">Ninguém ainda.</div>'}</div>
+        <div><div style="font-size:11px;font-weight:700;color:var(--red);text-transform:uppercase;margin-bottom:6px">⏳ Ainda não confirmaram (${d.pendentes.length})</div>
+          ${d.pendentes.length ? d.pendentes.map(c => `<div style="font-size:13px;padding:4px 0;border-bottom:1px solid var(--border)">${c.nome}<span style="float:right;font-size:11px;color:var(--muted)">${PERFIL_LABEL[c.perfil] || c.perfil}</span></div>`).join('') : '<div style="font-size:12px;color:#16A34A">Todos confirmaram ✔</div>'}
+          ${d.pendentes.length ? `<button class="btn-sm" onclick="muralLembrar()" style="margin-top:8px;padding:4px 10px;font-size:11px">🔔 Lembrar pendentes agora</button>` : ''}</div>
+      </div>`;
+    el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    el._dados = d;
+  } catch (e) { el.innerHTML = '<div style="font-size:13px;color:var(--red)">' + (e.message || 'Erro') + '</div>'; }
+}
+async function muralLembrar() {
+  try { const r = await apiFetch('/api/mural/lembretes/rodar', { method: 'POST', body: '{}' }); toast('Lembretes enviados: ' + (r.enviados || 0) + ' (só avisos com 48 h+ e 1 por pessoa a cada 48 h)', 'success'); }
+  catch (e) { toast(e.message || 'Erro', 'error'); }
+}
+function muralLeitoresExportar(id) {
+  const d = document.getElementById('mural-leitores')._dados; if (!d) return;
+  const linhas = [['Aviso', 'Colaborador', 'Login', 'Perfil', 'Situação', 'Confirmado em']];
+  d.confirmaram.forEach(c => linhas.push([d.titulo, c.nome, c.login, PERFIL_LABEL[c.perfil] || c.perfil, 'Confirmou', new Date(c.quando).toLocaleString('pt-BR')]));
+  d.pendentes.forEach(c => linhas.push([d.titulo, c.nome, c.login, PERFIL_LABEL[c.perfil] || c.perfil, 'Pendente', '']));
+  const csv = '\ufeff' + linhas.map(l => l.map(v => '"' + String(v).replace(/"/g, '""') + '"').join(';')).join('\r\n');
+  const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+  a.download = 'mural-confirmacoes-' + id + '.csv'; a.click();
 }
 async function excluirAvisoMural(id) {
   if (!confirm('Desativar este aviso?')) return;
@@ -2570,11 +2688,20 @@ async function carregarMuralAdmin() {
         tagHtml = '<span style="font-size:10px;background:#DCFCE7;color:#16A34A;padding:2px 8px;border-radius:99px;margin-left:8px">todos</span>';
       }
       const data = a.criado_em ? new Date(a.criado_em).toLocaleDateString('pt-BR') : '';
+      // (09/11/2026) validade, imagem e contador "n confirmaram" (abre quem leu / não leu)
+      if (a.vencido) tagHtml += '<span style="font-size:10px;background:#F1F5F9;color:#64748B;padding:2px 8px;border-radius:99px;margin-left:6px">vencido</span>';
+      else if (a.valido_ate) tagHtml += '<span style="font-size:10px;background:#FFF7ED;color:#B45309;padding:2px 8px;border-radius:99px;margin-left:6px">até ' + a.valido_ate.slice(0,10).split('-').reverse().join('/') + '</span>';
+      const imgHtml = a.imagem_url ? `<img src="${a.imagem_url}" alt="" onclick="window.open(this.src,'_blank')" style="max-width:220px;max-height:140px;border-radius:6px;margin-top:6px;cursor:zoom-in;display:block">` : '';
+      const confHtml = a.exige_confirmacao
+        ? `<button onclick="muralQuemLeu(${a.id})" class="btn-sm" style="padding:3px 10px;font-size:11px;margin-top:6px" title="Ver quem confirmou e quem falta">✔ ${a.confirmacoes||0} confirmaram · ver quem leu</button>`
+        : '<span style="font-size:11px;color:var(--muted);margin-top:6px;display:inline-block">sem confirmação de leitura</span>';
       return `<div style="display:flex;align-items:flex-start;gap:12px;padding:12px 0;border-bottom:1px solid var(--border)">
         <div style="flex:1">
           <div style="font-size:14px;font-weight:700;color:var(--blue)">${a.titulo}${tagHtml}</div>
-          <div style="font-size:13px;color:var(--muted);margin-top:4px">${a.mensagem}</div>
+          ${imgHtml}
+          <div style="font-size:13px;color:var(--muted);margin-top:4px;white-space:pre-line">${a.mensagem}</div>
           <div style="font-size:11px;color:var(--muted);margin-top:4px">${data} · ${a.criado_por||''}</div>
+          ${confHtml}
         </div>
         <button onclick='abrirFormMural(${JSON.stringify(a).replace(/'/g,"&apos;")})' class="btn-sm" style="flex-shrink:0;padding:4px 10px;font-size:11px" title="Editar">✎</button>
         <button onclick="excluirAvisoMural(${a.id})" class="btn-sm" style="color:var(--red);border-color:var(--red);flex-shrink:0;padding:4px 10px;font-size:11px" title="Remover">✕</button>
@@ -2607,13 +2734,16 @@ function renderSidebar(perfil, perms) {
         <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
         Permissões
       </div>
-      <div class="sb-item" onclick="navTo('mural',this)">
-        <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-        Mural
-      </div>
       <div class="sb-item" onclick="navTo('cartilha',this)">
         <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
         Manual do Colaborador
+      </div>`;
+
+  // (09/11/2026) Mural: admin ou módulo mural_publicar (Gestor liga na matriz; pessoa nas Exceções)
+  if (isAdmin || temPerm('mural_publicar')) html += `
+      <div class="sb-item" onclick="navTo('mural',this)">
+        <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+        Mural
       </div>`;
 
   // (21/10/2026) OS, Controle Mensal, Agenda e Cadastros são o "Painel de gestão" = módulo Admin Master.

@@ -32,6 +32,9 @@ MODULOS_DISPONIVEIS = [
     # configuração do próprio módulo; aqui é só a porta de entrada.
     {"id": "atendimento",        "label": "Atendimento WhatsApp",           "desc": "Inbox do número interno — responde os setores em que está cadastrado (app e desktop)"},
     {"id": "atendimento_gestao", "label": "Atendimento WhatsApp — Gerência", "desc": "Vê e atende todos os setores, configura menu e textos, libera acesso entre setores, conexão"},
+    # (09/11/2026) Mural: publicar cards/avisos (com imagem) e ver quem confirmou leitura. Antes era só o
+    # perfil admin; agora é módulo — ligue para Gestor na matriz ou para uma pessoa nas Exceções.
+    {"id": "mural_publicar",     "label": "Mural — Publicar avisos",        "desc": "Publica, edita e remove avisos do Mural (com imagem) e vê quem confirmou leitura — item Mural no Admin"},
 ]
 
 PERFIL_MODULOS_PADRAO = {

@@ -1386,6 +1386,12 @@ function abrirPainelConta() {
   carregarMuralJard();
 }
 
+function muralConfirmarJard(id, btn) {   // (09/11/2026)
+  if (btn) { btn.disabled = true; btn.textContent = 'Registrando…'; }
+  fetch('/api/mural/' + id + '/confirmar', {method:'POST', headers:{'Authorization':'Bearer '+TOKEN, 'Content-Type':'application/json'}, body:'{}'})
+    .then(function(r){ if (!r.ok) throw new Error(); carregarMuralJard(); })
+    .catch(function(){ if (btn) { btn.disabled = false; btn.textContent = '✔ Li e entendi'; } });
+}
 function carregarMuralJard() {
   var el = document.getElementById("mural-avisos-jard");
   if (!el) return;
@@ -1393,10 +1399,16 @@ function carregarMuralJard() {
     .then(function(r){return r.json();})
     .then(function(avisos){
       if (!avisos.length) { el.innerHTML = '<div style="font-size:12px;color:var(--mut);text-align:center">Nenhum aviso no momento.</div>'; return; }
+      // (09/11/2026) imagem do card + ✔ Li e entendi (mesma regra do app principal)
       el.innerHTML = avisos.map(function(a){
-        return '<div style="background:#fff;border-left:3px solid var(--or);border-radius:0 6px 6px 0;padding:10px 12px;margin-bottom:8px">'
+        var pend = a.exige_confirmacao && !a.confirmado_em;
+        return '<div style="background:#fff;border-left:3px solid ' + (pend ? 'var(--or)' : '#CBD5E1') + ';border-radius:0 6px 6px 0;padding:10px 12px;margin-bottom:8px">'
           + '<div style="font-size:12px;font-weight:800;color:var(--bl)">' + a.titulo + '</div>'
-          + '<div style="font-size:12px;color:var(--txt);margin-top:3px">' + a.mensagem + '</div>'
+          + (a.imagem_url ? '<img src="' + a.imagem_url + '" alt="" onclick="window.open(this.src,\'_blank\')" style="width:100%;border-radius:6px;margin-top:6px;display:block">' : '')
+          + '<div style="font-size:12px;color:var(--txt);margin-top:4px;white-space:pre-line">' + a.mensagem + '</div>'
+          + (a.exige_confirmacao ? (a.confirmado_em
+              ? '<div style="font-size:11px;color:#15803D;margin-top:6px">✔ Você confirmou em ' + new Date(a.confirmado_em).toLocaleDateString('pt-BR') + '</div>'
+              : '<button onclick="muralConfirmarJard(' + a.id + ', this)" style="margin-top:8px;width:100%;padding:10px;background:#16A34A;color:#fff;border:none;border-radius:8px;font-weight:800;font-size:13px">✔ Li e entendi</button>') : '')
           + '</div>';
       }).join("");
     })
