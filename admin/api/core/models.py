@@ -84,6 +84,8 @@ class MuralCreate(BaseModel):
     imagem_path: str = ""          # path no Storage (garra-fotos:mural/…) devolvido por POST /api/mural/imagem
     exige_confirmacao: bool = True # mostra o botão ✔ Li e entendi e conta quem confirmou
     valido_ate: str = ""           # "AAAA-MM-DD" — depois dessa data some do painel (fica no histórico)
+    bloqueia_checklist: bool = False  # (09/11/2026) alerta de segurança: aparece antes do checklist e só libera após "Li e entendi"
+    audio_path: str = ""           # (09/11/2026) áudio curto da gestão explicando o card (POST /api/mural/audio)
 
 class CartilhaBloco(BaseModel):
     ordem: int = 0

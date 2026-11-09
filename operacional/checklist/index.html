@@ -904,6 +904,8 @@
             tabInicial: tabInicial,
           };
           localStorage.setItem('garra_current_user', JSON.stringify(currentUser));
+          // (09/11/2026) Alerta de segurança obrigatório: aparece ANTES do checklist e só libera após ✔ Li e entendi
+          await muralAlertaAntesDoChecklist(API, data.token || token);
           if (typeof _navigate === 'function') _navigate();
           return;
         }
@@ -915,6 +917,56 @@
     // Sem token ou falhou — mostrar login normal
     if (typeof renovarTokenSilencioso === 'function') renovarTokenSilencioso();
   });
+</script>
+<script>
+// (09/11/2026) Alerta de Segurança antes do checklist (Mural › "Exigir antes do checklist").
+// Busca os alertas pendentes do usuário; mostra um por um em tela cheia (título, card, áudio, legenda)
+// com um único botão ✔ Li e entendi (sem fechar). Confirma no servidor (mesma confirmação do Mural) e
+// segue para o próximo; sem pendências, resolve na hora e o checklist abre normal. Falha de rede = não bloqueia.
+async function muralAlertaAntesDoChecklist(API, token) {
+  let pend = [];
+  try {
+    const r = await fetch(API + '/api/mural/pendentes-checklist', { headers: { 'Authorization': 'Bearer ' + token } });
+    if (r.ok) pend = await r.json();
+  } catch (e) { return; }
+  if (!Array.isArray(pend) || !pend.length) return;
+  const esc = v => String(v == null ? '' : v).replace(/&/g,'&amp;').replace(/</g,'&lt;');
+  for (let i = 0; i < pend.length; i++) {
+    const a = pend[i];
+    await new Promise(resolve => {
+      const ov = document.createElement('div');
+      ov.id = 'mural-gate';
+      ov.style.cssText = 'position:fixed;inset:0;z-index:99999;background:#001F4D;color:#0F172A;display:flex;flex-direction:column;font-family:Inter,system-ui,sans-serif';
+      ov.innerHTML =
+        '<div style="padding:14px 16px;color:#fff;display:flex;align-items:center;gap:10px">'
+        + '<span style="font-size:22px">🦺</span><div><div style="font-size:11px;letter-spacing:.08em;text-transform:uppercase;opacity:.8">Alerta de Segurança Garra</div>'
+        + '<div style="font-size:12px;opacity:.8">' + (pend.length > 1 ? (i + 1) + ' de ' + pend.length + ' · ' : '') + 'leia antes de começar o checklist</div></div></div>'
+        + '<div style="flex:1;overflow:auto;background:#fff;border-radius:16px 16px 0 0;padding:16px 16px 110px">'
+        + '<div style="font-size:18px;font-weight:800;color:#001F4D;margin-bottom:10px">' + esc(a.titulo) + '</div>'
+        + (a.imagem_url ? '<img src="' + a.imagem_url + '" alt="" style="width:100%;border-radius:10px;display:block;margin-bottom:10px" onclick="this.requestFullscreen&&this.requestFullscreen()">' : '')
+        + (a.audio_url ? '<div style="font-size:12px;color:#475569;margin:4px 0">🎙 Ouça a explicação:</div><audio controls preload="auto" src="' + a.audio_url + '" style="width:100%;height:40px;margin-bottom:10px"></audio>' : '')
+        + '<div style="font-size:15px;line-height:1.5;white-space:pre-line">' + esc(a.mensagem) + '</div>'
+        + '</div>'
+        + '<div style="position:fixed;left:0;right:0;bottom:0;padding:12px 16px 20px;background:#fff;border-top:1px solid #E2E8F0">'
+        + '<div style="font-size:11px;color:#64748B;text-align:center;margin-bottom:8px">Ao confirmar, fica registrado seu nome, data e hora.</div>'
+        + '<button id="mural-gate-ok" style="width:100%;padding:16px;background:#16A34A;color:#fff;border:none;border-radius:12px;font-size:17px;font-weight:800">✔ Li e entendi</button>'
+        + '<div id="mural-gate-err" style="font-size:12px;color:#B91C1C;text-align:center;margin-top:6px;min-height:14px"></div></div>';
+      document.body.appendChild(ov);
+      const btn = ov.querySelector('#mural-gate-ok');
+      btn.onclick = async () => {
+        btn.disabled = true; btn.textContent = 'Registrando…';
+        try {
+          const r = await fetch(API + '/api/mural/' + a.id + '/confirmar', { method: 'POST', headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' }, body: '{}' });
+          if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || 'Erro ' + r.status);
+          ov.remove(); resolve();
+        } catch (e) {
+          btn.disabled = false; btn.textContent = '✔ Li e entendi';
+          ov.querySelector('#mural-gate-err').textContent = 'Não foi possível registrar (' + (e.message || 'sem conexão') + '). Tente de novo.';
+        }
+      };
+    });
+  }
+}
 </script>
 <script>
 // Modo embedded: quando carregado dentro do iframe do app shell mobile

@@ -539,6 +539,8 @@ button:disabled, select:disabled, input:disabled, [aria-disabled=true] { cursor:
           <div class="card-title">
             Mural de Avisos
             <button class="btn btn-primary" style="padding:6px 14px;font-size:12px" onclick="abrirFormMural()">+ Novo aviso</button>
+          <!-- (09/11/2026) Relatório mensal de confirmações (Alertas de Segurança Garra → PGR) -->
+          <button class="btn-sm" onclick="muralRelatorioAbrir()" style="margin-left:6px" title="Relatório do mês: temas publicados, % de confirmação, pendentes — imprimir/PDF">📄 Relatório mensal</button>
           </div>
           <p style="font-size:13px;color:var(--muted);margin-bottom:16px">Avisos aparecem no painel do avatar de todos os colaboradores (ou filtrado por perfil).</p>
 
@@ -569,9 +571,24 @@ button:disabled, select:disabled, input:disabled, [aria-disabled=true] { cursor:
                 <button type="button" id="mural-imagem-rm" onclick="muralImagemRemover()" class="btn-sm" style="display:none;padding:3px 10px;font-size:11px;color:var(--red);border-color:var(--red)">Remover imagem</button>
               </div>
             </div>
+            <!-- (09/11/2026) áudio da gestão explicando o card (30–60 s) -->
+            <div style="margin-bottom:10px">
+              <label style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;display:block;margin-bottom:4px">Áudio explicando o card (opcional — MP3/M4A/OGG, até 60 s)</label>
+              <input type="hidden" id="mural-audio-path" value="">
+              <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+                <button type="button" class="btn-sm" onclick="document.getElementById('mural-audio-file').click()" style="padding:6px 12px;font-size:12px">🎙 Escolher áudio</button>
+                <input type="file" id="mural-audio-file" accept="audio/*" style="display:none" onchange="muralAudioEscolhido(this.files[0])">
+                <audio id="mural-audio-prev" controls style="display:none;height:32px;max-width:320px"></audio>
+                <span id="mural-audio-status" style="font-size:12px;color:var(--muted)"></span>
+                <button type="button" id="mural-audio-rm" onclick="muralAudioSet('','')" class="btn-sm" style="display:none;padding:3px 10px;font-size:11px;color:var(--red);border-color:var(--red)">Remover áudio</button>
+              </div>
+            </div>
             <div style="display:flex;gap:18px;flex-wrap:wrap;margin-bottom:12px;align-items:center">
               <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer" title="Mostra o botão ✔ Li e entendi e registra quem confirmou (nome, data e hora)">
                 <input type="checkbox" id="mural-exige" checked> Pedir confirmação de leitura (✔ Li e entendi)
+              </label>
+              <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer" title="Alerta de segurança: aparece em tela cheia antes do checklist e só libera o checklist depois do ✔ Li e entendi">
+                <input type="checkbox" id="mural-bloqueia"> 🦺 Exigir antes do checklist
               </label>
               <label style="display:flex;align-items:center;gap:6px;font-size:13px" title="Depois desta data o aviso some do painel dos colaboradores, mas fica aqui no histórico com as confirmações">
                 Exibir até <input type="date" id="mural-valido-ate" style="padding:6px 8px;border:1.5px solid var(--border);border-radius:6px;font-size:13px">
@@ -2291,6 +2308,7 @@ async function carregarMuralAvatarAdmin() {
       '<div style="background:var(--bg);border-left:3px solid ' + (a.exige_confirmacao && !a.confirmado_em ? 'var(--orange)' : '#CBD5E1') + ';border-radius:0 6px 6px 0;padding:10px 12px;margin-bottom:8px">'
       + '<div style="font-size:12px;font-weight:800;color:var(--blue)">' + a.titulo + '</div>'
       + (a.imagem_url ? '<img src="' + a.imagem_url + '" alt="" onclick="window.open(this.src,\'_blank\')" style="max-width:100%;border-radius:6px;margin-top:6px;cursor:zoom-in;display:block">' : '')
+      + (a.audio_url ? '<audio controls preload="none" src="' + a.audio_url + '" style="width:100%;height:32px;margin-top:6px"></audio>' : '')
       + '<div style="font-size:12px;color:var(--text);margin-top:3px;white-space:pre-line">' + a.mensagem + '</div>'
       + (a.exige_confirmacao ? (a.confirmado_em
           ? '<div style="font-size:11px;color:#16A34A;margin-top:6px">✔ Você confirmou em ' + new Date(a.confirmado_em).toLocaleDateString('pt-BR') + '</div>'
@@ -2507,6 +2525,8 @@ function abrirFormMural(aviso) {
   // (09/11/2026) imagem, confirmação e validade
   muralImagemSet(aviso ? (aviso.imagem_path || '') : '', aviso ? (aviso.imagem_url || '') : '');
   document.getElementById('mural-exige').checked = aviso ? aviso.exige_confirmacao !== false : true;
+  document.getElementById('mural-bloqueia').checked = aviso ? !!aviso.bloqueia_checklist : false;
+  muralAudioSet(aviso ? (aviso.audio_path || '') : '', aviso ? (aviso.audio_url || '') : '');
   document.getElementById('mural-valido-ate').value = aviso && aviso.valido_ate ? aviso.valido_ate.slice(0,10) : '';
   document.getElementById('mural-form-titulo').textContent = aviso ? 'Editar aviso' : 'Novo aviso';
   document.getElementById('mural-btn-salvar').textContent = aviso ? 'Salvar alterações' : 'Publicar';
@@ -2569,7 +2589,10 @@ async function salvarAvisoMural() {
   const corpo = { titulo, mensagem, perfis, destinatario,
     imagem_path: document.getElementById('mural-imagem-path').value || '',
     exige_confirmacao: document.getElementById('mural-exige').checked,
+    bloqueia_checklist: document.getElementById('mural-bloqueia').checked && document.getElementById('mural-exige').checked,
+    audio_path: document.getElementById('mural-audio-path').value || '',
     valido_ate: document.getElementById('mural-valido-ate').value || '' };
+  if (document.getElementById('mural-bloqueia').checked && !document.getElementById('mural-exige').checked) { toast('"Exigir antes do checklist" precisa de confirmação de leitura ligada', 'error'); return; }
   try {
     if (editId) {
       await apiFetch('/api/mural/'+editId, { method: 'PUT', body: JSON.stringify(corpo) });
@@ -2622,6 +2645,72 @@ async function muralImagemEscolhida(file) {
     st.textContent = 'Imagem pronta (' + Math.round(blob.size / 1024) + ' KB)';
   } catch (e) { st.textContent = ''; toast(e.message || 'Não foi possível enviar a imagem', 'error'); }
   finally { _muralImgEnviando = false; document.getElementById('mural-imagem-file').value = ''; }
+}
+// ── (09/11/2026) Áudio do card ──
+function muralAudioSet(path, url) {
+  document.getElementById('mural-audio-path').value = path || '';
+  const a = document.getElementById('mural-audio-prev'), rm = document.getElementById('mural-audio-rm');
+  if (url) { a.src = url; a.style.display = 'inline-block'; rm.style.display = 'inline-block'; } else { a.removeAttribute('src'); a.style.display = 'none'; rm.style.display = 'none'; }
+  document.getElementById('mural-audio-status').textContent = '';
+}
+async function muralAudioEscolhido(file) {
+  if (!file) return;
+  const st = document.getElementById('mural-audio-status');
+  if (file.size > 15 * 1024 * 1024) { toast('Áudio acima de 15 MB', 'error'); return; }
+  try {
+    _muralImgEnviando = true; st.textContent = 'Enviando áudio…';
+    const fd = new FormData(); fd.append('audio', file, file.name || 'audio');
+    const r = await fetch(API + '/api/mural/audio', { method: 'POST', headers: { Authorization: 'Bearer ' + Token.get() }, body: fd });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.detail || 'Erro ' + r.status);
+    muralAudioSet(j.audio_path, j.audio_url || URL.createObjectURL(file));
+    st.textContent = 'Áudio pronto (' + Math.round(file.size / 1024) + ' KB)';
+  } catch (e) { st.textContent = ''; toast(e.message || 'Não foi possível enviar o áudio', 'error'); }
+  finally { _muralImgEnviando = false; document.getElementById('mural-audio-file').value = ''; }
+}
+// ── (09/11/2026) Relatório mensal — página imprimível (Ctrl+P → PDF) no padrão Garra ──
+async function muralRelatorioAbrir() {
+  const padrao = new Date(); padrao.setDate(1); padrao.setMonth(padrao.getMonth());
+  const mes = prompt('Mês do relatório (AAAA-MM):', padrao.toISOString().slice(0, 7));
+  if (!mes) return;
+  let d;
+  try { d = await apiFetch('/api/mural/relatorio?mes=' + encodeURIComponent(mes)); } catch (e) { toast(e.message || 'Erro', 'error'); return; }
+  const MESES = ['janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro'];
+  const [ano, m] = d.mes.split('-'); const nomeMes = MESES[parseInt(m, 10) - 1] + ' de ' + ano;
+  const esc = v => String(v == null ? '' : v).replace(/&/g,'&amp;').replace(/</g,'&lt;');
+  const fmt = iso => { const x = new Date(iso); return x.toLocaleDateString('pt-BR'); };
+  const fmtH = iso => { const x = new Date(iso); return x.toLocaleDateString('pt-BR') + ' ' + x.toLocaleTimeString('pt-BR', {hour:'2-digit',minute:'2-digit'}); };
+  const r = d.resumo;
+  const linhasAvisos = d.avisos.map((a, i) => `<tr><td>${i+1}</td><td>${fmt(a.criado_em)}</td><td><b>${esc(a.titulo)}</b>${a.bloqueia_checklist ? ' <span class="tg">antes do checklist</span>' : ''}${a.tem_imagem ? ' <span class="tg">card</span>' : ''}${a.tem_audio ? ' <span class="tg">áudio</span>' : ''}</td><td>${esc(a.destinatario || a.perfis)}</td><td class="c">${a.publico}</td><td class="c">${a.confirmados}</td><td class="c"><b>${a.pct}%</b></td><td>${a.pendentes.map(p => esc(p.nome)).join(', ') || '—'}</td></tr>`).join('');
+  const linhasPessoas = d.pessoas.map(p => `<tr><td>${esc(p.nome)}</td><td>${esc(PERFIL_LABEL[p.perfil] || p.perfil)}</td><td class="c">${p.total}</td><td class="c">${p.confirmou}</td><td class="c"><b>${p.pct}%</b></td></tr>`).join('');
+  const detalhe = d.avisos.map(a => `<h3>${esc(a.titulo)} <small>— publicado em ${fmt(a.criado_em)} por ${esc(a.criado_por)}</small></h3>
+      <table class="mini"><tr><th>Confirmou</th><th>Data/hora</th></tr>${a.confirmaram.map(c => `<tr><td>${esc(c.nome)}</td><td>${fmtH(c.quando)}</td></tr>`).join('') || '<tr><td colspan="2">Nenhuma confirmação</td></tr>'}</table>`).join('');
+  const html = `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Alertas de Segurança Garra — ${esc(nomeMes)}</title>
+  <style>
+    body{font-family:Inter,Arial,sans-serif;color:#0F172A;margin:28px;font-size:12px}
+    .cab{display:flex;justify-content:space-between;align-items:center;border-bottom:3px solid #F58220;padding-bottom:10px;margin-bottom:16px}
+    .cab h1{margin:0;font-size:18px;color:#001F4D}.cab .sub{color:#475569;font-size:12px}.cab .logo{font-weight:900;font-size:22px;color:#001F4D}.cab .logo span{color:#F58220}
+    .kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:14px 0 18px}.kpi{border:1px solid #E2E8F0;border-radius:8px;padding:10px}.kpi b{display:block;font-size:22px;color:#001F4D}.kpi small{color:#475569}
+    table{width:100%;border-collapse:collapse;margin-bottom:18px}th{background:#001F4D;color:#fff;text-align:left;padding:6px 8px;font-size:11px}td{padding:6px 8px;border-bottom:1px solid #E2E8F0;vertical-align:top}.c{text-align:center}
+    .tg{font-size:9px;background:#FEF3C7;color:#92400E;padding:1px 6px;border-radius:99px}h2{font-size:14px;color:#001F4D;margin:18px 0 8px;border-left:4px solid #F58220;padding-left:8px}h3{font-size:12px;margin:12px 0 4px}h3 small{font-weight:400;color:#475569}
+    .mini td,.mini th{font-size:11px;padding:4px 8px}.rod{margin-top:24px;color:#64748B;font-size:10px;border-top:1px solid #E2E8F0;padding-top:8px}
+    .ass{display:grid;grid-template-columns:1fr 1fr;gap:40px;margin-top:40px}.ass div{border-top:1px solid #0F172A;padding-top:4px;text-align:center;font-size:11px}
+    @media print{body{margin:12mm}.np{display:none}}
+  </style></head><body>
+  <div class="cab"><div><div class="logo">GARRA <span>Terraplenagem e Caçambas</span></div><div class="sub">Sistema de Gestão Integrado · Mural</div></div>
+    <div style="text-align:right"><h1>Alertas de Segurança — ${esc(nomeMes)}</h1><div class="sub">Registro de divulgação e confirmação de leitura (evidência para PGR / NR-01)</div></div></div>
+  <div class="kpis"><div class="kpi"><b>${r.temas}</b><small>temas publicados</small></div><div class="kpi"><b>${r.pct_geral}%</b><small>confirmação geral (${r.confirmacoes} de ${r.publico_total})</small></div><div class="kpi"><b>${r.colaboradores_100}/${r.colaboradores}</b><small>colaboradores com 100%</small></div><div class="kpi"><b>${d.avisos.filter(a => a.pct === 100).length}</b><small>temas com 100% de leitura</small></div></div>
+  <h2>1. Temas publicados no mês</h2>
+  <table><tr><th>#</th><th>Data</th><th>Tema</th><th>Público</th><th class="c">Pessoas</th><th class="c">Confirmaram</th><th class="c">%</th><th>Ainda não confirmaram</th></tr>${linhasAvisos || '<tr><td colspan="8">Nenhum alerta com confirmação exigida neste mês.</td></tr>'}</table>
+  <h2>2. Por colaborador</h2>
+  <table><tr><th>Colaborador</th><th>Perfil</th><th class="c">Alertas recebidos</th><th class="c">Confirmou</th><th class="c">%</th></tr>${linhasPessoas || '<tr><td colspan="5">—</td></tr>'}</table>
+  <h2>3. Detalhe das confirmações (login, data e hora)</h2>${detalhe || '<p>—</p>'}
+  <div class="ass"><div>Responsável pela divulgação</div><div>Direção</div></div>
+  <div class="rod">Gerado pelo Garra Sistemas em ${new Date(d.gerado_em).toLocaleString('pt-BR')} por ${esc(d.gerado_por)}. Cada confirmação foi registrada pelo próprio colaborador no aplicativo (botão "Li e entendi"), com login autenticado e data/hora do servidor. Complementa — não substitui — os treinamentos presenciais e o DDS.</div>
+  <div class="np" style="position:fixed;bottom:16px;right:16px"><button onclick="print()" style="padding:8px 14px;background:#F58220;color:#fff;border:none;border-radius:6px;font-weight:700;cursor:pointer">🖨 Imprimir / salvar PDF</button></div>
+  </body></html>`;
+  const w = window.open('', '_blank'); if (!w) { toast('Permita pop-ups para abrir o relatório', 'error'); return; }
+  w.document.open(); w.document.write(html); w.document.close();
 }
 // ── (09/11/2026) Quem leu / quem falta ──
 async function muralQuemLeu(id) {
@@ -2691,6 +2780,8 @@ async function carregarMuralAdmin() {
       // (09/11/2026) validade, imagem e contador "n confirmaram" (abre quem leu / não leu)
       if (a.vencido) tagHtml += '<span style="font-size:10px;background:#F1F5F9;color:#64748B;padding:2px 8px;border-radius:99px;margin-left:6px">vencido</span>';
       else if (a.valido_ate) tagHtml += '<span style="font-size:10px;background:#FFF7ED;color:#B45309;padding:2px 8px;border-radius:99px;margin-left:6px">até ' + a.valido_ate.slice(0,10).split('-').reverse().join('/') + '</span>';
+      if (a.bloqueia_checklist) tagHtml += '<span style="font-size:10px;background:#FEF3C7;color:#92400E;padding:2px 8px;border-radius:99px;margin-left:6px">🦺 antes do checklist</span>';
+      if (a.audio_url) tagHtml += '<span style="font-size:10px;background:#EFF6FF;color:#1D4ED8;padding:2px 8px;border-radius:99px;margin-left:6px">🎙 áudio</span>';
       const imgHtml = a.imagem_url ? `<img src="${a.imagem_url}" alt="" onclick="window.open(this.src,'_blank')" style="max-width:220px;max-height:140px;border-radius:6px;margin-top:6px;cursor:zoom-in;display:block">` : '';
       const confHtml = a.exige_confirmacao
         ? `<button onclick="muralQuemLeu(${a.id})" class="btn-sm" style="padding:3px 10px;font-size:11px;margin-top:6px" title="Ver quem confirmou e quem falta">✔ ${a.confirmacoes||0} confirmaram · ver quem leu</button>`

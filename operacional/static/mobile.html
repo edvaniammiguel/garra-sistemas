@@ -2599,6 +2599,7 @@ function carregarMuralMobile() {
         return '<div id="mural-av-' + a.id + '" style="background:#fff;border-left:3px solid ' + (pend ? 'var(--orange)' : '#CBD5E1') + ';border-radius:0 6px 6px 0;padding:10px 12px;margin-bottom:8px">'
           + '<div style="font-size:12px;font-weight:800;color:var(--blue)">' + a.titulo + '</div>'
           + (a.imagem_url ? '<img src="' + a.imagem_url + '" alt="" onclick="muralImagemCheia(this.src)" style="width:100%;border-radius:6px;margin-top:6px;display:block">' : '')
+          + (a.audio_url ? '<audio controls preload="none" src="' + a.audio_url + '" style="width:100%;height:36px;margin-top:6px"></audio>' : '')
           + '<div style="font-size:12px;color:var(--text);margin-top:4px;white-space:pre-line">' + a.mensagem + '</div>'
           + (a.exige_confirmacao ? (a.confirmado_em
               ? '<div style="font-size:11px;color:#15803D;margin-top:6px">✔ Você confirmou em ' + new Date(a.confirmado_em).toLocaleDateString('pt-BR') + '</div>'

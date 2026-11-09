@@ -40,6 +40,7 @@ EVENTOS = {
     # (09/11/2026) Mural: lembrete de aviso ainda não confirmado ("Li e entendi") — vai só para quem está
     # pendente (apenas=[…]); módulo "*" = qualquer colaborador com login, não depende de módulo.
     "mural_confirmar": {"modulo": "*",               "padrao": set(),                          "nome": "Aviso do Mural aguardando minha confirmação de leitura"},
+    "mural_novo":      {"modulo": "*",               "padrao": set(),                          "nome": "Novo aviso / alerta de segurança publicado no Mural"},
 }
 
 _OK = False

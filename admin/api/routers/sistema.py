@@ -39,6 +39,8 @@ async def _garantir_mural_v2():
         "ALTER TABLE public.mural_avisos ADD COLUMN IF NOT EXISTS imagem_path TEXT DEFAULT ''",
         "ALTER TABLE public.mural_avisos ADD COLUMN IF NOT EXISTS exige_confirmacao BOOLEAN DEFAULT true",
         "ALTER TABLE public.mural_avisos ADD COLUMN IF NOT EXISTS valido_ate DATE",
+        "ALTER TABLE public.mural_avisos ADD COLUMN IF NOT EXISTS bloqueia_checklist BOOLEAN DEFAULT false",
+        "ALTER TABLE public.mural_avisos ADD COLUMN IF NOT EXISTS audio_path TEXT DEFAULT ''",
         """CREATE TABLE IF NOT EXISTS public.mural_confirmacoes (
                id SERIAL PRIMARY KEY,
                aviso_id INTEGER NOT NULL REFERENCES public.mural_avisos(id) ON DELETE CASCADE,
@@ -107,6 +109,7 @@ async def _avisos_visiveis(payload, ignorar_filtros=False):
     rows = await ajard_query(
         "SELECT a.id, a.titulo, a.mensagem, a.perfis, a.destinatario, a.criado_em, a.criado_por, "
         "       a.imagem_path, coalesce(a.exige_confirmacao,true) AS exige_confirmacao, a.valido_ate, "
+        "       coalesce(a.bloqueia_checklist,false) AS bloqueia_checklist, a.audio_path, "
         "       (SELECT count(*) FROM public.mural_confirmacoes c WHERE c.aviso_id=a.id)::int AS confirmacoes, "
         "       (SELECT c.confirmado_em FROM public.mural_confirmacoes c WHERE c.aviso_id=a.id AND c.usuario_login=%s) AS confirmado_em "
         "FROM public.mural_avisos a WHERE a.ativo=true ORDER BY a.criado_em DESC",
@@ -126,8 +129,19 @@ async def _avisos_visiveis(payload, ignorar_filtros=False):
                 img_url = storage_url(img)
             except Exception:
                 img_url = ""
+        aud = r.get("audio_path") or ""
+        aud_url = ""
+        if aud:
+            try:
+                from core.storage import storage_url
+                aud_url = storage_url(aud)
+            except Exception:
+                aud_url = ""
         result.append({
             "id": r["id"],
+            "bloqueia_checklist": bool(r.get("bloqueia_checklist")),
+            "audio_path": aud,
+            "audio_url": aud_url,
             "titulo": r["titulo"],
             "mensagem": r["mensagem"],
             "perfis": (r.get("perfis") or "").strip(),
@@ -259,6 +273,97 @@ async def mural_imagem(request: Request, payload=Depends(verificar_mural_publica
     return {"ok": True, "imagem_path": sp, "imagem_url": url}
 
 
+@router.get("/api/mural/pendentes-checklist")
+async def mural_pendentes_checklist(payload=Depends(verificar_token)):
+    """(09/11/2026) Alertas marcados "exigir antes do checklist" que o usuário ainda não confirmou.
+    O checklist mostra um por um em tela cheia e só carrega depois do ✔ Li e entendi."""
+    avisos = await _avisos_visiveis(payload)
+    return [a for a in avisos if a["bloqueia_checklist"] and a["exige_confirmacao"] and not a["confirmado_em"]]
+
+
+@router.post("/api/mural/audio")
+async def mural_audio(request: Request, payload=Depends(verificar_mural_publicar)):
+    """(09/11/2026) Áudio curto (30–60 s) da gestão explicando o card. MP3/M4A/OGG/WebM/WAV até 15 MB."""
+    form = await request.form()
+    f = form.get("audio")
+    if f is None:
+        raise HTTPException(status_code=400, detail="Envie o campo 'audio'")
+    dados = await f.read()
+    if not dados:
+        raise HTTPException(status_code=400, detail="Áudio vazio")
+    if len(dados) > 15 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="Áudio acima de 15 MB")
+    ct = (f.content_type or "").lower().split(";")[0]
+    exts = {"audio/mpeg": "mp3", "audio/mp3": "mp3", "audio/mp4": "m4a", "audio/x-m4a": "m4a", "audio/aac": "aac",
+            "audio/ogg": "ogg", "audio/webm": "webm", "audio/wav": "wav", "audio/x-wav": "wav", "video/webm": "webm"}
+    if ct not in exts:
+        raise HTTPException(status_code=400, detail=f"Formato de áudio não aceito ({ct or 'desconhecido'}) — use MP3, M4A, OGG ou WebM")
+    import uuid as _uuid
+    from core.storage import storage_upload, storage_url
+    path = f"mural/audio/{datetime.now():%Y/%m}/{_uuid.uuid4().hex}.{exts[ct]}"
+    try:
+        sp = storage_upload(dados, path, content_type=ct)
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Não foi possível salvar o áudio no Storage: {e}")
+    url = ""
+    try:
+        url = storage_url(sp)
+    except Exception:
+        pass
+    return {"ok": True, "audio_path": sp, "audio_url": url}
+
+
+@router.get("/api/mural/relatorio")
+async def mural_relatorio(mes: str = "", payload=Depends(verificar_mural_publicar)):
+    """(09/11/2026) Relatório mensal "Alertas de Segurança Garra": por aviso publicado no mês (com confirmação
+    exigida) → público, confirmados, %, pendentes; resumo (temas, média, colaboradores com 100%). Vai para o PGR."""
+    await _garantir_mural_v2()
+    try:
+        ano, m = (mes or datetime.now().strftime("%Y-%m")).split("-")[:2]
+        ano, m = int(ano), int(m)
+    except Exception:
+        raise HTTPException(status_code=400, detail="mes inválido — use AAAA-MM")
+    ini = datetime(ano, m, 1)
+    fim = datetime(ano + (m // 12), (m % 12) + 1, 1)
+    rows = await ajard_query(
+        """SELECT * FROM public.mural_avisos
+            WHERE coalesce(exige_confirmacao,true) AND criado_em >= %s AND criado_em < %s
+            ORDER BY criado_em""", (ini, fim)) or []
+    avisos, por_pessoa = [], {}
+    for r in rows:
+        publico = await _publico_do_aviso(r)
+        conf = await ajard_query("SELECT usuario_login, confirmado_em FROM public.mural_confirmacoes WHERE aviso_id=%s", (r["id"],)) or []
+        quando = {c["usuario_login"]: c["confirmado_em"] for c in conf}
+        confs, pend = [], []
+        for u in publico:
+            pp = por_pessoa.setdefault(u["login"], {"nome": u["nome"], "perfil": u.get("perfil") or "", "total": 0, "confirmou": 0})
+            pp["total"] += 1
+            if u["login"] in quando:
+                pp["confirmou"] += 1
+                confs.append({"nome": u["nome"], "quando": quando[u["login"]].isoformat()})
+            else:
+                pend.append({"nome": u["nome"], "perfil": u.get("perfil") or ""})
+        avisos.append({
+            "id": r["id"], "titulo": r["titulo"], "criado_em": r["criado_em"].isoformat(), "criado_por": r.get("criado_por") or "",
+            "perfis": (r.get("perfis") or "").strip() or "todos", "destinatario": (r.get("destinatario") or "").strip(),
+            "ativo": bool(r.get("ativo")), "bloqueia_checklist": bool(r.get("bloqueia_checklist")),
+            "tem_imagem": bool(r.get("imagem_path")), "tem_audio": bool(r.get("audio_path")),
+            "publico": len(publico), "confirmados": len(confs), "pct": round(100 * len(confs) / len(publico)) if publico else 0,
+            "confirmaram": confs, "pendentes": pend,
+        })
+    pessoas = sorted(por_pessoa.values(), key=lambda x: x["nome"])
+    for pp in pessoas:
+        pp["pct"] = round(100 * pp["confirmou"] / pp["total"]) if pp["total"] else 0
+    tot_pub = sum(a["publico"] for a in avisos); tot_conf = sum(a["confirmados"] for a in avisos)
+    return {
+        "mes": f"{ano:04d}-{m:02d}", "gerado_em": datetime.now().isoformat(), "gerado_por": payload.get("nome", ""),
+        "resumo": {"temas": len(avisos), "publico_total": tot_pub, "confirmacoes": tot_conf,
+                   "pct_geral": round(100 * tot_conf / tot_pub) if tot_pub else 0,
+                   "colaboradores": len(pessoas), "colaboradores_100": sum(1 for pp in pessoas if pp["total"] and pp["confirmou"] == pp["total"])},
+        "avisos": avisos, "pessoas": pessoas,
+    }
+
+
 def _valido_ate(dados):
     v = (dados.valido_ate or "").strip()
     if not v:
@@ -273,13 +378,26 @@ def _valido_ate(dados):
 async def criar_aviso_mural(dados: MuralCreate, payload=Depends(verificar_mural_publicar)):
     """Publica aviso no mural (admin ou módulo mural_publicar)."""
     await _garantir_mural_v2()
-    await ajard_query(
-        """INSERT INTO public.mural_avisos (titulo, mensagem, perfis, destinatario, criado_por, imagem_path, exige_confirmacao, valido_ate)
-           VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
+    row = await ajard_query(
+        """INSERT INTO public.mural_avisos (titulo, mensagem, perfis, destinatario, criado_por, imagem_path, exige_confirmacao, valido_ate,
+                                            bloqueia_checklist, audio_path)
+           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id""",
         (dados.titulo, dados.mensagem, dados.perfis, dados.destinatario, payload.get("nome", ""),
-         dados.imagem_path or "", bool(dados.exige_confirmacao), _valido_ate(dados)), fetch="none"
+         dados.imagem_path or "", bool(dados.exige_confirmacao), _valido_ate(dados),
+         bool(dados.bloqueia_checklist), dados.audio_path or ""), fetch="one"
     )
-    return {"ok": True}
+    novo_id = (row or {}).get("id")
+    # (09/11/2026) publicou → sino/push para o público (igual a qualquer notificação); abre Minha conta
+    try:
+        publico = await _publico_do_aviso({"destinatario": dados.destinatario, "perfis": dados.perfis})
+        ids = [u["id"] for u in publico]
+        if ids:
+            pref = "🦺 Alerta de segurança" if dados.bloqueia_checklist else "📌 Novo aviso no Mural"
+            corpo = dados.titulo + (" — confirme a leitura em Minha conta › Mural" if dados.exige_confirmacao else "")
+            await _notificar("mural_novo", pref, corpo, "/mobile?conta=1", apenas=ids, chave=f"mural-novo:{novo_id}")
+    except Exception as e:
+        print(f"[mural novo] notificação falhou: {e}")
+    return {"ok": True, "id": novo_id}
 
 @router.put("/api/mural/{aviso_id}")
 async def editar_aviso_mural(aviso_id: int, dados: MuralCreate, payload=Depends(verificar_mural_publicar)):
@@ -287,9 +405,10 @@ async def editar_aviso_mural(aviso_id: int, dados: MuralCreate, payload=Depends(
     await _garantir_mural_v2()
     await ajard_query(
         """UPDATE public.mural_avisos SET titulo=%s, mensagem=%s, perfis=%s, destinatario=%s,
-                  imagem_path=%s, exige_confirmacao=%s, valido_ate=%s WHERE id=%s""",
+                  imagem_path=%s, exige_confirmacao=%s, valido_ate=%s, bloqueia_checklist=%s, audio_path=%s WHERE id=%s""",
         (dados.titulo, dados.mensagem, dados.perfis, dados.destinatario,
-         dados.imagem_path or "", bool(dados.exige_confirmacao), _valido_ate(dados), aviso_id), fetch="none"
+         dados.imagem_path or "", bool(dados.exige_confirmacao), _valido_ate(dados),
+         bool(dados.bloqueia_checklist), dados.audio_path or "", aviso_id), fetch="none"
     )
     return {"ok": True}
 
