@@ -1083,6 +1083,39 @@ async def editar_ot(ot_id: str, request: Request, payload=Depends(verificar_manu
             d["data_limite"] = datetime.fromisoformat(v).date() if v else None
         except ValueError:
             raise HTTPException(status_code=400, detail="Data limite inválida")
+    # (10/11/2026) Data do Pedido (data_abertura) editável na Gestão — OT lançada depois do fato (retroativa).
+    # Regras: obrigatória, não pode ser futura nem posterior ao Início real / Fim; fica no histórico (de → para, quem).
+    _obs_abertura = None
+    if "data_abertura" in d:
+        v = (str(d["data_abertura"] or "")).strip()
+        if not v:
+            raise HTTPException(status_code=400, detail="A data do pedido não pode ficar vazia")
+        try:
+            nova = datetime.fromisoformat(v.replace("Z", "+00:00"))
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Data do pedido inválida")
+        atual = await ajard_query(
+            "SELECT data_abertura, data_inicio_real, data_conclusao, numero FROM manutencao.ot WHERE id=%s AND ativo=true",
+            (ot_id,), fetch="one")
+        if not atual:
+            raise HTTPException(status_code=404, detail="OT não encontrada")
+        _tz = nova.tzinfo
+        agora = datetime.now(_tz) if _tz else datetime.now()
+        if nova > agora:
+            raise HTTPException(status_code=400, detail="A data do pedido não pode ser no futuro")
+        for campo, rot in (("data_inicio_real", "Início"), ("data_conclusao", "Fim")):
+            ref = atual.get(campo)
+            if ref:
+                ref_c = ref if (ref.tzinfo is None) == (_tz is None) else (ref.replace(tzinfo=None) if _tz is None else ref.astimezone(_tz))
+                if nova > ref_c:
+                    raise HTTPException(status_code=400, detail=f"A data do pedido não pode ser depois do {rot} da OT ({ref_c:%d/%m/%Y %H:%M})")
+        d["data_abertura"] = nova
+        ant = atual.get("data_abertura")
+        # histórico em hora de Brasília (o navegador manda ISO em UTC)
+        from zoneinfo import ZoneInfo
+        _br = ZoneInfo("America/Sao_Paulo")
+        _f = lambda x: (x.astimezone(_br) if x.tzinfo else x).strftime("%d/%m/%Y %H:%M")
+        _obs_abertura = f"Data do pedido alterada: {_f(ant)} → {_f(nova)}" if ant else f"Data do pedido definida: {_f(nova)}"
     # (10/10/2026) ManWinWin: a programação (data/registro previstos) NÃO se edita na ficha —
     # só pelo Avançado (/reprogramar, com motivo e histórico) ou pelo plano (aplicar-fmp, novo-ciclo).
     for c in ("data_prevista", "horimetro_previsto"):
@@ -1092,7 +1125,7 @@ async def editar_ot(ot_id: str, request: Request, payload=Depends(verificar_manu
               "sintoma_codigo", "causa_codigo", "tipo_trabalho", "projecto_id", "plano_id",
               "interventor", "setor_interventor", "contrato", "tdm_previsto", "bloqueada",
               "tarefas_planejado", "tarefas_realizado",
-              "data_inicio_real", "horimetro_inicio", "data_limite", "horas_externo"]
+              "data_inicio_real", "horimetro_inicio", "data_limite", "horas_externo", "data_abertura"]
     if "projecto_id" in d and d["projecto_id"] == "":
         d["projecto_id"] = None
     # (20/10/2026) Um campo só (MWW): Tipo de Trabalho manda; a classe (tipo) deriva da letra
@@ -1111,6 +1144,12 @@ async def editar_ot(ot_id: str, request: Request, payload=Depends(verificar_manu
     await ajard_query(
         f"UPDATE manutencao.ot SET {', '.join(updates)}, atualizado_em=now() WHERE id=%s",
         params, fetch="none")
+    if _obs_abertura:   # (10/11/2026) rastro no histórico da OT (mesmo padrão do Reprogramar: status de = para)
+        st = await ajard_query("SELECT status FROM manutencao.ot WHERE id=%s", (ot_id,), fetch="one")
+        await ajard_query(
+            """INSERT INTO manutencao.ot_historico (ot_id, status_de, status_para, observacao, usuario_id)
+               VALUES (%s, %s, %s, %s, %s)""",
+            (ot_id, (st or {}).get("status"), (st or {}).get("status"), _obs_abertura, await _usuario_id(payload)), fetch="none")
     return {"ok": True}
 
 
