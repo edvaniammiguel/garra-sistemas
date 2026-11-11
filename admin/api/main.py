@@ -97,8 +97,12 @@ _HOST_LEGADO = APP_URL_LEGADO.split("://", 1)[-1]
 @app.middleware("http")
 async def _redirecionar_dominio(request: Request, call_next):
     host = (request.headers.get("host") or "").split(":")[0].lower()
+    # (11/11/2026 15h) Quadros (iframe) do app shell antigo NÃO são redirecionados: o X-Frame-Options SAMEORIGIN
+    # bloqueia página do domínio novo dentro do app no domínio antigo ("carinha triste" na aba Compras).
+    # Só a navegação principal (Sec-Fetch-Dest: document) troca de domínio.
     if host == _HOST_LEGADO and APP_HOST != _HOST_LEGADO and request.method == "GET" \
-            and "text/html" in (request.headers.get("accept") or "") and not request.url.path.endswith("sw.js"):
+            and "text/html" in (request.headers.get("accept") or "") and not request.url.path.endswith("sw.js") \
+            and (request.headers.get("sec-fetch-dest") or "document") == "document":
         return _Redir(url=APP_URL + request.url.path + (("?" + request.url.query) if request.url.query else ""), status_code=301)
     return await call_next(request)
 
