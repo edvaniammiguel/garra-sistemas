@@ -2440,6 +2440,7 @@ function _pintarBadgeAvatar() {
 }
 function atualizarBadgeMural() {
   var token = localStorage.getItem('garra_token') || ''; if (!token) return;
+  if (document.hidden) return;   // (11/11/2026) aba escondida não consulta — revalida ao voltar (visibilitychange)
   fetch('/api/mural/nao-lidos', {headers:{'Authorization':'Bearer '+token}})
     .then(function(r){ return r.ok ? r.json() : null; })
     .then(function(d){ if (d) { _muralNaoLidos = d.nao_lidos || 0; _pintarBadgeAvatar(); } }).catch(function(){});

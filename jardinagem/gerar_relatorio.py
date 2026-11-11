@@ -54,8 +54,10 @@ def make_logo(w=160):
 # conexão TLS nova — 1–3 min para montar o Excel/e-mail.
 _sess = requests.Session()
 
-def baixar_fotos_lote(paths, supabase_url, service_key, workers=8):
-    """Baixa várias fotos em paralelo. Devolve {storage_path: BytesIO|None}."""
+def baixar_fotos_lote(paths, supabase_url, service_key, workers=3):
+    """Baixa várias fotos em paralelo. Devolve {storage_path: BytesIO|None}.
+    (11/11/2026) 3 por vez (era 8): na instância de 512 MB do Render, 8 originais decodificando
+    ao mesmo tempo + Excel com 44 imagens levava o worker ao teto de memória → "Instance restarted"."""
     from concurrent.futures import ThreadPoolExecutor
     paths = [p for p in dict.fromkeys(paths) if p]
     if not paths:
@@ -65,7 +67,9 @@ def baixar_fotos_lote(paths, supabase_url, service_key, workers=8):
     return dict(zip(paths, bufs))
 
 def baixar_foto(storage_path, supabase_url, service_key,
-                max_px=800, qualidade=80):
+                max_px=800, qualidade=80, timeout=15):
+    # (11/11/2026) timeout 15 s por foto (era 10+30): uma foto travada não segura o relatório inteiro;
+    # a célula sai como "foto indisponível". Imagem original é descartada logo após reduzir (draft + close).
     """Baixa foto via signed URL do Supabase Storage.
     Resolve o bucket pelo prefixo 'bucket:path' gravado no storage_path
     (fotos novas = garra-fotos). Fotos antigas sem prefixo continuam
@@ -83,36 +87,45 @@ def baixar_foto(storage_path, supabase_url, service_key,
             "apikey": service_key
         }
         rs = _sess.post(sign_url, json={"expiresIn": 3600},
-                        headers=headers, timeout=10)
+                        headers=headers, timeout=timeout)
         if rs.status_code == 200:
             signed = rs.json().get("signedURL", "")
             if signed:
                 url = f"{supabase_url}/storage/v1{signed}"
-                r = _sess.get(url, timeout=30)
+                r = _sess.get(url, timeout=timeout)
                 if r.status_code == 200:
-                    img = PILImage.open(io.BytesIO(r.content))
-                    if img.mode not in ("RGB","L"):
-                        img = img.convert("RGB")
-                    img.thumbnail((max_px, max_px), PILImage.LANCZOS)
-                    buf = io.BytesIO()
-                    img.save(buf, format="JPEG", quality=qualidade)
-                    buf.seek(0)
-                    return buf
+                    return _reduzir(r.content, max_px, qualidade)
         # Fallback: acesso direto com apikey
         url = f"{supabase_url}/storage/v1/object/{bucket}/{real_path}"
-        r = _sess.get(url, headers=headers, timeout=30)
+        r = _sess.get(url, headers=headers, timeout=timeout)
         if r.status_code != 200:
             return None
-        img = PILImage.open(io.BytesIO(r.content))
-        if img.mode not in ("RGB","L"):
+        return _reduzir(r.content, max_px, qualidade)
+    except Exception:
+        return None
+
+
+def _reduzir(dados: bytes, max_px: int, qualidade: int):
+    """(11/11/2026) JPEG draft decodifica já em tamanho reduzido (1/2, 1/4…) — memória de pico cai ~4x;
+    fecha a imagem original na saída."""
+    img = PILImage.open(io.BytesIO(dados))
+    try:
+        try:
+            img.draft("RGB", (max_px * 2, max_px * 2))
+        except Exception:
+            pass
+        if img.mode not in ("RGB", "L"):
             img = img.convert("RGB")
         img.thumbnail((max_px, max_px), PILImage.LANCZOS)
         buf = io.BytesIO()
         img.save(buf, format="JPEG", quality=qualidade)
         buf.seek(0)
         return buf
-    except Exception:
-        return None
+    finally:
+        try:
+            img.close()
+        except Exception:
+            pass
 
 # ══════════════════════════════════════════════════════════════
 def gerar_relatorio_fotos(semana: dict, pares: list,
@@ -222,6 +235,11 @@ def gerar_relatorio_fotos(semana: dict, pares: list,
                 xl_img.width=FOTO_W; xl_img.height=FOTO_H
                 xl_img.anchor=f"B{row}"
                 ws.add_image(xl_img)
+            else:   # (11/11/2026) download falhou/expirou (15 s): marca a célula em vez de deixar em branco
+                ws.merge_cells(f"B{row}:C{row+ROWS_FOTO-1}")
+                ws[f"B{row}"].value="⚠ foto indisponível — gere de novo"
+                ws[f"B{row}"].font=Font(name="Arial",size=9,italic=True,color="B91C1C")
+                ws[f"B{row}"].alignment=aln("center")
         else:
             ws.merge_cells(f"B{row}:C{row+ROWS_FOTO-1}")
             ws[f"B{row}"].value="📷 Foto Antes"
@@ -237,6 +255,11 @@ def gerar_relatorio_fotos(semana: dict, pares: list,
                 xl_img2.width=FOTO_W; xl_img2.height=FOTO_H
                 xl_img2.anchor=f"D{row}"
                 ws.add_image(xl_img2)
+            else:   # (11/11/2026) download falhou/expirou (15 s): marca a célula em vez de deixar em branco
+                ws.merge_cells(f"D{row}:E{row+ROWS_FOTO-1}")
+                ws[f"D{row}"].value="⚠ foto indisponível — gere de novo"
+                ws[f"D{row}"].font=Font(name="Arial",size=9,italic=True,color="B91C1C")
+                ws[f"D{row}"].alignment=aln("center")
         else:
             ws.merge_cells(f"D{row}:E{row+ROWS_FOTO-1}")
             ws[f"D{row}"].value="📷 Foto Depois"
@@ -252,6 +275,11 @@ def gerar_relatorio_fotos(semana: dict, pares: list,
                     xl_img3.width=FOTO_W; xl_img3.height=FOTO_H
                     xl_img3.anchor=f"F{row}"
                     ws.add_image(xl_img3)
+                else:   # (11/11/2026) download falhou/expirou: marca a célula
+                    ws.merge_cells(f"F{row}:G{row+ROWS_FOTO-1}")
+                    ws[f"F{row}"].value="⚠ foto indisponível — gere de novo"
+                    ws[f"F{row}"].font=Font(name="Arial",size=9,italic=True,color="B91C1C")
+                    ws[f"F{row}"].alignment=aln("center")
             else:
                 ws.merge_cells(f"F{row}:G{row+ROWS_FOTO-1}")
                 ws[f"F{row}"].value="📷 Foto Antes"
@@ -266,6 +294,11 @@ def gerar_relatorio_fotos(semana: dict, pares: list,
                     xl_img4.width=FOTO_W; xl_img4.height=FOTO_H
                     xl_img4.anchor=f"H{row}"
                     ws.add_image(xl_img4)
+                else:   # (11/11/2026) download falhou/expirou: marca a célula
+                    ws.merge_cells(f"H{row}:I{row+ROWS_FOTO-1}")
+                    ws[f"H{row}"].value="⚠ foto indisponível — gere de novo"
+                    ws[f"H{row}"].font=Font(name="Arial",size=9,italic=True,color="B91C1C")
+                    ws[f"H{row}"].alignment=aln("center")
             else:
                 ws.merge_cells(f"H{row}:I{row+ROWS_FOTO-1}")
                 ws[f"H{row}"].value="📷 Foto Depois"

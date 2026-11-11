@@ -1374,13 +1374,27 @@ function semanaAtivaSelecionada(){
   return quadrante[quadrante.length-1];
 }
 
+// (11/11/2026) Resposta do servidor em erro → mensagem que a pessoa entende.
+// 409 = já está gerando; HTML (<!DOCTYPE) = página de erro do Render (instância reiniciando); 5xx = servidor.
+function _relErro(r){
+  var ct = (r.headers.get('content-type')||'');
+  if (r.status === 409) return r.json().then(function(j){ throw new Error(j.detail || 'Já está gerando — aguarde'); });
+  if (r.status === 502 || r.status === 503 || /text\/html/.test(ct)) throw new Error('Servidor reiniciando — aguarde 1 minuto e tente de novo');
+  return r.json().catch(function(){ return {}; }).then(function(j){ throw new Error(j.detail || ('Erro ' + r.status)); });
+}
+// botão "Gerando…" (desabilitado) enquanto o relatório não chega
+var _relBotoes = {};
+function _relOcupar(btn, texto){ if(!btn) return; _relBotoes[texto] = btn.innerHTML; btn.disabled = true; btn.innerHTML = '⏳ Gerando…'; btn.style.opacity = '.6'; }
+function _relLiberar(btn, texto){ if(!btn) return; btn.disabled = false; btn.innerHTML = _relBotoes[texto] || texto; btn.style.opacity = ''; }
+
 function baixarRelatorioMes(tipo){
   // 06/07/2026: download do MÊS COMPLETO (fotos ou km) — substitui o semanal no topo
   if(!mesAtual){toast('Selecione um mês primeiro!');return;}
-  toast('Gerando relatório do MÊS ('+tipo.toUpperCase()+')... pode levar alguns segundos');
+  toast('Gerando relatório do MÊS ('+tipo.toUpperCase()+')... pode levar até 1 minuto');
   var url = '/jardinagem/api/relatorios/mes/'+mesAtual.id+'/'+(tipo==='fotos'?'fotos':'km');
+  var btn = (window.event && window.event.currentTarget) || null; _relOcupar(btn, 'mes-'+tipo);   // (11/11/2026)
   fetchAuth(url).then(function(r){
-    if(!r.ok) throw new Error('Erro '+r.status);
+    if(!r.ok) return _relErro(r);
     return r.blob();
   }).then(function(blob){
     var u = URL.createObjectURL(blob);
@@ -1389,7 +1403,7 @@ function baixarRelatorioMes(tipo){
     var a = document.createElement('a'); a.href = u; a.download = nome;
     document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(u);
     toast('✅ Relatório do mês baixado!');
-  }).catch(function(e){toast('❌ '+e.message);});
+  }).catch(function(e){toast('❌ '+e.message);}).finally(function(){ _relLiberar(btn, 'mes-'+tipo); });
 }
 
 function baixarRelatorio(tipo){
@@ -1401,11 +1415,12 @@ function baixarRelatorio(tipo){
   }
   if(!sem) sem = semanaAtivaSelecionada();
   if(!sem){toast('Nenhuma semana disponível!');return;}
-  toast('Gerando relatório '+tipo.toUpperCase()+'...');
+  toast('Gerando relatório '+tipo.toUpperCase()+'... pode levar até 1 minuto');
   var url = '/jardinagem/api/relatorios/'+sem.semId+'/'+(tipo==='fotos'?'fotos':'km');
+  var btn = (window.event && window.event.currentTarget) || null; _relOcupar(btn, 'sem-'+tipo);   // (11/11/2026)
   // Precisa do token no header — usar fetch+blob
   fetchAuth(url).then(function(r){
-    if(!r.ok) throw new Error('Erro '+r.status);
+    if(!r.ok) return _relErro(r);
     return r.blob();
   }).then(function(blob){
     var u = URL.createObjectURL(blob);
@@ -1430,7 +1445,7 @@ function baixarRelatorio(tipo){
     a2.click();
     URL.revokeObjectURL(u);
     toast('✅ Download iniciado!');
-  }).catch(function(e){toast('Erro ao gerar: '+e.message);});
+  }).catch(function(e){toast('❌ '+e.message);}).finally(function(){ _relLiberar(btn, 'sem-'+tipo); });
 }
 
 var _prevAbaAtual = 'fotos';
@@ -1472,13 +1487,13 @@ function carregarPreview(){
     '<div style="text-align:center;color:var(--mut);padding:2rem;font-size:13px;"><span class="spin">⟳</span> Carregando...</div>';
 
   fetchAuth('/jardinagem/api/relatorios/'+sid+'/preview')
-    .then(function(r){return r.json();})
+    .then(function(r){ if(!r.ok || /text\/html/.test(r.headers.get('content-type')||'')) return _relErro(r); return r.json(); })   // (11/11/2026)
     .then(function(d){
       if(d.erro){ renderPreviewErro(d.erro); return; }
       renderPreviewFotos(d);
       renderPreviewKm(d);
     })
-    .catch(function(e){ renderPreviewErro('Erro de conexão: '+e.message); });
+    .catch(function(e){ renderPreviewErro(/reiniciando|Erro \d/.test(e.message) ? e.message : 'Sem conexão com o servidor — verifique a internet e tente de novo'); });
 }
 
 function renderPreviewErro(msg){

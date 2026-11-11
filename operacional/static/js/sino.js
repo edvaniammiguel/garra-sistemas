@@ -128,7 +128,7 @@
     sino.onclick = e => { e.stopPropagation(); const on = painel.classList.toggle('on'); if (on) { atualizar(true); montarRodape(); } };
     document.addEventListener('click', e => { if (painel.classList.contains('on') && !painel.contains(e.target)) painel.classList.remove('on'); });
     atualizar(false);
-    clearInterval(timer); timer = setInterval(() => atualizar(painel.classList.contains('on')), 90000);
+    clearInterval(timer); timer = setInterval(() => { if (!document.hidden) atualizar(painel.classList.contains('on')); }, 90000);   // (11/11/2026) aba escondida não consulta
     document.addEventListener('visibilitychange', () => { if (!document.hidden) atualizar(painel.classList.contains('on')); });
   }
   window.GarraSino = { init, linkDesktop, atualizar: () => atualizar(painel && painel.classList.contains('on')) };

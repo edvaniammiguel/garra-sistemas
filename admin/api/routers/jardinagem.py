@@ -780,6 +780,19 @@ async def jard_preview(semana_id: int, payload=Depends(verificar_token_jard)):
     return {"semana_id":semana_id,"label":sem["label"],"pares":pares,"relatorios":kms,
             "total_pares":len(pares),"pares_completos":sum(1 for p in pares if p["foto_antes"] and p["foto_depois"]),"total_km":len(kms)}
 
+# (11/11/2026) Uma geração de relatório por semana de cada vez: o 2º clique (ou outra pessoa) recebe 409
+# "já está gerando" em vez de abrir outra geração em paralelo (cada uma baixa 40+ fotos → memória).
+_REL_EM_CURSO = set()
+
+def _rel_iniciar(chave):
+    if chave in _REL_EM_CURSO:
+        raise HTTPException(status_code=409, detail="Este relatório já está sendo gerado — aguarde terminar (até 1 min) e tente de novo")
+    _REL_EM_CURSO.add(chave)
+
+def _rel_fim(chave):
+    _REL_EM_CURSO.discard(chave)
+
+
 @router.get("/jardinagem/api/relatorios/{semana_id}/fotos")
 async def jard_excel_fotos(semana_id: int, payload=Depends(verificar_token_jard)):
     import sys; sys.path.insert(0, os.path.join(JARD_DIR))
@@ -803,7 +816,11 @@ async def jard_excel_fotos(semana_id: int, payload=Depends(verificar_token_jard)
         pares.append({"codigo_a":p["codigo_a"],"codigo_d":p["codigo_d"],"local_nome":p["local_nome"] or "",
                       "foto_antes":fp.get("antes"), "foto_depois":fp.get("depois")})
     # (12/10/2026) baixa fotos e monta o Excel numa thread — o servidor segue atendendo
-    buf = await _asyncio.to_thread(gerar_relatorio_fotos, semana_dict, pares, SUPABASE_URL, SUPABASE_SERVICE_KEY)
+    _rel_iniciar(f"fotos:{semana_id}")
+    try:
+        buf = await _asyncio.to_thread(gerar_relatorio_fotos, semana_dict, pares, SUPABASE_URL, SUPABASE_SERVICE_KEY)
+    finally:
+        _rel_fim(f"fotos:{semana_id}")
     return StreamingResponse(buf, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                              headers={"Content-Disposition":f'attachment; filename="{nome_arquivo_semana(sem, "Fotos")}"'})
 
@@ -844,6 +861,7 @@ async def jard_enviar_email(semana_id: int, payload=Depends(verificar_token_jard
         pares.append({"codigo_a":p["codigo_a"],"codigo_d":p["codigo_d"],"local_nome":p["local_nome"] or "",
                       "foto_antes":fp.get("antes"), "foto_depois":fp.get("depois")})
     relatorios = _kms_excel(await _kms_periodo(sem["data_ini"], sem["data_fim"]))
+    _rel_iniciar(f"enviar:{semana_id}")   # (11/11/2026) um envio por vez por semana
     try:
         # (12/10/2026) fotos + Excel + SMTP em thread: antes bloqueava o servidor
         # inteiro (todas as telas, de todos os usuários) por 1–3 min a cada envio
@@ -864,6 +882,8 @@ async def jard_enviar_email(semana_id: int, payload=Depends(verificar_token_jard
         await ajard_query("INSERT INTO jardinagem.emails_enviados (semana_id,destinatario,assunto,status,erro_msg) VALUES (%s,%s,%s,'erro',%s)",
                    (semana_id,MAIL_DESTINO,f"Relatório {semana_dict['label']}",str(e)), fetch="none")
         raise HTTPException(status_code=500, detail=f"Falha no envio: {str(e)}")
+    finally:
+        _rel_fim(f"enviar:{semana_id}")
 
 @router.get("/jardinagem/api/health")
 async def jard_health():
@@ -919,7 +939,11 @@ async def jard_excel_fotos_mes(mes_id: int, payload=Depends(verificar_token_jard
     pares = [{"codigo_a": p["codigo_a"], "codigo_d": p["codigo_d"], "local_nome": p["local_nome"] or "",
               "foto_antes": fotos_por_par.get(p["id"], {}).get("antes"),
               "foto_depois": fotos_por_par.get(p["id"], {}).get("depois")} for p in pares_raw]
-    buf = await _asyncio.to_thread(gerar_relatorio_fotos, mes_dict, pares, SUPABASE_URL, SUPABASE_SERVICE_KEY)
+    _rel_iniciar(f"mes-fotos:{mes_id}")   # (11/11/2026) uma geração do mês por vez (é a mais pesada: 80+ fotos)
+    try:
+        buf = await _asyncio.to_thread(gerar_relatorio_fotos, mes_dict, pares, SUPABASE_URL, SUPABASE_SERVICE_KEY)
+    finally:
+        _rel_fim(f"mes-fotos:{mes_id}")
     return StreamingResponse(buf, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                              headers={"Content-Disposition": f'attachment; filename="{arq.format(tipo="fotos")}"'})
 
