@@ -14,6 +14,7 @@ Fluxo do bot (textos exatos do BotConversa, editáveis em whatsapp.parametros):
 
 Provedor (Evolution) só em core/whatsapp_provedor.py.
 """
+from core.config import APP_URL   # (11/11/2026) links do app seguem o domínio configurado
 import re
 import json
 import time
@@ -232,10 +233,10 @@ MENU_SEED = [
     (3, "Duvidas sobre a Marcação de ponto", "setor", "gerencia", None),
     (4, "Manutenção", "setor", "manutencao", None),
     (5, "Link CHECK LIST", "texto", None,
-     "App Garra 📲\n\nTudo da operação em um só lugar — checklist, rotinas e registros:\n👉 https://garra-sistemas.onrender.com/mobile\n\nChecklist preenchido antes de operar. Sempre. 🧡"),
+     "App Garra 📲\n\nTudo da operação em um só lugar — checklist, rotinas e registros:\n👉 " + APP_URL + "/mobile\n\nChecklist preenchido antes de operar. Sempre. 🧡"),   # (11/11/2026) domínio da env
 ]
 RESPOSTAS_SEED = [
-    ("Link do app", "Abre pelo app: https://garra-sistemas.onrender.com/mobile"),
+    ("Link do app", "Abre pelo app: " + APP_URL + "/mobile"),
     ("Pedir foto", "Me manda uma foto, por favor."),
     ("Vem ao escritório", "Passa aqui no escritório, por favor."),
 ]

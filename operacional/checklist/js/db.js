@@ -8,7 +8,7 @@
    - localStorage é apenas CACHE — banco é a fonte da verdade
 ═══════════════════════════════════════════════════════════ */
 
-const API_URL = 'https://garra-sistemas.onrender.com';
+const API_URL = location.origin;   // (11/11/2026) mesma origem da página — segue o domínio do sistema
 
 // ─── TOKEN JWT ─────────────────────────────────────────────
 const TokenStore = {

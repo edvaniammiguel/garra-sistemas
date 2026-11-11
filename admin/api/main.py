@@ -39,7 +39,7 @@ import sys as _sys
 _sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from core.config import (
-    DATABASE_URL, FRONTEND_URL,
+    DATABASE_URL, FRONTEND_URL, APP_URL, APP_HOST, APP_URL_LEGADO,
     SUPABASE_URL, SUPABASE_SERVICE_KEY, BUCKET_ATUAL,
     MAIL_HOST, MAIL_PORT, MAIL_USERNAME, MAIL_PASSWORD, MAIL_CC, MAIL_DESTINO,
     JWT_SECRET, JWT_EXPIRY_HOURS, DEBUG_KEY, _debug_autorizado,
@@ -75,8 +75,9 @@ from core.permissions import (
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
+        APP_URL,                                       # (11/11/2026) domínio próprio (env APP_URL)
+        APP_URL_LEGADO,
         "https://garra-checklist-app.onrender.com",
-        "https://garra-sistemas.onrender.com",
         "https://garra-jardinagem-app.onrender.com",  # Static Site PWA mobile
         "http://localhost:8000",   # Dev local
         "http://127.0.0.1:8000",  # Dev local alternativo
@@ -87,6 +88,19 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["Content-Type","Authorization"],
 )
+
+# ── (11/11/2026) DOMÍNIO PRÓPRIO — quem abrir pelo endereço antigo (.onrender.com) é levado para o novo.
+# Só páginas (GET com Accept text/html): chamadas de API, webhooks e o service worker não são redirecionados,
+# para o app já aberto no endereço antigo continuar funcionando até ser reinstalado no domínio novo.
+from fastapi.responses import RedirectResponse as _Redir
+_HOST_LEGADO = APP_URL_LEGADO.split("://", 1)[-1]
+@app.middleware("http")
+async def _redirecionar_dominio(request: Request, call_next):
+    host = (request.headers.get("host") or "").split(":")[0].lower()
+    if host == _HOST_LEGADO and APP_HOST != _HOST_LEGADO and request.method == "GET" \
+            and "text/html" in (request.headers.get("accept") or "") and not request.url.path.endswith("sw.js"):
+        return _Redir(url=APP_URL + request.url.path + (("?" + request.url.query) if request.url.query else ""), status_code=301)
+    return await call_next(request)
 
 # ── (11/10/2026) COMPRESSÃO — manutencao.html tem ~530 KB; gzip entrega ~90 KB.
 # JSON das listas (semáforos, OTs, equipamentos) também encolhe 5–10×.

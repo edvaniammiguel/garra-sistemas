@@ -21,9 +21,16 @@ DEBUG_KEY            = os.environ.get("DEBUG_KEY", "")
 # ── WEBAUTHN (biometria) ──────────────────────────────────────
 # RP ID = domínio (sem esquema/porta). Em localhost o navegador aceita
 # 'localhost' automaticamente — as envs permitem sobrescrever em dev.
-WEBAUTHN_RP_ID   = os.environ.get("WEBAUTHN_RP_ID", "garra-sistemas.onrender.com")
+# ── (11/11/2026) ORIGEM ÚNICA DO SISTEMA ───────────────────────────────
+# APP_URL é o endereço público (env no Render: https://app.garraterraplenagem.com.br). Tudo que precisa do
+# domínio deriva daqui: biometria, CORS, links do WhatsApp, reset de senha, redirecionamento do endereço
+# antigo. Trocar de host/domínio = trocar esta env, sem mexer em código.
+APP_URL        = os.environ.get("APP_URL", "https://garra-sistemas.onrender.com").rstrip("/")
+APP_HOST       = APP_URL.split("://", 1)[-1].split("/", 1)[0]
+APP_URL_LEGADO = "https://garra-sistemas.onrender.com"      # endereço antigo: continua aceito e redireciona
+WEBAUTHN_RP_ID   = os.environ.get("WEBAUTHN_RP_ID", APP_HOST)
 WEBAUTHN_RP_NAME = os.environ.get("WEBAUTHN_RP_NAME", "Garra Sistemas")
-WEBAUTHN_ORIGIN  = os.environ.get("WEBAUTHN_ORIGIN", "https://garra-sistemas.onrender.com")
+WEBAUTHN_ORIGIN  = os.environ.get("WEBAUTHN_ORIGIN", APP_URL)
 
 # ── CAMINHOS DO REPOSITÓRIO (Fase 2 — antes viviam no main.py) ─────────
 # Este arquivo está em admin/api/core/ → a raiz do repo fica 3 níveis acima.
@@ -69,7 +76,7 @@ MAIL_HOST            = os.environ.get("MAIL_HOST", "smtp.hostinger.com")
 MAIL_PORT            = int(os.environ.get("MAIL_PORT", "587"))
 MAIL_DESTINO         = os.environ.get("MAIL_DESTINO", "")
 MAIL_CC              = os.environ.get("MAIL_CC", "")
-FRONTEND_URL         = os.environ.get("FRONTEND_URL", "https://garra-checklist-app.onrender.com")
+FRONTEND_URL         = os.environ.get("FRONTEND_URL", APP_URL)   # (11/11/2026) reset de senha abre no domínio do sistema
 BUCKET_NAME          = "jardinagem-fotos"      # legado — fotos antigas continuam aqui
 BUCKET_ATUAL         = "garra-fotos"           # bucket unificado — todas as fotos novas (jardinagem + checklist)
 

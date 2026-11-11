@@ -57,7 +57,7 @@ self.addEventListener("fetch", function(e){
   }
 
   // API calls: sempre network, sem cache (produção E localhost)
-  if(url.includes("garra-sistemas.onrender.com") ||
+  if(url.startsWith(self.location.origin) ||   // (11/11/2026) qualquer domínio do sistema
      url.includes("/api/") ||
      url.includes("localhost:8000") ||
      url.includes("127.0.0.1:8000")){

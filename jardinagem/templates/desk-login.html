@@ -48,9 +48,7 @@ h1{font-size:15px;font-weight:800;color:#1A2A5E;text-align:center;margin-bottom:
 </div>
 <script>
 // Detecta ambiente: localhost → DEV (backend local), senão → PRODUÇÃO
-const BASE_API = (location.hostname === "localhost" || location.hostname === "127.0.0.1")
-  ? "http://localhost:8000/jardinagem"
-  : "https://garra-sistemas.onrender.com/jardinagem"
+const BASE_API = location.origin + "/jardinagem"   // (11/11/2026) mesma origem — segue o domínio do sistema
 
 // ── SSO: entra direto se houver token válido (vindo do Admin via ?sso= ou localStorage) ──
 (async function ssoAutoLogin(){

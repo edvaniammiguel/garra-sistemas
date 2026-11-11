@@ -477,7 +477,7 @@ input[type="time"]{-webkit-appearance:none;appearance:none;cursor:pointer;}
 // Detecta ambiente: localhost → DEV (backend local), senão → PRODUÇÃO
 var BASE_API = ((location.hostname === "localhost" || location.hostname === "127.0.0.1")
   ? "http://localhost:8000"
-  : "https://garra-sistemas.onrender.com") + "/jardinagem";
+  : location.origin   /* (11/11/2026) mesma origem — segue o domínio do sistema */) + "/jardinagem";
 // ── SSO: se veio token na URL (?sso=), salva token+usuario antes de checar ──
 (function(){
   var sso = new URLSearchParams(location.search).get('sso');
