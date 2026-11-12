@@ -358,6 +358,12 @@ async def criar_oc(request: Request, payload=Depends(verificar_compras_solicitan
     """Cria OC em rascunho (cotação). Itens no body: lista de
     {descricao, quantidade, unidade, valor_unit, peca_id?}."""
     d = await request.json()
+    return await _criar_oc_dados(d, payload)
+
+
+async def _criar_oc_dados(d, payload):
+    """(12/11/2026) Núcleo da criação de OC, separado do endpoint para a cotação (routers.cotacoes)
+    gerar OCs pelo mesmo caminho — numeração, itens, total e trilha iguais."""
     setor = (d.get("setor_codigo") or "").strip().upper()
     if not setor:
         raise HTTPException(status_code=400, detail="Setor é obrigatório")
@@ -415,7 +421,12 @@ async def criar_oc(request: Request, payload=Depends(verificar_compras_solicitan
 @router.get("/compras/api/ocs")
 async def listar_ocs(status: str = None, setor: str = None,
                      fornecedor_id: str = None, mes: str = None,
+                     busca: str = None, itens: int = 0, abertas: int = 0,
                      _auth=Depends(verificar_compras)):
+    """(12/11/2026) ?busca= procura em nº da OC, fornecedor, OT, equipamento e nos ITENS
+    (descrição ou código da peça) — responde "o filtro X já está em alguma OC?".
+    ?itens=1 devolve o resumo dos itens e quantas entradas aguardam conferência na Manutenção.
+    ?abertas=1 só as vivas (rascunho → recebida_parcial)."""
     where, params = ["oc.ativo=true"], []
     if not await _ve_todas(_auth):
         uid = await _usuario_id(_auth)
@@ -424,6 +435,8 @@ async def listar_ocs(status: str = None, setor: str = None,
     if status:
         params.append(status)
         where.append("oc.status=%s")
+    if abertas:
+        where.append("oc.status IN ('rascunho','solicitada','aprovada','enviada','recebida_parcial')")
     if setor:
         params.append(setor.upper())
         where.append("oc.setor_codigo=%s")
@@ -433,12 +446,25 @@ async def listar_ocs(status: str = None, setor: str = None,
     if mes:  # 'YYYY-MM'
         params.append(mes)
         where.append("to_char(oc.criado_em,'YYYY-MM')=%s")
+    if busca and busca.strip():
+        b = f"%{busca.strip()}%"
+        where.append("(oc.numero ILIKE %s OR COALESCE(fo.nome, oc.fornecedor_avulso) ILIKE %s OR ot.numero ILIKE %s "
+                     "OR eq.codigo ILIKE %s OR EXISTS (SELECT 1 FROM compras.oc_itens i LEFT JOIN manutencao.pecas p ON p.id=i.peca_id "
+                     "WHERE i.oc_id=oc.id AND i.ativo=true AND (i.descricao ILIKE %s OR p.codigo ILIKE %s)))")
+        params += [b, b, b, b, b, b]
+    extra = ""
+    if itens:
+        await _garantir_elo_estoque()
+        extra = """, (SELECT string_agg(trim(to_char(i.quantidade,'FM9999990.##'))||' '||COALESCE(i.unidade,'UN')||' '||i.descricao, ' · ' ORDER BY i.ordem, i.descricao)
+                       FROM compras.oc_itens i WHERE i.oc_id=oc.id AND i.ativo=true) AS itens_resumo,
+                  (SELECT COUNT(*)::int FROM compras.oc_itens i WHERE i.oc_id=oc.id AND i.ativo=true) AS itens_n,
+                  (SELECT COUNT(*)::int FROM manutencao.entradas_pendentes ep WHERE ep.oc_id=oc.id AND ep.status='pendente') AS a_conferir"""
     rows = await ajard_query(
         f"""SELECT oc.*, se.nome AS setor_nome, se.cor AS setor_cor,
                   COALESCE(fo.nome, oc.fornecedor_avulso) AS fornecedor_nome,
                   us.nome AS solicitante_nome, ua.nome AS aprovador_nome,
                   ot.numero AS ot_numero,
-                  eq.codigo AS equipamento_codigo
+                  eq.codigo AS equipamento_codigo{extra}
            FROM compras.ordens_compra oc
            JOIN compras.setores se ON se.codigo = oc.setor_codigo
            LEFT JOIN public.fornecedores fo ON fo.id = oc.fornecedor_id
@@ -885,6 +911,12 @@ async def receber_oc(oc_id: str, request: Request, payload=Depends(verificar_com
         except Exception:
             pass
 
+    # (12/11/2026) cotação: fecha prometido × real do fornecedor (histórico de entrega)
+    try:
+        from routers.cotacoes import registrar_entrega as _reg_ent
+        await _reg_ent(oc_id)
+    except Exception:
+        pass
     return {"ok": True, "status": novo, "valor_recebido": valor_recebido_agora, "a_conferir": pendentes_geradas}
 
 

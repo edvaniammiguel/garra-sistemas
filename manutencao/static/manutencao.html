@@ -4715,6 +4715,7 @@ async function otPecasRender(){
     + (podeBaixar && pl.length
         ? '<div style="margin-top:8px;display:flex;gap:8px">'
           + '<button class="btn" title="Peças previstas que o estoque e as OCs abertas não cobrem → OC no Compras, amarrada a esta OT" onclick="ocDaOT()">🛒 Gerar OC (faltantes)</button>'
+          + '<button class="btn" title="Cotar os faltantes em vários fornecedores antes de gerar a OC (amarrada a esta OT)" onclick="ocDaOT(true)">📋 Cotar (faltantes)</button>'
           + '</div>'
         : '');
 }
@@ -5900,9 +5901,22 @@ async function almFamRenomear(cod){
 function almArvToggle(raiz){ _almArvAberta[raiz] = !_almArvAberta[raiz]; montarNavAlm(); }
 // (19/10/2026) clique numa CLASSE da árvore: filtra o catálogo pelas famílias dessa classe
 let _almClasseSel = '';
+let _almRecebN = 0, _almRecebT = 0;
+async function _almRecebPend(){
+  // (12/11/2026) badge do 📦 Receber: entradas aguardando conferência (cache 60 s)
+  if (Date.now() - _almRecebT < 60000) return _almRecebN;
+  try { const r = await mntFetch('/manutencao/api/recebimentos?status=pendente'); _almRecebN = Array.isArray(r) ? r.length : 0; } catch(e){ _almRecebN = 0; }
+  _almRecebT = Date.now(); return _almRecebN;
+}
+function almComprasAlternar(){
+  const aberto = localStorage.getItem('garra_alm_compras') !== '0';
+  localStorage.setItem('garra_alm_compras', aberto ? '0' : '1');
+  montarNavAlm();
+}
 async function montarNavAlm(){
   await _almoxarifados();
   const nav = document.getElementById('alm-nav'); if (!nav) return;
+  if (_almLente === 'armazem') await _almRecebPend();
   const st = document.getElementById('alm-strip');
   if (st) st.textContent = _almList.length + ' local(is) · endereçamento C-P-N (Corredor–Prateleira–Nicho)';
   const sel = document.getElementById('alm-local');
@@ -5947,21 +5961,30 @@ async function montarNavAlm(){
   if (_almLente === 'armazem'){
     // Operações no TOPO — sempre à vista, acompanhando a lente
     // (12/11/2026) Um só destaque azul: o último item clicado (operação ou vista). Operações abrem janela
-    //              e continuam marcadas até clicar em outro item; Vistas trocam a lista do centro.
-    const acao = (rot, fn, modal, title) => '<div class="pn-item pn-acao'+(_almAcaoOn===rot?' on':'')+'" data-rot="'+_esc(rot)+'" onclick="almAcao(this,'+fn+')"'+(title?' title="'+title+'"':'')+'>'+rot+'<span class="pn-seta">▸</span></div>';
+    //              e continuam marcadas até clicar em outro item; Consulta troca a lista do centro.
+    //              Grupo 🛒 Compras (recolhível) reúne as ações de compra; o que é lista fica em Consulta.
+    const acao = (rot, fn, title) => '<div class="pn-item pn-acao'+(_almAcaoOn===rot?' on':'')+'" data-rot="'+_esc(rot)+'" onclick="almAcao(this,'+fn+')"'+(title?' title="'+title+'"':'')+'>'+rot+'<span class="pn-seta">▸</span></div>';
     const vistaOn = v => (!_almAcaoOn && _almVista===v) ? ' on' : '';
+    const compAberto = localStorage.getItem('garra_alm_compras') !== '0';
     html += '<div class="pn-grp">🔧 Operações</div>'
-      + acao('🛒 Comprar selecionadas', 'comprarSelecionadas', null, 'Gera OC em rascunho no Compras para as peças selecionadas na lista (Ctrl/Shift para várias)')
-      + acao('📥 Entrada por documento', 'entradaAbrir', 'ent-doc')
-      + acao('📤 Saída avulsa', "()=>almMovAbrir('saida')", 'alm-mov')
-      + acao('⇄ Transferência', "()=>almMovAbrir('transferencia')", 'alm-mov')
-      + acao('🧮 Ajuste de saldo', "()=>almMovAbrir('ajuste')", 'alm-mov')
-      + acao('↩ Devolução de OT', 'devolucaoAbrir', 'dev-ot')
-      + '<div class="pn-grp" style="margin-top:8px">👁 Vistas</div>'
+      + acao('📥 Entrada por documento', 'entradaAbrir')
+      + acao('📤 Saída avulsa', "()=>almMovAbrir('saida')")
+      + acao('⇄ Transferência', "()=>almMovAbrir('transferencia')")
+      + acao('🧮 Ajuste de saldo', "()=>almMovAbrir('ajuste')")
+      + acao('↩ Devolução de OT', 'devolucaoAbrir')
+      + '<div class="pn-grp" style="margin-top:8px;cursor:pointer;user-select:none" onclick="almComprasAlternar()" title="recolher / expandir">'+(compAberto?'▾':'▸')+' 🛒 Compras</div>'
+      + '<div id="alm-grp-compras" style="display:'+(compAberto?'block':'none')+'">'
+      + acao('🛒 Comprar selecionadas', 'comprarSelecionadas', 'Gera OC em rascunho no Compras para as peças selecionadas na lista (Ctrl/Shift para várias)')
+      + acao('📋 Cotar selecionadas', 'cotarSelecionadas', 'Uma cotação com as peças selecionadas para comparar vários fornecedores (preço · prazo · frete) e só então gerar a OC')
+      + acao('📦 Receber' + (_almRecebN ? ' <span class="chip nr">'+_almRecebN+'</span>' : ''), "()=>recebimentosJanela()", 'Conferir o que o Compras registrou como recebido — é aqui que o saldo sobe')
+      + acao('↗ Abrir módulo Compras', "()=>window.open('/compras','_blank')", 'Aprovar, alçadas, relatórios — abre o Compras em outra aba')
+      + '</div>'
+      + '<div class="pn-grp" style="margin-top:8px">👁 Consulta</div>'
       + '<div class="pn-item'+vistaOn('lista')+'" onclick="_almAcaoOn=null;almLente(\'armazem\')">📦 Estoque (saldos)</div>'
       + '<div class="pn-item'+vistaOn('mov')+'" onclick="_almAcaoOn=null;almVistaMov()">🧾 Movimentos (extrato)</div>'
       + '<div class="pn-item'+vistaOn('baixo')+'" onclick="_almAcaoOn=null;almVistaBaixo()">⚠ Abaixo do mínimo'
-      + (baixoN ? ' <span class="chip nr">'+baixoN+'</span>' : ' <span class="muted">(0)</span>') + '</div>';
+      + (baixoN ? ' <span class="chip nr">'+baixoN+'</span>' : ' <span class="muted">(0)</span>') + '</div>'
+      + '<div class="pn-item'+vistaOn('pedidos')+'" onclick="_almAcaoOn=null;almVistaPedidos()" title="OCs do setor Manutenção por estágio — busca por nº, peça, fornecedor ou OT">📑 Pedidos de compra</div>';
   }
   if (_almLente === 'armazem'){
     html += '<div class="pn-grp" style="margin-top:8px">🏬 Almoxarifados</div>'
@@ -6013,17 +6036,116 @@ async function novoAlmox(){
 }
 let _almLente = 'mestre', _almFamSel = '', _almFamNomes = {}, _almVista = 'lista', _almAcaoOn = null;   // (12/11/2026) _almAcaoOn = operação em destaque na barra
 function almFamFiltra(cod){ _almFamSel = cod; _almVista = 'lista'; almLente(_almLente); }
-function almLocalSel(v){ _almFiltro = v; const s = document.getElementById('alm-local'); if (s) s.value = v; montarNavAlm(); if (_almVista === 'mov') { almVistaMov(); return; } if (_almVista === 'baixo') { almVistaBaixo(); return; } carregarPecasReais(); }
+function almLocalSel(v){ _almFiltro = v; const s = document.getElementById('alm-local'); if (s) s.value = v; montarNavAlm(); if (_almVista === 'mov') { almVistaMov(); return; } if (_almVista === 'baixo') { almVistaBaixo(); return; } if (_almVista === 'pedidos') { return; } carregarPecasReais(); }
 async function almVistaBaixo(){
   _almVista = 'baixo';
   montarNavAlm();
+  const fbp = document.getElementById('ped-filtros'); if (fbp) fbp.style.display = 'none';
   const th = document.getElementById('alm-thead');
   if (th) th.innerHTML = '<th style="width:26px"><input type="checkbox" title="marcar todos" onchange="document.querySelectorAll(\'#alm-tbody .eb-ck\').forEach(c=>c.checked=this.checked)"></th><th style="width:100px">Código</th><th>Descrição</th><th style="width:60px">Local</th><th class="r" style="width:56px">Saldo</th><th class="r" style="width:60px" title="Previsto nas OTs programadas">Comprom.</th><th class="r" style="width:56px">Mín</th><th class="r" style="width:56px">Máx</th><th class="r" style="width:70px">Em pedido</th><th class="r" style="width:70px">A conferir</th><th class="r" style="width:70px">Sugestão</th><th style="width:150px">Fornecedor ref.</th>';
   renderEstoqueBaixo();
 }
+// (12/11/2026) 📑 Pedidos de compra — as OCs do setor Manutenção lidas direto do Compras (uma verdade só),
+// agrupadas pelo estágio que importa à oficina. Busca por nº, peça, fornecedor, OT ou equipamento.
+const _PED_ESTAGIOS = [
+  ['rascunho',         '📝 A cotar / rascunho',        '#64748B'],
+  ['solicitada',       '⏳ Aguardando aprovação',      '#B45309'],
+  ['aprovada',         '✅ Aprovada — a enviar',       '#1D4ED8'],
+  ['enviada',          '🚚 A caminho',                 '#1D4ED8'],
+  ['recebida_parcial', '📦 Chegou parte — a conferir', '#7C3AED'],
+  ['recebida',         '✔ Recebida',                   '#15803D'],
+  ['rejeitada',        '✖ Rejeitada',                  '#B91C1C'],
+  ['cancelada',        '✖ Cancelada',                  '#B91C1C'],
+];
+let _pedRows = [], _pedCots = [];
+async function almVistaPedidos(){
+  _almVista = 'pedidos';
+  montarNavAlm();
+  const fbm = document.getElementById('mov-filtros'); if (fbm) fbm.style.display = 'none';
+  const th = document.getElementById('alm-thead');
+  if (th) th.innerHTML = '<th style="width:104px">OC</th><th style="width:120px">Origem</th><th>Itens</th>'
+    + '<th style="width:170px">Fornecedor</th><th style="width:90px" class="r">Valor</th><th style="width:84px" title="última mudança de situação">Atualizada</th><th style="width:150px">Ação</th>';
+  const tb = document.getElementById('alm-tbody'); if (!tb) return;
+  let fb = document.getElementById('ped-filtros');
+  if (!fb) {
+    fb = document.createElement('div'); fb.id = 'ped-filtros';
+    fb.style.cssText = 'display:flex;gap:6px;align-items:flex-end;flex-wrap:wrap;padding:6px 0 8px';
+    fb.innerHTML = '<div class="mfield" style="width:300px">Buscar<input id="pd-busca" placeholder="nº da OC, peça, fornecedor, OT ou equipamento" onkeydown="if(event.key===\'Enter\')renderPedidos()"></div>'
+      + '<div class="mfield" style="width:170px">Situação<select id="pd-sit" onchange="renderPedidos()"><option value="abertas">Em andamento</option><option value="todas">Todas</option>'
+      + _PED_ESTAGIOS.map(e => '<option value="'+e[0]+'">'+e[1]+'</option>').join('') + '</select></div>'
+      + '<button class="btn p" onclick="renderPedidos()">Filtrar</button>'
+      + '<button class="btn" onclick="document.getElementById(\'pd-busca\').value=\'\';document.getElementById(\'pd-sit\').value=\'abertas\';renderPedidos()">Limpar</button>'
+      + '<span id="pd-info" class="muted" style="margin-left:auto;font-size:10px"></span>';
+    const wrap = tb.closest('table').parentElement; wrap.parentElement.insertBefore(fb, wrap);
+  }
+  fb.style.display = 'flex';
+  renderPedidos();
+}
+async function renderPedidos(){
+  const tb = document.getElementById('alm-tbody'); if (!tb || _almVista !== 'pedidos') return;
+  tb.innerHTML = '<tr><td colspan="7" style="padding:14px;color:#64748B">Carregando…</td></tr>';
+  const q = (document.getElementById('pd-busca')||{}).value || '', sit = (document.getElementById('pd-sit')||{}).value || 'abertas';
+  try {
+    const setor = await _setorManutencao().catch(() => null);   // código do setor (string) ou null
+    const qs = ['itens=1'];
+    if (setor) qs.push('setor=' + encodeURIComponent(setor));
+    if (sit === 'abertas') qs.push('abertas=1'); else if (sit !== 'todas') qs.push('status=' + sit);
+    if (q.trim()) qs.push('busca=' + encodeURIComponent(q.trim()));
+    const rows = await _fxCompras('/compras/api/ocs?' + qs.join('&'));
+    _pedRows = Array.isArray(rows) ? rows : [];
+    // (12/11/2026) cotações abertas aparecem no topo (estágio "A cotar") quando a situação é Em andamento/Todas
+    _pedCots = [];
+    if (sit === 'abertas' || sit === 'todas' || sit === 'rascunho'){
+      try { _pedCots = await _fxCompras('/compras/api/cotacoes?status='+(sit==='todas'?'todas':'aberta')+(setor?'&setor='+encodeURIComponent(setor):'')+(q.trim()?'&busca='+encodeURIComponent(q.trim()):'')); } catch(e){ _pedCots = []; }
+    }
+  } catch(e){ tb.innerHTML = '<tr><td colspan="7" style="padding:14px;color:#B91C1C">'+_esc(e.message)+'</td></tr>'; return; }
+  const money = v => 'R$ ' + (parseFloat(v)||0).toLocaleString('pt-BR',{minimumFractionDigits:2, maximumFractionDigits:2});
+  const dd = v => v ? _fmtData(v) : '—';
+  const origem = r => r.ot_numero ? '🔧 OT ' + _esc(r.ot_numero) + (r.equipamento_codigo ? '<br><span class="muted">'+_esc(r.equipamento_codigo)+'</span>' : '')
+                      : (r.equipamento_codigo ? '🚜 ' + _esc(r.equipamento_codigo) : ({minimo:'⚠ mínimo', direta:'🛒 avulsa', manual:'✍ Compras'}[r.origem] || _esc(r.origem || '—')));
+  const acoes = r => {
+    const b = [];
+    if (r.status === 'rascunho') b.push('<button class="btn p" style="font-size:10px" onclick="pedidoSolicitar(\''+r.id+'\')" title="Rascunho → aguardando aprovação (se estiver na sua alçada, aprova na hora)">Enviar p/ aprovação</button>');
+    if (r.a_conferir) b.push('<button class="btn p" style="font-size:10px" onclick="almAcaoPorRotulo(\'📦 Receber\');recebimentosJanela()">Conferir '+r.a_conferir+'</button>');
+    b.push('<a class="btn" style="font-size:10px" href="/compras?oc='+encodeURIComponent(r.id)+'" target="_blank" title="abrir no Compras">↗</a>');
+    return b.join(' ');
+  };
+  const grupos = {}; _pedRows.forEach(r => (grupos[r.status] = grupos[r.status] || []).push(r));
+  const ordem = _PED_ESTAGIOS.map(e => e[0]).filter(k => grupos[k]).concat(Object.keys(grupos).filter(k => !_PED_ESTAGIOS.some(e => e[0] === k)));
+  const cotHtml = (_pedCots||[]).length ? '<tr class="grp" style="background:#F5F3FF"><td colspan="7" style="font-weight:700;color:#6D28D9;padding:5px 8px">📋 Cotações <span class="muted">('+_pedCots.length+')</span></td></tr>'
+    + _pedCots.map(c => '<tr data-cot="'+c.id+'" style="cursor:pointer" ondblclick="cotacaoMapa(\''+c.id+'\')"><td class="bold">'+_esc(c.numero)+'<br><span class="muted" style="font-weight:400;font-size:10px">'+dd(c.criado_em)+' · '+_esc((c.criado_por_nome||'').split(' ')[0])+'</span></td>'
+      + '<td style="font-size:10px">'+(c.ot_numero?'🔧 OT '+_esc(c.ot_numero):({estoque_minimo:'⚠ mínimo',minimo:'⚠ mínimo',direta:'🛒 avulsa'}[c.origem]||_esc(c.origem||'—')))+(c.equipamento_codigo?'<br><span class="muted">'+_esc(c.equipamento_codigo)+'</span>':'')+'</td>'
+      + '<td style="font-size:10px" title="'+_esc(c.itens_resumo||'')+'">'+_esc(c.itens_resumo||'—')+'</td>'
+      + '<td style="font-size:10px">'+c.forn_resp+' de '+c.forn_n+' responderam'+(c.ocs?'<br><span class="chip tm" style="font-size:9px">'+_esc(c.ocs)+'</span>':'')+'</td>'
+      + '<td class="r muted">'+(c.status==='aberta'?'—':_esc(c.status))+'</td><td class="muted">'+dd(c.encerrada_em||c.criado_em)+'</td>'
+      + '<td style="white-space:nowrap"><button class="btn p" style="font-size:10px" onclick="cotacaoMapa(\''+c.id+'\')">'+(c.status==='aberta'?'Abrir mapa':'Ver mapa')+'</button></td></tr>').join('') : '';
+  tb.innerHTML = cotHtml + ordem.map(k => {
+    const e = _PED_ESTAGIOS.find(x => x[0] === k) || [k, k, '#64748B'];
+    return '<tr class="grp" style="background:#F1F5F9"><td colspan="7" style="font-weight:700;color:'+e[2]+';padding:5px 8px">'+e[1]+' <span class="muted">('+grupos[k].length+')</span></td></tr>'
+      + grupos[k].map(r => '<tr data-oc="'+r.id+'" style="cursor:default">'
+        + '<td class="bold">'+_esc(r.numero)+'<br><span class="muted" style="font-weight:400;font-size:10px">'+dd(r.criado_em)+' · '+_esc((r.solicitante_nome||'').split(' ')[0])+'</span></td>'
+        + '<td style="font-size:10px">'+origem(r)+'</td>'
+        + '<td style="font-size:10px" title="'+_esc(r.itens_resumo||'')+'">'+_esc(r.itens_resumo||'—')+'</td>'
+        + '<td style="font-size:10px">'+(r.fornecedor_nome ? _esc(r.fornecedor_nome) : '<span class="muted">a definir</span>')+'</td>'
+        + '<td class="r mono">'+money(r.valor_total)+'</td>'
+        + '<td class="muted">'+dd(r.atualizado_em || r.criado_em)+'</td>'
+        + '<td style="white-space:nowrap">'+acoes(r)+'</td></tr>').join('');
+  }).join('') || (cotHtml ? '' : '<tr><td colspan="7" style="padding:14px;color:#64748B">Nenhuma ordem de compra ' + (q.trim() ? 'com "'+_esc(q.trim())+'"' : 'em andamento') + '.</td></tr>');
+  const info = document.getElementById('pd-info'); if (info) info.textContent = _pedRows.length + ' OC(s)' + ((_pedCots||[]).length ? ' · ' + _pedCots.length + ' cotação(ões)' : '');
+}
+function almAcaoPorRotulo(rot){ const el = [...document.querySelectorAll('#alm-nav .pn-acao')].find(x => x.dataset.rot === rot); if (el) { _almAcaoOn = rot; document.querySelectorAll('#alm-nav .pn-item.on').forEach(x => { if (!x.dataset.id && !x.dataset.fam) x.classList.remove('on'); }); el.classList.add('on'); } }
+async function pedidoSolicitar(id){
+  const r = _pedRows.find(x => String(x.id) === String(id)); if (!r) return;
+  if (!r.fornecedor_nome && !confirm('A '+r.numero+' está sem fornecedor ("a definir"). Enviar para aprovação assim mesmo?')) return;
+  if (!confirm('Enviar a '+r.numero+' para aprovação?')) return;
+  try { const j = await _fxCompras('/compras/api/ocs/'+id+'/solicitar', {method:'POST'}); mostrarToast('✅ '+r.numero+' → '+((j&&j.status)==='aprovada' ? 'aprovada (dentro da sua alçada)' : 'aguardando aprovação'),'ok'); }
+  catch(e){ mostrarToast('❌ '+e.message,'warn'); }
+  renderPedidos();
+}
 async function almVistaMov(){
   _almVista = 'mov';
   montarNavAlm();
+  const fbp = document.getElementById('ped-filtros'); if (fbp) fbp.style.display = 'none';
   const th = document.getElementById('alm-thead');
   if (th) th.innerHTML = '<th style="width:96px">Data</th><th style="width:96px">Tipo</th>'
     + '<th style="width:150px">Documento / Peça</th><th>Descrição</th><th style="width:56px" class="r">Qtd</th>'
@@ -6411,6 +6533,7 @@ async function almMovOK(){
 function almLente(l){
   _almAcaoOn = null;   // (12/11/2026) vista escolhida → destaque sai da operação
   const fbm = document.getElementById('mov-filtros'); if (fbm) fbm.style.display = 'none';
+  const fbp = document.getElementById('ped-filtros'); if (fbp) fbp.style.display = 'none';
   _almLente = l;
   const bm = document.getElementById('alm-l-mestre'), ba = document.getElementById('alm-l-armazem');
   if (bm) bm.className = 'btn' + (l === 'mestre' ? ' p' : '');
@@ -6511,7 +6634,7 @@ async function renderEstoqueBaixo(){
       + '<td class="r mono"><b>'+n(b.sugestao)+'</b> '+_esc(b.unidade||'')+'</td>'
       + '<td style="font-size:10px">'+(b.ref_fornecedor_nome?_esc(b.ref_fornecedor_nome)+(b.preco_sugerido!=null?' · R$ '+n(b.preco_sugerido):''):'<span class="muted">sem referência'+(b.preco_sugerido!=null?' · médio R$ '+n(b.preco_sugerido):'')+'</span>')+'</td></tr>'
     ).join('') || '<tr><td colspan="12" style="padding:14px;color:#16A34A">✔ Nenhuma peça abaixo do mínimo.</td></tr>';
-    if (rows.length) tb.innerHTML += '<tr><td colspan="12" style="padding:8px"><div style="display:flex;justify-content:space-between;align-items:center"><span class="muted" style="font-size:10px">Sugestão = máximo − saldo − em pedido − a conferir. Itens com sugestão &gt; 0 já vêm marcados. A OC nasce em <b>rascunho</b> no Compras, uma por fornecedor de referência (sem referência → OC sem fornecedor, para cotar).</span><button class="btn p" onclick="ocSugerida()">🛒 Gerar OC sugerida</button></div></td></tr>';
+    if (rows.length) tb.innerHTML += '<tr><td colspan="12" style="padding:8px"><div style="display:flex;justify-content:space-between;align-items:center"><span class="muted" style="font-size:10px">Sugestão = máximo − saldo − em pedido − a conferir. Itens com sugestão &gt; 0 já vêm marcados. A OC nasce em <b>rascunho</b> no Compras, uma por fornecedor de referência (sem referência → OC sem fornecedor, para cotar).</span><span style="display:flex;gap:6px"><button class="btn" onclick="cotarSugerida()" title="Uma cotação com os itens marcados para comparar vários fornecedores (preço, prazo, frete) antes da OC">📋 Cotar marcados</button><button class="btn p" onclick="ocSugerida()">🛒 Gerar OC sugerida</button></span></div></td></tr>';
   } catch(e){ mostrarToast('❌ '+e.message,'warn'); }
 }
 let _setorCompras = null;
@@ -6614,6 +6737,181 @@ async function _criarOCs(grupos, extra, origem){
   if (erros.length) alert('Não foi possível criar:\n'+erros.join('\n'));
   return criadas;
 }
+// ═══ (12/11/2026) COTAÇÃO — 1 cotação × N fornecedores → mapa de comparação → OC(s) ═══
+function cotarSelecionadas(){
+  const cods = [...document.querySelectorAll('#alm-tbody tr.sel[data-cod]')].map(t => t.dataset.cod).filter(c => c).filter((v,i,a) => a.indexOf(v) === i);
+  if (!cods.length){ mostrarToast('Clique na linha da peça para selecionar (Ctrl/Shift para várias) — no Estoque, no Catálogo ou no extrato','warn'); return; }
+  return cotarPecas(cods);
+}
+async function cotarPecas(codigos){
+  const itens = [];
+  for (const cod of codigos){
+    const q = prompt('Quantidade a cotar de '+cod+':', '1'); if (q === null) return;
+    const n = parseFloat(String(q).replace(',','.')); if (!(n > 0)) { mostrarToast('Quantidade inválida para '+cod,'warn'); return; }
+    itens.push({ peca_codigo: cod, descricao: cod, quantidade: n });
+  }
+  // descrição real do catálogo
+  for (const it of itens){ try { const p = await mntFetch('/manutencao/api/peca-ficha?peca_codigo='+encodeURIComponent(it.peca_codigo)); if (p && p.descricao){ it.descricao = it.peca_codigo+' — '+p.descricao; it.unidade = p.unidade || 'UN'; } } catch(e){} }
+  return cotacaoCriar({ origem: 'direta', itens });
+}
+async function cotarSugerida(){
+  const marcados = Array.from(document.querySelectorAll('#alm-tbody .eb-ck:checked')).map(c => _ebRows[parseInt(c.value)]).filter(b => b && b.sugestao > 0);
+  if (!marcados.length){ mostrarToast('Marque ao menos um item com sugestão > 0','warn'); return; }
+  return cotacaoCriar({ origem: 'estoque_minimo', itens: marcados.map(b => ({ peca_id: b.peca_id, peca_codigo: b.codigo, descricao: b.codigo+' — '+(b.descricao||''), quantidade: b.sugestao, unidade: b.unidade||'UN' })) });
+}
+async function cotacaoCriar(d){
+  const setor = await _setorManutencao().catch(() => null);
+  if (!setor){ mostrarToast('Setor Manutenção não encontrado no Compras','warn'); return; }
+  if (!confirm('Abrir cotação com '+d.itens.length+' item(ns)?\n\nOs fornecedores de referência (e quem já vendeu essas peças) entram sugeridos; você acrescenta outros no mapa.')) return;
+  try {
+    const c = await _fxCompras('/compras/api/cotacoes', { method:'POST', body: JSON.stringify(Object.assign({ setor_codigo: setor }, d)) });
+    mostrarToast('📋 '+c.numero+' aberta','ok');
+    cotacaoMapa(c.id);
+  } catch(e){ mostrarToast('❌ '+e.message,'warn'); }
+}
+let _cot = null, _cotForns = null;
+async function cotacaoMapa(id){
+  try { _cot = await _fxCompras('/compras/api/cotacoes/'+id); } catch(e){ mostrarToast('❌ '+e.message,'warn'); return; }
+  if (!_cotForns){ try { const f = await _fxCompras('/compras/api/fornecedores'); _cotForns = Array.isArray(f) ? f : (f.itens||f.fornecedores||[]); } catch(e){ _cotForns = []; } }
+  document.querySelector('#eq-ficha .modal').classList.add('larga');
+  document.getElementById('eq-ficha-corpo').innerHTML = _cotHtml();
+  document.getElementById('eq-ficha').style.display = 'flex';
+}
+function _cotHtml(){
+  const c = _cot, aberta = c.status === 'aberta', money = v => (v == null ? '—' : 'R$ ' + (parseFloat(v)||0).toLocaleString('pt-BR',{minimumFractionDigits:2, maximumFractionDigits:2}));
+  const sug = c.sugestao || {}, precos = {}; (c.precos||[]).forEach(p => precos[p.item_id+'|'+p.cf_id] = p);
+  const nomeCf = id => (c.fornecedores.find(f => f.id === id)||{}).fornecedor_nome || '—';
+  const hist = f => f.historico ? (f.historico.no_prazo+'/'+f.historico.n+' no prazo'+(f.historico.atraso_medio ? ' · atraso médio '+f.historico.atraso_medio+' d' : '')) : 'sem histórico de entrega';
+  const melhorLinha = it => { let m = null; c.fornecedores.forEach(f => { const p = precos[it.id+'|'+f.id]; if (p && p.preco_unit != null && (m == null || p.preco_unit < m)) m = p.preco_unit; }); return m; };
+  let h = '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><div><b style="font-size:14px;color:#1A2A5E">📋 '+_esc(c.numero)+'</b> <span class="chip '+(aberta?'pr':'tm')+'">'+_esc(c.status)+'</span>'
+    + ' <span class="muted" style="font-size:11px">'+({minimo:'⚠ mínimo',estoque_minimo:'⚠ mínimo',ot:'🔧 OT '+_esc(c.ot_numero||''),direta:'🛒 avulsa'}[c.origem]||_esc(c.origem||''))+(c.equipamento_codigo?' · '+_esc(c.equipamento_codigo):'')+' · '+_esc(c.criado_por_nome||'')+'</span></div>'
+    + '<span style="cursor:pointer;font-size:16px" onclick="document.getElementById(\'eq-ficha\').style.display=\'none\';if(_almVista===\'pedidos\')renderPedidos()">✕</span></div>';
+  // barra de ações
+  h += '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:8px 0;font-size:11px">';
+  if (aberta){
+    h += '<select id="cot-add-forn" style="min-width:220px"><option value="">＋ adicionar fornecedor…</option>'+_cotForns.filter(f => !c.fornecedores.some(x => x.fornecedor_id === String(f.id))).map(f => '<option value="'+f.id+'">'+_esc(f.nome)+'</option>').join('')+'</select>'
+      + '<button class="btn" onclick="cotAddForn()">Adicionar</button>'
+      + '<button class="btn" onclick="cotAddItem()">＋ item</button>'
+      + '<button class="btn" onclick="cotTexto()" title="texto único do pedido de cotação — copiar ou enviar por WhatsApp">📨 Pedido de cotação</button>'
+      + '<span style="margin-left:auto"></span>'
+      + '<label>Critério <select id="cot-criterio" onchange="cotEditar({criterio:this.value})"><option value="preco"'+(c.criterio!=='prazo'?' selected':'')+'>menor custo (prazo desempata)</option><option value="prazo"'+(c.criterio==='prazo'?' selected':'')+'>menor prazo (custo desempata)</option></select></label>'
+      + '<label>Fechar <select id="cot-modo"><option value="fornecedor"'+(c.modo!=='item'?' selected':'')+'>por fornecedor (1 OC)</option><option value="item"'+(c.modo==='item'?' selected':'')+'>por item (melhor de cada)</option></select></label>';
+  }
+  h += '</div>';
+  // mapa
+  h += '<div style="overflow:auto;max-height:420px"><table style="font-size:11px;min-width:600px"><thead><tr><th style="min-width:200px">Item</th><th class="r" style="width:60px">Qtd</th>'
+    + c.fornecedores.map(f => '<th style="min-width:150px;text-align:center'+(sug.por_fornecedor===f.id?';background:#ECFDF5':'')+'">'+_esc(f.fornecedor_nome)+(sug.por_fornecedor===f.id?' <span class="chip ok" style="font-size:9px">sugestão</span>':'')
+        + (aberta ? '<br><span class="muted" style="font-weight:400;font-size:9px;cursor:pointer" onclick="cotDelForn(\''+f.id+'\')">✕ remover</span>' : (f.oc_numero ? '<br><span class="chip tm" style="font-size:9px">'+_esc(f.oc_numero)+' · '+_esc(f.oc_status||'')+'</span>' : ''))
+        + '<br><span class="muted" style="font-weight:400;font-size:9px" title="prometido × real nas cotações anteriores">'+hist(f)+'</span></th>').join('')
+    + '</tr></thead><tbody>';
+  if (!c.fornecedores.length) h += '<tr><td colspan="3" class="muted" style="padding:10px">Nenhum fornecedor — adicione acima.</td></tr>';
+  c.itens.forEach(it => {
+    const ml = melhorLinha(it);
+    h += '<tr><td><b>'+_esc(it.descricao)+'</b>'+(aberta ? ' <span class="muted" style="cursor:pointer;font-size:9px" onclick="cotDelItem(\''+it.id+'\')">✕</span>' : '')+(it.vencedor_cf_id && !aberta ? '<br><span class="chip ok" style="font-size:9px">'+_esc(nomeCf(it.vencedor_cf_id))+'</span>' : '')+'</td>'
+      + '<td class="r mono">'+parseFloat(it.quantidade)+' '+_esc(it.unidade||'UN')+'</td>';
+    c.fornecedores.forEach(f => {
+      const p = precos[it.id+'|'+f.id] || {}; const venc = sug.por_item && sug.por_item[it.id] === f.id;
+      h += '<td style="text-align:center'+(venc?';background:#ECFDF5':'')+'">'
+        + (aberta ? '<input class="cot-preco" data-it="'+it.id+'" data-cf="'+f.id+'" type="number" step="0.01" min="0" placeholder="não tem" value="'+(p.preco_unit!=null?p.preco_unit:'')+'" style="width:84px;text-align:right'+(p.preco_unit!=null && p.preco_unit===ml?';font-weight:700;color:#15803D':'')+'" title="'+_esc(p.observacao||'preço unitário')+'">'
+                 : '<span class="mono"'+(p.preco_unit!=null && p.preco_unit===ml?' style="font-weight:700;color:#15803D"':'')+'>'+(p.preco_unit!=null?money(p.preco_unit):'<span class=muted>—</span>')+'</span>')
+        + (p.observacao && aberta ? '<div class="muted" style="font-size:8px">'+_esc(p.observacao)+'</div>' : '')
+        + (aberta && c.modo==='item' && p.preco_unit!=null ? '<div><label style="font-size:9px"><input type="radio" name="venc-'+it.id+'" value="'+f.id+'"'+(venc?' checked':'')+'> vencedor</label></div>' : '')
+        + '</td>';
+    });
+    h += '</tr>';
+  });
+  // rodapé por fornecedor
+  const linha = (rot, fn) => '<tr style="background:#F8FAFC"><td colspan="2" class="muted"><b>'+rot+'</b></td>'+c.fornecedores.map(fn).join('')+'</tr>';
+  h += linha('Prazo (dias)', f => '<td style="text-align:center">'+(aberta ? '<input class="cot-prazo" data-cf="'+f.id+'" type="number" min="0" value="'+(f.prazo_dias??'')+'" style="width:60px;text-align:center">' : (f.prazo_dias??'—'))+'</td>');
+  h += linha('Frete (R$)', f => '<td style="text-align:center">'+(aberta ? '<input class="cot-frete" data-cf="'+f.id+'" type="number" step="0.01" min="0" value="'+(f.frete||0)+'" style="width:70px;text-align:right">' : money(f.frete||0))+'</td>');
+  h += linha('Condição', f => '<td style="text-align:center">'+(aberta ? '<input class="cot-cond" data-cf="'+f.id+'" value="'+_esc(f.condicao_pagamento||'')+'" placeholder="ex.: 30 dias" style="width:110px">' : _esc(f.condicao_pagamento||'—'))+'</td>');
+  h += linha('Situação', f => '<td style="text-align:center">'+(aberta ? '<select class="cot-st" data-cf="'+f.id+'"><option value="aguardando"'+(f.status==='aguardando'?' selected':'')+'>aguardando</option><option value="respondeu"'+(f.status==='respondeu'?' selected':'')+'>respondeu</option><option value="sem_resposta"'+(f.status==='sem_resposta'?' selected':'')+'>sem resposta</option></select>' : _esc(f.status))+'</td>');
+  h += linha('TOTAL (itens + frete)', f => { const t = (sug.totais||{})[f.id]; return '<td style="text-align:center'+(sug.por_fornecedor===f.id?';background:#ECFDF5':'')+'">'+(t ? '<b'+(t.completo?'':' class="muted" title="não cotou todos os itens"')+'>'+money(t.custo)+'</b>'+(t.completo?'':'<br><span class="muted" style="font-size:9px">incompleto</span>') : '<span class="muted">—</span>')+(aberta && c.modo!=='item' && t && t.completo ? '<div><label style="font-size:9px"><input type="radio" name="venc-forn" value="'+f.id+'"'+(sug.por_fornecedor===f.id?' checked':'')+'> vencedor</label></div>' : '')+'</td>'; });
+  h += '</tbody></table></div>';
+  // resumo da sugestão
+  if (aberta){
+    const pf = sug.por_fornecedor ? ((sug.totais||{})[sug.por_fornecedor]||{}).custo : null;
+    h += '<div style="display:flex;gap:14px;align-items:center;margin-top:8px;font-size:11px;flex-wrap:wrap">'
+      + '<span>1 fornecedor: <b>'+(pf!=null ? money(pf)+' — '+_esc(nomeCf(sug.por_fornecedor)) : 'ninguém cotou tudo')+'</b></span>'
+      + '<span>Por item: <b>'+(sug.custo_por_item!=null ? money(sug.custo_por_item)+' em '+sug.fornecedores_por_item+' fornecedor(es)' : '—')+'</b>'+(sug.itens_sem_cotacao&&sug.itens_sem_cotacao.length?' <span style="color:#B91C1C">· '+sug.itens_sem_cotacao.length+' item(ns) sem preço</span>':'')+'</span>'
+      + '<span style="margin-left:auto;display:flex;gap:6px"><button class="btn" onclick="cotCancelar()">Cancelar cotação</button><button class="btn" onclick="cotSalvar()">💾 Salvar respostas</button>'
+      + '<label style="font-size:10px"><input type="checkbox" id="cot-solicitar" checked> já enviar p/ aprovação</label>'
+      + '<button class="btn p" onclick="cotEncerrar()">✔ Encerrar → gerar OC</button></span></div>'
+      + '<div class="muted" style="font-size:10px;margin-top:4px">Lance preço unitário por item (vazio = fornecedor não tem), prazo, frete e condição. Verde = melhor da linha / sugestão. Ao encerrar, nasce 1 OC por fornecedor vencedor e o preço/prazo de <b>todos</b> que responderam vira referência das peças. Depois, ao receber a OC, o sistema compara prazo prometido × real (histórico de entrega).</div>';
+  }
+  return h;
+}
+function _cotLerRespostas(){
+  const out = {};
+  _cot.fornecedores.forEach(f => { out[f.id] = { precos: [] }; });
+  document.querySelectorAll('.cot-preco').forEach(i => { out[i.dataset.cf].precos.push({ item_id: i.dataset.it, preco_unit: i.value === '' ? null : parseFloat(i.value) }); });
+  document.querySelectorAll('.cot-prazo').forEach(i => out[i.dataset.cf].prazo_dias = i.value === '' ? null : parseInt(i.value));
+  document.querySelectorAll('.cot-frete').forEach(i => out[i.dataset.cf].frete = i.value === '' ? 0 : parseFloat(i.value));
+  document.querySelectorAll('.cot-cond').forEach(i => out[i.dataset.cf].condicao_pagamento = i.value);
+  document.querySelectorAll('.cot-st').forEach(i => out[i.dataset.cf].status = i.value);
+  return out;
+}
+async function cotSalvar(silencio){
+  const r = _cotLerRespostas();
+  try {
+    for (const cf of Object.keys(r)){
+      const d = r[cf];
+      if (d.status === 'aguardando' && d.precos.some(p => p.preco_unit != null)) d.status = 'respondeu';
+      _cot = await _fxCompras('/compras/api/cotacoes/'+_cot.id+'/fornecedores/'+cf, { method:'PUT', body: JSON.stringify(d) });
+    }
+    if (!silencio) mostrarToast('💾 Respostas salvas','ok');
+    document.getElementById('eq-ficha-corpo').innerHTML = _cotHtml();
+    return true;
+  } catch(e){ mostrarToast('❌ '+e.message,'warn'); return false; }
+}
+async function cotEditar(d){ await cotSalvar(true); try { _cot = await _fxCompras('/compras/api/cotacoes/'+_cot.id, { method:'PUT', body: JSON.stringify(d) }); document.getElementById('eq-ficha-corpo').innerHTML = _cotHtml(); } catch(e){ mostrarToast('❌ '+e.message,'warn'); } }
+async function cotAddForn(){ const id = document.getElementById('cot-add-forn').value; if (!id) return; await cotSalvar(true); try { _cot = await _fxCompras('/compras/api/cotacoes/'+_cot.id+'/fornecedores', { method:'POST', body: JSON.stringify({ fornecedor_id: id }) }); document.getElementById('eq-ficha-corpo').innerHTML = _cotHtml(); } catch(e){ mostrarToast('❌ '+e.message,'warn'); } }
+async function cotDelForn(cf){ if (!confirm('Remover este fornecedor da cotação?')) return; await cotSalvar(true); try { _cot = await _fxCompras('/compras/api/cotacoes/'+_cot.id+'/fornecedores/'+cf, { method:'DELETE' }); document.getElementById('eq-ficha-corpo').innerHTML = _cotHtml(); } catch(e){ mostrarToast('❌ '+e.message,'warn'); } }
+async function cotAddItem(){
+  const cod = prompt('Código da peça (ou deixe vazio para item só por descrição):', ''); if (cod === null) return;
+  let desc = '', un = 'UN';
+  if (cod.trim()){ try { const p = await mntFetch('/manutencao/api/peca-ficha?peca_codigo='+encodeURIComponent(cod.trim())); desc = cod.trim()+' — '+(p.descricao||''); un = p.unidade||'UN'; } catch(e){ mostrarToast('Peça não encontrada: '+cod,'warn'); return; } }
+  else { desc = prompt('Descrição do item:', ''); if (!desc) return; }
+  const q = prompt('Quantidade:', '1'); if (q === null) return; const n = parseFloat(String(q).replace(',','.')); if (!(n > 0)) return;
+  await cotSalvar(true);
+  try { _cot = await _fxCompras('/compras/api/cotacoes/'+_cot.id+'/itens', { method:'POST', body: JSON.stringify({ peca_codigo: cod.trim()||null, descricao: desc, quantidade: n, unidade: un }) }); document.getElementById('eq-ficha-corpo').innerHTML = _cotHtml(); } catch(e){ mostrarToast('❌ '+e.message,'warn'); }
+}
+async function cotDelItem(id){ if (!confirm('Remover o item da cotação?')) return; await cotSalvar(true); try { _cot = await _fxCompras('/compras/api/cotacoes/'+_cot.id+'/itens/'+id, { method:'DELETE' }); document.getElementById('eq-ficha-corpo').innerHTML = _cotHtml(); } catch(e){ mostrarToast('❌ '+e.message,'warn'); } }
+async function cotTexto(){
+  let t; try { t = await _fxCompras('/compras/api/cotacoes/'+_cot.id+'/texto'); } catch(e){ mostrarToast('❌ '+e.message,'warn'); return; }
+  const links = (t.fornecedores||[]).map(f => { const tel = String(f.whatsapp||'').replace(/\D/g,''); return tel ? '<a class="btn" style="font-size:10px" target="_blank" href="https://wa.me/'+(tel.length<=11?'55':'')+tel+'?text='+encodeURIComponent(t.texto)+'">WhatsApp → '+_esc(f.nome)+'</a>' : '<span class="muted" style="font-size:10px">'+_esc(f.nome)+' (sem telefone)</span>'; }).join(' ');
+  const b = document.createElement('div'); b.id = 'cot-texto-jan';
+  b.style.cssText = 'position:fixed;inset:0;z-index:100001;background:rgba(15,23,42,.45);display:flex;align-items:center;justify-content:center';
+  b.innerHTML = '<div style="background:#fff;border-radius:10px;padding:16px;width:560px;max-width:94vw;box-shadow:0 12px 32px rgba(15,23,42,.3)"><b style="color:#1A2A5E">📨 Pedido de cotação — o mesmo texto para todos</b>'
+    + '<textarea id="cot-texto-ta" style="width:100%;height:200px;margin:8px 0;font-size:12px;font-family:inherit">'+_esc(t.texto)+'</textarea>'
+    + '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">'+links+'<span style="margin-left:auto"></span><button class="btn" onclick="navigator.clipboard.writeText(document.getElementById(\'cot-texto-ta\').value).then(()=>mostrarToast(\'Copiado\',\'ok\'))">📋 Copiar</button><button class="btn p" onclick="document.getElementById(\'cot-texto-jan\').remove()">Fechar</button></div></div>';
+  document.body.appendChild(b);
+}
+async function cotEncerrar(){
+  if (!(await cotSalvar(true))) return;
+  const modo = document.getElementById('cot-modo').value, sug = _cot.sugestao || {};
+  const venc = {}; const motivos = {};
+  if (modo === 'item'){
+    for (const it of _cot.itens){
+      const r = document.querySelector('input[name="venc-'+it.id+'"]:checked'); if (!r){ mostrarToast('Item sem preço/vencedor: '+it.descricao,'warn'); return; }
+      venc[it.id] = r.value;
+      if (sug.por_item && sug.por_item[it.id] && sug.por_item[it.id] !== r.value){ const m = prompt('"'+it.descricao+'": você escolheu um fornecedor diferente da sugestão. Motivo:', ''); if (m === null) return; motivos[it.id] = m; }
+    }
+  } else {
+    const r = document.querySelector('input[name="venc-forn"]:checked'); if (!r){ mostrarToast('Nenhum fornecedor cotou todos os itens — feche "por item" ou complete as respostas','warn'); return; }
+    venc['*'] = r.value;
+    if (sug.por_fornecedor && sug.por_fornecedor !== r.value){ const m = prompt('Você escolheu um fornecedor diferente da sugestão. Motivo:', ''); if (m === null) return; _cot.itens.forEach(it => motivos[it.id] = m); }
+  }
+  const solicitar = document.getElementById('cot-solicitar').checked;
+  if (!confirm('Encerrar a '+_cot.numero+' e gerar a(s) OC(s)'+(solicitar?' já enviada(s) para aprovação':' em rascunho')+'?')) return;
+  try {
+    const r = await _fxCompras('/compras/api/cotacoes/'+_cot.id+'/encerrar', { method:'POST', body: JSON.stringify({ modo, vencedores: venc, motivos, solicitar }) });
+    mostrarToast('✅ '+(r.ocs||[]).map(o => o.numero+' → '+o.fornecedor+' ('+o.status+')').join(' · '),'ok');
+    cotacaoMapa(_cot.id);
+    if (_almVista === 'baixo') renderEstoqueBaixo();
+  } catch(e){ mostrarToast('❌ '+e.message,'warn'); }
+}
+async function cotCancelar(){ if (!confirm('Cancelar a '+_cot.numero+'? Nenhuma OC será gerada.')) return; try { await _fxCompras('/compras/api/cotacoes/'+_cot.id+'/cancelar', { method:'POST' }); document.getElementById('eq-ficha').style.display='none'; if (_almVista==='pedidos') renderPedidos(); } catch(e){ mostrarToast('❌ '+e.message,'warn'); } }
 async function ocSugerida(){
   const marcados = Array.from(document.querySelectorAll('#alm-tbody .eb-ck:checked')).map(c => _ebRows[parseInt(c.value)]).filter(b => b && b.sugestao > 0);
   if (!marcados.length){ mostrarToast('Marque ao menos um item com sugestão > 0','warn'); return; }
@@ -6624,7 +6922,7 @@ async function ocSugerida(){
   const ok = await _criarOCs(grupos, null, 'estoque_minimo');
   if (ok.length) renderEstoqueBaixo();
 }
-async function ocDaOT(){
+async function ocDaOT(cotar){
   const o = _otAberta; if (!o) return;
   let f;
   try { f = await mntFetch('/manutencao/api/ots/'+o.id+'/faltantes'); } catch(e){ mostrarToast('❌ '+e.message,'warn'); return; }
@@ -6633,6 +6931,10 @@ async function ocDaOT(){
   const semCad = falt.filter(x => x.sem_cadastro).map(x => x.codigo);
   const lista = falt.map(x => '• '+x.codigo+' — falta '+x.faltante+' '+x.unidade+(x.ocs&&x.ocs.length?' (já em '+x.ocs.join(', ')+')':'')).join('\n');
   if (!confirm('Peças previstas na FMP não cobertas:\n\n'+lista+(semCad.length?'\n\n⚠ Sem cadastro (entram só por descrição): '+semCad.join(', '):'')+'\n\nCriar OC em rascunho no Compras amarrada à '+_esc(o.numero)+'?')) return;
+  if (cotar){   // (12/11/2026) cotação amarrada à OT
+    return cotacaoCriar({ origem: 'ot', ot_id: o.id, equipamento_id: f.equipamento_id,
+      itens: falt.map(x => ({ peca_id: x.peca_id, peca_codigo: x.codigo, descricao: x.codigo+' — '+(x.descricao||''), quantidade: x.faltante, unidade: x.unidade||'UN' })) });
+  }
   // (11/11/2026) uma OC por fornecedor de referência (como no mínimo); sem referência → grupo '' (escolhe na janela)
   const grupos = {};
   falt.forEach(x => { (grupos[x.ref_fornecedor_id||''] = grupos[x.ref_fornecedor_id||''] || []).push({ peca_id: x.peca_id, descricao: x.codigo+' — '+(x.descricao||''), quantidade: x.faltante, unidade: x.unidade||'UN', valor_unit: x.preco||0 }); });

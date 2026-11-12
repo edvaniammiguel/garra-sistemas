@@ -137,7 +137,7 @@
           texto: '<b>🖨 Imprimir/PDF</b> gera a Ordem de Compra formal: dados da Garra, fornecedor, itens, <b>solicitante e aprovador com data</b>. É o documento que o fornecedor deve citar na NF. <b>📲 WhatsApp</b> monta a mensagem com o número da OC e, se ela está Aprovada, já a marca como <b>Enviada</b>.' },
         { alvo: '#f-status', titulo: 'Acompanhar por status',
           antes: async () => { fecharModal(); irTab('lista'); await esperar(600); },
-          texto: 'Na aba <b>📋 OCs</b>, o filtro <b>Status</b> separa <b>Solicitada</b> (aguardando aprovação), <b>Aprovada</b>, Enviada, Recebida, <b>Rejeitada</b> e Cancelada; com setor e mês ao lado. Quem aprova ou tem Visão geral vê as OCs de todo mundo.' },
+          texto: 'Na aba <b>📋 OCs</b>, o filtro <b>Status</b> separa <b>Solicitada</b> (aguardando aprovação), <b>Aprovada</b>, Enviada, Recebida, <b>Rejeitada</b> e Cancelada; com setor e mês ao lado. A caixa 🔍 busca por <b>nº, item/peça, fornecedor, OT ou equipamento</b> em qualquer mês — "o filtro X já está em alguma OC?". Quem aprova ou tem Visão geral vê as OCs de todo mundo.' },
         { alvo: '#tela-rel .panel', titulo: '📊 Relatório de Compras',
           antes: async () => { irTab('rel'); await esperar(400); },
           texto: 'Período, status e setor. <b>👁 Visualizar</b> mostra o total, o resumo <b>por setor</b> e cada OC com NF; <b>⬇ Excel</b> e <b>🖨 PDF</b> para o financeiro e o fechamento do mês.' },

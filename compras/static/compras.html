@@ -166,6 +166,8 @@ button:disabled, select:disabled, input:disabled, fieldset:disabled *, [aria-dis
         <option value="rejeitada">Rejeitada</option><option value="cancelada">Cancelada</option>
       </select>
       <input type="month" id="f-mes" onchange="carregarLista()">
+      <!-- (12/11/2026) busca: nº da OC, fornecedor, item/peça, OT ou equipamento — "o filtro X já está em alguma OC?" -->
+      <input type="search" id="f-busca" placeholder="🔍 nº, item, fornecedor, OT…" oninput="clearTimeout(window._fbT);window._fbT=setTimeout(carregarLista,350)" style="min-width:220px">
     </div>
     <div id="lista-ocs"><div class="vazio"><span class="spin"></span> Carregando...</div></div>
   </div>
@@ -500,9 +502,10 @@ async function carregarLista(){
   const s=document.getElementById('f-setor').value; if(s) p.set('setor',s);
   const st=document.getElementById('f-status').value; if(st) p.set('status',st);
   const m=document.getElementById('f-mes').value; if(m) p.set('mes',m);
+  const b=(document.getElementById('f-busca')||{}).value||''; if(b.trim()){ p.set('busca',b.trim()); p.delete('mes'); }   // (12/11/2026) busca ignora o mês
   try{
     const ocs = await api('/compras/api/ocs?'+p.toString());
-    if(!ocs.length){ el.innerHTML='<div class="vazio">Nenhuma OC no filtro. Toque em ＋ Nova OC para criar.</div>'; return; }
+    if(!ocs.length){ el.innerHTML='<div class="vazio">'+(b.trim()?'Nenhuma OC com "'+b.trim().replace(/</g,'&lt;')+'".':'Nenhuma OC no filtro. Toque em ＋ Nova OC para criar.')+'</div>'; return; }
     el.innerHTML = ocs.map(cardOC).join('');
   }catch(e){ el.innerHTML='<div class="vazio">Erro ao carregar: '+e.message+'</div>'; }
 }

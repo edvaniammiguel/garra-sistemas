@@ -856,6 +856,8 @@ from routers.relatorios import router as relatorios_router  # (11/10/2026) Relat
 app.include_router(relatorios_router)
 from routers.compras import router as compras_router  # v28 — Ordens de Compra
 app.include_router(compras_router)
+from routers.cotacoes import router as cotacoes_router  # (12/11/2026) Cotação: 1 cotação × N fornecedores → OCs
+app.include_router(cotacoes_router)
 from routers.abastecimentos import router as abastecimentos_router  # 29/08 — reconstruído
 app.include_router(abastecimentos_router)
 from routers.manutencao_mobile import router as manutencao_mobile_router  # (24/10/2026) Manutenção no celular (gestão)
