@@ -5428,6 +5428,25 @@ function abrirModalEquipamento(eq = null) {
       }
     } catch(e) {}
   })();
+  // (12/11/2026) Categoria: lista do cadastro (Manutenção › Parametrizar › Categorias de objeto).
+  // Falhou a busca → fica a lista fixa acima. Ao escolher, a medição padrão da categoria vem junto.
+  (async () => {
+    try {
+      const cats = await apiFetch('/manutencao/api/categorias-objeto');
+      const sel = document.getElementById('eq-categoria');
+      if (!sel || !Array.isArray(cats) || !cats.length) return;
+      const atual = String(e.categoria || '').toLowerCase();
+      const fora = atual && !cats.some(c => String(c.codigo).toLowerCase() === atual);
+      sel.innerHTML = '<option value="">— selecionar —</option>'
+        + (fora ? '<option value="' + esc(atual) + '" selected>⚠ ' + esc(atual) + ' (não cadastrada — escolha outra)</option>' : '')
+        + cats.map(c => '<option value="' + esc(c.codigo) + '"' + (String(c.codigo).toLowerCase() === atual ? ' selected' : '') + '>' + esc(c.nome || c.codigo) + '</option>').join('');
+      sel.addEventListener('change', () => {
+        const c = cats.find(x => x.codigo === sel.value);
+        const med = document.getElementById('eq-medicao');
+        if (c && c.medicao && med && Array.from(med.options).some(o => o.value === c.medicao)) med.value = c.medicao;
+      });
+    } catch(err) {}
+  })();
 }
 function fecharModalEq() {
   const m = document.getElementById('modal-eq');

@@ -1903,6 +1903,14 @@ const _PNEU_GAB = {
   retroescavadeira:['dian','tras1'], carregadeira:['dian','tras1'], minicarregadeira:['dian','tras1'],
   patrol:['dian','tan1','tan2'], compactador:['tras1']
 };
+// (12/11/2026) Desenho escolhido em Parametrizar › Categorias de objeto (eu.diagrama vem do back);
+// _PNEU_GAB fica só como reserva para categoria ainda sem desenho cadastrado.
+const _PNEU_DIAG = {
+  caminhao:['dian','tras2'], caminhao_reboque:['dian','tras2','reb2'], veiculo_leve:['dian','tras1'],
+  maquina4:['dian','tras1'], patrol:['dian','tan1','tan2'], compactador:['tras1']
+};
+const _PNEU_DIAG_NOMES = [['','— sem desenho —'],['caminhao','Caminhão (dianteiro + traseiro duplo)'],['caminhao_reboque','Caminhão com reboque'],
+  ['veiculo_leve','Veículo leve (4 rodas)'],['maquina4','Máquina 4 rodas (retro, pá, mini)'],['patrol','Patrol (dianteiro + tandem)'],['compactador','Compactador (2 traseiros)']];
 function _pneuSlotDe(pos){
   const t = (pos||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
   const tem = w => t.indexOf(w) >= 0;
@@ -1915,7 +1923,8 @@ function _pneuSlotDe(pos){
 }
 function _pneuDiagrama(eu, filhos){
   const cat = (eu.categoria||'').toLowerCase();
-  const eixos = _PNEU_GAB[cat]; if (!eixos) return '';
+  const eixos = (eu.diagrama !== undefined && eu.diagrama !== null) ? (_PNEU_DIAG[eu.diagrama] || null) : _PNEU_GAB[cat];   // (12/11/2026)
+  if (!eixos) return '';
   const all = []; eixos.forEach(e => _PNEU_EIXOS[e].slots.forEach(sl => all.push(sl.k)));
   const ocup = {}; const fora = [];
   (filhos||[]).forEach(f => {
@@ -1935,7 +1944,7 @@ function _pneuDiagrama(eu, filhos){
     return '<div data-l="'+_esc(sl.l)+'" onclick="_pneuAlocar(this.dataset.l)" title="'+_esc(sl.l)+' — vago · clique para alocar um pneu aqui" '
       + 'style="width:52px;height:64px;border:2px dashed #B83030;background:rgba(184,48,48,.05);border-radius:8px;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;font-size:8px;font-weight:600;color:#B83030;text-align:center;gap:2px;padding:2px">➕<div>'+_esc(sl.l)+'</div></div>';
   };
-  const _maq = !/^(caminhao|carro|veiculo)/.test(cat);   // (12/11/2026)
+  const _maq = eu.diagrama ? ['maquina4','patrol','compactador'].includes(eu.diagrama) : !/^(caminhao|carro|veiculo)/.test(cat);   // (12/11/2026)
   let html = '<div class="dsec" style="margin-top:10px">'+(_maq?'🚜':'🚚')+' Diagrama de pneus <span class="muted" style="font-weight:400;font-size:10px">vago = clique para alocar · montado = clique para abrir</span></div>'
     + '<div style="display:flex;flex-direction:column;align-items:center;gap:6px;padding:8px 0;background:#F8FAFC;border:1px solid #E2E8F0;border-radius:8px">'
     + '<div style="background:#E6EDF7;border:1px solid #A8BDDA;border-radius:8px;padding:5px 22px;font-size:11px;font-weight:700;color:#3D5A80">CABINE — '+_esc(eu.codigo)+'</div>';
@@ -2254,6 +2263,7 @@ async function novoEquipMW(copiarDe, editar){
     try { ops = await mntFetch('/operacional/api/operadores'); } catch(e){}
     try { forn = _mntFornList || await mntFetch('/manutencao/api/fornecedores'); if (!_mntFornList) _mntFornList = Array.isArray(forn) ? forn : (forn.itens || []); } catch(e){}
     _mwDom = { tipos: await g('tipos-equipamento'), sistemas: await g('sistemas'), ccs: await g('centros-custo'),
+               cats: (await g('categorias-objeto')).filter(c => !c.nao_cadastrada).sort((a,b)=>String(a.nome||a.codigo).localeCompare(String(b.nome||b.codigo))),   // (12/11/2026)
                operadores: Array.isArray(ops) ? ops : (ops.itens || []), fornecedores: Array.isArray(forn) ? forn : (forn.itens || []) };
   }
   _neEditId = null;
@@ -2281,7 +2291,7 @@ async function novoEquipMW(copiarDe, editar){
       + lista.map(x => '<option value="'+_esc(x[chave])+'"'+(String(x[chave])===String(val||'')?' selected':'')+'>'+(chave==='id' ? _esc(x[rot]||'') : _esc(x[chave])+(x[rot]?' \u2014 '+_esc(x[rot]):''))+'</option>').join('')+'</select>';
   const fld = (rot, html, w) => '<div class="ne-f"'+(w?' style="flex:'+w+'"':'')+'><span class="ne-l">'+rot+'</span>'+html+'</div>';
   const inp = (id, val, ph, tipo) => '<input id="'+id+'"'+(tipo?' type="'+tipo+'"':'')+' value="'+_esc(val==null?'':val)+'" placeholder="'+(ph||'')+'">';
-  const cats = Array.from(new Set(_semCache.map(e => e.categoria).filter(Boolean))).sort();
+  const cats = _mwDom.cats || [];   // (12/11/2026) lista fechada (Parametrizar › Categorias de objeto)
   const pais = _semCache.filter(e => (e.categoria||'') !== 'componente');
 
   document.querySelector('#eq-ficha .modal').classList.add('larga');
@@ -2334,7 +2344,7 @@ async function novoEquipMW(copiarDe, editar){
     + '<button class="btn" onclick="document.getElementById(\'ne-cars\').insertAdjacentHTML(\'beforeend\', neCarLinha(\'\',\'\'))">\u2795 Caracter\u00edstica</button></div>'
     // aba 2 — Dados Operacionais
     + '<div class="ne-pane" id="ne-p2"><div style="display:flex;gap:8px;flex-wrap:wrap">'
-    + fld('Categoria (Operacional) *','<input id="ne-cat" list="ne-cat-l" value="'+_esc(base.categoria||'')+'" placeholder="caminhao, maquina, apoio\u2026"><datalist id="ne-cat-l">'+cats.map(c=>'<option value="'+_esc(c)+'">').join('')+'</datalist>',1)
+    + fld('Categoria (Operacional) *', _neCatSelect(cats, base.categoria), 1)
     + fld('Medi\u00e7\u00e3o','<select id="ne-med">'+['horimetro','km','hora','diaria','viagem','metros'].map(m=>'<option value="'+m+'"'+((base.medicao||'horimetro')===m?' selected':'')+'>'+m+'</option>').join('')+'</select>',1)
     + fld('Placa', inp('ne-placa','', 'ABC-1D23'),1)
     + '</div></div>'
@@ -2592,13 +2602,33 @@ function neTipoMudou(){
   if (tp) _neAplicarTipo(tp);
   neProximo();
 }
+// (12/11/2026) Categoria = lista fechada; valor gravado fora do cadastro aparece marcado para corrigir
+function _neCatSelect(cats, atual){
+  const a = String(atual||'').toLowerCase();
+  const fora = a && !cats.some(c => String(c.codigo).toLowerCase() === a);
+  return '<select id="ne-cat" onchange="neCatMudou()"><option value="">\u2014 selecionar \u2014</option>'
+    + (fora ? '<option value="'+_esc(a)+'" selected>\u26a0 '+_esc(a)+' (n\u00e3o cadastrada \u2014 escolha outra)</option>' : '')
+    + cats.map(c => '<option value="'+_esc(c.codigo)+'"'+(String(c.codigo).toLowerCase()===a?' selected':'')+'>'+_esc(c.nome||c.codigo)+'</option>').join('')
+    + '</select>';
+}
+function neCatMudou(){
+  const c = ((_mwDom||{}).cats||[]).find(x => x.codigo === (document.getElementById('ne-cat')||{}).value);
+  const med = document.getElementById('ne-med');
+  if (c && c.medicao && med && Array.from(med.options).some(o => o.value === c.medicao)){ med.value = c.medicao; med.dispatchEvent(new Event('change')); }
+}
 function _neAplicarTipo(tp){
   const n = (tp.nome||'').toUpperCase();
   const cat = document.getElementById('ne-cat');
-  if (cat && !cat.value)
-    cat.value = /CAMINH|CARRET|REBOQ/.test(n) ? 'caminhao' : /PNEU/.test(n) ? 'componente' : /VEIC|APOIO|PICK|CARRO/.test(n) ? 'apoio' : /GAL/.test(n) ? 'galao' : 'maquina';
+  // (12/11/2026) categoria padrão do Tipo (Parametrizar › Tipos) manda; sem ela, a sugestão pelo nome só se vazio
+  const temOp = v => cat && Array.from(cat.options).some(o => o.value === v);
+  if (cat && tp.categoria_padrao && temOp(tp.categoria_padrao) && (!_neEditId || !cat.value)) cat.value = tp.categoria_padrao;
+  else if (cat && !cat.value){
+    const sug = /CAMINH|CARRET|REBOQ/.test(n) ? 'caminhao' : /PNEU/.test(n) ? 'componente' : /VEIC|APOIO|PICK|CARRO/.test(n) ? 'apoio' : /GAL/.test(n) ? 'galao' : 'maquina';
+    if (temOp(sug)) cat.value = sug;
+  }
   const med = document.getElementById('ne-med');
-  if (med) med.value = /CAMINH|CARRET|REBOQ|VEIC|APOIO|PICK|CARRO/.test(n) ? 'km' : 'horimetro';
+  const cInfo = ((_mwDom||{}).cats||[]).find(x => cat && x.codigo === cat.value);
+  if (med) med.value = (cInfo && cInfo.medicao) ? cInfo.medicao : (/CAMINH|CARRET|REBOQ|VEIC|APOIO|PICK|CARRO/.test(n) ? 'km' : 'horimetro');
   // (22/10/2026) Sistema: o select mostra SÓ o ramo da família do tipo (PNEU → 02.00.05 Pneus e as subpastas
   // Veículo leve / Caminhão / Máquina). Tipo sem pasta correspondente → lista completa (sem botão "todos": a
   // pasta é obrigatória — decisão Edvania 22/10).
@@ -2818,8 +2848,10 @@ async function equipSubsistemas(id){
       + _pneuDiagrama(eu, r.filhos)
       + '<div class="dsec" style="margin-top:10px">\u2795 Montar componente</div>'
       + '<div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;padding:4px 0">'
+      // (12/11/2026) soltos primeiro; montados em outro equipamento aparecem à parte com onde estão; busca por código/medida
+      + '<div class="mfield" style="width:170px">Procurar<input id="sub-busca" placeholder="c\u00f3digo ou medida" oninput="subFiltrar(this.value)"></div>'
       + '<div class="mfield" style="flex:1;min-width:220px">Componente<select id="sub-comp">'
-      + r.componentes_livres.map(c=>'<option value="'+c.id+'">'+_esc(c.codigo)+' \u2014 '+_esc((c.descricao||'').slice(0,40))+(c.n_renov?' \u00b7 '+(c.no_limite?'\u26a0 ':'')+c.n_renov+(c.limite?'/'+c.limite:'')+' renov.':'')+'</option>').join('')
+      + _subOpcoes(r.componentes_livres)
       + '</select></div>'
       + '<div class="mfield" style="width:200px">Posi\u00e7\u00e3o<input id="sub-pos" placeholder="ex.: traseiro interno dir"></div>'
       + '<button class="btn p" data-p="'+eu.id+'" onclick="subMontar(this.dataset.p)">Montar</button></div>'
@@ -2829,13 +2861,32 @@ async function equipSubsistemas(id){
   document.getElementById('eq-ficha-corpo').innerHTML =
     fichaTopo({icone:'\ud83d\udede', titulo:'Subsistemas / Montagem', codigo:eu.codigo, descricao:eu.descricao, id:id, fn:'equipSubsistemas'})
     + corpo;
+  _subLivres = r.componentes_livres || [];
   document.getElementById('eq-ficha').style.display = '';   // (12/11/2026) defesa contra display inline deixado por outra janela
   document.getElementById('eq-ficha').classList.add('show');
 }
+function _subOpcoes(livres, q){
+  const t = s => String(s||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/\s+/g,'');
+  const qq = t(q);
+  const casa = c => !qq || t(c.codigo).indexOf(qq) >= 0 || t(c.descricao).indexOf(qq) >= 0;
+  const op = c => '<option value="'+c.id+'" data-pai="'+_esc(c.pai_codigo||'')+'" data-pos="'+_esc(c.pai_posicao||'')+'">'
+    + (c.pai_codigo ? '\u26a0 ' : '') + _esc(c.codigo)+' \u2014 '+_esc((c.descricao||'').slice(0,48))
+    + (c.pai_codigo ? ' \u00b7 montado em '+_esc(c.pai_codigo)+(c.pai_posicao?' ('+_esc(c.pai_posicao)+')':'') : '')
+    + (c.n_renov?' \u00b7 '+(c.no_limite?'\u26a0 ':'')+c.n_renov+(c.limite?'/'+c.limite:'')+' renov.':'')+'</option>';
+  const soltos = (livres||[]).filter(c => !c.pai_codigo && casa(c)), outros = (livres||[]).filter(c => c.pai_codigo && casa(c));
+  if (!soltos.length && !outros.length) return '<option value="">'+(qq ? 'Nada encontrado' : 'Nenhum componente cadastrado (categoria componente)')+'</option>';
+  return (soltos.length ? '<optgroup label="Soltos ('+soltos.length+')">'+soltos.map(op).join('')+'</optgroup>' : '')
+    + (outros.length ? '<optgroup label="Montados em outro equipamento \u2014 montar aqui tira de l\u00e1 ('+outros.length+')">'+outros.map(op).join('')+'</optgroup>' : '');
+}
+let _subLivres = [];
+function subFiltrar(q){ const s = document.getElementById('sub-comp'); if (s) s.innerHTML = _subOpcoes(_subLivres, q); }
 async function subMontar(paiId, forcar){
   const comp = (document.getElementById('sub-comp')||{}).value;
   const pos = (document.getElementById('sub-pos')||{}).value || '';
   if (!comp){ mostrarToast('Escolha o componente','warn'); return; }
+  // (12/11/2026) componente montado em outro equipamento: montar aqui desmonta de lá — confirma
+  const _o = ((document.getElementById('sub-comp')||{}).selectedOptions||[])[0];
+  if (!forcar && _o && _o.dataset.pai && !confirm('\u26a0 Este componente est\u00e1 montado em '+_o.dataset.pai+(_o.dataset.pos?' ('+_o.dataset.pos+')':'')+'.\nMontar aqui tira ele de l\u00e1 (o hist\u00f3rico de l\u00e1 fecha). Continuar?')) return;
   // (22/10/2026) componente no limite de renova\u00e7\u00f5es: o back devolve 409 e a gest\u00e3o confirma (n\u00e3o bloqueia)
   const opt = (document.getElementById('sub-comp')||{}).selectedOptions; const rot = opt && opt[0] ? opt[0].textContent : '';
   if (!forcar && /\u26a0/.test(rot)){
@@ -7544,6 +7595,7 @@ const PARAM_MAP = {
   familias:  { dom:'familias',               titulo:'Famílias de materiais', pk:'codigo' },
   famobj:    { dom:'familias-objetos',       titulo:'Famílias de objetos',   pk:'codigo' },
   classmat:  { dom:'classes-materiais',      titulo:'Classes de materiais (Norma: Classe → Família → Subfamília)', pk:'codigo' },   // (19/10/2026)
+  catobj:    { dom:'categorias-objeto',      titulo:'Categorias de objeto', pk:'codigo' },   // (12/11/2026)
   unidades:  { dom:'unidades',               titulo:'Unidades de medida das peças (sigla · nome) — a ficha da peça só aceita o que está aqui', pk:'codigo' },   // (05/11/2026)
   periodos:  { dom:'periodos',               titulo:'Períodos',              pk:'codigo' },
   tipofer:   { dom:'tipos-ferramenta',       titulo:'Tipos de ferramenta',   pk:'codigo' },
@@ -7572,6 +7624,7 @@ const PARAM_GRUPOS = [
     ['horarios','dom','Horários de trabalho'] ]},
   { t:'🏗 Equipamentos', itens:[
     ['tipos','dom','Tipos de equipamento'],
+    ['catobj','catobj','Categorias de objeto (operacional)'],   // (12/11/2026)
     ['famobj','dom','Famílias de objetos'],
     ['grupos','dom','Grupos / Sistemas (árvore)'],
     ['equipList','equip','Equipamentos (frota)'] ]},
@@ -7637,6 +7690,7 @@ function abrirParamPane(paneId, tipo, titulo){
   if (tipo === 'equip')  { paneEquipamentos(); return; }
   if (tipo === 'pontos') { panePontos(); return; }
   if (tipo === 'funcoes') { paneFuncoes(); return; }
+  if (tipo === 'catobj') { paneCategorias(); return; }   // (12/11/2026)
   if (tipo === 'alm')    { showModule('alm'); return; }
   if (tipo === 'admin')  { paneAviso(titulo, 'Usuários, perfis e permissões são gerenciados no <b>Admin Master</b> — cadastro único (usuarios_garra), sem duplicação aqui.'); return; }
   const fila = { empresa: empresaPane, clientes: clientesPane, planos: planosTodosPane, refforn: referenciasPane,
@@ -7644,6 +7698,63 @@ function abrirParamPane(paneId, tipo, titulo){
                  docs: () => docsTodosPane(''), config: configPane };
   if (fila[paneId]) { fila[paneId](); return; }
   paneAviso(titulo, 'Cadastro sem tela pr\u00f3pria ainda.');
+}
+/* (12/11/2026) CATEGORIAS DE OBJETO — código fixo (o sistema usa), nome, medição padrão, desenho de pneus, componente.
+   Categorias gravadas nos objetos e ausentes do cadastro aparecem no fim, em laranja, para cadastrar ou corrigir. */
+async function paneCategorias(){
+  const pane = document.getElementById('pp-pane');
+  let rows = [];
+  try { rows = await mntFetch('/manutencao/api/param/categorias-objeto'); } catch(e){ mostrarToast('\u274c '+e.message,'warn'); return; }
+  const meds = ['horimetro','km','hora','diaria','viagem','metros'];
+  const selMed = (c, v) => '<select data-c="'+_esc(c)+'" onchange="catSalvar(this.dataset.c,{medicao:this.value})">'+[''].concat(meds).map(m=>'<option value="'+m+'"'+(m===(v||'')?' selected':'')+'>'+(m||'\u2014 do pai')+'</option>').join('')+'</select>';
+  const selDia = (c, v) => '<select data-c="'+_esc(c)+'" onchange="catSalvar(this.dataset.c,{diagrama:this.value})">'+_PNEU_DIAG_NOMES.map(d=>'<option value="'+d[0]+'"'+(d[0]===(v||'')?' selected':'')+'>'+d[1]+'</option>').join('')+'</select>';
+  const cad = rows.filter(r => !r.nao_cadastrada), fora = rows.filter(r => r.nao_cadastrada);
+  const linha = r => {
+    const inat = r.ativo === false;
+    return '<tr style="'+(inat?'opacity:.55':'')+'"><td class="bold mono">'+_esc(r.codigo)+'</td>'
+      + '<td>'+_esc(r.nome||'')+(inat?' <span class="chip ap" style="font-size:9px">INATIVA</span>':'')+'</td>'
+      + '<td>'+selMed(r.codigo, r.medicao)+'</td><td>'+selDia(r.codigo, r.diagrama)+'</td>'
+      + '<td style="text-align:center"><input type="checkbox" data-c="'+_esc(r.codigo)+'"'+(r.componente?' checked':'')+' onchange="catSalvar(this.dataset.c,{componente:this.checked})" title="Componente/subsistema: entra na lista de montagem"></td>'
+      + '<td class="r mono">'+(r.n_uso||0)+'</td>'
+      + '<td class="act" style="white-space:nowrap"><button class="btn" title="Renomear" data-c="'+_esc(r.codigo)+'" data-n="'+_esc(r.nome||'')+'" onclick="catRenomear(this.dataset.c,this.dataset.n)">\u270f\ufe0f</button>'
+      + (inat ? '<button class="btn" title="Reativar" data-c="'+_esc(r.codigo)+'" onclick="catSalvar(this.dataset.c,{ativo:true},true)">\u267b\ufe0f</button>'
+              : '<button class="btn" title="Desativar (some dos formul\u00e1rios; objetos que j\u00e1 usam continuam)" data-c="'+_esc(r.codigo)+'" onclick="catSalvar(this.dataset.c,{ativo:false},true)">\ud83d\udeab</button>')
+      + (!(r.n_uso>0) ? '<button class="btn" title="Excluir de vez (s\u00f3 se nenhum objeto usa)" data-c="'+_esc(r.codigo)+'" onclick="catExcluir(this.dataset.c)">\ud83d\uddd1\ufe0f</button>' : '')
+      + '</td></tr>';
+  };
+  pane.innerHTML = '<div class="pp-hdr"><div><div class="pp-title">Categorias de objeto</div>'
+    + '<div class="pp-sub">A ficha do objeto s\u00f3 aceita o que est\u00e1 aqui. O c\u00f3digo \u00e9 fixo (checklist, app do operador e OT usam o c\u00f3digo); renomeie s\u00f3 o nome. Medi\u00e7\u00e3o e desenho de pneus valem para todos os objetos da categoria.</div></div>'
+    + '<button class="btn o" onclick="catNova()">\uff0b Nova</button></div>'
+    + '<div style="margin-top:8px;background:#fff;border:1px solid #E2E8F0;border-radius:6px;overflow:auto"><table><thead><tr><th style="width:150px">C\u00f3digo</th><th>Nome</th><th style="width:110px">Medi\u00e7\u00e3o</th><th style="width:250px">Desenho de pneus</th><th style="width:80px">Componente</th><th class="r" style="width:60px">Objetos</th><th style="width:110px"></th></tr></thead><tbody>'
+    + (cad.map(linha).join('') || '<tr><td colspan="7" class="muted" style="padding:12px">Nenhuma categoria.</td></tr>')
+    + '</tbody></table></div>'
+    + (fora.length ? '<div class="dsec" style="margin-top:12px;color:#B45309">\u26a0 Gravadas em objetos mas n\u00e3o cadastradas</div>'
+      + '<div style="background:#FFF7ED;border:1px solid #FED7AA;border-radius:6px;padding:6px 10px;font-size:12px">'
+      + fora.map(r => '<div style="display:flex;gap:8px;align-items:center;padding:3px 0"><b class="mono">'+_esc(r.codigo)+'</b> <span class="muted">'+r.n_uso+' objeto(s)</span>'
+        + '<button class="btn" data-c="'+_esc(r.codigo)+'" onclick="catNova(this.dataset.c)">\uff0b Cadastrar</button></div>').join('')
+      + '<div class="muted" style="font-size:10px;margin-top:4px">Cadastre se a categoria for v\u00e1lida, ou abra os objetos e escolha uma categoria da lista.</div></div>' : '');
+}
+async function catSalvar(cod, d, recarregar){
+  try { await mntFetch('/manutencao/api/param/categorias-objeto/'+encodeURIComponent(cod), {method:'PATCH', body: JSON.stringify(d)});
+    mostrarToast('\u2705 '+cod+' atualizada','ok'); _mwDom = null; if (recarregar) paneCategorias();
+  } catch(e){ mostrarToast('\u274c '+e.message,'warn'); paneCategorias(); }
+}
+async function catExcluir(cod){
+  if (!confirm('Excluir a categoria '+cod+' de vez? (s\u00f3 se nenhum objeto usa)')) return;
+  try { await mntFetch('/manutencao/api/param/categorias-objeto/'+encodeURIComponent(cod), {method:'DELETE'});
+    mostrarToast('\ud83d\uddd1\ufe0f '+cod+' exclu\u00edda','ok'); _mwDom = null; paneCategorias();
+  } catch(e){ mostrarToast('\u274c '+e.message,'warn'); }
+}
+async function catRenomear(cod, atual){
+  const n = prompt('Nome de '+cod+':', atual||''); if (!n || !n.trim()) return;
+  catSalvar(cod, {nome:n.trim()}, true);
+}
+async function catNova(codIni){
+  const cod = prompt('C\u00f3digo da categoria (min\u00fasculo, sem acento; ex.: caminhao_munck). N\u00e3o muda depois:', codIni||''); if (!cod || !cod.trim()) return;
+  const nome = prompt('Nome que aparece na lista (ex.: Caminh\u00e3o munck):', ''); if (!nome || !nome.trim()) return;
+  try { const r = await mntFetch('/manutencao/api/param/categorias-objeto', {method:'POST', body: JSON.stringify({codigo:cod.trim(), nome:nome.trim(), medicao:'horimetro'})});
+    mostrarToast('\u2705 '+(r.codigo||cod)+' cadastrada \u2014 ajuste medi\u00e7\u00e3o e desenho na linha','ok'); _mwDom = null; paneCategorias();
+  } catch(e){ mostrarToast('\u274c '+e.message,'warn'); }
 }
 function paneAviso(titulo, msg){
   document.getElementById('pp-pane').innerHTML =
@@ -8091,6 +8202,8 @@ async function ligarParamPane(paneId){
       + '><td class="bold" style="width:'+(hier?170:90)+'px;padding-left:'+(8+nivel*16)+'px;white-space:nowrap">'
       + seta + (dom === 'tipos-manutencao' ? (nivel === 0 ? '📁 ' : '📄 ') : '') + (inat?'<s>':'')+_esc(cod)+(inat?'</s>':'')+'</td><td>'
       + (inat?'<s>':'')+_esc(r.nome||'')+(inat?'</s>':'')
+      + (dom === 'tipos-equipamento' && !inat ? ' <select style="margin-left:8px;font-size:11px" title="Categoria padr\u00e3o: o objeto novo deste tipo j\u00e1 nasce com ela" data-c="'+_esc(cod)+'" onclick="event.stopPropagation()" onchange="tipoCatPadrao(this.dataset.c,this.value)"><option value="">categoria padr\u00e3o: \u2014</option>'
+          + (_ppCats||[]).map(c => '<option value="'+_esc(c.codigo)+'"'+(c.codigo===(r.categoria_padrao||'')?' selected':'')+'>categoria padr\u00e3o: '+_esc(c.nome||c.codigo)+'</option>').join('') + '</select>' : '')   // (12/11/2026)
       + (dom === 'familias' && nivel === 0 ? ' <span class="chip pe" style="font-size:9px" title="Classe da Norma (clique em ✏️ para mudar)">'+(r.classe ? 'Classe '+_esc(r.classe) : 'sem classe')+'</span>' : '')
       + (Array.isArray(r.caracteristicas) && r.caracteristicas.length ? ' <span class="muted" style="font-size:9px" title="Características (rótulos) da subfamília">· '+_esc(r.caracteristicas.filter(Boolean).join(' · '))+'</span>' : '')
       + (inat?' <span class="chip ap" style="font-size:9px">INATIVO</span>':'')+'</td>'
@@ -8103,6 +8216,9 @@ async function ligarParamPane(paneId){
     + '<div style="margin-top:6px;background:#fff;border:1px solid #E2E8F0;border-radius:6px;overflow:hidden"><table><thead><tr><th style="width:90px">Código</th><th>Descrição</th><th style="width:96px"></th></tr></thead><tbody>'
     + render(rows, dom, pk) + '</tbody></table></div>';
   try {
+    if (cfg.dom === 'tipos-equipamento'){   // (12/11/2026) categorias para o select "categoria padrão"
+      try { _ppCats = (await mntFetch('/manutencao/api/param/categorias-objeto')).filter(c => !c.nao_cadastrada && c.ativo !== false); } catch(e){ _ppCats = []; }
+    }
     const rows = await mntFetch('/manutencao/api/param/'+cfg.dom);
     let extraHtml = '';
     if (cfg.extra){
@@ -8115,6 +8231,12 @@ async function ligarParamPane(paneId){
       + '<button class="btn o" id="pp-novo-rot" onclick="novoParam(\''+cfg.dom+'\',\''+paneId+'\')">'+(_ppSel[cfg.dom] ? '＋ Novo em '+_esc(_ppSel[cfg.dom]) : '＋ Novo')+'</button></div>'
       + tabela(null, cfg.dom, cfg.pk, rows, false) + extraHtml;
   } catch(e){ mostrarToast('❌ '+e.message,'warn'); }
+}
+let _ppCats = [];
+async function tipoCatPadrao(sigla, cat){   // (12/11/2026)
+  try { await mntFetch('/manutencao/api/param/tipos-equipamento/'+encodeURIComponent(sigla), {method:'PATCH', body: JSON.stringify({categoria_padrao: cat})});
+    mostrarToast('\u2705 '+sigla+': categoria padr\u00e3o '+(cat||'removida'),'ok'); _mwDom = null;
+  } catch(e){ mostrarToast('\u274c '+e.message,'warn'); }
 }
 async function novoParam(dom, paneId){
   // (30/09/2026) Sistemas: janela "Novo Sistema" (ManWinWin) na raiz; o ➕ de cada linha cria dentro do nó

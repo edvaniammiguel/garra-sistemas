@@ -3764,7 +3764,36 @@ _DOMINIOS_PARAM = {
     # (05/11/2026) Unidades de medida das peças (UN, PC, JG, KIT, L…): lista única em vez de texto
     # livre — quem cadastra escolhe o que já existe, sem puxar da memória se é "KIT", "CJ" ou "JG".
     "unidades": "manutencao.unidades",
+    # (12/11/2026) Categorias operacionais dos objetos (caminhao, retroescavadeira, componente…): lista fechada
+    # em vez de texto livre. O CÓDIGO é fixo (checklist, app do operador e OT usam o código); o nome é o que
+    # aparece. Cada categoria diz a medição padrão, o desenho de pneus e se é componente (subsistema).
+    "categorias-objeto": "manutencao.categorias_objeto",
 }
+
+# (12/11/2026) carga inicial: (codigo, nome, medicao, diagrama de pneus, componente)
+# diagrama: caminhao · caminhao_reboque · veiculo_leve · maquina4 · patrol · compactador · '' (sem desenho)
+_CATEGORIAS_PADRAO = [
+    ("caminhao", "Caminhão", "km", "caminhao", False),
+    ("caminhao_basculante", "Caminhão basculante", "km", "caminhao", False),
+    ("caminhao_pipa", "Caminhão pipa", "km", "caminhao", False),
+    ("caminhao_bruck", "Caminhão bruck", "km", "caminhao", False),
+    ("caminhao_cacamba", "Caminhão caçamba", "km", "caminhao", False),
+    ("caminhao_reboque", "Caminhão com reboque", "km", "caminhao_reboque", False),
+    ("carro", "Carro / veículo", "km", "veiculo_leve", False),
+    ("veiculo_leve", "Veículo leve", "km", "veiculo_leve", False),
+    ("escavadeira", "Escavadeira (esteira)", "horimetro", "", False),
+    ("retroescavadeira", "Retroescavadeira", "horimetro", "maquina4", False),
+    ("carregadeira", "Pá carregadeira", "horimetro", "maquina4", False),
+    ("minicarregadeira", "Minicarregadeira", "horimetro", "maquina4", False),
+    ("patrol", "Patrol / motoniveladora", "horimetro", "patrol", False),
+    ("compactador", "Compactador / rolo", "horimetro", "compactador", False),
+    ("maquina", "Máquina (genérica)", "horimetro", "", False),
+    ("apoio", "Apoio / combinado (não motorizado — sem OT)", "km", "", False),
+    ("galao", "Galão", "horimetro", "", False),
+    ("componente", "Componente / subsistema (pneu, motor, bomba…)", None, "", True),   # medição = a do equipamento onde monta
+    ("outro", "Outro", "horimetro", "", False),
+]
+_DIAGRAMAS_PNEU = ("", "caminhao", "caminhao_reboque", "veiculo_leve", "maquina4", "patrol", "compactador")
 
 # (05/11/2026) carga inicial das unidades; siglas já usadas em pecas.unidade entram sozinhas (migração)
 _UNIDADES_PADRAO = [
@@ -3826,6 +3855,20 @@ async def _garantir_dominios():
         SELECT DISTINCT upper(trim(unidade)), upper(trim(unidade)) FROM manutencao.pecas
          WHERE coalesce(trim(unidade),'') <> ''
         ON CONFLICT (codigo) DO NOTHING""", fetch="none")
+    # (12/11/2026) Categorias de objeto: colunas extras + carga inicial; Tipo de objeto ganha categoria padrão
+    await ajard_query("ALTER TABLE manutencao.categorias_objeto ADD COLUMN IF NOT EXISTS medicao TEXT", fetch="none")
+    await ajard_query("ALTER TABLE manutencao.categorias_objeto ADD COLUMN IF NOT EXISTS diagrama TEXT", fetch="none")
+    await ajard_query("ALTER TABLE manutencao.categorias_objeto ADD COLUMN IF NOT EXISTS componente BOOLEAN DEFAULT false", fetch="none")
+    for _c, _n, _m, _d, _k in _CATEGORIAS_PADRAO:
+        await ajard_query(
+            """INSERT INTO manutencao.categorias_objeto (codigo, nome, medicao, diagrama, componente)
+               VALUES (%s,%s,%s,%s,%s) ON CONFLICT (codigo) DO NOTHING""",
+            (_c, _n, _m, _d or None, _k), fetch="none")
+    await ajard_query("ALTER TABLE manutencao.tipos_equipamento ADD COLUMN IF NOT EXISTS categoria_padrao TEXT", fetch="none")
+    # tipo PNEU nasce apontando para componente (só preenche se ainda vazio — escolha da gestão prevalece)
+    await ajard_query("""UPDATE manutencao.tipos_equipamento SET categoria_padrao='componente'
+                         WHERE categoria_padrao IS NULL AND (upper(sigla)='PNEU' OR upper(coalesce(nome,'')) LIKE 'PNEU%%')""",
+                      fetch="none")
     # (27/09/2026) PT-BR: "planeado" → "planejado" no status dos projetos (valor gravado)
     await _garantir_tabela("projectos")
     await ajard_query("UPDATE manutencao.projectos SET status='planejado' WHERE status='planeado'", fetch="none")
@@ -4092,6 +4135,19 @@ async def editar_dominio(dominio: str, codigo: str, request: Request, payload=De
         sets.append("rubrica=%s"); params.append((d.get("rubrica") or "").strip() or None)
     if "classe" in d and tabela == "manutencao.familias":
         sets.append("classe=%s"); params.append((d.get("classe") or "").strip().upper() or None)
+    if tabela == "manutencao.categorias_objeto":   # (12/11/2026)
+        if "medicao" in d:
+            sets.append("medicao=%s"); params.append((d.get("medicao") or "").strip().lower() or None)
+        if "diagrama" in d:
+            dg = (d.get("diagrama") or "").strip().lower()
+            if dg not in _DIAGRAMAS_PNEU:
+                raise HTTPException(status_code=400, detail="Desenho de pneus inválido")
+            sets.append("diagrama=%s"); params.append(dg or None)
+        if "componente" in d:
+            sets.append("componente=%s"); params.append(bool(d.get("componente")))
+    if "categoria_padrao" in d and "tipos_equipamento" in tabela:   # (12/11/2026)
+        await ajard_query("ALTER TABLE manutencao.tipos_equipamento ADD COLUMN IF NOT EXISTS categoria_padrao TEXT", fetch="none")
+        sets.append("categoria_padrao=%s"); params.append((d.get("categoria_padrao") or "").strip().lower() or None)
     if tabela == "manutencao.tipos_manutencao":   # (22/10/2026) renovação de vida + limite por objeto
         if "renova_vida" in d:
             sets.append("renova_vida=%s"); params.append(None if d.get("renova_vida") is None else bool(d.get("renova_vida")))
@@ -4127,6 +4183,13 @@ async def excluir_dominio(dominio: str, codigo: str, payload=Depends(verificar_m
         if uso and int(uso["n"] or 0) > 0:
             raise HTTPException(status_code=409,
                                 detail=f"Unidade {codigo.upper()} em uso em {uso['n']} peça(s) — não pode ser excluída. Use Desativar.")
+    if tabela == "manutencao.categorias_objeto":
+        # (12/11/2026) categoria em uso em algum objeto nunca é apagada (o código está gravado no equipamento)
+        uso = await ajard_query("SELECT count(*) AS n FROM operacional.equipamentos WHERE lower(categoria)=%s",
+                                (codigo.strip().lower(),), fetch="one")
+        if uso and int(uso["n"] or 0) > 0:
+            raise HTTPException(status_code=409,
+                                detail=f"Categoria {codigo} em uso em {uso['n']} objeto(s) — não pode ser excluída. Use Desativar.")
     import asyncpg as _apg
     try:
         await ajard_query(f"DELETE FROM {tabela} WHERE {pk}=%s", (codigo,), fetch="none")
@@ -4153,7 +4216,26 @@ async def listar_dominio(dominio: str, _auth=Depends(verificar_manutencao)):
             try: d["caracteristicas"] = _json.loads(d["caracteristicas"])
             except Exception: pass
         out.append(d)
+    if tabela == "manutencao.categorias_objeto":
+        # (12/11/2026) quantos objetos usam cada categoria + as gravadas nos objetos que NÃO estão cadastradas
+        uso = await ajard_query("""SELECT lower(categoria) AS c, count(*)::int AS n FROM operacional.equipamentos
+                                   WHERE ativo=true AND coalesce(categoria,'')<>'' GROUP BY 1""") or []
+        mapa = {u["c"]: u["n"] for u in uso}
+        for d in out:
+            d["n_uso"] = mapa.pop(str(d["codigo"]).lower(), 0)
+        for c, n in sorted(mapa.items()):
+            out.append({"codigo": c, "nome": None, "ativo": True, "n_uso": n, "nao_cadastrada": True})
     return out
+
+
+@router.get("/manutencao/api/categorias-objeto")
+async def categorias_objeto(_auth=Depends(verificar_token)):
+    """(12/11/2026) Lista leve das categorias ativas para os selects de qualquer módulo (Admin Master,
+    Manutenção). Leitura só — editar continua em Parametrizar (gate Manutenção)."""
+    await _garantir_dominios()
+    rows = await ajard_query("""SELECT codigo, nome, medicao, diagrama, componente FROM manutencao.categorias_objeto
+                                WHERE ativo IS NOT FALSE ORDER BY nome""") or []
+    return [dict(r) for r in rows]
 
 
 @router.post("/manutencao/api/param/{dominio}")
@@ -4169,6 +4251,12 @@ async def upsert_dominio(dominio: str, request: Request, payload=Depends(verific
     pk = "sigla" if "tipos_equipamento" in tabela else "codigo"
     if tabela == "manutencao.unidades":   # (05/11/2026) sigla sempre maiúscula, sem espaços
         cod = cod.upper().replace(" ", "")
+    if tabela == "manutencao.categorias_objeto":   # (12/11/2026) código minúsculo, sem acento nem espaço (caminhao_pipa)
+        import unicodedata as _ud
+        cod = ''.join(c for c in _ud.normalize('NFD', cod.lower()) if _ud.category(c) != 'Mn')
+        cod = re.sub(r'[^a-z0-9]+', '_', cod).strip('_')
+        if not cod:
+            raise HTTPException(status_code=400, detail="Código inválido")
     await ajard_query(
         f"""INSERT INTO {tabela} ({pk}, nome) VALUES (%s,%s)
             ON CONFLICT ({pk}) DO UPDATE SET nome=EXCLUDED.nome""",
@@ -4176,7 +4264,12 @@ async def upsert_dominio(dominio: str, request: Request, payload=Depends(verific
     if tabela == "manutencao.familias" and (d.get("classe") or "").strip():
         await ajard_query("UPDATE manutencao.familias SET classe=%s, ativo=true WHERE codigo=%s",
                           ((d.get("classe") or "").strip().upper(), cod), fetch="none")
-    return {"ok": True}
+    if tabela == "manutencao.categorias_objeto":   # (12/11/2026)
+        dg = (d.get("diagrama") or "").strip().lower()
+        await ajard_query("UPDATE manutencao.categorias_objeto SET medicao=%s, diagrama=%s, componente=%s, ativo=true WHERE codigo=%s",
+                          ((d.get("medicao") or "").strip().lower() or None, dg if dg in _DIAGRAMAS_PNEU and dg else None,
+                           bool(d.get("componente")), cod), fetch="none")
+    return {"ok": True, "codigo": cod}
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -6363,8 +6456,10 @@ async def subsistemas(eq_id: str, _auth=Depends(verificar_manutencao)):
     """Janela de duas faces: PAI → filhos montados (posição, sistema, OTs
     abertas); COMPONENTE → onde está montado + vida acumulada."""
     await _garantir_montagens()
+    await _garantir_dominios()   # (12/11/2026) categorias_objeto (desenho de pneus por categoria)
     eu = await ajard_query(
         """SELECT e.id, e.codigo, e.descricao, e.categoria, e.medicao,
+                  (SELECT c.diagrama FROM manutencao.categorias_objeto c WHERE c.codigo = lower(e.categoria)) AS diagrama,
                   e.horimetro_atual, e.km_atual, e.posicao, e.data_aquisicao, e.valor_aquisicao,
                   p.id AS pai_id, p.codigo AS pai_codigo, p.descricao AS pai_desc,
                   p.medicao AS pai_medicao, p.horimetro_atual AS pai_horimetro, p.km_atual AS pai_km
@@ -6418,11 +6513,17 @@ async def subsistemas(eq_id: str, _auth=Depends(verificar_manutencao)):
     for r in renovs:
         r.pop("_data", None)
     limite = _limite_renovacao(tipos_ren, renovs)
+    # (12/11/2026) soltos primeiro; os montados em OUTRO pai vêm com onde estão (montar = tirar de lá);
+    # componente = categoria 'componente' ou qualquer categoria marcada como componente em Parametrizar
     livres = await ajard_query(
-        """SELECT id, codigo, descricao FROM operacional.equipamentos
-           WHERE categoria='componente' AND ativo=true
-             AND (equipamento_pai IS NULL OR equipamento_pai <> %s)
-           ORDER BY codigo LIMIT 200""", (eq_id,))
+        """SELECT c.id, c.codigo, c.descricao, c.posicao AS pai_posicao, p.codigo AS pai_codigo
+           FROM operacional.equipamentos c
+           LEFT JOIN operacional.equipamentos p ON p.id = c.equipamento_pai
+           WHERE c.ativo=true
+             AND (lower(c.categoria)='componente'
+                  OR lower(c.categoria) IN (SELECT codigo FROM manutencao.categorias_objeto WHERE componente IS TRUE))
+             AND (c.equipamento_pai IS NULL OR c.equipamento_pai <> %s)
+           ORDER BY (c.equipamento_pai IS NOT NULL), c.codigo LIMIT 500""", (eq_id,))
     # contagem de renovações nos filhos e nos livres (chip ⚠ e rótulo do select)
     ren_map = await _renovacoes_por_objeto(tipos_ren, [str(f["id"]) for f in filhos] + [str(c["id"]) for c in livres])
     def _ren_info(oid):
@@ -6430,7 +6531,7 @@ async def subsistemas(eq_id: str, _auth=Depends(verificar_manutencao)):
         lim = _limite_renovacao(tipos_ren, rs)
         return {"n_renov": len(rs), "limite": lim, "no_limite": bool(lim and len(rs) >= lim)}
     return {"eu": {"id": str(eu["id"]), "codigo": eu["codigo"], "descricao": eu["descricao"],
-                   "categoria": eu["categoria"], "posicao": eu["posicao"],
+                   "categoria": eu["categoria"], "diagrama": eu["diagrama"], "posicao": eu["posicao"],
                    "pai": ({"id": str(eu["pai_id"]), "codigo": eu["pai_codigo"],
                             "descricao": eu["pai_desc"]} if eu["pai_id"] else None)},
             "filhos": [dict(f, id=str(f["id"]), **_ren_info(f["id"])) for f in filhos],
