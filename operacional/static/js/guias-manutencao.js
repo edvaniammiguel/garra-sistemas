@@ -181,9 +181,26 @@ window.GUIAS_MANUTENCAO = {
         titulo: '🧾 Movimentos (extrato)',
         texto: 'O extrato mostra cada entrada, saída, transferência e ajuste, com documento, OT e quem fez. Filtre por período, peça, tipo ou documento; <b>▸</b> abre os itens; <b>↩ Estornar</b> desfaz a entrada inteira com motivo (fica o chip "estornada").' },
       { alvo: () => [...document.querySelectorAll('#mod-alm .pn-item')].find(e => /Abaixo do m/.test(e.textContent)) || document.querySelector('#mod-alm .pn-item'), titulo: '⚠ Abaixo do mínimo',
-        texto: 'Lista as peças com disponível abaixo do mínimo cadastrado. Olhe <b>toda semana</b>: é daqui que nasce a compra antes de faltar na oficina. Marque os itens e <b>🛒 Gerar OC</b>: sai uma OC por <b>fornecedor de referência</b>, no setor <b>Manutenção</b>, em rascunho no Compras.' },
-      // (11/11/2026) 🛒 Comprar selecionadas + janela do fornecedor
-      // (12/11/2026) grupo 🛒 Compras na barra + vista 📑 Pedidos de compra
+        texto: 'Lista as peças com disponível abaixo do mínimo cadastrado. Olhe <b>toda semana</b>: é daqui que nasce a compra antes de faltar na oficina. Marque os itens e <b>🛒 Gerar OC</b> ou <b>📋 Cotar marcados</b>. Compras e cotação têm demonstração própria: <b>Materiais — comprar, cotar e acompanhar pedidos</b>.' },
+      { alvo: () => [...document.querySelectorAll('#mwbar-alm button')].find(b => /Ferramentas/.test(b.textContent)), titulo: '📋 Inventário',
+        texto: 'Em <b>Ferramentas › Inventário</b>: escolha o almoxarifado, conte e digite só nas linhas contadas; a diferença vira <b>Ajuste de saldo</b> com trilha (quem, quando, motivo). Classe A todo mês, geral a cada trimestre.' },
+      { alvo: () => [...document.querySelectorAll('#mwbar-alm button')].find(b => /Etiquetas/.test(b.textContent)), titulo: '🏷 Etiquetas',
+        texto: 'Etiquetas com QR por item ou por entrada. Ao imprimir: <b>Escala 100%</b> e <b>Margens Padrão</b>, sempre iguais; se sair deslocado no molde, use o ajuste ↕↔ em mm na barra da página (fica gravado por computador).' },
+      { titulo: 'Pronto! ✅',
+        texto: 'Resumo: peça sai <b>pela OT</b> (Saída Armazém ou Aplicação Directa, sempre com documento) · extrato para auditar e estornar · mínimo toda semana · inventário por contagem. Compras e cotação: próxima demonstração. Detalhes no <b>POP-MAT-01</b>.' },
+    ],
+  },
+
+  // (12/11/2026) ── Compras pela Manutenção: comprar, cotar, acompanhar, receber
+  'materiais-compras': {
+    titulo: 'Materiais — comprar, cotar e acompanhar pedidos',
+    pop: 'POP-MAT-01 · Compras',
+    passos: [
+      { titulo: 'Da falta à peça na prateleira 🛒',
+        texto: '<b>Bem-vinda à demonstração de Compras pela Manutenção.</b><br><br>Você vai ver onde a compra nasce (mínimo, OT ou avulsa), como <b>cotar em vários fornecedores</b> antes da OC, onde acompanhar cada pedido e como a peça entra no estoque. Nada é gravado.',
+        botao: 'Começar demonstração' },
+      { alvo: '#tn-alm', antes: async () => { showModule('alm'); almLente('armazem'); await new Promise(r => setTimeout(r, 600)); }, titulo: 'Materiais › Estoque',
+        texto: 'Tudo começa no <b>Estoque</b>: é aqui que se marcam as peças (clique na linha; Ctrl/Shift para várias) e ficam os botões de ação.' },
       { alvo: () => [...document.querySelectorAll('#mod-alm .pn-grp')].find(e => /Compras/.test(e.textContent)) || document.querySelector('#mod-alm .pn-grp'), titulo: '🛒 Grupo Compras',
         antes: () => { let m = false; ['oper','compras','consulta'].forEach(k => { if (localStorage.getItem('garra_alm_grp_'+k) === '0') { localStorage.setItem('garra_alm_grp_'+k, '1'); m = true; } }); if (m) montarNavAlm(); },
         texto: 'Os três grupos da barra (Operações, Compras, Consulta) recolhem e expandem pelo título. Menu de compra: <b>Comprar / cotar peças</b> abre o Estoque — os botões de ação ficam lá; <b>Receber</b> (conferência — o mesmo do ícone no topo) e o atalho para o módulo Compras. O que é <b>lista</b> fica em <b>Consulta</b>, logo abaixo.' },
@@ -198,12 +215,13 @@ window.GUIAS_MANUTENCAO = {
         texto: 'As OCs da Manutenção lidas direto do Compras, por estágio: <b>A cotar/rascunho → Aguardando aprovação → Aprovada → A caminho → Chegou, a conferir → Recebida</b>. Busque por <b>nº, peça, fornecedor, OT ou equipamento</b> ("o filtro já está em alguma OC?"). Rascunho tem o botão <b>Enviar p/ aprovação</b> aqui mesmo; chegou → <b>Conferir</b>; ↗ abre no Compras.' },
       { alvo: '#alm-btn-cotar', antes: () => { const f = document.getElementById('ped-filtros'); if (f) f.style.display = 'none'; almLente('armazem'); }, titulo: '📋 Cotar: vários fornecedores antes da OC',
         texto: 'Quer <b>comparar preços</b> antes de comprar? Marque as peças e clique em <b>📋 Cotar</b> (ou "Cotar marcados" no Abaixo do mínimo, "Cotar (faltantes)" na OT). Abre <b>uma cotação</b> com os fornecedores sugeridos; você acrescenta outros, manda o <b>mesmo pedido</b> a todos (WhatsApp/copiar) e lança no <b>mapa</b> preço por item, prazo, frete e condição. O sistema marca o melhor de cada linha e sugere o vencedor. <b>Encerrar</b> gera a OC do vencedor e guarda o preço de <b>todos</b>. Ao receber, prazo prometido × real vira o histórico de entrega do fornecedor.' },
-      { alvo: () => [...document.querySelectorAll('#mwbar-alm button')].find(b => /Ferramentas/.test(b.textContent)), antes: () => { const j = document.getElementById('oc-forn-jan'); if (j) j.remove(); }, titulo: '📋 Inventário',
-        texto: 'Em <b>Ferramentas › Inventário</b>: escolha o almoxarifado, conte e digite só nas linhas contadas; a diferença vira <b>Ajuste de saldo</b> com trilha (quem, quando, motivo). Classe A todo mês, geral a cada trimestre.' },
-      { alvo: () => [...document.querySelectorAll('#mwbar-alm button')].find(b => /Etiquetas/.test(b.textContent)), titulo: '🏷 Etiquetas',
-        texto: 'Etiquetas com QR por item ou por entrada. Ao imprimir: <b>Escala 100%</b> e <b>Margens Padrão</b>, sempre iguais; se sair deslocado no molde, use o ajuste ↕↔ em mm na barra da página (fica gravado por computador).' },
+      { alvo: () => [...document.querySelectorAll('#mod-alm .pn-item')].find(e => /Receber/.test(e.textContent)) || document.querySelector('#mod-alm .pn-item'), titulo: '📦 Receber (conferência)',
+        antes: () => { const f = document.getElementById('ped-filtros'); if (f) f.style.display = 'none'; },
+        texto: 'Quando o Compras registra que a mercadoria chegou, cada item vinculado a peça vira uma <b>entrada pendente</b> aqui (o contador mostra quantas). <b>Conferir</b> = quantidade real na caixa + local de guarda: só então o saldo sobe, o custo médio é refeito e o fornecedor/preço viram <b>referência</b> da peça. OT em espera dessa peça pergunta se quer <b>retomar</b>.' },
+      { alvo: () => [...document.querySelectorAll('#mod-alm .pn-item')].find(e => /Abrir módulo Compras/.test(e.textContent)) || document.querySelector('#mod-alm .pn-item'), titulo: '↗ Módulo Compras',
+        texto: 'Aprovar (alçadas), enviar ao fornecedor por WhatsApp/PDF, registrar recebimento, relatórios: isso fica no <b>módulo Compras</b>, que abre em outra aba já com a sua sessão. O ↗ de cada OC em Pedidos de compra leva direto ao detalhe dela.' },
       { titulo: 'Pronto! ✅',
-        texto: 'Resumo: peça sai <b>pela OT</b> (Saída Armazém ou Aplicação Directa, sempre com documento) · extrato para auditar e estornar · mínimo toda semana · <b>🛒 Comprar</b> para compra avulsa · inventário por contagem. Detalhes no <b>POP-MAT-01</b>.' },
+        texto: 'Resumo: marque as peças → <b>🛒 Comprar</b> (OC direta) ou <b>📋 Cotar</b> (vários fornecedores → mapa → OC do vencedor) → acompanhe em <b>📑 Pedidos de compra</b> → chegou, <b>📦 Receber › conferir</b>. A referência de fornecedor e preço se alimenta sozinha a cada recebimento e cotação.' },
     ],
   },
 
