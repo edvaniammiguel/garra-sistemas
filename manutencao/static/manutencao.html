@@ -447,6 +447,8 @@ button:disabled, select:disabled, input:disabled, [aria-disabled=true] { cursor:
   if (!sessionStorage.getItem('garra_mnt_token')) location.replace('/admin');
 })();
 function mntToken(){ return sessionStorage.getItem('garra_mnt_token') || ''; }
+// (12/11/2026) abrir o Compras em outra aba levando a sessão (SSO) — senão ele cai no login do mobile
+function comprasUrl(extra){ return '/compras?sso=' + encodeURIComponent(mntToken()) + (extra || ''); }
 async function mntFetch(path, opts){
   const r = await fetch(path, Object.assign({}, opts, {
     headers: Object.assign({'Content-Type':'application/json','Authorization':'Bearer '+mntToken()}, (opts&&opts.headers)||{})
@@ -5981,7 +5983,7 @@ async function montarNavAlm(){
       + grp('compras', '🛒 Compras', true)
       + '<div class="pn-item" onclick="_almAcaoOn=null;almIrComprar()" title="Abre o Estoque: marque as peças e use os botões 🛒 Comprar / 📋 Cotar da tela">🛒 Comprar / cotar peças</div>'
       + acao('📦 Receber' + (_almRecebN ? ' <span class="chip nr">'+_almRecebN+'</span>' : ''), "()=>recebimentosJanela()", 'Conferir o que o Compras registrou como recebido — é aqui que o saldo sobe')
-      + acao('↗ Abrir módulo Compras', "()=>window.open('/compras','_blank')", 'Aprovar, alçadas, relatórios — abre o Compras em outra aba')
+      + acao('↗ Abrir módulo Compras', "()=>window.open(comprasUrl(''),'_blank')", 'Aprovar, alçadas, relatórios — abre o Compras em outra aba')
       + '</div>'
       + grp('consulta', '👁 Consulta', true)
       + '<div class="pn-item'+vistaOn('lista')+'" onclick="_almAcaoOn=null;almLente(\'armazem\')">📦 Estoque (saldos)</div>'
@@ -6112,7 +6114,7 @@ async function renderPedidos(){
     const b = [];
     if (r.status === 'rascunho') b.push('<button class="btn p" style="font-size:10px" onclick="pedidoSolicitar(\''+r.id+'\')" title="Rascunho → aguardando aprovação (se estiver na sua alçada, aprova na hora)">Enviar p/ aprovação</button>');
     if (r.a_conferir) b.push('<button class="btn p" style="font-size:10px" onclick="almAcaoPorRotulo(\'📦 Receber\');recebimentosJanela()">Conferir '+r.a_conferir+'</button>');
-    b.push('<a class="btn" style="font-size:10px" href="/compras?oc='+encodeURIComponent(r.id)+'" target="_blank" title="abrir no Compras">↗</a>');
+    b.push('<a class="btn" style="font-size:10px" href="'+comprasUrl('&oc='+encodeURIComponent(r.id))+'" target="_blank" title="abrir no Compras">↗</a>');
     return b.join(' ');
   };
   const grupos = {}; _pedRows.forEach(r => (grupos[r.status] = grupos[r.status] || []).push(r));
