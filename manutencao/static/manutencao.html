@@ -114,6 +114,9 @@ tr.sel td{background:#DBEAFE!important;color:#1A2A5E}
 #tt-nav .pn-item.on .muted{color:#CBD5E1}
 .pn-item:hover{background:#F0F4FF}
 .pn-item.on{background:#1A2A5E;color:#fff;font-weight:700}
+/* (12/11/2026) Materiais: um só item em destaque (azul) = o último clicado, seja operação ou vista. */
+.pn-item.pn-acao .pn-seta{float:right;color:#94A3B8;font-size:10px}
+.pn-item.pn-acao.on .pn-seta{color:#fff}
 .param-pane{flex:1;overflow:auto;padding:14px;background:#F8FAFC}
 .pp-title{font-size:14px;font-weight:800;color:#1A2A5E}
 .pp-sub{font-size:10px;color:#64748B;margin-top:2px}
@@ -5943,15 +5946,21 @@ async function montarNavAlm(){
   let html = '';
   if (_almLente === 'armazem'){
     // Operações no TOPO — sempre à vista, acompanhando a lente
+    // (12/11/2026) Um só destaque azul: o último item clicado (operação ou vista). Operações abrem janela
+    //              e continuam marcadas até clicar em outro item; Vistas trocam a lista do centro.
+    const acao = (rot, fn, modal, title) => '<div class="pn-item pn-acao'+(_almAcaoOn===rot?' on':'')+'" data-rot="'+_esc(rot)+'" onclick="almAcao(this,'+fn+')"'+(title?' title="'+title+'"':'')+'>'+rot+'<span class="pn-seta">▸</span></div>';
+    const vistaOn = v => (!_almAcaoOn && _almVista===v) ? ' on' : '';
     html += '<div class="pn-grp">🔧 Operações</div>'
-      + '<div class="pn-item" onclick="comprarSelecionadas()" title="Gera OC em rascunho no Compras para as peças selecionadas na lista (Ctrl/Shift para várias)">🛒 Comprar selecionadas</div>'
-      + '<div class="pn-item" onclick="entradaAbrir()">📥 Entrada por documento</div>'
-      + '<div class="pn-item" onclick="almMovAbrir(\'saida\')">📤 Saída avulsa</div>'
-      + '<div class="pn-item" onclick="almMovAbrir(\'transferencia\')">⇄ Transferência</div>'
-      + '<div class="pn-item" onclick="almMovAbrir(\'ajuste\')">🧮 Ajuste de saldo</div>'
-      + '<div class="pn-item" onclick="devolucaoAbrir()">↩ Devolução de OT</div>'
-      + '<div class="pn-item'+(_almVista==='mov'?' on':'')+'" onclick="almVistaMov()">🧾 Movimentos (extrato)</div>'
-      + '<div class="pn-item'+(_almVista==='baixo'?' on':'')+'" onclick="almVistaBaixo()">⚠ Abaixo do mínimo'
+      + acao('🛒 Comprar selecionadas', 'comprarSelecionadas', null, 'Gera OC em rascunho no Compras para as peças selecionadas na lista (Ctrl/Shift para várias)')
+      + acao('📥 Entrada por documento', 'entradaAbrir', 'ent-doc')
+      + acao('📤 Saída avulsa', "()=>almMovAbrir('saida')", 'alm-mov')
+      + acao('⇄ Transferência', "()=>almMovAbrir('transferencia')", 'alm-mov')
+      + acao('🧮 Ajuste de saldo', "()=>almMovAbrir('ajuste')", 'alm-mov')
+      + acao('↩ Devolução de OT', 'devolucaoAbrir', 'dev-ot')
+      + '<div class="pn-grp" style="margin-top:8px">👁 Vistas</div>'
+      + '<div class="pn-item'+vistaOn('lista')+'" onclick="_almAcaoOn=null;almLente(\'armazem\')">📦 Estoque (saldos)</div>'
+      + '<div class="pn-item'+vistaOn('mov')+'" onclick="_almAcaoOn=null;almVistaMov()">🧾 Movimentos (extrato)</div>'
+      + '<div class="pn-item'+vistaOn('baixo')+'" onclick="_almAcaoOn=null;almVistaBaixo()">⚠ Abaixo do mínimo'
       + (baixoN ? ' <span class="chip nr">'+baixoN+'</span>' : ' <span class="muted">(0)</span>') + '</div>';
   }
   if (_almLente === 'armazem'){
@@ -6002,7 +6011,7 @@ async function novoAlmox(){
     mostrarToast('✅ Almoxarifado criado','ok'); montarNavAlm(true && await _almoxarifados(true));
   } catch(e){ mostrarToast('❌ '+e.message,'warn'); }
 }
-let _almLente = 'mestre', _almFamSel = '', _almFamNomes = {}, _almVista = 'lista';
+let _almLente = 'mestre', _almFamSel = '', _almFamNomes = {}, _almVista = 'lista', _almAcaoOn = null;   // (12/11/2026) _almAcaoOn = operação em destaque na barra
 function almFamFiltra(cod){ _almFamSel = cod; _almVista = 'lista'; almLente(_almLente); }
 function almLocalSel(v){ _almFiltro = v; const s = document.getElementById('alm-local'); if (s) s.value = v; montarNavAlm(); if (_almVista === 'mov') { almVistaMov(); return; } if (_almVista === 'baixo') { almVistaBaixo(); return; } carregarPecasReais(); }
 async function almVistaBaixo(){
@@ -6064,7 +6073,8 @@ async function almVistaMov(){
     const linhaItem = (m, sub) => {
       const t = TIPO[m.tipo] || ['nr', m.tipo];
       const risc = m.estornado_em ? 'text-decoration:line-through;color:#94A3B8;' : '';
-      return '<tr style="'+risc+(sub?'background:#FAFBFF':'')+'"><td class="muted">'+(sub?'':dd(m.criado_em))+'</td>'
+      // (12/11/2026) linha de peça do extrato também seleciona (🛒 Comprar selecionadas) e abre a ficha no duplo clique
+      return '<tr style="'+risc+(sub?'background:#FAFBFF;':'')+'cursor:pointer" data-cod="'+_esc(m.peca_codigo||'')+'" onclick="listaSelClick(event,this,\'alm\')" ondblclick="abrirPeca(this.dataset.cod)"><td class="muted">'+(sub?'':dd(m.criado_em))+'</td>'
         + '<td>'+(sub?'':'<span class="chip '+t[0]+'" style="font-size:9px">'+t[1]+'</span>')+'</td>'
         + '<td class="bold" style="'+(sub?'padding-left:22px':'')+'">'+_esc(m.peca_codigo)+'</td><td>'+_esc(m.peca_descricao||'')+'</td>'
         + '<td class="r">'+parseFloat(m.quantidade)+'</td>'
@@ -6399,6 +6409,7 @@ async function almMovOK(){
   } catch(e){ mostrarToast('❌ '+e.message, 'warn'); }
 }
 function almLente(l){
+  _almAcaoOn = null;   // (12/11/2026) vista escolhida → destaque sai da operação
   const fbm = document.getElementById('mov-filtros'); if (fbm) fbm.style.display = 'none';
   _almLente = l;
   const bm = document.getElementById('alm-l-mestre'), ba = document.getElementById('alm-l-armazem');
@@ -6564,9 +6575,19 @@ async function comprarPecas(codigos){
   const ok = await _criarOCs(grupos, null, 'direta');
   if (ok.length && typeof carregarPecasReais === 'function') carregarPecasReais();
 }
+// (12/11/2026) Ação da barra lateral: vira o único item em destaque (azul) até clicar em outro — igual a um menu.
+// Guardado em _almAcaoOn para sobreviver a redesenhos da barra (montarNavAlm).
+function almAcao(el, fn){
+  _almAcaoOn = el.dataset.rot || el.textContent.trim();
+  document.querySelectorAll('#alm-nav .pn-item.on').forEach(x => { if (!x.dataset.id && !x.dataset.fam) x.classList.remove('on'); });
+  el.classList.add('on');
+  return fn();
+}
 function comprarSelecionadas(){
-  const cods = [...document.querySelectorAll('#alm-tbody tr.sel[data-cod]')].map(t => t.dataset.cod);
-  comprarPecas(cods);
+  // (12/11/2026) sem repetir a mesma peça (no extrato ela pode aparecer em várias linhas)
+  const cods = [...document.querySelectorAll('#alm-tbody tr.sel[data-cod]')].map(t => t.dataset.cod).filter(c => c).filter((v,i,a) => a.indexOf(v) === i);
+  if (!cods.length){ mostrarToast('Clique na linha da peça para selecionar (Ctrl/Shift para várias) — no Estoque, no Catálogo ou no extrato','warn'); return; }
+  return comprarPecas(cods);
 }
 async function _criarOCs(grupos, extra, origem){
   // grupos: {fornecedor_id|'' : [{peca_id, descricao, quantidade, unidade, valor_unit}]}
