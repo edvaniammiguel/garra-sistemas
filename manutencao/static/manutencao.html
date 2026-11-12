@@ -350,9 +350,9 @@ button:disabled, select:disabled, input:disabled, [aria-disabled=true] { cursor:
         <table>
           <thead><tr id="alm-thead">
             <th style="width:100px">Código</th><th>Descrição</th><th style="width:80px">Família</th>
-            <th style="width:56px">Unid.</th><th style="width:90px" class="r">Custo médio</th>
+            <th style="width:56px">Unid.</th><th style="width:90px" class="r" title="última entrada (NF/OC) da peça">Últ. compra</th><th style="width:100px" class="r">Custo médio</th>
           </tr></thead>
-          <tbody id="alm-tbody"><tr><td colspan="5" style="padding:16px;color:#64748B">Carregando acervo…</td></tr></tbody>
+          <tbody id="alm-tbody"><tr><td colspan="6" style="padding:16px;color:#64748B">Carregando acervo…</td></tr></tbody>
         </table>
       </div>
     </div>
@@ -3372,9 +3372,9 @@ function xlsListaAtual(aba){
         {k:'codigo',t:'Item',tipo:'txt'},{k:'descricao',t:'Descrição',tipo:'txt'},{k:'almox',t:'Estoque',tipo:'txt'},{k:'localizacao',t:'Local',tipo:'txt'},{k:'quantidade',t:'Saldo',tipo:'num'},{k:'minimo',t:'Mínimo',tipo:'num'},
         {k:'maximo',t:'Máximo',tipo:'num'},{k:'em_pedido',t:'Em pedido',tipo:'num'},{k:'a_conferir',t:'A conferir',tipo:'num'},{k:'sugestao',t:'Sugestão',tipo:'num',soma:true},{k:'unidade',t:'Un.',tipo:'txt'},{k:'ref_fornecedor_nome',t:'Fornecedor ref.',tipo:'txt'},{k:'preco_sugerido',t:'Preço (R$)',tipo:'moeda'}], _ebRows, 'Conforme a tela');
     }
-    const linhas = (window._pecasRender || []).map(p => ({codigo: p.codigo, descricao: p.descricao || '', familia: p.familia_codigo || '', unidade: p.unidade || '', custo_medio: p.custo_medio, saldo: p.saldo_total ?? p.quantidade}));
+    const linhas = (window._pecasRender || []).map(p => ({codigo: p.codigo, descricao: p.descricao || '', familia: p.familia_codigo || '', unidade: p.unidade || '', ultimo_preco: p.ultimo_preco, custo_medio: p.custo_medio, saldo: p.saldo_total ?? p.quantidade}));
     return xlsExportar('Materiais' + (_almFamSel ? ' — família ' + _almFamSel : ''), [
-      {k:'codigo',t:'Item',tipo:'txt'},{k:'descricao',t:'Descrição',tipo:'txt'},{k:'familia',t:'Família',tipo:'txt'},{k:'unidade',t:'Un.',tipo:'txt'},{k:'custo_medio',t:'Custo médio (R$)',tipo:'moeda'},{k:'saldo',t:'Saldo',tipo:'num'}], linhas, 'Conforme a tela');
+      {k:'codigo',t:'Item',tipo:'txt'},{k:'descricao',t:'Descrição',tipo:'txt'},{k:'familia',t:'Família',tipo:'txt'},{k:'unidade',t:'Un.',tipo:'txt'},{k:'ultimo_preco',t:'Últ. compra (R$)',tipo:'moeda'},{k:'custo_medio',t:'Custo médio (R$)',tipo:'moeda'},{k:'saldo',t:'Saldo',tipo:'num'}], linhas, 'Conforme a tela');
   }
 }
 async function relatoriosJanela(nome){
@@ -6418,11 +6418,11 @@ function almLente(l){
   const th = document.getElementById('alm-thead');
   if (th) th.innerHTML = (l === 'mestre')
     ? '<th style="width:100px">Código</th><th>Descrição</th><th style="width:80px">Família</th>'
-      + '<th style="width:56px">Unid.</th><th style="width:90px" class="r">Custo médio</th>'
+      + '<th style="width:56px">Unid.</th><th style="width:90px" class="r" title="última entrada (NF/OC) da peça">Últ. compra</th><th style="width:100px" class="r">Custo médio</th>'
     : '<th style="width:100px">Código</th><th>Descrição</th><th style="width:60px">🏬 Local</th>'
       + '<th style="width:90px">Endereço</th><th style="width:74px" class="r">Existência</th>'
       + '<th style="width:64px" class="r" title="Previsto nas OTs programadas (itens da FMP)">Comprom.</th><th style="width:64px" class="r" title="Existência − comprometido">Dispon.</th>'
-      + '<th style="width:50px" class="r">Mín</th><th style="width:46px">UN</th><th style="width:90px" class="r">Custo médio</th>';
+      + '<th style="width:50px" class="r">Mín</th><th style="width:46px">UN</th><th style="width:90px" class="r" title="última entrada (NF/OC) da peça">Últ. compra</th><th style="width:100px" class="r">Custo médio</th>';
   _almVista = 'lista';
   const ops = document.getElementById('alm-ops');
   if (ops) ops.style.display = (l === 'armazem') ? 'inline-flex' : 'none';
@@ -6482,15 +6482,16 @@ async function carregarPecasReais(){
       <td>${_esc(p.descricao)}</td>
       <td>${_esc(p.familia_codigo || '—')}</td>
       <td>${_esc(p.unidade || '')}</td>
+      <td class="r mono">${p.ultimo_preco != null ? 'R$ ' + parseFloat(p.ultimo_preco).toFixed(2) : '<span class="muted">—</span>'}</td>
       <td class="r mono">${p.custo_medio != null ? 'R$ ' + parseFloat(p.custo_medio).toFixed(2) : '—'}</td>
     </tr>`;
     tb.innerHTML = (agrupar
       ? _almGrpIds.map(g => {
           const fechado = _almGrpFechados.has(g);
-          return '<tr class="grp" style="background:#F1F5F9;cursor:pointer" onclick="almGrpAlternar(\''+_esc(g)+'\')"><td colspan="5" style="font-weight:700;color:#1A2A5E;padding:5px 8px">'+(fechado?'▸':'▾')+' '+_esc(g)+(_almFamNomes[g]?' — '+_esc(_almFamNomes[g]):'')+' <span class="muted">('+grupos[g].length+')</span></td></tr>'
+          return '<tr class="grp" style="background:#F1F5F9;cursor:pointer" onclick="almGrpAlternar(\''+_esc(g)+'\')"><td colspan="6" style="font-weight:700;color:#1A2A5E;padding:5px 8px">'+(fechado?'▸':'▾')+' '+_esc(g)+(_almFamNomes[g]?' — '+_esc(_almFamNomes[g]):'')+' <span class="muted">('+grupos[g].length+')</span></td></tr>'
             + (fechado ? '' : grupos[g].map(linhaPeca).join(''));
         }).join('')
-      : r.itens.map(linhaPeca).join('')) || '<tr><td colspan="5" style="padding:14px;color:#64748B">Nada encontrado.</td></tr>';
+      : r.itens.map(linhaPeca).join('')) || '<tr><td colspan="6" style="padding:14px;color:#64748B">Nada encontrado.</td></tr>';
   } catch(e) { mostrarToast('❌ '+e.message,'warn'); }
 }
 let _ebRows = [];
@@ -6658,8 +6659,9 @@ async function carregarArmazem(q){
       <td class="r mono"${(parseFloat(x.quantidade) - (parseFloat(x.comprometido)||0)) < (parseFloat(x.minimo)||0) && x.minimo != null ? ' style="color:#B45309;font-weight:700"' : ''}>${parseFloat(x.quantidade) - (parseFloat(x.comprometido)||0)}</td>
       <td class="r muted">${x.minimo != null ? parseFloat(x.minimo) : '—'}</td>
       <td>${_esc(x.unidade || '')}</td>
+      <td class="r mono">${x.ultimo_preco != null ? 'R$ ' + parseFloat(x.ultimo_preco).toFixed(2) : '<span class="muted">—</span>'}</td>
       <td class="r mono">${x.custo_medio != null ? 'R$ ' + parseFloat(x.custo_medio).toFixed(2) : '—'}</td>
-    </tr>`).join('') || '<tr><td colspan="10" style="padding:14px;color:#64748B">Nenhuma existência' + (_almFiltro !== '_todos' ? ' neste local' : '') + ' — dê entrada de peças para povoar.</td></tr>';
+    </tr>`).join('') || '<tr><td colspan="11" style="padding:14px;color:#64748B">Nenhuma existência' + (_almFiltro !== '_todos' ? ' neste local' : '') + ' — dê entrada de peças para povoar.</td></tr>';
   } catch(e){ mostrarToast('❌ '+e.message, 'warn'); }
 }
 let _pcFicha = null;

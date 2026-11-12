@@ -1377,6 +1377,13 @@ def _rubrica_material(tipo_mov: str, familia: str, descricao: str) -> str:
     return f"2.0{base + classe - 1}"
 
 
+# (12/11/2026) "Últ. compra" nas grelhas: preço unitário da última ENTRADA da peça (NF/OC conferida).
+# Custo médio = média ponderada; último preço = o que foi pago da última vez. Subconsulta por linha
+# (índice em peca_id + criado_em cobre); peça sem entrada valorizada = NULL.
+_ULTIMO_PRECO_SQL = ("(SELECT m.custo_unitario FROM manutencao.movimentacoes m WHERE m.peca_id=p.id "
+                     "AND m.tipo='entrada' AND m.custo_unitario IS NOT NULL ORDER BY m.criado_em DESC LIMIT 1) AS ultimo_preco")
+
+
 @router.get("/manutencao/api/pecas")
 async def listar_pecas(busca: str = None, familia: str = None, limit: int = 100,
                        _auth=Depends(verificar_manutencao)):
@@ -1399,9 +1406,10 @@ async def listar_pecas(busca: str = None, familia: str = None, limit: int = 100,
         where.append(f"({fe} = %s OR {fe} LIKE %s)")
         params += [familia.strip(), familia.strip() + ".%"]
     rows = await ajard_query(
-        f"""SELECT id, codigo, descricao, unidade, familia_codigo, custo_medio
-            FROM manutencao.pecas WHERE {' AND '.join(where)}
-            ORDER BY codigo LIMIT {limit}""", params)
+        f"""SELECT p.id, p.codigo, p.descricao, p.unidade, p.familia_codigo, p.custo_medio,
+                   {_ULTIMO_PRECO_SQL}
+            FROM manutencao.pecas p WHERE {' AND '.join(where)}
+            ORDER BY p.codigo LIMIT {limit}""", params)
     for r in rows:
         r["id"] = str(r["id"]) if r.get("id") is not None else None
     total = await ajard_query("SELECT COUNT(*)::int AS n FROM manutencao.pecas WHERE ativo=true", fetch="one")
@@ -4978,7 +4986,7 @@ async def lente_armazem(almox: str = None, busca: str = None, familia: str = Non
         cond_p = [c for c, _, so_p in conds if so_p]
         params_p = [x for _, ps, so_p in conds if so_p for x in ps]
         rows = await ajard_query(
-            f"""SELECT p.codigo, p.descricao, p.unidade, p.custo_medio, p.familia_codigo,
+            f"""SELECT p.codigo, p.descricao, p.unidade, p.custo_medio, p.familia_codigo, {_ULTIMO_PRECO_SQL},
                        COALESCE(a.codigo, %s) AS almox,
                        COALESCE(e.quantidade, 0) AS quantidade, e.minimo, e.localizacao
                 FROM manutencao.pecas p
@@ -4991,7 +4999,7 @@ async def lente_armazem(almox: str = None, busca: str = None, familia: str = Non
             tuple([almox or '—'] + ([almox] if almox else []) + params_p))
         return {"itens": [dict(r) for r in rows]}
     rows = await ajard_query(
-        f"""SELECT p.codigo, p.descricao, p.unidade, p.custo_medio, p.familia_codigo,
+        f"""SELECT p.codigo, p.descricao, p.unidade, p.custo_medio, p.familia_codigo, {_ULTIMO_PRECO_SQL},
                    a.codigo AS almox, e.quantidade, e.minimo, e.localizacao
             FROM manutencao.estoque e
             JOIN manutencao.pecas p ON p.id = e.peca_id
