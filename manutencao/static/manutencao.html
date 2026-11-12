@@ -6130,7 +6130,7 @@ async function renderPedidos(){
     + _pedCots.map(c => '<tr data-cot="'+c.id+'" style="cursor:pointer" ondblclick="cotacaoMapa(\''+c.id+'\')"><td class="bold">'+_esc(c.numero)+'<br><span class="muted" style="font-weight:400;font-size:10px">'+dd(c.criado_em)+' · '+_esc((c.criado_por_nome||'').split(' ')[0])+'</span></td>'
       + '<td style="font-size:10px">'+(c.ot_numero?'🔧 OT '+_esc(c.ot_numero):({estoque_minimo:'⚠ mínimo',minimo:'⚠ mínimo',direta:'🛒 avulsa',saldo:'↩ saldo'+(c.origem_numero?' '+_esc(c.origem_numero):''),pendencia:'⏳ pendência'}[c.origem]||_esc(c.origem||'—')))+(c.equipamento_codigo?'<br><span class="muted">'+_esc(c.equipamento_codigo)+'</span>':'')+'</td>'
       + '<td style="font-size:10px" title="'+_esc(c.itens_resumo||'')+'">'+_esc(c.itens_resumo||'—')+'</td>'
-      + '<td style="font-size:10px">'+c.forn_resp+' de '+c.forn_n+' responderam'+(c.ocs?'<br><span class="chip tm" style="font-size:9px">'+_esc(c.ocs)+'</span>':'')+'</td>'
+      + '<td style="font-size:10px">'+(c.fase==='montando' ? '✏ montando · '+c.forn_n+' fornecedor(es)' : c.fase==='enviada' ? '📨 aguardando há '+Math.max(0,Math.round((Date.now()-new Date(c.enviada_em))/864e5))+' dia(s) · 0 de '+c.forn_n : c.forn_resp+' de '+c.forn_n+' responderam')+(c.ocs?'<br><span class="chip tm" style="font-size:9px">'+_esc(c.ocs)+'</span>':'')+'</td>'
       + '<td class="r muted">'+(c.status==='aberta'?'—':_esc(c.status))+'</td><td class="muted">'+dd(c.encerrada_em||c.criado_em)+'</td>'
       + '<td style="white-space:nowrap"><button class="btn p" style="font-size:10px" onclick="cotacaoMapa(\''+c.id+'\')">'+(c.status==='aberta'?'Abrir mapa':'Ver mapa')+'</button></td></tr>').join('') : '';
   // (12/11/2026) ⏳ Pendentes de compra: itens sem oferta aceita ao encerrar cotação — baixa MANUAL com motivo
@@ -6878,9 +6878,16 @@ function _cotHtml(){
   const c = _cot, aberta = c.status === 'aberta', money = v => (v == null ? '—' : 'R$ ' + (parseFloat(v)||0).toLocaleString('pt-BR',{minimumFractionDigits:2, maximumFractionDigits:2}));
   const sug = c.sugestao || {}, precos = {}; (c.precos||[]).forEach(p => precos[p.item_id+'|'+p.cf_id] = p);
   const nomeCf = id => (c.fornecedores.find(f => f.id === id)||{}).fornecedor_nome || '—';
-  const hist = f => f.historico ? (f.historico.no_prazo+'/'+f.historico.n+' no prazo'+(f.historico.atraso_medio ? ' · atraso médio '+f.historico.atraso_medio+' d' : '')) : 'sem histórico de entrega';
+  // (12/11/2026) histórico só quando existe — "sem histórico" em toda coluna era ruído
+  const hist = f => f.historico ? '<br><span class="muted" style="font-weight:400;font-size:9px" title="prometido × real nas cotações anteriores">🚚 '+f.historico.no_prazo+'/'+f.historico.n+' no prazo'+(f.historico.atraso_medio ? ' · atraso médio '+f.historico.atraso_medio+' d' : '')+'</span>' : '';
+  // (12/11/2026) fase: montando → enviada → respondida → encerrada. Antes de alguém responder a tela não cobra nada.
+  const fase = c.fase || (aberta ? 'montando' : c.status), respondida = fase === 'respondida';
+  const nResp = c.fornecedores.filter(f => f.status === 'respondeu').length;
+  const faseChip = { montando:['pr','✏ montando'], enviada:['pr','📨 enviada '+(c.enviada_em ? _fmtData(c.enviada_em) : '')+' · aguardando '+c.fornecedores.length+' fornecedor(es)'], respondida:['ok','💬 '+nResp+' de '+c.fornecedores.length+' responderam'], encerrada:['tm','✔ encerrada'], cancelada:['tm','✕ cancelada'] }[fase] || ['tm',_esc(fase)];
+  const trilha = ['montando','enviada','respondida','encerrada'], pos = Math.max(trilha.indexOf(fase), 0);
+  const trilhaHtml = fase === 'cancelada' ? '' : '<span class="muted" style="font-size:10px;margin-left:6px" title="fase da cotação">'+trilha.map((t,i) => '<span style="'+(i===pos?'color:#1A2A5E;font-weight:700':(i<pos?'color:#15803D':''))+'">'+(i<pos?'✔ ':'')+t+'</span>').join(' › ')+'</span>';
   const melhorLinha = it => { let m = null; c.fornecedores.forEach(f => { const p = precos[it.id+'|'+f.id]; if (p && p.preco_unit != null && (m == null || p.preco_unit < m)) m = p.preco_unit; }); return m; };
-  let h = '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><div><b style="font-size:14px;color:#1A2A5E">📋 '+_esc(c.numero)+'</b> <span class="chip '+(aberta?'pr':'tm')+'">'+_esc(c.status)+'</span>'
+  let h = '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><div><b style="font-size:14px;color:#1A2A5E">📋 '+_esc(c.numero)+'</b> <span class="chip '+faseChip[0]+'">'+faseChip[1]+'</span>'+trilhaHtml
     + ' <span class="muted" style="font-size:11px">'+({minimo:'⚠ mínimo',estoque_minimo:'⚠ mínimo',ot:'🔧 OT '+_esc(c.ot_numero||''),direta:'🛒 avulsa',saldo:'↩ saldo de outra cotação',pendencia:'⏳ pendência'}[c.origem]||_esc(c.origem||''))+(c.equipamento_codigo?' · '+_esc(c.equipamento_codigo):'')+' · '+_esc(c.criado_por_nome||'')+'</span></div>'
     + '<span style="cursor:pointer;font-size:16px" onclick="document.getElementById(\'eq-ficha\').style.display=\'none\';if(_almVista===\'pedidos\')renderPedidos()">✕</span></div>';
   // barra de ações
@@ -6899,7 +6906,7 @@ function _cotHtml(){
   h += '<div style="overflow:auto;max-height:420px"><table style="font-size:11px;min-width:600px"><thead><tr><th style="min-width:200px">Item</th><th class="r" style="width:60px">Qtd</th>'
     + c.fornecedores.map(f => '<th style="min-width:150px;text-align:center'+(sug.por_fornecedor===f.id?';background:#ECFDF5':'')+'">'+_esc(f.fornecedor_nome)+(sug.por_fornecedor===f.id?' <span class="chip ok" style="font-size:9px">sugestão</span>':'')
         + (aberta ? '<br><span class="muted" style="font-weight:400;font-size:9px;cursor:pointer" onclick="cotDelForn(\''+f.id+'\')">✕ remover</span>' : (f.oc_numero ? '<br><span class="chip tm" style="font-size:9px">'+_esc(f.oc_numero)+' · '+_esc(f.oc_status||'')+'</span>' : ''))
-        + '<br><span class="muted" style="font-weight:400;font-size:9px" title="prometido × real nas cotações anteriores">'+hist(f)+'</span></th>').join('')
+        + hist(f)+'</th>').join('')
     + '</tr></thead><tbody>';
   if (!c.fornecedores.length) h += '<tr><td colspan="3" class="muted" style="padding:10px">Nenhum fornecedor — adicione acima.</td></tr>';
   c.itens.forEach(it => {
@@ -6913,7 +6920,7 @@ function _cotHtml(){
       const obsLimpa = (p.observacao && !/^último preço conhecido/.test(p.observacao)) ? p.observacao : '';
       const substTxt = subst ? ((p.subst_peca_codigo ? p.subst_peca_codigo + ' ' : '') + (p.subst_descricao || '')).trim() || 'substituto' : '';
       h += '<td style="text-align:center'+(venc?';background:#ECFDF5':'')+(subst && p.aceito===false?';opacity:.55':'')+'">'
-        + (aberta ? '<input class="cot-preco" data-it="'+it.id+'" data-cf="'+f.id+'" data-obs="'+_esc(p.observacao||'')+'" data-oferta="'+(p.oferta||'igual')+'" data-subcod="'+_esc(p.subst_peca_codigo||'')+'" data-subdesc="'+_esc(p.subst_descricao||'')+'" data-aceito="'+(p.aceito===true?'1':(p.aceito===false?'0':''))+'" type="number" step="0.01" min="0" placeholder="não tem" value="'+(p.preco_unit!=null?p.preco_unit:'')+'" style="width:84px;text-align:right'+(conta && p.preco_unit===ml?';font-weight:700;color:#15803D':'')+(subst?';border-color:#F59E0B':'')+'" title="'+_esc(subst ? 'SUBSTITUTO: '+substTxt : (obsLimpa||'preço unitário'))+'">'
+        + (aberta ? '<input class="cot-preco" data-it="'+it.id+'" data-cf="'+f.id+'" data-obs="'+_esc(p.observacao||'')+'" data-oferta="'+(p.oferta||'igual')+'" data-subcod="'+_esc(p.subst_peca_codigo||'')+'" data-subdesc="'+_esc(p.subst_descricao||'')+'" data-aceito="'+(p.aceito===true?'1':(p.aceito===false?'0':''))+'" type="number" step="0.01" min="0" placeholder="não tem" value="'+(p.preco_unit!=null?p.preco_unit:'')+'" oninput="if(/^último preço/.test(this.dataset.obs))this.dataset.obs=\'\'" style="width:84px;text-align:right'+(conta && p.preco_unit===ml?';font-weight:700;color:#15803D':'')+(subst?';border-color:#F59E0B':'')+'" title="'+_esc(subst ? 'SUBSTITUTO: '+substTxt : (obsLimpa||'preço unitário'))+'">'
                    + ' <span style="cursor:pointer;font-size:11px" title="O fornecedor ofereceu outra coisa (marca/código diferente)? Registre a oferta real aqui" onclick="cotOfertaJan(\''+it.id+'\',\''+f.id+'\')">✎</span>'
                  : '<span class="mono"'+(conta && p.preco_unit===ml?' style="font-weight:700;color:#15803D"':'')+'>'+(p.preco_unit!=null?money(p.preco_unit):'<span class=muted>—</span>')+'</span>')
         + (subst ? '<div style="font-size:9px;color:#B45309" title="'+_esc(substTxt)+'">⚠ subst.: '+_esc(substTxt.length>26?substTxt.slice(0,26)+'…':substTxt)+'</div>'
@@ -6939,7 +6946,7 @@ function _cotHtml(){
   h += '</tbody></table></div>';
   // (12/11/2026) pedido original × ofertas reais — e itens que ficaram sem oferta aceita
   const semOf = (c.sem_oferta || []).map(id => c.itens.find(x => x.id === id)).filter(Boolean);
-  if (c.fornecedores.length){
+  if (c.fornecedores.length && (respondida || !aberta)){
     h += '<div style="display:flex;gap:10px;align-items:center;margin-top:6px;font-size:11px;flex-wrap:wrap">'
       + '<span style="cursor:pointer;color:#1A2A5E;text-decoration:underline" onclick="cotVerMudou()">🔍 Ver o que mudou (pedido × ofertas)</span>';
     if (semOf.length){
@@ -6950,10 +6957,17 @@ function _cotHtml(){
     h += '</div>';
   }
   // resumo da sugestão
-  if (aberta){
+  if (aberta && !respondida){
+    // (12/11/2026) montando / enviada: nada de alerta vermelho — só o próximo passo
+    const passo = !c.itens.length ? 'Adicione os itens (＋ item).' : !c.fornecedores.length ? 'Adicione os fornecedores que vão cotar.' : fase === 'montando' ? 'Lista pronta: clique <b>📨 Pedido de cotação</b> para enviar (WhatsApp ou copiar o texto).' : 'Pedido enviado. Quando as respostas chegarem, lance preço, prazo, frete e condição de cada fornecedor e salve (se ele só confirmou o preço já sugerido, marque Situação = respondeu).';
+    h += '<div style="display:flex;gap:14px;align-items:center;margin-top:8px;font-size:11px;flex-wrap:wrap">'
+      + '<span style="color:#1A2A5E">'+(fase === 'montando' ? '✏' : '📨')+' '+passo+'</span>'
+      + '<span style="margin-left:auto;display:flex;gap:6px"><button class="btn" onclick="cotCancelar()">Cancelar cotação</button><button class="btn" onclick="cotSalvar()">💾 Salvar respostas</button>'
+      + '<button class="btn p" disabled style="opacity:.45;cursor:not-allowed" title="Só depois de lançar as respostas dos fornecedores">✔ Encerrar → gerar OC</button></span></div>';
+  } else if (aberta){
     const pf = sug.por_fornecedor ? ((sug.totais||{})[sug.por_fornecedor]||{}).custo : null;
     h += '<div style="display:flex;gap:14px;align-items:center;margin-top:8px;font-size:11px;flex-wrap:wrap">'
-      + '<span>1 fornecedor: <b>'+(pf!=null ? money(pf)+' — '+_esc(nomeCf(sug.por_fornecedor))+(sug.por_fornecedor_parcial?' <span style="color:#B45309">(parcial — o resto vira pendência)</span>':'') : 'ninguém cotou')+'</b></span>'
+      + '<span>1 fornecedor: <b>'+(pf!=null ? money(pf)+' — '+_esc(nomeCf(sug.por_fornecedor))+(sug.por_fornecedor_parcial?' <span style="color:#B45309">(parcial — o resto vira pendência)</span>':'') : 'ninguém cobre todos os itens')+'</b></span>'
       + '<span>Por item: <b>'+(sug.custo_por_item!=null ? money(sug.custo_por_item)+' em '+sug.fornecedores_por_item+' fornecedor(es)' : '—')+'</b>'+(sug.itens_sem_cotacao&&sug.itens_sem_cotacao.length?' <span style="color:#B91C1C">· '+sug.itens_sem_cotacao.length+' item(ns) sem preço</span>':'')+'</span>'
       + '<span style="margin-left:auto;display:flex;gap:6px"><button class="btn" onclick="cotCancelar()">Cancelar cotação</button><button class="btn" onclick="cotSalvar()">💾 Salvar respostas</button>'
       + '<label style="font-size:10px" title="Marcado: a OC do vencedor já vai para aprovação ao encerrar. Desmarcado (padrão): nasce em rascunho e você envia pelo Pedidos de compra."><input type="checkbox" id="cot-solicitar"> já enviar a OC p/ aprovação</label>'
@@ -7049,7 +7063,8 @@ async function cotSalvar(silencio){
   try {
     for (const cf of Object.keys(r)){
       const d = r[cf];
-      if (d.status === 'aguardando' && d.precos.some(p => p.preco_unit != null)) d.status = 'respondeu';
+      // (12/11/2026) preço pré-preenchido (último conhecido) não conta como resposta do fornecedor
+      if (d.status === 'aguardando' && d.precos.some(p => p.preco_unit != null && !/^último preço conhecido/.test(p.observacao||''))) d.status = 'respondeu';
       _cot = await _fxCompras('/compras/api/cotacoes/'+_cot.id+'/fornecedores/'+cf, { method:'PUT', body: JSON.stringify(d) });
     }
     if (!silencio) mostrarToast('💾 Respostas salvas','ok');
@@ -7072,13 +7087,18 @@ async function cotAddItem(){
 async function cotDelItem(id){ if (!confirm('Remover o item da cotação?')) return; await cotSalvar(true); try { _cot = await _fxCompras('/compras/api/cotacoes/'+_cot.id+'/itens/'+id, { method:'DELETE' }); document.getElementById('eq-ficha-corpo').innerHTML = _cotHtml(); } catch(e){ mostrarToast('❌ '+e.message,'warn'); } }
 async function cotTexto(){
   let t; try { t = await _fxCompras('/compras/api/cotacoes/'+_cot.id+'/texto'); } catch(e){ mostrarToast('❌ '+e.message,'warn'); return; }
-  const links = (t.fornecedores||[]).map(f => { const tel = String(f.whatsapp||'').replace(/\D/g,''); return tel ? '<a class="btn" style="font-size:10px" target="_blank" href="https://wa.me/'+(tel.length<=11?'55':'')+tel+'?text='+encodeURIComponent(t.texto)+'">WhatsApp → '+_esc(f.nome)+'</a>' : '<span class="muted" style="font-size:10px">'+_esc(f.nome)+' (sem telefone)</span>'; }).join(' ');
+  const links = (t.fornecedores||[]).map(f => { const tel = String(f.whatsapp||'').replace(/\D/g,''); return tel ? '<a class="btn" style="font-size:10px" target="_blank" onclick="cotMarcarEnviada()" href="https://wa.me/'+(tel.length<=11?'55':'')+tel+'?text='+encodeURIComponent(t.texto)+'">WhatsApp → '+_esc(f.nome)+'</a>' : '<span class="muted" style="font-size:10px">'+_esc(f.nome)+' (sem telefone)</span>'; }).join(' ');
   const b = document.createElement('div'); b.id = 'cot-texto-jan';
   b.style.cssText = 'position:fixed;inset:0;z-index:100001;background:rgba(15,23,42,.45);display:flex;align-items:center;justify-content:center';
   b.innerHTML = '<div style="background:#fff;border-radius:10px;padding:16px;width:560px;max-width:94vw;box-shadow:0 12px 32px rgba(15,23,42,.3)"><b style="color:#1A2A5E">📨 Pedido de cotação — o mesmo texto para todos</b>'
     + '<textarea id="cot-texto-ta" style="width:100%;height:200px;margin:8px 0;font-size:12px;font-family:inherit">'+_esc(t.texto)+'</textarea>'
-    + '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">'+links+'<span style="margin-left:auto"></span><button class="btn" onclick="navigator.clipboard.writeText(document.getElementById(\'cot-texto-ta\').value).then(()=>mostrarToast(\'Copiado\',\'ok\'))">📋 Copiar</button><button class="btn p" onclick="document.getElementById(\'cot-texto-jan\').remove()">Fechar</button></div></div>';
+    + '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">'+links+'<span style="margin-left:auto"></span><button class="btn" onclick="navigator.clipboard.writeText(document.getElementById(\'cot-texto-ta\').value).then(()=>{mostrarToast(\'Copiado\',\'ok\');cotMarcarEnviada()})">📋 Copiar</button><button class="btn p" onclick="document.getElementById(\'cot-texto-jan\').remove()">Fechar</button></div></div>';
   document.body.appendChild(b);
+}
+// (12/11/2026) pedido de cotação saiu (WhatsApp ou texto copiado) → fase "enviada"; grava só na 1ª vez
+async function cotMarcarEnviada(){
+  if (!_cot || _cot.enviada_em) return;
+  try { _cot = await _fxCompras('/compras/api/cotacoes/'+_cot.id+'/enviar', { method:'POST' }); const r = _cotLerRespostas(); document.getElementById('eq-ficha-corpo').innerHTML = _cotHtml(); _cotRepor(r); } catch(e){}
 }
 async function cotEncerrar(){
   if (!(await cotSalvar(true))) return;

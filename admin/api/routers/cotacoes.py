@@ -69,6 +69,7 @@ ALTER TABLE compras.cotacao_precos ADD COLUMN IF NOT EXISTS oferta TEXT DEFAULT 
 ALTER TABLE compras.cotacao_precos ADD COLUMN IF NOT EXISTS subst_peca_codigo TEXT;
 ALTER TABLE compras.cotacao_precos ADD COLUMN IF NOT EXISTS subst_descricao TEXT;
 ALTER TABLE compras.cotacao_precos ADD COLUMN IF NOT EXISTS aceito BOOLEAN;
+ALTER TABLE compras.cotacoes ADD COLUMN IF NOT EXISTS enviada_em TIMESTAMPTZ;
 ALTER TABLE compras.cotacoes ADD COLUMN IF NOT EXISTS cotacao_origem_id UUID;
 -- (12/11/2026) itens que ficaram sem compra ao encerrar (sem oferta aceita) — baixa MANUAL
 CREATE TABLE IF NOT EXISTS compras.pendencias_compra (
@@ -220,10 +221,27 @@ async def _carregar(cid):
     return dict(cot), [dict(i) for i in itens], [dict(f) for f in forns], [dict(p) for p in precos]
 
 
+def _prefill(p):
+    """(12/11/2026) célula só com o 'último preço conhecido' sugerido pelo sistema — ainda não é resposta do fornecedor."""
+    return (p.get("observacao") or "").startswith("último preço conhecido")
+
+
+def _fase(cot, forns, precos):
+    """(12/11/2026) Fase da cotação aberta — a tela só cobra resposta depois que alguém respondeu.
+    montando → enviada (📨 pedido de cotação enviado/copiado) → respondida (algum preço ou situação ≠ aguardando).
+    Encerrada/cancelada: a própria situação."""
+    if cot["status"] != "aberta":
+        return cot["status"]
+    if any(f.get("status") and f["status"] != "aguardando" for f in forns) or any(p.get("preco_unit") is not None and not _prefill(p) for p in precos):
+        return "respondida"
+    return "enviada" if cot.get("enviada_em") else "montando"
+
+
 def _saida(cot, itens, forns, precos, hist):
     sug = _sugerir(cot, itens, forns, precos)
     return {
         **{k: (str(v) if k.endswith("_id") or k == "id" else v) for k, v in cot.items()},
+        "fase": _fase(cot, forns, precos),
         "itens": [{**{k: (str(v) if k in ("id", "cotacao_id", "peca_id", "vencedor_cf_id") and v is not None else v) for k, v in i.items()},
                    "quantidade": _f(i["quantidade"])} for i in itens],
         "fornecedores": [{**{k: (str(v) if k in ("id", "cotacao_id", "fornecedor_id", "oc_id") and v is not None else v) for k, v in f.items()},
@@ -253,7 +271,7 @@ async def listar(status: str = "aberta", setor: str = None, busca: str = None, _
                      "OR EXISTS (SELECT 1 FROM compras.cotacao_fornecedores cf JOIN public.fornecedores f ON f.id=cf.fornecedor_id WHERE cf.cotacao_id=c.id AND f.nome ILIKE %s))")
         params += [b, b, b, b, b, b]
     rows = await ajard_query(
-        f"""SELECT c.id, c.numero, c.status, c.origem, c.criterio, c.modo, c.criado_em, c.encerrada_em, c.setor_codigo,
+        f"""SELECT c.id, c.numero, c.status, c.origem, c.criterio, c.modo, c.criado_em, c.encerrada_em, c.enviada_em, c.setor_codigo,
                    ot.numero AS ot_numero, eq.codigo AS equipamento_codigo, u.nome AS criado_por_nome,
                    (SELECT string_agg(trim(to_char(i.quantidade,'FM9999990.##'))||' '||COALESCE(i.unidade,'UN')||' '||i.descricao, ' · ' ORDER BY i.ordem)
                       FROM compras.cotacao_itens i WHERE i.cotacao_id=c.id AND i.ativo) AS itens_resumo,
@@ -269,7 +287,10 @@ async def listar(status: str = "aberta", setor: str = None, busca: str = None, _
              WHERE {' AND '.join(where)} ORDER BY c.criado_em DESC LIMIT 300""", params) or []
     out = []
     for r in rows:
-        d = dict(r); d["id"] = str(d["id"]); out.append(d)
+        d = dict(r); d["id"] = str(d["id"])
+        # (12/11/2026) fase para a lista (mesma regra de _fase, sem carregar os preços: forn_resp já conta quem respondeu)
+        d["fase"] = d["status"] if d["status"] != "aberta" else ("respondida" if d["forn_resp"] else ("enviada" if d.get("enviada_em") else "montando"))
+        out.append(d)
     return out
 
 
@@ -444,7 +465,8 @@ async def forn_resposta(cid: str, cf_id: str, request: Request, payload=Depends(
                      oferta=EXCLUDED.oferta, subst_peca_codigo=EXCLUDED.subst_peca_codigo, subst_descricao=EXCLUDED.subst_descricao, aceito=EXCLUDED.aceito""",
                 (p["item_id"], cf_id, pu, p.get("prazo_dias") or None, p.get("observacao"), oferta, sub_cod,
                  (p.get("subst_descricao") or "").strip() or None, aceito), fetch="none")
-        if status is None and any(p.get("preco_unit") not in (None, "") for p in (d["precos"] or [])):
+        # (12/11/2026) preço PRÉ-PREENCHIDO (último conhecido, ainda não confirmado) não vale como resposta
+        if status is None and any(p.get("preco_unit") not in (None, "") and not _prefill(p) for p in (d["precos"] or [])):
             status = "respondeu"
     sets, params = [], []
     for k in ("prazo_dias", "frete", "condicao_pagamento", "validade", "observacao", "anexo_path"):
@@ -693,6 +715,15 @@ async def _item_oc(i, cf_id, cel, tabela, precos, cot):
             desc += f" ({obs})"
     return {"peca_id": peca_id, "descricao": desc, "quantidade": float(i["quantidade"]),
             "unidade": i.get("unidade") or "UN", "valor_unit": tabela[(str(i["id"]), cf_id)]}
+
+
+@router.post("/compras/api/cotacoes/{cid}/enviar")
+async def marcar_enviada(cid: str, payload=Depends(verificar_compras_solicitante)):
+    """(12/11/2026) Pedido de cotação foi enviado (WhatsApp ou texto copiado): grava enviada_em na 1ª vez.
+    A partir daqui a lista mostra 'aguardando respostas há N dias'."""
+    await _garantir()
+    await ajard_query("UPDATE compras.cotacoes SET enviada_em = COALESCE(enviada_em, now()) WHERE id=%s AND status='aberta'", (cid,), fetch="none")
+    return await ver(cid, payload)
 
 
 @router.post("/compras/api/cotacoes/{cid}/cancelar")
