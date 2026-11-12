@@ -63,6 +63,24 @@ CREATE TABLE IF NOT EXISTS compras.cotacao_precos (
 );
 ALTER TABLE compras.ordens_compra ADD COLUMN IF NOT EXISTS cotacao_id UUID;
 CREATE INDEX IF NOT EXISTS ix_cotacoes_status ON compras.cotacoes(status) WHERE ativo;
+-- (12/11/2026) oferta real do fornecedor por célula: igual ao pedido ou SUBSTITUTO (marca/código diferente),
+-- com decisão manual aceito/recusado. Substituto sem ✔ não entra na comparação.
+ALTER TABLE compras.cotacao_precos ADD COLUMN IF NOT EXISTS oferta TEXT DEFAULT 'igual';
+ALTER TABLE compras.cotacao_precos ADD COLUMN IF NOT EXISTS subst_peca_codigo TEXT;
+ALTER TABLE compras.cotacao_precos ADD COLUMN IF NOT EXISTS subst_descricao TEXT;
+ALTER TABLE compras.cotacao_precos ADD COLUMN IF NOT EXISTS aceito BOOLEAN;
+ALTER TABLE compras.cotacoes ADD COLUMN IF NOT EXISTS cotacao_origem_id UUID;
+-- (12/11/2026) itens que ficaram sem compra ao encerrar (sem oferta aceita) — baixa MANUAL
+CREATE TABLE IF NOT EXISTS compras.pendencias_compra (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    peca_id UUID, peca_codigo TEXT, descricao TEXT NOT NULL,
+    quantidade NUMERIC(14,3) DEFAULT 1, unidade TEXT DEFAULT 'UN',
+    setor_codigo TEXT, ot_id UUID, equipamento_id UUID,
+    origem_tipo TEXT DEFAULT 'cotacao', cotacao_id UUID, cotacao_numero TEXT,
+    status TEXT DEFAULT 'aberta',            -- aberta | resolvida
+    criado_em TIMESTAMPTZ DEFAULT now(), criado_por UUID,
+    resolvido_em TIMESTAMPTZ, resolvido_por UUID, motivo TEXT, resolvido_ref TEXT
+);
 """
 _pronto = False
 
@@ -107,16 +125,26 @@ async def _historico_entrega(fornecedor_ids):
 
 
 # ── Cálculo da sugestão (preço × prazo) ────────────────────────────────────
+def _oferta_conta(p):
+    """(12/11/2026) Uma célula entra na comparação se tem preço e: é igual ao pedido, ou é substituto ACEITO."""
+    if p.get("preco_unit") is None:
+        return False
+    if (p.get("oferta") or "igual") == "substituto":
+        return p.get("aceito") is True
+    return True
+
+
+def _tabela_valida(precos):
+    return {(str(p["item_id"]), str(p["cf_id"])): float(p["preco_unit"]) for p in precos if _oferta_conta(p)}
+
+
 def _sugerir(cot, itens, forns, precos):
     """Devolve {por_item: {item_id: cf_id}, por_fornecedor: cf_id|None, totais: {cf_id: {...}}}.
     criterio 'preco': menor custo total (preço×qtd + frete), prazo desempata.
     criterio 'prazo': menor prazo, custo desempata. Fornecedor que não cotou TODOS os itens
     não concorre no modo 'por fornecedor' (fica 'incompleto')."""
     respondeu = [f for f in forns if f["status"] == "respondeu"]
-    tabela = {}   # (item_id, cf_id) -> preco
-    for p in precos:
-        if p["preco_unit"] is not None:
-            tabela[(str(p["item_id"]), str(p["cf_id"]))] = float(p["preco_unit"])
+    tabela = _tabela_valida(precos)   # (item_id, cf_id) -> preco, só ofertas que contam
     chave = (lambda custo, prazo: (custo, prazo if prazo is not None else 9999)) if cot["criterio"] != "prazo" \
         else (lambda custo, prazo: (prazo if prazo is not None else 9999, custo))
     por_item = {}
@@ -138,11 +166,18 @@ def _sugerir(cot, itens, forns, precos):
                 completo = False
                 continue
             custo += pu * float(it["quantidade"])
-        totais[str(f["id"])] = {"custo": round(custo, 2), "completo": completo, "prazo_dias": f.get("prazo_dias")}
+        cobre = sum(1 for it in itens if (str(it["id"]), str(f["id"])) in tabela)
+        totais[str(f["id"])] = {"custo": round(custo, 2), "completo": completo, "prazo_dias": f.get("prazo_dias"), "cobre": cobre}
         if completo:
             k = chave(custo, f.get("prazo_dias"))
             if melhor is None or k < melhor[0]:
                 melhor = (k, str(f["id"]))
+    # (12/11/2026) ninguém cobre tudo → sugere o PARCIAL que cobre mais itens (os demais viram pendência ao encerrar)
+    parcial = False
+    if melhor is None:
+        cands = [(-t["cobre"], chave(t["custo"], t["prazo_dias"]), cf) for cf, t in totais.items() if t["cobre"] > 0]
+        if cands:
+            melhor = (None, min(cands)[2]); parcial = True
     # custo do modo "por item" (soma dos melhores + um frete por fornecedor envolvido)
     custo_item, fretes = 0.0, set()
     for it in itens:
@@ -153,7 +188,7 @@ def _sugerir(cot, itens, forns, precos):
     for cf in fretes:
         f = next((x for x in respondeu if str(x["id"]) == cf), None)
         custo_item += float((f or {}).get("frete") or 0)
-    return {"por_item": por_item, "por_fornecedor": melhor[1] if melhor else None, "totais": totais,
+    return {"por_item": por_item, "por_fornecedor": melhor[1] if melhor else None, "por_fornecedor_parcial": parcial, "totais": totais,
             "custo_por_item": round(custo_item, 2) if por_item else None, "fornecedores_por_item": len(fretes),
             "itens_sem_cotacao": [str(it["id"]) for it in itens if str(it["id"]) not in por_item]}
 
@@ -194,7 +229,10 @@ def _saida(cot, itens, forns, precos, hist):
         "fornecedores": [{**{k: (str(v) if k in ("id", "cotacao_id", "fornecedor_id", "oc_id") and v is not None else v) for k, v in f.items()},
                           "frete": _f(f.get("frete")), "historico": hist.get(str(f["fornecedor_id"]))} for f in forns],
         "precos": [{"item_id": str(p["item_id"]), "cf_id": str(p["cf_id"]), "preco_unit": _f(p["preco_unit"]),
-                    "prazo_dias": p.get("prazo_dias"), "observacao": p.get("observacao")} for p in precos],
+                    "prazo_dias": p.get("prazo_dias"), "observacao": p.get("observacao"),
+                    "oferta": p.get("oferta") or "igual", "subst_peca_codigo": p.get("subst_peca_codigo"),
+                    "subst_descricao": p.get("subst_descricao"), "aceito": p.get("aceito"), "conta": _oferta_conta(p)} for p in precos],
+        "sem_oferta": [str(it["id"]) for it in itens if not any(_oferta_conta(p) and str(p["item_id"]) == str(it["id"]) for p in precos)],
         "sugestao": sug,
     }
 
@@ -221,7 +259,9 @@ async def listar(status: str = "aberta", setor: str = None, busca: str = None, _
                       FROM compras.cotacao_itens i WHERE i.cotacao_id=c.id AND i.ativo) AS itens_resumo,
                    (SELECT COUNT(*)::int FROM compras.cotacao_fornecedores cf WHERE cf.cotacao_id=c.id) AS forn_n,
                    (SELECT COUNT(*)::int FROM compras.cotacao_fornecedores cf WHERE cf.cotacao_id=c.id AND cf.status='respondeu') AS forn_resp,
-                   (SELECT string_agg(oc.numero, ', ') FROM compras.ordens_compra oc WHERE oc.cotacao_id=c.id AND oc.ativo) AS ocs
+                   (SELECT string_agg(oc.numero, ', ') FROM compras.ordens_compra oc WHERE oc.cotacao_id=c.id AND oc.ativo) AS ocs,
+                   (SELECT co.numero FROM compras.cotacoes co WHERE co.id=c.cotacao_origem_id) AS origem_numero,
+                   (SELECT COUNT(*)::int FROM compras.pendencias_compra pc WHERE pc.cotacao_id=c.id AND pc.status='aberta') AS pendencias
               FROM compras.cotacoes c
               LEFT JOIN manutencao.ot ot ON ot.id = c.ot_id
               LEFT JOIN operacional.equipamentos eq ON eq.id = c.equipamento_id
@@ -388,10 +428,22 @@ async def forn_resposta(cid: str, cf_id: str, request: Request, payload=Depends(
             pu = float(str(pu).replace(",", ".")) if pu not in (None, "") else None
             if pu is not None and pu < 0:
                 raise HTTPException(400, "Preço não pode ser negativo")
+            oferta = p.get("oferta") or "igual"
+            if oferta not in ("igual", "substituto"):
+                oferta = "igual"
+            sub_cod = (p.get("subst_peca_codigo") or "").strip() or None
+            if sub_cod:
+                ok = await ajard_query("SELECT 1 FROM manutencao.pecas WHERE codigo=%s", (sub_cod,), fetch="one")
+                if not ok:
+                    raise HTTPException(400, f"Peça substituta '{sub_cod}' não existe no catálogo — cadastre antes ou deixe só a descrição")
+            aceito = p.get("aceito") if oferta == "substituto" else None
             await ajard_query(
-                """INSERT INTO compras.cotacao_precos (item_id, cf_id, preco_unit, prazo_dias, observacao) VALUES (%s,%s,%s,%s,%s)
-                   ON CONFLICT (item_id, cf_id) DO UPDATE SET preco_unit=EXCLUDED.preco_unit, prazo_dias=EXCLUDED.prazo_dias, observacao=EXCLUDED.observacao""",
-                (p["item_id"], cf_id, pu, p.get("prazo_dias") or None, p.get("observacao")), fetch="none")
+                """INSERT INTO compras.cotacao_precos (item_id, cf_id, preco_unit, prazo_dias, observacao, oferta, subst_peca_codigo, subst_descricao, aceito)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                   ON CONFLICT (item_id, cf_id) DO UPDATE SET preco_unit=EXCLUDED.preco_unit, prazo_dias=EXCLUDED.prazo_dias, observacao=EXCLUDED.observacao,
+                     oferta=EXCLUDED.oferta, subst_peca_codigo=EXCLUDED.subst_peca_codigo, subst_descricao=EXCLUDED.subst_descricao, aceito=EXCLUDED.aceito""",
+                (p["item_id"], cf_id, pu, p.get("prazo_dias") or None, p.get("observacao"), oferta, sub_cod,
+                 (p.get("subst_descricao") or "").strip() or None, aceito), fetch="none")
         if status is None and any(p.get("preco_unit") not in (None, "") for p in (d["precos"] or [])):
             status = "respondeu"
     sets, params = [], []
@@ -413,6 +465,89 @@ async def forn_resposta(cid: str, cf_id: str, request: Request, payload=Depends(
         params += [cf_id, cid]
         await ajard_query(f"UPDATE compras.cotacao_fornecedores SET {', '.join(sets)} WHERE id=%s AND cotacao_id=%s", params, fetch="none")
     return await ver(cid, payload)
+
+
+@router.put("/compras/api/cotacoes/{cid}/celula")
+async def celula_decidir(cid: str, request: Request, payload=Depends(verificar_compras_solicitante)):
+    """(12/11/2026) Decisão manual sobre um substituto: {item_id, cf_id, aceito: true|false|null}."""
+    d = await request.json()
+    aceito = d.get("aceito")
+    await ajard_query("UPDATE compras.cotacao_precos SET aceito=%s WHERE item_id=%s AND cf_id=%s AND oferta='substituto'",
+                      (aceito, d.get("item_id"), d.get("cf_id")), fetch="none")
+    return await ver(cid, payload)
+
+
+@router.post("/compras/api/cotacoes/{cid}/saldo")
+async def cotacao_saldo(cid: str, request: Request, payload=Depends(verificar_compras_solicitante)):
+    """(12/11/2026) Itens sem oferta aceita → NOVA cotação ("saldo da COT-x"), vinculada à original.
+    Body: {itens: [item_id…]}. Os itens saem da cotação atual (ativo=false, motivo) e entram na nova."""
+    await _garantir()
+    d = await request.json()
+    cot, itens, forns, precos = await _carregar(cid)
+    if cot["status"] != "aberta":
+        raise HTTPException(400, "Cotação não está aberta")
+    ids = set(str(i) for i in (d.get("itens") or []))
+    mover = [i for i in itens if str(i["id"]) in ids]
+    if not mover:
+        raise HTTPException(400, "Nenhum item informado")
+    seq = await ajard_query("SELECT COALESCE(MAX(sequencia),0)+1 AS n FROM compras.cotacoes WHERE ano=%s", (date.today().year,), fetch="one")
+    numero = f"COT-{date.today().year}-{int(seq['n']):04d}"
+    uid = await _usuario_id(payload)
+    row = await ajard_query_id(
+        """INSERT INTO compras.cotacoes (numero, ano, sequencia, setor_codigo, origem, ot_id, equipamento_id, observacao, criado_por, cotacao_origem_id)
+           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+        (numero, date.today().year, int(seq["n"]), cot.get("setor_codigo"), "saldo", cot.get("ot_id"), cot.get("equipamento_id"),
+         f"Saldo da {cot['numero']}: itens sem oferta aceita", uid, cid))
+    nid = row["id"]
+    for n, i in enumerate(mover):
+        await ajard_query(
+            "INSERT INTO compras.cotacao_itens (cotacao_id, peca_id, peca_codigo, descricao, quantidade, unidade, ordem) VALUES (%s,%s,%s,%s,%s,%s,%s)",
+            (nid, i.get("peca_id"), i.get("peca_codigo"), i["descricao"], float(i["quantidade"]), i.get("unidade") or "UN", n), fetch="none")
+        await ajard_query("UPDATE compras.cotacao_itens SET ativo=false, motivo=%s WHERE id=%s", (f"levado para {numero}", i["id"]), fetch="none")
+    await _prefill(nid)
+    return {"ok": True, "id": str(nid), "numero": numero}
+
+
+@router.get("/compras/api/pendencias")
+async def pendencias_listar(status: str = "aberta", setor: str = None, _auth=Depends(verificar_compras)):
+    """(12/11/2026) Itens que ficaram sem compra (baixa manual com motivo)."""
+    await _garantir()
+    where, params = [], []
+    if status != "todas":
+        where.append("p.status=%s"); params.append(status)
+    if setor:
+        where.append("p.setor_codigo=%s"); params.append(setor.upper())
+    rows = await ajard_query(
+        f"""SELECT p.*, ot.numero AS ot_numero, eq.codigo AS equipamento_codigo, u.nome AS resolvido_por_nome
+              FROM compras.pendencias_compra p
+              LEFT JOIN manutencao.ot ot ON ot.id = p.ot_id
+              LEFT JOIN operacional.equipamentos eq ON eq.id = p.equipamento_id
+              LEFT JOIN public.usuarios_garra u ON u.id = p.resolvido_por
+             {('WHERE ' + ' AND '.join(where)) if where else ''} ORDER BY p.criado_em DESC LIMIT 300""", params) or []
+    out = []
+    for r in rows:
+        x = {k: (str(v) if k in ("id", "peca_id", "ot_id", "equipamento_id", "cotacao_id", "criado_por", "resolvido_por") and v is not None else v) for k, v in dict(r).items()}
+        x["quantidade"] = _f(r["quantidade"]); out.append(x)
+    return out
+
+
+@router.post("/compras/api/pendencias/{pid}/resolver")
+async def pendencia_resolver(pid: str, request: Request, payload=Depends(verificar_compras_solicitante)):
+    """Baixa manual: {motivo, ref?} (ref = nº da OC/cotação que resolveu, se houver)."""
+    d = await request.json()
+    motivo = (d.get("motivo") or "").strip()
+    if not motivo:
+        raise HTTPException(400, "Informe o motivo da baixa (ex.: comprado na OC-2026-0091; não precisa mais)")
+    uid = await _usuario_id(payload)
+    await ajard_query("UPDATE compras.pendencias_compra SET status='resolvida', resolvido_em=now(), resolvido_por=%s, motivo=%s, resolvido_ref=%s WHERE id=%s AND status='aberta'",
+                      (uid, motivo, (d.get("ref") or "").strip() or None, pid), fetch="none")
+    return {"ok": True}
+
+
+@router.post("/compras/api/pendencias/{pid}/reabrir")
+async def pendencia_reabrir(pid: str, payload=Depends(verificar_compras_solicitante)):
+    await ajard_query("UPDATE compras.pendencias_compra SET status='aberta', resolvido_em=NULL, resolvido_por=NULL, motivo=NULL, resolvido_ref=NULL WHERE id=%s", (pid,), fetch="none")
+    return {"ok": True}
 
 
 @router.get("/compras/api/cotacoes/{cid}/texto")
@@ -442,31 +577,38 @@ async def encerrar(cid: str, request: Request, payload=Depends(verificar_compras
     modo = d.get("modo") or cot.get("modo") or "fornecedor"
     venc = d.get("vencedores") or {}
     sug = _sugerir(cot, itens, forns, precos)
-    tabela = {(str(p["item_id"]), str(p["cf_id"])): float(p["preco_unit"]) for p in precos if p["preco_unit"] is not None}
-    # resolve vencedor por item
-    por_item = {}
+    tabela = _tabela_valida(precos)   # só ofertas que contam (igual, ou substituto aceito)
+    # resolve vencedor por item; (12/11/2026) item sem oferta aceita NÃO bloqueia: vira pendência (se o front confirmou)
+    por_item, pendentes = {}, []
     if modo == "fornecedor":
         cf = venc.get("*") or sug["por_fornecedor"]
         if not cf:
-            raise HTTPException(400, "Nenhum fornecedor cotou todos os itens — feche por item ou complete as respostas")
+            raise HTTPException(400, "Nenhum fornecedor com oferta aceita — lance os preços ou aceite um substituto")
         for it in itens:
-            if (str(it["id"]), cf) not in tabela:
-                raise HTTPException(400, f"O fornecedor escolhido não cotou '{it['descricao']}'")
-            por_item[str(it["id"])] = cf
+            if (str(it["id"]), cf) in tabela:
+                por_item[str(it["id"])] = cf
+            else:
+                pendentes.append(it)
     else:
         for it in itens:
             cf = venc.get(str(it["id"])) or sug["por_item"].get(str(it["id"]))
-            if not cf:
-                raise HTTPException(400, f"Item sem cotação: {it['descricao']} — remova-o ou lance um preço")
-            if (str(it["id"]), cf) not in tabela:
-                raise HTTPException(400, f"Fornecedor sem preço para '{it['descricao']}'")
-            por_item[str(it["id"])] = cf
+            if cf and (str(it["id"]), cf) in tabela:
+                por_item[str(it["id"])] = cf
+            else:
+                pendentes.append(it)
+    if pendentes and not d.get("aceitar_pendencias"):
+        raise HTTPException(409, "Há itens sem oferta aceita: " + ", ".join(i["descricao"] for i in pendentes)
+                            + ". Confirme para encerrar mesmo assim (eles vão para Pendentes de compra).")
+    if not por_item:
+        raise HTTPException(400, "Nenhum item com oferta aceita — nada para comprar")
     uid = await _usuario_id(payload)
     motivos = d.get("motivos") or {}
+    cel = {(str(p["item_id"]), str(p["cf_id"])): p for p in precos}
     # agrupa por fornecedor → OC
     por_cf = {}
     for it in itens:
-        por_cf.setdefault(por_item[str(it["id"])], []).append(it)
+        if str(it["id"]) in por_item:
+            por_cf.setdefault(por_item[str(it["id"])], []).append(it)
     ocs = []
     for cf_id, lista in por_cf.items():
         f = next(x for x in forns if str(x["id"]) == cf_id)
@@ -476,11 +618,7 @@ async def encerrar(cid: str, request: Request, payload=Depends(verificar_compras
             "equipamento_id": str(cot["equipamento_id"]) if cot.get("equipamento_id") else None,
             "condicao_pagamento": f.get("condicao_pagamento"), "origem": "cotacao",
             "observacao": f"Cotação {cot['numero']} · prazo prometido {f.get('prazo_dias') or '?'} dia(s)" + (f" · frete R$ {float(f.get('frete') or 0):.2f}" if f.get("frete") else ""),
-            "itens": [{"peca_id": str(i["peca_id"]) if i.get("peca_id") else None,
-                       # (12/11/2026) observação da célula (substituto/marca) vai para o item da OC
-                       "descricao": i["descricao"] + ((" (" + _obs_cel(precos, i["id"], cf_id) + ")") if _obs_cel(precos, i["id"], cf_id) else ""),
-                       "quantidade": float(i["quantidade"]), "unidade": i.get("unidade") or "UN",
-                       "valor_unit": tabela[(str(i["id"]), cf_id)]} for i in lista],
+            "itens": [await _item_oc(i, cf_id, cel, tabela, precos, cot) for i in lista],
         }
         if f.get("frete"):
             dados["itens"].append({"descricao": "Frete", "quantidade": 1, "unidade": "SV", "valor_unit": float(f["frete"])})
@@ -503,8 +641,14 @@ async def encerrar(cid: str, request: Request, payload=Depends(verificar_compras
             continue
         for it in itens:
             pu = tabela.get((str(it["id"]), str(f["id"])))
-            if pu is None or not it.get("peca_codigo"):
+            if pu is None:
                 continue
+            # (12/11/2026) substituto aceito com peça do catálogo → o preço aprende na peça SUBSTITUTA
+            pc = cel.get((str(it["id"]), str(f["id"]))) or {}
+            cod_aprender = pc.get("subst_peca_codigo") if (pc.get("oferta") == "substituto") else it.get("peca_codigo")
+            if not cod_aprender:
+                continue
+            it = dict(it); it["peca_codigo"] = cod_aprender
             prazo = next((p.get("prazo_dias") for p in precos if str(p["item_id"]) == str(it["id"]) and str(p["cf_id"]) == str(f["id"]) and p.get("prazo_dias")), None) or f.get("prazo_dias")
             ex = await ajard_query("SELECT id FROM manutencao.peca_fornecedores WHERE peca_codigo=%s AND fornecedor_id=%s", (it["peca_codigo"], f["fornecedor_id"]), fetch="one")
             if ex:
@@ -513,8 +657,42 @@ async def encerrar(cid: str, request: Request, payload=Depends(verificar_compras
             else:
                 await ajard_query("INSERT INTO manutencao.peca_fornecedores (peca_codigo, fornecedor_id, preco, prazo_dias, observacao) VALUES (%s,%s,%s,%s,%s)",
                                   (it["peca_codigo"], f["fornecedor_id"], pu, prazo, f"cotação {cot['numero']}"), fetch="none")
+    # (12/11/2026) itens sem compra → Pendentes de compra (baixa manual)
+    pend_out = []
+    for it in pendentes:
+        await ajard_query(
+            """INSERT INTO compras.pendencias_compra (peca_id, peca_codigo, descricao, quantidade, unidade, setor_codigo, ot_id, equipamento_id, origem_tipo, cotacao_id, cotacao_numero, criado_por)
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,'cotacao',%s,%s,%s)""",
+            (it.get("peca_id"), it.get("peca_codigo"), it["descricao"], float(it["quantidade"]), it.get("unidade") or "UN", cot.get("setor_codigo"),
+             cot.get("ot_id"), cot.get("equipamento_id"), cid, cot["numero"], uid), fetch="none")
+        await ajard_query("UPDATE compras.cotacao_itens SET motivo=%s WHERE id=%s", ("sem oferta aceita → Pendentes de compra", it["id"]), fetch="none")
+        pend_out.append(it["descricao"])
     await ajard_query("UPDATE compras.cotacoes SET status='encerrada', modo=%s, encerrada_por=%s, encerrada_em=now() WHERE id=%s", (modo, uid, cid), fetch="none")
-    return {"ok": True, "ocs": ocs}
+    return {"ok": True, "ocs": ocs, "pendentes": pend_out}
+
+
+async def _item_oc(i, cf_id, cel, tabela, precos, cot):
+    """(12/11/2026) Item da OC a partir da célula vencedora. Substituto aceito: a OC nasce com a PEÇA SUBSTITUTA
+    (se cadastrada) e a descrição diz 'em lugar de …' — o recebimento cai na peça certa e a referência aprende."""
+    p = cel.get((str(i["id"]), cf_id)) or {}
+    peca_id = str(i["peca_id"]) if i.get("peca_id") else None
+    desc = i["descricao"]
+    if (p.get("oferta") or "igual") == "substituto":
+        sub_cod, sub_desc = p.get("subst_peca_codigo"), p.get("subst_descricao") or ""
+        if sub_cod:
+            sp = await ajard_query("SELECT id, descricao FROM manutencao.pecas WHERE codigo=%s", (sub_cod,), fetch="one")
+            if sp:
+                peca_id = str(sp["id"])
+                desc = f"{sub_cod} — {sp['descricao']}" + (f" ({sub_desc})" if sub_desc else "")
+        elif sub_desc:
+            desc = f"SUBSTITUTO: {sub_desc}"
+        desc += f" · em lugar de {i.get('peca_codigo') or i['descricao']} ({cot['numero']})"
+    else:
+        obs = _obs_cel(precos, i["id"], cf_id)
+        if obs:
+            desc += f" ({obs})"
+    return {"peca_id": peca_id, "descricao": desc, "quantidade": float(i["quantidade"]),
+            "unidade": i.get("unidade") or "UN", "valor_unit": tabela[(str(i["id"]), cf_id)]}
 
 
 @router.post("/compras/api/cotacoes/{cid}/cancelar")

@@ -1889,42 +1889,26 @@ const _PNEU_EIXOS = {
   dian:  {rot:'Eixo dianteiro', slots:[{k:'dian-esq',l:'Dianteiro esquerdo'},{k:'dian-dir',l:'Dianteiro direito'}]},
   tras2: {rot:'Eixo traseiro (rodado duplo)', slots:[{k:'tras-esq-ext',l:'Traseiro esquerdo externo'},{k:'tras-esq-int',l:'Traseiro esquerdo interno'},{k:'tras-dir-int',l:'Traseiro direito interno'},{k:'tras-dir-ext',l:'Traseiro direito externo'}]},
   tras1: {rot:'Eixo traseiro', slots:[{k:'tras-esq',l:'Traseiro esquerdo'},{k:'tras-dir',l:'Traseiro direito'}]},
-  reb2:  {rot:'Eixo reboque (rodado duplo)', slots:[{k:'reb-esq-ext',l:'Reboque esquerdo externo'},{k:'reb-esq-int',l:'Reboque esquerdo interno'},{k:'reb-dir-int',l:'Reboque direito interno'},{k:'reb-dir-ext',l:'Reboque direito externo'}]},
-  // (12/11/2026) máquinas de pneu: tandem da patrol (2 rodas por lado, em sequência)
-  tan1:  {rot:'Tandem — 1º eixo', slots:[{k:'tan-esq-1',l:'Tandem esquerdo 1'},{k:'tan-dir-1',l:'Tandem direito 1'}]},
-  tan2:  {rot:'Tandem — 2º eixo', slots:[{k:'tan-esq-2',l:'Tandem esquerdo 2'},{k:'tan-dir-2',l:'Tandem direito 2'}]}
+  reb2:  {rot:'Eixo reboque (rodado duplo)', slots:[{k:'reb-esq-ext',l:'Reboque esquerdo externo'},{k:'reb-esq-int',l:'Reboque esquerdo interno'},{k:'reb-dir-int',l:'Reboque direito interno'},{k:'reb-dir-ext',l:'Reboque direito externo'}]}
 };
 const _PNEU_GAB = {
   caminhao:['dian','tras2'], caminhao_basculante:['dian','tras2'],
   caminhao_pipa:['dian','tras2'], caminhao_bruck:['dian','tras2'],
   caminhao_cacamba:['dian','tras2'], caminhao_reboque:['dian','tras2','reb2'],
-  carro:['dian','tras1'], veiculo_leve:['dian','tras1'],
-  // (12/11/2026) máquinas de pneu (categorias do cadastro de equipamentos); escavadeira é esteira — sem diagrama
-  retroescavadeira:['dian','tras1'], carregadeira:['dian','tras1'], minicarregadeira:['dian','tras1'],
-  patrol:['dian','tan1','tan2'], compactador:['tras1']
+  carro:['dian','tras1'], veiculo_leve:['dian','tras1']
 };
-// (12/11/2026) Desenho escolhido em Parametrizar › Categorias de objeto (eu.diagrama vem do back);
-// _PNEU_GAB fica só como reserva para categoria ainda sem desenho cadastrado.
-const _PNEU_DIAG = {
-  caminhao:['dian','tras2'], caminhao_reboque:['dian','tras2','reb2'], veiculo_leve:['dian','tras1'],
-  maquina4:['dian','tras1'], patrol:['dian','tan1','tan2'], compactador:['tras1']
-};
-const _PNEU_DIAG_NOMES = [['','— sem desenho —'],['caminhao','Caminhão (dianteiro + traseiro duplo)'],['caminhao_reboque','Caminhão com reboque'],
-  ['veiculo_leve','Veículo leve (4 rodas)'],['maquina4','Máquina 4 rodas (retro, pá, mini)'],['patrol','Patrol (dianteiro + tandem)'],['compactador','Compactador (2 traseiros)']];
 function _pneuSlotDe(pos){
   const t = (pos||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
   const tem = w => t.indexOf(w) >= 0;
   const lado = tem('esq') ? 'esq' : (tem('dir') ? 'dir' : null);
-  const eixo = tem('reboque') ? 'reb' : (tem('tandem') ? 'tan' : (tem('dian')||tem('frente') ? 'dian' : (tem('tras') ? 'tras' : null)));
-  if (eixo === 'tan'){ const n = /\b1\b/.test(t) ? '1' : (/\b2\b/.test(t) ? '2' : null); return (lado && n) ? 'tan-'+lado+'-'+n : null; }   // (12/11/2026)
+  const eixo = tem('reboque') ? 'reb' : (tem('dian')||tem('frente') ? 'dian' : (tem('tras') ? 'tras' : null));
   const anel = tem('ext') ? 'ext' : (tem('int') ? 'int' : null);
   if (!lado || !eixo) return null;
   return eixo+'-'+lado+(anel ? '-'+anel : '');
 }
 function _pneuDiagrama(eu, filhos){
   const cat = (eu.categoria||'').toLowerCase();
-  const eixos = (eu.diagrama !== undefined && eu.diagrama !== null) ? (_PNEU_DIAG[eu.diagrama] || null) : _PNEU_GAB[cat];   // (12/11/2026)
-  if (!eixos) return '';
+  const eixos = _PNEU_GAB[cat]; if (!eixos) return '';
   const all = []; eixos.forEach(e => _PNEU_EIXOS[e].slots.forEach(sl => all.push(sl.k)));
   const ocup = {}; const fora = [];
   (filhos||[]).forEach(f => {
@@ -1944,8 +1928,7 @@ function _pneuDiagrama(eu, filhos){
     return '<div data-l="'+_esc(sl.l)+'" onclick="_pneuAlocar(this.dataset.l)" title="'+_esc(sl.l)+' — vago · clique para alocar um pneu aqui" '
       + 'style="width:52px;height:64px;border:2px dashed #B83030;background:rgba(184,48,48,.05);border-radius:8px;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;font-size:8px;font-weight:600;color:#B83030;text-align:center;gap:2px;padding:2px">➕<div>'+_esc(sl.l)+'</div></div>';
   };
-  const _maq = eu.diagrama ? ['maquina4','patrol','compactador'].includes(eu.diagrama) : !/^(caminhao|carro|veiculo)/.test(cat);   // (12/11/2026)
-  let html = '<div class="dsec" style="margin-top:10px">'+(_maq?'🚜':'🚚')+' Diagrama de pneus <span class="muted" style="font-weight:400;font-size:10px">vago = clique para alocar · montado = clique para abrir</span></div>'
+  let html = '<div class="dsec" style="margin-top:10px">🚚 Diagrama de pneus <span class="muted" style="font-weight:400;font-size:10px">vago = clique para alocar · montado = clique para abrir</span></div>'
     + '<div style="display:flex;flex-direction:column;align-items:center;gap:6px;padding:8px 0;background:#F8FAFC;border:1px solid #E2E8F0;border-radius:8px">'
     + '<div style="background:#E6EDF7;border:1px solid #A8BDDA;border-radius:8px;padding:5px 22px;font-size:11px;font-weight:700;color:#3D5A80">CABINE — '+_esc(eu.codigo)+'</div>';
   eixos.forEach(ek => {
@@ -2263,7 +2246,6 @@ async function novoEquipMW(copiarDe, editar){
     try { ops = await mntFetch('/operacional/api/operadores'); } catch(e){}
     try { forn = _mntFornList || await mntFetch('/manutencao/api/fornecedores'); if (!_mntFornList) _mntFornList = Array.isArray(forn) ? forn : (forn.itens || []); } catch(e){}
     _mwDom = { tipos: await g('tipos-equipamento'), sistemas: await g('sistemas'), ccs: await g('centros-custo'),
-               cats: (await g('categorias-objeto')).filter(c => !c.nao_cadastrada).sort((a,b)=>String(a.nome||a.codigo).localeCompare(String(b.nome||b.codigo))),   // (12/11/2026)
                operadores: Array.isArray(ops) ? ops : (ops.itens || []), fornecedores: Array.isArray(forn) ? forn : (forn.itens || []) };
   }
   _neEditId = null;
@@ -2291,7 +2273,7 @@ async function novoEquipMW(copiarDe, editar){
       + lista.map(x => '<option value="'+_esc(x[chave])+'"'+(String(x[chave])===String(val||'')?' selected':'')+'>'+(chave==='id' ? _esc(x[rot]||'') : _esc(x[chave])+(x[rot]?' \u2014 '+_esc(x[rot]):''))+'</option>').join('')+'</select>';
   const fld = (rot, html, w) => '<div class="ne-f"'+(w?' style="flex:'+w+'"':'')+'><span class="ne-l">'+rot+'</span>'+html+'</div>';
   const inp = (id, val, ph, tipo) => '<input id="'+id+'"'+(tipo?' type="'+tipo+'"':'')+' value="'+_esc(val==null?'':val)+'" placeholder="'+(ph||'')+'">';
-  const cats = _mwDom.cats || [];   // (12/11/2026) lista fechada (Parametrizar › Categorias de objeto)
+  const cats = Array.from(new Set(_semCache.map(e => e.categoria).filter(Boolean))).sort();
   const pais = _semCache.filter(e => (e.categoria||'') !== 'componente');
 
   document.querySelector('#eq-ficha .modal').classList.add('larga');
@@ -2344,7 +2326,7 @@ async function novoEquipMW(copiarDe, editar){
     + '<button class="btn" onclick="document.getElementById(\'ne-cars\').insertAdjacentHTML(\'beforeend\', neCarLinha(\'\',\'\'))">\u2795 Caracter\u00edstica</button></div>'
     // aba 2 — Dados Operacionais
     + '<div class="ne-pane" id="ne-p2"><div style="display:flex;gap:8px;flex-wrap:wrap">'
-    + fld('Categoria (Operacional) *', _neCatSelect(cats, base.categoria), 1)
+    + fld('Categoria (Operacional) *','<input id="ne-cat" list="ne-cat-l" value="'+_esc(base.categoria||'')+'" placeholder="caminhao, maquina, apoio\u2026"><datalist id="ne-cat-l">'+cats.map(c=>'<option value="'+_esc(c)+'">').join('')+'</datalist>',1)
     + fld('Medi\u00e7\u00e3o','<select id="ne-med">'+['horimetro','km','hora','diaria','viagem','metros'].map(m=>'<option value="'+m+'"'+((base.medicao||'horimetro')===m?' selected':'')+'>'+m+'</option>').join('')+'</select>',1)
     + fld('Placa', inp('ne-placa','', 'ABC-1D23'),1)
     + '</div></div>'
@@ -2602,33 +2584,13 @@ function neTipoMudou(){
   if (tp) _neAplicarTipo(tp);
   neProximo();
 }
-// (12/11/2026) Categoria = lista fechada; valor gravado fora do cadastro aparece marcado para corrigir
-function _neCatSelect(cats, atual){
-  const a = String(atual||'').toLowerCase();
-  const fora = a && !cats.some(c => String(c.codigo).toLowerCase() === a);
-  return '<select id="ne-cat" onchange="neCatMudou()"><option value="">\u2014 selecionar \u2014</option>'
-    + (fora ? '<option value="'+_esc(a)+'" selected>\u26a0 '+_esc(a)+' (n\u00e3o cadastrada \u2014 escolha outra)</option>' : '')
-    + cats.map(c => '<option value="'+_esc(c.codigo)+'"'+(String(c.codigo).toLowerCase()===a?' selected':'')+'>'+_esc(c.nome||c.codigo)+'</option>').join('')
-    + '</select>';
-}
-function neCatMudou(){
-  const c = ((_mwDom||{}).cats||[]).find(x => x.codigo === (document.getElementById('ne-cat')||{}).value);
-  const med = document.getElementById('ne-med');
-  if (c && c.medicao && med && Array.from(med.options).some(o => o.value === c.medicao)){ med.value = c.medicao; med.dispatchEvent(new Event('change')); }
-}
 function _neAplicarTipo(tp){
   const n = (tp.nome||'').toUpperCase();
   const cat = document.getElementById('ne-cat');
-  // (12/11/2026) categoria padrão do Tipo (Parametrizar › Tipos) manda; sem ela, a sugestão pelo nome só se vazio
-  const temOp = v => cat && Array.from(cat.options).some(o => o.value === v);
-  if (cat && tp.categoria_padrao && temOp(tp.categoria_padrao) && (!_neEditId || !cat.value)) cat.value = tp.categoria_padrao;
-  else if (cat && !cat.value){
-    const sug = /CAMINH|CARRET|REBOQ/.test(n) ? 'caminhao' : /PNEU/.test(n) ? 'componente' : /VEIC|APOIO|PICK|CARRO/.test(n) ? 'apoio' : /GAL/.test(n) ? 'galao' : 'maquina';
-    if (temOp(sug)) cat.value = sug;
-  }
+  if (cat && !cat.value)
+    cat.value = /CAMINH|CARRET|REBOQ/.test(n) ? 'caminhao' : /PNEU/.test(n) ? 'componente' : /VEIC|APOIO|PICK|CARRO/.test(n) ? 'apoio' : /GAL/.test(n) ? 'galao' : 'maquina';
   const med = document.getElementById('ne-med');
-  const cInfo = ((_mwDom||{}).cats||[]).find(x => cat && x.codigo === cat.value);
-  if (med) med.value = (cInfo && cInfo.medicao) ? cInfo.medicao : (/CAMINH|CARRET|REBOQ|VEIC|APOIO|PICK|CARRO/.test(n) ? 'km' : 'horimetro');
+  if (med) med.value = /CAMINH|CARRET|REBOQ|VEIC|APOIO|PICK|CARRO/.test(n) ? 'km' : 'horimetro';
   // (22/10/2026) Sistema: o select mostra SÓ o ramo da família do tipo (PNEU → 02.00.05 Pneus e as subpastas
   // Veículo leve / Caminhão / Máquina). Tipo sem pasta correspondente → lista completa (sem botão "todos": a
   // pasta é obrigatória — decisão Edvania 22/10).
@@ -2776,7 +2738,7 @@ function fichaTopo(o){
     + '<div class="mwobj"><span class="lb">'+(tipo==='peca'?'Item':'Objeto')+'</span>'
     + '<span class="vl">'+_esc(o.codigo||'')+(o.descricao?' - '+_esc(o.descricao):'')+'</span></div>';
 }
-function fichaFechar(){ if (typeof abVoltarGrupo === 'function' && abVoltarGrupo()) return; document.getElementById('eq-ficha').style.display = ''; document.getElementById('eq-ficha').classList.remove('show'); document.querySelector('#eq-ficha .modal').classList.remove('larga'); }
+function fichaFechar(){ if (typeof abVoltarGrupo === 'function' && abVoltarGrupo()) return; document.getElementById('eq-ficha').classList.remove('show'); document.querySelector('#eq-ficha .modal').classList.remove('larga'); }
 function fichaIr(onde){
   const n = _fichaNav.lista.length; if (!_fichaNav.fn || !n) return;
   const i = _fichaNav.i;
@@ -2848,10 +2810,8 @@ async function equipSubsistemas(id){
       + _pneuDiagrama(eu, r.filhos)
       + '<div class="dsec" style="margin-top:10px">\u2795 Montar componente</div>'
       + '<div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;padding:4px 0">'
-      // (12/11/2026) soltos primeiro; montados em outro equipamento aparecem à parte com onde estão; busca por código/medida
-      + '<div class="mfield" style="width:170px">Procurar<input id="sub-busca" placeholder="c\u00f3digo ou medida" oninput="subFiltrar(this.value)"></div>'
       + '<div class="mfield" style="flex:1;min-width:220px">Componente<select id="sub-comp">'
-      + _subOpcoes(r.componentes_livres)
+      + r.componentes_livres.map(c=>'<option value="'+c.id+'">'+_esc(c.codigo)+' \u2014 '+_esc((c.descricao||'').slice(0,40))+(c.n_renov?' \u00b7 '+(c.no_limite?'\u26a0 ':'')+c.n_renov+(c.limite?'/'+c.limite:'')+' renov.':'')+'</option>').join('')
       + '</select></div>'
       + '<div class="mfield" style="width:200px">Posi\u00e7\u00e3o<input id="sub-pos" placeholder="ex.: traseiro interno dir"></div>'
       + '<button class="btn p" data-p="'+eu.id+'" onclick="subMontar(this.dataset.p)">Montar</button></div>'
@@ -2861,32 +2821,12 @@ async function equipSubsistemas(id){
   document.getElementById('eq-ficha-corpo').innerHTML =
     fichaTopo({icone:'\ud83d\udede', titulo:'Subsistemas / Montagem', codigo:eu.codigo, descricao:eu.descricao, id:id, fn:'equipSubsistemas'})
     + corpo;
-  _subLivres = r.componentes_livres || [];
-  document.getElementById('eq-ficha').style.display = '';   // (12/11/2026) defesa contra display inline deixado por outra janela
   document.getElementById('eq-ficha').classList.add('show');
 }
-function _subOpcoes(livres, q){
-  const t = s => String(s||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/\s+/g,'');
-  const qq = t(q);
-  const casa = c => !qq || t(c.codigo).indexOf(qq) >= 0 || t(c.descricao).indexOf(qq) >= 0;
-  const op = c => '<option value="'+c.id+'" data-pai="'+_esc(c.pai_codigo||'')+'" data-pos="'+_esc(c.pai_posicao||'')+'">'
-    + (c.pai_codigo ? '\u26a0 ' : '') + _esc(c.codigo)+' \u2014 '+_esc((c.descricao||'').slice(0,48))
-    + (c.pai_codigo ? ' \u00b7 montado em '+_esc(c.pai_codigo)+(c.pai_posicao?' ('+_esc(c.pai_posicao)+')':'') : '')
-    + (c.n_renov?' \u00b7 '+(c.no_limite?'\u26a0 ':'')+c.n_renov+(c.limite?'/'+c.limite:'')+' renov.':'')+'</option>';
-  const soltos = (livres||[]).filter(c => !c.pai_codigo && casa(c)), outros = (livres||[]).filter(c => c.pai_codigo && casa(c));
-  if (!soltos.length && !outros.length) return '<option value="">'+(qq ? 'Nada encontrado' : 'Nenhum componente cadastrado (categoria componente)')+'</option>';
-  return (soltos.length ? '<optgroup label="Soltos ('+soltos.length+')">'+soltos.map(op).join('')+'</optgroup>' : '')
-    + (outros.length ? '<optgroup label="Montados em outro equipamento \u2014 montar aqui tira de l\u00e1 ('+outros.length+')">'+outros.map(op).join('')+'</optgroup>' : '');
-}
-let _subLivres = [];
-function subFiltrar(q){ const s = document.getElementById('sub-comp'); if (s) s.innerHTML = _subOpcoes(_subLivres, q); }
 async function subMontar(paiId, forcar){
   const comp = (document.getElementById('sub-comp')||{}).value;
   const pos = (document.getElementById('sub-pos')||{}).value || '';
   if (!comp){ mostrarToast('Escolha o componente','warn'); return; }
-  // (12/11/2026) componente montado em outro equipamento: montar aqui desmonta de lá — confirma
-  const _o = ((document.getElementById('sub-comp')||{}).selectedOptions||[])[0];
-  if (!forcar && _o && _o.dataset.pai && !confirm('\u26a0 Este componente est\u00e1 montado em '+_o.dataset.pai+(_o.dataset.pos?' ('+_o.dataset.pos+')':'')+'.\nMontar aqui tira ele de l\u00e1 (o hist\u00f3rico de l\u00e1 fecha). Continuar?')) return;
   // (22/10/2026) componente no limite de renova\u00e7\u00f5es: o back devolve 409 e a gest\u00e3o confirma (n\u00e3o bloqueia)
   const opt = (document.getElementById('sub-comp')||{}).selectedOptions; const rot = opt && opt[0] ? opt[0].textContent : '';
   if (!forcar && /\u26a0/.test(rot)){
@@ -6127,7 +6067,7 @@ const _PED_ESTAGIOS = [
   ['rejeitada',        '✖ Rejeitada',                  '#B91C1C'],
   ['cancelada',        '✖ Cancelada',                  '#B91C1C'],
 ];
-let _pedRows = [], _pedCots = [];
+let _pedRows = [], _pedCots = [], _pedPend = [];
 async function almVistaPedidos(){
   _almVista = 'pedidos';
   montarNavAlm();
@@ -6164,7 +6104,11 @@ async function renderPedidos(){
     const rows = await _fxCompras('/compras/api/ocs?' + qs.join('&'));
     _pedRows = Array.isArray(rows) ? rows : [];
     // (12/11/2026) cotações abertas aparecem no topo (estágio "A cotar") quando a situação é Em andamento/Todas
-    _pedCots = [];
+    _pedCots = []; _pedPend = [];
+    if (sit === 'abertas' || sit === 'todas'){
+      try { _pedPend = await _fxCompras('/compras/api/pendencias?status=aberta'+(setor?'&setor='+encodeURIComponent(setor):'')); } catch(e){ _pedPend = []; }
+      if (q.trim()){ const t = q.trim().toLowerCase(); _pedPend = _pedPend.filter(p => [p.descricao, p.peca_codigo, p.cotacao_numero, p.ot_numero, p.equipamento_codigo].some(v => (v||'').toLowerCase().includes(t))); }
+    }
     if (sit === 'abertas' || sit === 'todas' || sit === 'rascunho'){
       try { _pedCots = await _fxCompras('/compras/api/cotacoes?status='+(sit==='todas'?'todas':'aberta')+(setor?'&setor='+encodeURIComponent(setor):'')+(q.trim()?'&busca='+encodeURIComponent(q.trim()):'')); } catch(e){ _pedCots = []; }
     }
@@ -6184,12 +6128,20 @@ async function renderPedidos(){
   const ordem = _PED_ESTAGIOS.map(e => e[0]).filter(k => grupos[k]).concat(Object.keys(grupos).filter(k => !_PED_ESTAGIOS.some(e => e[0] === k)));
   const cotHtml = (_pedCots||[]).length ? '<tr class="grp" style="background:#F5F3FF"><td colspan="7" style="font-weight:700;color:#6D28D9;padding:5px 8px">📋 Cotações <span class="muted">('+_pedCots.length+')</span></td></tr>'
     + _pedCots.map(c => '<tr data-cot="'+c.id+'" style="cursor:pointer" ondblclick="cotacaoMapa(\''+c.id+'\')"><td class="bold">'+_esc(c.numero)+'<br><span class="muted" style="font-weight:400;font-size:10px">'+dd(c.criado_em)+' · '+_esc((c.criado_por_nome||'').split(' ')[0])+'</span></td>'
-      + '<td style="font-size:10px">'+(c.ot_numero?'🔧 OT '+_esc(c.ot_numero):({estoque_minimo:'⚠ mínimo',minimo:'⚠ mínimo',direta:'🛒 avulsa'}[c.origem]||_esc(c.origem||'—')))+(c.equipamento_codigo?'<br><span class="muted">'+_esc(c.equipamento_codigo)+'</span>':'')+'</td>'
+      + '<td style="font-size:10px">'+(c.ot_numero?'🔧 OT '+_esc(c.ot_numero):({estoque_minimo:'⚠ mínimo',minimo:'⚠ mínimo',direta:'🛒 avulsa',saldo:'↩ saldo'+(c.origem_numero?' '+_esc(c.origem_numero):''),pendencia:'⏳ pendência'}[c.origem]||_esc(c.origem||'—')))+(c.equipamento_codigo?'<br><span class="muted">'+_esc(c.equipamento_codigo)+'</span>':'')+'</td>'
       + '<td style="font-size:10px" title="'+_esc(c.itens_resumo||'')+'">'+_esc(c.itens_resumo||'—')+'</td>'
       + '<td style="font-size:10px">'+c.forn_resp+' de '+c.forn_n+' responderam'+(c.ocs?'<br><span class="chip tm" style="font-size:9px">'+_esc(c.ocs)+'</span>':'')+'</td>'
       + '<td class="r muted">'+(c.status==='aberta'?'—':_esc(c.status))+'</td><td class="muted">'+dd(c.encerrada_em||c.criado_em)+'</td>'
       + '<td style="white-space:nowrap"><button class="btn p" style="font-size:10px" onclick="cotacaoMapa(\''+c.id+'\')">'+(c.status==='aberta'?'Abrir mapa':'Ver mapa')+'</button></td></tr>').join('') : '';
-  tb.innerHTML = cotHtml + ordem.map(k => {
+  // (12/11/2026) ⏳ Pendentes de compra: itens sem oferta aceita ao encerrar cotação — baixa MANUAL com motivo
+  const pendHtml = (_pedPend||[]).length ? '<tr class="grp" style="background:#FEF2F2"><td colspan="7" style="font-weight:700;color:#B91C1C;padding:5px 8px">⏳ Pendentes de compra <span class="muted">('+_pedPend.length+')</span> <span class="muted" style="font-weight:400;font-size:10px">— sem fornecedor na cotação; cote de novo ou dê baixa com motivo</span></td></tr>'
+    + _pedPend.map(p => '<tr data-pend="'+p.id+'"><td class="bold">'+_esc(p.cotacao_numero||'—')+'<br><span class="muted" style="font-weight:400;font-size:10px">'+dd(p.criado_em)+'</span></td>'
+      + '<td style="font-size:10px">'+(p.ot_numero?'🔧 OT '+_esc(p.ot_numero):'⏳ pendência')+(p.equipamento_codigo?'<br><span class="muted">'+_esc(p.equipamento_codigo)+'</span>':'')+'</td>'
+      + '<td style="font-size:10px">'+parseFloat(p.quantidade||1)+' '+_esc(p.unidade||'UN')+' '+_esc(p.descricao)+'</td>'
+      + '<td class="muted" style="font-size:10px">sem oferta aceita</td><td class="r muted">—</td><td class="muted">'+dd(p.criado_em)+'</td>'
+      + '<td style="white-space:nowrap"><button class="btn p" style="font-size:10px" onclick="pendCotar(\''+p.id+'\')" title="abre uma cotação nova com este item (a pendência continua até você dar baixa)">📋 Cotar</button> '
+      + '<button class="btn" style="font-size:10px" onclick="pendResolver(\''+p.id+'\')" title="baixa manual: informe o motivo (comprado na OC…, não precisa mais…)">✔ Baixa</button></td></tr>').join('') : '';
+  tb.innerHTML = pendHtml + cotHtml + ordem.map(k => {
     const e = _PED_ESTAGIOS.find(x => x[0] === k) || [k, k, '#64748B'];
     return '<tr class="grp" style="background:#F1F5F9"><td colspan="7" style="font-weight:700;color:'+e[2]+';padding:5px 8px">'+e[1]+' <span class="muted">('+grupos[k].length+')</span></td></tr>'
       + grupos[k].map(r => '<tr data-oc="'+r.id+'" style="cursor:default">'
@@ -6200,8 +6152,21 @@ async function renderPedidos(){
         + '<td class="r mono">'+money(r.valor_total)+'</td>'
         + '<td class="muted">'+dd(r.atualizado_em || r.criado_em)+'</td>'
         + '<td style="white-space:nowrap">'+acoes(r)+'</td></tr>').join('');
-  }).join('') || (cotHtml ? '' : '<tr><td colspan="7" style="padding:14px;color:#64748B">Nenhuma ordem de compra ' + (q.trim() ? 'com "'+_esc(q.trim())+'"' : 'em andamento') + '.</td></tr>');
-  const info = document.getElementById('pd-info'); if (info) info.textContent = _pedRows.length + ' OC(s)' + ((_pedCots||[]).length ? ' · ' + _pedCots.length + ' cotação(ões)' : '');
+  }).join('') || ((cotHtml || pendHtml) ? '' : '<tr><td colspan="7" style="padding:14px;color:#64748B">Nenhuma ordem de compra ' + (q.trim() ? 'com "'+_esc(q.trim())+'"' : 'em andamento') + '.</td></tr>');
+  const info = document.getElementById('pd-info'); if (info) info.textContent = _pedRows.length + ' OC(s)' + ((_pedCots||[]).length ? ' · ' + _pedCots.length + ' cotação(ões)' : '') + ((_pedPend||[]).length ? ' · ' + _pedPend.length + ' pendente(s)' : '');
+}
+async function pendResolver(id){
+  const p = (_pedPend||[]).find(x => x.id === id); if (!p) return;
+  const motivo = prompt('Baixa da pendência "'+p.descricao+'".\nMotivo (ex.: comprado na OC-2026-0091 · comprado fora · não precisa mais):', '');
+  if (motivo === null) return; if (!motivo.trim()){ mostrarToast('Informe o motivo','warn'); return; }
+  const ref = (motivo.match(/(OC|COT)-\d{4}-\d{4}/i)||[])[0] || '';
+  try { await _fxCompras('/compras/api/pendencias/'+id+'/resolver', { method:'POST', body: JSON.stringify({ motivo: motivo.trim(), ref }) }); mostrarToast('✔ Pendência baixada','ok'); renderPedidos(); }
+  catch(e){ mostrarToast('❌ '+e.message,'warn'); }
+}
+async function pendCotar(id){
+  const p = (_pedPend||[]).find(x => x.id === id); if (!p) return;
+  return cotacaoCriar({ origem: 'pendencia', ot_id: p.ot_id || null, equipamento_id: p.equipamento_id || null,
+    itens: [{ peca_id: p.peca_id || null, peca_codigo: p.peca_codigo || null, descricao: p.descricao, quantidade: p.quantidade || 1, unidade: p.unidade || 'UN' }] });
 }
 function almAcaoPorRotulo(rot){ const el = [...document.querySelectorAll('#alm-nav .pn-acao')].find(x => x.dataset.rot === rot); if (el) { _almAcaoOn = rot; document.querySelectorAll('#alm-nav .pn-item.on').forEach(x => { if (!x.dataset.id && !x.dataset.fam) x.classList.remove('on'); }); el.classList.add('on'); } }
 async function pedidoSolicitar(id){
@@ -6907,8 +6872,7 @@ async function cotacaoMapa(id){
   if (!_cotForns){ try { const f = await _fxCompras('/compras/api/fornecedores'); _cotForns = Array.isArray(f) ? f : (f.itens||f.fornecedores||[]); } catch(e){ _cotForns = []; } }
   document.querySelector('#eq-ficha .modal').classList.add('larga');
   document.getElementById('eq-ficha-corpo').innerHTML = _cotHtml();
-  // (12/11/2026) abre pela classe .show como as demais fichas; o style.display inline travava a janela invisível
-  const _ov = document.getElementById('eq-ficha'); _ov.style.display = ''; _ov.classList.add('show');
+  document.getElementById('eq-ficha').style.display = 'flex';
 }
 function _cotHtml(){
   const c = _cot, aberta = c.status === 'aberta', money = v => (v == null ? '—' : 'R$ ' + (parseFloat(v)||0).toLocaleString('pt-BR',{minimumFractionDigits:2, maximumFractionDigits:2}));
@@ -6917,8 +6881,8 @@ function _cotHtml(){
   const hist = f => f.historico ? (f.historico.no_prazo+'/'+f.historico.n+' no prazo'+(f.historico.atraso_medio ? ' · atraso médio '+f.historico.atraso_medio+' d' : '')) : 'sem histórico de entrega';
   const melhorLinha = it => { let m = null; c.fornecedores.forEach(f => { const p = precos[it.id+'|'+f.id]; if (p && p.preco_unit != null && (m == null || p.preco_unit < m)) m = p.preco_unit; }); return m; };
   let h = '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><div><b style="font-size:14px;color:#1A2A5E">📋 '+_esc(c.numero)+'</b> <span class="chip '+(aberta?'pr':'tm')+'">'+_esc(c.status)+'</span>'
-    + ' <span class="muted" style="font-size:11px">'+({minimo:'⚠ mínimo',estoque_minimo:'⚠ mínimo',ot:'🔧 OT '+_esc(c.ot_numero||''),direta:'🛒 avulsa'}[c.origem]||_esc(c.origem||''))+(c.equipamento_codigo?' · '+_esc(c.equipamento_codigo):'')+' · '+_esc(c.criado_por_nome||'')+'</span></div>'
-    + '<span style="cursor:pointer;font-size:16px" onclick="fichaFechar();if(_almVista===\'pedidos\')renderPedidos()">✕</span></div>';
+    + ' <span class="muted" style="font-size:11px">'+({minimo:'⚠ mínimo',estoque_minimo:'⚠ mínimo',ot:'🔧 OT '+_esc(c.ot_numero||''),direta:'🛒 avulsa',saldo:'↩ saldo de outra cotação',pendencia:'⏳ pendência'}[c.origem]||_esc(c.origem||''))+(c.equipamento_codigo?' · '+_esc(c.equipamento_codigo):'')+' · '+_esc(c.criado_por_nome||'')+'</span></div>'
+    + '<span style="cursor:pointer;font-size:16px" onclick="document.getElementById(\'eq-ficha\').style.display=\'none\';if(_almVista===\'pedidos\')renderPedidos()">✕</span></div>';
   // barra de ações
   h += '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:8px 0;font-size:11px">';
   if (aberta){
@@ -6928,7 +6892,7 @@ function _cotHtml(){
       + '<button class="btn" onclick="cotTexto()" title="texto único do pedido de cotação — copiar ou enviar por WhatsApp">📨 Pedido de cotação</button>'
       + '<span style="margin-left:auto"></span>'
       + '<label>Critério <select id="cot-criterio" onchange="cotEditar({criterio:this.value})"><option value="preco"'+(c.criterio!=='prazo'?' selected':'')+'>menor custo (prazo desempata)</option><option value="prazo"'+(c.criterio==='prazo'?' selected':'')+'>menor prazo (custo desempata)</option></select></label>'
-      + '<label>Fechar <select id="cot-modo"><option value="fornecedor"'+(c.modo!=='item'?' selected':'')+'>por fornecedor (1 OC)</option><option value="item"'+(c.modo==='item'?' selected':'')+'>por item (melhor de cada)</option></select></label>';
+      + '<label>Fechar <select id="cot-modo" onchange="cotEditar({modo:this.value})"><option value="fornecedor"'+(c.modo!=='item'?' selected':'')+'>por fornecedor (1 OC)</option><option value="item"'+(c.modo==='item'?' selected':'')+'>por item (melhor de cada)</option></select></label>';
   }
   h += '</div>';
   // mapa
@@ -6944,12 +6908,22 @@ function _cotHtml(){
       + '<td class="r mono">'+(aberta ? '<input class="cot-qtd" data-it="'+it.id+'" type="number" min="0.001" step="any" value="'+parseFloat(it.quantidade)+'" style="width:58px;text-align:right" title="quantidade (salva ao sair do campo)" onchange="cotQtd(\''+it.id+'\',this.value)"> ' : parseFloat(it.quantidade)+' ')+_esc(it.unidade||'UN')+'</td>';
     c.fornecedores.forEach(f => {
       const p = precos[it.id+'|'+f.id] || {}; const venc = sug.por_item && sug.por_item[it.id] === f.id;
-      h += '<td style="text-align:center'+(venc?';background:#ECFDF5':'')+'">'
-        + (aberta ? '<input class="cot-preco" data-it="'+it.id+'" data-cf="'+f.id+'" data-obs="'+_esc(p.observacao||'')+'" type="number" step="0.01" min="0" placeholder="não tem" value="'+(p.preco_unit!=null?p.preco_unit:'')+'" style="width:84px;text-align:right'+(p.preco_unit!=null && p.preco_unit===ml?';font-weight:700;color:#15803D':'')+'" title="'+_esc(p.observacao||'preço unitário')+'">'
-                   + ' <span style="cursor:pointer;font-size:11px" title="Oferta diferente do pedido? Anote marca/código do substituto ou observação" onclick="cotObsCelula(\''+it.id+'\',\''+f.id+'\')">✎</span>'
-                 : '<span class="mono"'+(p.preco_unit!=null && p.preco_unit===ml?' style="font-weight:700;color:#15803D"':'')+'>'+(p.preco_unit!=null?money(p.preco_unit):'<span class=muted>—</span>')+'</span>')
-        + (p.observacao && !/^último preço conhecido/.test(p.observacao) ? '<div style="font-size:9px;color:#B45309" title="'+_esc(p.observacao)+'">⚠ '+_esc(p.observacao.length>28?p.observacao.slice(0,28)+'…':p.observacao)+'</div>' : (p.observacao && aberta ? '<div class="muted" style="font-size:8px">'+_esc(p.observacao)+'</div>' : ''))
-        + (aberta && c.modo==='item' && p.preco_unit!=null ? '<div><label style="font-size:9px"><input type="radio" name="venc-'+it.id+'" value="'+f.id+'"'+(venc?' checked':'')+'> vencedor</label></div>' : '')
+      // (12/11/2026) oferta real: igual ao pedido ou SUBSTITUTO (⚠) com decisão manual ✔ aceito / ✘ recusado
+      const subst = (p.oferta === 'substituto'), conta = p.conta !== false && p.preco_unit != null && (!subst || p.aceito === true);
+      const obsLimpa = (p.observacao && !/^último preço conhecido/.test(p.observacao)) ? p.observacao : '';
+      const substTxt = subst ? ((p.subst_peca_codigo ? p.subst_peca_codigo + ' ' : '') + (p.subst_descricao || '')).trim() || 'substituto' : '';
+      h += '<td style="text-align:center'+(venc?';background:#ECFDF5':'')+(subst && p.aceito===false?';opacity:.55':'')+'">'
+        + (aberta ? '<input class="cot-preco" data-it="'+it.id+'" data-cf="'+f.id+'" data-obs="'+_esc(p.observacao||'')+'" data-oferta="'+(p.oferta||'igual')+'" data-subcod="'+_esc(p.subst_peca_codigo||'')+'" data-subdesc="'+_esc(p.subst_descricao||'')+'" data-aceito="'+(p.aceito===true?'1':(p.aceito===false?'0':''))+'" type="number" step="0.01" min="0" placeholder="não tem" value="'+(p.preco_unit!=null?p.preco_unit:'')+'" style="width:84px;text-align:right'+(conta && p.preco_unit===ml?';font-weight:700;color:#15803D':'')+(subst?';border-color:#F59E0B':'')+'" title="'+_esc(subst ? 'SUBSTITUTO: '+substTxt : (obsLimpa||'preço unitário'))+'">'
+                   + ' <span style="cursor:pointer;font-size:11px" title="O fornecedor ofereceu outra coisa (marca/código diferente)? Registre a oferta real aqui" onclick="cotOfertaJan(\''+it.id+'\',\''+f.id+'\')">✎</span>'
+                 : '<span class="mono"'+(conta && p.preco_unit===ml?' style="font-weight:700;color:#15803D"':'')+'>'+(p.preco_unit!=null?money(p.preco_unit):'<span class=muted>—</span>')+'</span>')
+        + (subst ? '<div style="font-size:9px;color:#B45309" title="'+_esc(substTxt)+'">⚠ subst.: '+_esc(substTxt.length>26?substTxt.slice(0,26)+'…':substTxt)+'</div>'
+                 + (aberta ? '<div style="font-size:9px">'
+                      + '<span style="cursor:pointer;padding:0 4px;border-radius:4px;'+(p.aceito===true?'background:#15803D;color:#fff':'color:#15803D')+'" title="aceitar o substituto: entra na comparação" onclick="cotDecidir(\''+it.id+'\',\''+f.id+'\',true)">✔ aceito</span> '
+                      + '<span style="cursor:pointer;padding:0 4px;border-radius:4px;'+(p.aceito===false?'background:#B91C1C;color:#fff':'color:#B91C1C')+'" title="recusar: vale como não tem" onclick="cotDecidir(\''+it.id+'\',\''+f.id+'\',false)">✘ recusado</span>'
+                      + (p.aceito==null?' <span class="muted">← decidir</span>':'')+'</div>'
+                    : '<div style="font-size:9px;color:'+(p.aceito===true?'#15803D':'#B91C1C')+'">'+(p.aceito===true?'✔ aceito':'✘ recusado')+'</div>')
+                 : (obsLimpa ? '<div style="font-size:9px;color:#B45309" title="'+_esc(obsLimpa)+'">'+_esc(obsLimpa.length>28?obsLimpa.slice(0,28)+'…':obsLimpa)+'</div>' : (p.observacao && aberta ? '<div class="muted" style="font-size:8px">'+_esc(p.observacao)+'</div>' : '')))
+        + (aberta && c.modo==='item' && conta ? '<div><label style="font-size:9px"><input type="radio" name="venc-'+it.id+'" value="'+f.id+'"'+(venc?' checked':'')+'> vencedor</label></div>' : '')
         + '</td>';
     });
     h += '</tr>';
@@ -6960,13 +6934,26 @@ function _cotHtml(){
   h += linha('Frete (R$)', f => '<td style="text-align:center">'+(aberta ? '<input class="cot-frete" data-cf="'+f.id+'" type="number" step="0.01" min="0" value="'+(f.frete||0)+'" style="width:70px;text-align:right">' : money(f.frete||0))+'</td>');
   h += linha('Condição', f => '<td style="text-align:center">'+(aberta ? '<input class="cot-cond" data-cf="'+f.id+'" value="'+_esc(f.condicao_pagamento||'')+'" placeholder="ex.: 30 dias" style="width:110px">' : _esc(f.condicao_pagamento||'—'))+'</td>');
   h += linha('Situação', f => '<td style="text-align:center">'+(aberta ? '<select class="cot-st" data-cf="'+f.id+'"><option value="aguardando"'+(f.status==='aguardando'?' selected':'')+'>aguardando</option><option value="respondeu"'+(f.status==='respondeu'?' selected':'')+'>respondeu</option><option value="sem_resposta"'+(f.status==='sem_resposta'?' selected':'')+'>sem resposta</option></select>' : _esc(f.status))+'</td>');
-  h += linha('TOTAL (itens + frete)', f => { const t = (sug.totais||{})[f.id]; return '<td style="text-align:center'+(sug.por_fornecedor===f.id?';background:#ECFDF5':'')+'">'+(t ? '<b'+(t.completo?'':' class="muted" title="não cotou todos os itens"')+'>'+money(t.custo)+'</b>'+(t.completo?'':'<br><span class="muted" style="font-size:9px">incompleto</span>') : '<span class="muted">—</span>')+(aberta && c.modo!=='item' && t && t.completo ? '<div><label style="font-size:9px"><input type="radio" name="venc-forn" value="'+f.id+'"'+(sug.por_fornecedor===f.id?' checked':'')+'> vencedor</label></div>' : '')+'</td>'; });
+  const algumCompleto = Object.values(sug.totais||{}).some(t => t.completo);
+  h += linha('TOTAL (itens + frete)', f => { const t = (sug.totais||{})[f.id]; return '<td style="text-align:center'+(sug.por_fornecedor===f.id?';background:#ECFDF5':'')+'">'+(t ? '<b'+(t.completo?'':' class="muted" title="não cobre todos os itens — o que faltar vira pendência"')+'>'+money(t.custo)+'</b>'+(t.completo?'':'<br><span class="muted" style="font-size:9px">cobre '+t.cobre+' de '+c.itens.length+'</span>') : '<span class="muted">—</span>')+(aberta && c.modo!=='item' && t && (t.completo || (!algumCompleto && t.cobre > 0)) ? '<div><label style="font-size:9px"><input type="radio" name="venc-forn" value="'+f.id+'"'+(sug.por_fornecedor===f.id?' checked':'')+'> vencedor'+(t.completo?'':' (parcial)')+'</label></div>' : '')+'</td>'; });
   h += '</tbody></table></div>';
+  // (12/11/2026) pedido original × ofertas reais — e itens que ficaram sem oferta aceita
+  const semOf = (c.sem_oferta || []).map(id => c.itens.find(x => x.id === id)).filter(Boolean);
+  if (c.fornecedores.length){
+    h += '<div style="display:flex;gap:10px;align-items:center;margin-top:6px;font-size:11px;flex-wrap:wrap">'
+      + '<span style="cursor:pointer;color:#1A2A5E;text-decoration:underline" onclick="cotVerMudou()">🔍 Ver o que mudou (pedido × ofertas)</span>';
+    if (semOf.length){
+      h += '<span style="color:#B91C1C">· <b>'+semOf.length+' item(ns) sem oferta aceita</b>: '+semOf.map(i => _esc(i.descricao.length>34?i.descricao.slice(0,34)+'…':i.descricao)).join(' · ')+'</span>';
+      if (aberta) h += ' <button class="btn" style="font-size:10px" onclick="cotSaldo()" title="Tira esses itens desta cotação e abre uma nova só com eles (saldo), vinculada a esta">→ nova cotação do saldo</button>'
+        + '<span class="muted" style="font-size:10px">ou ✕ no item para tirar · ou encerre assim mesmo: eles vão para <b>Pendentes de compra</b></span>';
+    }
+    h += '</div>';
+  }
   // resumo da sugestão
   if (aberta){
     const pf = sug.por_fornecedor ? ((sug.totais||{})[sug.por_fornecedor]||{}).custo : null;
     h += '<div style="display:flex;gap:14px;align-items:center;margin-top:8px;font-size:11px;flex-wrap:wrap">'
-      + '<span>1 fornecedor: <b>'+(pf!=null ? money(pf)+' — '+_esc(nomeCf(sug.por_fornecedor)) : 'ninguém cotou tudo')+'</b></span>'
+      + '<span>1 fornecedor: <b>'+(pf!=null ? money(pf)+' — '+_esc(nomeCf(sug.por_fornecedor))+(sug.por_fornecedor_parcial?' <span style="color:#B45309">(parcial — o resto vira pendência)</span>':'') : 'ninguém cotou')+'</b></span>'
       + '<span>Por item: <b>'+(sug.custo_por_item!=null ? money(sug.custo_por_item)+' em '+sug.fornecedores_por_item+' fornecedor(es)' : '—')+'</b>'+(sug.itens_sem_cotacao&&sug.itens_sem_cotacao.length?' <span style="color:#B91C1C">· '+sug.itens_sem_cotacao.length+' item(ns) sem preço</span>':'')+'</span>'
       + '<span style="margin-left:auto;display:flex;gap:6px"><button class="btn" onclick="cotCancelar()">Cancelar cotação</button><button class="btn" onclick="cotSalvar()">💾 Salvar respostas</button>'
       + '<label style="font-size:10px" title="Marcado: a OC do vencedor já vai para aprovação ao encerrar. Desmarcado (padrão): nasce em rascunho e você envia pelo Pedidos de compra."><input type="checkbox" id="cot-solicitar"> já enviar a OC p/ aprovação</label>'
@@ -6978,7 +6965,8 @@ function _cotHtml(){
 function _cotLerRespostas(){
   const out = {};
   _cot.fornecedores.forEach(f => { out[f.id] = { precos: [] }; });
-  document.querySelectorAll('.cot-preco').forEach(i => { out[i.dataset.cf].precos.push({ item_id: i.dataset.it, preco_unit: i.value === '' ? null : parseFloat(i.value), observacao: i.dataset.obs || null }); });
+  document.querySelectorAll('.cot-preco').forEach(i => { out[i.dataset.cf].precos.push({ item_id: i.dataset.it, preco_unit: i.value === '' ? null : parseFloat(i.value), observacao: i.dataset.obs || null,
+    oferta: i.dataset.oferta || 'igual', subst_peca_codigo: i.dataset.subcod || null, subst_descricao: i.dataset.subdesc || null, aceito: i.dataset.aceito === '1' ? true : (i.dataset.aceito === '0' ? false : null) }); });
   document.querySelectorAll('.cot-prazo').forEach(i => out[i.dataset.cf].prazo_dias = i.value === '' ? null : parseInt(i.value));
   document.querySelectorAll('.cot-frete').forEach(i => out[i.dataset.cf].frete = i.value === '' ? 0 : parseFloat(i.value));
   document.querySelectorAll('.cot-cond').forEach(i => out[i.dataset.cf].condicao_pagamento = i.value);
@@ -6986,13 +6974,63 @@ function _cotLerRespostas(){
   return out;
 }
 // (12/11/2026) fornecedor ofereceu substituto / marca diferente: anota na célula (vai para a OC se ele vencer)
-function cotObsCelula(itemId, cfId){
+function cotOfertaJan(itemId, cfId){
+  // (12/11/2026) oferta real do fornecedor nesta célula: igual ao pedido, ou substituto (marca/código diferente)
   const inp = document.querySelector('.cot-preco[data-it="'+itemId+'"][data-cf="'+cfId+'"]'); if (!inp) return;
-  const atual = /^último preço conhecido/.test(inp.dataset.obs||'') ? '' : (inp.dataset.obs||'');
-  const v = prompt('Oferta diferente do pedido? Anote marca / código / observação do substituto.\n(Vazio = sem observação. Se não serve, deixe o preço em branco = "não tem".)', atual);
-  if (v === null) return;
-  inp.dataset.obs = v.trim(); inp.title = v.trim() || 'preço unitário';
+  const it = _cot.itens.find(x => x.id === itemId) || {}, f = _cot.fornecedores.find(x => x.id === cfId) || {};
+  const subst = inp.dataset.oferta === 'substituto';
+  const obsAtual = /^último preço conhecido/.test(inp.dataset.obs||'') ? '' : (inp.dataset.obs||'');
+  const j = document.createElement('div'); j.id = 'cot-oferta-jan';
+  j.style.cssText = 'position:fixed;inset:0;z-index:100001;background:rgba(15,23,42,.45);display:flex;align-items:center;justify-content:center';
+  j.innerHTML = '<div style="background:#fff;border-radius:10px;padding:16px;width:460px;max-width:94vw;box-shadow:0 12px 32px rgba(15,23,42,.3);font-size:12px">'
+    + '<b style="color:#1A2A5E">Oferta de '+_esc(f.fornecedor_nome||'')+'</b><div class="muted" style="margin:2px 0 10px">para: '+_esc(it.descricao||'')+'</div>'
+    + '<label style="display:block;margin-bottom:6px"><input type="radio" name="of-tipo" value="igual"'+(!subst?' checked':'')+' onchange="document.getElementById(\'of-sub\').style.display=\'none\'"> Ofereceu <b>o item pedido</b></label>'
+    + '<label style="display:block;margin-bottom:6px"><input type="radio" name="of-tipo" value="substituto"'+(subst?' checked':'')+' onchange="document.getElementById(\'of-sub\').style.display=\'block\'"> Ofereceu um <b>substituto</b> (marca/código diferente)</label>'
+    + '<div id="of-sub" style="display:'+(subst?'block':'none')+';background:#FFF7ED;border:1px solid #FED7AA;border-radius:8px;padding:8px;margin:4px 0 8px">'
+    + '<div class="mfield">Código da peça substituta no catálogo (se já cadastrada)<input id="of-subcod" value="'+_esc(inp.dataset.subcod||'')+'" placeholder="ex.: FIL.007 — vazio se não existe no catálogo"></div>'
+    + '<div class="mfield">Marca / modelo / descrição do substituto<input id="of-subdesc" value="'+_esc(inp.dataset.subdesc||'')+'" placeholder="ex.: Mann C25860"></div>'
+    + '<div class="muted" style="font-size:10px">Substituto só entra na comparação depois de você marcar <b>✔ aceito</b> na célula. Se vencer, a OC nasce com a peça substituta (quando cadastrada) e a descrição "em lugar de…".</div></div>'
+    + '<div class="mfield">Observação<input id="of-obs" value="'+_esc(obsAtual)+'" placeholder="ex.: entrega só na 2ª quinzena"></div>'
+    + '<div style="display:flex;gap:6px;justify-content:flex-end;margin-top:10px"><button class="btn" onclick="document.getElementById(\'cot-oferta-jan\').remove()">Cancelar</button><button class="btn p" onclick="cotOfertaSalvar(\''+itemId+'\',\''+cfId+'\')">Salvar</button></div></div>';
+  document.body.appendChild(j);
+}
+function cotOfertaSalvar(itemId, cfId){
+  const inp = document.querySelector('.cot-preco[data-it="'+itemId+'"][data-cf="'+cfId+'"]'); if (!inp) return;
+  const tipo = (document.querySelector('input[name="of-tipo"]:checked')||{}).value || 'igual';
+  inp.dataset.oferta = tipo;
+  inp.dataset.subcod = tipo === 'substituto' ? document.getElementById('of-subcod').value.trim() : '';
+  inp.dataset.subdesc = tipo === 'substituto' ? document.getElementById('of-subdesc').value.trim() : '';
+  if (tipo !== 'substituto') inp.dataset.aceito = '';
+  inp.dataset.obs = document.getElementById('of-obs').value.trim();
+  document.getElementById('cot-oferta-jan').remove();
   cotSalvar(true);
+}
+async function cotDecidir(itemId, cfId, aceito){
+  const inp = document.querySelector('.cot-preco[data-it="'+itemId+'"][data-cf="'+cfId+'"]'); if (inp) inp.dataset.aceito = aceito ? '1' : '0';
+  if (!(await cotSalvar(true))) return;
+  try { _cot = await _fxCompras('/compras/api/cotacoes/'+_cot.id+'/celula', { method:'PUT', body: JSON.stringify({ item_id: itemId, cf_id: cfId, aceito }) }); document.getElementById('eq-ficha-corpo').innerHTML = _cotHtml(); } catch(e){ mostrarToast('❌ '+e.message,'warn'); }
+}
+function cotVerMudou(){
+  // pedido original (itens) × o que cada fornecedor ofereceu de fato (células)
+  const c = _cot, precos = {}; (c.precos||[]).forEach(p => precos[p.item_id+'|'+p.cf_id] = p);
+  const linhas = c.itens.map(it => '<tr><td><b>'+_esc(it.descricao)+'</b><br><span class="muted">'+parseFloat(it.quantidade)+' '+_esc(it.unidade||'UN')+'</span></td>'
+    + c.fornecedores.map(f => { const p = precos[it.id+'|'+f.id]; if (!p || p.preco_unit == null) return '<td class="muted">— não tem</td>';
+        if (p.oferta === 'substituto') return '<td style="color:#B45309">⚠ substituto: '+_esc(((p.subst_peca_codigo||'')+' '+(p.subst_descricao||'')).trim())+'<br>'+(p.aceito===true?'<span style="color:#15803D">✔ aceito</span>':(p.aceito===false?'<span style="color:#B91C1C">✘ recusado</span>':'<span class="muted">sem decisão</span>'))+'</td>';
+        return '<td style="color:#15803D">= igual ao pedido</td>'; }).join('') + '</tr>').join('');
+  const j = document.createElement('div'); j.id = 'cot-mudou-jan';
+  j.style.cssText = 'position:fixed;inset:0;z-index:100001;background:rgba(15,23,42,.45);display:flex;align-items:center;justify-content:center';
+  j.onclick = e => { if (e.target === j) j.remove(); };
+  j.innerHTML = '<div style="background:#fff;border-radius:10px;padding:16px;width:760px;max-width:94vw;max-height:80vh;overflow:auto;box-shadow:0 12px 32px rgba(15,23,42,.3);font-size:11px"><b style="color:#1A2A5E;font-size:13px">🔍 '+_esc(c.numero)+' — pedido × ofertas reais</b>'
+    + '<table style="margin-top:8px"><thead><tr><th>Pedido original</th>'+c.fornecedores.map(f => '<th>'+_esc(f.fornecedor_nome)+'</th>').join('')+'</tr></thead><tbody>'+linhas+'</tbody></table>'
+    + '<div style="text-align:right;margin-top:8px"><button class="btn p" onclick="document.getElementById(\'cot-mudou-jan\').remove()">Fechar</button></div></div>';
+  document.body.appendChild(j);
+}
+async function cotSaldo(){
+  const ids = _cot.sem_oferta || []; if (!ids.length) return;
+  if (!(await cotSalvar(true))) return;
+  if (!confirm('Tirar '+ids.length+' item(ns) sem oferta aceita desta cotação e abrir uma nova cotação só com eles (saldo da '+_cot.numero+')?')) return;
+  try { const r = await _fxCompras('/compras/api/cotacoes/'+_cot.id+'/saldo', { method:'POST', body: JSON.stringify({ itens: ids }) }); mostrarToast('📋 '+r.numero+' aberta com o saldo','ok'); cotacaoMapa(r.id); }
+  catch(e){ mostrarToast('❌ '+e.message,'warn'); }
 }
 async function cotQtd(itemId, v){
   try { _cot = await _fxCompras('/compras/api/cotacoes/'+_cot.id+'/itens/'+itemId, { method:'PUT', body: JSON.stringify({ quantidade: v }) }); const r = _cotLerRespostas(); document.getElementById('eq-ficha-corpo').innerHTML = _cotHtml(); _cotRepor(r); }
@@ -7048,25 +7086,27 @@ async function cotEncerrar(){
   const venc = {}; const motivos = {};
   if (modo === 'item'){
     for (const it of _cot.itens){
-      const r = document.querySelector('input[name="venc-'+it.id+'"]:checked'); if (!r){ mostrarToast('Item sem preço/vencedor: '+it.descricao,'warn'); return; }
+      const r = document.querySelector('input[name="venc-'+it.id+'"]:checked'); if (!r) continue;   // sem oferta aceita → pendência (confirmado abaixo)
       venc[it.id] = r.value;
       if (sug.por_item && sug.por_item[it.id] && sug.por_item[it.id] !== r.value){ const m = prompt('"'+it.descricao+'": você escolheu um fornecedor diferente da sugestão. Motivo:', ''); if (m === null) return; motivos[it.id] = m; }
     }
   } else {
-    const r = document.querySelector('input[name="venc-forn"]:checked'); if (!r){ mostrarToast('Nenhum fornecedor cotou todos os itens — feche "por item" ou complete as respostas','warn'); return; }
+    const r = document.querySelector('input[name="venc-forn"]:checked'); if (!r){ mostrarToast('Nenhum fornecedor cobre todos os itens — feche "por item" (cada um com quem tem) ou complete as respostas','warn'); return; }
     venc['*'] = r.value;
     if (sug.por_fornecedor && sug.por_fornecedor !== r.value){ const m = prompt('Você escolheu um fornecedor diferente da sugestão. Motivo:', ''); if (m === null) return; _cot.itens.forEach(it => motivos[it.id] = m); }
   }
   const solicitar = document.getElementById('cot-solicitar').checked;
-  if (!confirm('Encerrar a '+_cot.numero+' e gerar a(s) OC(s)'+(solicitar?' já enviada(s) para aprovação':' em rascunho')+'?')) return;
+  const semOf = (_cot.sem_oferta || []).map(id => (_cot.itens.find(x => x.id === id)||{}).descricao).filter(Boolean);
+  if (!confirm('Encerrar a '+_cot.numero+' e gerar a(s) OC(s)'+(solicitar?' já enviada(s) para aprovação':' em rascunho')+'?'
+      + (semOf.length ? '\n\n⚠ '+semOf.length+' item(ns) SEM oferta aceita ficam de fora e vão para Pendentes de compra:\n• '+semOf.join('\n• ') : ''))) return;
   try {
-    const r = await _fxCompras('/compras/api/cotacoes/'+_cot.id+'/encerrar', { method:'POST', body: JSON.stringify({ modo, vencedores: venc, motivos, solicitar }) });
-    mostrarToast('✅ '+(r.ocs||[]).map(o => o.numero+' → '+o.fornecedor+' ('+o.status+')').join(' · '),'ok');
+    const r = await _fxCompras('/compras/api/cotacoes/'+_cot.id+'/encerrar', { method:'POST', body: JSON.stringify({ modo, vencedores: venc, motivos, solicitar, aceitar_pendencias: true }) });
+    mostrarToast('✅ '+(r.ocs||[]).map(o => o.numero+' → '+o.fornecedor+' ('+o.status+')').join(' · ')+((r.pendentes||[]).length ? ' · ⏳ '+r.pendentes.length+' pendente(s)' : ''),'ok');
     cotacaoMapa(_cot.id);
     if (_almVista === 'baixo') renderEstoqueBaixo();
   } catch(e){ mostrarToast('❌ '+e.message,'warn'); }
 }
-async function cotCancelar(){ if (!confirm('Cancelar a '+_cot.numero+'? Nenhuma OC será gerada.')) return; try { await _fxCompras('/compras/api/cotacoes/'+_cot.id+'/cancelar', { method:'POST' }); fichaFechar(); if (_almVista==='pedidos') renderPedidos(); } catch(e){ mostrarToast('❌ '+e.message,'warn'); } }
+async function cotCancelar(){ if (!confirm('Cancelar a '+_cot.numero+'? Nenhuma OC será gerada.')) return; try { await _fxCompras('/compras/api/cotacoes/'+_cot.id+'/cancelar', { method:'POST' }); document.getElementById('eq-ficha').style.display='none'; if (_almVista==='pedidos') renderPedidos(); } catch(e){ mostrarToast('❌ '+e.message,'warn'); } }
 async function ocSugerida(){
   const marcados = Array.from(document.querySelectorAll('#alm-tbody .eb-ck:checked')).map(c => _ebRows[parseInt(c.value)]).filter(b => b && b.sugestao > 0);
   if (!marcados.length){ mostrarToast('Marque ao menos um item com sugestão > 0','warn'); return; }
@@ -7595,7 +7635,6 @@ const PARAM_MAP = {
   familias:  { dom:'familias',               titulo:'Famílias de materiais', pk:'codigo' },
   famobj:    { dom:'familias-objetos',       titulo:'Famílias de objetos',   pk:'codigo' },
   classmat:  { dom:'classes-materiais',      titulo:'Classes de materiais (Norma: Classe → Família → Subfamília)', pk:'codigo' },   // (19/10/2026)
-  catobj:    { dom:'categorias-objeto',      titulo:'Categorias de objeto', pk:'codigo' },   // (12/11/2026)
   unidades:  { dom:'unidades',               titulo:'Unidades de medida das peças (sigla · nome) — a ficha da peça só aceita o que está aqui', pk:'codigo' },   // (05/11/2026)
   periodos:  { dom:'periodos',               titulo:'Períodos',              pk:'codigo' },
   tipofer:   { dom:'tipos-ferramenta',       titulo:'Tipos de ferramenta',   pk:'codigo' },
@@ -7624,7 +7663,6 @@ const PARAM_GRUPOS = [
     ['horarios','dom','Horários de trabalho'] ]},
   { t:'🏗 Equipamentos', itens:[
     ['tipos','dom','Tipos de equipamento'],
-    ['catobj','catobj','Categorias de objeto (operacional)'],   // (12/11/2026)
     ['famobj','dom','Famílias de objetos'],
     ['grupos','dom','Grupos / Sistemas (árvore)'],
     ['equipList','equip','Equipamentos (frota)'] ]},
@@ -7690,7 +7728,6 @@ function abrirParamPane(paneId, tipo, titulo){
   if (tipo === 'equip')  { paneEquipamentos(); return; }
   if (tipo === 'pontos') { panePontos(); return; }
   if (tipo === 'funcoes') { paneFuncoes(); return; }
-  if (tipo === 'catobj') { paneCategorias(); return; }   // (12/11/2026)
   if (tipo === 'alm')    { showModule('alm'); return; }
   if (tipo === 'admin')  { paneAviso(titulo, 'Usuários, perfis e permissões são gerenciados no <b>Admin Master</b> — cadastro único (usuarios_garra), sem duplicação aqui.'); return; }
   const fila = { empresa: empresaPane, clientes: clientesPane, planos: planosTodosPane, refforn: referenciasPane,
@@ -7698,63 +7735,6 @@ function abrirParamPane(paneId, tipo, titulo){
                  docs: () => docsTodosPane(''), config: configPane };
   if (fila[paneId]) { fila[paneId](); return; }
   paneAviso(titulo, 'Cadastro sem tela pr\u00f3pria ainda.');
-}
-/* (12/11/2026) CATEGORIAS DE OBJETO — código fixo (o sistema usa), nome, medição padrão, desenho de pneus, componente.
-   Categorias gravadas nos objetos e ausentes do cadastro aparecem no fim, em laranja, para cadastrar ou corrigir. */
-async function paneCategorias(){
-  const pane = document.getElementById('pp-pane');
-  let rows = [];
-  try { rows = await mntFetch('/manutencao/api/param/categorias-objeto'); } catch(e){ mostrarToast('\u274c '+e.message,'warn'); return; }
-  const meds = ['horimetro','km','hora','diaria','viagem','metros'];
-  const selMed = (c, v) => '<select data-c="'+_esc(c)+'" onchange="catSalvar(this.dataset.c,{medicao:this.value})">'+[''].concat(meds).map(m=>'<option value="'+m+'"'+(m===(v||'')?' selected':'')+'>'+(m||'\u2014 do pai')+'</option>').join('')+'</select>';
-  const selDia = (c, v) => '<select data-c="'+_esc(c)+'" onchange="catSalvar(this.dataset.c,{diagrama:this.value})">'+_PNEU_DIAG_NOMES.map(d=>'<option value="'+d[0]+'"'+(d[0]===(v||'')?' selected':'')+'>'+d[1]+'</option>').join('')+'</select>';
-  const cad = rows.filter(r => !r.nao_cadastrada), fora = rows.filter(r => r.nao_cadastrada);
-  const linha = r => {
-    const inat = r.ativo === false;
-    return '<tr style="'+(inat?'opacity:.55':'')+'"><td class="bold mono">'+_esc(r.codigo)+'</td>'
-      + '<td>'+_esc(r.nome||'')+(inat?' <span class="chip ap" style="font-size:9px">INATIVA</span>':'')+'</td>'
-      + '<td>'+selMed(r.codigo, r.medicao)+'</td><td>'+selDia(r.codigo, r.diagrama)+'</td>'
-      + '<td style="text-align:center"><input type="checkbox" data-c="'+_esc(r.codigo)+'"'+(r.componente?' checked':'')+' onchange="catSalvar(this.dataset.c,{componente:this.checked})" title="Componente/subsistema: entra na lista de montagem"></td>'
-      + '<td class="r mono">'+(r.n_uso||0)+'</td>'
-      + '<td class="act" style="white-space:nowrap"><button class="btn" title="Renomear" data-c="'+_esc(r.codigo)+'" data-n="'+_esc(r.nome||'')+'" onclick="catRenomear(this.dataset.c,this.dataset.n)">\u270f\ufe0f</button>'
-      + (inat ? '<button class="btn" title="Reativar" data-c="'+_esc(r.codigo)+'" onclick="catSalvar(this.dataset.c,{ativo:true},true)">\u267b\ufe0f</button>'
-              : '<button class="btn" title="Desativar (some dos formul\u00e1rios; objetos que j\u00e1 usam continuam)" data-c="'+_esc(r.codigo)+'" onclick="catSalvar(this.dataset.c,{ativo:false},true)">\ud83d\udeab</button>')
-      + (!(r.n_uso>0) ? '<button class="btn" title="Excluir de vez (s\u00f3 se nenhum objeto usa)" data-c="'+_esc(r.codigo)+'" onclick="catExcluir(this.dataset.c)">\ud83d\uddd1\ufe0f</button>' : '')
-      + '</td></tr>';
-  };
-  pane.innerHTML = '<div class="pp-hdr"><div><div class="pp-title">Categorias de objeto</div>'
-    + '<div class="pp-sub">A ficha do objeto s\u00f3 aceita o que est\u00e1 aqui. O c\u00f3digo \u00e9 fixo (checklist, app do operador e OT usam o c\u00f3digo); renomeie s\u00f3 o nome. Medi\u00e7\u00e3o e desenho de pneus valem para todos os objetos da categoria.</div></div>'
-    + '<button class="btn o" onclick="catNova()">\uff0b Nova</button></div>'
-    + '<div style="margin-top:8px;background:#fff;border:1px solid #E2E8F0;border-radius:6px;overflow:auto"><table><thead><tr><th style="width:150px">C\u00f3digo</th><th>Nome</th><th style="width:110px">Medi\u00e7\u00e3o</th><th style="width:250px">Desenho de pneus</th><th style="width:80px">Componente</th><th class="r" style="width:60px">Objetos</th><th style="width:110px"></th></tr></thead><tbody>'
-    + (cad.map(linha).join('') || '<tr><td colspan="7" class="muted" style="padding:12px">Nenhuma categoria.</td></tr>')
-    + '</tbody></table></div>'
-    + (fora.length ? '<div class="dsec" style="margin-top:12px;color:#B45309">\u26a0 Gravadas em objetos mas n\u00e3o cadastradas</div>'
-      + '<div style="background:#FFF7ED;border:1px solid #FED7AA;border-radius:6px;padding:6px 10px;font-size:12px">'
-      + fora.map(r => '<div style="display:flex;gap:8px;align-items:center;padding:3px 0"><b class="mono">'+_esc(r.codigo)+'</b> <span class="muted">'+r.n_uso+' objeto(s)</span>'
-        + '<button class="btn" data-c="'+_esc(r.codigo)+'" onclick="catNova(this.dataset.c)">\uff0b Cadastrar</button></div>').join('')
-      + '<div class="muted" style="font-size:10px;margin-top:4px">Cadastre se a categoria for v\u00e1lida, ou abra os objetos e escolha uma categoria da lista.</div></div>' : '');
-}
-async function catSalvar(cod, d, recarregar){
-  try { await mntFetch('/manutencao/api/param/categorias-objeto/'+encodeURIComponent(cod), {method:'PATCH', body: JSON.stringify(d)});
-    mostrarToast('\u2705 '+cod+' atualizada','ok'); _mwDom = null; if (recarregar) paneCategorias();
-  } catch(e){ mostrarToast('\u274c '+e.message,'warn'); paneCategorias(); }
-}
-async function catExcluir(cod){
-  if (!confirm('Excluir a categoria '+cod+' de vez? (s\u00f3 se nenhum objeto usa)')) return;
-  try { await mntFetch('/manutencao/api/param/categorias-objeto/'+encodeURIComponent(cod), {method:'DELETE'});
-    mostrarToast('\ud83d\uddd1\ufe0f '+cod+' exclu\u00edda','ok'); _mwDom = null; paneCategorias();
-  } catch(e){ mostrarToast('\u274c '+e.message,'warn'); }
-}
-async function catRenomear(cod, atual){
-  const n = prompt('Nome de '+cod+':', atual||''); if (!n || !n.trim()) return;
-  catSalvar(cod, {nome:n.trim()}, true);
-}
-async function catNova(codIni){
-  const cod = prompt('C\u00f3digo da categoria (min\u00fasculo, sem acento; ex.: caminhao_munck). N\u00e3o muda depois:', codIni||''); if (!cod || !cod.trim()) return;
-  const nome = prompt('Nome que aparece na lista (ex.: Caminh\u00e3o munck):', ''); if (!nome || !nome.trim()) return;
-  try { const r = await mntFetch('/manutencao/api/param/categorias-objeto', {method:'POST', body: JSON.stringify({codigo:cod.trim(), nome:nome.trim(), medicao:'horimetro'})});
-    mostrarToast('\u2705 '+(r.codigo||cod)+' cadastrada \u2014 ajuste medi\u00e7\u00e3o e desenho na linha','ok'); _mwDom = null; paneCategorias();
-  } catch(e){ mostrarToast('\u274c '+e.message,'warn'); }
 }
 function paneAviso(titulo, msg){
   document.getElementById('pp-pane').innerHTML =
@@ -8202,8 +8182,6 @@ async function ligarParamPane(paneId){
       + '><td class="bold" style="width:'+(hier?170:90)+'px;padding-left:'+(8+nivel*16)+'px;white-space:nowrap">'
       + seta + (dom === 'tipos-manutencao' ? (nivel === 0 ? '📁 ' : '📄 ') : '') + (inat?'<s>':'')+_esc(cod)+(inat?'</s>':'')+'</td><td>'
       + (inat?'<s>':'')+_esc(r.nome||'')+(inat?'</s>':'')
-      + (dom === 'tipos-equipamento' && !inat ? ' <select style="margin-left:8px;font-size:11px" title="Categoria padr\u00e3o: o objeto novo deste tipo j\u00e1 nasce com ela" data-c="'+_esc(cod)+'" onclick="event.stopPropagation()" onchange="tipoCatPadrao(this.dataset.c,this.value)"><option value="">categoria padr\u00e3o: \u2014</option>'
-          + (_ppCats||[]).map(c => '<option value="'+_esc(c.codigo)+'"'+(c.codigo===(r.categoria_padrao||'')?' selected':'')+'>categoria padr\u00e3o: '+_esc(c.nome||c.codigo)+'</option>').join('') + '</select>' : '')   // (12/11/2026)
       + (dom === 'familias' && nivel === 0 ? ' <span class="chip pe" style="font-size:9px" title="Classe da Norma (clique em ✏️ para mudar)">'+(r.classe ? 'Classe '+_esc(r.classe) : 'sem classe')+'</span>' : '')
       + (Array.isArray(r.caracteristicas) && r.caracteristicas.length ? ' <span class="muted" style="font-size:9px" title="Características (rótulos) da subfamília">· '+_esc(r.caracteristicas.filter(Boolean).join(' · '))+'</span>' : '')
       + (inat?' <span class="chip ap" style="font-size:9px">INATIVO</span>':'')+'</td>'
@@ -8216,9 +8194,6 @@ async function ligarParamPane(paneId){
     + '<div style="margin-top:6px;background:#fff;border:1px solid #E2E8F0;border-radius:6px;overflow:hidden"><table><thead><tr><th style="width:90px">Código</th><th>Descrição</th><th style="width:96px"></th></tr></thead><tbody>'
     + render(rows, dom, pk) + '</tbody></table></div>';
   try {
-    if (cfg.dom === 'tipos-equipamento'){   // (12/11/2026) categorias para o select "categoria padrão"
-      try { _ppCats = (await mntFetch('/manutencao/api/param/categorias-objeto')).filter(c => !c.nao_cadastrada && c.ativo !== false); } catch(e){ _ppCats = []; }
-    }
     const rows = await mntFetch('/manutencao/api/param/'+cfg.dom);
     let extraHtml = '';
     if (cfg.extra){
@@ -8231,12 +8206,6 @@ async function ligarParamPane(paneId){
       + '<button class="btn o" id="pp-novo-rot" onclick="novoParam(\''+cfg.dom+'\',\''+paneId+'\')">'+(_ppSel[cfg.dom] ? '＋ Novo em '+_esc(_ppSel[cfg.dom]) : '＋ Novo')+'</button></div>'
       + tabela(null, cfg.dom, cfg.pk, rows, false) + extraHtml;
   } catch(e){ mostrarToast('❌ '+e.message,'warn'); }
-}
-let _ppCats = [];
-async function tipoCatPadrao(sigla, cat){   // (12/11/2026)
-  try { await mntFetch('/manutencao/api/param/tipos-equipamento/'+encodeURIComponent(sigla), {method:'PATCH', body: JSON.stringify({categoria_padrao: cat})});
-    mostrarToast('\u2705 '+sigla+': categoria padr\u00e3o '+(cat||'removida'),'ok'); _mwDom = null;
-  } catch(e){ mostrarToast('\u274c '+e.message,'warn'); }
 }
 async function novoParam(dom, paneId){
   // (30/09/2026) Sistemas: janela "Novo Sistema" (ManWinWin) na raiz; o ➕ de cada linha cria dentro do nó
