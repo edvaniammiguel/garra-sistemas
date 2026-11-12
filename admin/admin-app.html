@@ -641,11 +641,18 @@ button:disabled, select:disabled, input:disabled, [aria-disabled=true] { cursor:
             Manual do Colaborador
             <button class="btn btn-primary" style="padding:6px 14px;font-size:12px" onclick="abrirFormCartilha()">+ Novo bloco</button>
           </div>
-          <p style="font-size:13px;color:var(--muted);margin-bottom:16px">Conteúdo exibido no avatar de todos os colaboradores (mobile, jardinagem e admin). Edite conforme necessário — recomendado revisar ao menos uma vez por ano.</p>
+          <p style="font-size:13px;color:var(--muted);margin-bottom:16px">Conteúdo exibido no avatar de todos os colaboradores (mobile, jardinagem e admin). Edite conforme necessário — recomendado revisar ao menos uma vez por ano. <b>Idiomas:</b> o colaborador escolhe PT · ES · EN no topo do manual; cada bloco pode ter a versão em espanhol e inglês (abas ao editar) — sem tradução, ele lê em português.</p>
 
           <!-- Form bloco (escondido) -->
           <div id="cartilha-form" style="display:none;background:var(--bg);border:1.5px solid var(--border);border-radius:8px;padding:16px;margin-bottom:16px">
             <input type="hidden" id="cartilha-edit-id" value="">
+            <!-- (11/11/2026) Manual em 3 idiomas: PT é o bloco principal; ES/EN são traduções opcionais -->
+            <div id="cartilha-abas" style="display:flex;gap:4px;margin-bottom:12px;border-bottom:1.5px solid var(--border)">
+              <button type="button" class="cart-aba" data-i="pt" onclick="cartilhaAba('pt')" style="padding:8px 14px;border:none;background:none;font-size:13px;font-weight:700;cursor:pointer;border-bottom:3px solid var(--orange);color:var(--blue)">🇧🇷 Português</button>
+              <button type="button" class="cart-aba" data-i="es" onclick="cartilhaAba('es')" style="padding:8px 14px;border:none;background:none;font-size:13px;font-weight:700;cursor:pointer;border-bottom:3px solid transparent;color:var(--muted)">🇪🇸 Español</button>
+              <button type="button" class="cart-aba" data-i="en" onclick="cartilhaAba('en')" style="padding:8px 14px;border:none;background:none;font-size:13px;font-weight:700;cursor:pointer;border-bottom:3px solid transparent;color:var(--muted)">🇺🇸 English</button>
+            </div>
+            <div id="cartilha-pt">
             <div style="display:grid;grid-template-columns:80px 1fr;gap:10px;margin-bottom:10px">
               <div>
                 <label style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;display:block;margin-bottom:4px">Ordem</label>
@@ -666,6 +673,29 @@ button:disabled, select:disabled, input:disabled, [aria-disabled=true] { cursor:
               <div style="font-size:11px;color:var(--muted);margin-top:4px">
                 Dica de formatação: linha em branco separa parágrafos · <code>**texto**</code> fica em negrito · linha começando com <code>- </code> vira item de lista
               </div>
+            </div>
+            </div>
+            <div id="cartilha-es" style="display:none">
+              <p style="font-size:12px;color:var(--muted);margin:0 0 10px">Versão em espanhol deste bloco. Vazio = o colaborador que lê em ES vê o português.</p>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
+                <div><label style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;display:block;margin-bottom:4px">Título (ES)</label>
+                  <input id="cartilha-titulo-es" type="text" placeholder="Ej: Deberes del Colaborador" style="width:100%;padding:10px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;box-sizing:border-box"></div>
+                <div><label style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;display:block;margin-bottom:4px">Subtítulo (ES)</label>
+                  <input id="cartilha-subtitulo-es" type="text" style="width:100%;padding:10px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;box-sizing:border-box"></div>
+              </div>
+              <label style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;display:block;margin-bottom:4px">Conteúdo (ES)</label>
+              <textarea id="cartilha-conteudo-es" rows="8" placeholder="Texto en español..." style="width:100%;padding:10px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;box-sizing:border-box;font-family:inherit;resize:vertical;margin-bottom:10px"></textarea>
+            </div>
+            <div id="cartilha-en" style="display:none">
+              <p style="font-size:12px;color:var(--muted);margin:0 0 10px">Versão em inglês deste bloco. Vazio = o colaborador que lê em EN vê o português.</p>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
+                <div><label style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;display:block;margin-bottom:4px">Título (EN)</label>
+                  <input id="cartilha-titulo-en" type="text" placeholder="E.g.: Employee Duties" style="width:100%;padding:10px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;box-sizing:border-box"></div>
+                <div><label style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;display:block;margin-bottom:4px">Subtítulo (EN)</label>
+                  <input id="cartilha-subtitulo-en" type="text" style="width:100%;padding:10px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;box-sizing:border-box"></div>
+              </div>
+              <label style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;display:block;margin-bottom:4px">Conteúdo (EN)</label>
+              <textarea id="cartilha-conteudo-en" rows="8" placeholder="Text in English..." style="width:100%;padding:10px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;box-sizing:border-box;font-family:inherit;resize:vertical;margin-bottom:10px"></textarea>
             </div>
             <div style="display:flex;gap:8px">
               <button onclick="salvarBlocoCartilha()" class="btn btn-primary" style="padding:8px 20px;font-size:13px">Salvar</button>
@@ -2348,85 +2378,37 @@ async function salvarNovaSenhaAdmin() {
   }
 }
 
-function renderConteudoCartilha(texto) {
-  // Markdown-lite: linha em branco = parágrafo · **texto** = negrito · "- " = item de lista
-  const linhas = texto.split('\n');
-  let html = '';
-  let listaAberta = false;
-  let paragrafoAtual = [];
-
-  function fecharParagrafo() {
-    if (paragrafoAtual.length) {
-      let p = paragrafoAtual.join('<br>').replace(/\*\*(.+?)\*\*/g, '<strong style="color:var(--blue)">$1</strong>');
-      html += '<p style="margin:0 0 12px 0">' + p + '</p>';
-      paragrafoAtual = [];
-    }
-  }
-  function fecharLista() {
-    if (listaAberta) { html += '</ul>'; listaAberta = false; }
-  }
-
-  linhas.forEach(function(linha) {
-    const t = linha.trim();
-    if (t === '') { fecharParagrafo(); fecharLista(); return; }
-    if (t.startsWith('- ')) {
-      fecharParagrafo();
-      if (!listaAberta) { html += '<ul style="margin:0 0 12px 0;padding-left:20px">'; listaAberta = true; }
-      html += '<li style="margin-bottom:4px">' + t.slice(2) + '</li>';
-      return;
-    }
-    fecharLista();
-    paragrafoAtual.push(t.replace(/\*\*(.+?)\*\*/g, '<strong style="color:var(--blue)">$1</strong>'));
-  });
-  fecharParagrafo();
-  fecharLista();
-  return html;
-}
-
-async function abrirCartilhaAdmin() {
-  const m = document.createElement("div");
-  m.id = "modal-cartilha-admin";
-  m.style.cssText = "position:fixed;inset:0;background:#fff;z-index:500;display:flex;flex-direction:column";
-  m.innerHTML = '<div style="background:var(--blue);border-bottom:3px solid var(--orange);padding:12px 16px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0">'
-    + '<div style="color:#fff;font-size:15px;font-weight:800">📖 Manual do Colaborador</div>'
-    + '<button onclick="document.getElementById(\'modal-cartilha-admin\').remove();abrirPainelContaAdmin()" style="background:none;border:none;color:#fff;font-size:22px;cursor:pointer;padding:0 4px">✕</button></div>'
-    + '<div id="cartilha-admin-body" style="flex:1;overflow-y:auto;padding:20px 16px;font-size:13px;color:var(--text);line-height:1.6"><div style="text-align:center;color:var(--muted);padding:40px 0">Carregando...</div></div>';
-  document.body.appendChild(m);
-
-  try {
-    const blocos = await apiFetch('/api/cartilha');
-    const body = document.getElementById('cartilha-admin-body');
-    if (!blocos.length) { body.innerHTML = '<div style="text-align:center;color:var(--muted);padding:40px 0">Nenhum conteúdo publicado ainda.</div>'; return; }
-    body.innerHTML = blocos.map(b =>
-      '<div style="margin-top:8px;margin-bottom:12px;border-bottom:2px solid var(--orange);padding-bottom:6px">'
-      + '<div style="font-size:16px;font-weight:800;color:var(--blue)">' + b.titulo + '</div>'
-      + (b.subtitulo ? '<div style="font-size:11px;color:var(--muted)">' + b.subtitulo + '</div>' : '')
-      + '</div>'
-      + renderConteudoCartilha(b.conteudo)
-    ).join('') + '<div style="text-align:center;padding:20px 0;font-size:11px;color:var(--muted)">Garra Terraplenagem e Caçambas</div>';
-  } catch(e) {
-    document.getElementById('cartilha-admin-body').innerHTML = '<div style="text-align:center;color:var(--muted);padding:40px 0">Erro ao carregar o manual.</div>';
-  }
+// (11/11/2026) Leitor único em /operacional/static/js/cartilha.js — com escolha de idioma PT/ES/EN.
+function abrirCartilhaAdmin() {
+  GarraCartilha.abrir({ token: Token.get() || '', aoFechar: abrirPainelContaAdmin,
+    cores: { azul: 'var(--blue)', laranja: 'var(--orange)', texto: 'var(--text)', mudo: 'var(--muted)' } });
 }
 
 /* ══════════════════════════════════════════════
    MANUAL DO COLABORADOR (CARTILHA) — CRUD
 ══════════════════════════════════════════════ */
+function cartilhaAba(i) {
+  ['pt','es','en'].forEach(k => {
+    const d = document.getElementById('cartilha-' + k); if (d) d.style.display = (k === i ? 'block' : 'none');
+    const b = document.querySelector('.cart-aba[data-i="' + k + '"]');
+    if (b) { b.style.borderBottomColor = (k === i ? 'var(--orange)' : 'transparent'); b.style.color = (k === i ? 'var(--blue)' : 'var(--muted)'); }
+  });
+}
 function abrirFormCartilha(bloco) {
   document.getElementById('cartilha-form').style.display = 'block';
+  const tr = (bloco && bloco.traducoes) || {};
+  const campo = (id, v) => { document.getElementById(id).value = v || ''; };
   if (bloco) {
     document.getElementById('cartilha-edit-id').value = bloco.id;
     document.getElementById('cartilha-ordem').value = bloco.ordem;
-    document.getElementById('cartilha-titulo').value = bloco.titulo;
-    document.getElementById('cartilha-subtitulo').value = bloco.subtitulo || '';
-    document.getElementById('cartilha-conteudo').value = bloco.conteudo;
+    campo('cartilha-titulo', bloco.titulo); campo('cartilha-subtitulo', bloco.subtitulo); campo('cartilha-conteudo', bloco.conteudo);
   } else {
     document.getElementById('cartilha-edit-id').value = '';
     document.getElementById('cartilha-ordem').value = 0;
-    document.getElementById('cartilha-titulo').value = '';
-    document.getElementById('cartilha-subtitulo').value = '';
-    document.getElementById('cartilha-conteudo').value = '';
+    campo('cartilha-titulo', ''); campo('cartilha-subtitulo', ''); campo('cartilha-conteudo', '');
   }
+  ['es','en'].forEach(k => { const t = tr[k] || {}; campo('cartilha-titulo-' + k, t.titulo); campo('cartilha-subtitulo-' + k, t.subtitulo); campo('cartilha-conteudo-' + k, t.conteudo); });
+  cartilhaAba('pt');
   document.getElementById('cartilha-titulo').focus();
   document.getElementById('cartilha-form').scrollIntoView({behavior:'smooth', block:'center'});
 }
@@ -2439,21 +2421,37 @@ async function salvarBlocoCartilha() {
   const titulo = document.getElementById('cartilha-titulo').value.trim();
   const subtitulo = document.getElementById('cartilha-subtitulo').value.trim();
   const conteudo = document.getElementById('cartilha-conteudo').value.trim();
-  if (!titulo || !conteudo) { toast('Preencha título e conteúdo','error'); return; }
+  if (!titulo || !conteudo) { cartilhaAba('pt'); toast('Preencha título e conteúdo em português','error'); return; }
+  // (11/11/2026) traduções: título+conteúdo juntos, ou os dois vazios (remove)
+  const trad = {};
+  for (const k of ['es','en']) {
+    const t = document.getElementById('cartilha-titulo-' + k).value.trim();
+    const st = document.getElementById('cartilha-subtitulo-' + k).value.trim();
+    const c = document.getElementById('cartilha-conteudo-' + k).value.trim();
+    if ((t && !c) || (!t && c)) { cartilhaAba(k); toast('Na aba ' + k.toUpperCase() + ' preencha título e conteúdo (ou deixe os dois vazios)','error'); return; }
+    trad[k] = { titulo: t, subtitulo: st, conteudo: c };
+  }
   try {
+    let blocoId = id;
     if (id) {
-      await apiFetch('/api/cartilha/'+id, {
-        method: 'PUT',
-        body: JSON.stringify({ ordem, titulo, subtitulo, conteudo })
-      });
-      toast('Bloco atualizado!','success');
+      await apiFetch('/api/cartilha/'+id, { method: 'PUT', body: JSON.stringify({ ordem, titulo, subtitulo, conteudo }) });
     } else {
-      await apiFetch('/api/cartilha', {
-        method: 'POST',
-        body: JSON.stringify({ ordem, titulo, subtitulo, conteudo })
-      });
-      toast('Bloco criado!','success');
+      await apiFetch('/api/cartilha', { method: 'POST', body: JSON.stringify({ ordem, titulo, subtitulo, conteudo }) });
+      // bloco novo: localiza o id pelo título+ordem (o POST não devolve id)
+      const lista = await apiFetch('/api/cartilha?completo=1');
+      const novo = lista.filter(b => b.titulo === titulo && b.ordem === ordem).sort((a, b) => b.id - a.id)[0];
+      blocoId = novo ? novo.id : '';
     }
+    if (blocoId) {
+      for (const k of ['es','en']) {
+        const antes = (_cartilhaBlocos.find(b => String(b.id) === String(blocoId)) || {}).traducoes || {};
+        const a = antes[k] || { titulo: '', subtitulo: '', conteudo: '' };
+        const n = trad[k];
+        if (a.titulo === n.titulo && (a.subtitulo || '') === n.subtitulo && a.conteudo === n.conteudo) continue;   // nada mudou
+        await apiFetch('/api/cartilha/' + blocoId + '/traducao/' + k, { method: 'PUT', body: JSON.stringify(n) });
+      }
+    }
+    toast(id ? 'Bloco atualizado!' : 'Bloco criado!','success');
     fecharFormCartilha();
     carregarCartilhaAdmin();
   } catch(e) { toast(e.message || 'Erro ao salvar','error'); }
@@ -2471,7 +2469,7 @@ async function carregarCartilhaAdmin() {
   const el = document.getElementById('cartilha-lista');
   if (!el) return;
   try {
-    _cartilhaBlocos = await apiFetch('/api/cartilha');
+    _cartilhaBlocos = await apiFetch('/api/cartilha?completo=1');   // (11/11/2026) com traduções
     if (!_cartilhaBlocos.length) {
       el.innerHTML = '<div style="color:var(--muted);font-size:13px;padding:20px;text-align:center">Nenhum bloco cadastrado.</div>';
       return;
@@ -2481,7 +2479,8 @@ async function carregarCartilhaAdmin() {
       return `<div style="display:flex;align-items:flex-start;gap:12px;padding:12px 0;border-bottom:1px solid var(--border)">
         <div style="width:28px;height:28px;border-radius:6px;background:var(--bg);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:var(--muted);flex-shrink:0">${b.ordem}</div>
         <div style="flex:1">
-          <div style="font-size:14px;font-weight:700;color:var(--blue)">${b.titulo}${b.subtitulo?' <span style="font-weight:400;color:var(--muted);font-size:12px">— '+b.subtitulo+'</span>':''}</div>
+          <div style="font-size:14px;font-weight:700;color:var(--blue)">${b.titulo}${b.subtitulo?' <span style="font-weight:400;color:var(--muted);font-size:12px">— '+b.subtitulo+'</span>':''}
+            <span style="font-weight:600;font-size:10px;margin-left:6px;letter-spacing:.3px">${['es','en'].map(k => (b.traducoes||{})[k] ? '<span style="color:#15803D" title="tradução em '+k.toUpperCase()+' ok">'+k.toUpperCase()+' ✓</span>' : '<span style="color:var(--muted)" title="sem tradução em '+k.toUpperCase()+'">'+k.toUpperCase()+' –</span>').join(' · ')}</span></div>
           <div style="font-size:12px;color:var(--muted);margin-top:4px;white-space:pre-line">${preview}</div>
         </div>
         <div style="display:flex;gap:6px;flex-shrink:0">
@@ -6495,6 +6494,7 @@ function cmBaixarExcel(url, nomeArquivo) {
 }
 </script>
 <!-- (05/11/2026) Tour guiado "▶ Como fazer" — motor + roteiros desta tela (usuarios, painel) -->
+<script src="/operacional/static/js/cartilha.js"></script>  <!-- (11/11/2026) manual PT/ES/EN -->
 <script src="/operacional/static/js/guia.js"></script>
 <script src="/operacional/static/js/guias-admin.js"></script>
 </body>

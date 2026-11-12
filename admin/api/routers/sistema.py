@@ -14,6 +14,7 @@ from core.config import DEBUG_KEY, _debug_autorizado, DATABASE_URL, JWT_SECRET
 from core.db import get_db, ajard_query
 from core.auth import verificar_token, verificar_admin, verificar_gestor
 from core.models import MuralCreate, CartilhaBloco
+from core.cartilha_i18n import IDIOMAS, IDIOMAS_LABEL   # (11/11/2026) manual em PT/ES/EN
 
 router = APIRouter()
 
@@ -470,21 +471,88 @@ async def mural_lembretes_rodar(payload=Depends(verificar_mural_publicar)):
     return {"ok": True, "enviados": await mural_lembretes_pendentes()}
 
 
+def _idioma_ok(idioma):
+    idioma = (idioma or "pt").lower()[:2]
+    return idioma if idioma in IDIOMAS else "pt"
+
+
 @router.get("/api/cartilha")
-async def listar_cartilha(payload=Depends(verificar_token)):
-    """Lista blocos ativos do manual, em ordem — qualquer usuário logado pode ler."""
+async def listar_cartilha(idioma: str = "pt", completo: int = 0, payload=Depends(verificar_token)):
+    """Lista blocos ativos do manual, em ordem — qualquer usuário logado pode ler.
+    (11/11/2026) ?idioma=es|en devolve a tradução de cada bloco (cai no português
+    onde ainda não há; `traduzido` diz qual foi). ?completo=1 (admin) devolve também
+    `traducoes: {es: {...}, en: {...}}` para o editor."""
+    idioma = _idioma_ok(idioma)
     rows = await ajard_query(
-        "SELECT id, ordem, titulo, subtitulo, conteudo, atualizado_em "
-        "FROM public.cartilha_blocos WHERE ativo=true ORDER BY ordem ASC, id ASC",
-        fetch="all"
+        "SELECT b.id, b.ordem, b.titulo, b.subtitulo, b.conteudo, b.atualizado_em, "
+        "       t.titulo AS t_titulo, t.subtitulo AS t_subtitulo, t.conteudo AS t_conteudo "
+        "FROM public.cartilha_blocos b "
+        "LEFT JOIN public.cartilha_traducoes t ON t.bloco_id=b.id AND t.idioma=%s "
+        "WHERE b.ativo=true ORDER BY b.ordem ASC, b.id ASC",
+        (idioma,), fetch="all"
     ) or []
-    return [
-        {
-            "id": r["id"], "ordem": r["ordem"], "titulo": r["titulo"],
-            "subtitulo": r.get("subtitulo") or "", "conteudo": r["conteudo"],
-        }
-        for r in rows
-    ]
+    out = []
+    for r in rows:
+        trad = idioma != "pt" and bool(r.get("t_conteudo"))
+        out.append({
+            "id": r["id"], "ordem": r["ordem"],
+            "titulo": r["t_titulo"] if trad else r["titulo"],
+            "subtitulo": (r.get("t_subtitulo") if trad else r.get("subtitulo")) or "",
+            "conteudo": r["t_conteudo"] if trad else r["conteudo"],
+            "idioma": idioma if trad or idioma == "pt" else "pt",
+            "traduzido": trad or idioma == "pt",
+        })
+    if completo:
+        trs = await ajard_query(
+            "SELECT bloco_id, idioma, titulo, subtitulo, conteudo FROM public.cartilha_traducoes", fetch="all") or []
+        mapa = {}
+        for t in trs:
+            mapa.setdefault(t["bloco_id"], {})[t["idioma"]] = {
+                "titulo": t["titulo"], "subtitulo": t.get("subtitulo") or "", "conteudo": t["conteudo"]}
+        for b in out:
+            b["traducoes"] = mapa.get(b["id"], {})
+    return out
+
+
+@router.get("/api/cartilha/idioma")
+async def idioma_manual_ler(payload=Depends(verificar_token)):
+    """(11/11/2026) Idioma preferido do colaborador para ler o manual (gravado no cadastro)."""
+    u = await ajard_query("SELECT idioma_manual FROM public.usuarios_garra WHERE login=%s",
+                          (payload.get("sub", ""),), fetch="one")
+    return {"idioma": _idioma_ok((u or {}).get("idioma_manual")), "idiomas": IDIOMAS_LABEL}
+
+
+@router.put("/api/cartilha/idioma")
+async def idioma_manual_gravar(dados: dict = Body(...), payload=Depends(verificar_token)):
+    """(11/11/2026) Colaborador escolhe o idioma no app — fica no cadastro, segue em qualquer aparelho."""
+    idioma = _idioma_ok(dados.get("idioma"))
+    await ajard_query("UPDATE public.usuarios_garra SET idioma_manual=%s WHERE login=%s",
+                      (idioma, payload.get("sub", "")), fetch="none")
+    return {"ok": True, "idioma": idioma}
+
+
+@router.put("/api/cartilha/{bloco_id}/traducao/{idioma}")
+async def gravar_traducao_cartilha(bloco_id: int, idioma: str, dados: dict = Body(...), payload=Depends(verificar_admin)):
+    """(11/11/2026) Admin grava/atualiza a versão ES/EN de um bloco. Conteúdo vazio apaga a tradução
+    (o bloco volta a aparecer em português para quem lê naquele idioma)."""
+    idioma = _idioma_ok(idioma)
+    if idioma == "pt":
+        raise HTTPException(400, "O português é o bloco principal — edite o bloco em si")
+    titulo = (dados.get("titulo") or "").strip()
+    subtitulo = (dados.get("subtitulo") or "").strip()
+    conteudo = (dados.get("conteudo") or "").strip()
+    if not titulo and not conteudo:
+        await ajard_query("DELETE FROM public.cartilha_traducoes WHERE bloco_id=%s AND idioma=%s",
+                          (bloco_id, idioma), fetch="none")
+        return {"ok": True, "removida": True}
+    if not titulo or not conteudo:
+        raise HTTPException(400, "Preencha título e conteúdo da tradução (ou deixe os dois vazios para remover)")
+    await ajard_query(
+        "INSERT INTO public.cartilha_traducoes (bloco_id, idioma, titulo, subtitulo, conteudo) VALUES (%s,%s,%s,%s,%s) "
+        "ON CONFLICT (bloco_id, idioma) DO UPDATE SET titulo=EXCLUDED.titulo, subtitulo=EXCLUDED.subtitulo, "
+        "conteudo=EXCLUDED.conteudo, atualizado_em=NOW()",
+        (bloco_id, idioma, titulo, subtitulo, conteudo), fetch="none")
+    return {"ok": True}
 
 @router.post("/api/cartilha")
 async def criar_bloco_cartilha(dados: CartilhaBloco, payload=Depends(verificar_admin)):
@@ -507,6 +575,7 @@ async def editar_bloco_cartilha(bloco_id: int, dados: CartilhaBloco, payload=Dep
 @router.delete("/api/cartilha/{bloco_id}")
 async def excluir_bloco_cartilha(bloco_id: int, payload=Depends(verificar_admin)):
     """Admin remove um bloco definitivamente."""
+    await ajard_query("DELETE FROM public.cartilha_traducoes WHERE bloco_id=%s", (bloco_id,), fetch="none")   # (11/11/2026)
     await ajard_query("DELETE FROM public.cartilha_blocos WHERE id=%s", (bloco_id,), fetch="none")
     return {"ok": True}
 

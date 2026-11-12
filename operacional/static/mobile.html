@@ -2693,59 +2693,10 @@ async function salvarNovaSenha() {
 }
 
 // ── MANUAL DO COLABORADOR (mobile) ────────────────────────
-function renderConteudoCartilhaMob(texto) {
-  const linhas = texto.split('\n');
-  let html = '', listaAberta = false, paragrafoAtual = [];
-  function fecharParagrafo() {
-    if (paragrafoAtual.length) {
-      let p = paragrafoAtual.join('<br>').replace(/\*\*(.+?)\*\*/g, '<strong style="color:var(--blue)">$1</strong>');
-      html += '<p style="margin:0 0 12px 0">' + p + '</p>';
-      paragrafoAtual = [];
-    }
-  }
-  function fecharLista() { if (listaAberta) { html += '</ul>'; listaAberta = false; } }
-  linhas.forEach(function(linha) {
-    const t = linha.trim();
-    if (t === '') { fecharParagrafo(); fecharLista(); return; }
-    if (t.startsWith('- ')) {
-      fecharParagrafo();
-      if (!listaAberta) { html += '<ul style="margin:0 0 12px 0;padding-left:20px">'; listaAberta = true; }
-      html += '<li style="margin-bottom:4px">' + t.slice(2) + '</li>';
-      return;
-    }
-    fecharLista();
-    paragrafoAtual.push(t.replace(/\*\*(.+?)\*\*/g, '<strong style="color:var(--blue)">$1</strong>'));
-  });
-  fecharParagrafo(); fecharLista();
-  return html;
-}
-
-async function abrirCartilhaMobile() {
-  const m = document.createElement("div");
-  m.id = "modal-cartilha-m";
-  m.style.cssText = "position:fixed;inset:0;background:#fff;z-index:500;display:flex;flex-direction:column";
-  m.innerHTML = '<div style="background:var(--blue);border-bottom:3px solid var(--orange);padding:12px 16px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0">'
-    + '<div style="color:#fff;font-size:15px;font-weight:800">📖 Manual do Colaborador</div>'
-    + '<button onclick="document.getElementById(\'modal-cartilha-m\').remove();abrirPainelConta()" style="background:none;border:none;color:#fff;font-size:22px;cursor:pointer;padding:0 4px">✕</button></div>'
-    + '<div id="cartilha-mob-body" style="flex:1;overflow-y:auto;padding:20px 16px;font-size:13px;color:var(--text);line-height:1.6"><div style="text-align:center;color:var(--muted);padding:40px 0">Carregando...</div></div>';
-  document.body.appendChild(m);
-
-  const token = localStorage.getItem('garra_token') || '';
-  try {
-    const r = await fetch('/api/cartilha', {headers:{'Authorization':'Bearer '+token}});
-    const blocos = await r.json();
-    const body = document.getElementById('cartilha-mob-body');
-    if (!blocos.length) { body.innerHTML = '<div style="text-align:center;color:var(--muted);padding:40px 0">Nenhum conteúdo publicado ainda.</div>'; return; }
-    body.innerHTML = blocos.map(b =>
-      '<div style="margin-top:8px;margin-bottom:12px;border-bottom:2px solid var(--orange);padding-bottom:6px">'
-      + '<div style="font-size:16px;font-weight:800;color:var(--blue)">' + b.titulo + '</div>'
-      + (b.subtitulo ? '<div style="font-size:11px;color:var(--muted)">' + b.subtitulo + '</div>' : '')
-      + '</div>'
-      + renderConteudoCartilhaMob(b.conteudo)
-    ).join('') + '<div style="text-align:center;padding:20px 0;font-size:11px;color:var(--muted)">Garra Terraplenagem e Caçambas</div>';
-  } catch(e) {
-    document.getElementById('cartilha-mob-body').innerHTML = '<div style="text-align:center;color:var(--muted);padding:40px 0">Erro ao carregar o manual.</div>';
-  }
+// (11/11/2026) Leitor único em /operacional/static/js/cartilha.js — com escolha de idioma PT/ES/EN.
+function abrirCartilhaMobile() {
+  GarraCartilha.abrir({ token: localStorage.getItem('garra_token') || '', aoFechar: abrirPainelConta,
+    cores: { azul: 'var(--blue)', laranja: 'var(--orange)', texto: 'var(--text)', mudo: 'var(--muted)' } });
 }
 
 async function verPartes(osId, osNum, editavel = true) {
@@ -3544,6 +3495,7 @@ async function entrarComDigital(automatico) {
 <!-- Offline UI e outros scripts -->
 <script src="/operacional/static/js/offline-ui.js"></script>
 <!-- (05/11/2026) Tour guiado "▶ Como fazer" (GarraGuia): roteiros Parte diária e Conhecendo o app -->
+<script src="/operacional/static/js/cartilha.js"></script>
 <script src="/operacional/static/js/guia.js"></script>
 <script src="/operacional/static/js/guias-app.js"></script>
 

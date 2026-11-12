@@ -5944,6 +5944,7 @@ async function montarNavAlm(){
   if (_almLente === 'armazem'){
     // Operações no TOPO — sempre à vista, acompanhando a lente
     html += '<div class="pn-grp">🔧 Operações</div>'
+      + '<div class="pn-item" onclick="comprarSelecionadas()" title="Gera OC em rascunho no Compras para as peças selecionadas na lista (Ctrl/Shift para várias)">🛒 Comprar selecionadas</div>'
       + '<div class="pn-item" onclick="entradaAbrir()">📥 Entrada por documento</div>'
       + '<div class="pn-item" onclick="almMovAbrir(\'saida\')">📤 Saída avulsa</div>'
       + '<div class="pn-item" onclick="almMovAbrir(\'transferencia\')">⇄ Transferência</div>'
@@ -6515,10 +6516,57 @@ async function _setorManutencao(){
   try {
     const st = await _fxCompras('/compras/api/setores');
     const lst = Array.isArray(st) ? st : (st.setores||[]);
-    const pref = lst.find(x => /MANUT|OFIC/i.test((x.codigo||'')+' '+(x.nome||''))) || lst[0];
+    // (11/11/2026) preferir o nome exato "Manutenção" (sem acento/caixa); antes o 1º "MANUT…" em ordem
+    // alfabética vencia e a OC caía em "Manutencao estrutural"
+    const norm = t => (t||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim();
+    const pref = lst.find(x => norm(x.nome) === 'manutencao' || norm(x.codigo) === 'manutencao' || norm(x.codigo) === 'manut')
+      || lst.find(x => /^manut/.test(norm(x.nome)) && !/estrutur/.test(norm(x.nome)))
+      || lst.find(x => /MANUT|OFIC/i.test((x.codigo||'')+' '+(x.nome||''))) || lst[0];
     _setorCompras = pref ? pref.codigo : null;
   } catch(e){ _setorCompras = null; }
   return _setorCompras;
+}
+// (11/11/2026) Janela: peças sem referência → escolher fornecedor (ou "a definir"). Resolve com id | '' | false
+function _escolherFornecedorOC(itens){
+  return new Promise(async resolve => {
+    let forn = [];
+    try { const r = _mntFornList || await mntFetch('/manutencao/api/fornecedores'); forn = Array.isArray(r) ? r : (r.itens||[]); _mntFornList = forn; } catch(e){}
+    const old = document.getElementById('oc-forn-jan'); if (old) old.remove();
+    const j = document.createElement('div'); j.id = 'oc-forn-jan';
+    j.style.cssText = 'position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:100000;display:flex;align-items:center;justify-content:center';
+    j.innerHTML = '<div style="background:#fff;border-radius:10px;padding:16px 18px;width:520px;max-width:95vw;box-shadow:0 10px 30px rgba(0,0,0,.25)">'
+      + '<div style="font-weight:800;color:#1A2A5E;font-size:14px;margin-bottom:6px">Fornecedor para '+itens.length+' peça(s) sem referência</div>'
+      + '<div class="muted" style="font-size:11px;margin-bottom:8px">Estas peças ainda não têm fornecedor de referência. Escolha um agora (vira a referência quando a OC for recebida) ou deixe "a definir" para cotar no Compras.</div>'
+      + '<div style="max-height:140px;overflow:auto;font-size:11px;border:1px solid #E2E8F0;border-radius:6px;padding:6px;margin-bottom:10px">'+itens.map(i=>'• '+_esc(i.descricao)+' — '+i.quantidade+' '+_esc(i.unidade||'')).join('<br>')+'</div>'
+      + '<div class="mfield">Fornecedor<select id="oc-forn-sel" style="width:100%"><option value="">— a definir (cotar no Compras) —</option>'
+      + forn.map(f=>'<option value="'+_esc(f.id)+'">'+_esc(f.nome)+(f.cnpj?' · '+_esc(f.cnpj):'')+'</option>').join('')+'</select></div>'
+      + '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px"><button class="btn" id="oc-forn-cancel">Cancelar</button><button class="btn p" id="oc-forn-ok">Continuar</button></div></div>';
+    document.body.appendChild(j);
+    j.querySelector('#oc-forn-cancel').onclick = () => { j.remove(); resolve(false); };
+    j.querySelector('#oc-forn-ok').onclick = () => { const v = j.querySelector('#oc-forn-sel').value; j.remove(); resolve(v || ''); };
+  });
+}
+// (11/11/2026) 🛒 Comprar — qualquer peça, qualquer hora (ficha ou seleção no Catálogo/Estoque)
+async function comprarPecas(codigos){
+  codigos = (codigos||[]).filter(Boolean);
+  if (!codigos.length){ mostrarToast('Selecione uma ou mais peças (Ctrl/Shift para várias)','warn'); return; }
+  const itens = [];
+  for (const cod of codigos){
+    const q = prompt('Quantidade a comprar de '+cod+':', '1'); if (q === null) return;
+    const n = parseFloat(String(q).replace(',','.')); if (!(n > 0)) { mostrarToast('Quantidade inválida para '+cod,'warn'); return; }
+    itens.push({ codigo: cod, quantidade: n });
+  }
+  let r; try { r = await mntFetch('/manutencao/api/pecas/comprar', {method:'POST', body: JSON.stringify({itens})}); } catch(e){ mostrarToast('❌ '+e.message,'warn'); return; }
+  const grupos = r.grupos || {}; const nF = Object.keys(grupos).length;
+  if (!nF){ mostrarToast('Nenhuma peça válida','warn'); return; }
+  const res = Object.keys(grupos).map(f => (f ? (r.fornecedores[f]||'fornecedor') : 'a definir')+': '+grupos[f].length+' item(ns)').join('\n');
+  if (!confirm('Criar OC em rascunho no Compras (setor Manutenção):\n\n'+res+'\n\nContinuar?')) return;
+  const ok = await _criarOCs(grupos, null, 'direta');
+  if (ok.length && typeof carregarPecasReais === 'function') carregarPecasReais();
+}
+function comprarSelecionadas(){
+  const cods = [...document.querySelectorAll('#alm-tbody tr.sel[data-cod]')].map(t => t.dataset.cod);
+  comprarPecas(cods);
 }
 async function _criarOCs(grupos, extra, origem){
   // grupos: {fornecedor_id|'' : [{peca_id, descricao, quantidade, unidade, valor_unit}]}
@@ -6526,10 +6574,17 @@ async function _criarOCs(grupos, extra, origem){
   if (!setor){ mostrarToast('Compras sem setor cadastrado — cadastre em Compras ▸ Parametrização','warn'); return []; }
   const alms = await mntFetch('/manutencao/api/almoxarifados').catch(()=>[]);
   const almDef = ((Array.isArray(alms)?alms:(alms.almoxarifados||[]))[0]||{}).codigo || null;
+  // (11/11/2026) peças sem fornecedor de referência: oferece escolher um agora (ou deixar "a definir")
+  if (grupos[''] && grupos[''].length) {
+    const escolhido = await _escolherFornecedorOC(grupos['']);
+    if (escolhido === false) return [];                       // cancelou
+    if (escolhido) { (grupos[escolhido] = grupos[escolhido] || []).push(...grupos['']); delete grupos['']; }
+  }
   const criadas = [], erros = [];
+  const OBS = { estoque_minimo: 'Gerada automaticamente pelo estoque mínimo (Manutenção ▸ Materiais)', ot: 'Gerada pela OT (peças previstas na FMP não cobertas pelo estoque)', direta: 'Gerada por 🛒 Comprar (Manutenção ▸ Materiais)' };
   for (const forn of Object.keys(grupos)){
     const body = Object.assign({ setor_codigo: setor, fornecedor_id: forn || null, itens: grupos[forn], origem, almoxarifado_codigo: almDef,
-      observacao: origem === 'estoque_minimo' ? 'Gerada automaticamente pelo estoque mínimo (Manutenção ▸ Materiais)' : 'Gerada pela OT (peças previstas na FMP não cobertas pelo estoque)' }, extra||{});
+      observacao: OBS[origem] || OBS.ot }, extra||{});
     try { const r = await _fxCompras('/compras/api/ocs', {method:'POST', body: JSON.stringify(body)}); criadas.push(r.numero || r.id); }
     catch(e){ erros.push(e.message); }
   }
@@ -6556,8 +6611,10 @@ async function ocDaOT(){
   const semCad = falt.filter(x => x.sem_cadastro).map(x => x.codigo);
   const lista = falt.map(x => '• '+x.codigo+' — falta '+x.faltante+' '+x.unidade+(x.ocs&&x.ocs.length?' (já em '+x.ocs.join(', ')+')':'')).join('\n');
   if (!confirm('Peças previstas na FMP não cobertas:\n\n'+lista+(semCad.length?'\n\n⚠ Sem cadastro (entram só por descrição): '+semCad.join(', '):'')+'\n\nCriar OC em rascunho no Compras amarrada à '+_esc(o.numero)+'?')) return;
-  const itens = falt.map(x => ({ peca_id: x.peca_id, descricao: x.codigo+' — '+(x.descricao||''), quantidade: x.faltante, unidade: x.unidade||'UN', valor_unit: x.preco||0 }));
-  await _criarOCs({'': itens}, { ot_id: o.id, equipamento_id: f.equipamento_id, prioridade: (o.prioridade==='urgente'||o.prioridade==='alta') ? 'urgente' : 'normal' }, 'ot');
+  // (11/11/2026) uma OC por fornecedor de referência (como no mínimo); sem referência → grupo '' (escolhe na janela)
+  const grupos = {};
+  falt.forEach(x => { (grupos[x.ref_fornecedor_id||''] = grupos[x.ref_fornecedor_id||''] || []).push({ peca_id: x.peca_id, descricao: x.codigo+' — '+(x.descricao||''), quantidade: x.faltante, unidade: x.unidade||'UN', valor_unit: x.preco||0 }); });
+  await _criarOCs(grupos, { ot_id: o.id, equipamento_id: f.equipamento_id, prioridade: (o.prioridade==='urgente'||o.prioridade==='alta') ? 'urgente' : 'normal' }, 'ot');
 }
 async function carregarArmazem(q){
   const tb = document.getElementById('alm-tbody'); if (!tb) return;
@@ -6719,6 +6776,22 @@ function artUnidOpts(sel){
   if (!lista.some(u => u.codigo === sel)) lista.push({ codigo: sel, nome: '(não cadastrada)' });   // ficha antiga nunca perde a unidade
   return lista.map(u => '<option value="'+_esc(u.codigo)+'"'+(u.codigo===sel?' selected':'')+'>'+_esc(u.codigo)+(u.nome&&u.nome!==u.codigo?' — '+_esc(u.nome):'')+'</option>').join('');
 }
+// (11/11/2026) referência de fornecedor na ficha
+async function artRefCarregar(cod){
+  const sel = document.getElementById('art-ref-forn'); if (!sel) return;
+  try {
+    const r = _mntFornList || await mntFetch('/manutencao/api/fornecedores'); const forn = Array.isArray(r) ? r : (r.itens||[]); _mntFornList = forn;
+    const ref = await mntFetch('/manutencao/api/pecas/'+encodeURIComponent(cod)+'/referencia');
+    sel.innerHTML = '<option value="">— nenhum (OC sai "a definir") —</option>' + forn.map(f=>'<option value="'+_esc(f.id)+'"'+(ref.fornecedor_id===f.id?' selected':'')+'>'+_esc(f.nome)+'</option>').join('');
+    const pr = document.getElementById('art-ref-preco'); if (pr && ref.preco != null) pr.value = ref.preco;
+  } catch(e){}
+}
+async function artRefSalvar(){
+  const cod = _artEdit; if (!cod) return;
+  const fid = document.getElementById('art-ref-forn').value, preco = document.getElementById('art-ref-preco').value;
+  try { await mntFetch('/manutencao/api/pecas/'+encodeURIComponent(cod)+'/referencia', {method:'PUT', body: JSON.stringify({fornecedor_id: fid, preco})}); mostrarToast(fid ? '✅ Referência gravada' : 'Referência: nenhuma (OC sai "a definir")','ok'); }
+  catch(e){ mostrarToast('❌ '+e.message,'warn'); }
+}
 async function artUnidRecarregar(){ const s = document.getElementById('art-un'); if (!s) return; const v = s.value; await artUnidades(true); s.innerHTML = artUnidOpts(v); }
 function artUnidParam(){
   // abre Parametrizar › Unidades de medida; ao voltar à ficha, a lista é relida (botão ↻ ou ao reabrir)
@@ -6831,13 +6904,21 @@ async function artJanela(codigo, opts){
           + (_almList||[]).map(a=>'<option value="'+_esc(a.codigo)+'"'+(a.codigo===_almFiltro?' selected':'')+'>'+_esc(a.codigo)+' — '+_esc(a.nome||'')+'</option>').join('')
           + '</select></div><div class="mfield" style="width:160px">Endereço (P-N)<input id="art-loc" placeholder="P-02-N-03" style="text-transform:uppercase"></div>'
           + '<div class="mfield" style="width:90px">Mínimo<input id="art-loc-min" type="number" step="1" placeholder="—"></div></div>')
-      + '<div id="art-arm-lista" class="muted" style="font-size:11px">'+(_artEdit?'Carregando existências…':'Existências nascem nas Entradas — após criar, dê entrada por documento no Almoxarifado.')+'</div></div>'
+      + '<div id="art-arm-lista" class="muted" style="font-size:11px">'+(_artEdit?'Carregando existências…':'Existências nascem nas Entradas — após criar, dê entrada por documento no Almoxarifado.')+'</div>'
+      // (11/11/2026) fornecedor de referência (vale para OC pelo mínimo, pela OT e 🛒 Comprar); nasce sozinho ao receber OC
+      + (_artEdit ? '<div class="dsec" style="margin-top:10px">Compras <span class="muted" style="font-weight:400">— fornecedor de referência: usado ao gerar OC (mínimo, OT, 🛒 Comprar). Atualiza sozinho a cada recebimento de OC.</span></div>'
+          + '<div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap"><div class="mfield" style="width:280px">Fornecedor de referência<select id="art-ref-forn" style="width:100%"><option value="">— nenhum (OC sai "a definir") —</option></select></div>'
+          + '<div class="mfield" style="width:110px">Preço ref. (R$)<input id="art-ref-preco" type="number" step="0.01" placeholder="—"></div>'
+          + '<button class="btn" type="button" onclick="artRefSalvar()" title="Grava a referência desta peça">💾 Referência</button>'
+          + '<button class="btn p" type="button" onclick="comprarPecas([_artEdit])" title="Gera OC em rascunho no Compras para esta peça">🛒 Comprar</button></div>' : '')
+      + '</div>'
     + '<div id="art-p-obs" style="display:none;padding:8px 2px"><textarea id="art-obs" rows="7" style="width:100%" placeholder="observações livres…">'+_esc(p.observacoes||'')+'</textarea></div>'
     + '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">'
     + '<button class="btn" onclick="document.getElementById(\'art-jan\').style.display=\'none\'">Cancelar</button>'
     + '<button class="btn p" onclick="artOK()">💾 '+(_artEdit?'Salvar alterações':'Criar item')+'</button></div></div>';
   b.style.display = 'flex';
   artSubs(fam);
+  if (_artEdit) artRefCarregar(_artEdit);   // (11/11/2026)
   artIdSync();
   if (copiaDe || (!_artEdit && fam)) artProximo();   // cópia ou pasta da árvore: família já escolhida → propõe o próximo código livre
   if (!_artEdit && classeArv && !fam) artClasseMudou();   // (03/11/2026) só a classe marcada: lista só as famílias dela

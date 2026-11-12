@@ -125,6 +125,11 @@ window.GUIAS_MANUTENCAO = {
         texto: 'Informe o <b>almoxarifado</b>, o <b>endereço</b> (P-N) e o <b>mínimo</b>: o sistema cria a linha de estoque zerada já endereçada — a entrada só precisa somar. Peça abaixo do mínimo aparece no alerta ⚠ Abaixo do mínimo.' },
       { alvo: () => [...document.querySelectorAll('#art-jan button')].find(b => /Criar item|Salvar/.test(b.textContent)), antes: () => artAba('id'), titulo: '💾 Criar item',
         texto: 'Criar item grava a peça no catálogo. Peça <b>duplicada</b>? Não apague: cadastre como <b>substituto</b> da correta e desative a repetida — o histórico de OTs continua inteiro.' },
+      // (11/11/2026) fornecedor de referência + 🛒 Comprar na ficha (só aparece em peça já cadastrada)
+      { alvo: () => document.getElementById('art-ref-forn') || document.getElementById('art-loc'), posicao: 'esquerda',
+        antes: async () => { try { let cod = null; const r = await mntFetch('/manutencao/api/pecas?limit=1').catch(() => null); const l = r ? (Array.isArray(r) ? r : (r.itens || r.pecas || [])) : []; if (l[0]) cod = l[0].codigo; if (!cod) { const t = document.querySelector('#alm-tbody tr[data-cod]'); cod = t && t.dataset.cod; } if (cod) { await artJanela(cod); await new Promise(r => setTimeout(r, 600)); artAba('arm'); await new Promise(r => setTimeout(r, 300)); } } catch (e) { } },
+        titulo: 'Fornecedor de referência e 🛒 Comprar',
+        texto: 'Na ficha de uma peça já cadastrada, aba Estoques › bloco <b>Compras</b>: o <b>fornecedor de referência</b> e o preço. É ele que o sistema usa ao gerar OC (pelo mínimo, pela OT ou pelo 🛒 Comprar) — sem referência a OC sai "a definir". <b>Nasce sozinho</b>: ao conferir o recebimento de uma OC, o fornecedor e o preço pagos viram a referência. O botão <b>🛒 Comprar</b> aqui gera uma OC em rascunho no Compras só desta peça.' },
       { alvo: '#ent-tipo', posicao: 'esquerda',
         antes: async () => { const j = document.getElementById('art-jan'); if (j) j.style.display = 'none'; almLente('armazem'); await entradaAbrir(); await new Promise(r => setTimeout(r, 600)); },
         titulo: '📥 Entrada por documento',
@@ -176,13 +181,20 @@ window.GUIAS_MANUTENCAO = {
         titulo: '🧾 Movimentos (extrato)',
         texto: 'O extrato mostra cada entrada, saída, transferência e ajuste, com documento, OT e quem fez. Filtre por período, peça, tipo ou documento; <b>▸</b> abre os itens; <b>↩ Estornar</b> desfaz a entrada inteira com motivo (fica o chip "estornada").' },
       { alvo: () => [...document.querySelectorAll('#mod-alm .pn-item')].find(e => /Abaixo do m/.test(e.textContent)) || document.querySelector('#mod-alm .pn-item'), titulo: '⚠ Abaixo do mínimo',
-        texto: 'Lista as peças com disponível abaixo do mínimo cadastrado. Olhe <b>toda semana</b>: é daqui que nasce a compra antes de faltar na oficina.' },
-      { alvo: () => [...document.querySelectorAll('#mwbar-alm button')].find(b => /Ferramentas/.test(b.textContent)), titulo: '📋 Inventário',
+        texto: 'Lista as peças com disponível abaixo do mínimo cadastrado. Olhe <b>toda semana</b>: é daqui que nasce a compra antes de faltar na oficina. Marque os itens e <b>🛒 Gerar OC</b>: sai uma OC por <b>fornecedor de referência</b>, no setor <b>Manutenção</b>, em rascunho no Compras.' },
+      // (11/11/2026) 🛒 Comprar selecionadas + janela do fornecedor
+      { alvo: () => [...document.querySelectorAll('#mod-alm .pn-item')].find(e => /Comprar selecionadas/.test(e.textContent)) || document.querySelector('#mod-alm .pn-item'), titulo: '🛒 Comprar selecionadas',
+        texto: 'Precisa comprar <b>qualquer peça, a qualquer hora</b> (sem esperar o mínimo nem uma OT)? Selecione as linhas do Estoque ou do Catálogo (Ctrl/Shift para várias) e clique em <b>🛒 Comprar selecionadas</b>: pergunta a quantidade de cada uma e cria a OC em rascunho no Compras. Na ficha da peça existe o mesmo botão, só para ela.' },
+      { alvo: () => document.querySelector('#oc-forn-jan > div'), posicao: 'esquerda',
+        antes: async () => { try { if (typeof _escolherFornecedorOC === 'function') { _escolherFornecedorOC([{ descricao: 'FIL.001 — Filtro de óleo hidráulico (exemplo)', quantidade: 2, unidade: 'UN' }]); await new Promise(r => setTimeout(r, 600)); } } catch (e) { } },
+        titulo: 'Peça sem fornecedor de referência',
+        texto: 'Se alguma peça ainda não tem <b>fornecedor de referência</b>, abre uma janela: escolha o fornecedor agora (vira a referência quando a OC for recebida) ou deixe <b>"a definir"</b> para o Compras cotar. A referência também nasce sozinha na <b>conferência do recebimento</b> de qualquer OC — da segunda compra em diante a OC já sai com fornecedor e preço.' },
+      { alvo: () => [...document.querySelectorAll('#mwbar-alm button')].find(b => /Ferramentas/.test(b.textContent)), antes: () => { const j = document.getElementById('oc-forn-jan'); if (j) j.remove(); }, titulo: '📋 Inventário',
         texto: 'Em <b>Ferramentas › Inventário</b>: escolha o almoxarifado, conte e digite só nas linhas contadas; a diferença vira <b>Ajuste de saldo</b> com trilha (quem, quando, motivo). Classe A todo mês, geral a cada trimestre.' },
       { alvo: () => [...document.querySelectorAll('#mwbar-alm button')].find(b => /Etiquetas/.test(b.textContent)), titulo: '🏷 Etiquetas',
         texto: 'Etiquetas com QR por item ou por entrada. Ao imprimir: <b>Escala 100%</b> e <b>Margens Padrão</b>, sempre iguais; se sair deslocado no molde, use o ajuste ↕↔ em mm na barra da página (fica gravado por computador).' },
       { titulo: 'Pronto! ✅',
-        texto: 'Resumo: peça sai <b>pela OT</b> (Saída Armazém ou Aplicação Directa, sempre com documento) · extrato para auditar e estornar · mínimo toda semana · inventário por contagem. Detalhes no <b>POP-MAT-01</b>.' },
+        texto: 'Resumo: peça sai <b>pela OT</b> (Saída Armazém ou Aplicação Directa, sempre com documento) · extrato para auditar e estornar · mínimo toda semana · <b>🛒 Comprar</b> para compra avulsa · inventário por contagem. Detalhes no <b>POP-MAT-01</b>.' },
     ],
   },
 
@@ -279,11 +291,11 @@ window.GUIAS_MANUTENCAO = {
       { alvo: () => { const b = [...document.querySelectorAll('#ot-aba-corpo button')].find(x => /Realizar/.test(x.textContent)); if (b) return b; const d = document.querySelectorAll('#ot-aba-corpo .dsec')[1]; return (d && d.nextElementSibling) || d || document.querySelector('#ot-aba-corpo'); }, titulo: '✔ Realizar',
         texto: 'Serviço feito e nota em mãos: <b>✔ Realizar</b> copia para Realizado com o <b>documento + valor</b> e dá a OC como recebida. É esse valor que entra no custo da OT (MO + Peças + Outros). Emitir/Encerrar com OC em aberto <b>avisam, não bloqueiam</b>.' },
       { alvo: '#mt-pc', antes: async () => { await otAba('pc'); await new Promise(r => setTimeout(r, 500)); }, titulo: 'Peças: previsão e faltantes',
-        texto: 'Em <b>Peças › Planejado</b>, ⊕ Inserir peça faz a previsão: compromete o estoque e calcula os <b>faltantes</b> (o que estoque + OCs abertas não cobrem). Faltou? <b>🛒 Gerar OC</b> aqui também, já ligada à OT.' },
+        texto: 'Em <b>Peças › Planejado</b>, ⊕ Inserir peça faz a previsão: compromete o estoque e calcula os <b>faltantes</b> (o que estoque + OCs abertas não cobrem). Faltou? <b>🛒 Gerar OC</b> aqui também, já ligada à OT: uma OC por <b>fornecedor de referência</b> da peça (cadastrado na ficha › Estoques › Compras), setor <b>Manutenção</b>. Peça sem referência? A janela pergunta o fornecedor ou deixa "a definir" para o Compras cotar.' },
       { alvo: () => [...document.querySelectorAll('#eq-ficha button')].find(b => /Aguardando/.test(b.textContent)) || [...document.querySelectorAll('#eq-ficha button')].find(b => /Emitir|Encerrar|Retomar/.test(b.textContent)), titulo: '⏸ Aguardando (pausar a OT)',
         texto: 'OT parada esperando peça, fornecedor ou aprovação: <b>⏸ Aguardando</b> pede o <b>motivo</b> (PEC peça · FOR fornecedor/serviço externo · APR aprovação · EQP equipamento · OUT) + observação, e oferece gerar a OC dos faltantes na hora. A pausa fica registrada (início → retomada) e é <b>descontada do TDM</b> na Gestão; o PDI continua contando.' },
       { alvo: '#tn-alm', titulo: 'Chegou a peça → Receber',
-        texto: 'Quando a OC chega, <b>Materiais › Receber › conferir</b> sobe o saldo e, se a OT estava em espera dessa peça, o sistema pergunta se quer <b>retomar</b> (volta a Em curso). ▶ em círculo na lista = OT aberta/em curso.' },
+        texto: 'Quando a OC chega, <b>Materiais › Receber › conferir</b> sobe o saldo e, se a OT estava em espera dessa peça, o sistema pergunta se quer <b>retomar</b> (volta a Em curso). Na conferência o fornecedor e o preço pagos viram a <b>referência</b> da peça para a próxima compra. ▶ em círculo na lista = OT aberta/em curso.' },
       { alvo: () => [...document.querySelectorAll('#eq-ficha button')].find(b => /Cancelar OT/.test(b.textContent)) || document.querySelector('#mt-gestao'), titulo: 'Cancelar OT e OCs',
         texto: 'Cancelar uma OT <b>cancela as OCs vivas</b> dela (aguardando/aprovada sem recebimento). Antes de cancelar, confira no Compras se algo já foi pago.' },
       { titulo: 'Pronto! ✅',
@@ -296,7 +308,7 @@ window.GUIAS_MANUTENCAO = {
 // Abertura: botão ▶ Como fazer na barra superior e deep link ?guia=<nome>
 window.guiaAbrir = function (nome) {
   const g = window.GUIAS_MANUTENCAO[nome]; if (!g || !window.GarraGuia) return;
-  g.aoSair = () => { try { _abEdit = null; } catch (e) { } try { document.getElementById('eq-ficha').classList.remove('show'); } catch (e) { } ['art-jan', 'ent-doc', 'ot-saida', 'alm-mov'].forEach(k => { const j = document.getElementById(k); if (j) j.style.display = 'none'; }); };
+  g.aoSair = () => { try { _abEdit = null; } catch (e) { } try { document.getElementById('eq-ficha').classList.remove('show'); } catch (e) { } ['art-jan', 'ent-doc', 'ot-saida', 'alm-mov'].forEach(k => { const j = document.getElementById(k); if (j) j.style.display = 'none'; }); try { const j = document.getElementById('oc-forn-jan'); if (j) j.remove(); } catch (e) { } };
   GarraGuia.iniciar(g);
 };
 window.guiaMenu = function (ev) {

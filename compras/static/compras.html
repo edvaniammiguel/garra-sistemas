@@ -76,6 +76,7 @@ header .badge-fila{background:var(--red);border-radius:99px;padding:1px 8px;font
 .item-row input{padding:10px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;width:100%}
 .item-row .tot{font-weight:800;color:var(--blue);font-size:13px;text-align:right;min-width:82px}
 .item-row .del{background:none;border:none;color:var(--red);font-size:18px;cursor:pointer;padding:0 4px}
+.peca-sug{display:flex;flex-direction:column;gap:2px}.peca-op{font-size:12px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;cursor:pointer;background:#F8FAFC}.peca-op:hover{background:#EEF2FF}
 .hint{font-size:11px;color:var(--muted);margin-top:3px}
 .hint b{color:var(--green)}
 .tot-geral{display:flex;justify-content:space-between;align-items:center;background:#fff;border:1px solid var(--border);border-radius:10px;padding:12px 14px;margin:12px 0;font-size:14px}
@@ -539,7 +540,11 @@ function addItem(dados){
   const div=document.createElement('div');
   div.className='item-row'; div.id=id;
   div.innerHTML=`
-    <div><input placeholder="Descrição do item" class="i-desc" value="${(dados&&dados.descricao)||''}" oninput="dicaPreco(this,'${id}')"><div class="hint" id="${id}-hint"></div></div>
+    <div><input placeholder="Descrição do item" class="i-desc" value="${(dados&&dados.descricao)||''}" oninput="dicaPreco(this,'${id}');pecaBuscar(this,'${id}')">
+      <input type="hidden" class="i-peca" value="${(dados&&dados.peca_id)||''}">
+      <div class="hint" id="${id}-hint"></div>
+      <div id="${id}-peca" class="hint" style="color:${(dados&&dados.peca_id)?'#15803D':'var(--muted)'}">${(dados&&dados.peca_id)?'🔗 peça do catálogo — entra no estoque ao receber':'<span style="font-size:11px">Digite código/descrição para vincular a uma peça do catálogo (entra no estoque ao receber). Sem vínculo = item só do Compras.</span>'}</div>
+      <div id="${id}-sug" class="peca-sug"></div></div>
     <div class="lin2">
       <input placeholder="Qtd" class="i-qtd" type="number" step="any" value="${(dados&&dados.quantidade)||1}" oninput="calcTotal()">
       <input placeholder="Un" class="i-un" value="${(dados&&dados.unidade)||'UN'}">
@@ -551,6 +556,34 @@ function addItem(dados){
   calcTotal();
 }
 
+// (11/11/2026) vínculo do item com o catálogo de peças (peca_id) — sugestões enquanto digita
+let _pecaTimer=null;
+function pecaBuscar(inp, id){
+  clearTimeout(_pecaTimer);
+  const row=document.getElementById(id), sug=document.getElementById(id+'-sug'), hid=row.querySelector('.i-peca');
+  if(hid.value){ hid.value=''; document.getElementById(id+'-peca').innerHTML='<span style="font-size:11px">vínculo removido — digite para vincular de novo</span>'; document.getElementById(id+'-peca').style.color='var(--muted)'; }
+  const q=inp.value.trim(); if(q.length<2){ sug.innerHTML=''; return; }
+  _pecaTimer=setTimeout(async ()=>{
+    try{
+      const r=await api('/compras/api/pecas?q='+encodeURIComponent(q));
+      sug.innerHTML = r.length ? r.map(p=>`<div class="peca-op" onclick='pecaVincular("${id}",${JSON.stringify(p).replace(/'/g,"&#39;")})'><b>${esc(p.codigo)}</b> ${esc(p.descricao)} <span style="color:var(--muted)">· ${esc(p.unidade)}${p.preco!=null?' · R$ '+Number(p.preco).toFixed(2):''}${p.ref_fornecedor_nome?' · '+esc(p.ref_fornecedor_nome):''}</span></div>`).join('') : '';
+    }catch(e){ sug.innerHTML=''; }
+  }, 350);
+}
+function pecaVincular(id, p){
+  const row=document.getElementById(id);
+  row.querySelector('.i-desc').value=p.codigo+' — '+p.descricao;
+  row.querySelector('.i-peca').value=p.id;
+  row.querySelector('.i-un').value=p.unidade||'UN';
+  if(p.preco!=null && !row.querySelector('.i-vlr').value) row.querySelector('.i-vlr').value=Number(p.preco).toFixed(2);
+  document.getElementById(id+'-sug').innerHTML='';
+  const info=document.getElementById(id+'-peca'); info.style.color='#15803D';
+  info.innerHTML='🔗 peça do catálogo — entra no estoque ao receber'+(p.ref_fornecedor_nome?' · ref.: '+esc(p.ref_fornecedor_nome):'');
+  // fornecedor de referência preenche o cabeçalho se ainda estiver vazio
+  const fh=document.getElementById('n-fornecedor'), fb=document.getElementById('n-forn-busca');
+  if(fh && fb && p.ref_fornecedor_id && !fh.value){ fh.value=p.ref_fornecedor_id; fb.value=p.ref_fornecedor_nome||''; }
+  calcTotal();
+}
 let _dicaTimer=null;
 function dicaPreco(inp, id){
   clearTimeout(_dicaTimer);
@@ -573,6 +606,7 @@ function lerItens(){
     const desc=r.querySelector('.i-desc').value.trim();
     if(!desc) return;
     itens.push({descricao:desc,
+      peca_id:(r.querySelector('.i-peca')||{}).value||null,   // (11/11/2026) vínculo com o catálogo
       quantidade:parseFloat(r.querySelector('.i-qtd').value)||1,
       unidade:r.querySelector('.i-un').value.trim()||'UN',
       valor_unit:parseFloat(r.querySelector('.i-vlr').value)||0});

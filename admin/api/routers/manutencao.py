@@ -3391,6 +3391,86 @@ async def oc_existe(numero: str, _auth=Depends(verificar_manutencao)):
     return {"existe": bool(oc), "status": oc["status"] if oc else None}
 
 
+# ── (11/11/2026) Fornecedor de referência da peça — uma regra só para mínimo, OT e 🛒 Comprar ──
+async def _ref_fornecedor(peca_codigo):
+    """Referência preferida: menor preço, depois a mais recente. None se a peça não tem referência."""
+    await _garantir_tabela("referencias-fornecedor")
+    return await ajard_query(
+        """SELECT r.fornecedor_id, r.preco, r.prazo_dias, r.referencia,
+                  (SELECT nome FROM public.fornecedores f WHERE f.id=r.fornecedor_id) AS fornecedor_nome
+             FROM manutencao.peca_fornecedores r
+            WHERE r.peca_codigo=%s AND r.ativo=true AND r.fornecedor_id IS NOT NULL
+            ORDER BY r.preco NULLS LAST, r.atualizado_em DESC LIMIT 1""", (peca_codigo,), fetch="one")
+
+
+async def _aprender_referencia(peca_codigo, fornecedor_id, preco, origem="recebimento"):
+    """(11/11/2026) A referência nasce da compra: ao conferir um recebimento de OC, grava/atualiza
+    fornecedor + preço pago como referência da peça. Nunca apaga referência manual — só atualiza o preço
+    do mesmo fornecedor ou acrescenta o fornecedor novo."""
+    if not (peca_codigo and fornecedor_id):
+        return
+    await _garantir_tabela("referencias-fornecedor")
+    ex = await ajard_query("SELECT id FROM manutencao.peca_fornecedores WHERE peca_codigo=%s AND fornecedor_id=%s",
+                           (peca_codigo, fornecedor_id), fetch="one")
+    if ex:
+        await ajard_query("UPDATE manutencao.peca_fornecedores SET preco=COALESCE(%s, preco), ativo=true, atualizado_em=now() WHERE id=%s",
+                          (preco, ex["id"]), fetch="none")
+    else:
+        await ajard_query("INSERT INTO manutencao.peca_fornecedores (peca_codigo, fornecedor_id, preco, observacao) VALUES (%s,%s,%s,%s)",
+                          (peca_codigo, fornecedor_id, preco, f"gerado pelo {origem}"), fetch="none")
+
+
+@router.get("/manutencao/api/pecas/{codigo}/referencia")
+async def peca_referencia(codigo: str, _auth=Depends(verificar_manutencao)):
+    """(11/11/2026) Fornecedor de referência da peça (ficha › Estoques e 🛒 Comprar)."""
+    r = await _ref_fornecedor(codigo)
+    return {"fornecedor_id": str(r["fornecedor_id"]) if r else None, "fornecedor_nome": (r or {}).get("fornecedor_nome"),
+            "preco": float(r["preco"]) if r and r.get("preco") is not None else None,
+            "prazo_dias": (r or {}).get("prazo_dias"), "referencia": (r or {}).get("referencia")}
+
+
+@router.put("/manutencao/api/pecas/{codigo}/referencia")
+async def peca_referencia_gravar(codigo: str, request: Request, payload=Depends(verificar_manutencao)):
+    """(11/11/2026) Define/troca o fornecedor de referência pela ficha da peça (vale sobre as demais referências:
+    recebe o menor preço ou o preço informado). fornecedor_id vazio = remove a preferência manual."""
+    d = await request.json()
+    fid = (d.get("fornecedor_id") or "").strip() or None
+    preco = d.get("preco")
+    preco = float(str(preco).replace(",", ".")) if preco not in (None, "") else None
+    await _garantir_tabela("referencias-fornecedor")
+    if not fid:
+        return {"ok": True}
+    ex = await ajard_query("SELECT id FROM manutencao.peca_fornecedores WHERE peca_codigo=%s AND fornecedor_id=%s", (codigo, fid), fetch="one")
+    if ex:
+        await ajard_query("UPDATE manutencao.peca_fornecedores SET preco=COALESCE(%s, preco), ativo=true, atualizado_em=now() WHERE id=%s", (preco, ex["id"]), fetch="none")
+    else:
+        await ajard_query("INSERT INTO manutencao.peca_fornecedores (peca_codigo, fornecedor_id, preco, observacao) VALUES (%s,%s,%s,'definido na ficha da peça')",
+                          (codigo, fid, preco), fetch="none")
+    # garante que esta referência vença a ordenação (menor preço, depois mais recente): atualizado_em = agora já cobre empate
+    return {"ok": True}
+
+
+@router.post("/manutencao/api/pecas/comprar")
+async def pecas_comprar(request: Request, payload=Depends(verificar_manutencao)):
+    """(11/11/2026) 🛒 Comprar — peças escolhidas na ficha/catálogo → itens prontos para a OC, agrupados por
+    fornecedor de referência (sem referência → grupo '' = OC 'a definir'). Não cria a OC: o front chama o Compras."""
+    d = await request.json()
+    itens = d.get("itens") or []     # [{codigo, quantidade}]
+    grupos, nomes = {}, {}
+    for it in itens:
+        cod = (it.get("codigo") or "").strip(); q = _mo_num(it.get("quantidade")) or 0
+        if not cod or q <= 0: continue
+        p = await ajard_query("SELECT id, codigo, descricao, unidade, custo_medio FROM manutencao.pecas WHERE codigo=%s AND ativo=true", (cod,), fetch="one")
+        if not p: continue
+        rf = await _ref_fornecedor(cod)
+        fid = str(rf["fornecedor_id"]) if rf else ""
+        if fid: nomes[fid] = rf.get("fornecedor_nome") or ""
+        preco = float(rf["preco"]) if rf and rf.get("preco") is not None else (float(p["custo_medio"]) if p.get("custo_medio") is not None else 0)
+        grupos.setdefault(fid, []).append({"peca_id": str(p["id"]), "descricao": f"{p['codigo']} — {p['descricao'] or ''}",
+                                           "quantidade": q, "unidade": p["unidade"] or "UN", "valor_unit": preco})
+    return {"grupos": grupos, "fornecedores": nomes}
+
+
 @router.get("/manutencao/api/ots/{ot_id}/faltantes")
 async def ot_faltantes(ot_id: str, _auth=Depends(verificar_manutencao)):
     """Peças previstas na FMP da OT que o estoque não cobre → itens da OC.
@@ -3429,9 +3509,12 @@ async def ot_faltantes(ot_id: str, _auth=Depends(verificar_manutencao)):
             continue
         k = str(p["id"]); q = _mo_num(x.get("qtd")) or 0
         falta = max(0.0, q - float(p["saldo"] or 0) - pedido.get(k, 0.0) - pend.get(k, 0.0))
+        rf = await _ref_fornecedor(p["codigo"])   # (11/11/2026) OC da OT sai com o fornecedor de referência, como no mínimo
         itens.append({"peca_id": k, "codigo": p["codigo"], "descricao": p["descricao"], "unidade": p["unidade"] or "UN",
                       "previsto": q, "saldo": float(p["saldo"] or 0), "em_pedido": pedido.get(k, 0.0) + pend.get(k, 0.0),
-                      "faltante": round(falta, 3), "preco": float(p["custo_medio"]) if p["custo_medio"] is not None else _mo_num(x.get("custo")),
+                      "faltante": round(falta, 3),
+                      "preco": (float(rf["preco"]) if rf and rf.get("preco") is not None else (float(p["custo_medio"]) if p["custo_medio"] is not None else _mo_num(x.get("custo")))),
+                      "ref_fornecedor_id": str(rf["fornecedor_id"]) if rf else None, "ref_fornecedor_nome": (rf or {}).get("fornecedor_nome"),
                       "ocs": ocs.get(k, [])})
     return {"ot": o["numero"], "equipamento_id": str(o["equipamento_id"]) if o.get("equipamento_id") else None, "itens": itens}
 
@@ -3536,6 +3619,12 @@ async def recebimento_conferir(rid: str, request: Request, payload=Depends(verif
             await _notificar("peca_chegou", tit, txt, lnk, excluir=[uid])
             if resp and resp.get("responsavel_id"):
                 await _notificar("peca_chegou", tit, txt, f"/manutencao/pedido?ot={oa['id']}", apenas=[resp["responsavel_id"]], excluir=[uid])
+    # (11/11/2026) a referência nasce da compra: fornecedor + preço pago viram referência da peça
+    try:
+        await _aprender_referencia(r.get("codigo"), r.get("fornecedor_id"),
+                                   float(r["custo_unitario"]) if r.get("custo_unitario") is not None else None)
+    except Exception as e:
+        print(f"[referencia] {e}")
     return {"ok": True, "entrada": res, "diferenca": round(qtd - float(r["quantidade"]), 3), "ot_aguardando": ot_ag}
 
 

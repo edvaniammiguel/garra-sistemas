@@ -108,7 +108,7 @@
     p.push({ alvo: () => document.querySelector('#notif-lista-mob > div[onclick]') || secaoConta('notif-lista-mob'), antes: async () => { ctl(false); await painelConta(); }, titulo: 'Avisos',
       texto: 'Os avisos do sistema para você: OS aberta no seu nome, pedido que virou OT, abastecimento divergente… Os <b>não lidos</b> ficam com a faixa laranja. Toque num aviso para abrir a tela certa; o <b>✕</b> apaga um; <b>Marcar todos como lidos</b> e <b>Limpar lidos</b> organizam a lista.' });
     p.push({ alvo: () => secaoConta('mural-avisos-mob'), titulo: 'Mural e Manual do colaborador',
-      texto: 'O <b>Mural</b> traz os comunicados da empresa para todos. O botão <b>📖 Manual do colaborador</b> abre o manual com os procedimentos (POPs) — é a referência quando bater dúvida fora do tour.' });
+      texto: 'O <b>Mural</b> traz os comunicados da empresa para todos. O botão <b>📖 Manual do colaborador</b> abre o manual com os procedimentos (POPs) — é a referência quando bater dúvida fora do tour. No topo do manual dá para escolher o idioma: <b>PT · ES · EN</b>.' });
     p.push({ alvo: () => { const s = document.getElementById('push-switch'); return s && s.parentElement; }, titulo: 'Notificações neste aparelho',
       texto: 'Ligue <b>Receber avisos neste aparelho</b> para o celular tocar quando chegar aviso, mesmo com o app fechado. Em <b>O que avisar</b> você escolhe os tipos. No iPhone só funciona com o app <b>adicionado à tela de início</b>; "Bloqueado" = permissão negada nas configurações do navegador.' });
     const bio = await (async () => { try { return await bioSuportada(); } catch (e) { return false; } })();

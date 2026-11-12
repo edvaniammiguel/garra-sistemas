@@ -1125,6 +1125,30 @@ async def excluir_anexo(oc_id: str, anexo_id: str, payload=Depends(verificar_com
 
 # ── INTELIGÊNCIA: último preço pago ───────────────────────────
 
+@router.get("/compras/api/pecas")
+async def compras_buscar_pecas(q: str = "", _auth=Depends(verificar_compras)):
+    """(11/11/2026) Busca no catálogo de peças da Manutenção para vincular o item da OC (peca_id).
+    Item vinculado entra no estoque pela conferência do recebimento; sem vínculo fica só no Compras.
+    Traz o fornecedor de referência e o preço (ref. → custo médio) para pré-preencher."""
+    q = (q or "").strip()
+    if len(q) < 2:
+        return []
+    rows = await ajard_query(
+        """SELECT p.id, p.codigo, p.descricao, p.unidade, p.custo_medio,
+                  rf.fornecedor_id AS ref_fornecedor_id, rf.preco AS ref_preco,
+                  (SELECT nome FROM public.fornecedores f WHERE f.id=rf.fornecedor_id) AS ref_fornecedor_nome
+             FROM manutencao.pecas p
+             LEFT JOIN LATERAL (SELECT fornecedor_id, preco FROM manutencao.peca_fornecedores r
+                                 WHERE r.peca_codigo=p.codigo AND r.ativo=true AND r.fornecedor_id IS NOT NULL
+                                 ORDER BY r.preco NULLS LAST, r.atualizado_em DESC LIMIT 1) rf ON true
+            WHERE p.ativo=true AND (p.codigo ILIKE %s OR p.descricao ILIKE %s OR p.codigo_externo ILIKE %s)
+            ORDER BY p.codigo LIMIT 15""", (f"%{q}%", f"%{q}%", f"%{q}%")) or []
+    return [{"id": str(r["id"]), "codigo": r["codigo"], "descricao": r["descricao"] or "", "unidade": r["unidade"] or "UN",
+             "preco": float(r["ref_preco"]) if r.get("ref_preco") is not None else (float(r["custo_medio"]) if r.get("custo_medio") is not None else None),
+             "ref_fornecedor_id": str(r["ref_fornecedor_id"]) if r.get("ref_fornecedor_id") else None,
+             "ref_fornecedor_nome": r.get("ref_fornecedor_nome")} for r in rows]
+
+
 @router.get("/compras/api/ultimo-preco")
 async def ultimo_preco(q: str = "", _auth=Depends(verificar_compras)):
     """Histórico de preço por descrição (OCs recebidas). Alimenta a dica

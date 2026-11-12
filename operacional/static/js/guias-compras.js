@@ -67,7 +67,12 @@
             await esperar(700);
           },
           texto: 'Um item por linha: <b>descrição, quantidade, unidade e valor unitário</b>. Ao digitar a descrição o sistema mostra o <b>último preço pago</b> e com quem — compare antes de fechar. <b>＋ Adicionar item</b> cria mais linhas; ✕ remove. Quantidade tem de ser maior que zero.' },
+        // (11/11/2026) vínculo do item com o catálogo de peças da Manutenção
+        { alvo: () => { const r = document.querySelector('#n-itens .item-row'); if (!r) return $('#n-itens'); const sg = document.getElementById(r.id + '-sug'); return (sg && sg.children.length) ? sg : (document.getElementById(r.id + '-peca') || $('#n-itens')); }, titulo: '🔗 Peça do catálogo → entra no estoque',
+          antes: async () => { if (!_livre) return; const r = document.querySelector('#n-itens .item-row'); if (!r) return; try { const inp = r.querySelector('.i-desc'); pecaBuscar({ value: (inp.value || 'filtro').split(' ')[0] }, r.id); } catch (e) { } /* busca só pela 1ª palavra: mostra a lista do catálogo */ await esperar(1000); },
+          texto: 'Setor <b>Manutenção</b>: ao digitar código ou descrição aparecem as <b>peças do catálogo</b> (com unidade, preço e fornecedor de referência). Escolheu uma? O item fica <b>vinculado</b> e, quando a OC for recebida e conferida em <b>Manutenção › Materiais › Receber</b>, a quantidade <b>entra no estoque</b> e o fornecedor vira a referência da peça. Sem vínculo = item só do Compras (não mexe no estoque). Peça que não existe: cadastre antes em Materiais › ＋ Nova peça.' },
         { alvo: '#tela-nova .tot-geral', titulo: 'Total da OC',
+          antes: async () => { document.querySelectorAll('#n-itens .peca-sug').forEach(e => { e.innerHTML = ''; }); },
           texto: 'O total se calcula sozinho. É <b>esse valor</b> que o sistema compara com a <b>alçada</b> de quem solicita: cabe na alçada → aprova na hora; acima → vai para a fila de aprovação.' },
         { alvo: () => $('#n-anexos').closest('.fld'), titulo: 'Orçamento anexado',
           texto: 'Anexe a <b>cotação do fornecedor</b> (foto ou PDF, até 10 MB). Vira evidência com data, e quem aprova vê o orçamento real antes de decidir. Dá para anexar depois, pelo detalhe da OC. Logo abaixo, a <b>Observação</b> (entrega, referência) sai impressa na OC.' },
@@ -86,7 +91,7 @@
           antes: async () => { const t = $('#modal-det.on .trilha'); if (t) t.scrollIntoView({ block: 'center' }); await esperar(200); },
           texto: 'A <b>trilha</b> registra cada passo com <b>nome e hora</b> — é a assinatura digital da OC. Foi <b>rejeitada</b>? O motivo aparece em vermelho acima das ações, e você pode refazer a OC corrigida.' },
         { titulo: 'Pronto! ✅',
-          texto: 'Rotina: <b>＋ Nova OC → setor → fornecedor → itens → anexar orçamento → Solicitar aprovação</b>. Depois acompanhe o status na aba 📋 OCs; aprovada, ela vai ao fornecedor por WhatsApp ou PDF. Repita este tour quando quiser pelo ▶ Como fazer.' },
+          texto: 'Rotina: <b>＋ Nova OC → setor → fornecedor → itens (peça do catálogo quando for estoque) → anexar orçamento → Solicitar aprovação</b>. Depois acompanhe o status na aba 📋 OCs; aprovada, ela vai ao fornecedor por WhatsApp ou PDF. OC que nasceu na Manutenção (mínimo, OT ou 🛒 Comprar) chega aqui em <b>Rascunho</b>, setor Manutenção, já com o fornecedor de referência — ou "a definir" para você cotar. Repita este tour quando quiser pelo ▶ Como fazer.' },
       ],
     },
 
@@ -123,7 +128,7 @@
             if (o) { await abrirReceber(o.id); document.getElementById('modal-det').classList.add('on'); await esperar(400); }
             else { await abrirOC(['recebida', 'aprovada', 'solicitada']); }
           },
-          texto: 'Chegou a mercadoria? Quem solicitou (ou a gestão / Visão geral) registra o <b>recebimento item a item</b>: a quantidade é o que chegou <b>agora</b> — acumula. Tudo completo → <b>Recebida</b>; faltou algo → <b>Recebida parcial</b>, e a OC continua aguardando o resto. Item que não está na OC: <b>não</b> receba.' },
+          texto: 'Chegou a mercadoria? Quem solicitou (ou a gestão / Visão geral) registra o <b>recebimento item a item</b>: a quantidade é o que chegou <b>agora</b> — acumula. Tudo completo → <b>Recebida</b>; faltou algo → <b>Recebida parcial</b>, e a OC continua aguardando o resto. Item que não está na OC: <b>não</b> receba. Itens <b>vinculados a peça do catálogo</b> seguem para <b>Manutenção › Materiais › Receber</b>: só na conferência de lá o saldo sobe e o fornecedor vira referência da peça.' },
         { alvo: () => $('#modal-det.on #rec-nf') ? $('#modal-det.on #rec-nf').closest('.fld') : ($('#modal-det.on .acoes') || $('#modal-det-body')), titulo: 'NF, complemento e o que muda na OT',
           antes: async () => { const t = $('#modal-det.on #rec-nf'); if (t) t.scrollIntoView({ block: 'center' }); await esperar(200); },
           texto: 'Informe o <b>nº da Nota Fiscal</b> e, se houver, a observação (desconto, brinde) — vai para a trilha. Veio algo fora da OC? Entra como <b>complemento</b> até R$ 100 ou 20% da OC; acima disso, OC nova. <b>Na OT vinculada</b>: o valor recebido <b>soma no custo da OT</b> e ela ganha a linha "📦 OC recebida" no histórico — o status da OT <b>não muda</b> sozinho.' },
@@ -153,6 +158,7 @@
     const r = { titulo: g.titulo, pop: g.pop, passos: g.passos.filter(p => !p.quando || p.quando()) };
     r.aoSair = () => {
       fecharModal();
+      try { document.querySelectorAll('#n-itens .peca-sug').forEach(e => { e.innerHTML = ''; }); } catch (e) { }   // (11/11/2026) sugestões do catálogo
       try { if (nome === 'solicitar' && _livre) limparNova(); } catch (e) { }
       try { if (abaAtual() !== _abaInicial) irTab(_abaInicial); } catch (e) { }
     };

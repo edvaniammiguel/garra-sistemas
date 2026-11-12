@@ -724,6 +724,12 @@ async def criar_tabela_cartilha():
                 )
     except Exception:
         pass
+    # (11/11/2026) Manual em espanhol/inglês: tabela de traduções + carga inicial (não sobrescreve)
+    try:
+        from core.cartilha_i18n import criar_tabela_cartilha_i18n
+        await criar_tabela_cartilha_i18n()
+    except Exception:
+        pass
 
 
 

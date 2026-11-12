@@ -117,7 +117,7 @@
           texto: '<b>Regimes de Cobrança</b> (hora, diária, km, empreito): o regime da OS <b>sugere a medição</b> da parte e manda no fechamento. <b>Tipos de Serviço</b> classificam o trabalho. <b>Clientes</b>: nome, CNPJ/CPF e contato — OS com cliente cadastrado entra no relatório por cliente.' },
         { alvo: () => document.querySelector('#sec-mural .card-title button'), antes: () => ir('mural', /Mural/),
           titulo: 'Mural e Manual (só Administrador)',
-          texto: '<b>Mural de Avisos</b>: publica para todos, por perfil ou para uma pessoa — aparece no sino/avatar de cada colaborador, no app e no desktop. <b>Manual do Colaborador</b>: blocos de texto que todos leem pelo avatar; revise ao menos uma vez por ano.' },
+          texto: '<b>Mural de Avisos</b>: publica para todos, por perfil ou para uma pessoa — aparece no sino/avatar de cada colaborador, no app e no desktop. <b>Manual do Colaborador</b>: blocos de texto que todos leem pelo avatar; revise ao menos uma vez por ano. Cada bloco pode ter versão em <b>espanhol e inglês</b> (abas ao editar) — o colaborador escolhe o idioma no topo do manual.' },
         { titulo: 'Pronto! ✅',
           texto: 'Rotina da gestão: <b>OS</b> (resolver ⚠ sem responsável e aguardando fechamento) → <b>Partes diárias</b> → <b>Fechar OS</b> → <b>Controle Mensal</b> → Excel para o financeiro. Cadastros sempre em dia: equipamento novo entra aqui antes de rodar. Repita este tour pelo ▶ Como fazer.' },
       ],
