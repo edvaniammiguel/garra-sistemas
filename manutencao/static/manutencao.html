@@ -344,6 +344,9 @@ button:disabled, select:disabled, input:disabled, [aria-disabled=true] { cursor:
             <input type="checkbox" id="alm-zerados" onchange="carregarPecasReais()"> incluir sem saldo</label>
         </span>
         <button class="btn o" id="alm-btn-novo" onclick="novaPeca()">＋ Nova peça</button>
+        <!-- (12/11/2026) ações sobre as peças marcadas ficam na própria tela; a barra lateral só navega -->
+        <button class="btn" id="alm-btn-comprar" onclick="comprarSelecionadas()" title="OC em rascunho no Compras com as peças marcadas (uma por fornecedor de referência)">🛒 Comprar</button>
+        <button class="btn" id="alm-btn-cotar" onclick="cotarSelecionadas()" title="Cotação com as peças marcadas: vários fornecedores, preço × prazo, depois a OC">📋 Cotar</button>
         <span class="muted">clique = marca · duplo clique = ficha</span>
       </div>
       <div style="flex:1;overflow:auto;background:#fff;border:1px solid #E2E8F0;border-radius:6px" oncontextmenu="ctxExpandir(event,'alm')">
@@ -5908,9 +5911,9 @@ async function _almRecebPend(){
   try { const r = await mntFetch('/manutencao/api/recebimentos?status=pendente'); _almRecebN = Array.isArray(r) ? r.length : 0; } catch(e){ _almRecebN = 0; }
   _almRecebT = Date.now(); return _almRecebN;
 }
-function almComprasAlternar(){
-  const aberto = localStorage.getItem('garra_alm_compras') !== '0';
-  localStorage.setItem('garra_alm_compras', aberto ? '0' : '1');
+function almGrpAlternarNav(k){
+  const aberto = localStorage.getItem('garra_alm_grp_'+k) !== '0';
+  localStorage.setItem('garra_alm_grp_'+k, aberto ? '0' : '1');
   montarNavAlm();
 }
 async function montarNavAlm(){
@@ -5965,26 +5968,28 @@ async function montarNavAlm(){
     //              Grupo 🛒 Compras (recolhível) reúne as ações de compra; o que é lista fica em Consulta.
     const acao = (rot, fn, title) => '<div class="pn-item pn-acao'+(_almAcaoOn===rot?' on':'')+'" data-rot="'+_esc(rot)+'" onclick="almAcao(this,'+fn+')"'+(title?' title="'+title+'"':'')+'>'+rot+'<span class="pn-seta">▸</span></div>';
     const vistaOn = v => (!_almAcaoOn && _almVista===v) ? ' on' : '';
-    const compAberto = localStorage.getItem('garra_alm_compras') !== '0';
-    html += '<div class="pn-grp">🔧 Operações</div>'
+    // (12/11/2026) os três grupos recolhem/expandem (estado lembrado por grupo)
+    const grpAberto = k => localStorage.getItem('garra_alm_grp_'+k) !== '0';
+    const grp = (k, rot, mt) => '<div class="pn-grp" style="'+(mt?'margin-top:8px;':'')+'cursor:pointer;user-select:none" onclick="almGrpAlternarNav(\''+k+'\')" title="recolher / expandir">'+(grpAberto(k)?'▾':'▸')+' '+rot+'</div><div id="alm-grp-'+k+'" style="display:'+(grpAberto(k)?'block':'none')+'">';
+    html += grp('oper', '🔧 Operações')
       + acao('📥 Entrada por documento', 'entradaAbrir')
       + acao('📤 Saída avulsa', "()=>almMovAbrir('saida')")
       + acao('⇄ Transferência', "()=>almMovAbrir('transferencia')")
       + acao('🧮 Ajuste de saldo', "()=>almMovAbrir('ajuste')")
       + acao('↩ Devolução de OT', 'devolucaoAbrir')
-      + '<div class="pn-grp" style="margin-top:8px;cursor:pointer;user-select:none" onclick="almComprasAlternar()" title="recolher / expandir">'+(compAberto?'▾':'▸')+' 🛒 Compras</div>'
-      + '<div id="alm-grp-compras" style="display:'+(compAberto?'block':'none')+'">'
-      + acao('🛒 Comprar selecionadas', 'comprarSelecionadas', 'Gera OC em rascunho no Compras para as peças selecionadas na lista (Ctrl/Shift para várias)')
-      + acao('📋 Cotar selecionadas', 'cotarSelecionadas', 'Uma cotação com as peças selecionadas para comparar vários fornecedores (preço · prazo · frete) e só então gerar a OC')
+      + '</div>'
+      + grp('compras', '🛒 Compras', true)
+      + '<div class="pn-item" onclick="_almAcaoOn=null;almIrComprar()" title="Abre o Estoque: marque as peças e use os botões 🛒 Comprar / 📋 Cotar da tela">🛒 Comprar / cotar peças</div>'
       + acao('📦 Receber' + (_almRecebN ? ' <span class="chip nr">'+_almRecebN+'</span>' : ''), "()=>recebimentosJanela()", 'Conferir o que o Compras registrou como recebido — é aqui que o saldo sobe')
       + acao('↗ Abrir módulo Compras', "()=>window.open('/compras','_blank')", 'Aprovar, alçadas, relatórios — abre o Compras em outra aba')
       + '</div>'
-      + '<div class="pn-grp" style="margin-top:8px">👁 Consulta</div>'
+      + grp('consulta', '👁 Consulta', true)
       + '<div class="pn-item'+vistaOn('lista')+'" onclick="_almAcaoOn=null;almLente(\'armazem\')">📦 Estoque (saldos)</div>'
       + '<div class="pn-item'+vistaOn('mov')+'" onclick="_almAcaoOn=null;almVistaMov()">🧾 Movimentos (extrato)</div>'
       + '<div class="pn-item'+vistaOn('baixo')+'" onclick="_almAcaoOn=null;almVistaBaixo()">⚠ Abaixo do mínimo'
       + (baixoN ? ' <span class="chip nr">'+baixoN+'</span>' : ' <span class="muted">(0)</span>') + '</div>'
-      + '<div class="pn-item'+vistaOn('pedidos')+'" onclick="_almAcaoOn=null;almVistaPedidos()" title="OCs do setor Manutenção por estágio — busca por nº, peça, fornecedor ou OT">📑 Pedidos de compra</div>';
+      + '<div class="pn-item'+vistaOn('pedidos')+'" onclick="_almAcaoOn=null;almVistaPedidos()" title="OCs do setor Manutenção por estágio — busca por nº, peça, fornecedor ou OT">📑 Pedidos de compra</div>'
+      + '</div>';
   }
   if (_almLente === 'armazem'){
     html += '<div class="pn-grp" style="margin-top:8px">🏬 Almoxarifados</div>'
@@ -6707,10 +6712,17 @@ function almAcao(el, fn){
   el.classList.add('on');
   return fn();
 }
+// (12/11/2026) item de menu: abre o Estoque (onde se marcam as peças e ficam os botões 🛒 Comprar / 📋 Cotar)
+function almIrComprar(){
+  if (_almVista !== 'lista' || _almLente !== 'armazem') almLente('armazem');
+  const b = document.getElementById('alm-btn-comprar'), c = document.getElementById('alm-btn-cotar');
+  [b, c].forEach(x => { if (x){ x.style.boxShadow = '0 0 0 3px #FDBA74'; setTimeout(() => { x.style.boxShadow = ''; }, 2500); } });
+  mostrarToast('Marque as peças na lista e use 🛒 Comprar ou 📋 Cotar aqui em cima','ok');
+}
 function comprarSelecionadas(){
   // (12/11/2026) sem repetir a mesma peça (no extrato ela pode aparecer em várias linhas)
   const cods = [...document.querySelectorAll('#alm-tbody tr.sel[data-cod]')].map(t => t.dataset.cod).filter(c => c).filter((v,i,a) => a.indexOf(v) === i);
-  if (!cods.length){ mostrarToast('Clique na linha da peça para selecionar (Ctrl/Shift para várias) — no Estoque, no Catálogo ou no extrato','warn'); return; }
+  if (!cods.length){ mostrarToast('Marque as peças na lista (clique na linha; Ctrl/Shift para várias) e clique em 🛒 Comprar','warn'); return; }
   return comprarPecas(cods);
 }
 async function _criarOCs(grupos, extra, origem){
@@ -6740,7 +6752,7 @@ async function _criarOCs(grupos, extra, origem){
 // ═══ (12/11/2026) COTAÇÃO — 1 cotação × N fornecedores → mapa de comparação → OC(s) ═══
 function cotarSelecionadas(){
   const cods = [...document.querySelectorAll('#alm-tbody tr.sel[data-cod]')].map(t => t.dataset.cod).filter(c => c).filter((v,i,a) => a.indexOf(v) === i);
-  if (!cods.length){ mostrarToast('Clique na linha da peça para selecionar (Ctrl/Shift para várias) — no Estoque, no Catálogo ou no extrato','warn'); return; }
+  if (!cods.length){ mostrarToast('Marque as peças na lista (clique na linha; Ctrl/Shift para várias) e clique em 📋 Cotar','warn'); return; }
   return cotarPecas(cods);
 }
 async function cotarPecas(codigos){
@@ -6762,7 +6774,8 @@ async function cotarSugerida(){
 async function cotacaoCriar(d){
   const setor = await _setorManutencao().catch(() => null);
   if (!setor){ mostrarToast('Setor Manutenção não encontrado no Compras','warn'); return; }
-  if (!confirm('Abrir cotação com '+d.itens.length+' item(ns)?\n\nOs fornecedores de referência (e quem já vendeu essas peças) entram sugeridos; você acrescenta outros no mapa.')) return;
+  if (!d.vazia && !confirm('Abrir cotação com '+d.itens.length+' item(ns)?\n\nOs fornecedores de referência (e quem já vendeu essas peças) entram sugeridos; você acrescenta outros no mapa.')) return;
+  delete d.vazia;
   try {
     const c = await _fxCompras('/compras/api/cotacoes', { method:'POST', body: JSON.stringify(Object.assign({ setor_codigo: setor }, d)) });
     mostrarToast('📋 '+c.numero+' aberta','ok');

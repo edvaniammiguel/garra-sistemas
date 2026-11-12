@@ -232,8 +232,7 @@ async def criar(request: Request, payload=Depends(verificar_compras_solicitante)
     await _garantir()
     d = await request.json()
     itens = [i for i in (d.get("itens") or []) if (i.get("descricao") or "").strip()]
-    if not itens:
-        raise HTTPException(400, "Informe ao menos 1 item")
+    # (12/11/2026) cotação pode nascer vazia (itens entram pelo ＋ item do mapa); encerrar sem item é que não pode
     setor = (d.get("setor_codigo") or "").strip().upper() or None
     seq = await ajard_query("SELECT COALESCE(MAX(sequencia),0)+1 AS n FROM compras.cotacoes WHERE ano=%s", (date.today().year,), fetch="one")
     numero = f"COT-{date.today().year}-{int(seq['n']):04d}"
@@ -412,6 +411,8 @@ async def encerrar(cid: str, request: Request, payload=Depends(verificar_compras
     cot, itens, forns, precos = await _carregar(cid)
     if cot["status"] != "aberta":
         raise HTTPException(400, f"Cotação já {cot['status']}")
+    if not itens:
+        raise HTTPException(400, "Cotação sem itens — acrescente ao menos um antes de encerrar")
     modo = d.get("modo") or cot.get("modo") or "fornecedor"
     venc = d.get("vencedores") or {}
     sug = _sugerir(cot, itens, forns, precos)
