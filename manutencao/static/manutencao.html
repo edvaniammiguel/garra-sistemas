@@ -115,6 +115,8 @@ tr.sel td{background:#DBEAFE!important;color:#1A2A5E}
 .pn-item:hover{background:#F0F4FF}
 .pn-item.on{background:#1A2A5E;color:#fff;font-weight:700}
 /* (12/11/2026) Materiais: um só item em destaque (azul) = o último clicado, seja operação ou vista. */
+#alm-tbody tr.carrinho td{background:#FFF7ED}
+#alm-tbody tr.carrinho.sel td{background:#FDBA74}
 .pn-item.pn-acao .pn-seta{float:right;color:#94A3B8;font-size:10px}
 .pn-item.pn-acao.on .pn-seta{color:#fff}
 .param-pane{flex:1;overflow:auto;padding:14px;background:#F8FAFC}
@@ -345,20 +347,18 @@ button:disabled, select:disabled, input:disabled, [aria-disabled=true] { cursor:
         </span>
         <button class="btn o" id="alm-btn-novo" onclick="novaPeca()">＋ Nova peça</button>
         <!-- (12/11/2026) ações sobre as peças marcadas ficam na própria tela; a barra lateral só navega -->
-        <button class="btn" id="alm-btn-comprar" onclick="comprarSelecionadas()" title="OC em rascunho no Compras com as peças marcadas (uma por fornecedor de referência)">🛒 Comprar</button>
-        <button class="btn" id="alm-btn-cotar" onclick="cotarSelecionadas()" title="Cotação com as peças marcadas: vários fornecedores, preço × prazo, depois a OC">📋 Cotar</button>
+        <button class="btn" id="alm-btn-comprar" onclick="comprarSelecionadas()" title="OC em rascunho no Compras com as peças do carrinho (uma por fornecedor de referência)">🛒 Comprar</button>
+        <button class="btn" id="alm-btn-cotar" onclick="cotarSelecionadas()" title="Cotação com as peças do carrinho: vários fornecedores, preço × prazo, depois a OC">📋 Cotar</button>
+        <button class="btn" id="alm-btn-carrinho" onclick="almCarrinhoPainel()" title="Ver o carrinho: itens, quantidades, remover" style="display:none">🧺 0</button>
         <span class="muted">clique = marca · duplo clique = ficha</span>
-      </div>
-      <!-- (12/11/2026) 🧺 cesta: peças marcadas que ficam guardadas enquanto você pesquisa outras (Catálogo, Estoque, extrato) -->
-      <div id="alm-cesta" style="display:none;align-items:center;gap:6px;flex-wrap:wrap;font-size:11px;padding:4px 0 2px">
       </div>
       <div style="flex:1;overflow:auto;background:#fff;border:1px solid #E2E8F0;border-radius:6px" oncontextmenu="ctxExpandir(event,'alm')">
         <table>
           <thead><tr id="alm-thead">
-            <th style="width:100px">Código</th><th>Descrição</th><th style="width:80px">Família</th>
+            <th style="width:26px" title="carrinho: marcar todos os visíveis"><input type="checkbox" onchange="almCarrinhoTodos(this.checked)"></th><th style="width:100px">Código</th><th>Descrição</th><th style="width:80px">Família</th>
             <th style="width:56px">Unid.</th><th style="width:90px" class="r" title="última entrada (NF/OC) da peça">Últ. compra</th><th style="width:100px" class="r">Custo médio</th>
           </tr></thead>
-          <tbody id="alm-tbody"><tr><td colspan="6" style="padding:16px;color:#64748B">Carregando acervo…</td></tr></tbody>
+          <tbody id="alm-tbody"><tr><td colspan="7" style="padding:16px;color:#64748B">Carregando acervo…</td></tr></tbody>
         </table>
       </div>
     </div>
@@ -2101,7 +2101,6 @@ function listaSelClick(ev, tr, aba){
   }
   _listaUltimoSel[aba] = tr.dataset[chave]; mwSel(aba, tr.dataset[chave]);
   if (aba === 'frota') _frotaUltimoSel = tr.dataset[chave];
-  if (aba === 'alm' && chave === 'cod') almCestaSync(trs, tr, ev);   // (12/11/2026) cesta de peças sobrevive à busca
 }
 function frotaSelClick(ev, tr){ listaSelClick(ev, tr, 'frota'); }
 function _frotaSelecionados(){ return [...document.querySelectorAll('#frota-centro tr[data-id].sel')].map(t => t.dataset.id); }
@@ -6551,13 +6550,13 @@ function almLente(l){
   if (bm) bm.className = 'btn' + (l === 'mestre' ? ' p' : '');
   if (ba) ba.className = 'btn' + (l === 'armazem' ? ' p' : '');
   const th = document.getElementById('alm-thead');
-  if (th) th.innerHTML = (l === 'mestre')
+  if (th) th.innerHTML = '<th style="width:26px" title="carrinho: marcar todos os visíveis"><input type="checkbox" onchange="almCarrinhoTodos(this.checked)"></th>' + ((l === 'mestre')   // (12/11/2026) coluna 🛒 do carrinho
     ? '<th style="width:100px">Código</th><th>Descrição</th><th style="width:80px">Família</th>'
       + '<th style="width:56px">Unid.</th><th style="width:90px" class="r" title="última entrada (NF/OC) da peça">Últ. compra</th><th style="width:100px" class="r">Custo médio</th>'
     : '<th style="width:100px">Código</th><th>Descrição</th><th style="width:60px">🏬 Local</th>'
       + '<th style="width:90px">Endereço</th><th style="width:74px" class="r">Existência</th>'
       + '<th style="width:64px" class="r" title="Previsto nas OTs programadas (itens da FMP)">Comprom.</th><th style="width:64px" class="r" title="Existência − comprometido">Dispon.</th>'
-      + '<th style="width:50px" class="r">Mín</th><th style="width:46px">UN</th><th style="width:90px" class="r" title="última entrada (NF/OC) da peça">Últ. compra</th><th style="width:100px" class="r">Custo médio</th>';
+      + '<th style="width:50px" class="r">Mín</th><th style="width:46px">UN</th><th style="width:90px" class="r" title="última entrada (NF/OC) da peça">Últ. compra</th><th style="width:100px" class="r">Custo médio</th>');
   _almVista = 'lista';
   const ops = document.getElementById('alm-ops');
   if (ops) ops.style.display = (l === 'armazem') ? 'inline-flex' : 'none';
@@ -6613,6 +6612,7 @@ async function carregarPecasReais(){
     const grupos = {}; r.itens.forEach(p => { const g = String(p.familia_codigo || '—').split('.')[0]; (grupos[g] = grupos[g] || []).push(p); });
     _almGrpIds = Object.keys(grupos).sort();
     const linhaPeca = p => `<tr data-cod="${_esc(p.codigo)}"${String(_mwSel.alm)===String(p.codigo)?' class="sel"':''} style="cursor:pointer" onclick="listaSelClick(event,this,'alm')" ondblclick="abrirPeca(this.dataset.cod)">
+      ${almCarrinhoCelula(p.codigo, p.descricao, p.unidade)}
       <td class="bold">${_esc(p.codigo)}</td>
       <td>${_esc(p.descricao)}</td>
       <td>${_esc(p.familia_codigo || '—')}</td>
@@ -6623,10 +6623,10 @@ async function carregarPecasReais(){
     tb.innerHTML = (agrupar
       ? _almGrpIds.map(g => {
           const fechado = _almGrpFechados.has(g);
-          return '<tr class="grp" style="background:#F1F5F9;cursor:pointer" onclick="almGrpAlternar(\''+_esc(g)+'\')"><td colspan="6" style="font-weight:700;color:#1A2A5E;padding:5px 8px">'+(fechado?'▸':'▾')+' '+_esc(g)+(_almFamNomes[g]?' — '+_esc(_almFamNomes[g]):'')+' <span class="muted">('+grupos[g].length+')</span></td></tr>'
+          return '<tr class="grp" style="background:#F1F5F9;cursor:pointer" onclick="almGrpAlternar(\''+_esc(g)+'\')"><td colspan="7" style="font-weight:700;color:#1A2A5E;padding:5px 8px">'+(fechado?'▸':'▾')+' '+_esc(g)+(_almFamNomes[g]?' — '+_esc(_almFamNomes[g]):'')+' <span class="muted">('+grupos[g].length+')</span></td></tr>'
             + (fechado ? '' : grupos[g].map(linhaPeca).join(''));
         }).join('')
-      : r.itens.map(linhaPeca).join('')) || '<tr><td colspan="6" style="padding:14px;color:#64748B">Nada encontrado.</td></tr>';
+      : r.itens.map(linhaPeca).join('')) || '<tr><td colspan="7" style="padding:14px;color:#64748B">Nada encontrado.</td></tr>';
     almCestaAplicar();
   } catch(e) { mostrarToast('❌ '+e.message,'warn'); }
 }
@@ -6697,9 +6697,11 @@ function _escolherFornecedorOC(itens){
 // (11/11/2026) 🛒 Comprar — qualquer peça, qualquer hora (ficha ou seleção no Catálogo/Estoque)
 async function comprarPecas(codigos){
   codigos = (codigos||[]).filter(Boolean);
-  if (!codigos.length){ mostrarToast('Selecione uma ou mais peças (Ctrl/Shift para várias)','warn'); return; }
+  if (!codigos.length){ mostrarToast('Marque ☐ as peças na lista (carrinho) e clique em 🛒 Comprar','warn'); return; }
   const itens = [];
   for (const cod of codigos){
+    const c = _almCesta.get(cod);   // (12/11/2026) quantidade do carrinho → sem perguntar
+    if (c){ itens.push({ codigo: cod, quantidade: c.qtd || 1 }); continue; }
     const q = prompt('Quantidade a comprar de '+cod+':', '1'); if (q === null) return;
     const n = parseFloat(String(q).replace(',','.')); if (!(n > 0)) { mostrarToast('Quantidade inválida para '+cod,'warn'); return; }
     itens.push({ codigo: cod, quantidade: n });
@@ -6720,52 +6722,63 @@ function almAcao(el, fn){
   el.classList.add('on');
   return fn();
 }
-// ═══ (12/11/2026) 🧺 CESTA DE PEÇAS — a marcação sobrevive à busca/troca de lista ═══
-// Pesquisa a 1ª peça, clica (entra na cesta), pesquisa a 2ª, clica… Comprar/Cotar usam a cesta inteira.
-// Ctrl/Shift continuam valendo dentro da lista; Ctrl-clique numa marcada tira da cesta; ✕ no chip também.
-const _almCesta = new Map();   // codigo → descrição
-function almCestaSync(trs, tr, ev){
-  const desc = t => { const td = t.querySelectorAll('td'); return (td[1] && td[1].textContent.trim()) || t.dataset.cod; };
-  if (ev.ctrlKey || ev.metaKey || ev.shiftKey){
-    trs.forEach(t => { if (t.classList.contains('sel')) _almCesta.set(t.dataset.cod, desc(t)); else _almCesta.delete(t.dataset.cod); });
-  } else {
-    _almCesta.set(tr.dataset.cod, desc(tr));
-  }
+// ═══ (12/11/2026) 🧺 CARRINHO DE PEÇAS — coluna ☐ no Catálogo/Estoque; sobrevive à busca e à troca de lista ═══
+// Marcar = entra no carrinho (com quantidade, padrão 1); o painel 🧺 revisa itens/quantidades; Comprar/Cotar usam
+// o carrinho inteiro sem perguntar quantidade. O clique na linha continua sendo só seleção (Abrir, Etiquetas…).
+const _almCesta = new Map();   // codigo → {descricao, unidade, qtd}
+function almCarrinhoCelula(cod, desc, un){
+  const no = _almCesta.has(cod);
+  return '<td onclick="event.stopPropagation()" style="text-align:center"><input type="checkbox" class="alm-ck"'+(no?' checked':'')+' data-cod="'+_esc(cod)+'" data-desc="'+_esc(desc||'')+'" data-un="'+_esc(un||'UN')+'" onchange="almCarrinhoToggle(this)" title="carrinho"></td>';
+}
+function almCarrinhoToggle(ck){
+  const cod = ck.dataset.cod;
+  if (ck.checked) { if (!_almCesta.has(cod)) _almCesta.set(cod, { descricao: ck.dataset.desc, unidade: ck.dataset.un || 'UN', qtd: 1 }); }
+  else _almCesta.delete(cod);
+  const tr = ck.closest('tr'); if (tr) tr.classList.toggle('carrinho', ck.checked);
   almCestaRender();
 }
+function almCarrinhoTodos(marcar){ document.querySelectorAll('#alm-tbody .alm-ck').forEach(c => { if (c.checked !== marcar){ c.checked = marcar; almCarrinhoToggle(c); } }); }
 function almCestaAplicar(){
-  // lista redesenhada (busca, troca Catálogo/Estoque/extrato): as peças da cesta voltam marcadas
-  document.querySelectorAll('#alm-tbody tr[data-cod]').forEach(t => { if (_almCesta.has(t.dataset.cod)) t.classList.add('sel'); });
+  document.querySelectorAll('#alm-tbody tr[data-cod]').forEach(t => t.classList.toggle('carrinho', _almCesta.has(t.dataset.cod)));
   almCestaRender();
 }
 function almCestaRender(){
-  const b = document.getElementById('alm-cesta'); if (!b) return;
   const n = _almCesta.size;
-  const bc = document.getElementById('alm-btn-comprar'), bt = document.getElementById('alm-btn-cotar');
+  const bc = document.getElementById('alm-btn-comprar'), bt = document.getElementById('alm-btn-cotar'), bk = document.getElementById('alm-btn-carrinho');
   if (bc) bc.textContent = '🛒 Comprar' + (n ? ' ('+n+')' : '');
   if (bt) bt.textContent = '📋 Cotar' + (n ? ' ('+n+')' : '');
-  if (!n){ b.style.display = 'none'; b.innerHTML = ''; return; }
-  b.style.display = 'flex';
-  b.innerHTML = '<b style="color:#1A2A5E">🧺 Cesta ('+n+'):</b> '
-    + [..._almCesta.keys()].map(c => '<span class="chip pe" style="font-size:10px" title="'+_esc(_almCesta.get(c))+'">'+_esc(c)+' <span style="cursor:pointer" onclick="almCestaTirar(\''+_esc(c).replace(/'/g,'&#39;')+'\')">✕</span></span>').join(' ')
-    + ' <span class="muted" style="cursor:pointer;margin-left:6px" onclick="almCestaLimpar()">limpar</span>';
+  if (bk) { bk.textContent = '🧺 ' + n; bk.style.display = n ? '' : 'none'; }
+  const j = document.getElementById('alm-carrinho-jan'); if (j) almCarrinhoPainel(true);
 }
-function almCestaTirar(cod){ _almCesta.delete(cod); document.querySelectorAll('#alm-tbody tr[data-cod]').forEach(t => { if (t.dataset.cod === cod) t.classList.remove('sel'); }); almCestaRender(); }
-function almCestaLimpar(){ _almCesta.clear(); document.querySelectorAll('#alm-tbody tr.sel[data-cod]').forEach(t => t.classList.remove('sel')); almCestaRender(); }
-function almCestaCodigos(){
-  const sel = [...document.querySelectorAll('#alm-tbody tr.sel[data-cod]')].map(t => t.dataset.cod);
-  return [..._almCesta.keys(), ...sel].filter(c => c).filter((v,i,a) => a.indexOf(v) === i);
+function almCestaTirar(cod){ _almCesta.delete(cod); document.querySelectorAll('#alm-tbody .alm-ck').forEach(c => { if (c.dataset.cod === cod){ c.checked = false; c.closest('tr').classList.remove('carrinho'); } }); almCestaRender(); }
+function almCestaLimpar(){ _almCesta.clear(); document.querySelectorAll('#alm-tbody .alm-ck').forEach(c => { c.checked = false; c.closest('tr').classList.remove('carrinho'); }); almCestaRender(); }
+function almCestaCodigos(){ return [..._almCesta.keys()]; }
+function almCarrinhoPainel(soRedesenha){
+  let j = document.getElementById('alm-carrinho-jan');
+  if (!_almCesta.size){ if (j) j.remove(); if (!soRedesenha) mostrarToast('Carrinho vazio — marque ☐ nas peças da lista','warn'); return; }
+  if (!j){ j = document.createElement('div'); j.id = 'alm-carrinho-jan'; j.style.cssText = 'position:fixed;inset:0;z-index:100000;background:rgba(15,23,42,.45);display:flex;align-items:center;justify-content:center'; j.onclick = e => { if (e.target === j) j.remove(); }; document.body.appendChild(j); }
+  const esc1 = c => _esc(c).replace(/'/g,'&#39;');
+  j.innerHTML = '<div style="background:#fff;border-radius:10px;padding:14px 16px;width:640px;max-width:94vw;max-height:80vh;display:flex;flex-direction:column;box-shadow:0 12px 32px rgba(15,23,42,.3)" onclick="event.stopPropagation()">'
+    + '<div style="display:flex;align-items:center;gap:8px"><b style="color:#1A2A5E;font-size:14px">🧺 Carrinho — '+_almCesta.size+' item(ns)</b><span style="margin-left:auto;cursor:pointer;font-size:16px" onclick="document.getElementById(\'alm-carrinho-jan\').remove()">✕</span></div>'
+    + '<div style="overflow:auto;margin:8px 0;flex:1"><table style="font-size:11px"><thead><tr><th style="width:100px">Código</th><th>Descrição</th><th style="width:40px">UN</th><th style="width:80px" class="r">Qtd</th><th style="width:30px"></th></tr></thead><tbody>'
+    + [..._almCesta.entries()].map(([c, v]) => '<tr><td class="bold">'+_esc(c)+'</td><td>'+_esc(v.descricao||'')+'</td><td>'+_esc(v.unidade||'UN')+'</td>'
+        + '<td class="r"><input type="number" min="0.001" step="any" value="'+v.qtd+'" style="width:70px;text-align:right" onchange="almCarrinhoQtd(\''+esc1(c)+'\',this.value)"></td>'
+        + '<td><span style="cursor:pointer;color:#B91C1C" title="tirar do carrinho" onclick="almCestaTirar(\''+esc1(c)+'\')">✕</span></td></tr>').join('')
+    + '</tbody></table></div>'
+    + '<div style="display:flex;gap:6px;align-items:center"><span class="muted" style="cursor:pointer;font-size:11px" onclick="almCestaLimpar()">limpar carrinho</span><span style="margin-left:auto"></span>'
+    + '<button class="btn" onclick="document.getElementById(\'alm-carrinho-jan\').remove();comprarSelecionadas()">🛒 Comprar</button><button class="btn p" onclick="document.getElementById(\'alm-carrinho-jan\').remove();cotarSelecionadas()">📋 Cotar</button></div></div>';
 }
+function almCarrinhoQtd(cod, v){ const n = parseFloat(String(v).replace(',','.')); const it = _almCesta.get(cod); if (it && n > 0) it.qtd = n; }
 // (12/11/2026) item de menu: abre o Estoque (onde se marcam as peças e ficam os botões 🛒 Comprar / 📋 Cotar)
 function almIrComprar(){
   if (_almVista !== 'lista' || _almLente !== 'armazem') almLente('armazem');
   const b = document.getElementById('alm-btn-comprar'), c = document.getElementById('alm-btn-cotar');
   [b, c].forEach(x => { if (x){ x.style.boxShadow = '0 0 0 3px #FDBA74'; setTimeout(() => { x.style.boxShadow = ''; }, 2500); } });
-  mostrarToast('Marque as peças na lista e use 🛒 Comprar ou 📋 Cotar aqui em cima','ok');
+  mostrarToast('Marque ☐ as peças na lista (carrinho) e use 🛒 Comprar ou 📋 Cotar aqui em cima','ok');
 }
 function comprarSelecionadas(){
   const cods = almCestaCodigos();   // (12/11/2026) cesta + marcadas na lista, sem repetir
-  if (!cods.length){ mostrarToast('Marque as peças na lista (clique na linha; Ctrl/Shift para várias) e clique em 🛒 Comprar','warn'); return; }
+  if (!cods.length){ mostrarToast('Marque ☐ as peças na lista (carrinho) e clique em 🛒 Comprar','warn'); return; }
   return comprarPecas(cods);
 }
 async function _criarOCs(grupos, extra, origem){
@@ -6795,18 +6808,20 @@ async function _criarOCs(grupos, extra, origem){
 // ═══ (12/11/2026) COTAÇÃO — 1 cotação × N fornecedores → mapa de comparação → OC(s) ═══
 function cotarSelecionadas(){
   const cods = almCestaCodigos();   // (12/11/2026) cesta + marcadas na lista, sem repetir
-  if (!cods.length){ mostrarToast('Marque as peças na lista (clique na linha; Ctrl/Shift para várias) e clique em 📋 Cotar','warn'); return; }
+  if (!cods.length){ mostrarToast('Marque ☐ as peças na lista (carrinho) e clique em 📋 Cotar','warn'); return; }
   return cotarPecas(cods);
 }
 async function cotarPecas(codigos){
   const itens = [];
   for (const cod of codigos){
+    const c = _almCesta.get(cod);   // (12/11/2026) quantidade do carrinho → sem perguntar
+    if (c){ itens.push({ peca_codigo: cod, descricao: cod + (c.descricao ? ' — ' + c.descricao : ''), quantidade: c.qtd || 1, unidade: c.unidade || 'UN' }); continue; }
     const q = prompt('Quantidade a cotar de '+cod+':', '1'); if (q === null) return;
     const n = parseFloat(String(q).replace(',','.')); if (!(n > 0)) { mostrarToast('Quantidade inválida para '+cod,'warn'); return; }
     itens.push({ peca_codigo: cod, descricao: cod, quantidade: n });
   }
-  // descrição real do catálogo
-  for (const it of itens){ try { const p = await mntFetch('/manutencao/api/peca-ficha?peca_codigo='+encodeURIComponent(it.peca_codigo)); if (p && p.descricao){ it.descricao = it.peca_codigo+' — '+p.descricao; it.unidade = p.unidade || 'UN'; } } catch(e){} }
+  // descrição real do catálogo (só para quem não veio do carrinho)
+  for (const it of itens){ if (it.unidade) continue; try { const p = await mntFetch('/manutencao/api/peca-ficha?peca_codigo='+encodeURIComponent(it.peca_codigo)); if (p && p.descricao){ it.descricao = it.peca_codigo+' — '+p.descricao; it.unidade = p.unidade || 'UN'; } } catch(e){} }
   return cotacaoCriar({ origem: 'direta', itens });
 }
 async function cotarSugerida(){
@@ -6865,7 +6880,7 @@ function _cotHtml(){
   c.itens.forEach(it => {
     const ml = melhorLinha(it);
     h += '<tr><td><b>'+_esc(it.descricao)+'</b>'+(aberta ? ' <span class="muted" style="cursor:pointer;font-size:9px" onclick="cotDelItem(\''+it.id+'\')">✕</span>' : '')+(it.vencedor_cf_id && !aberta ? '<br><span class="chip ok" style="font-size:9px">'+_esc(nomeCf(it.vencedor_cf_id))+'</span>' : '')+'</td>'
-      + '<td class="r mono">'+parseFloat(it.quantidade)+' '+_esc(it.unidade||'UN')+'</td>';
+      + '<td class="r mono">'+(aberta ? '<input class="cot-qtd" data-it="'+it.id+'" type="number" min="0.001" step="any" value="'+parseFloat(it.quantidade)+'" style="width:58px;text-align:right" title="quantidade (salva ao sair do campo)" onchange="cotQtd(\''+it.id+'\',this.value)"> ' : parseFloat(it.quantidade)+' ')+_esc(it.unidade||'UN')+'</td>';
     c.fornecedores.forEach(f => {
       const p = precos[it.id+'|'+f.id] || {}; const venc = sug.por_item && sug.por_item[it.id] === f.id;
       h += '<td style="text-align:center'+(venc?';background:#ECFDF5':'')+'">'
@@ -6917,6 +6932,18 @@ function cotObsCelula(itemId, cfId){
   if (v === null) return;
   inp.dataset.obs = v.trim(); inp.title = v.trim() || 'preço unitário';
   cotSalvar(true);
+}
+async function cotQtd(itemId, v){
+  try { _cot = await _fxCompras('/compras/api/cotacoes/'+_cot.id+'/itens/'+itemId, { method:'PUT', body: JSON.stringify({ quantidade: v }) }); const r = _cotLerRespostas(); document.getElementById('eq-ficha-corpo').innerHTML = _cotHtml(); _cotRepor(r); }
+  catch(e){ mostrarToast('❌ '+e.message,'warn'); }
+}
+// devolve ao mapa redesenhado o que estava digitado e ainda não salvo
+function _cotRepor(r){
+  Object.keys(r||{}).forEach(cf => { const d = r[cf];
+    (d.precos||[]).forEach(p => { const i = document.querySelector('.cot-preco[data-it="'+p.item_id+'"][data-cf="'+cf+'"]'); if (i){ i.value = p.preco_unit == null ? '' : p.preco_unit; if (p.observacao) i.dataset.obs = p.observacao; } });
+    const set = (cls, v) => { const i = document.querySelector('.'+cls+'[data-cf="'+cf+'"]'); if (i && v != null) i.value = v; };
+    set('cot-prazo', d.prazo_dias); set('cot-frete', d.frete); set('cot-cond', d.condicao_pagamento); set('cot-st', d.status);
+  });
 }
 async function cotSalvar(silencio){
   const r = _cotLerRespostas();
@@ -7019,6 +7046,7 @@ async function carregarArmazem(q){
     const r = await mntFetch('/manutencao/api/armazem' + (qs.length ? '?' + qs.join('&') : ''));
     const abaixo = x => x.minimo != null && parseFloat(x.quantidade) < parseFloat(x.minimo);
     tb.innerHTML = (r.itens || []).map(x => `<tr data-cod="${_esc(x.codigo)}" data-alm="${_esc(x.almox)}" data-loc="${_esc(x.localizacao||'')}"${String(_mwSel.alm)===String(x.codigo)?' class="sel"':''} style="cursor:pointer" onclick="listaSelClick(event,this,'alm')" ondblclick="abrirPeca(this.dataset.cod)" oncontextmenu="estoqueCtx(event,this)">
+      ${almCarrinhoCelula(x.codigo, x.descricao, x.unidade)}
       <td class="bold">${_esc(x.codigo)}</td>
       <td>${_esc(x.descricao)}</td>
       <td><span class="chip pe" style="font-size:9px">${_esc(x.almox)}</span></td>
@@ -7030,7 +7058,7 @@ async function carregarArmazem(q){
       <td>${_esc(x.unidade || '')}</td>
       <td class="r mono">${x.ultimo_preco != null ? 'R$ ' + parseFloat(x.ultimo_preco).toFixed(2) : '<span class="muted">—</span>'}</td>
       <td class="r mono">${x.custo_medio != null ? 'R$ ' + parseFloat(x.custo_medio).toFixed(2) : '—'}</td>
-    </tr>`).join('') || '<tr><td colspan="11" style="padding:14px;color:#64748B">Nenhuma existência' + (_almFiltro !== '_todos' ? ' neste local' : '') + ' — dê entrada de peças para povoar.</td></tr>';
+    </tr>`).join('') || '<tr><td colspan="12" style="padding:14px;color:#64748B">Nenhuma existência' + (_almFiltro !== '_todos' ? ' neste local' : '') + ' — dê entrada de peças para povoar.</td></tr>';
     almCestaAplicar();
   } catch(e){ mostrarToast('❌ '+e.message, 'warn'); }
 }

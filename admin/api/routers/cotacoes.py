@@ -334,6 +334,23 @@ async def item_add(cid: str, request: Request, payload=Depends(verificar_compras
     return await ver(cid, payload)
 
 
+@router.put("/compras/api/cotacoes/{cid}/itens/{item_id}")
+async def item_editar(cid: str, item_id: str, request: Request, payload=Depends(verificar_compras_solicitante)):
+    """(12/11/2026) Quantidade do item editável no mapa (cotação aberta)."""
+    d = await request.json()
+    q = d.get("quantidade")
+    try:
+        q = float(str(q).replace(",", "."))
+    except Exception:
+        raise HTTPException(400, "Quantidade inválida")
+    if q <= 0:
+        raise HTTPException(400, "Quantidade deve ser maior que zero")
+    await ajard_query(
+        "UPDATE compras.cotacao_itens i SET quantidade=%s FROM compras.cotacoes c WHERE i.id=%s AND i.cotacao_id=%s AND c.id=i.cotacao_id AND c.status='aberta'",
+        (q, item_id, cid), fetch="none")
+    return await ver(cid, payload)
+
+
 @router.delete("/compras/api/cotacoes/{cid}/itens/{item_id}")
 async def item_del(cid: str, item_id: str, payload=Depends(verificar_compras_solicitante)):
     await ajard_query("UPDATE compras.cotacao_itens SET ativo=false WHERE id=%s AND cotacao_id=%s", (item_id, cid), fetch="none")
