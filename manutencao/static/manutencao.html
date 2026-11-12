@@ -349,6 +349,9 @@ button:disabled, select:disabled, input:disabled, [aria-disabled=true] { cursor:
         <button class="btn" id="alm-btn-cotar" onclick="cotarSelecionadas()" title="Cotação com as peças marcadas: vários fornecedores, preço × prazo, depois a OC">📋 Cotar</button>
         <span class="muted">clique = marca · duplo clique = ficha</span>
       </div>
+      <!-- (12/11/2026) 🧺 cesta: peças marcadas que ficam guardadas enquanto você pesquisa outras (Catálogo, Estoque, extrato) -->
+      <div id="alm-cesta" style="display:none;align-items:center;gap:6px;flex-wrap:wrap;font-size:11px;padding:4px 0 2px">
+      </div>
       <div style="flex:1;overflow:auto;background:#fff;border:1px solid #E2E8F0;border-radius:6px" oncontextmenu="ctxExpandir(event,'alm')">
         <table>
           <thead><tr id="alm-thead">
@@ -2098,6 +2101,7 @@ function listaSelClick(ev, tr, aba){
   }
   _listaUltimoSel[aba] = tr.dataset[chave]; mwSel(aba, tr.dataset[chave]);
   if (aba === 'frota') _frotaUltimoSel = tr.dataset[chave];
+  if (aba === 'alm' && chave === 'cod') almCestaSync(trs, tr, ev);   // (12/11/2026) cesta de peças sobrevive à busca
 }
 function frotaSelClick(ev, tr){ listaSelClick(ev, tr, 'frota'); }
 function _frotaSelecionados(){ return [...document.querySelectorAll('#frota-centro tr[data-id].sel')].map(t => t.dataset.id); }
@@ -6231,6 +6235,7 @@ async function almVistaMov(){
         + '<td class="r mono"><b>'+tot.toFixed(2)+'</b></td><td class="mono">—</td><td class="muted">'+_esc(m.usuario||'—')+'</td></tr>'
         + gp.itens.map(x => linhaItem(x, true).replace('<tr style="', '<tr class="mvg'+gi+'" style="display:none;')).join('');
     }).join('') || '<tr><td colspan="10" style="padding:14px;color:#64748B">Nenhum movimento no período/filtro.</td></tr>';
+    almCestaAplicar();
     const inf = document.getElementById('mv-info'); if (inf) inf.textContent = (r.itens||[]).length + ' movimento(s) · ' + nDocs + ' documento(s)' + ((r.itens||[]).length >= 2000 ? ' · limite 2000 — refine o período' : '');
   } catch(e){ mostrarToast('❌ '+e.message,'warn'); }
 }
@@ -6622,6 +6627,7 @@ async function carregarPecasReais(){
             + (fechado ? '' : grupos[g].map(linhaPeca).join(''));
         }).join('')
       : r.itens.map(linhaPeca).join('')) || '<tr><td colspan="6" style="padding:14px;color:#64748B">Nada encontrado.</td></tr>';
+    almCestaAplicar();
   } catch(e) { mostrarToast('❌ '+e.message,'warn'); }
 }
 let _ebRows = [];
@@ -6704,7 +6710,7 @@ async function comprarPecas(codigos){
   const res = Object.keys(grupos).map(f => (f ? (r.fornecedores[f]||'fornecedor') : 'a definir')+': '+grupos[f].length+' item(ns)').join('\n');
   if (!confirm('Criar OC em rascunho no Compras (setor Manutenção):\n\n'+res+'\n\nContinuar?')) return;
   const ok = await _criarOCs(grupos, null, 'direta');
-  if (ok.length && typeof carregarPecasReais === 'function') carregarPecasReais();
+  if (ok.length){ almCestaLimpar(); if (typeof carregarPecasReais === 'function') carregarPecasReais(); }
 }
 // (12/11/2026) Ação da barra lateral: vira o único item em destaque (azul) até clicar em outro — igual a um menu.
 // Guardado em _almAcaoOn para sobreviver a redesenhos da barra (montarNavAlm).
@@ -6714,6 +6720,42 @@ function almAcao(el, fn){
   el.classList.add('on');
   return fn();
 }
+// ═══ (12/11/2026) 🧺 CESTA DE PEÇAS — a marcação sobrevive à busca/troca de lista ═══
+// Pesquisa a 1ª peça, clica (entra na cesta), pesquisa a 2ª, clica… Comprar/Cotar usam a cesta inteira.
+// Ctrl/Shift continuam valendo dentro da lista; Ctrl-clique numa marcada tira da cesta; ✕ no chip também.
+const _almCesta = new Map();   // codigo → descrição
+function almCestaSync(trs, tr, ev){
+  const desc = t => { const td = t.querySelectorAll('td'); return (td[1] && td[1].textContent.trim()) || t.dataset.cod; };
+  if (ev.ctrlKey || ev.metaKey || ev.shiftKey){
+    trs.forEach(t => { if (t.classList.contains('sel')) _almCesta.set(t.dataset.cod, desc(t)); else _almCesta.delete(t.dataset.cod); });
+  } else {
+    _almCesta.set(tr.dataset.cod, desc(tr));
+  }
+  almCestaRender();
+}
+function almCestaAplicar(){
+  // lista redesenhada (busca, troca Catálogo/Estoque/extrato): as peças da cesta voltam marcadas
+  document.querySelectorAll('#alm-tbody tr[data-cod]').forEach(t => { if (_almCesta.has(t.dataset.cod)) t.classList.add('sel'); });
+  almCestaRender();
+}
+function almCestaRender(){
+  const b = document.getElementById('alm-cesta'); if (!b) return;
+  const n = _almCesta.size;
+  const bc = document.getElementById('alm-btn-comprar'), bt = document.getElementById('alm-btn-cotar');
+  if (bc) bc.textContent = '🛒 Comprar' + (n ? ' ('+n+')' : '');
+  if (bt) bt.textContent = '📋 Cotar' + (n ? ' ('+n+')' : '');
+  if (!n){ b.style.display = 'none'; b.innerHTML = ''; return; }
+  b.style.display = 'flex';
+  b.innerHTML = '<b style="color:#1A2A5E">🧺 Cesta ('+n+'):</b> '
+    + [..._almCesta.keys()].map(c => '<span class="chip pe" style="font-size:10px" title="'+_esc(_almCesta.get(c))+'">'+_esc(c)+' <span style="cursor:pointer" onclick="almCestaTirar(\''+_esc(c).replace(/'/g,'&#39;')+'\')">✕</span></span>').join(' ')
+    + ' <span class="muted" style="cursor:pointer;margin-left:6px" onclick="almCestaLimpar()">limpar</span>';
+}
+function almCestaTirar(cod){ _almCesta.delete(cod); document.querySelectorAll('#alm-tbody tr[data-cod]').forEach(t => { if (t.dataset.cod === cod) t.classList.remove('sel'); }); almCestaRender(); }
+function almCestaLimpar(){ _almCesta.clear(); document.querySelectorAll('#alm-tbody tr.sel[data-cod]').forEach(t => t.classList.remove('sel')); almCestaRender(); }
+function almCestaCodigos(){
+  const sel = [...document.querySelectorAll('#alm-tbody tr.sel[data-cod]')].map(t => t.dataset.cod);
+  return [..._almCesta.keys(), ...sel].filter(c => c).filter((v,i,a) => a.indexOf(v) === i);
+}
 // (12/11/2026) item de menu: abre o Estoque (onde se marcam as peças e ficam os botões 🛒 Comprar / 📋 Cotar)
 function almIrComprar(){
   if (_almVista !== 'lista' || _almLente !== 'armazem') almLente('armazem');
@@ -6722,8 +6764,7 @@ function almIrComprar(){
   mostrarToast('Marque as peças na lista e use 🛒 Comprar ou 📋 Cotar aqui em cima','ok');
 }
 function comprarSelecionadas(){
-  // (12/11/2026) sem repetir a mesma peça (no extrato ela pode aparecer em várias linhas)
-  const cods = [...document.querySelectorAll('#alm-tbody tr.sel[data-cod]')].map(t => t.dataset.cod).filter(c => c).filter((v,i,a) => a.indexOf(v) === i);
+  const cods = almCestaCodigos();   // (12/11/2026) cesta + marcadas na lista, sem repetir
   if (!cods.length){ mostrarToast('Marque as peças na lista (clique na linha; Ctrl/Shift para várias) e clique em 🛒 Comprar','warn'); return; }
   return comprarPecas(cods);
 }
@@ -6753,7 +6794,7 @@ async function _criarOCs(grupos, extra, origem){
 }
 // ═══ (12/11/2026) COTAÇÃO — 1 cotação × N fornecedores → mapa de comparação → OC(s) ═══
 function cotarSelecionadas(){
-  const cods = [...document.querySelectorAll('#alm-tbody tr.sel[data-cod]')].map(t => t.dataset.cod).filter(c => c).filter((v,i,a) => a.indexOf(v) === i);
+  const cods = almCestaCodigos();   // (12/11/2026) cesta + marcadas na lista, sem repetir
   if (!cods.length){ mostrarToast('Marque as peças na lista (clique na linha; Ctrl/Shift para várias) e clique em 📋 Cotar','warn'); return; }
   return cotarPecas(cods);
 }
@@ -6781,6 +6822,7 @@ async function cotacaoCriar(d){
   try {
     const c = await _fxCompras('/compras/api/cotacoes', { method:'POST', body: JSON.stringify(Object.assign({ setor_codigo: setor }, d)) });
     mostrarToast('📋 '+c.numero+' aberta','ok');
+    if (d.origem === 'direta') almCestaLimpar();
     cotacaoMapa(c.id);
   } catch(e){ mostrarToast('❌ '+e.message,'warn'); }
 }
@@ -6989,6 +7031,7 @@ async function carregarArmazem(q){
       <td class="r mono">${x.ultimo_preco != null ? 'R$ ' + parseFloat(x.ultimo_preco).toFixed(2) : '<span class="muted">—</span>'}</td>
       <td class="r mono">${x.custo_medio != null ? 'R$ ' + parseFloat(x.custo_medio).toFixed(2) : '—'}</td>
     </tr>`).join('') || '<tr><td colspan="11" style="padding:14px;color:#64748B">Nenhuma existência' + (_almFiltro !== '_todos' ? ' neste local' : '') + ' — dê entrada de peças para povoar.</td></tr>';
+    almCestaAplicar();
   } catch(e){ mostrarToast('❌ '+e.message, 'warn'); }
 }
 let _pcFicha = null;

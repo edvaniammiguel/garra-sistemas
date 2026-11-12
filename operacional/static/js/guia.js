@@ -66,7 +66,11 @@
   function posicionar() {
     if (!roteiro) return;
     const p = roteiro.passos[i];
-    const a = alvoAtual;
+    let a = alvoAtual;
+    // (12/11/2026) alvo que saiu da tela (barra redesenhada, janela fechada) ou invisível (0×0): procura de novo;
+    // se não achar, vira cartão centralizado em vez de ficar solto no canto
+    const valido = x => x && document.body.contains(x) && (() => { const r = x.getBoundingClientRect(); return r.width > 0 && r.height > 0; })();
+    if (!valido(a) && p.alvo) { a = q(p.alvo); alvoAtual = valido(a) ? a : null; a = alvoAtual; }
     if (!a) { el.sombra.style.display = 'none'; el.balao.classList.add('cartao'); el.balao.style.left = el.balao.style.top = ''; return; }
     el.balao.classList.remove('cartao');
     const r = a.getBoundingClientRect(), m = 6;
@@ -80,12 +84,15 @@
     if (top < 12) { top = 12; seta = ''; }
     let left = Math.max(12, Math.min(r.left, window.innerWidth - bw - 12));
     if (p.posicao === 'esquerda' && r.left - bw - 16 > 12) { left = r.left - bw - 16; top = Math.max(12, r.top); seta = 'dir'; }
+    // (12/11/2026) 'direita': balão ao lado direito do alvo (itens da barra lateral) — se couber na janela
+    if (p.posicao === 'direita' && r.right + 16 + bw < window.innerWidth - 12) { left = r.right + 16; top = Math.max(12, Math.min(r.top, window.innerHeight - bh - 12)); seta = 'esq'; }
     el.balao.style.left = left + 'px'; el.balao.style.top = top + 'px';
     const s = el.balao.querySelector('.gg-seta'); if (s) {
       const cx = Math.min(Math.max(r.left + r.width / 2 - left - 7, 14), bw - 28);
       if (seta === 'cima') s.style.cssText = 'top:-7px;left:' + cx + 'px';
       else if (seta === 'baixo') s.style.cssText = 'bottom:-7px;left:' + cx + 'px';
       else if (seta === 'dir') s.style.cssText = 'right:-7px;top:18px';
+      else if (seta === 'esq') s.style.cssText = 'left:-7px;top:18px';
       else s.style.display = 'none';
     }
   }
