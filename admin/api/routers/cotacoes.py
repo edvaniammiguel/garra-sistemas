@@ -81,6 +81,15 @@ def _f(v):
     return float(v) if v is not None else None
 
 
+def _obs_cel(precos, item_id, cf_id):
+    """Observação lançada na célula item × fornecedor (ex.: 'substituto: marca X'), ignorando o aviso de pré-preenchimento."""
+    for p in precos:
+        if str(p["item_id"]) == str(item_id) and str(p["cf_id"]) == str(cf_id):
+            o = (p.get("observacao") or "").strip()
+            return "" if o.startswith("último preço conhecido") else o
+    return ""
+
+
 # ── Histórico de entrega do fornecedor (prometido × real) ──────────────────
 async def _historico_entrega(fornecedor_ids):
     """Para cada fornecedor: cotações vencidas com entrega registrada → % no prazo e atraso médio.
@@ -450,7 +459,9 @@ async def encerrar(cid: str, request: Request, payload=Depends(verificar_compras
             "equipamento_id": str(cot["equipamento_id"]) if cot.get("equipamento_id") else None,
             "condicao_pagamento": f.get("condicao_pagamento"), "origem": "cotacao",
             "observacao": f"Cotação {cot['numero']} · prazo prometido {f.get('prazo_dias') or '?'} dia(s)" + (f" · frete R$ {float(f.get('frete') or 0):.2f}" if f.get("frete") else ""),
-            "itens": [{"peca_id": str(i["peca_id"]) if i.get("peca_id") else None, "descricao": i["descricao"],
+            "itens": [{"peca_id": str(i["peca_id"]) if i.get("peca_id") else None,
+                       # (12/11/2026) observação da célula (substituto/marca) vai para o item da OC
+                       "descricao": i["descricao"] + ((" (" + _obs_cel(precos, i["id"], cf_id) + ")") if _obs_cel(precos, i["id"], cf_id) else ""),
                        "quantidade": float(i["quantidade"]), "unidade": i.get("unidade") or "UN",
                        "valor_unit": tabela[(str(i["id"]), cf_id)]} for i in lista],
         }

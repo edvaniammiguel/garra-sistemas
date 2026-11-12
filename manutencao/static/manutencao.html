@@ -6825,9 +6825,10 @@ function _cotHtml(){
     c.fornecedores.forEach(f => {
       const p = precos[it.id+'|'+f.id] || {}; const venc = sug.por_item && sug.por_item[it.id] === f.id;
       h += '<td style="text-align:center'+(venc?';background:#ECFDF5':'')+'">'
-        + (aberta ? '<input class="cot-preco" data-it="'+it.id+'" data-cf="'+f.id+'" type="number" step="0.01" min="0" placeholder="não tem" value="'+(p.preco_unit!=null?p.preco_unit:'')+'" style="width:84px;text-align:right'+(p.preco_unit!=null && p.preco_unit===ml?';font-weight:700;color:#15803D':'')+'" title="'+_esc(p.observacao||'preço unitário')+'">'
+        + (aberta ? '<input class="cot-preco" data-it="'+it.id+'" data-cf="'+f.id+'" data-obs="'+_esc(p.observacao||'')+'" type="number" step="0.01" min="0" placeholder="não tem" value="'+(p.preco_unit!=null?p.preco_unit:'')+'" style="width:84px;text-align:right'+(p.preco_unit!=null && p.preco_unit===ml?';font-weight:700;color:#15803D':'')+'" title="'+_esc(p.observacao||'preço unitário')+'">'
+                   + ' <span style="cursor:pointer;font-size:11px" title="Oferta diferente do pedido? Anote marca/código do substituto ou observação" onclick="cotObsCelula(\''+it.id+'\',\''+f.id+'\')">✎</span>'
                  : '<span class="mono"'+(p.preco_unit!=null && p.preco_unit===ml?' style="font-weight:700;color:#15803D"':'')+'>'+(p.preco_unit!=null?money(p.preco_unit):'<span class=muted>—</span>')+'</span>')
-        + (p.observacao && aberta ? '<div class="muted" style="font-size:8px">'+_esc(p.observacao)+'</div>' : '')
+        + (p.observacao && !/^último preço conhecido/.test(p.observacao) ? '<div style="font-size:9px;color:#B45309" title="'+_esc(p.observacao)+'">⚠ '+_esc(p.observacao.length>28?p.observacao.slice(0,28)+'…':p.observacao)+'</div>' : (p.observacao && aberta ? '<div class="muted" style="font-size:8px">'+_esc(p.observacao)+'</div>' : ''))
         + (aberta && c.modo==='item' && p.preco_unit!=null ? '<div><label style="font-size:9px"><input type="radio" name="venc-'+it.id+'" value="'+f.id+'"'+(venc?' checked':'')+'> vencedor</label></div>' : '')
         + '</td>';
     });
@@ -6848,7 +6849,7 @@ function _cotHtml(){
       + '<span>1 fornecedor: <b>'+(pf!=null ? money(pf)+' — '+_esc(nomeCf(sug.por_fornecedor)) : 'ninguém cotou tudo')+'</b></span>'
       + '<span>Por item: <b>'+(sug.custo_por_item!=null ? money(sug.custo_por_item)+' em '+sug.fornecedores_por_item+' fornecedor(es)' : '—')+'</b>'+(sug.itens_sem_cotacao&&sug.itens_sem_cotacao.length?' <span style="color:#B91C1C">· '+sug.itens_sem_cotacao.length+' item(ns) sem preço</span>':'')+'</span>'
       + '<span style="margin-left:auto;display:flex;gap:6px"><button class="btn" onclick="cotCancelar()">Cancelar cotação</button><button class="btn" onclick="cotSalvar()">💾 Salvar respostas</button>'
-      + '<label style="font-size:10px"><input type="checkbox" id="cot-solicitar" checked> já enviar p/ aprovação</label>'
+      + '<label style="font-size:10px" title="Marcado: a OC do vencedor já vai para aprovação ao encerrar. Desmarcado (padrão): nasce em rascunho e você envia pelo Pedidos de compra."><input type="checkbox" id="cot-solicitar"> já enviar a OC p/ aprovação</label>'
       + '<button class="btn p" onclick="cotEncerrar()">✔ Encerrar → gerar OC</button></span></div>'
       + '<div class="muted" style="font-size:10px;margin-top:4px">Lance preço unitário por item (vazio = fornecedor não tem), prazo, frete e condição. Verde = melhor da linha / sugestão. Ao encerrar, nasce 1 OC por fornecedor vencedor e o preço/prazo de <b>todos</b> que responderam vira referência das peças. Depois, ao receber a OC, o sistema compara prazo prometido × real (histórico de entrega).</div>';
   }
@@ -6857,12 +6858,21 @@ function _cotHtml(){
 function _cotLerRespostas(){
   const out = {};
   _cot.fornecedores.forEach(f => { out[f.id] = { precos: [] }; });
-  document.querySelectorAll('.cot-preco').forEach(i => { out[i.dataset.cf].precos.push({ item_id: i.dataset.it, preco_unit: i.value === '' ? null : parseFloat(i.value) }); });
+  document.querySelectorAll('.cot-preco').forEach(i => { out[i.dataset.cf].precos.push({ item_id: i.dataset.it, preco_unit: i.value === '' ? null : parseFloat(i.value), observacao: i.dataset.obs || null }); });
   document.querySelectorAll('.cot-prazo').forEach(i => out[i.dataset.cf].prazo_dias = i.value === '' ? null : parseInt(i.value));
   document.querySelectorAll('.cot-frete').forEach(i => out[i.dataset.cf].frete = i.value === '' ? 0 : parseFloat(i.value));
   document.querySelectorAll('.cot-cond').forEach(i => out[i.dataset.cf].condicao_pagamento = i.value);
   document.querySelectorAll('.cot-st').forEach(i => out[i.dataset.cf].status = i.value);
   return out;
+}
+// (12/11/2026) fornecedor ofereceu substituto / marca diferente: anota na célula (vai para a OC se ele vencer)
+function cotObsCelula(itemId, cfId){
+  const inp = document.querySelector('.cot-preco[data-it="'+itemId+'"][data-cf="'+cfId+'"]'); if (!inp) return;
+  const atual = /^último preço conhecido/.test(inp.dataset.obs||'') ? '' : (inp.dataset.obs||'');
+  const v = prompt('Oferta diferente do pedido? Anote marca / código / observação do substituto.\n(Vazio = sem observação. Se não serve, deixe o preço em branco = "não tem".)', atual);
+  if (v === null) return;
+  inp.dataset.obs = v.trim(); inp.title = v.trim() || 'preço unitário';
+  cotSalvar(true);
 }
 async function cotSalvar(silencio){
   const r = _cotLerRespostas();
