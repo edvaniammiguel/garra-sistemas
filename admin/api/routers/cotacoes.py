@@ -311,12 +311,11 @@ async def criar(request: Request, payload=Depends(verificar_compras_solicitante)
     numero = f"COT-{date.today().year}-{int(seq['n']):04d}"
     uid = await _usuario_id(payload)
     row = await ajard_query_id(
-        # (13/11/2026) modo padrão = 'item' (melhor de cada): na prática a compra quase sempre sai dividida
-        # entre fornecedores. Com 1 fornecedor só dá no mesmo (1 OC); 'por fornecedor' continua no seletor.
+        # (13/11/2026) modo padrão = 'fornecedor' (1 OC) — decisão da gestão; 'por item' fica no seletor do mapa.
         # (13/11/2026) pendencia_id: cotação aberta a partir de uma pendência — ao encerrar, a pendência é resolvida
         # (item comprado) ou fica a MESMA (sem oferta de novo); nunca nasce uma segunda pendência da mesma peça.
         """INSERT INTO compras.cotacoes (numero, ano, sequencia, setor_codigo, origem, ot_id, equipamento_id, observacao, criado_por, modo, pendencia_id)
-           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,'item',%s)""",
+           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,'fornecedor',%s)""",
         (numero, date.today().year, int(seq["n"]), setor, (d.get("origem") or "manual"), d.get("ot_id") or None,
          d.get("equipamento_id") or None, d.get("observacao"), uid, d.get("pendencia_id") or None))
     cid = row["id"]
@@ -529,7 +528,7 @@ async def cotacao_saldo(cid: str, request: Request, payload=Depends(verificar_co
     uid = await _usuario_id(payload)
     row = await ajard_query_id(
         """INSERT INTO compras.cotacoes (numero, ano, sequencia, setor_codigo, origem, ot_id, equipamento_id, observacao, criado_por, cotacao_origem_id, modo)
-           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,'item')""",
+           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,'fornecedor')""",
         (numero, date.today().year, int(seq["n"]), cot.get("setor_codigo"), "saldo", cot.get("ot_id"), cot.get("equipamento_id"),
          f"Saldo da {cot['numero']}: itens sem oferta aceita", uid, cid))
     nid = row["id"]
