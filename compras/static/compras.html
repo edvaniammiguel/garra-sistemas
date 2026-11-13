@@ -87,9 +87,9 @@ header .badge-fila{background:var(--red);border-radius:99px;padding:1px 8px;font
 .modal-bg.on{display:flex}
 .modal{background:#fff;width:100%;max-width:640px;border-radius:14px 14px 0 0;padding:18px;max-height:92dvh;overflow-y:auto}
 @media(min-width:700px){.modal-bg.on{align-items:center}.modal{border-radius:14px}}
-.modal .mh{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
-.modal .mh h2{font-size:16px;color:var(--blue)}
-.modal .fechar{background:none;border:none;font-size:26px;color:var(--muted);cursor:pointer;line-height:1}
+.modal .mh,.wa-card .mh{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
+.modal .mh h2,.wa-card .mh h2{font-size:16px;color:var(--blue)}
+.modal .fechar,.wa-card .fechar{background:none;border:none;font-size:26px;color:var(--muted);cursor:pointer;line-height:1} /* (13/11/2026) ✕ da folha do WhatsApp alinhado ao título */
 .trilha{border-left:3px solid #E2E8F0;padding-left:12px;margin-top:8px}
 .trilha .ev{font-size:12px;margin-bottom:8px}
 .trilha .ev b{color:var(--blue)}
@@ -1144,9 +1144,21 @@ function fornResolver(){
   return false;                                  // ambíguo/inexistente
 }
 
+// (13/11/2026) Copiar = enviar por outro canal: fecha a folha e marca a OC como Enviada (igual ao WhatsApp)
 function waCopiar(){
-  if(!_waCtx) return;
-  if(navigator.clipboard) navigator.clipboard.writeText(_waCtx.txt).then(()=>toast('📋 Mensagem copiada','ok')).catch(()=>toast('Selecione e copie manualmente','warn'));
+  const c=_waCtx; if(!c) return;
+  const fim=()=>{ document.getElementById('wa-overlay').classList.remove('on'); waMarcarEnviada(); };
+  if(navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(c.txt).then(()=>{ toast('📋 Mensagem copiada — cole na conversa do fornecedor','ok'); fim(); }).catch(()=>{ toast('Selecione e copie manualmente','warn'); });
+  else toast('Selecione e copie manualmente','warn');
+}
+function waMarcarEnviada(){
+  const c=_waCtx; if(!c || !c.marcar) return;
+  api('/compras/api/ocs/'+c.id+'/enviar',{method:'POST'}).then(()=>{
+    toast('📤 '+c.numero+' marcada como Enviada','ok');
+    c.marcar=false;
+    carregarLista(); carregarResumo();
+    try{ abrirDetalhe(c.id); }catch(_){}
+  }).catch(e=>toast('Não marcou como enviada: '+e.message+' — use "Marcar enviada"','warn'));
 }
 
 function waAbrir(usarNumero){
@@ -1155,14 +1167,7 @@ function waAbrir(usarNumero){
   if(navigator.clipboard) navigator.clipboard.writeText(c.txt).catch(()=>{});
   abrirWhatsApp(win, usarNumero?c.fone:'', c.txt);
   document.getElementById('wa-overlay').classList.remove('on');
-  if (c.marcar){
-    api('/compras/api/ocs/'+c.id+'/enviar',{method:'POST'}).then(()=>{
-      toast('📤 '+c.numero+' marcada como Enviada','ok');
-      c.marcar=false;
-      carregarLista(); carregarResumo();
-      try{ abrirDetalhe(c.id); }catch(_){}
-    }).catch(e=>toast('Não marcou como enviada: '+e.message+' — use "Marcar enviada"','warn'));
-  }
+  waMarcarEnviada();
 }
 
 /* ══ RECEBIMENTO ══ */
