@@ -5930,8 +5930,9 @@ async function montarNavAlm(){
   const sel = document.getElementById('alm-local');
   if (sel) sel.innerHTML = '<option value="_todos"'+(_almFiltro==='_todos'?' selected':'')+'>🏬 Todos os locais</option>'
     + _almList.map(a=>'<option value="'+_esc(a.codigo)+'"'+(a.codigo===_almFiltro?' selected':'')+'>'+_esc(a.codigo)+' — '+_esc(a.nome||'')+'</option>').join('');
-  let baixoN = 0;
+  let baixoN = 0, necN = 0;
   try { baixoN = (await mntFetch('/manutencao/api/estoque-baixo')).length; } catch(e){}
+  try { necN = (await mntFetch('/manutencao/api/necessidades?prazo=atencao')).n_faltantes || 0; } catch(e){}   // (13/11/2026)
   let fams = [];
   try { fams = (await mntFetch('/manutencao/api/param/familias')).filter(f => f.ativo !== false); } catch(e){}
   fams.forEach(f => { _almFamNomes[f.codigo] = f.nome || ''; });
@@ -5993,6 +5994,8 @@ async function montarNavAlm(){
       + '<div class="pn-item'+vistaOn('mov')+'" onclick="_almAcaoOn=null;almVistaMov()">🧾 Movimentos (extrato)</div>'
       + '<div class="pn-item'+vistaOn('baixo')+'" onclick="_almAcaoOn=null;almVistaBaixo()">⚠ Abaixo do mínimo'
       + (baixoN ? ' <span class="chip nr">'+baixoN+'</span>' : ' <span class="muted">(0)</span>') + '</div>'
+      + '<div class="pn-item'+vistaOn('nec')+'" onclick="_almAcaoOn=null;almVistaNec()" title="Peças previstas nas OTs programadas (FMP/Planejado) que o estoque e as OCs abertas não cobrem — na ordem do prazo">📅 Peças das OTs programadas'
+      + (necN ? ' <span class="chip nr" title="peças em falta para OTs vencidas ou em atenção">'+necN+'</span>' : ' <span class="muted">(0)</span>') + '</div>'
       + '<div class="pn-item'+vistaOn('pedidos')+'" onclick="_almAcaoOn=null;almVistaPedidos()" title="OCs do setor Manutenção por estágio — busca por nº, peça, fornecedor ou OT">📑 Pedidos de compra</div>'
       + '</div>';
   }
@@ -6051,9 +6054,113 @@ async function almVistaBaixo(){
   _almVista = 'baixo';
   montarNavAlm();
   const fbp = document.getElementById('ped-filtros'); if (fbp) fbp.style.display = 'none';
+  const fbn = document.getElementById('nec-filtros'); if (fbn) fbn.style.display = 'none';
   const th = document.getElementById('alm-thead');
   if (th) th.innerHTML = '<th style="width:26px"><input type="checkbox" title="marcar todos" onchange="document.querySelectorAll(\'#alm-tbody .eb-ck\').forEach(c=>c.checked=this.checked)"></th><th style="width:100px">Código</th><th>Descrição</th><th style="width:60px">Local</th><th class="r" style="width:56px">Saldo</th><th class="r" style="width:60px" title="Previsto nas OTs programadas">Comprom.</th><th class="r" style="width:56px">Mín</th><th class="r" style="width:56px">Máx</th><th class="r" style="width:70px">Em pedido</th><th class="r" style="width:70px">A conferir</th><th class="r" style="width:70px">Sugestão</th><th style="width:150px">Fornecedor ref.</th>';
   renderEstoqueBaixo();
+}
+// ═══ (13/11/2026) 📅 PEÇAS DAS OTs PROGRAMADAS — "comprar só o necessário" ═══════════════════════════════
+// Agrupa por OT na ordem do prazo (semáforo). Linha = peça prevista que estoque + OCs abertas não cobrem.
+// Marcar → 📋 Cotar / 🛒 Comprar com a quantidade FALTANTE; o rodapé soma o R$ estimado do que está marcado.
+let _necDados = null;
+async function almVistaNec(){
+  _almVista = 'nec';
+  montarNavAlm();
+  const fbm = document.getElementById('mov-filtros'); if (fbm) fbm.style.display = 'none';
+  const fbp = document.getElementById('ped-filtros'); if (fbp) fbp.style.display = 'none';
+  const th = document.getElementById('alm-thead');
+  if (th) th.innerHTML = '<th style="width:26px"><input type="checkbox" title="marcar todas as peças em falta" onchange="necMarcarTodos(this.checked)"></th>'
+    + '<th style="width:96px">Peça</th><th>Descrição</th><th class="r" style="width:60px">Precisa</th><th class="r" style="width:76px" title="o que sobra no estoque para esta OT (a OT mais urgente consome primeiro)">Disponível</th>'
+    + '<th class="r" style="width:76px" title="em OC aberta ou chegou e aguarda conferência">Em pedido</th><th class="r" style="width:64px">Faltante</th><th class="r" style="width:84px">Últ. preço</th><th class="r" style="width:96px">R$ estimado</th>';
+  const tb = document.getElementById('alm-tbody'); if (!tb) return;
+  let fb = document.getElementById('nec-filtros');
+  if (!fb) {
+    fb = document.createElement('div'); fb.id = 'nec-filtros';
+    fb.style.cssText = 'display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:6px 0 8px';
+    fb.innerHTML = '<span class="muted" style="font-size:11px">Peças previstas das OTs (FMP / Planejado) que o estoque + OCs abertas não cobrem, na ordem do prazo.</span>'
+      + '<span style="margin-left:auto;display:flex;gap:8px;align-items:center">'
+      + '<label style="font-size:11px">Prazo <select id="nec-prazo" style="font-size:11px" onchange="renderNec()"><option value="atencao">🔴🟡 vencidas e em atenção</option><option value="15">até 15 dias</option><option value="30">até 30 dias</option><option value="todas">todas as programadas</option></select></label>'
+      + '<label style="font-size:11px;display:flex;gap:4px;align-items:center"><input type="checkbox" id="nec-cobertas" onchange="renderNec()"> mostrar também as cobertas</label>'
+      + '<button class="btn" onclick="necComprar()" title="OC em rascunho (uma por fornecedor de referência) com as quantidades faltantes marcadas">🛒 Comprar marcados</button>'
+      + '<button class="btn p" id="nec-btn-cotar" onclick="necCotar()" title="Uma cotação com as peças marcadas (quantidade = faltante), ligada às OTs">📋 Cotar marcados</button></span>';
+    const wrap = tb.closest('table').parentElement; wrap.parentElement.insertBefore(fb, wrap);
+  }
+  fb.style.display = 'flex';
+  renderNec();
+}
+async function renderNec(){
+  const tb = document.getElementById('alm-tbody'); if (!tb || _almVista !== 'nec') return;
+  const prazo = (document.getElementById('nec-prazo')||{}).value || 'atencao', cob = (document.getElementById('nec-cobertas')||{}).checked ? 1 : 0;
+  tb.innerHTML = '<tr><td colspan="9" style="padding:12px" class="muted">Calculando…</td></tr>';
+  let d; try { d = await mntFetch('/manutencao/api/necessidades?prazo='+prazo+'&cobertas='+cob); } catch(e){ tb.innerHTML = '<tr><td colspan="9" style="padding:12px;color:#B91C1C">'+_esc(e.message)+'</td></tr>'; return; }
+  _necDados = d;
+  const money = v => (v == null ? '—' : 'R$ '+(parseFloat(v)||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2}));
+  const ocsCurto = l => { l = (l||[]).map(x => x.replace(/ \(.*\)$/,'')); return l.slice(0,2).join(', ')+(l.length>2 ? ' +'+(l.length-2) : ''); };
+  const cor = n => ['#DC2626','#F59E0B','#16A34A'][n] || '#94A3B8', bola = n => '<span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:'+cor(n)+';margin-right:5px;vertical-align:middle"></span>';
+  let h = '';
+  d.ots.forEach((o, oi) => {
+    h += '<tr style="background:#F1F5F9"><td colspan="9" style="padding:5px 8px;font-weight:700;color:#1A2A5E;font-size:11px">'+bola(o.nivel)+_esc(o.numero)+' · '+_esc(o.equipamento)+(o.equipamento_descricao?' · '+_esc(o.equipamento_descricao):'')
+      + ' <span class="muted" style="font-weight:400">· '+_esc((o.tipo_trabalho?o.tipo_trabalho+' ':'')+(o.plano||''))+' · '+_esc(o.vencimento||'')+(o.data_ref?' ('+_fmtData(o.data_ref)+')':'')+'</span>'
+      + ' <span style="float:right;font-weight:400;font-size:10px;color:#1A2A5E;cursor:pointer;text-decoration:underline" onclick="otAbrirEm(\''+o.ot_id+'\',\'pc\')">abrir OT</span></td></tr>';
+    o.itens.forEach((it, ii) => {
+      const falta = it.faltante > 0, ck = falta && o.nivel < 2;
+      h += '<tr'+(ck?' class="carrinho"':'')+'><td style="text-align:center">'+(falta ? '<input type="checkbox" class="nec-ck"'+(ck?' checked':'')+' value="'+oi+':'+ii+'" onchange="necTotal()">' : '')+'</td>'
+        + '<td><b>'+_esc(it.codigo)+'</b>'+(it.sem_cadastro?' <span class="chip tm" style="font-size:9px" title="código não existe no catálogo — a cotação sai com a descrição">sem cadastro</span>':'')+'</td>'
+        + '<td>'+_esc(it.descricao||'')+(!falta ? ' <span class="chip ok" style="font-size:9px" title="'+_esc((it.ocs||[]).join(', '))+'">'+(it.em_pedido>0 ? 'coberta por OC: '+_esc(ocsCurto(it.ocs)) : 'coberta pelo estoque')+'</span>' : (it.em_pedido>0 ? ' <span class="muted" style="font-size:9px" title="'+_esc((it.ocs||[]).join(', '))+'">parte em '+_esc(ocsCurto(it.ocs))+'</span>' : ''))+'</td>'
+        + '<td class="r">'+it.precisa+' <span class="muted" style="font-size:9px">'+_esc(it.unidade||'')+'</span></td>'
+        + '<td class="r" style="color:'+(it.disponivel>0?'#475569':'#B91C1C')+'">'+it.disponivel+(it.saldo_total!=null && it.saldo_total>it.disponivel ? ' <span class="muted" style="font-size:9px" title="existência total; o resto já está comprometido com OT mais urgente">(de '+it.saldo_total+')</span>' : '')+'</td>'
+        + '<td class="r muted">'+(it.em_pedido>0 ? it.em_pedido : '—')+'</td>'
+        + '<td class="r" style="font-weight:700;color:'+(falta?'#B91C1C':'#16A34A')+'">'+it.faltante+'</td>'
+        + '<td class="r muted">'+money(it.preco)+'</td><td class="r">'+(falta ? money(it.estimado) : '—')+'</td></tr>';
+    });
+  });
+  if (!d.ots.length) h += '<tr><td colspan="9" style="padding:14px" class="muted">Nenhuma peça em falta para as OTs deste prazo'+(prazo==='atencao'?' — experimente "até 30 dias"':'')+'.</td></tr>';
+  if (d.sem_previsao && d.sem_previsao.length)
+    h += '<tr><td colspan="9" style="padding:8px;background:#FFF7ED;color:#B45309;font-size:11px">⚠ '+d.sem_previsao.length+' OT(s) em atenção <b>sem peças previstas</b>: '+d.sem_previsao.map(x => _esc(x.numero)+' '+_esc(x.equipamento)+' ('+_esc(x.vencimento)+')').join(' · ')+' — preencha "Peças previstas" na FMP ou no Planejado da OT para elas entrarem aqui.</td></tr>';
+  h += '<tr><td colspan="9" id="nec-rodape" style="padding:8px;color:#475569;font-size:11px;background:#F8FAFC"></td></tr>';
+  tb.innerHTML = h;
+  necTotal();
+}
+function necMarcados(){
+  return Array.from(document.querySelectorAll('#alm-tbody .nec-ck:checked')).map(c => { const [oi, ii] = c.value.split(':').map(Number); const o = _necDados.ots[oi]; return Object.assign({ ot: o }, o.itens[ii]); });
+}
+function necTotal(){
+  const m = necMarcados(), ots = new Set(m.map(x => x.ot.numero));
+  const tot = m.reduce((s, x) => s + (x.estimado || 0), 0), semPreco = m.filter(x => x.estimado == null).length;
+  document.querySelectorAll('#alm-tbody .nec-ck').forEach(c => c.closest('tr').classList.toggle('carrinho', c.checked));
+  const money = v => 'R$ '+(parseFloat(v)||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
+  const r = document.getElementById('nec-rodape');
+  if (r) r.innerHTML = m.length
+    ? '<b>Marcados:</b> '+m.length+' peça(s) · '+ots.size+' OT(s) · <b>'+(tot>0||!semPreco ? money(tot) : '—')+'</b> estimado (último preço)'+(semPreco?' <span class="muted">· '+semPreco+' sem preço conhecido</span>':'')+' &nbsp;·&nbsp; <span class="muted">Peça igual em várias OTs vira uma linha só na cotação; a OC nasce ligada às OTs e avisa o mecânico ao conferir.</span>'
+    : '<span class="muted">Marque as peças que quer cotar ou comprar agora — o total aparece aqui. Itens de OTs vencidas/em atenção já vêm marcados.</span>';
+  const b = document.getElementById('nec-btn-cotar'); if (b) b.textContent = '📋 Cotar marcados'+(m.length?' ('+m.length+')'+(tot>0?' · '+money(tot):''):'');
+}
+function necMarcarTodos(v){ document.querySelectorAll('#alm-tbody .nec-ck').forEach(c => c.checked = v); necTotal(); }
+function _necAgrupar(){
+  // peça igual em várias OTs → uma linha com a soma; guarda as OTs para a observação
+  const m = necMarcados(), por = new Map();
+  m.forEach(x => { const k = x.codigo; const a = por.get(k) || { codigo: x.codigo, peca_id: x.peca_id || null, descricao: x.descricao, unidade: x.unidade || 'UN', qtd: 0, ots: new Set() }; a.qtd += x.faltante; a.ots.add(x.ot.numero); por.set(k, a); });
+  return Array.from(por.values());
+}
+async function necCotar(){
+  const g = _necAgrupar();
+  if (!g.length){ mostrarToast('Marque ao menos uma peça em falta','warn'); return; }
+  const ots = Array.from(new Set(necMarcados().map(x => x.ot))), otsN = Array.from(new Set(ots.map(o => o.numero)));
+  return cotacaoCriar({ origem: 'ot', ot_id: ots.length === 1 ? ots[0].ot_id : null, equipamento_id: null,
+    observacao: 'Peças das OTs programadas: '+otsN.join(', '),
+    itens: g.map(a => ({ peca_id: a.peca_id, peca_codigo: a.codigo, descricao: a.codigo+' — '+(a.descricao||'')+' (OT '+Array.from(a.ots).join(', ')+')', quantidade: a.qtd, unidade: a.unidade })) });
+}
+async function necComprar(){
+  const g = _necAgrupar().filter(a => a.peca_id);
+  if (!g.length){ mostrarToast('Marque ao menos uma peça cadastrada em falta','warn'); return; }
+  let r; try { r = await mntFetch('/manutencao/api/pecas/comprar', {method:'POST', body: JSON.stringify({itens: g.map(a => ({ codigo: a.codigo, quantidade: a.qtd }))})}); } catch(e){ mostrarToast('❌ '+e.message,'warn'); return; }
+  const grupos = r.grupos || {}; const nF = Object.keys(grupos).length;
+  if (!nF){ mostrarToast('Nenhuma peça válida','warn'); return; }
+  const res = Object.keys(grupos).map(f => (f ? (r.fornecedores[f]||'fornecedor') : 'a definir')+': '+grupos[f].length+' item(ns)').join('\n');
+  if (!confirm('Criar OC em rascunho no Compras com as quantidades faltantes:\n\n'+res+'\n\nContinuar?')) return;
+  const otsN = Array.from(new Set(necMarcados().map(x => x.ot.numero))), ots = Array.from(new Set(necMarcados().map(x => x.ot.ot_id)));
+  const ok = await _criarOCs(grupos, Object.assign({ observacao: 'Peças das OTs programadas: '+otsN.join(', ') }, ots.length === 1 ? { ot_id: ots[0] } : {}), 'ot');
+  if (ok.length) renderNec();
 }
 // (12/11/2026) 📑 Pedidos de compra — as OCs do setor Manutenção lidas direto do Compras (uma verdade só),
 // agrupadas pelo estágio que importa à oficina. Busca por nº, peça, fornecedor, OT ou equipamento.
@@ -6183,6 +6290,7 @@ async function almVistaMov(){
   _almVista = 'mov';
   montarNavAlm();
   const fbp = document.getElementById('ped-filtros'); if (fbp) fbp.style.display = 'none';
+  const fbn = document.getElementById('nec-filtros'); if (fbn) fbn.style.display = 'none';
   const th = document.getElementById('alm-thead');
   if (th) th.innerHTML = '<th style="width:96px">Data</th><th style="width:96px">Tipo</th>'
     + '<th style="width:150px">Documento / Peça</th><th>Descrição</th><th style="width:56px" class="r">Qtd</th>'
@@ -6572,6 +6680,7 @@ function almLente(l){
   _almAcaoOn = null;   // (12/11/2026) vista escolhida → destaque sai da operação
   const fbm = document.getElementById('mov-filtros'); if (fbm) fbm.style.display = 'none';
   const fbp = document.getElementById('ped-filtros'); if (fbp) fbp.style.display = 'none';
+  const fbn = document.getElementById('nec-filtros'); if (fbn) fbn.style.display = 'none';
   _almLente = l;
   const bm = document.getElementById('alm-l-mestre'), ba = document.getElementById('alm-l-armazem');
   if (bm) bm.className = 'btn' + (l === 'mestre' ? ' p' : '');

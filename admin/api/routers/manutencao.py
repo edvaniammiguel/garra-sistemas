@@ -3479,6 +3479,111 @@ async def pecas_comprar(request: Request, payload=Depends(verificar_manutencao))
     return {"grupos": grupos, "fornecedores": nomes}
 
 
+# ══ (13/11/2026) PEÇAS DAS OTs PROGRAMADAS — "comprar só o necessário" ═══════════════════════
+# Peças previstas (FMP ou Planejado da OT) das OTs vivas, na ordem do prazo (semáforo), com o que o
+# estoque + OCs abertas não cobrem. O disponível é repartido entre as OTs na ordem do prazo: a OT mais
+# urgente consome o saldo primeiro, a seguinte só vê o que sobrou (assim 2 OTs não "contam" a mesma peça).
+@router.get("/manutencao/api/necessidades")
+async def necessidades_ots(prazo: str = "atencao", cobertas: int = 0, _auth=Depends(verificar_manutencao)):
+    """prazo: atencao (vencidas + a vencer) · 15 · 30 · todas. cobertas=1 mostra também as peças já cobertas."""
+    import json as _json
+    from datetime import date as _date
+    hoje = _date.today()
+    rows = await ajard_query(
+        """SELECT o.id, o.numero, o.status, o.data_prevista, o.data_limite, o.horimetro_previsto, o.tipo_trabalho,
+                  o.descricao, COALESCE(o.pecas_previstas, p.pecas) AS pecas, p.descricao AS plano_descricao,
+                  eq.codigo AS equipamento, eq.descricao AS equipamento_descricao, eq.horimetro_atual AS equipamento_horimetro,
+                  eq.medicao AS equipamento_medicao
+           FROM manutencao.ot o
+           LEFT JOIN manutencao.planos p ON p.id = o.plano_id
+           JOIN operacional.equipamentos eq ON eq.id = o.equipamento_id
+           WHERE o.ativo=true AND o.status IN ('programada','aberta','aguardando_peca')""") or []
+    ots = []
+    for r in rows:
+        d = dict(r)
+        if d["status"] == "programada":
+            v = _vencimento_ot(d.get("data_prevista"), d.get("horimetro_previsto"), d.get("equipamento_horimetro"), hoje,
+                               "km" if (d.get("equipamento_medicao") or "") == "km" else "h")
+        else:
+            v = _vencimento_ot(d.get("data_limite"), None, None, hoje) if d.get("data_limite") else None
+        nivel = v["nivel"] if v else 2
+        dias = None
+        ref = d.get("data_prevista") if d["status"] == "programada" else d.get("data_limite")
+        if ref:
+            dias = (ref - hoje).days
+        if prazo == "atencao" and nivel == 2:
+            continue
+        if prazo in ("15", "30") and (dias is None or dias > int(prazo)):
+            continue
+        itens = d.get("pecas")
+        if isinstance(itens, str):
+            try:
+                itens = _json.loads(itens)
+            except Exception:
+                itens = []
+        d["itens"] = itens or []
+        d["nivel"] = nivel; d["dias"] = dias; d["vencimento"] = (v or {}).get("texto") or ("sem prazo" if ref is None else "")
+        d["data_ref"] = ref.isoformat() if ref else None
+        ots.append(d)
+    # ordem: mais urgente primeiro (nível, depois data); sem data por último
+    ots.sort(key=lambda x: (x["nivel"], x["dias"] if x["dias"] is not None else 9999, x["numero"]))
+    pedido, pend, ocs_por_peca = await _em_pedido_por_peca()
+    cache = {}
+    async def peca(cod):
+        if cod in cache:
+            return cache[cod]
+        p = await ajard_query(
+            f"""SELECT p.id, p.codigo, p.descricao, p.unidade, p.custo_medio, {_ULTIMO_PRECO_SQL},
+                       (SELECT COALESCE(SUM(quantidade),0) FROM manutencao.estoque e WHERE e.peca_id=p.id) AS saldo
+                FROM manutencao.pecas p WHERE p.codigo=%s""", (cod,), fetch="one")
+        cache[cod] = p
+        return p
+    sobra = {}        # saldo ainda não consumido por OT mais urgente, por código
+    sobra_ped = {}    # idem para o que está em pedido/a conferir
+    saida, sem_previsao = [], []
+    tot_falt, tot_ots = 0, set()
+    for o in ots:
+        if not o["itens"]:
+            if o["nivel"] < 2:
+                sem_previsao.append({"numero": o["numero"], "equipamento": o["equipamento"], "vencimento": o["vencimento"]})
+            continue
+        linhas = []
+        for x in o["itens"]:
+            cod = str(x.get("peca") or x.get("codigo") or "").strip()
+            if not cod:
+                continue
+            q = _mo_num(x.get("qtd") or x.get("quantidade")) or 0
+            if q <= 0:
+                continue
+            p = await peca(cod)
+            if not p:
+                linhas.append({"codigo": cod, "descricao": x.get("descricao") or cod, "unidade": x.get("un") or "UN", "sem_cadastro": True,
+                               "precisa": q, "disponivel": 0, "em_pedido": 0, "faltante": q, "preco": _mo_num(x.get("custo")), "ocs": []})
+                continue
+            k = str(p["id"])
+            if cod not in sobra:
+                sobra[cod] = float(p["saldo"] or 0)
+                sobra_ped[cod] = pedido.get(k, 0.0) + pend.get(k, 0.0)
+            usa_est = min(q, max(0.0, sobra[cod])); sobra[cod] -= usa_est
+            usa_ped = min(q - usa_est, max(0.0, sobra_ped[cod])); sobra_ped[cod] -= usa_ped
+            falt = round(max(0.0, q - usa_est - usa_ped), 3)
+            preco = float(p["ultimo_preco"]) if p.get("ultimo_preco") is not None else (float(p["custo_medio"]) if p.get("custo_medio") is not None else None)
+            linhas.append({"peca_id": k, "codigo": p["codigo"], "descricao": p["descricao"], "unidade": p["unidade"] or "UN",
+                           "precisa": q, "disponivel": round(usa_est, 3), "saldo_total": float(p["saldo"] or 0),
+                           "em_pedido": round(usa_ped, 3), "ocs": ocs_por_peca.get(k, []), "faltante": falt, "preco": preco,
+                           "estimado": round(falt * preco, 2) if preco is not None else None})
+        if not cobertas:
+            linhas = [l for l in linhas if l["faltante"] > 0]
+        if not linhas:
+            continue
+        tot_falt += sum(1 for l in linhas if l["faltante"] > 0); tot_ots.add(o["numero"])
+        saida.append({"ot_id": str(o["id"]), "numero": o["numero"], "status": o["status"], "equipamento": o["equipamento"],
+                      "equipamento_descricao": o.get("equipamento_descricao"), "tipo_trabalho": o.get("tipo_trabalho"),
+                      "plano": o.get("plano_descricao") or o.get("descricao"), "nivel": o["nivel"], "dias": o["dias"],
+                      "vencimento": o["vencimento"], "data_ref": o["data_ref"], "itens": linhas})
+    return {"ots": saida, "sem_previsao": sem_previsao, "n_faltantes": tot_falt, "n_ots": len(tot_ots)}
+
+
 @router.get("/manutencao/api/ots/{ot_id}/faltantes")
 async def ot_faltantes(ot_id: str, _auth=Depends(verificar_manutencao)):
     """Peças previstas na FMP da OT que o estoque não cobre → itens da OC.
