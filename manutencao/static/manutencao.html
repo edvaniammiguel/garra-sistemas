@@ -7001,12 +7001,31 @@ function cotOfertaJan(itemId, cfId){
     + '<label style="display:block;margin-bottom:6px"><input type="radio" name="of-tipo" value="igual"'+(!subst?' checked':'')+' onchange="document.getElementById(\'of-sub\').style.display=\'none\'"> Ofereceu <b>o item pedido</b></label>'
     + '<label style="display:block;margin-bottom:6px"><input type="radio" name="of-tipo" value="substituto"'+(subst?' checked':'')+' onchange="document.getElementById(\'of-sub\').style.display=\'block\'"> Ofereceu um <b>substituto</b> (marca/código diferente)</label>'
     + '<div id="of-sub" style="display:'+(subst?'block':'none')+';background:#FFF7ED;border:1px solid #FED7AA;border-radius:8px;padding:8px;margin:4px 0 8px">'
+    + '<div class="mfield">🔍 Buscar no catálogo (código ou descrição)<input id="of-busca" placeholder="ex.: filtro ar C24650 — escolha abaixo para preencher" oninput="cotSubstBuscar(this.value)" autocomplete="off"><div id="of-busca-l" style="display:none;max-height:150px;overflow:auto;border:1px solid #CBD5E1;border-radius:6px;background:#fff;margin-top:2px"></div></div>'
     + '<div class="mfield">Código da peça substituta no catálogo (se já cadastrada)<input id="of-subcod" value="'+_esc(inp.dataset.subcod||'')+'" placeholder="ex.: FIL.007 — vazio se não existe no catálogo"></div>'
     + '<div class="mfield">Marca / modelo / descrição do substituto<input id="of-subdesc" value="'+_esc(inp.dataset.subdesc||'')+'" placeholder="ex.: Mann C25860"></div>'
     + '<div class="muted" style="font-size:10px">Substituto só entra na comparação depois de você marcar <b>✔ aceito</b> na célula. Se vencer, a OC nasce com a peça substituta (quando cadastrada) e a descrição "em lugar de…".</div></div>'
     + '<div class="mfield">Observação<input id="of-obs" value="'+_esc(obsAtual)+'" placeholder="ex.: entrega só na 2ª quinzena"></div>'
     + '<div style="display:flex;gap:6px;justify-content:flex-end;margin-top:10px"><button class="btn" onclick="document.getElementById(\'cot-oferta-jan\').remove()">Cancelar</button><button class="btn p" onclick="cotOfertaSalvar(\''+itemId+'\',\''+cfId+'\')">Salvar</button></div></div>';
   document.body.appendChild(j);
+}
+// (13/11/2026) busca no catálogo dentro da janela do substituto — escolher preenche código + descrição
+let _cotSubstT = null;
+function cotSubstBuscar(q){
+  clearTimeout(_cotSubstT); const box = document.getElementById('of-busca-l'); if (!box) return;
+  q = (q||'').trim(); if (q.length < 2){ box.style.display = 'none'; return; }
+  _cotSubstT = setTimeout(async () => {
+    let r; try { r = await mntFetch('/manutencao/api/pecas?busca='+encodeURIComponent(q)+'&limit=30'); } catch(e){ return; }
+    const itens = (Array.isArray(r) ? r : (r && r.itens) || []);
+    box.innerHTML = itens.length ? itens.map(p => '<div style="padding:5px 8px;cursor:pointer;border-bottom:1px solid #F1F5F9;font-size:11px" onmousedown="event.preventDefault();cotSubstEscolher(\''+_esc(p.codigo).replace(/'/g,'&#39;')+'\',\''+_esc(p.descricao||'').replace(/'/g,'&#39;')+'\')"><b>'+_esc(p.codigo)+'</b> — '+_esc(p.descricao||'')+(p.custo_medio!=null?' <span class="muted">· R$ '+parseFloat(p.custo_medio).toFixed(2)+'</span>':'')+'</div>').join('')
+      : '<div class="muted" style="padding:6px 8px;font-size:11px">Nada no catálogo com "'+_esc(q)+'" — deixe o código vazio e descreva o substituto abaixo.</div>';
+    box.style.display = 'block';
+  }, 250);
+}
+function cotSubstEscolher(cod, desc){
+  document.getElementById('of-subcod').value = cod;
+  const d = document.getElementById('of-subdesc'); if (!d.value.trim()) d.value = desc;
+  document.getElementById('of-busca').value = cod+' — '+desc; document.getElementById('of-busca-l').style.display = 'none';
 }
 function cotOfertaSalvar(itemId, cfId){
   const inp = document.querySelector('.cot-preco[data-it="'+itemId+'"][data-cf="'+cfId+'"]'); if (!inp) return;
