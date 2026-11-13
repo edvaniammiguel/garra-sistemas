@@ -70,6 +70,9 @@ ALTER TABLE compras.cotacao_precos ADD COLUMN IF NOT EXISTS subst_peca_codigo TE
 ALTER TABLE compras.cotacao_precos ADD COLUMN IF NOT EXISTS subst_descricao TEXT;
 ALTER TABLE compras.cotacao_precos ADD COLUMN IF NOT EXISTS aceito BOOLEAN;
 ALTER TABLE compras.cotacoes ADD COLUMN IF NOT EXISTS enviada_em TIMESTAMPTZ;
+ALTER TABLE compras.cotacoes ADD COLUMN IF NOT EXISTS pendencia_id UUID;
+ALTER TABLE compras.pendencias_compra ADD COLUMN IF NOT EXISTS cotacoes_n INT DEFAULT 0;
+ALTER TABLE compras.pendencias_compra ADD COLUMN IF NOT EXISTS ultima_cotacao TEXT;
 ALTER TABLE compras.cotacoes ADD COLUMN IF NOT EXISTS cotacao_origem_id UUID;
 -- (12/11/2026) itens que ficaram sem compra ao encerrar (sem oferta aceita) — baixa MANUAL
 CREATE TABLE IF NOT EXISTS compras.pendencias_compra (
@@ -310,11 +313,16 @@ async def criar(request: Request, payload=Depends(verificar_compras_solicitante)
     row = await ajard_query_id(
         # (13/11/2026) modo padrão = 'item' (melhor de cada): na prática a compra quase sempre sai dividida
         # entre fornecedores. Com 1 fornecedor só dá no mesmo (1 OC); 'por fornecedor' continua no seletor.
-        """INSERT INTO compras.cotacoes (numero, ano, sequencia, setor_codigo, origem, ot_id, equipamento_id, observacao, criado_por, modo)
-           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,'item')""",
+        # (13/11/2026) pendencia_id: cotação aberta a partir de uma pendência — ao encerrar, a pendência é resolvida
+        # (item comprado) ou fica a MESMA (sem oferta de novo); nunca nasce uma segunda pendência da mesma peça.
+        """INSERT INTO compras.cotacoes (numero, ano, sequencia, setor_codigo, origem, ot_id, equipamento_id, observacao, criado_por, modo, pendencia_id)
+           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,'item',%s)""",
         (numero, date.today().year, int(seq["n"]), setor, (d.get("origem") or "manual"), d.get("ot_id") or None,
-         d.get("equipamento_id") or None, d.get("observacao"), uid))
+         d.get("equipamento_id") or None, d.get("observacao"), uid, d.get("pendencia_id") or None))
     cid = row["id"]
+    if d.get("pendencia_id"):
+        await ajard_query("UPDATE compras.pendencias_compra SET cotacoes_n=COALESCE(cotacoes_n,0)+1, ultima_cotacao=%s WHERE id=%s AND status='aberta'",
+                          (numero, d["pendencia_id"]), fetch="none")
     codigos = []
     for n, it in enumerate(itens):
         pid, cod = it.get("peca_id") or None, (it.get("peca_codigo") or "").strip() or None
@@ -451,6 +459,8 @@ async def forn_resposta(cid: str, cf_id: str, request: Request, payload=Depends(
             pu = float(str(pu).replace(",", ".")) if pu not in (None, "") else None
             if pu is not None and pu < 0:
                 raise HTTPException(400, "Preço não pode ser negativo")
+            if pu == 0:
+                pu = None   # (13/11/2026) 0 = "não tem": ninguém vende de graça; zero não entra na comparação
             oferta = p.get("oferta") or "igual"
             if oferta not in ("igual", "substituto"):
                 oferta = "igual"
@@ -681,9 +691,35 @@ async def encerrar(cid: str, request: Request, payload=Depends(verificar_compras
             else:
                 await ajard_query("INSERT INTO manutencao.peca_fornecedores (peca_codigo, fornecedor_id, preco, prazo_dias, observacao) VALUES (%s,%s,%s,%s,%s)",
                                   (it["peca_codigo"], f["fornecedor_id"], pu, prazo, f"cotação {cot['numero']}"), fetch="none")
+    # (13/11/2026) cotação que veio de uma pendência: a pendência de origem é resolvida se o item saiu em OC,
+    # ou continua a mesma (sem duplicar) se ficou sem oferta de novo. Casa pela peça (código) ou pela descrição.
+    pend_origem = None
+    if cot.get("pendencia_id"):
+        pend_origem = await ajard_query("SELECT * FROM compras.pendencias_compra WHERE id=%s AND status='aberta'", (cot["pendencia_id"],), fetch="one")
+    def _mesma_peca(it):
+        if not pend_origem:
+            return False
+        if pend_origem.get("peca_codigo") and it.get("peca_codigo"):
+            return str(pend_origem["peca_codigo"]).strip().upper() == str(it["peca_codigo"]).strip().upper()
+        return (pend_origem.get("descricao") or "").strip().lower() == (it.get("descricao") or "").strip().lower()
+    if pend_origem:
+        for it in itens:
+            if str(it["id"]) in por_item and _mesma_peca(it):
+                cf_v = por_item[str(it["id"])]
+                f_v = next((x for x in forns if str(x["id"]) == cf_v), {})
+                oc_num = next((o["numero"] for o in ocs if o["fornecedor"] == f_v.get("fornecedor_nome")), None)
+                await ajard_query("UPDATE compras.pendencias_compra SET status='resolvida', resolvido_em=now(), resolvido_por=%s, motivo=%s, resolvido_ref=%s WHERE id=%s AND status='aberta'",
+                                  (uid, f"comprado na {oc_num or 'OC'} (cotação {cot['numero']})", oc_num, pend_origem["id"]), fetch="none")
+                pend_origem = None
+                break
     # (12/11/2026) itens sem compra → Pendentes de compra (baixa manual)
     pend_out = []
     for it in pendentes:
+        if pend_origem and _mesma_peca(it):
+            # mesma peça da pendência de origem: não duplica — só anota a tentativa
+            await ajard_query("UPDATE compras.pendencias_compra SET ultima_cotacao=%s WHERE id=%s", (f"{cot['numero']} (sem oferta)", pend_origem["id"]), fetch="none")
+            await ajard_query("UPDATE compras.cotacao_itens SET motivo=%s WHERE id=%s", ("sem oferta aceita → continua em Pendentes de compra", it["id"]), fetch="none")
+            pend_out.append(it["descricao"]); continue
         await ajard_query(
             """INSERT INTO compras.pendencias_compra (peca_id, peca_codigo, descricao, quantidade, unidade, setor_codigo, ot_id, equipamento_id, origem_tipo, cotacao_id, cotacao_numero, criado_por)
                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,'cotacao',%s,%s,%s)""",

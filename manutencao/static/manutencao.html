@@ -6140,6 +6140,7 @@ async function renderPedidos(){
       + '<td style="font-size:10px">'+parseFloat(p.quantidade||1)+' '+_esc(p.unidade||'UN')+' '+_esc(p.descricao)+'</td>'
       + '<td class="muted" style="font-size:10px">sem oferta aceita</td><td class="r muted">—</td><td class="muted">'+dd(p.criado_em)+'</td>'
       + '<td style="white-space:nowrap"><button class="btn p" style="font-size:10px" onclick="pendCotar(\''+p.id+'\')" title="abre uma cotação nova com este item (a pendência continua até você dar baixa)">📋 Cotar</button> '
+      + (p.cotacoes_n ? '<span class="muted" style="font-size:9px" title="última: '+_esc(p.ultima_cotacao||'')+'">cotada '+p.cotacoes_n+'×'+(p.ultima_cotacao?' · '+_esc(p.ultima_cotacao):'')+'</span> ' : '')
       + '<button class="btn" style="font-size:10px" onclick="pendResolver(\''+p.id+'\')" title="baixa manual: informe o motivo (comprado na OC…, não precisa mais…)">✔ Baixa</button></td></tr>').join('') : '';
   tb.innerHTML = pendHtml + cotHtml + ordem.map(k => {
     const e = _PED_ESTAGIOS.find(x => x[0] === k) || [k, k, '#64748B'];
@@ -6165,7 +6166,8 @@ async function pendResolver(id){
 }
 async function pendCotar(id){
   const p = (_pedPend||[]).find(x => x.id === id); if (!p) return;
-  return cotacaoCriar({ origem: 'pendencia', ot_id: p.ot_id || null, equipamento_id: p.equipamento_id || null,
+  // (13/11/2026) pendencia_id: ao encerrar essa cotação a pendência é baixada (comprou) ou continua a mesma (sem oferta) — nunca duplica
+  return cotacaoCriar({ origem: 'pendencia', pendencia_id: p.id, ot_id: p.ot_id || null, equipamento_id: p.equipamento_id || null,
     itens: [{ peca_id: p.peca_id || null, peca_codigo: p.peca_codigo || null, descricao: p.descricao, quantidade: p.quantidade || 1, unidade: p.unidade || 'UN' }] });
 }
 function almAcaoPorRotulo(rot){ const el = [...document.querySelectorAll('#alm-nav .pn-acao')].find(x => x.dataset.rot === rot); if (el) { _almAcaoOn = rot; document.querySelectorAll('#alm-nav .pn-item.on').forEach(x => { if (!x.dataset.id && !x.dataset.fam) x.classList.remove('on'); }); el.classList.add('on'); } }
@@ -6904,7 +6906,7 @@ function _cotHtml(){
   h += '</div>';
   // mapa
   h += '<div style="overflow:auto;max-height:420px"><table style="font-size:11px;min-width:600px"><thead><tr><th style="min-width:200px">Item</th><th class="r" style="width:60px">Qtd</th>'
-    + c.fornecedores.map(f => '<th style="min-width:150px;text-align:center'+(sug.por_fornecedor===f.id?';background:#ECFDF5':'')+'">'+_esc(f.fornecedor_nome)+(sug.por_fornecedor===f.id?' <span class="chip ok" style="font-size:9px">sugestão</span>':'')
+    + c.fornecedores.map(f => '<th style="min-width:150px;text-align:center'+(aberta && sug.por_fornecedor===f.id?';background:#ECFDF5':'')+'">'+_esc(f.fornecedor_nome)+(aberta && sug.por_fornecedor===f.id?' <span class="chip ok" style="font-size:9px">sugestão</span>':'')
         + (aberta ? '<br><span class="muted" style="font-weight:400;font-size:9px;cursor:pointer" onclick="cotDelForn(\''+f.id+'\')">✕ remover</span>' : (f.oc_numero ? '<br><span class="chip tm" style="font-size:9px">'+_esc(f.oc_numero)+' · '+_esc(f.oc_status||'')+'</span>' : ''))
         + hist(f)+'</th>').join('')
     + '</tr></thead><tbody>';
@@ -6920,7 +6922,7 @@ function _cotHtml(){
       const obsLimpa = (p.observacao && !/^último preço conhecido/.test(p.observacao)) ? p.observacao : '';
       const substTxt = subst ? ((p.subst_peca_codigo ? p.subst_peca_codigo + ' ' : '') + (p.subst_descricao || '')).trim() || 'substituto' : '';
       h += '<td style="text-align:center'+(venc?';background:#ECFDF5':'')+(subst && p.aceito===false?';opacity:.55':'')+'">'
-        + (aberta ? '<input class="cot-preco" data-it="'+it.id+'" data-cf="'+f.id+'" data-obs="'+_esc(p.observacao||'')+'" data-oferta="'+(p.oferta||'igual')+'" data-subcod="'+_esc(p.subst_peca_codigo||'')+'" data-subdesc="'+_esc(p.subst_descricao||'')+'" data-aceito="'+(p.aceito===true?'1':(p.aceito===false?'0':''))+'" type="number" step="0.01" min="0" placeholder="não tem" value="'+(p.preco_unit!=null?p.preco_unit:'')+'" oninput="if(/^último preço/.test(this.dataset.obs))this.dataset.obs=\'\'" style="width:84px;text-align:right'+(conta && p.preco_unit===ml?';font-weight:700;color:#15803D':'')+(subst?';border-color:#F59E0B':'')+'" title="'+_esc(subst ? 'SUBSTITUTO: '+substTxt : (obsLimpa||'preço unitário'))+'">'
+        + (aberta ? '<input class="cot-preco" data-it="'+it.id+'" data-cf="'+f.id+'" data-obs="'+_esc(p.observacao||'')+'" data-oferta="'+(p.oferta||'igual')+'" data-subcod="'+_esc(p.subst_peca_codigo||'')+'" data-subdesc="'+_esc(p.subst_descricao||'')+'" data-aceito="'+(p.aceito===true?'1':(p.aceito===false?'0':''))+'" type="number" step="0.01" min="0" placeholder="não tem" value="'+(p.preco_unit!=null?p.preco_unit:'')+'" oninput="if(/^último preço/.test(this.dataset.obs))this.dataset.obs=\'\'" onchange="if(parseFloat(this.value)===0){this.value=\'\';mostrarToast(\'Preço 0 = não tem (campo vazio)\',\'warn\')}" style="width:84px;text-align:right'+(conta && p.preco_unit===ml?';font-weight:700;color:#15803D':'')+(subst?';border-color:#F59E0B':'')+'" title="'+_esc(subst ? 'SUBSTITUTO: '+substTxt : (obsLimpa||'preço unitário'))+'">'
                    + ' <span style="cursor:pointer;font-size:11px" title="O fornecedor ofereceu outra coisa (marca/código diferente)? Registre a oferta real aqui" onclick="cotOfertaJan(\''+it.id+'\',\''+f.id+'\')">✎</span>'
                  : '<span class="mono"'+(conta && p.preco_unit===ml?' style="font-weight:700;color:#15803D"':'')+'>'+(p.preco_unit!=null?money(p.preco_unit):'<span class=muted>—</span>')+'</span>')
         + (subst ? '<div style="font-size:9px;color:#B45309" title="'+_esc(substTxt)+'">⚠ subst.: '+_esc(substTxt.length>26?substTxt.slice(0,26)+'…':substTxt)+'</div>'
@@ -6942,7 +6944,7 @@ function _cotHtml(){
   h += linha('Condição', f => '<td style="text-align:center">'+(aberta ? '<input class="cot-cond" data-cf="'+f.id+'" value="'+_esc(f.condicao_pagamento||'')+'" placeholder="ex.: 30 dias" style="width:110px">' : _esc(f.condicao_pagamento||'—'))+'</td>');
   h += linha('Situação', f => '<td style="text-align:center">'+(aberta ? '<select class="cot-st" data-cf="'+f.id+'"><option value="aguardando"'+(f.status==='aguardando'?' selected':'')+'>aguardando</option><option value="respondeu"'+(f.status==='respondeu'?' selected':'')+'>respondeu</option><option value="sem_resposta"'+(f.status==='sem_resposta'?' selected':'')+'>sem resposta</option></select>' : _esc(f.status))+'</td>');
   const algumCompleto = Object.values(sug.totais||{}).some(t => t.completo);
-  h += linha('TOTAL (itens + frete)', f => { const t = (sug.totais||{})[f.id]; return '<td style="text-align:center'+(sug.por_fornecedor===f.id?';background:#ECFDF5':'')+'">'+(t ? '<b'+(t.completo?'':' class="muted" title="não cobre todos os itens — o que faltar vira pendência"')+'>'+money(t.custo)+'</b>'+(t.completo?'':'<br><span class="muted" style="font-size:9px">cobre '+t.cobre+' de '+c.itens.length+'</span>') : '<span class="muted">—</span>')+(aberta && c.modo!=='item' && t && (t.completo || (!algumCompleto && t.cobre > 0)) ? '<div><label style="font-size:9px"><input type="radio" name="venc-forn" value="'+f.id+'"'+(sug.por_fornecedor===f.id?' checked':'')+'> vencedor'+(t.completo?'':' (parcial)')+'</label></div>' : '')+'</td>'; });
+  h += linha('TOTAL (itens + frete)', f => { const t = (sug.totais||{})[f.id]; return '<td style="text-align:center'+(aberta && sug.por_fornecedor===f.id?';background:#ECFDF5':'')+'">'+(t ? '<b'+(t.completo?'':' class="muted" title="não cobre todos os itens — o que faltar vira pendência"')+'>'+money(t.custo)+'</b>'+(t.completo?'':'<br><span class="muted" style="font-size:9px">cobre '+t.cobre+' de '+c.itens.length+'</span>') : '<span class="muted">—</span>')+(aberta && c.modo!=='item' && t && (t.completo || (!algumCompleto && t.cobre > 0)) ? '<div><label style="font-size:9px"><input type="radio" name="venc-forn" value="'+f.id+'"'+(sug.por_fornecedor===f.id?' checked':'')+'> vencedor'+(t.completo?'':' (parcial)')+'</label></div>' : '')+'</td>'; });
   h += '</tbody></table></div>';
   // (12/11/2026) pedido original × ofertas reais — e itens que ficaram sem oferta aceita
   const semOf = (c.sem_oferta || []).map(id => c.itens.find(x => x.id === id)).filter(Boolean);
