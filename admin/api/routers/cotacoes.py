@@ -308,8 +308,10 @@ async def criar(request: Request, payload=Depends(verificar_compras_solicitante)
     numero = f"COT-{date.today().year}-{int(seq['n']):04d}"
     uid = await _usuario_id(payload)
     row = await ajard_query_id(
-        """INSERT INTO compras.cotacoes (numero, ano, sequencia, setor_codigo, origem, ot_id, equipamento_id, observacao, criado_por)
-           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+        # (13/11/2026) modo padrão = 'item' (melhor de cada): na prática a compra quase sempre sai dividida
+        # entre fornecedores. Com 1 fornecedor só dá no mesmo (1 OC); 'por fornecedor' continua no seletor.
+        """INSERT INTO compras.cotacoes (numero, ano, sequencia, setor_codigo, origem, ot_id, equipamento_id, observacao, criado_por, modo)
+           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,'item')""",
         (numero, date.today().year, int(seq["n"]), setor, (d.get("origem") or "manual"), d.get("ot_id") or None,
          d.get("equipamento_id") or None, d.get("observacao"), uid))
     cid = row["id"]
@@ -516,8 +518,8 @@ async def cotacao_saldo(cid: str, request: Request, payload=Depends(verificar_co
     numero = f"COT-{date.today().year}-{int(seq['n']):04d}"
     uid = await _usuario_id(payload)
     row = await ajard_query_id(
-        """INSERT INTO compras.cotacoes (numero, ano, sequencia, setor_codigo, origem, ot_id, equipamento_id, observacao, criado_por, cotacao_origem_id)
-           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+        """INSERT INTO compras.cotacoes (numero, ano, sequencia, setor_codigo, origem, ot_id, equipamento_id, observacao, criado_por, cotacao_origem_id, modo)
+           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,'item')""",
         (numero, date.today().year, int(seq["n"]), cot.get("setor_codigo"), "saldo", cot.get("ot_id"), cot.get("equipamento_id"),
          f"Saldo da {cot['numero']}: itens sem oferta aceita", uid, cid))
     nid = row["id"]
