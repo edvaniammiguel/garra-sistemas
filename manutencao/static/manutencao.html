@@ -6932,7 +6932,7 @@ function _cotHtml(){
                       + (p.aceito==null?' <span class="muted">← decidir</span>':'')+'</div>'
                     : '<div style="font-size:9px;color:'+(p.aceito===true?'#15803D':'#B91C1C')+'">'+(p.aceito===true?'✔ aceito':'✘ recusado')+'</div>')
                  : (obsLimpa ? '<div style="font-size:9px;color:#B45309" title="'+_esc(obsLimpa)+'">'+_esc(obsLimpa.length>28?obsLimpa.slice(0,28)+'…':obsLimpa)+'</div>' : (p.observacao && aberta ? '<div class="muted" style="font-size:8px">'+_esc(p.observacao)+'</div>' : '')))
-        + (aberta && c.modo==='item' && conta ? '<div><label style="font-size:9px"><input type="radio" name="venc-'+it.id+'" value="'+f.id+'"'+(venc?' checked':'')+'> vencedor</label></div>' : '')
+        + (aberta && respondida && c.modo==='item' && conta ? '<div><label style="font-size:9px"><input type="radio" name="venc-'+it.id+'" value="'+f.id+'"'+(venc?' checked':'')+'> vencedor</label></div>' : '')
         + '</td>';
     });
     h += '</tr>';
@@ -6944,7 +6944,7 @@ function _cotHtml(){
   h += linha('Condição', f => '<td style="text-align:center">'+(aberta ? '<input class="cot-cond" data-cf="'+f.id+'" value="'+_esc(f.condicao_pagamento||'')+'" placeholder="ex.: 30 dias" style="width:110px">' : _esc(f.condicao_pagamento||'—'))+'</td>');
   h += linha('Situação', f => '<td style="text-align:center">'+(aberta ? '<select class="cot-st" data-cf="'+f.id+'"><option value="aguardando"'+(f.status==='aguardando'?' selected':'')+'>aguardando</option><option value="respondeu"'+(f.status==='respondeu'?' selected':'')+'>respondeu</option><option value="sem_resposta"'+(f.status==='sem_resposta'?' selected':'')+'>sem resposta</option></select>' : _esc(f.status))+'</td>');
   const algumCompleto = Object.values(sug.totais||{}).some(t => t.completo);
-  h += linha('TOTAL (itens + frete)', f => { const t = (sug.totais||{})[f.id]; return '<td style="text-align:center'+(aberta && sug.por_fornecedor===f.id?';background:#ECFDF5':'')+'">'+(t ? '<b'+(t.completo?'':' class="muted" title="não cobre todos os itens — o que faltar vira pendência"')+'>'+money(t.custo)+'</b>'+(t.completo?'':'<br><span class="muted" style="font-size:9px">cobre '+t.cobre+' de '+c.itens.length+'</span>') : '<span class="muted">—</span>')+(aberta && c.modo!=='item' && t && (t.completo || (!algumCompleto && t.cobre > 0)) ? '<div><label style="font-size:9px"><input type="radio" name="venc-forn" value="'+f.id+'"'+(sug.por_fornecedor===f.id?' checked':'')+'> vencedor'+(t.completo?'':' (parcial)')+'</label></div>' : '')+'</td>'; });
+  h += linha('TOTAL (itens + frete)', f => { const t = (sug.totais||{})[f.id]; return '<td style="text-align:center'+(aberta && sug.por_fornecedor===f.id?';background:#ECFDF5':'')+'">'+(t ? '<b'+(t.completo?'':' class="muted" title="não cobre todos os itens — o que faltar vira pendência"')+'>'+money(t.custo)+'</b>'+(t.completo?'':'<br><span class="muted" style="font-size:9px">cobre '+t.cobre+' de '+c.itens.length+'</span>') : '<span class="muted">—</span>')+(aberta && respondida && c.modo!=='item' && t && (t.completo || (!algumCompleto && t.cobre > 0)) ? '<div><label style="font-size:9px"><input type="radio" name="venc-forn" value="'+f.id+'"'+(sug.por_fornecedor===f.id?' checked':'')+'> vencedor'+(t.completo?'':' (parcial)')+'</label></div>' : '')+'</td>'; });
   h += '</tbody></table></div>';
   // (12/11/2026) pedido original × ofertas reais — e itens que ficaram sem oferta aceita
   const semOf = (c.sem_oferta || []).map(id => c.itens.find(x => x.id === id)).filter(Boolean);
@@ -7113,8 +7113,16 @@ async function cotTexto(){
   b.style.cssText = 'position:fixed;inset:0;z-index:100001;background:rgba(15,23,42,.45);display:flex;align-items:center;justify-content:center';
   b.innerHTML = '<div style="background:#fff;border-radius:10px;padding:16px;width:560px;max-width:94vw;box-shadow:0 12px 32px rgba(15,23,42,.3)"><b style="color:#1A2A5E">📨 Pedido de cotação — o mesmo texto para todos</b>'
     + '<textarea id="cot-texto-ta" style="width:100%;height:200px;margin:8px 0;font-size:12px;font-family:inherit">'+_esc(t.texto)+'</textarea>'
-    + '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">'+links+'<span style="margin-left:auto"></span><button class="btn" onclick="navigator.clipboard.writeText(document.getElementById(\'cot-texto-ta\').value).then(()=>{mostrarToast(\'Copiado\',\'ok\');cotMarcarEnviada()})">📋 Copiar</button><button class="btn p" onclick="document.getElementById(\'cot-texto-jan\').remove()">Fechar</button></div></div>';
+    + '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">'+links+'<span style="margin-left:auto"></span><button class="btn" onclick="cotCopiarTexto()">📋 Copiar</button><button class="btn p" onclick="document.getElementById(\'cot-texto-jan\').remove()">Fechar</button></div></div>';
   document.body.appendChild(b);
+}
+// (13/11/2026) copiar o texto: clipboard moderno com reserva (select + execCommand) — e marca enviada de qualquer jeito
+function cotCopiarTexto(){
+  const ta = document.getElementById('cot-texto-ta'); if (!ta) return;
+  const ok = () => mostrarToast('Copiado','ok');
+  const reserva = () => { try { ta.select(); document.execCommand('copy'); ok(); } catch(e){ mostrarToast('Selecione o texto e copie com Ctrl+C','warn'); } };
+  if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(ta.value).then(ok).catch(reserva); else reserva();
+  cotMarcarEnviada();
 }
 // (12/11/2026) pedido de cotação saiu (WhatsApp ou texto copiado) → fase "enviada"; grava só na 1ª vez
 async function cotMarcarEnviada(){
