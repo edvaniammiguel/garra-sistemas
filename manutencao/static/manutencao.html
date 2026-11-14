@@ -459,7 +459,15 @@ button:disabled, select:disabled, input:disabled, [aria-disabled=true] { cursor:
       history.replaceState(null, '', location.pathname);
     }
   } catch(e) {}
-  if (!sessionStorage.getItem('garra_mnt_token')) location.replace('/admin');
+  if (!sessionStorage.getItem('garra_mnt_token')) {
+    // (14/11/2026) link direto (?rel= relatório, ?ot=, ?peca=…) aberto sem sessão: guarda o destino;
+    // o Admin, depois do login, volta para cá com o mesmo link (antes o destino se perdia no login)
+    try {
+      const q = new URLSearchParams(location.search); q.delete('sso'); q.delete('nc');
+      if ([...q.keys()].length) localStorage.setItem('garra_destino', JSON.stringify({ url: location.pathname + '?' + q.toString(), t: Date.now() }));
+    } catch(e) {}
+    location.replace('/admin');
+  }
 })();
 function mntToken(){ return sessionStorage.getItem('garra_mnt_token') || ''; }
 // (12/11/2026) abrir o Compras em outra aba levando a sessão (SSO) — senão ele cai no login do mobile
@@ -3334,6 +3342,7 @@ async function pontoHistorico(eqId, pid, cod){
    filtros aceitos pelo relatório à direita, grade com totais, 🖨 PDF e ⬇ Excel (xlsx gerado no servidor,
    números como números). xlsExportar() serve também para qualquer lista da tela (Frota · OTs · Materiais). */
 let _relCat = null, _relAtual = null, _relDados = null, _relF = { de: '', ate: '', sistema: '', equipamento_id: '', tipo_trabalho: '', setor: '', familia: '' };
+let _relOpc = {}, _indFavs = [];   // (14/11/2026) agrupar/gráfico por relatório · ⭐ favoritos do usuário
 function _relFmt(v, tipo){
   if (v == null || v === '') return '—';
   if (tipo === 'moeda') return 'R$ ' + Number(v).toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2});
@@ -3428,6 +3437,7 @@ async function relatoriosJanela(nome){
 }
 async function indAbrir(){
   if (!(await _relPrep())) return;
+  await indCarregarFavs();
   indMontarNav();
   if (_indVista === 'rel' && _relAtual) indRel(_relAtual); else indPainel();
 }
@@ -3436,10 +3446,14 @@ function indMontarNav(){
   const nav = document.getElementById('ind-nav'); if (!nav || !_relCat) return;
   const q = (_indBusca || '').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase().trim();
   const casa = it => !q || ((it.titulo + ' ' + (it.sub||'')).normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase().includes(q));
-  const item = it => '<div class="pn-item' + (_indVista === 'rel' && it.nome === _relAtual ? ' on' : '') + '" data-n="' + it.nome + '" title="' + _esc(it.sub||'') + '" onclick="' + (it.fn ? it.fn : 'indRel(this.dataset.n)') + '" style="padding-left:22px">' + _esc(it.titulo) + '</div>';
+  const item = it => '<div class="pn-item' + (_indVista === 'rel' && it.nome === _relAtual && !_indFavAtual ? ' on' : '') + '" data-n="' + it.nome + '" title="' + _esc(it.sub||'') + '" onclick="' + (it.fn ? it.fn : 'indRel(this.dataset.n)') + '" style="padding-left:22px">' + _esc(it.titulo) + '</div>';
   const grupos = _relCat.grupos.map(g => ({ grupo: g.grupo, itens: g.itens })).concat([{ grupo: 'Análises', itens: _IND_ANALISES }]);
   let h = '<div class="pn-item' + (_indVista === 'painel' ? ' on' : '') + '" onclick="indPainel()" style="font-weight:700">📈 Painel</div>'
     + '<div style="padding:6px 8px"><input id="ind-busca" value="' + _esc(_indBusca) + '" placeholder="🔍 buscar relatório…" oninput="_indBusca=this.value;indMontarNav();const b=document.getElementById(\'ind-busca\');b.focus();b.setSelectionRange(b.value.length,b.value.length)" style="width:100%;font-size:11px;padding:4px 6px;border:1px solid #CBD5E1;border-radius:6px"></div>';
+  const favs = (_indFavs || []).filter(f => !q || (f.rotulo + ' ' + _indTitulo(f.relatorio)).normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().includes(q));
+  h += '<div class="pn-grp" style="cursor:default">⭐ Favoritos</div>' + (favs.length
+    ? favs.map(f => '<div class="pn-item' + (_indVista === 'rel' && _indFavAtual === f.id ? ' on' : '') + '" onclick="indFav(\'' + f.id + '\')" title="' + _esc(_indTitulo(f.relatorio)) + '" style="padding-left:22px;display:flex;justify-content:space-between;gap:6px"><span>' + _esc(f.rotulo) + '</span><span onclick="indFavExcluir(\'' + f.id + '\',event)" title="tirar dos favoritos" style="color:#94A3B8;padding:0 2px">✕</span></div>').join('')
+    : (q ? '' : '<div class="muted" style="padding:2px 10px 6px 22px;font-size:10px">Abra um relatório e clique em ⭐ Favoritar.</div>'));
   const rec = _indRecentes().filter(n => _relCfg(n));
   if (rec.length && !q) h += '<div class="pn-grp" style="cursor:default">🕘 Recentes</div>' + rec.map(n => item({ nome: n, titulo: _indTitulo(n), sub: (_relCfg(n)||{}).sub })).join('');
   grupos.forEach(g => {
@@ -3452,8 +3466,9 @@ function indMontarNav(){
   if (q && !grupos.some(g => g.itens.some(casa))) h += '<div class="muted" style="padding:8px 10px;font-size:11px">Nenhum relatório com "' + _esc(_indBusca) + '".</div>';
   nav.innerHTML = h;
 }
-function indRel(nome){
+function indRel(nome, deFav){
   _indVista = 'rel'; _relAtual = nome; _indRecente(nome);
+  if (!deFav) _indFavAtual = null;
   const pane = document.getElementById('ind-pane'); if (!pane) return;
   pane.innerHTML = '<div id="rel-titulo" style="display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap;margin-bottom:6px"></div>'
     + '<div id="rel-filtros" style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-bottom:8px;padding:8px;background:#fff;border:1px solid #E2E8F0;border-radius:8px"></div>'
@@ -3571,7 +3586,7 @@ function indPainelPDF(){
 function _relCfg(nome){ for (const g of _relCat.grupos) for (const it of g.itens) if (it.nome === nome) return it; return null; }
 function relEscolher(nome){
   _relAtual = nome; const cfg = _relCfg(nome); if (!cfg) return;
-  document.querySelectorAll('#ind-nav .pn-item').forEach(x => x.classList.toggle('on', x.dataset.n === nome));
+  if (!_indFavAtual) document.querySelectorAll('#ind-nav .pn-item').forEach(x => x.classList.toggle('on', x.dataset.n === nome));
   const f = cfg.filtros || [], F = _relF, D = window._relDom || {};
   const fld = (rot, inner, w) => '<div class="mfield" style="width:' + (w || 150) + 'px">' + rot + inner + '</div>';
   const opt = (lista, val, vazio) => '<option value="">' + vazio + '</option>' + lista.map(x => '<option value="' + _esc(x.v) + '"' + (String(x.v) === String(val) ? ' selected' : '') + '>' + _esc(x.t) + '</option>').join('');
@@ -3588,6 +3603,12 @@ function relEscolher(nome){
   if (f.includes('fornecedor')) h += fld('Fornecedor', '<select id="rf-forn">' + opt((_mntFornList||[]).map(x => ({v: x.id, t: x.nome})), F.fornecedor_id, '— todos —') + '</select>', 200);
   if (f.includes('documento')) h += fld('Documento', '<input id="rf-doc" value="' + _esc(F.documento||'') + '" placeholder="nº NF / cupom">', 120);
   if (f.includes('almox')) h += fld('Almoxarifado', '<select id="rf-almox">' + opt((_almList||[]).map(x => ({v: x.codigo, t: x.codigo + ' — ' + (x.nome||'')})), F.almox, '— todos —') + '</select>', 150);
+  // (14/11/2026) agrupar por (subtotal por grupo) + gráfico — também no PDF e no Excel
+  const O = _relOpc[nome] || (_relOpc[nome] = { agrupar: '', grafico: '', medida: '' });
+  if ((cfg.agrupaveis || []).length) h += '<span style="border-left:1px solid #CBD5E1;align-self:stretch;margin:0 2px"></span>'
+    + fld('Agrupar por', '<select id="rf-agr" onchange="relGerar()">' + opt(cfg.agrupaveis.map(a => ({v: a.k, t: a.t})), O.agrupar, '— sem agrupar —') + '</select>', 170);
+  h += '<label style="display:flex;gap:4px;align-items:center;font-size:11px;padding-bottom:6px;cursor:pointer" title="barras do agrupamento acima da tabela (e na 1ª página do PDF; aba Gráfico no Excel)"><input type="checkbox" id="rf-graf"' + (O.grafico ? ' checked' : '') + ' onchange="relGerar()"> com gráfico</label>';
+  h += fld('Medida do gráfico', '<select id="rf-med" onchange="relGerar()">' + (cfg.medidas || []).map(m => '<option value="' + m.k + '"' + (m.k === O.medida ? ' selected' : '') + '>' + _esc(m.t) + '</option>').join('') + '<option value="_n"' + (O.medida === '_n' ? ' selected' : '') + '>Nº de linhas</option></select>', 150);
   h += '<div style="display:flex;gap:6px;margin-left:auto;padding-bottom:2px"><button class="btn p" onclick="relGerar()">▶ Gerar</button>'
     + '<button class="btn" onclick="relPDF()">📄 PDF</button><button class="btn" style="background:#107C41;color:#fff;border-color:#107C41" onclick="relExcel()">⬇ Excel</button></div>';
   document.getElementById('rel-filtros').innerHTML = h;
@@ -3621,6 +3642,10 @@ function _relQuery(){
   // (14/11/2026) grupo Compras: OCs/cotações/pendências do setor de compras da manutenção
   const grp = ((_relCat && _relCat.grupos) || []).find(g => g.itens.some(i => i.nome === _relAtual));
   if (grp && grp.grupo === 'Compras' && _setorCompras && !cfg.filtros.includes('setor')) add('setor', _setorCompras);
+  const O = _relOpc[_relAtual] || (_relOpc[_relAtual] = {});
+  O.agrupar = g('rf-agr'); O.grafico = (document.getElementById('rf-graf') || {}).checked ? '1' : ''; O.medida = g('rf-med');
+  const mg = document.getElementById('rf-med'); if (mg) mg.closest('.mfield').style.display = O.grafico ? '' : 'none';
+  add('agrupar', O.agrupar); if (O.grafico) { add('grafico', '1'); add('medida', O.medida); }
   return q.join('&');
 }
 async function relGerar(){
@@ -3631,12 +3656,81 @@ async function relGerar(){
   catch(e){ grade.innerHTML = '<div style="padding:14px;color:#B91C1C">' + _esc(e.message) + '</div>'; return; }
   const d = _relDados, cols = d.colunas;
   const num = t => ['int','num','moeda','pct'].includes(t);
-  grade.innerHTML = '<table style="font-size:11px"><thead><tr>' + cols.map(c => '<th' + (num(c.tipo) ? ' class="r" style="white-space:nowrap"' : '') + '>' + _esc(c.t) + '</th>').join('') + '</tr></thead><tbody>'
-    + (d.linhas.map(l => '<tr>' + cols.map(c => '<td' + (num(c.tipo) ? ' class="r mono" style="white-space:nowrap"' : (c.tipo === 'data' || c.tipo === 'datahora' || String(l[c.k] ?? '').length <= 22 ? ' style="white-space:nowrap"' : ' style="min-width:160px;max-width:320px"')) + '>' + _esc(_relFmt(l[c.k], c.tipo)) + '</td>').join('') + '</tr>').join('')
-       || '<tr><td colspan="' + cols.length + '" style="padding:14px;color:#64748B">Sem dados para os filtros escolhidos.</td></tr>')
+  const linhaHtml = l => '<tr>' + cols.map(c => '<td' + (num(c.tipo) ? ' class="r mono" style="white-space:nowrap"' : (c.tipo === 'data' || c.tipo === 'datahora' || String(l[c.k] ?? '').length <= 22 ? ' style="white-space:nowrap"' : ' style="min-width:160px;max-width:320px"')) + '>' + _esc(_relFmt(l[c.k], c.tipo)) + '</td>').join('') + '</tr>';
+  let corpo = '';
+  if (d.grupos && d.grupos.length) {
+    // (14/11/2026) faixa do grupo + linhas + subtotal (mesma ordem do PDF/Excel: maior R$ primeiro; mês = cronológico)
+    let p = 0;
+    d.grupos.forEach(gr => {
+      corpo += '<tr style="background:#E8EEF7"><td colspan="' + cols.length + '" style="padding:5px 8px;font-weight:700;color:#1A2A5E;border-top:1px solid #1A2A5E">' + _esc(gr.rotulo) + ' <span class="muted" style="font-weight:400">(' + gr.n + ')</span></td></tr>';
+      corpo += d.linhas.slice(p, p + gr.n).map(linhaHtml).join(''); p += gr.n;
+      if (Object.keys(gr.totais || {}).length) corpo += '<tr style="background:#FFF7ED"><td style="font-style:italic;color:#1A2A5E">Subtotal</td>' + cols.slice(1).map(c => '<td class="r mono" style="font-weight:700">' + (c.k in gr.totais ? _esc(_relFmt(gr.totais[c.k], c.tipo)) : '') + '</td>').join('') + '</tr>';
+    });
+  } else corpo = d.linhas.map(linhaHtml).join('');
+  grade.innerHTML = (d.grafico ? _relGraficoSVG(d.grafico) : '') + '<table style="font-size:11px"><thead><tr>' + cols.map(c => '<th' + (num(c.tipo) ? ' class="r" style="white-space:nowrap"' : '') + '>' + _esc(c.t) + '</th>').join('') + '</tr></thead><tbody>'
+    + (corpo || '<tr><td colspan="' + cols.length + '" style="padding:14px;color:#64748B">Sem dados para os filtros escolhidos.</td></tr>')
     + (d.linhas.length && Object.keys(d.totais||{}).length ? '<tr style="background:#FFF7ED;font-weight:700"><td>Total</td>' + cols.slice(1).map(c => '<td class="r mono">' + (c.k in d.totais ? _esc(_relFmt(d.totais[c.k], c.tipo)) : '') + '</td>').join('') + '</tr>' : '')
     + '</tbody></table>';
-  const t = document.getElementById('rel-titulo'); if (t) t.innerHTML = '<div><b style="color:#1A2A5E">' + _esc(d.titulo) + '</b> <span class="muted" style="font-size:10px">' + _esc(d.sub) + '</span></div><span class="muted" style="font-size:10px">' + _esc(d.filtros) + ' · ' + d.linhas.length + ' linha(s)</span>';
+  const t = document.getElementById('rel-titulo'); if (t) t.innerHTML = '<div><b style="color:#1A2A5E">' + _esc(d.titulo) + '</b> <span class="muted" style="font-size:10px">' + _esc(d.sub) + '</span></div>'
+    + '<span style="display:flex;gap:8px;align-items:center"><span class="muted" style="font-size:10px">' + _esc(d.filtros) + ' · ' + d.linhas.length + ' linha(s)</span>'
+    + '<button class="btn" style="padding:2px 8px;font-size:11px" onclick="relFavoritar()" title="Guardar este relatório com os filtros, o agrupamento e o gráfico em ⭐ Favoritos (vale em qualquer computador)">⭐ Favoritar</button>'
+    + '<button class="btn" style="padding:2px 8px;font-size:11px" onclick="relLink()" title="Copiar um link que abre este relatório já com estes filtros (para mandar no WhatsApp)">🔗 Copiar link</button></span>';
+}
+function _relGraficoSVG(g){
+  // (14/11/2026) barras horizontais (mês = colunas em ordem cronológica)
+  const it = g.itens || []; if (!it.length) return '';
+  const fm = v => _relFmt(v, g.tipo), mx = Math.max(1, ...it.map(x => Math.abs(x.valor)));
+  const W = 900, rot = Math.min(270, Math.max(110, ...it.map(x => Math.min(38, String(x.rotulo).length) * 7 + 14))), area = W - rot - 110, bh = 16, gap = 6, H = it.length * (bh + gap) + 8;
+  return '<div style="padding:8px 12px 4px;border-bottom:1px solid #E2E8F0"><div style="font-size:11px;font-weight:700;color:#1A2A5E;margin-bottom:4px">' + _esc(g.med_t) + ' por ' + _esc(g.dim_t) + '</div>'
+    + '<svg viewBox="0 0 ' + W + ' ' + H + '" width="100%" style="max-height:' + Math.max(120, H * 0.9) + 'px">'
+    + it.map((x, i) => { const y = 4 + i * (bh + gap), w = Math.max(1, area * Math.abs(x.valor) / mx), lab = String(x.rotulo).length > 38 ? String(x.rotulo).slice(0, 37) + '…' : String(x.rotulo);
+        return '<text x="' + (rot - 6) + '" y="' + (y + 12) + '" font-size="11" text-anchor="end" fill="#334155">' + _esc(lab) + '</text>'
+          + '<rect x="' + rot + '" y="' + y + '" width="' + w.toFixed(1) + '" height="' + bh + '" rx="2" fill="' + (/^Outros \(/.test(x.rotulo) ? '#E8820C' : '#1A2A5E') + '"><title>' + _esc(x.rotulo) + ': ' + _esc(fm(x.valor)) + '</title></rect>'
+          + '<text x="' + (rot + w + 5).toFixed(1) + '" y="' + (y + 12) + '" font-size="11" font-weight="700" fill="#1A2A5E">' + _esc(fm(x.valor)) + '</text>'; }).join('')
+    + '</svg></div>';
+}
+// ── (14/11/2026) ⭐ favoritos e 🔗 link ──
+function _relParamsAtuais(relativo){
+  const q = _relQuery(); if (q === null) return null;
+  const p = {}; q.split('&').filter(Boolean).forEach(kv => { const i = kv.indexOf('='); p[kv.slice(0, i)] = decodeURIComponent(kv.slice(i + 1)); });
+  delete p.setor_compras;
+  // favorito com "até hoje" guarda a janela em dias: toda segunda abre com o período atualizado
+  if (relativo && p.ate && p.de && p.ate === new Date().toISOString().slice(0,10)) {
+    p.rel_dias = String(Math.round((new Date(p.ate) - new Date(p.de)) / 864e5)); delete p.de; delete p.ate;
+  }
+  const grp = ((_relCat && _relCat.grupos) || []).find(g => g.itens.some(i => i.nome === _relAtual));
+  if (grp && grp.grupo === 'Compras' && p.setor && p.setor === _setorCompras) delete p.setor;   // o setor de compras é automático
+  return p;
+}
+function _relAplicar(nome, p){
+  p = p || {};
+  if (p.rel_dias) { const h = new Date(), d = new Date(h); d.setDate(d.getDate() - parseInt(p.rel_dias, 10)); _relF.de = d.toISOString().slice(0,10); _relF.ate = h.toISOString().slice(0,10); }
+  ['de','ate','sistema','equipamento_id','tipo_trabalho','setor','familia','item','fornecedor_id','documento','almox'].forEach(k => { if (p[k] !== undefined) _relF[k] = p[k]; });
+  _relOpc[nome] = { agrupar: p.agrupar || '', grafico: p.grafico ? '1' : '', medida: p.medida || '' };
+}
+async function relFavoritar(){
+  const p = _relParamsAtuais(true); if (!p) return;
+  const cfg = _relCfg(_relAtual) || {}, ag = (cfg.agrupaveis || []).find(a => a.k === p.agrupar);
+  const sug = cfg.titulo + (ag ? ' por ' + ag.t.toLowerCase() : '') + (p.rel_dias ? ' (últimos ' + p.rel_dias + ' dias)' : '');
+  const rot = prompt('Nome do favorito (aparece em ⭐ Favoritos):', sug); if (rot === null) return;
+  try { await mntFetch('/manutencao/api/relatorios-favoritos', { method: 'POST', body: JSON.stringify({ relatorio: _relAtual, rotulo: rot.trim() || sug, params: p }) }); }
+  catch(e){ mostrarToast('❌ ' + e.message, 'warn'); return; }
+  await indCarregarFavs(); indMontarNav(); mostrarToast('⭐ Guardado em Favoritos', 'ok');
+}
+async function indCarregarFavs(){ try { _indFavs = await mntFetch('/manutencao/api/relatorios-favoritos'); } catch(e){ _indFavs = []; } }
+function indFav(id){ const f = _indFavs.find(x => x.id === id); if (!f) return; _relAplicar(f.relatorio, f.params); _indFavAtual = id; indRel(f.relatorio, true); }
+let _indFavAtual = null;
+async function indFavExcluir(id, ev){
+  ev && ev.stopPropagation();
+  const f = _indFavs.find(x => x.id === id); if (!f || !confirm('Tirar "' + f.rotulo + '" dos favoritos?')) return;
+  try { await mntFetch('/manutencao/api/relatorios-favoritos/' + id, { method: 'DELETE' }); } catch(e){ mostrarToast('❌ ' + e.message, 'warn'); return; }
+  await indCarregarFavs(); indMontarNav();
+}
+function relLink(){
+  const p = _relParamsAtuais(false); if (!p) return;
+  const url = location.origin + location.pathname + '?rel=' + encodeURIComponent(_relAtual) + Object.entries(p).map(([k, v]) => '&' + k + '=' + encodeURIComponent(v)).join('');
+  const ok = () => mostrarToast('🔗 Link copiado — quem abrir (com login) vê este relatório com estes filtros', 'ok');
+  if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(url).then(ok).catch(() => prompt('Copie o link:', url)); else prompt('Copie o link:', url);
 }
 async function relExcel(){
   const q = _relQuery(); if (q === null) return;
@@ -9537,6 +9631,9 @@ document.addEventListener('DOMContentLoaded', function(){
   // (20/10/2026) QR da etiqueta: /manutencao?peca=CÓDIGO abre Materiais já na ficha do item
   // (27/10/2026) links de aviso no computador: ?ot= ?pedido= ?eq= ?func= ?abast=1 (vindos do sino do Admin)
   try { const q = window._LINK_Q || new URLSearchParams(location.search); if (['ot','pedido','eq','func','abast'].some(k => q.get(k))) { history.replaceState(null, '', location.pathname); setTimeout(() => abrirDeLink(q), 900); } } catch(e){}
+  // (14/11/2026) ?rel=<relatório>&filtros… abre a aba Indicadores já no relatório (link 🔗 do relatório)
+  try { const rq = window._LINK_Q || new URLSearchParams(location.search), rn = rq.get('rel');
+        if (rn) { history.replaceState(null, '', location.pathname); const p = {}; rq.forEach((v, k) => { if (k !== 'rel' && k !== 'sso') p[k] = v; }); setTimeout(() => { _relAplicar(rn, p); relatoriosJanela(rn); }, 900); } } catch(e){}
   // (04/11/2026) ?guia=triagem abre a demonstração guiada direto
   try { const gq = (window._LINK_Q || new URLSearchParams(location.search)).get('guia'); if (gq) { history.replaceState(null, '', location.pathname); setTimeout(() => guiaAbrir(gq), 1500); } } catch(e){}
   try { const pc = (window._LINK_Q || new URLSearchParams(location.search)).get('peca'); if (pc) { history.replaceState(null, '', location.pathname); showModule('alm'); setTimeout(() => { mwSel('alm', pc); abrirPeca(pc); }, 600); } } catch(e){}

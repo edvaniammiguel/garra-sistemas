@@ -1110,6 +1110,88 @@ RELATORIOS = {
 _ORDEM_GRUPOS = ["Custos", "Trabalhos", "Preventivas", "Disponibilidade", "Mão de obra", "Materiais", "Compras", "Entradas", "Utilização"]
 
 
+# ═══ (14/11/2026) AGRUPAR POR + GRÁFICO — genéricos para todos os relatórios (tela, PDF e Excel) ═══
+_NAO_AGRUPA = re.compile(r"descri|observa|^obs|motivo|^itens$|convidados|relato|texto|refer|^ocs|nota fiscal|^nf$|documento$|^n[ºo°] |^un\.?$|^unidade$", re.I)
+_MES_ABR = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"]
+
+
+def _agrupaveis(cols):
+    """colunas de texto curtas (objeto, fornecedor, família, etapa…) + 'mês' de cada coluna de data"""
+    out = [{"k": c[0], "t": c[1]} for c in cols if c[2] == "txt" and not _NAO_AGRUPA.search(c[1])]
+    out += [{"k": "mes:" + c[0], "t": "Mês (" + c[1] + ")"} for c in cols if c[2] in ("data", "datahora")]
+    return out
+
+
+def _medidas(cols):
+    return [{"k": c[0], "t": c[1], "tipo": c[2]} for c in cols if len(c) > 3 and c[3] == "sum"]
+
+
+def _chave_grupo(l, chave):
+    if chave.startswith("mes:"):
+        v = l.get(chave[4:])
+        if isinstance(v, str) and len(v) >= 7:
+            return v[:7], f"{_MES_ABR[int(v[5:7]) - 1]}/{v[:4]}"
+        if isinstance(v, (_dt, _date)):
+            return v.strftime("%Y-%m"), f"{_MES_ABR[v.month - 1]}/{v.year}"
+        return "9999", "— sem data —"
+    v = l.get(chave)
+    t = str(v).strip() if v not in (None, "") else ""
+    return (t.lower() or "~"), (t or "— sem " + chave.replace("_", " ") + " —")
+
+
+def _agrupar(cols, linhas, chave):
+    """reordena as linhas por grupo e devolve [(rotulo, linhas, totais)]. Ordem: mês = cronológica;
+    demais = pelo 1º total (R$ primeiro) do maior para o menor; sem total = alfabética."""
+    if not chave or not linhas:
+        return None
+    grupos = {}
+    for l in linhas:
+        k, rot = _chave_grupo(l, chave)
+        grupos.setdefault(k, [rot, []])[1].append(l)
+    meds = _medidas(cols)
+    med = next((m["k"] for m in meds if m["tipo"] == "moeda"), meds[0]["k"] if meds else None)
+    out = [(rot, ls, _totais(cols, ls)) for k, (rot, ls) in grupos.items()]
+    if chave.startswith("mes:"):
+        out.sort(key=lambda g: _chave_grupo(g[1][0], chave)[0])
+    elif med:
+        out.sort(key=lambda g: (-(g[2].get(med) or 0), g[0]))
+    else:
+        out.sort(key=lambda g: g[0].lower())
+    return out
+
+
+def _grafico(cols, linhas, chave, medida):
+    """barras horizontais: dimensão = agrupamento (ou 1ª coluna agrupável); medida = soma escolhida ou nº de linhas.
+    Até 12 barras; o resto vira 'Outros'."""
+    if not linhas:
+        return None
+    if not chave:
+        ag = _agrupaveis(cols)
+        chave = ag[0]["k"] if ag else None
+    if not chave:
+        return None
+    meds = {m["k"]: m for m in _medidas(cols)}
+    if medida != "_n" and medida not in meds:
+        medida = next((m for m in meds if meds[m]["tipo"] == "moeda"), next(iter(meds), "_n"))
+    soma = {}
+    rot = {}
+    for l in linhas:
+        k, r = _chave_grupo(l, chave)
+        rot[k] = r
+        soma[k] = soma.get(k, 0.0) + (1.0 if medida == "_n" else _f(l.get(medida)))
+    itens = sorted(soma.items(), key=(lambda x: x[0]) if chave.startswith("mes:") else (lambda x: -x[1]))
+    if not chave.startswith("mes:") and len(itens) > 12:
+        resto = sum(v for _, v in itens[11:])
+        itens = itens[:11] + [("~outros", resto)]
+        rot["~outros"] = f"Outros ({len(soma) - 11})"
+    if chave.startswith("mes:"):
+        itens = itens[-18:]
+    dim_t = next((a["t"] for a in _agrupaveis(cols) if a["k"] == chave), chave)
+    med_t, tipo = ("Nº de linhas", "int") if medida == "_n" else (meds[medida]["t"], meds[medida]["tipo"])
+    return {"dim": chave, "dim_t": dim_t, "medida": medida, "med_t": med_t, "tipo": tipo,
+            "itens": [{"rotulo": rot[k], "valor": round(v, 2)} for k, v in itens]}
+
+
 def _cols_json(cols):
     return [{"k": c[0], "t": c[1], "tipo": c[2], "soma": (len(c) > 3 and c[3] == "sum")} for c in cols]
 
@@ -1270,11 +1352,75 @@ async def indicadores(periodo: str = "12m", setor: str = None, _auth=Depends(ver
             "top_custo": top_custo, "top_corretivas": top_corr, "series": serie}
 
 
+# ═══ (14/11/2026) ⭐ FAVORITOS — relatório + filtros + agrupar/gráfico, por usuário (vale em qualquer computador) ═══
+_FAV_OK = False
+
+
+async def _fav_tabela():
+    global _FAV_OK
+    if _FAV_OK:
+        return
+    await ajard_query("""CREATE TABLE IF NOT EXISTS manutencao.relatorio_favoritos (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        usuario_id UUID NOT NULL,
+        rotulo TEXT NOT NULL,
+        relatorio TEXT NOT NULL,
+        params JSONB NOT NULL DEFAULT '{}'::jsonb,
+        ordem INT NOT NULL DEFAULT 0,
+        criado_em TIMESTAMPTZ NOT NULL DEFAULT now())""", fetch="none")
+    await ajard_query("CREATE INDEX IF NOT EXISTS ix_rel_fav_usuario ON manutencao.relatorio_favoritos (usuario_id)", fetch="none")
+    _FAV_OK = True
+
+
+@router.get("/manutencao/api/relatorios-favoritos")
+async def favoritos_listar(_auth=Depends(verificar_manutencao)):
+    from routers.manutencao import _usuario_id
+    await _fav_tabela()
+    uid = await _usuario_id(_auth)
+    if not uid:
+        return []
+    rows = await ajard_query("SELECT id, rotulo, relatorio, params FROM manutencao.relatorio_favoritos WHERE usuario_id=%s ORDER BY ordem, criado_em", (uid,)) or []
+    import json as _json
+    par = lambda v: (_json.loads(v) if isinstance(v, str) else (v or {}))
+    return [{"id": str(r["id"]), "rotulo": r["rotulo"], "relatorio": r["relatorio"], "params": par(r["params"])} for r in rows if r["relatorio"] in RELATORIOS]
+
+
+@router.post("/manutencao/api/relatorios-favoritos")
+async def favoritos_criar(dados: dict, _auth=Depends(verificar_manutencao)):
+    from routers.manutencao import _usuario_id
+    import json as _json
+    await _fav_tabela()
+    uid = await _usuario_id(_auth)
+    if not uid:
+        raise HTTPException(status_code=400, detail="Usuário não identificado")
+    rel = str(dados.get("relatorio") or "")
+    if rel not in RELATORIOS:
+        raise HTTPException(status_code=400, detail="Relatório desconhecido")
+    rotulo = (str(dados.get("rotulo") or "").strip() or RELATORIOS[rel]["titulo"])[:80]
+    params = {k: str(v)[:120] for k, v in (dados.get("params") or {}).items() if v not in (None, "") and len(str(k)) <= 30}
+    n = await ajard_query("SELECT COUNT(*)::int AS n FROM manutencao.relatorio_favoritos WHERE usuario_id=%s", (uid,), fetch="one")
+    if int((n or {}).get("n") or 0) >= 30:
+        raise HTTPException(status_code=400, detail="Limite de 30 favoritos — remova algum antes")
+    r = await ajard_query("""INSERT INTO manutencao.relatorio_favoritos (usuario_id, rotulo, relatorio, params, ordem)
+                             VALUES (%s, %s, %s, %s::jsonb, %s) RETURNING id""", (uid, rotulo, rel, _json.dumps(params), int((n or {}).get("n") or 0)), fetch="one")
+    return {"id": str(r["id"]), "rotulo": rotulo, "relatorio": rel, "params": params}
+
+
+@router.delete("/manutencao/api/relatorios-favoritos/{fid}")
+async def favoritos_excluir(fid: str, _auth=Depends(verificar_manutencao)):
+    from routers.manutencao import _usuario_id
+    await _fav_tabela()
+    uid = await _usuario_id(_auth)
+    await ajard_query("DELETE FROM manutencao.relatorio_favoritos WHERE id=%s AND usuario_id=%s", (fid, uid), fetch="none")
+    return {"ok": True}
+
+
 @router.get("/manutencao/api/relatorios")
 async def catalogo(_auth=Depends(verificar_manutencao)):
     grupos = []
     for g in _ORDEM_GRUPOS:
-        itens = [{"nome": k, "titulo": v["titulo"], "sub": v["sub"], "filtros": v["filtros"]} for k, v in RELATORIOS.items() if v["grupo"] == g]
+        itens = [{"nome": k, "titulo": v["titulo"], "sub": v["sub"], "filtros": v["filtros"],
+                  "agrupaveis": _agrupaveis(v["cols"]), "medidas": _medidas(v["cols"])} for k, v in RELATORIOS.items() if v["grupo"] == g]
         if itens:
             grupos.append({"grupo": g, "itens": itens})
     return {"grupos": grupos}
@@ -1289,13 +1435,26 @@ async def relatorio(nome: str, request: Request, _auth=Depends(verificar_manuten
     F = _F(request.query_params)
     linhas = await cfg["fn"](F)
     cols = cfg["cols"]
-    formato = (request.query_params.get("formato") or "").lower()
+    qp = request.query_params
+    formato = (qp.get("formato") or "").lower()
+    # (14/11/2026) agrupar por / gráfico — iguais na tela, no PDF e no Excel
+    chave = (qp.get("agrupar") or "").strip()
+    if chave and chave not in {a["k"] for a in _agrupaveis(cols)}:
+        chave = ""
+    grupos = _agrupar(cols, linhas, chave) if chave else None
+    if grupos:
+        linhas = [l for _, ls, _ in grupos for l in ls]
+    graf = _grafico(cols, linhas, chave, (qp.get("medida") or "").strip()) if qp.get("grafico") in ("1", "true", "sim") else None
+    rot = F.rotulo("periodo" in cfg["filtros"])
+    if chave:
+        rot += " · agrupado por " + next((a["t"] for a in _agrupaveis(cols) if a["k"] == chave), chave)
     if formato == "xlsx":
-        return _xlsx_response(cfg["titulo"], F.rotulo("periodo" in cfg["filtros"]), _cols_json(cols), linhas, nome, _emitente(_auth))
+        return _xlsx_response(cfg["titulo"], rot, _cols_json(cols), linhas, nome, _emitente(_auth), grupos=grupos, grafico=graf)
     if formato == "pdf":
-        return _pdf_response(cfg["titulo"], F.rotulo("periodo" in cfg["filtros"]), _cols_json(cols), linhas, _totais(cols, linhas), nome, _emitente(_auth))
-    return {"nome": nome, "titulo": cfg["titulo"], "sub": cfg["sub"], "filtros": F.rotulo("periodo" in cfg["filtros"]),
-            "colunas": _cols_json(cols), "linhas": [{k: _json_val(v) for k, v in l.items()} for l in linhas], "totais": _totais(cols, linhas)}
+        return _pdf_response(cfg["titulo"], rot, _cols_json(cols), linhas, _totais(cols, linhas), nome, _emitente(_auth), grupos=grupos, grafico=graf)
+    return {"nome": nome, "titulo": cfg["titulo"], "sub": cfg["sub"], "filtros": rot,
+            "colunas": _cols_json(cols), "linhas": [{k: _json_val(v) for k, v in l.items()} for l in linhas], "totais": _totais(cols, linhas),
+            "grupos": [{"rotulo": r, "n": len(ls), "totais": t} for r, ls, t in grupos] if grupos else None, "grafico": graf}
 
 
 # ═════════════════════════════ EXCEL ══════════════════════════════════════
@@ -1373,7 +1532,7 @@ def _br(v, tipo):
 def _subtitulo(filtros, n, emitente):
     return f"{filtros} · {n} linha(s) · emitido em {_dt.now().strftime('%d/%m/%Y %H:%M')}" + (f" por {emitente}" if emitente else "")
 
-def _xlsx_bytes(titulo, filtros, colunas, linhas, emitente=""):
+def _xlsx_bytes(titulo, filtros, colunas, linhas, emitente="", grupos=None, grafico=None):
     from openpyxl import Workbook
     from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
     from openpyxl.utils import get_column_letter
@@ -1403,7 +1562,8 @@ def _xlsx_bytes(titulo, filtros, colunas, linhas, emitente=""):
         cell.font = Font(bold=True, color="FFFFFF"); cell.fill = PatternFill("solid", fgColor=AZUL)
         cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True); cell.border = Border(bottom=Side(style="thin", color=LARANJA))
     zebra = PatternFill("solid", fgColor=CINZA)
-    for i, l in enumerate(linhas, hdr + 1):
+    from openpyxl.utils import get_column_letter as _L
+    def _linha(i, l, z):
         for j, c in enumerate(colunas, 1):
             v = _coagir(l.get(c["k"]), c["tipo"])
             cell = ws.cell(row=i, column=j, value=v)
@@ -1412,9 +1572,31 @@ def _xlsx_bytes(titulo, filtros, colunas, linhas, emitente=""):
             if c["tipo"] in ("int", "num", "moeda", "pct"):
                 cell.alignment = Alignment(horizontal="right")
             cell.border = Border(bottom=fino)
-            if (i - hdr) % 2 == 0:
+            if z:
                 cell.fill = zebra
-    fim = hdr + len(linhas)
+    if grupos:
+        # (14/11/2026) faixa do grupo + linhas + subtotal (SUBTOTAL: o total geral ignora os subtotais)
+        i = hdr + 1
+        fgrp, fsub = PatternFill("solid", fgColor="E8EEF7"), PatternFill("solid", fgColor="FFF7ED")
+        for rot, ls, _t in grupos:
+            for j in range(1, len(colunas) + 1):
+                ws.cell(row=i, column=j).fill = fgrp
+            ws.cell(row=i, column=1, value=f"{rot}  ({len(ls)})").font = Font(bold=True, color=AZUL)
+            i += 1; ini = i
+            for n, l in enumerate(ls):
+                _linha(i, l, n % 2 == 1); i += 1
+            ws.cell(row=i, column=1, value=f"Subtotal {rot}").font = Font(bold=True, italic=True, color=AZUL, size=9)
+            for j, c in enumerate(colunas, 1):
+                ws.cell(row=i, column=j).fill = fsub
+                if c.get("soma"):
+                    cell = ws.cell(row=i, column=j, value=f"=SUBTOTAL(9,{_L(j)}{ini}:{_L(j)}{i-1})")
+                    cell.font = Font(bold=True, color=AZUL, size=9); cell.number_format = _FMT.get(c["tipo"], "#,##0.00"); cell.alignment = Alignment(horizontal="right")
+            i += 1
+        fim = i - 1
+    else:
+        for i, l in enumerate(linhas, hdr + 1):
+            _linha(i, l, (i - hdr) % 2 == 0)
+        fim = hdr + len(linhas)
     if linhas and any(c.get("soma") for c in colunas):
         tr = fim + 1
         ws.cell(row=tr, column=1, value="Total").font = Font(bold=True, color=AZUL)
@@ -1441,12 +1623,36 @@ def _xlsx_bytes(titulo, filtros, colunas, linhas, emitente=""):
     ws.oddFooter.left.text = f"Garra Sistemas — Manutenção · {titulo}"; ws.oddFooter.left.size = 8
     ws.oddFooter.center.text = f"Emitido em {_dt.now().strftime('%d/%m/%Y %H:%M')}" + (f" por {emitente}" if emitente else ""); ws.oddFooter.center.size = 8
     ws.oddFooter.right.text = "Página &P de &N"; ws.oddFooter.right.size = 8
+    if grafico and grafico.get("itens"):
+        # (14/11/2026) aba "Gráfico": tabela-resumo + barras (o Excel redesenha se a pessoa mexer nos números)
+        from openpyxl.chart import BarChart, Reference
+        wg = wb.create_sheet("Gráfico")
+        wg["A1"] = f"{titulo} — {grafico['med_t']} por {grafico['dim_t']}"; wg["A1"].font = Font(bold=True, size=12, color=AZUL)
+        wg["A2"] = filtros; wg["A2"].font = Font(size=8, color="64748B")
+        wg["A4"], wg["B4"] = grafico["dim_t"], grafico["med_t"]
+        for c in ("A4", "B4"):
+            wg[c].font = Font(bold=True, color="FFFFFF"); wg[c].fill = PatternFill("solid", fgColor=AZUL)
+        for n, it in enumerate(grafico["itens"], 5):
+            wg.cell(row=n, column=1, value=it["rotulo"])
+            cv = wg.cell(row=n, column=2, value=it["valor"]); cv.number_format = _FMT.get(grafico["tipo"], "#,##0.00")
+        ult = 4 + len(grafico["itens"])
+        wg.column_dimensions["A"].width = min(max(12, max(len(str(it["rotulo"])) for it in grafico["itens"]) + 2), 45)
+        wg.column_dimensions["B"].width = 18
+        ch = BarChart(); ch.type = "col" if grafico["dim"].startswith("mes:") else "bar"; ch.style = 10
+        ch.title = f"{grafico['med_t']} por {grafico['dim_t']}"; ch.legend = None
+        ch.add_data(Reference(wg, min_col=2, min_row=4, max_row=ult), titles_from_data=True)
+        ch.set_categories(Reference(wg, min_col=1, min_row=5, max_row=ult))
+        if ch.type == "bar":
+            ch.y_axis.majorGridlines = None; ch.x_axis.scaling.orientation = "maxMin"
+        ch.series[0].graphicalProperties.solidFill = AZUL
+        ch.height, ch.width = max(7, 0.7 * len(grafico["itens"]) + 3), 22
+        wg.add_chart(ch, "D4")
     bio = io.BytesIO(); wb.save(bio); bio.seek(0)
     return bio
 
 
 # ═════════════════════════════ PDF ════════════════════════════════════════
-def _pdf_bytes(titulo, filtros, colunas, linhas, totais=None, emitente=""):
+def _pdf_bytes(titulo, filtros, colunas, linhas, totais=None, emitente="", grupos=None, grafico=None):
     """PDF no padrão documental Garra: moldura laranja fina nas 4 laterais,
     cabeçalho com logotipo + empresa, tabela azul #001F4D com zebra, rodapé
     com emissão/emitente e "Página X de Y". Paisagem quando a tabela é larga."""
@@ -1536,9 +1742,29 @@ def _pdf_bytes(titulo, filtros, colunas, linhas, totais=None, emitente=""):
     st_c = ParagraphStyle("c", fontName="Helvetica", fontSize=fs, leading=fs + 1.5)
     st_r = ParagraphStyle("r", parent=st_c, alignment=2)
     dados = [[Paragraph(_x(str(c["t"])), st_h) for c in colunas]]
-    for i in range(len(linhas)):
-        l = linhas[i]
-        dados.append([Paragraph(_x(_br(l.get(c["k"]), c["tipo"])), st_r if num(c["tipo"]) else st_c) for c in colunas])
+    kind = ["h"]
+    def _lin(l):
+        return [Paragraph(_x(_br(l.get(c["k"]), c["tipo"])), st_r if num(c["tipo"]) else st_c) for c in colunas]
+    if grupos:
+        # (14/11/2026) faixa do grupo (célula única) + linhas + subtotal
+        st_g = ParagraphStyle("g", fontName="Helvetica-Bold", fontSize=fs + 0.5, textColor=azul, leading=fs + 2.5)
+        for rot, ls, tg in grupos:
+            dados.append([Paragraph(_x(f"{rot}  ({len(ls)})"), st_g)] + [""] * (len(colunas) - 1)); kind.append("g")
+            for l in ls:
+                dados.append(_lin(l)); kind.append("l")
+            if tg:
+                fila = []
+                for j, c in enumerate(colunas):
+                    if j == 0:
+                        fila.append(Paragraph("<i>Subtotal</i>", st_c))
+                    elif c["k"] in tg:
+                        fila.append(Paragraph("<b>" + _x(_br(tg[c["k"]], c["tipo"])) + "</b>", st_r))
+                    else:
+                        fila.append("")
+                dados.append(fila); kind.append("s")
+    else:
+        for l in linhas:
+            dados.append(_lin(l)); kind.append("l")
     if tem_total:
         fila = []
         for j, c in enumerate(colunas):
@@ -1548,18 +1774,30 @@ def _pdf_bytes(titulo, filtros, colunas, linhas, totais=None, emitente=""):
                 fila.append(Paragraph("<b>" + _x(_br(totais[c["k"]], c["tipo"])) + "</b>", st_r))
             else:
                 fila.append("")
-        dados.append(fila)
+        dados.append(fila); kind.append("t")
     t = Table(dados, colWidths=larguras, repeatRows=1)
     estilo = [("BACKGROUND", (0, 0), (-1, 0), azul), ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
               ("LINEBELOW", (0, 0), (-1, 0), 0.8, laranja), ("GRID", (0, 1), (-1, -1), 0.3, colors.HexColor("#CBD5E1")),
               ("TOPPADDING", (0, 0), (-1, -1), 2), ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
               ("LEFTPADDING", (0, 0), (-1, -1), 3), ("RIGHTPADDING", (0, 0), (-1, -1), 3)]
-    for i in range(2, len(dados) - (1 if tem_total else 0), 2):
-        estilo.append(("BACKGROUND", (0, i), (-1, i), cinza))
+    z = 0
+    for i, k in enumerate(kind):
+        if k == "l":
+            z += 1
+            if z % 2 == 0:
+                estilo.append(("BACKGROUND", (0, i), (-1, i), cinza))
+        elif k == "g":
+            z = 0
+            estilo += [("SPAN", (0, i), (-1, i)), ("BACKGROUND", (0, i), (-1, i), colors.HexColor("#E8EEF7")), ("LINEABOVE", (0, i), (-1, i), 0.6, azul)]
+        elif k == "s":
+            estilo.append(("BACKGROUND", (0, i), (-1, i), colors.HexColor("#FFF7ED")))
     if tem_total:
         estilo += [("BACKGROUND", (0, -1), (-1, -1), colors.HexColor("#FFF7ED")), ("LINEABOVE", (0, -1), (-1, -1), 0.8, laranja)]
     t.setStyle(TableStyle(estilo))
-    corpo = [Paragraph(_x(titulo), st_t), Paragraph(_x(sub), st_s), Spacer(1, 4 * mm), t]
+    corpo = [Paragraph(_x(titulo), st_t), Paragraph(_x(sub), st_s), Spacer(1, 4 * mm)]
+    if grafico and grafico.get("itens"):
+        corpo += [_pdf_grafico(grafico, disp, azul, laranja), Spacer(1, 4 * mm)]
+    corpo.append(t)
     if not linhas:
         corpo.append(Spacer(1, 3 * mm)); corpo.append(Paragraph("Sem dados para os filtros escolhidos.", st_s))
     bio = io.BytesIO()
@@ -1570,15 +1808,40 @@ def _pdf_bytes(titulo, filtros, colunas, linhas, totais=None, emitente=""):
     return bio
 
 
-def _pdf_response(titulo, filtros, colunas, linhas, totais, nome, emitente=""):
-    bio = _pdf_bytes(titulo, filtros, colunas, linhas, totais, emitente)
+def _pdf_grafico(g, largura, azul, laranja):
+    """barras horizontais desenhadas à mão (reportlab.graphics): rótulo à esquerda, valor na ponta."""
+    from reportlab.graphics.shapes import Drawing, Rect, String, Line
+    from reportlab.lib import colors
+    from reportlab.pdfbase.pdfmetrics import stringWidth as _sw
+    itens = g["itens"]; n = len(itens)
+    barra, gap, topo = 11, 4, 16
+    alt = topo + n * (barra + gap) + 6
+    d = Drawing(largura, alt)
+    d.add(String(0, alt - 11, f"{g['med_t']} por {g['dim_t']}", fontName="Helvetica-Bold", fontSize=8.5, fillColor=azul))
+    rot_w = min(max(_sw(str(i["rotulo"])[:40], "Helvetica", 7) for i in itens) + 6, largura * 0.35)
+    val = lambda v: _br(v, g["tipo"])
+    val_w = max(_sw(val(i["valor"]), "Helvetica-Bold", 7) for i in itens) + 6
+    area = max(largura - rot_w - val_w, 40)
+    mx = max([abs(i["valor"]) for i in itens] + [1])
+    for k, it in enumerate(itens):
+        y = alt - topo - (k + 1) * (barra + gap) + gap
+        d.add(String(rot_w - 4, y + 3, str(it["rotulo"])[:40], fontName="Helvetica", fontSize=7, textAnchor="end", fillColor=colors.HexColor("#334155")))
+        w = area * abs(it["valor"]) / mx
+        d.add(Rect(rot_w, y, max(w, 0.5), barra, fillColor=laranja if str(it["rotulo"]).startswith("Outros (") else azul, strokeColor=None))
+        d.add(String(rot_w + w + 3, y + 3, val(it["valor"]), fontName="Helvetica-Bold", fontSize=7, fillColor=azul))
+    d.add(Line(rot_w, 2, rot_w, alt - topo + 2, strokeColor=colors.HexColor("#CBD5E1"), strokeWidth=0.5))
+    return d
+
+
+def _pdf_response(titulo, filtros, colunas, linhas, totais, nome, emitente="", grupos=None, grafico=None):
+    bio = _pdf_bytes(titulo, filtros, colunas, linhas, totais, emitente, grupos=grupos, grafico=grafico)
     arq = re.sub(r"[^a-z0-9]+", "-", nome.lower()).strip("-") or "relatorio"
     return StreamingResponse(bio, media_type="application/pdf",
                              headers={"Content-Disposition": f'attachment; filename="garra-{arq}-{_date.today().isoformat()}.pdf"'})
 
 
-def _xlsx_response(titulo, filtros, colunas, linhas, nome, emitente=""):
-    bio = _xlsx_bytes(titulo, filtros, colunas, linhas, emitente)
+def _xlsx_response(titulo, filtros, colunas, linhas, nome, emitente="", grupos=None, grafico=None):
+    bio = _xlsx_bytes(titulo, filtros, colunas, linhas, emitente, grupos=grupos, grafico=grafico)
     arq = re.sub(r"[^a-z0-9]+", "-", nome.lower()).strip("-") or "relatorio"
     return StreamingResponse(bio, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                              headers={"Content-Disposition": f'attachment; filename="garra-{arq}-{_date.today().isoformat()}.xlsx"'})

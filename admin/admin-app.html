@@ -1581,6 +1581,13 @@ async function iniciarApp(user) {
     try { _usuarios = await apiFetch('/usuarios'); } catch {}
   }
   renderModulos(window._USER_ID, user.perfil);
+  // (14/11/2026) link direto para um módulo (ex.: relatório da Manutenção mandado no WhatsApp) aberto sem sessão:
+  // depois do login segue para ele levando a sessão (SSO). Vale por 15 minutos e só para caminhos internos.
+  try {
+    const d = JSON.parse(localStorage.getItem('garra_destino') || 'null');
+    localStorage.removeItem('garra_destino');
+    if (d && d.url && /^\/(manutencao|compras)(\/|\?|$)/.test(d.url) && Date.now() - (d.t || 0) < 15 * 60 * 1000) abrirModuloUrl(d.url, false);
+  } catch(e) {}
 }
 
 // Verificar sessão existente ao carregar
