@@ -240,6 +240,7 @@ button:disabled, select:disabled, input:disabled, [aria-disabled=true] { cursor:
   <div class="tbn on" id="tn-frota" onclick="showModule('frota')">🚦 Frota</div>
   <div class="tbn" id="tn-ots" onclick="showModule('ots')">🔧 Ordens de Trabalho</div>
   <div class="tbn" id="tn-alm" onclick="showModule('alm')">🧰 Materiais</div>
+  <div class="tbn" id="tn-ind" onclick="showModule('ind')" title="Painel e todos os relatórios da manutenção num lugar só">📊 Indicadores</div>
   <div class="tbn" id="tn-param" onclick="showModule('param')">⚙️ Parametrizar</div>
   <div class="tbn" id="tn-guia" onclick="guiaMenu(event)" title="Demonstrações guiadas na tela real (modo demonstração: nada é gravado)" style="margin-left:auto;background:#16A34A;color:#fff">▶ Como fazer</div>
   <div class="tb-user" id="tb-user" style="margin-left:0"><b>—</b></div>
@@ -323,6 +324,17 @@ button:disabled, select:disabled, input:disabled, [aria-disabled=true] { cursor:
         <label title="Mecânico sinalizou serviço concluído pelo app — falta a gestão encerrar"><input type="checkbox" id="ots-f-sinal" onchange="renderOTs()"> ✅ Sinalizadas p/ encerrar <b id="ots-c-sinal"></b></label>
       </div>
     </div>
+  </div>
+</div>
+
+<!-- ══ (14/11/2026) 📊 INDICADORES — painel + todos os relatórios (antes: botão 📑 Relatórios em cada tela) ══ -->
+<div class="mod" id="mod-ind">
+  <div class="strip">📊 Indicadores <span class="sc" id="ind-strip">painel e relatórios da manutenção</span></div>
+  <div class="param-wrap">
+    <div class="param-nav" style="width:250px;display:flex;flex-direction:column">
+      <div id="ind-nav" style="flex:1;overflow:auto"></div>
+    </div>
+    <div class="param-pane" id="ind-pane" style="display:flex;flex-direction:column;overflow:auto;padding:10px 12px"></div>
   </div>
 </div>
 
@@ -511,6 +523,7 @@ function showModule(id){
   if (id==='ots') carregarOTsReais();
   if (id==='alm') { montarNavAlm(); if (_almFiltro !== '_baixo') carregarPecasReais(); }
   if (id==='param') montarParamNav();
+  if (id==='ind') indAbrir();
 }
 
 
@@ -1972,7 +1985,7 @@ const _MW = {
     excluir:"excluirEquipMW()", imprimir:"imprimirDialogo('frota')",
     botoes:[
       ['\ud83d\udc41','Ver',[['\ud83c\udf33 \u00c1rvore',"ftModo('arv')"],['\u2630 Lista',"ftModo('lista')"],['\u21bb Atualizar sem\u00e1foros',"carregarSemaforosReais()"]]],
-      ['\ud83d\udcca','An\u00e1lises',[['\ud83d\udcca Par\u00e2metros do objeto (m\u00eas a m\u00eas)',"(function(){const i=_mwPrecisa('frota','objeto'); if(i) equipAnalises(i);})()"],['\ud83d\udea6 Sem\u00e1foros da frota',"carregarSemaforosReais()"],['\ud83d\udcca An\u00e1lise ABC',"anABC()"]]],
+      ['\ud83d\udcca','An\u00e1lises',[['\ud83d\udcca Par\u00e2metros do objeto (m\u00eas a m\u00eas)',"(function(){const i=_mwPrecisa('frota','objeto'); if(i) equipAnalises(i);})()"],['\ud83d\udea6 Sem\u00e1foros da frota',"carregarSemaforosReais()"]]],
       ['\u22ef','Mais',[
         ['\ud83d\udcc5 Planos Manuten\u00e7\u00e3o',"(function(){const i=_mwPrecisa('frota','objeto'); if(i) abrirPlanosEquip(i);})()"],
         ['\ud83d\udd27 Ordens Trabalho',"(function(){const i=_mwPrecisa('frota','objeto'); if(i) otsDoEquip(i,true);})()"],
@@ -1988,7 +2001,6 @@ const _MW = {
                                           ['\ud83d\udede Subsistemas / Montagem','equipSubsistemas'],['\ud83d\udd29 Itens aplicados','equipArtigos'],
                                           ['\ud83d\udcc5 Planos de manuten\u00e7\u00e3o','abrirPlanosEquip']], sel:true},
         ['\u26a1 Gerar preventivas',"gerarPreventivas()"],
-        ['\ud83d\udcca An\u00e1lise ABC',"anABC()"],
         ['\ud83c\udf33 \u00c1rvore Objetos',"ftModo('arv')"],
         ['\ud83d\udcc5 Plano Trabalhos',"(function(){const i=_mwPrecisa('frota','objeto'); if(i) abrirPlanosEquip(i);})()"],
         ['\ud83d\udcdc Hist\u00f3rico Completo OTs',"(function(){const i=_mwPrecisa('frota','objeto'); if(i) otsDoEquip(i,true);})()"],
@@ -2016,7 +2028,6 @@ const _MW = {
         {sub:'\ud83d\udcd2 Registros', itens:[['\ud83d\udc65 Registro M\u00e3o de Obra',"(function(){const i=_mwPrecisa('ots','OT'); if(i) otAbrirEm(i,'mo');})()"],['\ud83d\udd29 Registro Itens',"(function(){const i=_mwPrecisa('ots','OT'); if(i) verOTReal(i);})()"],['\ud83d\udcc4 Registro Outros',"(function(){const i=_mwPrecisa('ots','OT'); if(i) otAbrirEm(i,'ou');})()"]]},
         ['\u270f\ufe0f M\u00faltipla Edi\u00e7\u00e3o OTs',"multiEdicao('ots')"],
         ['\u26a0\ufe0f Modos Falha (sintomas / causas)',"showModule('param');abrirParamPane('sintomas','dom','Sintomas e Causas')"],
-        ['\ud83d\udcca Carga Trabalhos',"cargaTrabalhos()"],
         ['\ud83e\udd1d Contratos',"contratosJanela()"],
         ['\ud83d\ude9a Guias Transporte',"guiasJanela()"]]]
     ],
@@ -2029,7 +2040,7 @@ const _MW = {
     excluir:"desativarArtigoMW()", imprimir:"mwImprimir('mod-alm','Materiais')",
     botoes:[
       ['\ud83d\udc41','Ver',[['\ud83d\uddc2 Cat\u00e1logo de Pe\u00e7as',"almLente('mestre')"],['\ud83d\udce6 Estoque',"almLente('armazem')"]]],
-      ['\ud83d\udcca','An\u00e1lises',[['\ud83d\udcca An\u00e1lise ABC',"anABC()"],['\u26a0 Estoque baixo',"almVistaBaixo()"]]],
+      ['\ud83d\udcca','An\u00e1lises',[['\u26a0 Estoque baixo',"almVistaBaixo()"]]],
       ['\ud83d\udce5','Receber',"recebimentosJanela()"],
       ['\ud83d\udd01','Substitutos',"(function(){const i=_mwPrecisa('alm','item'); if(i) substitutosJanela(i);})()"],
       ['\ud83c\udff7','Etiquetas',"etiquetasItens()"],
@@ -2060,7 +2071,7 @@ function mwBar(aba){
     + c.botoes.map(([ico,rot,x]) => Array.isArray(x) ? dd(ico,rot,x) : b(ico,rot,x)).join('')
     + '<span class="sep"></span>'
     // (11/10/2026) Relatórios num lugar só + Excel da lista que está na tela — igual nos três módulos
-    + b('\ud83d\udcd1','Relat\u00f3rios',"relatoriosJanela()") + b('\u2b07','Excel',"xlsListaAtual('"+aba+"')")
+    + b('\u2b07','Excel',"xlsListaAtual('"+aba+"')")   // (14/11/2026) 📑 Relatórios saiu daqui: tudo em 📊 Indicadores
     + '<span class="sep"></span>'
     + '<input placeholder="Procurar\u2026" onkeydown="if(event.key===\'Enter\'){mwProcurar(\''+aba+'\',this.value)}">'
     + '<button class="mwb" onclick="mwProcurar(\''+aba+'\',this.previousElementSibling.value)"><span class="i">\ud83d\udd0d</span>Procurar</button>'
@@ -3385,37 +3396,182 @@ function xlsListaAtual(aba){
       {k:'codigo',t:'Item',tipo:'txt'},{k:'descricao',t:'Descrição',tipo:'txt'},{k:'familia',t:'Família',tipo:'txt'},{k:'unidade',t:'Un.',tipo:'txt'},{k:'ultimo_preco',t:'Últ. compra (R$)',tipo:'moeda'},{k:'custo_medio',t:'Custo médio (R$)',tipo:'moeda'},{k:'saldo',t:'Saldo',tipo:'num'}], linhas, 'Conforme a tela');
   }
 }
-async function relatoriosJanela(nome){
-  if (!_relCat) { try { _relCat = await mntFetch('/manutencao/api/relatorios'); } catch(e){ mostrarToast('❌ ' + e.message, 'warn'); return; } }
+// ═══ (14/11/2026) 📊 INDICADORES — painel + relatórios numa aba só ══════════════════════════════════════
+// A antiga janela flutuante "📑 Relatórios" virou a aba Indicadores: barra lateral com grupos que recolhem
+// (estado guardado por computador), busca, recentes e o Painel. relatoriosJanela(nome) continua existindo
+// para os atalhos de contexto e os tours: só leva para a aba já no relatório pedido.
+let _indVista = 'painel', _indBusca = '', _indPainelDados = null;
+const _IND_ICO = { 'Custos':'💰', 'Trabalhos':'🔧', 'Preventivas':'📅', 'Disponibilidade':'⏱', 'Mão de obra':'👷', 'Materiais':'📦', 'Compras':'🛒', 'Entradas':'📥', 'Utilização':'🚜', 'Análises':'🔎' };
+const _IND_ANALISES = [ { nome: '_abc', titulo: 'Análise ABC (peças)', sub: 'curva ABC do consumo de peças — onde está o dinheiro', fn: 'anABC()' },
+                        { nome: '_carga', titulo: 'Carga de trabalhos', sub: 'horas planejadas por semana × capacidade da oficina', fn: 'cargaTrabalhos()' } ];
+function _indLS(k, v){ try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch(e){ return null; } }
+function _indRecentes(){ try { return JSON.parse(_indLS('garra_ind_recentes') || '[]'); } catch(e){ return []; } }
+function _indRecente(nome){ const r = _indRecentes().filter(x => x !== nome); r.unshift(nome); _indLS('garra_ind_recentes', JSON.stringify(r.slice(0,5))); }
+async function _relPrep(){
+  if (!_relCat) { try { _relCat = await mntFetch('/manutencao/api/relatorios'); } catch(e){ mostrarToast('❌ ' + e.message, 'warn'); return false; } }
+  if (window._relDom) return true;
   await _sistemas(); if (!_mntEquipList.length) { try { await carregarEquipReais(); } catch(e){} }
   // (21/10/2026) listas dos filtros de Entradas (fornecedor, almoxarifado)
   if (!_mntFornList || !_mntFornList.length) { try { _mntFornList = await mntFetch('/manutencao/api/fornecedores'); } catch(e){ _mntFornList = _mntFornList || []; } }
   if (!_almList) { try { const a = await mntFetch('/manutencao/api/almoxarifados'); _almList = Array.isArray(a) ? a : (a.almoxarifados || []); } catch(e){ _almList = []; } }
   await _tiposTrab();
   const setores = await _setoresInterventor();
+  try { await _setorManutencao(); } catch(e){}   // relatórios do grupo Compras saem só do setor de compras da manutenção
   if (!_relF.ate) { const h = new Date(); _relF.ate = h.toISOString().slice(0,10); const d = new Date(h); d.setFullYear(d.getFullYear()-1); _relF.de = d.toISOString().slice(0,10); }
-  _relAtual = nome || _relAtual || _relCat.grupos[0].itens[0].nome;
-  document.querySelector('#eq-ficha .modal').classList.add('larga');
-  const nav = _relCat.grupos.map(g => '<div class="pn-grp" style="cursor:default">' + _esc(g.grupo) + '</div>'
-    + g.itens.map(it => '<div class="pn-item' + (it.nome === _relAtual ? ' on' : '') + '" data-n="' + it.nome + '" onclick="relEscolher(this.dataset.n)" title="' + _esc(it.sub) + '">' + _esc(it.titulo) + '</div>').join('')).join('');
-  document.getElementById('eq-ficha-corpo').innerHTML =
-    '<div style="display:flex;justify-content:space-between;align-items:center"><b style="font-size:14px;color:#1A2A5E">📑 Relatórios — Manutenção</b>'
-    + '<span style="cursor:pointer;font-size:18px" onclick="fichaFechar()">✕</span></div>'
-    + '<div style="display:flex;gap:10px;margin-top:8px;flex:1;min-height:0">'
-    +   '<div class="param-nav" style="width:230px;border:1px solid #E2E8F0;border-radius:6px;overflow:auto">' + nav + '</div>'
-    +   '<div style="flex:1;display:flex;flex-direction:column;min-width:0">'
-    +     '<div id="rel-filtros" style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-bottom:6px"></div>'
-    +     '<div id="rel-titulo" style="display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap;margin-bottom:4px"></div>'
-    +     '<div id="rel-grade" style="flex:1;overflow:auto;background:#fff;border:1px solid #E2E8F0;border-radius:6px;min-height:200px"></div>'
-    +   '</div></div>';
-  document.getElementById('eq-ficha').classList.add('show');
   window._relDom = { setores, tipos: (_mntTiposTrab || []) };
-  relEscolher(_relAtual);
+  return true;
+}
+async function relatoriosJanela(nome){
+  // (14/11/2026) compatibilidade: atalhos e tours que chamavam a janela agora abrem a aba Indicadores
+  if (nome) { _indVista = 'rel'; _relAtual = nome; }
+  showModule('ind');
+}
+async function indAbrir(){
+  if (!(await _relPrep())) return;
+  indMontarNav();
+  if (_indVista === 'rel' && _relAtual) indRel(_relAtual); else indPainel();
+}
+function _indTitulo(nome){ const c = _relCfg(nome); return c ? c.titulo : nome; }
+function indMontarNav(){
+  const nav = document.getElementById('ind-nav'); if (!nav || !_relCat) return;
+  const q = (_indBusca || '').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase().trim();
+  const casa = it => !q || ((it.titulo + ' ' + (it.sub||'')).normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase().includes(q));
+  const item = it => '<div class="pn-item' + (_indVista === 'rel' && it.nome === _relAtual ? ' on' : '') + '" data-n="' + it.nome + '" title="' + _esc(it.sub||'') + '" onclick="' + (it.fn ? it.fn : 'indRel(this.dataset.n)') + '" style="padding-left:22px">' + _esc(it.titulo) + '</div>';
+  const grupos = _relCat.grupos.map(g => ({ grupo: g.grupo, itens: g.itens })).concat([{ grupo: 'Análises', itens: _IND_ANALISES }]);
+  let h = '<div class="pn-item' + (_indVista === 'painel' ? ' on' : '') + '" onclick="indPainel()" style="font-weight:700">📈 Painel</div>'
+    + '<div style="padding:6px 8px"><input id="ind-busca" value="' + _esc(_indBusca) + '" placeholder="🔍 buscar relatório…" oninput="_indBusca=this.value;indMontarNav();const b=document.getElementById(\'ind-busca\');b.focus();b.setSelectionRange(b.value.length,b.value.length)" style="width:100%;font-size:11px;padding:4px 6px;border:1px solid #CBD5E1;border-radius:6px"></div>';
+  const rec = _indRecentes().filter(n => _relCfg(n));
+  if (rec.length && !q) h += '<div class="pn-grp" style="cursor:default">🕘 Recentes</div>' + rec.map(n => item({ nome: n, titulo: _indTitulo(n), sub: (_relCfg(n)||{}).sub })).join('');
+  grupos.forEach(g => {
+    const its = g.itens.filter(casa); if (!its.length) return;
+    const k = 'garra_ind_grp_' + g.grupo, temAtual = _indVista === 'rel' && its.some(x => x.nome === _relAtual);
+    const aberto = q || temAtual || _indLS(k) === '1';
+    h += '<div class="pn-grp" style="cursor:pointer" onclick="_indLS(\'' + k + '\',' + (aberto ? "'0'" : "'1'") + ');indMontarNav()">' + (aberto ? '▾ ' : '▸ ') + (_IND_ICO[g.grupo] || '') + ' ' + _esc(g.grupo) + ' <span class="muted" style="font-weight:400">(' + its.length + ')</span></div>'
+      + (aberto ? its.map(item).join('') : '');
+  });
+  if (q && !grupos.some(g => g.itens.some(casa))) h += '<div class="muted" style="padding:8px 10px;font-size:11px">Nenhum relatório com "' + _esc(_indBusca) + '".</div>';
+  nav.innerHTML = h;
+}
+function indRel(nome){
+  _indVista = 'rel'; _relAtual = nome; _indRecente(nome);
+  const pane = document.getElementById('ind-pane'); if (!pane) return;
+  pane.innerHTML = '<div id="rel-titulo" style="display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap;margin-bottom:6px"></div>'
+    + '<div id="rel-filtros" style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-bottom:8px;padding:8px;background:#fff;border:1px solid #E2E8F0;border-radius:8px"></div>'
+    + '<div id="rel-grade" style="flex:1;overflow:auto;background:#fff;border:1px solid #E2E8F0;border-radius:8px;min-height:200px"></div>';
+  indMontarNav();
+  relEscolher(nome);
+}
+// ── Painel ──
+async function indPainel(){
+  _indVista = 'painel'; indMontarNav();
+  const pane = document.getElementById('ind-pane'); if (!pane) return;
+  const per = _indLS('garra_ind_periodo') || '12m';
+  if (!_indPainelDados) pane.innerHTML = '<div class="muted" style="padding:14px">Calculando indicadores…</div>';
+  let setor = ''; try { setor = await _setorManutencao() || ''; } catch(e){}
+  try { _indPainelDados = await mntFetch('/manutencao/api/indicadores?periodo=' + per + (setor ? '&setor=' + encodeURIComponent(setor) : '')); }
+  catch(e){ pane.innerHTML = '<div style="padding:14px;color:#B91C1C">' + _esc(e.message) + '</div>'; return; }
+  if (_indVista !== 'painel') return;
+  _indPainelRender(_indPainelDados, per);
+}
+function _indPainelRender(d, per){
+  const pane = document.getElementById('ind-pane'); if (!pane) return;
+  const n = v => (v == null ? '—' : Number(v).toLocaleString('pt-BR'));
+  const mil = v => v == null ? '—' : (Math.abs(v) >= 1000 ? 'R$ ' + (v/1000).toLocaleString('pt-BR', {maximumFractionDigits: v >= 100000 ? 0 : 1}) + ' mil' : 'R$ ' + Number(v).toLocaleString('pt-BR', {maximumFractionDigits: 0}));
+  const pct = v => v == null ? '—' : (v*100).toLocaleString('pt-BR', {maximumFractionDigits: 0}) + '%';
+  const perT = { '12m': 'últimos 12 meses', 'ano': 'este ano', 'mes': 'este mês' }[per] || per;
+  const num = (v, rot, acao, tit, alerta) => '<div style="cursor:' + (acao ? 'pointer' : 'default') + '" ' + (acao ? 'onclick="' + acao + '"' : '') + ' title="' + _esc(tit || '') + '"><b style="font-size:17px">' + v + '</b> <span style="font-size:11.5px">' + rot + '</span>' + (alerta ? ' <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#fff;box-shadow:0 0 0 2px rgba(255,255,255,.4)"></span>' : '') + '</div>';
+  const card = (cor, ico, t, itens, rod, acaoT) => '<div style="background:' + cor + ';color:#fff;border-radius:10px;padding:10px 12px;min-height:104px;display:flex;flex-direction:column">'
+    + '<div style="display:flex;justify-content:space-between;font-weight:700;font-size:15px;cursor:' + (acaoT ? 'pointer' : 'default') + '" ' + (acaoT ? 'onclick="' + acaoT + '"' : '') + '>' + t + '<span>' + ico + '</span></div>'
+    + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:3px 10px;margin-top:6px">' + itens.join('') + '</div>'
+    + (rod ? '<div style="margin-top:auto;padding-top:4px;font-size:10px;opacity:.9">' + rod + '</div>' : '') + '</div>';
+  const F = d.frota || {}, T = d.trabalhos || {}, M = d.materiais || {}, C = d.compras, K = d.custos || {};
+  const otsAcao = (est, sinal) => "indIrOTs(" + JSON.stringify(est).replace(/"/g, "'") + "," + (sinal ? 'true' : 'false') + ")";
+  const cards = '<div style="display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px;margin-bottom:10px">'
+    + card('#0E7490', '🚜', 'Frota', [num(n(F.total), 'objetos', "showModule('frota')"), num(n(F.disponiveis), 'disponíveis', "showModule('frota')"),
+        num(n(F.em_manutencao), 'em manutenção', otsAcao(['em_andamento'])), num(n(F.sem_peca), 'parados s/ peça', otsAcao(['aguardando_peca']))], n(F.inativos) + ' inativo(s)', "showModule('frota')")
+    + card('#D97706', '🔧', 'Trabalhos', [num(n(T.programadas), 'programadas', otsAcao(['programada'])), num(n(T.em_curso), 'em curso', otsAcao(['em_andamento'])),
+        num(n(T.vencidas), 'vencidas', otsAcao(['programada','aberta','em_andamento','aguardando_peca']), 'programadas pela previsão; corretivas pela Data Limite', T.vencidas > 0), num(n(T.aguardando_peca), 'aguard. peça', otsAcao(['aguardando_peca']))],
+        '<span style="cursor:pointer" onclick="' + otsAcao(['aberta','em_andamento','aguardando_peca'], true) + '">' + n(T.sinalizadas) + ' sinalizada(s) p/ encerrar</span> · <span style="cursor:pointer" onclick="showModule(\'ots\');abrirPedidos()">' + n(T.triagem) + ' pedido(s) na triagem</span>' + (T.atencao ? ' · ' + n(T.atencao) + ' em atenção' : ''))
+    + card('#DC2626', '🧰', 'Materiais', [num(n(M.itens), 'itens', "showModule('alm')"), num(n(M.abaixo_minimo), 'abaixo do mínimo', "showModule('alm');almVistaBaixo()"),
+        num(n(M.faltam_ots), 'faltam p/ OTs', "showModule('alm');almVistaNec()", 'peças das OTs vencidas/em atenção que o estoque + OCs não cobrem', M.faltam_ots > 0), num(n(M.a_conferir), 'a conferir', "showModule('alm');recebimentosJanela('pendente')")],
+        mil(M.valor_estoque) + ' em estoque', "showModule('alm')")
+    + (C ? card('#5B4636', '🛒', 'Compras', [num(n(C.cotacoes), 'cotações abertas', "showModule('alm');almVistaPedidos()"), num(n(C.a_aprovar), 'OCs a aprovar', "showModule('alm');almVistaPedidos()"),
+        num(n(C.a_caminho), 'a caminho', "showModule('alm');almVistaPedidos()"), num(n(C.pendencias), 'pendências', "showModule('alm');almVistaPedidos()")],
+        (C.atrasadas ? '<b>' + n(C.atrasadas) + ' OC(s) atrasada(s)</b> · ' : '') + n(C.rascunho) + ' rascunho(s) · ' + mil(C.valor_aberto) + ' em aberto', "showModule('alm');almVistaPedidos()")
+       : card('#5B4636', '🛒', 'Compras', ['<div style="font-size:11px">sem acesso ao módulo Compras</div>'], ''))
+    + card('#475569', '💰', 'Custos', [num(mil(K.mes), 'este mês', "relatoriosJanela('custo-objeto')"), num(mil(K.periodo), perT, "relatoriosJanela('custo-objeto')"),
+        num(K.por_hora == null ? '—' : 'R$ ' + Number(K.por_hora).toLocaleString('pt-BR', {maximumFractionDigits: 0}), 'por h/km operado', "relatoriosJanela('custo-objeto')"), num(pct(K.pct_corretiva), 'corretiva', "relatoriosJanela('corretiva-preventiva')")], '')
+    + '</div>';
+  const tab = (t, cab, linhas, rel, vazio) => '<div style="background:#fff;border:1px solid #E2E8F0;border-radius:10px;padding:8px 10px;min-width:0">'
+    + '<div style="display:flex;justify-content:space-between;align-items:baseline"><b style="color:#1A2A5E;font-size:12px">' + t + '</b><span style="font-size:10px;color:#1A2A5E;cursor:pointer;text-decoration:underline" onclick="relatoriosJanela(\'' + rel + '\')">ver relatório</span></div>'
+    + '<table style="width:100%;font-size:11px;border-collapse:collapse;margin-top:4px"><tr style="color:#64748B">' + cab.map((c, i) => '<th style="text-align:' + (i >= cab.length - 2 ? 'right' : 'left') + ';font-weight:600;padding:2px 4px">' + c + '</th>').join('') + '</tr>'
+    + (linhas.length ? linhas.map(r => '<tr style="border-top:1px solid #F1F5F9">' + r.map((c, i) => '<td style="padding:3px 4px;text-align:' + (i >= r.length - 2 ? 'right' : 'left') + '">' + c + '</td>').join('') + '</tr>').join('') : '<tr><td colspan="' + cab.length + '" class="muted" style="padding:8px 4px">' + vazio + '</td></tr>')
+    + '</table></div>';
+  const topC = tab('TOP 10 — custo de manutenção (' + perT + ')', ['Objeto', 'Descrição', 'OTs', 'R$'],
+    (d.top_custo || []).map(r => ['<b>' + _esc(r.objeto) + '</b>', _esc(r.descricao || ''), n(r.ots), Number(r.total).toLocaleString('pt-BR', {maximumFractionDigits: 0})]), 'top-custo', 'Sem custo lançado no período.');
+  const topK = tab('TOP 10 — corretivas (' + perT + ')', ['Objeto', 'Descrição', 'Corretivas', '% das OTs'],
+    (d.top_corretivas || []).map(r => ['<b>' + _esc(r.objeto) + '</b>', _esc(r.descricao || ''), n(r.corretivas), pct(r.pct)]), 'corretiva-preventiva', 'Nenhuma corretiva no período.');
+  // pizza do estado da frota
+  const fat = [['Disponível', F.disponiveis, '#16A34A'], ['Em manutenção', F.em_manutencao, '#F59E0B'], ['Parado aguardando peça', F.sem_peca, '#DC2626'], ['Inativo', F.inativos, '#94A3B8']];
+  const totF = fat.reduce((a, x) => a + (x[1] || 0), 0);
+  let ang = -Math.PI / 2, fatias = '';
+  fat.forEach(x => { const v = x[1] || 0; if (!v || !totF) return; const a2 = ang + 2 * Math.PI * v / totF;
+    if (v === totF) fatias += '<circle r="50" cx="60" cy="60" fill="' + x[2] + '"/>';
+    else fatias += '<path d="M60 60 L' + (60 + 50 * Math.cos(ang)).toFixed(2) + ' ' + (60 + 50 * Math.sin(ang)).toFixed(2) + ' A50 50 0 ' + (a2 - ang > Math.PI ? 1 : 0) + ' 1 ' + (60 + 50 * Math.cos(a2)).toFixed(2) + ' ' + (60 + 50 * Math.sin(a2)).toFixed(2) + ' Z" fill="' + x[2] + '" stroke="#fff" stroke-width="1"/>';
+    ang = a2; });
+  const pizza = '<div style="background:#fff;border:1px solid #E2E8F0;border-radius:10px;padding:8px 10px"><b style="color:#1A2A5E;font-size:12px">Estado da frota</b><div style="display:flex;align-items:center;gap:14px;margin-top:4px">'
+    + '<svg viewBox="0 0 120 120" width="130" height="130">' + (fatias || '<circle r="50" cx="60" cy="60" fill="#E2E8F0"/>') + '</svg><div style="font-size:11px;line-height:1.8">'
+    + fat.map(x => '<span style="color:' + x[2] + '">■</span> ' + x[0] + ' <b>' + n(x[1]) + '</b>' + (totF ? ' (' + Math.round(100 * (x[1] || 0) / totF) + '%)' : '')).join('<br>') + '</div></div></div>';
+  // barras corretiva × preventiva e linha de custo (12 meses)
+  const S = d.series || [], MES = ['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'], mr = m => MES[parseInt(m.slice(5), 10) - 1];
+  const mx = Math.max(1, ...S.map(x => Math.max(x.corretivas, x.preventivas))), W = 520, passo = (W - 20) / Math.max(1, S.length);
+  const barras = '<div style="background:#fff;border:1px solid #E2E8F0;border-radius:10px;padding:8px 10px"><div style="display:flex;justify-content:space-between"><b style="color:#1A2A5E;font-size:12px">OTs encerradas por mês — <span style="color:#DC2626">corretiva</span> × <span style="color:#1A2A5E">preventiva</span></b><span style="font-size:10px;color:#1A2A5E;cursor:pointer;text-decoration:underline" onclick="relatoriosJanela(\'encerradas\')">ver relatório</span></div>'
+    + (!S.some(x => x.corretivas + x.preventivas) ? '<div class="muted" style="padding:40px 8px;text-align:center;font-size:11px">Nenhuma OT encerrada nos últimos 12 meses.</div>' : '')
+    + '<svg viewBox="0 0 ' + W + ' 130" width="100%" height="130"' + (!S.some(x => x.corretivas + x.preventivas) ? ' style="display:none"' : '') + '>' + S.map((x, i) => { const x0 = 14 + i * passo, hc = 80 * x.corretivas / mx, hp = 80 * x.preventivas / mx;
+        return '<rect x="' + x0.toFixed(1) + '" y="' + (100 - hc).toFixed(1) + '" width="' + (passo * .32).toFixed(1) + '" height="' + hc.toFixed(1) + '" fill="#DC2626"><title>' + mr(x.mes) + ': ' + x.corretivas + ' corretiva(s)</title></rect>'
+          + '<rect x="' + (x0 + passo * .36).toFixed(1) + '" y="' + (100 - hp).toFixed(1) + '" width="' + (passo * .32).toFixed(1) + '" height="' + hp.toFixed(1) + '" fill="#1A2A5E"><title>' + mr(x.mes) + ': ' + x.preventivas + ' preventiva(s)</title></rect>'
+          + (x.corretivas + x.preventivas ? '<text x="' + (x0 + passo * .34).toFixed(1) + '" y="' + (96 - Math.max(hc, hp)).toFixed(1) + '" font-size="9" text-anchor="middle" fill="#334155">' + (x.corretivas + x.preventivas) + '</text>' : '')
+          + '<text x="' + (x0 + passo * .34).toFixed(1) + '" y="116" font-size="9" text-anchor="middle" fill="#64748B">' + mr(x.mes) + '</text>'; }).join('')
+    + '<line x1="10" y1="100" x2="' + (W - 5) + '" y2="100" stroke="#CBD5E1"/></svg></div>';
+  // linha ocupa a largura toda do quadro: viewBox próprio, mais largo
+  const W2 = 1100, passo2 = (W2 - 40) / Math.max(1, S.length);
+  const cx = Math.max(1, ...S.map(x => x.custo || 0)), pts = S.map((x, i) => [30 + i * passo2 + passo2 / 2 - 10, 100 - 75 * (x.custo || 0) / cx]);
+  const linha = '<div style="background:#fff;border:1px solid #E2E8F0;border-radius:10px;padding:8px 10px"><div style="display:flex;justify-content:space-between"><b style="color:#1A2A5E;font-size:12px">Custo de manutenção por mês (R$ mil) — peças + mão de obra + serviços das OTs abertas no mês</b><span style="font-size:10px;color:#1A2A5E;cursor:pointer;text-decoration:underline" onclick="relatoriosJanela(\'custo-objeto\')">ver relatório</span></div>'
+    + (!S.some(x => x.custo) ? '<div class="muted" style="padding:30px 8px;text-align:center;font-size:11px">Sem custo lançado nas OTs dos últimos 12 meses.</div>' : '')
+    + '<svg viewBox="0 0 ' + W2 + ' 125" width="100%" height="125"' + (!S.some(x => x.custo) ? ' style="display:none"' : '') + '><polyline fill="none" stroke="#1A2A5E" stroke-width="2" points="' + pts.map(p => p[0].toFixed(1) + ',' + p[1].toFixed(1)).join(' ') + '"/>'
+    + S.map((x, i) => '<circle cx="' + pts[i][0].toFixed(1) + '" cy="' + pts[i][1].toFixed(1) + '" r="3" fill="#E8820C"><title>' + mr(x.mes) + ': R$ ' + Number(x.custo || 0).toLocaleString('pt-BR', {maximumFractionDigits: 0}) + '</title></circle>'
+        + (x.custo ? '<text x="' + pts[i][0].toFixed(1) + '" y="' + (pts[i][1] - 6).toFixed(1) + '" font-size="9" text-anchor="middle" fill="#1A2A5E">' + (x.custo / 1000).toLocaleString('pt-BR', {maximumFractionDigits: 0}) + '</text>' : '')
+        + '<text x="' + pts[i][0].toFixed(1) + '" y="117" font-size="9" text-anchor="middle" fill="#64748B">' + mr(x.mes) + '</text>').join('') + '</svg></div>';
+  const ger = d.gerado_em ? new Date(d.gerado_em).toLocaleString('pt-BR', {day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit'}) : '';
+  const st = document.getElementById('ind-strip'); if (st) st.textContent = 'painel da manutenção · fotografia de ' + ger;
+  pane.innerHTML = '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;gap:8px;flex-wrap:wrap"><span style="font-size:11px;color:#64748B">Clique em qualquer número para abrir a lista correspondente. Contadores = hoje; custos e TOP 10 = ' + perT + '.</span>'
+    + '<span style="display:flex;gap:6px"><select id="ind-per" style="font-size:11px" onchange="_indLS(\'garra_ind_periodo\',this.value);indPainel()">' + [['12m','Últimos 12 meses'],['ano','Este ano'],['mes','Este mês']].map(o => '<option value="' + o[0] + '"' + (o[0] === per ? ' selected' : '') + '>' + o[1] + '</option>').join('') + '</select>'
+    + '<button class="btn" onclick="indPainelPDF()" title="Imprimir ou salvar o painel em PDF">📄 PDF do painel</button><button class="btn" onclick="indPainel()">⟳ Atualizar</button></span></div>'
+    + '<div id="ind-painel">' + cards
+    + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">' + topC + topK + '</div>'
+    + '<div style="display:grid;grid-template-columns:1fr 1.4fr;gap:8px;margin-bottom:8px">' + pizza + barras + '</div>' + linha + '</div>';
+}
+function indIrOTs(estados, sinal){
+  // (14/11/2026) número do painel → lista de OTs com o filtro de estado do rodapé já marcado
+  document.querySelectorAll('#ots-filtros input[type=checkbox][value]').forEach(c => c.checked = estados.includes(c.value));
+  const s = document.getElementById('ots-f-sinal'); if (s) s.checked = !!sinal;
+  showModule('ots');
+}
+function indPainelPDF(){
+  // impressão do próprio painel (cartões + gráficos SVG), no padrão de cabeçalho Garra — o navegador salva em PDF
+  const el = document.getElementById('ind-painel'); if (!el) return;
+  const w = window.open('', '_blank'); if (!w) { mostrarToast('Permita pop-ups para gerar o PDF', 'warn'); return; }
+  const ger = new Date().toLocaleString('pt-BR');
+  w.document.write('<!DOCTYPE html><html><head><meta charset="utf-8"><title>Painel da Manutenção — Garra</title><style>@page{size:A4 landscape;margin:10mm}body{font-family:Arial,Helvetica,sans-serif;margin:0;-webkit-print-color-adjust:exact;print-color-adjust:exact}'
+    + '.cab{display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid #001F4D;padding-bottom:6px;margin-bottom:8px}.cab b{color:#001F4D;font-size:15px}.cab span{font-size:10px;color:#64748B}'
+    + '.moldura{border:1px solid #FF9500;padding:10px}</style></head><body><div class="moldura"><div class="cab"><b>GARRA TERRAPLENAGEM E CAÇAMBAS — Painel da Manutenção</b><span>Emitido em ' + ger + '</span></div>'
+    + el.innerHTML.replace(/onclick="[^"]*"/g, '') + '</div><script>setTimeout(()=>window.print(),400)<\/script></body></html>');
+  w.document.close();
 }
 function _relCfg(nome){ for (const g of _relCat.grupos) for (const it of g.itens) if (it.nome === nome) return it; return null; }
 function relEscolher(nome){
   _relAtual = nome; const cfg = _relCfg(nome); if (!cfg) return;
-  document.querySelectorAll('#eq-ficha-corpo .pn-item').forEach(x => x.classList.toggle('on', x.dataset.n === nome));
+  document.querySelectorAll('#ind-nav .pn-item').forEach(x => x.classList.toggle('on', x.dataset.n === nome));
   const f = cfg.filtros || [], F = _relF, D = window._relDom || {};
   const fld = (rot, inner, w) => '<div class="mfield" style="width:' + (w || 150) + 'px">' + rot + inner + '</div>';
   const opt = (lista, val, vazio) => '<option value="">' + vazio + '</option>' + lista.map(x => '<option value="' + _esc(x.v) + '"' + (String(x.v) === String(val) ? ' selected' : '') + '>' + _esc(x.t) + '</option>').join('');
@@ -3462,6 +3618,9 @@ function _relQuery(){
   if (cfg.filtros.includes('fornecedor')) add('fornecedor_id', _relF.fornecedor_id);
   if (cfg.filtros.includes('documento')) add('documento', _relF.documento);
   if (cfg.filtros.includes('almox')) add('almox', _relF.almox);
+  // (14/11/2026) grupo Compras: OCs/cotações/pendências do setor de compras da manutenção
+  const grp = ((_relCat && _relCat.grupos) || []).find(g => g.itens.some(i => i.nome === _relAtual));
+  if (grp && grp.grupo === 'Compras' && _setorCompras && !cfg.filtros.includes('setor')) add('setor', _setorCompras);
   return q.join('&');
 }
 async function relGerar(){
@@ -3473,7 +3632,7 @@ async function relGerar(){
   const d = _relDados, cols = d.colunas;
   const num = t => ['int','num','moeda','pct'].includes(t);
   grade.innerHTML = '<table style="font-size:11px"><thead><tr>' + cols.map(c => '<th' + (num(c.tipo) ? ' class="r" style="white-space:nowrap"' : '') + '>' + _esc(c.t) + '</th>').join('') + '</tr></thead><tbody>'
-    + (d.linhas.map(l => '<tr>' + cols.map(c => '<td' + (num(c.tipo) ? ' class="r mono" style="white-space:nowrap"' : (c.tipo === 'data' || c.tipo === 'datahora' ? ' style="white-space:nowrap"' : '')) + '>' + _esc(_relFmt(l[c.k], c.tipo)) + '</td>').join('') + '</tr>').join('')
+    + (d.linhas.map(l => '<tr>' + cols.map(c => '<td' + (num(c.tipo) ? ' class="r mono" style="white-space:nowrap"' : (c.tipo === 'data' || c.tipo === 'datahora' || String(l[c.k] ?? '').length <= 22 ? ' style="white-space:nowrap"' : ' style="min-width:160px;max-width:320px"')) + '>' + _esc(_relFmt(l[c.k], c.tipo)) + '</td>').join('') + '</tr>').join('')
        || '<tr><td colspan="' + cols.length + '" style="padding:14px;color:#64748B">Sem dados para os filtros escolhidos.</td></tr>')
     + (d.linhas.length && Object.keys(d.totais||{}).length ? '<tr style="background:#FFF7ED;font-weight:700"><td>Total</td>' + cols.slice(1).map(c => '<td class="r mono">' + (c.k in d.totais ? _esc(_relFmt(d.totais[c.k], c.tipo)) : '') + '</td>').join('') + '</tr>' : '')
     + '</tbody></table>';

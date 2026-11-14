@@ -335,6 +335,34 @@ window.GUIAS_MANUTENCAO = {
         antes: () => { document.getElementById('eq-ficha').classList.remove('show'); } },
     ],
   },
+  // (14/11/2026) aba Indicadores — painel + todos os relatórios
+  'indicadores': {
+    titulo: 'Indicadores — painel e relatórios',
+    pop: 'Indicadores',
+    passos: [
+      { titulo: 'Tudo que é análise, num lugar só 📊',
+        texto: '<b>Bem-vinda à aba Indicadores.</b><br><br>O painel mostra a manutenção de hoje em uma tela, e todos os relatórios (custos, OTs, preventivas, materiais, compras…) ficam aqui — nas outras telas ficou só o ⬇ Excel da lista que está aberta. Nada é gravado nesta demonstração.',
+        botao: 'Começar demonstração' },
+      { alvo: '#tn-ind', antes: async () => { showModule('ind'); await indPainel(); }, titulo: '📊 Indicadores',
+        texto: 'A aba fica no topo, ao lado de Materiais. Abre sempre no <b>📈 Painel</b>.' },
+      { alvo: () => document.querySelector('#ind-painel > div'), titulo: 'Os 5 cartões',
+        texto: '<b>Frota</b> (disponíveis, em manutenção, parados sem peça) · <b>Trabalhos</b> (programadas, em curso, vencidas, aguardando peça) · <b>Materiais</b> (abaixo do mínimo, faltam p/ OTs, a conferir) · <b>Compras</b> (cotações, OCs a aprovar, a caminho, pendências) · <b>Custos</b> (mês, período, R$ por hora, % corretiva). <b>Clique em qualquer número</b>: abre a lista daquilo, já filtrada.' },
+      { alvo: '#ind-per', titulo: 'Período',
+        texto: 'Contadores são sempre <b>de hoje</b>. Custos e TOP 10 seguem o período: últimos 12 meses, este ano ou este mês. <b>📄 PDF do painel</b> imprime a tela para levar à reunião.' },
+      { alvo: () => [...document.querySelectorAll('#ind-painel b')].find(b => /TOP 10/.test(b.textContent)), titulo: 'TOP 10 e gráficos',
+        texto: 'Quem mais custa e quem mais quebra (corretivas), estado da frota, OTs encerradas por mês (corretiva × preventiva) e custo por mês. Cada quadro tem <b>ver relatório</b> com o detalhe.' },
+      { alvo: '#ind-busca', posicao: 'direita', titulo: '🔍 Buscar relatório',
+        texto: 'Digite parte do nome ("fornecedor", "estoque", "preventiva") e a barra mostra só os relatórios que casam.' },
+      { alvo: () => [...document.querySelectorAll('#ind-nav .pn-grp')].find(e => /Compras/.test(e.textContent)), posicao: 'direita', titulo: 'Grupos que recolhem',
+        antes: () => { try { localStorage.setItem('garra_ind_grp_Compras', '1'); } catch (e) { } indMontarNav(); },
+        texto: 'Custos, Trabalhos, Preventivas, Disponibilidade, Mão de obra, Materiais, <b>Compras</b>, Entradas, Utilização e <b>Análises</b> (Análise ABC, Carga de trabalhos). Clique no título para abrir/fechar — o sistema lembra como você deixou. Os 5 últimos abertos ficam em <b>🕘 Recentes</b>.' },
+      { alvo: () => document.getElementById('rel-filtros'), antes: async () => { indRel('ots-faltantes'); await new Promise(r => setTimeout(r, 900)); }, titulo: 'Relatório aberto',
+        texto: 'O relatório abre aqui mesmo: filtros (período, sistema, objeto…), <b>▶ Gerar</b>, <b>📄 PDF</b> e <b>⬇ Excel</b> no padrão Garra. Os do grupo Compras já saem só do setor de compras da manutenção.' },
+      { titulo: 'Pronto! ✅',
+        texto: 'Resumo: <b>📊 Indicadores › Painel</b> para olhar e decidir; números clicáveis levam à lista; relatórios agrupados na barra, com busca e recentes. Nas outras telas: <b>⬇ Excel</b> da lista que está na tela.',
+        antes: () => { indPainel(); } },
+    ],
+  },
 };
 
 // Abertura: botão ▶ Como fazer na barra superior e deep link ?guia=<nome>

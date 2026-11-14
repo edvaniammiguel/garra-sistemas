@@ -820,6 +820,261 @@ COL_ENTRADAS_ITEM = [("item", "Item", "txt"), ("descricao", "Descrição", "txt"
                      ("ultimo_forn", "Último fornecedor", "txt"), ("ultima", "Última compra", "datahora")]
 
 
+
+# ═════════════ (14/11/2026) GRUPO COMPRAS — materiais: o que falta, o que está cotando, o que está a caminho ═════════════
+# (sem emoji: a fonte do PDF não os desenha)
+_OC_ETAPA = {"rascunho": "Rascunho", "solicitada": "Aguardando aprovação", "aprovada": "Aprovada - a enviar",
+             "enviada": "A caminho", "recebida_parcial": "Recebida parcial", "recebida": "Recebida",
+             "rejeitada": "Rejeitada", "cancelada": "Cancelada"}
+_NIVEL = {0: "VENCIDA", 1: "Em atenção", 2: "No prazo"}
+
+
+async def rel_ots_faltantes(F):
+    """Peças previstas das OTs vivas (FMP/Planejado) que o estoque + OCs abertas não cobrem — mesma conta da tela
+    Consulta › Peças das OTs programadas (a OT mais urgente consome o saldo primeiro)."""
+    from routers.manutencao import necessidades_ots
+    d = await necessidades_ots(prazo="todas", cobertas=0, _auth=None)
+    out = []
+    for o in d["ots"]:
+        for it in o["itens"]:
+            if it["faltante"] <= 0:
+                continue
+            out.append({"situacao": _NIVEL.get(o["nivel"], ""), "ot": o["numero"], "objeto": o["equipamento"], "objeto_desc": o.get("equipamento_descricao") or "",
+                        "trabalho": ((o.get("tipo_trabalho") or "") + " " + (o.get("plano") or "")).strip(), "prazo": o.get("data_ref"), "vencimento": o.get("vencimento") or "",
+                        "item": it["codigo"], "descricao": it["descricao"], "unidade": it.get("unidade") or "", "precisa": _r2(it["precisa"]),
+                        "disponivel": _r2(it["disponivel"]), "em_pedido": _r2(it["em_pedido"]), "ocs": ", ".join(it.get("ocs") or []), "faltante": _r2(it["faltante"]),
+                        "preco": _r2(it["preco"]) if it.get("preco") is not None else None, "estimado": _r2(it["estimado"]) if it.get("estimado") is not None else None})
+    return out
+
+COL_OTS_FALT = [("situacao", "Situação", "txt"), ("ot", "OT", "txt"), ("objeto", "Objeto", "txt"), ("objeto_desc", "Descrição do objeto", "txt"), ("trabalho", "Trabalho", "txt"),
+                ("prazo", "Prazo", "data"), ("vencimento", "Vencimento", "txt"), ("item", "Item", "txt"), ("descricao", "Descrição", "txt"), ("unidade", "Un.", "txt"),
+                ("precisa", "Precisa", "num"), ("disponivel", "Disponível", "num"), ("em_pedido", "Em pedido", "num"), ("ocs", "OCs", "txt"),
+                ("faltante", "Faltante", "num", "sum"), ("preco", "Últ. preço (R$)", "moeda"), ("estimado", "Estimado (R$)", "moeda", "sum")]
+
+
+async def rel_cotacoes_abertas(F):
+    """Fotografia: cotações abertas com fase, dias de espera, fornecedores convidados × respondidos e menor total."""
+    rows = await ajard_query("""
+        SELECT c.id, c.numero, c.origem, c.modo, c.criterio, c.criado_em, c.enviada_em, c.observacao, c.setor_codigo,
+               ot.numero AS ot_numero, e.codigo AS objeto, u.nome AS criador,
+               (SELECT COUNT(*) FROM compras.cotacao_itens i WHERE i.cotacao_id=c.id AND i.ativo) AS n_itens,
+               (SELECT COUNT(*) FROM compras.cotacao_fornecedores cf WHERE cf.cotacao_id=c.id) AS n_forn,
+               (SELECT COUNT(*) FROM compras.cotacao_fornecedores cf WHERE cf.cotacao_id=c.id AND cf.status='respondeu') AS n_resp,
+               (SELECT COUNT(*) FROM compras.cotacao_fornecedores cf WHERE cf.cotacao_id=c.id AND cf.status='sem_resposta') AS n_sem,
+               (SELECT string_agg(f.nome, ', ' ORDER BY f.nome) FROM compras.cotacao_fornecedores cf JOIN public.fornecedores f ON f.id=cf.fornecedor_id WHERE cf.cotacao_id=c.id) AS fornecedores,
+               (SELECT MIN(t.total) FROM (
+                   SELECT cf.id, SUM(p.preco_unit * i.quantidade) + COALESCE(cf.frete,0) AS total,
+                          COUNT(p.item_id) AS n
+                     FROM compras.cotacao_fornecedores cf
+                     JOIN compras.cotacao_precos p ON p.cf_id=cf.id AND p.preco_unit IS NOT NULL
+                          AND (COALESCE(p.oferta,'igual')='igual' OR p.aceito IS TRUE)
+                     JOIN compras.cotacao_itens i ON i.id=p.item_id AND i.ativo
+                    WHERE cf.cotacao_id=c.id GROUP BY cf.id, cf.frete) t
+                 WHERE t.n = (SELECT COUNT(*) FROM compras.cotacao_itens i WHERE i.cotacao_id=c.id AND i.ativo)) AS menor_total
+          FROM compras.cotacoes c
+          LEFT JOIN manutencao.ot ot ON ot.id=c.ot_id
+          LEFT JOIN operacional.equipamentos e ON e.id=c.equipamento_id
+          LEFT JOIN public.usuarios_garra u ON u.id=c.criado_por
+         WHERE c.ativo AND c.status='aberta' AND (%s::text IS NULL OR c.setor_codigo=%s)
+         ORDER BY c.criado_em""", (F.setor, F.setor)) or []
+    hoje = _dt.now(_tz.utc)
+    out = []
+    for r in rows:
+        if r["n_resp"] or r["n_sem"]:
+            fase = "respondida"
+        elif r["enviada_em"]:
+            fase = "enviada"
+        else:
+            fase = "montando"
+        esp = (hoje - r["enviada_em"]).days if r["enviada_em"] else None
+        out.append({"cotacao": r["numero"], "fase": fase, "criada": r["criado_em"], "enviada": r["enviada_em"], "dias": esp,
+                    "itens": int(r["n_itens"] or 0), "fornecedores": int(r["n_forn"] or 0), "responderam": int(r["n_resp"] or 0),
+                    "sem_resposta": int(r["n_sem"] or 0), "nomes": r["fornecedores"] or "", "menor_total": _r2(r["menor_total"]) if r["menor_total"] is not None else None,
+                    "ot": r["ot_numero"] or "", "objeto": r["objeto"] or "", "origem": r["origem"] or "", "modo": "por item" if r["modo"] == "item" else "por fornecedor",
+                    "criador": r["criador"] or "", "obs": r["observacao"] or ""})
+    return out
+
+COL_COT_ABERTAS = [("cotacao", "Cotação", "txt"), ("fase", "Fase", "txt"), ("criada", "Criada", "datahora"), ("enviada", "Enviada", "datahora"), ("dias", "Dias aguardando", "int"),
+                   ("itens", "Itens", "int", "sum"), ("fornecedores", "Fornecedores", "int"), ("responderam", "Responderam", "int"), ("sem_resposta", "Sem resposta", "int"),
+                   ("nomes", "Fornecedores convidados", "txt"), ("menor_total", "Menor total completo (R$)", "moeda", "sum"), ("ot", "OT", "txt"), ("objeto", "Objeto", "txt"),
+                   ("origem", "Origem", "txt"), ("modo", "Fechar", "txt"), ("criador", "Criada por", "txt"), ("obs", "Observação", "txt")]
+
+
+async def rel_cotacoes_resultado(F):
+    """Cotações encerradas no período: vencedores, OCs geradas, total comprado e economia × a proposta mais cara."""
+    rows = await ajard_query("""
+        SELECT c.id, c.numero, c.modo, c.criterio, c.criado_em, c.encerrada_em, ot.numero AS ot_numero, e.codigo AS objeto,
+               (SELECT COUNT(*) FROM compras.cotacao_itens i WHERE i.cotacao_id=c.id AND i.ativo) AS n_itens,
+               (SELECT COUNT(*) FROM compras.cotacao_fornecedores cf WHERE cf.cotacao_id=c.id) AS n_forn,
+               (SELECT COUNT(*) FROM compras.cotacao_fornecedores cf WHERE cf.cotacao_id=c.id AND cf.status='respondeu') AS n_resp,
+               (SELECT string_agg(DISTINCT f.nome, ', ') FROM compras.cotacao_fornecedores cf JOIN public.fornecedores f ON f.id=cf.fornecedor_id WHERE cf.cotacao_id=c.id AND cf.oc_id IS NOT NULL) AS vencedores,
+               (SELECT string_agg(o.numero, ', ' ORDER BY o.numero) FROM compras.ordens_compra o WHERE o.cotacao_id=c.id AND o.ativo) AS ocs,
+               (SELECT COALESCE(SUM(o.valor_total),0) FROM compras.ordens_compra o WHERE o.cotacao_id=c.id AND o.ativo AND o.status NOT IN ('cancelada','rejeitada')) AS total_oc,
+               (SELECT COUNT(*) FROM compras.pendencias_compra pc WHERE pc.cotacao_id=c.id) AS pendencias,
+               (SELECT MAX(t.total) FROM (
+                   SELECT cf.id, SUM(p.preco_unit * i.quantidade) + COALESCE(cf.frete,0) AS total, COUNT(p.item_id) AS n
+                     FROM compras.cotacao_fornecedores cf
+                     JOIN compras.cotacao_precos p ON p.cf_id=cf.id AND p.preco_unit IS NOT NULL AND (COALESCE(p.oferta,'igual')='igual' OR p.aceito IS TRUE)
+                     JOIN compras.cotacao_itens i ON i.id=p.item_id AND i.ativo
+                    WHERE cf.cotacao_id=c.id GROUP BY cf.id, cf.frete) t
+                 WHERE t.n = (SELECT COUNT(*) FROM compras.cotacao_itens i WHERE i.cotacao_id=c.id AND i.ativo)) AS maior_total
+          FROM compras.cotacoes c
+          LEFT JOIN manutencao.ot ot ON ot.id=c.ot_id
+          LEFT JOIN operacional.equipamentos e ON e.id=c.equipamento_id
+         WHERE c.ativo AND c.status='encerrada' AND c.encerrada_em >= %s AND c.encerrada_em <= %s AND (%s::text IS NULL OR c.setor_codigo=%s)
+         ORDER BY c.encerrada_em DESC""", (F.de, F.ate_fim(), F.setor, F.setor)) or []
+    out = []
+    for r in rows:
+        tot, maior = _f(r["total_oc"]), (_f(r["maior_total"]) if r["maior_total"] is not None else None)
+        econ = (maior - tot) if (maior is not None and maior > tot > 0) else None
+        out.append({"cotacao": r["numero"], "encerrada": r["encerrada_em"], "dias": (r["encerrada_em"] - r["criado_em"]).days if r["encerrada_em"] and r["criado_em"] else None,
+                    "itens": int(r["n_itens"] or 0), "fornecedores": int(r["n_forn"] or 0), "responderam": int(r["n_resp"] or 0),
+                    "vencedores": r["vencedores"] or "", "ocs": r["ocs"] or "", "total": _r2(tot), "maior": _r2(maior) if maior is not None else None,
+                    "economia": _r2(econ) if econ is not None else None, "pendencias": int(r["pendencias"] or 0),
+                    "modo": "por item" if r["modo"] == "item" else "por fornecedor", "ot": r["ot_numero"] or "", "objeto": r["objeto"] or ""})
+    return out
+
+COL_COT_RESULT = [("cotacao", "Cotação", "txt"), ("encerrada", "Encerrada", "datahora"), ("dias", "Dias até encerrar", "int"), ("itens", "Itens", "int", "sum"),
+                  ("fornecedores", "Fornecedores", "int"), ("responderam", "Responderam", "int"), ("vencedores", "Vencedor(es)", "txt"), ("ocs", "OCs geradas", "txt"),
+                  ("total", "Total comprado (R$)", "moeda", "sum"), ("maior", "Proposta mais cara (R$)", "moeda"), ("economia", "Economia (R$)", "moeda", "sum"),
+                  ("pendencias", "Itens sem oferta", "int", "sum"), ("modo", "Fechamento", "txt"), ("ot", "OT", "txt"), ("objeto", "Objeto", "txt")]
+
+
+async def rel_pendencias_compra(F):
+    """Pendentes de compra: abertas (fotografia) + baixadas no período, com motivo e quantas vezes foram cotadas."""
+    rows = await ajard_query("""
+        SELECT pc.*, ot.numero AS ot_numero, e.codigo AS objeto, u.nome AS resolvido_nome
+          FROM compras.pendencias_compra pc
+          LEFT JOIN manutencao.ot ot ON ot.id=pc.ot_id
+          LEFT JOIN operacional.equipamentos e ON e.id=pc.equipamento_id
+          LEFT JOIN public.usuarios_garra u ON u.id=pc.resolvido_por
+         WHERE (pc.status='aberta' OR (pc.resolvido_em >= %s AND pc.resolvido_em <= %s)) AND (%s::text IS NULL OR pc.setor_codigo=%s)
+         ORDER BY pc.status, pc.criado_em""", (F.de, F.ate_fim(), F.setor, F.setor)) or []
+    hoje = _dt.now(_tz.utc)
+    return [{"situacao": "Aberta" if r["status"] == "aberta" else "Baixada", "item": r["peca_codigo"] or "", "descricao": r["descricao"], "qtd": _r2(r["quantidade"]),
+             "unidade": r["unidade"] or "", "origem": r["cotacao_numero"] or (r["origem_tipo"] or ""), "criada": r["criado_em"],
+             "dias": (hoje - r["criado_em"]).days if r["status"] == "aberta" and r["criado_em"] else None,
+             "cotada": int(r["cotacoes_n"] or 0), "ultima": r["ultima_cotacao"] or "", "ot": r["ot_numero"] or "", "objeto": r["objeto"] or "",
+             "baixa": r["resolvido_em"], "por": r["resolvido_nome"] or "", "motivo": r["motivo"] or "", "ref": r["resolvido_ref"] or ""} for r in rows]
+
+COL_PENDENCIAS = [("situacao", "Situação", "txt"), ("item", "Item", "txt"), ("descricao", "Descrição", "txt"), ("qtd", "Qtd", "num"), ("unidade", "Un.", "txt"),
+                  ("origem", "Veio de", "txt"), ("criada", "Criada", "datahora"), ("dias", "Dias em aberto", "int"), ("cotada", "Vezes cotada", "int"),
+                  ("ultima", "Última cotação", "txt"), ("ot", "OT", "txt"), ("objeto", "Objeto", "txt"), ("baixa", "Baixa", "datahora"), ("por", "Baixada por", "txt"),
+                  ("motivo", "Motivo", "txt"), ("ref", "Referência", "txt")]
+
+
+async def rel_ocs_andamento(F):
+    """OCs do setor em andamento (fotografia): etapa, fornecedor, valor, idade, prazo prometido e o que falta receber."""
+    rows = await ajard_query("""
+        SELECT o.id, o.numero, o.status, o.prioridade, o.origem, o.valor_total, o.criado_em, o.data_aprovacao, o.enviado_em, o.condicao_pagamento,
+               COALESCE(f.nome, o.fornecedor_avulso, '— a definir —') AS fornecedor, ot.numero AS ot_numero, e.codigo AS objeto,
+               c.numero AS cotacao, cf.prazo_dias,
+               (SELECT COUNT(*) FROM compras.oc_itens i WHERE i.oc_id=o.id AND i.ativo) AS n_itens,
+               (SELECT COALESCE(SUM(i.quantidade - COALESCE(i.qtd_recebida,0)),0) FROM compras.oc_itens i WHERE i.oc_id=o.id AND i.ativo) AS falta_receber,
+               (SELECT string_agg(i.descricao, '; ' ORDER BY i.ordem) FROM compras.oc_itens i WHERE i.oc_id=o.id AND i.ativo) AS itens_txt,
+               us.nome AS solicitante
+          FROM compras.ordens_compra o
+          LEFT JOIN public.fornecedores f ON f.id=o.fornecedor_id
+          LEFT JOIN manutencao.ot ot ON ot.id=o.ot_id
+          LEFT JOIN operacional.equipamentos e ON e.id=o.equipamento_id
+          LEFT JOIN compras.cotacoes c ON c.id=o.cotacao_id
+          LEFT JOIN compras.cotacao_fornecedores cf ON cf.oc_id=o.id
+          LEFT JOIN public.usuarios_garra us ON us.id=o.solicitante_id
+         WHERE o.ativo AND o.status IN ('rascunho','solicitada','aprovada','enviada','recebida_parcial') AND (%s::text IS NULL OR o.setor_codigo=%s)
+         ORDER BY CASE o.status WHEN 'recebida_parcial' THEN 0 WHEN 'enviada' THEN 1 WHEN 'aprovada' THEN 2 WHEN 'solicitada' THEN 3 ELSE 4 END, o.criado_em""",
+        (F.setor, F.setor)) or []
+    hoje = _dt.now(_tz.utc)
+    out = []
+    for r in rows:
+        prev = None
+        if r["enviado_em"] and r["prazo_dias"] is not None:
+            prev = (r["enviado_em"] + _td(days=int(r["prazo_dias"]))).date()
+        atraso = (hoje.date() - prev).days if prev and hoje.date() > prev and r["status"] in ("enviada", "recebida_parcial") else None
+        out.append({"oc": r["numero"], "etapa": _OC_ETAPA.get(r["status"], r["status"]), "prioridade": r["prioridade"] or "", "fornecedor": r["fornecedor"],
+                    "itens": int(r["n_itens"] or 0), "valor": _r2(r["valor_total"]), "criada": r["criado_em"], "dias": (hoje - r["criado_em"]).days if r["criado_em"] else None,
+                    "enviada": r["enviado_em"], "prazo": r["prazo_dias"], "previsao": prev, "atraso": atraso, "falta": _r2(r["falta_receber"]),
+                    "cotacao": r["cotacao"] or "", "ot": r["ot_numero"] or "", "objeto": r["objeto"] or "", "origem": r["origem"] or "", "solicitante": r["solicitante"] or "",
+                    "itens_txt": (r["itens_txt"] or "")[:120]})
+    return out
+
+COL_OCS_AND = [("oc", "OC", "txt"), ("etapa", "Etapa", "txt"), ("prioridade", "Prioridade", "txt"), ("fornecedor", "Fornecedor", "txt"), ("itens", "Itens", "int"),
+               ("valor", "Valor (R$)", "moeda", "sum"), ("criada", "Criada", "datahora"), ("dias", "Idade (dias)", "int"), ("enviada", "Enviada", "datahora"),
+               ("prazo", "Prazo prometido (d)", "int"), ("previsao", "Previsão de chegada", "data"), ("atraso", "Atraso (d)", "int"), ("falta", "Falta receber (qtd)", "num"),
+               ("cotacao", "Cotação", "txt"), ("ot", "OT", "txt"), ("objeto", "Objeto", "txt"), ("origem", "Origem", "txt"), ("solicitante", "Solicitante", "txt"), ("itens_txt", "Itens", "txt")]
+
+
+async def rel_fornecedores_desempenho(F):
+    """Por fornecedor, no período: convites, respostas, vitórias, valor comprado, entregas no prazo e atraso médio."""
+    rows = await ajard_query("""
+        SELECT f.id, f.nome,
+               COUNT(cf.id) AS convites,
+               SUM(CASE WHEN cf.status='respondeu' THEN 1 ELSE 0 END) AS respostas,
+               SUM(CASE WHEN cf.status='sem_resposta' THEN 1 ELSE 0 END) AS sem_resposta,
+               SUM(CASE WHEN cf.oc_id IS NOT NULL THEN 1 ELSE 0 END) AS vitorias,
+               AVG(cf.prazo_dias) FILTER (WHERE cf.status='respondeu') AS prazo_medio,
+               COUNT(cf.dias_reais) AS entregas,
+               SUM(CASE WHEN cf.dias_reais IS NOT NULL AND cf.dias_reais <= COALESCE(cf.prazo_dias, cf.dias_reais) THEN 1 ELSE 0 END) AS no_prazo,
+               AVG(GREATEST(cf.dias_reais - COALESCE(cf.prazo_dias, cf.dias_reais), 0)) FILTER (WHERE cf.dias_reais IS NOT NULL) AS atraso_medio
+          FROM compras.cotacao_fornecedores cf
+          JOIN compras.cotacoes c ON c.id=cf.cotacao_id AND c.ativo AND c.criado_em >= %s AND c.criado_em <= %s AND (%s::text IS NULL OR c.setor_codigo=%s)
+          JOIN public.fornecedores f ON f.id=cf.fornecedor_id
+         GROUP BY f.id, f.nome ORDER BY vitorias DESC, respostas DESC, f.nome""", (F.de, F.ate_fim(), F.setor, F.setor)) or []
+    ids = [str(r["id"]) for r in rows]
+    valores = {}
+    if ids:
+        for v in await ajard_query("""SELECT fornecedor_id::text AS fid, COUNT(*) AS n, COALESCE(SUM(valor_total),0) AS valor
+                                        FROM compras.ordens_compra WHERE ativo AND fornecedor_id::text = ANY(%s) AND status NOT IN ('cancelada','rejeitada')
+                                         AND criado_em >= %s AND criado_em <= %s GROUP BY fornecedor_id""", (ids, F.de, F.ate_fim())) or []:
+            valores[v["fid"]] = v
+    out = []
+    for r in rows:
+        v = valores.get(str(r["id"]), {})
+        conv, resp, ent = int(r["convites"] or 0), int(r["respostas"] or 0), int(r["entregas"] or 0)
+        out.append({"fornecedor": r["nome"], "convites": conv, "respostas": resp, "pct_resposta": round(resp / conv, 4) if conv else 0.0,
+                    "sem_resposta": int(r["sem_resposta"] or 0), "vitorias": int(r["vitorias"] or 0), "pct_vitoria": round(int(r["vitorias"] or 0) / resp, 4) if resp else 0.0,
+                    "prazo_medio": _r2(r["prazo_medio"]) if r["prazo_medio"] is not None else None, "ocs": int(v.get("n") or 0), "valor": _r2(v.get("valor")),
+                    "entregas": ent, "no_prazo": int(r["no_prazo"] or 0), "pct_prazo": round(int(r["no_prazo"] or 0) / ent, 4) if ent else None,
+                    "atraso_medio": _r2(r["atraso_medio"]) if r["atraso_medio"] is not None else None})
+    return out
+
+COL_FORN_DESEMP = [("fornecedor", "Fornecedor", "txt"), ("convites", "Cotações convidado", "int", "sum"), ("respostas", "Respondeu", "int", "sum"), ("pct_resposta", "% resposta", "pct"),
+                   ("sem_resposta", "Sem resposta", "int"), ("vitorias", "Venceu", "int", "sum"), ("pct_vitoria", "% vitória", "pct"), ("prazo_medio", "Prazo médio prometido (d)", "num"),
+                   ("ocs", "OCs no período", "int", "sum"), ("valor", "Valor comprado (R$)", "moeda", "sum"), ("entregas", "Entregas medidas", "int"), ("no_prazo", "No prazo", "int"),
+                   ("pct_prazo", "% no prazo", "pct"), ("atraso_medio", "Atraso médio (d)", "num")]
+
+
+async def rel_posicao_estoque(F):
+    """Posição valorizada do estoque hoje: saldo, comprometido com OTs, disponível, mínimo e valor a custo médio."""
+    from routers.manutencao import _comprometido_por_peca, _em_pedido_por_peca
+    comp = await _comprometido_por_peca()
+    pedido, pend, _ = await _em_pedido_por_peca()
+    params = []
+    w = ["p.ativo = true"]
+    if F.familia:
+        w.append("p.familia_codigo = %s"); params.append(F.familia)
+    if F.almox:
+        w.append("a.codigo = %s"); params.append(F.almox)
+    if F.item:
+        w.append("(p.codigo ILIKE %s OR p.descricao ILIKE %s)"); params += [f"%{F.item}%", f"%{F.item}%"]
+    rows = await ajard_query(f"""
+        SELECT p.id, p.codigo, p.descricao, p.unidade, p.familia_codigo, p.custo_medio, a.codigo AS almox, s.quantidade, s.minimo, s.maximo, s.localizacao
+          FROM manutencao.estoque s JOIN manutencao.pecas p ON p.id = s.peca_id JOIN manutencao.almoxarifados a ON a.id = s.almoxarifado_id
+         WHERE {' AND '.join(w)} AND (COALESCE(s.quantidade,0) <> 0 OR COALESCE(s.minimo,0) > 0)
+         ORDER BY p.familia_codigo, p.codigo, a.codigo""", tuple(params)) or []
+    out = []
+    for r in rows:
+        k = str(r["id"]); q = _f(r["quantidade"]); cm = _f(r["custo_medio"]); c = comp.get(k, 0.0); mn = _f(r["minimo"])
+        disp = q - c
+        out.append({"item": r["codigo"], "descricao": r["descricao"], "familia": r["familia_codigo"] or "", "unidade": r["unidade"] or "", "estoque": r["almox"],
+                    "local": r["localizacao"] or "", "saldo": _r2(q), "comprometido": _r2(c), "disponivel": _r2(disp), "em_pedido": _r2(pedido.get(k, 0.0) + pend.get(k, 0.0)),
+                    "minimo": _r2(mn) if r["minimo"] is not None else None, "situacao": ("ZERADO" if q <= 0 else ("Abaixo do mínimo" if mn and disp < mn else "ok")),
+                    "custo_medio": _r2(cm), "valor": _r2(q * cm)})
+    return out
+
+COL_POSICAO = [("situacao", "Situação", "txt"), ("item", "Item", "txt"), ("descricao", "Descrição", "txt"), ("familia", "Família", "txt"), ("unidade", "Un.", "txt"),
+               ("estoque", "Estoque", "txt"), ("local", "Local", "txt"), ("saldo", "Saldo", "num"), ("comprometido", "Comprometido (OTs)", "num"), ("disponivel", "Disponível", "num"),
+               ("em_pedido", "Em pedido", "num"), ("minimo", "Mínimo", "num"), ("custo_medio", "Custo médio (R$)", "moeda"), ("valor", "Valor em estoque (R$)", "moeda", "sum")]
+
 RELATORIOS = {
     "custo-objeto":        {"grupo": "Custos", "titulo": "Custo de manutenção por objeto", "sub": "peças + mão de obra + outros das OTs abertas no período; R$ por hora/km operado", "fn": rel_custo_objeto, "cols": COL_CUSTO_OBJETO, "filtros": ["periodo", "sistema", "objeto", "tipo_trabalho", "setor"]},
     "custo-sistema":       {"grupo": "Custos", "titulo": "Custo por sistema", "sub": "onde o dinheiro vai, por ramo da organização", "fn": rel_custo_sistema, "cols": COL_CUSTO_SISTEMA, "filtros": ["periodo", "sistema", "tipo_trabalho", "setor"]},
@@ -841,10 +1096,18 @@ RELATORIOS = {
     "consumo-familia":     {"grupo": "Materiais", "titulo": "Consumo por família", "sub": "peso de filtros, pneus, óleos… no gasto com peças", "fn": rel_consumo_familia, "cols": COL_CONSUMO_FAM, "filtros": ["periodo", "sistema", "objeto"]},
     "estoque-baixo":       {"grupo": "Materiais", "titulo": "Estoque baixo / sugestão de compra", "sub": "itens abaixo do mínimo com quantidade e valor sugeridos", "fn": rel_estoque_baixo, "cols": COL_ESTOQUE_BAIXO, "filtros": []},
     "giro-estoque":        {"grupo": "Materiais", "titulo": "Giro de estoque", "sub": "saldo × consumo 12 meses: itens parados e cobertura", "fn": rel_giro_estoque, "cols": COL_GIRO, "filtros": []},
+    # (14/11/2026) grupo Compras — materiais: o que falta, o que está cotando, o que está a caminho
+    "ots-faltantes":       {"grupo": "Compras", "titulo": "Peças faltantes das OTs programadas", "sub": "peças previstas (FMP/Planejado) que o estoque + OCs abertas não cobrem, na ordem do prazo — para cotar/comprar só o necessário", "fn": rel_ots_faltantes, "cols": COL_OTS_FALT, "filtros": []},
+    "cotacoes-abertas":    {"grupo": "Compras", "titulo": "Cotações em aberto", "sub": "fotografia: fase, dias aguardando, quem respondeu, menor total completo", "fn": rel_cotacoes_abertas, "cols": COL_COT_ABERTAS, "filtros": []},
+    "cotacoes-resultado":  {"grupo": "Compras", "titulo": "Resultado das cotações", "sub": "cotações encerradas no período: vencedores, OCs geradas, total comprado e economia frente à proposta mais cara", "fn": rel_cotacoes_resultado, "cols": COL_COT_RESULT, "filtros": ["periodo"]},
+    "pendencias-compra":   {"grupo": "Compras", "titulo": "Pendentes de compra", "sub": "peças que ficaram sem oferta: abertas hoje + baixadas no período, com motivo e vezes cotadas", "fn": rel_pendencias_compra, "cols": COL_PENDENCIAS, "filtros": ["periodo"]},
+    "ocs-andamento":       {"grupo": "Compras", "titulo": "OCs em andamento", "sub": "fotografia: etapa, fornecedor, valor, idade, previsão de chegada (prazo prometido) e atraso", "fn": rel_ocs_andamento, "cols": COL_OCS_AND, "filtros": []},
+    "fornecedores-desempenho": {"grupo": "Compras", "titulo": "Desempenho de fornecedores", "sub": "no período: convites × respostas, vitórias, valor comprado, % entregas no prazo e atraso médio", "fn": rel_fornecedores_desempenho, "cols": COL_FORN_DESEMP, "filtros": ["periodo"]},
+    "posicao-estoque":     {"grupo": "Compras", "titulo": "Posição de estoque valorizada", "sub": "hoje: saldo, comprometido com OTs, disponível, em pedido, mínimo e valor a custo médio", "fn": rel_posicao_estoque, "cols": COL_POSICAO, "filtros": ["familia", "item"]},
     "utilizacao":          {"grupo": "Utilização", "titulo": "Horas/km por objeto e mês", "sub": "quanto cada máquina rodou (base do R$/h e do FMD)", "fn": rel_utilizacao, "cols": COL_UTIL, "filtros": ["periodo", "sistema", "objeto"]},
     "pontos":              {"grupo": "Utilização", "titulo": "Pontos de leitura", "sub": "situação dos pontos com limiares 🟡🟠🔴", "fn": rel_pontos, "cols": COL_PONTOS, "filtros": ["sistema", "objeto"]},
 }
-_ORDEM_GRUPOS = ["Custos", "Trabalhos", "Preventivas", "Disponibilidade", "Mão de obra", "Materiais", "Entradas", "Utilização"]
+_ORDEM_GRUPOS = ["Custos", "Trabalhos", "Preventivas", "Disponibilidade", "Mão de obra", "Materiais", "Compras", "Entradas", "Utilização"]
 
 
 def _cols_json(cols):
@@ -863,6 +1126,148 @@ def _json_val(v):
     if isinstance(v, (_dt, _date)):
         return v.isoformat()
     return v
+
+
+# ═════════════ (14/11/2026) 📊 PAINEL DE INDICADORES — aba Indicadores da Manutenção ═════════════
+# Uma chamada só, tudo de leitura. Custos usam as MESMAS regras dos relatórios (rel_custo_objeto etc.),
+# para o número do painel bater com o relatório que abre ao clicar nele.
+class _FP:
+    """Filtro mínimo para reaproveitar as funções dos relatórios dentro do painel."""
+    def __init__(self, de, ate, setor=None):
+        self.de, self.ate = de, ate
+        self.sistema = self.equipamento_id = self.tipo_trabalho = self.familia = None
+        self.item = self.fornecedor_id = self.documento = self.almox = None
+        self.setor = None   # setor interventor (custos) — o setor de COMPRAS vai à parte
+    def where_eq(self, params, alias="e"):
+        return f"{alias}.ativo = true"
+    def ate_fim(self):
+        return _dt.combine(self.ate, _dt.max.time()).replace(microsecond=0)
+
+
+@router.get("/manutencao/api/indicadores")
+async def indicadores(periodo: str = "12m", setor: str = None, _auth=Depends(verificar_manutencao)):
+    """periodo: 12m (padrão) · ano · mes. setor = setor de COMPRAS da manutenção (cotações/OCs/pendências)."""
+    await _prep()
+    from routers.manutencao import _vencimento_ot, necessidades_ots, estoque_baixo
+    hoje = _date.today()
+    ini_mes = hoje.replace(day=1)
+    de = ini_mes if periodo == "mes" else (hoje.replace(month=1, day=1) if periodo == "ano" else (hoje - _td(days=365)))
+    setor = (setor or "").strip() or None
+
+    # ── Frota ──
+    fr = await ajard_query("""
+        SELECT SUM(CASE WHEN e.ativo THEN 1 ELSE 0 END)::int AS ativos,
+               SUM(CASE WHEN NOT e.ativo THEN 1 ELSE 0 END)::int AS inativos,
+               SUM(CASE WHEN e.ativo AND EXISTS (SELECT 1 FROM manutencao.ot o WHERE o.equipamento_id=e.id AND o.ativo AND o.status='aguardando_peca') THEN 1 ELSE 0 END)::int AS sem_peca,
+               SUM(CASE WHEN e.ativo AND EXISTS (SELECT 1 FROM manutencao.ot o WHERE o.equipamento_id=e.id AND o.ativo AND o.status IN ('em_andamento','aguardando_peca')) THEN 1 ELSE 0 END)::int AS em_mnt
+          FROM operacional.equipamentos e
+         WHERE e.equipamento_pai IS NULL AND COALESCE(e.categoria,'') NOT IN ('apoio','componente')""", fetch="one") or {}
+    ativos, inativos, sem_peca, em_mnt = int(fr.get("ativos") or 0), int(fr.get("inativos") or 0), int(fr.get("sem_peca") or 0), int(fr.get("em_mnt") or 0)
+    frota = {"total": ativos, "disponiveis": max(0, ativos - em_mnt), "em_manutencao": em_mnt - sem_peca, "sem_peca": sem_peca, "inativos": inativos}
+
+    # ── Trabalhos ──
+    ots = await ajard_query("""
+        SELECT o.status, o.data_prevista, o.horimetro_previsto, o.data_limite, eq.horimetro_atual, eq.medicao,
+               (SELECT bool_or(a.concluido) FROM manutencao.ot_apontamentos a WHERE a.ot_id=o.id AND a.ativo=true) AS sinal
+          FROM manutencao.ot o JOIN operacional.equipamentos eq ON eq.id=o.equipamento_id
+         WHERE o.ativo AND o.status IN ('programada','aberta','em_andamento','aguardando_peca')""") or []
+    tr = {"programadas": 0, "abertas": 0, "em_curso": 0, "aguardando_peca": 0, "vencidas": 0, "atencao": 0, "sinalizadas": 0}
+    for o in ots:
+        st = o["status"]
+        tr["programadas" if st == "programada" else ("em_curso" if st == "em_andamento" else ("aguardando_peca" if st == "aguardando_peca" else "abertas"))] += 1
+        if o["sinal"] and st != "programada":
+            tr["sinalizadas"] += 1
+        v = None
+        if st == "programada":
+            v = _vencimento_ot(o["data_prevista"], o["horimetro_previsto"], o["horimetro_atual"], hoje, "km" if (o["medicao"] or "") == "km" else "h")
+        elif o["data_limite"]:
+            v = _vencimento_ot(o["data_limite"], None, None, hoje)
+        if v and v.get("nivel") == 0:
+            tr["vencidas"] += 1
+        elif v and v.get("nivel") == 1:
+            tr["atencao"] += 1
+    try:
+        tri = await ajard_query("SELECT COUNT(*)::int AS n FROM manutencao.pedidos WHERE status='aberto' AND ativo=true", fetch="one")
+        tr["triagem"] = int((tri or {}).get("n") or 0)
+    except Exception:
+        tr["triagem"] = 0
+
+    # ── Materiais ──
+    mt = await ajard_query("""SELECT (SELECT COUNT(*) FROM manutencao.pecas WHERE ativo)::int AS itens,
+                                     (SELECT COALESCE(SUM(s.quantidade * COALESCE(p.custo_medio,0)),0) FROM manutencao.estoque s JOIN manutencao.pecas p ON p.id=s.peca_id WHERE p.ativo AND s.quantidade > 0) AS valor""", fetch="one") or {}
+    try:
+        baixo = len(await estoque_baixo(_auth=None))
+    except Exception:
+        baixo = None
+    try:
+        falt = (await necessidades_ots(prazo="atencao", cobertas=0, _auth=None)).get("n_faltantes", 0)
+    except Exception:
+        falt = None
+    try:
+        conf = await ajard_query("SELECT COUNT(*)::int AS n FROM manutencao.entradas_pendentes WHERE status='pendente'", fetch="one")
+        conf = int((conf or {}).get("n") or 0)
+    except Exception:
+        conf = None
+    materiais = {"itens": int(mt.get("itens") or 0), "abaixo_minimo": baixo, "faltam_ots": falt, "a_conferir": conf, "valor_estoque": _r2(mt.get("valor"))}
+
+    # ── Compras (setor da manutenção) ──
+    sc = "(%s::text IS NULL OR setor_codigo=%s)"
+    try:
+        cp = await ajard_query(f"""
+            SELECT (SELECT COUNT(*) FROM compras.cotacoes WHERE ativo AND status='aberta' AND {sc})::int AS cot,
+                   (SELECT COUNT(*) FROM compras.ordens_compra WHERE ativo AND status='solicitada' AND {sc})::int AS aprovar,
+                   (SELECT COUNT(*) FROM compras.ordens_compra WHERE ativo AND status='rascunho' AND {sc})::int AS rascunho,
+                   (SELECT COUNT(*) FROM compras.ordens_compra WHERE ativo AND status IN ('aprovada') AND {sc})::int AS a_enviar,
+                   (SELECT COUNT(*) FROM compras.ordens_compra WHERE ativo AND status IN ('enviada','recebida_parcial') AND {sc})::int AS caminho,
+                   (SELECT COUNT(*) FROM compras.pendencias_compra WHERE status='aberta' AND {sc})::int AS pend,
+                   (SELECT COUNT(*) FROM compras.ordens_compra o JOIN compras.cotacao_fornecedores cf ON cf.oc_id=o.id
+                     WHERE o.ativo AND o.status IN ('enviada','recebida_parcial') AND o.enviado_em IS NOT NULL AND cf.prazo_dias IS NOT NULL
+                       AND (o.enviado_em + make_interval(days => cf.prazo_dias))::date < CURRENT_DATE AND (%s::text IS NULL OR o.setor_codigo=%s))::int AS atrasadas,
+                   (SELECT COALESCE(SUM(valor_total),0) FROM compras.ordens_compra WHERE ativo AND status IN ('solicitada','aprovada','enviada','recebida_parcial') AND {sc}) AS valor_aberto""",
+            (setor, setor) * 8, fetch="one") or {}
+        compras = {"cotacoes": int(cp["cot"]), "a_aprovar": int(cp["aprovar"]), "rascunho": int(cp["rascunho"]), "a_enviar": int(cp["a_enviar"]),
+                   "a_caminho": int(cp["caminho"]), "pendencias": int(cp["pend"]), "atrasadas": int(cp["atrasadas"]), "valor_aberto": _r2(cp["valor_aberto"])}
+    except Exception:
+        compras = None
+
+    # ── Custos (mesma regra dos relatórios: OTs abertas no período) ──
+    F = _FP(de, hoje)
+    por_obj = await rel_custo_objeto(F)
+    total = sum(l["total"] for l in por_obj)
+    operadas = sum(_f(l["operadas"]) for l in por_obj)
+    cxp = await rel_corretiva_preventiva(F)
+    cc, cpv = sum(_f(l["custo_c"]) for l in cxp), sum(_f(l["custo_p"]) for l in cxp)
+    mes = await rel_custo_objeto(_FP(ini_mes, hoje))
+    custos = {"periodo": _r2(total), "mes": _r2(sum(l["total"] for l in mes)), "por_hora": _r2(total / operadas) if operadas else None,
+              "pct_corretiva": round(cc / (cc + cpv), 4) if (cc + cpv) else None}
+
+    # ── TOP 10 ──
+    top_custo = [{"objeto": l["objeto"], "descricao": l["descricao"], "ots": l["n_ots"], "total": l["total"]} for l in por_obj[:10] if l["total"] > 0]
+    top_corr = sorted([l for l in cxp if l["n_c"] > 0], key=lambda x: (-x["n_c"], x["objeto"]))[:10]
+    top_corr = [{"objeto": l["objeto"], "descricao": l["descricao"], "corretivas": l["n_c"], "pct": l["pct_c"]} for l in top_corr]
+
+    # ── Séries mensais (12 meses, sempre — o gráfico mostra a tendência) ──
+    m0 = (hoje.replace(day=1) - _td(days=335)).replace(day=1)
+    meses = []
+    d = m0
+    while d <= hoje:
+        meses.append(d.strftime("%Y-%m"))
+        d = (d.replace(day=28) + _td(days=4)).replace(day=1)
+    enc = await ajard_query("""
+        SELECT to_char(o.data_conclusao,'YYYY-MM') AS m,
+               SUM(CASE WHEN upper(COALESCE(o.tipo_trabalho,'')) LIKE 'C%%' OR (COALESCE(o.tipo_trabalho,'')='' AND o.tipo='corretiva') THEN 1 ELSE 0 END)::int AS c,
+               SUM(CASE WHEN upper(COALESCE(o.tipo_trabalho,'')) LIKE 'A%%' OR upper(COALESCE(o.tipo_trabalho,'')) LIKE 'B%%' OR (COALESCE(o.tipo_trabalho,'')='' AND o.tipo='preventiva') THEN 1 ELSE 0 END)::int AS p
+          FROM manutencao.ot o WHERE o.ativo AND o.status='concluida' AND o.data_conclusao >= %s GROUP BY 1""", (m0,)) or []
+    em = {r["m"]: r for r in enc}
+    cm = await ajard_query(f"""
+        SELECT to_char(o.data_abertura,'YYYY-MM') AS m, SUM({_SQL_PECAS_OT} + {_SQL_MO_OT} + {_SQL_OUTROS_OT}) AS v
+          FROM manutencao.ot o WHERE o.ativo AND o.status <> 'cancelada' AND o.data_abertura >= %s GROUP BY 1""", (m0,)) or []
+    cmm = {r["m"]: _f(r["v"]) for r in cm}
+    serie = [{"mes": m, "corretivas": int((em.get(m) or {}).get("c") or 0), "preventivas": int((em.get(m) or {}).get("p") or 0), "custo": _r2(cmm.get(m, 0.0))} for m in meses]
+
+    return {"gerado_em": _dt.now(_tz.utc).isoformat(), "periodo": periodo, "de": de.isoformat(), "ate": hoje.isoformat(),
+            "frota": frota, "trabalhos": tr, "materiais": materiais, "compras": compras, "custos": custos,
+            "top_custo": top_custo, "top_corretivas": top_corr, "series": serie}
 
 
 @router.get("/manutencao/api/relatorios")
