@@ -143,6 +143,8 @@ async def garantir_rh():
             validade_meses INT, carga_horaria NUMERIC(6,1), ordem INT DEFAULT 0,
             ativo BOOLEAN NOT NULL DEFAULT true, criado_em TIMESTAMPTZ DEFAULT now())""", fetch="none")
     await ajard_query("CREATE UNIQUE INDEX IF NOT EXISTS ux_rh_cursos_codigo ON rh.cursos (upper(codigo))", fetch="none")
+    # (15/11/2026) excluir do catálogo = some de todas as telas (o registro fica; recriar o mesmo código reaproveita)
+    await ajard_query("ALTER TABLE rh.cursos ADD COLUMN IF NOT EXISTS excluido_em TIMESTAMPTZ", fetch="none")
     # Sugestão inicial — validade só onde a própria NR fixa a reciclagem; o resto a gestão define na tela.
     await ajard_query("""
         INSERT INTO rh.cursos (codigo, nome, tipo, validade_meses, ordem) VALUES
@@ -572,8 +574,8 @@ async def opcoes(payload=Depends(verificar_rh_ver)):
 # ══════════════════════════════════════════════════════════════
 async def _cursos(so_ativos=False):
     rows = await ajard_query(
-        "SELECT id, codigo, nome, tipo, validade_meses, carga_horaria, ordem, ativo FROM rh.cursos"
-        + (" WHERE ativo" if so_ativos else "") + " ORDER BY ativo DESC, (tipo='NR') DESC, ordem, codigo") or []
+        "SELECT id, codigo, nome, tipo, validade_meses, carga_horaria, ordem, ativo FROM rh.cursos WHERE excluido_em IS NULL"
+        + (" AND ativo" if so_ativos else "") + " ORDER BY ativo DESC, (tipo='NR') DESC, ordem, codigo") or []
     return [{**dict(r), "id": str(r["id"]), "carga_horaria": _f(r["carga_horaria"])} for r in rows]
 
 
@@ -599,17 +601,42 @@ async def cursos_salvar(request: Request, payload=Depends(verificar_rh)):
     val = int(_num(val)) if val not in (None, "") else None
     ch = _num(d.get("carga_horaria"))
     tipo = "NR" if (d.get("tipo") or "NR").upper() == "NR" else "OUTRO"
+    dup = await ajard_query("SELECT id, excluido_em FROM rh.cursos WHERE upper(codigo)=%s AND id IS DISTINCT FROM %s",
+                            (cod, d.get("id")), fetch="one")
+    if dup and not dup["excluido_em"]:
+        raise HTTPException(status_code=409, detail=f"Já existe um treinamento com o código {cod}")
+    if dup and not d.get("id"):
+        # código de um item excluído antes: reaproveita o registro
+        await ajard_query("""UPDATE rh.cursos SET nome=%s, tipo=%s, validade_meses=%s, carga_horaria=%s, ativo=true,
+                                    excluido_em=NULL WHERE id=%s""", (nome, tipo, val, ch, dup["id"]), fetch="none")
+        return {"ok": True, "id": str(dup["id"])}
+    if dup:
+        raise HTTPException(status_code=409, detail=f"O código {cod} já foi usado por um treinamento excluído — escolha outro")
     if d.get("id"):
         await ajard_query("""UPDATE rh.cursos SET codigo=%s, nome=%s, tipo=%s, validade_meses=%s, carga_horaria=%s,
                                     ativo=COALESCE(%s, ativo) WHERE id=%s""",
                           (cod, nome, tipo, val, ch, d.get("ativo"), d["id"]), fetch="none")
         return {"ok": True, "id": d["id"]}
-    dup = await ajard_query("SELECT id FROM rh.cursos WHERE upper(codigo)=%s", (cod,), fetch="one")
-    if dup:
-        raise HTTPException(status_code=409, detail="Já existe um treinamento com esse código")
     r = await ajard_query("""INSERT INTO rh.cursos (codigo, nome, tipo, validade_meses, carga_horaria, ordem)
                              VALUES (%s,%s,%s,%s,%s,999) RETURNING id""", (cod, nome, tipo, val, ch), fetch="one")
     return {"ok": True, "id": str(r["id"])}
+
+
+@router.delete("/rh/api/cursos/{kid}")
+async def cursos_excluir(kid: str, payload=Depends(verificar_rh)):
+    """(15/11/2026) Exclui do catálogo quem nunca foi usado. Com treinamento registrado não exclui —
+    desativar (sai das listas e do painel; o histórico das pessoas fica)."""
+    await garantir_rh()
+    k = await ajard_query("SELECT codigo FROM rh.cursos WHERE id=%s AND excluido_em IS NULL", (kid,), fetch="one")
+    if not k:
+        raise HTTPException(status_code=404, detail="Treinamento não encontrado")
+    n = await ajard_query("SELECT COUNT(*) AS n FROM rh.treinamentos WHERE curso_id=%s AND ativo", (kid,), fetch="one")
+    if n and int(n["n"]):
+        raise HTTPException(status_code=409, detail=f"{k['codigo']} tem {n['n']} treinamento(s) registrado(s) — não dá para excluir. "
+                                                     "Em Editar, marque Ativo = Não: sai das listas e do painel e o histórico fica.")
+    await ajard_query("DELETE FROM rh.cargo_cursos WHERE curso_id=%s", (kid,), fetch="none")
+    await ajard_query("UPDATE rh.cursos SET excluido_em=now(), ativo=false WHERE id=%s", (kid,), fetch="none")
+    return {"ok": True}
 
 
 @router.get("/rh/api/exigencias")
@@ -998,6 +1025,52 @@ def _norm(s):
     return re.sub(r"[^A-Z0-9 ]", " ", s).split()
 
 
+_PARTICULAS = {"DE", "DA", "DO", "DAS", "DOS", "E", "D"}
+
+
+def _fonetico(t):
+    """Grafias equivalentes do português: LUIZ=LUIS, PHELIPE=FELIPE, THIAGO=TIAGO, YAGO=IAGO, letras dobradas."""
+    t = t.replace("PH", "F").replace("TH", "T").replace("Y", "I").replace("W", "V").replace("Z", "S").replace("K", "C")
+    t = re.sub(r"(.)\1+", r"\1", t)
+    return t
+
+
+def _token_parecido(a, b):
+    """(15/11/2026) FILIPI≈FELIPE, LUIZ≈LUIS, ITALO≈ÍTALO: igual, igual na fonética, mesmas consoantes
+    (com a mesma inicial) ou muito parecido. Só sugere — quem confirma é a pessoa na prévia."""
+    if a == b:
+        return True
+    fa, fb = _fonetico(a), _fonetico(b)
+    if fa == fb:
+        return True
+    if len(fa) >= 4 and len(fb) >= 4 and fa[0] == fb[0]:
+        sa, sb = re.sub(r"[AEIOU]", "", fa), re.sub(r"[AEIOU]", "", fb)
+        if len(sa) >= 2 and sa == sb:
+            return True
+        from difflib import SequenceMatcher
+        if SequenceMatcher(None, fa, fb).ratio() >= 0.8:
+            return True
+    return False
+
+
+def _pontos_nome(usuario_nome, alvos):
+    """Pontuação de "este login é esta pessoa do MAIS" (0 = não é ele). A 1ª palavra do usuário tem de bater
+    com alguma do MAIS; +1 por palavra que bate; +1 se bate com o PRIMEIRO nome do MAIS (Jair → JAIR LUIZ…,
+    e não Luiz); −0,5 por palavra do usuário que não aparece no MAIS."""
+    un = [t for t in _norm(usuario_nome) if t not in _PARTICULAS]
+    if not un:
+        return 0
+    melhor = 0
+    for a in alvos:
+        a = [t for t in a if t not in _PARTICULAS]
+        if not a or not any(_token_parecido(un[0], x) for x in a):
+            continue
+        bate = sum(1 for t in un if any(_token_parecido(t, x) for x in a))
+        pts = bate + (1 if _token_parecido(un[0], a[0]) else 0) - 0.5 * (len(un) - bate)
+        melhor = max(melhor, pts)
+    return max(melhor, 0)
+
+
 def _cel(v):
     if v in (None, ""):
         return None
@@ -1095,7 +1168,7 @@ async def importar_mais_previa(ficheiro: UploadFile = File(...), payload=Depends
                 next((f for f in fichas if mat and (f["matricula_mais"] or "") == mat), None)
         # sugere o login pelo nome (apelido/1º nome) — você confirma na tela. Se o login já tem ficha
         # sem CPF nem matrícula (criada por "Importar logins" ou pela migração do HH), propõe ATUALIZAR essa ficha.
-        sug = None
+        sug, sug_pts = None, 0
         if ficha and ficha["usuario_id"]:
             sug = str(ficha["usuario_id"])
         else:
@@ -1106,15 +1179,13 @@ async def importar_mais_previa(ficheiro: UploadFile = File(...), payload=Depends
                     dono = next((f for f in fichas if str(f["usuario_id"] or "") == str(u["id"])), None)
                     if ficha or not dono or dono["cpf"] or dono["matricula_mais"]:
                         continue
-                un = _norm(u["nome"])
-                if not un:
-                    continue
-                if any(a and (un == a[:len(un)] or un[0] == a[0]) for a in alvo):
-                    peso = max((len(set(un) & set(a)) for a in alvo if a), default=0)
-                    cands.append((peso, u))
+                pts = _pontos_nome(u["nome"], alvo)
+                if pts:
+                    cands.append((pts + (0.5 if u["ativo"] else 0), u))
             cands.sort(key=lambda x: -x[0])
             if cands and (len(cands) == 1 or cands[0][0] > cands[1][0]):
                 sug = str(cands[0][1]["id"])
+                sug_pts = cands[0][0]
                 if not ficha and sug in usados:
                     ficha = next(f for f in fichas if str(f["usuario_id"] or "") == sug)
         previa.append({
@@ -1127,7 +1198,23 @@ async def importar_mais_previa(ficheiro: UploadFile = File(...), payload=Depends
             "situacao": situacao, "acao": "ignorar" if generico else ("atualizar" if ficha else "criar"),
             "ficha_id": str(ficha["id"]) if ficha else None, "ficha_nome": ficha["nome"] if ficha else None,
             "usuario_id": sug, "generico": generico, "avisos": avisos,
+            "_pts": (99 if (ficha and ficha["usuario_id"] and sug == str(ficha["usuario_id"])) else sug_pts) if sug else 0,
         })
+    # o mesmo login não é sugerido para duas pessoas: fica com quem bate melhor; empate = ninguém
+    por_user = {}
+    for i, p in enumerate(previa):
+        if p["usuario_id"]:
+            por_user.setdefault(p["usuario_id"], []).append(i)
+    for uid, idxs in por_user.items():
+        if len(idxs) > 1:
+            idxs.sort(key=lambda i: -previa[i]["_pts"])
+            fica = idxs[0] if previa[idxs[0]]["_pts"] > previa[idxs[1]]["_pts"] else None
+            for i in idxs:
+                if i != fica:
+                    previa[i]["usuario_id"] = None
+                    previa[i]["avisos"].append("o nome lembra mais de um login — escolha na lista")
+    for p in previa:
+        p.pop("_pts", None)
     return {"linhas": previa,
             "usuarios": [{"id": str(u["id"]), "nome": u["nome"], "login": u["login"], "ativo": u["ativo"],
                           "em_uso": str(u["id"]) in usados} for u in usuarios]}

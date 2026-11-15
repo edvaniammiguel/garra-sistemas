@@ -126,8 +126,8 @@ table.t td{padding:6px;border-bottom:1px solid #EEF2F7;vertical-align:middle}
 <section class="tela" id="t-par">
   <div class="grid" style="grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);align-items:start">
     <div class="painel" style="padding:12px">
-      <div style="display:flex;justify-content:space-between;align-items:center"><b style="color:var(--blue)">NRs e treinamentos</b><button class="btn peq" onclick="cursoEditar()">+ Novo</button></div>
-      <div class="hint">Validade em meses = prazo da reciclagem. Vazio = não vence. O vencimento de cada treinamento é calculado com este prazo (pode ser corrigido no registro).</div>
+      <div style="display:flex;justify-content:space-between;align-items:center"><b style="color:var(--blue)">NRs e treinamentos</b><button class="btn pri peq" onclick="cursoEditar()">+ Adicionar NR ou treinamento</button></div>
+      <div class="hint">Cadastre aqui as NRs e também outros treinamentos (Direção defensiva, Operador de escavadeira…): use o tipo “Outro treinamento”. Reciclagem em meses = prazo de validade; vazio = não vence. Depois marque, ao lado, em quais cargos ele é exigido.</div>
       <div id="par-cursos" style="margin-top:8px"></div>
     </div>
     <div class="grid">
@@ -573,7 +573,7 @@ async function carregarPar(){
   await carregarOpcoes();
   try { _exig = await api('/rh/api/exigencias'); } catch(e){ toast('❌ ' + e.message); return; }
   document.getElementById('par-cursos').innerHTML = '<table class="t"><thead><tr><th>Código</th><th>Nome</th><th>Reciclagem</th><th>Carga</th><th></th></tr></thead><tbody>'
-    + OP.cursos.map(k => '<tr' + (k.ativo ? '' : ' style="opacity:.5"') + '><td><b>' + esc(k.codigo) + '</b></td><td>' + esc(k.nome) + (k.tipo === 'NR' ? '' : ' <span class="pill p-cinza">outro</span>') + '</td><td>' + (k.validade_meses ? k.validade_meses + ' meses' : '<span class="muted">não vence</span>') + '</td><td>' + (k.carga_horaria ? k.carga_horaria + ' h' : '') + '</td><td style="text-align:right"><button class="btn peq" onclick="cursoEditar(\'' + k.id + '\')">editar</button></td></tr>').join('') + '</tbody></table>';
+    + OP.cursos.map(k => '<tr' + (k.ativo ? '' : ' style="opacity:.5"') + '><td><b>' + esc(k.codigo) + '</b></td><td>' + esc(k.nome) + (k.tipo === 'NR' ? '' : ' <span class="pill p-cinza">outro</span>') + '</td><td>' + (k.validade_meses ? k.validade_meses + ' meses' : '<span class="muted">não vence</span>') + '</td><td>' + (k.carga_horaria ? k.carga_horaria + ' h' : '') + '</td><td style="text-align:right;white-space:nowrap"><button class="btn peq" onclick="cursoEditar(\'' + k.id + '\')">editar</button> <button class="btn peq del" onclick="cursoExcluir(\'' + k.id + '\')" title="excluir do catálogo">✕</button></td></tr>').join('') + '</tbody></table>';
   const cursosAtivos = OP.cursos.filter(k => k.ativo);
   document.getElementById('par-exig').innerHTML = (OP.cargos || []).filter(c => c.ativo).map(f => '<div style="padding:6px 0;border-bottom:1px solid #EEF2F7"><div style="font-weight:600;margin-bottom:4px">' + esc(f.nome) + '</div><div class="chips">'
     + cursosAtivos.map(k => '<span class="chip' + ((_exig[f.codigo] || []).includes(k.id) ? ' sel' : '') + '" onclick="exigToggle(\'' + esc(f.codigo) + '\',\'' + k.id + '\',this)" title="' + esc(k.nome) + '">' + esc(k.codigo) + '</span>').join('') + '</div></div>').join('') || '<div class="muted">Nenhum cargo ainda. Os cargos chegam com a importação do MAIS (Colaboradores › Importar do MAIS).</div>';
@@ -586,7 +586,7 @@ async function exigToggle(fc, kid, el){
 }
 function cursoEditar(id){
   const k = OP.cursos.find(x => x.id === id) || { codigo: '', nome: '', tipo: 'NR', validade_meses: '', carga_horaria: '', ativo: true };
-  modal(id ? 'Editar ' + k.codigo : 'Nova NR / treinamento', '<div class="grid g3">' + fld('Código *', '<input id="cu-cod" value="' + esc(k.codigo) + '" placeholder="NR-35">') + fld('Tipo', '<select id="cu-tipo"><option value="NR"' + (k.tipo === 'NR' ? ' selected' : '') + '>NR</option><option value="OUTRO"' + (k.tipo !== 'NR' ? ' selected' : '') + '>Outro treinamento</option></select>') + fld('Reciclagem (meses)', '<input id="cu-val" inputmode="numeric" value="' + (k.validade_meses ?? '') + '" placeholder="vazio = não vence">') + '</div>'
+  modal(id ? 'Editar ' + k.codigo : 'Nova NR / treinamento', '<div class="grid g3">' + fld('Código *', '<input id="cu-cod" value="' + esc(k.codigo) + '" placeholder="NR-35 ou DIR-DEF">') + fld('Tipo', '<select id="cu-tipo"><option value="NR"' + (k.tipo === 'NR' ? ' selected' : '') + '>NR</option><option value="OUTRO"' + (k.tipo !== 'NR' ? ' selected' : '') + '>Outro treinamento</option></select>') + fld('Reciclagem (meses)', '<input id="cu-val" inputmode="numeric" value="' + (k.validade_meses ?? '') + '" placeholder="vazio = não vence">') + '</div>'
     + '<div style="margin-top:10px">' + fld('Nome *', '<input id="cu-nome" value="' + esc(k.nome) + '">') + '</div>'
     + '<div class="grid g2" style="margin-top:10px">' + fld('Carga horária (h)', '<input id="cu-ch" inputmode="decimal" value="' + (k.carga_horaria ?? '') + '">') + (id ? fld('Ativo', '<select id="cu-at"><option value="1"' + (k.ativo ? ' selected' : '') + '>Sim</option><option value="0"' + (k.ativo ? '' : ' selected') + '>Não (some das listas)</option></select>') : '') + '</div><div class="erro" id="cu-erro"></div>',
     'Salvar', async () => {
@@ -597,6 +597,12 @@ function cursoEditar(id){
       try { await api('/rh/api/cursos', { method: 'POST', body: JSON.stringify(body) }); } catch(x){ e.textContent = x.message; return false; }
       carregarPar();
     });
+}
+async function cursoExcluir(id){
+  const k = OP.cursos.find(x => x.id === id); if (!k) return;
+  if (!confirm('Excluir ' + k.codigo + ' — ' + k.nome + ' do catálogo?\n\nSai também das exigências dos cargos.')) return;
+  try { await api('/rh/api/cursos/' + id, { method: 'DELETE' }); } catch(e){ alert(e.message); return; }
+  toast(k.codigo + ' excluído'); carregarPar();
 }
 function platEditar(id){
   const p = OP.plataformas.find(x => x.id === id) || { nome: '', site: '', ativo: true };
