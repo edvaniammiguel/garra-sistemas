@@ -509,8 +509,7 @@ button:disabled, select:disabled, input:disabled, [aria-disabled=true] { cursor:
           <!-- Aba Perfis -->
           <div id="perm-perfis">
             <p style="font-size:13px;color:var(--muted);margin-bottom:16px">
-              Define o acesso padrão de cada perfil. Novos colaboradores herdam automaticamente.
-              <strong style="color:var(--blue)">Admin Master não pode ser removido do perfil Admin.</strong>
+              Define o acesso padrão de cada perfil. Novos colaboradores herdam automaticamente. Abra o grupo que quer ajustar.
             </p>
             <div id="perm-perfis-content"><div class="loading"><span class="spin"></span></div></div>
           </div>
@@ -2027,44 +2026,78 @@ async function hidratarPermissoes(force) {
 
 async function renderPermissoes() { await hidratarPermissoes(); renderPermPerfis(); }
 
+/* (15/11/2026) Matriz reorganizada: módulos em LINHAS, agrupados por área (abre/fecha), perfis em COLUNAS.
+   Antes eram 26 colunas com a descrição inteira no cabeçalho — rolagem lateral sem fim. */
+const GRUPOS_ORDEM = ['Gestão','Operação em campo','Manutenção','Compras','Jardinagem','Atendimento WhatsApp','RH','Outros'];
+let _permQ = '', _permAbertos = new Set();
+const _permNorm = s => String(s||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase();
+function permGrupos() {
+  const g = {};
+  MODULOS.forEach(m => { const k = m.grupo || 'Outros'; (g[k] = g[k] || []).push(m); });
+  return Object.keys(g).sort((a,b) => (GRUPOS_ORDEM.indexOf(a)+1||99) - (GRUPOS_ORDEM.indexOf(b)+1||99)).map(k => ({ nome:k, mods:g[k] }));
+}
+// rótulo curto dentro do grupo: "Compras — Solicitar" → "Solicitar"
+const permRotulo = (m, grupo) => { const p = m.label.split(' — '); return p.length > 1 && _permNorm(grupo).startsWith(_permNorm(p[0]).slice(0,6)) ? p.slice(1).join(' — ') : m.label; };
+
 function renderPermPerfis() {
-  const perfis = Object.keys(PERFIL_PADRAO);
   const el = document.getElementById('perm-perfis-content');
+  const perfis = Object.keys(PERFIL_PADRAO).filter(p => p !== 'admin');
   const contagem = {};
   (_usuarios||[]).filter(u=>u.ativo).forEach(u => { contagem[u.perfil] = (contagem[u.perfil]||0)+1; });
+  const grupos = permGrupos(), q = _permNorm(_permQ);
+  const th = 'padding:8px 6px;text-align:center;font-size:12px;font-weight:700;color:var(--blue);min-width:84px;width:84px;position:sticky;top:0;background:#fff;z-index:2;border-bottom:2px solid var(--border)';
+  let corpo = '';
+  grupos.forEach((g, gi) => {
+    const mods = g.mods.filter(m => !q || _permNorm(g.nome+' '+m.label+' '+m.desc).includes(q));
+    if (!mods.length) return;
+    const aberto = _permAbertos.has(g.nome) || !!q;
+    corpo += `<tr style="background:#F1F5F9;cursor:pointer;border-top:1px solid var(--border)" onclick="permToggleGrupo('${gi}')">
+      <td style="padding:9px 10px;font-size:13px;font-weight:700;color:var(--blue)">${aberto?'▾':'▸'} ${esc(g.nome)} <span style="font-weight:400;font-size:11px;color:var(--muted)">${g.mods.length} módulo(s)</span></td>
+      ${perfis.map(p => { const n = g.mods.filter(m => (PERFIL_PADRAO[p]||[]).includes(m.id)).length, cheio = n === g.mods.length;
+        return `<td style="text-align:center;padding:6px"><span onclick="event.stopPropagation();permGrupoPerfil('${gi}','${p}')" title="Clique para ${cheio?'desmarcar':'marcar'} o grupo inteiro para ${esc(PERFIL_LABEL[p]||p)}"
+          style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:10px;cursor:pointer;border:1px solid ${cheio?'#86EFAC':n?'#FDBA74':'var(--border)'};background:${cheio?'#F0FDF4':n?'#FFF7ED':'#fff'};color:${cheio?'var(--green)':n?'#9A3412':'var(--muted)'}">${n}/${g.mods.length}</span></td>`; }).join('')}
+    </tr>`;
+    if (aberto) mods.forEach(m => {
+      corpo += `<tr style="border-top:1px solid #F1F5F9" onmouseenter="this.style.background='#F8FAFC'" onmouseleave="this.style.background=''">
+        <td style="padding:7px 10px 7px 28px;max-width:0">
+          <div style="font-size:13px;font-weight:600;color:var(--text)">${esc(permRotulo(m, g.nome))}</div>
+          <div style="font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${esc(m.desc)}">${esc(m.desc)}</div>
+        </td>
+        ${perfis.map(p => `<td style="text-align:center;padding:6px"><input type="checkbox" style="width:18px;height:18px;cursor:pointer;accent-color:var(--orange)" ${(PERFIL_PADRAO[p]||[]).includes(m.id)?'checked':''} onchange="salvarPermPerfil('${p}','${m.id}',this.checked)"/></td>`).join('')}
+      </tr>`;
+    });
+  });
+  const todos = grupos.every(g => _permAbertos.has(g.nome));
   el.innerHTML = `
-    <div style="overflow-x:auto">
-      <table style="width:100%;border-collapse:collapse;min-width:600px">
-        <thead>
-          <tr style="border-bottom:2px solid var(--border)">
-            <th style="text-align:left;padding:10px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--muted);min-width:160px">Perfil</th>
-            ${MODULOS.map(m=>`<th style="text-align:center;padding:10px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--muted)">${m.label}<br><span style="font-weight:400;font-size:10px">${m.desc}</span></th>`).join('')}
-            <th style="padding:10px;width:60px"></th>
-          </tr>
-        </thead>
-        <tbody>
-          ${perfis.map(p => {
-            const isAdmin = p==='admin';
-            const count = contagem[p]||0;
-            return `<tr style="border-bottom:1px solid #F1F5F9" onmouseenter="this.style.background='#F8FAFC'" onmouseleave="this.style.background=''">
-              <td style="padding:10px">
-                <div style="font-size:13px;font-weight:700;color:var(--blue)">${PERFIL_LABEL[p]||p}</div>
-                <div style="font-size:11px;color:var(--muted)">${count} colaborador(es)</div>
-              </td>
-              ${MODULOS.map(m=>{
-                // (14/10/2026) Perfil Administrador é MASTER: o servidor já dá todos os módulos
-                // (perfil_modulos_padrao) — a tela mostra tudo marcado e travado, sem precisar marcar um a um
-                const checked=isAdmin||(PERFIL_PADRAO[p]||[]).includes(m.id);
-                const bloqueado=isAdmin;
-                return `<td style="padding:10px;text-align:center"><input type="checkbox" style="width:18px;height:18px;cursor:${bloqueado?'not-allowed':'pointer'};accent-color:var(--orange)" ${checked?'checked':''} ${bloqueado?'disabled title="Master — acesso total a todos os módulos"':''} onchange="salvarPermPerfil('${p}','${m.id}',this.checked)"/></td>`;
-              }).join('')}
-              <td style="padding:8px;text-align:center">${!isAdmin?`<button class="btn-sm" style="color:var(--red);border-color:var(--red)" onclick="excluirPerfil('${p}','${PERFIL_LABEL[p]||p}',${count})">✕</button>`:'<span style="font-size:12px">🔒</span>'}</td>
-            </tr>`;
-          }).join('')}
-        </tbody>
+    <div style="display:flex;gap:8px;margin-bottom:10px;align-items:center">
+      <input id="perm-busca" placeholder="Buscar módulo" value="${esc(_permQ)}" oninput="permBuscar(this.value)" style="flex:1;max-width:340px;padding:7px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:13px"/>
+      <button class="btn btn-secondary" style="font-size:12px;padding:6px 12px" onclick="permAbrirTodos(${!todos})">${todos?'Fechar todos':'Abrir todos'}</button>
+    </div>
+    <div style="overflow-x:auto;border:1px solid var(--border);border-radius:10px">
+      <table style="width:100%;border-collapse:collapse;table-layout:fixed;min-width:${300+perfis.length*84}px">
+        <thead><tr>
+          <th style="${th};text-align:left;width:auto;min-width:300px;color:var(--muted);font-size:11px;text-transform:uppercase">Módulo</th>
+          ${perfis.map(p => `<th style="${th}">${esc(PERFIL_LABEL[p]||p)}<div style="font-weight:400;font-size:10px;color:var(--muted)">${contagem[p]||0} pessoa(s) <span class="admin-only" title="Excluir perfil" style="cursor:pointer;color:var(--red)" onclick="excluirPerfil('${p}','${esc(PERFIL_LABEL[p]||p)}',${contagem[p]||0})">✕</span></div></th>`).join('')}
+        </tr></thead>
+        <tbody>${corpo || '<tr><td colspan="'+(perfis.length+1)+'" style="padding:16px;color:var(--muted);font-size:13px">Nenhum módulo encontrado.</td></tr>'}</tbody>
       </table>
     </div>
-    <div style="margin-top:12px;font-size:11px;color:var(--muted)">🔒 Perfil Administrador é <b>Master</b>: acesso a todos os módulos, inclusive os criados no futuro — não se marca módulo a módulo · Alterações nos demais perfis aplicam-se a todos do perfil.</div>`;
+    <div style="margin-top:10px;font-size:11px;color:var(--muted)">🔒 Perfil Administrador é <b>Master</b>: acesso a todos os módulos, inclusive os criados no futuro — por isso não aparece na matriz · Clique no contador (ex.: 2/4) para marcar ou desmarcar o grupo inteiro naquele perfil · Alterações aplicam-se a todos do perfil.</div>`;
+}
+function permToggleGrupo(gi) { const g = permGrupos()[gi]; if (!g) return; _permAbertos.has(g.nome) ? _permAbertos.delete(g.nome) : _permAbertos.add(g.nome); renderPermPerfis(); }
+function permAbrirTodos(abrir) { _permAbertos = new Set(abrir ? permGrupos().map(g => g.nome) : []); renderPermPerfis(); }
+function permBuscar(v) { _permQ = v; renderPermPerfis(); const i = document.getElementById('perm-busca'); if (i) { i.focus(); i.setSelectionRange(v.length, v.length); } }
+async function permGrupoPerfil(gi, perfil) {
+  const g = permGrupos()[gi]; if (!g) return;
+  const atual = PERFIL_PADRAO[perfil] || [], ids = g.mods.map(m => m.id), cheio = ids.every(i => atual.includes(i));
+  if (!confirm(`${cheio?'Desmarcar':'Marcar'} os ${ids.length} módulo(s) de "${g.nome}" para o perfil ${PERFIL_LABEL[perfil]||perfil}?`)) return;
+  const novo = cheio ? atual.filter(i => !ids.includes(i)) : [...new Set([...atual, ...ids])];
+  try {
+    await apiFetch('/permissoes/perfis/'+perfil,{method:'PUT',body:JSON.stringify({modulos:novo})});
+    PERFIL_PADRAO[perfil] = novo; _permAbertos.add(g.nome);
+    toast(`${PERFIL_LABEL[perfil]||perfil} — ${g.nome}: ${cheio?'❌ tudo desmarcado':'✅ tudo marcado'}`,'success');
+  } catch(e) { toast('Erro: '+e.message,'error'); }
+  renderPermPerfis();
 }
 
 async function salvarPermPerfil(perfil, modulo, permitido) {
@@ -2075,6 +2108,7 @@ async function salvarPermPerfil(perfil, modulo, permitido) {
   try {
     await apiFetch('/permissoes/perfis/'+perfil,{method:'PUT',body:JSON.stringify({modulos:PERFIL_PADRAO[perfil]||[]})});
     toast(`${PERFIL_LABEL[perfil]||perfil} — ${permitido?'✅':'❌'} ${MODULOS.find(m=>m.id===modulo)?.label}`,'success');
+    renderPermPerfis();   // atualiza o contador do grupo
   } catch(e) { toast('Erro: '+e.message,'error'); renderPermPerfis(); }
 }
 
@@ -2135,139 +2169,118 @@ function filtrarSelectExcecao() {
   renderCardsColaboradores();
 }
 
+/* (15/11/2026) Exceções individuais reorganizadas: lista de pessoas à esquerda (busca + nº de exceções),
+   ficha à direita com os mesmos grupos da matriz. Marcar igual ao padrão do perfil desfaz a exceção. */
+let _excSel = null, _excQ = '', _excSo = false, _excAbertos = new Set(), _excPerms = {}, _excCont = {};
+async function excCarregarContagem() {
+  try {
+    const todos = await apiFetch('/permissoes/todos');
+    _excCont = {};
+    (todos||[]).forEach(u => { if (u.perfil === 'admin') return; const pad = PERFIL_PADRAO[u.perfil] || [];
+      _excCont[u.id] = MODULOS.filter(m => !!u.permissoes[m.id] !== pad.includes(m.id)).length; });
+  } catch(e) { /* a contagem é só um indicador */ }
+}
 function renderCardsColaboradores() {
-  const perfil = document.getElementById('perm-filter-perfil')?.value||'';
-  let lista = (_usuarios||[]).filter(u=>u.ativo);
-  if (perfil) lista = lista.filter(u=>u.perfil===perfil);
-
   const el = document.getElementById('perm-excecoes-content');
   if (!el) return;
-
-  if (!lista.length) {
-    el.innerHTML = '<div style="color:var(--muted);font-size:13px;padding:20px 0">Nenhum colaborador encontrado.</div>';
-    return;
-  }
-
   el.innerHTML = `
-    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px;margin-bottom:16px">
-      ${lista.map(u => `
-        <div onclick="abrirPermColaborador('${u.id}','${u.perfil}')"
-          style="padding:14px;border:1.5px solid var(--border);border-radius:10px;
-          cursor:pointer;transition:.15s;background:#fff;text-align:center"
-          onmouseenter="this.style.borderColor='var(--orange)';this.style.background='#FFF7ED'"
-          onmouseleave="this.style.borderColor='var(--border)';this.style.background='#fff'">
-          <div style="width:38px;height:38px;border-radius:50%;background:var(--blue);
-            display:flex;align-items:center;justify-content:center;
-            font-size:16px;font-weight:800;color:#fff;margin:0 auto 8px">
-            ${esc((u.nome||u.login).charAt(0).toUpperCase())}
-          </div>
-          <div style="font-size:13px;font-weight:600;color:var(--text)">${esc(u.nome||u.login)}</div>
-          <div style="font-size:11px;color:var(--muted);margin-top:2px">${PERFIL_LABEL[u.perfil]||u.perfil}</div>
-        </div>`).join('')}
-    </div>
-    <div id="perm-detail-content"></div>`;
+    <div style="display:grid;grid-template-columns:260px minmax(0,1fr);gap:14px;align-items:start">
+      <div style="border:1px solid var(--border);border-radius:10px;overflow:hidden;background:#fff">
+        <div style="padding:8px"><input id="exc-busca" placeholder="Buscar pessoa" value="${esc(_excQ)}" oninput="_excQ=this.value;excLista()" style="width:100%;padding:7px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:13px"/></div>
+        <div id="exc-lista" style="max-height:62vh;overflow:auto"></div>
+      </div>
+      <div id="perm-detail-content"><div style="color:var(--muted);font-size:13px;padding:24px 4px">Escolha uma pessoa na lista para ver e ajustar as permissões dela.</div></div>
+    </div>`;
+  excLista();
+  excCarregarContagem().then(excLista);
+  if (_excSel) { const u = (_usuarios||[]).find(x => x.id === _excSel); if (u) abrirPermColaborador(u.id, u.perfil); }
 }
-
+function excLista() {
+  const el = document.getElementById('exc-lista'); if (!el) return;
+  const perfil = document.getElementById('perm-filter-perfil')?.value||'', q = _permNorm(_excQ);
+  const lista = (_usuarios||[]).filter(u => u.ativo && (!perfil || u.perfil === perfil) && (!q || _permNorm((u.nome||'')+' '+u.login).includes(q)))
+    .sort((a,b) => (a.nome||a.login).localeCompare(b.nome||b.login));
+  el.innerHTML = lista.length ? lista.map(u => { const n = _excCont[u.id] || 0, on = u.id === _excSel;
+    return `<div onclick="abrirPermColaborador('${u.id}','${u.perfil}')" style="padding:8px 12px;border-top:1px solid #F1F5F9;cursor:pointer;display:flex;justify-content:space-between;align-items:center;gap:6px;${on?'background:#FFF7ED;box-shadow:inset 3px 0 0 var(--orange)':''}">
+      <div style="min-width:0"><div style="font-size:13px;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(u.nome||u.login)}</div>
+      <div style="font-size:11px;color:var(--muted)">${esc(PERFIL_LABEL[u.perfil]||u.perfil)}</div></div>
+      ${n?`<span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px;background:#FFF7ED;border:1px solid #FDBA74;color:#9A3412;white-space:nowrap">${n} exc.</span>`:''}
+    </div>`; }).join('') : '<div style="color:var(--muted);font-size:13px;padding:14px">Ninguém encontrado.</div>';
+}
 async function abrirPermColaborador(uid, perfil) {
+  if (_excSel !== uid) { _excAbertos = new Set(); _excSo = false; }
+  _excSel = uid; excLista();
   const el = document.getElementById('perm-detail-content');
-  const user = (_usuarios||[]).find(u=>u.id===uid);
-  el.innerHTML = `
-    <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;padding-top:16px;border-top:2px solid var(--border)">
-      <div style="width:38px;height:38px;border-radius:50%;background:var(--blue);display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:800;color:#fff">
-        ${esc((user?.nome||user?.login||'?').charAt(0).toUpperCase())}
-      </div>
-      <div>
-        <div style="font-size:15px;font-weight:700;color:var(--blue)">${esc(user?.nome||user?.login||'')}</div>
-        <div style="font-size:12px;color:var(--muted)">Perfil: ${PERFIL_LABEL[perfil]||perfil}</div>
-      </div>
-      <button class="btn btn-secondary" style="margin-left:auto;font-size:12px;padding:5px 10px" onclick="document.getElementById('perm-detail-content').innerHTML=''">✕ Fechar</button>
-    </div>
-    <div class="loading"><span class="spin"></span></div>`;
-
-  try {
-    const perms = await apiFetch('/permissoes/usuario/'+uid);
-    const padrao = PERFIL_PADRAO[perfil]||[];
-    document.getElementById('perm-detail-content').innerHTML = `
-      <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;padding-top:16px;border-top:2px solid var(--border)">
-        <div style="width:38px;height:38px;border-radius:50%;background:var(--blue);display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:800;color:#fff">
-          ${esc((user?.nome||'?').charAt(0).toUpperCase())}
-        </div>
-        <div>
-          <div style="font-size:15px;font-weight:700;color:var(--blue)">${esc(user?.nome||user?.login||'')}</div>
-          <div style="font-size:12px;color:var(--muted)">Perfil: ${PERFIL_LABEL[perfil]||perfil}</div>
-        </div>
-        <button class="btn btn-secondary" style="margin-left:auto;font-size:12px;padding:5px 10px" onclick="document.getElementById('perm-detail-content').innerHTML=''">✕ Fechar</button>
-      </div>
-      ${perfil==='admin'?`<div style="margin-bottom:12px;padding:10px 14px;border-radius:8px;background:#FFF7ED;border:1.5px solid var(--orange);font-size:12px;color:#9A3412"><b>★ Master</b> — o perfil Administrador tem acesso a todos os módulos, inclusive os que forem criados daqui para a frente. Não há o que marcar aqui; para restringir alguém, troque o perfil do colaborador.</div>`:''}
-      <div style="display:flex;flex-direction:column;gap:8px;max-width:560px">
-        ${MODULOS.map(m=>{
-          const master=perfil==='admin';
-          const temPerm=master||(perms[m.id]??padrao.includes(m.id));
-          const ePadrao=master||padrao.includes(m.id);
-          const ehExcecao=!master&&perms[m.id]!==undefined&&perms[m.id]!==ePadrao;
-          const bloqueado=master;
-          return `<div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;
-            border:1.5px solid ${ehExcecao?'var(--orange)':temPerm?'#BBF7D0':'var(--border)'};
-            border-radius:8px;background:${temPerm?'#F0FDF4':'#fff'}">
-            <div>
-              <div style="font-size:13px;font-weight:600;color:var(--text)">${m.label}</div>
-              <div style="font-size:11px;color:var(--muted)">${m.desc}
-                <span style="color:${ehExcecao?'var(--orange)':'var(--muted)'}">
-                  ${ehExcecao?'✎ exceção':(perfil==='admin'?'★ master':'↑ herdado')}
-                </span>
-              </div>
-            </div>
-            <div style="display:flex;align-items:center;gap:8px">
-              ${ehExcecao?`<button style="font-size:11px;color:var(--muted);background:none;border:1px solid var(--border);border-radius:4px;padding:2px 6px;cursor:pointer" onclick="resetarPermissao('${uid}','${m.id}','${perfil}')">↺</button>`:''}
-              <label style="display:flex;align-items:center;gap:6px;cursor:${bloqueado?'not-allowed':'pointer'}">
-                <span style="font-size:12px;color:${temPerm?'var(--green)':'var(--muted)'}">${temPerm?'Liberado':'Bloqueado'}</span>
-                <input type="checkbox" style="width:20px;height:20px;accent-color:var(--orange);cursor:${bloqueado?'not-allowed':'pointer'}"
-                  ${temPerm?'checked':''} ${bloqueado?'disabled':''}
-                  onchange="salvarPermissaoCard('${uid}','${m.id}',this.checked,'${perfil}')"/>
-              </label>
-            </div>
-          </div>`;
-        }).join('')}
-      </div>
-      ${perfil==='admin'?'':`<button class="btn btn-secondary" style="margin-top:14px;font-size:12px" onclick="resetarTodasPermissoes('${uid}','${perfil}')">
-        ↺ Resetar todas para padrão do perfil
-      </button>`}`;
-  } catch(e) {
-    document.getElementById('perm-detail-content').innerHTML += `<div style="color:var(--red)">Erro: ${esc(e.message)}</div>`;
-  }
+  if (!el.dataset.uid || el.dataset.uid !== uid) el.innerHTML = '<div class="loading"><span class="spin"></span></div>';
+  try { _excPerms = await apiFetch('/permissoes/usuario/'+uid); }
+  catch(e) { el.innerHTML = `<div style="color:var(--red)">Erro: ${esc(e.message)}</div>`; return; }
+  el.dataset.uid = uid;
+  excFicha(uid, perfil);
 }
+function excFicha(uid, perfil) {
+  const el = document.getElementById('perm-detail-content');
+  const user = (_usuarios||[]).find(u=>u.id===uid), master = perfil === 'admin';
+  const padrao = PERFIL_PADRAO[perfil] || [];
+  const tem = m => master || !!(_excPerms[m.id] ?? padrao.includes(m.id));
+  const exc = m => !master && tem(m) !== padrao.includes(m.id);
+  const nExc = MODULOS.filter(exc).length;
+  _excCont[uid] = nExc;
+  let corpo = '';
+  permGrupos().forEach((g, gi) => {
+    const mods = g.mods.filter(m => !_excSo || exc(m));
+    if (!mods.length) return;
+    const lib = g.mods.filter(tem).length, ex = g.mods.filter(exc).length, aberto = _excAbertos.has(g.nome) || _excSo || ex > 0;
+    corpo += `<div onclick="excToggleGrupo('${gi}','${uid}','${perfil}')" style="display:flex;justify-content:space-between;align-items:center;padding:9px 12px;background:#F1F5F9;border-top:1px solid var(--border);cursor:pointer">
+      <div style="font-size:13px;font-weight:700;color:var(--blue)">${aberto?'▾':'▸'} ${esc(g.nome)}</div>
+      <div style="font-size:11px;color:var(--muted)">${lib}/${g.mods.length} liberado(s)${ex?` <span style="font-weight:700;padding:1px 7px;border-radius:10px;background:#FFF7ED;border:1px solid #FDBA74;color:#9A3412">${ex} exceção(ões)</span>`:''}</div>
+    </div>`;
+    if (aberto) mods.forEach(m => { const on = tem(m), x = exc(m);
+      corpo += `<div style="display:flex;align-items:center;gap:10px;padding:7px 12px 7px 30px;border-top:1px solid #F1F5F9;${x?'background:#FFFBF5':''}">
+        <div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:600;color:var(--text)">${esc(permRotulo(m, g.nome))}</div>
+          <div style="font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${esc(m.desc)}">${esc(m.desc)}</div></div>
+        ${master ? '<span style="font-size:11px;color:var(--muted)">★ master</span>' : x
+          ? `<span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px;background:#FFF7ED;border:1px solid #FDBA74;color:#9A3412">exceção</span><button title="Voltar ao padrão do perfil" style="font-size:12px;color:var(--muted);background:#fff;border:1px solid var(--border);border-radius:4px;padding:1px 7px;cursor:pointer" onclick="resetarPermissao('${uid}','${m.id}','${perfil}')">↺</button>`
+          : '<span style="font-size:11px;color:var(--muted)">padrão do perfil</span>'}
+        <span style="font-size:12px;width:64px;text-align:right;color:${on?'var(--green)':'var(--muted)'}">${on?'Liberado':'Bloqueado'}</span>
+        <input type="checkbox" style="width:19px;height:19px;accent-color:var(--orange);cursor:${master?'not-allowed':'pointer'}" ${on?'checked':''} ${master?'disabled':''} onchange="salvarPermissaoCard('${uid}','${m.id}',this.checked,'${perfil}')"/>
+      </div>`; });
+  });
+  el.innerHTML = `
+    <div style="border:1px solid var(--border);border-radius:10px;overflow:hidden;background:#fff">
+      <div style="display:flex;align-items:center;gap:10px;padding:12px">
+        <div style="width:38px;height:38px;border-radius:50%;background:var(--blue);display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:800;color:#fff;flex:none">${esc((user?.nome||user?.login||'?').charAt(0).toUpperCase())}</div>
+        <div style="flex:1;min-width:0"><div style="font-size:15px;font-weight:700;color:var(--blue)">${esc(user?.nome||user?.login||'')}</div>
+          <div style="font-size:12px;color:var(--muted)">Perfil ${esc(PERFIL_LABEL[perfil]||perfil)} · ${master?'Master':nExc?nExc+' exceção(ões)':'segue o padrão do perfil'}</div></div>
+        ${master?'':`<label style="font-size:12px;color:var(--muted);display:flex;gap:5px;align-items:center;cursor:pointer"><input type="checkbox" ${_excSo?'checked':''} onchange="_excSo=this.checked;excFicha('${uid}','${perfil}')" style="accent-color:var(--orange)"/> só exceções</label>
+        <button class="btn btn-secondary" style="font-size:12px;padding:5px 10px" ${nExc?'':'disabled'} onclick="resetarTodasPermissoes('${uid}','${perfil}')">↺ Voltar tudo ao padrão</button>`}
+      </div>
+      ${master?`<div style="margin:0 12px 12px;padding:10px 14px;border-radius:8px;background:#FFF7ED;border:1.5px solid var(--orange);font-size:12px;color:#9A3412"><b>★ Master</b> — o perfil Administrador tem acesso a todos os módulos, inclusive os que forem criados daqui para a frente. Para restringir alguém, troque o perfil do colaborador.</div>`:''}
+      ${corpo || '<div style="padding:16px;font-size:13px;color:var(--muted);border-top:1px solid var(--border)">Sem exceções: esta pessoa segue o padrão do perfil.</div>'}
+    </div>`;
+  excLista();
+}
+function excToggleGrupo(gi, uid, perfil) { const g = permGrupos()[gi]; if (!g) return; _excAbertos.has(g.nome) ? _excAbertos.delete(g.nome) : _excAbertos.add(g.nome); excFicha(uid, perfil); }
 
 async function salvarPermissaoCard(usuarioId, modulo, permitido, perfil) {
+  // valor igual ao padrão do perfil = o servidor apaga a exceção (não fica registro preso)
   try {
     await apiFetch('/permissoes/usuario/'+usuarioId,{method:'POST',body:JSON.stringify({[modulo]:permitido})});
     toast(`${permitido?'✅ Liberado':'❌ Bloqueado'} — ${MODULOS.find(m=>m.id===modulo)?.label||modulo}`,'success');
-    await abrirPermColaborador(usuarioId, perfil);
   } catch(e) { toast('Erro: '+e.message,'error'); }
+  await abrirPermColaborador(usuarioId, perfil);
 }
-
-async function carregarPermExcecao() {}
-
-async function salvarPermissao(usuarioId, modulo, permitido) {
-  try {
-    await apiFetch('/permissoes/usuario/'+usuarioId,{method:'POST',body:JSON.stringify({[modulo]:permitido})});
-    toast(`${permitido?'✅ Liberado':'❌ Bloqueado'} — ${MODULOS.find(m=>m.id===modulo)?.label||modulo}`,'success');
-    await carregarPermExcecao();
-  } catch(e) { toast('Erro: '+e.message,'error'); }
-}
-
 async function resetarPermissao(usuarioId, modulo, perfil) {
-  await salvarPermissao(usuarioId, modulo, (PERFIL_PADRAO[perfil]||[]).includes(modulo));
+  await salvarPermissaoCard(usuarioId, modulo, (PERFIL_PADRAO[perfil]||[]).includes(modulo), perfil);
 }
-
 async function resetarTodasPermissoes(usuarioId, perfil) {
-  if (!confirm('Resetar todas para o padrão do perfil?')) return;
+  if (!confirm('Voltar todas as permissões desta pessoa para o padrão do perfil?')) return;
   const payload={};
   MODULOS.forEach(m=>{payload[m.id]=(PERFIL_PADRAO[perfil]||[]).includes(m.id);});
   try {
     await apiFetch('/permissoes/usuario/'+usuarioId,{method:'POST',body:JSON.stringify(payload)});
-    toast('Permissões resetadas','success');
-    await carregarPermExcecao();
+    toast('Permissões de volta ao padrão do perfil','success');
   } catch(e) { toast('Erro: '+e.message,'error'); }
+  await abrirPermColaborador(usuarioId, perfil);
 }
 
 /* ══════════════════════════════════════════════

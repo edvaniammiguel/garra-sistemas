@@ -5,39 +5,41 @@ from .db import ajard_query
 
 # ═══════════════════════════════════════════════════════════════════════════
 
+# (15/11/2026) "grupo" organiza a tela de Permissões (matriz por perfil e exceções). Módulo novo: informe o grupo;
+# sem grupo ele aparece em "Outros". A ordem dos grupos na tela é a de GRUPOS_ORDEM (admin-app.html).
 MODULOS_DISPONIVEIS = [
-    {"id": "admin_master",        "label": "Painel de Gestão",      "desc": "Admin: Ordens de Serviço, Controle Mensal, Agenda e Cadastros (não é o perfil Master)"},
-    {"id": "jardinagem_desktop",  "label": "Jardinagem Desktop",    "desc": "Relatórios e fotos"},
-    {"id": "jardinagem_mobile",   "label": "Jardinagem Mobile",     "desc": "Campo — fotos e KM"},
-    {"id": "operacional_mobile",  "label": "Operacional Mobile",    "desc": "OS e horímetro"},
-    {"id": "checklist",           "label": "Checklist",             "desc": "Checklist de máquinas"},
-    {"id": "checklist_logistica", "label": "Logística (Checklist)", "desc": "Aba de carros de apoio dentro do Checklist"},
-    {"id": "checklist_gestao",    "label": "Gestão do Checklist",   "desc": "Vê e trata os envios de todos os operadores (não só os próprios)"},
-    {"id": "manutencao",          "label": "Manutenção Desktop",    "desc": "Módulo completo — frota, OTs, materiais (gestão)"},
-    {"id": "pedir_ot",            "label": "Manutenção — Pedir OT", "desc": "Solicitar OT pelo mobile e acompanhar as próprias (operadores e mecânicos)"},
+    {"id": "admin_master",        "grupo": "Gestão", "label": "Painel de Gestão",      "desc": "Admin: Ordens de Serviço, Controle Mensal, Agenda e Cadastros (não é o perfil Master)"},
+    {"id": "jardinagem_desktop",  "grupo": "Jardinagem", "label": "Jardinagem Desktop",    "desc": "Relatórios e fotos"},
+    {"id": "jardinagem_mobile",   "grupo": "Jardinagem", "label": "Jardinagem Mobile",     "desc": "Campo — fotos e KM"},
+    {"id": "operacional_mobile",  "grupo": "Operação em campo", "label": "Operacional Mobile",    "desc": "OS e horímetro"},
+    {"id": "checklist",           "grupo": "Operação em campo", "label": "Checklist",             "desc": "Checklist de máquinas"},
+    {"id": "checklist_logistica", "grupo": "Operação em campo", "label": "Logística (Checklist)", "desc": "Aba de carros de apoio dentro do Checklist"},
+    {"id": "checklist_gestao",    "grupo": "Operação em campo", "label": "Gestão do Checklist",   "desc": "Vê e trata os envios de todos os operadores (não só os próprios)"},
+    {"id": "manutencao",          "grupo": "Manutenção", "label": "Manutenção Desktop",    "desc": "Módulo completo — frota, OTs, materiais (gestão)"},
+    {"id": "pedir_ot",            "grupo": "Manutenção", "label": "Manutenção — Pedir OT", "desc": "Solicitar OT pelo mobile e acompanhar as próprias (operadores e mecânicos)"},
     # (14/10/2026) Separa quem só PEDE (operador) de quem EXECUTA (mecânico): a aba
     # 🔧 OTs do app e o apontamento em OT de outros exigem este módulo.
-    {"id": "ot_executar",         "label": "Manutenção — Executar OT", "desc": "Vê todas as OTs em aberto no app e registra execução em qualquer uma (mecânicos)"},
-    {"id": "abastecimento",       "label": "Abastecimento (mobile)", "desc": "Registrar abastecimento com fotos — leitura alimenta FMD/preventivas"},
-    {"id": "abastecimento_notas", "label": "Notas de Abastecimento", "desc": "Conferência financeira das notinhas (foto, valores, lançado na MAIS) — sem acesso à Manutenção"},
-    {"id": "manutencao_notas",    "label": "Notas de Manutenção", "desc": "Conferência financeira das notinhas das OTs (foto, valor digitado, lançado na MAIS) — sem acesso à Manutenção"},
+    {"id": "ot_executar",         "grupo": "Manutenção", "label": "Manutenção — Executar OT", "desc": "Vê todas as OTs em aberto no app e registra execução em qualquer uma (mecânicos)"},
+    {"id": "abastecimento",       "grupo": "Operação em campo", "label": "Abastecimento (mobile)", "desc": "Registrar abastecimento com fotos — leitura alimenta FMD/preventivas"},
+    {"id": "abastecimento_notas", "grupo": "Manutenção", "label": "Notas de Abastecimento", "desc": "Conferência financeira das notinhas (foto, valores, lançado na MAIS) — sem acesso à Manutenção"},
+    {"id": "manutencao_notas",    "grupo": "Manutenção", "label": "Notas de Manutenção", "desc": "Conferência financeira das notinhas das OTs (foto, valor digitado, lançado na MAIS) — sem acesso à Manutenção"},
     # (13/10/2026) Compras estava só na lista do front, que é SOBRESCRITA por esta
     # ao abrir Permissões — os 4 módulos sumiam do painel e uma exceção dada a um
     # operador não tinha onde ser revogada. Esta lista é a fonte da verdade.
-    {"id": "compras_solicitar", "label": "Compras — Solicitar",   "desc": "Criar cotações e OCs, enviar e receber"},
-    {"id": "compras_aprovar",   "label": "Compras — Aprovar",     "desc": "Aprovar/rejeitar OCs (limitado pela alçada)"},
-    {"id": "compras_alcadas",   "label": "Compras — Alçadas",     "desc": "Configurar alçadas, setores e condições (gestão)"},
-    {"id": "compras_ver_todas", "label": "Compras — Visão geral", "desc": "Vê todas as OCs e confere recebimentos/devoluções (financeiro, recebedor) — sem aprovar"},
+    {"id": "compras_solicitar", "grupo": "Compras", "label": "Compras — Solicitar",   "desc": "Criar cotações e OCs, enviar e receber"},
+    {"id": "compras_aprovar",   "grupo": "Compras", "label": "Compras — Aprovar",     "desc": "Aprovar/rejeitar OCs (limitado pela alçada)"},
+    {"id": "compras_alcadas",   "grupo": "Compras", "label": "Compras — Alçadas",     "desc": "Configurar alçadas, setores e condições (gestão)"},
+    {"id": "compras_ver_todas", "grupo": "Compras", "label": "Compras — Visão geral", "desc": "Vê todas as OCs e confere recebimentos/devoluções (financeiro, recebedor) — sem aprovar"},
     # (26/10/2026) Atendimento WhatsApp (substitui o BotConversa). Quem atende qual setor fica na tela de
     # configuração do próprio módulo; aqui é só a porta de entrada.
-    {"id": "atendimento",        "label": "Atendimento WhatsApp",           "desc": "Inbox do número interno — responde os setores em que está cadastrado (app e desktop)"},
-    {"id": "atendimento_gestao", "label": "Atendimento WhatsApp — Gerência", "desc": "Vê e atende todos os setores, configura menu e textos, libera acesso entre setores, conexão"},
+    {"id": "atendimento",        "grupo": "Atendimento WhatsApp", "label": "Atendimento WhatsApp",           "desc": "Inbox do número interno — responde os setores em que está cadastrado (app e desktop)"},
+    {"id": "atendimento_gestao", "grupo": "Atendimento WhatsApp", "label": "Atendimento WhatsApp — Gerência", "desc": "Vê e atende todos os setores, configura menu e textos, libera acesso entre setores, conexão"},
     # (09/11/2026) Mural: publicar cards/avisos (com imagem) e ver quem confirmou leitura. Antes era só o
     # perfil admin; agora é módulo — ligue para Gestor na matriz ou para uma pessoa nas Exceções.
-    {"id": "mural_publicar",     "label": "Mural — Publicar avisos",        "desc": "Publica, edita e remove avisos do Mural (com imagem) e vê quem confirmou leitura — item Mural no Admin"},
+    {"id": "mural_publicar",     "grupo": "Gestão", "label": "Mural — Publicar avisos",        "desc": "Publica, edita e remove avisos do Mural (com imagem) e vê quem confirmou leitura — item Mural no Admin"},
     # (15/11/2026) RH: cadastro de colaboradores, função/HH, NRs e treinamentos, logins das plataformas EAD.
-    {"id": "rh",                 "label": "RH — Completo",                  "desc": "Fichas dos colaboradores (CPF, função e custo da hora), NRs e treinamentos, logins/senhas das plataformas EAD"},
-    {"id": "rh_nr",              "label": "RH — Ver NRs",                   "desc": "Só a situação das NRs de cada colaborador e o painel geral (sem CPF, custo da hora ou senhas)"},
+    {"id": "rh",                 "grupo": "RH", "label": "RH — Completo",                  "desc": "Fichas dos colaboradores (CPF, função e custo da hora), NRs e treinamentos, logins/senhas das plataformas EAD"},
+    {"id": "rh_nr",              "grupo": "RH", "label": "RH — Ver NRs",                   "desc": "Só a situação das NRs de cada colaborador e o painel geral (sem CPF, custo da hora ou senhas)"},
 ]
 
 PERFIL_MODULOS_PADRAO = {

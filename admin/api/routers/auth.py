@@ -608,7 +608,16 @@ async def get_permissoes_usuario(usuario_id: str, payload=Depends(verificar_toke
 async def salvar_permissoes_usuario(usuario_id: str, request: Request, _auth=Depends(verificar_admin)):
     """Salva permissões de um colaborador. Body: {modulo: bool, ...}"""
     d = await request.json()
+    # (15/11/2026) Valor igual ao padrão do perfil NÃO é exceção: apaga o registro em vez de gravar.
+    # Antes "voltar ao padrão" gravava o valor do dia e a pessoa ficava presa nele — mudar o perfil
+    # na matriz depois não a alcançava mais.
+    u = await ajard_query("SELECT perfil FROM public.usuarios_garra WHERE id=%s", (usuario_id,), fetch="one")
+    padrao = set(await perfil_modulos_padrao(u["perfil"])) if u else None
     for modulo, permitido in d.items():
+        if padrao is not None and bool(permitido) == (modulo in padrao):
+            await ajard_query("DELETE FROM public.permissoes_colaborador WHERE usuario_id=%s AND modulo=%s",
+                              (usuario_id, modulo), fetch="none")
+            continue
         await ajard_query(
             """INSERT INTO public.permissoes_colaborador (usuario_id, modulo, permitido)
                VALUES (%s, %s, %s)
