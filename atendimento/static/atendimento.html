@@ -695,7 +695,7 @@ async function pintarConexao(){
   try {
     const c = await api('/whatsapp/api/conexao');
     el.className = 'con ' + (c.estado === 'open' ? 'ok' : c.simulacao ? 'sim' : 'mal');
-    el.textContent = c.estado === 'open' ? '● WhatsApp conectado' : c.simulacao ? '● Modo simulação' : '● WhatsApp desconectado';
+    el.textContent = c.estado === 'open' ? '● WhatsApp conectado' : c.simulacao ? '● Modo simulação' : c.estado === 'acordando' ? '● WhatsApp: serviço ligando…' : '● WhatsApp desconectado';
     el.onclick = c.estado === 'open' || c.simulacao ? null : () => abrirConfig('conexao');
   } catch(e) { el.className = 'con mal'; el.textContent = '● Sem conexão'; }
 }
@@ -726,17 +726,31 @@ function renderAba(){
 }
 
 let _tCon = null;
+/* (15/11/2026) serviço do WhatsApp adormecido (plano gratuito do Render): a tela avisa, espera e — se a pessoa
+   já clicou em Conectar — pede o QR Code sozinha assim que ele responder. */
+let _conAcordandoDesde = 0, _conQuerConectar = false;
 async function abaConexao(el, silencioso){
   clearTimeout(_tCon);
   if (!silencioso) el.innerHTML = '<div class="panel">Consultando…</div>';
   let c; try { c = await api('/whatsapp/api/conexao'); } catch(e) { el.innerHTML = `<div class="panel">${esc(e.message)}</div>`; return; }
   if (ABA !== 'conexao' || !document.getElementById('cfg').classList.contains('vis')) return;
-  const ok = c.estado === 'open';
+  const ok = c.estado === 'open', acordando = c.estado === 'acordando';
+  if (acordando) { if (!_conAcordandoDesde) _conAcordandoDesde = Date.now(); }
+  else {
+    _conAcordandoDesde = 0;
+    if (_conQuerConectar && !ok && !c.simulacao && !c.qrcode) { _conQuerConectar = false; conectarAuto(); return; }
+    if (ok || c.qrcode) _conQuerConectar = false;
+  }
+  const esperaS = acordando ? Math.round((Date.now() - _conAcordandoDesde) / 1000) : 0;
+  const txtEstado = acordando
+    ? (esperaS < 180 ? '🟡 Ligando o serviço do WhatsApp… (' + esperaS + ' s) — ele adormece depois de um tempo sem uso e leva de 1 a 2 minutos para voltar. Esta tela continua sozinha' + (_conQuerConectar ? ' e mostra o QR Code assim que ele responder.' : '.')
+        : '🔴 O serviço do WhatsApp não respondeu em 3 minutos. Abra o painel do Render › serviço garra-whatsapp e veja se ele está "Live" (aba Logs mostra o motivo). Se estiver parado, use Manual Deploy › Restart.')
+    : esc(c.estado);
   /* (26/10/2026) enquanto não conecta, a tela se atualiza sozinha a cada 4 s — o QR lido vira "Conectado" sem clicar */
   if (!ok && !c.simulacao) _tCon = setTimeout(() => abaConexao(document.getElementById('cfg-corpo'), true), 4000);
   else if (ok && silencioso) { toast('WhatsApp conectado'); pintarConexao(); }
   el.innerHTML = `<div class="dsec">Número do WhatsApp</div><div class="panel">
-    <p><strong>Estado:</strong> ${c.simulacao ? '🟣 Modo simulação (laboratório — nada sai para o WhatsApp)' : ok ? '🟢 Conectado' : '🔴 ' + esc(c.estado)}</p>
+    <p><strong>Estado:</strong> ${c.simulacao ? '🟣 Modo simulação (laboratório — nada sai para o WhatsApp)' : ok ? '🟢 Conectado' : acordando ? txtEstado : '🔴 ' + txtEstado}</p>
     <p class="hint">Instância: ${esc(c.instancia)}. Abra o WhatsApp no celular deste número pelo menos 1 vez a cada 14 dias, senão a sessão cai.</p>
     ${c.simulacao ? '<p class="hint">Para ligar de verdade, preencha EVOLUTION_URL, EVOLUTION_APIKEY e WHATSAPP_WEBHOOK_TOKEN.</p>' : `
     <div class="rodape" style="justify-content:flex-start;margin-top:12px">
@@ -745,7 +759,17 @@ async function abaConexao(el, silencioso){
     <div id="qr-area">${c.qrcode ? `<img class="qr" src="${esc(c.qrcode)}" alt="QR Code"><p class="hint" style="text-align:center">No celular do número: WhatsApp › Aparelhos conectados › Conectar um aparelho.</p>` : ''}</div>`}
   </div><p class="hint" style="margin-top:8px">${esc(c.aviso)}</p>`;
 }
-function conectar(ev){ guard(async () => { const r = await post('/whatsapp/api/conexao/conectar'); toast(r.estado === 'open' ? 'Conectado' : 'Leia o QR Code no celular do número'); await abaConexao(document.getElementById('cfg-corpo')); }, ev); }
+/* serviço voltou e a pessoa já tinha pedido o QR: pede de novo sem passar pelo guard (que pode estar ocupado com o 1º clique) */
+async function conectarAuto(){
+  try { const r = await post('/whatsapp/api/conexao/conectar');
+    if (r.estado === 'acordando') _conQuerConectar = true; else toast(r.estado === 'open' ? 'Conectado' : 'Leia o QR Code no celular do número'); }
+  catch(e) { toast(e.message, 'err'); }
+  abaConexao(document.getElementById('cfg-corpo'), true);
+}
+function conectar(ev){ guard(async () => { const r = await post('/whatsapp/api/conexao/conectar');
+  if (r.estado === 'acordando') { _conQuerConectar = true; toast('Ligando o serviço do WhatsApp — o QR Code aparece sozinho em 1 a 2 minutos'); }
+  else toast(r.estado === 'open' ? 'Conectado' : 'Leia o QR Code no celular do número');
+  await abaConexao(document.getElementById('cfg-corpo'), r.estado === 'acordando'); }, ev); }
 function desconectar(ev){ if (!confirm('Desconectar o WhatsApp do atendimento? O bot para de responder até ler o QR de novo.')) return; guard(async () => { await post('/whatsapp/api/conexao/desconectar'); await abaConexao(document.getElementById('cfg-corpo')); }, ev); }
 
 function abaSetores(el){

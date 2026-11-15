@@ -142,14 +142,21 @@ async def baixar_midia(provider_msg_id):
 
 # ── conexão ────────────────────────────────────────────────────
 async def estado():
-    """'open' | 'connecting' | 'close' | 'simulacao' | 'erro: …'"""
+    """'open' | 'connecting' | 'close' | 'simulacao' | 'acordando' | 'erro: …'
+    (15/11/2026) 'acordando': o serviço da Evolution não respondeu a tempo. No plano gratuito do Render ele
+    adormece após ~15 min sem uso e leva 1–2 min para voltar — a própria consulta já o acorda. Antes isso
+    aparecia como "erro: Read timed out" e o botão Conectar falhava sem explicar."""
     if simulacao():
         return "simulacao"
     try:
         d = await _chamar("GET", f"/instance/connectionState/{INSTANCIA}", timeout=10)
         return ((d or {}).get("instance") or {}).get("state") or (d or {}).get("state") or "close"
     except ErroProvedor as e:
-        return "inexistente" if " 404" in str(e) else f"erro: {e}"
+        if " 404" in str(e):
+            return "inexistente"
+        return "acordando" if any(c in str(e) for c in (" 502", " 503", " 504")) else f"erro: {e}"
+    except (requests.exceptions.Timeout, requests.exceptions.ConnectionError):
+        return "acordando"
     except Exception as e:
         return f"erro: {e}"
 

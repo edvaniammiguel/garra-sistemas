@@ -786,11 +786,20 @@ async def conectar(request: Request, payload=Depends(verificar_token)):
         return {"estado": "simulacao"}
     if not P.WEBHOOK_TOKEN:
         raise HTTPException(status_code=500, detail="Configure WHATSAPP_WEBHOOK_TOKEN no Render antes de conectar")
+    # (15/11/2026) serviço adormecido (Render gratuito): não é erro — a tela espera e conecta sozinha quando ele voltar
+    if await P.estado() == "acordando":
+        return {"estado": "acordando", "qrcode": None}
     try:
         await P.preparar(_url_webhook(request))
         qr = await P.qrcode()
     except P.ErroProvedor as e:
+        if any(c in str(e) for c in (" 502", " 503", " 504")):
+            return {"estado": "acordando", "qrcode": None}
         raise HTTPException(status_code=502, detail=str(e))
+    except Exception as e:
+        if type(e).__name__ in ("Timeout", "ReadTimeout", "ConnectTimeout", "ConnectionError"):
+            return {"estado": "acordando", "qrcode": None}
+        raise
     if qr:
         M.QR_ATUAL.update(base64=qr)
     return {"estado": await P.estado(), "qrcode": qr}
