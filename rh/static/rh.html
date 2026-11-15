@@ -11,7 +11,7 @@
 *{box-sizing:border-box;margin:0;padding:0;font-family:system-ui,-apple-system,"Segoe UI",sans-serif}
 body{background:var(--bg);color:var(--text);font-size:13px}
 header{background:var(--blue);border-bottom:3px solid var(--orange);color:#fff;display:flex;align-items:center;gap:12px;padding:8px 16px}
-header img{height:30px;background:#fff;border-radius:4px;padding:2px 4px}
+header img{height:26px;object-fit:contain;filter:brightness(0) invert(1)}
 header b{font-size:15px}
 header .eu{margin-left:auto;font-size:12px;opacity:.85}
 .topo{display:flex;gap:4px;padding:10px 16px 0}
@@ -75,8 +75,10 @@ table.t td{padding:6px;border-bottom:1px solid #EEF2F7;vertical-align:middle}
 </head>
 <body>
 <header>
-  <img src="/static/icons/logo.png" alt="Garra" onerror="this.style.display='none'">
-  <b>RH · Colaboradores</b>
+  <!-- (15/11/2026) logotipo no padrão do sistema: o mesmo do Admin/Manutenção, em branco sobre o azul -->
+  <img src="/static/icons/logo.png" alt="Garra Terraplenagem" onerror="this.style.display='none';this.nextElementSibling.style.display='inline'">
+  <b style="display:none">GARRA</b>
+  <span style="font-weight:600">Sistemas · RH</span>
   <span class="eu" id="eu"></span>
 </header>
 <div class="topo">
