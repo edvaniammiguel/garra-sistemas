@@ -866,6 +866,8 @@ from routers.notificacoes import router as notificacoes_router  # (24/10/2026) a
 app.include_router(notificacoes_router)
 from routers.whatsapp_atendimento import router as whatsapp_atendimento_router  # (26/10/2026) Atendimento WhatsApp (substitui o BotConversa)
 app.include_router(whatsapp_atendimento_router)
+from routers.rh import router as rh_router  # (15/11/2026) RH: colaboradores, função/HH, NRs, plataformas EAD
+app.include_router(rh_router)
 
 @app.on_event("startup")
 async def criar_tabela_checklist_config():

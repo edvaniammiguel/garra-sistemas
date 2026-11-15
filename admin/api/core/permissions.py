@@ -35,13 +35,16 @@ MODULOS_DISPONIVEIS = [
     # (09/11/2026) Mural: publicar cards/avisos (com imagem) e ver quem confirmou leitura. Antes era só o
     # perfil admin; agora é módulo — ligue para Gestor na matriz ou para uma pessoa nas Exceções.
     {"id": "mural_publicar",     "label": "Mural — Publicar avisos",        "desc": "Publica, edita e remove avisos do Mural (com imagem) e vê quem confirmou leitura — item Mural no Admin"},
+    # (15/11/2026) RH: cadastro de colaboradores, função/HH, NRs e treinamentos, logins das plataformas EAD.
+    {"id": "rh",                 "label": "RH — Completo",                  "desc": "Fichas dos colaboradores (CPF, função e custo da hora), NRs e treinamentos, logins/senhas das plataformas EAD"},
+    {"id": "rh_nr",              "label": "RH — Ver NRs",                   "desc": "Só a situação das NRs de cada colaborador e o painel geral (sem CPF, custo da hora ou senhas)"},
 ]
 
 PERFIL_MODULOS_PADRAO = {
     "admin":     ["admin_master","jardinagem_desktop","jardinagem_mobile","operacional_mobile","checklist","checklist_logistica","abastecimento","abastecimento_notas","manutencao_notas","compras_solicitar","compras_aprovar","compras_alcadas","compras_ver_todas"],
     "gestor":    ["admin_master","jardinagem_desktop","operacional_mobile","checklist_gestao","manutencao","abastecimento","abastecimento_notas","manutencao_notas","compras_solicitar","compras_aprovar","compras_alcadas","compras_ver_todas"],
     "luana":     ["admin_master","jardinagem_desktop","operacional_mobile","abastecimento_notas","manutencao_notas","compras_solicitar","compras_aprovar","compras_alcadas","compras_ver_todas"],
-    "bruna":     ["admin_master","checklist","checklist_gestao","manutencao","pedir_ot","ot_executar","abastecimento","compras_solicitar","compras_aprovar"],
+    "bruna":     ["admin_master","checklist","checklist_gestao","manutencao","pedir_ot","ot_executar","abastecimento","compras_solicitar","compras_aprovar","rh_nr"],
     "operador":  ["operacional_mobile","checklist","abastecimento"],
     "motorista": ["operacional_mobile","checklist","abastecimento"],
     "campo":     ["jardinagem_mobile"],

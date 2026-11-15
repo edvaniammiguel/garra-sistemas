@@ -15,3 +15,4 @@ icalendar>=5.0.0
 reportlab>=4.0
 segno>=1.6
 pywebpush>=2.0
+cryptography>=42.0

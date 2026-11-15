@@ -1,0 +1,625 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RH · Garra Sistemas</title>
+<!-- (15/11/2026) Módulo RH — etapa 1: colaboradores, função/HH, NRs e treinamentos, plataformas EAD -->
+<style>
+:root{--blue:#1A2A5E;--navy:#001F4D;--orange:#E8820C;--bg:#F3F6FB;--line:#D9E1EC;--text:#1E293B;--muted:#64748B;
+  --ok:#15803D;--okbg:#DCFCE7;--warn:#92400E;--warnbg:#FEF3C7;--bad:#B91C1C;--badbg:#FEE2E2;--info:#1E40AF;--infobg:#DBEAFE}
+*{box-sizing:border-box;margin:0;padding:0;font-family:system-ui,-apple-system,"Segoe UI",sans-serif}
+body{background:var(--bg);color:var(--text);font-size:13px}
+header{background:var(--blue);border-bottom:3px solid var(--orange);color:#fff;display:flex;align-items:center;gap:12px;padding:8px 16px}
+header img{height:30px;background:#fff;border-radius:4px;padding:2px 4px}
+header b{font-size:15px}
+header .eu{margin-left:auto;font-size:12px;opacity:.85}
+.topo{display:flex;gap:4px;padding:10px 16px 0}
+.topo button{background:none;border:none;border-bottom:2px solid transparent;padding:8px 14px;font-size:13px;font-weight:600;color:var(--muted);cursor:pointer}
+.topo button.on{color:var(--blue);border-bottom-color:var(--orange)}
+.tela{display:none;padding:12px 16px 24px}.tela.on{display:block}
+.btn{border:1px solid var(--line);background:#fff;color:var(--blue);border-radius:6px;padding:6px 12px;font-size:12px;font-weight:600;cursor:pointer}
+.btn:hover{border-color:var(--blue)}
+.btn.pri{background:var(--orange);border-color:var(--orange);color:#fff}
+.btn.peq{padding:3px 8px;font-size:11px}
+.btn.del{color:var(--bad)}
+input,select,textarea{border:1px solid var(--line);border-radius:6px;padding:6px 8px;font-size:13px;background:#fff;color:var(--text);width:100%}
+textarea{resize:vertical;min-height:54px}
+label.f{display:block;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:3px}
+.grid{display:grid;gap:10px}
+.g2{grid-template-columns:1fr 1fr}.g3{grid-template-columns:repeat(3,1fr)}.g4{grid-template-columns:repeat(4,1fr)}
+.layout{display:grid;grid-template-columns:320px minmax(0,1fr);gap:14px;align-items:start}
+.painel{background:#fff;border:1px solid var(--line);border-radius:10px}
+.lista-top{padding:10px;border-bottom:1px solid var(--line);display:grid;gap:6px}
+.lista{max-height:calc(100vh - 230px);overflow-y:auto}
+.it{padding:8px 12px;border-bottom:1px solid #EEF2F7;cursor:pointer;display:flex;justify-content:space-between;gap:8px;align-items:center}
+.it:hover{background:#F8FAFD}.it.on{background:#EEF3FB;box-shadow:inset 3px 0 0 var(--orange)}
+.it .n{font-weight:600}.it .s{font-size:11px;color:var(--muted)}
+.pill{display:inline-block;border-radius:99px;padding:1px 8px;font-size:10px;font-weight:700;white-space:nowrap}
+.p-valida{background:var(--okbg);color:var(--ok)}.p-vence{background:var(--warnbg);color:var(--warn)}
+.p-vencida,.p-falta{background:var(--badbg);color:var(--bad)}.p-andamento,.p-inscrito{background:var(--infobg);color:var(--info)}
+.p-cinza{background:#F1F5F9;color:#475569}
+.ficha{height:calc(100vh - 150px);min-height:520px;display:flex;flex-direction:column}
+.fic-top{display:flex;gap:12px;align-items:center;padding:12px 14px}
+.avatar{width:42px;height:42px;border-radius:50%;background:#E6EEF9;color:var(--blue);display:flex;align-items:center;justify-content:center;font-weight:700}
+.abas{display:flex;gap:2px;border-bottom:1px solid var(--line);padding:0 10px;overflow-x:auto}
+.abas button{background:none;border:none;border-bottom:2px solid transparent;padding:8px 10px;font-size:12px;font-weight:600;color:var(--muted);cursor:pointer;white-space:nowrap}
+.abas button.on{color:var(--blue);border-bottom-color:var(--orange)}
+.abas button[disabled]{opacity:.45;cursor:default}
+.fic-corpo{flex:1;overflow-y:auto;padding:14px}
+table.t{width:100%;border-collapse:collapse;font-size:12px}
+table.t th{text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);padding:6px;border-bottom:1px solid var(--line);background:#F8FAFD;position:sticky;top:0}
+table.t td{padding:6px;border-bottom:1px solid #EEF2F7;vertical-align:middle}
+.faixa{background:#F1F5FA;border:1px solid var(--line);border-radius:6px;padding:6px 10px;font-weight:700;color:var(--blue);margin:14px 0 8px;font-size:12px}
+.muted{color:var(--muted)}.hint{font-size:11px;color:var(--muted);margin-top:3px}
+.erro{color:var(--bad);font-size:11px;margin-top:3px}
+.chips{display:flex;gap:6px;flex-wrap:wrap}
+.chip{border:1.5px solid var(--line);border-radius:99px;padding:4px 11px;font-size:12px;font-weight:600;background:#fff;color:var(--muted);cursor:pointer}
+.chip.sel{border-color:var(--orange);color:#9A3412;background:#FFF7ED}
+.vazio{padding:30px;text-align:center;color:var(--muted)}
+.kpis{display:flex;gap:10px;margin:0 0 12px;flex-wrap:wrap}
+.kpi{background:#fff;border:1px solid var(--line);border-radius:8px;padding:8px 14px;min-width:120px;cursor:pointer}
+.kpi .v{font-size:20px;font-weight:800}.kpi .l{font-size:11px;color:var(--muted)}
+.mat td.c{text-align:center;font-size:11px;cursor:pointer;white-space:nowrap}
+.mat td.c:hover{outline:2px solid var(--orange);outline-offset:-2px}
+.mat th.c{text-align:center}
+.mod-fundo{position:fixed;inset:0;background:rgba(15,23,42,.45);display:flex;align-items:center;justify-content:center;z-index:50}
+.mod{background:#fff;border-radius:10px;width:min(640px,94vw);max-height:90vh;display:flex;flex-direction:column}
+.mod h3{padding:12px 16px;border-bottom:1px solid var(--line);color:var(--blue);font-size:15px}
+.mod .c{padding:14px 16px;overflow-y:auto}
+.mod .r{padding:10px 16px;border-top:1px solid var(--line);display:flex;gap:8px;justify-content:flex-end}
+#toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:#1E293B;color:#fff;padding:9px 16px;border-radius:8px;font-size:13px;display:none;z-index:99}
+.lock{font-size:11px}
+.senha{font-family:ui-monospace,Consolas,monospace;background:#F8FAFD;border:1px dashed var(--line);border-radius:4px;padding:2px 6px}
+</style>
+</head>
+<body>
+<header>
+  <img src="/static/icons/logo.png" alt="Garra" onerror="this.style.display='none'">
+  <b>RH · Colaboradores</b>
+  <span class="eu" id="eu"></span>
+</header>
+<div class="topo">
+  <button class="on" data-t="col" onclick="tela('col')">Colaboradores</button>
+  <button data-t="pnr" onclick="tela('pnr')">Painel de NRs</button>
+  <button data-t="par" onclick="tela('par')" id="bt-par" style="display:none">Parametrizar</button>
+</div>
+
+<!-- ══ COLABORADORES ══ -->
+<section class="tela on" id="t-col">
+  <div class="layout">
+    <div class="painel">
+      <div class="lista-top">
+        <input id="busca" placeholder="Buscar por nome" oninput="desenharLista()">
+        <div class="grid g2">
+          <select id="f-sit" onchange="carregarLista()"><option value="">Ativos e afastados</option><option value="ativo">Só ativos</option><option value="afastado">Afastados</option><option value="desligado">Desligados</option><option value="todos">Todos</option></select>
+          <select id="f-fun" onchange="carregarLista()"><option value="">Todos os cargos</option></select>
+        </div>
+        <div id="acoes-lista" style="display:none;gap:6px" class="chips">
+          <button class="btn pri" onclick="novoColab()">+ Novo colaborador</button>
+          <button class="btn" onclick="maisAbrir()" title="Planilha de colaboradores exportada do MAIS">Importar do MAIS</button>
+          <button class="btn" onclick="importarAbrir()" title="Criar fichas a partir dos logins do sistema">Importar logins</button>
+        </div>
+      </div>
+      <div class="lista" id="lista"><div class="vazio">Carregando…</div></div>
+    </div>
+    <div class="painel ficha" id="ficha"><div class="vazio" style="margin:auto">Escolha um colaborador na lista.</div></div>
+  </div>
+</section>
+
+<!-- ══ PAINEL DE NRs ══ -->
+<section class="tela" id="t-pnr">
+  <div style="display:flex;gap:8px;align-items:end;flex-wrap:wrap;margin-bottom:12px">
+    <div style="width:220px"><label class="f">Cargo</label><select id="p-fun" onchange="carregarPainel()"><option value="">Todas</option></select></div>
+    <div style="width:170px"><label class="f">Situação</label><select id="p-sit" onchange="carregarPainel()"><option value="">Ativos e afastados</option><option value="ativo">Só ativos</option><option value="afastado">Afastados</option></select></div>
+    <label style="display:flex;gap:5px;align-items:center;font-size:12px;padding-bottom:6px;cursor:pointer"><input type="checkbox" id="p-exig" style="width:auto" onchange="carregarPainel()"> só NRs exigidas pelo cargo</label>
+    <button class="btn" style="margin-left:auto" onclick="painelExcel()">Excel</button>
+  </div>
+  <div class="kpis" id="p-kpis"></div>
+  <div class="painel" style="overflow:auto;max-height:calc(100vh - 250px)" id="p-mat"><div class="vazio">Carregando…</div></div>
+  <div class="hint" style="margin-top:6px">Clique numa célula para abrir a ficha do colaborador na aba de NRs. Vermelho = falta ou vencida · amarelo = vence em até 30 dias · azul = em andamento · verde = válida. Célula vazia = NR que o cargo não exige e que a pessoa não fez.</div>
+</section>
+
+<!-- ══ PARAMETRIZAR ══ -->
+<section class="tela" id="t-par">
+  <div class="grid" style="grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);align-items:start">
+    <div class="painel" style="padding:12px">
+      <div style="display:flex;justify-content:space-between;align-items:center"><b style="color:var(--blue)">NRs e treinamentos</b><button class="btn peq" onclick="cursoEditar()">+ Novo</button></div>
+      <div class="hint">Validade em meses = prazo da reciclagem. Vazio = não vence. O vencimento de cada treinamento é calculado com este prazo (pode ser corrigido no registro).</div>
+      <div id="par-cursos" style="margin-top:8px"></div>
+    </div>
+    <div class="grid">
+      <div class="painel" style="padding:12px">
+        <b style="color:var(--blue)">NRs exigidas por cargo</b>
+        <div class="hint">É isso que faz o sistema mostrar quem ainda <b>falta</b> fazer. Os cargos são os do MAIS (chegam pela importação).</div>
+        <div id="par-exig" style="margin-top:8px"></div>
+      </div>
+      <div class="painel" style="padding:12px">
+        <div style="display:flex;justify-content:space-between;align-items:center"><b style="color:var(--blue)">Plataformas EAD</b><button class="btn peq" onclick="platEditar()">+ Nova</button></div>
+        <div id="par-plat" style="margin-top:8px"></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div id="modal"></div>
+<div id="toast"></div>
+
+<script>
+/* ══ SSO (abre pelo Admin) ══ */
+(function(){
+  try {
+    const q = new URLSearchParams(location.search), sso = q.get('sso');
+    if (sso && sso.length > 10) { sessionStorage.setItem('garra_rh_token', sso); history.replaceState(null, '', location.pathname); }
+  } catch(e) {}
+  if (!sessionStorage.getItem('garra_rh_token')) location.replace('/admin');
+})();
+const tok = () => sessionStorage.getItem('garra_rh_token') || '';
+async function api(path, opts){
+  opts = opts || {};
+  const h = { 'Authorization': 'Bearer ' + tok() };
+  if (opts.body && !(opts.body instanceof FormData)) h['Content-Type'] = 'application/json';
+  const r = await fetch(path, { ...opts, headers: { ...h, ...(opts.headers || {}) } });
+  if (r.status === 401) { toast('Sessão expirada — entre de novo pelo Admin'); setTimeout(() => location.replace('/admin'), 1500); throw new Error('Sessão expirada'); }
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) { const e = new Error(typeof j.detail === 'string' ? j.detail : ('Erro ' + r.status)); e.status = r.status; throw e; }
+  return j;
+}
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const br = iso => iso ? iso.slice(8,10) + '/' + iso.slice(5,7) + '/' + iso.slice(0,4) : '';
+const hojeISO = () => { const d = new Date(); return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0,10); };
+const moeda = v => v == null ? '' : 'R$ ' + Number(v).toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+const cpfFmt = c => c && c.length === 11 ? c.slice(0,3)+'.'+c.slice(3,6)+'.'+c.slice(6,9)+'-'+c.slice(9) : (c || '');
+function toast(m){ const t = document.getElementById('toast'); t.textContent = m; t.style.display = 'block'; clearTimeout(t._h); t._h = setTimeout(() => t.style.display = 'none', 3200); }
+const ST_TXT = { valida: 'Válida', vence: 'Vence logo', vencida: 'Vencida', falta: 'Falta', andamento: 'Em andamento', inscrito: 'Inscrito' };
+const pill = st => '<span class="pill p-' + st + '">' + (ST_TXT[st] || st) + '</span>';
+
+let EU = { pode_rh: false }, OP = { funcoes: [], vinculos: [], cursos: [], plataformas: [], usuarios: [] };
+let _lista = [], _atual = null, _ficha = null, _aba = 'dados';
+
+async function iniciar(){
+  try { EU = await api('/rh/api/eu'); }
+  catch(e){ document.body.innerHTML = '<div class="vazio" style="margin-top:80px">' + esc(e.status === 403 ? 'Seu usuário não tem acesso ao RH. Peça a liberação em Admin › Permissões (RH — Completo ou RH — Ver NRs).' : e.message) + '</div>'; return; }
+  document.getElementById('eu').textContent = (EU.nome || '') + (EU.pode_rh ? ' · RH completo' : ' · só NRs');
+  if (!EU.pode_rh) _aba = 'nrs';   // quem só vê NRs abre a ficha direto nelas
+  if (EU.pode_rh) { document.getElementById('bt-par').style.display = ''; document.getElementById('acoes-lista').style.display = 'flex'; }
+  await carregarOpcoes();
+  await carregarLista();
+}
+async function carregarOpcoes(){
+  OP = await api('/rh/api/opcoes');
+  // (15/11/2026) filtros por CARGO (o do MAIS) — as NRs exigidas são por cargo
+  const o = '<option value="">Todos os cargos</option>' + (OP.cargos || []).filter(c => c.ativo).map(c => '<option value="' + esc(c.codigo) + '">' + esc(c.nome) + '</option>').join('');
+  ['f-fun','p-fun'].forEach(id => { const s = document.getElementById(id), v = s.value; s.innerHTML = id === 'p-fun' ? o.replace('Todos os cargos','Todos') : o; s.value = v; });
+}
+function tela(t){
+  document.querySelectorAll('.topo button').forEach(b => b.classList.toggle('on', b.dataset.t === t));
+  document.querySelectorAll('.tela').forEach(s => s.classList.toggle('on', s.id === 't-' + t));
+  if (t === 'pnr') carregarPainel();
+  if (t === 'par') carregarPar();
+}
+
+/* ══ LISTA ══ */
+async function carregarLista(){
+  const q = new URLSearchParams({ situacao: document.getElementById('f-sit').value, cargo: document.getElementById('f-fun').value });
+  try { _lista = await api('/rh/api/colaboradores?' + q); } catch(e){ document.getElementById('lista').innerHTML = '<div class="vazio erro">' + esc(e.message) + '</div>'; return; }
+  desenharLista();
+}
+function resumoPills(r){
+  r = r || {}; let h = '';
+  if (r.vencida) h += '<span class="pill p-vencida">' + r.vencida + ' vencida' + (r.vencida > 1 ? 's' : '') + '</span> ';
+  if (r.falta) h += '<span class="pill p-falta">falta' + (r.falta > 1 ? 'm ' : ' ') + r.falta + '</span> ';
+  if (r.vence) h += '<span class="pill p-vence">' + r.vence + ' vence</span> ';
+  if (!h && (r.valida || r.andamento)) h = '<span class="pill p-valida">em dia</span>';
+  return h;
+}
+function desenharLista(){
+  const b = (document.getElementById('busca').value || '').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase();
+  const it = _lista.filter(c => !b || c.nome.normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase().includes(b));
+  document.getElementById('lista').innerHTML = it.length ? it.map(c =>
+    '<div class="it' + (c.id === _atual ? ' on' : '') + '" onclick="abrir(\'' + c.id + '\')"><div><div class="n">' + esc(c.nome) + '</div><div class="s">'
+    + esc(c.cargo_nome || 'sem cargo') + (c.situacao !== 'ativo' ? ' · ' + esc(c.situacao) : '') + (c.tem_login ? '' : ' · sem login') + '</div></div><div style="text-align:right">' + resumoPills(c.nr) + '</div></div>').join('')
+    : '<div class="vazio">' + (_lista.length ? 'Ninguém com esse nome.' : (EU.pode_rh ? 'Nenhuma ficha ainda. Use “Importar logins” ou “+ Novo colaborador”.' : 'Nenhum colaborador.')) + '</div>';
+}
+
+/* ══ FICHA ══ */
+const ABAS = [
+  ['dados', 'Dados'], ['funcao', 'Função e HH', 1], ['nrs', 'NRs e treinamentos'], ['ead', 'Plataformas EAD', 1], ['comissoes', 'Comissões', 1, 1], ['docs', 'Documentos', 0, 1],
+];
+async function abrir(id, aba){
+  _atual = id; desenharLista();
+  try { _ficha = await api('/rh/api/colaboradores/' + id); } catch(e){ toast('❌ ' + e.message); return; }
+  if (aba) _aba = aba;
+  if (!EU.pode_rh && !['dados','nrs'].includes(_aba)) _aba = 'nrs';
+  desenharFicha();
+}
+function desenharFicha(){
+  const f = _ficha, ini = f.nome.split(/\s+/).filter(Boolean).slice(0,2).map(p => p[0]).join('').toUpperCase();
+  const vin = (OP.vinculos.find(v => v.codigo === f.vinculo) || {}).nome || f.vinculo || '';
+  document.getElementById('ficha').innerHTML =
+    '<div class="fic-top"><div class="avatar">' + esc(ini) + '</div><div style="flex:1;min-width:0"><div style="font-weight:700;font-size:15px">' + esc(f.nome) + '</div>'
+    + '<div class="muted" style="font-size:12px">' + (f.apelido && f.apelido !== f.nome ? '“' + esc(f.apelido) + '” · ' : '') + esc(f.cargo_nome || 'sem cargo') + (f.funcao_nome ? ' · função ' + esc(f.funcao_nome) : '') + (vin ? ' · ' + esc(vin) : '') + ' · ' + esc(f.situacao) + (f.tem_login ? ' · tem login no sistema' : ' · sem login') + '</div></div>'
+    + '<span id="fic-alerta"></span></div>'
+    + '<div class="abas">' + ABAS.map(([k, t, rh, futura]) => {
+        const bloq = rh && !EU.pode_rh;
+        if (bloq) return '';
+        return '<button class="' + (k === _aba ? 'on' : '') + '"' + (futura ? ' disabled title="Etapa 2"' : ' onclick="aba(\'' + k + '\')"') + '>' + (rh ? '🔒 ' : '') + t + '</button>';
+      }).join('') + '</div>'
+    + '<div class="fic-corpo" id="fic-corpo"></div>';
+  aba(_aba);
+}
+function aba(k){
+  _aba = k;
+  document.querySelectorAll('#ficha .abas button').forEach(b => b.classList.toggle('on', (b.getAttribute('onclick') || '').includes("'" + k + "'")));
+  ({ dados: abaDados, funcao: abaFuncao, nrs: abaNrs, ead: abaEad })[k]();
+}
+const fld = (rot, html, extra) => '<div' + (extra ? ' ' + extra : '') + '><label class="f">' + rot + '</label>' + html + '</div>';
+
+function abaDados(){
+  const f = _ficha, el = document.getElementById('fic-corpo');
+  if (!EU.pode_rh) { el.innerHTML = '<div class="grid g2">' + fld('Nome', '<div>' + esc(f.nome) + '</div>') + fld('Cargo', '<div>' + esc(f.cargo_nome || '—') + '</div>') + '</div><div class="hint" style="margin-top:12px">Os demais dados (CPF, telefone, admissão) são visíveis só para quem tem RH completo.</div>'; return; }
+  const opt = (arr, v, vazio) => (vazio ? '<option value="">' + vazio + '</option>' : '') + arr.map(o => '<option value="' + esc(o.v) + '"' + (o.v === v ? ' selected' : '') + '>' + esc(o.t) + '</option>').join('');
+  const livres = (OP.usuarios || []).filter(u => u.id === (f.usuario && f.usuario.id) || !_lista.some(c => c.id !== f.id && c.login === u.login));
+  el.innerHTML = '<div class="grid g3">'
+    + fld('Nome completo *', '<input id="d-nome" value="' + esc(f.nome) + '">', 'style="grid-column:span 2"')
+    + fld('Apelido (como é chamado)', '<input id="d-apel" value="' + esc(f.apelido || '') + '">')
+    + fld('Cargo (do MAIS)', '<select id="d-cargo">' + opt((OP.cargos || []).filter(c => c.ativo || c.codigo === f.cargo_codigo).map(c => ({v: c.codigo, t: c.nome})), f.cargo_codigo, '— sem cargo —') + '</select><div class="hint">Define as NRs exigidas.</div>')
+    + fld('CPF', '<input id="d-cpf" value="' + esc(cpfFmt(f.cpf)) + '" placeholder="000.000.000-00" inputmode="numeric">')
+    + fld('Telefone', '<input id="d-tel" value="' + esc(f.telefone || '') + '" placeholder="(37) 99999-0000">')
+    + fld('Nascimento', '<input id="d-nasc" type="date" value="' + esc(f.data_nascimento || '') + '">')
+    + fld('Matrícula no MAIS', '<input id="d-mat" value="' + esc(f.matricula_mais || '') + '" placeholder="código do MAIS">')
+    + fld('Admissão', '<input id="d-adm" type="date" value="' + esc(f.data_admissao || '') + '">')
+    + fld('Situação', '<select id="d-sit">' + opt([{v:'ativo',t:'Ativo'},{v:'afastado',t:'Afastado'},{v:'desligado',t:'Desligado'}], f.situacao) + '</select>')
+    + fld('Desligamento', '<input id="d-desl" type="date" value="' + esc(f.data_desligamento || '') + '">')
+    + fld('Vínculo', '<select id="d-vin">' + opt(OP.vinculos.map(v => ({v: v.codigo, t: v.nome})), f.vinculo, '—') + '</select>')
+    + fld('Login no sistema', '<select id="d-usr">' + opt(livres.map(u => ({v: u.id, t: u.nome + ' (' + u.login + ')' + (u.ativo ? '' : ' — inativo')})), f.usuario && f.usuario.id, '— sem login —') + '</select><div class="hint">Quem não usa o sistema (ajudante, diarista) fica sem login.</div>', 'style="grid-column:span 2"')
+    + fld('Observação', '<textarea id="d-obs">' + esc(f.observacao || '') + '</textarea>', 'style="grid-column:span 3"')
+    + '</div><div class="erro" id="d-erro"></div>'
+    + '<div style="display:flex;gap:8px;margin-top:12px"><button class="btn pri" onclick="salvarDados()">Salvar</button><button class="btn del" style="margin-left:auto" onclick="excluirColab()" title="Só para ficha criada por engano. Quem saiu da empresa: situação Desligado.">Excluir ficha</button></div>'
+    + '<div class="hint" style="margin-top:14px">' + (f.mais_sync_em ? '🔄 Nome, CPF, cargo, admissão e desligamento atualizados pelo MAIS em ' + new Date(f.mais_sync_em).toLocaleDateString('pt-BR') + ' — numa nova importação, o MAIS prevalece nesses campos.' : 'Esta ficha ainda não foi casada com o MAIS (use “Importar do MAIS”).') + ' Salário, folha, endereço e documentos pessoais ficam no MAIS.</div>';
+}
+async function salvarDados(){
+  const g = id => document.getElementById(id).value;
+  const err = document.getElementById('d-erro'); err.textContent = '';
+  if (!g('d-nome').trim()) { err.textContent = 'Informe o nome.'; return; }
+  const body = { nome: g('d-nome'), apelido: g('d-apel'), cargo_codigo: g('d-cargo'), cpf: g('d-cpf'), telefone: g('d-tel'), data_nascimento: g('d-nasc'), matricula_mais: g('d-mat'),
+                 data_admissao: g('d-adm'), situacao: g('d-sit'), data_desligamento: g('d-desl'), vinculo: g('d-vin'), usuario_id: g('d-usr'), observacao: g('d-obs') };
+  try { await api('/rh/api/colaboradores/' + _atual, { method: 'PATCH', body: JSON.stringify(body) }); }
+  catch(e){ err.textContent = e.message; return; }
+  toast('Dados salvos'); await carregarLista(); await abrir(_atual);
+}
+async function excluirColab(){
+  if (!confirm('Excluir a ficha de ' + _ficha.nome + '? Use só para ficha criada por engano.')) return;
+  try { await api('/rh/api/colaboradores/' + _atual, { method: 'DELETE' }); } catch(e){ toast('❌ ' + e.message); return; }
+  _atual = null; document.getElementById('ficha').innerHTML = '<div class="vazio" style="margin:auto">Ficha excluída.</div>'; carregarLista();
+}
+function novoColab(){
+  modal('Novo colaborador', fld('Nome completo *', '<input id="n-nome">') + '<div class="grid g2" style="margin-top:10px">'
+    + fld('CPF', '<input id="n-cpf" placeholder="000.000.000-00" inputmode="numeric">')
+    + fld('Cargo', '<select id="n-fun"><option value="">—</option>' + (OP.cargos || []).filter(c => c.ativo).map(c => '<option value="' + esc(c.codigo) + '">' + esc(c.nome) + '</option>').join('') + '</select>') + '</div><div class="erro" id="n-erro"></div>',
+    'Criar', async () => {
+      const nome = document.getElementById('n-nome').value.trim(), e = document.getElementById('n-erro');
+      if (!nome) { e.textContent = 'Informe o nome.'; return false; }
+      try { const r = await api('/rh/api/colaboradores', { method: 'POST', body: JSON.stringify({ nome, cpf: document.getElementById('n-cpf').value, cargo_codigo: document.getElementById('n-fun').value }) });
+            await carregarLista(); abrir(r.id, 'dados'); }
+      catch(x){ e.textContent = x.message; return false; }
+    });
+}
+
+function abaFuncao(){
+  const f = _ficha, el = document.getElementById('fic-corpo');
+  const funs = OP.funcoes.filter(x => x.ativo || x.codigo === f.funcao_codigo);
+  el.innerHTML = '<div class="grid g2">'
+    + fld('Função (organograma)', '<select id="h-fun" onchange="hhPrevia()"><option value="">— sem função —</option>' + funs.map(x => '<option value="' + esc(x.codigo) + '"' + (x.codigo === f.funcao_codigo ? ' selected' : '') + '>' + esc(x.nome) + (x.setor ? ' · ' + esc(x.setor) : '') + '</option>').join('') + '</select>')
+    + fld('Custo da hora só desta pessoa (R$/h)', '<input id="h-custo" value="' + (f.custo_hh_proprio != null ? String(f.custo_hh_proprio).replace('.', ',') : '') + '" placeholder="vazio = usa o da função" oninput="hhPrevia()" inputmode="decimal">')
+    + '</div><div id="h-previa" class="faixa" style="font-weight:400"></div>'
+    + '<div class="hint">O custo da hora é o que a Manutenção usa na mão de obra das OTs (horas × R$/h). O valor de cada função é definido em Manutenção › Parametrizar › Organograma; aqui você só coloca uma exceção para esta pessoa. Salário fica no MAIS.</div>'
+    + '<div style="margin-top:12px"><button class="btn pri" onclick="salvarFuncao()">Salvar</button></div>';
+  hhPrevia();
+}
+function hhPrevia(){
+  const fc = document.getElementById('h-fun').value, fu = OP.funcoes.find(x => x.codigo === fc), c = document.getElementById('h-custo').value.trim();
+  document.getElementById('h-previa').innerHTML = 'Custo da hora usado nas OTs: <b>' + (c ? moeda(parseFloat(c.replace(/\./g,'').replace(',','.'))) + '/h</b> (exceção desta pessoa)'
+    : (fu && fu.custo_hh != null ? moeda(fu.custo_hh) + '/h</b> (da função ' + esc(fu.nome) + ')' : '—</b> <span class="muted">(a função ainda não tem custo da hora definido)</span>'));
+}
+async function salvarFuncao(){
+  try { await api('/rh/api/colaboradores/' + _atual, { method: 'PATCH', body: JSON.stringify({ funcao_codigo: document.getElementById('h-fun').value, custo_hh: document.getElementById('h-custo').value }) }); }
+  catch(e){ toast('❌ ' + e.message); return; }
+  toast('Função salva'); await carregarLista(); abrir(_atual, 'funcao');
+}
+
+/* ── NRs e treinamentos ── */
+let _trein = null;
+async function abaNrs(){
+  const el = document.getElementById('fic-corpo'); el.innerHTML = '<div class="vazio">Carregando…</div>';
+  try { _trein = await api('/rh/api/colaboradores/' + _atual + '/treinamentos'); } catch(e){ el.innerHTML = '<div class="erro">' + esc(e.message) + '</div>'; return; }
+  const r = _trein.resumo, al = document.getElementById('fic-alerta');
+  if (al) al.innerHTML = r.vencida ? '<span class="pill p-vencida">' + r.vencida + ' NR vencida</span>' : (r.falta ? '<span class="pill p-falta">falta' + (r.falta > 1 ? 'm ' : ' ') + r.falta + ' NR</span>' : (r.vence ? '<span class="pill p-vence">' + r.vence + ' NR vence em até 30 dias</span>' : ''));
+  const q = _trein.quadro;
+  el.innerHTML = '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><span class="muted">' + (_ficha.cargo_nome ? 'NRs exigidas para o cargo <b>' + esc(_ficha.cargo_nome) + '</b> e as demais que a pessoa já fez' : 'Sem cargo: defina o cargo (aba Dados) para o sistema saber quais NRs são exigidas.') + '</span>'
+    + (EU.pode_rh ? '<button class="btn pri" onclick="treinForm()">Registrar treinamento</button>' : '') + '</div>'
+    + (q.length ? '<table class="t"><thead><tr><th>NR / treinamento</th><th>Situação</th><th>Concluída</th><th>Vence</th><th>Onde</th><th>Certificado</th><th></th></tr></thead><tbody>'
+      + q.map(x => '<tr><td><b>' + esc(x.codigo) + '</b> <span class="muted">' + esc(x.nome) + '</span>' + (x.exigida ? '' : ' <span class="pill p-cinza" title="o cargo não exige">extra</span>') + '</td><td>' + pill(x.status) + '</td><td>' + br(x.conclusao) + '</td><td>' + br(x.validade_ate) + '</td><td>' + esc(x.onde || '') + '</td>'
+        + '<td>' + (x.tem_certificado ? '<button class="btn peq" onclick="certVer(\'' + x.tid + '\')">ver</button>' : (x.tid && EU.pode_rh ? '<button class="btn peq" onclick="certEnviar(\'' + x.tid + '\')">anexar</button>' : '')) + '</td>'
+        + '<td style="text-align:right">' + (EU.pode_rh ? (x.tid ? '<button class="btn peq" onclick="treinForm(\'' + x.tid + '\')">editar</button> ' : '') + '<button class="btn peq" onclick="treinForm(null,\'' + x.curso_id + '\')">' + (x.status === 'falta' ? 'registrar' : 'renovar') + '</button>' : '') + '</td></tr>').join('')
+      + '</tbody></table>' : '<div class="vazio">Nenhuma NR exigida nem registrada.</div>')
+    + '<div class="faixa">Histórico completo (' + _trein.historico.length + ')</div>'
+    + (_trein.historico.length ? '<table class="t"><thead><tr><th>NR</th><th>Situação</th><th>Modalidade</th><th>Início</th><th>Conclusão</th><th>Vence</th><th>Carga</th>' + (EU.pode_rh ? '<th>Custo</th><th></th>' : '') + '</tr></thead><tbody>'
+      + _trein.historico.map(h => '<tr><td>' + esc(h.curso_codigo) + '</td><td>' + pill(h.status) + '</td><td>' + esc(h.modalidade === 'ead' ? 'EAD · ' + (h.plataforma_nome || '') : (h.modalidade || '')) + (h.local ? ' · ' + esc(h.local) : '') + '</td><td>' + br(h.data_inicio) + '</td><td>' + br(h.data_conclusao) + '</td><td>' + br(h.validade_ate) + '</td><td>' + (h.carga_horaria ? h.carga_horaria + ' h' : '') + '</td>'
+        + (EU.pode_rh ? '<td>' + moeda(h.custo) + '</td><td style="text-align:right"><button class="btn peq" onclick="treinForm(\'' + h.id + '\')">editar</button> <button class="btn peq del" onclick="treinExcluir(\'' + h.id + '\')" title="excluir este registro">✕</button></td>' : '') + '</tr>').join('')
+      + '</tbody></table>' : '<div class="muted">Nenhum treinamento registrado.</div>');
+}
+function treinForm(tid, cursoId){
+  const h = tid ? _trein.historico.find(x => x.id === tid) : null;
+  const v = h || { curso_id: cursoId || '', situacao: 'concluido', modalidade: '', data_conclusao: '' };
+  const cursos = OP.cursos.filter(k => k.ativo || k.id === v.curso_id);
+  modal(h ? 'Editar treinamento' : 'Registrar treinamento',
+    fld('NR / treinamento *', '<select id="tr-curso" onchange="trVence()"><option value="">— escolha —</option>' + cursos.map(k => '<option value="' + k.id + '"' + (k.id === v.curso_id ? ' selected' : '') + '>' + esc(k.codigo + ' — ' + k.nome) + '</option>').join('') + '</select>')
+    + '<div style="margin-top:10px">' + fld('Situação', '<div class="chips" id="tr-sit">' + [['concluido','Concluído'],['andamento','Em andamento'],['inscrito','Inscrito']].map(([k, t]) => '<span class="chip' + (k === v.situacao ? ' sel' : '') + '" data-v="' + k + '" onclick="trChip(\'tr-sit\',this)">' + t + '</span>').join('') + '</div>') + '</div>'
+    + '<div style="margin-top:10px">' + fld('Onde foi feito', '<div class="chips" id="tr-mod">' + [['presencial','Presencial'],['ead','EAD'],['semipresencial','Semipresencial']].map(([k, t]) => '<span class="chip' + (k === v.modalidade ? ' sel' : '') + '" data-v="' + k + '" onclick="trChip(\'tr-mod\',this)">' + t + '</span>').join('') + '</div>') + '</div>'
+    + '<div id="tr-ead" style="margin-top:10px"></div>'
+    + '<div id="tr-pres" class="grid g2" style="margin-top:10px">' + fld('Local / empresa', '<input id="tr-local" value="' + esc(v.local || '') + '" placeholder="na obra, SENAI, empresa contratada…">') + fld('Instrutor', '<input id="tr-inst" value="' + esc(v.instrutor || '') + '">') + '</div>'
+    + '<div class="grid g3" style="margin-top:10px">' + fld('Início', '<input type="date" id="tr-ini" value="' + esc(v.data_inicio || '') + '">') + fld('Conclusão', '<input type="date" id="tr-conc" max="' + hojeISO() + '" value="' + esc(v.data_conclusao || '') + '" onchange="trVence()">') + fld('Vence em', '<input type="date" id="tr-vence" value="' + esc(v.validade_ate || '') + '" onchange="this.dataset.manual=1">') + '</div>'
+    + '<div class="hint" id="tr-vhint"></div>'
+    + '<div class="grid g2" style="margin-top:10px">' + fld('Carga horária (h)', '<input id="tr-ch" inputmode="decimal" value="' + (v.carga_horaria ?? '') + '">') + fld('Custo (R$)', '<input id="tr-custo" inputmode="decimal" value="' + (v.custo != null ? String(v.custo).replace('.', ',') : '') + '">') + '</div>'
+    + '<div style="margin-top:10px">' + fld('Observação', '<textarea id="tr-obs">' + esc(v.observacao || '') + '</textarea>') + '</div>'
+    + (h ? '' : '<div style="margin-top:10px">' + fld('Certificado (PDF ou foto)', '<input type="file" id="tr-cert" accept="application/pdf,image/*">') + '</div>')
+    + '<div class="erro" id="tr-erro"></div>',
+    h ? 'Salvar' : 'Registrar', () => treinSalvar(tid));
+  window._trPlat = v.plataforma_id || '';
+  if (h && h.validade_ate) document.getElementById('tr-vence').dataset.manual = 1;
+  trMod(); trVence();
+}
+function trChip(gid, el){
+  // escolha única; na modalidade, clicar de novo desmarca (não informado)
+  const ja = el.classList.contains('sel');
+  document.querySelectorAll('#' + gid + ' .chip').forEach(c => c.classList.remove('sel'));
+  if (!(ja && gid === 'tr-mod')) el.classList.add('sel');
+  if (gid === 'tr-mod') trMod(); trVence();
+}
+const trVal = gid => { const s = document.querySelector('#' + gid + ' .chip.sel'); return s ? s.dataset.v : ''; };
+function trMod(){
+  const m = trVal('tr-mod'), ead = document.getElementById('tr-ead');
+  // Classe 2: plataforma só existe no EAD; local/instrutor no presencial/semipresencial
+  ead.innerHTML = (m === 'ead' || m === 'semipresencial') ? fld('Plataforma EAD', '<select id="tr-plat"><option value="">— escolha —</option>' + OP.plataformas.filter(p => p.ativo || p.id === window._trPlat).map(p => '<option value="' + p.id + '"' + (p.id === window._trPlat ? ' selected' : '') + '>' + esc(p.nome) + '</option>').join('') + '</select><div class="hint">O login da pessoa em cada plataforma fica na aba Plataformas EAD.</div>') : '';
+  document.getElementById('tr-pres').style.display = (m === 'presencial' || m === 'semipresencial') ? '' : 'none';
+}
+function trVence(){
+  const sit = trVal('tr-sit'), kid = document.getElementById('tr-curso').value, k = OP.cursos.find(x => x.id === kid), conc = document.getElementById('tr-conc').value, v = document.getElementById('tr-vence'), hint = document.getElementById('tr-vhint');
+  if (sit !== 'concluido') { v.value = ''; v.disabled = true; hint.textContent = 'Em andamento / inscrito não tem vencimento.'; return; }
+  v.disabled = false;
+  if (!k) { hint.textContent = ''; return; }
+  if (!k.validade_meses) { hint.textContent = k.codigo + ' sem prazo de reciclagem cadastrado (RH › Parametrizar). Se tiver vencimento, digite.'; return; }
+  hint.textContent = k.codigo + ': reciclagem a cada ' + k.validade_meses + ' meses.';
+  if (conc && !v.dataset.manual) { const d = new Date(conc + 'T12:00:00'); const dia = d.getDate(); d.setDate(1); d.setMonth(d.getMonth() + k.validade_meses); const ult = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate(); d.setDate(Math.min(dia, ult)); v.value = d.toISOString().slice(0,10); }
+}
+async function treinSalvar(tid){
+  const e = document.getElementById('tr-erro'), g = id => (document.getElementById(id) || {}).value || '';
+  e.textContent = '';
+  const sit = trVal('tr-sit'), mod = trVal('tr-mod');
+  if (!g('tr-curso')) { e.textContent = 'Escolha a NR / treinamento.'; return false; }
+  if (!sit) { e.textContent = 'Escolha a situação.'; return false; }
+  if (sit === 'concluido' && !g('tr-conc')) { e.textContent = 'Informe a data de conclusão.'; return false; }
+  if (mod === 'ead' && !g('tr-plat')) { e.textContent = 'Escolha a plataforma EAD.'; return false; }
+  const body = { curso_id: g('tr-curso'), situacao: sit, modalidade: mod, plataforma_id: g('tr-plat'), local: g('tr-local'), instrutor: g('tr-inst'),
+                 data_inicio: g('tr-ini'), data_conclusao: g('tr-conc'), carga_horaria: g('tr-ch'), custo: g('tr-custo'), observacao: g('tr-obs') };
+  const vv = document.getElementById('tr-vence');
+  if (sit === 'concluido' && vv.dataset.manual) body.validade_ate = vv.value;
+  let id = tid;
+  try {
+    if (tid) await api('/rh/api/treinamentos/' + tid, { method: 'PATCH', body: JSON.stringify(body) });
+    else id = (await api('/rh/api/colaboradores/' + _atual + '/treinamentos', { method: 'POST', body: JSON.stringify(body) })).id;
+  } catch(x){ e.textContent = x.message; return false; }
+  // certificado em passo separado: se o envio falhar, o treinamento já está salvo — não deixa o formulário
+  // aberto (salvar de novo duplicaria o registro); avisa para anexar pela tabela
+  let msg = tid ? 'Treinamento atualizado' : 'Treinamento registrado';
+  const arq = document.getElementById('tr-cert');
+  if (arq && arq.files && arq.files[0]) {
+    try { const fd = new FormData(); fd.append('ficheiro', arq.files[0]); await api('/rh/api/treinamentos/' + id + '/certificado', { method: 'POST', body: fd }); }
+    catch(x){ msg += ', mas o certificado não foi enviado (' + x.message + '). Use “anexar” na tabela.'; }
+  }
+  toast(msg); abaNrs(); carregarLista();
+}
+async function treinExcluir(tid){
+  if (!confirm('Excluir este registro de treinamento?')) return;
+  try { await api('/rh/api/treinamentos/' + tid, { method: 'DELETE' }); } catch(e){ toast('❌ ' + e.message); return; }
+  abaNrs(); carregarLista();
+}
+function certEnviar(tid){
+  const i = document.createElement('input'); i.type = 'file'; i.accept = 'application/pdf,image/*';
+  i.onchange = async () => { if (!i.files[0]) return; const fd = new FormData(); fd.append('ficheiro', i.files[0]);
+    try { await api('/rh/api/treinamentos/' + tid + '/certificado', { method: 'POST', body: fd }); toast('Certificado anexado'); abaNrs(); } catch(e){ toast('❌ ' + e.message); } };
+  i.click();
+}
+async function certVer(tid){ try { const r = await api('/rh/api/treinamentos/' + tid + '/certificado'); window.open(r.url, '_blank'); } catch(e){ toast('❌ ' + e.message); } }
+
+/* ── Plataformas EAD (logins; senha criptografada) ── */
+async function abaEad(){
+  const el = document.getElementById('fic-corpo'); el.innerHTML = '<div class="vazio">Carregando…</div>';
+  let a; try { a = await api('/rh/api/colaboradores/' + _atual + '/acessos'); } catch(e){ el.innerHTML = '<div class="erro">' + esc(e.message) + '</div>'; return; }
+  el.innerHTML = '<div class="hint" style="margin-bottom:8px">🔒 As senhas ficam criptografadas no banco. Só aparecem ao clicar em “mostrar”, e cada vez fica registrado quem viu. Nunca saem em Excel ou relatório.</div>'
+    + '<table class="t"><thead><tr><th>Plataforma</th><th>Login</th><th>Senha</th><th>Observação</th><th></th></tr></thead><tbody>'
+    + a.map(x => '<tr id="ead-' + x.plataforma_id + '"><td><b>' + esc(x.plataforma) + '</b>' + (x.site ? '<div><a href="' + esc(x.site) + '" target="_blank" rel="noopener" style="font-size:11px">abrir site</a></div>' : '') + '</td>'
+      + '<td>' + esc(x.login || '') + (x.login ? '' : '<span class="muted">—</span>') + '</td>'
+      + '<td>' + (x.tem_senha ? '<span class="senha" id="sn-' + x.plataforma_id + '">senha guardada</span> <button class="btn peq" onclick="eadMostrar(\'' + x.plataforma_id + '\')">mostrar</button>' : '<span class="muted">—</span>') + '</td>'
+      + '<td>' + esc(x.observacao || '') + '</td><td style="text-align:right"><button class="btn peq" onclick=\'eadEditar(' + JSON.stringify(x).replace(/'/g, '&#39;') + ')\'>editar</button></td></tr>').join('')
+    + '</tbody></table><div style="margin-top:12px"><button class="btn peq" onclick="eadLog()">Quem viu ou alterou</button></div><div id="ead-log"></div>';
+}
+async function eadMostrar(pid){
+  const s = document.getElementById('sn-' + pid);
+  try { const r = await api('/rh/api/colaboradores/' + _atual + '/acessos/' + pid + '/revelar', { method: 'POST' }); s.textContent = r.senha; setTimeout(() => { if (s.isConnected) s.textContent = 'senha guardada'; }, 20000); }
+  catch(e){ toast('❌ ' + e.message); }
+}
+function eadEditar(x){
+  modal('Login na ' + x.plataforma, fld('Login (usuário, e-mail ou CPF)', '<input id="ea-login" value="' + esc(x.login || '') + '" autocomplete="off">')
+    + '<div style="margin-top:10px">' + fld(x.tem_senha ? 'Nova senha (vazio = mantém a guardada)' : 'Senha', '<input id="ea-senha" type="password" autocomplete="new-password" readonly onfocus="this.removeAttribute(\'readonly\')" placeholder="' + (x.tem_senha ? 'deixe vazio para manter' : 'digite a senha') + '">') + '</div>'
+    + (x.tem_senha ? '<label style="display:flex;gap:6px;align-items:center;margin-top:8px;font-size:12px"><input type="checkbox" id="ea-apagar" style="width:auto"> apagar a senha guardada</label>' : '')
+    + '<div style="margin-top:10px">' + fld('Observação', '<input id="ea-obs" value="' + esc(x.observacao || '') + '">') + '</div>',
+    'Salvar', async () => {
+      const body = { login: document.getElementById('ea-login').value, observacao: document.getElementById('ea-obs').value };
+      const s = document.getElementById('ea-senha').value, ap = document.getElementById('ea-apagar');
+      if (ap && ap.checked) body.senha = ''; else if (s) body.senha = s;
+      try { await api('/rh/api/colaboradores/' + _atual + '/acessos/' + x.plataforma_id, { method: 'PUT', body: JSON.stringify(body) }); } catch(e){ toast('❌ ' + e.message); return false; }
+      toast('Login salvo'); abaEad();
+    });
+}
+async function eadLog(){
+  let l; try { l = await api('/rh/api/colaboradores/' + _atual + '/acessos-log'); } catch(e){ toast('❌ ' + e.message); return; }
+  const A = { viu_senha: 'viu a senha', alterou: 'alterou login/senha', alterou_login: 'alterou o login' };
+  document.getElementById('ead-log').innerHTML = '<div class="faixa">Registro de acessos (últimos 50)</div>' + (l.length ? '<table class="t"><tbody>' + l.map(r => '<tr><td>' + new Date(r.em).toLocaleString('pt-BR', {dateStyle: 'short', timeStyle: 'short'}) + '</td><td>' + esc(r.quem || '') + '</td><td>' + esc(A[r.acao] || r.acao) + '</td><td>' + esc(r.plataforma || '') + '</td></tr>').join('') + '</tbody></table>' : '<div class="muted">Nenhum acesso registrado.</div>');
+}
+
+/* ══ IMPORTAR LOGINS ══ */
+async function importarAbrir(){
+  let u; try { u = await api('/rh/api/usuarios-sem-ficha'); } catch(e){ toast('❌ ' + e.message); return; }
+  if (!u.length) { toast('Todos os logins já têm ficha'); return; }
+  modal('Importar logins do sistema', '<div class="hint" style="margin-bottom:8px">Marque quem é colaborador de verdade. Contas genéricas (teste, admin, gestor) deixe sem marcar. Nada é apagado.</div>'
+    + '<div style="display:flex;gap:8px;margin-bottom:6px"><button class="btn peq" onclick="document.querySelectorAll(\'.imp\').forEach(c=>c.checked=true)">marcar todos</button><button class="btn peq" onclick="document.querySelectorAll(\'.imp\').forEach(c=>c.checked=false)">desmarcar</button></div>'
+    + '<table class="t"><tbody>' + u.map(x => '<tr><td style="width:24px"><input type="checkbox" class="imp" value="' + x.id + '" style="width:auto"></td><td>' + esc(x.nome) + '</td><td class="muted">' + esc(x.login) + '</td><td class="muted">' + esc(x.perfil || '') + '</td><td>' + (x.ativo ? '' : '<span class="pill p-cinza">inativo</span>') + '</td></tr>').join('') + '</tbody></table>',
+    'Criar fichas', async () => {
+      const ids = [...document.querySelectorAll('.imp:checked')].map(c => c.value);
+      if (!ids.length) { toast('Marque ao menos um'); return false; }
+      try { const r = await api('/rh/api/importar-usuarios', { method: 'POST', body: JSON.stringify({ ids }) }); toast(r.criados + ' ficha(s) criada(s)'); } catch(e){ toast('❌ ' + e.message); return false; }
+      carregarLista();
+    });
+}
+
+/* ══ IMPORTAR DO MAIS (planilha de colaboradores) ══ */
+let _mais = null;
+function maisAbrir(){
+  modal('Importar colaboradores do MAIS',
+    '<div class="hint" style="margin-bottom:10px">No MAIS, exporte o relatório de colaboradores em Excel (.xlsx) e escolha o arquivo. Primeiro aparece uma <b>prévia</b> para você conferir; nada é gravado antes de confirmar e nada é apagado.</div>'
+    + '<input type="file" id="mais-arq" accept=".xlsx"><div class="erro" id="mais-erro"></div>'
+    + '<div class="hint" style="margin-top:10px">Entram só: matrícula, nome, apelido, CPF, nascimento, celular, cargo, admissão e demissão. Endereço, PIS, RG, estado civil e salário ficam só no MAIS.</div>',
+    'Ler planilha', async () => {
+      const a = document.getElementById('mais-arq'), e = document.getElementById('mais-erro');
+      if (!a.files || !a.files[0]) { e.textContent = 'Escolha o arquivo .xlsx.'; return false; }
+      const fd = new FormData(); fd.append('ficheiro', a.files[0]);
+      try { _mais = await api('/rh/api/importar-mais/previa', { method: 'POST', body: fd }); } catch(x){ e.textContent = x.message; return false; }
+      setTimeout(maisPrevia, 0);
+    });
+}
+function maisPrevia(){
+  const L = _mais.linhas, U = _mais.usuarios;
+  const sitP = s => '<span class="pill ' + (s === 'ativo' ? 'p-valida' : 'p-cinza') + '">' + s + '</span>';
+  const cont = { criar: 0, atualizar: 0, ignorar: 0 }; L.forEach(l => cont[l.acao]++);
+  const optUser = l => '<option value="">— sem login —</option>' + U.map(u => '<option value="' + u.id + '"' + (u.id === l.usuario_id ? ' selected' : '') + (u.em_uso && u.id !== l.usuario_id ? ' disabled' : '') + '>' + esc(u.nome) + ' (' + esc(u.login) + ')' + (u.em_uso && u.id !== l.usuario_id ? ' — já tem ficha' : '') + (u.ativo ? '' : ' — inativo') + '</option>').join('');
+  modal('Prévia da importação do MAIS — ' + L.length + ' linha(s)',
+    '<div class="hint" style="margin-bottom:8px">Confira a coluna <b>Login</b>: é a sugestão de qual usuário do sistema é essa pessoa (pelo nome). Corrija se estiver errada ou deixe “sem login”. Quem já tem ficha é <b>atualizado</b> (casando por CPF/matrícula); o MAIS prevalece em nome, CPF, cargo, admissão e demissão — função, HH, NRs e logins EAD não mudam.</div>'
+    + '<div id="mais-cont" class="muted" style="margin-bottom:6px"></div>'
+    + '<div style="max-height:56vh;overflow:auto"><table class="t"><thead><tr><th>Ação</th><th>Matr.</th><th>Nome</th><th>Cargo</th><th>Admissão</th><th>Situação</th><th>Login no sistema</th><th>Avisos</th></tr></thead><tbody>'
+    + L.map((l, i) => '<tr' + (l.acao === 'ignorar' ? ' style="opacity:.55"' : '') + '><td><select id="mx-a' + i + '" onchange="maisConta()" style="width:110px">'
+        + (l.ficha_id ? '<option value="atualizar"' + (l.acao === 'atualizar' ? ' selected' : '') + '>Atualizar</option>' : '<option value="criar"' + (l.acao === 'criar' ? ' selected' : '') + '>Criar</option>')
+        + '<option value="ignorar"' + (l.acao === 'ignorar' ? ' selected' : '') + '>Ignorar</option></select>'
+        + (l.ficha_id ? '<div class="hint">ficha: ' + esc(l.ficha_nome) + '</div>' : '') + '</td>'
+        + '<td>' + esc(l.matricula) + '</td><td><b>' + esc(l.nome) + '</b>' + (l.apelido && l.apelido !== l.nome ? '<div class="muted" style="font-size:11px">“' + esc(l.apelido) + '”</div>' : '') + (l.cpf ? '' : '<div class="erro" style="margin:0">sem CPF</div>') + '</td>'
+        + '<td>' + esc(l.cargo_nome || '') + (l.cargo_novo ? ' <span class="pill p-andamento">novo</span>' : '') + '</td><td>' + br(l.admissao) + '</td><td>' + sitP(l.situacao) + '</td>'
+        + '<td><select id="mx-u' + i + '" style="width:230px">' + optUser(l) + '</select></td>'
+        + '<td style="font-size:11px;color:var(--warn)">' + (l.generico ? 'registro genérico do MAIS — sugerido ignorar. ' : '') + esc((l.avisos || []).join(' · ')) + '</td></tr>').join('')
+    + '</tbody></table></div><div class="erro" id="mx-erro"></div>',
+    'Importar', maisAplicar, true);
+  maisConta();
+}
+function maisConta(){
+  const c = { criar: 0, atualizar: 0, ignorar: 0 };
+  _mais.linhas.forEach((l, i) => { const s = document.getElementById('mx-a' + i); if (s) c[s.value]++; });
+  const el = document.getElementById('mais-cont'); if (el) el.textContent = c.criar + ' nova(s) ficha(s) · ' + c.atualizar + ' atualização(ões) · ' + c.ignorar + ' ignorada(s)';
+}
+async function maisAplicar(){
+  const linhas = _mais.linhas.map((l, i) => ({ ...l, acao: document.getElementById('mx-a' + i).value, usuario_id: document.getElementById('mx-u' + i).value }));
+  const usados = linhas.filter(l => l.acao !== 'ignorar' && l.usuario_id).map(l => l.usuario_id);
+  const dup = usados.find((u, i) => usados.indexOf(u) !== i);
+  if (dup) { document.getElementById('mx-erro').textContent = 'O mesmo login foi escolhido para duas pessoas: ' + ((_mais.usuarios.find(u => u.id === dup) || {}).nome || '') + '.'; return false; }
+  let r; try { r = await api('/rh/api/importar-mais/aplicar', { method: 'POST', body: JSON.stringify({ linhas }) }); }
+  catch(x){ document.getElementById('mx-erro').textContent = x.message; return false; }
+  toast(r.criados + ' criada(s) · ' + r.atualizados + ' atualizada(s) · ' + r.ignorados + ' ignorada(s)');
+  if (r.erros && r.erros.length) setTimeout(() => modal('Importação concluída com avisos', '<ul style="padding-left:18px">' + r.erros.map(x => '<li>' + esc(x) + '</li>').join('') + '</ul>'), 50);
+  await carregarOpcoes(); await carregarLista();
+}
+
+/* ══ PAINEL DE NRs ══ */
+let _pn = null;
+async function carregarPainel(){
+  const q = new URLSearchParams({ cargo: document.getElementById('p-fun').value, situacao: document.getElementById('p-sit').value, so_exigidas: document.getElementById('p-exig').checked ? 1 : 0 });
+  const box = document.getElementById('p-mat');
+  try { _pn = await api('/rh/api/painel-nr?' + q); } catch(e){ box.innerHTML = '<div class="vazio erro">' + esc(e.message) + '</div>'; return; }
+  const t = _pn.totais;
+  document.getElementById('p-kpis').innerHTML = [['vencida','Vencidas','var(--bad)'],['falta','Faltam (exigidas)','var(--bad)'],['vence','Vencem em 30 dias','var(--warn)'],['andamento','Em andamento','var(--info)'],['valida','Válidas','var(--ok)']]
+    .map(([k, l, c]) => '<div class="kpi"><div class="v" style="color:' + c + '">' + (t[k] || 0) + '</div><div class="l">' + l + '</div></div>').join('');
+  if (!_pn.linhas.length) { box.innerHTML = '<div class="vazio">Nenhum colaborador neste filtro.</div>'; return; }
+  if (!_pn.cursos.length) { box.innerHTML = '<div class="vazio">Nenhuma NR para mostrar. Cadastre as NRs exigidas por cargo em Parametrizar.</div>'; return; }
+  box.innerHTML = '<table class="t mat"><thead><tr><th>Colaborador</th><th>Cargo</th>' + _pn.cursos.map(k => '<th class="c" title="' + esc(k.nome) + '">' + esc(k.codigo) + '</th>').join('') + '</tr></thead><tbody>'
+    + _pn.linhas.map(l => '<tr><td><b>' + esc(l.nome) + '</b></td><td class="muted">' + esc(l.funcao || '') + '</td>' + _pn.cursos.map(k => {
+        const c = l.celulas[k.id];
+        if (!c) return '<td class="c" onclick="irFicha(\'' + l.id + '\')"></td>';
+        return '<td class="c" onclick="irFicha(\'' + l.id + '\')" title="' + esc(k.codigo + ' — ' + (ST_TXT[c.st] || c.st) + (c.validade_ate ? ' até ' + br(c.validade_ate) : '')) + '"><span class="pill p-' + c.st + '">' + (c.st === 'valida' || c.st === 'vence' || c.st === 'vencida' ? (c.validade_ate ? br(c.validade_ate).slice(0,5) + '/' + c.validade_ate.slice(2,4) : 'ok') : (ST_TXT[c.st] || c.st)) + '</span></td>';
+      }).join('') + '</tr>').join('') + '</tbody></table>';
+}
+function irFicha(id){ tela('col'); abrir(id, 'nrs'); }
+async function painelExcel(){
+  const q = new URLSearchParams({ cargo: document.getElementById('p-fun').value, situacao: document.getElementById('p-sit').value, so_exigidas: document.getElementById('p-exig').checked ? 1 : 0 });
+  try {
+    const r = await fetch('/rh/api/painel-nr.xlsx?' + q, { headers: { 'Authorization': 'Bearer ' + tok() } });
+    if (!r.ok) throw new Error('Erro ' + r.status);
+    const b = await r.blob(), a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = 'garra-nrs-' + hojeISO() + '.xlsx'; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+  } catch(e){ toast('❌ ' + e.message); }
+}
+
+/* ══ PARAMETRIZAR ══ */
+let _exig = {};
+async function carregarPar(){
+  await carregarOpcoes();
+  try { _exig = await api('/rh/api/exigencias'); } catch(e){ toast('❌ ' + e.message); return; }
+  document.getElementById('par-cursos').innerHTML = '<table class="t"><thead><tr><th>Código</th><th>Nome</th><th>Reciclagem</th><th>Carga</th><th></th></tr></thead><tbody>'
+    + OP.cursos.map(k => '<tr' + (k.ativo ? '' : ' style="opacity:.5"') + '><td><b>' + esc(k.codigo) + '</b></td><td>' + esc(k.nome) + (k.tipo === 'NR' ? '' : ' <span class="pill p-cinza">outro</span>') + '</td><td>' + (k.validade_meses ? k.validade_meses + ' meses' : '<span class="muted">não vence</span>') + '</td><td>' + (k.carga_horaria ? k.carga_horaria + ' h' : '') + '</td><td style="text-align:right"><button class="btn peq" onclick="cursoEditar(\'' + k.id + '\')">editar</button></td></tr>').join('') + '</tbody></table>';
+  const cursosAtivos = OP.cursos.filter(k => k.ativo);
+  document.getElementById('par-exig').innerHTML = (OP.cargos || []).filter(c => c.ativo).map(f => '<div style="padding:6px 0;border-bottom:1px solid #EEF2F7"><div style="font-weight:600;margin-bottom:4px">' + esc(f.nome) + '</div><div class="chips">'
+    + cursosAtivos.map(k => '<span class="chip' + ((_exig[f.codigo] || []).includes(k.id) ? ' sel' : '') + '" onclick="exigToggle(\'' + esc(f.codigo) + '\',\'' + k.id + '\',this)" title="' + esc(k.nome) + '">' + esc(k.codigo) + '</span>').join('') + '</div></div>').join('') || '<div class="muted">Nenhum cargo ainda. Os cargos chegam com a importação do MAIS (Colaboradores › Importar do MAIS).</div>';
+  document.getElementById('par-plat').innerHTML = '<table class="t"><tbody>' + OP.plataformas.map(p => '<tr' + (p.ativo ? '' : ' style="opacity:.5"') + '><td><b>' + esc(p.nome) + '</b>' + (p.site ? ' <a href="' + esc(p.site) + '" target="_blank" rel="noopener" style="font-size:11px">site</a>' : '') + '</td><td style="text-align:right"><button class="btn peq" onclick="platEditar(\'' + p.id + '\')">editar</button></td></tr>').join('') + '</tbody></table>';
+}
+async function exigToggle(fc, kid, el){
+  const cur = new Set(_exig[fc] || []); if (cur.has(kid)) cur.delete(kid); else cur.add(kid);
+  try { await api('/rh/api/exigencias/' + encodeURIComponent(fc), { method: 'PUT', body: JSON.stringify({ cursos: [...cur] }) }); } catch(e){ toast('❌ ' + e.message); return; }
+  _exig[fc] = [...cur]; el.classList.toggle('sel', cur.has(kid));
+}
+function cursoEditar(id){
+  const k = OP.cursos.find(x => x.id === id) || { codigo: '', nome: '', tipo: 'NR', validade_meses: '', carga_horaria: '', ativo: true };
+  modal(id ? 'Editar ' + k.codigo : 'Nova NR / treinamento', '<div class="grid g3">' + fld('Código *', '<input id="cu-cod" value="' + esc(k.codigo) + '" placeholder="NR-35">') + fld('Tipo', '<select id="cu-tipo"><option value="NR"' + (k.tipo === 'NR' ? ' selected' : '') + '>NR</option><option value="OUTRO"' + (k.tipo !== 'NR' ? ' selected' : '') + '>Outro treinamento</option></select>') + fld('Reciclagem (meses)', '<input id="cu-val" inputmode="numeric" value="' + (k.validade_meses ?? '') + '" placeholder="vazio = não vence">') + '</div>'
+    + '<div style="margin-top:10px">' + fld('Nome *', '<input id="cu-nome" value="' + esc(k.nome) + '">') + '</div>'
+    + '<div class="grid g2" style="margin-top:10px">' + fld('Carga horária (h)', '<input id="cu-ch" inputmode="decimal" value="' + (k.carga_horaria ?? '') + '">') + (id ? fld('Ativo', '<select id="cu-at"><option value="1"' + (k.ativo ? ' selected' : '') + '>Sim</option><option value="0"' + (k.ativo ? '' : ' selected') + '>Não (some das listas)</option></select>') : '') + '</div><div class="erro" id="cu-erro"></div>',
+    'Salvar', async () => {
+      const e = document.getElementById('cu-erro'), at = document.getElementById('cu-at');
+      const body = { id: id || null, codigo: document.getElementById('cu-cod').value, nome: document.getElementById('cu-nome').value, tipo: document.getElementById('cu-tipo').value, validade_meses: document.getElementById('cu-val').value, carga_horaria: document.getElementById('cu-ch').value };
+      if (at) body.ativo = at.value === '1';
+      if (!body.codigo.trim() || !body.nome.trim()) { e.textContent = 'Informe código e nome.'; return false; }
+      try { await api('/rh/api/cursos', { method: 'POST', body: JSON.stringify(body) }); } catch(x){ e.textContent = x.message; return false; }
+      carregarPar();
+    });
+}
+function platEditar(id){
+  const p = OP.plataformas.find(x => x.id === id) || { nome: '', site: '', ativo: true };
+  modal(id ? 'Editar plataforma' : 'Nova plataforma EAD', fld('Nome *', '<input id="pl-nome" value="' + esc(p.nome) + '">') + '<div style="margin-top:10px">' + fld('Site (endereço de login)', '<input id="pl-site" value="' + esc(p.site || '') + '" placeholder="https://…">') + '</div>'
+    + (id ? '<div style="margin-top:10px">' + fld('Ativa', '<select id="pl-at"><option value="1"' + (p.ativo ? ' selected' : '') + '>Sim</option><option value="0"' + (p.ativo ? '' : ' selected') + '>Não</option></select>') + '</div>' : '') + '<div class="erro" id="pl-erro"></div>',
+    'Salvar', async () => {
+      const e = document.getElementById('pl-erro'), at = document.getElementById('pl-at'), site = document.getElementById('pl-site').value.trim();
+      if (!document.getElementById('pl-nome').value.trim()) { e.textContent = 'Informe o nome.'; return false; }
+      if (site && !/^https?:\/\//i.test(site)) { e.textContent = 'O site deve começar com http:// ou https://'; return false; }
+      const body = { id: id || null, nome: document.getElementById('pl-nome').value, site }; if (at) body.ativo = at.value === '1';
+      try { await api('/rh/api/plataformas', { method: 'POST', body: JSON.stringify(body) }); } catch(x){ e.textContent = x.message; return false; }
+      carregarPar();
+    });
+}
+
+/* ══ MODAL ══ */
+function modal(titulo, corpo, botao, acao, largo){
+  const m = document.getElementById('modal');
+  m.innerHTML = '<div class="mod-fundo" onclick="if(event.target===this)fecharModal()"><div class="mod"' + (largo ? ' style="width:min(1180px,96vw)"' : '') + '><h3>' + esc(titulo) + '</h3><div class="c">' + corpo + '</div><div class="r"><button class="btn" onclick="fecharModal()">Cancelar</button>' + (botao ? '<button class="btn pri" id="mod-ok">' + esc(botao) + '</button>' : '') + '</div></div></div>';
+  if (botao) document.getElementById('mod-ok').onclick = async () => { const b = document.getElementById('mod-ok'); b.disabled = true; const r = await acao(); if (r === false) { b.disabled = false; return; } fecharModal(); };
+}
+function fecharModal(){ document.getElementById('modal').innerHTML = ''; }
+document.addEventListener('keydown', e => { if (e.key === 'Escape') fecharModal(); });
+
+iniciar();
+</script>
+</body>
+</html>

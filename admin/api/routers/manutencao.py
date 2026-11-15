@@ -1622,10 +1622,14 @@ async def _funcoes_lista(so_ativas=True):
 
 
 async def _colaboradores_funcao():
+    # (15/11/2026) função e HH moram na ficha do RH (rh.colaboradores); a Manutenção lê de lá pelo login.
     await _garantir_funcoes()
+    from routers.rh import garantir_rh
+    await garantir_rh()
     rows = await ajard_query(
         """SELECT cf.usuario_id, cf.funcao_codigo, cf.custo_hh, f.nome AS funcao_nome, f.custo_hh AS custo_funcao, f.rubrica
-           FROM manutencao.colaborador_funcao cf LEFT JOIN manutencao.funcoes f ON f.codigo = cf.funcao_codigo""") or []
+           FROM rh.colaboradores cf LEFT JOIN manutencao.funcoes f ON f.codigo = cf.funcao_codigo
+           WHERE cf.ativo AND cf.usuario_id IS NOT NULL AND (cf.funcao_codigo IS NOT NULL OR cf.custo_hh IS NOT NULL)""") or []
     return {str(r["usuario_id"]): {"funcao_codigo": r["funcao_codigo"], "funcao_nome": r["funcao_nome"],
                                    "custo_hh": float(r["custo_hh"]) if r["custo_hh"] is not None else
                                                (float(r["custo_funcao"]) if r["custo_funcao"] is not None else None),
@@ -1687,7 +1691,7 @@ async def funcoes_excluir(codigo: str, payload=Depends(verificar_manutencao)):
     await _garantir_funcoes()
     uso = await ajard_query(
         """SELECT (SELECT COUNT(*) FROM manutencao.ot_mao_obra WHERE funcao_codigo=%s AND ativo=true)
-                + (SELECT COUNT(*) FROM manutencao.colaborador_funcao WHERE funcao_codigo=%s) AS n""",
+                + (SELECT COUNT(*) FROM rh.colaboradores WHERE funcao_codigo=%s AND ativo) AS n""",
         (codigo, codigo), fetch="one")
     if uso and int(uso["n"]) > 0:
         raise HTTPException(status_code=409, detail="Função em uso (OTs ou colaboradores) — desative em vez de excluir")
@@ -1698,18 +1702,21 @@ async def funcoes_excluir(codigo: str, payload=Depends(verificar_manutencao)):
 @router.put("/manutencao/api/colaboradores/{usuario_id}/funcao")
 async def colaborador_funcao(usuario_id: str, request: Request, payload=Depends(verificar_manutencao)):
     """Aponta a função do colaborador (e um custo/HH próprio, opcional — vazio usa o da função)."""
+    # (15/11/2026) grava na ficha do RH (fonte única de função/HH); quem ainda não tem ficha ganha uma.
     await _garantir_funcoes()
+    from routers.rh import garantir_rh
+    await garantir_rh()
     d = await request.json()
     fc = (d.get("funcao_codigo") or "").strip() or None
     custo = _mo_num(d.get("custo_hh"))
-    if not fc and custo is None:
-        await ajard_query("DELETE FROM manutencao.colaborador_funcao WHERE usuario_id=%s", (usuario_id,), fetch="none")
-        return {"ok": True}
-    await ajard_query(
-        """INSERT INTO manutencao.colaborador_funcao (usuario_id, funcao_codigo, custo_hh)
-           VALUES (%s,%s,%s)
-           ON CONFLICT (usuario_id) DO UPDATE SET funcao_codigo=EXCLUDED.funcao_codigo, custo_hh=EXCLUDED.custo_hh, atualizado_em=now()""",
-        (usuario_id, fc, custo), fetch="none")
+    r = await ajard_query("UPDATE rh.colaboradores SET funcao_codigo=%s, custo_hh=%s, atualizado_em=now() WHERE usuario_id=%s AND ativo RETURNING id",
+                          (fc, custo, usuario_id), fetch="one")
+    if not r and (fc or custo is not None):
+        await ajard_query(
+            """INSERT INTO rh.colaboradores (nome, usuario_id, funcao_codigo, custo_hh, situacao, criado_por)
+               SELECT nome, id, %s, %s, CASE WHEN ativo THEN 'ativo' ELSE 'desligado' END, %s
+                 FROM public.usuarios_garra WHERE id=%s""",
+            (fc, custo, payload.get("sub"), usuario_id), fetch="none")
     return {"ok": True}
 
 

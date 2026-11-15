@@ -1586,7 +1586,7 @@ async function iniciarApp(user) {
   try {
     const d = JSON.parse(localStorage.getItem('garra_destino') || 'null');
     localStorage.removeItem('garra_destino');
-    if (d && d.url && /^\/(manutencao|compras)(\/|\?|$)/.test(d.url) && Date.now() - (d.t || 0) < 15 * 60 * 1000) abrirModuloUrl(d.url, false);
+    if (d && d.url && /^\/(manutencao|compras|rh)(\/|\?|$)/.test(d.url) && Date.now() - (d.t || 0) < 15 * 60 * 1000) abrirModuloUrl(d.url, false);
   } catch(e) {}
 }
 
@@ -2869,6 +2869,11 @@ function renderSidebar(perfil, perms) {
         <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>
         Compras (OC)
       </div>` : '') +
+      ((temPerm('rh') || temPerm('rh_nr')) ? `
+      <div class="sb-item" onclick="abrirModuloUrl('/rh', true)">
+        <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+        RH — Colaboradores
+      </div>` : '') +
       ((temPerm('atendimento') || temPerm('atendimento_gestao')) ? `
       <div class="sb-item" onclick="abrirModuloUrl('/atendimento', true)">
         <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>
@@ -2979,10 +2984,12 @@ async function carregarFeed() {
 ══════════════════════════════════════════════ */
 const MODULOS_DASHBOARD = [
   {
-    id: null, // planejado — sem permissão
-    icon: '👥', nome: 'RH', desc: 'Admissão · eSocial · NR',
-    status: 'planejado', badge: 'badge-gray',
-    url: null,
+    // (15/11/2026) RH etapa 1: colaboradores, NRs e treinamentos, plataformas EAD
+    id: 'rh', ids: ['rh', 'rh_nr'],
+    icon: '👥', nome: 'RH', desc: 'Colaboradores · NRs · Treinamentos',
+    status: 'construcao', badge: 'badge-orange',   // (15/11/2026) etapa 1 no ar; comissões e documentos a seguir
+    url: '/rh',
+    externo: true,
   },
   {
     id: null,
@@ -3061,6 +3068,7 @@ const STATUS_MODULO = {
   producao:  { label:'Produção',         badge:'badge-green'  },
   dev:       { label:'Em desenvolvimento',badge:'badge-orange' },
   teste:     { label:'Em teste',          badge:'badge-orange' },
+  construcao:{ label:'Em construção',     badge:'badge-orange' },   // (15/11/2026)
   planejado: { label:'Planejado',         badge:'badge-gray'   },
 };
 
@@ -3084,7 +3092,7 @@ async function renderModulos(usuarioId, perfil) {
   };
 
   // (21/10/2026) ordem dos quadrantes: Produção → Em teste → Em desenvolvimento → Planejado (dentro do grupo, ordem do cadastro)
-  const ORDEM_STATUS = { producao: 0, teste: 1, dev: 2, planejado: 3 };
+  const ORDEM_STATUS = { producao: 0, teste: 1, dev: 2, construcao: 2, planejado: 3 };
   const cards = MODULOS_DASHBOARD.slice().sort((a, b) => (ORDEM_STATUS[a.status] ?? 9) - (ORDEM_STATUS[b.status] ?? 9)).map(m => {
     // Verificar permissão usando a função temPerm definida acima (ids = qualquer um libera)
     const hasAccess = (m.ids || [m.id]).some(temPerm);
