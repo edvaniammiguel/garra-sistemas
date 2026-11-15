@@ -1410,6 +1410,7 @@ async def _garantir_documentos():
     await ajard_query("CREATE INDEX IF NOT EXISTS ix_rh_docarq_doc ON rh.documento_arquivos (documento_id) WHERE ativo", fetch="none")
     await ajard_query("CREATE INDEX IF NOT EXISTS ix_rh_docarq_sha ON rh.documento_arquivos (sha256) WHERE ativo", fetch="none")
     await ajard_query("ALTER TABLE rh.acessos_log ADD COLUMN IF NOT EXISTS documento_id UUID", fetch="none")
+    await ajard_query("ALTER TABLE rh.documento_arquivos ADD COLUMN IF NOT EXISTS nr_ignorar BOOLEAN NOT NULL DEFAULT false", fetch="none")
     await ajard_query("""
         CREATE TABLE IF NOT EXISTS rh.config (chave TEXT PRIMARY KEY, valor TEXT,
             atualizado_por TEXT, atualizado_em TIMESTAMPTZ DEFAULT now())""", fetch="none")
@@ -1601,7 +1602,9 @@ async def documentos_listar(cid: str, payload=Depends(verificar_rh_ver)):
     # certificados anexados na aba NRs aparecem também aqui (somente leitura)
     certs = await ajard_query("""SELECT t.id, t.certificado_nome, t.data_conclusao, t.validade_ate, k.codigo
                                    FROM rh.treinamentos t JOIN rh.cursos k ON k.id=t.curso_id
-                                  WHERE t.colaborador_id=%s AND t.ativo AND t.certificado_path IS NOT NULL""", (cid,)) or []
+                                  WHERE t.colaborador_id=%s AND t.ativo AND t.certificado_path IS NOT NULL
+                                    AND NOT EXISTS (SELECT 1 FROM rh.documento_arquivos a JOIN rh.documentos d ON d.id=a.documento_id AND d.ativo
+                                                     WHERE a.path=t.certificado_path AND a.ativo)""", (cid,)) or []
     for t in certs:
         out.append({"id": "nr:" + str(t["id"]), "categoria": "CERTIFICADO", "categoria_nome": (cats.get("CERTIFICADO") or {}).get("nome", "Certificados"),
                     "sigilosa": False, "titulo": f"Certificado {t['codigo']}", "data_doc": iso(t["data_conclusao"]),
@@ -1674,7 +1677,7 @@ async def documento_criar(cid: str, request: Request, payload=Depends(verificar_
 @router.patch("/rh/api/documentos/{did}")
 async def documento_editar(did: str, request: Request, payload=Depends(verificar_rh)):
     await garantir_rh()
-    await _doc(did)
+    atual = await _doc(did)
     d = await request.json()
     v = {}
     if "categoria" in d:
@@ -1690,6 +1693,13 @@ async def documento_editar(did: str, request: Request, payload=Depends(verificar
             v[k] = _data(d[k])
     if "observacao" in d:
         v["observacao"] = (d["observacao"] or "").strip() or None
+    if d.get("colaborador_id") and str(d["colaborador_id"]) != str(atual["colaborador_id"]):
+        await _colab(d["colaborador_id"])
+        preso = await ajard_query("""SELECT 1 FROM rh.treinamentos t JOIN rh.documento_arquivos a ON a.path=t.certificado_path
+                                      WHERE a.documento_id=%s AND a.ativo AND t.ativo LIMIT 1""", (did,), fetch="one")
+        if preso:
+            raise HTTPException(status_code=409, detail="Já existe NR registrada a partir deste certificado — exclua o treinamento na aba NRs antes de mover")
+        v["colaborador_id"] = d["colaborador_id"]
     if v:
         await ajard_query(f"UPDATE rh.documentos SET {', '.join(k + '=%s' for k in v)}, atualizado_em=now() WHERE id=%s",
                           tuple(v.values()) + (did,), fetch="none")
@@ -1941,3 +1951,98 @@ async def importar_pasta_aplicar(request: Request, payload=Depends(verificar_rh)
     except Exception:
         pass
     return {"ok": True, "importados": ok, "repetidos": rep, "bytes": bytes_, "erros": erros[:50]}
+
+
+# ══════════════════════════════════════════════════════════════
+# CERTIFICADOS → NRs (15/11/2026)
+# Guardar o certificado em Documentos só arquiva o arquivo; o Painel de NRs conta TREINAMENTOS.
+# Aqui o sistema lê o nome de cada certificado ainda não ligado a um treinamento ("…-NR-12", "NR35", "DIREÇÃO DEFENSIVA"),
+# sugere a NR e a data, e — depois de a pessoa do RH conferir — registra o treinamento apontando para o mesmo arquivo.
+# ══════════════════════════════════════════════════════════════
+_GENERICAS = {"CERTIFICADO", "CERTIFICADOS", "TREINAMENTO", "CURSO", "CURSOS", "NORMA", "SEGURANCA", "TRABALHO", "BASICO", "RECICLAGEM"}
+
+
+def _cursos_do_nome(nome, cursos):
+    """Cursos do catálogo citados no nome do arquivo. 'NR01 E NR06' → os dois (se existirem no catálogo)."""
+    toks = _norm(nome.rsplit(".", 1)[0])
+    txt = " ".join(toks)
+    nums = {int(x) for x in re.findall(r"NR\s*0*(\d{1,2})(?!\d)", txt)}
+    achados = []
+    for k in cursos:
+        cod = " ".join(_norm(k["codigo"]))
+        m = re.fullmatch(r"NR\s*0*(\d{1,2})", cod)
+        if m:
+            if int(m.group(1)) in nums:
+                achados.append(k["id"])
+            continue
+        chave = next((p for p in _norm(k["nome"]) if len(p) >= 5 and p not in _GENERICAS), None)
+        if chave and chave in toks:
+            achados.append(k["id"])
+    return achados
+
+
+@router.get("/rh/api/certificados-pendentes")
+async def certificados_pendentes(colaborador_id: str = "", payload=Depends(verificar_rh)):
+    await garantir_rh()
+    cursos = await _cursos(so_ativos=True)
+    rows = await ajard_query("""
+        SELECT a.id, a.nome, d.data_doc, d.titulo, co.id AS cid, co.nome AS colaborador
+          FROM rh.documento_arquivos a JOIN rh.documentos d ON d.id=a.documento_id AND d.ativo
+          JOIN rh.colaboradores co ON co.id=d.colaborador_id AND co.ativo
+         WHERE a.ativo AND NOT a.nr_ignorar AND d.categoria='CERTIFICADO'
+           AND NOT EXISTS (SELECT 1 FROM rh.treinamentos t WHERE t.certificado_path=a.path AND t.ativo)
+         ORDER BY co.nome, a.nome""") or []
+    feitos = {}
+    for t in await ajard_query("""SELECT colaborador_id, curso_id, MAX(data_conclusao) AS d FROM rh.treinamentos
+                                   WHERE ativo AND situacao='concluido' GROUP BY 1,2""") or []:
+        feitos[(str(t["colaborador_id"]), str(t["curso_id"]))] = t["d"]
+    out = []
+    for r in rows:
+        if colaborador_id and str(r["cid"]) != colaborador_id:
+            continue
+        nome = r["nome"] or r["titulo"] or ""
+        # o nome do arquivo cita outra pessoa? (ex.: certificado do Jair guardado na ficha do Arthur)
+        dono = set(_norm(r["colaborador"])) - _PARTICULAS
+        outra = not (dono & set(_norm(nome))) and len(_norm(nome)) > 2
+        sug = _cursos_do_nome(nome, cursos) or [None]
+        for kid in sug:
+            ja = feitos.get((str(r["cid"]), kid)) if kid else None
+            out.append({"arquivo_id": str(r["id"]), "arquivo": nome, "colaborador_id": str(r["cid"]), "colaborador": r["colaborador"],
+                        "curso_id": kid, "data": r["data_doc"].isoformat() if r["data_doc"] else None,
+                        "ja_tem": ja.isoformat() if ja else None, "nome_de_outro": outra})
+    return {"itens": out, "cursos": [{"id": k["id"], "codigo": k["codigo"], "nome": k["nome"]} for k in cursos]}
+
+
+@router.post("/rh/api/certificados-pendentes/aplicar")
+async def certificados_aplicar(request: Request, payload=Depends(verificar_rh)):
+    await garantir_rh()
+    d = await request.json()
+    n, erros = 0, []
+    for it in d.get("itens") or []:
+        a = await ajard_query("""SELECT a.path, a.nome, d.colaborador_id FROM rh.documento_arquivos a
+                                   JOIN rh.documentos d ON d.id=a.documento_id AND d.ativo WHERE a.id=%s AND a.ativo""",
+                              (it.get("arquivo_id"),), fetch="one")
+        dt = _data(it.get("data_conclusao"))
+        k = await ajard_query("SELECT id, codigo FROM rh.cursos WHERE id=%s AND excluido_em IS NULL", (it.get("curso_id"),), fetch="one") if it.get("curso_id") else None
+        if not a or not k:
+            continue
+        if not dt:
+            erros.append(f"{a['nome']}: sem data de conclusão")
+            continue
+        if dt > _hoje():
+            erros.append(f"{a['nome']}: data de conclusão no futuro")
+            continue
+        if await ajard_query("""SELECT 1 FROM rh.treinamentos WHERE colaborador_id=%s AND curso_id=%s AND ativo
+                                 AND (certificado_path=%s OR data_conclusao=%s)""", (a["colaborador_id"], k["id"], a["path"], dt), fetch="one"):
+            continue   # já registrado
+        v = {"situacao": "concluido", "data_conclusao": dt, "modalidade": it.get("modalidade") or None}
+        await _vencimento(v, k["id"])
+        await ajard_query("""INSERT INTO rh.treinamentos (colaborador_id, curso_id, situacao, modalidade, data_conclusao, validade_ate,
+                                                          certificado_path, certificado_nome, criado_por)
+                             VALUES (%s,%s,'concluido',%s,%s,%s,%s,%s,%s)""",
+                          (a["colaborador_id"], k["id"], v["modalidade"], dt, v.get("validade_ate"), a["path"], a["nome"], payload.get("sub")), fetch="none")
+        n += 1
+    ign = [x for x in (d.get("ignorar") or []) if x]
+    for aid in ign:
+        await ajard_query("UPDATE rh.documento_arquivos SET nr_ignorar=true WHERE id=%s", (aid,), fetch="none")
+    return {"ok": True, "registrados": n, "ignorados": len(ign), "erros": erros}
