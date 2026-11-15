@@ -14,7 +14,7 @@
  */
 
 const CACHE_NAME = 'garra-operacional-v24';   // (30/10/2026) JS/CSS passam a network-first
-const ASSETS_CACHE = 'garra-assets-v73';  // (26/10/2026) aba Atendimento no app
+const ASSETS_CACHE = 'garra-assets-v74';  // (15/11/2026) aba RH no app
 const OFFLINE_PAGE = '/operacional/offline.html';
 
 // Assets que devem sempre estar em cache (shell)

@@ -406,6 +406,8 @@ input,select,textarea{font-family:inherit;outline:none;border:none}
     <button class="nav-btn" onclick="ir('OT')" style="display:none"><span class="nav-icon">📨</span><span class="nav-label">Pedir OT</span></button>
     <button class="nav-btn" onclick="ir('MG')" style="display:none"><span class="nav-icon">🔧</span><span class="nav-label">Manutenção</span></button>
     <button class="nav-btn" onclick="ir('AB')" style="display:none"><span class="nav-icon nav-svg"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 22V5a2 2 0 0 1 2-2h7a2 2 0 0 1 2 2v17"/><path d="M2 22h13"/><rect x="6" y="6" width="5" height="4" rx="1"/><path d="M14 11h1.5a2 2 0 0 1 2 2v4.5a1.5 1.5 0 0 0 3 0V9.8a2 2 0 0 0-.6-1.4L18 6.5"/></svg></span><span class="nav-label">Abastecer</span></button>
+    <!-- (15/11/2026) RH: fichas, NRs e documentos — aparece para quem tem RH — Completo ou RH — Ver NRs -->
+    <button class="nav-btn" onclick="ir('RH')" style="display:none"><span class="nav-icon">👥</span><span class="nav-label">RH</span></button>
   </div>
 </div>
 
@@ -801,7 +803,7 @@ function ir(nome) {
   const bottomNavs = document.querySelectorAll('.bottom-nav .nav-btn');
   bottomNavs.forEach(b => b.classList.remove('active'));
   // aba ativa sempre visível na barra rolável
-  try { const ix = ['Jard','Op','Check','Log','OC','OT','MG','AB'].indexOf(nome);
+  try { const ix = ['Jard','Op','Check','Log','OC','OT','MG','AB','RH'].indexOf(nome);
         if (bottomNavs[ix]) bottomNavs[ix].scrollIntoView({behavior:'smooth', block:'nearest', inline:'center'}); } catch(e){}
 
   // FAB de Nova OS visível só na aba Operacional
@@ -850,6 +852,12 @@ function ir(nome) {
     bottomNavs[7].classList.add('active');
     document.getElementById('app-modulo').textContent = 'Abastecimento';
     carregarIframeExterno('ab', '/abastecimento');
+  } else if (nome === 'RH') {
+    // (15/11/2026) RH embutido no shell
+    document.getElementById('sec-ext').classList.add('active');
+    bottomNavs[8].classList.add('active');
+    document.getElementById('app-modulo').textContent = 'RH';
+    carregarIframeExterno('rh', '/rh');
   }
 }
 
@@ -863,7 +871,7 @@ function carregarIframeExterno(chave, path) {
   if (!iframe) {
     iframe = document.createElement('iframe');
     iframe.id = 'iframe-ext';
-    iframe.setAttribute('allow', 'microphone; camera');   // ditado por voz e câmera nas páginas embutidas
+    iframe.setAttribute('allow', 'microphone; camera; publickey-credentials-get; publickey-credentials-create');   // ditado por voz e câmera nas páginas embutidas
     sec.innerHTML = '';
     sec.appendChild(iframe);
   }
@@ -885,7 +893,7 @@ function carregarIframeChecklist(tab, extra) {
   if (!iframe) {
     iframe = document.createElement('iframe');
     iframe.id = 'iframe-check';
-    iframe.setAttribute('allow', 'microphone; camera');
+    iframe.setAttribute('allow', 'microphone; camera; publickey-credentials-get; publickey-credentials-create');
     sec.innerHTML = '';
     sec.appendChild(iframe);
   }
@@ -2502,6 +2510,7 @@ function abrirLinkApp(link) {
     if (u.pathname.indexOf('/manutencao/mobile') === 0) { ir('MG'); _iframeExtra('mg', '/manutencao/mobile', q); }
     else if (u.pathname.indexOf('/compras') === 0) { ir('OC'); _iframeExtra('oc', '/compras', q); }
     else if (u.pathname.indexOf('/manutencao/pedido') === 0) { ir('OT'); _iframeExtra('ot', '/manutencao/pedido', q); }
+    else if (u.pathname === '/rh') { ir('RH'); if (q) _iframeExtra('rh', '/rh', q); }   // (15/11/2026)
     else if (u.pathname.indexOf('/abastecimento') === 0) { ir('AB'); if (q) _iframeExtra('ab', '/abastecimento', q); }   // (04/11/2026) ?guia=… chega ao iframe
     else if (u.pathname === '/checklist') {   // (05/11/2026) /checklist?guia=operador|gestor|logistica&tab=… → aba Checklist (ou Logística) com o tour
       var gq = u.searchParams.get('guia'), tb = u.searchParams.get('tab') === 'logistica' || gq === 'logistica' ? 'logistica' : 'checklist';
@@ -3169,6 +3178,7 @@ function aplicarPermissoesPerfil() {
     { aba: 5, id: 'pedir_ot' },
     { aba: 6, id: 'manutencao' },
     { aba: 7, id: 'abastecimento' },
+    { aba: 8, id: 'rh', ids: ['rh', 'rh_nr'] },
   ];
 
   // Padrão por perfil (usado quando permsDB não define o módulo)
@@ -3206,7 +3216,7 @@ function aplicarPermissoesPerfil() {
 function abrirAbaInicial() {
   if (!USUARIO) return;
   const navs = document.querySelectorAll('.bottom-nav .nav-btn');
-  const abas = ['Jard', 'Op', 'Check', 'Log', 'OC', 'OT', 'MG', 'AB'];
+  const abas = ['Jard', 'Op', 'Check', 'Log', 'OC', 'OT', 'MG', 'AB', 'RH'];
 
   // Veio do botão "Módulos" da jardinagem → NÃO reabrir jardinagem (evita loop)
   const veioDaJardinagem = new URLSearchParams(location.search).get('from') === 'jardinagem';
