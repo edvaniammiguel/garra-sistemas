@@ -923,7 +923,7 @@ function relFiltros(){
 }
 function relInit(){
   const hoje=new Date(), ini=new Date(hoje.getFullYear(),hoje.getMonth(),1);
-  const iso=d=>d.toISOString().slice(0,10);
+  const iso=d=>new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,10);   // (14/11/2026) fuso local, não UTC
   if(!document.getElementById('rel-ini').value){
     document.getElementById('rel-ini').value=iso(ini);
     document.getElementById('rel-fim').value=iso(hoje);

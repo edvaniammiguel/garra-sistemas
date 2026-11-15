@@ -15,7 +15,7 @@ from core.db import get_db
 from core.auth import verificar_token, verificar_gestor, verificar_admin
 from core.storage import _checklist_extrair_fotos_para_storage, _checklist_assinar_fotos_para_leitura
 from core.models import (
-    EnvioCreate, FrotaItem, ChecklistModeloCreate,
+    EnvioCreate, ChecklistModeloCreate,
     LogMotoristaCreate, LogVeiculoCreate, LogRegistroCreate,
 )
 
@@ -318,36 +318,8 @@ async def arquivar_envio(envio_id: str, db=Depends(get_db), _auth=Depends(verifi
     await db.execute("UPDATE checklist.envios SET arquivado=TRUE WHERE envio_id=$1", envio_id)
     return {"ok": True}
 
-@router.get("/frota")
-async def listar_frota(db=Depends(get_db), _auth=Depends(verificar_token)):
-    rows = await db.fetch(
-        "SELECT DISTINCT ON (categoria, identificacao) * "
-        "FROM checklist.frota WHERE ativo=TRUE "
-        "ORDER BY categoria, identificacao, id"
-    )
-    return [dict(r) for r in rows]
-
-@router.post("/frota")
-async def salvar_frota(item: FrotaItem, db=Depends(get_db), _auth=Depends(verificar_token)):
-    # (09/07/2026) Identificação é ÚNICA na frota inteira: o mesmo veículo não
-    # pode existir em duas categorias (causa dos CAs duplicados em Caminhões).
-    outra_cat = await db.fetchval(
-        "SELECT categoria FROM checklist.frota WHERE identificacao=$1 AND categoria<>$2 AND ativo=TRUE",
-        item.identificacao, item.categoria)
-    if outra_cat:
-        raise HTTPException(status_code=400,
-            detail=f"{item.identificacao} já está cadastrado na categoria '{outra_cat}' — um veículo tem uma única categoria")
-    existe = await db.fetchval("SELECT id FROM checklist.frota WHERE categoria=$1 AND identificacao=$2", item.categoria, item.identificacao)
-    if existe:
-        await db.execute("UPDATE checklist.frota SET descricao=$1,ativo=TRUE WHERE categoria=$2 AND identificacao=$3", item.descricao,item.categoria,item.identificacao)
-    else:
-        await db.execute("INSERT INTO checklist.frota (categoria,identificacao,descricao) VALUES ($1,$2,$3)", item.categoria,item.identificacao,item.descricao)
-    return {"ok": True}
-
-@router.delete("/frota/{categoria}/{identificacao}")
-async def remover_frota(categoria: str, identificacao: str, db=Depends(get_db), _auth=Depends(verificar_token)):
-    await db.execute("UPDATE checklist.frota SET ativo=FALSE WHERE categoria=$1 AND identificacao=$2", categoria, identificacao)
-    return {"ok": True}
+# (14/11/2026) rotas antigas GET/POST/DELETE /frota REMOVIDAS: o espelho checklist.frota foi aposentado em
+# 09/07/2026 (o checklist lê o cadastro único por /frota-checklist) e ninguém mais as chama — mas ainda gravavam.
 
 @router.get("/logistica/motoristas")
 async def listar_motoristas(db=Depends(get_db), _auth=Depends(verificar_token)):

@@ -26,6 +26,7 @@ Horas operadas no período = maior leitura − menor leitura em operacional.v_le
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from datetime import date as _date, datetime as _dt, timedelta as _td, timezone as _tz
+from core.fuso import hoje as _hoje, inicio_dia as _ini_dia, fim_dia as _fim_dia, dia_seguinte as _dia_seg  # (14/11/2026) fuso de Brasília
 import io
 import os
 import re
@@ -55,7 +56,7 @@ def _data(v, nome):
 class _F:
     """Filtros normalizados. Período padrão: últimos 12 meses até hoje."""
     def __init__(self, q):
-        hoje = _date.today()
+        hoje = _hoje()
         self.ate = _data(q.get("ate"), "Data final") or hoje
         self.de = _data(q.get("de"), "Data inicial") or (self.ate - _td(days=365))
         if self.de > self.ate:
@@ -94,9 +95,17 @@ class _F:
             w.append(f"{alias}.id = %s"); params.append(self.equipamento_id)
         return " AND ".join(w)
 
+    # (14/11/2026) limites do período no fuso de Brasília (colunas timestamptz; o banco roda em UTC).
+    # Em coluna DATE o mesmo valor vale pelo dia (o driver usa só a parte da data).
     def ate_fim(self):
-        """fim do dia da data final (para colunas timestamptz)"""
-        return _dt.combine(self.ate, _dt.max.time()).replace(microsecond=0)
+        """23:59:59 da data final, hora de Brasília"""
+        return _fim_dia(self.ate)
+    def ini(self):
+        """00:00 da data inicial, hora de Brasília"""
+        return _ini_dia(self.de)
+    def fim_excl(self):
+        """00:00 do dia seguinte à data final, hora de Brasília (limite exclusivo)"""
+        return _dia_seg(self.ate)
 
 
 def _f(v):
@@ -118,7 +127,7 @@ async def _horas_operadas(F):
         SELECT v.equipamento_id, MAX(v.leitura) - MIN(v.leitura) AS operadas, COUNT(*)::int AS n
           FROM operacional.v_leituras v JOIN operacional.equipamentos e ON e.id = v.equipamento_id
          WHERE v.data >= %s AND v.data < %s AND {F.where_eq(params)}
-         GROUP BY v.equipamento_id""", (F.de, F.ate + _td(days=1), *params))
+         GROUP BY v.equipamento_id""", (F.de, F.ate + _td(days=1), *params))  # v_leituras: por data (parte diária é DATE)
     return {str(r["equipamento_id"]): (_f(r["operadas"]) if r["n"] > 1 else 0.0) for r in rows}
 
 
@@ -165,7 +174,7 @@ async def rel_custo_objeto(F):
          WHERE {we}
          GROUP BY e.id, e.codigo, e.descricao, e.sistema_codigo, e.centro_custo, e.medicao
          ORDER BY (SUM({_SQL_PECAS_OT}) + SUM({_SQL_MO_OT}) + SUM({_SQL_OUTROS_OT})) DESC, e.codigo""",
-        (F.de, F.ate + _td(days=1), *params))
+        (F.ini(), F.fim_excl(), *params))
     horas = await _horas_operadas(F)
     out = []
     for r in rows:
@@ -213,7 +222,7 @@ async def rel_custo_conta(F):
     """Plano de contas: peças (movimentações.rubrica), MO (ot_mao_obra.rubrica), outros (ot_outros.rubrica)."""
     params = []
     we = F.where_eq(params)
-    de, ate = F.de, F.ate + _td(days=1)
+    de, ate = F.ini(), F.fim_excl()
     rows = await ajard_query(f"""
         SELECT conta, SUM(valor) AS valor, COUNT(*)::int AS lancamentos FROM (
           SELECT COALESCE(NULLIF(m.rubrica,''), '2') AS conta,
@@ -228,7 +237,7 @@ async def rel_custo_conta(F):
           UNION ALL
           SELECT COALESCE(NULLIF(x.rubrica,''), '3') AS conta, COALESCE(x.valor,0)
             FROM manutencao.ot_outros x JOIN manutencao.ot o ON o.id = x.ot_id JOIN operacional.equipamentos e ON e.id = o.equipamento_id
-           WHERE x.ativo = true AND COALESCE(x.data, x.criado_em::date) >= %s AND COALESCE(x.data, x.criado_em::date) <= %s AND {we}
+           WHERE x.ativo = true AND COALESCE(x.data, (x.criado_em AT TIME ZONE 'America/Sao_Paulo')::date) >= %s AND COALESCE(x.data, (x.criado_em AT TIME ZONE 'America/Sao_Paulo')::date) <= %s AND {we}
         ) t GROUP BY conta ORDER BY conta""",
         (de, ate, *params, de, F.ate, *params, de, F.ate, *params))
     nomes = {r["codigo"]: r["nome"] for r in await ajard_query("SELECT codigo, nome FROM manutencao.rubricas")}
@@ -283,7 +292,7 @@ async def rel_backlog(F):
           LEFT JOIN public.fornecedores fo ON fo.id = o.fornecedor_id
          WHERE o.ativo = true AND o.status NOT IN ('concluida','cancelada') AND {we} {extra}
          ORDER BY o.data_abertura""", tuple(params))
-    hoje = _date.today()
+    hoje = _hoje()
     out = []
     for r in rows:
         ab = r["data_abertura"].date() if r["data_abertura"] else None
@@ -317,7 +326,7 @@ async def rel_encerradas(F):
           LEFT JOIN public.usuarios_garra u ON u.id = o.responsavel_id
           LEFT JOIN public.fornecedores fo ON fo.id = o.fornecedor_id
          WHERE o.ativo = true AND o.status = 'concluida' AND o.data_conclusao >= %s AND o.data_conclusao < %s AND {we} {extra}
-         ORDER BY o.data_conclusao""", (F.de, F.ate + _td(days=1), *params))
+         ORDER BY o.data_conclusao""", (F.ini(), F.fim_excl(), *params))
     out = []
     for r in rows:
         ab = r["data_abertura"].date() if r["data_abertura"] else None
@@ -357,7 +366,7 @@ async def rel_corretiva_preventiva(F):
           JOIN manutencao.ot o ON o.equipamento_id = e.id AND o.ativo = true AND o.status <> 'cancelada'
                AND o.data_abertura >= %s AND o.data_abertura < %s
          WHERE {we}
-         GROUP BY e.codigo, e.descricao, e.sistema_codigo ORDER BY e.codigo""", (F.de, F.ate + _td(days=1), *params))
+         GROUP BY e.codigo, e.descricao, e.sistema_codigo ORDER BY e.codigo""", (F.ini(), F.fim_excl(), *params))
     out = []
     for r in rows:
         n = r["n"] or 0
@@ -382,7 +391,7 @@ async def rel_avarias(F):
           FROM manutencao.ot o JOIN operacional.equipamentos e ON e.id = o.equipamento_id
          WHERE o.ativo = true AND o.status <> 'cancelada' AND o.data_abertura >= %s AND o.data_abertura < %s
            AND (upper(COALESCE(o.tipo_trabalho,'')) LIKE 'C%%' OR o.tipo = 'corretiva') AND {we}
-         GROUP BY 1, 2 ORDER BY n DESC, custo DESC""", (F.de, F.ate + _td(days=1), *params))
+         GROUP BY 1, 2 ORDER BY n DESC, custo DESC""", (F.ini(), F.fim_excl(), *params))
     sint = {r["codigo"]: r["nome"] for r in await ajard_query("SELECT codigo, nome FROM manutencao.sintomas")}
     caus = {r["codigo"]: r["nome"] for r in await ajard_query("SELECT codigo, nome FROM manutencao.causas")}
     tot = sum(r["n"] for r in rows) or 0
@@ -406,7 +415,7 @@ _PREV_PT = {"ok": "Em dia", "a_vencer": "A vencer", "vencida": "Vencida", "progr
 async def rel_aderencia_fmp(F):
     prev = await _calcular_previsoes()
     eqs = {str(r["id"]): r for r in await ajard_query("SELECT id, codigo, sistema_codigo FROM operacional.equipamentos WHERE ativo = true")}
-    hoje = _date.today()
+    hoje = _hoje()
     out = []
     for it in prev["itens"]:
         e = eqs.get(it["equipamento_id"])
@@ -459,7 +468,7 @@ async def rel_indisponibilidade(F):
           JOIN manutencao.ot o ON o.equipamento_id = e.id AND o.ativo = true AND o.status = 'concluida'
                AND o.data_conclusao >= %s AND o.data_conclusao < %s
          WHERE {we}
-         GROUP BY e.id, e.codigo, e.descricao, e.sistema_codigo ORDER BY parada DESC, e.codigo""", (F.de, F.ate + _td(days=1), *params))
+         GROUP BY e.id, e.codigo, e.descricao, e.sistema_codigo ORDER BY parada DESC, e.codigo""", (F.ini(), F.fim_excl(), *params))
     horas = await _horas_operadas(F)
     dias = (F.ate - F.de).days + 1
     disp_h = dias * jornada
@@ -542,7 +551,7 @@ async def rel_consumo_pecas(F):
          WHERE (m.tipo IN ('saida','aplicacao_direta') OR (m.tipo = 'entrada' AND m.ot_id IS NOT NULL))
            AND m.criado_em >= %s AND m.criado_em < %s""" +
         (f" AND (e.id IS NULL OR ({we}))" if (F.sistema or F.equipamento_id) else "") + extra +
-        " ORDER BY m.criado_em", (F.de, F.ate + _td(days=1), *params))
+        " ORDER BY m.criado_em", (F.ini(), F.fim_excl(), *params))
     out = []
     for r in rows:
         out.append({"data": r["criado_em"], "item": r["codigo"], "descricao": r["descricao"], "familia": r["familia_codigo"], "unidade": r["unidade"],
@@ -638,7 +647,7 @@ async def rel_utilizacao(F):
                MIN(v.leitura) AS ini, MAX(v.leitura) AS fim, COUNT(*)::int AS registros, COUNT(DISTINCT v.data::date)::int AS dias
           FROM operacional.v_leituras v JOIN operacional.equipamentos e ON e.id = v.equipamento_id
          WHERE v.data >= %s AND v.data < %s AND {we}
-         GROUP BY e.codigo, e.descricao, e.sistema_codigo, e.medicao, 5 ORDER BY e.codigo, 5""", (F.de, F.ate + _td(days=1), *params))
+         GROUP BY e.codigo, e.descricao, e.sistema_codigo, e.medicao, 5 ORDER BY e.codigo, 5""", (F.de, F.ate + _td(days=1), *params))  # v_leituras: por data (parte diária é DATE)
     out = []
     for r in rows:
         op = _f(r["fim"]) - _f(r["ini"]) if r["registros"] > 1 else 0.0
@@ -684,7 +693,7 @@ COL_PONTOS = [("objeto", "Objeto", "txt"), ("obj_desc", "Descrição", "txt"), (
 # ═════════════════════════════ ENTRADAS (21/10/2026) ═════════════════════════════
 def _where_entradas(F, params):
     w = ["m.tipo = 'entrada'", "m.criado_em >= %s", "m.criado_em < %s"]
-    params += [F.de, F.ate + _td(days=1)]
+    params += [F.ini(), F.fim_excl()]
     if F.item:
         w.append("(unaccent(p.codigo) ILIKE unaccent(%s) OR unaccent(p.descricao) ILIKE unaccent(%s))"); params += [f"%{F.item}%"] * 2
     if F.familia:
@@ -701,7 +710,7 @@ def _where_entradas(F, params):
 _SQL_ENTRADAS = """
     SELECT m.id, m.criado_em, m.quantidade, m.custo_unitario, m.custo_nf, m.acrescimo_rateado, m.total_nf,
            m.documento_tipo, m.documento_numero, m.oc_numero, m.estornado_em, m.lote,
-           COALESCE(m.lote::text, COALESCE(m.documento_numero,'') || '|' || m.criado_em::date::text) AS lote_chave,
+           COALESCE(m.lote::text, COALESCE(m.documento_numero,'') || '|' || (m.criado_em AT TIME ZONE 'America/Sao_Paulo')::date::text) AS lote_chave,
            COALESCE((SELECT td.nome FROM manutencao.tipos_documento td WHERE td.codigo = m.documento_tipo),
                     CASE m.documento_tipo WHEN 'nf' THEN 'NOTA FISCAL' WHEN 'notinha' THEN 'CUPOM' WHEN 'aplicacao_direta' THEN 'BALCAO' ELSE m.documento_tipo END) AS doc_nome,
            p.codigo, p.descricao, p.unidade, p.familia_codigo,
@@ -922,7 +931,7 @@ async def rel_cotacoes_resultado(F):
           LEFT JOIN manutencao.ot ot ON ot.id=c.ot_id
           LEFT JOIN operacional.equipamentos e ON e.id=c.equipamento_id
          WHERE c.ativo AND c.status='encerrada' AND c.encerrada_em >= %s AND c.encerrada_em <= %s AND (%s::text IS NULL OR c.setor_codigo=%s)
-         ORDER BY c.encerrada_em DESC""", (F.de, F.ate_fim(), F.setor, F.setor)) or []
+         ORDER BY c.encerrada_em DESC""", (F.ini(), F.ate_fim(), F.setor, F.setor)) or []
     out = []
     for r in rows:
         tot, maior = _f(r["total_oc"]), (_f(r["maior_total"]) if r["maior_total"] is not None else None)
@@ -949,7 +958,7 @@ async def rel_pendencias_compra(F):
           LEFT JOIN operacional.equipamentos e ON e.id=pc.equipamento_id
           LEFT JOIN public.usuarios_garra u ON u.id=pc.resolvido_por
          WHERE (pc.status='aberta' OR (pc.resolvido_em >= %s AND pc.resolvido_em <= %s)) AND (%s::text IS NULL OR pc.setor_codigo=%s)
-         ORDER BY pc.status, pc.criado_em""", (F.de, F.ate_fim(), F.setor, F.setor)) or []
+         ORDER BY pc.status, pc.criado_em""", (F.ini(), F.ate_fim(), F.setor, F.setor)) or []
     hoje = _dt.now(_tz.utc)
     return [{"situacao": "Aberta" if r["status"] == "aberta" else "Baixada", "item": r["peca_codigo"] or "", "descricao": r["descricao"], "qtd": _r2(r["quantidade"]),
              "unidade": r["unidade"] or "", "origem": r["cotacao_numero"] or (r["origem_tipo"] or ""), "criada": r["criado_em"],
@@ -1018,13 +1027,13 @@ async def rel_fornecedores_desempenho(F):
           FROM compras.cotacao_fornecedores cf
           JOIN compras.cotacoes c ON c.id=cf.cotacao_id AND c.ativo AND c.criado_em >= %s AND c.criado_em <= %s AND (%s::text IS NULL OR c.setor_codigo=%s)
           JOIN public.fornecedores f ON f.id=cf.fornecedor_id
-         GROUP BY f.id, f.nome ORDER BY vitorias DESC, respostas DESC, f.nome""", (F.de, F.ate_fim(), F.setor, F.setor)) or []
+         GROUP BY f.id, f.nome ORDER BY vitorias DESC, respostas DESC, f.nome""", (F.ini(), F.ate_fim(), F.setor, F.setor)) or []
     ids = [str(r["id"]) for r in rows]
     valores = {}
     if ids:
         for v in await ajard_query("""SELECT fornecedor_id::text AS fid, COUNT(*) AS n, COALESCE(SUM(valor_total),0) AS valor
                                         FROM compras.ordens_compra WHERE ativo AND fornecedor_id::text = ANY(%s) AND status NOT IN ('cancelada','rejeitada')
-                                         AND criado_em >= %s AND criado_em <= %s GROUP BY fornecedor_id""", (ids, F.de, F.ate_fim())) or []:
+                                         AND criado_em >= %s AND criado_em <= %s GROUP BY fornecedor_id""", (ids, F.ini(), F.ate_fim())) or []:
             valores[v["fid"]] = v
     out = []
     for r in rows:
@@ -1223,7 +1232,11 @@ class _FP:
     def where_eq(self, params, alias="e"):
         return f"{alias}.ativo = true"
     def ate_fim(self):
-        return _dt.combine(self.ate, _dt.max.time()).replace(microsecond=0)
+        return _fim_dia(self.ate)
+    def ini(self):
+        return _ini_dia(self.de)
+    def fim_excl(self):
+        return _dia_seg(self.ate)
 
 
 @router.get("/manutencao/api/indicadores")
@@ -1231,7 +1244,7 @@ async def indicadores(periodo: str = "12m", setor: str = None, _auth=Depends(ver
     """periodo: 12m (padrão) · ano · mes. setor = setor de COMPRAS da manutenção (cotações/OCs/pendências)."""
     await _prep()
     from routers.manutencao import _vencimento_ot, necessidades_ots, estoque_baixo
-    hoje = _date.today()
+    hoje = _hoje()
     ini_mes = hoje.replace(day=1)
     de = ini_mes if periodo == "mes" else (hoje.replace(month=1, day=1) if periodo == "ano" else (hoje - _td(days=365)))
     setor = (setor or "").strip() or None
@@ -1304,7 +1317,7 @@ async def indicadores(periodo: str = "12m", setor: str = None, _auth=Depends(ver
                    (SELECT COUNT(*) FROM compras.pendencias_compra WHERE status='aberta' AND {sc})::int AS pend,
                    (SELECT COUNT(*) FROM compras.ordens_compra o JOIN compras.cotacao_fornecedores cf ON cf.oc_id=o.id
                      WHERE o.ativo AND o.status IN ('enviada','recebida_parcial') AND o.enviado_em IS NOT NULL AND cf.prazo_dias IS NOT NULL
-                       AND (o.enviado_em + make_interval(days => cf.prazo_dias))::date < CURRENT_DATE AND (%s::text IS NULL OR o.setor_codigo=%s))::int AS atrasadas,
+                       AND ((o.enviado_em + make_interval(days => cf.prazo_dias)) AT TIME ZONE 'America/Sao_Paulo')::date < (now() AT TIME ZONE 'America/Sao_Paulo')::date AND (%s::text IS NULL OR o.setor_codigo=%s))::int AS atrasadas,
                    (SELECT COALESCE(SUM(valor_total),0) FROM compras.ordens_compra WHERE ativo AND status IN ('solicitada','aprovada','enviada','recebida_parcial') AND {sc}) AS valor_aberto""",
             (setor, setor) * 8, fetch="one") or {}
         compras = {"cotacoes": int(cp["cot"]), "a_aprovar": int(cp["aprovar"]), "rascunho": int(cp["rascunho"]), "a_enviar": int(cp["a_enviar"]),
@@ -1837,14 +1850,14 @@ def _pdf_response(titulo, filtros, colunas, linhas, totais, nome, emitente="", g
     bio = _pdf_bytes(titulo, filtros, colunas, linhas, totais, emitente, grupos=grupos, grafico=grafico)
     arq = re.sub(r"[^a-z0-9]+", "-", nome.lower()).strip("-") or "relatorio"
     return StreamingResponse(bio, media_type="application/pdf",
-                             headers={"Content-Disposition": f'attachment; filename="garra-{arq}-{_date.today().isoformat()}.pdf"'})
+                             headers={"Content-Disposition": f'attachment; filename="garra-{arq}-{_hoje().isoformat()}.pdf"'})
 
 
 def _xlsx_response(titulo, filtros, colunas, linhas, nome, emitente="", grupos=None, grafico=None):
     bio = _xlsx_bytes(titulo, filtros, colunas, linhas, emitente, grupos=grupos, grafico=grafico)
     arq = re.sub(r"[^a-z0-9]+", "-", nome.lower()).strip("-") or "relatorio"
     return StreamingResponse(bio, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                             headers={"Content-Disposition": f'attachment; filename="garra-{arq}-{_date.today().isoformat()}.xlsx"'})
+                             headers={"Content-Disposition": f'attachment; filename="garra-{arq}-{_hoje().isoformat()}.xlsx"'})
 
 
 def _lista_da_tela(d):

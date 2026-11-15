@@ -16,6 +16,7 @@ from datetime import date
 from fastapi import APIRouter, Depends, HTTPException, Request
 
 from core.db import ajard_query, ajard_query_id
+from core.fuso import hoje as _hoje  # (14/11/2026) fuso de Brasília
 from routers.compras import (verificar_compras, verificar_compras_solicitante, _usuario_id,
                              _criar_oc_dados, solicitar_aprovacao)
 
@@ -224,7 +225,7 @@ async def _carregar(cid):
     return dict(cot), [dict(i) for i in itens], [dict(f) for f in forns], [dict(p) for p in precos]
 
 
-def _prefill(p):
+def _eh_prefill(p):   # (14/11/2026) renomeada: tinha o mesmo nome da async _prefill(cid) abaixo, que a substituía
     """(12/11/2026) célula só com o 'último preço conhecido' sugerido pelo sistema — ainda não é resposta do fornecedor."""
     return (p.get("observacao") or "").startswith("último preço conhecido")
 
@@ -235,7 +236,7 @@ def _fase(cot, forns, precos):
     Encerrada/cancelada: a própria situação."""
     if cot["status"] != "aberta":
         return cot["status"]
-    if any(f.get("status") and f["status"] != "aguardando" for f in forns) or any(p.get("preco_unit") is not None and not _prefill(p) for p in precos):
+    if any(f.get("status") and f["status"] != "aguardando" for f in forns) or any(p.get("preco_unit") is not None and not _eh_prefill(p) for p in precos):
         return "respondida"
     return "enviada" if cot.get("enviada_em") else "montando"
 
@@ -307,8 +308,8 @@ async def criar(request: Request, payload=Depends(verificar_compras_solicitante)
     itens = [i for i in (d.get("itens") or []) if (i.get("descricao") or "").strip()]
     # (12/11/2026) cotação pode nascer vazia (itens entram pelo ＋ item do mapa); encerrar sem item é que não pode
     setor = (d.get("setor_codigo") or "").strip().upper() or None
-    seq = await ajard_query("SELECT COALESCE(MAX(sequencia),0)+1 AS n FROM compras.cotacoes WHERE ano=%s", (date.today().year,), fetch="one")
-    numero = f"COT-{date.today().year}-{int(seq['n']):04d}"
+    seq = await ajard_query("SELECT COALESCE(MAX(sequencia),0)+1 AS n FROM compras.cotacoes WHERE ano=%s", (_hoje().year,), fetch="one")
+    numero = f"COT-{_hoje().year}-{int(seq['n']):04d}"
     uid = await _usuario_id(payload)
     row = await ajard_query_id(
         # (13/11/2026) modo padrão = 'fornecedor' (1 OC) — decisão da gestão; 'por item' fica no seletor do mapa.
@@ -316,7 +317,7 @@ async def criar(request: Request, payload=Depends(verificar_compras_solicitante)
         # (item comprado) ou fica a MESMA (sem oferta de novo); nunca nasce uma segunda pendência da mesma peça.
         """INSERT INTO compras.cotacoes (numero, ano, sequencia, setor_codigo, origem, ot_id, equipamento_id, observacao, criado_por, modo, pendencia_id)
            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,'fornecedor',%s)""",
-        (numero, date.today().year, int(seq["n"]), setor, (d.get("origem") or "manual"), d.get("ot_id") or None,
+        (numero, _hoje().year, int(seq["n"]), setor, (d.get("origem") or "manual"), d.get("ot_id") or None,
          d.get("equipamento_id") or None, d.get("observacao"), uid, d.get("pendencia_id") or None))
     cid = row["id"]
     if d.get("pendencia_id"):
@@ -477,7 +478,7 @@ async def forn_resposta(cid: str, cf_id: str, request: Request, payload=Depends(
                 (p["item_id"], cf_id, pu, p.get("prazo_dias") or None, p.get("observacao"), oferta, sub_cod,
                  (p.get("subst_descricao") or "").strip() or None, aceito), fetch="none")
         # (12/11/2026) preço PRÉ-PREENCHIDO (último conhecido, ainda não confirmado) não vale como resposta
-        if status is None and any(p.get("preco_unit") not in (None, "") and not _prefill(p) for p in (d["precos"] or [])):
+        if status is None and any(p.get("preco_unit") not in (None, "") and not _eh_prefill(p) for p in (d["precos"] or [])):
             status = "respondeu"
     sets, params = [], []
     for k in ("prazo_dias", "frete", "condicao_pagamento", "validade", "observacao", "anexo_path"):
@@ -523,13 +524,13 @@ async def cotacao_saldo(cid: str, request: Request, payload=Depends(verificar_co
     mover = [i for i in itens if str(i["id"]) in ids]
     if not mover:
         raise HTTPException(400, "Nenhum item informado")
-    seq = await ajard_query("SELECT COALESCE(MAX(sequencia),0)+1 AS n FROM compras.cotacoes WHERE ano=%s", (date.today().year,), fetch="one")
-    numero = f"COT-{date.today().year}-{int(seq['n']):04d}"
+    seq = await ajard_query("SELECT COALESCE(MAX(sequencia),0)+1 AS n FROM compras.cotacoes WHERE ano=%s", (_hoje().year,), fetch="one")
+    numero = f"COT-{_hoje().year}-{int(seq['n']):04d}"
     uid = await _usuario_id(payload)
     row = await ajard_query_id(
         """INSERT INTO compras.cotacoes (numero, ano, sequencia, setor_codigo, origem, ot_id, equipamento_id, observacao, criado_por, cotacao_origem_id, modo)
            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,'fornecedor')""",
-        (numero, date.today().year, int(seq["n"]), cot.get("setor_codigo"), "saldo", cot.get("ot_id"), cot.get("equipamento_id"),
+        (numero, _hoje().year, int(seq["n"]), cot.get("setor_codigo"), "saldo", cot.get("ot_id"), cot.get("equipamento_id"),
          f"Saldo da {cot['numero']}: itens sem oferta aceita", uid, cid))
     nid = row["id"]
     for n, i in enumerate(mover):

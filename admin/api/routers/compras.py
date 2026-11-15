@@ -20,6 +20,7 @@ from fastapi.responses import HTMLResponse, StreamingResponse
 import os
 
 from core.auth import verificar_token
+from core.fuso import hoje as _hoje  # (14/11/2026) fuso de Brasília
 from core.db import ajard_query, ajard_query_id
 from core.storage import storage_upload, storage_url
 
@@ -380,7 +381,7 @@ async def _criar_oc_dados(d, payload):
         """SELECT COALESCE(MAX(sequencia),0)+1 AS n FROM compras.ordens_compra
            WHERE ano = EXTRACT(YEAR FROM now())::int""", fetch="one")
     from datetime import date as _date
-    ano = _date.today().year
+    ano = _hoje().year
     numero = f"OC-{ano}-{int(seq['n']):04d}"
 
     uid = await _usuario_id(payload)
@@ -1190,7 +1191,7 @@ async def ultimo_preco(q: str = "", _auth=Depends(verificar_compras)):
         return []
     rows = await ajard_query(
         """SELECT i.descricao, i.valor_unit, i.unidade,
-                  COALESCE(fo.nome, oc.fornecedor_avulso) AS fornecedor_nome, oc.criado_em::date AS data_compra
+                  COALESCE(fo.nome, oc.fornecedor_avulso) AS fornecedor_nome, (oc.criado_em AT TIME ZONE 'America/Sao_Paulo')::date AS data_compra
            FROM compras.oc_itens i
            JOIN compras.ordens_compra oc ON oc.id = i.oc_id
            LEFT JOIN public.fornecedores fo ON fo.id = oc.fornecedor_id
@@ -1208,12 +1209,12 @@ async def ultimo_preco(q: str = "", _auth=Depends(verificar_compras)):
 
 async def _dados_relatorio(payload, inicio, fim, status, setor):
     from datetime import date as _date
-    hoje = _date.today()
+    hoje = _hoje()
     if not inicio:
         inicio = hoje.replace(day=1).isoformat()
     if not fim:
         fim = hoje.isoformat()
-    where, params = ["oc.ativo=true", "oc.criado_em::date BETWEEN %s AND %s"], [inicio, fim]
+    where, params = ["oc.ativo=true", "(oc.criado_em AT TIME ZONE 'America/Sao_Paulo')::date BETWEEN %s AND %s"], [inicio, fim]
     if status:
         params.append(status)
         where.append("oc.status=%s")
@@ -1225,7 +1226,7 @@ async def _dados_relatorio(payload, inicio, fim, status, setor):
         params.append(uid)
         where.append("oc.solicitante_id=%s")
     linhas = await ajard_query(
-        f"""SELECT oc.numero, oc.criado_em::date AS data, se.nome AS setor,
+        f"""SELECT oc.numero, (oc.criado_em AT TIME ZONE 'America/Sao_Paulo')::date AS data, se.nome AS setor,
                   oc.status, oc.prioridade,
                   COALESCE(fo.nome, oc.fornecedor_avulso, '-') AS fornecedor,
                   us.nome AS solicitante, ua.nome AS aprovador,

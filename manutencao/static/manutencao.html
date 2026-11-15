@@ -488,6 +488,8 @@ async function mntFetch(path, opts){
   if (!r.ok) throw new Error(j.detail || ('Erro '+r.status));
   return j;
 }
+// (14/11/2026) data AAAA-MM-DD no fuso do aparelho (Brasília). toISOString() é UTC: das 21h à meia-noite já dava o dia seguinte.
+function _isoLocal(d){ d = d || new Date(); return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0,10); }
 function _esc(s){ return String(s??'').replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 function mostrarToast(msg, tipo){
   const t = document.getElementById('toast');
@@ -2321,11 +2323,11 @@ async function novoEquipMW(copiarDe, editar){
     + fld('C. Custo', sel('ne-cc', _mwDom.ccs, base.centro_custo, 'codigo','nome'))
     + fld('Localiza\u00e7\u00e3o', '<div style="display:flex;gap:4px">'+inp('ne-loc', base.localizacao, 'almoxarifado / local')+'<button class="btn" title="Localiza\u00e7\u00f5es (almoxarifados) \u2014 escolher ou criar" onclick="neSeletor(\'loc\')">\u2026</button></div>')
     + fld('Operador/motorista', '<div style="display:flex;gap:4px">'+sel('ne-op', _mwDom.operadores, base.operador_responsavel_id, 'id','nome')+'<button class="btn" title="Colaboradores \u2014 escolher ou cadastrar" onclick="neSeletor(\'op\')">\u2026</button></div>')
-    + fld('Desde', inp('ne-desde', editar ? (base.operador_desde ? String(base.operador_desde).slice(0,10) : '') : new Date().toISOString().slice(0,10), '', 'date'))
+    + fld('Desde', inp('ne-desde', editar ? (base.operador_desde ? String(base.operador_desde).slice(0,10) : '') : _isoLocal(new Date()), '', 'date'))
     + '<fieldset class="ne-fs"><legend>Fornecedor</legend>'
     + fld('Fornecedor', '<div style="display:flex;gap:4px">'+sel('ne-forn', _mwDom.fornecedores, base.fornecedor_id, 'id','nome')+'<button class="btn" title="Fornecedores \u2014 escolher ou cadastrar" onclick="neSeletor(\'forn\')">\u2026</button></div>')
     + '<div style="display:flex;gap:10px;margin-top:4px">'
-    + fld('<span class="r">Data:</span>', inp('ne-dtaq', editar ? (base.data_aquisicao ? String(base.data_aquisicao).slice(0,10) : '') : new Date().toISOString().slice(0,10), '', 'date'), 1)
+    + fld('<span class="r">Data:</span>', inp('ne-dtaq', editar ? (base.data_aquisicao ? String(base.data_aquisicao).slice(0,10) : '') : _isoLocal(new Date()), '', 'date'), 1)
     + fld('Registro (H):', inp('ne-leit', editar ? (base.medicao==='km' ? base.km_atual : base.horimetro_atual) ?? '' : '', '0'), 1)
     + '</div><div style="display:flex;gap:10px;margin-top:4px">'
     + fld('Vida \u00datil (h):', inp('ne-vida', base.vida_util_h, 'h'), 1) + fld('Investimento:', inp('ne-inv', editar ? (base.valor_aquisicao ?? '') : '', 'R$'), 1)
@@ -3028,7 +3030,7 @@ async function abPostoRenomear(){
    repetido, consumo); ✔ por nota e "Conferir todos sem alerta"; duplo clique abre a janela do
    equipamento para corrigir. Status vive em abastecimento_notas.status_conferencia. */
 let _abcf = { de:null, ate:null, pend:true, itens:[] };
-function _abcfDia(n){ const d = new Date(); d.setDate(d.getDate()+n); return d.toISOString().slice(0,10); }
+function _abcfDia(n){ const d = new Date(); d.setDate(d.getDate()+n); return _isoLocal(d); }
 async function abConferenciaJanela(de, ate, pend){
   if (de !== undefined) _abcf.de = de; if (ate !== undefined) _abcf.ate = ate; if (pend !== undefined) _abcf.pend = pend;
   if (!_abcf.de){ _abcf.de = _abcfDia(-1); _abcf.ate = _abcfDia(0); }
@@ -3426,7 +3428,7 @@ async function _relPrep(){
   await _tiposTrab();
   const setores = await _setoresInterventor();
   try { await _setorManutencao(); } catch(e){}   // relatórios do grupo Compras saem só do setor de compras da manutenção
-  if (!_relF.ate) { const h = new Date(); _relF.ate = h.toISOString().slice(0,10); const d = new Date(h); d.setFullYear(d.getFullYear()-1); _relF.de = d.toISOString().slice(0,10); }
+  if (!_relF.ate) { const h = new Date(); _relF.ate = _isoLocal(h); const d = new Date(h); d.setFullYear(d.getFullYear()-1); _relF.de = _isoLocal(d); }
   window._relDom = { setores, tipos: (_mntTiposTrab || []) };
   return true;
 }
@@ -3618,7 +3620,7 @@ function relEscolher(nome){
 function relPeriodo(dias){
   const h = new Date(); let d;
   if (dias === 0) d = new Date(h.getFullYear(), 0, 1); else { d = new Date(h); d.setDate(d.getDate() - dias); }
-  const g = id => document.getElementById(id); if (g('rf-de')) g('rf-de').value = d.toISOString().slice(0,10); if (g('rf-ate')) g('rf-ate').value = h.toISOString().slice(0,10);
+  const g = id => document.getElementById(id); if (g('rf-de')) g('rf-de').value = _isoLocal(d); if (g('rf-ate')) g('rf-ate').value = _isoLocal(h);
   relGerar();
 }
 function _relQuery(){
@@ -3695,7 +3697,7 @@ function _relParamsAtuais(relativo){
   const p = {}; q.split('&').filter(Boolean).forEach(kv => { const i = kv.indexOf('='); p[kv.slice(0, i)] = decodeURIComponent(kv.slice(i + 1)); });
   delete p.setor_compras;
   // favorito com "até hoje" guarda a janela em dias: toda segunda abre com o período atualizado
-  if (relativo && p.ate && p.de && p.ate === new Date().toISOString().slice(0,10)) {
+  if (relativo && p.ate && p.de && p.ate === _isoLocal(new Date())) {
     p.rel_dias = String(Math.round((new Date(p.ate) - new Date(p.de)) / 864e5)); delete p.de; delete p.ate;
   }
   const grp = ((_relCat && _relCat.grupos) || []).find(g => g.itens.some(i => i.nome === _relAtual));
@@ -3704,7 +3706,7 @@ function _relParamsAtuais(relativo){
 }
 function _relAplicar(nome, p){
   p = p || {};
-  if (p.rel_dias) { const h = new Date(), d = new Date(h); d.setDate(d.getDate() - parseInt(p.rel_dias, 10)); _relF.de = d.toISOString().slice(0,10); _relF.ate = h.toISOString().slice(0,10); }
+  if (p.rel_dias) { const h = new Date(), d = new Date(h); d.setDate(d.getDate() - parseInt(p.rel_dias, 10)); _relF.de = _isoLocal(d); _relF.ate = _isoLocal(h); }
   ['de','ate','sistema','equipamento_id','tipo_trabalho','setor','familia','item','fornecedor_id','documento','almox'].forEach(k => { if (p[k] !== undefined) _relF[k] = p[k]; });
   _relOpc[nome] = { agrupar: p.agrupar || '', grafico: p.grafico ? '1' : '', medida: p.medida || '' };
 }
@@ -4680,7 +4682,7 @@ async function otMaoObraRender(){
     return '<option value="'+u.id+'" data-fn="'+_esc(cf.funcao_codigo||'')+'" data-fnnome="'+_esc(cf.funcao_nome||'')+'" data-set="'+_esc(f.setor||'')+'" data-custo="'+(cf.custo_hh!=null?cf.custo_hh:'')+'" data-rub="'+_esc(cf.rubrica||'')+'">'+_esc(u.nome||u.login)+(cf.funcao_nome?' · '+_esc(cf.funcao_nome):' · (sem função)')+'</option>';
   }).join('');
   const contaOpts = _rubSelectOpts(_rubFolhas('1'), '', '— conta —');
-  const hoje = new Date().toISOString().slice(0,10);
+  const hoje = _isoLocal(new Date());
   // ── Planejado ──
   const prevs = _otMo.previstos || [];
   const totPrevH = prevs.reduce((s,x)=>s+(x.hh||0),0), totPrevC = prevs.reduce((s,x)=>s+(x.custo||0),0);
@@ -5675,7 +5677,7 @@ async function abrirReprogramar(){
 // conversão data ↔ registo pelo ritmo (FMD); no passado usa registo real quando há um perto
 function _reprogConv(origem, v){
   const r = window._reprog || {}; const hoje = new Date(); hoje.setHours(0,0,0,0);
-  const fmt = d => d.toISOString().slice(0,10);
+  const fmt = d => _isoLocal(d);
   if (!r.ritmo) return { d: null, r: null };
   if (origem === 'reg') { const alvo = parseFloat(v); if (!isFinite(alvo)) return { d: null, r: null }; const dias = Math.ceil((alvo - r.atual) / r.ritmo); return isFinite(dias) ? { d: fmt(new Date(hoje.getTime() + dias*86400000)), r: alvo } : { d: null, r: null }; }
   if (!v || parseInt(String(v).slice(0,4),10) < 2000) return { d: null, r: null };
@@ -5918,7 +5920,7 @@ function fichaAba(aba, alvo){
         if (on && mudou === cb) {
           const f = document.getElementById(ids[2]);
           if (f && !f.value && fornIdent() && [...f.options].some(o => o.value === String(fornIdent()))) f.value = fornIdent();
-          const d = document.getElementById(ids[0]); if (d && !d.value) d.value = new Date().toISOString().slice(0,10);
+          const d = document.getElementById(ids[0]); if (d && !d.value) d.value = _isoLocal(new Date());
         }
       });
     };
@@ -6556,8 +6558,8 @@ async function almVistaMov(){
     fb = document.createElement('div'); fb.id = 'mov-filtros';
     fb.style.cssText = 'display:flex;gap:6px;align-items:flex-end;flex-wrap:wrap;padding:6px 0 8px';
     const hoje = new Date(), de = new Date(hoje); de.setMonth(de.getMonth() - 3);
-    fb.innerHTML = '<div class="mfield" style="width:120px">De<input id="mv-de" type="date" value="'+de.toISOString().slice(0,10)+'"></div>'
-      + '<div class="mfield" style="width:120px">Até<input id="mv-ate" type="date" value="'+hoje.toISOString().slice(0,10)+'"></div>'
+    fb.innerHTML = '<div class="mfield" style="width:120px">De<input id="mv-de" type="date" value="'+_isoLocal(de)+'"></div>'
+      + '<div class="mfield" style="width:120px">Até<input id="mv-ate" type="date" value="'+_isoLocal(hoje)+'"></div>'
       + '<div class="mfield" style="width:120px">Documento<input id="mv-doc" placeholder="nº NF / notinha"></div>'
       + '<div class="mfield" style="width:170px">Peça<input id="mv-peca" placeholder="código ou descrição"></div>'
       + '<div class="mfield" style="width:130px">Tipo<select id="mv-tipo"><option value="">todos</option><option value="entrada">📥 Entrada</option><option value="saida">📤 Saída</option><option value="aplicacao_direta">⚡ Aplic. direta</option><option value="transferencia">⇄ Transferência</option><option value="ajuste">🧮 Ajuste</option><option value="estorno">↩ Estorno</option></select></div>'
@@ -8824,7 +8826,7 @@ const _F = {
   user: (k,label,w) => ({k, label: label||'Respons\u00e1vel', type:'select', opts:()=>(_mntUserList||[]).map(u=>({id:u.id,nome:u.nome||u.login})), w}),
   equip:(k,label,w) => ({k, label: label||'Equipamento', type:'select', opts:()=>_mntEquipList||[], labK:'codigo', w}),
   status:(k,lista,def) => ({k, label:'Status', type:'select', opts:()=>lista.map(x=>({id:x,nome:x})), def, w:'120px'}),
-  hoje: () => new Date().toISOString().slice(0,10)
+  hoje: () => _isoLocal(new Date())
 };
 const _nomeForn = id => ((_mntFornList||[]).find(f => String(f.id)===String(id))||{}).nome || '';
 
@@ -8897,7 +8899,7 @@ function guiasJanela(equipId){
             {k:'data_saida',label:'Sa\u00edda',type:'date',w:'130px',def:_F.hoje}, {k:'data_retorno_prevista',label:'Retorno previsto',type:'date',w:'130px'}, {k:'data_retorno',label:'Retorno real',type:'date',w:'130px'},
             {k:'motivo',label:'Motivo',req:true}, _F.status('status',['em tr\u00e2nsito','no fornecedor','devolvido'],'em tr\u00e2nsito'), {k:'observacao',label:'Observa\u00e7\u00e3o'}],
     colunas:[{t:'N\u00famero',k:'numero'},{t:'Objeto',fmt:r=>_esc(r.equipamento_codigo||r.peca_codigo||'')},{t:'Destino',fmt:r=>_esc(r.fornecedor_nome||'')},{t:'Sa\u00edda',k:'data_saida',date:true},{t:'Prev.',k:'data_retorno_prevista',date:true},{t:'Retorno',k:'data_retorno',date:true},{t:'Motivo',k:'motivo'},
-             {t:'Status',fmt:r=>{ const atr = !r.data_retorno && r.data_retorno_prevista && r.data_retorno_prevista < new Date().toISOString().slice(0,10); return '<span class="chip '+(r.data_retorno?'tm':(atr?'em':'pr'))+'">'+_esc(r.status||'')+(atr?' \u00b7 atrasada':'')+'</span>'; }}] });
+             {t:'Status',fmt:r=>{ const atr = !r.data_retorno && r.data_retorno_prevista && r.data_retorno_prevista < _isoLocal(new Date()); return '<span class="chip '+(r.data_retorno?'tm':(atr?'em':'pr'))+'">'+_esc(r.status||'')+(atr?' \u00b7 atrasada':'')+'</span>'; }}] });
 }
 /* ── (20/10/2026) Substitutos — janela própria no padrão MWW "Artigos Substitutos":
    Artigo (código — descrição) · grelha Substituto | Descrição | Saldo | Custo | Restrições · ⊕ inserir com busca. ── */
@@ -9103,7 +9105,7 @@ async function otOutrosRender(){
       + real.map(r => '<tr><td>'+_esc(r.documento||'—')+(r.oc_numero?' <span class="chip tm" style="font-size:9px" title="Ordem de compra">'+_esc(r.oc_numero)+'</span>':'')+'</td><td>'+(r.fornecedor_nome?'🏭 '+_esc(r.fornecedor_nome):'—')+'</td><td>'+_esc(r.descricao||'')+'</td><td class="muted">'+dd(r.data)+'</td><td class="r"><b style="color:#1A2A5E">'+money(r.valor)+'</b></td><td class="mono muted">'+_esc(r.rubrica||'')+'</td><td>'+x(r)+'</td></tr>').join('')
       + '</tbody><tfoot><tr><td colspan="4">Custo total</td><td class="r">'+money(tot(real))+'</td><td colspan="2"></td></tr></tfoot></table>'
     : '<div class="muted" style="padding:6px;font-size:11px">Nenhum custo realizado. Use ⊕ Inserir com o documento de custo (NF/recibo) do fornecedor.</div>';
-  const hoje = new Date().toISOString().slice(0,10);
+  const hoje = _isoLocal(new Date());
   c.innerHTML =
     '<div class="muted" style="font-size:10px;margin-bottom:4px">Tudo que não é peça de estoque nem HH interna: <b>mão de obra externa / serviço de fornecedor</b> (conta 1.03), frete, guincho, aluguer de ferramenta. Entra em Outros/CSE das Análises e na aba Custos.</div>'
     + '<div class="dsec" style="display:flex;justify-content:space-between;align-items:center"><span>Planejado <span class="muted">· '+plan.length+' linha(s) · '+money(tot(plan))+'</span></span><span style="display:flex;gap:6px">'
@@ -9198,7 +9200,7 @@ async function otOutrosRealizar(linhaId){
   try {
     await mntFetch('/manutencao/api/tab/ot-outros', {method:'POST', body: JSON.stringify({
       ot_id: o.id, planejado: false, fornecedor_id: r.fornecedor_id || null, descricao: r.descricao, documento: doc.trim() || null,
-      data: new Date().toISOString().slice(0,10), valor, rubrica: r.rubrica || null, oc_id: r.oc_id || null, oc_numero: r.oc_numero || null })});
+      data: _isoLocal(new Date()), valor, rubrica: r.rubrica || null, oc_id: r.oc_id || null, oc_numero: r.oc_numero || null })});
     if (r.oc_id){
       try {
         let oc = await _fxCompras('/compras/api/ocs/'+r.oc_id);
@@ -9481,7 +9483,7 @@ function calTrabalhos(delta){
     if (!d) return; const k = String(d).slice(0,10); if (!k.startsWith(y+'-'+String(m+1).padStart(2,'0'))) return;
     (porDia[k] = porDia[k] || []).push(o);
   });
-  const hoje = new Date().toISOString().slice(0,10);
+  const hoje = _isoLocal(new Date());
   const cor = o => o.status==='concluida' ? '#15803D' : (o.status==='programada' ? '#B45309' : (o.status==='em_andamento' ? '#1D4ED8' : '#B91C1C'));
   let cells = ''; for (let i=0;i<ini;i++) cells += '<div class="cal-c off"></div>';
   for (let d=1; d<=nDias; d++){

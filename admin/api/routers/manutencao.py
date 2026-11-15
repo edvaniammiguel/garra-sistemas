@@ -11,6 +11,7 @@ import json as _json
 import re
 from datetime import datetime
 
+from core.fuso import hoje as _hoje, agora as _agora_br  # (14/11/2026) fuso de Brasília
 from core.auth import verificar_token, verificar_gestor
 from core.db import ajard_query, ajard_query_id
 from core.storage import storage_upload, storage_url, storage_urls, storage_delete
@@ -340,7 +341,7 @@ async def _inserir_pedido(d: dict, descricao: str, uid):
         """SELECT COALESCE(MAX(sequencia),0)+1 AS n FROM manutencao.pedidos
            WHERE ano = EXTRACT(YEAR FROM now())::int""", fetch="one")
     from datetime import date as _date
-    ano = _date.today().year
+    ano = _hoje().year
     numero = f"PED-{ano}-{int(seq['n']):04d}"
     row = await ajard_query_id(
         """INSERT INTO manutencao.pedidos
@@ -532,7 +533,7 @@ async def converter_pedido(pid: str, request: Request, payload=Depends(verificar
         raise HTTPException(status_code=400, detail="Equipamento de apoio não recebe OT")
     seq = await _proximo_seq_ot()
     from datetime import date as _date
-    ano = _date.today().year
+    ano = _hoje().year
     numero = f"OT-{ano}-{int(seq['n']):04d}"
     mapa_pri = {"normal": "media", "urgente": "urgente", "alta": "alta", "baixa": "baixa"}
     corpo = {
@@ -544,7 +545,7 @@ async def converter_pedido(pid: str, request: Request, payload=Depends(verificar
         "responsavel_id": d.get("responsavel_id"),
         # (20/10/2026) MWW: ao virar OT já nasce com Prog. Início (= hoje, ou a data escolhida na triagem);
         # Prog. Fim deriva (Prog. Início + Prev. TDM). Início só no Emitir; Fim só no Encerrar.
-        "data_prevista": d.get("data_prevista") or _date.today().isoformat(),
+        "data_prevista": d.get("data_prevista") or _hoje().isoformat(),
         "horimetro_previsto": d.get("horimetro_previsto"),
         "_nasce_aberta": True,
         "pedido_id": str(pid),
@@ -578,7 +579,7 @@ async def abrir_ot(request: Request, payload=Depends(verificar_manutencao)):
 
     seq = await _proximo_seq_ot()
     from datetime import date as _date
-    ano = _date.today().year
+    ano = _hoje().year
     numero = f"OT-{ano}-{int(seq['n']):04d}"
 
     uid = await _usuario_id(payload)
@@ -691,7 +692,7 @@ async def listar_ots(status: str = None, equipamento_id: str = None, fechadas_di
            WHERE {' AND '.join(where)}
            ORDER BY ot.data_abertura DESC""", params)
     from datetime import date as _date
-    hoje = _date.today()
+    hoje = _hoje()
     saida = []
     for r in rows:
         d = dict(r)
@@ -717,7 +718,7 @@ async def proximo_numero_ot(_auth=Depends(verificar_manutencao)):
     POST, pela mesma sequência, à prova de corrida."""
     seq = await _proximo_seq_ot()
     from datetime import date as _date
-    return {"numero": f"OT-{_date.today().year}-{int(seq['n']):04d}"}
+    return {"numero": f"OT-{_hoje().year}-{int(seq['n']):04d}"}
 
 
 @router.get("/manutencao/api/ots/{ot_id}")
@@ -886,7 +887,7 @@ async def mudar_status_ot(ot_id: str, request: Request, payload=Depends(verifica
             except ValueError:
                 raise HTTPException(status_code=400, detail="Data de conclusão inválida")
             from datetime import timedelta
-            agora = datetime.now(dt_conc.tzinfo) if dt_conc.tzinfo else datetime.now()
+            agora = datetime.now(dt_conc.tzinfo) if dt_conc.tzinfo else _agora_br().replace(tzinfo=None)
             if dt_conc > agora + timedelta(minutes=10):
                 raise HTTPException(status_code=400, detail="Data de conclusão não pode ser no futuro")
         hc = d.get("horimetro")
@@ -897,7 +898,7 @@ async def mudar_status_ot(ot_id: str, request: Request, payload=Depends(verifica
                 raise HTTPException(status_code=400, detail="Horímetro/km inválido")
             if hor_conc < 0:
                 raise HTTPException(status_code=400, detail="Horímetro/km inválido")
-        extras = (", data_conclusao=COALESCE(%s, now()), data_retorno_operacao=COALESCE(%s, now())::date, "
+        extras = (", data_conclusao=COALESCE(%s, now()), data_retorno_operacao=(COALESCE(%s, now()) AT TIME ZONE 'America/Sao_Paulo')::date, "
                   "observacao_conclusao=%s, custo_total=%s, horimetro_conclusao=%s, encerrado_em=now()")
         params += [dt_conc, dt_conc, (d.get("observacao") or "").strip() or None, d.get("custo_total"), hor_conc]
         hp = d.get("horas_parada")
@@ -962,7 +963,7 @@ async def mudar_status_ot(ot_id: str, request: Request, payload=Depends(verifica
         await ajard_query(
             """UPDATE manutencao.planos p SET
                       ultima_data = CASE WHEN COALESCE(p.data_fixa,false) AND o.data_prevista IS NOT NULL
-                                         THEN o.data_prevista ELSE COALESCE(o.data_conclusao::date, now()::date) END,
+                                         THEN o.data_prevista ELSE COALESCE((o.data_conclusao AT TIME ZONE 'America/Sao_Paulo')::date, (now() AT TIME ZONE 'America/Sao_Paulo')::date) END,
                       ultima_leitura = CASE WHEN COALESCE(p.registro_fixo,false) AND o.horimetro_previsto IS NOT NULL
                                             THEN o.horimetro_previsto
                                             ELSE COALESCE(o.horimetro_conclusao, e.horimetro_atual) END
@@ -1100,7 +1101,7 @@ async def editar_ot(ot_id: str, request: Request, payload=Depends(verificar_manu
         if not atual:
             raise HTTPException(status_code=404, detail="OT não encontrada")
         _tz = nova.tzinfo
-        agora = datetime.now(_tz) if _tz else datetime.now()
+        agora = datetime.now(_tz) if _tz else _agora_br().replace(tzinfo=None)
         if nova > agora:
             raise HTTPException(status_code=400, detail="A data do pedido não pode ser no futuro")
         for campo, rot in (("data_inicio_real", "Início"), ("data_conclusao", "Fim")):
@@ -1264,7 +1265,7 @@ async def semaforos_frota(_auth=Depends(verificar_manutencao)):
            WHERE o.ativo = true AND o.status = 'programada'
            ORDER BY o.data_prevista NULLS LAST, o.horimetro_previsto NULLS LAST""")
     from datetime import date as _date
-    hoje = _date.today()
+    hoje = _hoje()
     nivel_st = {0: "vermelho", 1: "amarelo"}
     for o in prog:
         eq = equipes.get(str(o["equipamento_id"]))
@@ -1511,7 +1512,7 @@ async def _garantir_mao_obra():
             ot_id UUID NOT NULL,
             usuario_id UUID,
             nome TEXT,
-            data DATE NOT NULL DEFAULT now()::date,
+            data DATE NOT NULL DEFAULT ((now() AT TIME ZONE 'America/Sao_Paulo')::date),
             horas NUMERIC(8,2) NOT NULL,
             custo_hora NUMERIC(12,2),
             observacao TEXT,
@@ -1520,6 +1521,8 @@ async def _garantir_mao_obra():
             criado_por UUID,
             criado_em TIMESTAMPTZ DEFAULT now())""", fetch="none")
     await ajard_query("CREATE INDEX IF NOT EXISTS ix_ot_mao_obra_ot ON manutencao.ot_mao_obra (ot_id)", fetch="none")
+    # (14/11/2026) data padrão = dia de Brasília (o banco roda em UTC: depois das 21h caía no dia seguinte)
+    await ajard_query("ALTER TABLE manutencao.ot_mao_obra ALTER COLUMN data SET DEFAULT ((now() AT TIME ZONE 'America/Sao_Paulo')::date)", fetch="none")
     await ajard_query("""
         CREATE TABLE IF NOT EXISTS manutencao.parametros_manuais (
             id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -1816,7 +1819,7 @@ async def ot_mao_obra_criar(ot_id: str, request: Request, payload=Depends(verifi
     rubrica = rubrica or ("1.01" if usuario_id else "1.03")
     row = await ajard_query_id(
         """INSERT INTO manutencao.ot_mao_obra (ot_id, usuario_id, nome, data, horas, custo_hora, observacao, origem, criado_por, funcao_codigo, rubrica, fornecedor_id)
-           VALUES (%s,%s,%s,COALESCE(%s::date, now()::date),%s,%s,%s,%s,%s,%s,%s,%s)""",
+           VALUES (%s,%s,%s,COALESCE(%s::date, (now() AT TIME ZONE 'America/Sao_Paulo')::date),%s,%s,%s,%s,%s,%s,%s,%s)""",
         (ot_id, usuario_id, nome, data, horas, custo,
          (d.get("observacao") or "").strip() or None, (d.get("origem") or "desktop"), uid, funcao, rubrica, fornecedor_id))
     return {"ok": True, "id": str(row["id"]) if row else None}
@@ -2527,7 +2530,7 @@ async def carga_trabalhos(dias: int = 30, _auth=Depends(verificar_manutencao)):
     await _garantir_mao_obra()
     ots = await ajard_query(
         """SELECT COALESCE(u.nome, '(sem responsável)') AS nome, o.responsavel_id, o.status, COUNT(*)::int AS n,
-                  SUM(CASE WHEN o.data_prevista IS NOT NULL AND o.data_prevista < now()::date
+                  SUM(CASE WHEN o.data_prevista IS NOT NULL AND o.data_prevista < (now() AT TIME ZONE 'America/Sao_Paulo')::date
                             AND o.status IN ('programada','aberta') THEN 1 ELSE 0 END)::int AS vencidas
            FROM manutencao.ot o LEFT JOIN public.usuarios_garra u ON u.id = o.responsavel_id
            WHERE o.ativo=true AND o.status IN ('programada','aberta','em_andamento','aguardando_peca')
@@ -2537,7 +2540,7 @@ async def carga_trabalhos(dias: int = 30, _auth=Depends(verificar_manutencao)):
                   SUM(m.horas * COALESCE(m.custo_hora,0)) AS custo, COUNT(DISTINCT m.ot_id)::int AS ots
            FROM manutencao.ot_mao_obra m LEFT JOIN public.usuarios_garra u ON u.id = m.usuario_id
            WHERE m.ativo=true AND m.data >= %s
-           GROUP BY 1, 2""", ((__import__("datetime").date.today() - __import__("datetime").timedelta(days=int(dias))),)) or []
+           GROUP BY 1, 2""", ((_hoje() - __import__("datetime").timedelta(days=int(dias))),)) or []
     pess = {}
     for r in ots:
         p = pess.setdefault(r["nome"], {"nome": r["nome"], "programada": 0, "aberta": 0, "em_andamento": 0,
@@ -2641,7 +2644,7 @@ async def analises_equipamento(eq_id: str, ano: int = None, _auth=Depends(verifi
     from datetime import date as _date
     await _garantir_colunas_ot()
     await _garantir_mao_obra()
-    ano = int(ano or _date.today().year)
+    ano = int(ano or _hoje().year)
     eq = await ajard_query("SELECT id, codigo, descricao, medicao FROM operacional.equipamentos WHERE id=%s", (eq_id,), fetch="one")
     if not eq:
         raise HTTPException(status_code=404, detail="Equipamento não encontrado")
@@ -2756,7 +2759,7 @@ async def analises_equipamento(eq_id: str, ano: int = None, _auth=Depends(verifi
     anos = await ajard_query(
         """SELECT DISTINCT EXTRACT(YEAR FROM data_abertura)::int AS a FROM manutencao.ot
            WHERE equipamento_id=%s AND ativo=true ORDER BY 1 DESC""", (eq_id,)) or []
-    lista_anos = sorted({int(r["a"]) for r in anos if r.get("a")} | {ano, _date.today().year}, reverse=True)
+    lista_anos = sorted({int(r["a"]) for r in anos if r.get("a")} | {ano, _hoje().year}, reverse=True)
     manuais = await param_manuais_listar(eq_id, ano, _auth)
     return {"equipamento": eq["codigo"], "descricao": eq.get("descricao"), "ano": ano, "anos": lista_anos,
             "medicao": un,
@@ -3488,7 +3491,7 @@ async def necessidades_ots(prazo: str = "atencao", cobertas: int = 0, _auth=Depe
     """prazo: atencao (vencidas + a vencer) · 15 · 30 · todas. cobertas=1 mostra também as peças já cobertas."""
     import json as _json
     from datetime import date as _date
-    hoje = _date.today()
+    hoje = _hoje()
     rows = await ajard_query(
         """SELECT o.id, o.numero, o.status, o.data_prevista, o.data_limite, o.horimetro_previsto, o.tipo_trabalho,
                   o.descricao, COALESCE(o.pecas_previstas, p.pecas) AS pecas, p.descricao AS plano_descricao,
@@ -4525,7 +4528,7 @@ async def _calcular_previsoes():
             """INSERT INTO manutencao.periodos (codigo, nome, ativo)
                VALUES (%s, %s, true) ON CONFLICT (codigo) DO NOTHING""",
             (_cod, _nom), fetch="none")
-    hoje = _date.today()
+    hoje = _hoje()
     planos = await ajard_query(
         """SELECT p.id, p.equipamento_id, p.codigo, p.descricao, p.tipo_trabalho,
                   p.periodo_codigo, p.periodo_qtd, p.custo_previsto, p.ultima_data, p.ultima_leitura, p.criado_em,
@@ -4541,7 +4544,7 @@ async def _calcular_previsoes():
            WHERE p.ativo = true
            ORDER BY e.codigo, p.codigo""")
     ults = await ajard_query(
-        """SELECT DISTINCT ON (plano_id) plano_id, data_conclusao::date AS dt,
+        """SELECT DISTINCT ON (plano_id) plano_id, (data_conclusao AT TIME ZONE 'America/Sao_Paulo')::date AS dt,
                   horimetro_na_abertura AS leitura
            FROM manutencao.ot
            WHERE status = 'concluida' AND ativo = true AND plano_id IS NOT NULL
@@ -4671,7 +4674,7 @@ async def _gerar_ot_previsao(plano_id, d, payload):
         "SELECT id, codigo, categoria, horimetro_atual FROM operacional.equipamentos WHERE id=%s AND ativo=true",
         (str(p["equipamento_id"]),), fetch="one")
     seq = await _proximo_seq_ot()
-    ano = _date.today().year
+    ano = _hoje().year
     numero = f"OT-{ano}-{int(seq['n']):04d}"
     uid = await _usuario_id(payload)
     corpo = {"equipamento_id": str(p["equipamento_id"]),
@@ -4885,9 +4888,9 @@ async def ot_novo_ciclo(ot_id: str, payload=Depends(verificar_manutencao)):
             fmd = (await _fmd_por_equipamento()).get(str((await ajard_query(
                 "SELECT equipamento_id FROM manutencao.ot WHERE id=%s", (ot_id,), fetch="one"))["equipamento_id"]))
             if fmd:
-                nova_data = _date.today() + _td(days=int(max(total, 0) / fmd))
+                nova_data = _hoje() + _td(days=int(max(total, 0) / fmd))
     else:
-        base = nova_data or _date.today()
+        base = nova_data or _hoje()
         nova_data = base + _td(days=int(total))
     await ajard_query(
         "UPDATE manutencao.ot SET data_prevista=%s, horimetro_previsto=%s, prog_alterada=false WHERE id=%s",
@@ -4973,7 +4976,7 @@ def _resumo_projecto(pr, ots):
     todas_fechadas = ots and all(o["status"] in ("concluida", "cancelada") for o in ots)
     fim = pr.get("data_fim") or (max(datas_fim) if todas_fechadas and datas_fim else None)
     d0 = _date.fromisoformat(str(ini)[:10]) if ini else None
-    d1 = _date.fromisoformat(str(fim)[:10]) if fim else _date.today()
+    d1 = _date.fromisoformat(str(fim)[:10]) if fim else _hoje()
     return {"n_ots": len(ots), "n_concluidas": sum(1 for o in ots if o["status"] == "concluida"),
             "n_canceladas": sum(1 for o in ots if o["status"] == "cancelada"),
             "custo": round(sum(o["custo"] for o in ots if o["status"] != "cancelada"), 2),
@@ -5248,9 +5251,9 @@ async def listar_movimentacoes(almox: str = None, limit: int = 120, de: str = No
         params += [almox, almox]
     # (21/10/2026) filtros do extrato: período, documento, peça, tipo, OT
     if de:
-        cond.append("m.criado_em >= %s::date"); params.append(de[:10])
+        cond.append("(m.criado_em AT TIME ZONE 'America/Sao_Paulo')::date >= %s::date"); params.append(de[:10])
     if ate:
-        cond.append("m.criado_em < (%s::date + 1)"); params.append(ate[:10])
+        cond.append("(m.criado_em AT TIME ZONE 'America/Sao_Paulo')::date <= %s::date"); params.append(ate[:10])
     if documento:
         cond.append("m.documento_numero ILIKE %s"); params.append(f"%{documento.strip()}%")
     if peca:
@@ -5264,7 +5267,7 @@ async def listar_movimentacoes(almox: str = None, limit: int = 120, de: str = No
         f"""SELECT m.id, m.tipo, m.quantidade, m.custo_unitario, m.criado_em, m.observacao,
                    m.documento_tipo, m.documento_numero, m.estornado_em, m.estorno_de,
                    (SELECT td.nome FROM manutencao.tipos_documento td WHERE td.codigo = m.documento_tipo) AS documento_tipo_nome,
-                   COALESCE(m.lote::text, COALESCE(m.documento_numero,'') || '|' || m.criado_em::date::text) AS lote_chave,
+                   COALESCE(m.lote::text, COALESCE(m.documento_numero,'') || '|' || (m.criado_em AT TIME ZONE 'America/Sao_Paulo')::date::text) AS lote_chave,
                    (SELECT nome FROM public.fornecedores f WHERE f.id = m.fornecedor_id) AS fornecedor_nome,
                    p.codigo AS peca_codigo, p.descricao AS peca_descricao, p.unidade,
                    ao.codigo AS origem, ad.codigo AS destino,
@@ -5305,7 +5308,7 @@ async def estornar_entrada(request: Request, payload=Depends(verificar_manutenca
                   COALESCE((SELECT SUM(e.quantidade) FROM manutencao.estoque e WHERE e.peca_id=m.peca_id),0) AS saldo_total
            FROM manutencao.movimentacoes m JOIN manutencao.pecas p ON p.id=m.peca_id
            WHERE m.tipo='entrada' AND m.estornado_em IS NULL
-             AND COALESCE(m.lote::text, COALESCE(m.documento_numero,'') || '|' || m.criado_em::date::text) = %s""", (chave,)) or []
+             AND COALESCE(m.lote::text, COALESCE(m.documento_numero,'') || '|' || (m.criado_em AT TIME ZONE 'America/Sao_Paulo')::date::text) = %s""", (chave,)) or []
     if not rows:
         raise HTTPException(status_code=404, detail="Entrada não encontrada ou já estornada")
     faltam = [f"{r['codigo']} (entrou {float(r['quantidade']):g}, saldo {float(r['saldo_destino']):g})"
@@ -5814,7 +5817,7 @@ async def equip_funcionamento(eq_id: str, _auth=Depends(verificar_manutencao)):
             "anuladas": [{"data": r["d"].isoformat() if r["d"] else None, "fonte": r["fonte"], "ref": r["ref"],
                           "leitura_original": float(r["leitura_original"] or 0), "motivo": r["motivo"]} for r in anuladas],
             "fmd": fmd, "fmd_valido": fmd is not None,
-            "projecao_30d": proj_30, "gerado_em": _date.today().isoformat()}
+            "projecao_30d": proj_30, "gerado_em": _hoje().isoformat()}
 
 
 _FONTES_LEITURA = {"parte", "abastecimento", "checklist", "ot"}   # (19/10/2026) 'ot' = leitura no Encerrar da OT
@@ -6077,7 +6080,7 @@ def _apont_texto(relato, horas, hor, concluido, editado=False):
     if concluido:
         partes.append("✅ SINALIZOU SERVIÇO CONCLUÍDO — pronto para encerramento pela gestão")
     if editado:
-        partes.append(f"(editado pelo mecânico em {datetime.now().strftime('%d/%m %H:%M')})")
+        partes.append(f"(editado pelo mecânico em {_agora_br().strftime('%d/%m %H:%M')})")
     return " · ".join(partes)
 
 
@@ -6127,7 +6130,7 @@ async def ot_apontamento(ot_id: str, request: Request, payload=Depends(verificar
                ORDER BY criado_em DESC LIMIT 1""", (uid,), fetch="one")
         mo = await ajard_query_id(
             """INSERT INTO manutencao.ot_mao_obra (ot_id, usuario_id, data, horas, custo_hora, observacao, origem, criado_por)
-               VALUES (%s,%s,now()::date,%s,%s,%s,'mobile',%s)""",
+               VALUES (%s,%s,(now() AT TIME ZONE 'America/Sao_Paulo')::date,%s,%s,%s,'mobile',%s)""",
             (ot_id, uid, horas, (sug or {}).get("custo_hora"), relato[:200], uid))
         mo_id = mo["id"] if mo else None
     h = await ajard_query_id(
@@ -6341,7 +6344,7 @@ async def ot_fotos_execucao(ot_id: str, fotos: list[UploadFile] = File(...), tip
             raise HTTPException(status_code=400, detail=f"{f.filename}: só imagens")
         ext = "png" if "png" in ctype else "jpg"
         path = storage_upload(conteudo, f"manutencao/ots/{ot_id}/{cat}/{_uuid.uuid4().hex}.{ext}", content_type=ctype)
-        nome = f"{rotulo} {datetime.now().strftime('%d/%m/%Y %H:%M')}"
+        nome = f"{rotulo} {_agora_br().strftime('%d/%m/%Y %H:%M')}"
         row = await ajard_query_id(
             """INSERT INTO manutencao.equipamento_documentos
                  (equipamento_id, ot_id, nome, path, content_type, tamanho, descricao, categoria, usuario_id, apontamento_id)
@@ -6752,7 +6755,7 @@ async def verificar_notas_ot(payload=Depends(verificar_token)):
 async def notas_ot_listar(mes: str = None, fornecedor: str = None, pendentes: int = 0, ocultas: int = 0, payload=Depends(verificar_notas_ot)):
     await _garantir_notas_ot()
     from datetime import date as _date
-    mes = (mes or _date.today().strftime("%Y-%m"))[:7]
+    mes = (mes or _hoje().strftime("%Y-%m"))[:7]
     where, params = ["d.ativo=true", "d.categoria='nota_fiscal'", "d.ot_id IS NOT NULL",
                      "to_char(d.criado_em AT TIME ZONE 'America/Sao_Paulo','YYYY-MM')=%s"], [mes]
     # (22/10/2026) removidas da visão do financeiro ("não é nota") só aparecem com ocultas=1

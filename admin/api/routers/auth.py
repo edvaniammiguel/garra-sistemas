@@ -400,7 +400,12 @@ async def listar_usuarios(db=Depends(get_db), _auth=Depends(verificar_token)):
     rows = await db.fetch(
         "SELECT id,login,nome,email,perfil,perfil_checklist,pts,total_envios,ativo,criado_em FROM public.usuarios_garra ORDER BY nome"
     )
-    return [dict(r) for r in rows]
+    # (14/11/2026) menor privilégio: e-mail e data de cadastro só para a gestão (módulo Painel de Gestão).
+    # Os demais (checklist, Manutenção, Compras) usam só nome/login/perfil/pontos.
+    from core.permissions import tem_modulo
+    if await tem_modulo(_auth, {"admin_master"}):
+        return [dict(r) for r in rows]
+    return [{k: v for k, v in dict(r).items() if k not in ("email", "criado_em")} for r in rows]
 
 @router.post("/usuarios")
 async def criar_usuario(u: UsuarioCreate, db=Depends(get_db), _auth=Depends(verificar_admin)):
@@ -449,12 +454,8 @@ async def remover_usuario(login: str, db=Depends(get_db), _auth=Depends(verifica
     await db.execute("UPDATE public.usuarios_garra SET ativo=FALSE WHERE login=$1", login)
     return {"ok": True}
 
-@router.patch("/usuarios/{login}/pts")
-async def atualizar_pts(login: str, pts: int, db=Depends(get_db), _auth=Depends(verificar_token)):
-    await db.execute(
-        "UPDATE public.usuarios_garra SET pts=$1, atualizado_em=NOW() WHERE login=$2", pts, login
-    )
-    return {"ok": True}
+# (14/11/2026) PATCH /usuarios/{login}/pts REMOVIDA: qualquer usuário logado podia gravar os pontos de
+# qualquer pessoa, e nenhuma tela usa mais. Pontos somam no envio do checklist; ajuste = POST .../ajustar-pts (gestão).
 
 @router.post("/usuarios/{login}/ajustar-pts")
 async def ajustar_pts(login: str, request: Request, db=Depends(get_db), _auth=Depends(verificar_gestor)):
