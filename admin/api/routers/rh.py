@@ -29,7 +29,6 @@ from core.auth import verificar_token
 from core.db import ajard_query
 from core.fuso import hoje as _hoje
 from core.permissions import tem_modulo
-from core.storage import storage_upload, storage_url
 
 router = APIRouter()
 
@@ -211,6 +210,7 @@ async def garantir_rh():
             fetch="none")
     except Exception as e:   # tabela antiga ainda não existe (banco novo) — nada a migrar
         print("RH: migração função/HH ignorada:", str(e)[:120])
+    await _garantir_documentos()
     _RH_OK = True
 
 
@@ -362,7 +362,7 @@ async def pagina_rh():
 @router.get("/rh/api/eu")
 async def rh_eu(payload=Depends(verificar_rh_ver)):
     await garantir_rh()
-    return {"nome": payload.get("nome"), "pode_rh": await _eh_rh(payload)}
+    return {"nome": payload.get("nome"), "pode_rh": await _eh_rh(payload), "admin": (payload.get("perfil") or "") == "admin"}
 
 
 # ══════════════════════════════════════════════════════════════
@@ -826,8 +826,9 @@ async def certificado_enviar(tid: str, ficheiro: UploadFile = File(...), payload
     dados = await ficheiro.read()
     if len(dados) > 10 * 1024 * 1024:
         raise HTTPException(status_code=413, detail="Arquivo acima de 10 MB")
-    path = storage_upload(dados, f"rh/colaboradores/{t['colaborador_id']}/certificados/{tid}_{_uuid.uuid4().hex[:8]}.{_TIPOS_CERT[ctype]}",
-                          content_type=ctype)
+    if ctype.startswith("image/"):
+        dados, ctype = _comprimir(dados, ctype)
+    path = _rh_upload(dados, f"colaboradores/{t['colaborador_id']}/certificados/{tid}_{_uuid.uuid4().hex[:8]}.{_TIPOS_CERT[ctype]}", ctype)
     nome = re.sub(r"[^\w.\- ]", "", ficheiro.filename or "certificado")[:80]
     await ajard_query("UPDATE rh.treinamentos SET certificado_path=%s, certificado_nome=%s, atualizado_em=now() WHERE id=%s",
                       (path, nome, tid), fetch="none")
@@ -840,7 +841,7 @@ async def certificado_link(tid: str, payload=Depends(verificar_rh_ver)):
     t = await ajard_query("SELECT certificado_path FROM rh.treinamentos WHERE id=%s AND ativo", (tid,), fetch="one")
     if not t or not t["certificado_path"]:
         raise HTTPException(status_code=404, detail="Sem certificado")
-    url = storage_url(t["certificado_path"])
+    url = _rh_link(t["certificado_path"])
     if not url:
         raise HTTPException(status_code=502, detail="Não foi possível abrir o certificado agora (armazenamento indisponível)")
     return {"url": url}
@@ -894,6 +895,7 @@ async def acesso_salvar(cid: str, pid: str, request: Request, payload=Depends(ve
 @router.post("/rh/api/colaboradores/{cid}/acessos/{pid}/revelar")
 async def acesso_revelar(cid: str, pid: str, payload=Depends(verificar_rh)):
     await garantir_rh()
+    await _exigir_identidade(payload)
     a = await ajard_query("SELECT senha_cripto FROM rh.acessos_plataforma WHERE colaborador_id=%s AND plataforma_id=%s",
                           (cid, pid), fetch="one")
     if not a or not a["senha_cripto"]:
@@ -908,8 +910,9 @@ async def acesso_revelar(cid: str, pid: str, payload=Depends(verificar_rh)):
 async def acessos_log(cid: str, payload=Depends(verificar_rh)):
     await garantir_rh()
     rows = await ajard_query(
-        """SELECT l.em, l.acao, l.usuario_login, u.nome AS usuario_nome, p.nome AS plataforma
+        """SELECT l.em, l.acao, l.usuario_login, u.nome AS usuario_nome, COALESCE(p.nome, d.titulo) AS plataforma
              FROM rh.acessos_log l LEFT JOIN rh.plataformas p ON p.id = l.plataforma_id
+             LEFT JOIN rh.documentos d ON d.id = l.documento_id
              LEFT JOIN public.usuarios_garra u ON u.login = l.usuario_login
             WHERE l.colaborador_id=%s ORDER BY l.em DESC LIMIT 50""", (cid,)) or []
     return [{"em": r["em"].isoformat(), "acao": r["acao"], "quem": r["usuario_nome"] or r["usuario_login"],
@@ -1272,3 +1275,669 @@ async def importar_mais_aplicar(request: Request, payload=Depends(verificar_rh))
         except Exception as e:
             erros.append(f"{nome}: {str(e)[:120]}")
     return {"ok": True, "criados": cri, "atualizados": atu, "ignorados": ign, "erros": erros}
+
+
+# ══════════════════════════════════════════════════════════════
+# DOCUMENTOS DO COLABORADOR (15/11/2026)
+# A pasta "Documentos-NOME" do servidor vira a aba Documentos da ficha; cada subpasta, uma categoria.
+# Segurança:
+#   1. arquivos do RH num bucket próprio e PRIVADO (garra-rh), criado pelo sistema;
+#   2. link de abertura de 5 minutos, gerado na hora, sem reaproveitar;
+#   3. categoria sigilosa (atestado, documento pessoal) = só RH completo + registro de quem abriu;
+#   4. sigilosos e senhas EAD pedem confirmação de identidade por biometria (Windows Hello/digital)
+#      — vale 15 minutos; pode ser desligada em Parametrizar (só administrador).
+# ══════════════════════════════════════════════════════════════
+import json as _json
+import time as _time
+import zipfile as _zip
+import requests as _req
+from core.config import SUPABASE_URL as _SB_URL, SUPABASE_SERVICE_KEY as _SB_KEY
+
+_BUCKET_RH = os.environ.get("RH_BUCKET", "garra-rh")
+_BUCKET_OK = False
+_LINK_SEG = 300            # link de abertura: 5 minutos
+_ELEVACAO_MIN = 15         # confirmação de identidade vale 15 minutos
+_MAX_ARQ = 10 * 1024 * 1024
+_MAX_ZIP = 60 * 1024 * 1024
+_TIPOS_DOC = {"application/pdf": "pdf", "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp",
+              "application/msword": "doc",
+              "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "docx",
+              "application/vnd.ms-excel": "xls",
+              "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "xlsx"}
+_EXT_TIPO = {v: k for k, v in _TIPOS_DOC.items()}
+_EXT_TIPO.update({"jpeg": "image/jpeg"})
+
+
+def _sb_headers(ct=None):
+    h = {"Authorization": f"Bearer {_SB_KEY}", "apikey": _SB_KEY or ""}
+    if ct:
+        h["Content-Type"] = ct
+    return h
+
+
+def _garantir_bucket():
+    """Cria o bucket privado do RH na primeira vez (idempotente)."""
+    global _BUCKET_OK
+    if _BUCKET_OK:
+        return
+    if not _SB_URL or not _SB_KEY:
+        raise HTTPException(status_code=500, detail="Armazenamento não configurado")
+    r = _req.post(f"{_SB_URL}/storage/v1/bucket", headers=_sb_headers("application/json"),
+                  json={"id": _BUCKET_RH, "name": _BUCKET_RH, "public": False}, timeout=15)
+    if r.status_code not in (200, 201) and "exist" not in (r.text or "").lower() and r.status_code != 409:
+        raise HTTPException(status_code=502, detail=f"Não foi possível preparar a área de arquivos do RH [{r.status_code}]")
+    _BUCKET_OK = True
+
+
+def _rh_upload(dados: bytes, path: str, ctype: str) -> str:
+    _garantir_bucket()
+    r = _req.post(f"{_SB_URL}/storage/v1/object/{_BUCKET_RH}/{path}", headers={**_sb_headers(ctype), "x-upsert": "true"},
+                  data=dados, timeout=60)
+    if r.status_code not in (200, 201):
+        if r.status_code in (402, 413) or "quota" in (r.text or "").lower() or "exceed" in (r.text or "").lower():
+            raise HTTPException(status_code=507, detail="Espaço de armazenamento esgotado (plano gratuito: 1 GB). Arquivo não enviado.")
+        raise HTTPException(status_code=502, detail=f"Falha ao guardar o arquivo [{r.status_code}]")
+    return f"{_BUCKET_RH}:{path}"
+
+
+def _rh_link(path: str, segundos: int = _LINK_SEG) -> str:
+    """Link assinado curto, sempre novo (sem cache) — também abre os arquivos antigos do garra-fotos."""
+    if not path or not _SB_URL:
+        return ""
+    bucket, real = path.split(":", 1) if ":" in path else ("garra-fotos", path)
+    try:
+        r = _req.post(f"{_SB_URL}/storage/v1/object/sign/{bucket}/{real}", headers=_sb_headers("application/json"),
+                      json={"expiresIn": segundos}, timeout=15)
+        if r.status_code == 200:
+            return f"{_SB_URL}/storage/v1{r.json().get('signedURL', '')}"
+    except Exception as e:
+        print("RH: falha ao assinar link:", e)
+    return ""
+
+
+def _comprimir(dados: bytes, ctype: str):
+    """Foto/digitalização → JPEG até 2000 px (legível e bem menor). Se falhar, guarda o original."""
+    try:
+        from core.helpers import comprimir_imagem
+        novo = comprimir_imagem(dados, max_px=2000, qualidade=80)
+        if len(novo) < len(dados):
+            return novo, "image/jpeg"
+    except Exception as e:
+        print("RH: compressão falhou, mantendo original:", e)
+    return dados, ctype
+
+
+def _tipo_por_nome(nome: str):
+    ext = (nome.rsplit(".", 1)[-1] if "." in nome else "").lower()
+    return _EXT_TIPO.get(ext)
+
+
+async def _garantir_documentos():
+    await ajard_query("""
+        CREATE TABLE IF NOT EXISTS rh.doc_categorias (
+            codigo TEXT PRIMARY KEY, nome TEXT NOT NULL,
+            sigilosa BOOLEAN NOT NULL DEFAULT false, tem_vencimento BOOLEAN NOT NULL DEFAULT false,
+            ver_nr BOOLEAN NOT NULL DEFAULT false, pastas TEXT, ordem INT DEFAULT 0,
+            ativo BOOLEAN NOT NULL DEFAULT true, excluido_em TIMESTAMPTZ)""", fetch="none")
+    # pastas = começos de nome de subpasta do servidor que caem nesta categoria (importação em lote)
+    await ajard_query("""
+        INSERT INTO rh.doc_categorias (codigo, nome, sigilosa, tem_vencimento, ver_nr, pastas, ordem) VALUES
+          ('ASO','ASO',false,true,true,'ASO',1),
+          ('ATESTADO','Atestados',true,false,false,'ATESTADO',2),
+          ('CERTIFICADO','Certificados de NR e cursos',false,true,true,'CERTIFICADO,CERTIFICADOS',3),
+          ('PESSOAL','Documentos pessoais',true,true,false,'DOC-PESSOAL,DOC PESSOAL,DOCUMENTOS PESSOAIS,DOC_PESSOAL',4),
+          ('CONTRATO','Contratos',false,false,false,'CONTRATO',5),
+          ('OS_SST','Ordem de serviço de segurança',false,false,true,'OS ,ORDEM DE SERVICO,ORDEM-DE-SERVICO',6),
+          ('EPI','Fichas de EPI',false,false,true,'EPI,FICHA DE EPI,FICHA-EPI',7),
+          ('RECIBO','Recibos',false,false,false,'RECIBO,RECIBOS',8),
+          ('ANTIGO','Arquivo antigo',false,false,false,'DOCS-ANTIGO,ANTIGO',9),
+          ('OUTROS','Outros',false,false,false,'',99)
+        ON CONFLICT (codigo) DO NOTHING""", fetch="none")
+    await ajard_query("""
+        CREATE TABLE IF NOT EXISTS rh.documentos (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            colaborador_id UUID NOT NULL, categoria TEXT NOT NULL,
+            titulo TEXT NOT NULL, data_doc DATE, vencimento DATE, observacao TEXT,
+            origem TEXT DEFAULT 'manual', ativo BOOLEAN NOT NULL DEFAULT true,
+            criado_por TEXT, criado_em TIMESTAMPTZ DEFAULT now(), atualizado_em TIMESTAMPTZ DEFAULT now())""", fetch="none")
+    await ajard_query("CREATE INDEX IF NOT EXISTS ix_rh_docs_colab ON rh.documentos (colaborador_id) WHERE ativo", fetch="none")
+    await ajard_query("""
+        CREATE TABLE IF NOT EXISTS rh.documento_arquivos (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            documento_id UUID NOT NULL, path TEXT NOT NULL, nome TEXT, tipo TEXT,
+            tamanho BIGINT, sha256 TEXT, ativo BOOLEAN NOT NULL DEFAULT true,
+            criado_por TEXT, criado_em TIMESTAMPTZ DEFAULT now())""", fetch="none")
+    await ajard_query("CREATE INDEX IF NOT EXISTS ix_rh_docarq_doc ON rh.documento_arquivos (documento_id) WHERE ativo", fetch="none")
+    await ajard_query("CREATE INDEX IF NOT EXISTS ix_rh_docarq_sha ON rh.documento_arquivos (sha256) WHERE ativo", fetch="none")
+    await ajard_query("ALTER TABLE rh.acessos_log ADD COLUMN IF NOT EXISTS documento_id UUID", fetch="none")
+    await ajard_query("""
+        CREATE TABLE IF NOT EXISTS rh.config (chave TEXT PRIMARY KEY, valor TEXT,
+            atualizado_por TEXT, atualizado_em TIMESTAMPTZ DEFAULT now())""", fetch="none")
+    await ajard_query("INSERT INTO rh.config (chave, valor) VALUES ('exigir_biometria','1') ON CONFLICT DO NOTHING", fetch="none")
+    await ajard_query("""
+        CREATE TABLE IF NOT EXISTS rh.elevacoes (usuario_login TEXT PRIMARY KEY, expira_em TIMESTAMPTZ NOT NULL)""", fetch="none")
+
+
+async def _config(chave, padrao=None):
+    r = await ajard_query("SELECT valor FROM rh.config WHERE chave=%s", (chave,), fetch="one")
+    return r["valor"] if r else padrao
+
+
+# ── confirmação de identidade (biometria) ──
+async def _identidade_ok(payload) -> bool:
+    if (await _config("exigir_biometria", "1")) != "1":
+        return True
+    r = await ajard_query("SELECT 1 FROM rh.elevacoes WHERE usuario_login=%s AND expira_em > now()",
+                          (payload.get("login") or payload.get("sub"),), fetch="one")
+    return bool(r)
+
+
+async def _exigir_identidade(payload):
+    if not await _identidade_ok(payload):
+        raise HTTPException(status_code=428, detail="CONFIRMAR_IDENTIDADE")
+
+
+@router.get("/rh/api/identidade")
+async def identidade_status(payload=Depends(verificar_rh)):
+    await garantir_rh()
+    login = payload.get("login") or payload.get("sub")
+    n = await ajard_query("""SELECT COUNT(*) AS n FROM public.credenciais_webauthn c JOIN public.usuarios_garra u ON u.id=c.usuario_id
+                              WHERE u.login=%s AND c.ativo""", (login,), fetch="one")
+    r = await ajard_query("SELECT expira_em FROM rh.elevacoes WHERE usuario_login=%s AND expira_em > now()", (login,), fetch="one")
+    return {"exigir": (await _config("exigir_biometria", "1")) == "1", "biometrias": int(n["n"]) if n else 0,
+            "confirmada_ate": r["expira_em"].isoformat() if r else None}
+
+
+@router.post("/rh/api/identidade/desafio")
+async def identidade_desafio(payload=Depends(verificar_rh)):
+    from core.webauthn import gerar_opcoes_login
+    await garantir_rh()
+    login = payload.get("login") or payload.get("sub")
+    creds = await ajard_query("""SELECT c.credential_id FROM public.credenciais_webauthn c JOIN public.usuarios_garra u ON u.id=c.usuario_id
+                                  WHERE u.login=%s AND c.ativo""", (login,)) or []
+    if not creds:
+        raise HTTPException(status_code=404, detail="SEM_BIOMETRIA")
+    opts, desafio = gerar_opcoes_login([dict(c) for c in creds])
+    await ajard_query("DELETE FROM public.webauthn_desafios WHERE login=%s AND tipo='rh'", (login,), fetch="none")
+    await ajard_query("INSERT INTO public.webauthn_desafios (login, desafio, tipo) VALUES (%s,%s,'rh')", (login, desafio), fetch="none")
+    return _json.loads(opts)
+
+
+@router.post("/rh/api/identidade/verificar")
+async def identidade_verificar(request: Request, payload=Depends(verificar_rh)):
+    from core.webauthn import verificar_login
+    await garantir_rh()
+    login = payload.get("login") or payload.get("sub")
+    cred = (await request.json()).get("credencial") or {}
+    d = await ajard_query("""SELECT desafio FROM public.webauthn_desafios WHERE login=%s AND tipo='rh'
+                              AND criado_em > now() - interval '5 minutes' ORDER BY criado_em DESC LIMIT 1""", (login,), fetch="one")
+    if not d:
+        raise HTTPException(status_code=400, detail="Tempo esgotado — tente de novo")
+    c = await ajard_query("""SELECT c.credential_id, c.public_key, c.sign_count FROM public.credenciais_webauthn c
+                              JOIN public.usuarios_garra u ON u.id=c.usuario_id
+                             WHERE u.login=%s AND c.credential_id=%s AND c.ativo""", (login, cred.get("id") or ""), fetch="one")
+    if not c:
+        raise HTTPException(status_code=401, detail="Biometria não reconhecida")
+    try:
+        novo = verificar_login(cred, d["desafio"], c["public_key"], c["sign_count"] or 0)
+    except Exception:
+        raise HTTPException(status_code=401, detail="Biometria não reconhecida")
+    await ajard_query("UPDATE public.credenciais_webauthn SET sign_count=%s, ultimo_uso=now() WHERE credential_id=%s",
+                      (novo, c["credential_id"]), fetch="none")
+    await ajard_query("DELETE FROM public.webauthn_desafios WHERE login=%s AND tipo='rh'", (login,), fetch="none")
+    await ajard_query(f"""INSERT INTO rh.elevacoes (usuario_login, expira_em) VALUES (%s, now() + interval '{_ELEVACAO_MIN} minutes')
+                          ON CONFLICT (usuario_login) DO UPDATE SET expira_em=EXCLUDED.expira_em""", (login,), fetch="none")
+    await ajard_query("INSERT INTO rh.acessos_log (usuario_login, acao) VALUES (%s,'confirmou_identidade')", (login,), fetch="none")
+    return {"ok": True, "minutos": _ELEVACAO_MIN}
+
+
+@router.put("/rh/api/config")
+async def rh_config_salvar(request: Request, payload=Depends(verificar_rh)):
+    """Só o administrador muda a exigência de biometria."""
+    await garantir_rh()
+    if (payload.get("perfil") or "") != "admin":
+        raise HTTPException(status_code=403, detail="Só o administrador altera esta configuração")
+    d = await request.json()
+    if "exigir_biometria" in d:
+        v = "1" if d["exigir_biometria"] else "0"
+        await ajard_query("""INSERT INTO rh.config (chave, valor, atualizado_por, atualizado_em) VALUES ('exigir_biometria',%s,%s,now())
+                             ON CONFLICT (chave) DO UPDATE SET valor=EXCLUDED.valor, atualizado_por=EXCLUDED.atualizado_por, atualizado_em=now()""",
+                          (v, payload.get("sub")), fetch="none")
+        await ajard_query("INSERT INTO rh.acessos_log (usuario_login, acao) VALUES (%s,%s)",
+                          (payload.get("sub"), "biometria_" + ("ligada" if v == "1" else "desligada")), fetch="none")
+    return {"ok": True}
+
+
+# ── categorias ──
+async def _categorias(todas=False):
+    rows = await ajard_query("SELECT * FROM rh.doc_categorias WHERE excluido_em IS NULL" + ("" if todas else " AND ativo")
+                             + " ORDER BY ordem, nome") or []
+    return [dict(r) | {"excluido_em": None} for r in rows]
+
+
+@router.get("/rh/api/doc-categorias")
+async def doc_categorias(payload=Depends(verificar_rh_ver)):
+    await garantir_rh()
+    cats = await _categorias(todas=True)
+    if not await _eh_rh(payload):
+        cats = [c for c in cats if c["ver_nr"] and not c["sigilosa"]]
+    return cats
+
+
+@router.post("/rh/api/doc-categorias")
+async def doc_categoria_salvar(request: Request, payload=Depends(verificar_rh)):
+    await garantir_rh()
+    d = await request.json()
+    nome = (d.get("nome") or "").strip()
+    if not nome:
+        raise HTTPException(status_code=422, detail="Informe o nome da categoria")
+    cod = (d.get("codigo") or "").strip().upper() or re.sub(r"[^A-Z0-9]+", "_", " ".join(_norm(nome)))[:20]
+    pastas = ",".join(p.strip().upper() for p in str(d.get("pastas") or "").split(",") if p.strip()) or None
+    vals = (nome, bool(d.get("sigilosa")), bool(d.get("tem_vencimento")), bool(d.get("ver_nr")) and not bool(d.get("sigilosa")),
+            pastas, d.get("ativo") if d.get("ativo") is not None else True)
+    existe = await ajard_query("SELECT codigo, excluido_em FROM rh.doc_categorias WHERE codigo=%s", (cod,), fetch="one")
+    if existe and not d.get("codigo") and not existe["excluido_em"]:
+        raise HTTPException(status_code=409, detail="Já existe uma categoria com esse nome")
+    if existe:
+        await ajard_query("""UPDATE rh.doc_categorias SET nome=%s, sigilosa=%s, tem_vencimento=%s, ver_nr=%s, pastas=%s, ativo=%s,
+                                    excluido_em=NULL WHERE codigo=%s""", vals + (cod,), fetch="none")
+    else:
+        await ajard_query("""INSERT INTO rh.doc_categorias (nome, sigilosa, tem_vencimento, ver_nr, pastas, ativo, codigo, ordem)
+                             VALUES (%s,%s,%s,%s,%s,%s,%s,50)""", vals + (cod,), fetch="none")
+    return {"ok": True, "codigo": cod}
+
+
+@router.delete("/rh/api/doc-categorias/{cod}")
+async def doc_categoria_excluir(cod: str, payload=Depends(verificar_rh)):
+    await garantir_rh()
+    n = await ajard_query("SELECT COUNT(*) AS n FROM rh.documentos WHERE categoria=%s AND ativo", (cod,), fetch="one")
+    if n and int(n["n"]):
+        raise HTTPException(status_code=409, detail=f"Há {n['n']} documento(s) nesta categoria — mude-os de categoria ou desative-a (Ativa = Não)")
+    if cod == "OUTROS":
+        raise HTTPException(status_code=409, detail="A categoria Outros é usada pela importação e não pode ser excluída")
+    await ajard_query("UPDATE rh.doc_categorias SET excluido_em=now(), ativo=false WHERE codigo=%s", (cod,), fetch="none")
+    return {"ok": True}
+
+
+# ── documentos ──
+async def _doc(did):
+    d = await ajard_query("""SELECT d.*, c.sigilosa, c.nome AS categoria_nome, c.ver_nr FROM rh.documentos d
+                               LEFT JOIN rh.doc_categorias c ON c.codigo=d.categoria WHERE d.id=%s AND d.ativo""", (did,), fetch="one")
+    if not d:
+        raise HTTPException(status_code=404, detail="Documento não encontrado")
+    return d
+
+
+def _st_venc(v, hoje):
+    if not v:
+        return None
+    if v < hoje:
+        return "vencida"
+    return "vence" if (v - hoje).days <= 30 else "valida"
+
+
+@router.get("/rh/api/colaboradores/{cid}/documentos")
+async def documentos_listar(cid: str, payload=Depends(verificar_rh_ver)):
+    await garantir_rh()
+    await _colab(cid)
+    pode = await _eh_rh(payload)
+    cats = {c["codigo"]: c for c in await _categorias(todas=True)}
+    rows = await ajard_query("""SELECT d.*, (SELECT json_agg(json_build_object('id',a.id,'nome',a.nome,'tipo',a.tipo,'tamanho',a.tamanho)
+                                                      ORDER BY a.criado_em) FROM rh.documento_arquivos a WHERE a.documento_id=d.id AND a.ativo) AS arquivos
+                                  FROM rh.documentos d WHERE d.colaborador_id=%s AND d.ativo
+                                 ORDER BY d.data_doc DESC NULLS LAST, d.criado_em DESC""", (cid,)) or []
+    hoje = _hoje()
+    iso = lambda x: x.isoformat() if x else None
+    out = []
+    for r in rows:
+        c = cats.get(r["categoria"]) or {"nome": r["categoria"], "sigilosa": False, "ver_nr": False}
+        if not pode and (c["sigilosa"] or not c["ver_nr"]):
+            continue
+        arqs = r["arquivos"] if isinstance(r["arquivos"], list) else (_json.loads(r["arquivos"]) if r["arquivos"] else [])
+        out.append({"id": str(r["id"]), "categoria": r["categoria"], "categoria_nome": c["nome"], "sigilosa": bool(c["sigilosa"]),
+                    "titulo": r["titulo"], "data_doc": iso(r["data_doc"]), "vencimento": iso(r["vencimento"]),
+                    "status": _st_venc(r["vencimento"], hoje), "observacao": r["observacao"], "origem": r["origem"],
+                    "arquivos": arqs})
+    # certificados anexados na aba NRs aparecem também aqui (somente leitura)
+    certs = await ajard_query("""SELECT t.id, t.certificado_nome, t.data_conclusao, t.validade_ate, k.codigo
+                                   FROM rh.treinamentos t JOIN rh.cursos k ON k.id=t.curso_id
+                                  WHERE t.colaborador_id=%s AND t.ativo AND t.certificado_path IS NOT NULL""", (cid,)) or []
+    for t in certs:
+        out.append({"id": "nr:" + str(t["id"]), "categoria": "CERTIFICADO", "categoria_nome": (cats.get("CERTIFICADO") or {}).get("nome", "Certificados"),
+                    "sigilosa": False, "titulo": f"Certificado {t['codigo']}", "data_doc": iso(t["data_conclusao"]),
+                    "vencimento": iso(t["validade_ate"]), "status": _st_venc(t["validade_ate"], hoje), "observacao": None,
+                    "origem": "nr", "arquivos": [{"id": "nr:" + str(t["id"]), "nome": t["certificado_nome"] or "certificado", "tipo": None, "tamanho": None}]})
+    return out
+
+
+async def _guardar_arquivo(cid, did, nome, dados, ctype, quem, origem="manual"):
+    if len(dados) > _MAX_ARQ:
+        raise HTTPException(status_code=413, detail=f"{nome}: acima de 10 MB")
+    if ctype not in _TIPOS_DOC:
+        raise HTTPException(status_code=415, detail=f"{nome}: tipo não aceito (PDF, foto, Word ou Excel)")
+    if ctype.startswith("image/"):
+        dados, ctype = _comprimir(dados, ctype)
+    sha = _hl.sha256(dados).hexdigest()
+    ja = await ajard_query("""SELECT a.id FROM rh.documento_arquivos a JOIN rh.documentos d ON d.id=a.documento_id
+                               WHERE a.sha256=%s AND a.ativo AND d.ativo AND d.colaborador_id=%s LIMIT 1""", (sha, cid), fetch="one")
+    if ja:
+        return None   # já existe esse mesmo arquivo na ficha
+    path = _rh_upload(dados, f"colaboradores/{cid}/docs/{did}/{_uuid.uuid4().hex[:10]}.{_TIPOS_DOC[ctype]}", ctype)
+    r = await ajard_query("""INSERT INTO rh.documento_arquivos (documento_id, path, nome, tipo, tamanho, sha256, criado_por)
+                             VALUES (%s,%s,%s,%s,%s,%s,%s) RETURNING id""",
+                          (did, path, re.sub(r"[^\w.\- ()À-ÿ]", "", nome)[:120], ctype, len(dados), sha, quem), fetch="one")
+    return str(r["id"])
+
+
+@router.post("/rh/api/colaboradores/{cid}/documentos")
+async def documento_criar(cid: str, request: Request, payload=Depends(verificar_rh)):
+    await garantir_rh()
+    await _colab(cid)
+    form = await request.form()
+    cat = (form.get("categoria") or "").strip()
+    if not await ajard_query("SELECT 1 FROM rh.doc_categorias WHERE codigo=%s AND excluido_em IS NULL", (cat,), fetch="one"):
+        raise HTTPException(status_code=422, detail="Escolha a categoria")
+    titulo = (form.get("titulo") or "").strip()
+    arquivos = [f for f in form.getlist("arquivos") if hasattr(f, "read")]
+    if not titulo:
+        titulo = (arquivos[0].filename.rsplit(".", 1)[0] if arquivos else "")
+    if not titulo:
+        raise HTTPException(status_code=422, detail="Informe o nome do documento")
+    if not arquivos:
+        raise HTTPException(status_code=422, detail="Anexe ao menos um arquivo")
+    r = await ajard_query("""INSERT INTO rh.documentos (colaborador_id, categoria, titulo, data_doc, vencimento, observacao, criado_por)
+                             VALUES (%s,%s,%s,%s,%s,%s,%s) RETURNING id""",
+                          (cid, cat, titulo[:150], _data(form.get("data_doc")), _data(form.get("vencimento")),
+                           (form.get("observacao") or "").strip() or None, payload.get("sub")), fetch="one")
+    did = str(r["id"])
+    guardados, repetidos = 0, 0
+    try:
+        for f in arquivos:
+            dados = await f.read()
+            ct = (f.content_type or "").lower()
+            if ct not in _TIPOS_DOC:
+                ct = _tipo_por_nome(f.filename or "") or ct
+            if await _guardar_arquivo(cid, did, f.filename or "arquivo", dados, ct, payload.get("sub")):
+                guardados += 1
+            else:
+                repetidos += 1
+    except HTTPException:
+        if not guardados:
+            await ajard_query("UPDATE rh.documentos SET ativo=false WHERE id=%s", (did,), fetch="none")
+        raise
+    if not guardados:
+        await ajard_query("UPDATE rh.documentos SET ativo=false WHERE id=%s", (did,), fetch="none")
+        raise HTTPException(status_code=409, detail="Esse arquivo já está na ficha (nada foi duplicado)")
+    return {"ok": True, "id": did, "arquivos": guardados, "repetidos": repetidos}
+
+
+@router.patch("/rh/api/documentos/{did}")
+async def documento_editar(did: str, request: Request, payload=Depends(verificar_rh)):
+    await garantir_rh()
+    await _doc(did)
+    d = await request.json()
+    v = {}
+    if "categoria" in d:
+        if not await ajard_query("SELECT 1 FROM rh.doc_categorias WHERE codigo=%s AND excluido_em IS NULL", (d["categoria"],), fetch="one"):
+            raise HTTPException(status_code=422, detail="Categoria inválida")
+        v["categoria"] = d["categoria"]
+    if "titulo" in d:
+        if not (d["titulo"] or "").strip():
+            raise HTTPException(status_code=422, detail="Informe o nome do documento")
+        v["titulo"] = d["titulo"].strip()[:150]
+    for k in ("data_doc", "vencimento"):
+        if k in d:
+            v[k] = _data(d[k])
+    if "observacao" in d:
+        v["observacao"] = (d["observacao"] or "").strip() or None
+    if v:
+        await ajard_query(f"UPDATE rh.documentos SET {', '.join(k + '=%s' for k in v)}, atualizado_em=now() WHERE id=%s",
+                          tuple(v.values()) + (did,), fetch="none")
+    return {"ok": True}
+
+
+@router.delete("/rh/api/documentos/{did}")
+async def documento_excluir(did: str, payload=Depends(verificar_rh)):
+    await garantir_rh()
+    await _doc(did)
+    await ajard_query("UPDATE rh.documentos SET ativo=false, atualizado_em=now() WHERE id=%s", (did,), fetch="none")
+    await ajard_query("UPDATE rh.documento_arquivos SET ativo=false WHERE documento_id=%s", (did,), fetch="none")
+    return {"ok": True}
+
+
+@router.post("/rh/api/documentos/{did}/arquivos")
+async def documento_mais_arquivos(did: str, request: Request, payload=Depends(verificar_rh)):
+    await garantir_rh()
+    d = await _doc(did)
+    form = await request.form()
+    n = 0
+    for f in [f for f in form.getlist("arquivos") if hasattr(f, "read")]:
+        ct = (f.content_type or "").lower()
+        if ct not in _TIPOS_DOC:
+            ct = _tipo_por_nome(f.filename or "") or ct
+        if await _guardar_arquivo(str(d["colaborador_id"]), did, f.filename or "arquivo", await f.read(), ct, payload.get("sub")):
+            n += 1
+    return {"ok": True, "arquivos": n}
+
+
+@router.delete("/rh/api/doc-arquivos/{aid}")
+async def documento_arquivo_excluir(aid: str, payload=Depends(verificar_rh)):
+    await garantir_rh()
+    await ajard_query("UPDATE rh.documento_arquivos SET ativo=false WHERE id=%s", (aid,), fetch="none")
+    return {"ok": True}
+
+
+@router.get("/rh/api/doc-arquivos/{aid}/abrir")
+async def documento_arquivo_abrir(aid: str, payload=Depends(verificar_rh_ver)):
+    """Link de 5 minutos. Sigiloso: só RH completo, com identidade confirmada e registro de quem abriu."""
+    await garantir_rh()
+    if aid.startswith("nr:"):
+        t = await ajard_query("SELECT certificado_path FROM rh.treinamentos WHERE id=%s AND ativo", (aid[3:],), fetch="one")
+        if not t or not t["certificado_path"]:
+            raise HTTPException(status_code=404, detail="Sem certificado")
+        url = _rh_link(t["certificado_path"])
+    else:
+        a = await ajard_query("""SELECT a.path, a.documento_id, d.colaborador_id, c.sigilosa, c.ver_nr
+                                   FROM rh.documento_arquivos a JOIN rh.documentos d ON d.id=a.documento_id AND d.ativo
+                                   LEFT JOIN rh.doc_categorias c ON c.codigo=d.categoria
+                                  WHERE a.id=%s AND a.ativo""", (aid,), fetch="one")
+        if not a:
+            raise HTTPException(status_code=404, detail="Arquivo não encontrado")
+        pode = await _eh_rh(payload)
+        if not pode and (a["sigilosa"] or not a["ver_nr"]):
+            raise HTTPException(status_code=403, detail="Documento restrito ao RH")
+        if a["sigilosa"]:
+            await _exigir_identidade(payload)
+            await ajard_query("""INSERT INTO rh.acessos_log (usuario_login, acao, colaborador_id, documento_id)
+                                 VALUES (%s,'abriu_documento',%s,%s)""", (payload.get("sub"), a["colaborador_id"], a["documento_id"]), fetch="none")
+        url = _rh_link(a["path"])
+    if not url:
+        raise HTTPException(status_code=502, detail="Não foi possível abrir o arquivo agora (armazenamento indisponível)")
+    return {"url": url, "expira_em_segundos": _LINK_SEG}
+
+
+@router.get("/rh/api/documentos/uso")
+async def documentos_uso(payload=Depends(verificar_rh)):
+    await garantir_rh()
+    r = await ajard_query("SELECT COALESCE(SUM(tamanho),0) AS b, COUNT(*) AS n FROM rh.documento_arquivos WHERE ativo", fetch="one")
+    return {"bytes": int(r["b"]), "arquivos": int(r["n"]), "limite_plano_bytes": 1024 ** 3}
+
+
+@router.get("/rh/api/documentos/vencimentos")
+async def documentos_vencimentos(dias: int = 60, payload=Depends(verificar_rh_ver)):
+    """ASO, CNH e outros documentos que vencem nos próximos N dias ou já venceram (colaboradores não desligados)."""
+    await garantir_rh()
+    pode = await _eh_rh(payload)
+    rows = await ajard_query("""SELECT d.id, d.titulo, d.vencimento, d.categoria, c.nome AS categoria_nome, c.sigilosa, c.ver_nr,
+                                       co.id AS cid, co.nome
+                                  FROM rh.documentos d JOIN rh.colaboradores co ON co.id=d.colaborador_id AND co.ativo AND co.situacao <> 'desligado'
+                                  LEFT JOIN rh.doc_categorias c ON c.codigo=d.categoria
+                                 WHERE d.ativo AND d.vencimento IS NOT NULL AND d.vencimento <= %s
+                                 ORDER BY d.vencimento""", (_hoje() + __import__("datetime").timedelta(days=max(1, min(dias, 365))),)) or []
+    hoje = _hoje()
+    return [{"id": str(r["id"]), "colaborador_id": str(r["cid"]), "colaborador": r["nome"], "categoria": r["categoria_nome"],
+             "titulo": r["titulo"] if (pode or not r["sigilosa"]) else r["categoria_nome"],
+             "vencimento": r["vencimento"].isoformat(), "status": _st_venc(r["vencimento"], hoje)}
+            for r in rows if pode or (r["ver_nr"] and not r["sigilosa"])]
+
+
+# ══════════════════════════════════════════════════════════════
+# IMPORTAÇÃO EM LOTE DA PASTA DO SERVIDOR (.zip) — prévia → confirmar. Nada é apagado.
+#   Documentos-NOME/            → ficha do colaborador (sugestão pelo nome; você confirma)
+#   Documentos-NOME/ASO-NOME/…  → categoria pela "pastas" da categoria (começo do nome da subpasta)
+#   arquivo solto               → categoria pelo começo do nome do arquivo (Contrato…, OS…, RECIBO…) ou Outros
+#   pastas "x-…"                → ex-colaboradores: ignoradas por padrão
+# O .zip fica guardado no servidor só até confirmar (máx. 1 h).
+# ══════════════════════════════════════════════════════════════
+_ZIP_DIR = "/tmp/rh_import"
+
+
+def _limpa_zips():
+    try:
+        os.makedirs(_ZIP_DIR, exist_ok=True)
+        for f in os.listdir(_ZIP_DIR):
+            p = os.path.join(_ZIP_DIR, f)
+            if _time.time() - os.path.getmtime(p) > 3600:
+                os.remove(p)
+    except Exception:
+        pass
+
+
+def _cat_por_nome(nome, cats):
+    n = " ".join(_norm(nome))
+    n2 = re.sub(r"[^A-Z0-9]+", "-", n)
+    melhor = None
+    for c in cats:
+        for pref in [p.strip() for p in (c.get("pastas") or "").split(",") if p.strip()]:
+            pn = " ".join(_norm(pref)) if pref.strip() else ""
+            if pn and (n.startswith(pn) or n2.startswith(re.sub(r"[^A-Z0-9]+", "-", pn))):
+                if not melhor or len(pn) > melhor[1]:
+                    melhor = (c["codigo"], len(pn))
+    return melhor[0] if melhor else None
+
+
+def _nome_da_pasta(p):
+    """'Documentos-Eliton José' → 'Eliton José'"""
+    return re.sub(r"^\s*(documentos?|docs?)\s*[-_ ]\s*", "", p, flags=re.I).strip()
+
+
+@router.post("/rh/api/importar-pasta/previa")
+async def importar_pasta_previa(ficheiro: UploadFile = File(...), payload=Depends(verificar_rh)):
+    await garantir_rh()
+    _limpa_zips()
+    dados = await ficheiro.read()
+    if len(dados) > _MAX_ZIP:
+        raise HTTPException(status_code=413, detail="O .zip passa de 60 MB — divida em partes (algumas pessoas por vez)")
+    try:
+        z = _zip.ZipFile(io.BytesIO(dados))
+    except Exception:
+        raise HTTPException(status_code=422, detail="Arquivo .zip inválido")
+    cats = await _categorias()
+    fichas = await ajard_query("SELECT id, nome, apelido FROM rh.colaboradores WHERE ativo ORDER BY nome") or []
+    shas = {r["sha256"]: str(r["colaborador_id"]) for r in (await ajard_query(
+        """SELECT a.sha256, d.colaborador_id FROM rh.documento_arquivos a JOIN rh.documentos d ON d.id=a.documento_id
+            WHERE a.ativo AND d.ativo AND a.sha256 IS NOT NULL""") or [])}
+    pessoas, arquivos = {}, []
+    for info in z.infolist():
+        if info.is_dir():
+            continue
+        partes = [p for p in info.filename.replace("\\", "/").split("/") if p]
+        # nomes do Windows no zip podem vir em CP437 — tenta reconstruir os acentos
+        if not (info.flag_bits & 0x800):
+            try:
+                partes = [p.encode("cp437").decode("cp850") for p in partes]
+            except Exception:
+                pass
+        base = partes[-1]
+        if base.startswith(("~$", ".")) or base.lower() in ("thumbs.db", "desktop.ini"):
+            continue
+        # acha a pasta da pessoa: o primeiro nível "Documentos-…" (ignora a pasta-mãe Documentos-FUNCIONARIOS)
+        i_p = next((i for i, p in enumerate(partes[:-1]) if re.match(r"^\s*(x\s*-\s*)?documentos?\s*-", p, re.I)
+                    and "FUNCIONARIO" not in p.upper()), None)
+        if i_p is None:
+            continue
+        pasta = partes[i_p]
+        ex = bool(re.match(r"^\s*x\s*-", pasta, re.I))
+        sub = partes[i_p + 1] if len(partes) - 1 > i_p + 1 else ""
+        cat = (_cat_por_nome(sub, cats) if sub else None) or _cat_por_nome(base, cats) or "OUTROS"
+        ct = _tipo_por_nome(base)
+        dt = None
+        try:
+            dt = _date(*info.date_time[:3]).isoformat()
+        except Exception:
+            pass
+        if pasta not in pessoas:
+            alvo = _norm(_nome_da_pasta(re.sub(r"^\s*x\s*-\s*", "", pasta, flags=re.I)))
+            cand = []
+            for f in fichas:
+                pts = max(_pontos_nome(f["nome"], [alvo]), _pontos_nome(f["apelido"] or "", [alvo]) if f["apelido"] else 0,
+                          _pontos_nome(" ".join(alvo), [_norm(f["nome"]), _norm(f["apelido"] or "")]))
+                if pts:
+                    cand.append((pts, f))
+            cand.sort(key=lambda x: -x[0])
+            sug = str(cand[0][1]["id"]) if cand and (len(cand) == 1 or cand[0][0] > cand[1][0]) else None
+            pessoas[pasta] = {"pasta": pasta, "ex": ex, "colaborador_id": None if ex else sug, "arquivos": 0, "bytes": 0}
+        p = pessoas[pasta]
+        p["arquivos"] += 1
+        p["bytes"] += info.file_size
+        arquivos.append({"idx": len(arquivos), "zipname": info.filename, "pasta": pasta, "subpasta": sub, "nome": base,
+                         "categoria": cat, "data": dt, "tamanho": info.file_size, "aceito": bool(ct),
+                         "importar": bool(ct) and not ex and cat not in ("ANTIGO", "RECIBO")})
+    if not arquivos:
+        raise HTTPException(status_code=422, detail="Nenhuma pasta 'Documentos-NOME' encontrada no .zip")
+    lote = _uuid.uuid4().hex
+    with open(os.path.join(_ZIP_DIR, lote + ".zip"), "wb") as fh:
+        fh.write(dados)
+    uso = await ajard_query("SELECT COALESCE(SUM(tamanho),0) AS b FROM rh.documento_arquivos WHERE ativo", fetch="one")
+    return {"lote": lote, "pessoas": list(pessoas.values()), "arquivos": arquivos,
+            "colaboradores": [{"id": str(f["id"]), "nome": f["nome"]} for f in fichas],
+            "categorias": [{"codigo": c["codigo"], "nome": c["nome"]} for c in cats],
+            "uso_bytes": int(uso["b"]), "repetidos_conhecidos": len(shas) > 0}
+
+
+@router.post("/rh/api/importar-pasta/aplicar")
+async def importar_pasta_aplicar(request: Request, payload=Depends(verificar_rh)):
+    await garantir_rh()
+    d = await request.json()
+    lote = re.sub(r"[^a-f0-9]", "", str(d.get("lote") or ""))
+    caminho = os.path.join(_ZIP_DIR, lote + ".zip")
+    if not lote or not os.path.exists(caminho):
+        raise HTTPException(status_code=410, detail="A prévia expirou — envie o .zip de novo")
+    pessoa_de = {p["pasta"]: p.get("colaborador_id") for p in (d.get("pessoas") or [])}
+    escolhidos = [a for a in (d.get("arquivos") or []) if a.get("importar")]
+    cats = {c["codigo"] for c in await _categorias()}
+    z = _zip.ZipFile(caminho)
+    ok, rep, erros, bytes_ = 0, 0, [], 0
+    for a in escolhidos:
+        cid = pessoa_de.get(a.get("pasta"))
+        if not cid:
+            continue
+        cat = a.get("categoria") if a.get("categoria") in cats else "OUTROS"
+        ct = _tipo_por_nome(a.get("nome") or "")
+        if not ct:
+            continue
+        try:
+            dados = z.read(a["zipname"])
+            titulo = (a.get("nome") or "arquivo").rsplit(".", 1)[0][:150]
+            r = await ajard_query("""INSERT INTO rh.documentos (colaborador_id, categoria, titulo, data_doc, origem, criado_por)
+                                     VALUES (%s,%s,%s,%s,'zip',%s) RETURNING id""",
+                                  (cid, cat, titulo, _data(a.get("data")), payload.get("sub")), fetch="one")
+            aid = await _guardar_arquivo(cid, str(r["id"]), a.get("nome") or "arquivo", dados, ct, payload.get("sub"), "zip")
+            if aid:
+                ok += 1
+                t = await ajard_query("SELECT tamanho FROM rh.documento_arquivos WHERE id=%s", (aid,), fetch="one")
+                bytes_ += int(t["tamanho"] or 0)
+            else:
+                rep += 1
+                await ajard_query("UPDATE rh.documentos SET ativo=false WHERE id=%s", (r["id"],), fetch="none")
+        except HTTPException as e:
+            erros.append(f"{a.get('nome')}: {e.detail}")
+            if e.status_code == 507:
+                break
+        except Exception as e:
+            erros.append(f"{a.get('nome')}: {str(e)[:100]}")
+    try:
+        os.remove(caminho)
+    except Exception:
+        pass
+    return {"ok": True, "importados": ok, "repetidos": rep, "bytes": bytes_, "erros": erros[:50]}

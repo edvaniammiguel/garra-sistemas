@@ -101,6 +101,7 @@ table.t td{padding:6px;border-bottom:1px solid #EEF2F7;vertical-align:middle}
           <button class="btn pri" onclick="novoColab()">+ Novo colaborador</button>
           <button class="btn" onclick="maisAbrir()" title="Planilha de colaboradores exportada do MAIS">Importar do MAIS</button>
           <button class="btn" onclick="importarAbrir()" title="Criar fichas a partir dos logins do sistema">Importar logins</button>
+          <button class="btn" onclick="pastaAbrir()" title="Pasta Documentos-FUNCIONARIOS do servidor compactada em .zip">Importar documentos (.zip)</button>
         </div>
       </div>
       <div class="lista" id="lista"><div class="vazio">Carregando…</div></div>
@@ -119,6 +120,8 @@ table.t td{padding:6px;border-bottom:1px solid #EEF2F7;vertical-align:middle}
   </div>
   <div class="kpis" id="p-kpis"></div>
   <div class="painel" style="overflow:auto;max-height:calc(100vh - 250px)" id="p-mat"><div class="vazio">Carregando…</div></div>
+  <div class="faixa" style="margin-top:16px">Documentos vencidos ou vencendo nos próximos 60 dias (ASO, CNH…)</div>
+  <div class="painel" id="p-venc"><div class="vazio">—</div></div>
   <div class="hint" style="margin-top:6px">Clique numa célula para abrir a ficha do colaborador na aba de NRs. Vermelho = falta ou vencida · amarelo = vence em até 30 dias · azul = em andamento · verde = válida. Célula vazia = NR que o cargo não exige e que a pessoa não fez.</div>
 </section>
 
@@ -139,6 +142,15 @@ table.t td{padding:6px;border-bottom:1px solid #EEF2F7;vertical-align:middle}
       <div class="painel" style="padding:12px">
         <div style="display:flex;justify-content:space-between;align-items:center"><b style="color:var(--blue)">Plataformas EAD</b><button class="btn peq" onclick="platEditar()">+ Nova</button></div>
         <div id="par-plat" style="margin-top:8px"></div>
+      </div>
+      <div class="painel" style="padding:12px">
+        <div style="display:flex;justify-content:space-between;align-items:center"><b style="color:var(--blue)">Categorias de documentos</b><button class="btn peq" onclick="catEditar()">+ Nova</button></div>
+        <div class="hint">São as “pastas” da aba Documentos. 🔒 Sigilosa = só RH completo, pede biometria e registra quem abriu. “Nomes de pasta” = como a subpasta se chama no servidor (para a importação em lote).</div>
+        <div id="par-cats" style="margin-top:8px"></div>
+      </div>
+      <div class="painel" style="padding:12px">
+        <b style="color:var(--blue)">Segurança e armazenamento</b>
+        <div id="par-seg" style="margin-top:8px"></div>
       </div>
     </div>
   </div>
@@ -197,7 +209,7 @@ async function carregarOpcoes(){
 function tela(t){
   document.querySelectorAll('.topo button').forEach(b => b.classList.toggle('on', b.dataset.t === t));
   document.querySelectorAll('.tela').forEach(s => s.classList.toggle('on', s.id === 't-' + t));
-  if (t === 'pnr') carregarPainel();
+  if (t === 'pnr') { carregarPainel(); carregarVencDocs(); }
   if (t === 'par') carregarPar();
 }
 
@@ -226,7 +238,7 @@ function desenharLista(){
 
 /* ══ FICHA ══ */
 const ABAS = [
-  ['dados', 'Dados'], ['funcao', 'Função e HH', 1], ['nrs', 'NRs e treinamentos'], ['ead', 'Plataformas EAD', 1], ['comissoes', 'Comissões', 1, 1], ['docs', 'Documentos', 0, 1],
+  ['dados', 'Dados'], ['funcao', 'Função e HH', 1], ['nrs', 'NRs e treinamentos'], ['ead', 'Plataformas EAD', 1], ['comissoes', 'Comissões', 1, 1], ['docs', 'Documentos'],
 ];
 async function abrir(id, aba){
   _atual = id; desenharLista();
@@ -253,7 +265,7 @@ function desenharFicha(){
 function aba(k){
   _aba = k;
   document.querySelectorAll('#ficha .abas button').forEach(b => b.classList.toggle('on', (b.getAttribute('onclick') || '').includes("'" + k + "'")));
-  ({ dados: abaDados, funcao: abaFuncao, nrs: abaNrs, ead: abaEad })[k]();
+  ({ dados: abaDados, funcao: abaFuncao, nrs: abaNrs, ead: abaEad, docs: abaDocs })[k]();
 }
 const fld = (rot, html, extra) => '<div' + (extra ? ' ' + extra : '') + '><label class="f">' + rot + '</label>' + html + '</div>';
 
@@ -278,7 +290,7 @@ function abaDados(){
     + fld('Observação', '<textarea id="d-obs">' + esc(f.observacao || '') + '</textarea>', 'style="grid-column:span 3"')
     + '</div><div class="erro" id="d-erro"></div>'
     + '<div style="display:flex;gap:8px;margin-top:12px"><button class="btn pri" onclick="salvarDados()">Salvar</button><button class="btn del" style="margin-left:auto" onclick="excluirColab()" title="Só para ficha criada por engano. Quem saiu da empresa: situação Desligado.">Excluir ficha</button></div>'
-    + '<div class="hint" style="margin-top:14px">' + (f.mais_sync_em ? '🔄 Nome, CPF, cargo, admissão e desligamento atualizados pelo MAIS em ' + new Date(f.mais_sync_em).toLocaleDateString('pt-BR') + ' — numa nova importação, o MAIS prevalece nesses campos.' : 'Esta ficha ainda não foi casada com o MAIS (use “Importar do MAIS”).') + ' Salário, folha, endereço e documentos pessoais ficam no MAIS.</div>';
+    + '<div class="hint" style="margin-top:14px">' + (f.mais_sync_em ? '🔄 Nome, CPF, cargo, admissão e desligamento atualizados pelo MAIS em ' + new Date(f.mais_sync_em).toLocaleDateString('pt-BR') + ' — numa nova importação, o MAIS prevalece nesses campos.' : 'Esta ficha ainda não foi casada com o MAIS (use “Importar do MAIS”).') + ' Salário, folha e endereço ficam no MAIS; os arquivos digitalizados (ASO, contratos, atestados…) ficam na aba Documentos.</div>';
 }
 async function salvarDados(){
   const g = id => document.getElementById(id).value;
@@ -449,7 +461,7 @@ async function abaEad(){
 }
 async function eadMostrar(pid){
   const s = document.getElementById('sn-' + pid);
-  try { const r = await api('/rh/api/colaboradores/' + _atual + '/acessos/' + pid + '/revelar', { method: 'POST' }); s.textContent = r.senha; setTimeout(() => { if (s.isConnected) s.textContent = 'senha guardada'; }, 20000); }
+  try { const r = await apiId('/rh/api/colaboradores/' + _atual + '/acessos/' + pid + '/revelar', { method: 'POST' }); if (!r) return; s.textContent = r.senha; setTimeout(() => { if (s.isConnected) s.textContent = 'senha guardada'; }, 20000); }
   catch(e){ toast('❌ ' + e.message); }
 }
 function eadEditar(x){
@@ -467,8 +479,234 @@ function eadEditar(x){
 }
 async function eadLog(){
   let l; try { l = await api('/rh/api/colaboradores/' + _atual + '/acessos-log'); } catch(e){ toast('❌ ' + e.message); return; }
-  const A = { viu_senha: 'viu a senha', alterou: 'alterou login/senha', alterou_login: 'alterou o login' };
+  const A = { viu_senha: 'viu a senha', alterou: 'alterou login/senha', alterou_login: 'alterou o login', abriu_documento: 'abriu documento sigiloso' };
   document.getElementById('ead-log').innerHTML = '<div class="faixa">Registro de acessos (últimos 50)</div>' + (l.length ? '<table class="t"><tbody>' + l.map(r => '<tr><td>' + new Date(r.em).toLocaleString('pt-BR', {dateStyle: 'short', timeStyle: 'short'}) + '</td><td>' + esc(r.quem || '') + '</td><td>' + esc(A[r.acao] || r.acao) + '</td><td>' + esc(r.plataforma || '') + '</td></tr>').join('') + '</tbody></table>' : '<div class="muted">Nenhum acesso registrado.</div>');
+}
+
+/* ══ CONFIRMAÇÃO DE IDENTIDADE (biometria) — documentos sigilosos e senhas EAD ══ */
+const b64uBuf = s => { s = s.replace(/-/g, '+').replace(/_/g, '/'); const b = atob(s + '='.repeat((4 - s.length % 4) % 4)); const u = new Uint8Array(b.length); for (let i = 0; i < b.length; i++) u[i] = b.charCodeAt(i); return u.buffer; };
+const bufB64u = buf => { let b = ''; for (const x of new Uint8Array(buf)) b += String.fromCharCode(x); return btoa(b).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''); };
+async function apiId(path, opts){
+  // chama a API; se o servidor pedir confirmação de identidade (428), pede a biometria e tenta de novo
+  try { return await api(path, opts); }
+  catch(e){
+    if (e.status !== 428) throw e;
+    if (!(await confirmarIdentidade())) return null;
+    return await api(path, opts);
+  }
+}
+async function confirmarIdentidade(){
+  let st; try { st = await api('/rh/api/identidade'); } catch(e){ toast('❌ ' + e.message); return false; }
+  if (!st.biometrias) {
+    return await new Promise(res => {
+      modal('Confirme sua identidade', '<p style="margin-bottom:8px">Documentos sigilosos e senhas das plataformas só abrem com <b>biometria</b> (Windows Hello, digital ou rosto).</p>'
+        + '<p class="muted">Você ainda não tem biometria cadastrada neste computador. Cadastre agora — leva 10 segundos e vale para as próximas vezes.</p>',
+        'Cadastrar biometria deste computador', async () => { const ok = await bioRegistrar(); if (ok) res(await bioConfirmar()); else res(false); });
+      const c = document.querySelector('#modal .btn:not(.pri)'); if (c) c.addEventListener('click', () => res(false));
+    });
+  }
+  return await bioConfirmar();
+}
+async function bioRegistrar(){
+  if (!window.PublicKeyCredential) { alert('Este navegador não aceita biometria. Use o Chrome ou o Edge atualizado.'); return false; }
+  try {
+    const o = await api('/auth/webauthn/registro/desafio', { method: 'POST' });
+    o.challenge = b64uBuf(o.challenge); o.user.id = b64uBuf(o.user.id); (o.excludeCredentials || []).forEach(c => c.id = b64uBuf(c.id));
+    const cred = await navigator.credentials.create({ publicKey: o });
+    await api('/auth/webauthn/registro/verificar', { method: 'POST', body: JSON.stringify({ apelido: 'Computador (RH)', credencial: {
+      id: cred.id, rawId: bufB64u(cred.rawId), type: cred.type,
+      response: { clientDataJSON: bufB64u(cred.response.clientDataJSON), attestationObject: bufB64u(cred.response.attestationObject) } } }) });
+    toast('Biometria cadastrada neste computador'); return true;
+  } catch(e){
+    if (e.name === 'InvalidStateError') return true;   // já cadastrada
+    alert(e.name === 'NotAllowedError' ? 'Cadastro cancelado.' : ('Não foi possível cadastrar: ' + e.message + '\n\nNo Windows, confira se o Windows Hello (PIN, digital ou rosto) está configurado.'));
+    return false;
+  }
+}
+let _bioTentouCadastro = false;
+async function bioConfirmar(){
+  try {
+    const o = await api('/rh/api/identidade/desafio', { method: 'POST' });
+    o.challenge = b64uBuf(o.challenge); (o.allowCredentials || []).forEach(c => c.id = b64uBuf(c.id));
+    const cred = await navigator.credentials.get({ publicKey: o });
+    await api('/rh/api/identidade/verificar', { method: 'POST', body: JSON.stringify({ credencial: {
+      id: cred.id, rawId: bufB64u(cred.rawId), type: cred.type,
+      response: { clientDataJSON: bufB64u(cred.response.clientDataJSON), authenticatorData: bufB64u(cred.response.authenticatorData),
+                  signature: bufB64u(cred.response.signature), userHandle: cred.response.userHandle ? bufB64u(cred.response.userHandle) : null } } }) });
+    toast('Identidade confirmada por 15 minutos'); return true;
+  } catch(e){
+    if (e.message === 'SEM_BIOMETRIA') { const ok = await bioRegistrar(); return ok ? bioConfirmar() : false; }
+    if (e.name === 'NotAllowedError' || e.name === 'InvalidStateError') {
+      // cancelou, ou a biometria cadastrada é de outro aparelho (ex.: o celular do login por digital)
+      if (!_bioTentouCadastro && confirm('Não foi confirmado.\n\nSe a sua biometria foi cadastrada só no celular, este computador ainda não a conhece. Cadastrar a biometria deste computador agora?')) {
+        _bioTentouCadastro = true; const ok = await bioRegistrar(); return ok ? bioConfirmar() : false;
+      }
+      toast('Confirmação cancelada'); return false;
+    }
+    alert('Não foi possível confirmar: ' + e.message); return false;
+  }
+}
+
+/* ══ DOCUMENTOS ══ */
+let _docs = [], _docCats = null, _docCat = '';
+const kb = b => b == null ? '' : (b > 1048576 ? (b / 1048576).toFixed(1).replace('.', ',') + ' MB' : Math.max(1, Math.round(b / 1024)) + ' KB');
+async function docCats(forcar){ if (!_docCats || forcar) _docCats = await api('/rh/api/doc-categorias'); return _docCats; }
+async function abaDocs(){
+  const el = document.getElementById('fic-corpo'); el.innerHTML = '<div class="vazio">Carregando…</div>';
+  try { await docCats(); _docs = await api('/rh/api/colaboradores/' + _atual + '/documentos'); } catch(e){ el.innerHTML = '<div class="erro">' + esc(e.message) + '</div>'; return; }
+  const cats = _docCats.filter(c => c.ativo || _docs.some(d => d.categoria === c.codigo));
+  const n = c => _docs.filter(d => d.categoria === c).length;
+  el.innerHTML = '<div style="display:grid;grid-template-columns:210px minmax(0,1fr);gap:12px">'
+    + '<div style="border-right:1px solid var(--line);padding-right:10px" id="doc-cats">'
+    + '<div class="it' + (!_docCat ? ' on' : '') + '" style="padding:6px 8px" onclick="_docCat=\'\';docDesenhar()"><span>Todos</span><span class="muted">' + _docs.length + '</span></div>'
+    + cats.map(c => '<div class="it' + (_docCat === c.codigo ? ' on' : '') + '" style="padding:6px 8px" onclick="_docCat=\'' + esc(c.codigo) + '\';docDesenhar()"><span>' + (c.sigilosa ? '🔒 ' : '') + esc(c.nome) + '</span><span class="muted">' + n(c.codigo) + '</span></div>').join('')
+    + '</div><div><div style="display:flex;gap:8px;margin-bottom:8px"><input id="doc-busca" placeholder="Buscar documento" oninput="docDesenhar()" style="flex:1">'
+    + (EU.pode_rh ? '<button class="btn" onclick="docLog()" title="Quem abriu documentos sigilosos desta ficha">Registro de acessos</button><button class="btn pri" onclick="docForm()">Anexar documento</button>' : '') + '</div><div id="doc-lista"></div></div></div>';
+  docDesenhar();
+  const vv = _docs.filter(d => d.status === 'vencida' || d.status === 'vence');
+  const al = document.getElementById('fic-alerta');
+  if (al && vv.length && !al.innerHTML) al.innerHTML = '<span class="pill p-' + (vv.some(d => d.status === 'vencida') ? 'vencida' : 'vence') + '">' + esc(vv[0].categoria_nome) + (vv[0].status === 'vencida' ? ' vencido' : ' vence em breve') + '</span>';
+}
+function docDesenhar(){
+  document.querySelectorAll('#doc-cats .it').forEach(x => x.classList.toggle('on', (x.getAttribute('onclick') || '').includes("_docCat='" + _docCat + "'")));
+  const b = (document.getElementById('doc-busca').value || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+  const it = _docs.filter(d => (!_docCat || d.categoria === _docCat) && (!b || (d.titulo + ' ' + d.categoria_nome).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().includes(b)));
+  document.getElementById('doc-lista').innerHTML = it.length ? '<table class="t"><thead><tr><th>Categoria</th><th>Documento</th><th>Data</th><th>Vence</th><th>Arquivos</th><th></th></tr></thead><tbody>'
+    + it.map(d => '<tr><td>' + (d.sigilosa ? '🔒 ' : '') + esc(d.categoria_nome) + '</td><td><b>' + esc(d.titulo) + '</b>' + (d.observacao ? '<div class="muted" style="font-size:11px">' + esc(d.observacao) + '</div>' : '') + (d.origem === 'nr' ? '<div class="muted" style="font-size:11px">anexado na aba NRs</div>' : '') + '</td>'
+      + '<td>' + br(d.data_doc) + '</td><td>' + (d.vencimento ? '<span class="pill p-' + d.status + '">' + br(d.vencimento) + '</span>' : '') + '</td>'
+      + '<td>' + (d.arquivos || []).map(a => '<button class="btn peq" style="margin:1px" onclick="docAbrir(\'' + a.id + '\')" title="' + esc(a.nome) + (a.tamanho ? ' · ' + kb(a.tamanho) : '') + '">📄 ' + esc((a.nome || 'arquivo').slice(0, 22)) + '</button>').join('') + '</td>'
+      + '<td style="text-align:right;white-space:nowrap">' + (EU.pode_rh && d.origem !== 'nr' ? '<button class="btn peq" onclick="docForm(\'' + d.id + '\')">editar</button> <button class="btn peq del" onclick="docExcluir(\'' + d.id + '\')">✕</button>' : '') + '</td></tr>').join('')
+    + '</tbody></table>' : '<div class="vazio">' + (_docs.length ? 'Nada nesta categoria.' : 'Nenhum documento ainda.') + '</div>';
+}
+async function docAbrir(aid){
+  const w = window.open('', '_blank');   // abre já (o navegador bloqueia janelas abertas depois de esperar a rede)
+  try {
+    let r;
+    try { r = await api('/rh/api/doc-arquivos/' + aid + '/abrir'); }
+    catch(e){
+      if (e.status !== 428) throw e;
+      if (w) w.close();
+      if (!(await confirmarIdentidade())) return;
+      r = await api('/rh/api/doc-arquivos/' + aid + '/abrir');
+      modal('Documento liberado', '<p>Identidade confirmada. O link vale 5 minutos.</p>', 'Abrir documento', async () => { window.open(r.url, '_blank'); });
+      return;
+    }
+    if (w) w.location = r.url; else window.open(r.url, '_blank');
+  } catch(e){ if (w) w.close(); toast('❌ ' + e.message); }
+}
+function docForm(did){
+  const d = did ? _docs.find(x => x.id === did) : null;
+  const cats = _docCats.filter(c => c.ativo || (d && c.codigo === d.categoria));
+  const cat0 = d ? d.categoria : (_docCat || '');
+  modal(d ? 'Editar documento' : 'Anexar documento',
+    '<div class="grid g2">' + fld('Categoria *', '<select id="dc-cat" onchange="docVenc()"><option value="">— escolha —</option>' + cats.map(c => '<option value="' + esc(c.codigo) + '"' + (c.codigo === cat0 ? ' selected' : '') + '>' + (c.sigilosa ? '🔒 ' : '') + esc(c.nome) + '</option>').join('') + '</select>')
+    + fld('Nome do documento', '<input id="dc-tit" value="' + esc(d ? d.titulo : '') + '" placeholder="vazio = nome do arquivo">') + '</div>'
+    + '<div class="grid g2" style="margin-top:10px">' + fld('Data do documento', '<input type="date" id="dc-data" value="' + esc(d ? d.data_doc || '' : '') + '">') + '<div id="dc-venc-box">' + fld('Vence em', '<input type="date" id="dc-venc" value="' + esc(d ? d.vencimento || '' : '') + '">') + '</div></div>'
+    + '<div style="margin-top:10px">' + fld('Observação', '<input id="dc-obs" value="' + esc(d ? d.observacao || '' : '') + '">') + '</div>'
+    + '<div style="margin-top:10px">' + fld(d ? 'Acrescentar arquivos (opcional)' : 'Arquivos * (PDF, foto, Word ou Excel — até 10 MB cada)', '<input type="file" id="dc-arq" multiple accept="application/pdf,image/*,.doc,.docx,.xls,.xlsx">') + '</div>'
+    + (d && d.arquivos && d.arquivos.length ? '<div style="margin-top:8px" class="hint">Arquivos: ' + d.arquivos.map(a => esc(a.nome) + ' <a href="#" onclick="docArqExcluir(\'' + a.id + '\');return false" style="color:var(--bad)">remover</a>').join(' · ') + '</div>' : '')
+    + '<div class="hint" style="margin-top:8px">Fotos e digitalizações em JPG/PNG são comprimidas ao entrar (continuam legíveis e ocupam bem menos espaço).</div><div class="erro" id="dc-erro"></div>',
+    d ? 'Salvar' : 'Anexar', () => docSalvar(did));
+  docVenc();
+}
+function docVenc(){ const c = (_docCats || []).find(x => x.codigo === document.getElementById('dc-cat').value); document.getElementById('dc-venc-box').style.display = c && c.tem_vencimento ? '' : 'none'; if (!(c && c.tem_vencimento)) document.getElementById('dc-venc').value = ''; }
+async function docSalvar(did){
+  const e = document.getElementById('dc-erro'), g = id => document.getElementById(id).value, arq = document.getElementById('dc-arq').files;
+  e.textContent = '';
+  if (!g('dc-cat')) { e.textContent = 'Escolha a categoria.'; return false; }
+  if (!did && !arq.length) { e.textContent = 'Escolha o arquivo.'; return false; }
+  for (const f of arq) if (f.size > 10 * 1048576) { e.textContent = f.name + ' passa de 10 MB.'; return false; }
+  try {
+    if (did) {
+      await api('/rh/api/documentos/' + did, { method: 'PATCH', body: JSON.stringify({ categoria: g('dc-cat'), titulo: g('dc-tit') || (_docs.find(x => x.id === did) || {}).titulo, data_doc: g('dc-data'), vencimento: g('dc-venc'), observacao: g('dc-obs') }) });
+      if (arq.length) { const fd = new FormData(); for (const f of arq) fd.append('arquivos', f); await api('/rh/api/documentos/' + did + '/arquivos', { method: 'POST', body: fd }); }
+    } else {
+      const fd = new FormData(); fd.append('categoria', g('dc-cat')); fd.append('titulo', g('dc-tit')); fd.append('data_doc', g('dc-data')); fd.append('vencimento', g('dc-venc')); fd.append('observacao', g('dc-obs'));
+      for (const f of arq) fd.append('arquivos', f);
+      const r = await api('/rh/api/colaboradores/' + _atual + '/documentos', { method: 'POST', body: fd });
+      if (r.repetidos) toast(r.repetidos + ' arquivo(s) já estavam na ficha e não foram repetidos');
+    }
+  } catch(x){ e.textContent = x.message; return false; }
+  toast(did ? 'Documento atualizado' : 'Documento anexado'); abaDocs();
+}
+async function docLog(){
+  let l; try { l = await api('/rh/api/colaboradores/' + _atual + '/acessos-log'); } catch(e){ toast('❌ ' + e.message); return; }
+  l = l.filter(r => r.acao === 'abriu_documento');
+  modal('Quem abriu documentos sigilosos', l.length ? '<table class="t"><thead><tr><th>Quando</th><th>Quem</th><th>Documento</th></tr></thead><tbody>' + l.map(r => '<tr><td>' + new Date(r.em).toLocaleString('pt-BR', {dateStyle: 'short', timeStyle: 'short'}) + '</td><td>' + esc(r.quem || '') + '</td><td>' + esc(r.plataforma || '') + '</td></tr>').join('') + '</tbody></table>' : '<div class="muted">Nenhum documento sigiloso desta ficha foi aberto ainda.</div>');
+}
+async function docExcluir(did){ const d = _docs.find(x => x.id === did); if (!confirm('Excluir "' + (d ? d.titulo : '') + '"?')) return;
+  try { await api('/rh/api/documentos/' + did, { method: 'DELETE' }); } catch(e){ toast('❌ ' + e.message); return; } abaDocs(); }
+async function docArqExcluir(aid){ if (!confirm('Remover este arquivo do documento?')) return;
+  try { await api('/rh/api/doc-arquivos/' + aid, { method: 'DELETE' }); } catch(e){ toast('❌ ' + e.message); return; } fecharModal(); abaDocs(); }
+async function carregarVencDocs(){
+  const box = document.getElementById('p-venc'); let v;
+  try { v = await api('/rh/api/documentos/vencimentos?dias=60'); } catch(e){ box.innerHTML = '<div class="vazio erro">' + esc(e.message) + '</div>'; return; }
+  box.innerHTML = v.length ? '<table class="t"><thead><tr><th>Colaborador</th><th>Documento</th><th>Vence</th></tr></thead><tbody>'
+    + v.map(x => '<tr style="cursor:pointer" onclick="tela(\'col\');abrir(\'' + x.colaborador_id + '\',\'docs\')"><td><b>' + esc(x.colaborador) + '</b></td><td>' + esc(x.categoria) + (x.titulo !== x.categoria ? ' · ' + esc(x.titulo) : '') + '</td><td><span class="pill p-' + x.status + '">' + br(x.vencimento) + '</span></td></tr>').join('') + '</tbody></table>'
+    : '<div class="vazio">Nenhum documento vencido ou vencendo nos próximos 60 dias.</div>';
+}
+
+/* ══ IMPORTAR PASTA DE DOCUMENTOS (.zip) ══ */
+let _pz = null;
+function pastaAbrir(){
+  modal('Importar documentos da pasta do servidor',
+    '<ol style="padding-left:18px;line-height:1.7"><li>No servidor, selecione as pastas <b>Documentos-NOME</b> que quer trazer (ex.: algumas pessoas por vez).</li><li>Botão direito › <b>Enviar para › Pasta compactada</b> (.zip) — até 60 MB por vez.</li><li>Escolha o .zip abaixo. Aparece uma prévia; nada é gravado antes de você confirmar e nada é apagado do servidor.</li></ol>'
+    + '<input type="file" id="pz-arq" accept=".zip"><div class="erro" id="pz-erro"></div>'
+    + '<div class="hint" style="margin-top:8px">Pastas “x-Documentos-…” (ex-colaboradores), “DOCS-ANTIGO” e “RECIBOS” vêm desmarcadas (marque se quiser trazer). Arquivo igual que já está na ficha não é repetido.</div>',
+    'Ler .zip', async () => {
+      const a = document.getElementById('pz-arq'), e = document.getElementById('pz-erro');
+      if (!a.files || !a.files[0]) { e.textContent = 'Escolha o arquivo .zip.'; return false; }
+      if (a.files[0].size > 60 * 1048576) { e.textContent = 'Passa de 60 MB — compacte menos pastas por vez.'; return false; }
+      document.getElementById('mod-ok').textContent = 'Lendo…';
+      const fd = new FormData(); fd.append('ficheiro', a.files[0]);
+      try { _pz = await api('/rh/api/importar-pasta/previa', { method: 'POST', body: fd }); } catch(x){ e.textContent = x.message; document.getElementById('mod-ok').textContent = 'Ler .zip'; return false; }
+      setTimeout(pastaPrevia, 0);
+    });
+}
+function _pzGrupos(){
+  const g = {};
+  _pz.arquivos.forEach(a => { const k = a.pasta + '||' + (a.subpasta || ''); (g[k] = g[k] || { pasta: a.pasta, sub: a.subpasta || '', itens: [] }).itens.push(a); });
+  return Object.values(g);
+}
+function pastaPrevia(){
+  const G = _pzGrupos(), catOpt = v => _pz.categorias.map(c => '<option value="' + esc(c.codigo) + '"' + (c.codigo === v ? ' selected' : '') + '>' + esc(c.nome) + '</option>').join('');
+  const colOpt = v => '<option value="">— não importar —</option>' + _pz.colaboradores.map(c => '<option value="' + c.id + '"' + (c.id === v ? ' selected' : '') + '>' + esc(c.nome) + '</option>').join('');
+  let h = '<div class="hint" style="margin-bottom:8px">Confira a <b>pessoa</b> de cada pasta e a <b>categoria</b> de cada subpasta. Desmarque o que não quer trazer agora.</div><div id="pz-resumo" class="faixa" style="font-weight:400;margin-top:0"></div><div style="max-height:56vh;overflow:auto">';
+  _pz.pessoas.forEach((p, ip) => {
+    h += '<div style="border:1px solid var(--line);border-radius:8px;margin-bottom:10px">'
+      + '<div style="display:flex;gap:10px;align-items:center;padding:8px 10px;background:#F8FAFD;border-bottom:1px solid var(--line)"><b style="flex:1">' + esc(p.pasta) + (p.ex ? ' <span class="pill p-cinza">ex-colaborador</span>' : '') + '</b>'
+      + '<span class="muted">' + p.arquivos + ' arq. · ' + kb(p.bytes) + '</span><select id="pz-p' + ip + '" style="width:260px" onchange="pastaResumo()">' + colOpt(p.colaborador_id) + '</select></div><table class="t"><tbody>';
+    G.filter(g => g.pasta === p.pasta).forEach(g => {
+      const gi = G.indexOf(g), soltos = !g.sub, tam = g.itens.reduce((s, a) => s + a.tamanho, 0), aceitos = g.itens.filter(a => a.aceito).length;
+      h += '<tr><td style="width:24px"><input type="checkbox" id="pz-g' + gi + '" style="width:auto"' + (g.itens.some(a => a.importar) ? ' checked' : '') + ' onchange="pastaResumo()"></td>'
+        + '<td>' + (soltos ? '<i class="muted">arquivos soltos na pasta</i>' : '📁 ' + esc(g.sub)) + '</td><td class="muted">' + aceitos + ' arq.' + (aceitos < g.itens.length ? ' (+' + (g.itens.length - aceitos) + ' de tipo não aceito)' : '') + ' · ' + kb(tam) + '</td>'
+        + '<td style="width:240px">' + (soltos ? '<span class="muted" style="font-size:11px">categoria pelo nome de cada arquivo</span>' : '<select id="pz-c' + gi + '">' + catOpt(g.itens[0].categoria) + '</select>') + '</td></tr>';
+    });
+    h += '</tbody></table></div>';
+  });
+  h += '</div><div class="erro" id="pz-erro2"></div>';
+  modal('Prévia — ' + _pz.pessoas.length + ' pasta(s), ' + _pz.arquivos.length + ' arquivo(s)', h, 'Importar', pastaAplicar, true);
+  pastaResumo();
+}
+function pastaResumo(){
+  const G = _pzGrupos(); let n = 0, b = 0;
+  G.forEach((g, gi) => { const ip = _pz.pessoas.findIndex(p => p.pasta === g.pasta); if (document.getElementById('pz-g' + gi).checked && document.getElementById('pz-p' + ip).value) g.itens.filter(a => a.aceito).forEach(a => { n++; b += a.tamanho; }); });
+  const lim = 1024 ** 3, uso = _pz.uso_bytes;
+  document.getElementById('pz-resumo').innerHTML = 'Selecionado: <b>' + n + ' arquivo(s) · ' + kb(b) + '</b> (tamanho no .zip — fotos ficam menores ao entrar). RH já ocupa ' + kb(uso)
+    + '. <span style="color:var(--warn)">Plano gratuito: 1 GB no total, junto com as fotos do sistema.</span>' + (uso + b > lim * 0.6 ? ' <b style="color:var(--bad)">Atenção ao espaço.</b>' : '');
+}
+async function pastaAplicar(){
+  const G = _pzGrupos(), pessoas = _pz.pessoas.map((p, ip) => ({ pasta: p.pasta, colaborador_id: document.getElementById('pz-p' + ip).value }));
+  const arquivos = [];
+  G.forEach((g, gi) => { const on = document.getElementById('pz-g' + gi).checked, sel = document.getElementById('pz-c' + gi);
+    g.itens.forEach(a => arquivos.push({ ...a, importar: on && a.aceito, categoria: sel ? sel.value : a.categoria })); });
+  if (!arquivos.some(a => a.importar && pessoas.find(p => p.pasta === a.pasta).colaborador_id)) { document.getElementById('pz-erro2').textContent = 'Nada selecionado (marque subpastas e escolha a pessoa).'; return false; }
+  document.getElementById('mod-ok').textContent = 'Enviando… (pode levar alguns minutos)';
+  let r; try { r = await api('/rh/api/importar-pasta/aplicar', { method: 'POST', body: JSON.stringify({ lote: _pz.lote, pessoas, arquivos }) }); }
+  catch(x){ document.getElementById('pz-erro2').textContent = x.message; document.getElementById('mod-ok').textContent = 'Importar'; return false; }
+  setTimeout(() => modal('Importação concluída', '<p><b>' + r.importados + '</b> arquivo(s) importado(s) · ' + kb(r.bytes) + ' gravados' + (r.repetidos ? ' · ' + r.repetidos + ' já existiam (não repetidos)' : '') + '.</p>'
+    + (r.erros && r.erros.length ? '<div class="erro" style="margin-top:8px">Não entraram:</div><ul style="padding-left:18px;font-size:12px">' + r.erros.map(x => '<li>' + esc(x) + '</li>').join('') + '</ul>' : '')), 50);
+  carregarLista(); if (_atual) abrir(_atual);
 }
 
 /* ══ IMPORTAR LOGINS ══ */
@@ -578,7 +816,47 @@ async function carregarPar(){
   document.getElementById('par-exig').innerHTML = (OP.cargos || []).filter(c => c.ativo).map(f => '<div style="padding:6px 0;border-bottom:1px solid #EEF2F7"><div style="font-weight:600;margin-bottom:4px">' + esc(f.nome) + '</div><div class="chips">'
     + cursosAtivos.map(k => '<span class="chip' + ((_exig[f.codigo] || []).includes(k.id) ? ' sel' : '') + '" onclick="exigToggle(\'' + esc(f.codigo) + '\',\'' + k.id + '\',this)" title="' + esc(k.nome) + '">' + esc(k.codigo) + '</span>').join('') + '</div></div>').join('') || '<div class="muted">Nenhum cargo ainda. Os cargos chegam com a importação do MAIS (Colaboradores › Importar do MAIS).</div>';
   document.getElementById('par-plat').innerHTML = '<table class="t"><tbody>' + OP.plataformas.map(p => '<tr' + (p.ativo ? '' : ' style="opacity:.5"') + '><td><b>' + esc(p.nome) + '</b>' + (p.site ? ' <a href="' + esc(p.site) + '" target="_blank" rel="noopener" style="font-size:11px">site</a>' : '') + '</td><td style="text-align:right"><button class="btn peq" onclick="platEditar(\'' + p.id + '\')">editar</button></td></tr>').join('') + '</tbody></table>';
+  carregarParDocs();
 }
+async function carregarParDocs(){
+  let cats, uso, id;
+  try { [cats, uso, id] = await Promise.all([docCats(true), api('/rh/api/documentos/uso'), api('/rh/api/identidade')]); } catch(e){ toast('❌ ' + e.message); return; }
+  document.getElementById('par-cats').innerHTML = '<table class="t"><thead><tr><th>Categoria</th><th>Regras</th><th>Nomes de pasta</th><th></th></tr></thead><tbody>'
+    + cats.map(c => '<tr' + (c.ativo ? '' : ' style="opacity:.5"') + '><td><b>' + (c.sigilosa ? '🔒 ' : '') + esc(c.nome) + '</b></td><td style="font-size:11px">'
+      + [c.sigilosa ? 'sigilosa' : '', c.tem_vencimento ? 'tem vencimento' : '', c.ver_nr ? 'Bruna vê' : ''].filter(Boolean).join(' · ') + '</td><td class="muted" style="font-size:11px">' + esc(c.pastas || '') + '</td>'
+      + '<td style="text-align:right;white-space:nowrap"><button class="btn peq" onclick="catEditar(\'' + esc(c.codigo) + '\')">editar</button> <button class="btn peq del" onclick="catExcluir(\'' + esc(c.codigo) + '\')">✕</button></td></tr>').join('') + '</tbody></table>';
+  const pct = Math.round(uso.bytes / uso.limite_plano_bytes * 1000) / 10;
+  document.getElementById('par-seg').innerHTML = '<div style="line-height:1.7">Documentos do RH guardados: <b>' + uso.arquivos + ' arquivo(s) · ' + kb(uso.bytes) + '</b> (' + String(pct).replace('.', ',') + '% de 1 GB — o plano gratuito é dividido com as fotos do sistema).</div>'
+    + '<label style="display:flex;gap:8px;align-items:center;margin-top:8px;cursor:' + (EU.admin ? 'pointer' : 'default') + '"><input type="checkbox" id="seg-bio" style="width:auto"' + (id.exigir ? ' checked' : '') + (EU.admin ? '' : ' disabled') + ' onchange="segBio(this)"> Exigir biometria para abrir documentos sigilosos e ver senhas EAD (vale 15 min)</label>'
+    + (EU.admin ? '' : '<div class="hint">Só o administrador altera.</div>')
+    + '<div style="margin-top:8px">Biometrias cadastradas no seu login: <b>' + id.biometrias + '</b> <button class="btn peq" onclick="bioRegistrar()">Cadastrar biometria deste computador</button></div>';
+}
+async function segBio(el){
+  if (!el.checked && !confirm('Desligar a biometria? Sem ela, quem tiver o login do RH abre atestados e senhas sem confirmação extra.')) { el.checked = true; return; }
+  try { await api('/rh/api/config', { method: 'PUT', body: JSON.stringify({ exigir_biometria: el.checked }) }); toast(el.checked ? 'Biometria exigida' : 'Biometria desligada'); }
+  catch(e){ el.checked = !el.checked; toast('❌ ' + e.message); }
+}
+function catEditar(cod){
+  const c = cod ? (_docCats || []).find(x => x.codigo === cod) : { nome: '', sigilosa: false, tem_vencimento: false, ver_nr: false, pastas: '', ativo: true };
+  const ck = (id, v, t) => '<label style="display:flex;gap:6px;align-items:center;font-size:13px;margin-top:6px"><input type="checkbox" id="' + id + '" style="width:auto"' + (v ? ' checked' : '') + '> ' + t + '</label>';
+  modal(cod ? 'Editar categoria' : 'Nova categoria de documento',
+    fld('Nome *', '<input id="ct-nome" value="' + esc(c.nome) + '">')
+    + ck('ct-sig', c.sigilosa, '🔒 Sigilosa — só RH completo, pede biometria e registra quem abriu (atestados, documentos pessoais)')
+    + ck('ct-venc', c.tem_vencimento, 'Tem vencimento (ASO, CNH…) — aparece nos alertas')
+    + ck('ct-nr', c.ver_nr, 'Quem só vê NRs (ex.: Bruna) também vê esta categoria')
+    + (cod ? ck('ct-ativo', c.ativo, 'Ativa') : '')
+    + '<div style="margin-top:10px">' + fld('Nomes de pasta no servidor (separe por vírgula)', '<input id="ct-pastas" value="' + esc(c.pastas || '') + '" placeholder="ex.: ASO, EXAMES">') + '</div>'
+    + '<div class="hint">Na importação do .zip, a subpasta cujo nome começa com um destes cai nesta categoria.</div><div class="erro" id="ct-erro"></div>',
+    'Salvar', async () => {
+      const g = id => document.getElementById(id);
+      if (g('ct-sig').checked && g('ct-nr').checked) { g('ct-erro').textContent = 'Categoria sigilosa não pode ficar visível para quem só vê NRs.'; return false; }
+      try { await api('/rh/api/doc-categorias', { method: 'POST', body: JSON.stringify({ codigo: cod || '', nome: g('ct-nome').value, sigilosa: g('ct-sig').checked, tem_vencimento: g('ct-venc').checked, ver_nr: g('ct-nr').checked, pastas: g('ct-pastas').value, ativo: cod ? g('ct-ativo').checked : true }) }); }
+      catch(e){ g('ct-erro').textContent = e.message; return false; }
+      toast('Categoria salva'); carregarParDocs();
+    });
+}
+async function catExcluir(cod){ const c = (_docCats || []).find(x => x.codigo === cod); if (!confirm('Excluir a categoria "' + (c ? c.nome : cod) + '"?')) return;
+  try { await api('/rh/api/doc-categorias/' + encodeURIComponent(cod), { method: 'DELETE' }); } catch(e){ toast('❌ ' + e.message); return; } toast('Categoria excluída'); carregarParDocs(); }
 async function exigToggle(fc, kid, el){
   const cur = new Set(_exig[fc] || []); if (cur.has(kid)) cur.delete(kid); else cur.add(kid);
   try { await api('/rh/api/exigencias/' + encodeURIComponent(fc), { method: 'PUT', body: JSON.stringify({ cursos: [...cur] }) }); } catch(e){ toast('❌ ' + e.message); return; }
