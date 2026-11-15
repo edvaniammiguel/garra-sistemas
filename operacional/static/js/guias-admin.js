@@ -11,7 +11,8 @@
   const ir = async (sec, re) => { navTo(sec, re ? sbItem(re) : null); await dorme(600); };
   const set = (id, v) => { const e = document.getElementById(id); if (e) e.value = v; };
   // linha de módulo na ficha de exceções (Permissões › Exceções Individuais › colaborador)
-  const linhasModulo = () => [...document.querySelectorAll('#perm-detail-content > div[style*="flex-direction:column"] > div')];
+  // (15/11/2026) a ficha de exceções passou a ser agrupada: cada módulo é a linha que contém a caixa de marcar
+  const linhasModulo = () => [...document.querySelectorAll('#perm-detail-content input[onchange*="salvarPermissaoCard"]')].map(i => i.parentElement);
   const linhaModulo = (re) => linhasModulo().find(d => re.test(d.textContent));
   // colaborador para a demonstração de exceções: um operador, senão o primeiro que não for admin
   const colabDemo = () => { const l = (typeof _usuarios !== 'undefined' ? _usuarios : []).filter(u => u.ativo && u.perfil !== 'admin'); return l.find(u => u.perfil === 'operador') || l[0]; };
@@ -55,18 +56,18 @@
         { alvo: () => sbItem(/Permissões/), antes: () => ir('permissoes', /Permissões/),
           titulo: 'Permissões',
           texto: 'Aqui se decide o que cada <b>módulo</b> libera. Dois níveis: <b>Por Perfil</b> (padrão de todos do perfil) e <b>Exceções Individuais</b> (uma pessoa). Não é só o botão sumir da tela: o <b>servidor</b> checa o módulo em cada gravação.' },
-        { alvo: '#perm-perfis-content', antes: async () => { switchPermTab('perfis'); await dorme(400); },
-          titulo: 'Por Perfil — matriz perfil × módulo',
-          texto: 'Marcar aqui vale <b>para todos do perfil</b>, na hora. <b>Administrador</b> é Master: tudo marcado e travado. Leitura dos módulos: <b>Painel de Gestão</b> = OS, Controle Mensal, Agenda e Cadastros deste Admin; <b>Manutenção Desktop</b> = módulo completo da oficina; <b>Pedir OT</b> × <b>Executar OT</b> separa quem pede de quem executa; <b>Abastecimento (mobile)</b> registra; <b>Notas de Abastecimento / de Manutenção</b> só conferem as notinhas; <b>Compras</b> tem 4 níveis. <b>+ Novo Perfil</b> cria um perfil só com os módulos que você marcar.' },
-        { alvo: () => document.querySelector('#perm-excecoes-content > div > div'),
-          antes: async () => { switchPermTab('excecoes'); await dorme(500); },
+        { alvo: '#perm-perfis-content', antes: async () => { switchPermTab('perfis'); try { _permAbertos = new Set(['Compras']); renderPermPerfis(); } catch (e) { } await dorme(400); },
+          titulo: 'Por Perfil — módulos agrupados × perfis',
+          texto: 'Os módulos ficam em <b>grupos</b> que abrem e fecham (Gestão, Operação em campo, Manutenção, Compras, Jardinagem, Atendimento, RH) e cada <b>perfil</b> é uma coluna. Marcar vale <b>para todos do perfil</b>, na hora. O contador do grupo (ex.: <b>2/4</b>) mostra quantos módulos o perfil tem — clicar nele marca ou desmarca o grupo inteiro. <b>Administrador</b> é Master: tem tudo e por isso não aparece na matriz. Leitura: <b>Painel de Gestão</b> = OS, Controle Mensal, Agenda e Cadastros; <b>Pedir OT</b> × <b>Executar OT</b> separa quem pede de quem executa; <b>Notas</b> só conferem as notinhas; <b>Compras</b> tem 4 níveis. <b>+ Novo Perfil</b> cria um perfil próprio.' },
+        { alvo: '#exc-lista',
+          antes: async () => { switchPermTab('excecoes'); await dorme(700); },
           titulo: 'Exceções Individuais',
-          texto: 'Clique no colaborador. Serve para <b>liberar algo a mais</b> (um operador que também vai conferir abastecimentos) ou <b>bloquear algo do perfil</b> só para ele. O filtro de perfil acha a pessoa mais rápido.' },
-        { alvo: () => linhaModulo(/Operacional Mobile/) || linhasModulo()[0],
-          antes: async () => { const u = colabDemo(); if (u) { await abrirPermColaborador(u.id, u.perfil); await dorme(500); } },
+          texto: 'Escolha a pessoa na lista (busque pelo nome ou filtre o perfil). Serve para <b>liberar algo a mais</b> (um operador que também vai conferir abastecimentos) ou <b>bloquear algo do perfil</b> só para ela. A etiqueta <b>"2 exc."</b> mostra quem foge do padrão do perfil.' },
+        { alvo: () => linhaModulo(/Operacional Mobile/) || linhasModulo()[0] || document.getElementById('perm-detail-content'),
+          antes: async () => { const u = colabDemo(); if (u) { await abrirPermColaborador(u.id, u.perfil); try { permGrupos().forEach(g => _excAbertos.add(g.nome)); excFicha(u.id, u.perfil); } catch (e) { } await dorme(500); } },
           titulo: 'Liberado × Bloqueado',
-          texto: 'Cada módulo mostra <b>Liberado</b> ou <b>Bloqueado</b>. <b>↑ herdado</b> = veio do perfil; <b>✎ exceção</b> = ajuste só desta pessoa, com <b>↺</b> para voltar ao padrão. "Resetar todas" desfaz as exceções de uma vez. Fundo verde = tem acesso.' },
-        { alvo: () => linhaModulo(/Painel de Gestão/) || linhaModulo(/Manutenção Desktop/) || linhasModulo()[0],
+          texto: 'A ficha usa os mesmos grupos. Cada módulo mostra <b>Liberado</b> ou <b>Bloqueado</b> e de onde vem: <b>padrão do perfil</b> ou <b>exceção</b> (ajuste só desta pessoa), com <b>↺</b> para voltar ao padrão. Marcar igual ao perfil desfaz a exceção sozinho. <b>Só exceções</b> filtra a ficha; <b>Voltar tudo ao padrão</b> desfaz todas de uma vez.' },
+        { alvo: () => linhaModulo(/Painel de Gestão/) || linhaModulo(/Manutenção Desktop/) || linhasModulo()[0] || document.getElementById('perm-detail-content'),
           titulo: 'Regra: módulo da tela × módulo da rota',
           texto: 'A tela aparece pelo módulo — e o servidor <b>exige o mesmo módulo na gravação</b>, por URL direta inclusive. Exemplos: <b>cadastrar equipamento</b> (aqui ou na Manutenção) exige <b>Painel de Gestão</b> ou <b>Manutenção Desktop</b>; OS, Controle Mensal e Cadastros exigem <b>Painel de Gestão</b>; aprovar OC exige <b>Compras — Aprovar</b>. Alguém recebeu "Sem permissão"? É aqui que se resolve.' },
         { titulo: 'Pronto! ✅',
@@ -128,6 +129,7 @@
     try { fecharModalUsuario(); } catch (e) { }
     try { ['m-nome', 'm-login', 'm-email', 'm-senha'].forEach(id => set(id, '')); } catch (e) { }
     try { if (document.getElementById('modal-eq')) fecharModalEq(); } catch (e) { }
+    try { _excSel = null; _excAbertos = new Set(); _permAbertos = new Set(); } catch (e) { }
     try { const d = document.getElementById('perm-detail-content'); if (d) d.innerHTML = ''; } catch (e) { }
     try { if (!document.getElementById('sec-permissoes').classList.contains('hidden')) switchPermTab('perfis'); } catch (e) { }
     try { if (!document.getElementById('sec-partes').classList.contains('hidden')) navTo('os', sbItem(/Ordens de Serviço/)); } catch (e) { }
