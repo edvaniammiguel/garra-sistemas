@@ -4622,8 +4622,10 @@ async function verOTReal(id){
           const st = o.status, fecha = ";if(!otVoltarEquip())document.getElementById('eq-ficha').classList.remove('show')";
           const b = (rot, ac, p) => '<button class="btn'+(p?' p':'')+'" onclick="'+ac.replace(/'/g,'&#39;')+'">'+rot+'</button>';
           let acoes = '';
+          // (16/11/2026) Emitir numa OT recém-criada FICA na ficha (recarregada "em curso"), igual às programadas/abertas.
+          // Antes gravava, emitia e fechava a ficha — parecia que a OT tinha sumido.
           if (st === 'rascunho')
-            acoes = b('🖨 Emitir', "salvarOrigem(true,'em_andamento')")
+            acoes = b('🖨 Emitir', "salvarOrigem(false,'em_andamento')", true)
               + ' ' + b('✖️ Cancelar', "otDescartar('"+o.id+"')");
           // (23/10/2026) Emitir, Aguardando e Retomar ficam na ficha (recarregada com o estado novo); Encerrar/Cancelar fecham
           else if (st === 'programada')
@@ -4676,6 +4678,10 @@ async function otMaoObraRender(){
   const dd2 = v => { if(!v) return '—'; try{ return v.split('-').reverse().join('/'); }catch(e){ return '—'; } };
   const money = v => v == null ? '—' : 'R$ ' + v.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
   const podeLancar = ['programada','aberta','em_andamento','aguardando_peca','concluida'].includes(o.status);
+  // (16/11/2026) OT em criação (recém-aberta ou convertida de pedido): o PLANEJADO já pode ser preenchido —
+  // são as informações iniciais. O REALIZADO (horas apontadas) só depois de Emitir/OK.
+  const podePrevMo = podeLancar || o.status === 'rascunho';
+  const avisoCriacao = o.status === 'rascunho' ? '<span class="muted" style="font-size:10px;font-weight:400"> · lançamento após <b>Emitir</b> ou <b>OK</b></span>' : '';
   // (10/10/2026) Padrão ManWinWin: PLANEJADO (previsão por função, da FMP ou lançada na OT) × REALIZADO
   // (horas apontadas). Função vem do organograma (Parametrizar › Funções, agrupadas por setor); Conta vem
   // do Plano de contas (ramo 1 — Mão de Obra), neutra e obrigatória. Custo/HH sai da função/colaborador.
@@ -4737,8 +4743,8 @@ async function otMaoObraRender(){
     : '';
   const semFn = fns.length ? '' : '<div class="muted" style="font-size:10px;margin:4px 0">Sem funções cadastradas — cadastre em Parametrizar › Funções e custo HH (função por setor, custo/HH e conta).</div>';
   c.innerHTML =
-    '<div class="dsec" style="display:flex;justify-content:space-between;align-items:center"><span>Planejado <span class="muted">· '+prevs.length+' previsão(ões) · '+fmtH(totPrevH)+' h · '+money(totPrevC)+'</span></span>'+(podeLancar?'<button class="btn" style="font-size:11px;padding:2px 8px" onclick="otMoForm(\'mp\')">⊕ Inserir</button>':'')+'</div>'
-    + (podeLancar ? '<div id="mo-form-mp" class="panel" style="display:none;margin-bottom:4px"><div style="display:flex;gap:6px;flex-wrap:wrap;align-items:flex-end">'
+    '<div class="dsec" style="display:flex;justify-content:space-between;align-items:center"><span>Planejado <span class="muted">· '+prevs.length+' previsão(ões) · '+fmtH(totPrevH)+' h · '+money(totPrevC)+'</span></span>'+(podePrevMo?'<button class="btn" style="font-size:11px;padding:2px 8px" onclick="otMoForm(\'mp\')">⊕ Inserir</button>':'')+'</div>'
+    + (podePrevMo ? '<div id="mo-form-mp" class="panel" style="display:none;margin-bottom:4px"><div style="display:flex;gap:6px;flex-wrap:wrap;align-items:flex-end">'
       + '<div class="mfield" style="width:150px">Setor<select id="mp-set" onchange="otMoFiltraSetor(\'mp\')">'+setOpts+'</select></div>'
       + '<div class="mfield" style="width:230px">Função<select id="mp-fn" onchange="otMoFnMudou(\'mp\')">'+fnOpts()+'</select></div>'
       + '<div class="mfield" style="width:70px">HH<input id="mp-hh" type="number" step="0.5" min="0.5" placeholder="0,0" oninput="otMoPrevTotal()"></div>'
@@ -4748,7 +4754,7 @@ async function otMaoObraRender(){
       + '<button class="btn p" onclick="otMoPrevAdd()">💾 Inserir</button><button class="btn" onclick="otMoForm(\'mp\')">Cancelar</button></div></div>' : '')
     + tabPrev
     + comparativo
-    + '<div class="dsec" style="margin-top:8px;display:flex;justify-content:space-between;align-items:center"><span>Realizado <span class="muted">· '+_otMo.itens.length+' linha(s) · '+fmtH(_otMo.total_horas)+' h · '+money(_otMo.total_custo)+' · interna — serviço de fornecedor vai em Outros</span></span>'+(podeLancar?'<button class="btn" style="font-size:11px;padding:2px 8px" onclick="otMoForm(\'mo\')">⊕ Inserir</button>':'')+'</div>'
+    + '<div class="dsec" style="margin-top:8px;display:flex;justify-content:space-between;align-items:center"><span>Realizado <span class="muted">· '+_otMo.itens.length+' linha(s) · '+fmtH(_otMo.total_horas)+' h · '+money(_otMo.total_custo)+' · interna — serviço de fornecedor vai em Outros</span>'+avisoCriacao+'</span>'+(podeLancar?'<button class="btn" style="font-size:11px;padding:2px 8px" onclick="otMoForm(\'mo\')">⊕ Inserir</button>':'')+'</div>'
     + (podeLancar ? '<div id="mo-form-mo" class="panel" style="display:none;margin-bottom:4px"><div style="display:flex;gap:6px;flex-wrap:wrap;align-items:flex-end">'
       + '<div class="mfield" style="width:150px">Setor<select id="mo-set" onchange="otMoFiltraSetor(\'mo\')">'+setOpts+'</select></div>'
       + '<div class="mfield" id="mo-user-wrap" style="width:220px">Funcionário<select id="mo-user" onchange="otMoSugerir()">'+colOpts+'</select></div>'
@@ -4934,7 +4940,7 @@ async function otPecasRender(){
   const prevOT = _otPc.prev || {origem:null, itens:[]};
   const pl = prevOT.origem === 'ot' ? (prevOT.itens||[]) : (_otPc.plano ? jj(_otPc.plano.pecas) : []);
   const origemPl = prevOT.origem === 'ot' ? 'previsão desta OT' : (_otPc.plano ? 'FMP '+_esc(_otPc.plano.codigo) : '');
-  const podePrever = ['programada','aberta','em_andamento','aguardando_peca'].includes(o.status);
+  const podePrever = ['rascunho','programada','aberta','em_andamento','aguardando_peca'].includes(o.status);   // (16/11/2026) + em criação
   const totPl = pl.reduce((s,x) => s + nv(x.qtd) * nv(x.custo), 0);
   const linhaPl = (x, i) => {
     const t = nv(x.qtd) * nv(x.custo);
@@ -5524,7 +5530,7 @@ async function otAba(aba){
   if (aba === 'gestao'){
     // (19/10/2026) Gestão no padrão ManWinWin: grelha Trabalho (linha × Data/Hora · Registo) + Tempos.
     // Pedido · Última · Prog. Início · Prog. Fim · Início · Fim · Data Limite · Reg. Par./Total · Encerramento.
-    const aberta = ['programada','aberta','em_andamento','aguardando_peca'].includes(o.status);
+    const aberta = ['rascunho','programada','aberta','em_andamento','aguardando_peca'].includes(o.status);   // (16/11/2026) + em criação
     // (20/10/2026) ciclo MWW: Prog. Início/Fim nascem com a OT · Início só no Emitir · Fim só no Encerrar
     const emCurso = ['em_andamento','aguardando_peca'].includes(o.status);
     const h1 = (o.historico||[]).find(x => x.status_para === 'em_andamento');
@@ -5845,7 +5851,7 @@ async function salvarOrigem(fechar, promover){
   try {
     await mntFetch('/manutencao/api/ots/'+o.id, {method:'PATCH', body: JSON.stringify(body)});
     if (promover) await mntFetch('/manutencao/api/ots/'+o.id+'/status', {method:'PATCH', body: JSON.stringify({status: promover})});
-    mostrarToast('✅ OT gravada','ok');
+    mostrarToast(promover === 'em_andamento' ? '🖨 ' + (o.numero || 'OT') + ' emitida — em curso' : '✅ OT gravada','ok');
     if (fechar) { if (!otVoltarEquip()) document.getElementById('eq-ficha').classList.remove('show'); } else { await verOTReal(o.id); }
     carregarOTsReais(); carregarSemaforosReais();
   } catch(e){ mostrarToast('❌ '+e.message,'warn'); }
@@ -9101,7 +9107,7 @@ async function otOutrosRender(){
   const money = v => 'R$ ' + (parseFloat(v)||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
   const tot = arr => arr.reduce((s,r) => s + (parseFloat(r.valor)||0), 0);
   const dd = v => v ? _fmtData(v) : '—';
-  const podeLancar = ['programada','aberta','em_andamento','aguardando_peca','concluida'].includes(o.status);
+  const podeLancar = ['rascunho','programada','aberta','em_andamento','aguardando_peca','concluida'].includes(o.status);   // (16/11/2026) + em criação
   const contas = _rubFolhas('1').filter(r=>String(r.id).startsWith('1.03')).concat(_rubFolhas('3'),_rubFolhas('4'),_rubFolhas('6'),_rubFolhas('7'));
   const contaOpts = _rubSelectOpts(contas, '', '— conta —');
   const fornOpts = '<option value="">— fornecedor —</option>' + (_mntFornList||[]).map(f => '<option value="'+f.id+'"'+(String(f.id)===String(o.fornecedor_id||'')?' selected':'')+'>'+_esc(f.nome)+'</option>').join('');
@@ -9278,7 +9284,7 @@ async function otTarefasRender(){
   const doApp = aps.map(a => '- ' + dd(a.criado_em) + (a.usuario_nome ? ' · ' + a.usuario_nome : '') + ': ' + (a.relato||'') + (a.concluido ? ' ✅' : '')).join('\n');
   const plan = (o.tarefas_planejado || '').trim() || (o.tarefas_planejado_sugerido || '');
   const real = (o.tarefas_realizado || '').trim() || doApp;
-  const podeEditar = ['programada','aberta','em_andamento','aguardando_peca','concluida'].includes(o.status);
+  const podeEditar = ['rascunho','programada','aberta','em_andamento','aguardando_peca','concluida'].includes(o.status);   // (16/11/2026) + em criação
   const ro = podeEditar ? '' : ' readonly';
   c.innerHTML =
     '<div class="dsec" style="display:flex;justify-content:space-between;align-items:center"><span>Planejado <span class="muted">· o que deve ser feito'+(o.plano_id && !(o.tarefas_planejado||'').trim() ? ' — trazido da FMP' : '')+'</span></span>'

@@ -992,7 +992,7 @@ async def reprogramar_ot(ot_id: str, request: Request, payload=Depends(verificar
         (ot_id,), fetch="one")
     if not ot:
         raise HTTPException(status_code=404, detail="OT não encontrada")
-    if ot["status"] not in ("programada", "aberta", "em_andamento", "aguardando_peca"):
+    if ot["status"] not in ("rascunho", "programada", "aberta", "em_andamento", "aguardando_peca"):   # (16/11/2026) + em criação
         raise HTTPException(status_code=400, detail="OT encerrada não se reprograma")
     data_n = _data_ok(d.get("data_prevista"), "Nova data")
     hor_n = d.get("horimetro_previsto")
@@ -1026,6 +1026,15 @@ async def descartar_rascunho_ot(ot_id: str, _auth=Depends(verificar_manutencao))
         raise HTTPException(status_code=404, detail="OT não encontrada")
     if o["status"] != "rascunho":
         raise HTTPException(status_code=400, detail="Só uma OT em criação (rascunho) pode ser descartada — use Cancelar")
+    # (16/11/2026) As abas ficam liberadas já na criação: se a OT ganhou uma ordem de compra, não some em silêncio
+    try:
+        oc = await ajard_query("""SELECT numero FROM compras.ordens_compra WHERE ot_id=%s AND ativo=true
+                                    AND status IN ('rascunho','solicitada','aprovada','enviada','recebida_parcial','recebida') LIMIT 1""",
+                               (ot_id,), fetch="one")
+    except Exception:
+        oc = None
+    if oc:
+        raise HTTPException(status_code=400, detail=f"Esta OT já tem a ordem de compra {oc['numero']} — cancele a OC no Compras antes de descartar, ou emita a OT")
     await ajard_query("UPDATE manutencao.ot SET ativo=false, atualizado_em=now() WHERE id=%s", (ot_id,), fetch="none")
     return {"ok": True}
 
