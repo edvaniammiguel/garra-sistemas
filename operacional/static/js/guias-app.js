@@ -70,7 +70,8 @@
           texto: '<b>Cliente</b> é o padrão: o dia é cobrado dele. Marque <b>Empresa (Garra)</b> quando o serviço é nosso (deslocamento interno, retrabalho). Na <b>Observação</b> logo abaixo, escreva o que a gestão precisa saber: chuva, máquina parada, frente trocada.' },
         { alvo: '#btn-salvar-parte', titulo: 'Salvar registro',
           texto: '<b>✅ Salvar registro</b> grava e fecha. <b>+ Salvar e novo</b> grava e mantém a OS, o equipamento e o operador para o próximo dia. Avisos em ⚠️ (horímetro muito longe da última leitura, mais de 24h no dia) pedem <b>confirmação</b> — corrija se foi erro de digitação. Sem sinal? O registro fica guardado no aparelho e sobe sozinho quando a internet voltar.' },
-        { alvo: () => document.querySelector('#os-lista > div') || document.getElementById('op-tab-hist'), antes: async () => { await fecharForm(); try { opTab('hist'); } catch (e) { } for (let n = 0; n < 12; n++) { if (!document.querySelector('#os-lista .loading')) break; await esperar(250); } await esperar(200); }, titulo: 'Histórico',
+        { hist: true,   // (15/11/2026) passo só para quem tem a aba Histórico (módulo operacional_historico)
+          alvo: () => document.querySelector('#os-lista > div') || document.getElementById('op-tab-hist'), antes: async () => { await fecharForm(); try { opTab('hist'); } catch (e) { } for (let n = 0; n < 12; n++) { if (!document.querySelector('#os-lista .loading')) break; await esperar(250); } await esperar(200); }, titulo: 'Histórico',
           texto: 'A aba <b>🕐 Histórico</b> mostra <b>suas horas do mês</b> (dias, apontamentos, OS) e as OS já concluídas em que você registrou neste mês. Toque numa OS para ver as partes registradas. É aqui que você confere se o mês fechou certo antes da comissão.' },
         { titulo: 'Pronto! ✅',
           texto: 'Rotina de todo dia: <b>Minhas OS → 📝 Registrar → conferir equipamento e horímetro → medição do dia → Salvar</b>. Acabou a obra: ✅ Concluir. Mudou de obra: 🔄 Passar OS. O passo a passo completo está no <b>Manual do colaborador</b> (avatar › Minha conta). Repita este tour quando quiser pelo ▶ Como fazer.' },
@@ -122,9 +123,11 @@
   }
 
   window.guiaAbrir = async function (nome) {
-    const g = window.GUIAS_APP[nome]; if (!g || !window.GarraGuia) return;
+    const base = window.GUIAS_APP[nome]; if (!base || !window.GarraGuia) return;
     const menu = document.getElementById('guia-menu'); if (menu) menu.remove();
-    if (nome === 'app') g.passos = await montarApp();
+    if (nome === 'app') base.passos = await montarApp();
+    // (15/11/2026) sem a aba Histórico, o roteiro pula os passos dela
+    const g = Object.assign({}, base, { passos: base.passos.filter(p => !p.hist || window._histOk !== false) });
     g.aoSair = () => { try { fecharModalDireto(); } catch (e) { } fecharConta(); try { if (document.getElementById('sec-op').classList.contains('active')) opTab('os'); } catch (e) { } };
     GarraGuia.iniciar(g);
   };

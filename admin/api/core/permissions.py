@@ -12,6 +12,9 @@ MODULOS_DISPONIVEIS = [
     {"id": "jardinagem_desktop",  "grupo": "Jardinagem", "label": "Jardinagem Desktop",    "desc": "Relatórios e fotos"},
     {"id": "jardinagem_mobile",   "grupo": "Jardinagem", "label": "Jardinagem Mobile",     "desc": "Campo — fotos e KM"},
     {"id": "operacional_mobile",  "grupo": "Operação em campo", "label": "Operacional Mobile",    "desc": "OS e horímetro"},
+    # (15/11/2026) a aba Histórico do app (horas do mês e OS concluídas) passa a ter permissão própria — só para quem tem comissão.
+    # Nasce marcada para quem já tinha OS (ver garantir_modulo_historico); a gestão desmarca por perfil ou por pessoa.
+    {"id": "operacional_historico", "grupo": "Operação em campo", "label": "OS — Histórico e horas", "desc": "Aba Histórico do app: horas do mês, dias, apontamentos e OS concluídas"},
     {"id": "checklist",           "grupo": "Operação em campo", "label": "Checklist",             "desc": "Checklist de máquinas"},
     {"id": "checklist_logistica", "grupo": "Operação em campo", "label": "Logística (Checklist)", "desc": "Aba de carros de apoio dentro do Checklist"},
     {"id": "checklist_gestao",    "grupo": "Operação em campo", "label": "Gestão do Checklist",   "desc": "Vê e trata os envios de todos os operadores (não só os próprios)"},
@@ -43,12 +46,12 @@ MODULOS_DISPONIVEIS = [
 ]
 
 PERFIL_MODULOS_PADRAO = {
-    "admin":     ["admin_master","jardinagem_desktop","jardinagem_mobile","operacional_mobile","checklist","checklist_logistica","abastecimento","abastecimento_notas","manutencao_notas","compras_solicitar","compras_aprovar","compras_alcadas","compras_ver_todas"],
-    "gestor":    ["admin_master","jardinagem_desktop","operacional_mobile","checklist_gestao","manutencao","abastecimento","abastecimento_notas","manutencao_notas","compras_solicitar","compras_aprovar","compras_alcadas","compras_ver_todas"],
-    "luana":     ["admin_master","jardinagem_desktop","operacional_mobile","abastecimento_notas","manutencao_notas","compras_solicitar","compras_aprovar","compras_alcadas","compras_ver_todas"],
+    "admin":     ["admin_master","jardinagem_desktop","jardinagem_mobile","operacional_mobile","operacional_historico","checklist","checklist_logistica","abastecimento","abastecimento_notas","manutencao_notas","compras_solicitar","compras_aprovar","compras_alcadas","compras_ver_todas"],
+    "gestor":    ["admin_master","jardinagem_desktop","operacional_mobile","operacional_historico","checklist_gestao","manutencao","abastecimento","abastecimento_notas","manutencao_notas","compras_solicitar","compras_aprovar","compras_alcadas","compras_ver_todas"],
+    "luana":     ["admin_master","jardinagem_desktop","operacional_mobile","operacional_historico","abastecimento_notas","manutencao_notas","compras_solicitar","compras_aprovar","compras_alcadas","compras_ver_todas"],
     "bruna":     ["admin_master","checklist","checklist_gestao","manutencao","pedir_ot","ot_executar","abastecimento","compras_solicitar","compras_aprovar","rh_nr"],
-    "operador":  ["operacional_mobile","checklist","abastecimento"],
-    "motorista": ["operacional_mobile","checklist","abastecimento"],
+    "operador":  ["operacional_mobile","operacional_historico","checklist","abastecimento"],
+    "motorista": ["operacional_mobile","operacional_historico","checklist","abastecimento"],
     "campo":     ["jardinagem_mobile"],
 }
 
@@ -99,6 +102,39 @@ async def tem_modulo(payload, modulos) -> bool:
     return False
 
 
+_HIST_OK = False
+
+
+async def garantir_modulo_historico():
+    """(15/11/2026) Migração única do módulo operacional_historico: nasce MARCADO para quem já tinha OS no app
+    (perfis com operacional_mobile e pessoas com exceção liberando operacional_mobile) — nada muda no dia do
+    deploy. Roda uma vez (marca em public.permissoes_migracoes); depois disso vale o que a gestão marcar."""
+    global _HIST_OK
+    if _HIST_OK:
+        return
+    try:
+        await ajard_query("""CREATE TABLE IF NOT EXISTS public.permissoes_migracoes (
+                                 chave TEXT PRIMARY KEY, em TIMESTAMPTZ DEFAULT now())""", fetch="none")
+        novo = await ajard_query("""INSERT INTO public.permissoes_migracoes (chave) VALUES ('operacional_historico_v1')
+                                    ON CONFLICT (chave) DO NOTHING RETURNING chave""", fetch="one")
+        if novo:
+            await ajard_query("""UPDATE public.perfis_customizados
+                                    SET modulos = modulos || ',operacional_historico', atualizado_em = now()
+                                  WHERE (',' || replace(COALESCE(modulos,''), ' ', '') || ',') LIKE '%%,operacional_mobile,%%'
+                                    AND (',' || replace(COALESCE(modulos,''), ' ', '') || ',') NOT LIKE '%%,operacional_historico,%%'""",
+                              fetch="none")
+            await ajard_query("""INSERT INTO public.permissoes_colaborador (usuario_id, modulo, permitido)
+                                 SELECT pc.usuario_id, 'operacional_historico', true
+                                   FROM public.permissoes_colaborador pc
+                                  WHERE pc.modulo = 'operacional_mobile' AND pc.permitido
+                                    AND NOT EXISTS (SELECT 1 FROM public.permissoes_colaborador x
+                                                     WHERE x.usuario_id = pc.usuario_id AND x.modulo = 'operacional_historico')""",
+                              fetch="none")
+        _HIST_OK = True
+    except Exception as e:
+        print("permissões: migração do módulo operacional_historico falhou (tenta de novo no próximo acesso):", e)
+
+
 async def perfil_modulos_padrao(perfil: str):
     """Fonte da verdade: banco. Se o perfil não existir lá (ex: banco fora do ar),
     cai no dict hardcoded como rede de segurança.
@@ -108,6 +144,7 @@ async def perfil_modulos_padrao(perfil: str):
     'admin' no banco nasceu antes dos módulos de abastecimento existirem)."""
     if perfil == "admin":
         return [m["id"] for m in MODULOS_DISPONIVEIS]
+    await garantir_modulo_historico()
     try:
         row = await ajard_query(
             "SELECT modulos FROM public.perfis_customizados WHERE nome=%s AND ativo=true",

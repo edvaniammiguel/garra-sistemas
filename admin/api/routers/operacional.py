@@ -1801,6 +1801,10 @@ async def op_minhas_os(historico: int = 0, payload=Depends(verificar_token)):
         if user.get("perfil") not in perfis_com_acesso:
             return []
 
+    # (15/11/2026) Histórico tem permissão própria (operacional_historico) — só quem tem comissão vê
+    if historico == 1 and not await tem_modulo(payload, {"operacional_historico"}):
+        raise HTTPException(status_code=403, detail="Histórico não liberado para o seu acesso")
+
     # Filtro de status conforme histórico ou ativas
     if historico == 1:
         # Histórico: só OS concluídas COM registro no MÊS CORRENTE
@@ -2824,6 +2828,8 @@ async def op_controle_mensal_excel(
 @router.get("/operacional/api/resumo-mensal")
 async def op_resumo_mensal(payload=Depends(verificar_token)):
     """Retorna total de horas e dias trabalhados do operador no mês corrente."""
+    if not await tem_modulo(payload, {"operacional_historico"}):   # (15/11/2026) faz parte do Histórico
+        raise HTTPException(status_code=403, detail="Histórico não liberado para o seu acesso")
     login = payload.get("sub", "")
     user = await ajard_query(
         "SELECT id FROM public.usuarios_garra WHERE login=%s", (login,), fetch="one"

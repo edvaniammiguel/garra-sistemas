@@ -2237,6 +2237,7 @@ function opTab(tab) {
 }
 
 async function carregarHistoricoOS() {
+  if (window._histOk === false) { try { opTab('os'); } catch (e) {} return; }   // (15/11/2026) sem permissão de Histórico
   const el = document.getElementById('os-lista');
   el.innerHTML = '<div class="loading"><span class="spin"></span></div>';
   try {
@@ -3211,6 +3212,16 @@ function aplicarPermissoesPerfil() {
       navs[m.aba].style.display = '';
     }
   });
+
+  // (15/11/2026) Aba Histórico (horas do mês e OS concluídas) só para quem tem o módulo operacional_historico
+  // (quem tem comissão). permsDB antigo, sem a chave (offline / login velho): mantém como estava — o servidor barra.
+  const histOk = perfil === 'admin' || !('operacional_historico' in perms) || !!perms.operacional_historico;
+  window._histOk = histOk;
+  const tHist = document.getElementById('op-tab-hist');
+  if (tHist) {
+    tHist.style.display = histOk ? '' : 'none';
+    if (!histOk && tHist.style.color.indexOf('orange') >= 0) { try { opTab('os'); } catch (e) {} }
+  }
 }
 
 function abrirAbaInicial() {
