@@ -248,6 +248,8 @@ input[type="time"]{-webkit-appearance:none;appearance:none;cursor:pointer;}
 
   <!-- FOTOS -->
   <div class="tela ativa" id="tFotos">
+    <!-- (16/11/2026) Tour guiado (GarraGuia): link discreto no topo, como na aba OS do app -->
+    <div style="text-align:right;padding:0 2px 4px"><a href="#" onclick="if(window.guiaMenu)guiaMenu(event);return false" style="color:#16A34A;font-size:12px;font-weight:700;text-decoration:none">▶ Como fazer</a></div>
     <div class="sem-card" id="semCard" style="display:none;">
       <div style="flex:1;min-width:0;">
         <div class="sem-nome" id="semNome">Carregando...</div>
@@ -481,8 +483,10 @@ var BASE_API = ((location.hostname === "localhost" || location.hostname === "127
   : location.origin   /* (11/11/2026) mesma origem — segue o domínio do sistema */) + "/jardinagem";
 // ── SSO: se veio token na URL (?sso=), salva token+usuario antes de checar ──
 (function(){
-  var sso = new URLSearchParams(location.search).get('sso');
-  if (!sso) return;
+  var _q = new URLSearchParams(location.search);
+  window._GUIA_Q = _q.get('guia');   // (16/11/2026) ?guia=campo → tour guiado depois de carregar (antes do replaceState)
+  var sso = _q.get('sso');
+  if (!sso) { if (window._GUIA_Q) history.replaceState(null, '', location.pathname); return; }
   localStorage.setItem('garra_token', sso);
   try {
     var b64 = sso.split('.')[1].replace(/-/g,'+').replace(/_/g,'/');
@@ -1511,5 +1515,8 @@ if ('serviceWorker' in navigator) {
 }
 </script>
 
+<!-- (16/11/2026) tour guiado "▶ Como fazer" — motor + roteiros da Jardinagem -->
+<script src="/operacional/static/js/guia.js"></script>
+<script src="/operacional/static/js/guias-jardinagem.js"></script>
 </body>
 </html>

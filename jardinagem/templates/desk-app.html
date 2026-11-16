@@ -258,6 +258,8 @@ button:disabled, select:disabled, input:disabled, fieldset:disabled *, [aria-dis
     </div>
   </div>
   <div class="hdr-r">
+    <!-- (16/11/2026) ▶ Como fazer — tour guiado (guias-jardinagem.js) -->
+    <button class="btn btn-sm" style="background:#16A34A;color:#fff" onclick="if(window.guiaMenu)guiaMenu(event)" title="Demonstração guiada desta tela">▶ Como fazer</button>
     <button class="btn btn-or btn-sm" onclick="abrirModalMes()">+ Novo Mês</button>
     <button class="btn btn-out btn-sm" onclick="window.print()">🖨 Imprimir</button>
     <div style="width:1px;height:24px;background:rgba(255,255,255,.2);margin:0 2px;"></div>
@@ -419,8 +421,10 @@ button:disabled, select:disabled, input:disabled, fieldset:disabled *, [aria-dis
 // ── AUTH TOKEN ────────────────────────────────────────────
 // SSO: se veio token na URL (?sso=), salva token+usuario antes de checar
 (function(){
-  var sso = new URLSearchParams(location.search).get('sso');
-  if (!sso) return;
+  var _q = new URLSearchParams(location.search);
+  window._GUIA_Q = _q.get('guia');   // (16/11/2026) ?guia=escritorio → tour guiado depois de carregar (antes do replaceState)
+  var sso = _q.get('sso');
+  if (!sso) { if (window._GUIA_Q) history.replaceState(null, '', location.pathname); return; }
   sessionStorage.setItem('garra_jard_token', sso);
   try {
     var b64 = sso.split('.')[1].replace(/-/g,'+').replace(/_/g,'/');
@@ -1777,5 +1781,8 @@ function editarMes(mid, event){
 
 <!-- MODAL LOGIN DESKTOP -->
 
+<!-- (16/11/2026) tour guiado "▶ Como fazer" — motor + roteiros da Jardinagem -->
+<script src="/operacional/static/js/guia.js"></script>
+<script src="/operacional/static/js/guias-jardinagem.js"></script>
 </body>
 </html>
