@@ -6083,7 +6083,8 @@ def _apont_texto(relato, horas, hor, concluido, editado=False):
     if hor is not None:
         partes.append(f"Horímetro/KM no serviço: {hor:g}")
     if horas:
-        partes.append(f"⏱ Mão de obra: {horas:g} h")
+        _m = round(horas * 60)   # (16/11/2026) formato de relógio, igual ao app: 2,5 → 2:30
+        partes.append(f"⏱ Mão de obra: {_m // 60}:{_m % 60:02d} h")
     if concluido:
         partes.append("✅ SINALIZOU SERVIÇO CONCLUÍDO — pronto para encerramento pela gestão")
     if editado:

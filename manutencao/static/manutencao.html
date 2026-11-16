@@ -4654,6 +4654,17 @@ async function verOTReal(id){
 }
 /* ══ OT · PEÇAS — Planejado (FMP) × Realizado (Almoxarifado) — fatia 1 ══ */
 let _otPc = { plano: null, cons: null, alms: null };
+/* (16/11/2026) Horas em formato de relógio: _hm(2.5) → "2:30"; _hmDec("2:30") → 2.5 (aceita também "2,5"). */
+function _hm(v){
+  const n = Number(v) || 0, m = Math.round(Math.abs(n) * 60);
+  return (n < 0 ? '-' : '') + Math.floor(m / 60) + ':' + String(m % 60).padStart(2, '0');
+}
+function _hmDec(v){
+  v = String(v == null ? '' : v).trim(); if (!v) return '';
+  if (v.indexOf(':') >= 0) { const p = v.split(':'), h = parseInt(p[0] || '0', 10), m = parseInt(p[1] || '0', 10);
+    return (isNaN(h) || isNaN(m) || m > 59) ? v : Math.round((h + m / 60) * 100) / 100; }
+  return v;   // decimal: o servidor entende "2,5"
+}
 /* ── Mão de Obra da OT (HH) — padrão ManWinWin ── */
 let _otMo = null;
 async function otMaoObraRender(){
@@ -4686,7 +4697,8 @@ async function otMaoObraRender(){
   // ── Planejado ──
   const prevs = _otMo.previstos || [];
   const totPrevH = prevs.reduce((s,x)=>s+(x.hh||0),0), totPrevC = prevs.reduce((s,x)=>s+(x.custo||0),0);
-  const fmtH = v => (v||0).toLocaleString('pt-BR',{maximumFractionDigits:2});
+  // (16/11/2026) horas em formato de relógio (2,5 → 2:30), igual ao que o mecânico digita no app
+  const fmtH = v => _hm(v);
   // (19/10/2026) Layout "clean" ManWinWin: Planejado e Realizado em tabelas com cabeçalho; terceiro = 🏭 fornecedor
   const tabPrev = prevs.length
     ? '<table class="tbl"><thead><tr><th style="width:70px">Origem</th><th>Função</th><th class="r" style="width:60px">HH</th><th class="r" style="width:80px">Custo/HH</th><th class="r" style="width:95px">Custo</th><th style="width:50px">Conta</th><th>Obs.</th><th style="width:22px"></th></tr></thead><tbody>'
@@ -4742,7 +4754,7 @@ async function otMaoObraRender(){
       + '<div class="mfield" id="mo-user-wrap" style="width:220px">Funcionário<select id="mo-user" onchange="otMoSugerir()">'+colOpts+'</select></div>'
       + '<div class="mfield" style="width:200px;align-self:center"><span id="mo-fn-info" class="muted" style="font-size:10px">função e custo/HH vêm do cadastro do funcionário (Parametrizar › Funções)</span></div>'
       + '<div class="mfield" style="width:120px">Data<input id="mo-data" type="date" min="2000-01-01" max="2100-12-31" value="'+hoje+'"></div>'
-      + '<div class="mfield" style="width:70px">Horas<input id="mo-horas" type="number" step="0.25" min="0.25" placeholder="0,00"></div>'
+      + '<div class="mfield" style="width:80px">Horas (h:mm)<input id="mo-horas" type="text" inputmode="numeric" maxlength="5" placeholder="0:00" title="Horas e minutos — 2:30 = duas horas e meia. Também aceita decimal (2,5)."></div>'
       + '<div class="mfield" style="width:90px">Custo/h<input id="mo-custo" type="number" step="0.01" placeholder="0,00" title="Preenchido pela função; pode ajustar"></div>'
       + '<div class="mfield" style="width:220px">Conta * <span id="mo-rub-dica" class="muted" style="font-weight:400"></span><select id="mo-rub">'+contaOpts+'</select></div>'
       + '<div class="mfield" style="flex:1;min-width:140px">Observação<input id="mo-obs" placeholder="opcional"></div>'
@@ -4758,7 +4770,7 @@ function otMoEditar(id){
   el.style.display = '';
   const set = (i, v) => { const e = document.getElementById(i); if (e) e.value = v == null ? '' : v; };
   set('mo-user', x.usuario_id || ''); set('mo-fn', x.funcao_codigo || ''); set('mo-data', x.data ? String(x.data).slice(0,10) : '');
-  set('mo-horas', x.horas); set('mo-custo', x.custo_hora != null ? x.custo_hora : ''); set('mo-rub', x.rubrica || ''); set('mo-obs', x.observacao || '');
+  set('mo-horas', x.horas != null ? _hm(x.horas) : ''); set('mo-custo', x.custo_hora != null ? x.custo_hora : ''); set('mo-rub', x.rubrica || ''); set('mo-obs', x.observacao || '');
   _moEditId = id;
   const b = document.getElementById('mo-btn'); if (b) b.textContent = '💾 Salvar alteração';
   el.scrollIntoView({ block: 'nearest' });
@@ -4836,13 +4848,13 @@ async function otMoLancar(){
     if (_moEditId) {   // (02/11/2026) edição de linha existente
       await mntFetch('/manutencao/api/mao-obra/'+_moEditId, {method:'PATCH', body: JSON.stringify({
         usuario_id: g('mo-user'), data: g('mo-data') || null, funcao_codigo: g('mo-fn') || null, rubrica: g('mo-rub'),
-        horas: g('mo-horas'), custo_hora: custo === '' ? null : custo, observacao: g('mo-obs') })});
+        horas: _hmDec(g('mo-horas')), custo_hora: custo === '' ? null : custo, observacao: g('mo-obs') })});
       mostrarToast('✅ Mão de obra alterada','ok'); _moEditId = null; otMaoObraRender(); return;
     }
     await mntFetch('/manutencao/api/ots/'+_otAberta.id+'/mao-obra', {method:'POST', body: JSON.stringify({
       usuario_id: g('mo-user') || null, nome: '', data: g('mo-data') || null,
       funcao_codigo: g('mo-fn') || null, rubrica: g('mo-rub'),
-      horas: g('mo-horas'), custo_hora: custo === '' ? null : custo, observacao: g('mo-obs') })});
+      horas: _hmDec(g('mo-horas')), custo_hora: custo === '' ? null : custo, observacao: g('mo-obs') })});
     mostrarToast('✅ Horas lançadas','ok'); otMaoObraRender();
   } catch(e){ mostrarToast('❌ '+e.message,'warn'); }
 }

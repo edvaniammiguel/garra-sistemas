@@ -127,7 +127,7 @@ function _gpPassos(executor) {
   P.push({ alvo: '#ap-relato', antes: async () => { await _gpAbrirOT(); await _gpEspera(900); }, titulo: 'Registrar execução — o que foi feito',
     texto: 'Antes de escrever, confira no cabeçalho o <b>número da OT e o equipamento em laranja</b> — com várias OTs abertas é fácil trocar. Depois descreva o serviço (mínimo 10 letras, pode ditar): "trocado filtro e óleo do comando; testado sem vazamento".' });
   P.push({ alvo: '#ap-horas', titulo: 'Horas trabalhadas',
-    texto: 'As horas de <b>mão de obra deste serviço</b> (ex.: 2,5). Vão para a OT como custo de mão de obra interna. <b>Obrigatórias ao concluir</b> — sem elas a OT fecha sem custo. Registro parcial pode ir sem horas (o app pergunta antes).' });
+    texto: 'As horas de <b>mão de obra deste serviço</b>, em <b>horas:minutos</b> — digite só os números: <b>230</b> vira <b>2:30</b> (duas horas e meia). Vão para a OT como custo de mão de obra interna. <b>Obrigatórias ao concluir</b> — sem elas a OT fecha sem custo. Registro parcial pode ir sem horas (o app pergunta antes).' });
   P.push({ alvo: '#ap-hor', titulo: 'Horímetro / KM no serviço',
     texto: 'O campo mostra <b>Horímetro</b> ou <b>KM</b> conforme a máquina. Não barra o registro, mas é <b>muito importante</b>: é com essa leitura que a gestão fecha a OT e que a próxima preventiva é calculada. Ao concluir sem ela, o app avisa. Só deixe em branco se o painel estiver sem leitura — e escreva isso no relato.' });
   P.push({ alvo: () => document.querySelector('#tela-apont .fbtn'), titulo: 'Notinhas × fotos do serviço',
