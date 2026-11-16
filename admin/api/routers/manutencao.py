@@ -2374,6 +2374,39 @@ async def ot_aplicar_fmp(ot_id: str, request: Request, payload=Depends(verificar
             "horimetro_previsto": (float(novo_hor) if novo_hor is not None else None)}
 
 
+@router.post("/manutencao/api/ots/{ot_id}/desvincular-fmp")
+async def ot_desvincular_fmp(ot_id: str, payload=Depends(verificar_manutencao)):
+    """(16/11/2026) Escolheu a FMP por engano: a OT solta a ficha e volta a ser Corretiva sem tipo de trabalho.
+    Antes só dava para trocar por OUTRA ficha — "nenhuma" não fazia nada e o jeito era cancelar a OT.
+    A descrição fica (é editável). Saem: a ligação com a ficha, o tipo A1…, as tarefas da ficha ainda não feitas
+    e — só na OT em criação — a programação que veio da previsão da ficha."""
+    await _garantir_colunas_ot()
+    o = await ajard_query("SELECT id, status, plano_id FROM manutencao.ot WHERE id=%s AND ativo=true", (ot_id,), fetch="one")
+    if not o:
+        raise HTTPException(status_code=404, detail="OT não encontrada")
+    if o["status"] in ("concluida", "cancelada"):
+        raise HTTPException(status_code=400, detail="OT encerrada não muda de ficha")
+    if not o["plano_id"]:
+        return {"ok": True}
+    p = await ajard_query("SELECT codigo FROM manutencao.planos WHERE id=%s", (o["plano_id"],), fetch="one")
+    limpa_prog = ", data_prevista=NULL, horimetro_previsto=NULL" if o["status"] == "rascunho" else ""
+    await ajard_query(
+        f"""UPDATE manutencao.ot SET plano_id=NULL, tipo='corretiva', tipo_trabalho=NULL, prog_alterada=false{limpa_prog},
+                   atualizado_em=now() WHERE id=%s""", (ot_id,), fetch="none")
+    try:
+        await _garantir_tabela("ot-tarefas")
+        await ajard_query("UPDATE manutencao.ot_tarefas SET ativo=false WHERE ot_id=%s AND ativo=true AND COALESCE(feita,false)=false",
+                          (ot_id,), fetch="none")
+    except Exception as e:
+        print("desvincular-fmp: tarefas não removidas:", e)
+    await ajard_query(
+        """INSERT INTO manutencao.ot_historico (ot_id, status_de, status_para, observacao, usuario_id)
+           VALUES (%s, %s, %s, %s, %s)""",
+        (ot_id, o["status"], o["status"], f"FMP {(p or {}).get('codigo') or ''} desvinculada — OT volta a Corretiva".replace("  ", " "),
+         await _usuario_id(payload)), fetch="none")
+    return {"ok": True}
+
+
 @router.post("/manutencao/api/ots/{ot_id}/tarefas/da-fmp")
 async def ot_tarefas_da_fmp(ot_id: str, _auth=Depends(verificar_manutencao)):
     """Copia as tarefas do plano (FMP) da OT para o checklist da OT — uma
@@ -3207,7 +3240,33 @@ async def editar_peca(request: Request, payload=Depends(verificar_manutencao)):
         raise HTTPException(status_code=400, detail="Nada a alterar")
     params.append(p["id"])
     await ajard_query(f"UPDATE manutencao.pecas SET {', '.join(sets)} WHERE id=%s", tuple(params), fetch="none")
+    if "descricao" in d or "unidade" in d:
+        await _propagar_nome_peca((d.get("peca") or "").strip())
     return {"ok": True}
+
+
+async def _propagar_nome_peca(codigo: str):
+    """(16/11/2026) As previsões de peças (OT e FMP) guardam uma CÓPIA do nome e da unidade do item. Corrigiu o
+    cadastro (ex.: 'Eletroldo' → 'Eletrodo', UN → KG)? As previsões das OTs ainda abertas, das FMPs e da biblioteca
+    de preparações passam a mostrar o nome/unidade novos. OT encerrada/cancelada fica como foi feita (histórico)."""
+    import json as _json
+    if not codigo:
+        return
+    p = await ajard_query("SELECT descricao, unidade FROM manutencao.pecas WHERE codigo=%s", (codigo,), fetch="one")
+    if not p:
+        return
+    novo = _json.dumps({"descricao": p["descricao"] or "", "un": p["unidade"] or "UN"})
+    filtro = _json.dumps([{"peca": codigo}])
+    expr = """(SELECT jsonb_agg(CASE WHEN e->>'peca' = %s THEN e || %s::jsonb ELSE e END) FROM jsonb_array_elements({col}) e)"""
+    for tabela, col, extra in (("manutencao.ot", "pecas_previstas", " AND status NOT IN ('concluida','cancelada')"),
+                               ("manutencao.planos", "pecas", ""), ("manutencao.biblioteca_preparacoes", "pecas", "")):
+        try:
+            await ajard_query(
+                f"UPDATE {tabela} SET {col} = {expr.format(col=col)} "
+                f"WHERE jsonb_typeof({col}) = 'array' AND {col} @> %s::jsonb{extra}",
+                (codigo, novo, filtro), fetch="none")
+        except Exception as e:
+            print(f"propagar nome da peça {codigo} em {tabela}: {e}")
 
 
 @router.get("/manutencao/api/estoque-saldos")
@@ -3661,11 +3720,27 @@ async def ot_pecas_previstas(ot_id: str, _auth=Depends(verificar_manutencao)):
     def _lst(raw):
         try: return raw if isinstance(raw, list) else (_json.loads(raw) if raw else [])
         except Exception: return []
+    async def _atual(itens):
+        # (16/11/2026) nome e unidade vêm do cadastro de hoje, não da cópia guardada na previsão
+        cods = list({(x.get("peca") or "").strip() for x in itens if isinstance(x, dict) and x.get("peca")})
+        if not cods:
+            return itens
+        try:
+            rows = await ajard_query("SELECT codigo, descricao, unidade FROM manutencao.pecas WHERE codigo = ANY(%s)", (cods,)) or []
+        except Exception:
+            return itens
+        cad = {r["codigo"]: r for r in rows}
+        for x in itens:
+            c = cad.get((x.get("peca") or "").strip()) if isinstance(x, dict) else None
+            if c:
+                x["descricao"] = c["descricao"] or x.get("descricao")
+                x["un"] = c["unidade"] or x.get("un")
+        return itens
     if o.get("pecas_previstas") is not None:
-        return {"origem": "ot", "itens": _lst(o["pecas_previstas"])}
+        return {"origem": "ot", "itens": await _atual(_lst(o["pecas_previstas"]))}
     if o.get("plano_id"):
         pl = await ajard_query("SELECT codigo, pecas FROM manutencao.planos WHERE id=%s", (o["plano_id"],), fetch="one")
-        return {"origem": "fmp", "fmp": (pl or {}).get("codigo"), "itens": _lst((pl or {}).get("pecas"))}
+        return {"origem": "fmp", "fmp": (pl or {}).get("codigo"), "itens": await _atual(_lst((pl or {}).get("pecas")))}
     return {"origem": None, "itens": []}
 
 

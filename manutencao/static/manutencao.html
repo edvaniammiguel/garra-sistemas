@@ -5803,7 +5803,18 @@ async function otPeriodicidade(o){
 async function otAplicarFMP(aoEscolher){
   const o = _otAberta; if (!o) return;
   const sel = document.getElementById('oe-fmp'); const pid = (sel||{}).value;
-  if (!pid) return;
+  // (16/11/2026) "— nenhuma (corretiva) —" numa OT que tem ficha = DESVINCULAR (escolheu a FMP por engano).
+  // Antes não fazia nada: a OT ficava presa à ficha e o jeito era cancelar.
+  if (!pid) {
+    if (!o.plano_id) return;
+    if (!confirm('Tirar a Ficha de Manutenção Planejada desta OT?\n\nA OT '+(o.numero||'')+' volta a ser Corretiva, sem tipo de trabalho. Saem as tarefas da ficha que ainda não foram feitas'+(o.status === 'rascunho' ? ' e a programação que veio dela' : '')+'. A descrição fica — ajuste se precisar.')) { sel.value = String(o.plano_id||''); return; }
+    try {
+      await mntFetch('/manutencao/api/ots/'+o.id+'/desvincular-fmp', {method:'POST', body:'{}'});
+      mostrarToast('↩ Ficha retirada — OT voltou a Corretiva. Escolha o Tipo Trab. e confira a descrição.', 'ok');
+      await verOTReal(o.id); otAba('origem'); carregarOTsReais(); carregarSemaforosReais();
+    } catch(e){ sel.value = String(o.plano_id||''); mostrarToast('❌ '+e.message, 'warn'); }
+    return;
+  }
   if (aoEscolher && String(o.plano_id||'') === String(pid)) return;
   const rot = sel.options[sel.selectedIndex].text.split(' — ')[0];
   const descAtual = ((document.getElementById('ot-descricao')||{}).value || '').trim();
@@ -8002,6 +8013,12 @@ async function artOK(){
     }
     document.getElementById('art-jan').style.display = 'none';
     carregarPecasReais(); montarNavAlm();
+    // (16/11/2026) Editou o item: a lista da tela (estoque, abaixo do mínimo, movimentos) e a Ficha do Item aberta
+    // por trás passam a mostrar o que foi salvo na hora — antes continuavam com a descrição antiga até reabrir.
+    if (_artEdit) {
+      try { if (_almVista === 'lista') almLente(_almLente); else if (_almVista === 'baixo') almVistaBaixo(); else if (_almVista === 'mov') almVistaMov(); } catch(e){}
+      try { if (_pecaAberta === _artEdit && !_artDepois) abrirPeca(_artEdit); } catch(e){}
+    }
     if (_artDepois) { const f = _artDepois; _artDepois = null; f({ codigo: cod, descricao: desc, unidade: body.unidade, familia_codigo: body.familia_codigo, custo_medio: body.custo_medio }); return; }
     if (!_artEdit) abrirPeca(cod);
   } catch(e){ mostrarToast('❌ '+e.message,'warn'); }
