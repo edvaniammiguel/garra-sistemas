@@ -136,9 +136,19 @@
     <button type="button" class="btn-ditar" data-ditar="ap-relato">🎤 Ditar</button>
     <!-- (16/11/2026) Horas no formato de relógio (horas:minutos) em vez de decimal — "2:30", não "2,5".
          O total segue em horas para a aba Mão de Obra da OT, no sistema de Manutenção. -->
-    <label>Horas trabalhadas neste serviço (mão de obra) <span class="muted" style="font-weight:400">— horas:minutos</span></label>
-    <input id="ap-horas" type="text" inputmode="numeric" maxlength="5" autocomplete="off" placeholder="ex.: 02:30" oninput="apHorasMask(this)">
-    <div id="ap-horas-dica" class="muted" style="margin:-2px 0 4px;font-size:12px;min-height:16px"></div>
+    <!-- (16/11/2026) Igual à parte diária da OS: Hora início + Hora fim → o app calcula o TOTAL (desconta 1 h de almoço
+         quando o serviço atravessa o meio-dia e passa de 6 h, salvo "sem intervalo"). O total também pode ser digitado direto. -->
+    <label>Horário do serviço (mão de obra)</label>
+    <div id="ap-horas-bloco">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+        <div><div class="muted" style="font-size:12px;font-weight:700">Hora início</div><input id="ap-hini" type="time" oninput="apHorasCalc()"></div>
+        <div><div class="muted" style="font-size:12px;font-weight:700">Hora fim</div><input id="ap-hfim" type="time" oninput="apHorasCalc()"></div>
+      </div>
+      <label style="display:flex;align-items:center;gap:8px;margin:8px 0;font-weight:400;font-size:13px;cursor:pointer"><input id="ap-sem-almoco" type="checkbox" onchange="apHorasCalc()" style="width:18px;height:18px"> Serviço corrido — sem intervalo de almoço</label>
+      <div class="muted" style="font-size:12px;font-weight:700">Total de horas trabalhadas <span style="font-weight:400">— calculado; pode ajustar (horas:minutos)</span></div>
+      <input id="ap-horas" type="text" inputmode="numeric" maxlength="5" autocomplete="off" placeholder="00:00" oninput="apHorasMask(this)">
+      <div id="ap-horas-dica" class="muted" style="margin:2px 0 4px;font-size:12px;min-height:16px"></div>
+    </div>
     <!-- (05/11/2026) Não barra, mas é importante: a preventiva e o custo por h/km dependem desta leitura.
          O rótulo muda para Horímetro ou KM conforme a medição do equipamento da OT. -->
     <label><span id="ap-hor-rot">Horímetro/KM</span> no serviço <span style="color:#B45309;font-weight:800">⚠ importante</span></label>
@@ -363,7 +373,7 @@ async function apCarregarLista(){
     if (!AP_ITENS.length){ el.innerHTML = 'Nada registrado ainda.'; return; }
     el.innerHTML = AP_ITENS.map(a => {
       const tags = [];
-      if (a.horas != null) tags.push('⏱ ' + apHM(a.horas) + ' h');
+      if (a.horas != null) tags.push('⏱ ' + (a.hora_inicio && a.hora_fim ? a.hora_inicio + '–' + a.hora_fim + ' · ' : '') + apHM(a.horas) + ' h');
       if (a.horimetro != null) tags.push('🔢 ' + String(a.horimetro).replace('.', ','));
       if (a.concluido) tags.push('✅ concluído');
       const fotos = (a.fotos || []).length
@@ -383,6 +393,8 @@ function apEditar(id){
   AP_EDIT = id;
   AP_FOTOS = { nota: [], servico: [] };
   document.getElementById('ap-relato').value = a.relato || '';
+  document.getElementById('ap-hini').value = a.hora_inicio || ''; document.getElementById('ap-hfim').value = a.hora_fim || '';
+  document.getElementById('ap-sem-almoco').checked = !!a.sem_almoco;
   document.getElementById('ap-horas').value = a.horas != null ? apHM(a.horas, true) : ''; apHorasDica();
   document.getElementById('ap-hor').value = a.horimetro != null ? a.horimetro : '';
   document.getElementById('ap-fim').checked = !!a.concluido;
@@ -398,7 +410,7 @@ function apEditar(id){
 function apCancelarEdicao(){
   AP_EDIT = null;
   AP_FOTOS = { nota: [], servico: [] }; apFotosRender('nota'); apFotosRender('servico');
-  ['ap-relato','ap-horas','ap-hor'].forEach(i => document.getElementById(i).value = ''); apHorasDica();
+  ['ap-relato','ap-horas','ap-hor','ap-hini','ap-hfim'].forEach(i => document.getElementById(i).value = ''); document.getElementById('ap-sem-almoco').checked = false; apHorasDica();
   document.getElementById('ap-fim').checked = false;
   document.getElementById('ap-btn').textContent = '💾 Registrar na OT';
   document.getElementById('ap-cancel').style.display = 'none';
@@ -478,7 +490,7 @@ function apAbrir(otId, otNum, eq, desc){
     + '<div>O relato vai para o histórico; o encerramento é da gestão.</div>';
   document.getElementById('ap-relato').value = '';
   document.getElementById('ap-hor').value = '';
-  document.getElementById('ap-horas').value = ''; apHorasDica();
+  document.getElementById('ap-horas').value = ''; document.getElementById('ap-hini').value = ''; document.getElementById('ap-hfim').value = ''; document.getElementById('ap-sem-almoco').checked = false; apHorasDica();
   document.getElementById('ap-fim').checked = false;
   AP_EDIT = null; AP_ITENS = [];
   document.getElementById('ap-form').style.display = ''; document.getElementById('ap-btn').style.display = '';
@@ -499,6 +511,20 @@ function apHorasDec(v){   // "02:30" | "230" | "2" | "2,5" → horas decimais; '
   if (v.indexOf(':') >= 0) { const p = v.split(':'), h = parseInt(p[0] || '0', 10), m = parseInt(p[1] || '0', 10);
     if (isNaN(h) || isNaN(m) || m > 59) return NaN; return Math.round((h + m / 60) * 100) / 100; }
   const n = parseFloat(v.replace(',', '.')); return isNaN(n) ? NaN : n;   // só "2" = 2 horas
+}
+// Início + fim → total, com a MESMA regra da parte diária da OS (operacional/mobile.html › _calcularJornada)
+function apHorasCalc(){
+  const hi = document.getElementById('ap-hini').value, hf = document.getElementById('ap-hfim').value;
+  const dica = document.getElementById('ap-horas-dica');
+  if (!hi || !hf) { if (hi || hf) { dica.style.color = ''; dica.textContent = 'Informe a hora de início e a de fim para calcular o total'; } return; }
+  const ph = s => { const p = s.split(':').map(Number); return p[0] * 60 + (p[1] || 0); };
+  let ini = ph(hi), fim = ph(hf), diff = fim - ini; if (diff < 0) diff += 24 * 60;   // virou o dia
+  const bruto = diff / 60, sem = document.getElementById('ap-sem-almoco').checked;
+  const cruza = (ini < 12 * 60) && (fim > 12 * 60 || fim < ini);
+  const almoco = (!sem && cruza && bruto > 6) ? 1 : 0, liq = Math.max(0, bruto - almoco);
+  document.getElementById('ap-horas').value = apHM(liq, true);
+  dica.style.color = (liq <= 0 || liq > 24) ? '#B91C1C' : '';
+  dica.textContent = '🕐 ' + hi + ' às ' + hf + (almoco ? ' · ' + apHM(bruto) + ' brutas − 1:00 de almoço' : sem && cruza ? ' · sem intervalo' : '') + ' = ' + apHM(liq) + ' h';
 }
 function apHorasMask(el){   // digita só números: 2 → "2", 23 → "23", 230 → "2:30", 0230 → "02:30"
   const d = el.value.replace(/\D/g, '').slice(0, 4);
@@ -526,7 +552,9 @@ async function apEnviar(){
   const jaTemHoras = !AP_EDIT && AP_ITENS.some(a => a.horas != null && a.horas > 0);
   const soConcluir = concluido && jaTemHoras && horas === null && relato.length < 10;
   if (!soConcluir && relato.length < 10){ toast('Descreva o que foi feito (pelo menos 10 letras)', 'erro'); document.getElementById('ap-relato').focus(); return; }
-  if (horas !== null && (isNaN(horas) || horas <= 0 || horas > 24)){ toast('Horas trabalhadas: use horas:minutos, ex.: 02:30 (até 24:00)', 'erro'); elHoras.focus(); return; }
+  const _hi = document.getElementById('ap-hini').value, _hf = document.getElementById('ap-hfim').value;
+  if (!!_hi !== !!_hf){ toast('Informe a hora de início e a de fim (ou só o total)', 'erro'); document.getElementById(_hi ? 'ap-hfim' : 'ap-hini').focus(); return; }
+  if (horas !== null && (isNaN(horas) || horas <= 0 || horas > 24)){ toast('Total de horas: confira início e fim (até 24:00)', 'erro'); elHoras.focus(); return; }
   if (concluido && horas === null && !jaTemHoras){ toast('Para concluir, informe as horas trabalhadas', 'erro'); elHoras.focus(); return; }
   if (hor !== null && (isNaN(hor) || hor <= 0)){ toast('Horímetro/KM inválido', 'erro'); elHor.focus(); return; }
   if (!concluido && horas === null && !confirm('Registrar sem horas trabalhadas?')) { elHoras.focus(); return; }
@@ -537,7 +565,9 @@ async function apEnviar(){
   const btn = document.getElementById('ap-btn'), pg = document.getElementById('ap-prog');
   try {
     if (btn) btn.disabled = true;
-    const body = JSON.stringify({ relato, horas, horimetro: hor, concluido });
+    const body = JSON.stringify({ relato, horas, horimetro: hor, concluido,
+      hora_inicio: document.getElementById('ap-hini').value || null, hora_fim: document.getElementById('ap-hfim').value || null,
+      sem_almoco: document.getElementById('ap-sem-almoco').checked });
     let apId = AP_EDIT;
     if (AP_EDIT) await api('/manutencao/api/ots/' + AP_OT + '/apontamentos/' + AP_EDIT, { method: 'PUT', body });
     else { const r = await api('/manutencao/api/ots/' + AP_OT + '/apontamento', { method: 'POST', body }); apId = r.id; }

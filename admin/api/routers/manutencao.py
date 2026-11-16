@@ -6043,6 +6043,9 @@ async def _garantir_apontamentos():
             criado_em TIMESTAMPTZ DEFAULT now(),
             atualizado_em TIMESTAMPTZ)""", fetch="none")
     await ajard_query("CREATE INDEX IF NOT EXISTS ix_ot_apont_ot ON manutencao.ot_apontamentos (ot_id)", fetch="none")
+    # (16/11/2026) horário do serviço (início/fim), como na parte diária da OS — o total continua em `horas`
+    for _c, _t in (("hora_inicio", "TEXT"), ("hora_fim", "TEXT"), ("sem_almoco", "BOOLEAN DEFAULT false")):
+        await ajard_query(f"ALTER TABLE manutencao.ot_apontamentos ADD COLUMN IF NOT EXISTS {_c} {_t}", fetch="none")
     await ajard_query("ALTER TABLE manutencao.equipamento_documentos ADD COLUMN IF NOT EXISTS ot_id UUID", fetch="none")
     await ajard_query("ALTER TABLE manutencao.equipamento_documentos ADD COLUMN IF NOT EXISTS categoria TEXT", fetch="none")
     await ajard_query("ALTER TABLE manutencao.equipamento_documentos ADD COLUMN IF NOT EXISTS apontamento_id UUID", fetch="none")
@@ -6078,13 +6081,24 @@ def _apont_validar(d, ja_tem_horas=False):
     return relato, horas, hor, concluido
 
 
-def _apont_texto(relato, horas, hor, concluido, editado=False):
+def _apont_horario(d):
+    """(16/11/2026) Hora início/fim do serviço ('HH:MM') — opcionais, mas vêm em par. Devolve (ini, fim, sem_almoco)."""
+    hi, hf = (d.get("hora_inicio") or "").strip()[:5], (d.get("hora_fim") or "").strip()[:5]
+    ok = lambda s: bool(re.fullmatch(r"([01]\d|2[0-3]):[0-5]\d", s))
+    if not hi and not hf:
+        return None, None, False
+    if not (ok(hi) and ok(hf)):
+        raise HTTPException(status_code=400, detail="Informe a hora de início e a de fim do serviço")
+    return hi, hf, bool(d.get("sem_almoco"))
+
+
+def _apont_texto(relato, horas, hor, concluido, editado=False, horario=None):
     partes = [f"🔧 Execução (mecânico): {relato}"]
     if hor is not None:
         partes.append(f"Horímetro/KM no serviço: {hor:g}")
     if horas:
         _m = round(horas * 60)   # (16/11/2026) formato de relógio, igual ao app: 2,5 → 2:30
-        partes.append(f"⏱ Mão de obra: {_m // 60}:{_m % 60:02d} h")
+        partes.append(f"⏱ Mão de obra: {_m // 60}:{_m % 60:02d} h" + (f" ({horario[0]}–{horario[1]})" if horario and horario[0] else ""))
     if concluido:
         partes.append("✅ SINALIZOU SERVIÇO CONCLUÍDO — pronto para encerramento pela gestão")
     if editado:
@@ -6126,6 +6140,7 @@ async def ot_apontamento(ot_id: str, request: Request, payload=Depends(verificar
     await _garantir_apontamentos()
     d = await request.json()
     relato, horas, hor, concluido = _apont_validar(d, await _ot_ja_tem_horas(ot_id))
+    hi, hf, sem_alm = _apont_horario(d)
     o, uid = await _ot_mobile_pode(ot_id, payload)
     if o["status"] not in _OT_STATUS_APONTAVEL:
         raise HTTPException(status_code=400, detail="OT já encerrada — apontamento indisponível")
@@ -6144,11 +6159,12 @@ async def ot_apontamento(ot_id: str, request: Request, payload=Depends(verificar
     h = await ajard_query_id(
         """INSERT INTO manutencao.ot_historico (ot_id, status_de, status_para, observacao, usuario_id)
            VALUES (%s,%s,%s,%s,%s)""",
-        (ot_id, o["status"], o["status"], _apont_texto(relato, horas, hor, concluido), uid))
+        (ot_id, o["status"], o["status"], _apont_texto(relato, horas, hor, concluido, horario=(hi, hf)), uid))
     ap = await ajard_query_id(
-        """INSERT INTO manutencao.ot_apontamentos (ot_id, usuario_id, relato, horas, horimetro, concluido, mao_obra_id, historico_id)
-           VALUES (%s,%s,%s,%s,%s,%s,%s,%s)""",
-        (ot_id, uid, relato, horas, hor, concluido, mo_id, h["id"] if h else None))
+        """INSERT INTO manutencao.ot_apontamentos (ot_id, usuario_id, relato, horas, horimetro, concluido, mao_obra_id, historico_id,
+                                                    hora_inicio, hora_fim, sem_almoco)
+           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+        (ot_id, uid, relato, horas, hor, concluido, mo_id, h["id"] if h else None, hi, hf, sem_alm))
     if concluido:
         eqc = await ajard_query("SELECT e.codigo FROM manutencao.ot o JOIN operacional.equipamentos e ON e.id=o.equipamento_id WHERE o.id=%s", (ot_id,), fetch="one")
         await _notificar("ot_concluida", f"✔ {o['numero']} concluída pelo mecânico", f"{(eqc or {}).get('codigo') or ''} · {relato[:120]}",
@@ -6181,6 +6197,7 @@ async def ot_apontamentos_listar(ot_id: str, payload=Depends(verificar_pedir_ot)
                 "horas": float(r["horas"]) if r["horas"] is not None else None,
                 "horimetro": float(r["horimetro"]) if r["horimetro"] is not None else None,
                 "concluido": bool(r["concluido"]), "usuario_nome": r["usuario_nome"],
+                "hora_inicio": r.get("hora_inicio"), "hora_fim": r.get("hora_fim"), "sem_almoco": bool(r.get("sem_almoco")),
                 "criado_em": r["criado_em"].isoformat() if r["criado_em"] else None,
                 "atualizado_em": r["atualizado_em"].isoformat() if r["atualizado_em"] else None,
                 "meu": gestor or str(r["usuario_id"]) == str(uid),
@@ -6192,6 +6209,7 @@ async def ot_apontamento_editar(ot_id: str, ap_id: str, request: Request, payloa
     await _garantir_apontamentos()
     d = await request.json()
     relato, horas, hor, concluido = _apont_validar(d)
+    hi, hf, sem_alm = _apont_horario(d)
     o, uid, ap = await _apont_do_usuario(ap_id, ot_id, payload)
     mo_id = ap["mao_obra_id"]
     if horas:
@@ -6213,11 +6231,11 @@ async def ot_apontamento_editar(ot_id: str, ap_id: str, request: Request, payloa
         mo_id = None
     if ap["historico_id"]:
         await ajard_query("UPDATE manutencao.ot_historico SET observacao=%s WHERE id=%s",
-                          (_apont_texto(relato, horas, hor, concluido, editado=True), ap["historico_id"]), fetch="none")
+                          (_apont_texto(relato, horas, hor, concluido, editado=True, horario=(hi, hf)), ap["historico_id"]), fetch="none")
     await ajard_query(
         """UPDATE manutencao.ot_apontamentos SET relato=%s, horas=%s, horimetro=%s, concluido=%s,
-                  mao_obra_id=%s, atualizado_em=now() WHERE id=%s""",
-        (relato, horas, hor, concluido, mo_id, ap_id), fetch="none")
+                  mao_obra_id=%s, hora_inicio=%s, hora_fim=%s, sem_almoco=%s, atualizado_em=now() WHERE id=%s""",
+        (relato, horas, hor, concluido, mo_id, hi, hf, sem_alm, ap_id), fetch="none")
     return {"ok": True, "id": ap_id}
 
 
