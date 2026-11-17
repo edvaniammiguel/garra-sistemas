@@ -30,7 +30,7 @@ window.GUIAS_ABASTECIMENTO = {
       { alvo: '#soma', titulo: 'Soma dos itens',
         texto: 'Aqui você vê se a soma bate com os litros da nota. Diferença = algum item com litros errados.' },
       { alvo: '#btn-salvar', antes: () => { try { mostrar('rodape', true); } catch (e) { } }, titulo: 'Registrar abastecimento',
-        texto: 'Toque em <b>Registrar</b>. Avisos em laranja (horímetro menor que o anterior, litros acima do tanque) <b>não bloqueiam</b> — corrija se for erro seu, ou registre assim mesmo que a manutenção confere.' },
+        texto: 'Toque em <b>Registrar</b>. Avisos em laranja (horímetro menor que o anterior, litros acima do tanque) <b>não bloqueiam</b> — corrija se for erro seu, ou registre assim mesmo que a manutenção confere. Depois de registrar, a confirmação mostra o <b>consumo</b> do trecho e pode trazer dois avisos: <b>🔥 consumo acima da própria média</b> (confira litros e leitura; se estiverem certos, avise a manutenção) e <b>⚠ nenhuma parte diária ou checklist desde o abastecimento anterior</b> (veja se escolheu o equipamento certo e lance o registro que faltou).' },
       { alvo: '#tela-hist', titulo: 'Meus últimos registros',
         texto: 'Confirmação do que você já enviou. Antes de registrar uma nota, olhe aqui — se ela já estiver na lista, não mande de novo.' },
       { titulo: 'Pronto! ✅',

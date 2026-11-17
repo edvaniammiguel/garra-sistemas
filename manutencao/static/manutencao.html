@@ -2951,7 +2951,9 @@ async function equipAbastecimentos(id){
     + '<div class="mfield" style="width:90px">Valor<input id="ab-valor" inputmode="decimal" placeholder="0,00"></div>'
     + '<div class="mfield" style="width:110px">Leitura ('+un+')<input id="ab-leitura" inputmode="decimal" placeholder="vazio = \u00faltima"></div>'
     + '<button class="btn p" id="ab-btn" onclick="abSalvar(\''+id+'\')">\ud83d\udcbe Registrar</button>'
-    + '<button class="btn" id="ab-cancel" style="display:none" onclick="abCancelarEdicao(\''+id+'\')">Cancelar edi\u00e7\u00e3o</button></div>')
+    + '<button class="btn" id="ab-cancel" style="display:none" onclick="abCancelarEdicao(\''+id+'\')">Cancelar edi\u00e7\u00e3o</button>'
+    // (17/11/2026) excluir registro duplicado/feito por engano — só aparece editando; o servidor exige Painel de Gestão
+    + '<button class="btn" id="ab-excluir" style="display:none;color:#B91C1C;border-color:#FCA5A5" title="Excluir este registro (duplicado ou feito por engano) \u2014 s\u00f3 a gest\u00e3o" onclick="abExcluirReg(\''+id+'\')">\ud83d\uddd1 Excluir registro</button></div>')
     + '<div class="dsec" style="margin-top:8px">Registros <span class="muted" style="font-weight:400;font-size:10px">'+lista.length+' \u00b7 '+fmtN(Math.round(litrosTot))+' L</span></div>'
     + '<div style="max-height:320px;overflow:auto"><table><thead><tr><th>Doc.</th><th>Produto</th><th>Data</th><th class="r">Registro</th><th>UN</th><th class="r">Quant.</th><th>UN</th><th class="r">Custo</th><th>Posto</th><th>Entidade</th><th>Conta</th><th class="r">'+(eq.medicao==='km'?'L/100km':'L/h')+'</th><th>Alertas</th><th>Quem</th><th style="width:96px">Confer\u00eancia</th></tr></thead><tbody>'
     + (linhas || '<tr><td colspan="15" class="muted" style="padding:10px">Nenhum abastecimento registrado ainda.</td></tr>')
@@ -3106,10 +3108,22 @@ function abEditar(i, eqId){
   ['ab-posto','ab-cupom'].forEach(k => { const el = document.getElementById(k); if (el) el.disabled = multi; });
   const b = document.getElementById('ab-btn'); if (b) b.textContent = '\ud83d\udcbe Salvar altera\u00e7\u00f5es';
   const c = document.getElementById('ab-cancel'); if (c) c.style.display = '';
+  const x = document.getElementById('ab-excluir'); if (x) x.style.display = '';
   mostrarToast('\u270f\ufe0f Editando '+(a.numero_cupom?'cupom '+a.numero_cupom:'registro')+(multi?' \u2014 nota rateada: posto/cupom s\u00f3 pelo app':''),'ok');
   const el = document.getElementById('ab-litros'); if (el) el.focus();
 }
 function abCancelarEdicao(eqId){ _abEdit = null; equipAbastecimentos(eqId); }
+// (17/11/2026) Excluir o registro em edição. Nota rateada: sai só o item deste equipamento; se era o último, a nota sai junto
+// e o cupom volta a poder ser lançado. O contador do equipamento volta ao maior registro válido.
+async function abExcluirReg(eqId){
+  const a = _abEdit; if (!a) return;
+  const quem = (a.numero_cupom ? 'cupom ' + a.numero_cupom : 'registro') + ' \u00b7 ' + Number(a.litros||0).toLocaleString('pt-BR') + ' L';
+  if (!confirm('Excluir o abastecimento ' + quem + '?\n\nUse s\u00f3 para registro duplicado ou feito por engano. N\u00famero errado se CORRIGE, n\u00e3o se exclui.' + ((a.n_itens||1) > 1 ? '\n\nNota rateada: sai apenas a parte deste equipamento.' : ''))) return;
+  try { await mntFetch('/operacional/api/abastecimentos/' + a.id, {method:'DELETE'}); }
+  catch(e){ mostrarToast('\u274c ' + e.message, 'warn'); return; }
+  _abEdit = null; mostrarToast('\ud83d\uddd1 Registro exclu\u00eddo', 'ok');
+  equipAbastecimentos(eqId); try { carregarSemaforosReais(); } catch(e){}
+}
 async function abSalvar(id){
   const v = i => (document.getElementById(i)||{}).value || null;
   if (_abEdit){ return abSalvarEdicao(id); }
