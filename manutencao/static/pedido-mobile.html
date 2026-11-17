@@ -93,17 +93,23 @@
       <button id="u-alta" onclick="urg('alta')">🟠 Alta</button>
       <button id="u-urgente" onclick="urg('urgente')">🔴 Urgente<br><span style="font-weight:400;font-size:10px">equipamento parado</span></button>
     </div>
-    <button class="btn p" onclick="enviar()">📨 Enviar pedido</button>
-    <div class="muted" style="margin-top:8px;text-align:center">O pedido cai na triagem da manutenção, que abre a OT.</div>
+    <!-- (17/11/2026) Só para quem tem a permissão "Pedir OT (emite direto)": o pedido já sai como OT emitida. -->
+    <label id="pd-direto-bloco" style="display:none;align-items:flex-start;gap:8px;margin:10px 0 2px;padding:10px;border-radius:10px;background:#FFF7ED;border:1px solid #FED7AA;font-weight:400">
+      <input type="checkbox" id="pd-direto" style="width:20px;height:20px;margin-top:2px" onchange="pdDiretoTxt()">
+      <span><b>⚡ Já emitir a OT</b><br><span class="muted" style="font-size:12px">Sai com o número da OT na hora e libera o registro de execução. A gestão confere depois.</span></span>
+    </label>
+    <button class="btn p" id="pd-btn" onclick="enviar()">📨 Enviar pedido</button>
+    <div class="muted" id="pd-rodape" style="margin-top:8px;text-align:center">O pedido cai na triagem da manutenção, que abre a OT.</div>
   </div>
 
   <!-- CONFIRMAÇÃO -->
   <div class="card" id="tela-ok">
     <div class="ok-box">
       <div style="font-size:42px">✅</div>
-      <div>Pedido registrado</div>
+      <div id="ok-tit">Pedido registrado</div>
       <div class="num" id="ok-num"></div>
-      <div class="muted">A equipe de manutenção recebeu e vai triar.</div>
+      <div class="muted" id="ok-txt">A equipe de manutenção recebeu e vai triar.</div>
+      <button class="btn p" id="ok-exec" style="display:none">🔧 Registrar execução</button>
       <button class="btn s" onclick="novo()">＋ Fazer outro pedido</button>
     </div>
   </div>
@@ -262,15 +268,52 @@ async function carregarFrota(){
     document.getElementById('pd-eq').innerHTML = '<option value="">— escolher —</option>'
       + eqs.map(e => '<option value="' + e.id + '">' + e.codigo + ' — ' + (e.descricao || '') + '</option>').join('');
   } catch(e){ toast('❌ ' + e.message, 'erro'); }
+  pdDiretoCarregar();
+}
+// (17/11/2026) "Emite direto": a opção só aparece para quem tem a permissão; nasce marcada (administrador: desmarcada).
+let PD_DIRETO = false;
+async function pdDiretoCarregar(){
+  try {
+    const r = await api('/manutencao/api/pedido-direto');
+    PD_DIRETO = !!r.direto;
+    document.getElementById('pd-direto-bloco').style.display = PD_DIRETO ? 'flex' : 'none';
+    document.getElementById('pd-direto').checked = PD_DIRETO && !r.master;
+  } catch(e){ PD_DIRETO = false; }
+  pdDiretoTxt();
+}
+function pdDiretoOn(){ return PD_DIRETO && document.getElementById('pd-direto').checked; }
+function pdDiretoTxt(){
+  const on = pdDiretoOn();
+  document.getElementById('pd-btn').textContent = on ? '⚡ Emitir OT agora' : '📨 Enviar pedido';
+  document.getElementById('pd-rodape').textContent = on ? 'A OT já sai emitida, com número. A gestão é avisada para conferir.' : 'O pedido cai na triagem da manutenção, que abre a OT.';
 }
 async function enviar(){
   const desc = document.getElementById('pd-desc').value.trim();
   if (!desc){ toast('Descreva o problema', 'erro'); return; }
+  const eqId = document.getElementById('pd-eq').value || null, direto = pdDiretoOn();
+  if (direto && !eqId){ toast('Para emitir a OT, escolha o equipamento', 'erro'); document.getElementById('pd-eq').focus(); return; }
   try {
+    if (direto){
+      // aviso de duplicidade: o equipamento já tem OT viva (aberta, programada ou em execução)?
+      const info = await api('/manutencao/api/pedido-direto?equipamento_id=' + encodeURIComponent(eqId));
+      if ((info.ots || []).length && !confirm('⚠ Este equipamento já tem ' + info.ots.length + ' OT em aberto:\n\n'
+            + info.ots.map(o => '• ' + o.numero + ' (' + String(ST_OT[o.status] || o.status).replace(/^\S+\s/, '') + ') — ' + String(o.descricao || '').slice(0, 60)).join('\n')
+            + '\n\nEmitir uma OT nova mesmo assim?')) return;
+    }
     const r = await api('/manutencao/api/pedidos/externo', { method: 'POST',
-      body: JSON.stringify({ equipamento_id: document.getElementById('pd-eq').value || null,
-                             descricao: desc, grau_urgencia: URG }) });
-    document.getElementById('ok-num').textContent = r.numero;
+      body: JSON.stringify({ equipamento_id: eqId, descricao: desc, grau_urgencia: URG, direto }) });
+    const ex = document.getElementById('ok-exec');
+    if (r.direto && r.ot_numero){
+      document.getElementById('ok-tit').textContent = 'OT emitida';
+      document.getElementById('ok-num').textContent = r.ot_numero;
+      document.getElementById('ok-txt').textContent = 'Use este número com o fornecedor. A gestão foi avisada para conferir a OT.';
+      ex.style.display = ''; ex.onclick = () => apAbrir(r.ot_id, r.ot_numero, r.equipamento_codigo || '', desc);
+    } else {
+      document.getElementById('ok-tit').textContent = 'Pedido registrado';
+      document.getElementById('ok-num').textContent = r.numero;
+      document.getElementById('ok-txt').textContent = 'A equipe de manutenção recebeu e vai triar.';
+      ex.style.display = 'none';
+    }
     tela('tela-ok');
   } catch(e){ toast('❌ ' + e.message, 'erro'); }
 }
@@ -320,12 +363,18 @@ function renderOts(){
       + (o.responsavel_nome ? ' · 👤 ' + _h(o.responsavel_nome) : ' · <span style="color:#C2410C">sem responsável</span>')
       + (o.apontamentos ? ' · ' + o.apontamentos + ' registro(s)' : '') + (o.sinal_concluido ? ' · ✅ sinalizada' : '')
       + (o.minha ? ' · <b style="color:#1A2A5E">minha</b>' : '') + '</div>'
-      + '<button style="margin-top:6px;padding:7px 12px;border:none;border-radius:8px;background:#E8730C;color:#fff;font-weight:700" '
-      + 'onclick="apAbrir(\'' + o.id + '\',\'' + _esc(o.numero) + '\',\'' + _esc(o.equipamento_codigo) + '\',\'' + _esc(o.descricao) + '\')">🔧 Registrar execução</button>'
+      // (17/11/2026) Registrar execução só em OT emitida (em execução / aguardando peça)
+      + (OT_EMITIDA.includes(o.status)
+        ? '<button style="margin-top:6px;padding:7px 12px;border:none;border-radius:8px;background:#E8730C;color:#fff;font-weight:700" '
+          + 'onclick="apAbrir(\'' + o.id + '\',\'' + _esc(o.numero) + '\',\'' + _esc(o.equipamento_codigo) + '\',\'' + _esc(o.descricao) + '\')">🔧 Registrar execução</button>'
+        : '<div style="margin-top:6px;font-size:12px;color:#92400E;background:#FEF3C7;border-radius:8px;padding:6px 10px;display:inline-block">⏳ Aguardando a gestão emitir</div>'
+          + (o.apontamentos ? ' <button style="margin-left:6px;padding:6px 10px;border:1px solid #CBD5E1;border-radius:8px;background:#fff;color:#1A2A5E;font-weight:700" '
+          + 'onclick="apAbrir(\'' + o.id + '\',\'' + _esc(o.numero) + '\',\'' + _esc(o.equipamento_codigo) + '\',\'' + _esc(o.descricao) + '\')">Ver registros</button>' : ''))
       + '</div>';
   }).join('');
 }
 const ST_PED = { aberto:['#64748B','⏳ Na triagem'], convertido:['#1D4ED8','🔧 Virou OT'], recusado:['#B91C1C','✖ Recusado'] };
+const OT_EMITIDA = ['em_andamento', 'aguardando_peca'];   // (17/11/2026) só nelas o app registra execução
 const ST_OT = { programada:'📅 Programada', aberta:'📂 Aberta', em_andamento:'▶️ Em execução',
                 aguardando_peca:'⏸️ Aguardando peça', concluida:'🗂️ Encerrada', cancelada:'✖ Cancelada' };
 async function carregarMinhas(){
@@ -339,9 +388,10 @@ async function carregarMinhas(){
       let ot = '';
       if (p.ot_numero){
         ot = '<div style="margin-top:4px;font-size:13px"><b>' + p.ot_numero + '</b> — ' + (ST_OT[p.ot_status] || p.ot_status);
-        if (['em_andamento','aguardando_peca','aberta'].includes(p.ot_status))
+        if (OT_EMITIDA.includes(p.ot_status))
           ot += ' <button style="margin-left:6px;padding:6px 10px;border:none;border-radius:8px;background:#E8730C;color:#fff;font-weight:700" '
              + 'onclick="apAbrir(\'' + p.ot_id + '\',\'' + p.ot_numero + '\',\'' + _esc(p.equipamento_codigo) + '\',\'' + _esc(p.descricao) + '\')">🔧 Registrar execução</button>';
+        else if (['programada','aberta'].includes(p.ot_status)) ot += ' <span style="font-size:12px;color:#92400E">· ⏳ aguardando a gestão emitir</span>';
         ot += '</div>';
       }
       if (p.status === 'recusado' && p.motivo_recusa)
@@ -368,7 +418,9 @@ async function apCarregarLista(){
     // (15/10/2026) OT já encerrada pela gestão: tela vira só consulta (sem formulário, sem ✏️🗑️)
     const fechada = !r.aberta;
     ['ap-form','ap-btn','ap-cancel'].forEach(i => { const e = document.getElementById(i); if (e) e.style.display = fechada ? 'none' : (i === 'ap-cancel' ? (AP_EDIT ? '' : 'none') : ''); });
-    const av = document.getElementById('ap-fechada'); if (av) av.style.display = fechada ? '' : 'none';
+    const av = document.getElementById('ap-fechada'); if (av) { av.style.display = fechada ? '' : 'none';
+      // (17/11/2026) OT ainda não emitida: só consulta, com o motivo certo
+      av.textContent = r.aguarda_emissao ? '⏳ OT ainda não emitida pela gestão — o registro é liberado depois da emissão.' : '🔒 OT encerrada pela gestão — somente consulta.'; }
     if (fechada && AP_EDIT) AP_EDIT = null;
     // (02/11/2026) atalho "Só concluir" quando a OT já tem registro com horas e ainda não foi sinalizada
     const sc = document.getElementById('ap-so-concluir');

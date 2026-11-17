@@ -178,6 +178,7 @@ async def _garantir_colunas_ot():
         return
     for ddl in (
         "ALTER TABLE manutencao.ot ADD COLUMN IF NOT EXISTS data_prevista DATE",
+        "ALTER TABLE manutencao.ot ADD COLUMN IF NOT EXISTS a_conferir BOOLEAN DEFAULT false",   # (17/11/2026) OT emitida direto pelo app: gestão confere depois
         "ALTER TABLE manutencao.ot ADD COLUMN IF NOT EXISTS horimetro_previsto NUMERIC",
         "ALTER TABLE manutencao.ot ADD COLUMN IF NOT EXISTS plano_id UUID",
         "ALTER TABLE manutencao.ot ADD COLUMN IF NOT EXISTS origem TEXT DEFAULT 'garra'",
@@ -353,7 +354,8 @@ async def _inserir_pedido(d: dict, descricao: str, uid):
          d.get("equipamento_id"), d.get("solicitante_id"),
          (d.get("cliente_nome") or "").strip() or None, (d.get("contato") or "").strip() or None,
          (d.get("origem") or "manual"), d.get("nc_ref"), uid))
-    await _avisar_pedido(row, numero, descricao, d)
+    if not d.get("_sem_aviso"):   # (17/11/2026) pedido que vira OT direto avisa pela OT, não pela triagem
+        await _avisar_pedido(row, numero, descricao, d)
     return row, numero
 
 
@@ -6067,8 +6069,73 @@ async def pedido_externo(request: Request, payload=Depends(verificar_pedir_ot)):
              "grau_urgencia": (d.get("grau_urgencia") or "normal"),
              "equipamento_id": d.get("equipamento_id") or None,
              "solicitante_id": uid}
+    # (17/11/2026) "Emite direto": quem tem a permissão pedir_ot_direto e marcou a opção no app já sai com a
+    # OT emitida (número para o fornecedor + registro de execução). Nasce "a conferir" e a gestão é avisada.
+    eq = None
+    if d.get("direto") and dados["equipamento_id"] and await _tem_modulo(payload, {"pedir_ot_direto"}):
+        eq = await ajard_query(
+            "SELECT id, codigo, categoria, horimetro_atual FROM operacional.equipamentos WHERE id=%s AND ativo=true",
+            (dados["equipamento_id"],), fetch="one")
+        if eq and (eq.get("categoria") or "").lower() == "apoio":
+            eq = None   # apoio não recebe OT: segue como pedido comum
+    if not eq:
+        row, numero = await _inserir_pedido(dados, descricao, uid)
+        return {"ok": True, "numero": numero, "id": str(row["id"])}
+    await _garantir_colunas_ot()
+    dados["_sem_aviso"] = True
     row, numero = await _inserir_pedido(dados, descricao, uid)
-    return {"ok": True, "numero": numero, "id": str(row["id"])}
+    seq = await _proximo_seq_ot()
+    ano = _hoje().year
+    mapa_pri = {"normal": "media", "urgente": "urgente", "alta": "alta", "baixa": "baixa"}
+    ot = await _inserir_ot({
+        "equipamento_id": str(eq["id"]), "descricao": descricao,
+        "prioridade": mapa_pri.get(dados["grau_urgencia"], "media"), "tipo_trabalho": "C1",
+        "data_prevista": _hoje().isoformat(), "_nasce_aberta": True,
+        "pedido_id": str(row["id"]), "origem": "mobile-mecanico",
+        "_obs_criacao": f"OT criada do pedido {numero} (emissão direta pelo app)",
+    }, dict(eq), uid, f"OT-{ano}-{int(seq['n']):04d}", ano, seq)
+    await ajard_query(
+        "UPDATE manutencao.ot SET status='em_andamento', data_inicio_real=now(), a_conferir=true, atualizado_em=now() WHERE id=%s",
+        (ot["id"],), fetch="none")
+    await ajard_query(
+        """INSERT INTO manutencao.ot_historico (ot_id, status_de, status_para, observacao, usuario_id)
+           VALUES (%s,'aberta','em_andamento',%s,%s)""",
+        (ot["id"], "⚡ Emitida direto pelo app por quem pediu — a conferir pela gestão", uid), fetch="none")
+    await _notificar("pedido_novo", f"⚡ {ot['numero']} emitida direto — conferir",
+                     f"{eq.get('codigo') or ''} · {descricao[:120]}", f"/manutencao/mobile?ot={ot['id']}", excluir=[uid])
+    return {"ok": True, "numero": numero, "id": str(row["id"]), "direto": True,
+            "ot_id": str(ot["id"]), "ot_numero": ot["numero"], "equipamento_codigo": eq.get("codigo")}
+
+
+@router.get("/manutencao/api/pedido-direto")
+async def pedido_direto_info(equipamento_id: str = None, payload=Depends(verificar_pedir_ot)):
+    """(17/11/2026) O app pergunta: esta pessoa emite direto? E, para o equipamento escolhido, que OTs já
+    estão vivas (aviso de duplicidade antes de criar outra). `master` = administrador (tem tudo): a opção
+    aparece desmarcada para ele."""
+    direto = await _tem_modulo(payload, {"pedir_ot_direto"})
+    ots = []
+    if direto and equipamento_id:
+        ots = await ajard_query(
+            """SELECT numero, status, descricao FROM manutencao.ot
+               WHERE equipamento_id=%s AND ativo=true AND status IN ('programada','aberta','em_andamento','aguardando_peca')
+               ORDER BY data_abertura DESC LIMIT 8""", (equipamento_id,)) or []
+    return {"direto": direto, "master": (payload.get("perfil") or "").lower() == "admin", "ots": [dict(r) for r in ots]}
+
+
+@router.post("/manutencao/api/ots/{ot_id}/conferida")
+async def ot_conferida(ot_id: str, payload=Depends(verificar_manutencao)):
+    """(17/11/2026) Gestão conferiu a OT emitida direto pelo app (tipo, sistema, centro de custo, peças)."""
+    await _garantir_colunas_ot()
+    o = await ajard_query("SELECT id, status, a_conferir FROM manutencao.ot WHERE id=%s AND ativo=true", (ot_id,), fetch="one")
+    if not o:
+        raise HTTPException(status_code=404, detail="OT não encontrada")
+    if o.get("a_conferir"):
+        uid = await _usuario_id(payload)
+        await ajard_query("UPDATE manutencao.ot SET a_conferir=false, atualizado_em=now() WHERE id=%s", (ot_id,), fetch="none")
+        await ajard_query(
+            """INSERT INTO manutencao.ot_historico (ot_id, status_de, status_para, observacao, usuario_id)
+               VALUES (%s,%s,%s,%s,%s)""", (ot_id, o["status"], o["status"], "✔ Conferida pela gestão", uid), fetch="none")
+    return {"ok": True}
 
 
 @router.get("/manutencao/pedido", response_class=HTMLResponse)
@@ -6136,7 +6203,17 @@ async def _garantir_apontamentos():
     _APONT_OK = True
 
 
-_OT_STATUS_APONTAVEL = ("em_andamento", "aguardando_peca", "aberta", "programada")
+# (17/11/2026) Registro de execução pelo app só em OT EMITIDA (em curso / aguardando peça).
+# Programada e Aberta ainda não foram liberadas pela gestão: aparecem no app, mas sem registrar.
+_OT_STATUS_APONTAVEL = ("em_andamento", "aguardando_peca")
+_OT_STATUS_NAO_EMITIDA = ("programada", "aberta", "rascunho")
+
+
+def _exigir_ot_emitida(status, encerrada="OT já encerrada — apontamento indisponível"):
+    if status in _OT_STATUS_NAO_EMITIDA:
+        raise HTTPException(status_code=400, detail="OT ainda não emitida — a gestão precisa emitir a OT para liberar o registro")
+    if status not in _OT_STATUS_APONTAVEL:
+        raise HTTPException(status_code=400, detail=encerrada)
 
 
 RELATO_SO_CONCLUIR = "Serviço concluído — equipamento liberado (sinalizado sem novo registro)"
@@ -6193,8 +6270,7 @@ def _apont_texto(relato, horas, hor, concluido, editado=False, horario=None):
 async def _apont_do_usuario(ap_id, ot_id, payload):
     """Carrega o apontamento e garante que quem mexe é o autor (ou gestor) e a OT está aberta."""
     o, uid = await _ot_mobile_pode(ot_id, payload)
-    if o["status"] not in _OT_STATUS_APONTAVEL:
-        raise HTTPException(status_code=400, detail="OT já encerrada — apontamento indisponível")
+    _exigir_ot_emitida(o["status"])
     ap = await ajard_query("SELECT * FROM manutencao.ot_apontamentos WHERE id=%s AND ot_id=%s AND ativo=true",
                            (ap_id, ot_id), fetch="one")
     if not ap:
@@ -6226,8 +6302,7 @@ async def ot_apontamento(ot_id: str, request: Request, payload=Depends(verificar
     relato, horas, hor, concluido = _apont_validar(d, await _ot_ja_tem_horas(ot_id))
     hi, hf, sem_alm = _apont_horario(d)
     o, uid = await _ot_mobile_pode(ot_id, payload)
-    if o["status"] not in _OT_STATUS_APONTAVEL:
-        raise HTTPException(status_code=400, detail="OT já encerrada — apontamento indisponível")
+    _exigir_ot_emitida(o["status"])
     await _ot_assumir_se_vaga(o, uid, ot_id)
     mo_id = None
     if horas:
@@ -6276,6 +6351,7 @@ async def ot_apontamentos_listar(ot_id: str, payload=Depends(verificar_pedir_ot)
         por_ap.setdefault(str(f["apontamento_id"]), []).append(
             {"id": str(f["id"]), "categoria": f["categoria"], "url": storage_url(f["path"])})
     return {"numero": o["numero"], "status": o["status"], "aberta": o["status"] in _OT_STATUS_APONTAVEL,
+            "aguarda_emissao": o["status"] in _OT_STATUS_NAO_EMITIDA,
             "apontamentos": [{
                 "id": str(r["id"]), "relato": r["relato"],
                 "horas": float(r["horas"]) if r["horas"] is not None else None,
@@ -6436,8 +6512,7 @@ async def ot_fotos_execucao(ot_id: str, fotos: list[UploadFile] = File(...), tip
                                (apontamento_id, ot_id), fetch="one")
         if not ok:
             raise HTTPException(status_code=404, detail="Apontamento não encontrado")
-    if o["status"] not in ("em_andamento", "aguardando_peca", "aberta", "programada"):
-        raise HTTPException(status_code=400, detail="OT já encerrada — anexos indisponíveis")
+    _exigir_ot_emitida(o["status"], "OT já encerrada — anexos indisponíveis")
     cat, rotulo = _FOTO_CATEGORIAS.get((tipo or "nota").lower(), _FOTO_CATEGORIAS["nota"])
     if not fotos or len(fotos) > 10:
         raise HTTPException(status_code=400, detail="Envie de 1 a 10 fotos")
@@ -6492,8 +6567,7 @@ async def ot_foto_execucao_excluir(ot_id: str, doc_id: str, payload=Depends(veri
     """Mecânico remove uma foto que ele mesmo subiu (OT ainda aberta)."""
     await _garantir_apontamentos()
     o, uid = await _ot_mobile_pode(ot_id, payload)
-    if o["status"] not in _OT_STATUS_APONTAVEL:
-        raise HTTPException(status_code=400, detail="OT já encerrada — anexos indisponíveis")
+    _exigir_ot_emitida(o["status"], "OT já encerrada — anexos indisponíveis")
     f = await ajard_query("SELECT id, path, usuario_id FROM manutencao.equipamento_documentos WHERE id=%s AND ot_id=%s AND ativo=true",
                           (doc_id, ot_id), fetch="one")
     if not f:

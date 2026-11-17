@@ -23,6 +23,8 @@ MODULOS_DISPONIVEIS = [
     # (14/10/2026) Separa quem só PEDE (operador) de quem EXECUTA (mecânico): a aba
     # 🔧 OTs do app e o apontamento em OT de outros exigem este módulo.
     {"id": "ot_executar",         "grupo": "Manutenção", "label": "Manutenção — Executar OT", "desc": "Vê todas as OTs em aberto no app e registra execução em qualquer uma (mecânicos)"},
+    # (17/11/2026) Pedido que já nasce OT emitida (número na hora, sem esperar a triagem). Marcar POR PESSOA.
+    {"id": "pedir_ot_direto",     "grupo": "Manutenção", "label": "Manutenção — Pedir OT (emite direto)", "desc": "O pedido feito no app já vira OT emitida, com número e registro de execução; a gestão confere depois. Marcar só para pessoas escolhidas"},
     {"id": "abastecimento",       "grupo": "Operação em campo", "label": "Abastecimento (mobile)", "desc": "Registrar abastecimento com fotos — leitura alimenta FMD/preventivas"},
     {"id": "abastecimento_notas", "grupo": "Manutenção", "label": "Notas de Abastecimento", "desc": "Conferência financeira das notinhas (foto, valores, lançado na MAIS) — sem acesso à Manutenção"},
     {"id": "manutencao_notas",    "grupo": "Manutenção", "label": "Notas de Manutenção", "desc": "Conferência financeira das notinhas das OTs (foto, valor digitado, lançado na MAIS) — sem acesso à Manutenção"},
