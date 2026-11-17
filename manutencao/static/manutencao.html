@@ -4873,11 +4873,12 @@ async function otMoExcluir(id){
 async function otCustosRender(){
   const o = _otAberta, c = document.getElementById('ot-aba-corpo');
   c.innerHTML = '<div class="muted" style="padding:12px">Consolidando custos…</div>';
-  let cons = {itens:[], total:0}, mo = {itens:[], previstos:[], total_horas:0, total_custo:0}, outros = [], plano = null;
-  try { [cons, mo, outros, plano] = await Promise.all([
+  let cons = {itens:[], total:0}, mo = {itens:[], previstos:[], total_horas:0, total_custo:0}, outros = [], plano = null, prevPecas = {itens:[]};
+  try { [cons, mo, outros, plano, prevPecas] = await Promise.all([
       mntFetch('/manutencao/api/ots/'+o.id+'/consumos'), mntFetch('/manutencao/api/ots/'+o.id+'/mao-obra'),
       mntFetch('/manutencao/api/tab/ot-outros?ot_id='+o.id),
-      o.plano_id ? mntFetch('/manutencao/api/planos/'+o.plano_id).catch(()=>null) : Promise.resolve(null)]); }
+      o.plano_id ? mntFetch('/manutencao/api/planos/'+o.plano_id).catch(()=>null) : Promise.resolve(null),
+      mntFetch('/manutencao/api/ots/'+o.id+'/pecas-previstas').catch(()=>({itens:[]}))]); }
   catch(e){ c.innerHTML = '<div class="muted" style="padding:12px">❌ '+_esc(e.message)+'</div>'; return; }
   if (_mntFornList === null) { try { _mntFornList = await mntFetch('/manutencao/api/fornecedores'); } catch(e){ _mntFornList = []; } }
   const nv = v => parseFloat(String(v ?? '').replace(',', '.')) || 0;
@@ -4889,13 +4890,17 @@ async function otCustosRender(){
   const moInt = (mo.itens||[]).filter(x => !x.externo), moExt = (mo.itens||[]).filter(x => x.externo);
   const sum = (arr, k) => arr.reduce((s,x) => s + (parseFloat(x[k])||0), 0);
   const porForn = {};
-  (outros||[]).forEach(x => { const k = x.fornecedor_nome || 'sem fornecedor'; porForn[k] = (porForn[k]||0) + (parseFloat(x.valor)||0); });
+  // (16/11/2026) Outros: o PLANEJADO entra na coluna Previsto; só o lançado de fato entra no Realizado
+  const outPlan = (outros||[]).filter(x => x.planejado === true), outReal = (outros||[]).filter(x => x.planejado !== true);
+  outReal.forEach(x => { const k = x.fornecedor_nome || 'sem fornecedor'; porForn[k] = (porForn[k]||0) + (parseFloat(x.valor)||0); });
   moExt.forEach(x => { const k = (x.nome || 'Terceiro') + ' (MO externa — legado)'; porForn[k] = (porForn[k]||0) + (x.valor||0); });
   const fornOT = (_mntFornList||[]).find(f => String(f.id) === String(o.fornecedor_id||''));
   const prevMO = sum(mo.previstos||[], 'custo');
-  const prevMat = jj(plano && plano.pecas).reduce((s,x) => s + nv(x.qtd) * nv(x.custo), 0);
-  const prevOut = 0;
-  const realMO = sum(moInt, 'valor'), realMat = cons.total||0, realOut = sum(outros||[], 'valor') + sum(moExt, 'valor');
+  // (16/11/2026) Previsto de Materiais = as peças PREVISTAS da aba Peças (lista da OT; sem lista própria, a da FMP).
+  // Antes só lia a FMP — OT corretiva com peça prevista aparecia com Previsto R$ 0,00.
+  const prevMat = jj(prevPecas && prevPecas.itens).reduce((s,x) => s + nv(x.qtd) * nv(x.custo), 0);
+  const prevOut = sum(outPlan, 'valor');
+  const realMO = sum(moInt, 'valor'), realMat = cons.total||0, realOut = sum(outReal, 'valor') + sum(moExt, 'valor');
   const prevTot = prevMO + prevMat + prevOut, realTot = realMO + realMat + realOut;
   const fech = o.custo_total != null ? parseFloat(o.custo_total) : null;
   const pct = (p, r) => p ? ((r - p) / p * 100).toLocaleString('pt-BR',{maximumFractionDigits:0}) + '%' : '—';
@@ -4908,8 +4913,8 @@ async function otCustosRender(){
     '<div class="dsec">Custos da OT <span class="muted">· previsto × realizado</span></div>'
     + '<div class="panel"><table class="tbl" style="border:0;background:transparent"><thead><tr><th></th><th class="r" style="width:120px">Previsto</th><th class="r" style="width:120px">Realizado</th><th class="r" style="width:120px">Diferença</th><th class="r" style="width:60px">(%)</th></tr></thead><tbody>'
     + lin('👥 Mão de Obra', prevMO, realMO, sum(moInt,'horas').toLocaleString('pt-BR')+' h · interna')
-    + lin('🔩 Materiais', prevMat, realMat, (cons.itens||[]).length+' baixa(s)'+(plano?' · FMP '+_esc(plano.codigo||''):''))
-    + lin('📄 Outros', prevOut, realOut, (outros||[]).length+' lançamento(s) · serviço externo, frete…')
+    + lin('🔩 Materiais', prevMat, realMat, jj(prevPecas && prevPecas.itens).length+' prevista(s) · '+(cons.itens||[]).length+' baixa(s)'+(plano?' · FMP '+_esc(plano.codigo||''):''))
+    + lin('📄 Outros', prevOut, realOut, (outPlan.length ? outPlan.length+' previsto(s) · ' : '')+outReal.length+' lançamento(s) · serviço externo, frete…')
     + Object.keys(porForn).map(k => sub('🏭 '+_esc(k), porForn[k])).join('')
     + (fornOT && !porForn[fornOT.nome] ? sub('🏭 '+_esc(fornOT.nome)+' <span class="muted">(fornecedor da OT — sem custo lançado em Outros)</span>', 0) : '')
     + lin('TOTAL', prevTot, realTot, '', true)
@@ -5386,6 +5391,36 @@ async function _setoresInterventor(){
   if (_setIntCache === null) { try { _setIntCache = (await mntFetch('/manutencao/api/param/setores-interventor')).filter(s => s.ativo !== false); } catch(e){ _setIntCache = []; } }
   return _setIntCache;
 }
+// (16/11/2026) Responsável segue o Setor: mostra só quem tem função daquele setor (função vem da ficha do RH,
+// setor vem de Parametrizar › Funções). Setor sem ninguém = lista completa, para nunca travar a escolha.
+let _respSetMap = null;
+async function _respSetores(){
+  if (_respSetMap === null) {
+    try {
+      const d = await mntFetch('/manutencao/api/funcoes'), fs = {}, m = {};
+      (d.funcoes||[]).forEach(f => { fs[f.codigo] = f.setor || ''; });
+      Object.keys(d.colaboradores||{}).forEach(id => { const s = fs[(d.colaboradores[id]||{}).funcao_codigo]; if (s) m[id] = s; });
+      _respSetMap = m;
+    } catch(e){ return {}; }
+  }
+  return _respSetMap;
+}
+async function otRespPorSetor(mudou){
+  const m = await _respSetores();
+  const ss = document.getElementById('oe-setor'), rs = document.getElementById('oe-resp'), dc = document.getElementById('oe-resp-dica');
+  if (!ss || !rs) return;
+  const st = ss.value || '', ops = [...rs.options].filter(o => o.value);
+  const tem = !!st && ops.some(o => m[o.value] === st);
+  const atual = rs.value;
+  ops.forEach(o => { o.hidden = tem && m[o.value] !== st && !(!mudou && o.value === atual); });
+  if (mudou && tem) {
+    if (atual && m[atual] !== st) rs.value = '';
+    const vis = ops.filter(o => !o.hidden);
+    if (!rs.value && vis.length === 1) rs.value = vis[0].value;   // só uma pessoa no setor: já vem escolhida
+  }
+  if (dc) dc.textContent = !st ? '' : tem ? 'Só colaboradores do setor ' + st + (!mudou && atual && m[atual] !== st ? ' (o atual é de outro setor)' : '')
+                                         : 'Ninguém com função no setor ' + st + ' — mostrando todos';
+}
 // Interventor: Interno mostra Setor, Externo mostra Fornecedor (um OU outro, como no ManWinWin)
 function otInterventor(){
   const r = document.querySelector('input[name="oe-interv"]:checked'); if (!r) return;
@@ -5486,9 +5521,9 @@ async function otAba(aba){
       +     '<label style="display:flex;align-items:center;gap:5px;cursor:pointer"><input type="radio" name="oe-interv" value="interno"'+(interv==='interno'?' checked':'')+' onchange="otInterventor()"> Interno</label>'
       +     '<label style="display:flex;align-items:center;gap:5px;cursor:pointer"><input type="radio" name="oe-interv" value="externo"'+(interv==='externo'?' checked':'')+' onchange="otInterventor()"> Externo</label>'
       +   '</div>'
-      +   '<div class="mfield" id="oe-setor-wrap">Setor<select id="oe-setor" data-val="'+_esc(o.setor_interventor||'')+'"><option value="">— carregando —</option></select></div>'
+      +   '<div class="mfield" id="oe-setor-wrap">Setor<select id="oe-setor" onchange="otRespPorSetor(true)" data-val="'+_esc(o.setor_interventor||'')+'"><option value="">— carregando —</option></select></div>'
       +   '<div class="mfield" id="oe-forn-wrap">Fornecedor<select id="oe-forn">'+foOpts+'</select></div>'
-      +   '<div class="mfield" id="oe-resp-wrap" style="margin-top:6px">Responsável<select id="oe-resp">'+usOpts+'</select></div>'
+      +   '<div class="mfield" id="oe-resp-wrap" style="margin-top:6px">Responsável<select id="oe-resp">'+usOpts+'</select><div id="oe-resp-dica" class="muted" style="font-size:10px;margin-top:2px"></div></div>'
       + '</fieldset>'
       + '<div style="display:flex;gap:12px;align-items:flex-end">'
       +   '<div class="mfield" style="width:120px">Prev. TDM (h)<input id="oe-tdm" type="number" step="0.5" min="0" value="'+(o.tdm_previsto??'')+'" title="Tempo de manutenção previsto, em horas"></div>'
@@ -5519,6 +5554,7 @@ async function otAba(aba){
       el.innerHTML = '<option value="">— escolha o setor —</option>' + lst.map(s => '<option value="'+_esc(s.codigo)+'"'+(s.codigo===v?' selected':'')+'>'+_esc(s.codigo)+' — '+_esc(s.nome||'')+'</option>').join('')
         + (v && !lst.some(s => s.codigo===v) ? '<option value="'+_esc(v)+'" selected>'+_esc(v)+' (inativo)</option>' : '');
       if (!lst.length) el.innerHTML = '<option value="">— cadastre em Parametrizar › Setores Interventor —</option>';
+      otRespPorSetor(false);   // (16/11/2026) responsável segue o setor
     });
     // (20/10/2026) Tipo Trab.: garante a lista carregada e mostra a classe derivada
     _tiposTrab().then(lst => {
