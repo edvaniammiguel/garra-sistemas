@@ -6247,7 +6247,7 @@ async def ot_apontamento(ot_id: str, request: Request, payload=Depends(verificar
     ap = await ajard_query_id(
         """INSERT INTO manutencao.ot_apontamentos (ot_id, usuario_id, relato, horas, horimetro, concluido, mao_obra_id, historico_id,
                                                     hora_inicio, hora_fim, sem_almoco)
-           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+           VALUES (%s,%s,%s,%s,%s,%s,%s,%s, to_char(%s::time,'HH24:MI'), to_char(%s::time,'HH24:MI'), %s)""",   # (17/11/2026) 'HH:MM' chega ao banco como hora (core/db.py); a coluna é texto → to_char
         (ot_id, uid, relato, horas, hor, concluido, mo_id, h["id"] if h else None, hi, hf, sem_alm))
     if concluido:
         eqc = await ajard_query("SELECT e.codigo FROM manutencao.ot o JOIN operacional.equipamentos e ON e.id=o.equipamento_id WHERE o.id=%s", (ot_id,), fetch="one")
@@ -6318,7 +6318,7 @@ async def ot_apontamento_editar(ot_id: str, ap_id: str, request: Request, payloa
                           (_apont_texto(relato, horas, hor, concluido, editado=True, horario=(hi, hf)), ap["historico_id"]), fetch="none")
     await ajard_query(
         """UPDATE manutencao.ot_apontamentos SET relato=%s, horas=%s, horimetro=%s, concluido=%s,
-                  mao_obra_id=%s, hora_inicio=%s, hora_fim=%s, sem_almoco=%s, atualizado_em=now() WHERE id=%s""",
+                  mao_obra_id=%s, hora_inicio=to_char(%s::time,'HH24:MI'), hora_fim=to_char(%s::time,'HH24:MI'), sem_almoco=%s, atualizado_em=now() WHERE id=%s""",
         (relato, horas, hor, concluido, mo_id, hi, hf, sem_alm, ap_id), fetch="none")
     return {"ok": True, "id": ap_id}
 
