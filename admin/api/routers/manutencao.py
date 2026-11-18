@@ -1353,8 +1353,10 @@ def _classe_params(familia: str) -> list:
 
 def _fam_efetiva(alias: str = "") -> str:
     a = f"{alias}." if alias else ""
+    # (18/11/2026) a subfamília sai do código ESTRUTURADO — o item pode aparecer com o código do fabricante
+    ce = f"COALESCE(NULLIF({a}codigo_estruturado,''), {a}codigo)"
     return (f"CASE WHEN {a}familia_codigo LIKE '%%.%%' THEN {a}familia_codigo "
-            f"WHEN {a}codigo ~ '^[A-Za-z]\\.[A-Za-z0-9]+\\.[0-9]+\\.' THEN split_part({a}codigo,'.',2)||'.'||split_part({a}codigo,'.',3) "
+            f"WHEN {ce} ~ '^[A-Za-z]\\.[A-Za-z0-9]+\\.[0-9]+\\.' THEN split_part({ce},'.',2)||'.'||split_part({ce},'.',3) "
             f"ELSE {a}familia_codigo END")
 
 
@@ -1407,7 +1409,7 @@ async def listar_pecas(busca: str = None, familia: str = None, limit: int = 100,
         # "Bateria Kondor 45 Amp" mesmo com palavras fora de ordem
         for palavra in _sem_acento(busca.strip()).split():
             b = f"%{palavra}%"
-            where.append("(" + " OR ".join(f"{_sem_acento_sql(c)} ILIKE %s" for c in ("codigo", "descricao", "codigo_externo", "codigo_fabricante")) + ")"); params += [b, b, b, b]
+            where.append("(" + " OR ".join(f"{_sem_acento_sql(c)} ILIKE %s" for c in _PECA_BUSCA) + ")"); params += [b] * len(_PECA_BUSCA)
     if familia and familia.strip().startswith("@"):
         # (19/10/2026) '@G' = toda uma CLASSE da Norma (classe gravada na peça
         # OU prefixo do código OU classe da família cadastrada)
@@ -1419,6 +1421,7 @@ async def listar_pecas(busca: str = None, familia: str = None, limit: int = 100,
         params += [familia.strip(), familia.strip() + ".%"]
     rows = await ajard_query(
         f"""SELECT p.id, p.codigo, p.descricao, p.unidade, p.familia_codigo, p.custo_medio,
+                   p.codigo_estruturado, p.codigo_fabricante, p.codigo_externo, p.codigo_principal,
                    {_ULTIMO_PRECO_SQL}
             FROM manutencao.pecas p WHERE {' AND '.join(where)}
             ORDER BY p.codigo LIMIT {limit}""", params)
@@ -3113,8 +3116,66 @@ async def _garantir_peca_cols():
           ADD COLUMN IF NOT EXISTS codigo_externo TEXT,
           ADD COLUMN IF NOT EXISTS classe TEXT,
           ADD COLUMN IF NOT EXISTS espec_compra TEXT,
-          ADD COLUMN IF NOT EXISTS codigo_fabricante TEXT""", fetch="none")
+          ADD COLUMN IF NOT EXISTS codigo_fabricante TEXT,
+          ADD COLUMN IF NOT EXISTS codigo_estruturado TEXT,
+          ADD COLUMN IF NOT EXISTS codigo_principal TEXT,
+          ADD COLUMN IF NOT EXISTS codigos_anteriores TEXT""", fetch="none")
+    # (18/11/2026) CODIFICAÇÃO como no ManWinWin: o item tem 3 códigos (estruturado, fabricante, externo) e a
+    # ficha diz qual é o PRINCIPAL — é ele que fica em `codigo` (coluna Código, etiquetas, OT, OC). Migração dos
+    # itens antigos, sem renomear ninguém: descobre de que tipo é o código atual e guarda no campo certo.
+    for sql in (
+        # código no formato da estrutura (G.AU.020.044 · C.MR.10.001) → estruturado
+        """UPDATE manutencao.pecas SET codigo_principal='estruturado', codigo_estruturado=codigo
+            WHERE codigo_principal IS NULL AND codigo ~ '^[A-Za-z]{1,2}\\.[A-Za-z0-9]{2,3}\\.[0-9]{2,3}\\.[0-9]{2,4}$'""",
+        # o resto veio do ManWinWin com o código do fabricante como identidade
+        """UPDATE manutencao.pecas SET codigo_principal='fabricante', codigo_fabricante=codigo
+            WHERE codigo_principal IS NULL AND (coalesce(btrim(codigo_fabricante),'')='' OR codigo_fabricante=codigo)""",
+        """UPDATE manutencao.pecas SET codigo_principal='externo', codigo_externo=codigo
+            WHERE codigo_principal IS NULL AND (coalesce(btrim(codigo_externo),'')='' OR codigo_externo=codigo)""",
+        """UPDATE manutencao.pecas SET codigo_principal='estruturado', codigo_estruturado=codigo
+            WHERE codigo_principal IS NULL"""):
+        await ajard_query(sql, fetch="none")
     _PECA_COLS_OK = True
+
+
+_COD_CAMPO = {"estruturado": "codigo_estruturado", "fabricante": "codigo_fabricante", "externo": "codigo_externo"}
+_COD_NOME = {"estruturado": "Cód. Estruturado", "fabricante": "Cód. Fabricante", "externo": "Cód. Externo"}
+# busca de item: qualquer um dos códigos (inclusive os que o item já teve) ou a descrição
+_PECA_BUSCA = ("codigo", "descricao", "codigo_externo", "codigo_fabricante", "codigo_estruturado", "codigos_anteriores")
+
+
+async def _renomear_peca(peca_id, antigo: str, novo: str):
+    """(18/11/2026) Trocou o código principal do item: `codigo` muda e tudo que guarda o código como TEXTO
+    acompanha — previsões de peças (OT, FMP, biblioteca), fornecedores e substitutos do item, cotações e
+    pendências de compra. Estoque, movimentos e itens de OC usam o id do item e não precisam de nada.
+    O código antigo fica em `codigos_anteriores` para as etiquetas já impressas e as buscas continuarem achando."""
+    import json as _json
+    await ajard_query(
+        """UPDATE manutencao.pecas SET codigo=%s,
+                  codigos_anteriores = NULLIF(array_to_string(ARRAY(
+                      SELECT DISTINCT x FROM unnest(string_to_array(coalesce(codigos_anteriores,''), '|') || ARRAY[%s::text]) x
+                       WHERE x <> '' AND x <> %s), '|'), '')
+            WHERE id=%s""",
+        (novo, antigo, novo, peca_id), fetch="none")   # separador '|': há códigos com espaço (ex.: "AVX 13X895")
+    for sql in ("UPDATE manutencao.peca_fornecedores SET peca_codigo=%s WHERE peca_codigo=%s",
+                "UPDATE manutencao.peca_substitutos SET peca_codigo=%s WHERE peca_codigo=%s",
+                "UPDATE manutencao.peca_substitutos SET substituto_codigo=%s WHERE substituto_codigo=%s",
+                "UPDATE compras.cotacao_itens SET peca_codigo=%s WHERE peca_codigo=%s",
+                "UPDATE compras.cotacao_precos SET subst_peca_codigo=%s WHERE subst_peca_codigo=%s",
+                "UPDATE compras.pendencias_compra SET peca_codigo=%s WHERE peca_codigo=%s"):
+        try:
+            await ajard_query(sql, (novo, antigo), fetch="none")
+        except Exception as e:   # tabela ainda não criada neste banco
+            print(f"renomear item {antigo}→{novo}: {sql.split()[1]}: {str(e)[:100]}")
+    troca, filtro = _json.dumps({"peca": novo}), _json.dumps([{"peca": antigo}])
+    expr = "(SELECT jsonb_agg(CASE WHEN e->>'peca' = %s THEN e || %s::jsonb ELSE e END) FROM jsonb_array_elements({col}) e)"
+    for tabela, col in (("manutencao.ot", "pecas_previstas"), ("manutencao.planos", "pecas"), ("manutencao.biblioteca_preparacoes", "pecas")):
+        try:
+            await ajard_query(
+                f"UPDATE {tabela} SET {col} = {expr.format(col=col)} WHERE jsonb_typeof({col}) = 'array' AND {col} @> %s::jsonb",
+                (antigo, troca, filtro), fetch="none")
+        except Exception as e:
+            print(f"renomear item {antigo}→{novo} em {tabela}: {str(e)[:100]}")
 
 
 async def _validar_unidade(u):
@@ -3155,8 +3216,16 @@ async def proximo_codigo(dominio: str, prefixo: str = "", sep: str = ".", largur
         out["existe"] = bool(ex)
         out["codigo"] = verificar.strip().upper()
         return out
-    rows = await ajard_query(f"SELECT codigo FROM {tabela} WHERE upper(codigo) LIKE %s",
-                             (pref + "%",), fetch="all")
+    if dominio == "peca":
+        # (18/11/2026) o estruturado pode não ser o código principal do item — conta os dois para não repetir número
+        await _garantir_peca_cols()
+        rows = await ajard_query(
+            """SELECT codigo FROM manutencao.pecas WHERE upper(codigo) LIKE %s
+               UNION SELECT codigo_estruturado FROM manutencao.pecas WHERE upper(codigo_estruturado) LIKE %s""",
+            (pref + "%", pref + "%"), fetch="all")
+    else:
+        rows = await ajard_query(f"SELECT codigo FROM {tabela} WHERE upper(codigo) LIKE %s",
+                                 (pref + "%",), fetch="all")
     rx = _re.compile("^" + _re.escape(pref) + ("[.-]?" if pref else "") + r"(\d+)$", _re.I)
     maior, larg = 0, 0
     for r in rows or []:
@@ -3177,6 +3246,16 @@ async def criar_peca(request: Request, payload=Depends(verificar_manutencao)):
     d = await request.json()
     cod = (d.get("codigo") or "").strip()
     desc = (d.get("descricao") or "").strip()
+    # (18/11/2026) Codificação: `codigo` do corpo é o estruturado proposto pela família; o item nasce com o
+    # código PRINCIPAL que a pessoa marcou (estruturado, fabricante ou externo).
+    princ = (d.get("codigo_principal") or "estruturado").strip()
+    if princ not in _COD_CAMPO:
+        raise HTTPException(status_code=400, detail="Código principal inválido")
+    estrut = (d.get("codigo_estruturado") or "").strip() or cod
+    if princ != "estruturado":
+        cod = (d.get(_COD_CAMPO[princ]) or "").strip()
+        if not cod:
+            raise HTTPException(status_code=400, detail=f"Preencha o {_COD_NOME[princ]} — ele está marcado como código principal")
     if not cod or not desc:
         raise HTTPException(status_code=400, detail="Informe código e descrição")
     existe = await ajard_query("SELECT 1 FROM manutencao.pecas WHERE codigo=%s", (cod,), fetch="one")
@@ -3202,6 +3281,8 @@ async def criar_peca(request: Request, payload=Depends(verificar_manutencao)):
          _json.dumps(d.get("caracteristicas") or []),
          (d.get("observacoes") or "").strip() or None,
          (d.get("codigo_fabricante") or "").strip() or None))
+    await ajard_query("UPDATE manutencao.pecas SET codigo_principal=%s, codigo_estruturado=%s WHERE id=%s",
+                      (princ, estrut or None, row["id"]), fetch="none")
     return dict(row)
 
 
@@ -3210,21 +3291,50 @@ async def ficha_peca(peca_codigo: str, _auth=Depends(verificar_manutencao)):
     await _garantir_peca_cols()
     p = await ajard_query("SELECT * FROM manutencao.pecas WHERE codigo=%s", (peca_codigo,), fetch="one")
     if not p:
+        # (18/11/2026) etiqueta antiga ou código secundário: acha pelo estruturado, fabricante, externo ou por um
+        # código que o item já teve — só quando aponta para UM item
+        c = (peca_codigo or "").strip()
+        achados = await ajard_query(
+            """SELECT * FROM manutencao.pecas
+                WHERE ativo=true AND c.x <> '' AND (upper(codigo_estruturado)=c.x OR upper(codigo_fabricante)=c.x OR upper(codigo_externo)=c.x
+                       OR c.x = ANY(string_to_array(upper(coalesce(codigos_anteriores,'')), '|'))) LIMIT 2""".replace("c.x", "%s"),
+            (c.upper(),) * 5) if c else []
+        if achados and len(achados) == 1:
+            p = achados[0]
+    if not p:
         raise HTTPException(status_code=404, detail="Peça não encontrada")
     return dict(p)
 
 
 @router.patch("/manutencao/api/peca-ficha")
 async def editar_peca(request: Request, payload=Depends(verificar_manutencao)):
-    """Código de peça viaja no corpo (à prova de barra). Código não se edita."""
+    """Código de peça viaja no corpo (à prova de barra). (18/11/2026) O código do item é o que estiver marcado
+    como PRINCIPAL na Codificação: trocar a marcação, ou o valor do campo marcado, renomeia o item."""
     await _garantir_peca_cols()
     d = await request.json()
-    p = await ajard_query("SELECT id FROM manutencao.pecas WHERE codigo=%s", ((d.get("peca") or "").strip(),), fetch="one")
+    p = await ajard_query("SELECT * FROM manutencao.pecas WHERE codigo=%s", ((d.get("peca") or "").strip(),), fetch="one")
     if not p:
         raise HTTPException(status_code=404, detail="Peça não encontrada")
     import json as _json
+    # qual será o código do item depois desta gravação?
+    depois = {c: ((str(d[c]).strip() or None) if c in d and d[c] is not None else (None if c in d else p.get(c)))
+              for c in ("codigo_estruturado", "codigo_fabricante", "codigo_externo")}
+    princ = (d.get("codigo_principal") or p.get("codigo_principal") or "estruturado").strip()
+    if princ not in _COD_CAMPO:
+        raise HTTPException(status_code=400, detail="Código principal inválido")
+    novo_cod = p["codigo"]
+    if any(c in d for c in ("codigo_principal", "codigo_estruturado", "codigo_fabricante", "codigo_externo")):
+        novo_cod = depois[_COD_CAMPO[princ]]
+        if not novo_cod:
+            raise HTTPException(status_code=400, detail=f"Preencha o {_COD_NOME[princ]} — ele está marcado como código principal")
+        if novo_cod != p["codigo"]:
+            dup = await ajard_query("SELECT descricao FROM manutencao.pecas WHERE codigo=%s AND id<>%s", (novo_cod, p["id"]), fetch="one")
+            if dup:
+                raise HTTPException(status_code=409, detail=f"O código {novo_cod} já é de outro item ({dup['descricao'] or 'sem descrição'})")
     sets, params = [], []
-    for c in ["descricao", "unidade", "familia_codigo", "codigo_externo", "observacoes", "classe", "espec_compra", "codigo_fabricante"]:
+    if "codigo_principal" in d:
+        sets.append("codigo_principal=%s"); params.append(princ)
+    for c in ["descricao", "unidade", "familia_codigo", "codigo_externo", "observacoes", "classe", "espec_compra", "codigo_fabricante", "codigo_estruturado"]:
         if c in d:
             v = (str(d[c]).strip() or None) if d[c] is not None else None
             if c == "unidade":
@@ -3242,9 +3352,11 @@ async def editar_peca(request: Request, payload=Depends(verificar_manutencao)):
         raise HTTPException(status_code=400, detail="Nada a alterar")
     params.append(p["id"])
     await ajard_query(f"UPDATE manutencao.pecas SET {', '.join(sets)} WHERE id=%s", tuple(params), fetch="none")
+    if novo_cod != p["codigo"]:
+        await _renomear_peca(p["id"], p["codigo"], novo_cod)
     if "descricao" in d or "unidade" in d:
-        await _propagar_nome_peca((d.get("peca") or "").strip())
-    return {"ok": True}
+        await _propagar_nome_peca(novo_cod)
+    return {"ok": True, "codigo": novo_cod, "renomeado": novo_cod != p["codigo"]}
 
 
 async def _propagar_nome_peca(codigo: str):
@@ -5265,8 +5377,8 @@ async def lente_armazem(almox: str = None, busca: str = None, familia: str = Non
     if almox:
         conds.append(("a.codigo = %s", [almox], False))
     if busca:
-        conds.append(("(" + " OR ".join(f"{_sem_acento_sql(c)} ILIKE %s" for c in ("p.codigo", "p.descricao", "p.codigo_externo", "p.codigo_fabricante")) + ")",
-                      [f"%{_sem_acento(busca)}%"] * 4, True))
+        conds.append(("(" + " OR ".join(f"{_sem_acento_sql('p.' + c)} ILIKE %s" for c in _PECA_BUSCA) + ")",
+                      [f"%{_sem_acento(busca)}%"] * len(_PECA_BUSCA), True))
     if familia and familia.startswith("@"):
         conds.append((_classe_cond("p"), _classe_params(familia), True))
     elif familia:
@@ -5350,8 +5462,9 @@ async def listar_movimentacoes(almox: str = None, limit: int = 120, de: str = No
     if documento:
         cond.append("m.documento_numero ILIKE %s"); params.append(f"%{documento.strip()}%")
     if peca:
-        cond.append(f"({_sem_acento_sql('p.codigo')} ILIKE %s OR {_sem_acento_sql('p.descricao')} ILIKE %s)")
-        params += [f"%{_sem_acento(peca)}%"] * 2
+        await _garantir_peca_cols()   # (18/11/2026) o filtro de peça do extrato também acha por qualquer código
+        cond.append("(" + " OR ".join(f"{_sem_acento_sql('p.' + c)} ILIKE %s" for c in _PECA_BUSCA) + ")")
+        params += [f"%{_sem_acento(peca)}%"] * len(_PECA_BUSCA)
     if tipo:
         cond.append("m.tipo = %s"); params.append(tipo)
     if ot:
@@ -7087,6 +7200,7 @@ async def notas_ot_excel(mes: str = None, fornecedor: str = None, payload=Depend
 @router.get("/manutencao/api/etiquetas-itens")
 async def etiquetas_itens(codigos: str = None, familia: str = None, almox: str = None, request: Request = None, _auth=Depends(verificar_manutencao)):
     import json as _json
+    await _garantir_peca_cols()
     try:
         import segno as _segno   # QR gerado no servidor (sem CDN); requirements: segno>=1.6
     except Exception:
@@ -7125,7 +7239,7 @@ async def etiquetas_itens(codigos: str = None, familia: str = None, almox: str =
                    (SELECT f.nome FROM manutencao.familias f WHERE f.codigo = split_part({fe},'.',1) LIMIT 1) AS familia_nome,
                    (SELECT f.nome FROM manutencao.familias f WHERE f.codigo = {fe} AND {fe} LIKE '%%.%%' LIMIT 1) AS subfamilia_nome,
                    upper(COALESCE(NULLIF(p.classe,''),
-                         CASE WHEN p.codigo ~ '^[A-Za-z]\\.' THEN split_part(p.codigo,'.',1) ELSE NULL END,
+                         CASE WHEN COALESCE(NULLIF(p.codigo_estruturado,''), p.codigo) ~ '^[A-Za-z]\\.' THEN split_part(COALESCE(NULLIF(p.codigo_estruturado,''), p.codigo),'.',1) ELSE NULL END,
                          (SELECT f.classe FROM manutencao.familias f WHERE f.codigo = split_part({fe},'.',1) LIMIT 1))) AS classe,
                    COALESCE((SELECT SUM(e.quantidade) FROM manutencao.estoque e WHERE e.peca_id=p.id),0) AS existencia,
                    (SELECT string_agg(CASE WHEN upper(COALESCE(e.localizacao,'')) LIKE upper(a.codigo)||' %%' THEN e.localizacao

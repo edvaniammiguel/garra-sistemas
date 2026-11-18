@@ -1174,8 +1174,8 @@ async def compras_buscar_pecas(q: str = "", _auth=Depends(verificar_compras)):
              LEFT JOIN LATERAL (SELECT fornecedor_id, preco FROM manutencao.peca_fornecedores r
                                  WHERE r.peca_codigo=p.codigo AND r.ativo=true AND r.fornecedor_id IS NOT NULL
                                  ORDER BY r.preco NULLS LAST, r.atualizado_em DESC LIMIT 1) rf ON true
-            WHERE p.ativo=true AND (p.codigo ILIKE %s OR p.descricao ILIKE %s OR p.codigo_externo ILIKE %s)
-            ORDER BY p.codigo LIMIT 15""", (f"%{q}%", f"%{q}%", f"%{q}%")) or []
+            WHERE p.ativo=true AND (p.codigo ILIKE %s OR p.descricao ILIKE %s OR p.codigo_externo ILIKE %s OR p.codigo_fabricante ILIKE %s)
+            ORDER BY p.codigo LIMIT 15""", (f"%{q}%", f"%{q}%", f"%{q}%", f"%{q}%")) or []   # (18/11/2026) + código do fabricante
     return [{"id": str(r["id"]), "codigo": r["codigo"], "descricao": r["descricao"] or "", "unidade": r["unidade"] or "UN",
              "preco": float(r["ref_preco"]) if r.get("ref_preco") is not None else (float(r["custo_medio"]) if r.get("custo_medio") is not None else None),
              "ref_fornecedor_id": str(r["ref_fornecedor_id"]) if r.get("ref_fornecedor_id") else None,
