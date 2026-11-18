@@ -259,6 +259,7 @@ async function entrar(){
     await carregarFrota();
     urg('normal');
     verAba('novo');
+    api('/manutencao/api/ots-abertas-mobile').then(r => { EXECUTOR = !!r.executor; TEM_OTS = (r.ots || []).length > 0; abaOtsVisivel(); }).catch(() => {});   // (17/11/2026) login pela senha também confere a aba OTs
   } catch(e){ toast('❌ ' + e.message, 'erro'); }
 }
 async function carregarFrota(){
@@ -324,7 +325,10 @@ function novo(){
 }
 let AP_OT = null;
 let EXECUTOR = false;   // (02/11/2026) tem o módulo Executar OT? decide se a aba 🔧 OTs existe
-function abaOtsVisivel(){ const b = document.getElementById('aba-ots'); if (b) b.style.display = EXECUTOR ? '' : 'none'; }
+// (17/11/2026) A aba também existe para quem NÃO é executor mas tem OT em seu nome (responsável ou pedido dele):
+// o servidor já devolve só as dele. Antes a OT atribuída a um operador ficava escondida.
+let TEM_OTS = false;
+function abaOtsVisivel(){ const b = document.getElementById('aba-ots'); if (b) b.style.display = (EXECUTOR || TEM_OTS) ? '' : 'none'; }
 function verAba(a){
   document.getElementById('abas').style.display = 'flex';
   [['novo','tela-pedido'],['minhas','tela-minhas'],['ots','tela-ots']].forEach(([k, t]) => {
@@ -342,7 +346,7 @@ const PRIO = { urgente:['#B91C1C','🔴 Urgente'], alta:['#C2410C','🟠 Alta'],
 let OTS = [];
 async function carregarOts(){
   const el = document.getElementById('ots-lista');
-  try { const r = await api('/manutencao/api/ots-abertas-mobile'); OTS = r.ots || []; EXECUTOR = !!r.executor; abaOtsVisivel(); if (!EXECUTOR) { verAba('minhas'); return; } renderOts(); }
+  try { const r = await api('/manutencao/api/ots-abertas-mobile'); OTS = r.ots || []; EXECUTOR = !!r.executor; TEM_OTS = OTS.length > 0; abaOtsVisivel(); if (!EXECUTOR && !TEM_OTS) { verAba('minhas'); return; } renderOts(); }
   catch(e){ el.innerHTML = '❌ ' + e.message; }
 }
 function renderOts(){
@@ -646,7 +650,7 @@ async function apEnviar(){
 }
 (async () => {
   if (TOK){
-    try { await carregarFrota(); urg('normal'); verAba('novo'); api('/manutencao/api/ots-abertas-mobile').then(r => { EXECUTOR = !!r.executor; abaOtsVisivel(); }).catch(() => {}); return; }
+    try { await carregarFrota(); urg('normal'); verAba('novo'); api('/manutencao/api/ots-abertas-mobile').then(r => { EXECUTOR = !!r.executor; TEM_OTS = (r.ots || []).length > 0; abaOtsVisivel(); }).catch(() => {}); return; }
     catch(e){}
   }
   tela('tela-login');

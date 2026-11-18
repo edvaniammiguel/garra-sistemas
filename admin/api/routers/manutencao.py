@@ -6315,20 +6315,44 @@ async def ot_apontamento(ot_id: str, request: Request, payload=Depends(verificar
                VALUES (%s,%s,(now() AT TIME ZONE 'America/Sao_Paulo')::date,%s,%s,%s,'mobile',%s)""",
             (ot_id, uid, horas, (sug or {}).get("custo_hora"), relato[:200], uid))
         mo_id = mo["id"] if mo else None
-    h = await ajard_query_id(
-        """INSERT INTO manutencao.ot_historico (ot_id, status_de, status_para, observacao, usuario_id)
-           VALUES (%s,%s,%s,%s,%s)""",
-        (ot_id, o["status"], o["status"], _apont_texto(relato, horas, hor, concluido, horario=(hi, hf)), uid))
-    ap = await ajard_query_id(
-        """INSERT INTO manutencao.ot_apontamentos (ot_id, usuario_id, relato, horas, horimetro, concluido, mao_obra_id, historico_id,
-                                                    hora_inicio, hora_fim, sem_almoco)
-           VALUES (%s,%s,%s,%s,%s,%s,%s,%s, to_char(%s::time,'HH24:MI'), to_char(%s::time,'HH24:MI'), %s)""",   # (17/11/2026) 'HH:MM' chega ao banco como hora (core/db.py); a coluna é texto → to_char
-        (ot_id, uid, relato, horas, hor, concluido, mo_id, h["id"] if h else None, hi, hf, sem_alm))
+    # (17/11/2026) TRAVA: o registro grava 3 linhas (mão de obra, histórico, apontamento). Se uma das duas últimas
+    # falhar, desfaz o que esta tentativa já gravou — em 17/11 um erro no último passo deixou uma linha de mão de
+    # obra a cada nova tentativa do mecânico (OT-2026-0076 ficou com 10 × 4:20).
+    h = None
+    try:
+        h = await ajard_query_id(
+            """INSERT INTO manutencao.ot_historico (ot_id, status_de, status_para, observacao, usuario_id)
+               VALUES (%s,%s,%s,%s,%s)""",
+            (ot_id, o["status"], o["status"], _apont_texto(relato, horas, hor, concluido, horario=(hi, hf)), uid))
+        ap = await _apont_inserir(ot_id, uid, relato, horas, hor, concluido, mo_id, h["id"] if h else None, hi, hf, sem_alm)
+    except Exception:
+        await _apont_desfazer(mo_id, h["id"] if h else None)
+        raise
     if concluido:
         eqc = await ajard_query("SELECT e.codigo FROM manutencao.ot o JOIN operacional.equipamentos e ON e.id=o.equipamento_id WHERE o.id=%s", (ot_id,), fetch="one")
         await _notificar("ot_concluida", f"✔ {o['numero']} concluída pelo mecânico", f"{(eqc or {}).get('codigo') or ''} · {relato[:120]}",
                          f"/manutencao/mobile?ot={ot_id}", excluir=[uid])
     return {"ok": True, "numero": o["numero"], "id": str(ap["id"]) if ap else None}
+
+
+async def _apont_desfazer(mo_id, hist_id):
+    """(17/11/2026) Apaga as linhas que uma tentativa de registro falha deixou. Nunca levanta erro: quem chama
+    já vai devolver a falha original."""
+    for sql, rid in (("DELETE FROM manutencao.ot_mao_obra WHERE id=%s", mo_id),
+                     ("DELETE FROM manutencao.ot_historico WHERE id=%s", hist_id)):
+        if rid:
+            try:
+                await ajard_query(sql, (rid,), fetch="none")
+            except Exception as e:
+                print(f"[Apontamento] não desfez {rid}: {e}")
+
+
+async def _apont_inserir(ot_id, uid, relato, horas, hor, concluido, mo_id, hist_id, hi, hf, sem_alm):
+    return await ajard_query_id(
+        """INSERT INTO manutencao.ot_apontamentos (ot_id, usuario_id, relato, horas, horimetro, concluido, mao_obra_id, historico_id,
+                                                    hora_inicio, hora_fim, sem_almoco)
+           VALUES (%s,%s,%s,%s,%s,%s,%s,%s, to_char(%s::time,'HH24:MI'), to_char(%s::time,'HH24:MI'), %s)""",   # (17/11/2026) 'HH:MM' chega ao banco como hora (core/db.py); a coluna é texto → to_char
+        (ot_id, uid, relato, horas, hor, concluido, mo_id, hist_id, hi, hf, sem_alm))
 
 
 @router.get("/manutencao/api/ots/{ot_id}/apontamentos")
@@ -6372,6 +6396,7 @@ async def ot_apontamento_editar(ot_id: str, ap_id: str, request: Request, payloa
     hi, hf, sem_alm = _apont_horario(d)
     o, uid, ap = await _apont_do_usuario(ap_id, ot_id, payload)
     mo_id = ap["mao_obra_id"]
+    mo_novo = None   # (17/11/2026) mão de obra criada NESTA edição — desfeita se o passo final falhar
     if horas:
         if mo_id:
             await ajard_query("UPDATE manutencao.ot_mao_obra SET horas=%s, observacao=%s WHERE id=%s",
@@ -6385,17 +6410,21 @@ async def ot_apontamento_editar(ot_id: str, ap_id: str, request: Request, payloa
                 """INSERT INTO manutencao.ot_mao_obra (ot_id, usuario_id, data, horas, custo_hora, observacao, origem, criado_por)
                    VALUES (%s,%s,%s,%s,%s,%s,'mobile',%s)""",
                 (ot_id, ap["usuario_id"], ap["criado_em"], horas, (sug or {}).get("custo_hora"), relato[:200], uid))
-            mo_id = mo["id"] if mo else None
+            mo_id = mo_novo = mo["id"] if mo else None
     elif mo_id:
         await ajard_query("UPDATE manutencao.ot_mao_obra SET ativo=false WHERE id=%s", (mo_id,), fetch="none")
         mo_id = None
     if ap["historico_id"]:
         await ajard_query("UPDATE manutencao.ot_historico SET observacao=%s WHERE id=%s",
                           (_apont_texto(relato, horas, hor, concluido, editado=True, horario=(hi, hf)), ap["historico_id"]), fetch="none")
-    await ajard_query(
-        """UPDATE manutencao.ot_apontamentos SET relato=%s, horas=%s, horimetro=%s, concluido=%s,
-                  mao_obra_id=%s, hora_inicio=to_char(%s::time,'HH24:MI'), hora_fim=to_char(%s::time,'HH24:MI'), sem_almoco=%s, atualizado_em=now() WHERE id=%s""",
-        (relato, horas, hor, concluido, mo_id, hi, hf, sem_alm, ap_id), fetch="none")
+    try:
+        await ajard_query(
+            """UPDATE manutencao.ot_apontamentos SET relato=%s, horas=%s, horimetro=%s, concluido=%s,
+                      mao_obra_id=%s, hora_inicio=to_char(%s::time,'HH24:MI'), hora_fim=to_char(%s::time,'HH24:MI'), sem_almoco=%s, atualizado_em=now() WHERE id=%s""",
+            (relato, horas, hor, concluido, mo_id, hi, hf, sem_alm, ap_id), fetch="none")
+    except Exception:
+        await _apont_desfazer(mo_novo, None)
+        raise
     return {"ok": True, "id": ap_id}
 
 
