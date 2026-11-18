@@ -7699,12 +7699,12 @@ async function abrirPeca(codigo){
     _pcFicha = await mntFetch('/manutencao/api/peca-ficha?peca_codigo='+encodeURIComponent(codigo));
     _pecaAberta = _pcFicha.codigo || codigo;   // (18/11/2026) achado por etiqueta antiga / código secundário → vale o principal
     if (typeof _pcFicha.caracteristicas === 'string') { try { _pcFicha.caracteristicas = JSON.parse(_pcFicha.caracteristicas); } catch(x){ _pcFicha.caracteristicas = []; } }
-    pecaAba('ident');
+    pecaAba('carac');
   } catch(e){ mostrarToast('❌ '+e.message,'warn'); }
 }
 async function pecaAba(aba){
   const p = _pcFicha; if (!p) return;
-  const ABAS = [['ident','Identificação'],['carac','Características'],['arm','Estoques'],['subst','Substitutos'],['cod','Codificação'],['obs','Observações']];   // (18/11/2026) Codificação em aba própria, antes de Observações
+  const ABAS = [['carac','Características'],['arm','Estoques'],['subst','Substitutos'],['ident','Identificação'],['obs','Observações']];   // (18/11/2026) Identificação vai para o fim, antes de Observações; a ficha abre em Características
   document.querySelector('#eq-ficha .modal').classList.remove('larga');
   document.getElementById('eq-ficha-corpo').innerHTML =
     fichaTopo({icone:'🔩', titulo:'Ficha do Item', codigo:p.codigo, descricao:p.descricao, id:p.codigo, fn:'abrirPeca', tipo:'peca',
@@ -7726,6 +7726,15 @@ async function pecaAba(aba){
       + fld('Família de materiais','<select id="pc-fam">'+famOpts+'</select>')
       + fld('Unidade','<input id="pc-un" value="'+_esc(p.unidade||'UN')+'" style="text-transform:uppercase">')
       + fld('Custo médio (R$)','<input id="pc-custo" type="number" step="0.01" value="'+(p.custo_medio ?? '')+'">')
+      // (18/11/2026) CODIFICAÇÃO (ManWinWin), dentro da Identificação: três códigos; o marcado é o código do item
+      + '</div><div class="dsec">Codificação — o código marcado aparece na coluna Código, nas OTs, compras e etiquetas</div>'
+      + '<div id="pc-codif" style="display:grid;grid-template-columns:150px 1fr auto;gap:6px 10px;align-items:center;max-width:620px">'
+      + [['estruturado','Cód. Estruturado','pc-est',p.codigo_estruturado,'da família — ex.: G.AU.020.044'],['fabricante','Cód. Fabricante','pc-fab',p.codigo_fabricante,'part number, como está na peça'],['externo','Cód. Externo','pc-ext',p.codigo_externo,'código do fornecedor / antigo']].map(([k,rot,id,val,ph]) =>
+          '<label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer"><input type="radio" name="pc-princ" value="'+k+'"'+((p.codigo_principal||'estruturado')===k?' checked':'')+'> '+rot+':</label>'
+          + '<input id="'+id+'" value="'+_esc(val||'')+'" placeholder="'+ph+'" style="font-weight:'+((p.codigo_principal||'estruturado')===k?'800':'400')+'">'
+          + (k==='estruturado' ? '<button class="btn" type="button" title="Propor o próximo código da família do item" onclick="pecaGerarEstrut()">⚙ gerar</button>' : '<span></span>')).join('')
+      + '</div><div class="muted" style="font-size:10.5px;margin-top:4px">A busca encontra o item por qualquer um dos três códigos e pela descrição. Trocar o código principal renomeia o item em tudo; as etiquetas já impressas continuam abrindo a ficha.'
+      + (p.codigos_anteriores ? ' Códigos anteriores: <b>'+_esc(String(p.codigos_anteriores).split('|').join(' · '))+'</b>.' : '') + '</div><div>'
       + '</div><div style="display:flex;justify-content:flex-end;margin-top:10px"><button class="btn p" onclick="pecaSalvarIdent()">💾 Salvar</button></div>';
   }
   if (aba === 'carac'){
@@ -7779,18 +7788,6 @@ async function pecaAba(aba){
       }).catch(()=>{});
     } catch(e){ c.innerHTML = '<span class="muted">⚠ '+_esc(e.message)+'</span>'; }
   }
-  if (aba === 'cod'){
-      // (18/11/2026) CODIFICAÇÃO (ManWinWin): três códigos; o marcado é o código do item em todo o sistema
-    c.innerHTML = '<div class="dsec">Codificação — o código marcado aparece na coluna Código, nas OTs, compras e etiquetas</div>'
-      + '<div id="pc-codif" style="display:grid;grid-template-columns:150px 1fr auto;gap:6px 10px;align-items:center;max-width:620px">'
-      + [['estruturado','Cód. Estruturado','pc-est',p.codigo_estruturado,'da família — ex.: G.AU.020.044'],['fabricante','Cód. Fabricante','pc-fab',p.codigo_fabricante,'part number, como está na peça'],['externo','Cód. Externo','pc-ext',p.codigo_externo,'código do fornecedor / antigo']].map(([k,rot,id,val,ph]) =>
-          '<label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer"><input type="radio" name="pc-princ" value="'+k+'"'+((p.codigo_principal||'estruturado')===k?' checked':'')+'> '+rot+':</label>'
-          + '<input id="'+id+'" value="'+_esc(val||'')+'" placeholder="'+ph+'" style="font-weight:'+((p.codigo_principal||'estruturado')===k?'800':'400')+'">'
-          + (k==='estruturado' ? '<button class="btn" type="button" title="Propor o próximo código da família do item" onclick="pecaGerarEstrut()">⚙ gerar</button>' : '<span></span>')).join('')
-      + '</div><div class="muted" style="font-size:10.5px;margin-top:4px">A busca encontra o item por qualquer um dos três códigos e pela descrição. Trocar o código principal renomeia o item em tudo; as etiquetas já impressas continuam abrindo a ficha.'
-      + (p.codigos_anteriores ? ' Códigos anteriores: <b>'+_esc(String(p.codigos_anteriores).split('|').join(' · '))+'</b>.' : '') + '</div>'
-      + '<div style="display:flex;justify-content:flex-end;margin-top:10px"><button class="btn p" onclick="pecaSalvarCod()">💾 Salvar</button></div>';
-  }
   if (aba === 'obs'){
     c.innerHTML = '<div class="dsec">Observações</div>'
       + '<textarea id="pc-obs" rows="6" style="width:100%">'+_esc(p.observacoes||'')+'</textarea>'
@@ -7811,22 +7808,20 @@ async function _pecaPatch(body, aba){
 }
 function pecaSalvarIdent(){
   const g = id => document.getElementById(id).value;
-  _pecaPatch({ descricao: g('pc-desc'), familia_codigo: g('pc-fam'), unidade: g('pc-un'), custo_medio: g('pc-custo') }, 'ident');
-}
-// (18/11/2026) Codificação: o código marcado vira o código do item
-function pecaSalvarCod(){
-  const g = id => document.getElementById(id).value;
+  // (18/11/2026) Codificação: o código marcado vira o código do item
   const princ = (document.querySelector('input[name="pc-princ"]:checked')||{}).value || 'estruturado';
   const cods = { estruturado: g('pc-est').trim(), fabricante: g('pc-fab').trim(), externo: g('pc-ext').trim() };
   const nomes = { estruturado: 'Cód. Estruturado', fabricante: 'Cód. Fabricante', externo: 'Cód. Externo' };
   if (!cods[princ]) { mostrarToast('Preencha o '+nomes[princ]+' — ele está marcado como código principal','warn'); return; }
   if (cods[princ] !== _pecaAberta && !confirm('O item '+_pecaAberta+' passa a aparecer como '+cods[princ]+' em todo o sistema (catálogo, estoque, OTs, compras e etiquetas novas).\n\nAs etiquetas já impressas continuam abrindo a ficha. Confirmar?')) return;
-  _pecaPatch({ codigo_externo: cods.externo, codigo_fabricante: cods.fabricante, codigo_estruturado: cods.estruturado, codigo_principal: princ }, 'cod');
+  _pecaPatch({ descricao: g('pc-desc'), familia_codigo: g('pc-fam'), unidade: g('pc-un'),
+    custo_medio: g('pc-custo'), codigo_externo: cods.externo, codigo_fabricante: cods.fabricante,
+    codigo_estruturado: cods.estruturado, codigo_principal: princ }, 'ident');
 }
 // propõe o próximo código estruturado da família escolhida na ficha (mesma regra do Novo Item)
 async function pecaGerarEstrut(){
-  const fam = (_pcFicha && _pcFicha.familia_codigo) || '', cl = (_pcFicha && _pcFicha.classe) || '';
-  if (!fam) { mostrarToast('Defina a família do item na aba Identificação para gerar o código estruturado','warn'); return; }
+  const fam = document.getElementById('pc-fam').value, cl = (_pcFicha && _pcFicha.classe) || '';
+  if (!fam) { mostrarToast('Escolha a família para gerar o código estruturado','warn'); return; }
   try {
     const pref = (cl ? cl + '.' : '') + fam;
     const r = await mwProximoCodigo('peca', pref, '.', 3);
