@@ -17,6 +17,7 @@ Acesso: módulo 'rh' (completo) · módulo 'rh_nr' (só ver situação de NRs, s
 import base64 as _b64
 import hashlib as _hl
 import io
+import json
 import os
 import re
 import uuid as _uuid
@@ -211,6 +212,11 @@ async def garantir_rh():
     except Exception as e:   # tabela antiga ainda não existe (banco novo) — nada a migrar
         print("RH: migração função/HH ignorada:", str(e)[:120])
     await _garantir_documentos()
+    await _garantir_familia()
+    try:   # (18/11/2026) treinamentos concluídos sem vencimento em NR que TEM reciclagem → preenche
+        await _recalcular_vencimentos()
+    except Exception as e:
+        print("RH: recálculo de vencimentos ignorado:", str(e)[:120])
     _RH_OK = True
 
 
@@ -405,7 +411,7 @@ async def colaboradores_listar(situacao: str = "", cargo: str = "", payload=Depe
 
 _CAMPOS_DADOS = ("nome", "cpf", "matricula_mais", "telefone", "data_nascimento", "data_admissao",
                  "data_desligamento", "situacao", "vinculo", "usuario_id", "observacao", "funcao_codigo", "custo_hh",
-                 "apelido", "cargo_codigo")
+                 "apelido", "cargo_codigo", "presente_pref", "presente_obs")   # (18/11/2026) presente de aniversário
 
 
 async def _validar_dados(d, cid=None):
@@ -490,6 +496,7 @@ async def colaborador_ficha(cid: str, payload=Depends(verificar_rh_ver)):
             "cpf": c["cpf"], "matricula_mais": c["matricula_mais"], "telefone": c["telefone"],
             "data_nascimento": iso(c["data_nascimento"]), "data_admissao": iso(c["data_admissao"]),
             "data_desligamento": iso(c["data_desligamento"]), "observacao": c["observacao"],
+            "presente_pref": dict(c).get("presente_pref"), "presente_obs": dict(c).get("presente_obs"),
             "mais_sync_em": c["mais_sync_em"].isoformat() if c["mais_sync_em"] else None,
             "usuario": ({"id": str(u["id"]), "login": u["login"], "nome": u["nome"], "perfil": u["perfil"], "ativo": u["ativo"]} if u else None),
             "custo_hh_proprio": _f(c["custo_hh"]), "custo_hh_funcao": _f(f["custo_hh"]) if f else None,
@@ -613,10 +620,12 @@ async def cursos_salvar(request: Request, payload=Depends(verificar_rh)):
     if dup:
         raise HTTPException(status_code=409, detail=f"O código {cod} já foi usado por um treinamento excluído — escolha outro")
     if d.get("id"):
+        antes = await ajard_query("SELECT validade_meses FROM rh.cursos WHERE id=%s", (d["id"],), fetch="one")
         await ajard_query("""UPDATE rh.cursos SET codigo=%s, nome=%s, tipo=%s, validade_meses=%s, carga_horaria=%s,
                                     ativo=COALESCE(%s, ativo) WHERE id=%s""",
                           (cod, nome, tipo, val, ch, d.get("ativo"), d["id"]), fetch="none")
-        return {"ok": True, "id": d["id"]}
+        n = await _recalcular_vencimentos(d["id"], (antes or {}).get("validade_meses"), val)
+        return {"ok": True, "id": d["id"], "recalculados": n}
     r = await ajard_query("""INSERT INTO rh.cursos (codigo, nome, tipo, validade_meses, carga_horaria, ordem)
                              VALUES (%s,%s,%s,%s,%s,999) RETURNING id""", (cod, nome, tipo, val, ch), fetch="one")
     return {"ok": True, "id": str(r["id"])}
@@ -761,6 +770,31 @@ async def _trein_payload(d, parcial=False):
     return v
 
 
+async def _recalcular_vencimentos(curso_id=None, meses_antes=None, meses_agora=None):
+    """(18/11/2026) Mudou a reciclagem de uma NR → os treinamentos concluídos dela acompanham.
+    Só mexe no que o sistema calculou: vencimento vazio, ou igual a conclusão + reciclagem antiga.
+    Data digitada à mão (diferente do cálculo) fica como está. Sem curso_id = só preenche os vazios de todas as NRs."""
+    n = 0
+    if curso_id and meses_antes and meses_antes != meses_agora:
+        r = await ajard_query(
+            """UPDATE rh.treinamentos t
+                  SET validade_ate = CASE WHEN %s::int IS NULL THEN NULL
+                                          ELSE (t.data_conclusao + make_interval(months => %s::int))::date END,
+                      atualizado_em = now()
+                WHERE t.curso_id = %s AND t.ativo AND t.situacao = 'concluido' AND t.data_conclusao IS NOT NULL
+                  AND t.validade_ate = (t.data_conclusao + make_interval(months => %s::int))::date
+            RETURNING t.id""", (meses_agora, meses_agora, curso_id, meses_antes)) or []
+        n += len(r)
+    r = await ajard_query(
+        """UPDATE rh.treinamentos t
+              SET validade_ate = (t.data_conclusao + make_interval(months => k.validade_meses))::date, atualizado_em = now()
+             FROM rh.cursos k
+            WHERE k.id = t.curso_id AND k.validade_meses IS NOT NULL AND (%s::uuid IS NULL OR k.id = %s::uuid)
+              AND t.ativo AND t.situacao = 'concluido' AND t.data_conclusao IS NOT NULL AND t.validade_ate IS NULL
+        RETURNING t.id""", (curso_id, curso_id)) or []
+    return n + len(r)
+
+
 async def _vencimento(v, curso_id):
     """Vencimento = conclusão + validade da NR (se não foi digitado à mão)."""
     if v.get("situacao") == "concluido" and v.get("data_conclusao") and not v.get("validade_ate"):
@@ -777,6 +811,9 @@ async def treinamento_criar(cid: str, request: Request, payload=Depends(verifica
     await _colab(cid)
     v = await _trein_payload(await request.json())
     await _vencimento(v, v["curso_id"])
+    if v.get("carga_horaria") is None:   # (18/11/2026) formulário curto: carga horária vem do catálogo
+        kc = await ajard_query("SELECT carga_horaria FROM rh.cursos WHERE id=%s", (v["curso_id"],), fetch="one")
+        v["carga_horaria"] = (kc or {}).get("carga_horaria")
     cols = ["colaborador_id"] + list(v.keys()) + ["criado_por"]
     vals = [cid] + list(v.values()) + [payload.get("sub")]
     r = await ajard_query(f"INSERT INTO rh.treinamentos ({', '.join(cols)}) VALUES ({', '.join(['%s'] * len(cols))}) RETURNING id",
@@ -2046,3 +2083,179 @@ async def certificados_aplicar(request: Request, payload=Depends(verificar_rh)):
     for aid in ign:
         await ajard_query("UPDATE rh.documento_arquivos SET nr_ignorar=true WHERE id=%s", (aid,), fetch="none")
     return {"ok": True, "registrados": n, "ignorados": len(ign), "erros": erros}
+
+
+# ════════════════════════════════════════════════════════
+# ANIVERSARIANTES E DEPENDENTES (18/11/2026)
+# Só RH completo (verificar_rh) — são dados pessoais do colaborador e de familiares.
+#  • Colaborador: data de nascimento (já existia) + preferência de presente (a empresa presenteia).
+#  • Dependente: o MÍNIMO para lembrar a data e criar afinidade — nome, parentesco e nascimento.
+#    Sem CPF nem documento: não é cadastro para folha/IR (isso continua no MAIS/contabilidade).
+#  • Opções de presente: lista editável em RH › Parametrizar (rh.config 'presentes_opcoes').
+# ════════════════════════════════════════════════════════
+_PARENTESCOS = ("conjuge", "filho", "enteado", "pai_mae", "outro")
+_PRESENTES_PADRAO = ["Cerveja", "Suco"]
+
+
+async def _garantir_familia():
+    await ajard_query("ALTER TABLE rh.colaboradores ADD COLUMN IF NOT EXISTS presente_pref TEXT", fetch="none")
+    await ajard_query("ALTER TABLE rh.colaboradores ADD COLUMN IF NOT EXISTS presente_obs TEXT", fetch="none")
+    await ajard_query("""
+        CREATE TABLE IF NOT EXISTS rh.dependentes (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            colaborador_id UUID NOT NULL,
+            nome TEXT NOT NULL,
+            parentesco TEXT NOT NULL DEFAULT 'filho',
+            data_nascimento DATE,
+            observacao TEXT,
+            ativo BOOLEAN NOT NULL DEFAULT true,
+            criado_por TEXT, criado_em TIMESTAMPTZ DEFAULT now(), atualizado_em TIMESTAMPTZ DEFAULT now())""", fetch="none")
+    await ajard_query("CREATE INDEX IF NOT EXISTS ix_rh_dep_colab ON rh.dependentes (colaborador_id) WHERE ativo", fetch="none")
+
+
+def _proximo_aniversario(nasc, hoje):
+    """(data do próximo aniversário, dias que faltam, idade que completa). 29/02 comemora em 28/02 nos anos comuns."""
+    import datetime as _dt
+
+    def no_ano(ano):
+        try:
+            return nasc.replace(year=ano)
+        except ValueError:
+            return _dt.date(ano, 2, 28)
+    prox = no_ano(hoje.year)
+    if prox < hoje:
+        prox = no_ano(hoje.year + 1)
+    return prox, (prox - hoje).days, prox.year - nasc.year
+
+
+async def _presentes_opcoes():
+    r = await ajard_query("SELECT valor FROM rh.config WHERE chave='presentes_opcoes'", fetch="one")
+    if r and r["valor"]:
+        try:
+            lst = [str(x).strip() for x in json.loads(r["valor"]) if str(x).strip()]
+            if lst:
+                return lst
+        except Exception:
+            pass
+    return list(_PRESENTES_PADRAO)
+
+
+@router.get("/rh/api/presentes")
+async def presentes_listar(payload=Depends(verificar_rh)):
+    await garantir_rh()
+    return {"opcoes": await _presentes_opcoes()}
+
+
+@router.put("/rh/api/presentes")
+async def presentes_salvar(request: Request, payload=Depends(verificar_rh)):
+    await garantir_rh()
+    d = await request.json()
+    vistos, lst = set(), []
+    for x in (d.get("opcoes") or []):
+        t = str(x or "").strip()[:40]
+        if t and t.lower() not in vistos:
+            vistos.add(t.lower()); lst.append(t)
+    if not lst:
+        raise HTTPException(status_code=422, detail="Deixe pelo menos uma opção de presente")
+    await ajard_query("""INSERT INTO rh.config (chave, valor, atualizado_por, atualizado_em) VALUES ('presentes_opcoes',%s,%s,now())
+                         ON CONFLICT (chave) DO UPDATE SET valor=EXCLUDED.valor, atualizado_por=EXCLUDED.atualizado_por, atualizado_em=now()""",
+                      (json.dumps(lst, ensure_ascii=False), payload.get("sub")), fetch="none")
+    return {"ok": True, "opcoes": lst}
+
+
+def _dep_payload(d, parcial=False):
+    v = {}
+    if "nome" in d or not parcial:
+        v["nome"] = (d.get("nome") or "").strip()[:120]
+        if not v["nome"]:
+            raise HTTPException(status_code=422, detail="Informe o nome do dependente")
+    if "parentesco" in d or not parcial:
+        p = (d.get("parentesco") or "filho").strip()
+        if p not in _PARENTESCOS:
+            raise HTTPException(status_code=422, detail="Parentesco inválido")
+        v["parentesco"] = p
+    if "data_nascimento" in d or not parcial:
+        v["data_nascimento"] = _data(d.get("data_nascimento"))
+        if v["data_nascimento"] and v["data_nascimento"] > _hoje():
+            raise HTTPException(status_code=422, detail="Data de nascimento no futuro")
+    if "observacao" in d or not parcial:
+        v["observacao"] = (str(d.get("observacao") or "")).strip()[:200] or None
+    return v
+
+
+def _dep_out(r, hoje):
+    o = {"id": str(r["id"]), "nome": r["nome"], "parentesco": r["parentesco"], "observacao": r["observacao"],
+         "data_nascimento": r["data_nascimento"].isoformat() if r["data_nascimento"] else None}
+    if r["data_nascimento"]:
+        prox, dias, idade = _proximo_aniversario(r["data_nascimento"], hoje)
+        o.update({"proximo": prox.isoformat(), "dias": dias, "idade": idade})
+    return o
+
+
+@router.get("/rh/api/colaboradores/{cid}/dependentes")
+async def dependentes_listar(cid: str, payload=Depends(verificar_rh)):
+    await garantir_rh()
+    await _colab(cid)
+    rows = await ajard_query("SELECT * FROM rh.dependentes WHERE colaborador_id=%s AND ativo ORDER BY data_nascimento NULLS LAST, nome", (cid,)) or []
+    hoje = _hoje()
+    return {"itens": [_dep_out(r, hoje) for r in rows]}
+
+
+@router.post("/rh/api/colaboradores/{cid}/dependentes")
+async def dependente_criar(cid: str, request: Request, payload=Depends(verificar_rh)):
+    await garantir_rh()
+    await _colab(cid)
+    v = _dep_payload(await request.json())
+    r = await ajard_query("""INSERT INTO rh.dependentes (colaborador_id, nome, parentesco, data_nascimento, observacao, criado_por)
+                             VALUES (%s,%s,%s,%s,%s,%s) RETURNING id""",
+                          (cid, v["nome"], v["parentesco"], v["data_nascimento"], v["observacao"], payload.get("sub")), fetch="one")
+    return {"ok": True, "id": str(r["id"])}
+
+
+@router.patch("/rh/api/dependentes/{did}")
+async def dependente_editar(did: str, request: Request, payload=Depends(verificar_rh)):
+    await garantir_rh()
+    if not await ajard_query("SELECT 1 FROM rh.dependentes WHERE id=%s AND ativo", (did,), fetch="one"):
+        raise HTTPException(status_code=404, detail="Dependente não encontrado")
+    v = _dep_payload(await request.json(), parcial=True)
+    if v:
+        sets = [f"{k}=%s" for k in v] + ["atualizado_em=now()"]
+        await ajard_query(f"UPDATE rh.dependentes SET {', '.join(sets)} WHERE id=%s", tuple(v.values()) + (did,), fetch="none")
+    return {"ok": True}
+
+
+@router.delete("/rh/api/dependentes/{did}")
+async def dependente_excluir(did: str, payload=Depends(verificar_rh)):
+    await garantir_rh()
+    await ajard_query("UPDATE rh.dependentes SET ativo=false, atualizado_em=now() WHERE id=%s", (did,), fetch="none")
+    return {"ok": True}
+
+
+@router.get("/rh/api/aniversariantes")
+async def aniversariantes(payload=Depends(verificar_rh)):
+    """Colaboradores (ativos e afastados) e seus dependentes, ordenados pelos dias que faltam para o aniversário.
+    `sem_data` = colaboradores sem nascimento na ficha (para completar o cadastro)."""
+    await garantir_rh()
+    hoje = _hoje()
+    cols = await ajard_query("""SELECT c.id, c.nome, c.apelido, c.data_nascimento, c.presente_pref, c.presente_obs, c.situacao, g.nome AS cargo
+                                  FROM rh.colaboradores c LEFT JOIN rh.cargos g ON g.codigo = c.cargo_codigo
+                                 WHERE c.ativo AND c.situacao <> 'desligado' ORDER BY c.nome""") or []
+    deps = await ajard_query("""SELECT d.id, d.nome, d.parentesco, d.data_nascimento, d.observacao, c.id AS colaborador_id, c.nome AS colaborador, c.apelido
+                                  FROM rh.dependentes d JOIN rh.colaboradores c ON c.id = d.colaborador_id
+                                 WHERE d.ativo AND c.ativo AND c.situacao <> 'desligado' AND d.data_nascimento IS NOT NULL""") or []
+    itens, sem_data = [], []
+    for c in cols:
+        if not c["data_nascimento"]:
+            sem_data.append({"id": str(c["id"]), "nome": c["nome"]})
+            continue
+        prox, dias, idade = _proximo_aniversario(c["data_nascimento"], hoje)
+        itens.append({"tipo": "colaborador", "colaborador_id": str(c["id"]), "nome": c["nome"], "apelido": c["apelido"], "cargo": c["cargo"],
+                      "nascimento": c["data_nascimento"].isoformat(), "proximo": prox.isoformat(), "dias": dias, "idade": idade,
+                      "presente_pref": c["presente_pref"], "presente_obs": c["presente_obs"]})
+    for d in deps:
+        prox, dias, idade = _proximo_aniversario(d["data_nascimento"], hoje)
+        itens.append({"tipo": "dependente", "colaborador_id": str(d["colaborador_id"]), "nome": d["nome"], "parentesco": d["parentesco"],
+                      "colaborador": d["apelido"] or d["colaborador"], "observacao": d["observacao"],
+                      "nascimento": d["data_nascimento"].isoformat(), "proximo": prox.isoformat(), "dias": dias, "idade": idade})
+    itens.sort(key=lambda x: (x["dias"], 0 if x["tipo"] == "colaborador" else 1, x["nome"]))
+    return {"hoje": hoje.isoformat(), "itens": itens, "sem_data": sem_data, "presentes": await _presentes_opcoes()}

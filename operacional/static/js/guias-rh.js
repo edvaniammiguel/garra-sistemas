@@ -3,7 +3,8 @@
  *   nrs        — controle de NRs: catálogo e exigência por cargo, registrar treinamento, painel geral, NRs a partir dos certificados
  *   documentos — aba Documentos: categorias, anexar, sigilosos com biometria, importação da pasta do servidor (.zip)
  * Modo demonstração: mostra a tela real, não grava (alvos bloqueados ao clique; janelas fechadas ao sair).
- * Abre pelo botão ▶ Como fazer (cabeçalho) ou por /rh?guia=fichas | nrs | documentos.
+ *   aniversariantes — (18/11/2026) tela Aniversariantes, aba Família (presente preferido, dependentes) e opções de presente
+ * Abre pelo botão ▶ Como fazer (cabeçalho) ou por /rh?guia=fichas | nrs | documentos | aniversariantes.
  * Passos `soRh` só aparecem para quem tem RH — Completo; quem só vê NRs (rh_nr) tem apenas o roteiro `nrs`, reduzido. */
 (function () {
   const dorme = (ms) => new Promise(r => setTimeout(r, ms));
@@ -76,7 +77,7 @@
           texto: 'Na ficha, aba <b>NRs e treinamentos</b>. Em cima, a situação de cada NR: <b>válida</b>, <b>vence em até 30 dias</b>, <b>vencida</b>, <b>falta</b> ou <b>em andamento</b>, com a data e onde foi feita. Embaixo, o histórico de tudo que a pessoa já fez.' },
         { soRh: true, alvo: modalEl, antes: async () => { await fichaDemo('nrs'); treinForm(); await dorme(500); },
           titulo: 'Registrar um treinamento',
-          texto: 'Escolha a <b>NR</b>, a situação (concluído, em andamento, inscrito), <b>onde foi feito</b> — presencial ou EAD, e em qual plataforma — e a <b>data de conclusão</b>. O vencimento é calculado sozinho pela reciclagem da NR. Anexe o <b>certificado</b> (PDF ou foto) no mesmo lugar.' },
+          texto: 'São só três campos: a <b>NR</b>, a <b>data de conclusão</b> e o <b>certificado</b> (PDF ou foto). O <b>vencimento</b> aparece calculado pela reciclagem da NR e a carga horária vem do catálogo (RH › Parametrizar). O certificado anexado aqui já aparece na aba Documentos — não precisa subir de novo. Em <b>Mais detalhes</b> ficam os opcionais: situação (em andamento, inscrito), onde foi feito, plataforma EAD, custo e observação.' },
         { alvo: '#p-kpis', antes: () => irTela('pnr'),
           titulo: 'Painel de NRs',
           texto: 'O resumo de todos: quantas <b>vencidas</b>, quantas <b>faltam</b> (exigidas pelo cargo e não feitas), quantas <b>vencem em 30 dias</b>, em andamento e válidas. Filtre por cargo e situação.' },
@@ -132,6 +133,32 @@
           texto: 'Quanto os documentos do RH ocupam (o plano gratuito é de <b>1 GB</b>, dividido com as fotos do sistema), a exigência de <b>biometria</b> (só o Administrador desliga) e o botão para <b>cadastrar a biometria deste computador</b>.' },
         { titulo: 'Pronto! ✅',
           texto: 'Rotina: <b>ficha › Documentos › Anexar documento</b> no dia a dia; <b>Importar documentos (.zip)</b> para trazer as pastas antigas aos poucos, começando por ASO, certificados e EPI. Vencimentos aparecem no Painel de NRs. Repita este tour pelo ▶ Como fazer.' },
+      ],
+    },
+    // (18/11/2026) Aniversariantes, presente preferido e dependentes — só RH completo
+    aniversariantes: {
+      titulo: 'Aniversariantes e família', pop: 'RH — Aniversariantes', soRh: true,
+      passos: [
+        { titulo: 'Ninguém fica sem o parabéns 🎂',
+          texto: '<b>Demonstração dos aniversariantes.</b><br><br>Você vai ver quem faz aniversário e em quantos dias, o <b>presente preferido</b> de cada colaborador e os <b>lembretes dos dependentes</b>. Tudo aqui é visível só para quem tem <b>RH completo</b>.',
+          botao: 'Começar demonstração' },
+        { alvo: '#an-kpis', antes: () => irTela('aniv'),
+          titulo: 'O resumo',
+          texto: 'Quantos colaboradores fazem aniversário <b>hoje</b>, nos <b>próximos 7 dias</b> e no <b>mês</b>, e quantos dependentes aniversariam nos próximos 30 dias.' },
+        { alvo: '#an-corpo', antes: () => irTela('aniv'),
+          titulo: 'A lista, por data',
+          texto: 'Cada linha traz o dia, <b>quantos dias faltam</b> (laranja = hoje, amarelo = esta semana), a idade que a pessoa completa e o <b>🎁 presente preferido</b>. Dependente aparece como <b>lembrete</b>, com o nome do colaborador. Clique na linha para abrir a ficha.' },
+        { alvo: '#an-per', antes: () => irTela('aniv'),
+          titulo: 'Período e dependentes',
+          texto: 'Escolha <b>30, 60, 90 dias ou o ano todo</b>, e marque ou desmarque <b>mostrar dependentes</b>. Se alguém estiver sem data de nascimento na ficha, um aviso amarelo aparece no fim da lista.' },
+        { alvo: corpo, antes: () => fichaDemo('fam'),
+          titulo: 'Na ficha: aba Família',
+          texto: 'Aqui você escolhe o <b>presente preferido</b> e anota um detalhe (marca, sabor, “não bebe”). Embaixo ficam os <b>dependentes</b>: só nome, parentesco e nascimento — o suficiente para lembrar a data e conhecer a família.' },
+        { alvo: '#par-pres', antes: () => irTela('par'), posicao: 'esquerda',
+          titulo: 'As opções de presente',
+          texto: 'Em <b>Parametrizar › Presentes de aniversário</b> você mantém a lista: Cerveja, Suco e o que a empresa decidir oferecer (prêmio em dinheiro, dia de folga…). Tirar uma opção não muda quem já tinha escolhido.' },
+        { titulo: 'Pronto ✅',
+          texto: 'Rotina sugerida: abrir <b>Aniversariantes</b> toda segunda-feira, ver a semana e separar os presentes. A data de nascimento vem do MAIS; os dependentes você cadastra na aba Família.' },
       ],
     },
   };

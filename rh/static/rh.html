@@ -121,6 +121,7 @@ table.t td{padding:6px;border-bottom:1px solid #EEF2F7;vertical-align:middle}
 <div class="topo">
   <button class="on" data-t="col" onclick="tela('col')">Colaboradores</button>
   <button data-t="pnr" onclick="tela('pnr')">Painel de NRs</button>
+  <button data-t="aniv" onclick="tela('aniv')" id="bt-aniv" style="display:none">Aniversariantes</button>
   <button data-t="par" onclick="tela('par')" id="bt-par" style="display:none">Parametrizar</button>
   <button class="so-emb" onclick="guiaMenu(event)" title="Como fazer (demonstração)" style="margin-left:auto;color:#16A34A">▶ Como fazer</button>
 </div>
@@ -165,6 +166,17 @@ table.t td{padding:6px;border-bottom:1px solid #EEF2F7;vertical-align:middle}
 </section>
 
 <!-- ══ PARAMETRIZAR ══ -->
+<!-- (18/11/2026) Aniversariantes — só RH completo -->
+<section class="tela" id="t-aniv">
+  <div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;margin-bottom:12px">
+    <div style="width:200px"><label class="f">Período</label><select id="an-per" onchange="desenharAniv()"><option value="30">Próximos 30 dias</option><option value="60">Próximos 60 dias</option><option value="90" selected>Próximos 90 dias</option><option value="366">O ano todo</option></select></div>
+    <label style="display:flex;gap:5px;align-items:center;font-size:12px;padding-bottom:6px;cursor:pointer"><input type="checkbox" id="an-dep" style="width:auto" checked onchange="desenharAniv()"> mostrar dependentes</label>
+    <span class="hint" style="margin:0 0 6px auto">Clique numa linha para abrir a ficha. 🎁 = presente preferido do colaborador.</span>
+  </div>
+  <div class="kpis" id="an-kpis"></div>
+  <div class="painel" style="padding:8px 12px"><div id="an-corpo"><div class="muted">Carregando…</div></div></div>
+</section>
+
 <section class="tela" id="t-par">
   <div class="grid" style="grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);align-items:start">
     <div class="painel" style="padding:12px">
@@ -186,6 +198,11 @@ table.t td{padding:6px;border-bottom:1px solid #EEF2F7;vertical-align:middle}
         <div style="display:flex;justify-content:space-between;align-items:center"><b style="color:var(--blue)">Categorias de documentos</b><button class="btn peq" onclick="catEditar()">+ Nova</button></div>
         <div class="hint">São as “pastas” da aba Documentos. 🔒 Sigilosa = só RH completo, pede biometria e registra quem abriu. “Nomes de pasta” = como a subpasta se chama no servidor (para a importação em lote).</div>
         <div id="par-cats" style="margin-top:8px"></div>
+      </div>
+      <div class="painel" style="padding:12px">
+        <b style="color:var(--blue)">Presentes de aniversário</b>
+        <div class="hint">Opções que aparecem em “Presente preferido”, na ficha do colaborador (aba Família).</div>
+        <div id="par-pres" style="margin-top:8px"></div>
       </div>
       <div class="painel" style="padding:12px">
         <b style="color:var(--blue)">Segurança e armazenamento</b>
@@ -237,7 +254,7 @@ async function iniciar(){
   catch(e){ document.body.innerHTML = '<div class="vazio" style="margin-top:80px">' + esc(e.status === 403 ? 'Seu usuário não tem acesso ao RH. Peça a liberação em Admin › Permissões (RH — Completo ou RH — Ver NRs).' : e.message) + '</div>'; return; }
   document.getElementById('eu').textContent = (EU.nome || '') + (EU.pode_rh ? ' · RH completo' : ' · só NRs');
   if (!EU.pode_rh) _aba = 'nrs';   // quem só vê NRs abre a ficha direto nelas
-  if (EU.pode_rh) { document.getElementById('bt-par').style.display = ''; document.getElementById('acoes-lista').style.display = 'flex'; }
+  if (EU.pode_rh) { document.getElementById('bt-aniv').style.display = ''; document.getElementById('bt-par').style.display = ''; document.getElementById('acoes-lista').style.display = 'flex'; }
   await carregarOpcoes();
   await carregarLista();
 }
@@ -252,6 +269,7 @@ function tela(t){
   document.querySelectorAll('.tela').forEach(s => s.classList.toggle('on', s.id === 't-' + t));
   if (t === 'pnr') { carregarPainel(); carregarVencDocs(); certPendContar(); }
   if (t === 'par') carregarPar();
+  if (t === 'aniv') carregarAniv();
 }
 
 /* ══ LISTA ══ */
@@ -279,8 +297,119 @@ function desenharLista(){
 
 /* ══ FICHA ══ */
 const ABAS = [
-  ['dados', 'Dados'], ['funcao', 'Função e HH', 1], ['nrs', 'NRs e treinamentos'], ['ead', 'Plataformas EAD', 1], ['comissoes', 'Comissões', 1, 1], ['docs', 'Documentos'],
+  ['dados', 'Dados'], ['funcao', 'Função e HH', 1], ['nrs', 'NRs e treinamentos'], ['ead', 'Plataformas EAD', 1], ['comissoes', 'Comissões', 1, 1], ['docs', 'Documentos'], ['fam', 'Família', 1],
 ];
+/* ══ ANIVERSARIANTES E FAMÍLIA (18/11/2026) — só RH completo ══
+   Colaborador: aniversário + preferência de presente. Dependentes: só lembrete (nome, parentesco, nascimento). */
+const PARENT = { conjuge: 'Cônjuge', filho: 'Filho(a)', enteado: 'Enteado(a)', pai_mae: 'Pai / mãe', outro: 'Outro' };
+let _aniv = null, _presentes = null, _deps = [];
+const faltam = d => d === 0 ? 'HOJE 🎂' : d === 1 ? 'amanhã' : 'faltam ' + d + ' dias';
+const corDias = d => d === 0 ? 'background:#E8730C;color:#fff' : d <= 7 ? 'background:#FEF3C7;color:#92400E' : d <= 30 ? 'background:#DBEAFE;color:#1E40AF' : 'background:#F1F5F9;color:#475569';
+const MESES = ['janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro'];
+async function carregarAniv(){
+  const el = document.getElementById('an-corpo');
+  try { _aniv = await api('/rh/api/aniversariantes'); } catch(e){ el.innerHTML = '<div class="vazio">' + esc(e.message) + '</div>'; return; }
+  _presentes = _aniv.presentes;
+  desenharAniv();
+}
+function desenharAniv(){
+  const per = +document.getElementById('an-per').value, comDep = document.getElementById('an-dep').checked;
+  const todos = _aniv.itens.filter(x => comDep || x.tipo === 'colaborador'), cols = _aniv.itens.filter(x => x.tipo === 'colaborador');
+  const mesAtual = _aniv.hoje.slice(5, 7);
+  const k = [['Hoje', cols.filter(x => x.dias === 0).length, '#E8730C'], ['Próximos 7 dias', cols.filter(x => x.dias > 0 && x.dias <= 7).length, '#92400E'],
+             ['Em ' + MESES[+mesAtual - 1], cols.filter(x => x.proximo.slice(5, 7) === mesAtual && x.proximo.slice(0, 4) === _aniv.hoje.slice(0, 4)).length, '#1E40AF'],
+             ['Dependentes nos próximos 30 dias', _aniv.itens.filter(x => x.tipo === 'dependente' && x.dias <= 30).length, '#475569']];
+  document.getElementById('an-kpis').innerHTML = k.map(([l, v, c]) => '<div class="kpi" style="cursor:default"><div class="v" style="color:' + c + '">' + v + '</div><div class="l">' + l + '</div></div>').join('');
+  const lista = todos.filter(x => x.dias <= per);
+  let h = '';
+  if (!lista.length) h = '<div class="vazio">Nenhum aniversário neste período.</div>';
+  else {
+    let mes = '';
+    h = '<table class="t"><tbody>';
+    lista.forEach(x => {
+      const m = x.proximo.slice(0, 7);
+      if (m !== mes) { mes = m; h += '<tr><td colspan="5" style="background:#F8FAFD;font-weight:700;color:var(--blue)">' + MESES[+m.slice(5) - 1].replace(/^./, c => c.toUpperCase()) + ' de ' + m.slice(0, 4) + '</td></tr>'; }
+      const dep = x.tipo === 'dependente';
+      h += '<tr style="cursor:pointer' + (x.dias === 0 ? ';background:#FFF7ED' : '') + '" onclick="tela(\'col\');abrir(\'' + x.colaborador_id + '\',\'fam\')">'
+        + '<td style="width:70px;font-weight:800;font-size:15px;color:var(--blue)">' + x.proximo.slice(8, 10) + '/' + x.proximo.slice(5, 7) + '</td>'
+        + '<td><span class="pill" style="font-size:11px;padding:3px 10px;' + corDias(x.dias) + '">' + faltam(x.dias) + '</span></td>'
+        + '<td>' + (dep ? '<span class="muted">' + esc(PARENT[x.parentesco] || x.parentesco) + ' de <b>' + esc(x.colaborador) + '</b>:</span> ' + esc(x.nome)
+                        : '<b>' + esc(x.nome) + '</b>' + (x.cargo ? ' <span class="muted">· ' + esc(x.cargo) + '</span>' : ''))
+        + ' <span class="muted">· faz ' + x.idade + (x.idade === 1 ? ' ano' : ' anos') + '</span></td>'
+        + '<td>' + (dep ? '<span class="pill p-cinza">lembrete</span>' + (x.observacao ? ' <span class="muted">' + esc(x.observacao) + '</span>' : '')
+                        : (x.presente_pref ? '🎁 <b>' + esc(x.presente_pref) + '</b>' + (x.presente_obs ? ' <span class="muted">· ' + esc(x.presente_obs) + '</span>' : '') : '<span class="muted">🎁 presente não definido</span>')) + '</td></tr>';
+    });
+    h += '</tbody></table>';
+  }
+  if (_aniv.sem_data.length) h += '<div class="hint" style="margin-top:10px;padding:8px 10px;background:#FEF3C7;border-radius:8px;color:#92400E">⚠ ' + _aniv.sem_data.length + ' colaborador(es) sem data de nascimento na ficha: '
+    + _aniv.sem_data.slice(0, 12).map(c => '<a href="#" onclick="tela(\'col\');abrir(\'' + c.id + '\',\'dados\');return false">' + esc(c.nome) + '</a>').join(', ') + (_aniv.sem_data.length > 12 ? '…' : '') + '</div>';
+  document.getElementById('an-corpo').innerHTML = h;
+}
+async function abaFam(){
+  const f = _ficha, el = document.getElementById('fic-corpo');
+  el.innerHTML = '<div class="muted">Carregando…</div>';
+  try { if (!_presentes) _presentes = (await api('/rh/api/presentes')).opcoes; _deps = (await api('/rh/api/colaboradores/' + _atual + '/dependentes')).itens; }
+  catch(e){ el.innerHTML = '<div class="vazio">' + esc(e.message) + '</div>'; return; }
+  let nasc = '<span class="muted">Sem data de nascimento — preencha na aba Dados.</span>';
+  if (f.data_nascimento) {
+    const h = new Date(hojeISO() + 'T12:00:00'), n = new Date(f.data_nascimento + 'T12:00:00');
+    let p = new Date(h.getFullYear(), n.getMonth(), n.getDate(), 12); if (p.getMonth() !== n.getMonth()) p = new Date(h.getFullYear(), 1, 28, 12);
+    if (p < h) { p = new Date(h.getFullYear() + 1, n.getMonth(), n.getDate(), 12); if (p.getMonth() !== n.getMonth()) p = new Date(h.getFullYear() + 1, 1, 28, 12); }
+    const dias = Math.round((p - h) / 864e5);
+    nasc = '<b style="font-size:15px">' + br(f.data_nascimento).slice(0, 5) + '</b> <span class="muted">· faz ' + (p.getFullYear() - n.getFullYear()) + ' anos</span> <span class="pill" style="font-size:11px;padding:3px 10px;' + corDias(dias) + '">' + faltam(dias) + '</span>';
+  }
+  const ops = _presentes.slice(); if (f.presente_pref && !ops.includes(f.presente_pref)) ops.push(f.presente_pref);
+  el.innerHTML = '<div class="grid g3">' + fld('Aniversário', '<div style="padding-top:4px">' + nasc + '</div>')
+    + fld('Presente preferido', '<select id="fm-pref"><option value="">— não definido —</option>' + ops.map(o => '<option' + (o === f.presente_pref ? ' selected' : '') + '>' + esc(o) + '</option>').join('') + '</select><div class="hint">Opções em RH › Parametrizar › Presentes de aniversário.</div>')
+    + fld('Observação do presente', '<input id="fm-pobs" value="' + esc(f.presente_obs || '') + '" placeholder="marca, sabor, tamanho, não bebe…">') + '</div>'
+    + '<div style="margin-top:10px"><button class="btn pri" onclick="famSalvar()">Salvar preferência</button></div>'
+    + '<div style="display:flex;justify-content:space-between;align-items:center;margin-top:22px"><b style="color:var(--blue)">Dependentes</b><button class="btn pri peq" onclick="depForm()">+ Adicionar dependente</button></div>'
+    + '<div class="hint">Só para lembrar as datas e conhecer melhor a família do colaborador. Guardamos o mínimo: nome, parentesco e nascimento. Visível apenas para quem tem RH completo.</div>'
+    + (_deps.length ? '<table class="t" style="margin-top:8px"><thead><tr><th>Nome</th><th>Parentesco</th><th>Nascimento</th><th>Próximo aniversário</th><th>Observação</th><th></th></tr></thead><tbody>'
+        + _deps.map(d => '<tr><td><b>' + esc(d.nome) + '</b></td><td>' + esc(PARENT[d.parentesco] || d.parentesco) + '</td><td>' + (d.data_nascimento ? br(d.data_nascimento) : '<span class="muted">sem data</span>') + '</td>'
+          + '<td>' + (d.proximo ? br(d.proximo).slice(0, 5) + ' · faz ' + d.idade + ' <span class="pill" style="' + corDias(d.dias) + '">' + faltam(d.dias) + '</span>' : '') + '</td><td class="muted">' + esc(d.observacao || '') + '</td>'
+          + '<td style="text-align:right;white-space:nowrap"><button class="btn peq" onclick="depForm(\'' + d.id + '\')">editar</button> <button class="btn peq del" onclick="depExcluir(\'' + d.id + '\')" title="remover">✕</button></td></tr>').join('') + '</tbody></table>'
+      : '<div class="muted" style="margin-top:8px">Nenhum dependente cadastrado.</div>');
+}
+async function famSalvar(){
+  try { await api('/rh/api/colaboradores/' + _atual, { method: 'PATCH', body: JSON.stringify({ presente_pref: document.getElementById('fm-pref').value, presente_obs: document.getElementById('fm-pobs').value }) }); }
+  catch(e){ toast('❌ ' + e.message); return; }
+  _ficha.presente_pref = document.getElementById('fm-pref').value || null; _ficha.presente_obs = document.getElementById('fm-pobs').value.trim() || null; _aniv = null;
+  toast('Preferência salva');
+}
+function depForm(did){
+  const d = did ? _deps.find(x => x.id === did) : null, v = d || { nome: '', parentesco: 'filho', data_nascimento: '', observacao: '' };
+  modal(d ? 'Editar dependente' : 'Adicionar dependente — ' + _ficha.nome,
+    '<div class="grid g2">' + fld('Nome *', '<input id="dp-nome" value="' + esc(v.nome) + '">')
+    + fld('Parentesco', '<select id="dp-par">' + Object.entries(PARENT).map(([k, t]) => '<option value="' + k + '"' + (k === v.parentesco ? ' selected' : '') + '>' + t + '</option>').join('') + '</select>') + '</div>'
+    + '<div class="grid g2" style="margin-top:10px">' + fld('Data de nascimento', '<input type="date" id="dp-nasc" max="' + hojeISO() + '" value="' + esc(v.data_nascimento || '') + '">')
+    + fld('Observação (opcional)', '<input id="dp-obs" value="' + esc(v.observacao || '') + '" placeholder="apelido, do que gosta…">') + '</div>'
+    + '<div class="hint" style="margin-top:8px">Sem a data de nascimento o dependente não aparece na tela de Aniversariantes.</div><div class="erro" id="dp-erro"></div>',
+    d ? 'Salvar' : 'Adicionar', async () => {
+      const e = document.getElementById('dp-erro'), body = { nome: document.getElementById('dp-nome').value, parentesco: document.getElementById('dp-par').value, data_nascimento: document.getElementById('dp-nasc').value, observacao: document.getElementById('dp-obs').value };
+      if (!body.nome.trim()) { e.textContent = 'Informe o nome.'; return false; }
+      try { await api(did ? '/rh/api/dependentes/' + did : '/rh/api/colaboradores/' + _atual + '/dependentes', { method: did ? 'PATCH' : 'POST', body: JSON.stringify(body) }); }
+      catch(x){ e.textContent = x.message; return false; }
+      _aniv = null; toast(did ? 'Dependente atualizado' : 'Dependente adicionado'); abaFam();
+    });
+}
+async function depExcluir(did){
+  const d = _deps.find(x => x.id === did); if (!d || !confirm('Remover ' + d.nome + ' dos dependentes?')) return;
+  try { await api('/rh/api/dependentes/' + did, { method: 'DELETE' }); } catch(e){ toast('❌ ' + e.message); return; }
+  _aniv = null; toast('Dependente removido'); abaFam();
+}
+/* Parametrizar › Presentes de aniversário */
+async function carregarParPres(){
+  try { _presentes = (await api('/rh/api/presentes')).opcoes; } catch(e){ return; }
+  document.getElementById('par-pres').innerHTML = '<div style="display:flex;flex-wrap:wrap;gap:6px">' + _presentes.map((o, i) => '<span class="chip sel" style="cursor:default">' + esc(o) + ' <a href="#" onclick="presTirar(' + i + ');return false" title="remover" style="margin-left:4px;color:inherit;text-decoration:none">✕</a></span>').join('') + '</div>'
+    + '<div style="display:flex;gap:6px;margin-top:8px"><input id="pres-novo" placeholder="nova opção — ex.: Prêmio em dinheiro, Dia de folga" style="flex:1" onkeydown="if(event.key===\'Enter\')presAdd()"><button class="btn peq" onclick="presAdd()">+ Adicionar</button></div>';
+}
+async function presGravar(lst){
+  try { await api('/rh/api/presentes', { method: 'PUT', body: JSON.stringify({ opcoes: lst }) }); } catch(e){ toast('❌ ' + e.message); return; }
+  _aniv = null; carregarParPres();
+}
+function presAdd(){ const v = document.getElementById('pres-novo').value.trim(); if (!v) return; if (_presentes.some(o => o.toLowerCase() === v.toLowerCase())) { toast('Essa opção já existe'); return; } presGravar(_presentes.concat([v])); }
+function presTirar(i){ if (!confirm('Remover a opção "' + _presentes[i] + '"?\n\nQuem já tem essa preferência na ficha continua com ela.')) return; presGravar(_presentes.filter((_, n) => n !== i)); }
 function voltarLista(){ document.body.classList.remove('ver-ficha'); window.scrollTo(0, 0); }
 async function abrir(id, aba){
   _atual = id; desenharLista();
@@ -308,7 +437,7 @@ function desenharFicha(){
 function aba(k){
   _aba = k;
   document.querySelectorAll('#ficha .abas button').forEach(b => b.classList.toggle('on', (b.getAttribute('onclick') || '').includes("'" + k + "'")));
-  ({ dados: abaDados, funcao: abaFuncao, nrs: abaNrs, ead: abaEad, docs: abaDocs })[k]();
+  ({ dados: abaDados, funcao: abaFuncao, nrs: abaNrs, ead: abaEad, docs: abaDocs, fam: abaFam })[k]();
 }
 const fld = (rot, html, extra) => '<div' + (extra ? ' ' + extra : '') + '><label class="f">' + rot + '</label>' + html + '</div>';
 
@@ -410,22 +539,44 @@ function treinForm(tid, cursoId){
   const h = tid ? _trein.historico.find(x => x.id === tid) : null;
   const v = h || { curso_id: cursoId || '', situacao: 'concluido', modalidade: '', data_conclusao: '' };
   const cursos = OP.cursos.filter(k => k.ativo || k.id === v.curso_id);
+  // (18/11/2026) FORMULÁRIO CURTO: NR + conclusão + certificado. Reciclagem e carga horária vêm do catálogo
+  // (RH › Parametrizar); o resto fica em "Mais detalhes", já com os padrões (situação Concluído).
+  const abre = !!h && (h.situacao !== 'concluido' || h.modalidade || h.data_inicio || h.custo != null || h.observacao);
   modal(h ? 'Editar treinamento' : 'Registrar treinamento',
-    fld('NR / treinamento *', '<select id="tr-curso" onchange="trVence()"><option value="">— escolha —</option>' + cursos.map(k => '<option value="' + k.id + '"' + (k.id === v.curso_id ? ' selected' : '') + '>' + esc(k.codigo + ' — ' + k.nome) + '</option>').join('') + '</select>')
+    fld('NR / treinamento *', '<select id="tr-curso" onchange="trCurso()"><option value="">— escolha —</option>' + cursos.map(k => '<option value="' + k.id + '"' + (k.id === v.curso_id ? ' selected' : '') + '>' + esc(k.codigo + ' — ' + k.nome) + '</option>').join('') + '</select>')
+    + '<div class="grid g2" style="margin-top:10px">' + fld('Data de conclusão *', '<input type="date" id="tr-conc" max="' + hojeISO() + '" value="' + esc(v.data_conclusao || '') + '" onchange="trVence()">')
+    + (h ? '<div></div>' : fld('Certificado (PDF ou foto)', '<input type="file" id="tr-cert" accept="application/pdf,image/*">')) + '</div>'
+    + '<div id="tr-vtxt" style="margin-top:8px;font-size:12.5px;font-weight:600"></div>'
+    + '<details id="tr-mais" style="margin-top:12px;border-top:1px solid var(--line,#E5E7EB);padding-top:8px"' + (abre ? ' open' : '') + '><summary style="cursor:pointer;font-size:12.5px;font-weight:600;color:var(--muted)">Mais detalhes — situação, onde foi feito, carga horária, custo (opcional)</summary>'
     + '<div style="margin-top:10px">' + fld('Situação', '<div class="chips" id="tr-sit">' + [['concluido','Concluído'],['andamento','Em andamento'],['inscrito','Inscrito']].map(([k, t]) => '<span class="chip' + (k === v.situacao ? ' sel' : '') + '" data-v="' + k + '" onclick="trChip(\'tr-sit\',this)">' + t + '</span>').join('') + '</div>') + '</div>'
     + '<div style="margin-top:10px">' + fld('Onde foi feito', '<div class="chips" id="tr-mod">' + [['presencial','Presencial'],['ead','EAD'],['semipresencial','Semipresencial']].map(([k, t]) => '<span class="chip' + (k === v.modalidade ? ' sel' : '') + '" data-v="' + k + '" onclick="trChip(\'tr-mod\',this)">' + t + '</span>').join('') + '</div>') + '</div>'
     + '<div id="tr-ead" style="margin-top:10px"></div>'
     + '<div id="tr-pres" class="grid g2" style="margin-top:10px">' + fld('Local / empresa', '<input id="tr-local" value="' + esc(v.local || '') + '" placeholder="na obra, SENAI, empresa contratada…">') + fld('Instrutor', '<input id="tr-inst" value="' + esc(v.instrutor || '') + '">') + '</div>'
-    + '<div class="grid g3" style="margin-top:10px">' + fld('Início', '<input type="date" id="tr-ini" value="' + esc(v.data_inicio || '') + '">') + fld('Conclusão', '<input type="date" id="tr-conc" max="' + hojeISO() + '" value="' + esc(v.data_conclusao || '') + '" onchange="trVence()">') + fld('Vence em', '<input type="date" id="tr-vence" value="' + esc(v.validade_ate || '') + '" onchange="this.dataset.manual=1">') + '</div>'
+    + '<div class="grid g2" style="margin-top:10px">' + fld('Início', '<input type="date" id="tr-ini" value="' + esc(v.data_inicio || '') + '">') + fld('Vence em (só se for diferente do calculado)', '<input type="date" id="tr-vence" value="' + esc(v.validade_ate || '') + '" onchange="this.dataset.manual=this.value?1:\'\';trVence()">') + '</div>'
     + '<div class="hint" id="tr-vhint"></div>'
-    + '<div class="grid g2" style="margin-top:10px">' + fld('Carga horária (h)', '<input id="tr-ch" inputmode="decimal" value="' + (v.carga_horaria ?? '') + '">') + fld('Custo (R$)', '<input id="tr-custo" inputmode="decimal" value="' + (v.custo != null ? String(v.custo).replace('.', ',') : '') + '">') + '</div>'
+    + '<div class="grid g2" style="margin-top:10px">' + fld('Carga horária (h)', '<input id="tr-ch" inputmode="decimal" value="' + (v.carga_horaria ?? '') + '" oninput="this.dataset.manual=1">') + fld('Custo (R$)', '<input id="tr-custo" inputmode="decimal" value="' + (v.custo != null ? String(v.custo).replace('.', ',') : '') + '">') + '</div>'
     + '<div style="margin-top:10px">' + fld('Observação', '<textarea id="tr-obs">' + esc(v.observacao || '') + '</textarea>') + '</div>'
-    + (h ? '' : '<div style="margin-top:10px">' + fld('Certificado (PDF ou foto)', '<input type="file" id="tr-cert" accept="application/pdf,image/*">') + '</div>')
+    + '</details>'
     + '<div class="erro" id="tr-erro"></div>',
     h ? 'Salvar' : 'Registrar', () => treinSalvar(tid));
+  if (h && h.carga_horaria != null) document.getElementById('tr-ch').dataset.manual = 1;
   window._trPlat = v.plataforma_id || '';
-  if (h && h.validade_ate) document.getElementById('tr-vence').dataset.manual = 1;
-  trMod(); trVence();
+  if (h && h.validade_ate && h.validade_ate !== trCalc(v.curso_id, v.data_conclusao)) document.getElementById('tr-vence').dataset.manual = 1;
+  trMod(); trCurso();
+}
+// vencimento calculado: conclusão + reciclagem do catálogo ('' = a NR não vence)
+function trCalc(kid, conc){
+  const k = OP.cursos.find(x => x.id === kid);
+  if (!k || !k.validade_meses || !conc) return '';
+  const d = new Date(conc + 'T12:00:00'), dia = d.getDate(); d.setDate(1); d.setMonth(d.getMonth() + k.validade_meses);
+  d.setDate(Math.min(dia, new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate()));
+  return d.toISOString().slice(0, 10);
+}
+// trocou a NR: a carga horária do catálogo entra sozinha (se ninguém digitou outra)
+function trCurso(){
+  const k = OP.cursos.find(x => x.id === document.getElementById('tr-curso').value), ch = document.getElementById('tr-ch');
+  if (k && ch && !ch.dataset.manual) ch.value = k.carga_horaria != null ? String(k.carga_horaria).replace('.', ',') : '';
+  trVence();
 }
 function trChip(gid, el){
   // escolha única; na modalidade, clicar de novo desmarca (não informado)
@@ -442,26 +593,30 @@ function trMod(){
   document.getElementById('tr-pres').style.display = (m === 'presencial' || m === 'semipresencial') ? '' : 'none';
 }
 function trVence(){
-  const sit = trVal('tr-sit'), kid = document.getElementById('tr-curso').value, k = OP.cursos.find(x => x.id === kid), conc = document.getElementById('tr-conc').value, v = document.getElementById('tr-vence'), hint = document.getElementById('tr-vhint');
-  if (sit !== 'concluido') { v.value = ''; v.disabled = true; hint.textContent = 'Em andamento / inscrito não tem vencimento.'; return; }
+  const sit = trVal('tr-sit') || 'concluido', kid = document.getElementById('tr-curso').value, k = OP.cursos.find(x => x.id === kid), conc = document.getElementById('tr-conc').value,
+        v = document.getElementById('tr-vence'), hint = document.getElementById('tr-vhint'), tx = document.getElementById('tr-vtxt');
+  tx.style.color = 'var(--muted)';
+  if (sit !== 'concluido') { v.value = ''; v.disabled = true; hint.textContent = ''; tx.textContent = 'Em andamento / inscrito não tem vencimento.'; return; }
   v.disabled = false;
-  if (!k) { hint.textContent = ''; return; }
-  if (!k.validade_meses) { hint.textContent = k.codigo + ' sem prazo de reciclagem cadastrado (RH › Parametrizar). Se tiver vencimento, digite.'; return; }
-  hint.textContent = k.codigo + ': reciclagem a cada ' + k.validade_meses + ' meses.';
-  if (conc && !v.dataset.manual) { const d = new Date(conc + 'T12:00:00'); const dia = d.getDate(); d.setDate(1); d.setMonth(d.getMonth() + k.validade_meses); const ult = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate(); d.setDate(Math.min(dia, ult)); v.value = d.toISOString().slice(0,10); }
+  if (!k) { hint.textContent = ''; tx.textContent = ''; return; }
+  const calc = trCalc(kid, conc);
+  if (!v.dataset.manual) v.value = calc;
+  hint.textContent = k.validade_meses ? k.codigo + ': reciclagem a cada ' + k.validade_meses + ' meses (RH › Parametrizar).' : k.codigo + ' sem reciclagem cadastrada em RH › Parametrizar. Se este certificado tiver vencimento, digite acima.';
+  if (v.dataset.manual && v.value) { tx.style.color = 'var(--navy,#1A2A5E)'; tx.textContent = 'Vence em ' + br(v.value) + ' · data digitada à mão'; }
+  else if (!k.validade_meses) tx.textContent = k.codigo + ' não vence (sem reciclagem cadastrada).';
+  else if (!conc) tx.textContent = 'Reciclagem a cada ' + k.validade_meses + ' meses — informe a conclusão.';
+  else { tx.style.color = 'var(--navy,#1A2A5E)'; tx.textContent = 'Vence em ' + br(calc) + ' · reciclagem de ' + k.validade_meses + ' meses'; }
 }
 async function treinSalvar(tid){
   const e = document.getElementById('tr-erro'), g = id => (document.getElementById(id) || {}).value || '';
   e.textContent = '';
-  const sit = trVal('tr-sit'), mod = trVal('tr-mod');
+  const sit = trVal('tr-sit') || 'concluido', mod = trVal('tr-mod');
   if (!g('tr-curso')) { e.textContent = 'Escolha a NR / treinamento.'; return false; }
-  if (!sit) { e.textContent = 'Escolha a situação.'; return false; }
   if (sit === 'concluido' && !g('tr-conc')) { e.textContent = 'Informe a data de conclusão.'; return false; }
-  if (mod === 'ead' && !g('tr-plat')) { e.textContent = 'Escolha a plataforma EAD.'; return false; }
   const body = { curso_id: g('tr-curso'), situacao: sit, modalidade: mod, plataforma_id: g('tr-plat'), local: g('tr-local'), instrutor: g('tr-inst'),
                  data_inicio: g('tr-ini'), data_conclusao: g('tr-conc'), carga_horaria: g('tr-ch'), custo: g('tr-custo'), observacao: g('tr-obs') };
   const vv = document.getElementById('tr-vence');
-  if (sit === 'concluido' && vv.dataset.manual) body.validade_ate = vv.value;
+  if (sit === 'concluido' && vv.dataset.manual && vv.value) body.validade_ate = vv.value;
   let id = tid;
   try {
     if (tid) await api('/rh/api/treinamentos/' + tid, { method: 'PATCH', body: JSON.stringify(body) });
@@ -644,6 +799,10 @@ function docForm(did){
   modal((d ? 'Editar documento — ' : 'Anexar documento — ') + (_ficha ? _ficha.nome : ''),
     '<div class="grid g2">' + fld('Categoria *', '<select id="dc-cat" onchange="docVenc()"><option value="">— escolha —</option>' + cats.map(c => '<option value="' + esc(c.codigo) + '"' + (c.codigo === cat0 ? ' selected' : '') + '>' + (c.sigilosa ? '🔒 ' : '') + esc(c.nome) + '</option>').join('') + '</select>')
     + fld('Nome do documento', '<input id="dc-tit" value="' + esc(d ? d.titulo : '') + '" placeholder="vazio = nome do arquivo">') + '</div>'
+    // (18/11/2026) certificado de NR: um caminho só — o formulário de treinamento guarda o arquivo E registra a NR
+    + (d ? '' : '<div id="dc-cert-box" style="display:none;margin-top:10px;padding:10px 12px;border-radius:8px;background:#FFF7ED;border:1px solid #FED7AA;font-size:12.5px">'
+        + '<b>É certificado de NR ou de treinamento?</b> Registre pelo treinamento: você informa só a NR, a data e o arquivo — ele entra no Painel de NRs, calcula o vencimento e já aparece aqui em Documentos.'
+        + '<div style="margin-top:8px"><button class="btn pri peq" type="button" onclick="docParaTrein()">Registrar NR com este certificado</button> <span class="muted">Para outro tipo de documento, continue abaixo.</span></div></div>')
     + '<div class="grid g2" style="margin-top:10px">' + fld('Data do documento', '<input type="date" id="dc-data" value="' + esc(d ? d.data_doc || '' : '') + '">') + '<div id="dc-venc-box">' + fld('Vence em', '<input type="date" id="dc-venc" value="' + esc(d ? d.vencimento || '' : '') + '">') + '</div></div>'
     + '<div style="margin-top:10px">' + fld('Observação', '<input id="dc-obs" value="' + esc(d ? d.observacao || '' : '') + '">') + '</div>'
     + '<div style="margin-top:10px">' + fld(d ? 'Acrescentar arquivos (opcional)' : 'Arquivos * (PDF, foto, Word ou Excel — até 10 MB cada)', '<input type="file" id="dc-arq" multiple accept="application/pdf,image/*,.doc,.docx,.xls,.xlsx">') + '</div>'
@@ -653,7 +812,10 @@ function docForm(did){
     d ? 'Salvar' : 'Anexar', () => docSalvar(did));
   docVenc();
 }
-function docVenc(){ const c = (_docCats || []).find(x => x.codigo === document.getElementById('dc-cat').value); document.getElementById('dc-venc-box').style.display = c && c.tem_vencimento ? '' : 'none'; if (!(c && c.tem_vencimento)) document.getElementById('dc-venc').value = ''; }
+// (18/11/2026) sai do "Anexar documento" e abre o formulário curto de treinamento desta pessoa
+function docParaTrein(){ document.getElementById('modal').innerHTML = ''; treinForm(); }
+function docVenc(){ const c = (_docCats || []).find(x => x.codigo === document.getElementById('dc-cat').value);
+  const cb = document.getElementById('dc-cert-box'); if (cb) cb.style.display = (c && c.codigo === 'CERTIFICADO' && EU.pode_rh) ? '' : 'none'; document.getElementById('dc-venc-box').style.display = c && c.tem_vencimento ? '' : 'none'; if (!(c && c.tem_vencimento)) document.getElementById('dc-venc').value = ''; }
 async function docSalvar(did){
   const e = document.getElementById('dc-erro'), g = id => document.getElementById(id).value, arq = document.getElementById('dc-arq').files;
   e.textContent = '';
@@ -924,7 +1086,7 @@ async function carregarPar(){
   document.getElementById('par-exig').innerHTML = (OP.cargos || []).filter(c => c.ativo).map(f => '<div style="padding:6px 0;border-bottom:1px solid #EEF2F7"><div style="font-weight:600;margin-bottom:4px">' + esc(f.nome) + '</div><div class="chips">'
     + cursosAtivos.map(k => '<span class="chip' + ((_exig[f.codigo] || []).includes(k.id) ? ' sel' : '') + '" onclick="exigToggle(\'' + esc(f.codigo) + '\',\'' + k.id + '\',this)" title="' + esc(k.nome) + '">' + esc(k.codigo) + '</span>').join('') + '</div></div>').join('') || '<div class="muted">Nenhum cargo ainda. Os cargos chegam com a importação do MAIS (Colaboradores › Importar do MAIS).</div>';
   document.getElementById('par-plat').innerHTML = '<table class="t"><tbody>' + OP.plataformas.map(p => '<tr' + (p.ativo ? '' : ' style="opacity:.5"') + '><td><b>' + esc(p.nome) + '</b>' + (p.site ? ' <a href="' + esc(p.site) + '" target="_blank" rel="noopener" style="font-size:11px">site</a>' : '') + '</td><td style="text-align:right"><button class="btn peq" onclick="platEditar(\'' + p.id + '\')">editar</button></td></tr>').join('') + '</tbody></table>';
-  carregarParDocs();
+  carregarParDocs(); carregarParPres();
 }
 async function carregarParDocs(){
   let cats, uso, id;
@@ -980,7 +1142,9 @@ function cursoEditar(id){
       const body = { id: id || null, codigo: document.getElementById('cu-cod').value, nome: document.getElementById('cu-nome').value, tipo: document.getElementById('cu-tipo').value, validade_meses: document.getElementById('cu-val').value, carga_horaria: document.getElementById('cu-ch').value };
       if (at) body.ativo = at.value === '1';
       if (!body.codigo.trim() || !body.nome.trim()) { e.textContent = 'Informe código e nome.'; return false; }
-      try { await api('/rh/api/cursos', { method: 'POST', body: JSON.stringify(body) }); } catch(x){ e.textContent = x.message; return false; }
+      let rs; try { rs = await api('/rh/api/cursos', { method: 'POST', body: JSON.stringify(body) }); } catch(x){ e.textContent = x.message; return false; }
+      // (18/11/2026) mudou a reciclagem → os treinamentos já registrados acompanham
+      if (rs && rs.recalculados) toast('Reciclagem salva · ' + rs.recalculados + ' vencimento(s) recalculado(s)');
       carregarPar();
     });
 }
