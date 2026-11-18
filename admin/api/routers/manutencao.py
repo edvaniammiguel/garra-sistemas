@@ -3136,6 +3136,72 @@ async def _garantir_peca_cols():
             WHERE codigo_principal IS NULL"""):
         await ajard_query(sql, fetch="none")
     _PECA_COLS_OK = True
+    try:
+        await _importar_codificacao_mww()
+    except Exception as e:
+        print("Codificação ManWinWin: importação não concluída —", str(e)[:200])
+
+
+async def _importar_codificacao_mww():
+    """(18/11/2026) UMA VEZ: traz do ManWinWin (arquivo admin/api/dados/mww_codificacao.json, extraído de
+    MestreArtigos + Substitutos do ManWinWin.mdb) o que a primeira importação não trouxe:
+      • Cód. Estruturado de cada item (G.MC.130.001) — a numeração que a Garra já usava;
+      • Cód. Fabricante / Cód. Externo e QUAL era o principal lá (corrige o palpite da migração);
+      • os Substitutos já cadastrados.
+    Não renomeia ninguém: só vale para o item cujo código atual ainda é o que o ManWinWin mostrava.
+    Só preenche campo vazio (ou o palpite da migração); nada digitado no Garra é sobrescrito."""
+    import json as _json, os as _os
+    await ajard_query("""CREATE TABLE IF NOT EXISTS manutencao.migracoes_dados (
+                             chave TEXT PRIMARY KEY, detalhe TEXT, feito_em TIMESTAMPTZ DEFAULT now())""", fetch="none")
+    if await ajard_query("SELECT 1 FROM manutencao.migracoes_dados WHERE chave='mww_codificacao_v1'", fetch="one"):
+        return
+    arq = _os.path.join(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))), "dados", "mww_codificacao.json")
+    if not _os.path.exists(arq):
+        print("Codificação ManWinWin: arquivo não encontrado —", arq)
+        return   # sem marcar: tenta de novo quando o arquivo subir
+    with open(arq, encoding="utf-8") as f:
+        dados = _json.load(f)
+    itens = _json.dumps(dados.get("itens") or [], ensure_ascii=False)
+    feitos = await ajard_query(
+        """UPDATE manutencao.pecas p SET
+               codigo_principal = t.s,
+               codigo_estruturado = CASE
+                   WHEN t.s = 'estruturado' THEN p.codigo
+                   WHEN (coalesce(p.codigo_estruturado,'') = '' OR p.codigo_estruturado = p.codigo)
+                        AND NOT EXISTS (SELECT 1 FROM manutencao.pecas q WHERE q.id <> p.id AND (q.codigo = t.e OR q.codigo_estruturado = t.e))
+                        THEN t.e
+                   WHEN p.codigo_estruturado = p.codigo THEN NULL
+                   ELSE p.codigo_estruturado END,
+               codigo_fabricante = CASE
+                   WHEN t.s = 'fabricante' THEN p.codigo
+                   WHEN t.f IS NOT NULL AND (coalesce(p.codigo_fabricante,'') = '' OR p.codigo_fabricante = p.codigo) THEN t.f
+                   WHEN t.f IS NULL AND p.codigo_fabricante = p.codigo THEN NULL
+                   ELSE p.codigo_fabricante END,
+               codigo_externo = CASE
+                   WHEN t.s = 'externo' THEN p.codigo
+                   WHEN t.x IS NOT NULL AND coalesce(p.codigo_externo,'') = '' THEN t.x
+                   ELSE p.codigo_externo END
+             FROM jsonb_to_recordset(%s::jsonb) AS t(c text, e text, f text, x text, s text)
+            WHERE p.codigo = t.c AND coalesce(p.codigos_anteriores,'') = ''
+        RETURNING p.id""", (itens,)) or []
+    n_sub = 0
+    try:
+        tab, _ = await _garantir_tabela("substitutos")
+        pares = _json.dumps(dados.get("substitutos") or [], ensure_ascii=False)
+        novos = await ajard_query(
+            f"""INSERT INTO {tab} (peca_codigo, substituto_codigo, observacao)
+                SELECT v->>0, v->>1, 'ManWinWin'
+                  FROM jsonb_array_elements(%s::jsonb) v
+                 WHERE EXISTS (SELECT 1 FROM manutencao.pecas a WHERE a.codigo = v->>0 AND a.ativo)
+                   AND EXISTS (SELECT 1 FROM manutencao.pecas b WHERE b.codigo = v->>1 AND b.ativo)
+                   AND NOT EXISTS (SELECT 1 FROM {tab} s WHERE s.peca_codigo = v->>0 AND s.substituto_codigo = v->>1)
+             RETURNING id""", (pares,)) or []
+        n_sub = len(novos)
+    except Exception as e:
+        print("Codificação ManWinWin: substitutos —", str(e)[:200])
+    det = f"{len(feitos)} item(ns) com a codificação do ManWinWin · {n_sub} substituto(s)"
+    await ajard_query("INSERT INTO manutencao.migracoes_dados (chave, detalhe) VALUES ('mww_codificacao_v1', %s) ON CONFLICT DO NOTHING", (det,), fetch="none")
+    print("Codificação ManWinWin:", det)
 
 
 _COD_CAMPO = {"estruturado": "codigo_estruturado", "fabricante": "codigo_fabricante", "externo": "codigo_externo"}
@@ -3523,7 +3589,7 @@ async def _comprometido_por_peca():
     return out
 
 
-@router.get("/manutencao/api/pecas/{codigo}/comprometido")
+@router.get("/manutencao/api/pecas/{codigo:path}/comprometido")   # (18/11/2026) :path — há códigos com barra (W950/26)
 async def peca_comprometido(codigo: str, _auth=Depends(verificar_manutencao)):
     """Existência, comprometido (OTs programadas) e disponível de um item — usado na baixa da OT."""
     p = await ajard_query(
@@ -3620,7 +3686,7 @@ async def _aprender_referencia(peca_codigo, fornecedor_id, preco, origem="recebi
                           (peca_codigo, fornecedor_id, preco, f"gerado pelo {origem}"), fetch="none")
 
 
-@router.get("/manutencao/api/pecas/{codigo}/referencia")
+@router.get("/manutencao/api/pecas/{codigo:path}/referencia")   # (18/11/2026) :path — há códigos com barra (W950/26)
 async def peca_referencia(codigo: str, _auth=Depends(verificar_manutencao)):
     """(11/11/2026) Fornecedor de referência da peça (ficha › Estoques e 🛒 Comprar)."""
     r = await _ref_fornecedor(codigo)
@@ -3629,7 +3695,7 @@ async def peca_referencia(codigo: str, _auth=Depends(verificar_manutencao)):
             "prazo_dias": (r or {}).get("prazo_dias"), "referencia": (r or {}).get("referencia")}
 
 
-@router.put("/manutencao/api/pecas/{codigo}/referencia")
+@router.put("/manutencao/api/pecas/{codigo:path}/referencia")   # (18/11/2026) :path — há códigos com barra (W950/26)
 async def peca_referencia_gravar(codigo: str, request: Request, payload=Depends(verificar_manutencao)):
     """(11/11/2026) Define/troca o fornecedor de referência pela ficha da peça (vale sobre as demais referências:
     recebe o menor preço ou o preço informado). fornecedor_id vazio = remove a preferência manual."""
@@ -5778,7 +5844,7 @@ async def _subst_enriquecer(rows, chave):
     return out
 
 
-@router.get("/manutencao/api/pecas/{codigo}/substitutos")
+@router.get("/manutencao/api/pecas/{codigo:path}/substitutos")   # (18/11/2026) :path — há códigos com barra (W950/26)
 async def peca_substitutos(codigo: str, _auth=Depends(verificar_manutencao)):
     tab, _ = await _garantir_tabela("substitutos")
     p = await ajard_query("SELECT codigo, descricao FROM manutencao.pecas WHERE codigo=%s", (codigo,), fetch="one")
@@ -5793,7 +5859,7 @@ async def peca_substitutos(codigo: str, _auth=Depends(verificar_manutencao)):
             "substitui": await _subst_enriquecer(reversos, "peca_codigo")}
 
 
-@router.post("/manutencao/api/pecas/{codigo}/substitutos")
+@router.post("/manutencao/api/pecas/{codigo:path}/substitutos")   # (18/11/2026) :path — há códigos com barra (W950/26)
 async def peca_substituto_add(codigo: str, request: Request, payload=Depends(verificar_manutencao)):
     tab, _ = await _garantir_tabela("substitutos")
     d = await request.json()
