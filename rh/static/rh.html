@@ -122,6 +122,7 @@ table.t td{padding:6px;border-bottom:1px solid #EEF2F7;vertical-align:middle}
   <button class="on" data-t="col" onclick="tela('col')">Colaboradores</button>
   <button data-t="pnr" onclick="tela('pnr')">Painel de NRs</button>
   <button data-t="aniv" onclick="tela('aniv')" id="bt-aniv" style="display:none">Aniversariantes</button>
+  <button data-t="fer" onclick="tela('fer')" id="bt-fer" style="display:none">Férias</button>
   <button data-t="par" onclick="tela('par')" id="bt-par" style="display:none">Parametrizar</button>
   <button class="so-emb" onclick="guiaMenu(event)" title="Como fazer (demonstração)" style="margin-left:auto;color:#16A34A">▶ Como fazer</button>
 </div>
@@ -175,6 +176,18 @@ table.t td{padding:6px;border-bottom:1px solid #EEF2F7;vertical-align:middle}
   </div>
   <div class="kpis" id="an-kpis"></div>
   <div class="painel" style="padding:8px 12px"><div id="an-corpo"><div class="muted">Carregando…</div></div></div>
+</section>
+
+<!-- (19/11/2026) Férias — só RH completo. Períodos calculados pela data de admissão da ficha. -->
+<section class="tela" id="t-fer">
+  <div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin-bottom:12px">
+    <label style="display:flex;gap:5px;align-items:center;font-size:12px;cursor:pointer"><input type="checkbox" id="fe-form" style="width:auto" onchange="desenharFerias()"> mostrar período em formação</label>
+    <label style="display:flex;gap:5px;align-items:center;font-size:12px;cursor:pointer"><input type="checkbox" id="fe-ok" style="width:auto" onchange="desenharFerias()"> mostrar quem está em dia</label>
+    <span class="hint" style="margin:0 0 0 auto">“Iniciar até” = último dia para começar as férias sem pagar em dobro.</span>
+  </div>
+  <div class="kpis" id="fe-kpis"></div>
+  <div class="painel" style="padding:8px 12px;overflow:auto"><div id="fe-corpo"><div class="muted">Carregando…</div></div></div>
+  <div class="hint" style="margin-top:6px" id="fe-rodape"></div>
 </section>
 
 <section class="tela" id="t-par">
@@ -254,7 +267,7 @@ async function iniciar(){
   catch(e){ document.body.innerHTML = '<div class="vazio" style="margin-top:80px">' + esc(e.status === 403 ? 'Seu usuário não tem acesso ao RH. Peça a liberação em Admin › Permissões (RH — Completo ou RH — Ver NRs).' : e.message) + '</div>'; return; }
   document.getElementById('eu').textContent = (EU.nome || '') + (EU.pode_rh ? ' · RH completo' : ' · só NRs');
   if (!EU.pode_rh) _aba = 'nrs';   // quem só vê NRs abre a ficha direto nelas
-  if (EU.pode_rh) { document.getElementById('bt-aniv').style.display = ''; document.getElementById('bt-par').style.display = ''; document.getElementById('acoes-lista').style.display = 'flex'; }
+  if (EU.pode_rh) { document.getElementById('bt-aniv').style.display = ''; document.getElementById('bt-fer').style.display = ''; document.getElementById('bt-par').style.display = ''; document.getElementById('acoes-lista').style.display = 'flex'; }
   await carregarOpcoes();
   await carregarLista();
 }
@@ -270,6 +283,7 @@ function tela(t){
   if (t === 'pnr') { carregarPainel(); carregarVencDocs(); certPendContar(); }
   if (t === 'par') carregarPar();
   if (t === 'aniv') carregarAniv();
+  if (t === 'fer') carregarFerias();
 }
 
 /* ══ LISTA ══ */
@@ -299,6 +313,108 @@ function desenharLista(){
 const ABAS = [
   ['dados', 'Dados'], ['funcao', 'Função e HH', 1], ['nrs', 'NRs e treinamentos'], ['ead', 'Plataformas EAD', 1], ['comissoes', 'Comissões', 1, 1], ['docs', 'Documentos'], ['fam', 'Família', 1],
 ];
+/* ══ FÉRIAS (19/11/2026) — só RH completo ══
+   O servidor calcula os períodos pela data de admissão. Aqui: lista por prazo, programar/registrar férias,
+   ajustar os dias de direito (faltas) e marcar "já gozou". */
+let _fer = null;
+const FER_ST = { dobro: ['VENCIDA — em dobro', 'background:#991B1B;color:#fff'], urgente: ['urgente', 'background:var(--badbg);color:var(--bad)'],
+                 atencao: ['atenção', 'background:var(--warnbg);color:var(--warn)'], prazo: ['no prazo', 'background:var(--okbg);color:var(--ok)'],
+                 programada: ['programada', 'background:var(--infobg);color:var(--info)'], gozada: ['em dia', 'background:#F1F5F9;color:#475569'] };
+const ferDias = n => String(n).replace('.', ',');
+async function carregarFerias(){
+  const el = document.getElementById('fe-corpo');
+  try { _fer = await api('/rh/api/ferias'); } catch(e){ el.innerHTML = '<div class="vazio">' + esc(e.message) + '</div>'; return; }
+  desenharFerias();
+}
+function desenharFerias(){
+  const r = _fer.resumo, form = document.getElementById('fe-form').checked, ok = document.getElementById('fe-ok').checked;
+  document.getElementById('fe-kpis').innerHTML = [['Vencidas (em dobro)', r.dobro, '#991B1B'], ['Iniciar em até 60 dias', r.urgente, 'var(--bad)'], ['Iniciar em até 120 dias', r.atencao, 'var(--warn)'],
+      ['No prazo', r.prazo, 'var(--ok)'], ['Programadas', r.programada, 'var(--info)'], ['Sem data de admissão', _fer.sem_admissao.length, '#475569']]
+    .map(([l, v, c]) => '<div class="kpi" style="cursor:default"><div class="v" style="color:' + c + '">' + v + '</div><div class="l">' + l + '</div></div>').join('');
+  let h = '<table class="t"><thead><tr><th>Colaborador</th><th>Período aquisitivo</th><th style="text-align:center">Direito</th><th style="text-align:center">Saldo</th><th>Gozar até</th><th>Iniciar até</th><th>Programação</th><th>ASO vence</th><th></th></tr></thead><tbody>', n = 0;
+  _fer.itens.forEach((c, i) => {
+    const pend = c.periodos.filter(p => ok || p.status !== 'gozada');
+    pend.forEach((p, j) => {
+      n++;
+      const st = FER_ST[p.status], lanc = p.lanc.filter(x => x.tipo === 'ferias').map(x => br(x.inicio).slice(0, 5) + ' a ' + br(x.fim) + ' (' + ferDias(x.dias) + 'd)' + (x.futuro ? '' : ' ✓')).join('<br>')
+        + (p.lanc.some(x => x.tipo === 'abono') ? '<br><span class="muted">abono ' + ferDias(p.lanc.filter(x => x.tipo === 'abono').reduce((a, x) => a + x.dias, 0)) + 'd</span>' : '');
+      const faltam = p.dias_ate == null ? '' : p.dias_ate < 0 ? 'há ' + (-p.dias_ate) + ' dias' : p.dias_ate === 0 ? 'hoje' : 'faltam ' + p.dias_ate + ' dias';
+      h += '<tr>'
+        + '<td>' + (j ? '' : '<b style="cursor:pointer" onclick="tela(\'col\');abrir(\'' + c.colaborador_id + '\',\'dados\')">' + esc(c.nome) + '</b>' + (c.cargo ? '<div class="muted" style="font-size:11px">' + esc(c.cargo) + (c.situacao !== 'ativo' ? ' · ' + esc(c.situacao) : '') + '</div>' : '')) + '</td>'
+        + '<td style="white-space:nowrap">' + br(p.aq_ini) + ' a ' + br(p.aq_fim) + (p.observacao ? '<div class="muted" style="font-size:11px">' + esc(p.observacao) + '</div>' : '') + '</td>'
+        + '<td style="text-align:center">' + ferDias(p.direito) + '</td><td style="text-align:center;font-weight:700">' + ferDias(p.saldo) + '</td>'
+        + '<td style="white-space:nowrap">' + br(p.conc_fim) + '</td>'
+        + '<td style="white-space:nowrap">' + (p.limite ? '<b>' + br(p.limite) + '</b> ' : '') + '<span class="pill" style="font-size:11px;padding:3px 9px;' + st[1] + '">' + (p.limite && p.status !== 'dobro' ? faltam : st[0]) + '</span>'
+            + (p.status === 'dobro' ? ' <span class="muted" style="font-size:11px">' + faltam + '</span>' : '') + (p.fora_do_prazo ? '<div style="font-size:11px;color:var(--bad)">há dias programados fora do prazo</div>' : '') + '</td>'
+        + '<td style="font-size:12px">' + (lanc || '<span class="muted">—</span>') + '</td>'
+        + '<td style="white-space:nowrap;font-size:12px">' + (j ? '' : (c.aso_vencimento ? br(c.aso_vencimento) : '<span class="muted">—</span>')) + '</td>'
+        + '<td style="text-align:right;white-space:nowrap"><button class="btn peq" onclick="feriasJanela(' + i + ',\'' + p.aq_ini + '\')">' + (p.status === 'gozada' ? 'ver' : 'programar') + '</button></td></tr>';
+    });
+    if (form && c.formacao) { n++; const f = c.formacao;
+      h += '<tr style="color:var(--muted)"><td>' + (pend.length ? '' : '<b style="cursor:pointer;color:var(--text,#1F2937)" onclick="tela(\'col\');abrir(\'' + c.colaborador_id + '\',\'dados\')">' + esc(c.nome) + '</b>') + '</td>'
+        + '<td style="white-space:nowrap">' + br(f.aq_ini) + ' a ' + br(f.aq_fim) + '</td><td style="text-align:center">' + ferDias(f.dias) + '</td><td colspan="6"><span class="pill p-cinza">em formação</span> ' + f.avos + '/12 · completa em ' + br(f.aq_fim) + '</td></tr>'; }
+  });
+  h += '</tbody></table>';
+  document.getElementById('fe-corpo').innerHTML = n ? h : '<div class="vazio">Ninguém com férias pendentes. Marque “mostrar período em formação” para ver quem está adquirindo.</div>';
+  document.getElementById('fe-rodape').innerHTML = (_fer.sem_admissao.length ? '<b style="color:var(--bad)">Sem data de admissão na ficha (não entram na conta):</b> '
+      + _fer.sem_admissao.map(x => '<a href="#" onclick="tela(\'col\');abrir(\'' + x.id + '\',\'dados\');return false">' + esc(x.nome) + '</a>').join(', ') + '.<br>' : '')
+    + 'Os períodos saem da data de admissão. Direito padrão de 30 dias — se a contabilidade reduziu por faltas, ajuste em “programar”. Controle iniciado em ' + br(_fer.controle_desde)
+    + ': períodos com prazo de gozo encerrado antes dessa data não aparecem. Confira sempre com o relatório da contabilidade.';
+}
+function feriasJanela(i, aq){
+  const c = _fer.itens[i], p = c.periodos.find(x => x.aq_ini === aq);
+  const linhas = p.lanc.length ? '<table class="t" style="margin-bottom:10px"><tbody>' + p.lanc.map(x => '<tr><td>' + (x.tipo === 'abono' ? 'Abono (venda)' : br(x.inicio) + ' a ' + br(x.fim)) + '</td><td>' + ferDias(x.dias) + ' dias</td><td class="muted">'
+      + (x.tipo === 'abono' ? '' : x.futuro ? 'programada' : 'gozada') + (x.observacao ? ' · ' + esc(x.observacao) : '') + '</td><td style="text-align:right"><button class="btn peq del" onclick="feriasRemover(\'' + x.id + '\',' + i + ',\'' + aq + '\')">remover</button></td></tr>').join('') + '</tbody></table>' : '';
+  modal('Férias — ' + c.nome,
+    '<div class="hint" style="margin-bottom:10px">Período aquisitivo <b>' + br(p.aq_ini) + ' a ' + br(p.aq_fim) + '</b> · gozar entre <b>' + br(p.conc_ini) + '</b> e <b>' + br(p.conc_fim) + '</b>'
+      + (p.limite ? ' · iniciar até <b>' + br(p.limite) + '</b>' : '') + '<br>Direito ' + ferDias(p.direito) + ' dias · saldo sem data <b>' + ferDias(p.saldo) + ' dias</b></div>'
+    + linhas
+    + (p.saldo > 0 && !p.quitado ? '<div class="faixa" style="margin:0 0 8px">Programar ou registrar</div><div class="grid g3">'
+        + fld('Tipo', '<select id="fe-tipo" onchange="document.getElementById(\'fe-ini\').disabled=this.value===\'abono\';feriasFim(\'' + p.conc_fim + '\')"><option value="ferias">Férias</option><option value="abono">Abono (venda de dias)</option></select>')
+        + fld('Início', '<input type="date" id="fe-ini" min="' + p.conc_ini + '" onchange="feriasFim(\'' + p.conc_fim + '\')">')
+        + fld('Dias', '<input id="fe-dias" inputmode="decimal" value="' + ferDias(p.saldo) + '" oninput="feriasFim(\'' + p.conc_fim + '\')">') + '</div>'
+        + '<div class="hint" id="fe-fim" style="margin-top:4px"></div>'
+        + '<div style="margin-top:8px">' + fld('Observação', '<input id="fe-obs" placeholder="opcional">') + '</div>' : '')
+    + '<details style="margin-top:12px"><summary style="cursor:pointer;font-size:12px;font-weight:700;color:var(--blue)">Ajustar este período (faltas, já gozou)</summary><div class="grid g2" style="margin-top:8px">'
+        + fld('Dias de direito', '<input id="fe-dir" inputmode="decimal" value="' + ferDias(p.direito) + '">')
+        + fld('Observação do período', '<input id="fe-pobs" value="' + esc(p.observacao || '') + '" placeholder="ex.: reduzido por faltas">') + '</div>'
+        + '<div class="hint" style="margin-top:4px">Faltas sem justificativa no período: até 5 = 30 dias · 6 a 14 = 24 · 15 a 23 = 18 · 24 a 32 = 12 · mais de 32 = perde.</div>'
+        + '<label style="display:flex;gap:6px;align-items:center;margin-top:8px;font-size:12px"><input type="checkbox" id="fe-quit" style="width:auto"' + (p.quitado ? ' checked' : '') + '> Este período já foi gozado (antes do controle pelo sistema)</label>'
+        + '<div style="margin-top:8px"><button class="btn peq" onclick="feriasAjustar(' + i + ',\'' + aq + '\')">Salvar ajuste</button></div></details>'
+    + '<div class="erro" id="fe-erro"></div>',
+    (p.saldo > 0 && !p.quitado) ? 'Salvar' : null,
+    async () => {
+      const tipo = document.getElementById('fe-tipo').value;
+      try {
+        const r = await api('/rh/api/ferias/lancamentos', { method: 'POST', body: JSON.stringify({ colaborador_id: c.colaborador_id, aquisitivo_inicio: aq, tipo,
+          inicio: tipo === 'abono' ? null : document.getElementById('fe-ini').value, dias: document.getElementById('fe-dias').value, observacao: document.getElementById('fe-obs').value }) });
+        if (r.avisos && r.avisos.length) alert(r.avisos.join('\n\n'));
+        toast('Férias registradas'); await carregarFerias();
+      } catch(e){ document.getElementById('fe-erro').textContent = e.message; return false; }
+    });
+}
+function feriasFim(concFim){
+  const el = document.getElementById('fe-fim'), ini = document.getElementById('fe-ini').value, d = parseFloat(String(document.getElementById('fe-dias').value).replace(',', '.'));
+  if (document.getElementById('fe-tipo').value === 'abono') { el.textContent = 'Abono: dias vendidos, sem data de gozo (máximo de um terço do direito).'; el.style.color = ''; return; }
+  if (!ini || !(d > 0)) { el.textContent = ''; return; }
+  const f = new Date(ini + 'T12:00:00'); f.setDate(f.getDate() + Math.ceil(d) - 1); const iso = f.toISOString().slice(0, 10), fora = iso > concFim;
+  el.textContent = 'Termina em ' + br(iso) + (fora ? ' — depois do prazo de gozo (' + br(concFim) + '): os dias fora do prazo são pagos em dobro.' : '.'); el.style.color = fora ? 'var(--bad)' : '';
+}
+async function feriasReabrir(i, aq){ await carregarFerias(); const j = _fer.itens.findIndex(x => x.colaborador_id === i); if (j >= 0 && _fer.itens[j].periodos.some(p => p.aq_ini === aq)) feriasJanela(j, aq); else fecharModal(); }
+async function feriasRemover(id, i, aq){
+  if (!confirm('Remover este lançamento de férias?')) return;
+  const cid = _fer.itens[i].colaborador_id;
+  try { await api('/rh/api/ferias/lancamentos/' + id, { method: 'DELETE' }); toast('Lançamento removido'); await feriasReabrir(cid, aq); } catch(e){ document.getElementById('fe-erro').textContent = e.message; }
+}
+async function feriasAjustar(i, aq){
+  const cid = _fer.itens[i].colaborador_id;
+  try {
+    await api('/rh/api/ferias/periodo', { method: 'PUT', body: JSON.stringify({ colaborador_id: cid, aquisitivo_inicio: aq, dias_direito: document.getElementById('fe-dir').value,
+      quitado: document.getElementById('fe-quit').checked, observacao: document.getElementById('fe-pobs').value }) });
+    toast('Período ajustado'); await feriasReabrir(cid, aq);
+  } catch(e){ document.getElementById('fe-erro').textContent = e.message; }
+}
+
 /* ══ ANIVERSARIANTES E FAMÍLIA (18/11/2026) — só RH completo ══
    Colaborador: aniversário + preferência de presente. Dependentes: só lembrete (nome, parentesco, nascimento). */
 const PARENT = { conjuge: 'Cônjuge', filho: 'Filho(a)', enteado: 'Enteado(a)', pai_mae: 'Pai / mãe', outro: 'Outro' };
@@ -1087,6 +1203,9 @@ async function carregarPainel(){
   const t = _pn.totais;
   document.getElementById('p-kpis').innerHTML = [['vencida','Vencidas','var(--bad)'],['falta','Faltam (exigidas)','var(--bad)'],['vence','Vencem em 30 dias','var(--warn)'],['andamento','Em andamento','var(--info)'],['valida','Válidas','var(--ok)']]
     .map(([k, l, c]) => '<div class="kpi"><div class="v" style="color:' + c + '">' + (t[k] || 0) + '</div><div class="l">' + l + '</div></div>').join('');
+  // (19/11/2026) cartão de férias no painel (só RH completo): vencidas + iniciar em até 60 dias → leva para a aba Férias
+  if (EU.pode_rh) api('/rh/api/ferias').then(f => { const n = f.resumo.dobro + f.resumo.urgente, k = document.getElementById('p-kpis'); if (!k || document.getElementById('kpi-fer')) return;
+    k.insertAdjacentHTML('beforeend', '<div class="kpi" id="kpi-fer" onclick="tela(\'fer\')" title="Abrir a aba Férias"><div class="v" style="color:' + (n ? 'var(--bad)' : 'var(--ok)') + '">' + n + '</div><div class="l">Férias com prazo apertado</div></div>'); }).catch(() => {});
   if (!_pn.linhas.length) { box.innerHTML = '<div class="vazio">Nenhum colaborador neste filtro.</div>'; return; }
   if (!_pn.cursos.length) { box.innerHTML = '<div class="vazio">Nenhuma NR para mostrar. Cadastre as NRs exigidas por cargo em Parametrizar.</div>'; return; }
   box.innerHTML = '<table class="t mat"><thead><tr><th>Colaborador</th><th>Cargo</th>' + _pn.cursos.map(k => '<th class="c" title="' + esc(k.nome) + '">' + esc(k.codigo) + '</th>').join('') + '</tr></thead><tbody>'

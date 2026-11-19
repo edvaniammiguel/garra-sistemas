@@ -213,6 +213,7 @@ async def garantir_rh():
         print("RH: migração função/HH ignorada:", str(e)[:120])
     await _garantir_documentos()
     await _garantir_familia()
+    await _garantir_ferias()
     try:   # (18/11/2026) treinamentos concluídos sem vencimento em NR que TEM reciclagem → preenche
         await _recalcular_vencimentos()
     except Exception as e:
@@ -2259,3 +2260,251 @@ async def aniversariantes(payload=Depends(verificar_rh)):
                       "nascimento": d["data_nascimento"].isoformat(), "proximo": prox.isoformat(), "dias": dias, "idade": idade})
     itens.sort(key=lambda x: (x["dias"], 0 if x["tipo"] == "colaborador" else 1, x["nome"]))
     return {"hoje": hoje.isoformat(), "itens": itens, "sem_data": sem_data, "presentes": await _presentes_opcoes()}
+
+
+
+# ════════════════════════════════════════════════════════
+# FÉRIAS (19/11/2026) — só RH completo
+#  • Os períodos NÃO são digitados: saem da data de admissão da ficha (aquisitivo = 12 meses a partir do
+#    aniversário de admissão; concessivo = os 12 meses seguintes). O relatório da contabilidade vem em papel,
+#    por isso o sistema faz a mesma conta em vez de importar.
+#  • Guardado no banco só o que a pessoa informa: férias programadas/gozadas (rh.ferias_lanc) e o ajuste de um
+#    período (rh.ferias_periodos: dias de direito reduzidos por faltas, "já gozou", observação).
+#  • "Iniciar até" = último dia para COMEÇAR o saldo sem cair em dobro (fim do concessivo − saldo + 1).
+#  • Períodos cujo prazo de gozo já tinha acabado antes do início do controle (rh.config 'ferias_controle_desde')
+#    não aparecem — senão todo o passado de quem tem anos de casa viraria pendência.
+# ════════════════════════════════════════════════════════
+import datetime as _dtm
+
+_FERIAS_TIPOS = ("ferias", "abono")
+
+
+async def _garantir_ferias():
+    await ajard_query("""
+        CREATE TABLE IF NOT EXISTS rh.ferias_periodos (
+            colaborador_id UUID NOT NULL, aquisitivo_inicio DATE NOT NULL,
+            dias_direito NUMERIC(4,1), quitado BOOLEAN NOT NULL DEFAULT false, observacao TEXT,
+            atualizado_por TEXT, atualizado_em TIMESTAMPTZ DEFAULT now(),
+            PRIMARY KEY (colaborador_id, aquisitivo_inicio))""", fetch="none")
+    await ajard_query("""
+        CREATE TABLE IF NOT EXISTS rh.ferias_lanc (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            colaborador_id UUID NOT NULL, aquisitivo_inicio DATE NOT NULL,
+            tipo TEXT NOT NULL DEFAULT 'ferias', inicio DATE, dias NUMERIC(4,1) NOT NULL, observacao TEXT,
+            ativo BOOLEAN NOT NULL DEFAULT true, criado_por TEXT, criado_em TIMESTAMPTZ DEFAULT now())""", fetch="none")
+    await ajard_query("CREATE INDEX IF NOT EXISTS ix_rh_ferias_lanc ON rh.ferias_lanc (colaborador_id) WHERE ativo", fetch="none")
+    # a coluna valor é TEXT e o ajard_query transforma texto com cara de data em date → grava pelo to_char
+    await ajard_query("INSERT INTO rh.config (chave, valor) VALUES ('ferias_controle_desde', to_char(%s::date,'YYYY-MM-DD')) ON CONFLICT DO NOTHING",
+                      (_hoje(),), fetch="none")
+
+
+def _mais_anos(d, n):
+    try:
+        return d.replace(year=d.year + n)
+    except ValueError:          # 29/02 → 28/02 nos anos comuns
+        return d.replace(year=d.year + n, day=28)
+
+
+def _ferias_avos(aq_ini, hoje):
+    """Meses completos no período em formação; fração de 15 dias ou mais conta como mês (máx. 12)."""
+    meses = (hoje.year - aq_ini.year) * 12 + hoje.month - aq_ini.month
+    ref = _mais_meses(aq_ini, meses) if meses else aq_ini
+    if ref > hoje:
+        meses -= 1
+        ref = _mais_meses(aq_ini, meses) if meses else aq_ini
+    if (hoje - ref).days + 1 >= 15:
+        meses += 1
+    return max(0, min(12, meses))
+
+
+def _ferias_periodos(adm, hoje, desde):
+    """Períodos de um colaborador: os já adquiridos cujo prazo de gozo ainda conta + o que está em formação."""
+    out, k = [], 0
+    while True:
+        aq_ini = _mais_anos(adm, k)
+        if aq_ini > hoje:
+            break
+        aq_fim = _mais_anos(adm, k + 1) - _dtm.timedelta(days=1)
+        if aq_fim < hoje:      # adquirido
+            conc_fim = _mais_anos(adm, k + 2) - _dtm.timedelta(days=1)
+            if conc_fim >= desde:
+                out.append({"tipo": "adquirido", "aq_ini": aq_ini, "aq_fim": aq_fim,
+                            "conc_ini": aq_fim + _dtm.timedelta(days=1), "conc_fim": conc_fim})
+        else:
+            av = _ferias_avos(aq_ini, hoje)
+            out.append({"tipo": "formacao", "aq_ini": aq_ini, "aq_fim": aq_fim, "avos": av, "dias": av * 2.5})
+        k += 1
+    return out
+
+
+async def _ferias_desde():
+    r = await ajard_query("SELECT valor FROM rh.config WHERE chave='ferias_controle_desde'", fetch="one")
+    try:
+        return _date.fromisoformat(r["valor"])
+    except Exception:
+        return _hoje()
+
+
+def _ferias_montar(p, aj, lancs, hoje):
+    """Junta o período calculado com o ajuste e os lançamentos → saldo, prazo e situação."""
+    direito = float(aj["dias_direito"]) if aj and aj["dias_direito"] is not None else 30.0
+    ls = sorted(lancs, key=lambda x: (x["inicio"] or _date.min))
+    goz = sum(float(x["dias"]) for x in ls if x["tipo"] == "abono" or (x["inicio"] and x["inicio"] <= hoje))
+    prog = sum(float(x["dias"]) for x in ls if x["tipo"] != "abono" and x["inicio"] and x["inicio"] > hoje)
+    saldo = max(0.0, direito - goz - prog)          # o que ainda não tem data
+    quit_ = bool(aj and aj["quitado"])
+    limite = p["conc_fim"] - _dtm.timedelta(days=max(0, int(-(-saldo // 1)) - 1)) if saldo > 0 else None
+    if quit_ or (saldo <= 0 and prog <= 0):
+        st = "gozada"
+    elif saldo <= 0:
+        st = "programada"
+    else:
+        d = (limite - hoje).days
+        st = "dobro" if d < 0 else ("urgente" if d <= 60 else ("atencao" if d <= 120 else "prazo"))
+    fora = [x for x in ls if x["tipo"] != "abono" and x["inicio"] and x["inicio"] + _dtm.timedelta(days=float(x["dias"]) - 1) > p["conc_fim"]]
+    return {"tipo": "adquirido", "aq_ini": p["aq_ini"].isoformat(), "aq_fim": p["aq_fim"].isoformat(),
+            "conc_ini": p["conc_ini"].isoformat(), "conc_fim": p["conc_fim"].isoformat(),
+            "direito": direito, "gozados": goz, "programados": prog, "saldo": saldo,
+            "limite": limite.isoformat() if limite else None, "dias_ate": (limite - hoje).days if limite else None,
+            "status": st, "quitado": quit_, "observacao": (aj or {}).get("observacao"), "fora_do_prazo": bool(fora),
+            "lanc": [{"id": str(x["id"]), "tipo": x["tipo"], "inicio": x["inicio"].isoformat() if x["inicio"] else None,
+                      "dias": float(x["dias"]),
+                      "fim": (x["inicio"] + _dtm.timedelta(days=float(x["dias"]) - 1)).isoformat() if x["inicio"] else None,
+                      "futuro": bool(x["inicio"] and x["inicio"] > hoje), "observacao": x["observacao"]} for x in ls]}
+
+
+@router.get("/rh/api/ferias")
+async def ferias_lista(payload=Depends(verificar_rh)):
+    """Situação de férias de cada colaborador (ativos e afastados), do prazo mais apertado para o mais folgado."""
+    await garantir_rh()
+    hoje, desde = _hoje(), await _ferias_desde()
+    cols = await ajard_query("""SELECT c.id, c.nome, c.apelido, c.data_admissao, c.situacao, g.nome AS cargo
+                                  FROM rh.colaboradores c LEFT JOIN rh.cargos g ON g.codigo = c.cargo_codigo
+                                 WHERE c.ativo AND c.situacao <> 'desligado' ORDER BY c.nome""") or []
+    ajs = {(str(r["colaborador_id"]), r["aquisitivo_inicio"]): r
+           for r in (await ajard_query("SELECT * FROM rh.ferias_periodos") or [])}
+    lcs = {}
+    for r in (await ajard_query("SELECT * FROM rh.ferias_lanc WHERE ativo") or []):
+        lcs.setdefault((str(r["colaborador_id"]), r["aquisitivo_inicio"]), []).append(r)
+    aso = {str(r["colaborador_id"]): r["v"] for r in (await ajard_query(
+        "SELECT colaborador_id, MAX(vencimento) AS v FROM rh.documentos WHERE ativo AND categoria='ASO' GROUP BY 1") or [])}
+    peso = {"dobro": 0, "urgente": 1, "atencao": 2, "prazo": 3, "programada": 4, "gozada": 5}
+    itens, sem_adm = [], []
+    for c in cols:
+        cid = str(c["id"])
+        if not c["data_admissao"]:
+            sem_adm.append({"id": cid, "nome": c["nome"]})
+            continue
+        pers, form = [], None
+        for p in _ferias_periodos(c["data_admissao"], hoje, desde):
+            if p["tipo"] == "formacao":
+                form = {"aq_ini": p["aq_ini"].isoformat(), "aq_fim": p["aq_fim"].isoformat(), "avos": p["avos"], "dias": p["dias"]}
+            else:
+                pers.append(_ferias_montar(p, ajs.get((cid, p["aq_ini"])), lcs.get((cid, p["aq_ini"]), []), hoje))
+        pior = min((peso[x["status"]] for x in pers), default=6)
+        dias = min((x["dias_ate"] for x in pers if x["dias_ate"] is not None and x["status"] in ("dobro", "urgente", "atencao", "prazo")), default=99999)
+        itens.append({"colaborador_id": cid, "nome": c["nome"], "apelido": c["apelido"], "cargo": c["cargo"], "situacao": c["situacao"],
+                      "admissao": c["data_admissao"].isoformat(), "aso_vencimento": aso[cid].isoformat() if aso.get(cid) else None,
+                      "periodos": pers, "formacao": form, "_o": (pior, dias, c["nome"])})
+    itens.sort(key=lambda x: x.pop("_o"))
+    cont = lambda s: sum(1 for i in itens for p in i["periodos"] if p["status"] == s)
+    return {"hoje": hoje.isoformat(), "controle_desde": desde.isoformat(), "itens": itens, "sem_admissao": sem_adm,
+            "resumo": {"dobro": cont("dobro"), "urgente": cont("urgente"), "atencao": cont("atencao"),
+                       "prazo": cont("prazo"), "programada": cont("programada")}}
+
+
+async def _ferias_periodo_valido(cid, aq_ini):
+    """Confere que o período informado existe para o colaborador e já foi adquirido. Devolve o período calculado."""
+    c = await _colab(cid)
+    if not c["data_admissao"]:
+        raise HTTPException(status_code=422, detail="Colaborador sem data de admissão na ficha")
+    hoje = _hoje()
+    for p in _ferias_periodos(c["data_admissao"], hoje, _date.min):
+        if p["aq_ini"] == aq_ini:
+            if p["tipo"] != "adquirido":
+                raise HTTPException(status_code=422, detail="Este período ainda está em formação — só dá para programar depois de completo")
+            return p
+    raise HTTPException(status_code=422, detail="Período aquisitivo não confere com a data de admissão")
+
+
+@router.put("/rh/api/ferias/periodo")
+async def ferias_periodo_salvar(request: Request, payload=Depends(verificar_rh)):
+    """Ajuste de um período: dias de direito (redução por faltas), 'já gozou' e observação."""
+    await garantir_rh()
+    d = await request.json()
+    cid, aq = d.get("colaborador_id"), _data(d.get("aquisitivo_inicio"))
+    if not cid or not aq:
+        raise HTTPException(status_code=422, detail="Informe o colaborador e o período")
+    await _ferias_periodo_valido(cid, aq)
+    dias = _num(d.get("dias_direito"))
+    if dias is not None and not (0 <= dias <= 30):
+        raise HTTPException(status_code=422, detail="Dias de direito: de 0 a 30")
+    usados = await ajard_query("SELECT COALESCE(SUM(dias),0) AS n FROM rh.ferias_lanc WHERE ativo AND colaborador_id=%s AND aquisitivo_inicio=%s",
+                               (cid, aq), fetch="one")
+    if dias is not None and float(usados["n"]) > dias:
+        raise HTTPException(status_code=422, detail=f"Já há {float(usados['n']):g} dias lançados neste período — remova antes de reduzir o direito")
+    await ajard_query("""INSERT INTO rh.ferias_periodos (colaborador_id, aquisitivo_inicio, dias_direito, quitado, observacao, atualizado_por)
+                         VALUES (%s,%s,%s,%s,%s,%s)
+                         ON CONFLICT (colaborador_id, aquisitivo_inicio) DO UPDATE
+                            SET dias_direito=EXCLUDED.dias_direito, quitado=EXCLUDED.quitado, observacao=EXCLUDED.observacao,
+                                atualizado_por=EXCLUDED.atualizado_por, atualizado_em=now()""",
+                      (cid, aq, dias, bool(d.get("quitado")), (d.get("observacao") or "").strip() or None, payload.get("login") or payload.get("sub")), fetch="none")
+    return {"ok": True}
+
+
+@router.post("/rh/api/ferias/lancamentos")
+async def ferias_lancar(request: Request, payload=Depends(verificar_rh)):
+    """Programa ou registra férias (ou abono pecuniário) de um período já adquirido."""
+    await garantir_rh()
+    d = await request.json()
+    cid, aq = d.get("colaborador_id"), _data(d.get("aquisitivo_inicio"))
+    tipo = d.get("tipo") or "ferias"
+    if tipo not in _FERIAS_TIPOS:
+        raise HTTPException(status_code=422, detail="Tipo inválido")
+    if not cid or not aq:
+        raise HTTPException(status_code=422, detail="Informe o colaborador e o período")
+    p = await _ferias_periodo_valido(cid, aq)
+    dias, ini = _num(d.get("dias")), _data(d.get("inicio"))
+    if not dias or dias <= 0:
+        raise HTTPException(status_code=422, detail="Informe a quantidade de dias")
+    if tipo == "ferias":
+        if not ini:
+            raise HTTPException(status_code=422, detail="Informe a data de início das férias")
+        if ini < p["conc_ini"]:
+            raise HTTPException(status_code=422, detail=f"As férias deste período só podem começar a partir de {p['conc_ini'].strftime('%d/%m/%Y')}")
+    aj = await ajard_query("SELECT * FROM rh.ferias_periodos WHERE colaborador_id=%s AND aquisitivo_inicio=%s", (cid, aq), fetch="one")
+    direito = float(aj["dias_direito"]) if aj and aj["dias_direito"] is not None else 30.0
+    ja = await ajard_query("SELECT tipo, inicio, dias FROM rh.ferias_lanc WHERE ativo AND colaborador_id=%s AND aquisitivo_inicio=%s", (cid, aq)) or []
+    usados = sum(float(x["dias"]) for x in ja)
+    if usados + dias > direito + 0.001:
+        raise HTTPException(status_code=422, detail=f"Passa do direito: restam {direito - usados:g} de {direito:g} dias neste período")
+    if tipo == "abono" and sum(float(x["dias"]) for x in ja if x["tipo"] == "abono") + dias > direito / 3 + 0.001:
+        raise HTTPException(status_code=422, detail=f"O abono (venda) é de no máximo um terço do direito: {direito / 3:g} dias")
+    if tipo == "ferias":
+        fim = ini + _dtm.timedelta(days=dias - 1)
+        for x in ja:
+            if x["tipo"] == "ferias" and x["inicio"] and not (fim < x["inicio"] or ini > x["inicio"] + _dtm.timedelta(days=float(x["dias"]) - 1)):
+                raise HTTPException(status_code=422, detail="Já existe um lançamento de férias nessas datas")
+    await ajard_query("""INSERT INTO rh.ferias_lanc (colaborador_id, aquisitivo_inicio, tipo, inicio, dias, observacao, criado_por)
+                         VALUES (%s,%s,%s,%s,%s,%s,%s)""",
+                      (cid, aq, tipo, ini if tipo == "ferias" else None, dias, (d.get("observacao") or "").strip() or None,
+                       payload.get("login") or payload.get("sub")), fetch="none")
+    avisos = []
+    if tipo == "ferias":
+        if fim > p["conc_fim"]:
+            avisos.append(f"Atenção: termina em {fim.strftime('%d/%m/%Y')}, depois do prazo de gozo ({p['conc_fim'].strftime('%d/%m/%Y')}) — os dias fora do prazo são pagos em dobro.")
+        partes = [float(x["dias"]) for x in ja if x["tipo"] == "ferias"] + [dias]
+        if len(partes) > 3:
+            avisos.append("A CLT permite dividir as férias em até 3 partes.")
+        if len(partes) > 1 and (min(partes) < 5 or max(partes) < 14) and usados + dias >= direito - 0.001:
+            avisos.append("Na divisão, uma parte deve ter pelo menos 14 dias e as outras pelo menos 5.")
+    return {"ok": True, "avisos": avisos}
+
+
+@router.delete("/rh/api/ferias/lancamentos/{lid}")
+async def ferias_lanc_excluir(lid: str, payload=Depends(verificar_rh)):
+    await garantir_rh()
+    n = await ajard_query("UPDATE rh.ferias_lanc SET ativo=false WHERE id=%s AND ativo RETURNING id", (lid,))
+    if not n:
+        raise HTTPException(status_code=404, detail="Lançamento não encontrado")
+    return {"ok": True}
