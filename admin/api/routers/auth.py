@@ -196,7 +196,7 @@ async def renovar_token(payload=Depends(verificar_token)):
     }
 
 @router.post("/auth/webauthn/registro/desafio")
-async def webauthn_registro_desafio(db=Depends(get_db), payload=Depends(verificar_token)):
+async def webauthn_registro_desafio(aparelho: str = "", db=Depends(get_db), payload=Depends(verificar_token)):
     """Passo 1 do cadastro (usuário LOGADO): gera as opções para
     navigator.credentials.create() e persiste o desafio."""
     user = await db.fetchrow(
@@ -209,7 +209,8 @@ async def webauthn_registro_desafio(db=Depends(get_db), payload=Depends(verifica
         "SELECT credential_id FROM public.credenciais_webauthn WHERE usuario_id=$1 AND ativo=TRUE",
         user["id"]
     )
-    options_json, desafio = gerar_opcoes_registro(dict(user), [dict(r) for r in existentes])
+    # (19/11/2026) ?aparelho=qualquer → aceita chave no celular (computador sem Windows Hello); padrão continua só o próprio aparelho
+    options_json, desafio = gerar_opcoes_registro(dict(user), [dict(r) for r in existentes], qualquer_aparelho=(aparelho == "qualquer"))
     await db.execute("DELETE FROM public.webauthn_desafios WHERE login=$1 AND tipo='registro'", user["login"])
     await db.execute(
         "INSERT INTO public.webauthn_desafios (login, desafio, tipo) VALUES ($1,$2,'registro')",

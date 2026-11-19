@@ -51,7 +51,7 @@ CREATE TABLE IF NOT EXISTS public.webauthn_desafios (
 """
 
 
-def gerar_opcoes_registro(usuario: dict, credenciais_existentes: list) -> tuple:
+def gerar_opcoes_registro(usuario: dict, credenciais_existentes: list, qualquer_aparelho: bool = False) -> tuple:
     """Opções para navigator.credentials.create().
     Retorna (options_json: str, desafio_b64url: str)."""
     options = generate_registration_options(
@@ -66,7 +66,8 @@ def gerar_opcoes_registro(usuario: dict, credenciais_existentes: list) -> tuple:
             # do Android, deixando o cadastro com o mínimo de passos possível.
             # (A tela de consentimento em si é do sistema e aparece 1x por
             # aparelho, apenas no cadastro — o login diário vai direto ao dedo.)
-            authenticator_attachment=AuthenticatorAttachment.PLATFORM,
+            # (19/11/2026) qualquer_aparelho=True: computador SEM Windows Hello cadastra a chave no celular (QR code)
+            authenticator_attachment=None if qualquer_aparelho else AuthenticatorAttachment.PLATFORM,
             user_verification=UserVerificationRequirement.REQUIRED,
             resident_key=ResidentKeyRequirement.PREFERRED,
         ),

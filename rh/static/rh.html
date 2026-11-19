@@ -693,46 +693,67 @@ async function apiId(path, opts){
     return await api(path, opts);
   }
 }
-async function confirmarIdentidade(){
+// (19/11/2026) Refeito depois do teste real da Edvania. O que travava:
+//  1. clicar de novo em "mostrar" com a janela do Windows aberta → "A request is already pending";
+//  2. a biometria antiga (endereço antigo / celular) fazia o Windows oferecer só "chave de segurança" e celular,
+//     e a pessoa nunca chegava no cadastro deste computador.
+// Agora: um pedido por vez (o anterior é cancelado) · computador que ainda não confirmou neste endereço vê PRIMEIRO
+// a janela de cadastro · sem Windows Hello, explica e deixa cadastrar a chave no celular.
+let _bioEmCurso = null, _bioAbort = null;
+const _bioChave = () => 'garra_bio_' + location.host;
+const _bioEsteAparelho = () => { try { return localStorage.getItem(_bioChave()) === '1'; } catch(e){ return false; } };
+const _bioMarcar = () => { try { localStorage.setItem(_bioChave(), '1'); } catch(e){} };
+function _bioSinal(){ try { if (_bioAbort) _bioAbort.abort(); } catch(e){} _bioAbort = new AbortController(); return _bioAbort.signal; }
+function confirmarIdentidade(){
+  if (_bioEmCurso) { toast('Já existe uma confirmação aberta — conclua ou cancele a janela'); return _bioEmCurso; }
+  _bioEmCurso = _confirmarIdentidade().finally(() => { _bioEmCurso = null; });
+  return _bioEmCurso;
+}
+async function _confirmarIdentidade(){
   let st; try { st = await api('/rh/api/identidade'); } catch(e){ toast('❌ ' + e.message); return false; }
-  if (!st.biometrias) {
-    return await new Promise(res => {
-      modal('Confirme sua identidade', '<p style="margin-bottom:8px">Documentos sigilosos e senhas das plataformas só abrem com <b>biometria</b> (Windows Hello, digital ou rosto).</p>'
-        + '<p class="muted">Você ainda não tem biometria cadastrada neste computador. Cadastre agora — leva 10 segundos e vale para as próximas vezes.</p>',
-        'Cadastrar biometria deste computador', () => { setTimeout(async () => { const ok = await bioRegistrar(); res(ok ? await bioConfirmar() : false); }, 0); });
-      const c = document.querySelector('#modal .btn:not(.pri)'); if (c) c.addEventListener('click', () => res(false));
-    });
-  }
+  // nunca confirmou neste computador/endereço → cadastro primeiro (evita a janela do Windows sem saída)
+  if (!st.biometrias || !_bioEsteAparelho()) return await bioJanelaCadastro(!!st.biometrias);
   return await bioConfirmar();
 }
-// (19/11/2026) A chave não foi achada (ou a pessoa cancelou). Antes era um "confirm" que só aparecia uma vez e era
-// fácil de recusar sem entender; agora é uma janela com a explicação e o botão de cadastrar — aparece sempre.
-// Caso típico: a biometria foi criada no endereço antigo (garra-sistemas.onrender.com) ou só no celular;
-// a chave de acesso vale só para o endereço e o aparelho em que foi criada.
-function bioNaoAchou(){
-  return new Promise(res => {
-    modal('Biometria não encontrada neste computador',
-      '<p style="margin-bottom:8px">O computador não achou uma chave de acesso válida para <b>' + esc(location.host) + '</b>.</p>'
-      + '<p class="muted" style="margin-bottom:8px">Isso acontece quando a biometria foi cadastrada no <b>endereço antigo</b> do sistema ou <b>só no celular</b>: a chave vale apenas para o endereço e o aparelho em que foi criada.</p>'
-      + '<p>Cadastre a biometria <b>deste computador</b> agora (PIN, digital ou rosto do Windows). Leva 10 segundos e vale para as próximas vezes.</p>'
-      + '<p class="muted" style="margin-top:8px;font-size:11px">Se o Windows só oferecer o celular, o Windows Hello não está ativo: ative o PIN em Configurações › Contas › Opções de entrada, ou crie a chave no celular lendo o QR code.</p>',
-      'Cadastrar biometria deste computador', () => { setTimeout(async () => { const ok = await bioRegistrar(); res(ok ? await bioConfirmar() : false); }, 0); });
-    const c = document.querySelector('#modal .btn:not(.pri)'); if (c) c.addEventListener('click', () => { toast('Confirmação cancelada'); res(false); });
+async function _bioTemHello(){ try { return !!(window.PublicKeyCredential && await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable()); } catch(e){ return false; } }
+async function bioJanelaCadastro(temOutra, naoAchou){
+  const hello = await _bioTemHello();
+  return await new Promise(res => {
+    let feito = false, seguindo = false; const fim = v => { if (!feito) { feito = true; res(v); } };
+    const txt = '<p style="margin-bottom:8px">Documentos sigilosos e senhas das plataformas só abrem com <b>biometria</b>.</p>'
+      + (naoAchou ? '<p style="margin-bottom:8px;color:#B45309"><b>A chave de acesso não foi encontrada.</b></p>' : '')
+      + '<p class="muted" style="margin-bottom:8px">Este computador ainda não tem chave de acesso para <b>' + esc(location.host) + '</b>.'
+      + (temOutra ? ' A biometria que você já tinha foi criada no <b>endereço antigo</b> do sistema ou em <b>outro aparelho</b>, e a chave só vale onde foi criada.' : '') + '</p>'
+      + (hello
+          ? '<p>Cadastre agora a biometria <b>deste computador</b> (PIN, digital ou rosto do Windows). Leva 10 segundos e vale para as próximas vezes.</p>'
+          : '<p style="margin-bottom:8px"><b>Este computador não tem o Windows Hello ativo</b> (PIN, digital ou rosto).</p>'
+            + '<p class="muted" style="margin-bottom:8px">Melhor caminho: ative o PIN em <b>Configurações › Contas › Opções de entrada › PIN (Windows Hello)</b> e volte aqui.</p>'
+            + '<p>Ou cadastre a chave no <b>celular</b> agora: o Windows mostra um QR code, você lê com a câmera e confirma com a digital. Vai pedir o celular toda vez.</p>')
+      + (temOutra ? '<p style="margin-top:10px;font-size:11px"><a href="#" id="bio-ja">Já cadastrei neste computador — só confirmar</a></p>' : '');
+    modal('Confirme sua identidade', txt, hello ? 'Cadastrar biometria deste computador' : 'Cadastrar a chave no celular',
+      () => { seguindo = true; setTimeout(async () => { const ok = await bioRegistrar(!hello); fim(ok ? await bioConfirmar() : false); }, 0); });
+    const ja = document.getElementById('bio-ja'); if (ja) ja.addEventListener('click', e => { e.preventDefault(); seguindo = true; fecharModal(); setTimeout(async () => fim(await bioConfirmar()), 0); });
+    // janela fechada sem escolher (Cancelar, Esc, clique fora) → encerra o pedido, senão o próximo "mostrar" ficaria preso
+    const m = document.getElementById('modal'); const ob = new MutationObserver(() => { if (!m.innerHTML) { ob.disconnect(); if (!seguindo) fim(false); } }); ob.observe(m, { childList: true });
   });
 }
-async function bioRegistrar(){
+const bioNaoAchou = () => bioJanelaCadastro(true, true);
+const _bioPendente = e => /already pending|pending request/i.test((e && e.message) || '') || (e && e.name === 'OperationError');
+async function bioRegistrar(noCelular){
   if (!window.PublicKeyCredential) { alert('Este navegador não aceita biometria. Use o Chrome ou o Edge atualizado.'); return false; }
   try {
-    const o = await api('/auth/webauthn/registro/desafio', { method: 'POST' });
+    const o = await api('/auth/webauthn/registro/desafio' + (noCelular ? '?aparelho=qualquer' : ''), { method: 'POST' });
     o.challenge = b64uBuf(o.challenge); o.user.id = b64uBuf(o.user.id); (o.excludeCredentials || []).forEach(c => c.id = b64uBuf(c.id));
-    const cred = await navigator.credentials.create({ publicKey: o });
-    await api('/auth/webauthn/registro/verificar', { method: 'POST', body: JSON.stringify({ apelido: 'Computador (RH)', credencial: {
+    const cred = await navigator.credentials.create({ publicKey: o, signal: _bioSinal() });
+    await api('/auth/webauthn/registro/verificar', { method: 'POST', body: JSON.stringify({ apelido: noCelular ? 'Celular (RH)' : 'Computador (RH)', credencial: {
       id: cred.id, rawId: bufB64u(cred.rawId), type: cred.type,
       response: { clientDataJSON: bufB64u(cred.response.clientDataJSON), attestationObject: bufB64u(cred.response.attestationObject) } } }) });
-    toast('Biometria cadastrada neste computador'); return true;
+    _bioMarcar(); toast(noCelular ? 'Chave cadastrada no celular' : 'Biometria cadastrada neste computador'); return true;
   } catch(e){
-    if (e.name === 'InvalidStateError') return true;   // já cadastrada
-    alert(e.name === 'NotAllowedError' ? 'Cadastro cancelado.' : ('Não foi possível cadastrar: ' + e.message + '\n\nNo Windows, confira se o Windows Hello (PIN, digital ou rosto) está configurado.'));
+    if (e.name === 'InvalidStateError') { _bioMarcar(); return true; }   // já cadastrada neste aparelho
+    if (e.name === 'AbortError') return false;
+    if (_bioPendente(e)) { alert('Ainda há uma janela de segurança do Windows aberta.\n\nFeche-a (Cancelar) e clique em "mostrar" de novo.'); return false; }
+    alert(e.name === 'NotAllowedError' ? 'Cadastro cancelado ou não concluído.\n\nSe o Windows não ofereceu PIN/digital, o Windows Hello não está ativo neste computador.' : ('Não foi possível cadastrar: ' + e.message));
     return false;
   }
 }
@@ -740,18 +761,17 @@ async function bioConfirmar(){
   try {
     const o = await api('/rh/api/identidade/desafio', { method: 'POST' });
     o.challenge = b64uBuf(o.challenge); (o.allowCredentials || []).forEach(c => c.id = b64uBuf(c.id));
-    const cred = await navigator.credentials.get({ publicKey: o });
+    const cred = await navigator.credentials.get({ publicKey: o, signal: _bioSinal() });
     await api('/rh/api/identidade/verificar', { method: 'POST', body: JSON.stringify({ credencial: {
       id: cred.id, rawId: bufB64u(cred.rawId), type: cred.type,
       response: { clientDataJSON: bufB64u(cred.response.clientDataJSON), authenticatorData: bufB64u(cred.response.authenticatorData),
                   signature: bufB64u(cred.response.signature), userHandle: cred.response.userHandle ? bufB64u(cred.response.userHandle) : null } } }) });
-    toast('Identidade confirmada por 15 minutos'); return true;
+    _bioMarcar(); toast('Identidade confirmada por 15 minutos'); return true;
   } catch(e){
-    if (e.message === 'SEM_BIOMETRIA') { const ok = await bioRegistrar(); return ok ? bioConfirmar() : false; }
-    if (e.name === 'NotAllowedError' || e.name === 'InvalidStateError') {
-      // cancelou, ou a biometria cadastrada é de outro aparelho / do endereço antigo → janela com o cadastro
-      return await bioNaoAchou();
-    }
+    if (e.message === 'SEM_BIOMETRIA') return await bioJanelaCadastro(false);
+    if (e.name === 'AbortError') return false;
+    if (_bioPendente(e)) { alert('Ainda há uma janela de segurança do Windows aberta.\n\nFeche-a (Cancelar) e clique em "mostrar" de novo.'); return false; }
+    if (e.name === 'NotAllowedError' || e.name === 'InvalidStateError') return await bioNaoAchou();   // cancelou ou a chave não é deste aparelho/endereço
     alert('Não foi possível confirmar: ' + e.message); return false;
   }
 }
