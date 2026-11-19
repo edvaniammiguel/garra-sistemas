@@ -1407,9 +1407,9 @@ async def listar_pecas(busca: str = None, familia: str = None, limit: int = 100,
     if busca and busca.strip():
         # (19/10/2026) cada palavra tem de aparecer (em qualquer campo): "kondor 45" acha
         # "Bateria Kondor 45 Amp" mesmo com palavras fora de ordem
-        for palavra in _sem_acento(busca.strip()).split():
-            b = f"%{palavra}%"
-            where.append("(" + " OR ".join(f"{_sem_acento_sql(c)} ILIKE %s" for c in _PECA_BUSCA) + ")"); params += [b] * len(_PECA_BUSCA)
+        _sql, _par = _peca_busca_sql(busca)   # (18/11/2026) mesma busca do Estoque e do Extrato
+        if _sql:
+            where.append(_sql); params += _par
     if familia and familia.strip().startswith("@"):
         # (19/10/2026) '@G' = toda uma CLASSE da Norma (classe gravada na peça
         # OU prefixo do código OU classe da família cadastrada)
@@ -3140,6 +3140,25 @@ async def _garantir_peca_cols():
         await _importar_codificacao_mww()
     except Exception as e:
         print("Codificação ManWinWin: importação não concluída —", str(e)[:200])
+    try:
+        await _limpar_obs_substitutos_mww()
+    except Exception as e:
+        print("Substitutos ManWinWin: limpeza não concluída —", str(e)[:200])
+
+
+async def _limpar_obs_substitutos_mww():
+    """(18/11/2026) UMA VEZ: a importação gravou a palavra 'ManWinWin' na observação dos substitutos como marca
+    de origem — e a tela mostra esse campo como "Restrições", o que confundia. No ManWinWin o texto de restrição
+    estava vazio em todos; aqui o campo volta a ficar vazio. Só mexe onde o texto é exatamente 'ManWinWin'."""
+    await ajard_query("""CREATE TABLE IF NOT EXISTS manutencao.migracoes_dados (
+                             chave TEXT PRIMARY KEY, detalhe TEXT, feito_em TIMESTAMPTZ DEFAULT now())""", fetch="none")
+    if await ajard_query("SELECT 1 FROM manutencao.migracoes_dados WHERE chave='mww_subst_obs_v1'", fetch="one"):
+        return
+    tab, _ = await _garantir_tabela("substitutos")
+    feitos = await ajard_query(f"UPDATE {tab} SET observacao=NULL WHERE observacao='ManWinWin' RETURNING id") or []
+    await ajard_query("INSERT INTO manutencao.migracoes_dados (chave, detalhe) VALUES ('mww_subst_obs_v1', %s) ON CONFLICT DO NOTHING",
+                      (f"{len(feitos)} substituto(s) sem a marca na coluna Restrições",), fetch="none")
+    print("Substitutos ManWinWin:", len(feitos), "restrição(ões) limpa(s)")
 
 
 async def _importar_codificacao_mww():
@@ -3190,7 +3209,7 @@ async def _importar_codificacao_mww():
         pares = _json.dumps(dados.get("substitutos") or [], ensure_ascii=False)
         novos = await ajard_query(
             f"""INSERT INTO {tab} (peca_codigo, substituto_codigo, observacao)
-                SELECT v->>0, v->>1, 'ManWinWin'
+                SELECT v->>0, v->>1, NULL
                   FROM jsonb_array_elements(%s::jsonb) v
                  WHERE EXISTS (SELECT 1 FROM manutencao.pecas a WHERE a.codigo = v->>0 AND a.ativo)
                    AND EXISTS (SELECT 1 FROM manutencao.pecas b WHERE b.codigo = v->>1 AND b.ativo)
@@ -3208,6 +3227,19 @@ _COD_CAMPO = {"estruturado": "codigo_estruturado", "fabricante": "codigo_fabrica
 _COD_NOME = {"estruturado": "Cód. Estruturado", "fabricante": "Cód. Fabricante", "externo": "Cód. Externo"}
 # busca de item: qualquer um dos códigos (inclusive os que o item já teve) ou a descrição
 _PECA_BUSCA = ("codigo", "descricao", "codigo_externo", "codigo_fabricante", "codigo_estruturado", "codigos_anteriores")
+
+
+def _peca_busca_sql(texto: str, prefixo: str = ""):
+    """(18/11/2026) Uma busca de peça só, para Catálogo, Estoque e Extrato: cada PALAVRA digitada tem de
+    aparecer em algum campo (código, descrição ou qualquer um dos outros códigos), em qualquer ordem.
+    Traços e sinais soltos são ignorados — colar "W950/26 — Filtro lubrificante de motor" (como o item
+    aparece na cotação) acha o item. Devolve (sql, params); sql vazio = nada a filtrar."""
+    palavras = [w for w in _sem_acento((texto or "").strip()).split() if any(ch.isalnum() for ch in w)]
+    partes, params = [], []
+    for w in palavras:
+        partes.append("(" + " OR ".join(f"{_sem_acento_sql(prefixo + c)} ILIKE %s" for c in _PECA_BUSCA) + ")")
+        params += [f"%{w}%"] * len(_PECA_BUSCA)
+    return " AND ".join(partes), params
 
 
 async def _renomear_peca(peca_id, antigo: str, novo: str):
@@ -5443,8 +5475,10 @@ async def lente_armazem(almox: str = None, busca: str = None, familia: str = Non
     if almox:
         conds.append(("a.codigo = %s", [almox], False))
     if busca:
-        conds.append(("(" + " OR ".join(f"{_sem_acento_sql('p.' + c)} ILIKE %s" for c in _PECA_BUSCA) + ")",
-                      [f"%{_sem_acento(busca)}%"] * len(_PECA_BUSCA), True))
+        # (18/11/2026) palavra a palavra, como no Catálogo — antes exigia o texto inteiro num campo só
+        _sql, _par = _peca_busca_sql(busca, "p.")
+        if _sql:
+            conds.append(("(" + _sql + ")", _par, True))
     if familia and familia.startswith("@"):
         conds.append((_classe_cond("p"), _classe_params(familia), True))
     elif familia:
@@ -5529,8 +5563,9 @@ async def listar_movimentacoes(almox: str = None, limit: int = 120, de: str = No
         cond.append("m.documento_numero ILIKE %s"); params.append(f"%{documento.strip()}%")
     if peca:
         await _garantir_peca_cols()   # (18/11/2026) o filtro de peça do extrato também acha por qualquer código
-        cond.append("(" + " OR ".join(f"{_sem_acento_sql('p.' + c)} ILIKE %s" for c in _PECA_BUSCA) + ")")
-        params += [f"%{_sem_acento(peca)}%"] * len(_PECA_BUSCA)
+        _sql, _par = _peca_busca_sql(peca, "p.")   # (18/11/2026) palavra a palavra
+        if _sql:
+            cond.append("(" + _sql + ")"); params += _par
     if tipo:
         cond.append("m.tipo = %s"); params.append(tipo)
     if ot:

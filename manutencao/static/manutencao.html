@@ -4405,7 +4405,9 @@ function otEncEstado(o){
     const aps = (o.apontamentos||[]).slice();
     const ultimo = aps.slice().sort((a,b) => String(b.criado_em||'').localeCompare(String(a.criado_em||'')))[0] || null;
     const comHor = aps.filter(a => a.horimetro != null && a.horimetro !== '').sort((a,b) => parseFloat(b.horimetro)-parseFloat(a.horimetro))[0] || null;
-    _otEncState[id] = { data: otEncLocal(ultimo && ultimo.criado_em ? ultimo.criado_em : new Date()),
+    // (19/11/2026) Fim NÃO é mais sugerido (vinha a hora de agora ou do último registro): nasce vazio,
+    // quem encerra informa a data/hora real — o Encerrar já cobra o campo.
+    _otEncState[id] = { data: '',
                         hor: comHor ? String(comHor.horimetro) : '', horApp: comHor ? String(comHor.horimetro) : '',
                         obs: (o.tarefas_realizado||'').trim() || aps.slice().reverse().map(a => a.relato).filter(Boolean).join(' · '), hp: '' };   // relato do encerramento = Tarefas › Realizado
   }
@@ -4466,7 +4468,7 @@ function otEncerrarDialogo(id){
     const unid = km ? 'km' : 'h';
     const contador = km ? o.equipamento_km : o.equipamento_horimetro;
     const _local = d => { const x = new Date(d); if (isNaN(x)) return ''; const p = n => String(n).padStart(2,'0'); return x.getFullYear()+'-'+p(x.getMonth()+1)+'-'+p(x.getDate())+'T'+p(x.getHours())+':'+p(x.getMinutes()); };
-    const dtSug = _local(ultimo && ultimo.criado_em ? ultimo.criado_em : new Date());
+    const dtSug = '';   // (19/11/2026) data de conclusão não é sugerida — quem encerra informa
     const horSug = comHor ? String(comHor.horimetro) : '';
     const apurado = await otCustoApurado(id);
     const custoSug = apurado != null ? apurado.toFixed(2).replace('.', ',') : (o.custo_total != null ? String(o.custo_total).replace('.', ',') : '');
@@ -7753,9 +7755,12 @@ async function pecaAba(aba){
       const n = v => v == null ? '—' : parseFloat(v).toLocaleString('pt-BR');
       const lin = (r, k) => '<tr><td class="bold mono">'+_esc(r[k])+'</td><td>'+_esc(r.descricao||'')+'</td><td class="r mono" style="color:'+(r.saldo>0?'#15803D':'#B45309')+'">'+n(r.saldo)+'</td><td>'+_esc(r.observacao||'')+'</td></tr>';
       const tb = rows => '<div style="background:#fff;border:1px solid #E2E8F0;border-radius:6px;overflow:hidden"><table><thead><tr><th style="width:150px">Artigo</th><th>Descrição</th><th class="r" style="width:80px">Saldo</th><th style="width:200px">Restrições</th></tr></thead><tbody>'+rows+'</tbody></table></div>';
-      c.innerHTML = '<div class="dsec">Substitutos deste artigo — quando falta, a OT sugere o equivalente com saldo</div>'
-        + (d.substitutos.length ? tb(d.substitutos.map(r => lin(r,'substituto_codigo')).join('')) : '<div class="muted">Nenhum substituto cadastrado.</div>')
-        + (d.substitui.length ? '<div class="dsec" style="margin-top:8px">Este artigo substitui</div>' + tb(d.substitui.map(r => lin(r,'peca_codigo')).join('')) : '')
+      // (18/11/2026) vínculo de ida e volta aparece UMA vez, em "Equivalentes"; sentido único segue nos dois grupos
+      const g = _substGrupos(d);
+      c.innerHTML = (g.equiv.length ? '<div class="dsec">Equivalentes — troca nos dois sentidos · quando falta, a OT sugere o que tem saldo</div>' + tb(g.equiv.map(r => lin(r,'substituto_codigo')).join('')) : '')
+        + ((g.so_subst.length || !g.equiv.length) ? '<div class="dsec"'+(g.equiv.length?' style="margin-top:8px"':'')+'>'+(g.equiv.length ? 'Também podem substituir este artigo (só neste sentido)' : 'Substitutos deste artigo — quando falta, a OT sugere o equivalente com saldo')+'</div>'
+            + (g.so_subst.length ? tb(g.so_subst.map(r => lin(r,'substituto_codigo')).join('')) : '<div class="muted">Nenhum substituto cadastrado.</div>') : '')
+        + (g.so_substitui.length ? '<div class="dsec" style="margin-top:8px">Este artigo substitui'+(g.equiv.length || g.so_subst.length ? ' (só neste sentido)' : '')+'</div>' + tb(g.so_substitui.map(r => lin(r,'peca_codigo')).join('')) : '')
         + '<div style="display:flex;justify-content:flex-end;margin-top:10px"><button class="btn p" data-c="'+_esc(p.codigo)+'" onclick="substitutosJanela(this.dataset.c)">🔁 Gerir substitutos</button></div>';
     } catch(e){ c.innerHTML = '<span class="muted">⚠ '+_esc(e.message)+'</span>'; }
   }
@@ -9098,6 +9103,21 @@ async function substitutosJanela(peca){
   b.style.display = 'flex';
   substitutosRender(d);
 }
+/* (18/11/2026) Separa os vínculos de um item em: equivalentes (cadastrados ida E volta — mostrados uma vez só),
+   só-substitutos (outro → este não vale) e só-substitui (este → outro não vale). No equivalente, id2 = vínculo de volta. */
+function _substGrupos(d){
+  const volta = {}; (d.substitui||[]).forEach(r => { volta[r.peca_codigo] = r; });
+  const equiv = [], so_subst = [], usados = {};
+  (d.substitutos||[]).forEach(r => {
+    const v = volta[r.substituto_codigo];
+    if (v){
+      usados[r.substituto_codigo] = 1;
+      const obs = [r.observacao, v.observacao].map(x => (x||'').trim()).filter((x,i,a) => x && a.indexOf(x) === i).join(' · ');
+      equiv.push(Object.assign({}, r, { id2: v.id, observacao: obs }));
+    } else so_subst.push(r);
+  });
+  return { equiv, so_subst, so_substitui: (d.substitui||[]).filter(r => !usados[r.peca_codigo]) };
+}
 function substitutosRender(d){
   const c = document.getElementById('sub-corpo'); if (!c) return;
   const n = v => v == null ? '—' : parseFloat(v).toLocaleString('pt-BR');
@@ -9105,12 +9125,14 @@ function substitutosRender(d){
     + '<td>'+_esc(r.descricao||'')+'</td><td class="r mono" style="color:'+(r.saldo>0?'#15803D':'#B45309')+'">'+n(r.saldo)+' '+_esc(r.unidade||'')+'</td>'
     + '<td class="r mono">'+(r.custo_medio != null ? 'R$ '+parseFloat(r.custo_medio).toFixed(2) : '—')+'</td>'
     + '<td>'+_esc(r.observacao||'')+'</td>'
-    + '<td class="act"><span style="cursor:pointer;color:#B91C1C;font-weight:700" title="Remover" onclick="substitutoDel(\''+r.id+'\')">✕</span></td></tr>';
+    + '<td class="act"><span style="cursor:pointer;color:#B91C1C;font-weight:700" title="'+(r.id2?'Remover a equivalência (os dois sentidos)':'Remover')+'" onclick="substitutoDel(\''+r.id+'\''+(r.id2?',\''+r.id2+'\'':'')+')">✕</span></td></tr>';
   const tab = (tit, rows, codK, vazio) => '<div class="dsec">'+tit+' <span class="muted" style="font-weight:400">('+rows.length+')</span></div>'
     + (rows.length ? '<div style="background:#fff;border:1px solid #E2E8F0;border-radius:6px;overflow:hidden"><table><thead><tr><th style="width:150px">Artigo</th><th>Descrição</th><th class="r" style="width:90px">Saldo</th><th class="r" style="width:90px">Custo</th><th style="width:180px">Restrições</th><th style="width:30px"></th></tr></thead><tbody>'
         + rows.map(r => linha(r, codK)).join('') + '</tbody></table></div>' : '<div class="muted" style="padding:4px 2px">'+vazio+'</div>');
-  c.innerHTML = tab('Substitutos deste artigo', d.substitutos, 'substituto_codigo', 'Nenhum substituto — quando faltar este item, a OT não terá alternativa.')
-    + (d.substitui.length ? tab('Este artigo substitui', d.substitui, 'peca_codigo', '') : '');
+  const g = _substGrupos(d);   // (18/11/2026) ida e volta = uma linha só
+  c.innerHTML = (g.equiv.length ? tab('Equivalentes — troca nos dois sentidos', g.equiv, 'substituto_codigo', '') : '')
+    + ((g.so_subst.length || !g.equiv.length) ? tab(g.equiv.length ? 'Também podem substituir este artigo (só neste sentido)' : 'Substitutos deste artigo', g.so_subst, 'substituto_codigo', 'Nenhum substituto — quando faltar este item, a OT não terá alternativa.') : '')
+    + (g.so_substitui.length ? tab('Este artigo substitui'+(g.equiv.length || g.so_subst.length ? ' (só neste sentido)' : ''), g.so_substitui, 'peca_codigo', '') : '');
 }
 async function substitutoAdd(){
   const b = document.getElementById('sub-win'); if (!b || !_subCod) return;
@@ -9123,9 +9145,13 @@ async function substitutoAdd(){
     substitutosJanela(_subCod);
   } catch(e){ mostrarToast('❌ '+e.message, 'warn'); }
 }
-async function substitutoDel(id){
-  if (!confirm('Remover esta equivalência?')) return;
-  try { await mntFetch('/manutencao/api/substitutos/'+id, { method:'DELETE' }); substitutosJanela(_subCod); } catch(e){ mostrarToast('❌ '+e.message, 'warn'); }
+async function substitutoDel(id, id2){   // (18/11/2026) id2 = vínculo de volta do equivalente: sai junto
+  if (!confirm(id2 ? 'Remover esta equivalência nos dois sentidos?' : 'Remover esta equivalência?')) return;
+  try {
+    await mntFetch('/manutencao/api/substitutos/'+id, { method:'DELETE' });
+    if (id2) await mntFetch('/manutencao/api/substitutos/'+id2, { method:'DELETE' });
+    substitutosJanela(_subCod);
+  } catch(e){ mostrarToast('❌ '+e.message, 'warn'); }
 }
 /* ── Referências de fornecedor (Parametrização) ── */
 function referenciasPane(){
