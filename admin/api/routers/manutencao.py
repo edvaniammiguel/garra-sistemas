@@ -4188,16 +4188,42 @@ _DOMINIOS_PARAM = {
 }
 
 # (20/11/2026) modelo inicial de características por Tipo de equipamento (a gestão ajusta em Parametrizar)
-_CAR_CAMINHAO = ["MARCA", "MODELO", "ANO", "CHASSI / Nº SÉRIE", "RENAVAM", "Nº MOTOR", "COR", "CAPACIDADE"]
-_CAR_MAQ_PNEU = ["MARCA", "MODELO", "ANO", "Nº SÉRIE", "Nº MOTOR", "PESO OPERACIONAL", "MEDIDA DO PNEU"]
+# (20/11/2026 · 2) modelos completados com o que a Garra usava no ManWinWin (CB-0016, MA-0033, EH-0003).
+# PLACA e COMBUSTÍVEL ficam de fora: já são campos próprios da ficha. Data de vencimento (seguro) não é
+# característica — texto não alerta. Seguradora e apólice também saíram (20/11 · 3): mudam a cada renovação;
+# o vencimento do seguro é controlado por FMP (plano na Biblioteca) e semáforo.
+_CAR_CAMINHAO = ["MARCA", "MODELO", "ANO", "VERSÃO", "Nº SÉRIE", "CHASSI", "RENAVAM", "Nº CRV", "COR",
+                 "TIPO MOTOR", "Nº MOTOR", "CAPACIDADE (M³)", "QUANTIDADE DE EIXOS", "COMPRIMENTO", "LARGURA",
+                 "CATEGORIA DO VEÍCULO", "PROPRIETÁRIO", "CPF/CNPJ RESPONSÁVEL"]
+_CAR_MAQUINA = ["MARCA", "MODELO", "ANO", "Nº SÉRIE", "CHASSI", "COR", "Nº MOTOR", "PESO OPERACIONAL (KG)",
+                "CAPACIDADE DA CONCHA (M³)", "MEDIDA DO PNEU", "ALTURA", "LARGURA",
+                "PROPRIETÁRIO", "RESPONSÁVEL"]
 _MODELOS_CARAC_PADRAO = {
     "CB": _CAR_CAMINHAO, "CP": _CAR_CAMINHAO, "CPO": _CAR_CAMINHAO, "CPR": _CAR_CAMINHAO, "CR": _CAR_CAMINHAO,
+    "CA": ["MARCA", "MODELO", "ANO", "VERSÃO", "CHASSI", "RENAVAM", "Nº CRV", "COR", "Nº MOTOR",
+           "CATEGORIA DO VEÍCULO", "PROPRIETÁRIO", "CPF/CNPJ RESPONSÁVEL"],
+    "MA": ["MARCA", "MODELO", "ANO", "CHASSI", "RENAVAM", "Nº CRV", "COR",
+           "PROPRIETÁRIO", "CPF/CNPJ RESPONSÁVEL"],
+    "EH": ["MARCA", "MODELO", "ANO", "Nº SÉRIE", "CHASSI", "COR", "Nº MOTOR", "PESO OPERACIONAL (KG)",
+           "CAPACIDADE DA CONCHA (M³)", "COMPRIMENTO DOS BRAÇOS", "LARGURA DA SAPATA", "ALTURA", "LARGURA",
+           "PROPRIETÁRIO", "RESPONSÁVEL"],
+    "PC": _CAR_MAQUINA, "RE": _CAR_MAQUINA,
+    "RC": ["MARCA", "MODELO", "ANO", "Nº SÉRIE", "CHASSI", "COR", "Nº MOTOR", "PESO OPERACIONAL (KG)",
+           "LARGURA DO CILINDRO", "MEDIDA DO PNEU", "PROPRIETÁRIO", "RESPONSÁVEL"],
+    "PNEU": ["MARCA", "MODELO", "MEDIDA", "DOT / Nº SÉRIE", "SULCO (MM)"],
+    "CE": ["TAMANHO", "COR", "FABRICANTE"],
+    "C": ["MARCA", "MODELO", "ANO", "CHASSI", "RENAVAM", "Nº CRV", "CAPACIDADE", "QUANTIDADE DE EIXOS", "PROPRIETÁRIO"],
+    "GE": ["MARCA", "MODELO", "ANO", "Nº SÉRIE", "POTÊNCIA (KVA)", "TENSÃO (V)", "Nº MOTOR", "PROPRIETÁRIO"],
+}
+# modelos da 1ª carga (20/11 20:32) — só são trocados pelos novos se ninguém mexeu neles na tela
+_CAR_V1_CAM = ["MARCA", "MODELO", "ANO", "CHASSI / Nº SÉRIE", "RENAVAM", "Nº MOTOR", "COR", "CAPACIDADE"]
+_CAR_V1_MAQ = ["MARCA", "MODELO", "ANO", "Nº SÉRIE", "Nº MOTOR", "PESO OPERACIONAL", "MEDIDA DO PNEU"]
+_MODELOS_CARAC_V1 = {
+    "CB": _CAR_V1_CAM, "CP": _CAR_V1_CAM, "CPO": _CAR_V1_CAM, "CPR": _CAR_V1_CAM, "CR": _CAR_V1_CAM,
     "CA": ["MARCA", "MODELO", "ANO", "CHASSI / Nº SÉRIE", "RENAVAM", "COR"],
     "MA": ["MARCA", "MODELO", "ANO", "CHASSI / Nº SÉRIE", "RENAVAM", "COR"],
     "EH": ["MARCA", "MODELO", "ANO", "Nº SÉRIE", "Nº MOTOR", "PESO OPERACIONAL", "LARGURA DA SAPATA"],
-    "PC": _CAR_MAQ_PNEU, "RE": _CAR_MAQ_PNEU, "RC": _CAR_MAQ_PNEU,
-    "PNEU": ["MARCA", "MODELO", "MEDIDA", "DOT / Nº SÉRIE", "SULCO (MM)"],
-    "CE": ["TAMANHO", "COR", "FABRICANTE"],
+    "PC": _CAR_V1_MAQ, "RE": _CAR_V1_MAQ, "RC": _CAR_V1_MAQ,
     "C": ["MARCA", "MODELO", "ANO", "CHASSI / Nº SÉRIE", "CAPACIDADE"],
     "GE": ["MARCA", "MODELO", "Nº SÉRIE", "POTÊNCIA (KVA)", "Nº MOTOR"],
 }
@@ -4311,9 +4337,14 @@ async def _garantir_dominios():
     # Carga inicial só onde o tipo ainda não tem modelo — o que a gestão montar na tela prevalece.
     await ajard_query("ALTER TABLE manutencao.tipos_equipamento ADD COLUMN IF NOT EXISTS caracteristicas JSONB", fetch="none")
     for _sig, _lst in _MODELOS_CARAC_PADRAO.items():
+        # só troca modelo intocado: vazio, igual à 1ª carga, ou igual à 2ª carga (que ainda tinha seguradora/apólice)
+        _v1 = _MODELOS_CARAC_V1.get(_sig) or _lst
+        _v2 = _lst + ["SEGURADORA", "APÓLICE"]
         await ajard_query("""UPDATE manutencao.tipos_equipamento SET caracteristicas=%s::jsonb
-                             WHERE upper(sigla)=%s AND caracteristicas IS NULL""",
-                          (_json.dumps(_lst, ensure_ascii=False), _sig), fetch="none")
+                             WHERE upper(sigla)=%s AND (caracteristicas IS NULL OR caracteristicas = %s::jsonb
+                                                        OR caracteristicas = %s::jsonb)""",
+                          (_json.dumps(_lst, ensure_ascii=False), _sig, _json.dumps(_v1, ensure_ascii=False),
+                           _json.dumps(_v2, ensure_ascii=False)), fetch="none")
     # (20/11/2026) Listas novas: padrão + o que já está gravado (nada que existe fica fora da lista)
     for _tab, _itens in _LISTAS_PADRAO.items():
         for _c, _n in _itens:
