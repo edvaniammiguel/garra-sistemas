@@ -4179,6 +4179,38 @@ _DOMINIOS_PARAM = {
     # em vez de texto livre. O CÓDIGO é fixo (checklist, app do operador e OT usam o código); o nome é o que
     # aparece. Cada categoria diz a medição padrão, o desenho de pneus e se é componente (subsistema).
     "categorias-objeto": "manutencao.categorias_objeto",
+    # (20/11/2026) Fim dos campos livres na Manutenção: listas simples (código + nome) em Parametrizar.
+    # Unidade dos pontos de leitura (°C, bar…), nome das características do objeto (MARCA, DOT…),
+    # posição do componente no equipamento e motivo de envio da guia de transporte.
+    "unidades-leitura": "manutencao.unidades_leitura",
+    "caracteristicas-objeto": "manutencao.caracteristicas_objeto",
+    "posicoes": "manutencao.posicoes",
+    "motivos-envio": "manutencao.motivos_envio",
+}
+
+# (20/11/2026) carga inicial das listas novas — idempotente; nomes já existentes ficam como estão
+_LISTAS_PADRAO = {
+    "manutencao.unidades_leitura": [
+        ("H", "Horas"), ("KM", "Quilômetros"), ("°C", "Graus Celsius"), ("BAR", "Bar (pressão)"), ("PSI", "PSI (pressão)"),
+        ("MM", "Milímetros"), ("%", "Percentual"), ("V", "Volts"), ("A", "Ampères"), ("L", "Litros"), ("RPM", "Rotações por minuto")],
+    "manutencao.caracteristicas_objeto": [
+        ("MARCA", "Marca"), ("MODELO", "Modelo"), ("ANO", "Ano"), ("CHASSI / Nº SÉRIE", "Chassi / número de série"), ("COR", "Cor"), ("MEDIDA", "Medida"), ("DOT / Nº SÉRIE", "DOT / número de série"),
+        ("SULCO (MM)", "Sulco na entrada (mm)"), ("Nº SÉRIE", "Número de série"), ("CAPACIDADE (M³)", "Capacidade (m³)"),
+        ("FABRICANTE", "Fabricante"), ("HORAS NA REFORMA", "Horas na reforma"), ("DATA REFORMA", "Data da reforma"),
+        ("OFICINA", "Oficina"), ("GARANTIA", "Garantia"), ("PRESSÃO", "Pressão de trabalho")],
+    "manutencao.posicoes": [
+        ("DIANT-ESQ", "Dianteiro esquerdo"), ("DIANT-DIR", "Dianteiro direito"),
+        ("TRAS-ESQ", "Traseiro esquerdo"), ("TRAS-DIR", "Traseiro direito"),
+        ("TRAS-ESQ-EXT", "Traseiro esquerdo externo"), ("TRAS-ESQ-INT", "Traseiro esquerdo interno"),
+        ("TRAS-DIR-INT", "Traseiro direito interno"), ("TRAS-DIR-EXT", "Traseiro direito externo"),
+        ("REB-ESQ-EXT", "Reboque esquerdo externo"), ("REB-ESQ-INT", "Reboque esquerdo interno"),
+        ("REB-DIR-INT", "Reboque direito interno"), ("REB-DIR-EXT", "Reboque direito externo"),
+        ("TAN-ESQ-1", "Tandem esquerdo 1"), ("TAN-DIR-1", "Tandem direito 1"),
+        ("TAN-ESQ-2", "Tandem esquerdo 2"), ("TAN-DIR-2", "Tandem direito 2"),
+        ("ESTEPE", "Estepe"), ("MOTOR", "Motor"), ("BOMBA-PRINC", "Bomba principal"), ("CACAMBA", "Caçamba")],
+    "manutencao.motivos_envio": [
+        ("RECAP", "Recapagem"), ("RETIF", "Retífica"), ("REFORMA", "Reforma"), ("CONSERTO", "Conserto / oficina externa"),
+        ("GARANTIA", "Garantia"), ("EMPRESTIMO", "Empréstimo"), ("OUTRO", "Outro")],
 }
 
 # (12/11/2026) carga inicial: (codigo, nome, medicao, diagrama de pneus, componente)
@@ -4266,6 +4298,38 @@ async def _garantir_dominios():
         SELECT DISTINCT upper(trim(unidade)), upper(trim(unidade)) FROM manutencao.pecas
          WHERE coalesce(trim(unidade),'') <> ''
         ON CONFLICT (codigo) DO NOTHING""", fetch="none")
+    # (20/11/2026) Listas novas: padrão + o que já está gravado (nada que existe fica fora da lista)
+    for _tab, _itens in _LISTAS_PADRAO.items():
+        for _c, _n in _itens:
+            await ajard_query(f"INSERT INTO {_tab} (codigo, nome) VALUES (%s,%s) ON CONFLICT (codigo) DO NOTHING",
+                              (_c, _n), fetch="none")
+    for _sql in (
+        # unidades já digitadas nos pontos de leitura
+        """INSERT INTO manutencao.unidades_leitura (codigo, nome)
+           SELECT DISTINCT upper(trim(unidade)), trim(unidade) FROM manutencao.pontos_controle
+            WHERE coalesce(trim(unidade),'') <> '' ON CONFLICT (codigo) DO NOTHING""",
+        # nomes de características já usados nas fichas dos objetos ({"r": nome, "v": valor})
+        """INSERT INTO manutencao.caracteristicas_objeto (codigo, nome)
+           SELECT DISTINCT upper(trim(c->>'r')), upper(trim(c->>'r'))
+             FROM operacional.equipamentos e, jsonb_array_elements(CASE WHEN jsonb_typeof(e.caracteristicas)='array' THEN e.caracteristicas ELSE '[]'::jsonb END) c
+            WHERE coalesce(trim(c->>'r'),'') <> '' ON CONFLICT (codigo) DO NOTHING""",
+        # posições já gravadas nos componentes montados (por nome; código = o próprio texto)
+        """INSERT INTO manutencao.posicoes (codigo, nome)
+           SELECT DISTINCT upper(trim(posicao)), trim(posicao) FROM operacional.equipamentos
+            WHERE coalesce(trim(posicao),'') <> ''
+              AND lower(trim(posicao)) NOT IN (SELECT lower(nome) FROM manutencao.posicoes)
+           ON CONFLICT (codigo) DO NOTHING""",
+        # motivos já digitados nas guias de transporte
+        """INSERT INTO manutencao.motivos_envio (codigo, nome)
+           SELECT DISTINCT upper(trim(motivo)), trim(motivo) FROM manutencao.guias_transporte
+            WHERE coalesce(trim(motivo),'') <> ''
+              AND lower(trim(motivo)) NOT IN (SELECT lower(nome) FROM manutencao.motivos_envio)
+           ON CONFLICT (codigo) DO NOTHING""",
+    ):
+        try:
+            await ajard_query(_sql, fetch="none")
+        except Exception as _e:   # tabela de origem ainda não existe num banco novo — a lista nasce só com o padrão
+            print(f"[dominios] migração de lista ignorada: {_e}")
     # (12/11/2026) Categorias de objeto: colunas extras + carga inicial; Tipo de objeto ganha categoria padrão
     await ajard_query("ALTER TABLE manutencao.categorias_objeto ADD COLUMN IF NOT EXISTS medicao TEXT", fetch="none")
     await ajard_query("ALTER TABLE manutencao.categorias_objeto ADD COLUMN IF NOT EXISTS diagrama TEXT", fetch="none")
@@ -4594,6 +4658,26 @@ async def excluir_dominio(dominio: str, codigo: str, payload=Depends(verificar_m
         if uso and int(uso["n"] or 0) > 0:
             raise HTTPException(status_code=409,
                                 detail=f"Unidade {codigo.upper()} em uso em {uso['n']} peça(s) — não pode ser excluída. Use Desativar.")
+    # (20/11/2026) listas novas: item em uso nunca é apagado (sem FK — a regra vive aqui; use Desativar)
+    _usos = {
+        "manutencao.unidades_leitura": ("SELECT count(*) AS n FROM manutencao.pontos_controle WHERE upper(trim(unidade))=upper(%s)", "ponto(s) de leitura"),
+        "manutencao.caracteristicas_objeto": ("""SELECT count(*) AS n FROM operacional.equipamentos e,
+              jsonb_array_elements(CASE WHEN jsonb_typeof(e.caracteristicas)='array' THEN e.caracteristicas ELSE '[]'::jsonb END) c
+              WHERE upper(trim(c->>'r'))=upper(%s)""", "objeto(s)"),
+        "manutencao.posicoes": ("""SELECT count(*) AS n FROM operacional.equipamentos
+              WHERE lower(trim(posicao))=(SELECT lower(nome) FROM manutencao.posicoes WHERE codigo=%s)""", "componente(s) montado(s)"),
+        "manutencao.motivos_envio": ("""SELECT count(*) AS n FROM manutencao.guias_transporte
+              WHERE lower(trim(motivo))=(SELECT lower(nome) FROM manutencao.motivos_envio WHERE codigo=%s)""", "guia(s) de transporte"),
+    }
+    if tabela in _usos:
+        _q, _onde = _usos[tabela]
+        try:
+            uso = await ajard_query(_q, (codigo,), fetch="one")
+        except Exception:
+            uso = None
+        if uso and int(uso["n"] or 0) > 0:
+            raise HTTPException(status_code=409,
+                                detail=f"{codigo} em uso em {uso['n']} {_onde} — não pode ser excluído. Use Desativar.")
     if tabela == "manutencao.categorias_objeto":
         # (12/11/2026) categoria em uso em algum objeto nunca é apagada (o código está gravado no equipamento)
         uso = await ajard_query("SELECT count(*) AS n FROM operacional.equipamentos WHERE lower(categoria)=%s",
@@ -4662,6 +4746,9 @@ async def upsert_dominio(dominio: str, request: Request, payload=Depends(verific
     pk = "sigla" if "tipos_equipamento" in tabela else "codigo"
     if tabela == "manutencao.unidades":   # (05/11/2026) sigla sempre maiúscula, sem espaços
         cod = cod.upper().replace(" ", "")
+    if tabela in ("manutencao.unidades_leitura", "manutencao.caracteristicas_objeto",
+                  "manutencao.posicoes", "manutencao.motivos_envio"):   # (20/11/2026) código sempre maiúsculo
+        cod = cod.upper()
     if tabela == "manutencao.categorias_objeto":   # (12/11/2026) código minúsculo, sem acento nem espaço (caminhao_pipa)
         import unicodedata as _ud
         cod = ''.join(c for c in _ud.normalize('NFD', cod.lower()) if _ud.category(c) != 'Mn')
