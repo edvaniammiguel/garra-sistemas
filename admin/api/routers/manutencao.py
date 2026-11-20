@@ -4183,9 +4183,23 @@ _DOMINIOS_PARAM = {
     # Unidade dos pontos de leitura (°C, bar…), nome das características do objeto (MARCA, DOT…),
     # posição do componente no equipamento e motivo de envio da guia de transporte.
     "unidades-leitura": "manutencao.unidades_leitura",
-    "caracteristicas-objeto": "manutencao.caracteristicas_objeto",
     "posicoes": "manutencao.posicoes",
     "motivos-envio": "manutencao.motivos_envio",
+}
+
+# (20/11/2026) modelo inicial de características por Tipo de equipamento (a gestão ajusta em Parametrizar)
+_CAR_CAMINHAO = ["MARCA", "MODELO", "ANO", "CHASSI / Nº SÉRIE", "RENAVAM", "Nº MOTOR", "COR", "CAPACIDADE"]
+_CAR_MAQ_PNEU = ["MARCA", "MODELO", "ANO", "Nº SÉRIE", "Nº MOTOR", "PESO OPERACIONAL", "MEDIDA DO PNEU"]
+_MODELOS_CARAC_PADRAO = {
+    "CB": _CAR_CAMINHAO, "CP": _CAR_CAMINHAO, "CPO": _CAR_CAMINHAO, "CPR": _CAR_CAMINHAO, "CR": _CAR_CAMINHAO,
+    "CA": ["MARCA", "MODELO", "ANO", "CHASSI / Nº SÉRIE", "RENAVAM", "COR"],
+    "MA": ["MARCA", "MODELO", "ANO", "CHASSI / Nº SÉRIE", "RENAVAM", "COR"],
+    "EH": ["MARCA", "MODELO", "ANO", "Nº SÉRIE", "Nº MOTOR", "PESO OPERACIONAL", "LARGURA DA SAPATA"],
+    "PC": _CAR_MAQ_PNEU, "RE": _CAR_MAQ_PNEU, "RC": _CAR_MAQ_PNEU,
+    "PNEU": ["MARCA", "MODELO", "MEDIDA", "DOT / Nº SÉRIE", "SULCO (MM)"],
+    "CE": ["TAMANHO", "COR", "FABRICANTE"],
+    "C": ["MARCA", "MODELO", "ANO", "CHASSI / Nº SÉRIE", "CAPACIDADE"],
+    "GE": ["MARCA", "MODELO", "Nº SÉRIE", "POTÊNCIA (KVA)", "Nº MOTOR"],
 }
 
 # (20/11/2026) carga inicial das listas novas — idempotente; nomes já existentes ficam como estão
@@ -4193,11 +4207,6 @@ _LISTAS_PADRAO = {
     "manutencao.unidades_leitura": [
         ("H", "Horas"), ("KM", "Quilômetros"), ("°C", "Graus Celsius"), ("BAR", "Bar (pressão)"), ("PSI", "PSI (pressão)"),
         ("MM", "Milímetros"), ("%", "Percentual"), ("V", "Volts"), ("A", "Ampères"), ("L", "Litros"), ("RPM", "Rotações por minuto")],
-    "manutencao.caracteristicas_objeto": [
-        ("MARCA", "Marca"), ("MODELO", "Modelo"), ("ANO", "Ano"), ("CHASSI / Nº SÉRIE", "Chassi / número de série"), ("COR", "Cor"), ("MEDIDA", "Medida"), ("DOT / Nº SÉRIE", "DOT / número de série"),
-        ("SULCO (MM)", "Sulco na entrada (mm)"), ("Nº SÉRIE", "Número de série"), ("CAPACIDADE (M³)", "Capacidade (m³)"),
-        ("FABRICANTE", "Fabricante"), ("HORAS NA REFORMA", "Horas na reforma"), ("DATA REFORMA", "Data da reforma"),
-        ("OFICINA", "Oficina"), ("GARANTIA", "Garantia"), ("PRESSÃO", "Pressão de trabalho")],
     "manutencao.posicoes": [
         ("DIANT-ESQ", "Dianteiro esquerdo"), ("DIANT-DIR", "Dianteiro direito"),
         ("TRAS-ESQ", "Traseiro esquerdo"), ("TRAS-DIR", "Traseiro direito"),
@@ -4298,6 +4307,13 @@ async def _garantir_dominios():
         SELECT DISTINCT upper(trim(unidade)), upper(trim(unidade)) FROM manutencao.pecas
          WHERE coalesce(trim(unidade),'') <> ''
         ON CONFLICT (codigo) DO NOTHING""", fetch="none")
+    # (20/11/2026) Modelo de características por Tipo de equipamento (lista de nomes, na ordem da ficha).
+    # Carga inicial só onde o tipo ainda não tem modelo — o que a gestão montar na tela prevalece.
+    await ajard_query("ALTER TABLE manutencao.tipos_equipamento ADD COLUMN IF NOT EXISTS caracteristicas JSONB", fetch="none")
+    for _sig, _lst in _MODELOS_CARAC_PADRAO.items():
+        await ajard_query("""UPDATE manutencao.tipos_equipamento SET caracteristicas=%s::jsonb
+                             WHERE upper(sigla)=%s AND caracteristicas IS NULL""",
+                          (_json.dumps(_lst, ensure_ascii=False), _sig), fetch="none")
     # (20/11/2026) Listas novas: padrão + o que já está gravado (nada que existe fica fora da lista)
     for _tab, _itens in _LISTAS_PADRAO.items():
         for _c, _n in _itens:
@@ -4308,11 +4324,6 @@ async def _garantir_dominios():
         """INSERT INTO manutencao.unidades_leitura (codigo, nome)
            SELECT DISTINCT upper(trim(unidade)), trim(unidade) FROM manutencao.pontos_controle
             WHERE coalesce(trim(unidade),'') <> '' ON CONFLICT (codigo) DO NOTHING""",
-        # nomes de características já usados nas fichas dos objetos ({"r": nome, "v": valor})
-        """INSERT INTO manutencao.caracteristicas_objeto (codigo, nome)
-           SELECT DISTINCT upper(trim(c->>'r')), upper(trim(c->>'r'))
-             FROM operacional.equipamentos e, jsonb_array_elements(CASE WHEN jsonb_typeof(e.caracteristicas)='array' THEN e.caracteristicas ELSE '[]'::jsonb END) c
-            WHERE coalesce(trim(c->>'r'),'') <> '' ON CONFLICT (codigo) DO NOTHING""",
         # posições já gravadas nos componentes montados (por nome; código = o próprio texto)
         """INSERT INTO manutencao.posicoes (codigo, nome)
            SELECT DISTINCT upper(trim(posicao)), trim(posicao) FROM operacional.equipamentos
@@ -4661,9 +4672,6 @@ async def excluir_dominio(dominio: str, codigo: str, payload=Depends(verificar_m
     # (20/11/2026) listas novas: item em uso nunca é apagado (sem FK — a regra vive aqui; use Desativar)
     _usos = {
         "manutencao.unidades_leitura": ("SELECT count(*) AS n FROM manutencao.pontos_controle WHERE upper(trim(unidade))=upper(%s)", "ponto(s) de leitura"),
-        "manutencao.caracteristicas_objeto": ("""SELECT count(*) AS n FROM operacional.equipamentos e,
-              jsonb_array_elements(CASE WHEN jsonb_typeof(e.caracteristicas)='array' THEN e.caracteristicas ELSE '[]'::jsonb END) c
-              WHERE upper(trim(c->>'r'))=upper(%s)""", "objeto(s)"),
         "manutencao.posicoes": ("""SELECT count(*) AS n FROM operacional.equipamentos
               WHERE lower(trim(posicao))=(SELECT lower(nome) FROM manutencao.posicoes WHERE codigo=%s)""", "componente(s) montado(s)"),
         "manutencao.motivos_envio": ("""SELECT count(*) AS n FROM manutencao.guias_transporte
@@ -4723,6 +4731,43 @@ async def listar_dominio(dominio: str, _auth=Depends(verificar_manutencao)):
     return out
 
 
+def _lista_nomes(v):
+    """(20/11/2026) normaliza o modelo: lista de nomes únicos, maiúsculos, na ordem."""
+    if isinstance(v, str):
+        try:
+            v = _json.loads(v)
+        except Exception:
+            v = []
+    out = []
+    for x in (v or []):
+        n = str(x or "").strip().upper()
+        if n and n not in out:
+            out.append(n)
+    return out
+
+
+@router.get("/manutencao/api/tipos-caracteristicas")
+async def tipos_caracteristicas(_auth=Depends(verificar_token)):
+    """(20/11/2026) Modelos de características de todos os tipos (a ficha usa o do tipo escolhido)."""
+    await _garantir_dominios()
+    rows = await ajard_query("""SELECT sigla, nome, caracteristicas FROM manutencao.tipos_equipamento
+                                WHERE ativo IS NOT FALSE ORDER BY sigla""") or []
+    return [{"sigla": r["sigla"], "nome": r["nome"], "caracteristicas": _lista_nomes(r["caracteristicas"])} for r in rows]
+
+
+@router.put("/manutencao/api/tipos-caracteristicas/{sigla}")
+async def tipos_caracteristicas_gravar(sigla: str, request: Request, payload=Depends(verificar_manutencao)):
+    """(20/11/2026) Grava o modelo de um tipo (Parametrizar › Características de objeto). Não mexe nas fichas já feitas."""
+    await _garantir_dominios()
+    d = await request.json()
+    lst = _lista_nomes(d.get("caracteristicas"))
+    r = await ajard_query("""UPDATE manutencao.tipos_equipamento SET caracteristicas=%s::jsonb
+                             WHERE sigla=%s RETURNING sigla""", (_json.dumps(lst, ensure_ascii=False), sigla), fetch="one")
+    if not r:
+        raise HTTPException(status_code=404, detail="Tipo não encontrado")
+    return {"ok": True, "sigla": sigla, "caracteristicas": lst}
+
+
 @router.get("/manutencao/api/categorias-objeto")
 async def categorias_objeto(_auth=Depends(verificar_token)):
     """(12/11/2026) Lista leve das categorias ativas para os selects de qualquer módulo (Admin Master,
@@ -4746,7 +4791,7 @@ async def upsert_dominio(dominio: str, request: Request, payload=Depends(verific
     pk = "sigla" if "tipos_equipamento" in tabela else "codigo"
     if tabela == "manutencao.unidades":   # (05/11/2026) sigla sempre maiúscula, sem espaços
         cod = cod.upper().replace(" ", "")
-    if tabela in ("manutencao.unidades_leitura", "manutencao.caracteristicas_objeto",
+    if tabela in ("manutencao.unidades_leitura",
                   "manutencao.posicoes", "manutencao.motivos_envio"):   # (20/11/2026) código sempre maiúsculo
         cod = cod.upper()
     if tabela == "manutencao.categorias_objeto":   # (12/11/2026) código minúsculo, sem acento nem espaço (caminhao_pipa)

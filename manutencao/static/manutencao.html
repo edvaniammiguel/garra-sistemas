@@ -2339,7 +2339,7 @@ async function novoEquipMW(copiarDe, editar){
       + lista.map(x => '<option value="'+_esc(x[chave])+'"'+(String(x[chave])===String(val||'')?' selected':'')+'>'+(chave==='id' ? _esc(x[rot]||'') : _esc(x[chave])+(x[rot]?' \u2014 '+_esc(x[rot]):''))+'</option>').join('')+'</select>';
   const fld = (rot, html, w) => '<div class="ne-f"'+(w?' style="flex:'+w+'"':'')+'><span class="ne-l">'+rot+'</span>'+html+'</div>';
   const inp = (id, val, ph, tipo) => '<input id="'+id+'"'+(tipo?' type="'+tipo+'"':'')+' value="'+_esc(val==null?'':val)+'" placeholder="'+(ph||'')+'">';
-  await Promise.all([_lista('posicoes'), _lista('caracteristicas-objeto')]);   // (20/11/2026) listas dos selects da ficha
+  await Promise.all([_lista('posicoes'), _carModelos(true)]);   // (20/11/2026) posições + modelos de características por tipo
   const pais = _semCache.filter(e => (e.categoria||'') !== 'componente');
 
   document.querySelector('#eq-ficha .modal').classList.add('larga');
@@ -2388,7 +2388,7 @@ async function novoEquipMW(copiarDe, editar){
     + '</div></div>'
     // aba 1 — Características (pares nome/valor)
     + '<div class="ne-pane" id="ne-p1"><div class="muted" style="font-size:10px;margin-bottom:6px">Caracter\u00edsticas t\u00e9cnicas (nome = valor). Para pneus: Recapagens \u00b7 DOT/s\u00e9rie \u00b7 Medida.</div>'
-    + '<div id="ne-cars">'+((base.caracteristicas||[]).map(c=>neCarLinha(c.r||c.nome||c.n||'', c.v||c.valor||'')).join('') || ['MARCA','MODELO','ANO','CHASSI / Nº SÉRIE','COR'].map(r=>neCarLinha(r,'')).join('')+neCarLinha('',''))+'</div>'
+    + '<div id="ne-cars">'+_neCarHtml(base.tipo_sigla, base.caracteristicas)+'</div>'   // (20/11/2026) modelo do tipo + extras da ficha
     + '<button class="btn" onclick="document.getElementById(\'ne-cars\').insertAdjacentHTML(\'beforeend\', neCarLinha(\'\',\'\'))">\u2795 Caracter\u00edstica</button></div>'
     // aba 2 — Dados Operacionais
     + '<div class="ne-pane" id="ne-p2"><div style="display:flex;gap:8px;flex-wrap:wrap">'
@@ -2479,9 +2479,53 @@ async function neEnviarFoto(id){
     catch(e){ mostrarToast('\u26a0 Ficheiro n\u00e3o enviado: '+e.message,'warn'); }
   }
 }
-function neCarLinha(n, v){
-  return '<div class="ne-car" style="display:flex;gap:6px;margin-bottom:4px">'+_selLista('caracteristicas-objeto', 'class="c-n"', n, 'codigo')   // (20/11/2026)
-    + '<input class="c-v" placeholder="valor" value="'+_esc(v)+'" style="flex:1"><button class="btn" onclick="this.parentNode.remove()">\u2715</button></div>';
+/* (20/11/2026) CARACTERÍSTICAS POR TIPO — o modelo de cada Tipo (Parametrizar › Características de objeto) monta a aba:
+   linhas do modelo com nome fixo (não somem, para não faltar item) + linhas extras só desta ficha, com nome
+   escolhido entre os nomes usados nos modelos (➕ cadastra um nome novo e oferece incluir no modelo do tipo). */
+let _carMod = {}, _carDic = [];
+async function _carModelos(forcar){
+  if (forcar || !Object.keys(_carMod).length){
+    try {
+      const l = await mntFetch('/manutencao/api/tipos-caracteristicas');
+      _carMod = {}; (l||[]).forEach(t => { _carMod[String(t.sigla).toUpperCase()] = t.caracteristicas || []; });
+    } catch(e){}
+    _carDic = Array.from(new Set([].concat(...Object.values(_carMod)))).sort((a,b) => a.localeCompare(b, 'pt-BR'));
+  }
+  return _carMod;
+}
+function _neCarHtml(sigla, existentes){
+  const mod = _carMod[String(sigla||'').toUpperCase()] || [];
+  const ex = (existentes||[]).map(c => ({r: String(c.r||c.nome||c.n||'').trim(), v: c.v||c.valor||''})).filter(c => c.r || c.v);
+  const usados = new Set();
+  let h = mod.map(n => { const c = ex.find(x => x.r.toUpperCase() === n && !usados.has(x)); if (c) usados.add(c); return neCarLinha(n, c ? c.v : '', true); }).join('');
+  h += ex.filter(c => !usados.has(c)).map(c => neCarLinha(c.r, c.v, false)).join('');
+  return h || '<div class="muted" style="font-size:11px;padding:4px 0">Este tipo ainda n\u00e3o tem modelo de caracter\u00edsticas (Parametrizar \u203a Caracter\u00edsticas de objeto). Use \u2795 Caracter\u00edstica.</div>';
+}
+function _neCarColetar(){
+  return Array.from(document.querySelectorAll('#ne-cars .ne-car')).map(d => ({r: d.querySelector('.c-n').value.trim().toUpperCase(), v: d.querySelector('.c-v').value.trim()})).filter(c => c.r || c.v);
+}
+function neCarLinha(n, v, fixo){
+  const val = '<input class="c-v" placeholder="valor" value="'+_esc(v||'')+'" style="flex:1">';
+  if (fixo) return '<div class="ne-car" style="display:flex;gap:6px;margin-bottom:4px"><input class="c-n" value="'+_esc(n)+'" readonly title="Do modelo do tipo \u2014 altere em Parametrizar \u203a Caracter\u00edsticas de objeto" style="flex:1;background:#F8FAFC;font-weight:600">'+val+'<span style="width:30px"></span></div>';
+  const a = String(n||'').trim().toUpperCase(), fora = a && !_carDic.includes(a);
+  const sel = '<select class="c-n" style="flex:1"><option value="">\u2014 escolher \u2014</option>'
+    + (fora ? '<option value="'+_esc(a)+'" selected>\u26a0 '+_esc(a)+' (fora dos modelos)</option>' : '')
+    + _carDic.map(x => '<option'+(x===a?' selected':'')+'>'+_esc(x)+'</option>').join('') + '</select>';
+  return '<div class="ne-car" style="display:flex;gap:6px;margin-bottom:4px"><span style="display:flex;gap:4px;flex:1">'+sel
+    + '<button class="btn" type="button" title="Nome novo de caracter\u00edstica" onclick="neCarNovoNome(this.previousElementSibling)">\u2795</button></span>'
+    + val+'<button class="btn" onclick="this.parentNode.remove()">\u2715</button></div>';
+}
+async function neCarNovoNome(sel){
+  const n = (prompt('Nome da nova caracter\u00edstica (ex.: N\u00ba MOTOR):', '') || '').trim().toUpperCase(); if (!n) return;
+  if (!_carDic.includes(n)){ _carDic.push(n); _carDic.sort((a,b) => a.localeCompare(b, 'pt-BR')); }
+  sel.insertAdjacentHTML('beforeend', '<option>'+_esc(n)+'</option>'); sel.value = n;
+  const sig = String((document.getElementById('ne-tipo')||{}).value || (document.getElementById('ne-sigla')||{}).value || '').toUpperCase();
+  if (sig && confirm('Incluir "'+n+'" tamb\u00e9m no modelo do tipo '+sig+'?\n(OK = os pr\u00f3ximos '+sig+' j\u00e1 nascem com ela \u00b7 Cancelar = s\u00f3 nesta ficha)')){
+    const mod = (_carMod[sig] || []).concat([n]);
+    try { await mntFetch('/manutencao/api/tipos-caracteristicas/'+encodeURIComponent(sig), {method:'PUT', body: JSON.stringify({caracteristicas: mod})});
+      _carMod[sig] = mod; mostrarToast('\u2705 '+n+' inclu\u00edda no modelo do '+sig,'ok'); }
+    catch(e){ mostrarToast('\u274c '+e.message,'warn'); }
+  }
 }
 function neAba(i, el){
   document.querySelectorAll('.ne-tab').forEach(t => t.classList.remove('on')); el.classList.add('on');
@@ -2678,6 +2722,8 @@ function _neAplicarTipo(tp){
   // Veículo leve / Caminhão / Máquina). Tipo sem pasta correspondente → lista completa (sem botão "todos": a
   // pasta é obrigatória — decisão Edvania 22/10).
   neSistemaFiltrar(tp);
+  const _nc = document.getElementById('ne-cars');   // (20/11/2026) aba Características pelo modelo do tipo
+  if (_nc && !_neEditId) _nc.innerHTML = _neCarHtml(tp.sigla, _neCarColetar());
   // Descrição sugerida em cinza? Não: placeholder apenas (fantasma Classe 1)
   const d = document.getElementById('ne-desc');
   if (d && !d.value) d.placeholder = tp.nome || '';
@@ -2731,7 +2777,7 @@ async function neSalvar(fechar){
   if (!categoria){ mostrarToast('Informe a categoria (aba Dados Operacionais)','warn'); neAba(2, document.querySelectorAll('.ne-tab')[2]); return; }
   // (14/09/2026) Formato único {r,v} (o mesmo que a ficha de edição lê/grava) — antes a criação
   // gravava {nome,valor} e a ficha lia {r,v}: o que era cadastrado sumia na edição.
-  const cars = Array.from(document.querySelectorAll('#ne-cars .ne-car')).map(d => ({r: d.querySelector('.c-n').value.trim().toUpperCase(), v: d.querySelector('.c-v').value.trim()})).filter(c => c.r || c.v);
+  const cars = _neCarColetar();   // (20/11/2026)
   const car = rot => (cars.find(c => c.r === rot) || {}).v || '';
   const _marca = car('MARCA'), _modelo = car('MODELO'), _serie = car('CHASSI / Nº SÉRIE');
   // (14/09/2026) `ano` no Operacional é inteiro — cadastros antigos guardaram placa no ano;
@@ -8307,7 +8353,6 @@ const PARAM_MAP = {
   famobj:    { dom:'familias-objetos',       titulo:'Famílias de objetos',   pk:'codigo' },
   classmat:  { dom:'classes-materiais',      titulo:'Classes de materiais (Norma: Classe → Família → Subfamília)', pk:'codigo' },   // (19/10/2026)
   unileit:   { dom:'unidades-leitura',       titulo:'Unidades de leitura (sigla · nome) — pontos de leitura do equipamento (°C, bar, mm…)', pk:'codigo' },   // (20/11/2026)
-  carobj:    { dom:'caracteristicas-objeto', titulo:'Características de objeto — nomes da aba Características da ficha (MARCA, DOT…)', pk:'codigo' },
   posicoes:  { dom:'posicoes',               titulo:'Posições de montagem — onde o componente fica no equipamento', pk:'codigo' },
   motenvio:  { dom:'motivos-envio',          titulo:'Motivos de envio — Guias de Transporte (recapagem, retífica…)', pk:'codigo' },
   unidades:  { dom:'unidades',               titulo:'Unidades de medida das peças (sigla · nome) — a ficha da peça só aceita o que está aqui', pk:'codigo' },   // (05/11/2026)
@@ -8340,7 +8385,7 @@ const PARAM_GRUPOS = [
     ['tipos','dom','Tipos de equipamento'],
     ['famobj','dom','Famílias de objetos'],
     ['grupos','dom','Grupos / Sistemas (árvore)'],
-    ['carobj','dom','Características de objeto'],   // (20/11/2026)
+    ['carobj','carobj','Características de objeto (modelo por tipo)'],   // (20/11/2026)
     ['posicoes','dom','Posições de montagem'],
     ['equipList','equip','Equipamentos (frota)'] ]},
   { t:'🏭 Fornecedores', itens:[
@@ -8407,6 +8452,7 @@ function abrirParamPane(paneId, tipo, titulo){
   if (tipo === 'equip')  { paneEquipamentos(); return; }
   if (tipo === 'pontos') { panePontos(); return; }
   if (tipo === 'funcoes') { paneFuncoes(); return; }
+  if (tipo === 'carobj') { paneCaractTipo(); return; }   // (20/11/2026)
   if (tipo === 'alm')    { showModule('alm'); return; }
   if (tipo === 'admin')  { paneAviso(titulo, 'Usuários, perfis e permissões são gerenciados no <b>Admin Master</b> — cadastro único (usuarios_garra), sem duplicação aqui.'); return; }
   const fila = { empresa: empresaPane, clientes: clientesPane, planos: planosTodosPane, refforn: referenciasPane,
@@ -8414,6 +8460,52 @@ function abrirParamPane(paneId, tipo, titulo){
                  docs: () => docsTodosPane(''), config: configPane };
   if (fila[paneId]) { fila[paneId](); return; }
   paneAviso(titulo, 'Cadastro sem tela pr\u00f3pria ainda.');
+}
+/* (20/11/2026) CARACTERÍSTICAS DE OBJETO — modelo por Tipo de equipamento. Escolhe o tipo no select; a lista são
+   os nomes que a aba Características da ficha traz já prontos para preencher (só o valor é digitado no objeto). */
+let _ctSig = '';
+async function paneCaractTipo(sig){
+  await _carModelos(true);
+  let tipos = [];
+  try { tipos = (await mntFetch('/manutencao/api/tipos-caracteristicas')) || []; } catch(e){}
+  _ctSig = sig || _ctSig || (tipos[0] && tipos[0].sigla) || '';
+  const t = tipos.find(x => x.sigla === _ctSig) || {};
+  const lst = _carMod[String(_ctSig).toUpperCase()] || [];
+  const b = (ico, tit, fn) => '<button class="btn" title="'+tit+'" onclick="'+fn+'">'+ico+'</button>';
+  document.getElementById('pp-pane').innerHTML =
+    '<div class="pp-hdr"><div><div class="pp-title">Caracter\u00edsticas de objeto</div>'
+    + '<div class="pp-sub">Escolha o tipo: a lista abaixo \u00e9 o modelo que a aba Caracter\u00edsticas da ficha j\u00e1 traz pronto para preencher. Mudar aqui vale para os pr\u00f3ximos cadastros e para as fichas abertas depois; nenhum valor j\u00e1 gravado \u00e9 apagado.</div></div>'
+    + '<button class="btn o" onclick="ctNova()">\uff0b Nova</button></div>'
+    + '<div class="mfield" style="max-width:420px;margin-top:8px">Tipo de equipamento<select onchange="paneCaractTipo(this.value)">'
+    + tipos.map(x => '<option value="'+_esc(x.sigla)+'"'+(x.sigla===_ctSig?' selected':'')+'>'+_esc(x.sigla)+' \u2014 '+_esc(x.nome||'')+' ('+(x.caracteristicas||[]).length+')</option>').join('') + '</select></div>'
+    + '<div style="margin-top:8px;background:#fff;border:1px solid #E2E8F0;border-radius:6px;max-width:720px"><table><thead><tr><th style="width:40px">#</th><th>Caracter\u00edstica</th><th style="width:150px"></th></tr></thead><tbody>'
+    + (lst.map((n,i) => '<tr><td class="muted">'+(i+1)+'</td><td class="bold">'+_esc(n)+'</td><td class="act" style="white-space:nowrap">'
+        + b('\u2191','Subir','ctMover('+i+',-1)') + b('\u2193','Descer','ctMover('+i+',1)') + b('\u270f\ufe0f','Renomear','ctRenomear('+i+')') + b('\u2715','Tirar do modelo','ctTirar('+i+')') + '</td></tr>').join('')
+       || '<tr><td colspan="3" class="muted" style="padding:12px">'+(_ctSig ? 'Nenhuma caracter\u00edstica no modelo de '+_esc(_ctSig)+' \u2014 use \uff0b Nova.' : 'Nenhum tipo de equipamento cadastrado.')+'</td></tr>')
+    + '</tbody></table></div>';
+}
+async function _ctGravar(lst){
+  try { await mntFetch('/manutencao/api/tipos-caracteristicas/'+encodeURIComponent(_ctSig), {method:'PUT', body: JSON.stringify({caracteristicas: lst})});
+        mostrarToast('\u2705 Modelo de '+_ctSig+' gravado','ok'); }
+  catch(e){ mostrarToast('\u274c '+e.message,'warn'); }
+  paneCaractTipo(_ctSig);
+}
+function _ctLista(){ return (_carMod[String(_ctSig).toUpperCase()] || []).slice(); }
+function ctNova(){
+  if (!_ctSig) return;
+  const n = (prompt('Nova caracter\u00edstica do modelo de '+_ctSig+' (ex.: N\u00ba MOTOR):', '') || '').trim().toUpperCase(); if (!n) return;
+  const l = _ctLista(); if (l.includes(n)) { mostrarToast(n+' j\u00e1 est\u00e1 no modelo','warn'); return; }
+  l.push(n); _ctGravar(l);
+}
+function ctMover(i, d){ const l = _ctLista(), j = i + d; if (j < 0 || j >= l.length) return; [l[i], l[j]] = [l[j], l[i]]; _ctGravar(l); }
+function ctRenomear(i){
+  const l = _ctLista(); const n = (prompt('Renomear (no modelo de '+_ctSig+'):', l[i]) || '').trim().toUpperCase(); if (!n || n === l[i]) return;
+  if (l.includes(n)) { mostrarToast(n+' j\u00e1 est\u00e1 no modelo','warn'); return; }
+  l[i] = n; _ctGravar(l);
+}
+function ctTirar(i){
+  const l = _ctLista(); if (!confirm('Tirar "'+l[i]+'" do modelo de '+_ctSig+'?\nAs fichas que j\u00e1 t\u00eam esse valor n\u00e3o perdem nada (a linha fica como extra).')) return;
+  l.splice(i, 1); _ctGravar(l);
 }
 function paneAviso(titulo, msg){
   document.getElementById('pp-pane').innerHTML =
