@@ -83,6 +83,8 @@
     <!-- (05/11/2026) Tour guiado (GarraGuia) — guias-pedido.js -->
     <div class="muted" style="text-align:right;margin:2px 0 0"><a href="#" onclick="guiaAbrir('pedir');return false" style="color:#16A34A;font-weight:700">▶ Como fazer (demonstração)</a></div>
     <label>Equipamento</label>
+    <!-- (20/11/2026) Procurar: digita parte do código ou do nome e a lista encolhe; um só resultado já fica escolhido -->
+    <input id="pd-eq-busca" type="search" placeholder="🔍 Procurar equipamento (código ou nome)" oninput="pdEqFiltrar()" autocomplete="off" style="margin-bottom:6px">
     <select id="pd-eq"><option value="">— escolher —</option></select>
     <label>O que está acontecendo? *</label>
     <textarea id="pd-desc" placeholder="ex.: vazamento de óleo no comando; freio baixo; barulho na esteira…"></textarea>
@@ -262,12 +264,23 @@ async function entrar(){
     api('/manutencao/api/ots-abertas-mobile').then(r => { EXECUTOR = !!r.executor; TEM_OTS = (r.ots || []).length > 0; abaOtsVisivel(); }).catch(() => {});   // (17/11/2026) login pela senha também confere a aba OTs
   } catch(e){ toast('❌ ' + e.message, 'erro'); }
 }
+// (20/11/2026) lista do pedido filtrada pelo campo Procurar (ignora acento, espaço e hífen: "cb37" acha CB-37)
+let FROTA_PD = [];
+function pdEqFiltrar(){
+  const sel = document.getElementById('pd-eq'), atual = sel.value;
+  const n = t => String(t || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[\s\-_.]/g, '');
+  const q = n((document.getElementById('pd-eq-busca') || {}).value);
+  const lista = FROTA_PD.filter(e => !q || n(e.codigo + ' ' + (e.descricao || '')).includes(q));
+  sel.innerHTML = '<option value="">' + (q ? (lista.length ? '— ' + lista.length + ' encontrado(s) —' : '— nada encontrado —') : '— escolher —') + '</option>'
+    + lista.map(e => '<option value="' + e.id + '">' + _h(e.codigo) + ' — ' + _h(e.descricao || '') + '</option>').join('');
+  if (q && lista.length === 1) sel.value = lista[0].id;
+  else if (lista.some(e => String(e.id) === String(atual))) sel.value = atual;
+}
 async function carregarFrota(){
   try {
     const eqs = await api('/manutencao/api/equipamentos-basico');
     eqs.forEach(e => { FROTA_MED[e.codigo] = (e.medicao || 'h'); });   // (05/11/2026) h/km por equipamento
-    document.getElementById('pd-eq').innerHTML = '<option value="">— escolher —</option>'
-      + eqs.map(e => '<option value="' + e.id + '">' + e.codigo + ' — ' + (e.descricao || '') + '</option>').join('');
+    FROTA_PD = eqs; pdEqFiltrar();
   } catch(e){ toast('❌ ' + e.message, 'erro'); }
   pdDiretoCarregar();
 }
@@ -320,6 +333,7 @@ async function enviar(){
 }
 function novo(){
   document.getElementById('pd-desc').value = '';
+  const _b = document.getElementById('pd-eq-busca'); if (_b){ _b.value = ''; pdEqFiltrar(); document.getElementById('pd-eq').value = ''; }   // (20/11/2026) novo pedido: busca limpa
   urg('normal');
   verAba('novo');
 }
