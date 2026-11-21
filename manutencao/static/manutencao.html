@@ -1934,7 +1934,7 @@ const _PNEU_GAB = {
   caminhao_cacamba:['dian','tras2'], caminhao_reboque:['dian','tras2','reb2'],
   carro:['dian','tras1'], veiculo_leve:['dian','tras1'],
   // (20/11/2026) máquinas de pneu; escavadeira é esteira — sem desenho
-  retroescavadeira:['dian','tras1'], carregadeira:['dian','tras1'], minicarregadeira:['dian','tras1'],
+  retroescavadeira:['dian','tras1'], carregadeira:['dian','tras1'],
   patrol:['dian','tan1','tan2'], compactador:['tras1']
 };
 function _pneuSlotDe(pos){
@@ -2342,7 +2342,10 @@ async function novoEquipMW(copiarDe, editar){
   // Info. Complementares completos JÁ na criação — antes só apareciam depois do OK (ficha de edição).
   // Rascunho sem id: os blocos são colhidos no OK/Aplicar e gravados logo após o POST criar o objeto.
   else { _eqFicha = Object.assign({}, base, { id: null, codigo: '', garantia: (base.garantia && typeof base.garantia === 'object') ? base.garantia : {}, info_compl: (base.info_compl && typeof base.info_compl === 'object') ? base.info_compl : {}, medicao: base.medicao || 'horimetro' }); }
-  const sisAtivo = (typeof _arvNoAtivo === 'string' && _arvNoAtivo !== '_todos') ? _arvNoAtivo : (base.sistema_codigo || '');
+  // (20/11/2026) EDITAR: o Sistema abre sempre com o valor GRAVADO no objeto. A pasta marcada na árvore só vale
+  // para objeto NOVO — antes ela entrava também na edição e o OK movia o equipamento de pasta (CB-37).
+  const sisAtivo = editar ? (base.sistema_codigo || '')
+    : ((typeof _arvNoAtivo === 'string' && _arvNoAtivo !== '_todos') ? _arvNoAtivo : (base.sistema_codigo || ''));
   // (10/10/2026) Objeto gravado sem tipo (ex.: criado pelo Admin): o Tipo Objeto vem da sigla do código (EH-51 → EH)
   const _sigDoCod = (base.codigo && (_mwDom.tipos||[]).some(t => t.sigla === String(base.codigo).split('-')[0].toUpperCase())) ? String(base.codigo).split('-')[0].toUpperCase() : '';
   const tipoIni = base.tipo_sigla || _sigDoCod || (sisAtivo ? _neTipoDoSistema(sisAtivo) : '') || '';
@@ -2420,7 +2423,7 @@ async function novoEquipMW(copiarDe, editar){
   document.getElementById('eq-ficha').classList.add('show');
   // (22/10/2026) Janela aberta com Tipo já definido (edição/repetir/tipo vindo da árvore): o select Sistema
   // já nasce filtrado pelo ramo do tipo — antes só filtrava ao digitar a Estrutura.
-  { const tp0 = tipoIni ? (_mwDom.tipos||[]).find(t => String(t.sigla).toUpperCase() === String(tipoIni).toUpperCase()) : null; if (tp0) neSistemaFiltrar(tp0, editar ? (base.sistema_codigo || '') : ''); }
+  { const tp0 = tipoIni ? (_mwDom.tipos||[]).find(t => String(t.sigla).toUpperCase() === String(tipoIni).toUpperCase()) : null; if (tp0) neSistemaFiltrar(tp0, editar ? (base.sistema_codigo || '') : '', !!editar); }
   if (editar && copiarDe) {
     // código é identidade histórica: não se edita
     const cod = document.getElementById('ne-cod'); if (cod) { cod.value = base.codigo || ''; cod.readOnly = true; cod.style.background = '#f1f3f8'; }
@@ -2710,9 +2713,9 @@ function neTipoMudou(){
 // OT e desenho de pneus já usam; valor gravado fora da lista aparece marcado ⚠ para corrigir.
 const _CATS_OBJ = [['caminhao','Caminhão'],['caminhao_basculante','Caminhão basculante'],['caminhao_pipa','Caminhão pipa'],
   ['caminhao_bruck','Caminhão bruck'],['caminhao_cacamba','Caminhão caçamba'],['caminhao_reboque','Caminhão com reboque'],
-  ['carro','Carro'],['veiculo_leve','Veículo leve'],['retroescavadeira','Retroescavadeira'],['carregadeira','Pá carregadeira'],
-  ['minicarregadeira','Minicarregadeira'],['patrol','Patrol'],['compactador','Compactador / rolo'],['escavadeira','Escavadeira'],
-  ['maquina','Máquina (outra)'],['componente','Componente (pneu, motor, bomba…)'],['apoio','Apoio (sem OT)'],['galao','Galão'],['outro','Outro']];
+  ['carro','Carro'],['moto','Moto'],['veiculo_leve','Veículo leve'],['retroescavadeira','Retroescavadeira'],['carregadeira','Pá carregadeira (inclui mini)'],
+  ['patrol','Patrol'],['compactador','Compactador / rolo'],['escavadeira','Escavadeira'],
+  ['maquina','Máquina (outra)'],['suporte','Suporte (caçamba, carretinha, gerador)'],['componente','Componente (pneu, motor, bomba…)'],['apoio','Apoio (sem OT)'],['galao','Galão'],['outro','Outro']];
 function _neCatSelect(atual){
   const a = String(atual||'').toLowerCase();
   const fora = a && !_CATS_OBJ.some(c => c[0] === a);
@@ -2732,7 +2735,7 @@ function _neAplicarTipo(tp){
   // (22/10/2026) Sistema: o select mostra SÓ o ramo da família do tipo (PNEU → 02.00.05 Pneus e as subpastas
   // Veículo leve / Caminhão / Máquina). Tipo sem pasta correspondente → lista completa (sem botão "todos": a
   // pasta é obrigatória — decisão Edvania 22/10).
-  neSistemaFiltrar(tp);
+  neSistemaFiltrar(tp, _neEditId ? ((_eqFicha && _eqFicha.sistema_codigo) || '') : '', !!_neEditId);
   const _nc = document.getElementById('ne-cars');   // (20/11/2026) aba Características pelo modelo do tipo
   if (_nc && !_neEditId) _nc.innerHTML = _neCarHtml(tp.sigla, _neCarColetar());
   // Descrição sugerida em cinza? Não: placeholder apenas (fantasma Classe 1)
@@ -2740,7 +2743,7 @@ function _neAplicarTipo(tp){
   if (d && !d.value) d.placeholder = tp.nome || '';
 }
 function _neNorm(t){ return String(t||'').toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^A-Z0-9 ]/g,' ').replace(/\s+/g,' ').trim(); }
-function neSistemaFiltrar(tp, gravado){
+function neSistemaFiltrar(tp, gravado, edicao){
   const sis = document.getElementById('ne-sis'); if (!sis) return;
   const todos = (_mwDom.sistemas||[]).filter(x => x.ativo !== false);
   const atual = sis.value;
@@ -2748,9 +2751,15 @@ function neSistemaFiltrar(tp, gravado){
   if (tp){
     const n = _neNorm(tp.nome || tp.sigla); const n1 = n.split(' ')[0];
     // nó mais raso cujo nome contém o nome do tipo (ou a 1ª palavra: PNEU ↔ "Pneus", CAMINHAO ↔ "Caminhao Basculante")
-    const cands = todos.filter(x => { const sn = _neNorm(x.nome); return sn && (sn.indexOf(n) >= 0 || n.indexOf(sn) >= 0 || (n1.length >= 4 && sn.indexOf(n1) >= 0)); })
-      .sort((a,b) => String(a.codigo).length - String(b.codigo).length || String(a.codigo).localeCompare(String(b.codigo)));
+    // (20/11/2026) nome IGUAL ganha (CB "Caminhão Basculante" → pasta "Caminhao Basculante"); depois nome contido;
+    // só no fim a 1ª palavra — antes "Caminhao transporte" ganhava de "Caminhao Basculante" pela ordem do código
+    const grau = x => { const sn = _neNorm(x.nome); if (!sn) return 9; if (sn === n) return 0; if (sn.indexOf(n) >= 0 || n.indexOf(sn) >= 0) return 1; return (n1.length >= 4 && sn.indexOf(n1) >= 0) ? 2 : 9; };
+    const cands = todos.filter(x => grau(x) < 9)
+      .sort((a,b) => grau(a) - grau(b) || String(a.codigo).length - String(b.codigo).length || String(a.codigo).localeCompare(String(b.codigo)));
     raiz = cands.length ? cands[0].codigo : null;
+    // só a 1ª palavra bate e há mais de uma pasta candidata (CPO "Caminhão Poliguindaste" × Caminhao transporte /
+    // Basculante / Pipa / Bruck): não adivinha — mostra a lista completa para a pessoa escolher
+    if (raiz && grau(cands[0]) === 2 && cands.some(x => x.codigo !== raiz && !String(x.codigo).startsWith(raiz + '.'))) raiz = null;
   }
   const lista = raiz ? todos.filter(x => x.codigo === raiz || String(x.codigo).startsWith(raiz + '.')) : todos;
   // objeto já gravado fora do ramo (carga antiga): o valor gravado fica na lista, marcado, para não trocar sem querer
@@ -2758,6 +2767,7 @@ function neSistemaFiltrar(tp, gravado){
   sis.innerHTML = '<option value="">\u2014</option>' + lista.map(x => '<option value="'+_esc(x.codigo)+'">'+_esc(x.codigo)+(x.nome ? ' \u2014 '+_esc(x.nome) : '')+'</option>').join('');
   // mantém o valor se ainda está na lista; senão, o nó marcado na árvore (se for do ramo) ou a raiz do ramo
   if (atual && lista.some(x => x.codigo === atual)) sis.value = atual;
+  else if (edicao) sis.value = (gravado && lista.some(x => x.codigo === gravado)) ? gravado : '';   // (20/11/2026) edição nunca troca a pasta sozinha
   else if (raiz && typeof _arvNoAtivo === 'string' && lista.some(x => x.codigo === _arvNoAtivo)) sis.value = _arvNoAtivo;
   else if (raiz) sis.value = raiz;
   sis.title = raiz ? 'Só o ramo '+raiz+' (família do tipo)' : 'Tipo sem pasta correspondente em Sistemas — cadastre a pasta em Parametrizar';
