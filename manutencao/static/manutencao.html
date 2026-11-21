@@ -1126,6 +1126,7 @@ function plNav(dir){
   abrirPlanosEquip(_mntEquipList[n].id);
 }
 async function plNova(){
+  _plPrep = null;
   // (26/10/2026) Padrão ManWinWin "Nova Ficha Manutenção Planeada": Objecto · Tipo Trab. · Código (automático) · Descrição ·
   // Prev. TDM · Periodicidade (Calendário OU Registos) · Próxima FMP · Tarefas. Sem custo previsto. Mão de obra, artigos,
   // outros, ferramentas, leituras e documentos ficam nas abas da ficha, que abre logo depois de criar.
@@ -1169,6 +1170,7 @@ function plNovaModo(){
   document.getElementById('pl-reg-qtd').disabled = !reg;
   document.getElementById('pl-cal-qtd').disabled = reg; document.getElementById('pl-cal-un').disabled = reg;
 }
+let _plPrep = null;   // (20/11/2026) preparação da Biblioteca escolhida na Nova FMP (vínculo + mão de obra/peças/outros/ferramentas)
 async function plDaBiblioteca(){
   const eq = _mntEquipList.find(e => String(e.id) === String(_plEquip)) || {};
   let bib = [];
@@ -1182,11 +1184,14 @@ async function plDaBiblioteca(){
       if (b.periodo_codigo) {
         const reg = String(b.periodo_codigo) === '6';
         document.querySelector('input[name="pl-modo"][value="'+(reg?'reg':'cal')+'"]').checked = true; plNovaModo();
-        if (reg) { if (b.periodo_qtd != null) document.getElementById('pl-reg-qtd').value = b.periodo_qtd; }
-        else { document.getElementById('pl-cal-un').value = b.periodo_codigo; if (b.periodo_qtd != null) document.getElementById('pl-cal-qtd').value = b.periodo_qtd; }
+        // (20/11/2026) a ficha fica exatamente como a preparação: quantidade, TDM e tarefas (vazias limpam a sobra de outra ficha)
+        const q = b.periodo_qtd != null ? Number(b.periodo_qtd) : '';
+        if (reg) { document.getElementById('pl-reg-qtd').value = q; document.getElementById('pl-cal-qtd').value = ''; }
+        else { document.getElementById('pl-cal-un').value = b.periodo_codigo; document.getElementById('pl-cal-qtd').value = q; document.getElementById('pl-reg-qtd').value = ''; }
       }
-      if (b.tdm_horas != null) document.getElementById('pl-tdm').value = b.tdm_horas;
-      if (b.tarefas) document.getElementById('pl-proc').value = b.tarefas;
+      document.getElementById('pl-tdm').value = b.tdm_horas != null ? b.tdm_horas : '';
+      document.getElementById('pl-proc').value = b.tarefas || '';
+      _plPrep = b.codigo;
       mostrarToast('📚 '+b.codigo+' aplicada — ajuste e salve','ok');
     });
 }
@@ -1199,7 +1204,9 @@ async function plSalvar(){
   try {
     const r = await mntFetch('/manutencao/api/planos', {method:'POST', body: JSON.stringify({
       equipamento_id: _plEquip, tipo_trabalho: g('pl-tt'), descricao: g('pl-desc').trim(),
-      periodo_codigo, periodo_qtd, tempo_horas: g('pl-tdm'), plano_proximo_codigo: g('pl-prox') || null, procedimento: g('pl-proc') })});
+      periodo_codigo, periodo_qtd, tempo_horas: g('pl-tdm'), plano_proximo_codigo: g('pl-prox') || null, procedimento: g('pl-proc'),
+      preparacao_codigo: _plPrep || null })});
+    _plPrep = null;
     mostrarToast('✅ '+r.codigo+' criada — complete mão de obra, artigos e outros na ficha','ok');
     await abrirPlanosEquip(_plEquip);
     if (r.id) plFicha(r.id);
@@ -1509,7 +1516,11 @@ async function plfDaBibliotecaFicha(){
   if (!lista.length) { mostrarToast('Biblioteca sem preparações para o tipo '+(eq.tipo_sigla||''),'warn'); return; }
   const esc = lista.map((b,i) => (i+1)+') '+b.codigo+' — '+(b.descricao||'')).join('\n');
   const n = parseInt(prompt('Preparação da Biblioteca:\n\n'+esc+'\n\nNúmero:', '1')||'0'); const b = lista[n-1]; if (!b) return;
-  const d = _plfDraft; d.prep = b.codigo; if (b.tarefas) d.tarefas = b.tarefas; if (b.tdm_horas != null) d.tdm = b.tdm_horas;
+  const d = _plfDraft; d.prep = b.codigo; d.tarefas = b.tarefas || ''; if (b.tdm_horas != null) d.tdm = b.tdm_horas;
+  // (20/11/2026) periodicidade completa; mão de obra/peças/outros/ferramentas só entram se a ficha ainda não tem
+  if (b.periodo_codigo) { d.per = b.periodo_codigo; if (b.periodo_qtd != null) d.qtd = Number(b.periodo_qtd); }
+  const _j = v => { if (Array.isArray(v)) return v; try { return JSON.parse(v||'[]'); } catch(e){ return []; } };
+  [['mo','mao_obra'],['pc','pecas'],['ou','outros'],['fe','ferramentas']].forEach(([k,c]) => { if (!(d[k]||[]).length) d[k] = _j(b[c]); });
   mostrarToast('📚 '+b.codigo+' aplicada — confira as Tarefas e Aplique','ok'); plFicha(d.id, 'tar');
 }
 function _plfSync(){
@@ -8531,7 +8542,7 @@ async function paneBiblioteca(){
       + (_bibList.map(b =>
           '<tr data-id="'+b.id+'" style="cursor:pointer" onclick="bibAbrir(this.dataset.id)">'
           + '<td class="bold">'+_esc(b.codigo)+'</td><td>'+_esc(b.descricao)+'</td>'
-          + '<td>'+_esc(b.tipo_nome||b.tipo_sigla)+'</td><td>'+_esc(b.periodo_nome||b.periodo_codigo||'—')+'</td>'
+          + '<td>'+_esc(b.tipo_nome||b.tipo_sigla)+'</td><td>'+(b.periodo_qtd != null ? Number(b.periodo_qtd)+' ' : '')+_esc(b.periodo_nome||b.periodo_codigo||'—')+'</td>'
           + '<td class="r mono">'+(b.tdm_horas ?? '—')+'</td>'
           + '<td class="act"><button class="btn" title="Desativar" data-id="'+b.id+'" onclick="event.stopPropagation();bibDesativar(this.dataset.id)">🚫</button></td></tr>'
         ).join('') || '<tr><td colspan="6" style="padding:12px;color:#64748B">Biblioteca vazia — ➕ cria o primeiro modelo.</td></tr>')
@@ -8539,7 +8550,7 @@ async function paneBiblioteca(){
   } catch(e){ mostrarToast('❌ '+e.message,'warn'); }
 }
 function bibNova(){
-  _bibDraft = { id:null, tipo:'', desc:'', tdm:'', per:'', crit:'normal', tarefas:'',
+  _bibDraft = { id:null, tipo:'', desc:'', tdm:'', per:'', qtd:'', crit:'normal', tarefas:'',
                 mo:[], pc:[], ou:[], fe:[] };
   _bibMin = {};
   bibEditor('cab');
@@ -8548,7 +8559,7 @@ function bibAbrir(id){
   const b = _bibList.find(x => String(x.id) === String(id)); if (!b) return;
   const j = v => { if (Array.isArray(v)) return v; try { return JSON.parse(v||'[]'); } catch(e){ return []; } };
   _bibDraft = { id: b.id, codigo: b.codigo, tipo: b.tipo_sigla, desc: b.descricao,
-                tdm: b.tdm_horas ?? '', per: b.periodo_codigo || '', crit: b.criticidade || 'normal',
+                tdm: b.tdm_horas ?? '', per: b.periodo_codigo || '', qtd: b.periodo_qtd ?? '', crit: b.criticidade || 'normal',
                 tarefas: b.tarefas || '', mo: j(b.mao_obra), pc: j(b.pecas), ou: j(b.outros), fe: j(b.ferramentas) };
   bibEditor('cab');
 }
@@ -8556,7 +8567,7 @@ function _bibSync(aba){
   const g = id => document.getElementById(id);
   const d = _bibDraft; if (!d) return;
   if (g('bb-tipo')) { d.tipo = g('bb-tipo').value; d.desc = g('bb-desc').value; d.tdm = g('bb-tdm').value;
-    d.per = g('bb-per').value; d.crit = g('bb-crit').value; }
+    d.per = g('bb-per').value; d.qtd = g('bb-qtd') ? g('bb-qtd').value : d.qtd; d.crit = g('bb-crit').value; }
   if (g('bb-tarefas')) d.tarefas = g('bb-tarefas').value;
   const colhe = (cls, campos) => [...document.querySelectorAll('.'+cls)].map(row => {
     const o = {}; campos.forEach(c => { o[c.k] = row.querySelector('.'+c.cls).value; }); return o;
@@ -8592,8 +8603,10 @@ async function bibEditor(aba){
     c.innerHTML = '<div class="dsec">Cabeçalho</div><div class="mgrid">'
       + fld('Tipo de equipamento *'+(d.codigo?' (fixo)':''),'<select id="bb-tipo"'+(d.codigo?' disabled':'')+'>'
         + '<option value="">— escolha —</option>' + _bibTipos.map(t=>'<option value="'+_esc(t.sigla)+'"'+(t.sigla===d.tipo?' selected':'')+'>'+_esc(t.sigla)+' — '+_esc(t.nome||'')+'</option>').join('')+'</select>')
-      + fld('Periodicidade (Tipo Preparação)','<select id="bb-per"><option value="">— livre —</option>'
-        + _bibPer.map(p=>'<option value="'+_esc(p.codigo)+'"'+(p.codigo===d.per?' selected':'')+'>'+_esc(p.codigo)+' — '+_esc(p.nome||'')+'</option>').join('')+'</select>')
+      // (20/11/2026) quantidade + unidade (12 Meses · 500 Horas); a lista mostra só o nome — o código na frente parecia a quantidade
+      + fld('Periodicidade (a cada…)','<span style="display:flex;gap:6px"><input id="bb-qtd" type="number" min="0" step="1" value="'+_esc(String(d.qtd ?? ''))+'" placeholder="ex.: 12" style="width:90px">'
+        + '<select id="bb-per" style="flex:1"><option value="">— livre —</option>'
+        + _bibPer.map(p=>'<option value="'+_esc(p.codigo)+'"'+(p.codigo===d.per?' selected':'')+'>'+_esc(p.nome||p.codigo)+'</option>').join('')+'</select></span>')
       + fld('Descrição *','<input id="bb-desc" value="'+_esc(d.desc)+'" placeholder="ex.: Revisão 500 horas">')
       + fld('Prev. TDM (h)','<input id="bb-tdm" type="number" step="0.1" value="'+_esc(String(d.tdm))+'">')
       + fld('Criticidade','<select id="bb-crit">'+['normal','alta','critica'].map(x=>'<option value="'+x+'"'+(d.crit===x?' selected':'')+'>'+x+'</option>').join('')+'</select>')
@@ -8663,7 +8676,8 @@ async function bibSalvar(){
   _bibSync();
   const d = _bibDraft;
   if (!d.desc.trim() || (!d.id && !d.tipo)) { mostrarToast('Tipo e descrição são obrigatórios','warn'); return; }
-  const body = { descricao: d.desc.trim(), tdm_horas: d.tdm, periodo_codigo: d.per, criticidade: d.crit,
+  if (d.per && !String(d.qtd ?? '').trim()) { mostrarToast('Informe a quantidade da periodicidade (ex.: 12)','warn'); bibEditor('cab'); return; }
+  const body = { descricao: d.desc.trim(), tdm_horas: d.tdm, periodo_codigo: d.per, periodo_qtd: d.qtd, criticidade: d.crit,
                  tarefas: d.tarefas, mao_obra: d.mo, pecas: d.pc, outros: d.ou, ferramentas: d.fe };
   try {
     if (d.id) await mntFetch('/manutencao/api/biblioteca/'+d.id, {method:'PATCH', body: JSON.stringify(body)});

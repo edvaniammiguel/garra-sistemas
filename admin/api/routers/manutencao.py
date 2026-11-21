@@ -4449,6 +4449,8 @@ async def _garantir_biblioteca():
             ferramentas JSONB,
             ativo BOOLEAN DEFAULT true,
             criado_em TIMESTAMPTZ DEFAULT now())""", fetch="none")
+    # (20/11/2026) quantidade da periodicidade na preparação (12 meses, 500 horas) — a FMP nasce completa
+    await ajard_query("ALTER TABLE manutencao.biblioteca_preparacoes ADD COLUMN IF NOT EXISTS periodo_qtd NUMERIC", fetch="none")
     for _col in ("mao_obra", "pecas", "outros", "ferramentas"):
         await ajard_query(
             f"ALTER TABLE manutencao.planos ADD COLUMN IF NOT EXISTS {_col} JSONB",
@@ -4497,6 +4499,14 @@ async def criar_plano(request: Request, payload=Depends(verificar_manutencao)):
         (eq_id, codigo, desc, tt, (d.get("periodo_codigo") or "").strip() or None,
          qtd, tdm, custo, (d.get("procedimento") or "").strip() or None,
          (d.get("plano_proximo_codigo") or "").strip() or None))
+    # (20/11/2026) nasceu da Biblioteca: grava o vínculo e traz mão de obra, peças, outros e ferramentas da preparação
+    prep = (d.get("preparacao_codigo") or "").strip()
+    if prep and row and row.get("id"):
+        await _garantir_biblioteca()
+        await ajard_query(
+            """UPDATE manutencao.planos p SET preparacao_codigo=b.codigo, mao_obra=b.mao_obra, pecas=b.pecas,
+                      outros=b.outros, ferramentas=b.ferramentas
+               FROM manutencao.biblioteca_preparacoes b WHERE b.codigo=%s AND p.id=%s""", (prep, row["id"]), fetch="none")
     return dict(row)
 
 
@@ -4572,6 +4582,14 @@ async def listar_biblioteca(tipo_sigla: str = None, _auth=Depends(verificar_manu
     return [dict(r) for r in rows]
 
 
+def _num_ou_none(v):
+    """(20/11/2026) número digitado (aceita vírgula) ou None."""
+    try:
+        return float(str(v).replace(",", ".")) if v not in (None, "") else None
+    except ValueError:
+        return None
+
+
 @router.post("/manutencao/api/biblioteca")
 async def criar_preparacao(request: Request, payload=Depends(verificar_manutencao)):
     """Código automático por tipo (SIGLA-00001) — a parametrização define."""
@@ -4588,12 +4606,12 @@ async def criar_preparacao(request: Request, payload=Depends(verificar_manutenca
     import json as _json
     row = await ajard_query_id(
         """INSERT INTO manutencao.biblioteca_preparacoes
-              (tipo_sigla, sequencia, codigo, descricao, tdm_horas, periodo_codigo,
+              (tipo_sigla, sequencia, codigo, descricao, tdm_horas, periodo_codigo, periodo_qtd,
                criticidade, tarefas, mao_obra, pecas, outros, ferramentas)
-           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
         (sigla, int(seq["n"]), codigo, desc,
          (float(str(d["tdm_horas"]).replace(",", ".")) if d.get("tdm_horas") not in (None, "") else None),
-         (d.get("periodo_codigo") or "").strip() or None,
+         (d.get("periodo_codigo") or "").strip() or None, _num_ou_none(d.get("periodo_qtd")),
          (d.get("criticidade") or "normal"), (d.get("tarefas") or "").strip() or None,
          _json.dumps(d.get("mao_obra") or []), _json.dumps(d.get("pecas") or []),
          _json.dumps(d.get("outros") or []), _json.dumps(d.get("ferramentas") or [])))
@@ -4609,6 +4627,8 @@ async def editar_preparacao(bid: str, request: Request, payload=Depends(verifica
     for c in ["descricao", "periodo_codigo", "criticidade", "tarefas"]:
         if c in d:
             sets.append(f"{c}=%s"); params.append((str(d[c]).strip() or None) if d[c] is not None else None)
+    if "periodo_qtd" in d:   # (20/11/2026)
+        sets.append("periodo_qtd=%s"); params.append(_num_ou_none(d["periodo_qtd"]))
     if "tdm_horas" in d:
         try:
             sets.append("tdm_horas=%s")
