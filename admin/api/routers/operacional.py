@@ -1004,7 +1004,8 @@ async def op_remover_os(os_id: str, payload=Depends(verificar_token)):
         user = await ajard_query(
             "SELECT id FROM public.usuarios_garra WHERE login=%s", (login,), fetch="one")
         uid = str((user or {}).get("id") or "")
-        eh_dono = uid and (str(os_row.get("criado_por") or "") == uid or str(os_row.get("operador_id") or "") == uid)
+        # (21/11/2026) só quem CRIOU a OS avulsa exclui — quem apenas assumiu (Passar OS) não
+        eh_dono = bool(uid) and str(os_row.get("criado_por") or "") == uid
         if not (os_row.get("origem") == "campo"
                 and os_row.get("status") == "aberta_sem_erp"
                 and eh_dono):
@@ -1211,6 +1212,10 @@ async def op_listar_partes(os_id: str, _auth=Depends(verificar_token)):
         lista = [p for p in lista
                  if str(p.get("criado_por") or "") == meu_id
                  or str(p.get("operador_id") or "") == meu_id]
+        # (21/11/2026) "meu" = fui eu que lancei → só nesses o app mostra o lápis (mesma regra do servidor)
+        for p in lista:
+            _cp = str(p.get("criado_por") or "")
+            p["meu"] = (_cp == meu_id) if _cp else (str(p.get("operador_id") or "") == meu_id)
 
     if not eh_gestor:
         # Remover campos financeiros/cobrança da resposta para operador
@@ -1830,6 +1835,7 @@ async def op_minhas_os(historico: int = 0, payload=Depends(verificar_token)):
                   os.descricao AS observacao,
                   os.data_inicio, os.data_fim_prevista, os.status,
                   os.equipamento_id, os.operador_id, os.tipo_servico_id, os.cliente_id,
+                  (os.criado_por = %s::uuid) AS pode_excluir,
                   COALESCE(c.nome, os.cliente_nome_avulso) AS cliente_nome,
                   e.codigo AS equipamento_codigo, e.descricao AS equipamento_descricao,
                   e.medicao AS equipamento_medicao,
@@ -1842,7 +1848,7 @@ async def op_minhas_os(historico: int = 0, payload=Depends(verificar_token)):
              AND os.ativo = true
              AND {status_filter}
            ORDER BY os.data_inicio DESC""",
-        (user["id"],)
+        (user["id"], user["id"])   # (21/11/2026) 1º = pode_excluir (só quem criou); 2º = minhas OS
     )
     # Sem campos financeiros — operador não vê valores
     if _so_pessoal:   # (21/11/2026) Modo Pessoal: só as horas — sem cliente, obra, endereço ou localização
@@ -2923,10 +2929,13 @@ async def op_editar_minha_parte(parte_id: str, request: Request, payload=Depends
         raise HTTPException(status_code=404, detail="Parte não encontrada")
     if parte.get("fechado"):
         raise HTTPException(status_code=403, detail="Parte já fechada — fale com a gestão para ajustes.")
-    dono = str(parte.get("criado_por") or "") == str(user["id"]) or \
-           str(parte.get("os_operador_id") or "") == str(user["id"])
+    # (21/11/2026) Regra da Edvania: só quem REGISTROU altera ou exclui. Assumir a OS (Passar OS) não dá
+    # direito sobre o registro do colega — antes o operador da OS passava como dono de tudo que havia nela.
+    # Registro antigo sem autor gravado: vale o operador do próprio registro.
+    _cp = str(parte.get("criado_por") or "")
+    dono = (_cp == str(user["id"])) if _cp else (str(parte.get("operador_id") or "") == str(user["id"]))
     if not dono:
-        raise HTTPException(status_code=403, detail="Você só pode editar os seus próprios registros.")
+        raise HTTPException(status_code=403, detail="Só quem lançou o registro pode alterar — para corrigir o de um colega, fale com a gestão.")
 
     # Campos que o operador pode corrigir (medição + observação)
     # (13/07/2026) + equipamento e operador (vínculo próprio) — corrigir
@@ -3089,7 +3098,7 @@ async def op_excluir_minha_parte(parte_id: str, payload=Depends(verificar_token)
     if not user:
         raise HTTPException(status_code=404, detail="Usuário não encontrado")
     parte = await ajard_query(
-        """SELECT p.id, p.criado_por, p.fechado, os.operador_id AS os_operador_id
+        """SELECT p.id, p.criado_por, p.operador_id, p.fechado
            FROM operacional.partes_diarias p
            JOIN operacional.ordens_servico os ON os.id = p.os_id
            WHERE p.id=%s AND p.ativo=true""",
@@ -3099,10 +3108,13 @@ async def op_excluir_minha_parte(parte_id: str, payload=Depends(verificar_token)
         raise HTTPException(status_code=404, detail="Registro não encontrado")
     if parte.get("fechado"):
         raise HTTPException(status_code=403, detail="Registro fechado — fale com a gestão.")
-    dono = str(parte.get("criado_por") or "") == str(user["id"]) or \
-           str(parte.get("os_operador_id") or "") == str(user["id"])
+    # (21/11/2026) Regra da Edvania: só quem REGISTROU altera ou exclui. Assumir a OS (Passar OS) não dá
+    # direito sobre o registro do colega — antes o operador da OS passava como dono de tudo que havia nela.
+    # Registro antigo sem autor gravado: vale o operador do próprio registro.
+    _cp = str(parte.get("criado_por") or "")
+    dono = (_cp == str(user["id"])) if _cp else (str(parte.get("operador_id") or "") == str(user["id"]))
     if not dono:
-        raise HTTPException(status_code=403, detail="Você só pode excluir os seus próprios registros.")
+        raise HTTPException(status_code=403, detail="Só quem lançou o registro pode excluir — para o de um colega, fale com a gestão.")
     await ajard_query(
         "UPDATE operacional.partes_diarias SET ativo=false WHERE id=%s",
         (parte_id,), fetch="none"

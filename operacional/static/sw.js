@@ -14,7 +14,7 @@
  */
 
 const CACHE_NAME = 'garra-operacional-v29';   // (21/11/2026) controle de acesso por aparelho e horário (mobile.html + idb.js)
-const ASSETS_CACHE = 'garra-assets-v80';  // (21/11/2026) Modo Pessoal no app (faixa); fila offline com hora de criação
+const ASSETS_CACHE = 'garra-assets-v81';  // (21/11/2026) OS e partes: só quem lançou altera ou exclui
 const OFFLINE_PAGE = '/operacional/offline.html';
 
 // Assets que devem sempre estar em cache (shell)

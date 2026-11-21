@@ -1022,7 +1022,8 @@ async function carregarOSApp() {
       `<button onclick="liberarOS('${os.id}', '${os.numero}')" style="width:100%;margin-top:6px;padding:8px;background:transparent;border:1.5px dashed var(--muted);color:var(--muted);border-radius:8px;font-size:12px;font-weight:600;cursor:pointer">🔄 Passar OS para outro operador</button>`;
     // (13/07/2026) Excluir OS avulsa: lixeira DISCRETA no canto superior
     // direito do card — evita toque por engano (o confirm segue como 2ª trava)
-    const botaoExcluir = (!aguardando && os.origem === 'campo' && os.status === 'aberta_sem_erp')
+    // (21/11/2026) + só quem CRIOU a OS vê a lixeira (pode_excluir vem do servidor) — quem assumiu não
+    const botaoExcluir = (!aguardando && os.origem === 'campo' && os.status === 'aberta_sem_erp' && os.pode_excluir !== false)
       ? `<button onclick="excluirOSMobile('${os.id}', '${os.numero}')" title="Excluir esta OS" aria-label="Excluir OS" style="position:absolute;top:8px;right:8px;background:none;border:none;font-size:15px;color:#DC2626;opacity:.45;cursor:pointer;padding:6px;line-height:1">🗑</button>`
       : '';
 
@@ -2833,7 +2834,7 @@ async function verPartes(osId, osNum, editavel = true) {
             </div>
             <div style="display:flex;align-items:center;gap:8px">
               <span style="font-size:14px;font-weight:800;color:var(--orange);white-space:nowrap">${medInfo}</span>
-              ${(!p.fechado && window._vpEditavel !== false) ? `<button onclick="abrirEditarParte(${_idx})" style="background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:4px 8px;font-size:13px;cursor:pointer">✎</button>` : ''}
+              ${(!p.fechado && window._vpEditavel !== false && p.meu !== false) ? `<button onclick="abrirEditarParte(${_idx})" style="background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:4px 8px;font-size:13px;cursor:pointer">✎</button>` : ''}
             </div>
           </div>
           ${detalhes ? `<div style="font-size:11px;color:var(--muted);margin-top:5px">${detalhes}</div>` : ''}
