@@ -13,8 +13,8 @@
  * 4. Imagens/ícones: cache-first com limite de tamanho
  */
 
-const CACHE_NAME = 'garra-operacional-v24';   // (30/10/2026) JS/CSS passam a network-first
-const ASSETS_CACHE = 'garra-assets-v75';  // (15/11/2026) aba RH no app; Histórico com permissão própria
+const CACHE_NAME = 'garra-operacional-v29';   // (21/11/2026) controle de acesso por aparelho e horário (mobile.html + idb.js)
+const ASSETS_CACHE = 'garra-assets-v80';  // (21/11/2026) Modo Pessoal no app (faixa); fila offline com hora de criação
 const OFFLINE_PAGE = '/operacional/offline.html';
 
 // Assets que devem sempre estar em cache (shell)

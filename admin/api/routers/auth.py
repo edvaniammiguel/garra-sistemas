@@ -9,7 +9,7 @@ import jwt as pyjwt
 from datetime import datetime, timedelta
 from typing import Optional
 import logging
-from fastapi import APIRouter, Request, HTTPException, Depends, Header, Body
+from fastapi import APIRouter, Request, Response, HTTPException, Depends, Header, Body
 log = logging.getLogger("uvicorn.error")
 from fastapi.responses import JSONResponse
 
@@ -29,11 +29,12 @@ from core.models import (
     SenhaResetRequest, SenhaResetConfirm, PerfilCreate, PerfilUpdate,
 )
 from core.permissions import MODULOS_DISPONIVEIS, perfil_modulos_padrao
+from core.acesso_politica import vincular_dispositivo, tocar_dispositivo, modo_acesso, filtrar_perms   # (21/11/2026) controle de acesso
 
 router = APIRouter()
 
 @router.post("/auth/login")
-async def login(req: LoginRequest, request: Request, db=Depends(get_db)):
+async def login(req: LoginRequest, request: Request, response: Response, db=Depends(get_db)):
     check_rate_limit(request.client.host)
     ident = (req.login or "").strip().lower()
     user = await db.fetchrow(
@@ -42,12 +43,14 @@ async def login(req: LoginRequest, request: Request, db=Depends(get_db)):
     )
     if not user or not bcrypt.checkpw(req.senha.encode(), user["senha_hash"].encode()):
         raise HTTPException(status_code=401, detail="Usuário ou senha incorretos")
+    disp = await vincular_dispositivo(request, response, user["id"])
     token = pyjwt.encode({
         "sub":              user["login"],
         "login":            user["login"],
         "nome":             user["nome"],
         "perfil":           user["perfil"],
         "perfil_checklist": user["perfil_checklist"],
+        "disp":             disp,
         "exp":              datetime.utcnow() + timedelta(hours=JWT_EXPIRY_HOURS)
     }, JWT_SECRET, algorithm="HS256")
     
@@ -78,8 +81,10 @@ async def login(req: LoginRequest, request: Request, db=Depends(get_db)):
             perms = {m["id"]: True for m in MODULOS_DISPONIVEIS}
     except Exception:
         perms = {}
-    
+    perms = await filtrar_perms(perms, user["login"], disp)   # (21/11/2026) Modo Pessoal: só o que vale agora
+
     return {
+        "modo_acesso": await modo_acesso(user["login"], disp),
         "token": token,
         "id": str(user["id"]),
         "login": user["login"], "nome": user["nome"],
@@ -147,14 +152,23 @@ async def confirmar_reset(req: SenhaResetConfirm, db=Depends(get_db)):
     return {"ok": True, "msg": "Senha redefinida com sucesso."}
 
 @router.post("/auth/renovar")
-async def renovar_token(payload=Depends(verificar_token)):
-    """Token válido → gera novo com validade renovada. Chamado silenciosamente ao abrir o app."""
+async def renovar_token(request: Request, response: Response, payload=Depends(verificar_token)):
+    """Token válido → gera novo com validade renovada. Chamado silenciosamente ao abrir o app.
+    (21/11/2026) Mantém o aparelho (disp) do token; token antigo sem disp ganha o do cookie."""
+    disp = payload.get("disp")
+    await tocar_dispositivo(disp)
+    if not disp:
+        _u = await ajard_query("SELECT id FROM public.usuarios_garra WHERE (login=%s OR email=%s) AND ativo=true",
+                               (payload.get("login") or payload.get("sub", ""), payload.get("login") or payload.get("sub", "")), fetch="one")
+        if _u:
+            disp = await vincular_dispositivo(request, response, _u["id"])
     novo_token = pyjwt.encode({
         "sub":              payload["sub"],
         "login":            payload.get("login") or payload.get("sub", ""),
         "nome":             payload.get("nome", ""),
         "perfil":           payload.get("perfil", ""),
         "perfil_checklist": payload.get("perfil_checklist", ""),
+        "disp":             disp,
         "exp":              datetime.utcnow() + timedelta(hours=JWT_EXPIRY_HOURS)
     }, JWT_SECRET, algorithm="HS256")
 
@@ -182,8 +196,10 @@ async def renovar_token(payload=Depends(verificar_token)):
                 perms = {m["id"]: True for m in MODULOS_DISPONIVEIS}
         except Exception:
             perms = {}
+        perms = await filtrar_perms(perms, login, disp)   # (21/11/2026) Modo Pessoal: só o que vale agora
 
     return {
+        "modo_acesso": await modo_acesso(login, disp),
         "token": novo_token,
         "id": str(user["id"]) if user else None,
         "login": login,
@@ -294,7 +310,7 @@ async def webauthn_login_desafio(request: Request, db=Depends(get_db)):
     return json.loads(options_json)
 
 @router.post("/auth/webauthn/login/verificar")
-async def webauthn_login_verificar(request: Request, db=Depends(get_db)):
+async def webauthn_login_verificar(request: Request, response: Response, db=Depends(get_db)):
     """Passo 2 do login por digital: valida a assinatura e emite o MESMO
     payload do /auth/login (token + permsDB + redirect)."""
     check_rate_limit(request.client.host)
@@ -339,12 +355,14 @@ async def webauthn_login_verificar(request: Request, db=Depends(get_db)):
     await db.execute("DELETE FROM public.webauthn_desafios WHERE login=$1 AND tipo='login'", user["login"])
 
     # ── Mesmo payload do /auth/login ──
+    disp = await vincular_dispositivo(request, response, user["id"], credential_id=cred_id)
     token = pyjwt.encode({
         "sub":              user["login"],
         "login":            user["login"],
         "nome":             user["nome"],
         "perfil":           user["perfil"],
         "perfil_checklist": user["perfil_checklist"],
+        "disp":             disp,
         "exp":              datetime.utcnow() + timedelta(hours=JWT_EXPIRY_HOURS)
     }, JWT_SECRET, algorithm="HS256")
     redirects = {
@@ -365,7 +383,9 @@ async def webauthn_login_verificar(request: Request, db=Depends(get_db)):
             perms = {m["id"]: True for m in MODULOS_DISPONIVEIS}
     except Exception:
         perms = {}
+    perms = await filtrar_perms(perms, user["login"], disp)   # (21/11/2026) Modo Pessoal: só o que vale agora
     return {
+        "modo_acesso": await modo_acesso(user["login"], disp),
         "token": token,
         "id": str(user["id"]),
         "login": user["login"], "nome": user["nome"],

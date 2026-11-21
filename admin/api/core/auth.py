@@ -82,6 +82,9 @@ async def exigir_acesso_jardinagem(payload=Depends(verificar_token_jard)):
     if permitido is None:
         padrao = await perfil_modulos_padrao(perfil)
         permitido = ("jardinagem_mobile" in padrao) or ("jardinagem_desktop" in padrao)
+    if permitido:   # (21/11/2026) política de acesso fora da empresa (aparelho + horário)
+        from .acesso_politica import contexto_permite
+        permitido = (await contexto_permite(payload, "jardinagem_mobile")) or (await contexto_permite(payload, "jardinagem_desktop"))
     if not permitido:
         raise HTTPException(status_code=403, detail="Sem acesso ao módulo de Jardinagem")
     return payload

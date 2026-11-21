@@ -868,6 +868,19 @@ from routers.whatsapp_atendimento import router as whatsapp_atendimento_router  
 app.include_router(whatsapp_atendimento_router)
 from routers.rh import router as rh_router  # (15/11/2026) RH: colaboradores, função/HH, NRs, plataformas EAD
 app.include_router(rh_router)
+from routers.politica_acesso import router as politica_acesso_router  # (21/11/2026) política de acesso fora da empresa
+app.include_router(politica_acesso_router)
+from core.acesso_politica import MiddlewarePoliticaAcesso  # (21/11/2026) 403 da política sai com "modo_pessoal" (app não desloga)
+app.add_middleware(MiddlewarePoliticaAcesso)
+
+@app.on_event("startup")
+async def criar_tabelas_politica_acesso():
+    """(21/11/2026) Tabelas da política de acesso. Modo geral nasce 'desligada' — nada muda no deploy."""
+    try:
+        from core.acesso_politica import garantir_tabelas_acesso
+        await garantir_tabelas_acesso()
+    except Exception as e:
+        print(f"[Startup] política de acesso: {type(e).__name__}: {e!r}")
 
 @app.on_event("startup")
 async def criar_tabela_checklist_config():

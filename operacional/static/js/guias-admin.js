@@ -1,21 +1,33 @@
-/* (05/11/2026) Tour guiado da tela Admin Master (desktop, /admin) — GarraGuia. Dois roteiros:
+/* (05/11/2026) Tour guiado da tela Admin Master (desktop, /admin) — GarraGuia. Três roteiros:
  *   usuarios — cadastrar colaborador (login, senha inicial/reset, perfil, desativar/reativar) e Permissões
- *              (Por Perfil × Exceções Individuais, o que cada módulo libera, regra módulo da tela × módulo da rota).
+ *              (Por Perfil × Pessoas, o que cada módulo libera, regra módulo da tela × módulo da rota).
+ *   acesso   — (21/11/2026) acesso por aparelho e horário: horário de acesso da empresa, as duas chaves da pessoa,
+ *              liberar fora do expediente, aparelhos (inclusive o celular compartilhado) e registro.
  *   painel   — o que mais o Admin oferece: módulos, OS e partes diárias, Controle Mensal, Agenda, Cadastros, Mural.
  * Modo demonstração: mostra a tela real, não grava (alvos bloqueados ao clique; formulários limpos ao sair).
- * Abre pelo botão ▶ Como fazer (cabeçalho) ou por /admin?guia=usuarios | /admin?guia=painel. */
+ * Abre pelo botão ▶ Como fazer (cabeçalho) ou por /admin?guia=usuarios | /admin?guia=acesso | /admin?guia=painel. */
 (function () {
   const dorme = (ms) => new Promise(r => setTimeout(r, ms));
   // item do menu lateral pelo texto (o menu é montado pelo JS após o login)
   const sbItem = (re) => [...document.querySelectorAll('#sidebar .sb-item')].find(e => re.test(e.textContent));
   const ir = async (sec, re) => { navTo(sec, re ? sbItem(re) : null); await dorme(600); };
   const set = (id, v) => { const e = document.getElementById(id); if (e) e.value = v; };
-  // linha de módulo na ficha de exceções (Permissões › Exceções Individuais › colaborador)
+  // linha de módulo na ficha da pessoa (Permissões › Pessoas › colaborador)
   // (15/11/2026) a ficha de exceções passou a ser agrupada: cada módulo é a linha que contém a caixa de marcar
   const linhasModulo = () => [...document.querySelectorAll('#perm-detail-content input[onchange*="salvarPermissaoCard"]')].map(i => i.parentElement);
   const linhaModulo = (re) => linhasModulo().find(d => re.test(d.textContent));
   // colaborador para a demonstração de exceções: um operador, senão o primeiro que não for admin
   const colabDemo = () => { const l = (typeof _usuarios !== 'undefined' ? _usuarios : []).filter(u => u.ativo && u.perfil !== 'admin'); return l.find(u => u.perfil === 'operador') || l[0]; };
+
+  // (21/11/2026) roteiro "acesso": abre a ficha de uma pessoa (nada é gravado; os alvos ficam bloqueados ao clique)
+  const q = (sel) => document.querySelector(sel);
+  const linhaChave = (campo) => { const b = q('#perm-detail-content button[data-acx="' + campo + '"]'); return b ? b.parentElement : null; };
+  const fichaDemo = async () => {
+    switchPermTab('excecoes'); await dorme(900);
+    const u = colabDemo(); if (!u) return;
+    await abrirPermColaborador(u.id, u.perfil); await dorme(500);
+  };
+  const fichaPronta = async () => { if (!q('#perm-detail-content button[data-acx="so_empresa"]')) await fichaDemo(); };
 
   window.GUIAS_ADMIN = {
 
@@ -55,13 +67,13 @@
           texto: 'Saiu da empresa? <b>Desativar</b>: perde o acesso na hora, mas o histórico (partes, abastecimentos, checklists) fica. Para voltar, filtre <b>○ Inativos</b> e use <b>↺ Reativar</b>. Nunca apague — desativar basta.' },
         { alvo: () => sbItem(/Permissões/), antes: () => ir('permissoes', /Permissões/),
           titulo: 'Permissões',
-          texto: 'Aqui se decide o que cada <b>módulo</b> libera. Dois níveis: <b>Por Perfil</b> (padrão de todos do perfil) e <b>Exceções Individuais</b> (uma pessoa). Não é só o botão sumir da tela: o <b>servidor</b> checa o módulo em cada gravação.' },
+          texto: 'Aqui se decide o que cada <b>módulo</b> libera. Dois níveis: <b>Por Perfil</b> (padrão de todos do perfil) e <b>Pessoas</b> (ajustes de uma pessoa). Não é só o botão sumir da tela: o <b>servidor</b> checa o módulo em cada gravação.' },
         { alvo: '#perm-perfis-content', antes: async () => { switchPermTab('perfis'); try { _permAbertos = new Set(['Compras']); renderPermPerfis(); } catch (e) { } await dorme(400); },
           titulo: 'Por Perfil — módulos agrupados × perfis',
-          texto: 'Os módulos ficam em <b>grupos</b> que abrem e fecham (Gestão, Operação em campo, Manutenção, Compras, Jardinagem, Atendimento, RH) e cada <b>perfil</b> é uma coluna. Marcar vale <b>para todos do perfil</b>, na hora. O contador do grupo (ex.: <b>2/4</b>) mostra quantos módulos o perfil tem — clicar nele marca ou desmarca o grupo inteiro. <b>Administrador</b> é Master: tem tudo e por isso não aparece na matriz. Leitura: <b>Painel de Gestão</b> = OS, Controle Mensal, Agenda e Cadastros; <b>Pedir OT</b> × <b>Executar OT</b> separa quem pede de quem executa; <b>Notas</b> só conferem as notinhas; <b>Compras</b> tem 4 níveis. <b>+ Novo Perfil</b> cria um perfil próprio.' },
+          texto: 'Os módulos ficam em <b>grupos</b> que abrem e fecham (Gestão, Operação em campo, Manutenção, Compras, Jardinagem, Atendimento, RH) e cada <b>perfil</b> é uma coluna. Marcar vale <b>para todos do perfil</b>, na hora. O contador do grupo (ex.: <b>2/4</b>) mostra quantos módulos o perfil tem — clicar nele marca ou desmarca o grupo inteiro. <b>Administrador</b> é Master: tem tudo e por isso não aparece na matriz. Leitura: <b>Painel de Gestão</b> = OS, Controle Mensal, Agenda e Cadastros; <b>Pedir OT</b> × <b>Executar OT</b> separa quem pede de quem executa; <b>Notas</b> só conferem as notinhas; <b>Compras</b> tem 4 níveis. <b>+ Novo Perfil</b> cria um perfil próprio. ' },
         { alvo: '#exc-lista',
           antes: async () => { switchPermTab('excecoes'); await dorme(700); },
-          titulo: 'Exceções Individuais',
+          titulo: 'Pessoas — os ajustes de cada um',
           texto: 'Escolha a pessoa na lista (busque pelo nome ou filtre o perfil). Serve para <b>liberar algo a mais</b> (um operador que também vai conferir abastecimentos) ou <b>bloquear algo do perfil</b> só para ela. A etiqueta <b>"2 exc."</b> mostra quem foge do padrão do perfil.' },
         { alvo: () => linhaModulo(/Operacional Mobile/) || linhasModulo()[0] || document.getElementById('perm-detail-content'),
           antes: async () => { const u = colabDemo(); if (u) { await abrirPermColaborador(u.id, u.perfil); try { permGrupos().forEach(g => _excAbertos.add(g.nome)); excFicha(u.id, u.perfil); } catch (e) { } await dorme(500); } },
@@ -71,7 +83,47 @@
           titulo: 'Regra: módulo da tela × módulo da rota',
           texto: 'A tela aparece pelo módulo — e o servidor <b>exige o mesmo módulo na gravação</b>, por URL direta inclusive. Exemplos: <b>cadastrar equipamento</b> (aqui ou na Manutenção) exige <b>Painel de Gestão</b> ou <b>Manutenção Desktop</b>; OS, Controle Mensal e Cadastros exigem <b>Painel de Gestão</b>; aprovar OC exige <b>Compras — Aprovar</b>. Alguém recebeu "Sem permissão"? É aqui que se resolve.' },
         { titulo: 'Pronto! ✅',
-          texto: 'Rotina: <b>Usuários › + Novo colaborador → nome, login, senha inicial, perfil → Salvar</b>. Reset de senha pelo ✎ Editar. Saiu: <b>Desativar</b> (nunca apagar). Acesso diferente do padrão: <b>Permissões › Exceções Individuais</b>. Referência: descrição de cada módulo na própria tela de Permissões. Repita este tour pelo ▶ Como fazer.' },
+          texto: 'Rotina: <b>Usuários › + Novo colaborador → nome, login, senha inicial, perfil → Salvar</b>. Reset de senha pelo ✎ Editar. Saiu: <b>Desativar</b> (nunca apagar). Acesso diferente do padrão: <b>Permissões › Pessoas</b>. Referência: descrição de cada módulo na própria tela de Permissões. Repita este tour pelo ▶ Como fazer.' },
+      ],
+    },
+
+    acesso: {
+      titulo: 'Acesso por aparelho e horário',
+      pop: 'Admin · Permissões',
+      soAdmin: true,
+      passos: [
+        { titulo: 'O login vai para casa — o acesso, não 🏠',
+          texto: '<b>Bem-vinda à demonstração do acesso por aparelho e horário.</b><br><br>Cada pessoa tem <b>um login só</b>. Com <b>duas chaves</b> na ficha dela você decide: o trabalho abre <b>só nos aparelhos da empresa</b>? Só <b>no horário de acesso</b>? Fora disso, ela vê apenas o Mural, os avisos e o que é dela.<br><br>Quem não tiver chave ligada continua como sempre. Nada é gravado durante a demonstração.',
+          botao: 'Começar demonstração' },
+        { alvo: () => sbItem(/Permissões/), antes: () => ir('permissoes', /Permissões/),
+          titulo: 'Fica em Permissões › Pessoas',
+          texto: 'As permissões dos módulos continuam como sempre. O que é novo está na aba <b>Pessoas</b>: o horário de acesso da empresa, as chaves de cada um e os aparelhos. Tudo <b>salva no clique</b>.' },
+        { alvo: '#perm-horario', antes: fichaDemo,
+          titulo: 'Horário de acesso da empresa',
+          texto: '<b>Um horário só, para todos</b>: os dias e o intervalo em que o sistema abre para o trabalho (ex.: segunda a sábado, 06:30 às 18:00). É folgado de propósito, para caber o checklist da manhã e o fechamento do fim do dia. Mudou aqui, mudou para todo mundo que tem a chave do horário ligada.' },
+        { alvo: '#exc-lista',
+          titulo: 'A lista de pessoas',
+          texto: 'As etiquetas mostram a situação de cada um: <b>só aparelho da empresa</b> (azul), <b>só no horário</b> (verde) e <b>liberado até…</b> (amarelo). Sem etiqueta = acessa como sempre. Clique na pessoa para abrir a ficha.' },
+        { alvo: () => linhaChave('so_empresa'), antes: fichaPronta,
+          titulo: 'Chave: Só em aparelho da empresa',
+          texto: 'Para quem faz <b>gestão</b>. Ligada: tudo o que a permissão libera abre <b>só nos aparelhos marcados como da empresa</b>. No celular pessoal ela vê a faixa <b>"Este é seu celular pessoal."</b> e só o Mural, os avisos e o que é dela. Operador que usa o próprio celular para trabalhar: <b>deixe desligada</b>.' },
+        { alvo: () => linhaChave('so_horario'), antes: fichaPronta,
+          titulo: 'Chave: Só no horário de acesso',
+          texto: 'Ligada: fora do horário de acesso o app mostra <b>"Bom descanso!"</b> e fica só com o Mural, os avisos e o histórico de horas. Quem estava terminando um lançamento na hora do fim ainda consegue <b>enviar</b> (30 minutos), e o que foi lançado <b>sem sinal</b> na obra é aceito depois.' },
+        { alvo: '#acx-liberar', antes: fichaPronta,
+          titulo: 'Liberar fora do expediente',
+          texto: 'Alguém vai trabalhar fora do horário — um sábado à tarde, uma noite? Clique no campo e escolha no calendário o <b>primeiro</b> e o <b>último dia</b> (um dia só: clique nele duas vezes; tem o atalho <b>Hoje</b>). Nesses dias fica liberado o <b>dia inteiro</b>, com tudo o que a pessoa já tem de permissão, e <b>vence sozinho</b>. Para tirar antes: <b>Limpar</b>, dentro do calendário.' },
+        { alvo: () => { const d = [...document.querySelectorAll('#perm-detail-content div')].filter(e => /^Aparelhos/.test(e.textContent.trim()) && e.children.length <= 1); return d.length ? d[d.length - 1].parentElement : q('#perm-detail-content'); }, antes: fichaPronta,
+          titulo: 'Aparelhos da pessoa',
+          texto: 'Cada aparelho em que a pessoa entrou aparece aqui sozinho, como <b>Não classificado</b>. Dê um nome e marque <b>Da empresa</b> ou <b>Pessoal</b>. <b>Revogar</b> corta o acesso daquele aparelho na hora — celular perdido ou pessoa desligada.' },
+        { alvo: '#perm-aparelhos', antes: async () => { try { await acxAparelhos(true); } catch (e) { } await dorme(500); },
+          titulo: 'Aparelhos — o celular que várias pessoas usam',
+          texto: 'Esta lista mostra <b>cada aparelho uma vez</b>, com todos os logins que já entraram nele. Marque o <b>Celular do Administrativo</b> como Da empresa <b>uma vez só</b>: vale para todas que entrarem nele. Cada uma usa o próprio login — é assim que o sistema registra quem fez o quê.' },
+        { alvo: '#perm-registro',
+          titulo: 'Registro',
+          texto: 'Toda vez que um acesso é bloqueado por aparelho ou por horário, fica registrado aqui: quando, quem, qual módulo, o motivo e o aparelho. Guarda <b>90 dias</b> e se limpa sozinho.' },
+        { titulo: 'Pronto! ✅',
+          texto: 'Resumo: <b>gestão</b> → ligar "Só em aparelho da empresa" e marcar os aparelhos. <b>Campo</b> → ligar "Só no horário de acesso". <b>Serviço fora do horário</b> → "Liberar fora do expediente". Quem só acompanha o Mural: não precisa ligar nada. A pessoa precisa <b>sair e entrar de novo</b> para o aparelho aparecer na ficha. Repita este tour pelo ▶ Como fazer.' },
       ],
     },
 
@@ -130,6 +182,7 @@
     try { ['m-nome', 'm-login', 'm-email', 'm-senha'].forEach(id => set(id, '')); } catch (e) { }
     try { if (document.getElementById('modal-eq')) fecharModalEq(); } catch (e) { }
     try { _excSel = null; _excAbertos = new Set(); _permAbertos = new Set(); } catch (e) { }
+    try { acxAparelhos(false); } catch (e) { }   // (21/11/2026) fecha a lista que o roteiro "acesso" abriu
     try { const d = document.getElementById('perm-detail-content'); if (d) d.innerHTML = ''; } catch (e) { }
     try { if (!document.getElementById('sec-permissoes').classList.contains('hidden')) switchPermTab('perfis'); } catch (e) { }
     try { if (!document.getElementById('sec-partes').classList.contains('hidden')) navTo('os', sbItem(/Ordens de Serviço/)); } catch (e) { }
@@ -152,7 +205,7 @@
     document.body.appendChild(m);
     setTimeout(() => document.addEventListener('click', function f() { const x = document.getElementById('guia-menu'); if (x) x.remove(); document.removeEventListener('click', f); }), 0);
   };
-  // ?guia=usuarios | ?guia=painel — espera o app aparecer (login feito e menu lateral montado) e começa
+  // ?guia=usuarios | ?guia=acesso | ?guia=painel — espera o app aparecer (login feito e menu lateral montado) e começa
   (function () {
     const q = window._GUIA_Q; if (!q) return;
     let n = 0; const t = setInterval(() => {

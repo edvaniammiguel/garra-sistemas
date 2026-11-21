@@ -366,6 +366,12 @@ input,select,textarea{font-family:inherit;outline:none;border:none}
     </div>
   </div>
 
+  <!-- (21/11/2026) Política de acesso: aviso do Modo Pessoal (fora do horário, aparelho pessoal, férias) -->
+  <div id="acesso-banner" role="status" style="display:none;background:#F1F5F9;border-bottom:1.5px solid #CBD5E1;padding:10px 14px;font-size:13px;color:#1E293B">
+    <b id="acesso-banner-tit" style="color:#1A2A5E;font-size:14px"></b>
+    <div id="acesso-banner-txt" style="color:#475569;margin-top:2px"></div>
+  </div>
+
   <!-- CONTEÚDO -->
   <div class="app-content">
     <!-- JARDINAGEM -->
@@ -809,6 +815,7 @@ function ir(nome) {
   // FAB de Nova OS visível só na aba Operacional
   const fab = document.getElementById('btn-nova-os-fab');
   if (fab) fab.style.display = (nome === 'Op') ? 'block' : 'none';
+  acessoFab();
 
   if (nome === 'Jard') {
     // Jardinagem tem app próprio — abre direto, sem tela intermediária
@@ -920,6 +927,11 @@ function _linkNavegacao(os) {
 }
 
 async function carregarOSApp() {
+  if (window._modoPessoal) {   // (21/11/2026) Modo Pessoal: só o Histórico (horas próprias)
+    if (window._histOk) { opTab('hist'); return; }
+    document.getElementById('os-lista').innerHTML = '';
+    return;
+  }
   const el = document.getElementById('os-lista');
   el.innerHTML = '<div class="loading"><span class="spin"></span></div>';
 
@@ -1041,6 +1053,7 @@ async function carregarOSApp() {
 // NOVA OS AVULSA (operador cria do campo)
 // ──────────────────────────────────────────────────────────────────────────────
 async function abrirModalNovaOS() {
+  if (window._modoPessoal) return; // Modo Pessoal: não abre lançamento
   document.getElementById('novaos-error').style.display = 'none';
   document.getElementById('novaos-obra').value = '';
   document.getElementById('novaos-cliente').value = '';
@@ -3142,6 +3155,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (rr.ok) {
         const dd = await rr.json();
         if (dd.permsDB) USUARIO.permsDB = dd.permsDB;
+        if (dd.modo_acesso) USUARIO.modo_acesso = dd.modo_acesso;   // (21/11/2026) Modo Trabalho / Pessoal
         if (dd.token) localStorage.setItem('garra_token', dd.token);
         localStorage.setItem('garra_usuario', JSON.stringify(USUARIO));
       }
@@ -3222,7 +3236,72 @@ function aplicarPermissoesPerfil() {
     tHist.style.display = histOk ? '' : 'none';
     if (!histOk && tHist.style.color.indexOf('orange') >= 0) { try { opTab('os'); } catch (e) {} }
   }
+
+  // (21/11/2026) Política de acesso — Modo Pessoal: o servidor já tirou do permsDB o que não vale agora;
+  // aqui o Operacional fica só com o Histórico (horas da própria pessoa, sem dados da empresa).
+  const modoAc = USUARIO.modo_acesso || {};
+  window._modoPessoal = modoAc.modo === 'pessoal';
+  const ban = document.getElementById('acesso-banner');
+  if (ban) {
+    ban.style.display = window._modoPessoal ? '' : 'none';
+    const bh = document.getElementById('acesso-banner-tit'), bt = document.getElementById('acesso-banner-txt');
+    if (bh) bh.textContent = modoAc.titulo || 'Modo Pessoal';
+    if (bt) bt.textContent = modoAc.aviso || '';
+  }
+  const tOS = document.getElementById('op-tab-os'), gOp = document.getElementById('guia-link-op');
+  acessoFab();
+  if (window._modoPessoal) {
+    if (histOk && navs[1]) navs[1].style.display = '';
+    if (tOS) tOS.style.display = 'none';
+    if (gOp) gOp.style.display = 'none';
+  } else {
+    if (tOS) tOS.style.display = '';
+    if (gOp) gOp.style.display = '';
+  }
+  // Modo Pessoal sem nenhuma aba (ex.: sem Histórico liberado): só a faixa, sem tela de trabalho por baixo
+  if (window._modoPessoal && ![...navs].some(n => n.style.display !== 'none')) document.querySelectorAll('.mod-section').forEach(sec => sec.classList.remove('active'));
 }
+
+// (21/11/2026) Modo Pessoal: o botão + (Nova OS) continua no lugar, mas apagado e sem clique.
+function acessoFab() {
+  const fab = document.getElementById('btn-nova-os-fab'); if (!fab) return;
+  const off = !!window._modoPessoal;
+  fab.disabled = off;
+  fab.style.background = off ? '#CBD5E1' : 'var(--orange)';
+  fab.style.boxShadow = off ? 'none' : '0 4px 14px rgba(232,130,12,.4)';
+  fab.style.cursor = off ? 'not-allowed' : 'pointer';
+  fab.title = off ? 'Disponível no horário de trabalho' : '';
+}
+
+// (21/11/2026) A cada 5 min confere se o modo mudou (ex.: deu o fim da jornada). Com formulário aberto, espera:
+// quem está terminando um registro tem a tolerância do servidor para enviar.
+function acessoFormAberto() {
+  return [...document.querySelectorAll('[id^="modal"]')].some(m => getComputedStyle(m).display !== 'none');
+}
+async function acessoRevalidar(forcar) {
+  if (!USUARIO || !navigator.onLine) return;
+  const token = localStorage.getItem('garra_token') || '';
+  if (!token) return;
+  try {
+    if (!forcar) {
+      const r = await fetch('/acesso/meu-modo', { headers: { 'Authorization': 'Bearer ' + token } });
+      if (!r.ok) return;
+      const m = await r.json();
+      if ((m.modo || 'trabalho') === ((USUARIO.modo_acesso || {}).modo || 'trabalho')) return;
+    }
+    if (acessoFormAberto()) return;
+    const rr = await fetch('/auth/renovar', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token } });
+    if (!rr.ok) return;
+    const dd = await rr.json();
+    if (dd.permsDB) USUARIO.permsDB = dd.permsDB;
+    USUARIO.modo_acesso = dd.modo_acesso || null;
+    if (dd.token) localStorage.setItem('garra_token', dd.token);
+    localStorage.setItem('garra_usuario', JSON.stringify(USUARIO));
+    aplicarPermissoesPerfil();
+    abrirAbaInicial();
+  } catch (e) { /* sem rede: tenta na próxima */ }
+}
+setInterval(() => acessoRevalidar(false), 300000);
 
 function abrirAbaInicial() {
   if (!USUARIO) return;

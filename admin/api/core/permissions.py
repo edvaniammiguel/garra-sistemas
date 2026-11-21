@@ -78,7 +78,9 @@ async def tem_modulo(payload, modulos) -> bool:
     routers/manutencao._tem_modulo e cada router tinha a sua lista de perfis "livres",
     que passava por cima da tela de Permissões — brecha por URL direta).
     Ordem: exceção individual (permissoes_colaborador) > padrão do perfil (perfis_customizados).
-    Perfil admin = Master: tudo. Qualquer módulo do conjunto libera."""
+    Perfil admin = Master: tudo. Qualquer módulo do conjunto libera.
+    (21/11/2026) Depois da permissão, a política de acesso (aparelho + horário) decide o modo:
+    core.acesso_politica.contexto_permite. Desligada / pessoa sem política = como antes."""
     modulos = set(modulos)
     perfil_tok = (payload.get("perfil") or "").lower()
     if perfil_tok == "admin":
@@ -95,11 +97,10 @@ async def tem_modulo(payload, modulos) -> bool:
         "SELECT modulo, permitido FROM public.permissoes_colaborador WHERE usuario_id=%s", (u["id"],))
     individuais = {r["modulo"]: r["permitido"] for r in (rows or [])}
     padrao = set(await perfil_modulos_padrao(perfil))
-    for m in modulos:
-        if m in individuais:
-            if individuais[m]:
-                return True
-        elif m in padrao:
+    from .acesso_politica import contexto_permite   # (21/11/2026) política de acesso fora da empresa
+    for m in sorted(modulos):
+        liberado = individuais[m] if m in individuais else (m in padrao)
+        if liberado and await contexto_permite(payload, m):
             return True
     return False
 

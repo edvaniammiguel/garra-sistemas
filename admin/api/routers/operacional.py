@@ -22,6 +22,7 @@ from core.gates import exigir_painel_gestao, exigir_modulo   # (21/10/2026) OS/c
 # quem tem o módulo Manutenção cria/edita/desativa equipamento sem precisar do Painel de Gestão.
 exigir_cadastro_equip = exigir_modulo("admin_master", "manutencao", detail="Sem permissão para cadastrar equipamento (módulo Painel de Gestão ou Manutenção)")
 from core.permissions import tem_modulo
+from core.acesso_politica import exigir_contexto as _exigir_contexto, avaliar as _avaliar_politica
 
 router = APIRouter()
 
@@ -985,6 +986,7 @@ async def op_remover_os(os_id: str, payload=Depends(verificar_token)):
     - admin/gestor: podem excluir qualquer OS sem partes.
     - operador/motorista: só a própria OS avulsa (origem=campo,
       status=aberta_sem_erp, criada por ele ou dele) — caso do toque duplo."""
+    await _exigir_contexto(payload, "operacional_mobile")   # (21/11/2026) política de acesso: fora do horário = Modo Pessoal
     login = payload.get("sub", "")
     perfil = (payload.get("perfil") or "").lower()
     os_row = await ajard_query(
@@ -1016,6 +1018,7 @@ async def op_remover_os(os_id: str, payload=Depends(verificar_token)):
 @router.post("/operacional/api/os/{os_id}/partes")
 async def op_criar_parte(os_id: str, request: Request, payload=Depends(verificar_token)):
     """Registra parte diária. Qualquer operador logado pode registrar numa OS ativa."""
+    await _exigir_contexto(payload, "operacional_mobile")   # (21/11/2026) política de acesso: fora do horário = Modo Pessoal
     d = await request.json()
     login = payload.get("sub","")
 
@@ -1661,6 +1664,7 @@ async def op_reabrir_os(os_id: str, payload=Depends(exigir_painel_gestao)):
 @router.post("/operacional/api/os/{os_id}/concluir")
 async def op_concluir_os_operador(os_id: str, request: Request, payload=Depends(verificar_token)):
     """Operador marca OS como concluída do lado dele → aguarda fechamento pela Luana."""
+    await _exigir_contexto(payload, "operacional_mobile")   # (21/11/2026) política de acesso: fora do horário = Modo Pessoal
     login = payload.get("sub","") or payload.get("login","")
     user = await ajard_query(
         "SELECT id, perfil FROM public.usuarios_garra WHERE login=%s",
@@ -1711,6 +1715,7 @@ async def op_liberar_os(os_id: str, payload=Depends(verificar_token)):
     vermelho do admin para a Luana redesignar.
     As partes já registradas continuam com o operador original (comissão preservada).
     """
+    await _exigir_contexto(payload, "operacional_mobile")   # (21/11/2026) política de acesso: fora do horário = Modo Pessoal
     login = payload.get("sub","") or payload.get("login","")
     user = await ajard_query(
         "SELECT id, perfil FROM public.usuarios_garra WHERE login=%s",
@@ -1804,6 +1809,9 @@ async def op_minhas_os(historico: int = 0, payload=Depends(verificar_token)):
     # (15/11/2026) Histórico tem permissão própria (operacional_historico) — só quem tem comissão vê
     if historico == 1 and not await tem_modulo(payload, {"operacional_historico"}):
         raise HTTPException(status_code=403, detail="Histórico não liberado para o seu acesso")
+    if historico != 1:
+        await _exigir_contexto(payload, "operacional_mobile")   # (21/11/2026) lista de OS em aberto = trabalho
+    _so_pessoal = historico == 1 and not (await _avaliar_politica(payload.get("login") or login, payload.get("disp"), "operacional_mobile"))[0]
 
     # Filtro de status conforme histórico ou ativas
     if historico == 1:
@@ -1837,6 +1845,9 @@ async def op_minhas_os(historico: int = 0, payload=Depends(verificar_token)):
         (user["id"],)
     )
     # Sem campos financeiros — operador não vê valores
+    if _so_pessoal:   # (21/11/2026) Modo Pessoal: só as horas — sem cliente, obra, endereço ou localização
+        return [{**dict(r), "obra": None, "endereco": None, "gps": None, "cliente_nome": None, "observacao": None}
+                for r in (rows or [])]
     return [dict(r) for r in (rows or [])]
 
 @router.get("/operacional/api/minhas-os/debug")
@@ -1878,6 +1889,7 @@ async def op_minhas_os_debug(payload=Depends(verificar_token)):
 @router.post("/operacional/api/os/avulsa")
 async def op_criar_os_avulsa(req: Request, payload=Depends(verificar_token)):
     """Operador cria OS avulsa do campo — sem código ERP, status aberta_sem_erp."""
+    await _exigir_contexto(payload, "operacional_mobile")   # (21/11/2026) política de acesso: fora do horário = Modo Pessoal
     login = payload.get("sub","") or payload.get("login","")
     user = await ajard_query(
         "SELECT id, nome, perfil FROM public.usuarios_garra WHERE login=%s",
@@ -2891,6 +2903,7 @@ async def op_resumo_mensal(payload=Depends(verificar_token)):
 
 @router.patch("/operacional/api/minhas-partes/{parte_id}")
 async def op_editar_minha_parte(parte_id: str, request: Request, payload=Depends(verificar_token)):
+    await _exigir_contexto(payload, "operacional_mobile")   # (21/11/2026) política de acesso: fora do horário = Modo Pessoal
     d = await request.json()
     login = payload.get("sub", "")
     user = await ajard_query(
@@ -3068,6 +3081,7 @@ async def op_conflito_equipamento(eq_id: str, ignorar_os: str = None,
 
 @router.delete("/operacional/api/minhas-partes/{parte_id}")
 async def op_excluir_minha_parte(parte_id: str, payload=Depends(verificar_token)):
+    await _exigir_contexto(payload, "operacional_mobile")   # (21/11/2026) política de acesso: fora do horário = Modo Pessoal
     login = payload.get("sub", "")
     user = await ajard_query(
         "SELECT id FROM public.usuarios_garra WHERE login=%s", (login,), fetch="one"

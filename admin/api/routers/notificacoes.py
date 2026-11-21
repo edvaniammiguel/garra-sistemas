@@ -100,11 +100,12 @@ async def assinar(request: Request, payload=Depends(verificar_token)):
     if not ep or not keys.get("p256dh") or not keys.get("auth"):
         raise HTTPException(status_code=400, detail="Assinatura incompleta")
     await ajard_query(
-        """INSERT INTO public.push_assinaturas (usuario_id, endpoint, p256dh, auth, aparelho)
-           VALUES (%s,%s,%s,%s,%s)
+        """INSERT INTO public.push_assinaturas (usuario_id, endpoint, p256dh, auth, aparelho, dispositivo_id)
+           VALUES (%s,%s,%s,%s,%s,%s)
            ON CONFLICT (endpoint) DO UPDATE SET usuario_id=EXCLUDED.usuario_id, p256dh=EXCLUDED.p256dh,
-                auth=EXCLUDED.auth, aparelho=EXCLUDED.aparelho, ativo=true""",
-        (u["id"], ep, keys["p256dh"], keys["auth"], (d.get("aparelho") or "")[:200] or None), fetch="none")
+                auth=EXCLUDED.auth, aparelho=EXCLUDED.aparelho, dispositivo_id=EXCLUDED.dispositivo_id, ativo=true""",
+        (u["id"], ep, keys["p256dh"], keys["auth"], (d.get("aparelho") or "")[:200] or None,
+         payload.get("disp") or None), fetch="none")   # (21/11/2026) aparelho do token — política de acesso
     return {"ok": True}
 
 

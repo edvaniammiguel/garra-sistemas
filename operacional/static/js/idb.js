@@ -371,11 +371,14 @@ class GarraDB {
       // data null/undefined → sem body (evita mandar a string "null").
       const _m = queueItem.method || 'POST';
       const _temCorpo = queueItem.data !== null && queueItem.data !== undefined && _m !== 'DELETE';
+      // (21/11/2026) X-Garra-Criado-Em: hora em que o registro foi feito no aparelho — a política de acesso
+      // aceita o envio atrasado (sem sinal) pela hora de criação, não pela hora em que chegou.
+      const _criado = queueItem.createdAt ? { 'X-Garra-Criado-Em': String(queueItem.createdAt) } : {};
       const response = await fetch(queueItem.url, {
         method: _m,
         headers: _temCorpo
-          ? { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }
-          : { 'Authorization': `Bearer ${token}` },
+          ? { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json', ..._criado }
+          : { 'Authorization': `Bearer ${token}`, ..._criado },
         body: _temCorpo ? JSON.stringify(queueItem.data) : undefined
       });
 

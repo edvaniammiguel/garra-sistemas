@@ -35,6 +35,8 @@ EVENTOS = {
     "leitura_suspeita": {"modulo": "manutencao",    "padrao": {"bruna"},                       "nome": "Leitura de horímetro/km suspeita (salto ou recuo)"},
     "os_atribuida":    {"modulo": "operacional_mobile", "padrao": {"operador", "motorista"}, "nome": "OS aberta para mim no sistema (Operacional)"},
     "os_campo":        {"modulo": "admin_master",     "padrao": {"admin", "gestor"},             "nome": "OS aberta pelo operador no celular"},
+    # (21/11/2026) Controle de acesso — vai só para os Administradores (apenas=[…])
+    "aparelho_novo":   {"modulo": "admin_master",     "padrao": {"admin"},                       "nome": "Alguém entrou num aparelho novo (não conhecido)"},
     # (26/10/2026) Atendimento WhatsApp — os dois primeiros vão só para a atendente da conversa (apenas=[…])
     "atendimento_novo":    {"modulo": ("atendimento", "atendimento_gestao"), "padrao": set(), "nome": "WhatsApp: conversa nova ou transferida para mim"},
     "atendimento_msg":     {"modulo": ("atendimento", "atendimento_gestao"), "padrao": set(), "nome": "WhatsApp: mensagem nova numa conversa minha"},
@@ -74,6 +76,8 @@ async def _garantir():
             ativo BOOLEAN NOT NULL DEFAULT true,
             criado_em TIMESTAMPTZ NOT NULL DEFAULT now(),
             usado_em TIMESTAMPTZ)""", fetch="none")
+    # (21/11/2026) aparelho (acesso_dispositivos) da assinatura — avisos de gestão só em aparelho corporativo
+    await ajard_query("ALTER TABLE public.push_assinaturas ADD COLUMN IF NOT EXISTS dispositivo_id UUID", fetch="none")
     await ajard_query("""
         CREATE TABLE IF NOT EXISTS public.notificacao_prefs (
             usuario_id UUID NOT NULL,
@@ -231,11 +235,17 @@ def _push_sync(sub, payload, priv):
         return f"erro {e}"
 
 
-async def _push(usuario_id, payload):
+async def _push(usuario_id, payload, so_corporativo=False):
     v = await vapid()
     if not v:
         return
-    subs = await ajard_query("SELECT id, endpoint, p256dh, auth FROM public.push_assinaturas WHERE usuario_id=%s AND ativo=true", (usuario_id,)) or []
+    if so_corporativo:   # (21/11/2026) só assinaturas de aparelho classificado como corporativo (e não revogado)
+        subs = await ajard_query("""SELECT s.id, s.endpoint, s.p256dh, s.auth FROM public.push_assinaturas s
+                                      JOIN public.acesso_dispositivos d ON d.id = s.dispositivo_id
+                                     WHERE s.usuario_id=%s AND s.ativo=true AND d.ativo AND d.classificacao='corporativo'""",
+                                 (usuario_id,)) or []
+    else:
+        subs = await ajard_query("SELECT id, endpoint, p256dh, auth FROM public.push_assinaturas WHERE usuario_id=%s AND ativo=true", (usuario_id,)) or []
     if not subs:
         return
     loop = asyncio.get_running_loop()
@@ -262,14 +272,20 @@ async def notificar(tipo, titulo, texto=None, link=None, apenas=None, excluir=No
             if not ja:
                 return 0
         dest = await destinatarios(tipo, apenas=apenas, excluir=excluir)
+        # (21/11/2026) Controle de acesso: fora do horário o aviso fica na lista mas não vai push; quem é
+        # "só aparelho da empresa" recebe push de trabalho só nos aparelhos corporativos.
+        from core.acesso_politica import estado_aviso, aviso_so_corporativo
+        ev = EVENTOS.get(tipo) or {}
         n = 0
         for u in dest:
             await ajard_query("INSERT INTO public.notificacoes (usuario_id, tipo, titulo, texto, link) VALUES (%s,%s,%s,%s,%s)",
                               (u["id"], tipo, titulo[:200], (texto or "")[:500] or None, link), fetch="none")
             n += 1
+            if await estado_aviso(u) != "normal":
+                continue
             payload = {"titulo": titulo[:200], "texto": (texto or "")[:500], "link": link or "/mobile", "tipo": tipo,
                        "pendentes": await pendentes(u["id"])}
-            asyncio.create_task(_push(u["id"], payload))
+            asyncio.create_task(_push(u["id"], payload, await aviso_so_corporativo(u, ev.get("modulo"))))
         return n
     except Exception as e:
         log.warning("notificar(%s) falhou: %s", tipo, e)

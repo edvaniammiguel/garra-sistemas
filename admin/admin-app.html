@@ -502,7 +502,7 @@ button:disabled, select:disabled, input:disabled, [aria-disabled=true] { cursor:
             </button>
             <button id="perm-tab-excecoes" onclick="switchPermTab('excecoes')"
               style="padding:8px 18px;font-size:13px;font-weight:700;border:none;background:none;cursor:pointer;border-bottom:3px solid transparent;color:var(--muted);margin-bottom:-2px">
-              Exceções Individuais
+              Pessoas
             </button>
           </div>
 
@@ -517,8 +517,9 @@ button:disabled, select:disabled, input:disabled, [aria-disabled=true] { cursor:
           <!-- Aba Exceções -->
           <div id="perm-excecoes" style="display:none">
             <p style="font-size:13px;color:var(--muted);margin-bottom:16px">
-              Ajuste individual por colaborador. Substitui o padrão do perfil apenas para essa pessoa.
+              Tudo de uma pessoa num lugar só: módulos liberados, as duas chaves de acesso (aparelho da empresa e horário) e os aparelhos dela. Tudo salva no clique.
             </p>
+            <div id="perm-horario"></div>
             <!-- Filtros -->
             <div style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap;align-items:center">
               <select id="perm-filter-perfil" onchange="filtrarSelectExcecao()"
@@ -528,7 +529,10 @@ button:disabled, select:disabled, input:disabled, [aria-disabled=true] { cursor:
               <span id="perm-perfil-badge" style="font-size:11px;color:var(--muted)"></span>
             </div>
             <div id="perm-excecoes-content"></div>
+            <div id="perm-aparelhos"></div>
+            <div id="perm-registro"></div>
           </div>
+
         </div>
       </section>
 
@@ -1469,6 +1473,10 @@ async function apiFetch(path, opts = {}) {
   if (res.status === 403) {
     const err = await res.json().catch(() => ({}));
     const msg = err.detail || '';
+    if (err.modo_pessoal) {   // (21/11/2026) política de acesso: fora do horário / aparelho pessoal — não é sessão velha
+      acessoBannerAdmin({ modo: 'pessoal', aviso: msg });
+      throw new Error(msg);
+    }
     if (msg.includes('Acesso restrito')) {
       alert('Sua sessão está desatualizada. Faça login novamente.');
       doLogout();
@@ -1510,6 +1518,7 @@ async function doLogin() {
     Token.set(data.token);
     Token.setUser({ login: data.login, nome: data.nome, perfil: data.perfil, id: data.id || null });
     iniciarApp(data);
+    acessoBannerAdmin(data.modo_acesso);
   } catch(e) {
     err.textContent = e.message;
     err.classList.remove('hidden');
@@ -1610,6 +1619,7 @@ window.addEventListener('load', async () => {
       if (res.ok) {
         const data = await res.json();
         if (data.token) Token.set(data.token);
+        window._modoAcessoInicial = data.modo_acesso || null;   // (21/11/2026) política de acesso
       } else {
         Token.del(); Token.delUser(); return;
       }
@@ -1621,8 +1631,37 @@ window.addEventListener('load', async () => {
       return;
     }
     iniciarApp(user);
+    acessoBannerAdmin(window._modoAcessoInicial);
   }
 });
+
+/* (21/11/2026) Controle de acesso: faixa do Modo Pessoal no topo (fora do horário ou aparelho que não é da empresa).
+   A cada 5 min confere o modo; quando muda, recarrega a página para o menu refletir o que vale agora. */
+function acessoBannerAdmin(m) {
+  window._modoAcesso = m || null;
+  let el = document.getElementById('acesso-banner-admin');
+  const pessoal = m && m.modo === 'pessoal';
+  if (!pessoal) { if (el) el.remove(); return; }
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'acesso-banner-admin';
+    el.setAttribute('role', 'status');
+    el.style.cssText = 'background:#F1F5F9;border-bottom:1.5px solid #CBD5E1;padding:10px 18px;font-size:13px;color:#1E293B';
+    const h = document.getElementById('header');
+    if (h) h.insertAdjacentElement('afterend', el); else document.body.prepend(el);
+  }
+  el.innerHTML = m.titulo ? `<b style="color:#1A2A5E">${esc(m.titulo)}</b> <span style="color:#475569">${esc(m.aviso || '')}</span>`
+                          : `<span style="color:#1E293B">${esc(m.aviso || '')}</span>`;
+}
+setInterval(async () => {
+  const token = Token.get(); if (!token || !navigator.onLine) return;
+  try {
+    const r = await fetch(API + '/acesso/meu-modo', { headers: { Authorization: 'Bearer ' + token } });
+    if (!r.ok) return;
+    const m = await r.json();
+    if ((m.modo || 'trabalho') !== ((window._modoAcesso || {}).modo || 'trabalho')) location.reload();
+  } catch (e) {}
+}, 300000);
 
 /* ══════════════════════════════════════════════
    CHECKLIST ADMIN — abre em nova aba com SSO
@@ -2089,7 +2128,7 @@ function renderPermPerfis() {
         <tbody>${corpo || '<tr><td colspan="'+(perfis.length+1)+'" style="padding:16px;color:var(--muted);font-size:13px">Nenhum módulo encontrado.</td></tr>'}</tbody>
       </table>
     </div>
-    <div style="margin-top:10px;font-size:11px;color:var(--muted)">🔒 Perfil Administrador é <b>Master</b>: acesso a todos os módulos, inclusive os criados no futuro — por isso não aparece na matriz · Clique no contador (ex.: 2/4) para marcar ou desmarcar o grupo inteiro naquele perfil · Alterações aplicam-se a todos do perfil.</div>`;
+    <div style="margin-top:10px;font-size:11px;color:var(--muted)">🔒 Perfil Administrador é <b>Master</b>: acesso a todos os módulos, inclusive os criados no futuro — por isso não aparece na matriz · Clique no contador (ex.: 2/4) para marcar ou desmarcar o grupo inteiro naquele perfil · Alterações aplicam-se a todos do perfil</div>`;
 }
 function permToggleGrupo(gi) { const g = permGrupos()[gi]; if (!g) return; _permAbertos.has(g.nome) ? _permAbertos.delete(g.nome) : _permAbertos.add(g.nome); renderPermPerfis(); }
 function permAbrirTodos(abrir) { _permAbertos = new Set(abrir ? permGrupos().map(g => g.nome) : []); renderPermPerfis(); }
@@ -2163,6 +2202,7 @@ async function iniciarAbaExcecoes() {
     try { _usuarios = await apiFetch('/usuarios'); } catch(e) {}
   }
   _todosUsuariosExcecao = _usuarios||[];
+  await acxCarregarUsuarios(); acxHorario(); acxAparelhos(false); acxRegistro(false);
   const filtroPerfil = document.getElementById('perm-filter-perfil');
   if (filtroPerfil && filtroPerfil.options.length <= 1) {
     const perfis = [...new Set(_todosUsuariosExcecao.filter(u=>u.ativo).map(u=>u.perfil))].sort();
@@ -2211,15 +2251,17 @@ function excLista() {
     return `<div onclick="abrirPermColaborador('${u.id}','${u.perfil}')" style="padding:8px 12px;border-top:1px solid #F1F5F9;cursor:pointer;display:flex;justify-content:space-between;align-items:center;gap:6px;${on?'background:#FFF7ED;box-shadow:inset 3px 0 0 var(--orange)':''}">
       <div style="min-width:0"><div style="font-size:13px;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(u.nome||u.login)}</div>
       <div style="font-size:11px;color:var(--muted)">${esc(PERFIL_LABEL[u.perfil]||u.perfil)}</div></div>
-      ${n?`<span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px;background:#FFF7ED;border:1px solid #FDBA74;color:#9A3412;white-space:nowrap">${n} exc.</span>`:''}
+      <span style="display:flex;flex-direction:column;align-items:flex-end;gap:3px">
+      ${acxEtiquetas(u.id)}
+      ${n?`<span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px;background:#FFF7ED;border:1px solid #FDBA74;color:#9A3412;white-space:nowrap">${n} exc.</span>`:''}</span>
     </div>`; }).join('') : '<div style="color:var(--muted);font-size:13px;padding:14px">Ninguém encontrado.</div>';
 }
 async function abrirPermColaborador(uid, perfil) {
   if (_excSel !== uid) { _excAbertos = new Set(); _excSo = false; }
-  _excSel = uid; excLista();
+  _excSel = uid; _acxPerfil = perfil; excLista();
   const el = document.getElementById('perm-detail-content');
   if (!el.dataset.uid || el.dataset.uid !== uid) el.innerHTML = '<div class="loading"><span class="spin"></span></div>';
-  try { _excPerms = await apiFetch('/permissoes/usuario/'+uid); }
+  try { [_excPerms] = await Promise.all([apiFetch('/permissoes/usuario/'+uid), acxCarregarPessoa(uid)]); }
   catch(e) { el.innerHTML = `<div style="color:var(--red)">Erro: ${esc(e.message)}</div>`; return; }
   el.dataset.uid = uid;
   excFicha(uid, perfil);
@@ -2262,8 +2304,11 @@ function excFicha(uid, perfil) {
         <button class="btn btn-secondary" style="font-size:12px;padding:5px 10px" ${nExc?'':'disabled'} onclick="resetarTodasPermissoes('${uid}','${perfil}')">↺ Voltar tudo ao padrão</button>`}
       </div>
       ${master?`<div style="margin:0 12px 12px;padding:10px 14px;border-radius:8px;background:#FFF7ED;border:1.5px solid var(--orange);font-size:12px;color:#9A3412"><b>★ Master</b> — o perfil Administrador tem acesso a todos os módulos, inclusive os que forem criados daqui para a frente. Para restringir alguém, troque o perfil do colaborador.</div>`:''}
+      ${acxBlocoControle(uid, master)}
       ${corpo || '<div style="padding:16px;font-size:13px;color:var(--muted);border-top:1px solid var(--border)">Sem exceções: esta pessoa segue o padrão do perfil.</div>'}
+      ${acxBlocoAparelhos()}
     </div>`;
+  try { GarraPeriodo.anexarTodos(el); } catch (e) { }   // (21/11/2026) campo de período de "Liberar fora do expediente"
   excLista();
 }
 function excToggleGrupo(gi, uid, perfil) { const g = permGrupos()[gi]; if (!g) return; _excAbertos.has(g.nome) ? _excAbertos.delete(g.nome) : _excAbertos.add(g.nome); excFicha(uid, perfil); }
@@ -2280,7 +2325,7 @@ async function resetarPermissao(usuarioId, modulo, perfil) {
   await salvarPermissaoCard(usuarioId, modulo, (PERFIL_PADRAO[perfil]||[]).includes(modulo), perfil);
 }
 async function resetarTodasPermissoes(usuarioId, perfil) {
-  if (!confirm('Voltar todas as permissões desta pessoa para o padrão do perfil?')) return;
+  if (!confirm('Voltar todas as permissões desta pessoa para o padrão do perfil ? As chaves de acesso e os aparelhos continuam como estão.')) return;
   const payload={};
   MODULOS.forEach(m=>{payload[m.id]=(PERFIL_PADRAO[perfil]||[]).includes(m.id);});
   try {
@@ -2288,6 +2333,222 @@ async function resetarTodasPermissoes(usuarioId, perfil) {
     toast('Permissões de volta ao padrão do perfil','success');
   } catch(e) { toast('Erro: '+e.message,'error'); }
   await abrirPermColaborador(usuarioId, perfil);
+}
+
+/* ══════════════════════════════════════════════
+   CONTROLE DE ACESSO POR APARELHO E HORÁRIO (21/11/2026) — versão simples, dentro de Permissões › Pessoas:
+   • Horário de acesso da empresa: um só (dias, início, fim), no topo da aba.
+   • Ficha da pessoa: chave "Só em aparelho da empresa", chave "Só no horário de acesso" e
+     "Liberar fora do expediente" (campo de período padrão; dias inteiros; vence sozinho).
+   • Aparelhos: cada aparelho é marcado uma vez e vale para todos os logins nele.
+   Tudo salva no clique. A regra vale no servidor (core/acesso_politica.py).
+══════════════════════════════════════════════ */
+let _acxHor = null, _acxDados = null, _acxUsers = {}, _acxPerfil = '', _acxAvisoHor = '';
+const ACX_DIAS = [[1,'Seg'],[2,'Ter'],[3,'Qua'],[4,'Qui'],[5,'Sex'],[6,'Sáb'],[7,'Dom']];
+const ACX_DISP = { nao_classificado: 'Não classificado', corporativo: 'Da empresa', pessoal: 'Pessoal' };
+const ACX_INP = 'padding:7px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:13px';
+const acxDataBR = (iso) => iso ? iso.split('-').reverse().slice(0, 2).join('/') : '';
+
+/* ── Horário de acesso da empresa ── */
+async function acxHorario() {
+  const el = document.getElementById('perm-horario'); if (!el) return;
+  try { _acxHor = (await apiFetch('/acesso/config')).horario; } catch (e) { el.innerHTML = ''; return; }
+  const dias = String(_acxHor.dias || '').split(',').map(Number);
+  el.innerHTML = `
+    <div style="margin-bottom:16px;padding:12px 14px;border:1px solid var(--border);border-radius:10px;background:#fff">
+      <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)">Horário de acesso da empresa</div>
+      <div style="font-size:12px;color:var(--muted);margin:2px 0 10px">Um só, para todos. Vale para quem estiver com a chave “Só no horário de acesso” ligada. Fora dele, a pessoa vê só o Mural, os avisos e o que é dela.</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:flex-end">
+        <div id="acx-hor-dias" style="display:flex;gap:6px;flex-wrap:wrap" aria-label="Dias do horário de acesso">
+          ${ACX_DIAS.map(([n,lb]) => { const ok = dias.includes(n); return `<button aria-pressed="${ok}" onclick="acxHorDia(${n})" style="padding:7px 12px;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;${ok?'background:var(--blue);color:#fff;border:1.5px solid var(--blue)':'background:#fff;color:var(--muted);border:1.5px solid var(--border)'}">${lb}</button>`; }).join('')}
+        </div>
+        <div style="margin-left:12px"><label for="acx-hor-ini" style="font-size:12px;color:var(--muted);display:block">Início</label><input id="acx-hor-ini" type="time" value="${esc(_acxHor.inicio)}" onchange="acxHorSalvar({inicio:this.value})" style="${ACX_INP}"/></div>
+        <div><label for="acx-hor-fim" style="font-size:12px;color:var(--muted);display:block">Fim</label><input id="acx-hor-fim" type="time" value="${esc(_acxHor.fim)}" onchange="acxHorSalvar({fim:this.value})" style="${ACX_INP}"/></div>
+      </div>
+      ${_acxAvisoHor ? `<div style="font-size:12px;font-weight:700;color:#B35A00;margin-top:6px">${esc(_acxAvisoHor)}</div>` : ''}
+    </div>`;
+}
+function acxHorDia(n) {
+  const dias = String(_acxHor.dias || '').split(',').map(Number).filter(Boolean);
+  acxHorSalvar({ dias: dias.includes(n) ? dias.filter(d => d !== n) : [...dias, n] });
+}
+async function acxHorSalvar(campos) {
+  try { await apiFetch('/acesso/config', { method: 'PUT', body: JSON.stringify({ horario: campos }) }); _acxAvisoHor = ''; toast('Horário de acesso salvo', 'success'); }
+  catch (e) { _acxAvisoHor = e.message + ' — não salvo'; }
+  acxHorario();
+}
+
+/* ── Pessoas: dados e salvamento ── */
+async function acxCarregarUsuarios() {
+  try { const l = await apiFetch('/acesso/usuarios'); _acxUsers = {}; (l||[]).forEach(u => { _acxUsers[u.id] = u; }); } catch (e) { /* indicador */ }
+}
+async function acxCarregarPessoa(uid) {
+  try { _acxDados = await apiFetch('/acesso/usuario/' + uid); } catch (e) { _acxDados = null; }
+}
+async function acxRecarregar(uid) {
+  await acxCarregarPessoa(uid); await acxCarregarUsuarios();
+  if (_excSel === uid) excFicha(uid, _acxPerfil);
+}
+async function acxPut(uid, campos, msg) {
+  try { await apiFetch('/acesso/usuario/' + uid, { method: 'PUT', body: JSON.stringify(campos) }); toast(msg || 'Salvo', 'success'); }
+  catch (e) { toast('Erro: ' + e.message, 'error'); }
+  await acxRecarregar(uid);
+}
+// "Liberar fora do expediente": o campo de período padrão (garra-periodo.js) escreve nos dois hidden e dispara
+// change em cada um — o pequeno atraso junta os dois numa gravação só.
+let _acxLibT = null;
+function acxLiberar(uid) {
+  clearTimeout(_acxLibT);
+  _acxLibT = setTimeout(() => {
+    const de = document.getElementById('acx-lib-de'), ate = document.getElementById('acx-lib-ate'); if (!de || !ate) return;
+    const p = (_acxDados || {}).pessoa || {};
+    if ((de.value || '') === (p.liberado_de || '') && (ate.value || '') === (p.liberado_ate || '')) return;
+    acxPut(uid, { liberado_de: de.value, liberado_ate: ate.value },
+      de.value ? 'Liberado fora do expediente: ' + acxPeriodoBR(de.value, ate.value) : 'Liberação encerrada');
+  }, 150);
+}
+const acxPeriodoBR = (de, ate) => (!de || de === ate) ? acxDataBR(ate) : acxDataBR(de) + ' a ' + acxDataBR(ate);
+function acxEtiquetas(uid) {
+  const u = _acxUsers[uid] || {}, tag = (txt, bg, cor) => `<span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px;background:${bg};color:${cor};white-space:nowrap">${txt}</span>`;
+  return (u.so_empresa ? tag('só aparelho da empresa', '#DBEAFE', '#1D4ED8') : '')
+       + (u.so_horario ? tag('só no horário', '#DCFCE7', '#166534') : '')
+       + (u.liberado_ate ? tag('liberado ' + acxPeriodoBR(u.liberado_de, u.liberado_ate), '#FEF9C3', '#854D0E') : '');
+}
+
+/* ── Pessoas: bloco de acesso na ficha ── */
+function acxChave(uid, campo, on, titulo, texto) {
+  return `<div style="display:flex;gap:14px;align-items:flex-start;justify-content:space-between;padding:8px 0">
+      <div><div style="font-size:14px;font-weight:700;color:var(--text)">${titulo}</div>
+        <div style="font-size:12px;color:var(--muted);margin-top:2px">${texto}</div></div>
+      <button role="switch" aria-checked="${on}" aria-label="${titulo}" data-acx="${campo}" onclick="acxPut('${uid}',{${campo}:${!on}})" style="flex:none;width:54px;height:30px;border-radius:99px;border:none;cursor:pointer;padding:3px;display:flex;justify-content:${on?'flex-end':'flex-start'};background:${on?'var(--blue)':'#94A3B8'}"><span aria-hidden="true" style="width:24px;height:24px;border-radius:50%;background:#fff;display:block"></span></button>
+    </div>`;
+}
+function acxBlocoControle(uid, master) {
+  if (!_acxDados) return '';
+  const sec = (corpo) => `<div style="border-top:1px solid var(--border);padding:12px 14px">
+      <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:2px">Acesso — aparelho e horário</div>${corpo}</div>`;
+  if (master) return sec('<div style="font-size:12px;color:var(--muted)">★ Master — nunca é bloqueado por aparelho nem por horário.</div>');
+  const p = _acxDados.pessoa, hor = _acxHor ? `${_acxHor.inicio}–${_acxHor.fim}` : '';
+  const lib = p.liberado_ate;
+  return sec(
+    acxChave(uid, 'so_empresa', p.so_empresa, 'Só em aparelho da empresa', 'Ligada: o trabalho abre só nos aparelhos marcados como “Da empresa”. No celular pessoal, só Mural, avisos e o que é dela.')
+    + acxChave(uid, 'so_horario', p.so_horario, 'Só no horário de acesso', `Ligada: o trabalho abre só no horário de acesso da empresa${hor ? ' (' + esc(hor) + ')' : ''}. Fora dele, só Mural, avisos e o que é dela.`)
+    + `<div id="acx-liberar" style="margin-top:6px;padding-top:10px;border-top:1px dashed var(--border)">
+        <div style="font-size:14px;font-weight:700;color:var(--text)">Liberar fora do expediente</div>
+        <div style="font-size:12px;color:var(--muted);margin-top:2px">Clique no campo e escolha o primeiro e o último dia (um dia só: clique nele duas vezes). Nesses dias o acesso fica liberado o <b>dia inteiro</b> e depois vence sozinho.</div>
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:8px">
+          <input type="text" id="acx-lib-periodo" data-periodo-de="acx-lib-de" data-periodo-ate="acx-lib-ate" placeholder="Escolher os dias" aria-label="Período liberado fora do expediente" style="${ACX_INP};width:230px"/>
+          <input type="hidden" id="acx-lib-de" value="${esc(p.liberado_de || '')}" onchange="acxLiberar('${uid}')"/>
+          <input type="hidden" id="acx-lib-ate" value="${esc(p.liberado_ate || '')}" onchange="acxLiberar('${uid}')"/>
+          ${lib ? `<span style="font-size:12px;font-weight:700;padding:4px 10px;border-radius:99px;background:#FEF9C3;color:#854D0E">Liberado ${esc(acxPeriodoBR(p.liberado_de, lib))}</span>` : ''}
+        </div>
+      </div>`);
+}
+
+function acxBlocoAparelhos() {
+  if (!_acxDados) return '';
+  const lista = (_acxDados.dispositivos||[]).map(d => `
+    <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:8px 0;border-top:1px solid #F1F5F9;${d.ativo?'':'opacity:.6'}">
+      <div style="flex:1;min-width:200px">
+        <input value="${esc(d.apelido||'')}" placeholder="Nome do aparelho (ex.: Celular da empresa)" onchange="acxSalvarDisp('${d.id}',{apelido:this.value})" style="${ACX_INP};width:100%" aria-label="Nome do aparelho"/>
+        <div style="font-size:11px;color:var(--muted);margin-top:3px">${esc(acxResumoUA(d.user_agent))}${d.biometria?' · com digital':''} · último uso ${esc(acxData(d.ultimo_uso))}${d.ativo?'':' · <b style="color:var(--red)">revogado</b>'}${d.usado_por?` · <b style="color:var(--blue)">também usado por ${esc(d.usado_por)}</b>`:''}</div>
+      </div>
+      <select onchange="acxSalvarDisp('${d.id}',{classificacao:this.value})" style="${ACX_INP}" ${d.ativo?'':'disabled'} aria-label="Classificação">
+        ${Object.entries(ACX_DISP).map(([k,lb]) => `<option value="${k}" ${k===d.classificacao?'selected':''}>${lb}</option>`).join('')}
+      </select>
+      ${d.ativo ? `<button onclick="acxRevogar('${d.id}')" style="font-size:12px;color:var(--red);background:#fff;border:1.5px solid #FCA5A5;border-radius:6px;padding:5px 10px;cursor:pointer">Revogar</button>`
+                : `<button onclick="acxReativar('${d.id}')" style="font-size:12px;background:#fff;border:1.5px solid var(--border);border-radius:6px;padding:5px 10px;cursor:pointer">Reativar</button>`}
+    </div>`).join('');
+  return `<div style="border-top:1px solid var(--border);padding:12px 14px">
+    <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:4px">Aparelhos <span style="text-transform:none;letter-spacing:0;font-weight:400">— nome, classificação e revogação valem para o aparelho inteiro (todos os logins nele)</span></div>
+    ${lista || '<div style="font-size:12px;color:var(--muted)">Nenhum aparelho ainda — aparece aqui no próximo login da pessoa. Aparelho novo entra como “Não classificado”, que não conta como da empresa.</div>'}</div>`;
+}
+
+function acxResumoUA(ua) {
+  ua = ua || '';
+  const so = /Android/i.test(ua) ? 'Android' : /iPhone|iPad/i.test(ua) ? 'iPhone/iPad' : /Windows/i.test(ua) ? 'Windows' : /Mac OS/i.test(ua) ? 'Mac' : /Linux/i.test(ua) ? 'Linux' : 'Aparelho';
+  const nav = /Edg\//.test(ua) ? 'Edge' : /Chrome\//.test(ua) ? 'Chrome' : /Safari\//.test(ua) ? 'Safari' : /Firefox\//.test(ua) ? 'Firefox' : '';
+  return so + (nav ? ' · ' + nav : '');
+}
+function acxData(iso) {
+  if (!iso) return '—';
+  const d = new Date(iso); if (isNaN(d)) return '—';
+  return d.toLocaleDateString('pt-BR') + ' ' + d.toLocaleTimeString('pt-BR', {hour:'2-digit', minute:'2-digit'});
+}
+async function acxSalvarDisp(id, campos) {
+  try { await apiFetch('/acesso/dispositivo/'+id, {method:'PUT', body: JSON.stringify(campos)}); toast(campos.classificacao ? 'Aparelho: '+ACX_DISP[campos.classificacao] : 'Nome do aparelho salvo', 'success'); }
+  catch (e) { toast('Erro: '+e.message, 'error'); }
+  await acxRecarregar(_excSel);
+}
+async function acxRevogar(id) {
+  if (!confirm('Revogar este aparelho? Todos os logins nele perdem o acesso aos módulos na hora, mesmo de quem não tem chave ligada.')) return;
+  try { await apiFetch('/acesso/dispositivo/'+id+'/revogar', {method:'POST'}); toast('Aparelho revogado', 'success'); } catch (e) { toast('Erro: '+e.message, 'error'); }
+  await acxRecarregar(_excSel);
+}
+async function acxReativar(id) {
+  try { await apiFetch('/acesso/dispositivo/'+id+'/reativar', {method:'POST'}); toast('Aparelho reativado', 'success'); } catch (e) { toast('Erro: '+e.message, 'error'); }
+  await acxRecarregar(_excSel);
+}
+
+async function acxAparelhos(aberto) {
+  const el = document.getElementById('perm-aparelhos'); if (!el) return;
+  if (!aberto) {
+    el.innerHTML = `<div onclick="acxAparelhos(true)" style="cursor:pointer;margin-top:14px;padding:10px 14px;border:1px solid var(--border);border-radius:10px;background:#fff;font-size:13px;color:var(--muted)">▸ <b style="color:var(--blue)">Aparelhos</b> · celular do administrativo, desktops e celulares de cada um — classifique cada aparelho uma vez, vale para todos os logins nele</div>`;
+    return;
+  }
+  let lista = [];
+  try { lista = await apiFetch('/acesso/aparelhos'); } catch (e) { el.innerHTML = `<div style="color:var(--red);font-size:12px;margin-top:14px">Aparelhos: ${esc(e.message)}</div>`; return; }
+  el.innerHTML = `
+    <div style="margin-top:14px;border:1px solid var(--border);border-radius:10px;background:#fff;overflow:hidden">
+      <div onclick="acxAparelhos(false)" style="cursor:pointer;padding:10px 14px;background:#F1F5F9;font-size:13px;font-weight:700;color:var(--blue)">▾ Aparelhos (${lista.length})</div>
+      ${lista.length ? lista.map(d => `
+        <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:8px 14px;border-top:1px solid #F1F5F9;${d.ativo?'':'opacity:.6'}">
+          <div style="flex:1;min-width:240px">
+            <input value="${esc(d.apelido||'')}" placeholder="Nome do aparelho (ex.: Celular do Administrativo)" onchange="acxSalvarAparelho('${d.id}',{apelido:this.value})" style="${ACX_INP};width:100%" aria-label="Nome do aparelho"/>
+            <div style="font-size:11px;color:var(--muted);margin-top:3px">${esc(acxResumoUA(d.user_agent))} · último uso ${esc(acxData(d.ultimo_uso))} · <b style="color:var(--blue)">${esc((d.pessoas||[]).join(', '))}</b>${d.ativo?'':' · <b style="color:var(--red)">revogado</b>'}</div>
+          </div>
+          <select onchange="acxSalvarAparelho('${d.id}',{classificacao:this.value})" style="${ACX_INP}" ${d.ativo?'':'disabled'} aria-label="Classificação do aparelho">
+            ${Object.entries(ACX_DISP).map(([k,lb]) => `<option value="${k}" ${k===d.classificacao?'selected':''}>${lb}</option>`).join('')}
+          </select>
+          ${d.ativo ? `<button onclick="acxRevogarAparelho('${d.id}')" style="font-size:12px;color:var(--red);background:#fff;border:1.5px solid #FCA5A5;border-radius:6px;padding:5px 10px;cursor:pointer">Revogar</button>`
+                    : `<button onclick="acxReativarAparelho('${d.id}')" style="font-size:12px;background:#fff;border:1.5px solid var(--border);border-radius:6px;padding:5px 10px;cursor:pointer">Reativar</button>`}
+        </div>`).join('') : '<div style="padding:12px 14px;font-size:12px;color:var(--muted)">Nenhum aparelho ainda — aparecem conforme as pessoas entram no sistema.</div>'}
+    </div>`;
+}
+async function acxSalvarAparelho(id, campos) {
+  try { await apiFetch('/acesso/dispositivo/'+id, {method:'PUT', body: JSON.stringify(campos)}); toast(campos.classificacao ? 'Aparelho: '+ACX_DISP[campos.classificacao]+' (todos os logins nele)' : 'Nome do aparelho salvo', 'success'); }
+  catch (e) { toast('Erro: '+e.message, 'error'); }
+  await acxCarregarUsuarios(); acxAparelhos(true); if (_excSel) await acxRecarregar(_excSel);
+}
+async function acxRevogarAparelho(id) {
+  if (!confirm('Revogar este aparelho? Todos os logins nele perdem o acesso aos módulos na hora.')) return;
+  try { await apiFetch('/acesso/dispositivo/'+id+'/revogar', {method:'POST'}); toast('Aparelho revogado', 'success'); } catch (e) { toast('Erro: '+e.message, 'error'); }
+  acxAparelhos(true); if (_excSel) await acxRecarregar(_excSel);
+}
+async function acxReativarAparelho(id) {
+  try { await apiFetch('/acesso/dispositivo/'+id+'/reativar', {method:'POST'}); toast('Aparelho reativado', 'success'); } catch (e) { toast('Erro: '+e.message, 'error'); }
+  acxAparelhos(true); if (_excSel) await acxRecarregar(_excSel);
+}
+
+async function acxRegistro(aberto) {
+  const el = document.getElementById('perm-registro'); if (!el) return;
+  if (!aberto) {
+    el.innerHTML = `<div onclick="acxRegistro(true)" style="cursor:pointer;margin-top:14px;padding:10px 14px;border:1px solid var(--border);border-radius:10px;background:#fff;font-size:13px;color:var(--muted)">▸ <b style="color:var(--blue)">Registro dos últimos 90 dias</b> · bloqueios por aparelho ou horário (limpa sozinho)</div>`;
+    return;
+  }
+  let rows = [];
+  try { rows = await apiFetch('/acesso/registro?dias=90'); } catch (e) { el.innerHTML = `<div style="color:var(--red);font-size:12px;margin-top:14px">Registro: ${esc(e.message)}</div>`; return; }
+  const lbMod = id => (MODULOS.find(m => m.id === id) || {}).label || id;
+  el.innerHTML = `
+    <div style="margin-top:14px;border:1px solid var(--border);border-radius:10px;background:#fff;overflow:hidden">
+      <div onclick="acxRegistro(false)" style="cursor:pointer;padding:10px 14px;background:#F1F5F9;font-size:13px;font-weight:700;color:var(--blue)">▾ Registro dos últimos 90 dias</div>
+      ${rows.length ? `<div style="overflow-x:auto;max-height:50vh"><table style="width:100%;border-collapse:collapse;font-size:12px;min-width:620px">
+        <thead><tr style="text-align:left;color:var(--muted)"><th style="padding:6px 14px">Quando</th><th style="padding:6px">Pessoa</th><th style="padding:6px">Módulo</th><th style="padding:6px">Motivo</th><th style="padding:6px">Aparelho</th></tr></thead>
+        <tbody>${rows.map(r => `<tr style="border-top:1px solid #F1F5F9">
+          <td style="padding:6px 14px;white-space:nowrap">${esc(acxData(r.em))}</td><td style="padding:6px">${esc(r.nome||r.login||'')}</td><td style="padding:6px">${esc(lbMod(r.modulo))}</td>
+          <td style="padding:6px">${esc(r.motivo||'')}</td><td style="padding:6px">${esc(r.apelido || ACX_DISP[r.classificacao] || '—')}</td></tr>`).join('')}</tbody></table></div>`
+        : '<div style="padding:12px 14px;font-size:12px;color:var(--muted)">Nenhum bloqueio registrado.</div>'}
+    </div>`;
 }
 
 /* ══════════════════════════════════════════════
@@ -6582,7 +6843,7 @@ function cmBaixarExcel(url, nomeArquivo) {
     .catch(e => alert('Erro: ' + e.message));
 }
 </script>
-<!-- (05/11/2026) Tour guiado "▶ Como fazer" — motor + roteiros desta tela (usuarios, painel) -->
+<!-- (05/11/2026) Tour guiado "▶ Como fazer" — motor + roteiros desta tela (usuarios, acesso, painel) -->
 <script src="/operacional/static/js/cartilha.js"></script>  <!-- (11/11/2026) manual PT/ES/EN -->
 <script src="/operacional/static/js/guia.js"></script>
 <script src="/operacional/static/js/guias-admin.js"></script>
