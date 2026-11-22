@@ -593,6 +593,24 @@ input,select,textarea{font-family:inherit;outline:none;border:none}
 </div>
 
 <!-- MODAL NOVA OS AVULSA -->
+<!-- (22/11/2026) Despacho: escolher para qual operador enviar a OS. Só aparece para quem tem a permissão "OS — Despacho". -->
+<div id="modal-enviar-os" style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.5);display:none;z-index:300;align-items:flex-end" onclick="if(event.target===this)fecharEnviarOS()">
+  <div style="background:#fff;width:100%;border-radius:12px 12px 0 0;padding:20px 20px 24px;max-height:90dvh;overflow-y:auto">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+      <h2 id="enviar-os-titulo" style="font-size:16px;font-weight:800;color:var(--blue)">Enviar OS</h2>
+      <button onclick="fecharEnviarOS()" aria-label="Fechar" style="background:none;border:none;font-size:24px;color:var(--muted);cursor:pointer">×</button>
+    </div>
+    <div id="enviar-os-sub" style="font-size:12px;color:var(--muted);margin-bottom:12px"></div>
+    <div id="enviar-os-error" style="background:#FEE2E2;color:var(--red);border-radius:6px;padding:10px;margin-bottom:12px;font-size:13px;display:none"></div>
+    <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px">Para qual operador?</div>
+    <div id="enviar-os-lista"><div class="loading"><span class="spin"></span></div></div>
+    <div style="display:flex;gap:10px;margin-top:16px">
+      <button onclick="fecharEnviarOS()" style="flex:1;padding:14px;background:#fff;border:1.5px solid var(--blue);color:var(--blue);border-radius:8px;font-size:14px;font-weight:700;cursor:pointer">Cancelar</button>
+      <button id="enviar-os-btn" onclick="confirmarEnviarOS()" style="flex:2;padding:14px;background:var(--orange);border:none;color:#fff;border-radius:8px;font-size:15px;font-weight:800;cursor:pointer">Salvar e avisar</button>
+    </div>
+  </div>
+</div>
+
 <div id="modal-nova-os" style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.5);display:none;z-index:300;align-items:flex-end">
   <div style="background:#fff;width:100%;border-radius:12px 12px 0 0;padding:24px;max-height:90dvh;overflow-y:auto">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
@@ -993,8 +1011,15 @@ async function carregarOSApp() {
       ? '<span style="display:inline-block;background:#FFF7ED;color:#EA580C;font-size:10px;font-weight:700;padding:3px 10px;border-radius:99px;margin-left:8px">⏳ Aguardando fechamento</span>'
       : '<span style="display:inline-block;background:#DCFCE7;color:#16A34A;font-size:10px;font-weight:700;padding:3px 10px;border-radius:99px;margin-left:8px">● Em andamento</span>';
 
+    // (22/11/2026) Despacho: quem tem a permissão "OS — Despacho" recebe TODAS as OS em aberto (os.pode_enviar).
+    // Na OS que é dele o cartão fica normal; na dos outros (ou sem responsável) só "Ver" + "Enviar para operador".
+    const despacho = os.pode_enviar === true;
+    const deOutro  = despacho && os.minha !== true;
+    const btnEnviar = `<button class="os-btn" style="flex:2" onclick="abrirEnviarOS('${os.id}', '${os.numero}')">📤 Enviar para operador</button>`;
     const botoes = aguardando
       ? `<button class="os-btn" style="background:var(--blue)" onclick="verPartes('${os.id}', '${os.numero}')">👁 Ver partes</button>`
+      : deOutro
+      ? `<button class="os-btn" style="background:var(--blue)" onclick="verPartes('${os.id}', '${os.numero}')">👁 Ver</button>${btnEnviar}`
       : `<button class="os-btn" onclick="abrirModalParte('${os.id}')">📝 Registrar</button>
          <button class="os-btn" style="background:var(--blue)" onclick="verPartes('${os.id}', '${os.numero}')">👁 Ver</button>
          <button class="os-btn" style="background:#16A34A" onclick="concluirOS('${os.id}', '${os.numero}')">✅ Concluir</button>`;
@@ -1018,7 +1043,15 @@ async function carregarOSApp() {
       ? `<div style="margin-top:8px;padding:8px 10px;background:#FFF7ED;border:1px solid #FDBA74;border-radius:8px;font-size:12px;color:#7C2D12;line-height:1.4">💬 <strong>Observação:</strong> ${esc(obsOS)}</div>`
       : '';
     // Botão "Passar OS" — só quando em andamento (operador saiu p/ outra obra/máquina)
-    const botaoLiberar = aguardando ? '' :
+    const blocoResp = despacho
+      ? (os.operador_nome
+          ? `<div style="margin-top:8px;padding:8px 10px;background:#F8FAFC;border:1px solid var(--border);border-radius:8px;font-size:12px;color:var(--text)"><span style="color:var(--muted)">Responsável:</span> <strong>${esc(os.operador_nome)}${os.minha ? ' (você)' : ''}</strong></div>`
+          : `<div style="margin-top:8px;padding:8px 10px;background:#FFF7ED;border:1px solid #FDBA74;border-radius:8px;font-size:12px;color:#9A3412"><span>Responsável:</span> <strong>Sem responsável</strong></div>`)
+      : '';
+    // Na OS do próprio despachante, o "Passar OS" vira "Enviar para operador" (ele escolhe para quem).
+    const botaoLiberar = aguardando ? '' : deOutro ? '' : despacho
+      ? `<button onclick="abrirEnviarOS('${os.id}', '${os.numero}')" style="width:100%;margin-top:6px;padding:10px;background:#fff;border:1.5px solid var(--blue);color:var(--blue);border-radius:8px;font-size:13px;font-weight:700;cursor:pointer">📤 Enviar para operador</button>`
+      :
       `<button onclick="liberarOS('${os.id}', '${os.numero}')" style="width:100%;margin-top:6px;padding:8px;background:transparent;border:1.5px dashed var(--muted);color:var(--muted);border-radius:8px;font-size:12px;font-weight:600;cursor:pointer">🔄 Passar OS para outro operador</button>`;
     // (13/07/2026) Excluir OS avulsa: lixeira DISCRETA no canto superior
     // direito do card — evita toque por engano (o confirm segue como 2ª trava)
@@ -1042,6 +1075,7 @@ async function carregarOSApp() {
             <div class="os-info-value" style="font-size:12px">${os.regime_cobranca || '–'}</div>
           </div>
         </div>
+        ${blocoResp}
         <div class="os-btns">${botoes}</div>
         ${blocoLocal}${blocoObs}${botaoLiberar}
       </div>
@@ -2134,6 +2168,67 @@ function fecharModalDireto() {
 
 function fecharModalOp(e) {
   if (e.target === document.getElementById('modal-parte')) fecharModalDireto();
+}
+
+// ── (22/11/2026) Despacho: enviar a OS para um operador ──────────────────────
+let _enviarOS = null;   // { id, numero }
+async function abrirEnviarOS(osId, numero) {
+  _enviarOS = { id: osId, numero: numero };
+  document.getElementById('enviar-os-titulo').textContent = 'Enviar ' + numero;
+  document.getElementById('enviar-os-sub').textContent = '';
+  const er = document.getElementById('enviar-os-error'); er.style.display = 'none';
+  const cx = document.getElementById('enviar-os-lista');
+  cx.innerHTML = '<div class="loading"><span class="spin"></span></div>';
+  document.getElementById('modal-enviar-os').style.display = 'flex';
+  try {
+    const token = localStorage.getItem('garra_token') || '';
+    const r = await fetch('/operacional/api/despacho/operadores', { headers: { 'Authorization': 'Bearer ' + token } });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(d.detail || 'Erro ao carregar os operadores');
+    cx.innerHTML = (d || []).map(o =>
+      `<label style="display:flex;align-items:center;gap:12px;min-height:48px;padding:0 4px;border-top:1px solid var(--border);font-size:15px;cursor:pointer">
+         <input type="radio" name="enviar-os-op" value="${o.id}" style="width:20px;height:20px;accent-color:var(--blue)">
+         <span style="flex:1">${esc(o.nome)}</span>
+         <span style="font-size:12px;color:var(--muted)">${Number(o.os_abertas) > 0 ? o.os_abertas + ' OS em aberto' : ''}</span>
+       </label>`).join('') || '<div style="padding:12px 0;font-size:13px;color:var(--muted)">Nenhum operador ou motorista ativo.</div>';
+  } catch (e) {
+    cx.innerHTML = '';
+    er.textContent = navigator.onLine ? e.message : 'Sem internet. O envio da OS precisa de conexão.';
+    er.style.display = 'block';
+  }
+}
+// confirmação visível na tela (o toast() deste app só escreve no console)
+function _avisoEnvio(msg) {
+  const d = document.createElement('div');
+  d.textContent = msg;
+  d.style.cssText = 'position:fixed;left:12px;right:12px;bottom:84px;z-index:400;background:#166534;color:#fff;padding:14px 16px;border-radius:10px;font-size:14px;font-weight:700;text-align:center;box-shadow:0 6px 20px rgba(0,0,0,.25)';
+  document.body.appendChild(d);
+  setTimeout(() => d.remove(), 4500);
+}
+function fecharEnviarOS() { document.getElementById('modal-enviar-os').style.display = 'none'; _enviarOS = null; }
+async function confirmarEnviarOS() {
+  if (!_enviarOS) return;
+  const er = document.getElementById('enviar-os-error'); er.style.display = 'none';
+  const sel = document.querySelector('input[name="enviar-os-op"]:checked');
+  if (!sel) { er.textContent = 'Escolha o operador.'; er.style.display = 'block'; return; }
+  const btn = document.getElementById('enviar-os-btn'); btn.disabled = true; btn.textContent = 'Enviando…';
+  try {
+    const token = localStorage.getItem('garra_token') || '';
+    // Sem fila offline de propósito: o envio só vale quando o servidor confirma (nada de "enviei" que não chegou).
+    const r = await fetch('/operacional/api/os/' + _enviarOS.id + '/encaminhar', {
+      method: 'POST', headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ operador_id: sel.value })
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(d.detail || 'O servidor não gravou o envio');
+    const numero = _enviarOS.numero;
+    fecharEnviarOS();
+    _avisoEnvio('✅ ' + numero + ' enviada para ' + (d.operador_nome || 'o operador'));
+    carregarOSApp();
+  } catch (e) {
+    er.textContent = navigator.onLine ? e.message : 'Sem internet. O envio NÃO foi feito — tente de novo quando tiver sinal.';
+    er.style.display = 'block';
+  } finally { btn.disabled = false; btn.textContent = 'Salvar e avisar'; }
 }
 
 async function liberarOS(osId, numero) {

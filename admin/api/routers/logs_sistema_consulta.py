@@ -109,10 +109,13 @@ async def logs_evento(log_id: int, _=Depends(verificar_admin)):
     rastreio = []
     if ev.get("item_tipo") and ev.get("item_id"):
         rastreio = await ajard_query(
-            f"""SELECT id, to_char(em AT TIME ZONE '{TZ_SQL}', 'DD/MM HH24:MI') AS quando,
-                       usuario_nome AS usuario, evento, resumo
+            f"""SELECT id, to_char(em AT TIME ZONE '{TZ_SQL}', 'DD/MM/YYYY') AS data,
+                       to_char(em AT TIME ZONE '{TZ_SQL}', 'HH24:MI') AS hora,
+                       usuario_nome AS usuario, evento, resumo, motivo, detalhe
                 FROM public.log_sistema WHERE item_tipo=%s AND item_id=%s
                 ORDER BY em, id LIMIT 300""", (ev["item_tipo"], ev["item_id"])) or []
+        for r in rastreio:   # (22/11/2026) cada passo leva o que mudou: o detalhe é um passo a passo, em linhas
+            r["detalhe"] = _json(r.get("detalhe")) or []
     ev.pop("item_tipo", None)
     ev.pop("item_id", None)
     return {"evento": ev, "rastreio": rastreio}

@@ -43,13 +43,16 @@ input:focus,select:focus,button:focus-visible{outline:2px solid var(--azul);outl
 .lin:hover{background:#F8FAFC}
 .lin.aberta{background:#EEF2FF;font-weight:700}
 .lin span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.det{border-top:1px solid var(--linha);background:#F8FAFF;padding:16px 16px 20px;display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:24px}
-.det h2{margin:0 0 8px;font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--mudo)}
-.det table{border-collapse:collapse;width:100%;font-variant-numeric:tabular-nums}
-.det th{padding:6px 12px;font-size:12px;font-weight:700;color:var(--mudo);text-align:left}
-.det td{padding:8px 12px;border-top:1px solid var(--linha);vertical-align:top}
-.det .atual td{font-weight:700}
-.det p{margin:0 0 8px}
+/* (22/11/2026) Detalhe = passo a passo do item, em linhas estreitas logo abaixo da linha clicada (como um submenu).
+   Usa as mesmas colunas da grade: Data, Hora, Usuário e, no espaço restante, o que aconteceu. */
+.det{border-top:1px solid var(--linha);background:#F8FAFF;padding:6px 0 10px}
+.det .tit{padding:6px 16px 4px 28px;font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--mudo)}
+.passo{display:grid;grid-template-columns:92px 84px 170px 1fr;gap:12px;align-items:baseline;padding:4px 16px 4px 28px;font-size:13px;color:var(--mudo);font-variant-numeric:tabular-nums}
+.passo.atual{color:var(--texto);font-weight:700}
+.mud{padding:1px 16px 1px 28px;display:grid;grid-template-columns:92px 84px 170px 1fr;gap:12px;font-size:13px;color:var(--mudo)}
+.mud.atual{color:var(--texto)}
+.mud span:last-child{grid-column:4}
+.passo span,.mud span{overflow-wrap:anywhere;min-width:0}
 .nota{margin:12px 0 0;font-size:13px;color:var(--mudo)}
 .rodape{margin:0;font-size:13px;color:var(--mudo)}
 .vazio{padding:28px 16px;color:var(--mudo);border-top:1px solid var(--linha)}
@@ -168,24 +171,31 @@ async function abrir(id){
   if (_aberto === id) { lin.classList.remove('aberta'); lin.setAttribute('aria-expanded', 'false'); det.innerHTML = ''; _aberto = null; return; }
   _aberto = id;
   lin.classList.add('aberta'); lin.setAttribute('aria-expanded', 'true');
-  det.innerHTML = '<div class="det"><div>Carregando…</div></div>';
+  det.innerHTML = '<div class="det"><div class="tit">Carregando…</div></div>';
   try {
     const d = await (await api('/logs-sistema/api/evento/' + id)).json();
     if (_aberto !== id) return;
-    const ev = d.evento, difs = ev.detalhe || [], ras = d.rastreio || [];
-    let esq = '<h2>O que aconteceu</h2><p>' + esc(ev.resumo || (ev.evento + ' em ' + ev.modulo)) + '</p>';
-    if (ev.motivo) esq += '<p><b>Motivo:</b> ' + esc(ev.motivo) + '</p>';
-    if (difs.length) esq += '<table><thead><tr><th>Campo</th><th>Antes</th><th>Depois</th></tr></thead><tbody>'
-      + difs.map(x => '<tr><td>' + esc(x.campo) + '</td><td>' + esc(x.antes == null ? '(vazio)' : x.antes) + '</td><td><b>' + esc(x.depois == null ? '(vazio)' : x.depois) + '</b></td></tr>').join('')
-      + '</tbody></table>';
-    esq += '<p class="nota">' + esc(ev.data + ' às ' + ev.hora + (ev.origem ? ' · ' + ev.origem : '')) + '</p>';
-    let dir = '';
-    if (ras.length) dir = '<h2>Rastreio completo' + (ev.item ? ' da ' + esc(ev.item) : '') + '</h2><table><tbody>'
-      + ras.map(r => '<tr' + (r.id === ev.id ? ' class="atual"' : '') + '><td style="white-space:nowrap">' + esc(r.quando) + '</td><td>' + esc(r.usuario) + '</td><td>' + esc(r.resumo || r.evento) + '</td></tr>').join('')
-      + '</tbody></table>';
-    det.innerHTML = '<div class="det"><div>' + esq + '</div>' + (dir ? '<div>' + dir + '</div>' : '') + '</div>';
+    const ev = d.evento;
+    // sem rastreio (evento sem item): o próprio evento vira o único passo
+    const passos = (d.rastreio && d.rastreio.length) ? d.rastreio
+      : [{ id: ev.id, data: ev.data, hora: String(ev.hora || '').slice(0, 5), usuario: ev.usuario, evento: ev.evento, resumo: ev.resumo, motivo: ev.motivo, detalhe: ev.detalhe || [] }];
+    const vz = v => (v == null || v === '') ? '(vazio)' : v;
+    let h = '<div class="tit">' + (ev.item ? 'Passo a passo da ' + esc(ev.item) : 'Detalhe') + '</div>';
+    passos.forEach(p => {
+      const at = p.id === ev.id ? ' atual' : '';
+      h += '<div class="passo' + at + '"><span>' + esc(p.data) + '</span><span>' + esc(p.hora) + '</span><span>' + esc(p.usuario) + '</span><span>'
+        + esc(p.resumo || (p.evento + ' em ' + ev.modulo)) + (p.motivo ? ' — motivo: ' + esc(p.motivo) : '') + '</span></div>';
+      (p.detalhe || []).forEach(x => {
+        // a frase do passo já diz quem era e quem ficou responsável: não repete embaixo
+        if (x.campo === 'Responsável' && (p.evento === 'Encaminhamento' || p.evento === 'Liberação')) return;
+        const antes = (x.antes == null || x.antes === ''), txt = antes ? esc(vz(x.depois)) : esc(x.antes) + ' → ' + esc(vz(x.depois));
+        h += '<div class="mud' + at + '"><span>' + esc(x.campo) + ': ' + txt + '</span></div>';
+      });
+    });
+    if (ev.origem) h += '<div class="mud"><span class="nota" style="margin:6px 0 0">Feito em: ' + esc(ev.origem) + '</span></div>';
+    det.innerHTML = '<div class="det">' + h + '</div>';
   } catch (e) {
-    det.innerHTML = '<div class="det"><div>Não foi possível abrir o detalhe: ' + esc(e.message) + '</div></div>';
+    det.innerHTML = '<div class="det"><div class="tit">Não foi possível abrir o detalhe: ' + esc(e.message) + '</div></div>';
   }
 }
 

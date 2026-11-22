@@ -1754,6 +1754,97 @@ async def op_liberar_os(os_id: str, payload=Depends(verificar_token)):
 
     return {"ok": True, "numero": os_row.get("numero"), "liberada": True}
 
+
+# ── (22/11/2026) Despacho: enviar a OS direto para um operador, pelo app ─────
+async def _tem_despacho(user) -> bool:
+    """Permissão "OS — Despacho". De propósito NÃO usa o atalho "Master pode tudo": só vale se estiver
+    marcada para a pessoa (exceção individual) ou no padrão do perfil dela. Assim ligar o despacho
+    para alguém não muda a lista de OS de mais ninguém."""
+    if not user:
+        return False
+    ind = await ajard_query(
+        "SELECT permitido FROM public.permissoes_colaborador WHERE usuario_id=%s AND modulo='operacional_despacho'",
+        (user["id"],), fetch="one")
+    if ind:
+        return bool(ind.get("permitido"))
+    perfil = (user.get("perfil") or "").lower()
+    if perfil == "admin":       # o Master recebe todos os módulos por padrão; aqui só vale se marcado para a pessoa
+        return False
+    from core.permissions import perfil_modulos_padrao
+    return "operacional_despacho" in set(await perfil_modulos_padrao(perfil))
+
+
+async def _usuario_despacho(payload):
+    await _exigir_contexto(payload, "operacional_mobile")
+    login = payload.get("sub", "") or payload.get("login", "")
+    user = await ajard_query("SELECT id, nome, perfil FROM public.usuarios_garra WHERE login=%s AND ativo=true",
+                             (login,), fetch="one")
+    if not user:
+        raise HTTPException(status_code=404, detail="Usuário não encontrado")
+    if not await _tem_despacho(user):
+        raise HTTPException(status_code=403, detail="Seu acesso não tem o Despacho de OS")
+    return user
+
+
+@router.get("/operacional/api/despacho/operadores")
+async def op_despacho_operadores(payload=Depends(verificar_token)):
+    """Para quem escolher: operadores e motoristas ativos, com quantas OS em aberto cada um já tem."""
+    await _usuario_despacho(payload)
+    rows = await ajard_query(
+        """SELECT u.id, u.nome, u.perfil,
+                  (SELECT count(*) FROM operacional.ordens_servico o
+                    WHERE o.operador_id = u.id AND o.ativo = true
+                      AND o.status NOT IN ('concluida_completa','concluida_sem_erp','cancelada')) AS os_abertas
+           FROM public.usuarios_garra u
+           WHERE u.ativo = true AND u.perfil IN ('operador','motorista')
+           ORDER BY u.nome""")
+    return [dict(r) for r in (rows or [])]
+
+
+@router.post("/operacional/api/os/{os_id}/encaminhar")
+async def op_encaminhar_os(os_id: str, req: Request, payload=Depends(verificar_token)):
+    """Quem tem o Despacho envia a OS para um operador ou motorista (ou para si mesmo).
+    Os registros já lançados continuam de quem lançou. Avisa o novo responsável, o anterior e a gestão."""
+    user = await _usuario_despacho(payload)
+    d = await req.json()
+    destino_id = str((d or {}).get("operador_id") or "").strip()
+    if not destino_id:
+        raise HTTPException(status_code=400, detail="Escolha o operador")
+    destino = await ajard_query(
+        "SELECT id, nome, perfil FROM public.usuarios_garra WHERE id::text=%s AND ativo=true", (destino_id,), fetch="one")
+    if not destino or ((destino.get("perfil") or "") not in ("operador", "motorista") and str(destino["id"]) != str(user["id"])):
+        raise HTTPException(status_code=400, detail="Escolha um operador ou motorista ativo")
+    os_row = await ajard_query(
+        "SELECT id, numero, obra, status, operador_id FROM operacional.ordens_servico WHERE id=%s AND ativo=true",
+        (os_id,), fetch="one")
+    if not os_row:
+        raise HTTPException(status_code=404, detail="OS não encontrada")
+    if os_row.get("status") in ("concluida_completa", "concluida_sem_erp", "cancelada"):
+        raise HTTPException(status_code=400, detail="OS já está concluída")
+    anterior = os_row.get("operador_id")
+    if str(anterior or "") == str(destino["id"]):
+        return {"ok": True, "numero": os_row["numero"], "operador_nome": destino["nome"], "sem_mudanca": True}
+    await ajard_query("UPDATE operacional.ordens_servico SET operador_id=%s, atualizado_em=%s WHERE id=%s",
+                      (destino["id"], datetime.utcnow(), os_id), fetch="none")
+    # confirma no banco o que ficou gravado (a resposta diz a verdade, não o que foi pedido)
+    gravado = await ajard_query("SELECT operador_id FROM operacional.ordens_servico WHERE id=%s", (os_id,), fetch="one")
+    if str((gravado or {}).get("operador_id") or "") != str(destino["id"]):
+        raise HTTPException(status_code=500, detail="O envio não foi gravado. Tente de novo.")
+    try:
+        obra = os_row.get("obra") or ""
+        if str(destino["id"]) != str(user["id"]):
+            await _notificar("os_atribuida", f"📋 OS {os_row['numero']} aberta para você",
+                             f"{obra} · enviada por {user['nome']}", "/mobile?aba=Op", apenas=[destino["id"]])
+        if anterior and str(anterior) not in (str(user["id"]), str(destino["id"])):
+            await _notificar("os_atribuida", f"📋 OS {os_row['numero']} passou para {destino['nome']}",
+                             f"{obra} · enviada por {user['nome']}. Seus registros continuam seus.", "/mobile?aba=Op",
+                             apenas=[anterior])
+        await _notificar("os_campo", f"📋 OS {os_row['numero']} enviada para {destino['nome']}",
+                         f"por {user['nome']} · {obra}", "/admin")
+    except Exception as e:   # aviso nunca desfaz o envio
+        print("despacho: aviso falhou:", e)
+    return {"ok": True, "numero": os_row["numero"], "operador_nome": destino["nome"]}
+
 @router.get("/operacional/api/os/{os_id}/revisao")
 async def op_revisao_os(os_id: str, _auth=Depends(exigir_painel_gestao)):
     """Tela de revisão antes de fechar: OS + partes + totais consolidados."""
@@ -1829,12 +1920,18 @@ async def op_minhas_os(historico: int = 0, payload=Depends(verificar_token)):
     else:
         status_filter = "os.status NOT IN ('concluida_completa','concluida_sem_erp','cancelada')"
 
+    # (22/11/2026) Despacho: quem tem a permissão "OS — Despacho" vê TODAS as OS em aberto (não só as dele),
+    # com o nome do responsável, para poder enviar a OS a um operador. Histórico continua só o próprio.
+    despacho = historico != 1 and await _tem_despacho(user)
     rows = await ajard_query(
         f"""SELECT os.id, os.numero, os.obra, os.endereco, os.gps,
                   os.regime_cobranca, os.origem,
                   os.descricao AS observacao,
                   os.data_inicio, os.data_fim_prevista, os.status,
                   os.equipamento_id, os.operador_id, os.tipo_servico_id, os.cliente_id,
+                  uo.nome AS operador_nome,
+                  COALESCE(os.operador_id = %s::uuid, false) AS minha,
+                  %s::boolean AS pode_enviar,
                   (os.criado_por = %s::uuid) AS pode_excluir,
                   COALESCE(c.nome, os.cliente_nome_avulso) AS cliente_nome,
                   e.codigo AS equipamento_codigo, e.descricao AS equipamento_descricao,
@@ -1844,11 +1941,13 @@ async def op_minhas_os(historico: int = 0, payload=Depends(verificar_token)):
            LEFT JOIN public.clientes_garra c      ON c.id = os.cliente_id
            LEFT JOIN operacional.equipamentos e   ON e.id = os.equipamento_id
            LEFT JOIN operacional.tipos_servico ts ON ts.id = os.tipo_servico_id
-           WHERE os.operador_id = %s
+           LEFT JOIN public.usuarios_garra uo     ON uo.id = os.operador_id
+           WHERE (os.operador_id = %s OR %s::boolean)
              AND os.ativo = true
              AND {status_filter}
-           ORDER BY os.data_inicio DESC""",
-        (user["id"], user["id"])   # (21/11/2026) 1º = pode_excluir (só quem criou); 2º = minhas OS
+           ORDER BY COALESCE(os.operador_id = %s::uuid, false) DESC, (os.operador_id IS NULL) DESC, os.data_inicio DESC""",
+        # 1º = minha; 2º = pode_enviar; 3º = pode_excluir (só quem criou); 4º/5º = minhas OS ou todas (despacho); 6º = ordem
+        (user["id"], despacho, user["id"], user["id"], despacho, user["id"])
     )
     # Sem campos financeiros — operador não vê valores
     if _so_pessoal:   # (21/11/2026) Modo Pessoal: só as horas — sem cliente, obra, endereço ou localização

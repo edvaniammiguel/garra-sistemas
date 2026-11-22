@@ -20,6 +20,9 @@ import time
 from datetime import date, datetime, time as dtime
 from decimal import Decimal
 
+from datetime import timezone
+from zoneinfo import ZoneInfo
+
 import jwt as pyjwt
 
 from .config import JWT_SECRET
@@ -70,7 +73,7 @@ async def garantir_log_sistema():
 
 # ── O que NÃO vira log (ruído: renovação de sessão, avisos lidos, a própria consulta de logs) ──
 _IGNORAR = (
-    "/auth/renovar", "/auth/logout", "/api/notificacoes", "/api/mural/lido", "/logs-sistema",
+    "/auth/renovar", "/auth/logout", "/auth/log-cliente", "/auth/webauthn/login/desafio", "/auth/webauthn/registro/desafio", "/api/notificacoes", "/api/mural/lido", "/logs-sistema",
     "/acesso/meu-modo", "/api/push", "/health",
 )
 _IGNORAR_CONTEM = ("webhook", "/extrair")   # chamadas de fora (sem usuário) e leitura por IA (não grava nada)
@@ -106,7 +109,7 @@ def rota_generica(path: str) -> str:
 
 
 # ── Nível detalhado: Operacional (OS e registros do dia) ─────────────────────
-_RE_OS = re.compile(rf"^/operacional/api/os/({_UUID})(?:/(liberar|concluir|reabrir|fechar))?$")
+_RE_OS = re.compile(rf"^/operacional/api/os/({_UUID})(?:/(liberar|concluir|reabrir|fechar|encaminhar))?$")
 _RE_PARTE = re.compile(rf"^/operacional/api/(?:minhas-partes|partes)/({_UUID})$")
 _RE_NOVA_PARTE = re.compile(rf"^/operacional/api/os/({_UUID})/partes$")
 _RE_NOVA_OS = re.compile(r"^/operacional/api/os(?:/avulsa)?$")
@@ -135,6 +138,15 @@ _CAMPOS_NOVA_PARTE = ("data", "equipamento_id", "operador_id", "tipo_medicao", "
                       "quantidade_diarias", "observacao")
 _CAMPOS_NOVA_OS = ("obra", "cliente_id", "cliente_nome_avulso", "equipamento_id", "operador_id", "tipo_servico_id",
                    "regime_cobranca", "status")
+
+_FUSO_BR = ZoneInfo("America/Sao_Paulo")
+
+
+def _controle_interno(campo: str) -> bool:
+    """(22/11/2026) Colunas de controle do próprio sistema ("…_em" = quando, "…_por" = quem gravou): não são
+    escolha de ninguém e só poluem o "o que mudou". Ficam fora do antes/depois."""
+    return campo in _NAO_COMPARAR or campo.endswith("_em") or campo.endswith("_por")
+
 
 _cache_nome: dict = {}   # (tabela, id) → (em, texto)
 
@@ -172,7 +184,10 @@ async def _texto(campo: str, v):
     if isinstance(v, bool):
         return "Sim" if v else "Não"
     if isinstance(v, datetime):
-        return v.strftime("%d/%m/%Y %H:%M")
+        # (22/11/2026) sempre em horário de Brasília (o banco guarda em UTC; sem fuso = UTC)
+        if v.tzinfo is None:
+            v = v.replace(tzinfo=timezone.utc)
+        return v.astimezone(_FUSO_BR).strftime("%d/%m/%Y %H:%M")
     if isinstance(v, date):
         return v.strftime("%d/%m/%Y")
     if isinstance(v, dtime):
@@ -196,7 +211,7 @@ async def _diferencas(antes: dict, depois: dict, rotulos: dict):
     """Lista [{campo, antes, depois}] dos campos que mudaram."""
     out = []
     for campo in depois.keys():
-        if campo in _NAO_COMPARAR:
+        if _controle_interno(campo):
             continue
         if _igual((antes or {}).get(campo), depois.get(campo)):
             continue
@@ -350,6 +365,31 @@ async def _usuario(authorization: str):
     return dados
 
 
+# (22/11/2026) Acesso: o evento diz o que foi (antes saía "Inclusão", que não dizia nada)
+_ACESSO = (   # (começo da rota, evento, resumo)
+    ("/auth/webauthn/login/verificar", "Entrada", "Entrou no sistema com biometria"),
+    ("/auth/webauthn/registro/verificar", "Biometria", "Cadastrou a biometria neste aparelho"),
+    ("/auth/solicitar-reset", "Senha", "Pediu nova senha"),
+    ("/auth/confirmar-reset", "Senha", "Redefiniu a senha"),
+    ("/auth/alterar-senha", "Senha", "Trocou a própria senha"),
+    ("/acesso/config", "Alteração", "Alterou as regras gerais de acesso"),
+    ("/acesso/usuario/", "Alteração", "Alterou as regras de acesso de uma pessoa"),
+)
+
+
+def _acesso(path: str):
+    if path.startswith("/acesso/dispositivo/"):
+        if path.endswith("/revogar"):
+            return "Alteração", "Revogou um aparelho"
+        if path.endswith("/reativar"):
+            return "Alteração", "Reativou um aparelho"
+        return "Alteração", "Alterou o cadastro de um aparelho"
+    for pref, ev, res in _ACESSO:
+        if path.startswith(pref):
+            return ev, res
+    return None
+
+
 _EVENTO_METODO = {"POST": "Inclusão", "PUT": "Alteração", "PATCH": "Alteração", "DELETE": "Exclusão"}
 _VERBO = {"POST": "incluir", "PUT": "alterar", "PATCH": "alterar", "DELETE": "excluir"}
 
@@ -470,6 +510,13 @@ class MiddlewareLogSistema:
                     return await gravar_log(**base, evento=evento, item_tipo=it, item_id=iid, item_rotulo=rot,
                                             resumo=resumo,
                                             detalhe=[{k: d[k] for k in ("campo", "antes", "depois")} for d in difs] or None)
+            ac = _acesso(path)
+            if ac:
+                if not u and isinstance(corpo, dict):   # entrada por biometria: o nome vem na resposta
+                    us = corpo.get("usuario") if isinstance(corpo.get("usuario"), dict) else corpo
+                    if us.get("nome") or us.get("login"):
+                        base.update(usuario_nome=us.get("nome") or us.get("login"), login=us.get("login"))
+                return await gravar_log(**base, evento=ac[0], resumo=ac[1])
             await gravar_log(**base, evento=_EVENTO_METODO[metodo], resumo=None)
         except Exception as e:
             print(f"[LOG-SISTEMA] falhou: {type(e).__name__}: {e}")
@@ -480,6 +527,9 @@ class MiddlewareLogSistema:
             d = corpo.get("detail")
             if isinstance(d, str):
                 return d[:400]
+            if isinstance(d, list):      # validação automática dos campos: diz quais faltaram, sem o texto técnico
+                campos = [str((x.get("loc") or ["?"])[-1]) for x in d if isinstance(x, dict)]
+                return ("Dados incompletos ou inválidos" + (": " + ", ".join(campos[:6]) if campos else ""))[:400]
             if d is not None:
                 return json.dumps(d, ensure_ascii=False)[:400]
         return None

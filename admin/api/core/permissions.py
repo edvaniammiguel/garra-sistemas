@@ -15,6 +15,9 @@ MODULOS_DISPONIVEIS = [
     # (15/11/2026) a aba Histórico do app (horas do mês e OS concluídas) passa a ter permissão própria — só para quem tem comissão.
     # Nasce marcada para quem já tinha OS (ver garantir_modulo_historico); a gestão desmarca por perfil ou por pessoa.
     {"id": "operacional_historico", "grupo": "Operação em campo", "label": "OS — Histórico e horas", "desc": "Aba Histórico do app: horas do mês, dias, apontamentos e OS concluídas"},
+    # (22/11/2026) Despacho: quem fecha o serviço em campo manda a OS direto para o operador, pelo próprio app de OS.
+    # NÃO entra no padrão de nenhum perfil (nem do Master): liga-se por pessoa, na tela de Permissões.
+    {"id": "operacional_despacho", "grupo": "Operação em campo", "label": "OS — Despacho",        "desc": "No app de OS: vê todas as OS em aberto e envia a OS para um operador ou motorista. Ligue por pessoa (não vale para o perfil Master)"},
     {"id": "checklist",           "grupo": "Operação em campo", "label": "Checklist",             "desc": "Checklist de máquinas"},
     {"id": "checklist_logistica", "grupo": "Operação em campo", "label": "Logística (Checklist)", "desc": "Aba de carros de apoio dentro do Checklist"},
     {"id": "checklist_gestao",    "grupo": "Operação em campo", "label": "Gestão do Checklist",   "desc": "Vê e trata os envios de todos os operadores (não só os próprios)"},
