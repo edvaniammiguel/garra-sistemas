@@ -10,10 +10,17 @@
 <style>
 :root{--azul:#1A2A5E;--laranja:#E8820C;--borda:#CBD5E1;--linha:#E2E8F0;--texto:#1E293B;--mudo:#55637A}
 *{box-sizing:border-box}
-body{margin:0;background:#fff;color:var(--texto);font-family:system-ui,-apple-system,"Segoe UI",sans-serif;font-size:14px}
-header{background:var(--azul);border-bottom:3px solid var(--laranja);padding:12px 24px;display:flex;align-items:baseline;gap:12px}
-header b{font-size:20px;font-weight:900;color:#F5A040;letter-spacing:-.5px}
-header span{font-size:13px;color:#DBE4FF;font-weight:600}
+body{margin:0;background:#F0F4FF;color:var(--texto);font-family:system-ui,-apple-system,"Segoe UI",sans-serif;font-size:14px}
+/* (22/11/2026) Cabeçalho IGUAL ao da tela principal do Admin: mesmo logotipo (40px, branco), "Sistema de Gestão Integrado",
+   selo MASTER e, à direita, a bolinha laranja com a inicial e o nome. Mesmas medidas e cores do admin-app.html. */
+header{background:var(--azul);border-bottom:3px solid var(--laranja);padding:10px 20px;display:flex;align-items:center;justify-content:space-between}
+.hd-brand{display:flex;align-items:center;gap:12px}
+.hd-brand img{height:40px;object-fit:contain;filter:brightness(0) invert(1)}
+.hd-sub{font-size:10px;color:#93C5FD;font-weight:500;margin-top:2px}
+.hd-badge{background:var(--laranja);color:#fff;font-size:9px;font-weight:700;padding:2px 6px;border-radius:4px;margin-left:6px;letter-spacing:.5px}
+.hd-user{display:flex;align-items:center;gap:8px}
+.hd-avatar{width:32px;height:32px;border-radius:50%;background:var(--laranja);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:#fff}
+.hd-username{font-size:13px;color:#fff;font-weight:500}
 main{max-width:1200px;margin:0 auto;padding:24px;display:flex;flex-direction:column;gap:16px}
 .topo{display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap}
 h1{margin:0;font-size:22px;font-weight:800;color:var(--azul)}
@@ -27,7 +34,7 @@ input:focus,select:focus,button:focus-visible{outline:2px solid var(--azul);outl
 .menu.aberto{display:block}
 .menu button{display:block;width:100%;text-align:left;background:none;border:none;padding:12px 16px;font:inherit;color:var(--texto);cursor:pointer;min-height:44px}
 .menu button:hover{background:#F1F5F9}
-.grade{border:1px solid var(--borda);border-radius:6px;overflow:hidden}
+.grade{border:1px solid var(--borda);border-radius:6px;overflow:hidden;background:#fff}
 .rolagem{overflow-x:auto}
 .dentro{min-width:820px}
 .cab,.lin{display:grid;grid-template-columns:104px 84px 170px 140px 130px 1fr;gap:12px;align-items:center;padding:0 16px}
@@ -51,7 +58,14 @@ input:focus,select:focus,button:focus-visible{outline:2px solid var(--azul);outl
 </style>
 </head>
 <body>
-<header><b>GARRA</b><span>Sistemas · Admin Master</span></header>
+<header>
+  <div class="hd-brand">
+    <img src="/static/icons/logo.png" alt="Garra Terraplenagem" onerror="this.style.display='none';this.nextElementSibling.style.display='inline'">
+    <span style="display:none;font-weight:900;color:#fff;font-size:18px">GARRA</span>
+    <div class="hd-sub">Sistema de Gestão Integrado <span class="hd-badge">MASTER</span></div>
+  </div>
+  <div class="hd-user"><div class="hd-avatar" id="eu-ini" aria-hidden="true"></div><span class="hd-username" id="eu"></span></div>
+</header>
 <main>
   <div class="topo">
     <h1>Consulta de logs</h1>
@@ -82,6 +96,8 @@ input:focus,select:focus,button:focus-visible{outline:2px solid var(--azul);outl
 // (22/11/2026) Sessão: a aba aberta pelo Admin herda a sessão dele — o token NÃO viaja no endereço.
 const TOKEN = sessionStorage.getItem('garra_adm_token') || '';
 let _aberto = null, _tempo = null, _pedido = 0;
+// nome de quem está logado, no canto do cabeçalho (como nos outros sistemas)
+try { const u = JSON.parse(sessionStorage.getItem('garra_adm_usuario') || 'null'); if (u && u.nome) { document.getElementById('eu').textContent = u.nome; document.getElementById('eu-ini').textContent = u.nome.trim().charAt(0).toUpperCase(); } } catch (e) {}
 
 function esc(t){ return String(t == null ? '' : t).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 function iso(d){ return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
