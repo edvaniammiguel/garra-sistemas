@@ -872,6 +872,10 @@ from routers.politica_acesso import router as politica_acesso_router  # (21/11/2
 app.include_router(politica_acesso_router)
 from core.acesso_politica import MiddlewarePoliticaAcesso  # (21/11/2026) 403 da política sai com "modo_pessoal" (app não desloga)
 app.add_middleware(MiddlewarePoliticaAcesso)
+from routers.logs_sistema_consulta import router as logs_sistema_consulta_router  # (22/11/2026) página e consulta do log do sistema (só Master)
+app.include_router(logs_sistema_consulta_router)
+from core.logs_sistema import MiddlewareLogSistema  # (22/11/2026) toda gravação vira linha no log (quem, quando, o quê); Operacional com antes/depois
+app.add_middleware(MiddlewareLogSistema)
 
 @app.on_event("startup")
 async def criar_tabelas_politica_acesso():

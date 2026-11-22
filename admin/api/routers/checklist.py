@@ -481,7 +481,16 @@ async def checklist_app():
 @router.get("/checklist/sw.js")
 async def checklist_sw():
     path = os.path.join(CHECKLIST_DIR, "sw.js")
-    return FileResponse(path, media_type="application/javascript")
+    if os.path.isfile(path):
+        return FileResponse(path, media_type="application/javascript")
+    # (21/11/2026) O app do Checklist registra ./sw.js, mas o arquivo nunca existiu no repositório: a rota
+    # respondia erro 500 a cada abertura fora do app principal. Enquanto não houver um service worker próprio
+    # do Checklist, devolve um mínimo que só se instala — sem cache, sem interceptar nada (comportamento igual ao de hoje).
+    from fastapi.responses import Response
+    return Response("// Garra Checklist — service worker mínimo (sem cache)\n"
+                    "self.addEventListener('install', () => self.skipWaiting());\n"
+                    "self.addEventListener('activate', e => e.waitUntil(self.clients.claim()));\n",
+                    media_type="application/javascript", headers={"Cache-Control": "no-cache"})
 
 @router.get("/checklist/manifest.json")
 async def checklist_manifest():

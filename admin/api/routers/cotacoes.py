@@ -244,7 +244,9 @@ def _fase(cot, forns, precos):
 def _saida(cot, itens, forns, precos, hist):
     sug = _sugerir(cot, itens, forns, precos)
     return {
-        **{k: (str(v) if k.endswith("_id") or k == "id" else v) for k, v in cot.items()},
+        # (21/11/2026) campo vazio continua vazio: antes str(None) mandava o texto "None" em ot_id, equipamento_id,
+        # cotacao_origem_id e pendencia_id, e a tela podia tratar a cotação como se tivesse OT/equipamento.
+        **{k: (str(v) if (k.endswith("_id") or k == "id") and v is not None else v) for k, v in cot.items()},
         "fase": _fase(cot, forns, precos),
         "itens": [{**{k: (str(v) if k in ("id", "cotacao_id", "peca_id", "vencedor_cf_id") and v is not None else v) for k, v in i.items()},
                    "quantidade": _f(i["quantidade"])} for i in itens],

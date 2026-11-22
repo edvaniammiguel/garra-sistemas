@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Logs do sistema — Garra</title>
+<!-- (22/11/2026) Consulta de logs do sistema inteiro. Somente leitura, só Master.
+     Modelo relatório limpo: uma linha por evento; o detalhe (o que mudou + rastreio do item) abre ao clicar.
+     Datas sempre por calendário (De / Até); a tela abre nos últimos 7 dias, nunca em branco. -->
+<style>
+:root{--azul:#1A2A5E;--laranja:#E8820C;--borda:#CBD5E1;--linha:#E2E8F0;--texto:#1E293B;--mudo:#55637A}
+*{box-sizing:border-box}
+body{margin:0;background:#fff;color:var(--texto);font-family:system-ui,-apple-system,"Segoe UI",sans-serif;font-size:14px}
+header{background:var(--azul);border-bottom:3px solid var(--laranja);padding:12px 24px;display:flex;align-items:baseline;gap:12px}
+header b{font-size:20px;font-weight:900;color:#F5A040;letter-spacing:-.5px}
+header span{font-size:13px;color:#DBE4FF;font-weight:600}
+main{max-width:1200px;margin:0 auto;padding:24px;display:flex;flex-direction:column;gap:16px}
+.topo{display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap}
+h1{margin:0;font-size:22px;font-weight:800;color:var(--azul)}
+.filtros{display:grid;grid-template-columns:160px 160px 200px 1fr;gap:16px;align-items:end}
+label{display:block;font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--mudo);margin-bottom:6px}
+input,select{width:100%;border:1px solid var(--borda);border-radius:6px;padding:10px 12px;font:inherit;color:var(--texto);background:#fff;min-height:44px}
+input:focus,select:focus,button:focus-visible{outline:2px solid var(--azul);outline-offset:1px}
+.btn{background:#fff;color:var(--azul);border:1px solid var(--azul);border-radius:6px;padding:10px 20px;font:inherit;font-weight:700;cursor:pointer;min-height:44px}
+.rel{position:relative}
+.menu{position:absolute;right:0;top:calc(100% + 4px);background:#fff;border:1px solid var(--borda);border-radius:6px;box-shadow:0 6px 20px rgba(26,42,94,.14);min-width:150px;z-index:5;display:none}
+.menu.aberto{display:block}
+.menu button{display:block;width:100%;text-align:left;background:none;border:none;padding:12px 16px;font:inherit;color:var(--texto);cursor:pointer;min-height:44px}
+.menu button:hover{background:#F1F5F9}
+.grade{border:1px solid var(--borda);border-radius:6px;overflow:hidden}
+.rolagem{overflow-x:auto}
+.dentro{min-width:820px}
+.cab,.lin{display:grid;grid-template-columns:104px 84px 170px 140px 130px 1fr;gap:12px;align-items:center;padding:0 16px}
+.cab{padding-top:10px;padding-bottom:10px;font-size:12px;font-weight:700;color:var(--azul);background:#F1F5F9}
+.lin{width:100%;min-height:44px;background:#fff;border:none;border-top:1px solid var(--linha);font:inherit;text-align:left;color:var(--texto);cursor:pointer;font-variant-numeric:tabular-nums}
+.lin:hover{background:#F8FAFC}
+.lin.aberta{background:#EEF2FF;font-weight:700}
+.lin span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.det{border-top:1px solid var(--linha);background:#F8FAFF;padding:16px 16px 20px;display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:24px}
+.det h2{margin:0 0 8px;font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--mudo)}
+.det table{border-collapse:collapse;width:100%;font-variant-numeric:tabular-nums}
+.det th{padding:6px 12px;font-size:12px;font-weight:700;color:var(--mudo);text-align:left}
+.det td{padding:8px 12px;border-top:1px solid var(--linha);vertical-align:top}
+.det .atual td{font-weight:700}
+.det p{margin:0 0 8px}
+.nota{margin:12px 0 0;font-size:13px;color:var(--mudo)}
+.rodape{margin:0;font-size:13px;color:var(--mudo)}
+.vazio{padding:28px 16px;color:var(--mudo);border-top:1px solid var(--linha)}
+.erro{padding:14px 16px;border:1px solid #FCA5A5;background:#FEF2F2;color:#991B1B;border-radius:6px}
+@media (max-width:760px){.filtros{grid-template-columns:1fr 1fr}main{padding:16px}}
+</style>
+</head>
+<body>
+<header><b>GARRA</b><span>Sistemas · Admin Master</span></header>
+<main>
+  <div class="topo">
+    <h1>Consulta de logs</h1>
+    <div class="rel">
+      <button type="button" class="btn" id="btn-rel" aria-haspopup="true" aria-expanded="false" onclick="alternarMenu()">Relatório</button>
+      <div class="menu" id="menu-rel" role="menu">
+        <button type="button" role="menuitem" onclick="relatorio('xlsx')">Excel</button>
+        <button type="button" role="menuitem" onclick="relatorio('pdf')">PDF</button>
+      </div>
+    </div>
+  </div>
+  <div class="filtros">
+    <div><label for="f-de">De</label><input id="f-de" type="date" onchange="carregar()"></div>
+    <div><label for="f-ate">Até</label><input id="f-ate" type="date" onchange="carregar()"></div>
+    <div><label for="f-mod">Módulo</label><select id="f-mod" onchange="carregar()"><option>Todos</option></select></div>
+    <div><label for="f-q">Pesquisa</label><input id="f-q" type="text" placeholder="Usuário, OS, OT, máquina ou evento" oninput="pesquisar()" autocomplete="off"></div>
+  </div>
+  <div id="aviso"></div>
+  <div class="grade">
+    <div class="rolagem"><div class="dentro">
+      <div class="cab"><span>Data</span><span>Hora</span><span>Usuário</span><span>Módulo</span><span>Item</span><span>Evento</span></div>
+      <div id="linhas"><div class="vazio">Carregando…</div></div>
+    </div></div>
+  </div>
+  <p class="rodape" id="rodape"></p>
+</main>
+<script>
+// (22/11/2026) Sessão: a aba aberta pelo Admin herda a sessão dele — o token NÃO viaja no endereço.
+const TOKEN = sessionStorage.getItem('garra_adm_token') || '';
+let _aberto = null, _tempo = null, _pedido = 0;
+
+function esc(t){ return String(t == null ? '' : t).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function iso(d){ return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
+function brData(i){ const p = String(i || '').split('-'); return p.length === 3 ? p[2] + '/' + p[1] + '/' + p[0] : ''; }
+
+async function api(caminho){
+  const r = await fetch(caminho, { headers: { Authorization: 'Bearer ' + TOKEN } });
+  if (!r.ok) {
+    let m = 'Erro ' + r.status;
+    try { const j = await r.json(); if (j && j.detail) m = typeof j.detail === 'string' ? j.detail : m; } catch (e) {}
+    const er = new Error(m); er.status = r.status; throw er;
+  }
+  return r;
+}
+
+function filtros(){
+  const p = new URLSearchParams();
+  const de = document.getElementById('f-de').value, ate = document.getElementById('f-ate').value;
+  if (de) p.set('de', de);
+  if (ate) p.set('ate', ate);
+  const m = document.getElementById('f-mod').value;
+  if (m && m !== 'Todos') p.set('modulo', m);
+  const q = document.getElementById('f-q').value.trim();
+  if (q) p.set('q', q);
+  return p;
+}
+
+function avisar(msg){ document.getElementById('aviso').innerHTML = msg ? '<div class="erro">' + esc(msg) + '</div>' : ''; }
+
+async function carregar(){
+  const meu = ++_pedido;
+  avisar('');
+  try {
+    const d = await (await api('/logs-sistema/api/lista?' + filtros().toString())).json();
+    if (meu !== _pedido) return;               // chegou resposta de um filtro antigo
+    document.getElementById('f-de').value = d.de;
+    document.getElementById('f-ate').value = d.ate;
+    const sel = document.getElementById('f-mod');
+    if (sel.options.length <= 1) (d.modulos || []).forEach(m => { const o = document.createElement('option'); o.textContent = m; sel.appendChild(o); });
+    _aberto = null;
+    const cx = document.getElementById('linhas');
+    cx.innerHTML = (d.linhas || []).map(l =>
+      '<button type="button" class="lin" id="lin-' + l.id + '" aria-expanded="false" onclick="abrir(' + l.id + ')">'
+      + '<span>' + esc(l.data) + '</span><span>' + esc(l.hora) + '</span><span>' + esc(l.usuario) + '</span><span>' + esc(l.modulo)
+      + '</span><span>' + esc(l.item || '') + '</span><span>' + esc(l.evento) + '</span></button><div id="det-' + l.id + '"></div>'
+    ).join('') || '<div class="vazio">Nenhum registro neste período. Escolha outras datas no calendário.</div>';
+    document.getElementById('rodape').textContent =
+      (d.mostrando < d.total ? d.mostrando + ' de ' + d.total : d.total) + ' registro(s) de ' + brData(d.de) + ' a ' + brData(d.ate)
+      + (d.mostrando < d.total ? ' — diminua o período ou use a pesquisa para ver os demais' : '');
+  } catch (e) {
+    if (meu !== _pedido) return;
+    document.getElementById('linhas').innerHTML = '';
+    document.getElementById('rodape').textContent = '';
+    avisar(!TOKEN || e.status === 401 ? 'Sessão não encontrada. Abra esta página pelo menu do Admin (Logs do sistema).'
+      : e.status === 403 ? 'Esta página é restrita ao Admin Master.' : 'Não foi possível carregar os logs: ' + e.message);
+  }
+}
+
+function pesquisar(){ clearTimeout(_tempo); _tempo = setTimeout(carregar, 350); }
+
+async function abrir(id){
+  const lin = document.getElementById('lin-' + id), det = document.getElementById('det-' + id);
+  if (_aberto && _aberto !== id) {
+    const a = document.getElementById('lin-' + _aberto), b = document.getElementById('det-' + _aberto);
+    if (a) { a.classList.remove('aberta'); a.setAttribute('aria-expanded', 'false'); }
+    if (b) b.innerHTML = '';
+  }
+  if (_aberto === id) { lin.classList.remove('aberta'); lin.setAttribute('aria-expanded', 'false'); det.innerHTML = ''; _aberto = null; return; }
+  _aberto = id;
+  lin.classList.add('aberta'); lin.setAttribute('aria-expanded', 'true');
+  det.innerHTML = '<div class="det"><div>Carregando…</div></div>';
+  try {
+    const d = await (await api('/logs-sistema/api/evento/' + id)).json();
+    if (_aberto !== id) return;
+    const ev = d.evento, difs = ev.detalhe || [], ras = d.rastreio || [];
+    let esq = '<h2>O que aconteceu</h2><p>' + esc(ev.resumo || (ev.evento + ' em ' + ev.modulo)) + '</p>';
+    if (ev.motivo) esq += '<p><b>Motivo:</b> ' + esc(ev.motivo) + '</p>';
+    if (difs.length) esq += '<table><thead><tr><th>Campo</th><th>Antes</th><th>Depois</th></tr></thead><tbody>'
+      + difs.map(x => '<tr><td>' + esc(x.campo) + '</td><td>' + esc(x.antes == null ? '(vazio)' : x.antes) + '</td><td><b>' + esc(x.depois == null ? '(vazio)' : x.depois) + '</b></td></tr>').join('')
+      + '</tbody></table>';
+    esq += '<p class="nota">' + esc(ev.data + ' às ' + ev.hora + (ev.origem ? ' · ' + ev.origem : '')) + '</p>';
+    let dir = '';
+    if (ras.length) dir = '<h2>Rastreio completo' + (ev.item ? ' da ' + esc(ev.item) : '') + '</h2><table><tbody>'
+      + ras.map(r => '<tr' + (r.id === ev.id ? ' class="atual"' : '') + '><td style="white-space:nowrap">' + esc(r.quando) + '</td><td>' + esc(r.usuario) + '</td><td>' + esc(r.resumo || r.evento) + '</td></tr>').join('')
+      + '</tbody></table>';
+    det.innerHTML = '<div class="det"><div>' + esq + '</div>' + (dir ? '<div>' + dir + '</div>' : '') + '</div>';
+  } catch (e) {
+    det.innerHTML = '<div class="det"><div>Não foi possível abrir o detalhe: ' + esc(e.message) + '</div></div>';
+  }
+}
+
+function alternarMenu(fechar){
+  const m = document.getElementById('menu-rel'), b = document.getElementById('btn-rel');
+  const abrir = fechar ? false : !m.classList.contains('aberto');
+  m.classList.toggle('aberto', abrir); b.setAttribute('aria-expanded', abrir ? 'true' : 'false');
+}
+document.addEventListener('click', e => { if (!e.target.closest('.rel')) alternarMenu(true); });
+
+async function relatorio(formato){
+  alternarMenu(true);
+  avisar('');
+  try {
+    const p = filtros(); p.set('formato', formato);
+    const r = await api('/logs-sistema/api/relatorio?' + p.toString());
+    const blob = await r.blob(), a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'logs-' + document.getElementById('f-de').value + '-a-' + document.getElementById('f-ate').value + '.' + formato;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+  } catch (e) { avisar('Não foi possível gerar o relatório: ' + e.message); }
+}
+
+// Abre já com os últimos 7 dias (hoje e os 6 anteriores)
+(function(){ const h = new Date(), i = new Date(); i.setDate(h.getDate() - 6);
+  document.getElementById('f-de').value = iso(i); document.getElementById('f-ate').value = iso(h); carregar(); })();
+</script>
+</body>
+</html>

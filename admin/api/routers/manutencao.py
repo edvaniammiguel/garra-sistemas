@@ -883,6 +883,10 @@ async def mudar_status_ot(ot_id: str, request: Request, payload=Depends(verifica
         # (19/10/2026) Data/hora de conclusão e leitura (horímetro/km) informadas no Encerrar;
         # sem informar, vale agora / nada.
         dc = (d.get("data_conclusao") or "").strip()
+        # (21/11/2026) Fim é obrigatório também no servidor (a tela já cobrava): sem ele a OT não encerra.
+        # Antes, sem a data, o servidor gravava a hora do momento — o Fim passava a ser "agora" sem ninguém informar.
+        if not dc:
+            raise HTTPException(status_code=400, detail="Informe a data e a hora do Fim (aba Gestão) para encerrar a OT")
         if dc:
             try:
                 dt_conc = datetime.fromisoformat(dc.replace("Z", "+00:00"))
@@ -4582,12 +4586,8 @@ async def listar_biblioteca(tipo_sigla: str = None, _auth=Depends(verificar_manu
     return [dict(r) for r in rows]
 
 
-def _num_ou_none(v):
-    """(20/11/2026) número digitado (aceita vírgula) ou None."""
-    try:
-        return float(str(v).replace(",", ".")) if v not in (None, "") else None
-    except ValueError:
-        return None
+# (21/11/2026) _num_ou_none estava definida duas vezes neste arquivo; fica só a versão completa, mais abaixo
+# (aceita vírgula e ponto de milhar). Era ela que já valia — a última definição ganha.
 
 
 @router.post("/manutencao/api/biblioteca")

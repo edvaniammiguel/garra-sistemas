@@ -8134,7 +8134,7 @@ async function artJanela(codigo, opts){
         + [['estruturado','Cód. Estruturado (o da estrutura, acima)'],['fabricante','Cód. Fabricante'],['externo','Cód. Externo']].map(([k,t]) =>
             '<label style="display:flex;align-items:center;gap:5px;font-size:12px;cursor:pointer;font-weight:400"><input type="radio" name="art-princ" value="'+k+'"'+((p.codigo_principal||'estruturado')===k?' checked':'')+'> '+t+'</label>').join('')
       + '</div></div>'
-      + '<div class="mfield">Cód. Estruturado (Família.Sub.Sequência — proposto ao escolher a família)<input value="'+_esc((_artEdit ? p.codigo_estruturado : p.codigo)||'—')+'" readonly style="background:#F8FAFC"></div>'
+      + '<div class="mfield">Cód. Estruturado (Família.Sub.Sequência — proposto ao escolher a família)<input id="art-est-ro" value="'+_esc((_artEdit ? p.codigo_estruturado : p.codigo)||'—')+'" readonly style="background:#F8FAFC"></div>'
       + '<div class="mfield" style="margin-top:6px">Cód. Externo (nota do fornecedor / de-para)<input id="art-ext" value="'+_esc(p.codigo_externo||'')+'"></div>'
       + '<div class="mfield" style="margin-top:6px">Especificação Complementar de Compra<input id="art-espec" value="'+_esc(p.espec_compra||'')+'" placeholder="ex.: original CNH · não aceitar paralelo"></div>'
       + '<div class="muted" style="font-size:10px;margin-top:4px">O código marcado como principal é o que aparece na coluna Código. O estruturado nasce da família; o Cód. Fabricante (no cabeçalho) guarda o part number. A busca encontra por qualquer um deles e pela descrição.</div></div>'
@@ -8232,7 +8232,7 @@ async function artProximo(){
   if (_artEdit) return;
   const el = document.getElementById('art-cod'); if (!el) return;
   const pref = artPrefixo();
-  if (!pref){ if (_artCodAuto) el.value = ''; return; }
+  if (!pref){ if (_artCodAuto){ el.value = ''; artCodCheck(); } return; }
   if (!_artCodAuto && el.value.trim()) return;   // o usuário já escreveu o dele — não sobrescreve
   const r = await mwProximoCodigo('peca', pref, '.', 3);
   if (r && r.codigo){ el.value = r.codigo; _artCodAuto = true; artCodCheck(); const sq = document.getElementById('art-seq'); if (sq) sq.value = String(r.codigo).split('.').pop(); }
@@ -8240,6 +8240,8 @@ async function artProximo(){
 let _artCodTimer = null;
 function artCodCheck(){
   const el = document.getElementById('art-cod'); if (!el || _artEdit) return;
+  // (21/11/2026) aba Codificação: o campo "Cód. Estruturado" acompanha o código proposto/digitado (ficava "—")
+  const _ro = document.getElementById('art-est-ro'); if (_ro) _ro.value = el.value.trim() || '—';
   clearTimeout(_artCodTimer);
   _artCodTimer = setTimeout(async () => {
     const cod = el.value.trim(); if (!cod){ el.style.color = '#1A2A5E'; el.title = ''; return; }
