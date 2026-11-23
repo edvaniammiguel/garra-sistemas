@@ -6865,7 +6865,9 @@ async function almVistaMov(){
       const tot = gp.itens.reduce((a,x) => a + parseFloat(x.quantidade||0) * parseFloat(x.custo_unitario||0), 0);
       const estornada = m.tipo === 'entrada' && gp.itens.every(x => x.estornado_em);
       const nomeDoc = m.documento_tipo_nome || ({nf:'NF', notinha:'Notinha', aplicacao_direta:'Aplic. direta'}[m.documento_tipo] || m.documento_tipo || 'Doc.');
-      const rot = (m.tipo === 'estorno' ? 'Estorno ' : nomeDoc + ' ') + (m.documento_numero || 's/ nº');
+      // (23/11/2026) mostra a data da nota no cabeçalho do documento; a coluna da esquerda continua sendo o dia do lançamento
+      const _dnota = (m.tipo === 'entrada' && m.data_documento) ? ' · nota de ' + String(m.data_documento).slice(0,10).split('-').reverse().join('/') : '';
+      const rot = (m.tipo === 'estorno' ? 'Estorno ' : nomeDoc + ' ') + (m.documento_numero || 's/ nº') + _dnota;
       // (16/11/2026) 🏷 Etiquetas da entrada: reimprime as etiquetas de TODOS os itens do documento, a qualquer momento
       const codsDoc = gp.itens.map(x => x.peca_codigo).filter((v,i,a) => v && a.indexOf(v) === i).join(',');
       // abre a MESMA janela do fim da entrada: uma etiqueta por unidade que entrou (ajustável), ou 1 por item
@@ -6939,11 +6941,14 @@ async function entradaAbrir(){
   b.innerHTML = '<div style="background:#fff;border-radius:10px;box-shadow:0 12px 32px rgba(15,23,42,.3);padding:16px;width:720px;max-width:96vw;max-height:92vh;overflow:auto">'
     + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><b style="color:#1A2A5E">📥 Entrada de Materiais — por documento</b><span style="cursor:pointer;font-size:16px" onclick="document.getElementById(\'ent-doc\').style.display=\'none\'">✕</span></div>'
     + '<div style="display:flex;gap:8px;flex-wrap:wrap">'
-    + '<div class="mfield" style="width:190px">Tipo de documento<select id="ent-tipo">'+_tiposDocOpts('01')+'</select></div>'
-    + '<div class="mfield" style="width:130px">Nº documento<input id="ent-num" placeholder="ex.: 12345"></div>'
-    + '<div class="mfield" style="flex:1;min-width:180px">Fornecedor<select id="ent-forn"><option value="">— nenhum —</option>'
+    + '<div class="mfield" style="width:160px">Tipo de documento<select id="ent-tipo">'+_tiposDocOpts('01')+'</select></div>'
+    + '<div class="mfield" style="width:100px">Nº documento<input id="ent-num" placeholder="ex.: 12345"></div>'
+    // (23/11/2026) Data da nota: a nota quase nunca é lançada no dia da emissão. Vem em branco de propósito
+    // (obriga a escolher no calendário); não aceita data futura. A data do lançamento é gravada sozinha.
+    + '<div class="mfield" style="width:135px">Data da nota<input id="ent-data" type="date" max="'+_isoLocal()+'" title="Data de emissão da nota. A data em que você está lançando é gravada sozinha."></div>'
+    + '<div class="mfield" style="flex:1;min-width:150px">Fornecedor<select id="ent-forn"><option value="">— nenhum —</option>'
       + (_mntFornList||[]).map(f=>'<option value="'+f.id+'">'+_esc(f.nome)+'</option>').join('')+'</select></div>'
-    + '<div class="mfield" style="width:120px">OC nº<input id="ent-oc" placeholder="opcional"></div>'
+    + '<div class="mfield" style="width:90px">OC nº<input id="ent-oc" placeholder="opcional"></div>'
     + '</div>'
     + '<div style="display:flex;gap:8px;margin-top:4px">'
     // (21/10/2026) um só campo de destino: almoxarifado OU aplicação direta na OT (sem campo "Destino" separado)
@@ -7080,7 +7085,11 @@ async function entradaOK(){
   });
   if (!itens.length){ mostrarToast('Adicione ao menos um item','warn'); return; }
   if (!g('ent-tipo').value){ mostrarToast('Cadastre um tipo de documento em Parametrizar › Custos › Tipos de documento','warn'); return; }
-  const body = { documento_tipo: g('ent-tipo').value, destino_tipo: tipo === 'aplicacao_direta' ? 'ot' : 'almox', documento_numero: g('ent-num').value.trim(),
+  // (23/11/2026) data da nota obrigatória e nunca no futuro (o servidor confere de novo)
+  const _dn = g('ent-data').value;
+  if (!_dn){ mostrarToast('Informe a data da nota','warn'); g('ent-data').focus(); return; }
+  if (_dn > _isoLocal()){ mostrarToast('A data da nota não pode ser no futuro','warn'); g('ent-data').focus(); return; }
+  const body = { data_documento: _dn, documento_tipo: g('ent-tipo').value, destino_tipo: tipo === 'aplicacao_direta' ? 'ot' : 'almox', documento_numero: g('ent-num').value.trim(),
                  fornecedor_id: g('ent-forn').value || null, oc_numero: g('ent-oc').value.trim(),
                  observacao: g('ent-obs').value.trim(), itens,
                  acrescimos: g('ent-acr').value || null, desconto: g('ent-desc').value || null,

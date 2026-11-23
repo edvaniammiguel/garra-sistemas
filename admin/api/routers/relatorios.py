@@ -692,8 +692,10 @@ COL_PONTOS = [("objeto", "Objeto", "txt"), ("obj_desc", "Descrição", "txt"), (
 # filtros: periodo · sistema · objeto · tipo_trabalho · setor · familia  (o front mostra só os aceitos)
 # ═════════════════════════════ ENTRADAS (21/10/2026) ═════════════════════════════
 def _where_entradas(F, params):
-    w = ["m.tipo = 'entrada'", "m.criado_em >= %s", "m.criado_em < %s"]
-    params += [F.ini(), F.fim_excl()]
+    # (23/11/2026) o período do relatório é o da DATA DA NOTA; entradas antigas (sem ela) seguem a data do lançamento
+    _dia = "COALESCE(m.data_documento, (m.criado_em AT TIME ZONE 'America/Sao_Paulo')::date)"
+    w = ["m.tipo = 'entrada'", f"{_dia} >= %s", f"{_dia} <= %s"]
+    params += [F.de, F.ate]
     if F.item:
         w.append("(unaccent(p.codigo) ILIKE unaccent(%s) OR unaccent(p.descricao) ILIKE unaccent(%s))"); params += [f"%{F.item}%"] * 2
     if F.familia:
@@ -708,7 +710,7 @@ def _where_entradas(F, params):
 
 
 _SQL_ENTRADAS = """
-    SELECT m.id, m.criado_em, m.quantidade, m.custo_unitario, m.custo_nf, m.acrescimo_rateado, m.total_nf,
+    SELECT m.id, m.criado_em, m.data_documento, m.quantidade, m.custo_unitario, m.custo_nf, m.acrescimo_rateado, m.total_nf,
            m.documento_tipo, m.documento_numero, m.oc_numero, m.estornado_em, m.lote,
            COALESCE(m.lote::text, COALESCE(m.documento_numero,'') || '|' || (m.criado_em AT TIME ZONE 'America/Sao_Paulo')::date::text) AS lote_chave,
            COALESCE((SELECT td.nome FROM manutencao.tipos_documento td WHERE td.codigo = m.documento_tipo),
@@ -729,6 +731,7 @@ async def _entradas_rows(F):
         await ajard_query("CREATE EXTENSION IF NOT EXISTS unaccent", fetch="none")
     except Exception:
         pass
+    await ajard_query("ALTER TABLE manutencao.movimentacoes ADD COLUMN IF NOT EXISTS data_documento DATE", fetch="none")   # (23/11/2026)
     params = []
     where = _where_entradas(F, params)
     return await ajard_query(_SQL_ENTRADAS.format(where=where), tuple(params)) or []
@@ -739,14 +742,15 @@ async def rel_entradas_itens(F):
     out = []
     for r in await _entradas_rows(F):
         q = _f(r["quantidade"]); cu = _f(r["custo_unitario"])
-        out.append({"data": r["criado_em"], "documento": ((r["doc_nome"] or r["documento_tipo"] or "") + " " + (r["documento_numero"] or "")).strip(),
+        out.append({"data_nota": r["data_documento"], "data": r["criado_em"],
+                    "documento": ((r["doc_nome"] or r["documento_tipo"] or "") + " " + (r["documento_numero"] or "")).strip(),
                     "fornecedor": r["fornecedor"] or "", "item": r["codigo"], "descricao": r["descricao"], "familia": r["familia_codigo"] or "",
                     "unidade": r["unidade"] or "", "qtd": _r2(q), "custo_nf": _r2(r["custo_nf"]) if r["custo_nf"] is not None else _r2(cu),
                     "custo_unit": _r2(cu), "valor": _r2(q * cu), "almox": r["almox"] or "", "oc": r["oc_numero"] or "",
                     "situacao": "estornada" if r["estornado_em"] else "", "quem": r["usuario"] or ""})
     return out
 
-COL_ENTRADAS = [("data", "Data", "datahora"), ("documento", "Documento", "txt"), ("fornecedor", "Fornecedor", "txt"), ("item", "Item", "txt"),
+COL_ENTRADAS = [("data_nota", "Data da nota", "data"), ("data", "Lançada em", "datahora"), ("documento", "Documento", "txt"), ("fornecedor", "Fornecedor", "txt"), ("item", "Item", "txt"),
                 ("descricao", "Descrição", "txt"), ("familia", "Família", "txt"), ("unidade", "Un.", "txt"), ("qtd", "Qtd", "num", "sum"),
                 ("custo_nf", "Custo NF (R$)", "moeda"), ("custo_unit", "Custo c/ rateio (R$)", "moeda"), ("valor", "Valor (R$)", "moeda", "sum"),
                 ("almox", "Almox.", "txt"), ("oc", "OC", "txt"), ("situacao", "Situação", "txt"), ("quem", "Quem", "txt")]
@@ -757,7 +761,7 @@ async def rel_entradas_documentos(F):
     agg = {}
     for r in await _entradas_rows(F):
         k = r["lote_chave"]
-        a = agg.setdefault(k, {"data": r["criado_em"], "documento": ((r["doc_nome"] or r["documento_tipo"] or "") + " " + (r["documento_numero"] or "")).strip(),
+        a = agg.setdefault(k, {"data_nota": r["data_documento"], "data": r["criado_em"], "documento": ((r["doc_nome"] or r["documento_tipo"] or "") + " " + (r["documento_numero"] or "")).strip(),
                                "fornecedor": r["fornecedor"] or "", "almox": r["almox"] or "", "oc": r["oc_numero"] or "", "itens": 0, "qtd": 0.0,
                                "valor_itens": 0.0, "acrescimos": 0.0, "total_nf": _f(r["total_nf"]) if r["total_nf"] is not None else None,
                                "situacao": "estornada" if r["estornado_em"] else "", "quem": r["usuario"] or ""})
@@ -775,7 +779,7 @@ async def rel_entradas_documentos(F):
         out.append(a)
     return out
 
-COL_ENTRADAS_DOC = [("data", "Data", "datahora"), ("documento", "Documento", "txt"), ("fornecedor", "Fornecedor", "txt"), ("almox", "Almox.", "txt"),
+COL_ENTRADAS_DOC = [("data_nota", "Data da nota", "data"), ("data", "Lançada em", "datahora"), ("documento", "Documento", "txt"), ("fornecedor", "Fornecedor", "txt"), ("almox", "Almox.", "txt"),
                     ("oc", "OC", "txt"), ("itens", "Itens", "int", "sum"), ("qtd", "Qtd", "num", "sum"), ("valor_itens", "Itens (R$)", "moeda", "sum"),
                     ("acrescimos", "IPI/frete (R$)", "moeda", "sum"), ("total", "Total (R$)", "moeda", "sum"), ("situacao", "Situação", "txt"), ("quem", "Quem", "txt")]
 

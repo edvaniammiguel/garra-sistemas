@@ -12,6 +12,7 @@ import re
 from datetime import datetime
 
 from core.fuso import hoje as _hoje, agora as _agora_br  # (14/11/2026) fuso de Brasília
+from datetime import date as _date_cls   # (23/11/2026) data da nota na entrada de documento
 from core.auth import verificar_token, verificar_gestor
 from core.db import ajard_query, ajard_query_id
 from core.storage import storage_upload, storage_url, storage_urls, storage_delete
@@ -5727,7 +5728,7 @@ async def listar_movimentacoes(almox: str = None, limit: int = 120, de: str = No
         "ALTER TABLE manutencao.movimentacoes ADD COLUMN IF NOT EXISTS custo_unitario NUMERIC",
         fetch="none")
     for _col, _ddl in (("documento_tipo", "TEXT"), ("documento_numero", "TEXT"), ("fornecedor_id", "UUID"),
-                       ("lote", "UUID"), ("estorno_de", "UUID"), ("estornado_em", "TIMESTAMPTZ")):
+                       ("lote", "UUID"), ("estorno_de", "UUID"), ("estornado_em", "TIMESTAMPTZ"), ("data_documento", "DATE")):
         await ajard_query(f"ALTER TABLE manutencao.movimentacoes ADD COLUMN IF NOT EXISTS {_col} {_ddl}", fetch="none")
     # (21/10/2026) legado 'nf'/'notinha' → códigos do domínio (01/02); 'aplicacao_direta' → 03 BALCAO
     await ajard_query("""UPDATE manutencao.movimentacoes SET documento_tipo = CASE documento_tipo WHEN 'nf' THEN '01' WHEN 'notinha' THEN '02' ELSE '03' END
@@ -5738,10 +5739,13 @@ async def listar_movimentacoes(almox: str = None, limit: int = 120, de: str = No
         cond.append("(ao.codigo = %s OR ad.codigo = %s)")
         params += [almox, almox]
     # (21/10/2026) filtros do extrato: período, documento, peça, tipo, OT
+    # (23/11/2026) o período do extrato olha a DATA DA NOTA quando o movimento tem uma (entrada de documento);
+    # nos demais (saída, transferência, ajuste, entradas antigas) continua a data do lançamento
+    _dia = "COALESCE(m.data_documento, (m.criado_em AT TIME ZONE 'America/Sao_Paulo')::date)"
     if de:
-        cond.append("(m.criado_em AT TIME ZONE 'America/Sao_Paulo')::date >= %s::date"); params.append(de[:10])
+        cond.append(f"{_dia} >= %s::date"); params.append(de[:10])
     if ate:
-        cond.append("(m.criado_em AT TIME ZONE 'America/Sao_Paulo')::date <= %s::date"); params.append(ate[:10])
+        cond.append(f"{_dia} <= %s::date"); params.append(ate[:10])
     if documento:
         cond.append("m.documento_numero ILIKE %s"); params.append(f"%{documento.strip()}%")
     if peca:
@@ -5755,7 +5759,7 @@ async def listar_movimentacoes(almox: str = None, limit: int = 120, de: str = No
         cond.append("o.numero ILIKE %s"); params.append(f"%{ot.strip()}%")
     rows = await ajard_query(
         f"""SELECT m.id, m.tipo, m.quantidade, m.custo_unitario, m.criado_em, m.observacao,
-                   m.documento_tipo, m.documento_numero, m.estornado_em, m.estorno_de,
+                   m.documento_tipo, m.documento_numero, m.estornado_em, m.estorno_de, m.data_documento,
                    (SELECT td.nome FROM manutencao.tipos_documento td WHERE td.codigo = m.documento_tipo) AS documento_tipo_nome,
                    COALESCE(m.lote::text, COALESCE(m.documento_numero,'') || '|' || (m.criado_em AT TIME ZONE 'America/Sao_Paulo')::date::text) AS lote_chave,
                    (SELECT nome FROM public.fornecedores f WHERE f.id = m.fornecedor_id) AS fornecedor_nome,
@@ -5884,12 +5888,29 @@ async def _entrada_core(d, payload):
     itens = [i for i in itens if (i.get("peca") or "").strip()]
     if not itens:
         raise HTTPException(status_code=400, detail="Documento sem itens")
+    # (23/11/2026) DATA DA NOTA: a nota quase nunca é lançada no dia em que foi emitida. A tela exige o campo;
+    # quem chama por dentro sem informar (conferência do recebimento de OC) fica com o dia de hoje.
+    # A data do LANÇAMENTO continua gravada sozinha (criado_em) — as duas ficam, uma não substitui a outra.
+    _dd = str(d.get("data_documento") or "").strip()[:10]
+    if _dd:
+        try:
+            data_doc = _date_cls.fromisoformat(_dd)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Data da nota inválida")
+        if data_doc > _hoje():
+            raise HTTPException(status_code=400, detail="A data da nota não pode ser no futuro")
+        if data_doc.year < 2000:
+            raise HTTPException(status_code=400, detail="Data da nota inválida")
+    else:
+        data_doc = _hoje()
     for _col, _ddl in (("documento_tipo", "TEXT"), ("documento_numero", "TEXT"),
                        ("fornecedor_id", "UUID"), ("oc_numero", "TEXT"),
                        # (20/10/2026) fechamento com a NF: custo digitado × custo que entrou (com IPI/frete rateado)
                        ("custo_nf", "NUMERIC"), ("acrescimo_rateado", "NUMERIC"), ("total_nf", "NUMERIC"),
                        # (21/10/2026) estorno de documento: lote = uma entrada; estorno_de aponta o movimento original
-                       ("lote", "UUID"), ("estorno_de", "UUID"), ("estornado_em", "TIMESTAMPTZ")):
+                       ("lote", "UUID"), ("estorno_de", "UUID"), ("estornado_em", "TIMESTAMPTZ"),
+                       # (23/11/2026) data da nota (emissão), separada da data do lançamento (criado_em)
+                       ("data_documento", "DATE")):
         await ajard_query(
             f"ALTER TABLE manutencao.movimentacoes ADD COLUMN IF NOT EXISTS {_col} {_ddl}",
             fetch="none")
@@ -6008,15 +6029,15 @@ async def _entrada_core(d, payload):
             INSERT INTO manutencao.movimentacoes
                 (tipo, peca_id, almox_destino, quantidade, ot_id, usuario_id, observacao,
                  custo_unitario, documento_tipo, documento_numero, fornecedor_id, oc_numero, rubrica,
-                 custo_nf, acrescimo_rateado, total_nf, lote)
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+                 custo_nf, acrescimo_rateado, total_nf, lote, data_documento)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
             (tipo_mov, p["id"], destino, qtd,
              (ot_id if doc_tipo == "aplicacao_direta" else None), uid,
              (d.get("observacao") or "").strip() or None, custo,
              (doc_cod or "03"), doc_num or None, d.get("fornecedor_id") or None,
              (d.get("oc_numero") or "").strip() or None, rub,
              (round(custo_nf, 4) if custo_nf is not None else None), rateado,
-             (round(total_nf, 2) if total_nf is not None else None), lote), fetch="none")
+             (round(total_nf, 2) if total_nf is not None else None), lote, data_doc), fetch="none")
         total_doc += qtd * (custo or 0)
         lancados.append(cod)
     # (21/10/2026) itens que entraram no almoxarifado sem endereço (C-P-N): o front obriga a endereçar

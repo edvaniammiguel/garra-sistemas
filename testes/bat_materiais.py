@@ -87,3 +87,40 @@ def estorno():
     status(chamar("admin", "POST", "/manutencao/api/entradas/estornar", {"lote": EST["lote2"], "motivo": "BAT lançada em duplicidade"}), 200, "estornar")
     igual(_saldo(EST["a1"]) + _saldo(EST["a2"]), 7.0, "saldo total depois do estorno")
     status(chamar("admin", "POST", "/manutencao/api/entradas/estornar", {"lote": EST["lote2"], "motivo": "BAT de novo"}), (400, 404, 409), "estornar duas vezes")
+
+
+@teste("Materiais", "entrada guarda a data da nota separada da data do lançamento, e recusa data futura")
+def data_da_nota():
+    import datetime as dt
+    if not EST.get("a1"):
+        raise Pular("o cenário de materiais não foi montado")
+    hoje = dt.date.today()
+    nota = hoje - dt.timedelta(days=12)
+    base = {"documento_tipo": "01", "fornecedor_id": EST["forn"], "destino_tipo": "almox", "destino": EST["a1"],
+            "itens": [{"peca": COD, "quantidade": 1, "custo_unitario": 10}], "acrescimos": 0, "desconto": 0, "total_nf": 10}
+    amanha = (hoje + dt.timedelta(days=2)).isoformat()
+    status(chamar("admin", "POST", "/manutencao/api/entradas", {**base, "documento_numero": "BAT-DT-F-" + TAG, "data_documento": amanha}), 400, "nota com data futura")
+    status(chamar("admin", "POST", "/manutencao/api/entradas", {**base, "documento_numero": "BAT-DT-X-" + TAG, "data_documento": "11/11/2026"}), 400, "data fora do formato")
+    igual(sql1("select count(*) as n from manutencao.movimentacoes where documento_numero like $1", "BAT-DT-_-" + TAG)["n"], 0, "nada gravado nas recusas")
+    num = "BAT-DT-A-" + TAG
+    r = status(chamar("admin", "POST", "/manutencao/api/entradas", {**base, "documento_numero": num, "data_documento": nota.isoformat()}), 200, "entrada com a data da nota")
+    m = sql1("select data_documento, (criado_em at time zone 'America/Sao_Paulo')::date as lancada from manutencao.movimentacoes where documento_numero=$1", num)
+    igual(m["data_documento"], nota, "data da nota gravada")
+    assert m["lancada"] >= hoje - dt.timedelta(days=1), "a data do lançamento deveria ser a de agora"
+    # o extrato acha a nota pelo dia dela, e não pelo dia em que foi lançada
+    def _extrato(dia):
+        e = status(chamar("admin", "GET", f"/manutencao/api/movimentacoes?de={dia}&ate={dia}&documento={q(num)}&limit=50"), 200, "extrato")
+        return [i for i in e["itens"] if i["documento_numero"] == num]
+    achou = _extrato(nota.isoformat())
+    assert achou, "o extrato filtrado pelo dia da nota não trouxe a entrada"
+    igual(str(achou[0]["data_documento"])[:10], nota.isoformat(), "o extrato devolve a data da nota")
+    igual(_extrato(hoje.isoformat()), [], "o extrato do dia do lançamento não traz a nota de outro dia")
+    # quem não informa a data (conferência do recebimento de OC) fica com o dia de hoje
+    num2 = "BAT-DT-B-" + TAG
+    status(chamar("admin", "POST", "/manutencao/api/entradas", {**base, "documento_numero": num2}), 200, "entrada sem data")
+    d2 = sql1("select data_documento from manutencao.movimentacoes where documento_numero=$1", num2)["data_documento"]
+    assert abs((d2 - hoje).days) <= 1, f"sem data informada deveria ficar com hoje, ficou {d2}"
+    # desfaz as duas entradas do teste
+    for n in (num, num2):
+        lote = sql1("select lote::text as l from manutencao.movimentacoes where documento_numero=$1", n)["l"]
+        status(chamar("admin", "POST", "/manutencao/api/entradas/estornar", {"lote": lote, "motivo": "BAT limpeza do teste de data"}), 200, "estornar a entrada do teste")
