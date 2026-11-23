@@ -89,6 +89,25 @@ def envia():
         "o operador anterior não foi avisado de que a OS saiu dele"
 
 
+@teste("Despacho", "dá para tirar a OS do operador e deixar sem responsável, para decidir depois")
+def sem_responsavel():
+    a = usuario("op1")
+    orf = sql1("select id::text as id from operacional.ordens_servico where numero=$1", NUM + "-ORF")["id"]
+    igual(sql1("select operador_id::text as o from operacional.ordens_servico where id=$1::uuid", orf)["o"], a["id"], "a OS estava com o operador")
+    c = status(chamar("op2", "POST", f"/operacional/api/os/{orf}/encaminhar", {"sem_responsavel": True}), 200, "despachante tirando a OS do operador")
+    igual(c.get("sem_responsavel"), True, "resposta confirma que ficou sem responsável")
+    igual(sql1("select operador_id from operacional.ordens_servico where id=$1::uuid", orf)["operador_id"], None, "o servidor gravou sem responsável")
+    assert NUM + "-ORF" not in _minhas("op1"), "a OS continuou na lista do operador que perdeu"
+    v = _minhas("op2")[NUM + "-ORF"]
+    igual((v["operador_nome"], v["pode_enviar"]), (None, True), "o despachante continua vendo a OS, sem responsável, e pode enviar")
+    assert sql("select 1 from public.notificacoes where usuario_id=$1::uuid and titulo like $2", a["id"], "%" + NUM + "-ORF saiu de você%"), \
+        "o operador não foi avisado de que a OS saiu dele"
+    status(chamar("op1", "POST", f"/operacional/api/os/{orf}/encaminhar", {"sem_responsavel": True}), 403, "operador comum tentando o mesmo")
+    # e depois escolhe para quem vai
+    status(chamar("op2", "POST", f"/operacional/api/os/{orf}/encaminhar", {"operador_id": a["id"]}), 200, "decidiu depois: enviou ao operador")
+    igual(sql1("select operador_id::text as o from operacional.ordens_servico where id=$1::uuid", orf)["o"], a["id"], "voltou a ter responsável")
+
+
 @teste("Despacho", "só dá para enviar a operador ou motorista ativo; sem escolher ninguém é recusado")
 def destino_valido():
     os_b = sql1("select id::text as id from operacional.ordens_servico where numero=$1", NUM + "-B")["id"]

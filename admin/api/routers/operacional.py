@@ -1808,12 +1808,18 @@ async def op_encaminhar_os(os_id: str, req: Request, payload=Depends(verificar_t
     user = await _usuario_despacho(payload)
     d = await req.json()
     destino_id = str((d or {}).get("operador_id") or "").strip()
-    if not destino_id:
+    # (22/11/2026) "Sem responsável (decidir depois)": tira a OS do operador e deixa a designar.
+    # Só vale com o pedido explícito sem_responsavel=true — corpo vazio continua recusado (não zera por engano).
+    sem_resp = (d or {}).get("sem_responsavel") is True and not destino_id
+    if not destino_id and not sem_resp:
         raise HTTPException(status_code=400, detail="Escolha o operador")
-    destino = await ajard_query(
-        "SELECT id, nome, perfil FROM public.usuarios_garra WHERE id::text=%s AND ativo=true", (destino_id,), fetch="one")
-    if not destino or ((destino.get("perfil") or "") not in ("operador", "motorista") and str(destino["id"]) != str(user["id"])):
-        raise HTTPException(status_code=400, detail="Escolha um operador ou motorista ativo")
+    if sem_resp:
+        destino = {"id": None, "nome": None, "perfil": None}
+    else:
+        destino = await ajard_query(
+            "SELECT id, nome, perfil FROM public.usuarios_garra WHERE id::text=%s AND ativo=true", (destino_id,), fetch="one")
+        if not destino or ((destino.get("perfil") or "") not in ("operador", "motorista") and str(destino["id"]) != str(user["id"])):
+            raise HTTPException(status_code=400, detail="Escolha um operador ou motorista ativo")
     os_row = await ajard_query(
         "SELECT id, numero, obra, status, operador_id FROM operacional.ordens_servico WHERE id=%s AND ativo=true",
         (os_id,), fetch="one")
@@ -1822,16 +1828,24 @@ async def op_encaminhar_os(os_id: str, req: Request, payload=Depends(verificar_t
     if os_row.get("status") in ("concluida_completa", "concluida_sem_erp", "cancelada"):
         raise HTTPException(status_code=400, detail="OS já está concluída")
     anterior = os_row.get("operador_id")
-    if str(anterior or "") == str(destino["id"]):
+    if str(anterior or "") == str(destino["id"] or ""):
         return {"ok": True, "numero": os_row["numero"], "operador_nome": destino["nome"], "sem_mudanca": True}
     await ajard_query("UPDATE operacional.ordens_servico SET operador_id=%s, atualizado_em=%s WHERE id=%s",
                       (destino["id"], datetime.utcnow(), os_id), fetch="none")
     # confirma no banco o que ficou gravado (a resposta diz a verdade, não o que foi pedido)
     gravado = await ajard_query("SELECT operador_id FROM operacional.ordens_servico WHERE id=%s", (os_id,), fetch="one")
-    if str((gravado or {}).get("operador_id") or "") != str(destino["id"]):
+    if str((gravado or {}).get("operador_id") or "") != str(destino["id"] or ""):
         raise HTTPException(status_code=500, detail="O envio não foi gravado. Tente de novo.")
     try:
         obra = os_row.get("obra") or ""
+        if sem_resp:
+            if anterior and str(anterior) != str(user["id"]):
+                await _notificar("os_atribuida", f"📋 OS {os_row['numero']} saiu de você",
+                                 f"{obra} · retirada por {user['nome']}. Seus registros continuam seus.", "/mobile?aba=Op",
+                                 apenas=[anterior])
+            await _notificar("os_campo", f"📋 OS {os_row['numero']} ficou sem responsável",
+                             f"por {user['nome']} · {obra} · falta escolher o operador", "/admin")
+            return {"ok": True, "numero": os_row["numero"], "operador_nome": None, "sem_responsavel": True}
         if str(destino["id"]) != str(user["id"]):
             await _notificar("os_atribuida", f"📋 OS {os_row['numero']} aberta para você",
                              f"{obra} · enviada por {user['nome']}", "/mobile?aba=Op", apenas=[destino["id"]])

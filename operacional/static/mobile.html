@@ -2185,12 +2185,18 @@ async function abrirEnviarOS(osId, numero) {
     const r = await fetch('/operacional/api/despacho/operadores', { headers: { 'Authorization': 'Bearer ' + token } });
     const d = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(d.detail || 'Erro ao carregar os operadores');
-    cx.innerHTML = (d || []).map(o =>
+    // (22/11/2026) primeira opção: tirar do operador e deixar a designar (decide depois para quem vai)
+    const semResp = `<label style="display:flex;align-items:center;gap:12px;min-height:48px;padding:0 4px;border-top:1px solid var(--border);font-size:15px;cursor:pointer;background:#FFF7ED">
+         <input type="radio" name="enviar-os-op" value="__sem__" style="width:20px;height:20px;accent-color:var(--blue)">
+         <span style="flex:1;color:#9A3412;font-weight:700">Sem responsável</span>
+         <span style="font-size:12px;color:#9A3412">decidir depois</span>
+       </label>`;
+    cx.innerHTML = semResp + (d || []).map(o =>
       `<label style="display:flex;align-items:center;gap:12px;min-height:48px;padding:0 4px;border-top:1px solid var(--border);font-size:15px;cursor:pointer">
          <input type="radio" name="enviar-os-op" value="${o.id}" style="width:20px;height:20px;accent-color:var(--blue)">
          <span style="flex:1">${esc(o.nome)}</span>
          <span style="font-size:12px;color:var(--muted)">${Number(o.os_abertas) > 0 ? o.os_abertas + ' OS em aberto' : ''}</span>
-       </label>`).join('') || '<div style="padding:12px 0;font-size:13px;color:var(--muted)">Nenhum operador ou motorista ativo.</div>';
+       </label>`).join('');
   } catch (e) {
     cx.innerHTML = '';
     er.textContent = navigator.onLine ? e.message : 'Sem internet. O envio da OS precisa de conexão.';
@@ -2217,13 +2223,13 @@ async function confirmarEnviarOS() {
     // Sem fila offline de propósito: o envio só vale quando o servidor confirma (nada de "enviei" que não chegou).
     const r = await fetch('/operacional/api/os/' + _enviarOS.id + '/encaminhar', {
       method: 'POST', headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ operador_id: sel.value })
+      body: JSON.stringify(sel.value === '__sem__' ? { sem_responsavel: true } : { operador_id: sel.value })
     });
     const d = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(d.detail || 'O servidor não gravou o envio');
     const numero = _enviarOS.numero;
     fecharEnviarOS();
-    _avisoEnvio('✅ ' + numero + ' enviada para ' + (d.operador_nome || 'o operador'));
+    _avisoEnvio(d.sem_responsavel ? '✅ ' + numero + ' ficou sem responsável' : '✅ ' + numero + ' enviada para ' + (d.operador_nome || 'o operador'));
     carregarOSApp();
   } catch (e) {
     er.textContent = navigator.onLine ? e.message : 'Sem internet. O envio NÃO foi feito — tente de novo quando tiver sinal.';
