@@ -83,7 +83,7 @@ async def acesso_usuarios(payload=Depends(verificar_admin)):
     await garantir_tabelas_acesso()
     rows = await ajard_query("""
         SELECT u.id, u.login, u.nome, u.perfil, p.so_empresa, p.so_horario, p.liberado_de, p.liberado_ate,
-               (SELECT count(*) FROM public.acesso_dispositivos d WHERE d.usuario_id=u.id AND d.ativo) AS aparelhos
+               (SELECT count(*) FROM public.acesso_dispositivos d WHERE d.usuario_id=u.id AND d.ativo AND d.substituido_por IS NULL) AS aparelhos
           FROM public.usuarios_garra u
           LEFT JOIN public.acesso_pessoa p ON p.usuario_id=u.id
          WHERE u.ativo=true
@@ -103,7 +103,7 @@ async def acesso_usuario(uid: str, payload=Depends(verificar_admin)):
                                         (SELECT string_agg(COALESCE(u.nome, u.login), ', ' ORDER BY u.nome)
                                            FROM public.acesso_dispositivos o JOIN public.usuarios_garra u ON u.id=o.usuario_id
                                           WHERE o.chave_hash=d.chave_hash AND o.usuario_id<>d.usuario_id) AS usado_por
-                                   FROM public.acesso_dispositivos d WHERE d.usuario_id=%s
+                                   FROM public.acesso_dispositivos d WHERE d.usuario_id=%s AND d.substituido_por IS NULL
                                   ORDER BY d.ativo DESC, d.ultimo_uso DESC""", (uid,))
     return {"pessoa": _pessoa_json(p), "dispositivos": [{**d, "id": str(d["id"])} for d in (disps or [])]}
 
@@ -154,6 +154,7 @@ async def acesso_aparelhos(payload=Depends(verificar_admin)):
         SELECT d.chave_hash, d.id, d.classificacao, d.apelido, d.user_agent, d.ativo, d.ultimo_uso,
                COALESCE(u.nome, u.login) AS pessoa
           FROM public.acesso_dispositivos d JOIN public.usuarios_garra u ON u.id = d.usuario_id
+         WHERE d.substituido_por IS NULL          -- (23/11/2026) duplicado do mesmo aparelho já conciliado não aparece
          ORDER BY d.ultimo_uso DESC""")
     grupos = {}
     for r in rows or []:

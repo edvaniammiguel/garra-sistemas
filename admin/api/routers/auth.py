@@ -29,7 +29,7 @@ from core.models import (
     SenhaResetRequest, SenhaResetConfirm, PerfilCreate, PerfilUpdate,
 )
 from core.permissions import MODULOS_DISPONIVEIS, perfil_modulos_padrao
-from core.acesso_politica import vincular_dispositivo, tocar_dispositivo, modo_acesso, filtrar_perms   # (21/11/2026) controle de acesso
+from core.acesso_politica import vincular_dispositivo, tocar_dispositivo, conciliar_dispositivo, modo_acesso, filtrar_perms   # (21/11/2026) controle de acesso
 
 router = APIRouter()
 
@@ -156,6 +156,8 @@ async def renovar_token(request: Request, response: Response, payload=Depends(ve
     """Token válido → gera novo com validade renovada. Chamado silenciosamente ao abrir o app.
     (21/11/2026) Mantém o aparelho (disp) do token; token antigo sem disp ganha o do cookie."""
     disp = payload.get("disp")
+    # (23/11/2026) token e cookie apontando para registros diferentes = o mesmo aparelho cadastrado duas vezes: fica um só
+    disp = await conciliar_dispositivo(request, response, disp)
     await tocar_dispositivo(disp)
     if not disp:
         _u = await ajard_query("SELECT id FROM public.usuarios_garra WHERE (login=%s OR email=%s) AND ativo=true",

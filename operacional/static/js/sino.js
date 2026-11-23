@@ -70,7 +70,20 @@
   function abrirDesktop(link) {
     const l = linkDesktop(link), t = cfg.token() || '';
     const sso = t && l.indexOf('/admin') !== 0 ? (l.indexOf('?') >= 0 ? '&' : '?') + 'sso=' + encodeURIComponent(t) + '&nc=' + Date.now() : '';
-    window.open(l + sso, '_blank');
+    return window.open(l + sso, '_blank');
+  }
+  // (23/11/2026) Clique na notificação do sistema (a que aparece no canto do computador): antes o service worker
+  // abria sempre o app do celular (/mobile), mesmo com o Admin aberto. Agora ele avisa a página de mesa, e ela abre
+  // a tela certa: se o aviso é desta mesma tela, só traz a aba para frente; senão abre a tela de mesa do aviso.
+  function abrirDoSistema(link) {
+    atualizar(false);
+    let u = null;
+    try { u = new URL(linkDesktop(link || ''), location.origin); } catch (e) { }
+    if (u && u.pathname === location.pathname && !u.search) return;      // já está na tela certa (ex.: aviso do Admin com o Admin aberto)
+    if (cfg.abrir && cfg.abrir(link) === true) return;
+    let w = null;
+    try { w = abrirDesktop(link); } catch (e) { }
+    if (!w) { painel.classList.add('on'); atualizar(true); }             // navegador bloqueou a aba nova: mostra a lista para clicar
   }
   async function abrir(id, link) {
     try { const d = await api('/api/notificacoes/lidas', { method: 'POST', body: JSON.stringify({ ids: [id] }) }); pintar(d.pendentes); } catch (e) { }
@@ -122,6 +135,10 @@
     painel.innerHTML = `<div class="cab">🔔 Avisos <button class="todas">marcar todos lidos</button><button class="limpar" title="Apaga os avisos já lidos">limpar lidos</button></div><div class="lista"><div class="vazio">…</div></div>
       <div class="rodape"><label><input type="checkbox" class="push-cb"> Receber neste computador</label><span class="push-st" style="margin-left:auto"></span></div>`;
     document.body.appendChild(painel);
+    if ('serviceWorker' in navigator && !window._gsSinoSW) {
+      window._gsSinoSW = true;
+      navigator.serviceWorker.addEventListener('message', e => { if (e.data && e.data.type === 'GARRA_ABRIR_DESKTOP' && cfg) abrirDoSistema(e.data.link); });
+    }
     painel.querySelector('.todas').onclick = lerTodas;
     painel.querySelector('.limpar').onclick = () => apagar(null);
     painel.querySelector('.push-cb').onchange = e => ligarPush(e.target.checked);

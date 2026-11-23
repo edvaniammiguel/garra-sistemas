@@ -13,8 +13,8 @@
  * 4. Imagens/ícones: cache-first com limite de tamanho
  */
 
-const CACHE_NAME = 'garra-operacional-v31';   // (22/11/2026) despacho: opção 'Sem responsável' (mobile.html)
-const ASSETS_CACHE = 'garra-assets-v83';  // (22/11/2026) despacho: opção 'Sem responsável'
+const CACHE_NAME = 'garra-operacional-v32';   // (23/11/2026) clique na notificação no computador abre a tela de mesa, não o app
+const ASSETS_CACHE = 'garra-assets-v84';  // (23/11/2026) sino.js: clique na notificação do sistema
 const OFFLINE_PAGE = '/operacional/offline.html';
 
 // Assets que devem sempre estar em cache (shell)
@@ -353,10 +353,35 @@ self.addEventListener('notificationclick', (e) => {
   const link = (e.notification.data && e.notification.data.link) || '/mobile';
   // o app abre o link dentro do shell (aba certa + tela certa)
   const alvo = '/mobile?abrir=' + encodeURIComponent(link);
+  // (23/11/2026) No COMPUTADOR o clique abria o app do celular (/mobile), mesmo com o Admin aberto.
+  // Agora: no computador vai para a tela de mesa (Admin, Manutenção, Compras…); no celular continua indo para o app.
+  const noCelular = /Android|iPhone|iPad|iPod|Mobile/i.test((self.navigator && self.navigator.userAgent) || '');
+  const caminho = (u) => { try { return new URL(u, self.location.origin).pathname; } catch (x) { return ''; } };
+  const ehApp = (p) => p.indexOf('/mobile') >= 0 || p === '/manutencao/pedido';
+  const ehMesa = (p) => !ehApp(p) && (p === '/admin' || p === '/manutencao' || p.indexOf('/manutencao/') === 0 || p.indexOf('/compras') === 0 || p === '/rh' || p === '/logs-sistema');
+  // mesma tradução do sino (sino.js › linkDesktop): link do app → tela de mesa
+  const mesaDoLink = (l) => {
+    const p = caminho(l);
+    if (p === '/mobile' || p === '/operacional/mobile') return '/admin';
+    if (p === '/manutencao/mobile' || p === '/manutencao/pedido') return '/manutencao';
+    return p || '/admin';
+  };
   e.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(lista => {
-    for (const c of lista) {
-      if (c.url.includes('/mobile') && 'focus' in c) { c.postMessage({ type: 'GARRA_ABRIR', link }); return c.focus(); }
+    const apps = lista.filter(c => ehApp(caminho(c.url)));
+    const mesas = lista.filter(c => ehMesa(caminho(c.url)));
+    const noApp = () => { const c = apps[0]; c.postMessage({ type: 'GARRA_ABRIR', link }); return c.focus(); };
+    const naMesa = () => {
+      const quer = mesaDoLink(link);
+      const c = mesas.find(x => caminho(x.url) === quer) || mesas[0];     // prefere a aba que já é a tela do aviso
+      c.postMessage({ type: 'GARRA_ABRIR_DESKTOP', link });
+      return c.focus();
+    };
+    if (noCelular) {
+      if (apps.length) return noApp();
+      return self.clients.openWindow(alvo);
     }
-    return self.clients.openWindow(alvo);
+    if (mesas.length) return naMesa();
+    if (apps.length) return noApp();
+    return self.clients.openWindow(mesaDoLink(link));
   }));
 });

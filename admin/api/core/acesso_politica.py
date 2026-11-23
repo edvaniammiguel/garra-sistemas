@@ -24,13 +24,16 @@ Sem configuração, por baixo:
   • Aparelho novo: quando alguém que já tinha aparelho conhecido entra num aparelho que o sistema nunca viu, os
     Administradores recebem o aviso "aparelho_novo" (não bloqueia; o primeiro aparelho de cada pessoa é silencioso).
 """
+import base64
 import contextvars
 import hashlib
+import hmac
 import json
 import secrets
 import time as _time
 from datetime import datetime, date, time as dtime, timedelta
 
+from .config import JWT_SECRET
 from .db import ajard_query
 from .fuso import agora, FUSO
 
@@ -64,6 +67,7 @@ CREATE TABLE IF NOT EXISTS public.acesso_dispositivos (
     revogado_por TEXT,
     UNIQUE (usuario_id, chave_hash)
 );
+ALTER TABLE public.acesso_dispositivos ADD COLUMN IF NOT EXISTS substituido_por UUID;
 CREATE TABLE IF NOT EXISTS public.acesso_pessoa (
     usuario_id UUID PRIMARY KEY REFERENCES public.usuarios_garra(id),
     so_empresa BOOLEAN NOT NULL DEFAULT false,
@@ -177,10 +181,19 @@ async def _dispositivo(disp_id):
     if c and _time.time() - c[0] < _CACHE_TTL:
         return c[1]
     try:
-        row = await ajard_query("SELECT id, usuario_id, classificacao, ativo FROM public.acesso_dispositivos WHERE id=%s",
+        row = await ajard_query("SELECT id, usuario_id, classificacao, ativo, substituido_por FROM public.acesso_dispositivos WHERE id=%s",
                                 (disp_id,), fetch="one")
+        # (23/11/2026) registro duplicado do MESMO aparelho: vale o registro que ficou (ver conciliar_dispositivo)
+        if row and row.get("substituido_por"):
+            alvo = await ajard_query("SELECT id, usuario_id, classificacao, ativo, substituido_por FROM public.acesso_dispositivos WHERE id=%s",
+                                     (row["substituido_por"],), fetch="one")
+            row = alvo or row
     except Exception:
-        row = None
+        try:      # coluna nova ainda não criada: segue como antes
+            row = await ajard_query("SELECT id, usuario_id, classificacao, ativo FROM public.acesso_dispositivos WHERE id=%s",
+                                    (disp_id,), fetch="one")
+        except Exception:
+            row = None
     _cache_disp[disp_id] = (_time.time(), row)
     return row
 
@@ -516,6 +529,93 @@ async def tocar_dispositivo(disp_id):
         pass
 
 
+def _ip_do_pedido(request) -> str:
+    xff = (request.headers.get("x-forwarded-for") or "").split(",")[0].strip()
+    return xff or (request.client.host if request.client else "")
+
+
+async def _chave_primeiro_contato(request, usuario_id) -> str:
+    """(23/11/2026) Aparelho ainda sem cookie. Antes: cada pedido sorteava uma chave. Quando o app abria várias telas
+    ao mesmo tempo (o shell do celular + os módulos dentro dele, ou o Admin + um módulo), cada uma chegava sem cookie e
+    ganhava uma chave diferente — o MESMO aparelho virava 2, 3, 4 registros, e o que a administração nomeava e
+    classificava "voltava sem nome". Agora a chave do primeiro contato é a mesma para os pedidos da mesma pessoa, no
+    mesmo navegador (user-agent) e na mesma rede (IP), dentro de uma janela de 2 minutos: todos caem no mesmo registro.
+    Só quem tem o segredo do servidor consegue calcular a chave. Depois do primeiro contato vale o cookie, como sempre."""
+    ua = (request.headers.get("user-agent") or "")[:300]
+    base = f"{usuario_id}|{ua}|{_ip_do_pedido(request)}"
+    balde = int(_time.time() // 120)
+
+    def chave_de(b):
+        d = hmac.new(JWT_SECRET.encode(), f"disp1|{base}|{b}".encode(), hashlib.sha256).digest()
+        return base64.urlsafe_b64encode(d).decode().rstrip("=")      # 43 caracteres
+
+    try:      # pedido que cai logo depois da virada da janela: reaproveita a chave da janela anterior, se foi usada agora
+        ant = chave_de(balde - 1)
+        usado = await ajard_query(
+            "SELECT 1 AS x FROM public.acesso_dispositivos WHERE usuario_id=%s AND chave_hash=%s AND criado_em > now() - interval '2 minutes'",
+            (usuario_id, _hash(ant)), fetch="one")
+        if usado:
+            return ant
+    except Exception:
+        pass
+    return chave_de(balde)
+
+
+async def conciliar_dispositivo(request, response, disp_id):
+    """(23/11/2026) Conserta sozinho os registros duplicados que já existem. O token de cada módulo guarda o registro
+    do aparelho em que nasceu; o cookie é um só por navegador. Se o token aponta para um registro e o cookie para outro,
+    os dois são o MESMO aparelho: fica o do cookie. O que a administração já definiu (nome, da empresa/pessoal) é levado
+    para o registro que fica; aparelho revogado continua revogado. O registro antigo não é apagado — só passa a apontar
+    para o que ficou (substituido_por) e sai da lista. Devolve o registro que vale para este navegador."""
+    if not disp_id:
+        return disp_id
+    try:
+        tok = await ajard_query("""SELECT id, usuario_id, chave_hash, classificacao, apelido, ativo, substituido_por, user_agent
+                                     FROM public.acesso_dispositivos WHERE id=%s""", (disp_id,), fetch="one")
+        if not tok:
+            return disp_id
+        if tok.get("substituido_por"):                  # já conciliado antes: o token passa para o registro que ficou
+            return str(tok["substituido_por"])
+        chave = request.cookies.get(COOKIE_DISP)
+        if not chave or len(chave) < 32:
+            return disp_id
+        h = _hash(chave)
+        if tok["chave_hash"] == h:
+            return disp_id
+        # Segurança: só concilia se o navegador de agora é do mesmo tipo do registro do token (ex.: Android · Chrome).
+        # Um token levado de um notebook para um celular NÃO junta os dois nem passa "da empresa" para o celular.
+        if _resumo_ua(tok.get("user_agent") or "") != _resumo_ua(request.headers.get("user-agent") or ""):
+            return disp_id
+        fica_id = await vincular_dispositivo(request, response, tok["usuario_id"])
+        if not fica_id or str(fica_id) == str(disp_id):
+            return disp_id
+        fica = await ajard_query("SELECT classificacao, apelido, ativo FROM public.acesso_dispositivos WHERE id=%s", (fica_id,), fetch="one") or {}
+        sets, vals = [], []
+        if (fica.get("classificacao") or "nao_classificado") == "nao_classificado" and tok["classificacao"] != "nao_classificado":
+            sets.append("classificacao=%s"); vals.append(tok["classificacao"])
+        if not (fica.get("apelido") or "").strip() and (tok.get("apelido") or "").strip():
+            sets.append("apelido=%s"); vals.append(tok["apelido"])
+        if tok.get("ativo") is False and fica.get("ativo") is not False:
+            sets.append("ativo=false"); sets.append("revogado_em=now()"); sets.append("revogado_por='duplicado de aparelho revogado'")
+        if sets:
+            await ajard_query(f"UPDATE public.acesso_dispositivos SET {', '.join(sets)} WHERE chave_hash=%s AND substituido_por IS NULL",
+                              tuple(vals) + (h,), fetch="none")
+        # todos os logins que usaram a chave antiga neste aparelho apontam para o registro equivalente na chave que ficou
+        await ajard_query(
+            """UPDATE public.acesso_dispositivos a SET substituido_por = COALESCE(
+                   (SELECT n.id FROM public.acesso_dispositivos n WHERE n.chave_hash=%s AND n.usuario_id=a.usuario_id AND n.substituido_por IS NULL LIMIT 1), %s::uuid)
+               WHERE a.chave_hash=%s AND a.substituido_por IS NULL""", (h, fica_id, tok["chave_hash"]), fetch="none")
+        try:      # avisos (push) assinados no registro antigo passam para o que ficou
+            await ajard_query("UPDATE public.push_assinaturas SET dispositivo_id=%s WHERE dispositivo_id=%s", (fica_id, disp_id), fetch="none")
+        except Exception:
+            pass
+        _cache_disp.clear()
+        return str(fica_id)
+    except Exception as e:
+        print("acesso_politica: falha ao conciliar aparelho (segue normal):", e)
+        return disp_id
+
+
 async def vincular_dispositivo(request, response, usuario_id, credential_id: str = None):
     """Lê (ou cria) o cookie do aparelho, registra o aparelho para a pessoa e devolve o id.
     (21/11/2026) Aparelho compartilhado (ex.: celular do administrativo): a classificação, o nome e a revogação
@@ -524,7 +624,7 @@ async def vincular_dispositivo(request, response, usuario_id, credential_id: str
         await garantir_tabelas_acesso()
         chave = request.cookies.get(COOKIE_DISP)
         if not chave or len(chave) < 32:
-            chave = secrets.token_urlsafe(32)
+            chave = await _chave_primeiro_contato(request, usuario_id)
         seguro = request.url.scheme == "https" or request.headers.get("x-forwarded-proto") == "https"
         response.set_cookie(COOKIE_DISP, chave, max_age=COOKIE_MAX_AGE, httponly=True,
                             secure=seguro, samesite="lax", path="/")
@@ -533,7 +633,7 @@ async def vincular_dispositivo(request, response, usuario_id, credential_id: str
         ja_tinha = await ajard_query("SELECT count(*) AS n FROM public.acesso_dispositivos WHERE usuario_id=%s AND chave_hash<>%s",
                                      (usuario_id, h), fetch="one")
         herda = await ajard_query(
-            """SELECT classificacao, apelido, ativo FROM public.acesso_dispositivos WHERE chave_hash=%s
+            """SELECT classificacao, apelido, ativo FROM public.acesso_dispositivos WHERE chave_hash=%s AND substituido_por IS NULL
                 ORDER BY (classificacao <> 'nao_classificado') DESC, ultimo_uso DESC LIMIT 1""", (h,), fetch="one")
         row = await ajard_query(
             """INSERT INTO public.acesso_dispositivos (usuario_id, chave_hash, classificacao, apelido, ativo, user_agent, credential_id)
