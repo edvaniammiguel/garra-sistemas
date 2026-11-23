@@ -529,6 +529,9 @@ async def tocar_dispositivo(disp_id):
         pass
 
 
+JANELA_1O_CONTATO_S = 10      # (23/11/2026) segundos em que pedidos sem cookie da mesma pessoa/navegador/rede são o mesmo aparelho
+
+
 def _ip_do_pedido(request) -> str:
     xff = (request.headers.get("x-forwarded-for") or "").split(",")[0].strip()
     return xff or (request.client.host if request.client else "")
@@ -539,11 +542,13 @@ async def _chave_primeiro_contato(request, usuario_id) -> str:
     ao mesmo tempo (o shell do celular + os módulos dentro dele, ou o Admin + um módulo), cada uma chegava sem cookie e
     ganhava uma chave diferente — o MESMO aparelho virava 2, 3, 4 registros, e o que a administração nomeava e
     classificava "voltava sem nome". Agora a chave do primeiro contato é a mesma para os pedidos da mesma pessoa, no
-    mesmo navegador (user-agent) e na mesma rede (IP), dentro de uma janela de 2 minutos: todos caem no mesmo registro.
+    mesmo navegador (user-agent) e na mesma rede (IP), dentro de uma janela de 10 segundos: todos caem no mesmo registro.
+    A janela é curta de propósito: celulares diferentes da mesma pessoa se apresentam com o mesmo user-agent, e com
+    2 minutos o celular da empresa e o pessoal, cadastrados em seguida no Wi-Fi do escritório, viravam um registro só.
     Só quem tem o segredo do servidor consegue calcular a chave. Depois do primeiro contato vale o cookie, como sempre."""
     ua = (request.headers.get("user-agent") or "")[:300]
     base = f"{usuario_id}|{ua}|{_ip_do_pedido(request)}"
-    balde = int(_time.time() // 120)
+    balde = int(_time.time() // JANELA_1O_CONTATO_S)
 
     def chave_de(b):
         d = hmac.new(JWT_SECRET.encode(), f"disp1|{base}|{b}".encode(), hashlib.sha256).digest()
@@ -552,8 +557,8 @@ async def _chave_primeiro_contato(request, usuario_id) -> str:
     try:      # pedido que cai logo depois da virada da janela: reaproveita a chave da janela anterior, se foi usada agora
         ant = chave_de(balde - 1)
         usado = await ajard_query(
-            "SELECT 1 AS x FROM public.acesso_dispositivos WHERE usuario_id=%s AND chave_hash=%s AND criado_em > now() - interval '2 minutes'",
-            (usuario_id, _hash(ant)), fetch="one")
+            "SELECT 1 AS x FROM public.acesso_dispositivos WHERE usuario_id=%s AND chave_hash=%s AND criado_em > now() - make_interval(secs => %s)",
+            (usuario_id, _hash(ant), JANELA_1O_CONTATO_S), fetch="one")
         if usado:
             return ant
     except Exception:

@@ -65,6 +65,23 @@ def um_so():
     assert c_outro != res[0][1], "duas pessoas diferentes receberam a mesma chave de aparelho"
 
 
+@teste("Aparelhos", "dois aparelhos da mesma pessoa cadastrados em seguida NÃO viram um registro só (janela de 10 s)")
+def dois_aparelhos_em_seguida():
+    # Celulares diferentes se apresentam com o mesmo user-agent. Com a janela antiga (2 min), o celular da empresa e o
+    # pessoal, cadastrados um depois do outro no Wi-Fi do escritório, caíam no mesmo registro — e marcar "da empresa"
+    # liberava o pessoal. Com 10 s isso só aconteceria se os dois entrassem no mesmo instante.
+    _limpar()
+    uid = usuario("mec")["id"]
+    tok = _tok("mec")
+    d1, c1 = _renovar(tok)                              # 1º aparelho (sem cookie)
+    time.sleep(21)                                      # > 2 janelas: cobre a virada e o reaproveitamento da janela anterior
+    d2, c2 = _renovar(tok)                              # 2º aparelho (sem cookie), mesma pessoa, mesmo user-agent, mesma rede
+    assert c1 and c2 and c1 != c2, "os dois aparelhos receberam a mesma chave"
+    assert d1 != d2, "os dois aparelhos caíram no mesmo registro"
+    igual(sql1("select count(*) as n from public.acesso_dispositivos where usuario_id=$1::uuid and user_agent like '%BAT-APARELHO%'", uid)["n"],
+          2, "registros no banco para dois aparelhos")
+
+
 @teste("Aparelhos", "duplicado antigo se concilia: fica um registro, com o nome e a classificação já dados")
 def concilia():
     _limpar()
