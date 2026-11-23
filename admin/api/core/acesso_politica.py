@@ -298,7 +298,7 @@ class MiddlewarePoliticaAcesso:
 _FAIXA = {
     "fora do expediente": ("Bom descanso!", "Seu expediente terminou. Por aqui ficam o Mural e os seus avisos. O trabalho continua no próximo turno."),
     "aparelho pessoal": ("Este é seu celular pessoal.", "As telas de gestão abrem no aparelho da empresa. Por aqui: Mural, avisos e o que for do seu dia a dia."),
-    "aparelho não classificado": ("Este aparelho ainda não é da empresa.", "As telas de gestão abrem no aparelho da empresa. Peça à administração para marcar este aparelho, se ele for da empresa."),
+    "aparelho não classificado": ("Este aparelho ainda não está cadastrado.", "As telas de gestão abrem no aparelho da empresa. Peça à administração para marcar este aparelho, se ele for da empresa."),
     "aparelho revogado": ("Aparelho desligado do sistema.", "Fale com a administração."),
 }
 
