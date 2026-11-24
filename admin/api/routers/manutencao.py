@@ -5514,7 +5514,7 @@ async def ot_consumos(ot_id: str, _auth=Depends(verificar_manutencao)):
         fetch="none")
     rows = await ajard_query(
         """SELECT m.id, m.tipo, m.quantidade, m.custo_unitario, m.criado_em, m.observacao, m.rubrica,
-                  m.documento_numero, m.documento_tipo, fo.nome AS fornecedor_nome,
+                  m.documento_numero, m.documento_tipo, fo.nome AS fornecedor_nome, m.fornecedor_id,
                   p.codigo AS peca_codigo, p.descricao AS peca_descricao, p.unidade,
                   p.custo_medio,
                   ao.codigo AS almox_origem, ad.codigo AS almox_destino,
@@ -5543,6 +5543,8 @@ async def ot_consumos(ot_id: str, _auth=Depends(verificar_manutencao)):
             "custo_unitario": custo, "total": linha,
             "almox": r["almox_origem"] or r["almox_destino"], "rubrica": r["rubrica"],
             "documento": r.get("documento_numero"), "documento_tipo": r.get("documento_tipo"), "fornecedor_nome": r.get("fornecedor_nome"),
+            # (24/11/2026) a tela usa para sugerir o nº da última nota de cada fornecedor nesta OT
+            "fornecedor_id": (str(r["fornecedor_id"]) if r.get("fornecedor_id") else None),
             "usuario": r["usuario"], "observacao": r["observacao"]})
     return {"itens": itens, "total": round(total, 2)}
 
@@ -5889,6 +5891,15 @@ async def _entrada_core(d, payload):
     doc_num = (d.get("documento_numero") or "").strip()
     if destino_tipo == "almox" and not doc_num:
         raise HTTPException(status_code=400, detail="Informe o número do documento")
+    # (24/11/2026) Aplicação direta na OT: fornecedor OBRIGATÓRIO (regra no servidor, não só na tela).
+    # Quando a compra não tem um fornecedor do cadastro, usa-se o fornecedor genérico (ex.: Garra ou Diversos).
+    if destino_tipo == "ot":
+        _fid = str(d.get("fornecedor_id") or "").strip()
+        if not _fid:
+            raise HTTPException(status_code=400, detail="Escolha o fornecedor. Se a compra não tem um, use o fornecedor Garra ou Diversos.")
+        _fo = await ajard_query("SELECT 1 AS x FROM public.fornecedores WHERE id::text=%s AND ativo=true", (_fid,), fetch="one")
+        if not _fo:
+            raise HTTPException(status_code=400, detail="Fornecedor não encontrado ou inativo. Escolha outro na lista.")
     itens = d.get("itens") or []
     itens = [i for i in itens if (i.get("peca") or "").strip()]
     if not itens:

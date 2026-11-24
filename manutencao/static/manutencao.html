@@ -5409,7 +5409,7 @@ function otSaidaLinhaHtml(){
     + '<div class="mfield" style="flex:1.3">Descrição<input class="d" oninput="pcSugerir(this)" onfocus="this.closest(\'#ot-saida\')._rowAtiva=this.closest(\'.plf-pc-row\')" autocomplete="off"></div>'
     + '<div class="mfield" style="width:62px">Quant.<input class="h" type="number" step="0.5" oninput="pcTotLinha(this);otSaidaChecar()"></div>'
     + '<div class="mfield" style="width:48px">UN<input class="c" value="UN"></div>'
-    + '<div class="mfield" style="width:80px">Custo un.<input class="v" type="number" step="0.01" oninput="pcTotLinha(this)"></div>'
+    + '<div class="mfield" style="width:80px">Custo un.<input class="v" type="number" step="0.01" oninput="pcTotLinha(this);otSaidaChecar()"></div>'
     + '<div class="mfield" style="width:78px">Total<div class="t" style="padding:6px 0;font-weight:700;color:#1A2A5E">—</div></div>'
     + '<span style="cursor:pointer;color:#B91C1C;padding:0 2px 8px;font-size:14px" title="Remover este item" onclick="otSaidaRemLinha(this)">✕</span>'
     + '</div>'
@@ -5449,8 +5449,8 @@ function otSaidaAbrir(){
     + '</div>'
     + '<div class="panel doc-wrap"><div class="dsec" style="margin-top:0">Documento de custo</div><div style="display:flex;gap:8px;flex-wrap:wrap">'
     +   '<div class="mfield" style="width:150px">Tipo de documento<select class="doctipo">'+_tiposDocOpts('03')+'</select></div>'
-    +   '<div class="mfield" style="width:130px">Nº documento<input class="ref" placeholder="ex.: 887"></div>'
-    +   '<div class="mfield" style="flex:1;min-width:220px">Fornecedor<select class="forn">'+fornOpts+'</select></div>'
+    +   '<div class="mfield" style="width:130px">Nº documento<input class="ref" placeholder="ex.: 887" oninput="const d=this.parentNode.querySelector(\'.ref-dica\'); if(d) d.textContent=\'\'"><div class="ref-dica muted" style="font-size:10px;line-height:1.2;margin-top:2px"></div></div>'
+    +   '<div class="mfield" style="flex:1;min-width:220px">Fornecedor<select class="forn" onchange="otSaidaDocDoForn()">'+fornOpts+'</select></div>'
     + '</div></div>'
     + '<div class="panel alm-wrap" style="display:none"><div class="dsec" style="margin-top:0">Armazém</div>'
     +   '<div class="mfield" style="width:260px">Almoxarifado de origem<select class="alm" onchange="otSaidaChecar()">'+alms.map(a=>'<option value="'+_esc(a.codigo)+'">'+_esc(a.codigo)+' — '+_esc(a.nome||'')+'</option>').join('')+'</select></div></div>'
@@ -5461,7 +5461,25 @@ function otSaidaAbrir(){
     + '<span style="display:flex;gap:8px"><button class="btn" onclick="document.getElementById(\'ot-saida\').style.display=\'none\'">Cancelar</button>'
     + '<button class="btn p btn-ok" onclick="otSaidaOK()">Confirmar</button></span></div></div>';
   b.style.display = 'flex';
+  otSaidaDocDoForn();      // (24/11/2026) já abre com a última nota do fornecedor principal da OT, se houver
   _rubricas().then(() => { otSaidaAddLinha(); });
+}
+// (24/11/2026) O nº do documento SEGUE O FORNECEDOR: trocou o fornecedor, é outra notinha.
+//  · fornecedor que já tem nota lançada (aplicação direta) NESTA OT → vem o nº da última nota dele, com o tipo de documento;
+//  · fornecedor sem nada nesta OT, ou nenhum fornecedor → campo em branco para digitar.
+// Vale também no dia seguinte ou se outra pessoa lançou: a fonte é o que está gravado na OT, não a memória da tela.
+function otSaidaDocDoForn(){
+  const b = document.getElementById('ot-saida'); if (!b) return;
+  const forn = (b.querySelector('select.forn') || {}).value || '';
+  const ref = b.querySelector('input.ref'), dica = b.querySelector('.ref-dica'), tipo = b.querySelector('select.doctipo');
+  if (!ref) return;
+  let ult = null;
+  if (forn) (((_otPc || {}).cons || {}).itens || []).forEach(i => {      // vêm em ordem de lançamento: fica o mais recente
+    if (i.tipo === 'aplicacao_direta' && String(i.fornecedor_id || '') === String(forn) && String(i.documento || '').trim()) ult = i;
+  });
+  ref.value = ult ? String(ult.documento).trim() : '';
+  if (ult && tipo && ult.documento_tipo && [...tipo.options].some(o => o.value === ult.documento_tipo)) tipo.value = ult.documento_tipo;
+  if (dica) dica.textContent = ult ? 'última nota deste fornecedor nesta OT' : '';
 }
 function otSaidaRubRow(row){
   // conta sugerida pela origem + classe da peça (editável)
@@ -5508,6 +5526,8 @@ async function otSaidaOK(){
   }
   if (!itens.length) { mostrarToast('Informe ao menos um item', 'warn'); return; }
   const ref = (b.querySelector('.ref')||{}).value?.trim() || '', forn = (b.querySelector('.forn')||{}).value || null;
+  // (24/11/2026) aplicação direta: fornecedor obrigatório (o servidor recusa também). Sem fornecedor do cadastro, usa-se Garra ou Diversos.
+  if (modo === 'direta' && !forn) { mostrarToast('Escolha o fornecedor (se a compra não tem um, use Garra ou Diversos)', 'warn'); const sf = b.querySelector('select.forn'); if (sf) sf.focus(); return; }
   const aplicar = async (lista) => {
     const r = await mntFetch('/manutencao/api/entradas', { method:'POST', body: JSON.stringify({
       documento_tipo: ((b.querySelector('.doctipo')||{}).value || '03'), destino_tipo: 'ot', documento_numero: ref, fornecedor_id: forn, ot_id: _otAberta.id,

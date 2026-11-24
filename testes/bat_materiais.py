@@ -124,3 +124,18 @@ def data_da_nota():
     for n in (num, num2):
         lote = sql1("select lote::text as l from manutencao.movimentacoes where documento_numero=$1", n)["l"]
         status(chamar("admin", "POST", "/manutencao/api/entradas/estornar", {"lote": lote, "motivo": "BAT limpeza do teste de data"}), 200, "estornar a entrada do teste")
+
+
+@teste("Materiais", "aplicação direta na OT não grava sem fornecedor")
+def direta_exige_fornecedor():
+    ot = sql1("select id::text as id from manutencao.ot order by criado_em desc limit 1")
+    if not ot or not EST.get("forn"):
+        raise Pular("sem OT ou sem fornecedor no cenário")
+    base = {"documento_tipo": "03", "destino_tipo": "ot", "ot_id": ot["id"], "documento_numero": "BAT-SF-" + TAG,
+            "itens": [{"peca": COD, "quantidade": 1, "custo_unitario": 10}], "acrescimos": 0, "desconto": 0}
+    r = chamar("admin", "POST", "/manutencao/api/entradas", base)
+    status(r, 400, "aplicação direta sem fornecedor")
+    assert "fornecedor" in str(r[1]).lower(), f"a recusa não explica que falta o fornecedor: {r[1]}"
+    status(chamar("admin", "POST", "/manutencao/api/entradas", {**base, "fornecedor_id": "00000000-0000-0000-0000-000000000000"}), 400,
+           "aplicação direta com fornecedor que não existe")
+    igual(sql1("select count(*) as n from manutencao.movimentacoes where documento_numero=$1", "BAT-SF-" + TAG)["n"], 0, "nada gravado nas recusas")
