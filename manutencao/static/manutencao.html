@@ -7877,6 +7877,20 @@ async function carregarArmazem(q){
     if ((document.getElementById('alm-zerados')||{}).checked) qs.push('incluir_zerados=1');
     const r = await mntFetch('/manutencao/api/armazem' + (qs.length ? '?' + qs.join('&') : ''));
     const abaixo = x => x.minimo != null && parseFloat(x.quantidade) < parseFloat(x.minimo);
+    // (24/11/2026) sobra de estorno: linha peça×local zerada, SEM endereço e sem mínimo, some da lista (o registro
+    // continua no banco). Zerada COM endereço fica — o almoxarife confere a prateleira. Peça com comprometido que
+    // só tem linha vazia mantém uma, para a falta não sumir. "incluir sem saldo" marcado mostra tudo.
+    if (!(document.getElementById('alm-zerados')||{}).checked) {
+      const vazia = x => !(parseFloat(x.quantidade) > 0) && !String(x.localizacao||'').trim() && !(parseFloat(x.minimo) > 0);
+      const todas = r.itens || [];
+      const temOutra = {}; todas.forEach(x => { if (!vazia(x)) temOutra[x.codigo] = true; });
+      const jaFicou = {};
+      r.itens = todas.filter(x => {
+        if (!vazia(x)) return true;
+        if (temOutra[x.codigo] || !(parseFloat(x.comprometido) > 0) || jaFicou[x.codigo]) return false;
+        jaFicou[x.codigo] = true; return true;
+      });
+    }
     tb.innerHTML = (r.itens || []).map(x => `<tr data-cod="${_esc(x.codigo)}" data-alm="${_esc(x.almox)}" data-loc="${_esc(x.localizacao||'')}"${String(_mwSel.alm)===String(x.codigo)?' class="sel"':''} style="cursor:pointer" onclick="listaSelClick(event,this,'alm')" ondblclick="abrirPeca(this.dataset.cod)" oncontextmenu="estoqueCtx(event,this)">
       ${almCarrinhoCelula(x.codigo, x.descricao, x.unidade)}
       <td class="bold">${_esc(x.codigo)}</td>
