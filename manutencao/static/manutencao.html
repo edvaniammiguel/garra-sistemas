@@ -2985,17 +2985,8 @@ async function equipSubsistemas(id){
         + '<div style="padding:2px 4px 8px;font-size:12px">Leitura da prancha: <b style="color:#1A2A5E">'+_lt+'</b> '
         + '<span class="muted" style="font-size:10px">\u2014 soma o que o cavalo roda enquanto ela est\u00e1 acoplada; \u00e9 a leitura que conta a vida dos pneus dela.</span></div>';
     }
-    corpo += '<div class="dsec">Subsistemas montados</div>'
-      + (r.filhos.length
-        ? '<table><thead><tr><th>Posi\u00e7\u00e3o</th><th>C\u00f3digo</th><th>Descri\u00e7\u00e3o</th><th>Sistema</th><th>OTs</th><th></th></tr></thead><tbody>'
-          + r.filhos.map(f=>'<tr><td><b>'+_esc(f.posicao||'\u2014')+'</b></td><td class="bold">'+_esc(f.codigo)+' '+_renovChip(f,true)+'</td><td>'+_esc(f.descricao||'')+'</td><td class="muted">'+_esc(f.sistema_nome||'')+'</td>'
-            + '<td>'+(f.ots_abertas?'<span class="chip nr">'+f.ots_abertas+'</span>':'\u2014')+'</td>'
-            + '<td><button class="btn" data-c="'+f.id+'" onclick="equipSubsistemas(this.dataset.c)">\ud83d\udd0d</button> '
-            + '<button class="btn" data-c="'+f.id+'" onclick="subDesmontar(this.dataset.c,\''+eu.id+'\')">\u2934</button></td></tr>').join('')
-          + '</tbody></table>'
-        : '<div class="muted" style="padding:6px 4px">Nenhum componente montado.</div>')
-      + _pneuDiagrama(eu, r.filhos)
-      + '<div class="dsec" style="margin-top:10px">\u2795 Montar componente</div>'
+    // (24/11/2026) ordem da janela: Montar componente em cima · desenho no meio · lista dos montados embaixo
+    corpo += '<div class="dsec">\u2795 Montar componente</div>'
       + '<div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;padding:4px 0">'
       // (20/11/2026) soltos primeiro; montados em outro equipamento à parte com onde estão; busca por código/medida; posição da lista
       + '<div class="mfield" style="width:160px">Procurar<input id="sub-busca" placeholder="c\u00f3digo ou medida" oninput="subFiltrar(this.value)"></div>'
@@ -3004,7 +2995,17 @@ async function equipSubsistemas(id){
       + '</select></div>'
       + '<div class="mfield" style="width:240px">Posi\u00e7\u00e3o'+_selLista('posicoes', 'id="sub-pos"', '', 'nome')+'</div>'
       + '<button class="btn p" data-p="'+eu.id+'" onclick="subMontar(this.dataset.p)">Montar</button></div>'
-      + '<div class="muted" style="font-size:10px">Montar em cima de quem j\u00e1 est\u00e1 montado = troca: o hist\u00f3rico do anterior fecha sozinho com a leitura do pai antigo.</div>';
+      + '<div class="muted" style="font-size:10px">Montar em cima de quem j\u00e1 est\u00e1 montado = troca: o hist\u00f3rico do anterior fecha sozinho com a leitura do pai antigo.</div>'
+      + _pneuDiagrama(eu, r.filhos)
+      + '<div class="dsec" style="margin-top:10px">Subsistemas montados</div>'
+      + (r.filhos.length
+        ? '<table><thead><tr><th>Posi\u00e7\u00e3o</th><th>C\u00f3digo</th><th>Descri\u00e7\u00e3o</th><th>Sistema</th><th>OTs</th><th></th></tr></thead><tbody>'
+          + r.filhos.map(f=>'<tr><td><b>'+_esc(f.posicao||'\u2014')+'</b></td><td class="bold">'+_esc(f.codigo)+' '+_renovChip(f,true)+'</td><td>'+_esc(f.descricao||'')+'</td><td class="muted">'+_esc(f.sistema_nome||'')+'</td>'
+            + '<td>'+(f.ots_abertas?'<span class="chip nr">'+f.ots_abertas+'</span>':'\u2014')+'</td>'
+            + '<td><button class="btn" data-c="'+f.id+'" onclick="equipSubsistemas(this.dataset.c)">\ud83d\udd0d</button> '
+            + '<button class="btn" data-c="'+f.id+'" onclick="subDesmontar(this.dataset.c,\''+eu.id+'\')">\u2934</button></td></tr>').join('')
+          + '</tbody></table>'
+        : '<div class="muted" style="padding:6px 4px">Nenhum componente montado.</div>');
   }
   document.querySelector('#eq-ficha .modal').classList.add('larga');
   document.getElementById('eq-ficha-corpo').innerHTML =
