@@ -699,14 +699,19 @@ function renderCentroEquip(){
         + (e.n_filhos > 0 ? ' <span class="muted" style="font-size:9px">('+e.n_filhos+')</span>' : '')
         + (e.categoria === 'componente' && !e.equipamento_pai ? ' <span class="muted" style="font-size:9px">solto</span>' : '')
         + '</td><td>'+_esc(e.descricao||'')+'</td></tr>';
+      const _netos = f => filhosDe(f.id).map(n =>   // (24/11/2026) pneus da prancha acoplada
+          '<tr data-id="'+n.id+'" data-cod="'+_esc(n.codigo)+'" style="background:#F1F5F9" onclick="frotaSelClick(event,this)" ondblclick="verEquipReal(this.dataset.id)" '
+          + 'oncontextmenu="showCtxReal(event,this.dataset.id,\'equip\',this.dataset.cod)"><td></td>'
+          + '<td style="padding-left:44px;white-space:nowrap"><span style="color:#94A3B8">\u2514</span> \ud83d\udede <b>'+_esc(n.codigo)+'</b></td>'
+          + '<td>'+_esc(n.descricao||'')+(n.posicao ? ' <span class="muted">\u00b7</span> <b style="color:#1A2A5E">'+_esc(n.posicao)+'</b>' : '')+'</td></tr>').join('');
       if (aberto) linha += filhosDe(e.id).map(f => {
         return '<tr data-id="'+f.id+'" data-cod="'+_esc(f.codigo)+'" style="background:#F8FAFC" '
           + 'onclick="frotaSelClick(event,this)" '
           + 'ondblclick="verEquipReal(this.dataset.id)" '
           + 'oncontextmenu="showCtxReal(event,this.dataset.id,\'equip\',this.dataset.cod)">'
           + '<td style="text-align:center;white-space:nowrap"><span class="eq-chev"></span>'+play(f)+'</td>'
-          + '<td style="padding-left:22px;white-space:nowrap"><span style="color:#94A3B8">└</span> 🛞 <b>'+_esc(f.codigo)+'</b></td>'
-          + '<td>'+_esc(f.descricao||'')+(f.posicao && String(f.posicao).trim().toLowerCase() !== String(f.descricao||'').trim().toLowerCase() ? ' <span class="muted">·</span> <b style="color:#1A2A5E">'+_esc(f.posicao)+'</b>' : '')+' '+_renovChip(f, true)+'</td></tr>';
+          + '<td style="padding-left:22px;white-space:nowrap"><span style="color:#94A3B8">└</span> '+(f.categoria === 'componente' ? '🛞' : '\ud83d\udd17')+' <b>'+_esc(f.codigo)+'</b></td>'
+          + '<td>'+_esc(f.descricao||'')+(f.posicao && String(f.posicao).trim().toLowerCase() !== String(f.descricao||'').trim().toLowerCase() ? ' <span class="muted">·</span> <b style="color:#1A2A5E">'+_esc(f.posicao)+'</b>' : '')+' '+_renovChip(f, true)+'</td></tr>' + (f.categoria === 'componente' ? '' : _netos(f));
       }).join('');
       return linha;
     }).join('');
@@ -1926,7 +1931,10 @@ const _PNEU_EIXOS = {
   reb2:  {rot:'Eixo reboque (rodado duplo)', slots:[{k:'reb-esq-ext',l:'Reboque esquerdo externo'},{k:'reb-esq-int',l:'Reboque esquerdo interno'},{k:'reb-dir-int',l:'Reboque direito interno'},{k:'reb-dir-ext',l:'Reboque direito externo'}]},
   // (20/11/2026) patrol: tandem (2 rodas por lado, em sequência)
   tan1:  {rot:'Tandem — 1º eixo', slots:[{k:'tan-esq-1',l:'Tandem esquerdo 1'},{k:'tan-dir-1',l:'Tandem direito 1'}]},
-  tan2:  {rot:'Tandem — 2º eixo', slots:[{k:'tan-esq-2',l:'Tandem esquerdo 2'},{k:'tan-dir-2',l:'Tandem direito 2'}]}
+  tan2:  {rot:'Tandem — 2º eixo', slots:[{k:'tan-esq-2',l:'Tandem esquerdo 2'},{k:'tan-dir-2',l:'Tandem direito 2'}]},
+  // (24/11/2026) prancha / semi-reboque: 2 eixos em tandem, rodado duplo (8 pneus) — CPR-0008
+  pr1:   {rot:'Prancha — 1º eixo (rodado duplo)', slots:[{k:'pr1-esq-ext',l:'Prancha 1º eixo esquerdo externo'},{k:'pr1-esq-int',l:'Prancha 1º eixo esquerdo interno'},{k:'pr1-dir-int',l:'Prancha 1º eixo direito interno'},{k:'pr1-dir-ext',l:'Prancha 1º eixo direito externo'}]},
+  pr2:   {rot:'Prancha — 2º eixo (rodado duplo)', slots:[{k:'pr2-esq-ext',l:'Prancha 2º eixo esquerdo externo'},{k:'pr2-esq-int',l:'Prancha 2º eixo esquerdo interno'},{k:'pr2-dir-int',l:'Prancha 2º eixo direito interno'},{k:'pr2-dir-ext',l:'Prancha 2º eixo direito externo'}]}
 };
 const _PNEU_GAB = {
   caminhao:['dian','tras2'], caminhao_basculante:['dian','tras2'],
@@ -1935,13 +1943,16 @@ const _PNEU_GAB = {
   carro:['dian','tras1'], veiculo_leve:['dian','tras1'],
   // (20/11/2026) máquinas de pneu; escavadeira é esteira — sem desenho
   retroescavadeira:['dian','tras1'], carregadeira:['dian','tras1'],
-  patrol:['dian','tan1','tan2'], compactador:['tras1']
+  patrol:['dian','tan1','tan2'], compactador:['tras1'],
+  prancha:['pr1','pr2']   // (24/11/2026)
 };
 function _pneuSlotDe(pos){
   const t = (pos||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
   const tem = w => t.indexOf(w) >= 0;
   const lado = tem('esq') ? 'esq' : (tem('dir') ? 'dir' : null);
   const eixo = tem('reboque') ? 'reb' : (tem('tandem') ? 'tan' : (tem('dian')||tem('frente') ? 'dian' : (tem('tras') ? 'tras' : null)));
+  // (24/11/2026) prancha: "Prancha 1º eixo direito externo" → pr1-dir-ext
+  if (tem('prancha')){ const n = /(^|[^0-9])1/.test(t) ? '1' : (/(^|[^0-9])2/.test(t) ? '2' : null); const a = tem('ext') ? 'ext' : (tem('int') ? 'int' : null); return (lado && n && a) ? 'pr'+n+'-'+lado+'-'+a : null; }
   if (eixo === 'tan'){ const n = /\b1\b/.test(t) ? '1' : (/\b2\b/.test(t) ? '2' : null); return (lado && n) ? 'tan-'+lado+'-'+n : null; }   // (20/11/2026)
   const anel = tem('ext') ? 'ext' : (tem('int') ? 'int' : null);
   if (!lado || !eixo) return null;
@@ -1953,7 +1964,9 @@ function _pneuDiagrama(eu, filhos){
   const all = []; eixos.forEach(e => _PNEU_EIXOS[e].slots.forEach(sl => all.push(sl.k)));
   const ocup = {}; const fora = [];
   (filhos||[]).forEach(f => {
-    let k = _pneuSlotDe(f.posicao);
+    let k = String(f.categoria||'').toLowerCase() === 'prancha' ? null : _pneuSlotDe(f.posicao);
+    // (24/11/2026) prancha com posição antiga ("eixo diant lado direito externo"): dianteiro = 1º eixo, traseiro = 2º
+    if (cat === 'prancha' && k) k = k.replace(/^dian-/, 'pr1-').replace(/^tras-/, 'pr2-');
     if (k && all.indexOf(k) < 0){ const k2 = k.split('-').slice(0,2).join('-'); k = all.indexOf(k2) >= 0 ? k2 : null; }
     if (k && !ocup[k]) ocup[k] = f; else fora.push(f);
   });
@@ -1969,10 +1982,11 @@ function _pneuDiagrama(eu, filhos){
     return '<div data-l="'+_esc(sl.l)+'" onclick="_pneuAlocar(this.dataset.l)" title="'+_esc(sl.l)+' — vago · clique para alocar um pneu aqui" '
       + 'style="width:52px;height:64px;border:2px dashed #B83030;background:rgba(184,48,48,.05);border-radius:8px;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;font-size:8px;font-weight:600;color:#B83030;text-align:center;gap:2px;padding:2px">➕<div>'+_esc(sl.l)+'</div></div>';
   };
-  const _maq = !/^(caminhao|carro|veiculo)/.test(cat);   // (20/11/2026)
+  const _maq = !/^(caminhao|carro|veiculo|prancha)/.test(cat);   // (20/11/2026)
+  const _pr = cat === 'prancha';   // (24/11/2026)
   let html = '<div class="dsec" style="margin-top:10px">'+(_maq?'🚜':'🚚')+' Diagrama de pneus <span class="muted" style="font-weight:400;font-size:10px">vago = clique para alocar · montado = clique para abrir</span></div>'
     + '<div style="display:flex;flex-direction:column;align-items:center;gap:6px;padding:8px 0;background:#F8FAFC;border:1px solid #E2E8F0;border-radius:8px">'
-    + '<div style="background:#E6EDF7;border:1px solid #A8BDDA;border-radius:8px;padding:5px 22px;font-size:11px;font-weight:700;color:#3D5A80">CABINE — '+_esc(eu.codigo)+'</div>';
+    + '<div style="background:#E6EDF7;border:1px solid #A8BDDA;border-radius:8px;padding:5px 22px;font-size:11px;font-weight:700;color:#3D5A80">'+(_pr?'ENGATE (frente) — ':'CABINE — ')+_esc(eu.codigo)+'</div>';
   eixos.forEach(ek => {
     const e = _PNEU_EIXOS[ek];
     const met = e.slots.length/2;
@@ -1985,7 +1999,12 @@ function _pneuDiagrama(eu, filhos){
   html += '</div>';
   // (20/11/2026) estepe não é roda do desenho: aparece como Estepe, sem pedir para desmontar/remontar
   const _ehEst = f => /estepe|step/i.test(String(f.posicao||''));
-  const estep = fora.filter(_ehEst), foraR = fora.filter(f => !_ehEst(f));
+  const _ehAcop = f => String(f.categoria||'').toLowerCase() === 'prancha';   // (24/11/2026)
+  const acop = fora.filter(_ehAcop);
+  const estep = fora.filter(f => !_ehAcop(f) && _ehEst(f)), foraR = fora.filter(f => !_ehAcop(f) && !_ehEst(f));
+  if (acop.length) html += '<div style="font-size:11px;padding:4px 4px 0;color:#1A2A5E">\ud83d\udd17 <b>Acoplado:</b> '
+    + acop.map(f=>'<a href="#" data-c="'+f.id+'" onclick="equipSubsistemas(this.dataset.c);return false" style="color:#1A2A5E;font-weight:700">'+_esc(f.codigo)+'</a>').join(' \u00b7 ')
+    + ' <span class="muted" style="font-size:10px">\u2014 clique para ver os pneus</span></div>';
   if (estep.length) html += '<div style="font-size:11px;padding:4px 4px 0;color:#1A2A5E">\ud83d\udd18 <b>Estepe:</b> '
     + estep.map(f=>_esc(f.codigo)).join(' \u00b7 ') + '</div>';
   if (foraR.length) html += '<div class="muted" style="font-size:10px;padding:3px 4px">Fora do gabarito: '
@@ -2719,7 +2738,7 @@ function neTipoMudou(){
 const _CATS_OBJ = [['caminhao','Caminhão'],['caminhao_basculante','Caminhão basculante'],['caminhao_pipa','Caminhão pipa'],
   ['caminhao_bruck','Caminhão bruck'],['caminhao_cacamba','Caminhão caçamba'],['caminhao_reboque','Caminhão com reboque'],
   ['carro','Carro'],['moto','Moto'],['veiculo_leve','Veículo leve'],['retroescavadeira','Retroescavadeira'],['carregadeira','Pá carregadeira (inclui mini)'],
-  ['patrol','Patrol'],['compactador','Compactador / rolo'],['escavadeira','Escavadeira'],
+  ['patrol','Patrol'],['compactador','Compactador / rolo'],['prancha','Prancha / semi-reboque (2 eixos duplos)'],['escavadeira','Escavadeira'],
   ['maquina','Máquina (outra)'],['suporte','Suporte (caçamba, carretinha, gerador)'],['componente','Componente (pneu, motor, bomba…)'],['apoio','Apoio (sem OT)'],['galao','Galão'],['outro','Outro']];
 function _neCatSelect(atual){
   const a = String(atual||'').toLowerCase();
@@ -2954,6 +2973,18 @@ async function equipSubsistemas(id){
           + '</tbody></table>'
         : '<div class="muted" style="padding:6px 4px;font-size:11px">Sem registros ainda \u2014 o hist\u00f3rico nasce nas pr\u00f3ximas montagens/trocas.</div>');
   } else {
+    // (24/11/2026) prancha / semi-reboque: é pai (tem pneus) e também fica acoplada no cavalo
+    if ((eu.categoria||'').toLowerCase() === 'prancha'){
+      const _lt = (eu.leitura != null ? Number(eu.leitura).toLocaleString('pt-BR') : '0') + (eu.medicao === 'km' ? ' km' : ' h');
+      corpo += '<div class="dsec">Acoplada em</div>'
+        + (eu.pai
+          ? '<div style="padding:6px 4px;font-size:13px">\ud83d\ude9b <b>'+_esc(eu.pai.codigo)+'</b> \u2014 '+_esc(eu.pai.descricao||'')
+            + (eu.posicao ? ' \u00b7 <b>'+_esc(eu.posicao)+'</b>' : '')
+            + ' <button class="btn" style="margin-left:8px" data-c="'+eu.id+'" onclick="subDesmontar(this.dataset.c)">\u2934 Desacoplar</button></div>'
+          : '<div class="muted" style="padding:6px 4px">Solta (n\u00e3o acoplada). Para acoplar: janela Subsistemas do cavalo \u203a Montar componente \u203a posi\u00e7\u00e3o Engate.</div>')
+        + '<div style="padding:2px 4px 8px;font-size:12px">Leitura da prancha: <b style="color:#1A2A5E">'+_lt+'</b> '
+        + '<span class="muted" style="font-size:10px">\u2014 soma o que o cavalo roda enquanto ela est\u00e1 acoplada; \u00e9 a leitura que conta a vida dos pneus dela.</span></div>';
+    }
     corpo += '<div class="dsec">Subsistemas montados</div>'
       + (r.filhos.length
         ? '<table><thead><tr><th>Posi\u00e7\u00e3o</th><th>C\u00f3digo</th><th>Descri\u00e7\u00e3o</th><th>Sistema</th><th>OTs</th><th></th></tr></thead><tbody>'

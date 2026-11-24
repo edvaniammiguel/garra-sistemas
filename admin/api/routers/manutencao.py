@@ -4247,7 +4247,12 @@ _LISTAS_PADRAO = {
         ("REB-DIR-INT", "Reboque direito interno"), ("REB-DIR-EXT", "Reboque direito externo"),
         ("TAN-ESQ-1", "Tandem esquerdo 1"), ("TAN-DIR-1", "Tandem direito 1"),
         ("TAN-ESQ-2", "Tandem esquerdo 2"), ("TAN-DIR-2", "Tandem direito 2"),
-        ("ESTEPE", "Estepe"), ("MOTOR", "Motor"), ("BOMBA-PRINC", "Bomba principal"), ("CACAMBA", "Caçamba")],
+        # (24/11/2026) prancha / semi-reboque — 2 eixos de rodado duplo
+        ("PR1-ESQ-EXT", "Prancha 1º eixo esquerdo externo"), ("PR1-ESQ-INT", "Prancha 1º eixo esquerdo interno"),
+        ("PR1-DIR-INT", "Prancha 1º eixo direito interno"), ("PR1-DIR-EXT", "Prancha 1º eixo direito externo"),
+        ("PR2-ESQ-EXT", "Prancha 2º eixo esquerdo externo"), ("PR2-ESQ-INT", "Prancha 2º eixo esquerdo interno"),
+        ("PR2-DIR-INT", "Prancha 2º eixo direito interno"), ("PR2-DIR-EXT", "Prancha 2º eixo direito externo"),
+        ("ENGATE", "Engate (prancha / reboque)"), ("ESTEPE", "Estepe"), ("MOTOR", "Motor"), ("BOMBA-PRINC", "Bomba principal"), ("CACAMBA", "Caçamba")],
     "manutencao.motivos_envio": [
         ("RECAP", "Recapagem"), ("RETIF", "Retífica"), ("REFORMA", "Reforma"), ("CONSERTO", "Conserto / oficina externa"),
         ("GARANTIA", "Garantia"), ("EMPRESTIMO", "Empréstimo"), ("OUTRO", "Outro")],
@@ -7047,6 +7052,51 @@ async def _garantir_montagens():
           usuario_id UUID,
           observacao TEXT
         )""", fetch="none")
+    await _garantir_leitura_acoplado()
+
+
+# ── (24/11/2026) PRANCHA / SEMI-REBOQUE acoplado: o km vem do cavalo ──
+# A prancha (categoria 'prancha') é montada como subsistema do cavalo e não tem hodômetro. Enquanto estiver
+# montada, toda variação da leitura do pai (km e horímetro) é somada à leitura dela — correção de leitura
+# no pai (delta negativo) corrige junto. Os pneus da prancha continuam lendo a leitura da prancha (pai direto).
+# Regra única no banco (gatilho) porque a leitura do equipamento é gravada em mais de dez pontos
+# (checklist, abastecimento, OS, parte diária, registro de funcionamento).
+# Não soma: 1ª leitura do pai (antes era 0) nem zeragem (nova = 0) — senão a prancha herdaria o hodômetro inteiro.
+_LEITURA_ACOPLADO_OK = False
+async def _garantir_leitura_acoplado():
+    global _LEITURA_ACOPLADO_OK
+    if _LEITURA_ACOPLADO_OK:
+        return
+    try:
+        await ajard_query(r"""
+            CREATE OR REPLACE FUNCTION operacional.fn_leitura_acoplado() RETURNS trigger
+            LANGUAGE plpgsql AS $fn$
+            DECLARE dk numeric := 0; dh numeric := 0;
+            BEGIN
+              IF COALESCE(OLD.km_atual,0) > 0 AND COALESCE(NEW.km_atual,0) > 0 THEN
+                dk := NEW.km_atual - OLD.km_atual;
+              END IF;
+              IF COALESCE(OLD.horimetro_atual,0) > 0 AND COALESCE(NEW.horimetro_atual,0) > 0 THEN
+                dh := NEW.horimetro_atual - OLD.horimetro_atual;
+              END IF;
+              IF dk <> 0 OR dh <> 0 THEN
+                UPDATE operacional.equipamentos c
+                   SET km_atual = CASE WHEN dk <> 0 THEN GREATEST(COALESCE(c.km_atual,0) + dk, 0) ELSE c.km_atual END,
+                       horimetro_atual = CASE WHEN dh <> 0 THEN GREATEST(COALESCE(c.horimetro_atual,0) + dh, 0) ELSE c.horimetro_atual END
+                 WHERE c.equipamento_pai = NEW.id AND c.ativo = true AND lower(c.categoria) = 'prancha';
+              END IF;
+              RETURN NULL;
+            END $fn$""", fetch="none")
+        await ajard_query("DROP TRIGGER IF EXISTS trg_leitura_acoplado ON operacional.equipamentos", fetch="none")
+        await ajard_query("""
+            CREATE TRIGGER trg_leitura_acoplado
+            AFTER UPDATE OF km_atual, horimetro_atual ON operacional.equipamentos
+            FOR EACH ROW
+            WHEN (OLD.km_atual IS DISTINCT FROM NEW.km_atual OR OLD.horimetro_atual IS DISTINCT FROM NEW.horimetro_atual)
+            EXECUTE FUNCTION operacional.fn_leitura_acoplado()""", fetch="none")
+        _LEITURA_ACOPLADO_OK = True
+    except Exception as _e:
+        print("leitura do acoplado (prancha): gatilho não criado —", str(_e)[:200])
 
 
 def _leitura_de(eq):
@@ -7259,10 +7309,12 @@ async def subsistemas(eq_id: str, _auth=Depends(verificar_manutencao)):
            FROM operacional.equipamentos c
            LEFT JOIN operacional.equipamentos p ON p.id = c.equipamento_pai
            WHERE c.ativo=true
-             AND (lower(c.categoria)='componente'
+             AND (lower(c.categoria) IN ('componente', 'prancha')   -- (24/11/2026) prancha acopla no cavalo
                   OR lower(c.categoria) IN (SELECT codigo FROM manutencao.categorias_objeto WHERE componente IS TRUE))
              AND (c.equipamento_pai IS NULL OR c.equipamento_pai <> %s)
-           ORDER BY (c.equipamento_pai IS NOT NULL), c.codigo LIMIT 500""", (eq_id,))
+             AND c.id <> %s
+             AND c.id IS DISTINCT FROM (SELECT x.equipamento_pai FROM operacional.equipamentos x WHERE x.id = %s)
+           ORDER BY (c.equipamento_pai IS NOT NULL), c.codigo LIMIT 500""", (eq_id, eq_id, eq_id))
     # contagem de renovações nos filhos e nos livres (chip ⚠ e rótulo do select)
     ren_map = await _renovacoes_por_objeto(tipos_ren, [str(f["id"]) for f in filhos] + [str(c["id"]) for c in livres])
     def _ren_info(oid):
@@ -7271,6 +7323,8 @@ async def subsistemas(eq_id: str, _auth=Depends(verificar_manutencao)):
         return {"n_renov": len(rs), "limite": lim, "no_limite": bool(lim and len(rs) >= lim)}
     return {"eu": {"id": str(eu["id"]), "codigo": eu["codigo"], "descricao": eu["descricao"],
                    "categoria": eu["categoria"], "diagrama": eu["diagrama"], "posicao": eu["posicao"],
+                   "medicao": eu["medicao"],   # (24/11/2026) leitura própria: a prancha mostra o km herdado do cavalo
+                   "leitura": _leitura_de(dict(eu)),
                    "pai": ({"id": str(eu["pai_id"]), "codigo": eu["pai_codigo"],
                             "descricao": eu["pai_desc"]} if eu["pai_id"] else None)},
             "filhos": [dict(f, id=str(f["id"]), **_ren_info(f["id"])) for f in filhos],
@@ -7290,7 +7344,7 @@ async def montar(pai_id: str, request: Request, payload=Depends(verificar_manute
     comp_id = d.get("componente_id")
     posicao = (d.get("posicao") or "").strip() or None
     pai = await ajard_query(
-        "SELECT id, codigo, medicao, horimetro_atual, km_atual FROM operacional.equipamentos WHERE id=%s AND ativo=true",
+        "SELECT id, codigo, medicao, horimetro_atual, km_atual, equipamento_pai FROM operacional.equipamentos WHERE id=%s AND ativo=true",
         (pai_id,), fetch="one")
     comp = await ajard_query(
         "SELECT id, codigo, equipamento_pai FROM operacional.equipamentos WHERE id=%s AND ativo=true",
@@ -7299,6 +7353,8 @@ async def montar(pai_id: str, request: Request, payload=Depends(verificar_manute
         raise HTTPException(status_code=404, detail="Pai ou componente não encontrado")
     if str(pai["id"]) == str(comp["id"]):
         raise HTTPException(status_code=400, detail="Um equipamento não monta nele mesmo")
+    if pai.get("equipamento_pai") and str(pai["equipamento_pai"]) == str(comp["id"]):   # (24/11/2026)
+        raise HTTPException(status_code=400, detail=f"{pai['codigo']} está montado em {comp['codigo']} — não dá para montar um no outro")
     # (22/10/2026) componente no limite de renovações (ex.: 3 recapagens) → confirma antes de montar
     obs_extra = None
     tipos_ren = await _tipos_renovacao()
