@@ -8144,9 +8144,16 @@ async function artJanela(codigo, opts){
     catch(e){ mostrarToast('❌ '+e.message,'warn'); return; }
   } else if (opts && opts.copiarDe){
     // (19/10/2026) Repetir (ManWinWin): item NOVO a partir do marcado — mesma família, unidade,
-    // custo, classe, características e especificação; código novo proposto; descrição para ajustar.
+    // classe, características e especificação; código novo proposto; descrição para ajustar.
+    // (24/11/2026) Subfamília: cadastros antigos guardam familia_codigo sem a subfamília ("MC");
+    // ela é recuperada do código estruturado do item copiado (G.MC.170.335 → MC.170) para a
+    // sequência proposta sair da subfamília certa (saía G.MC.009 em vez de G.MC.170.xxx).
+    // Custo Unitário nasce em branco (POP Materiais: a primeira entrada preenche) — não copia.
     try { const o = await mntFetch('/manutencao/api/peca-ficha?peca_codigo=' + encodeURIComponent(opts.copiarDe)); copiaDe = o.codigo;
-          p = Object.assign({}, o, { codigo: '', codigo_fabricante: '', codigo_externo: '', custo_medio: o.custo_medio, descricao: o.descricao || '' }); }
+          let famCopia = String(o.familia_codigo || '');
+          const mEst = /^[A-Za-z]\.([A-Za-z0-9]+\.[0-9]+)\.[0-9]+$/.exec(String(o.codigo_estruturado || o.codigo || ''));
+          if (mEst && !famCopia.includes('.')) famCopia = mEst[1];
+          p = Object.assign({}, o, { codigo: '', codigo_fabricante: '', codigo_externo: '', custo_medio: null, familia_codigo: famCopia, descricao: o.descricao || '' }); }
     catch(e){ mostrarToast('❌ '+e.message,'warn'); return; }
   }
   const jj = v => { if (!v) return []; if (Array.isArray(v)) return v; try { const a = JSON.parse(v); return Array.isArray(a) ? a : []; } catch(e){ return []; } };
