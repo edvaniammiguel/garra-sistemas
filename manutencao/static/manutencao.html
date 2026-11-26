@@ -139,6 +139,8 @@ tr.sel td{background:#DBEAFE!important;color:#1A2A5E}
 .modal.larga #plf-corpo,.modal.larga #ot-aba-corpo{height:auto;min-height:0;flex:1}
 .mwtop{display:flex;align-items:center;gap:4px;flex-wrap:wrap;margin:6px 0 4px}
 .mwtop .sep{width:8px}.mwtop .cnt{font-family:ui-monospace,monospace;font-size:10px;padding:0 4px;color:#334155}
+#ctx-real .cs{position:relative}#ctx-real .cs>.csm{display:none;position:absolute;left:100%;top:-1px;min-width:210px;background:#fff;border:1px solid #CBD5E1;border-radius:6px;box-shadow:0 8px 24px rgba(0,0,0,.18)}
+#ctx-real .cs:hover>.csm{display:block}#ctx-real .csep{border-top:1px solid #E2E8F0;margin:2px 0}
 .mwtop input{width:150px;padding:4px 6px;border:1px solid #CBD5E1;border-radius:6px;font-size:11px}
 .mwobj{display:flex;align-items:center;gap:8px;margin:2px 0 8px}
 .mwobj .lb{border:1px solid #CBD5E1;border-radius:6px;padding:3px 10px;font-size:11px;font-weight:700;color:#334155;background:#F8FAFC}
@@ -1454,8 +1456,10 @@ async function plfBaseline(){
   // (10/10/2026) Chrome dispara change a cada dígito do ano ('0002' a caminho de 2026): só grava com ano completo
   if (dt && parseInt(dt.slice(0,4),10) < 2000) return;
   try {
-    await mntFetch('/manutencao/api/planos/'+d.id+'/baseline', {method:'PATCH', body: JSON.stringify({ultima_data: dt, ultima_leitura: le === '' ? null : le})});
+    const r = await mntFetch('/manutencao/api/planos/'+d.id+'/baseline', {method:'PATCH', body: JSON.stringify({ultima_data: dt, ultima_leitura: le === '' ? null : le})});
     d.ult_dt = dt || ''; d.ult_le = le; plfProxima();
+    if (r.ot) mostrarToast('📅 OT '+r.ot+' programada para esta FMP', 'ok');
+    else if (dt && le === '' && d.modo === 'reg') mostrarToast('⚠️ Informe a leitura da última execução para a OT ser gerada', 'warn');
   } catch(e){
     // regra do objeto barrou: alerta e devolve os valores anteriores — reveja o cadastro (Data de aquisição / leitura)
     alert('⚠️ '+e.message+'\n\nReveja o cadastro do objeto (Data de aquisição / leitura atual) ou a última execução.');
@@ -1470,7 +1474,14 @@ async function plfProxima(){
     const prev = await mntFetch('/manutencao/api/previsoes');
     const it = (prev.itens||[]).find(x => String(x.plano_id) === String(d.id));
     if (!it) { el.textContent = '—'; return; }
-    const rot = {vencida:'🔴 vencida', a_vencer:'🟡 a vencer', programada:'📅 OT programada', ok:'🟢 em dia', sem_base:'⚪ sem última execução', sem_periodo:'⚪ período indecifrável'}[it.status] || it.status;
+    // (26/11/2026) por Registros: data sem leitura não gera OT — dizer o que falta e sugerir o horímetro daquele dia
+    const semLe = it.status === 'sem_base' && it.modo === 'leitura' && it.ultima_data;
+    const rot = {vencida:'🔴 vencida', a_vencer:'🟡 a vencer', programada:'📅 OT programada', ok:'🟢 em dia',
+                 sem_base: semLe ? '⚠️ falta a leitura ('+(it.unidade||'h')+') da última execução — sem ela a OT não é gerada' : '⚪ sem última execução',
+                 sem_periodo:'⚪ período indecifrável'}[it.status] || it.status;
+    d.modo = it.modo === 'leitura' ? 'reg' : it.modo;
+    const le = document.getElementById('plf-ult-le');
+    if (le && !le.value) le.placeholder = semLe && it.leitura_sugerida != null ? 'sugestão: '+it.leitura_sugerida : 'leitura';
     const dt = v => v ? new Date(v+'T00:00').toLocaleDateString('pt-BR') : '';
     const alvo = it.modo === 'calendario' ? (dt(it.proxima_data) || '—')
                : (it.leitura_alvo != null ? it.leitura_alvo+' '+(it.unidade||'') + (it.proxima_data ? ' · ~'+dt(it.proxima_data) : '') : '—');
@@ -1889,16 +1900,38 @@ function showCtxReal(ev, id, tipo, rotulo){
   const it = (ico, txt, fn) => '<div onclick="'+fn+'" style="padding:7px 14px;cursor:pointer;display:flex;gap:8px;align-items:center" onmouseover="this.style.background=\'#F0F4FF\'" onmouseout="this.style.background=\'\'">'+ico+' '+txt+'</div>';
   const hd = '<div style="padding:6px 14px;font-weight:800;color:#1A2A5E;border-bottom:1px solid #E2E8F0">'+rotulo+'</div>';
   if (tipo === 'equip') {
+    // (26/11/2026) mesma ordem e submenus do botão direito do ManWinWin (Lista Objectos)
+    mwSel('frota', id);
+    const sub = (ico, txt, itens) => '<div class="cs" style="padding:7px 14px;cursor:default;display:flex;gap:8px;align-items:center;justify-content:space-between" onmouseover="this.style.background=\'#F0F4FF\'" onmouseout="this.style.background=\'\'"><span>'+ico+' '+txt+'</span><span class="muted">▸</span><div class="csm">'+itens+'</div></div>';
+    const sep = '<div class="csep"></div>';
     m.innerHTML = hd
-      + it('📋','Abrir ficha', "verEquipReal('"+id+"')")
-      + it('🔧','Ordens de Trabalho', "otsDoEquip('"+id+"',false)")
-      + it('📅','Planos de manutenção', "abrirPlanosEquip('"+id+"')")
-      + it('🚦','Pontos de leitura', "equipPontos('"+id+"')")
-      + it('🛞','Subsistemas / Montagem', "equipSubsistemas('"+id+"')")
-      + it('⛽','Abastecimentos', "equipAbastecimentos('"+id+"')")
-      + it('📈','Registro Funcionamento', "equipFuncionamento('"+id+"')")
+      + it('➕','Novo', "novoEquipMW()")
+      + sep
+      + it('📋','<b>Abrir</b>', "verEquipReal('"+id+"')")
+      + it('📑','Repetir', "novoEquipMW('"+id+"')")
+      + it('✖️','Excluir', "excluirEquipMW()")
+      + sep
+      + it('🖨','Imprimir', "imprimirDialogo('frota')")
+      + sep
+      + it('↻','Atualizar listagem', "carregarSemaforosReais()")
+      + sep
+      + sub('👁','Ver', it('🌳','Árvore', "ftModo('arv')") + it('☰','Lista', "ftModo('lista')"))
+      + sub('📒','Registros', it('⛽','Abastecimentos', "equipAbastecimentos('"+id+"')") + it('📈','Registro Funcionamento', "equipFuncionamento('"+id+"')")
+          + it('🛞','Subsistemas / Montagem', "equipSubsistemas('"+id+"')") + it('🔩','Itens aplicados', "equipArtigos('"+id+"')") + it('📅','Planos de manutenção', "abrirPlanosEquip('"+id+"')"))
+      + it('📊','Análises', "equipAnalises('"+id+"')")
+      + sep
+      + it('📅','Planos Manutenção', "abrirPlanosEquip('"+id+"')")
+      + it('🔧','Ordens Trabalho', "otsDoEquip('"+id+"',true)")
+      + it('⏳','Tarefas Pendentes', "otsDoEquip('"+id+"',false)")
+      + sep
+      + it('📎','Documentos', "equipDocumentos('"+id+"')")
       + it('🔩','Itens aplicados', "equipArtigos('"+id+"')")
-      + it('📜','Histórico de OTs', "otsDoEquip('"+id+"',true)");
+      + sep
+      + sub('⏱','Tempos', it('📈','Registro Funcionamento', "equipFuncionamento('"+id+"')") + it('⛽','Abastecimentos', "equipAbastecimentos('"+id+"')"))
+      + sep
+      + it('🚦','Pontos Leitura', "equipPontos('"+id+"')")
+      + sep
+      + it('📚','Histórico Utilização', "equipHistUtil('"+id+"')");
   } else {
     const _st = ((_otsCache||[]).find(x => String(x.id) === String(id)) || {}).status || '';
     const fechada = ['concluida','cancelada'].includes(_st);
@@ -1912,8 +1945,8 @@ function showCtxReal(ev, id, tipo, rotulo){
             + (['em_andamento','aguardando_peca'].includes(_st) ? it('✔️','Encerrar…', "mntStatusReal('"+id+"','concluida')") : '')
             + it('✖️','Cancelar OT…', "mntStatusReal('"+id+"','cancelada')"));
   }
-  m.style.left = Math.min(ev.clientX, window.innerWidth-230)+'px';
-  m.style.top  = Math.min(ev.clientY, window.innerHeight-220)+'px';
+  m.style.left = Math.min(ev.clientX, window.innerWidth-(tipo === 'equip' ? 450 : 230))+'px';
+  m.style.top  = Math.min(ev.clientY, window.innerHeight-(tipo === 'equip' ? 560 : 220))+'px';
   m.style.display = 'block';
 }
 // (22/10/2026) Chip de renovações (recapagens) do componente: "2 recap." · "⚠ 3/3 recap." quando no limite
@@ -2084,7 +2117,7 @@ const _MW = {
         ['\ud83d\udd29 Itens Aplicados',"(function(){const i=_mwPrecisa('frota','objeto'); if(i) equipArtigos(i);})()"],
         {sub:'\u23f1 Tempos', itens:[['\ud83d\udcc8 Registro Funcionamento','equipFuncionamento'],['\u26fd Abastecimentos','equipAbastecimentos']], sel:true},
         ['\ud83d\udea6 Pontos de leitura',"(function(){const i=_mwPrecisa('frota','objeto'); if(i) equipPontos(i);})()"],
-        ['\ud83d\udcda Hist\u00f3rico Utiliza\u00e7\u00e3o',"(function(){const i=_mwPrecisa('frota','objeto'); if(i) otsDoEquip(i,true);})()"],
+        ['\ud83d\udcda Hist\u00f3rico Utiliza\u00e7\u00e3o',"(function(){const i=_mwPrecisa('frota','objeto'); if(i) equipHistUtil(i);})()"],
         ['\u2699\ufe0f Parametrizar',"showModule('param')"]]],
       ['\ud83d\udd27','Ferramentas',[
         {sub:'\ud83d\udcd2 Registros', itens:[['\u26fd Abastecimentos','equipAbastecimentos'],['\ud83d\udcc8 Registro Funcionamento','equipFuncionamento'],
@@ -4056,24 +4089,88 @@ async function _funcLeituraEnviar(eqId, sufixo, metodo, corpo, motivo){
   }
   equipFuncionamento(eqId); carregarSemaforosReais();
 }
+// (26/11/2026) Itens aplicados = tudo o que já foi aplicado no equipamento pelas OTs, com o filtro
+// do ManWinWin (descrição · família · subfamília). O inverso (peça → equipamentos) é pecaEquipamentos().
+let _ea = { id:null, r:null, f:{d:'', fam:'', sub:''} };
 async function equipArtigos(id){
-  let r;
-  try { r = await mntFetch('/manutencao/api/equipamentos/'+id+'/artigos-aplicados'); }
-  catch(e){ mostrarToast('\u274c '+e.message,'warn'); return; }
+  if (_ea.id !== id){
+    let r;
+    try { r = await mntFetch('/manutencao/api/equipamentos/'+id+'/artigos-aplicados'); }
+    catch(e){ mostrarToast('\u274c '+e.message,'warn'); return; }
+    _ea = { id:id, r:r, f:{d:'', fam:'', sub:''} };
+  }
+  const r = _ea.r, f = _ea.f;
+  const fam = x => (x.familia||'').split('.')[1] || '';
+  const sub = x => (x.familia||'').split('.')[2] || '';
+  const norm = s => String(s||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+  const itens = r.itens.filter(x => (!f.d || norm(x.peca_descricao+' '+x.peca_codigo).indexOf(norm(f.d)) >= 0)
+    && (!f.fam || fam(x) === f.fam) && (!f.sub || sub(x) === f.sub));
+  const total = itens.reduce((s,x) => s + x.total, 0);
+  const opts = (lista, sel, tudo) => '<option value="">'+tudo+'</option>' + [...new Set(lista.filter(Boolean))].sort().map(v => '<option'+(v===sel?' selected':'')+'>'+_esc(v)+'</option>').join('');
+  const fams = r.itens.map(fam), subs = r.itens.filter(x => !f.fam || fam(x) === f.fam).map(sub);
   const dd = v => { if(!v) return '\u2014'; try{ return _fmtData(v); }catch(e){ return '\u2014'; } };
   const T = { saida:'\ud83d\udce4', aplicacao_direta:'\u26a1', entrada:'\u21a9' };
+  const eqF = _navEquipObjs().find(e => String(e.id) === String(id)) || {};
   document.querySelector('#eq-ficha .modal').classList.add('larga');
   document.getElementById('eq-ficha-corpo').innerHTML =
-    fichaTopo({icone:'\ud83d\udd29', titulo:'Itens aplicados', codigo:(_navEquipObjs().find(e => String(e.id) === String(id))||{}).codigo, descricao:(_navEquipObjs().find(e => String(e.id) === String(id))||{}).descricao, id:id, fn:'equipArtigos'})
+    fichaTopo({icone:'\ud83d\udd29', titulo:'Itens aplicados', codigo:eqF.codigo, descricao:eqF.descricao, id:id, fn:'equipArtigos'})
+    + '<div style="display:flex;gap:6px;align-items:flex-end;flex-wrap:wrap;margin-top:4px">'
+    + '<div class="mfield" style="flex:1;min-width:200px">Descri\u00e7\u00e3o do item<input id="ea-d" value="'+_esc(f.d)+'" placeholder="ex.: lona" oninput="_ea.f.d=this.value;equipArtigosFiltrar()"></div>'
+    + '<div class="mfield" style="width:130px">Fam\u00edlia<select id="ea-fam" onchange="_ea.f.fam=this.value;_ea.f.sub=\'\';equipArtigos(_ea.id)">'+opts(fams, f.fam, 'todas')+'</select></div>'
+    + '<div class="mfield" style="width:130px">Sub-fam\u00edlia<select id="ea-sub" onchange="_ea.f.sub=this.value;equipArtigos(_ea.id)">'+opts(subs, f.sub, 'todas')+'</select></div>'
+    + '<button class="btn" onclick="_ea.f={d:\'\',fam:\'\',sub:\'\'};equipArtigos(_ea.id)">Limpar filtro</button></div>'
     + (r.itens.length
-      ? '<div style="max-height:340px;overflow:auto;margin-top:6px"><table><thead><tr><th>Data</th><th></th><th>Pe\u00e7a</th><th>Descri\u00e7\u00e3o</th><th class="r">Qtd</th><th class="r">Custo un.</th><th class="r">Total</th><th>OT</th></tr></thead><tbody>'
-        + r.itens.map(x=>'<tr><td>'+dd(x.data)+'</td><td>'+(T[x.tipo]||'')+'</td><td class="bold">'+_esc(x.peca_codigo)+'</td><td>'+_esc(x.peca_descricao||'')+'</td>'
+      ? '<div style="max-height:320px;overflow:auto;margin-top:6px"><table><thead><tr><th>Data</th><th></th><th>Item</th><th>Descri\u00e7\u00e3o</th><th>Fam.</th><th class="r">Qtd</th><th class="r">Custo un.</th><th class="r">Total</th><th>OT</th></tr></thead><tbody id="ea-tb">'
+        + (itens.map(x=>'<tr><td>'+dd(x.data)+'</td><td>'+(T[x.tipo]||'')+'</td><td class="bold">'+_esc(x.peca_codigo)+'</td><td>'+_esc(x.peca_descricao||'')+'</td><td class="mono muted">'+_esc(x.familia||'')+'</td>'
           + '<td class="r">'+x.quantidade+'</td><td class="r mono">'+x.custo_unitario.toFixed(2)+'</td>'
           + '<td class="r mono" style="color:'+(x.total<0?'#15803D':'#1A2A5E')+'">'+x.total.toFixed(2)+'</td>'
-          + '<td class="mono">'+_esc(x.ot||'\u2014')+'</td></tr>').join('')
+          + '<td class="mono">'+_esc(x.ot||'\u2014')+'</td></tr>').join('') || '<tr><td colspan="9" class="muted" style="padding:10px">Nada com este filtro.</td></tr>')
         + '</tbody></table></div>'
-        + '<div style="text-align:right;font-weight:800;color:#1A2A5E;padding:6px 4px">Total aplicado: R$ '+r.total.toFixed(2)+'</div>'
-      : '<div class="muted" style="padding:14px">Nenhum consumo registrado neste equipamento ainda.</div>');
+        + '<div style="display:flex;justify-content:space-between;padding:6px 4px"><span class="muted" id="ea-n">'+itens.length+' de '+r.itens.length+' item(ns)</span><b style="color:#1A2A5E" id="ea-tot">Total aplicado: R$ '+total.toFixed(2)+'</b></div>'
+      : '<div class="muted" style="padding:14px">Nenhum item aplicado neste equipamento ainda \u2014 o que for aplicado pelas OTs aparece aqui.</div>');
+  document.getElementById('eq-ficha').classList.add('show');
+}
+function equipArtigosFiltrar(){
+  // s\u00f3 a descri\u00e7\u00e3o: redesenha sem perder o foco do campo
+  const el = document.getElementById('ea-d'); const pos = el ? el.selectionStart : null;
+  equipArtigos(_ea.id);
+  const n = document.getElementById('ea-d'); if (n){ n.focus(); if (pos != null) n.setSelectionRange(pos, pos); }
+}
+// (26/11/2026) Em quais equipamentos a pe\u00e7a foi aplicada (bot\u00e3o direito no material)
+async function pecaEquipamentos(codigo){
+  let rows;
+  try { rows = await mntFetch('/manutencao/api/pecas/'+encodeURIComponent(codigo)+'/equipamentos-aplicados'); }
+  catch(e){ mostrarToast('\u274c '+e.message,'warn'); return; }
+  const dd = v => { if(!v) return '\u2014'; try{ return _fmtData(v); }catch(e){ return '\u2014'; } };
+  const p = (_pcNav||[]).find(x => String(x.codigo) === String(codigo)) || {};
+  document.querySelector('#eq-ficha .modal').classList.remove('larga');
+  document.getElementById('eq-ficha-corpo').innerHTML =
+    fichaTopo({icone:'\ud83d\udea7', titulo:'Equipamentos onde foi aplicado', codigo:codigo, descricao:p.descricao, id:codigo, fn:'pecaEquipamentos', tipo:'peca'})
+    + (rows.length
+      ? '<div style="max-height:360px;overflow:auto;margin-top:6px"><table><thead><tr><th>Item</th><th>Equipamento</th><th>Descri\u00e7\u00e3o</th><th>Local</th><th class="r">Quantidade</th><th>UN</th><th class="r">OTs</th><th>\u00daltima</th></tr></thead><tbody>'
+        + rows.map(x => '<tr style="cursor:pointer" title="'+_esc(x.ots)+' \u00b7 duplo clique: ficha do equipamento" ondblclick="verEquipReal(\''+x.equipamento_id+'\')">'
+          + '<td class="mono">'+_esc(codigo)+'</td><td class="bold">'+_esc(x.codigo)+'</td><td>'+_esc(x.descricao||'')+'</td><td class="muted">'+_esc(x.local||'')+'</td><td class="r">'+x.quantidade+'</td><td>'+_esc(x.unidade||'UN')+'</td><td class="r">'+x.n_ots+'</td><td>'+dd(x.ultima)+'</td></tr>').join('')
+        + '</tbody></table></div>'
+        + '<div class="muted" style="padding:6px 4px">'+rows.length+' equipamento(s)</div>'
+      : '<div class="muted" style="padding:14px">Este item ainda n\u00e3o foi aplicado em nenhum equipamento.</div>');
+  document.getElementById('eq-ficha').classList.add('show');
+}
+// (26/11/2026) Hist\u00f3rico Utiliza\u00e7\u00e3o (ManWinWin): troca de operador, localiza\u00e7\u00e3o, centro de custo, sistema e situa\u00e7\u00e3o
+async function equipHistUtil(id){
+  let rows;
+  try { rows = await mntFetch('/manutencao/api/equipamentos/'+id+'/historico-utilizacao'); }
+  catch(e){ mostrarToast('\u274c '+e.message,'warn'); return; }
+  const eqF = _navEquipObjs().find(e => String(e.id) === String(id)) || {};
+  const dh = v => { if(!v) return '\u2014'; try{ const d = new Date(v); return _fmtData(v)+' '+String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0'); }catch(e){ return '\u2014'; } };
+  document.querySelector('#eq-ficha .modal').classList.remove('larga');
+  document.getElementById('eq-ficha-corpo').innerHTML =
+    fichaTopo({icone:'\ud83d\udcda', titulo:'Hist\u00f3rico Utiliza\u00e7\u00e3o', codigo:eqF.codigo, descricao:eqF.descricao, id:id, fn:'equipHistUtil'})
+    + '<div class="muted" style="font-size:10px;margin:4px 0 6px">Gravado ao salvar a ficha, enquanto "Guardar altera\u00e7\u00f5es no Hist\u00f3rico Utiliza\u00e7\u00e3o" (Info. Complementares) estiver marcado.</div>'
+    + (rows.length
+      ? '<div style="max-height:360px;overflow:auto"><table><thead><tr><th>Data</th><th>O que mudou</th><th>De</th><th>Para</th><th>Quem</th></tr></thead><tbody>'
+        + rows.map(h => '<tr><td class="mono">'+dh(h.data)+'</td><td class="bold">'+_esc(h.rotulo)+'</td><td class="muted">'+_esc(h.de||'\u2014')+'</td><td>'+_esc(h.para||'\u2014')+'</td><td class="muted">'+_esc(h.usuario||'')+'</td></tr>').join('')
+        + '</tbody></table></div>'
+      : '<div class="muted" style="padding:14px">Nenhuma altera\u00e7\u00e3o de utiliza\u00e7\u00e3o registrada ainda.</div>');
   document.getElementById('eq-ficha').classList.add('show');
 }
 let _devOTs = null;
@@ -4134,12 +4231,14 @@ async function _tiposTrab(){
   }
   return _mntTiposTrab;
 }
-async function otsDoEquip(id){
+async function otsDoEquip(id, historico){
   if (!_mntEquipList.length) await carregarEquipReais();
   await _tiposTrab();
   if (_otwin.eqId !== id) _otwin.sel = null;
   _otwin.eqId = id;
-  if (!_otwin.estados) _otwin.estados = new Set(['programada','aberta','em_andamento','aguardando_peca']);
+  // (26/11/2026) true = Ordens Trabalho / Histórico (todos os estados) · false = Tarefas Pendentes (só abertas)
+  if (historico === true) _otwin.estados = new Set(['programada','aberta','em_andamento','aguardando_peca','concluida','cancelada']);
+  else if (historico === false || !_otwin.estados) _otwin.estados = new Set(['programada','aberta','em_andamento','aguardando_peca']);
   if (!_otwin.tipos) _otwin.tipos = null; // null = todos
   try {
     _otwin.ots = await mntFetch('/manutencao/api/ots?equipamento_id='+id);
@@ -7335,15 +7434,29 @@ function estoqueCtx(ev, tr){
   const m = _ctxMenuEl();
   const it = (ico, txt, fn) => '<div onclick="'+fn+'" style="padding:7px 14px;cursor:pointer;display:flex;gap:8px;align-items:center" onmouseover="this.style.background=\'#F0F4FF\'" onmouseout="this.style.background=\'\'">'+ico+' '+txt+'</div>';
   const c = _esc(tr.dataset.cod).replace(/'/g,'&#39;');
-  m.innerHTML = '<div style="padding:6px 14px;font-weight:800;color:#1A2A5E;border-bottom:1px solid #E2E8F0">'+_esc(tr.dataset.cod)+' · '+_esc(tr.dataset.alm)+'</div>'
+  // (26/11/2026) mesma ordem do botão direito do ManWinWin (Lista Artigos); no Estoque ganha Endereçar
+  const sep = '<div class="csep"></div>';
+  m.innerHTML = '<div style="padding:6px 14px;font-weight:800;color:#1A2A5E;border-bottom:1px solid #E2E8F0">'+_esc(tr.dataset.cod)+(tr.dataset.alm ? ' · '+_esc(tr.dataset.alm) : '')+'</div>'
+    + it('➕','Novo', "artJanela('')")
+    + sep
+    + it('📋','<b>Abrir</b>', "abrirPeca('"+c+"')")
+    + it('📑','Repetir', "artJanela(null,{copiarDe:'"+c+"'})")
+    + it('✖️','Excluir', "desativarArtigoMW()")
+    + sep
+    + it('🖨','Imprimir', "mwImprimir('mod-alm','Materiais')")
     + it('🏷','Imprimir etiqueta', "window.open('/manutencao/etiquetas?codigos='+encodeURIComponent('"+c+"'),'_blank')")
-    + it('📍','Endereçar…', "estoqueEndereco(document.querySelector('#alm-tbody tr[data-cod=\\'"+c+"\\'][data-alm=\\'"+_esc(tr.dataset.alm)+"\\']'))")
-    + it('📋','Abrir ficha', "abrirPeca('"+c+"')")
-    + it('🔁','Substitutos', "substitutosJanela('"+c+"')");
-  m.style.left = Math.min(ev.clientX, window.innerWidth-230)+'px';
-  m.style.top  = Math.min(ev.clientY, window.innerHeight-200)+'px';
+    + (tr.dataset.alm ? it('📍','Endereçar…', "estoqueEndereco(document.querySelector('#alm-tbody tr[data-cod=\\'"+c+"\\'][data-alm=\\'"+_esc(tr.dataset.alm)+"\\']'))") : '')
+    + sep
+    + it('↻','Atualizar listagem', "carregarPecasReais()")
+    + sep
+    + it('🚧','Equipamentos aplicados', "pecaEquipamentos('"+c+"')")
+    + it('🔁','Itens substitutos', "substitutosJanela('"+c+"')");
+  m.style.left = Math.min(ev.clientX, window.innerWidth-240)+'px';
+  m.style.top  = Math.min(ev.clientY, window.innerHeight-400)+'px';
   m.style.display = 'block';
 }
+// (26/11/2026) Catálogo (linha sem almoxarifado) usa o mesmo menu
+function pecaCtx(ev, tr){ estoqueCtx(ev, tr); }
 // (18/11/2026) dica da coluna Código: os outros códigos do item (a busca acha por qualquer um)
 function _codsTit(p){
   const pr = p.codigo_principal || 'estruturado';
@@ -7368,7 +7481,7 @@ async function carregarPecasReais(){
     const agrupar = !fam && !q && r.itens.length > 1;
     const grupos = {}; r.itens.forEach(p => { const g = String(p.familia_codigo || '—').split('.')[0]; (grupos[g] = grupos[g] || []).push(p); });
     _almGrpIds = Object.keys(grupos).sort();
-    const linhaPeca = p => `<tr data-cod="${_esc(p.codigo)}"${String(_mwSel.alm)===String(p.codigo)?' class="sel"':''} style="cursor:pointer" onclick="listaSelClick(event,this,'alm')" ondblclick="abrirPeca(this.dataset.cod)">
+    const linhaPeca = p => `<tr data-cod="${_esc(p.codigo)}"${String(_mwSel.alm)===String(p.codigo)?' class="sel"':''} style="cursor:pointer" onclick="listaSelClick(event,this,'alm')" ondblclick="abrirPeca(this.dataset.cod)" oncontextmenu="pecaCtx(event,this)">
       ${almCarrinhoCelula(p.codigo, p.descricao, p.unidade)}
       <td class="bold" title="${_esc(_codsTit(p))}">${_esc(p.codigo)}</td>
       <td>${_esc(p.descricao)}</td>
