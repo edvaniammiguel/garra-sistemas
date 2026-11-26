@@ -1156,7 +1156,8 @@ def _fn_cols(cfg, v=None):
     return (x["fn"], x["cols"]) if x else (cfg["fn"], cfg["cols"])
 
 
-_ORDEM_GRUPOS = ["Custos", "Trabalhos", "Preventivas", "Disponibilidade", "Mão de obra", "Materiais", "Compras", "Entradas", "Utilização", "Subsistemas"]
+# (26/11/2026) Subsistemas fica logo abaixo de Custos no menu (grupo próprio, mesma configuração)
+_ORDEM_GRUPOS = ["Custos", "Subsistemas", "Trabalhos", "Preventivas", "Disponibilidade", "Mão de obra", "Materiais", "Compras", "Entradas", "Utilização"]
 
 
 # ═══ (14/11/2026) AGRUPAR POR + GRÁFICO — genéricos para todos os relatórios (tela, PDF e Excel) ═══

@@ -69,6 +69,15 @@ def posicao_vida_trocas():
     v2 = _linha(vida, P2)
     perto(v2["vida"], 200, "vida do P2 (montagem em curso conta)"); igual(v2["situacao"], "montado em " + MAQ, "situação do P2")
 
+    # campo Objeto com o próprio componente (e não a máquina) mostra esse componente — antes vinha vazio
+    def do_comp(visao, chave):
+        return status(chamar("admin", "GET", f"/manutencao/api/relatorios/subsistemas?visao={visao}&equipamento_id={EST[chave]}"), 200, visao + " pelo componente")
+    igual([l["componente"] for l in do_comp("vida", "p2")["linhas"]], [P2], "vida filtrando pelo próprio pneu montado")
+    igual([l["maquina"] for l in do_comp("posicao", "p2")["linhas"]], [MAQ], "posição filtrando pelo próprio pneu")
+    igual([l["componente"] for l in do_comp("vida", "p1")["linhas"]], [P1], "vida filtrando por componente solto")
+    igual([l["componente"] for l in do_comp("trocas", "p1")["linhas"]], [P1], "trocas filtrando pelo componente")
+    igual([l["componente"] for l in do_comp("previsao", "p2")["linhas"]], [P2], "previsão filtrando pelo próprio pneu")
+
     tr = _rel("trocas")
     assert "Período" in tr["filtros"], "histórico de trocas tem período"
     igual([(l["componente"], l["situacao"]) for l in tr["linhas"]], [(P1, "desmontado"), (P2, "montado")], "as duas montagens, em ordem")
@@ -117,6 +126,7 @@ def custo_previsao():
     cat = status(chamar("admin", "GET", "/manutencao/api/relatorios"), 200, "catálogo")
     grupo = [g for g in cat["grupos"] if g["grupo"] == "Subsistemas"]
     assert grupo and len(grupo[0]["itens"]) == 1, "Subsistemas devia ser um item só no menu"
+    igual([g["grupo"] for g in cat["grupos"]][:2], ["Custos", "Subsistemas"], "Subsistemas vem logo abaixo de Custos no menu")
     igual([v["v"] for v in grupo[0]["itens"][0]["visoes"]], ["posicao", "vida", "trocas", "custo", "previsao"], "opções do campo Mostrar")
     status(chamar("op1", "GET", "/manutencao/api/relatorios/subsistemas"), 403, "operador sem Manutenção pedindo o relatório")
     _limpar()

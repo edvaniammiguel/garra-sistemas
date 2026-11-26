@@ -17,7 +17,7 @@ De onde vêm os dados (nada novo é gravado — só leitura):
 Quem é subsistema: o que está montado em alguma máquina, o que já teve montagem registrada
 ou o que é de categoria marcada como componente em Parametrizar.
 
-Filtros "Sistema" e "Objeto" valem para a MÁQUINA (o pai), não para o componente.
+Filtros "Sistema" e "Objeto" aceitam a MÁQUINA (mostra tudo o que está nela) ou o próprio COMPONENTE (mostra só ele).
 Previsão de troca — vida de referência, nesta ordem: (1) vida útil cadastrada na ficha do componente;
 (2) média do que rodaram os componentes anteriores na mesma máquina e posição; sem nenhuma das duas,
 a linha sai como "sem referência" (não se inventa prazo).
@@ -69,15 +69,16 @@ def _un(medicao):
     return "km" if medicao == "km" else "h"
 
 
-def _filtro_pai(F, params, alias="p"):
-    """Sistema/Objeto filtram a máquina onde o componente está (ou esteve) montado."""
+def _filtro_pai(F, params, alias="p", comp="c"):
+    """Sistema/Objeto valem para a máquina (pai) OU para o próprio componente.
+    (26/11/2026) antes só olhava a máquina: escolher o pneu no campo Objeto devolvia a tela vazia."""
     w = []
     if F.sistema:
-        w.append(f"({alias}.sistema_codigo = %s OR {alias}.sistema_codigo LIKE %s)")
-        params += [F.sistema, F.sistema + ".%"]
+        w.append(f"({alias}.sistema_codigo = %s OR {alias}.sistema_codigo LIKE %s OR {comp}.sistema_codigo = %s OR {comp}.sistema_codigo LIKE %s)")
+        params += [F.sistema, F.sistema + ".%", F.sistema, F.sistema + ".%"]
     if F.equipamento_id:
-        w.append(f"{alias}.id = %s")
-        params.append(F.equipamento_id)
+        w.append(f"({alias}.id = %s OR {comp}.id = %s)")
+        params += [F.equipamento_id, F.equipamento_id]
     return (" AND " + " AND ".join(w)) if w else ""
 
 
