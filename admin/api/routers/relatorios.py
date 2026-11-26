@@ -36,6 +36,10 @@ from routers.manutencao import (verificar_manutencao, _calcular_previsoes, _gara
                                 _garantir_leituras, _garantir_planos_cols, _garantir_funcoes,
                                 _garantir_mao_obra, _garantir_tabela, _garantir_ficha_cols)
 
+# (26/11/2026) custo mensal por máquina (combustível + manutenção + pneus) — arquivo próprio
+from routers.relatorios_custo_mensal import (rel_custo_mensal, COL_CUSTO_MENSAL,
+                                             rel_custo_medio_mensal, COL_CUSTO_MEDIO_MENSAL)
+
 router = APIRouter()
 
 
@@ -1093,6 +1097,9 @@ RELATORIOS = {
     "custo-sistema":       {"grupo": "Custos", "titulo": "Custo por sistema", "sub": "onde o dinheiro vai, por ramo da organização", "fn": rel_custo_sistema, "cols": COL_CUSTO_SISTEMA, "filtros": ["periodo", "sistema", "tipo_trabalho", "setor"]},
     "custo-conta":         {"grupo": "Custos", "titulo": "Custo por plano de contas", "sub": "para o financeiro: lançamentos de peças, MO e outros por conta", "fn": rel_custo_conta, "cols": COL_CUSTO_CONTA, "filtros": ["periodo", "sistema", "objeto"]},
     "top-custo":           {"grupo": "Custos", "titulo": "Top 10 objetos por custo", "sub": "Pareto: quem concentra o gasto", "fn": rel_top_custo, "cols": COL_TOP_CUSTO, "filtros": ["periodo", "sistema", "tipo_trabalho"]},
+    # (26/11/2026) combustível + manutenção + pneus por máquina
+    "custo-medio-mensal":  {"grupo": "Custos", "titulo": "Custo médio mensal por máquina", "sub": "quanto cada máquina gasta por mês, em média: combustível, manutenção e pneus", "fn": rel_custo_medio_mensal, "cols": COL_CUSTO_MEDIO_MENSAL, "filtros": ["periodo", "sistema", "objeto"]},
+    "custo-mensal":        {"grupo": "Custos", "titulo": "Custo mensal por máquina (mês a mês)", "sub": "combustível, manutenção e pneus de cada máquina em cada mês", "fn": rel_custo_mensal, "cols": COL_CUSTO_MENSAL, "filtros": ["periodo", "sistema", "objeto"]},
     "backlog":             {"grupo": "Trabalhos", "titulo": "Backlog de OTs (em aberto)", "sub": "fotografia de hoje: tudo que não está encerrado, com idade e atraso", "fn": rel_backlog, "cols": COL_BACKLOG, "filtros": ["sistema", "objeto", "tipo_trabalho", "setor"]},
     "encerradas":          {"grupo": "Trabalhos", "titulo": "OTs encerradas no período", "sub": "produção da oficina: duração, TDM previsto × parada real, custo", "fn": rel_encerradas, "cols": COL_ENCERRADAS, "filtros": ["periodo", "sistema", "objeto", "tipo_trabalho", "setor"]},
     "corretiva-preventiva": {"grupo": "Trabalhos", "titulo": "Corretiva × Preventiva", "sub": "por objeto: a frota está sendo mantida ou apagando incêndio?", "fn": rel_corretiva_preventiva, "cols": COL_CXP, "filtros": ["periodo", "sistema", "objeto"]},

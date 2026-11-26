@@ -7,7 +7,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import bat_base as B
 
 B.travar_producao()
-import bat_estatica, bat_fumaca, bat_acesso, bat_os, bat_ot, bat_materiais, bat_abastecimento, bat_compras, bat_rh, bat_logs, bat_despacho, bat_aparelhos   # noqa: E402,F401  (registram os testes)
+import bat_estatica, bat_fumaca, bat_acesso, bat_os, bat_ot, bat_materiais, bat_abastecimento, bat_compras, bat_rh, bat_logs, bat_despacho, bat_aparelhos, bat_custo_mensal   # noqa: E402,F401  (registram os testes)
 
 
 def main(so):
