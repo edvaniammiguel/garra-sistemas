@@ -6566,7 +6566,7 @@ async def equip_artigos(eq_id: str, _auth=Depends(verificar_manutencao)):
     return {"itens": itens, "total": round(total, 2)}
 
 
-@router.get("/manutencao/api/pecas/{codigo}/equipamentos-aplicados")
+@router.get("/manutencao/api/pecas/{codigo:path}/equipamentos-aplicados")   # (26/11/2026) :path — há códigos com barra (W950/26); sem isso dava "Rota não encontrada"
 async def peca_equipamentos_aplicados(codigo: str, _auth=Depends(verificar_manutencao)):
     """(26/11/2026) Inverso de Itens aplicados: em quais equipamentos a peça foi
     usada (saídas e aplicações diretas das OTs; devoluções abatem), por equipamento."""

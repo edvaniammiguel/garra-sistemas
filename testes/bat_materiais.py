@@ -139,3 +139,11 @@ def direta_exige_fornecedor():
     status(chamar("admin", "POST", "/manutencao/api/entradas", {**base, "fornecedor_id": "00000000-0000-0000-0000-000000000000"}), 400,
            "aplicação direta com fornecedor que não existe")
     igual(sql1("select count(*) as n from manutencao.movimentacoes where documento_numero=$1", "BAT-SF-" + TAG)["n"], 0, "nada gravado nas recusas")
+
+
+@teste("Materiais", "peça com barra no código (W950/26) abre 'em quais equipamentos foi aplicada' sem 'Rota não encontrada'")
+def peca_com_barra_equipamentos():
+    # (26/11/2026) a rota nova nasceu sem :path — o código com barra quebrava o endereço e o servidor respondia 404
+    for cod in ("BAT%2F950%2F26", "BATSEMBARRA"):
+        st, r = chamar("admin", "GET", f"/manutencao/api/pecas/{cod}/equipamentos-aplicados")
+        assert st == 200, f"código {cod}: esperado 200, veio {st} — {str(r)[:120]}"
