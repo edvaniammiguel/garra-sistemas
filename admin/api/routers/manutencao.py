@@ -4168,6 +4168,10 @@ async def movimentar_estoque(request: Request, payload=Depends(verificar_manuten
             else (float(peca["custo_medio"]) if peca["custo_medio"] is not None else None)
     except (TypeError, ValueError):
         custo_unit = float(peca["custo_medio"]) if peca["custo_medio"] is not None else None
+    # (26/11/2026) Saída do estoque sai SEMPRE pelo custo médio da peça — o preço não se digita na baixa
+    # (a tela trava o campo; aqui o servidor ignora o que vier). Quem tem preço próprio é a aplicação direta.
+    if tipo == "saida":
+        custo_unit = float(peca["custo_medio"]) if peca["custo_medio"] is not None else None
 
     async def _alm(cod):
         if not cod: return None

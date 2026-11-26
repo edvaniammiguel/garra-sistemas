@@ -1572,6 +1572,8 @@ function _pcAcBox(){
       row.querySelector('.d').value = it.dataset.d;
       row.querySelector('.c').value = it.dataset.u || 'UN';
       if (it.dataset.v !== '') row.querySelector('.v').value = it.dataset.v;
+      row._custoMedio = it.dataset.v; row._pecaCusto = it.dataset.c;   // (26/11/2026) saída do armazém usa sempre este custo
+      if (row.closest('#ot-saida')) otSaidaCustoTrava(row);
       pcTotLinha(row.querySelector('.h'));
       b.style.display = 'none';
       if (row.querySelector('.saldo')) { row._familia = it.dataset.fam || ''; pcSaldoInfo(row, it.dataset.c); otSaidaRubrica(true); }   // janelas da OT
@@ -4788,12 +4790,21 @@ function otEncerrarDialogo(id){
     const unid = km ? 'km' : 'h';
     const contador = km ? o.equipamento_km : o.equipamento_horimetro;
     const _local = d => { const x = new Date(d); if (isNaN(x)) return ''; const p = n => String(n).padStart(2,'0'); return x.getFullYear()+'-'+p(x.getMonth()+1)+'-'+p(x.getDate())+'T'+p(x.getHours())+':'+p(x.getMinutes()); };
-    const dtSug = '';   // (19/11/2026) data de conclusão não é sugerida — quem encerra informa
-    const horSug = comHor ? String(comHor.horimetro) : '';
+    // (26/11/2026) O que já foi digitado na aba Gestão desta OT (Fim · leitura · PDI · o que foi feito) vem preenchido:
+    // antes, fechar a ficha e encerrar pela lista abria a janela em branco e pedia tudo de novo.
+    // Continua valendo a regra de 19/11: sem nada digitado, a data de conclusão NÃO é sugerida.
+    const rasc = _otEncState[String(id)] || {};
+    const daGestao = !!(rasc.data || rasc.hp || (rasc.hor && rasc.hor !== rasc.horApp));
+    const dtSug = rasc.data || '';
+    const horSug = String(rasc.hor || '').trim() || (comHor ? String(comHor.horimetro) : '');
+    const hpSug = String(rasc.hp || '').trim().replace('.', ',');
+    const obsSug = String(rasc.obs || '').trim() || rel;
     const apurado = await otCustoApurado(id);
     const custoSug = apurado != null ? apurado.toFixed(2).replace('.', ',') : (o.custo_total != null ? String(o.custo_total).replace('.', ',') : '');
     const h1d = (o.historico||[]).find(x => x.status_para === 'em_andamento');
     const iniD = o.data_inicio_real ? new Date(o.data_inicio_real) : (h1d ? new Date(h1d.criado_em) : null);
+    // (26/11/2026) PDI automático = Início → Fim; sem Fim informado mostrava "NaN"
+    const pdiAuto = dt => { const f = dt ? new Date(dt) : null; return (iniD && f && !isNaN(f)) ? Math.max(0, (f - iniD) / 3600000).toFixed(1).replace('.', ',') : 'Início → Fim'; };
     let b = document.getElementById('ot-encerrar');
     if (!b){
       b = document.createElement('div'); b.id = 'ot-encerrar';
@@ -4810,13 +4821,15 @@ function otEncerrarDialogo(id){
       + '</div>'
       + '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px">'
       + '<div class="mfield" style="width:160px">Custo total (R$) <span class="muted" style="font-weight:400">(apurado: peças + MO + outros)</span><input id="ote-custo" inputmode="decimal" value="'+_esc(custoSug)+'"></div>'
-      + '<div class="mfield" style="width:220px">Equipamento parado (PDI, h) <span class="muted" style="font-weight:400">(vazio = Início → Fim)</span><input id="ote-hp" inputmode="decimal" placeholder="'+(iniD ? Math.max(0,(new Date(dtSug) - iniD)/3600000).toFixed(1).replace('.',',') : 'paradas')+'"></div>'
+      + '<div class="mfield" style="width:220px">Equipamento parado (PDI, h) <span class="muted" style="font-weight:400">(vazio = Início → Fim)</span><input id="ote-hp" inputmode="decimal" value="'+_esc(hpSug)+'" placeholder="'+_esc(pdiAuto(dtSug))+'"></div>'
       + '</div>'
-      + '<div class="mfield" style="margin-top:6px">O que foi feito'+(rel?' <span class="muted" style="font-size:10px">(veio do app — edite se quiser)</span>':'')+'<textarea id="ote-obs" rows="4" style="width:100%">'+_esc(rel)+'</textarea></div>'
+      + '<div class="mfield" style="margin-top:6px">O que foi feito'+(obsSug?' <span class="muted" style="font-size:10px">(já registrado — edite se quiser)</span>':'')+'<textarea id="ote-obs" rows="4" style="width:100%">'+_esc(obsSug)+'</textarea></div>'
+      + (daGestao ? '<div style="font-size:10px;margin-top:4px;color:#15803D">✔ Preenchido com o que você informou na aba Gestão desta OT — confira e encerre.</div>' : '')
       + '<div class="muted" style="font-size:10px;margin-top:4px">A leitura informada vira a última leitura do equipamento (Registo Funcionamento, fonte OT) e a baseline da preventiva vinculada.</div>'
       + '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px"><button class="btn" id="ote-cancel">Cancelar</button><button class="btn p" id="ote-ok">✔ Encerrar OT</button></div>'
       + '</div>';
     b.style.display = 'flex';
+    document.getElementById('ote-data').oninput = ev => { document.getElementById('ote-hp').placeholder = pdiAuto(ev.target.value); };
     document.getElementById('ote-x').onclick = () => fechar(null);
     document.getElementById('ote-cancel').onclick = () => fechar(null);
     document.getElementById('ote-ok').onclick = () => {
@@ -5480,6 +5493,7 @@ function otSaidaUsarSubst(a){
   const row = a.closest('.plf-pc-row'); if (!row) return;
   row.querySelector('.f').value = a.dataset.c; row.querySelector('.d').value = a.dataset.d; row.querySelector('.c').value = a.dataset.u || 'UN';
   row.querySelector('.aviso').textContent = '';
+  otSaidaCustoTrava(row);   // (26/11/2026) custo médio do substituto
   pcSaldoInfo(row, a.dataset.c);
 }
 // (21/10/2026) Entrada por documento: peça nova → cadastro completo → volta preenchida na linha
@@ -5511,6 +5525,8 @@ function otPecaNova(texto){
     row.querySelector('.c').value = p.unidade || 'UN';
     if (p.custo_medio) row.querySelector('.v').value = p.custo_medio;
     row._familia = p.familia_codigo || ''; row._saldos = {};
+    row._pecaCusto = p.codigo; row._custoMedio = p.custo_medio != null && p.custo_medio !== '' ? String(parseFloat(p.custo_medio)) : '';   // (26/11/2026)
+    if (b.id === 'ot-saida') otSaidaCustoTrava(row);
     pcTotLinha(row.querySelector('.h'));
     const av = row.querySelector('.aviso'); if (av) av.textContent = p.codigo + ' cadastrado — item novo, sem saldo em estoque.';
     otSaidaRubrica(true, 'direta');
@@ -5526,14 +5542,39 @@ function otSaidaModo(m){
   const dw = b.querySelector('.doc-wrap'), aw = b.querySelector('.alm-wrap');
   if (dw) dw.style.display = direta ? '' : 'none';
   if (aw) aw.style.display = direta ? 'none' : '';
-  b.querySelectorAll('.plf-pc-row').forEach(row => { const c = row.querySelector('.c'); if (c) { c.readOnly = !direta; c.style.background = direta ? '' : '#F8FAFC'; } otSaidaRubRow(row); });
+  b.querySelectorAll('.plf-pc-row').forEach(row => { const c = row.querySelector('.c'); if (c) { c.readOnly = !direta; c.style.background = direta ? '' : '#F8FAFC'; } otSaidaCustoTrava(row); otSaidaRubRow(row); });
   const ok = b.querySelector('.btn-ok'); if (ok) ok.textContent = direta ? 'Confirmar (aplicação directa)' : 'Confirmar (saída do armazém)';
   otSaidaChecar();
+}
+// (26/11/2026) Saída do armazém: o preço não se digita — vale o custo médio da peça no estoque (o servidor grava assim).
+// Aplicação direta continua com o preço livre (é o valor da nota). Peça sem custo médio no catálogo avisa na linha.
+function otSaidaCustoTrava(row){
+  const b = document.getElementById('ot-saida'); if (!b || !row) return;
+  const direta = ((b.querySelector('input[name="sai-modo"]')||{}).value || 'direta') === 'direta';
+  const v = row.querySelector('.v'), av = row.querySelector('.custo-av'); if (!v) return;
+  v.readOnly = !direta; v.style.background = direta ? '' : '#F8FAFC';
+  v.title = direta ? '' : 'Saída do armazém: o custo é o custo médio da peça no estoque (não se altera aqui)';
+  const cod = ((row.querySelector('.f')||{}).value || '').trim();
+  // código que não veio do clique na lista (digitado inteiro, substituto, peça recém-cadastrada, linha do planejado):
+  // busca o custo médio no catálogo e volta aqui
+  if (cod && row._pecaCusto !== cod && row._custoBusca !== cod) {
+    row._custoBusca = cod;
+    mntFetch('/manutencao/api/pecas?busca=' + encodeURIComponent(cod) + '&limit=40').then(r => {
+      const p = ((r && r.itens) || []).find(x => String(x.codigo) === cod);
+      if (!p || ((row.querySelector('.f')||{}).value || '').trim() !== cod) return;
+      row._pecaCusto = cod; row._custoMedio = p.custo_medio != null ? String(parseFloat(p.custo_medio)) : '';
+      otSaidaCustoTrava(row); otSaidaChecar();
+    }).catch(() => {});
+  }
+  const escolhida = !!cod && row._pecaCusto === cod;
+  if (!direta) { v.value = escolhida ? (row._custoMedio || '') : ''; pcTotLinha(v); }
+  if (av) av.textContent = (!direta && escolhida && !row._custoMedio) ? 'Peça sem custo médio no catálogo — a baixa sai sem valor. Corrija o custo médio na ficha da peça.'
+                         : (!direta && !!cod && !escolhida) ? 'Escolha a peça na lista para trazer o custo médio.' : '';
 }
 function otSaidaLinhaHtml(){
   return '<div class="plf-pc-row" style="border:1px solid #E2E8F0;border-radius:6px;padding:6px 8px;margin-top:6px;background:#fff">'
     + '<div style="display:flex;gap:6px;align-items:flex-end">'
-    + '<div class="mfield" style="flex:1.1">Peça<div style="display:flex;gap:4px"><input class="f" style="flex:1" placeholder="código ou descrição" oninput="pcSugerir(this)" onfocus="this.closest(\'#ot-saida\')._rowAtiva=this.closest(\'.plf-pc-row\')" autocomplete="off"><button class="btn" title="Cadastrar peça nova sem sair da OT" onclick="document.getElementById(\'ot-saida\')._rowAtiva=this.closest(\'.plf-pc-row\');otPecaNova(this.parentElement.querySelector(\'.f\').value.trim())">➕</button></div></div>'
+    + '<div class="mfield" style="flex:1.1">Peça<div style="display:flex;gap:4px"><input class="f" style="flex:1" placeholder="código ou descrição" oninput="pcSugerir(this)" onchange="otSaidaCustoTrava(this.closest(\'.plf-pc-row\'))" onfocus="this.closest(\'#ot-saida\')._rowAtiva=this.closest(\'.plf-pc-row\')" autocomplete="off"><button class="btn" title="Cadastrar peça nova sem sair da OT" onclick="document.getElementById(\'ot-saida\')._rowAtiva=this.closest(\'.plf-pc-row\');otPecaNova(this.parentElement.querySelector(\'.f\').value.trim())">➕</button></div></div>'
     + '<div class="mfield" style="flex:1.3">Descrição<input class="d" oninput="pcSugerir(this)" onfocus="this.closest(\'#ot-saida\')._rowAtiva=this.closest(\'.plf-pc-row\')" autocomplete="off"></div>'
     + '<div class="mfield" style="width:62px">Quant.<input class="h" type="number" step="0.5" oninput="pcTotLinha(this);otSaidaChecar()"></div>'
     + '<div class="mfield" style="width:48px">UN<input class="c" value="UN"></div>'
@@ -5543,6 +5584,7 @@ function otSaidaLinhaHtml(){
     + '</div>'
     + '<div style="display:flex;gap:6px;align-items:center;margin-top:4px"><div class="mfield" style="flex:1">Conta <span class="rub-dica muted" style="font-weight:400"></span><select class="rub"><option value="">— conta —</option></select></div><div class="saldo muted" style="flex:1;font-size:10px;display:none"></div></div>'
     + '<div class="aviso" style="font-size:10px;min-height:12px;color:#B45309"></div>'
+    + '<div class="custo-av" style="font-size:10px;color:#B91C1C"></div>'
     + '</div>';
 }
 function otSaidaAddLinha(){

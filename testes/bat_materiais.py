@@ -61,10 +61,14 @@ def entrada_ok():
     perto(_custo(), 26.0, "custo médio ponderado (10×21 + 10×31)")
 
 
-@teste("Materiais", "saída baixa o saldo e não deixa sair mais do que existe")
+@teste("Materiais", "saída baixa o saldo pelo custo médio (ignora preço digitado) e não deixa sair mais do que existe")
 def saida():
     mv = lambda corpo: chamar("admin", "POST", "/manutencao/api/estoque/movimentar", corpo)
-    status(mv({"tipo": "saida", "peca": COD, "quantidade": 3, "origem": EST["a1"], "observacao": "BAT saída avulsa"}), 200, "saída de 3")
+    # (26/11/2026) o preço não se digita na baixa: a tela trava o campo e o servidor ignora o que vier (vale o custo médio)
+    status(mv({"tipo": "saida", "peca": COD, "quantidade": 3, "origem": EST["a1"], "custo_unitario": "999,99", "observacao": "BAT saída avulsa"}), 200, "saída de 3")
+    m = sql1("""select m.custo_unitario from manutencao.movimentacoes m join manutencao.pecas p on p.id=m.peca_id
+                 where p.codigo=$1 and m.tipo='saida' order by m.criado_em desc limit 1""", COD)
+    perto(m["custo_unitario"], 26.0, "saída gravada pelo custo médio, não pelo preço enviado")
     igual(_saldo(EST["a1"]), 17.0, "saldo depois da saída")
     status(mv({"tipo": "saida", "peca": COD, "quantidade": 500, "origem": EST["a1"], "observacao": "BAT acima do saldo"}), (400, 409), "saída acima do saldo")
     igual(_saldo(EST["a1"]), 17.0, "saldo depois da saída recusada")
