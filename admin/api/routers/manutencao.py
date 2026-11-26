@@ -1506,13 +1506,80 @@ async def editar_ficha(eq_id: str, request: Request, payload=Depends(verificar_m
         sets.append("os_alimenta_manutencao=%s"); params.append(bool(d["os_alimenta_manutencao"]))
     if not sets:
         raise HTTPException(status_code=400, detail="Nada a alterar")
+    antes = await _hist_util_snapshot(eq_id) if any(c in d for c in _HIST_UTIL_CAMPOS) else None
     params.append(eq_id)
     r = await ajard_query(
         f"UPDATE operacional.equipamentos SET {', '.join(sets)} WHERE id=%s AND ativo=true RETURNING codigo",
         tuple(params), fetch="one")
     if not r:
         raise HTTPException(status_code=404, detail="Equipamento não encontrado")
+    if antes is not None:
+        await _hist_util_gravar(eq_id, antes, d, await _usuario_id(payload))
     return {"ok": True, "codigo": r["codigo"]}
+
+
+# (26/11/2026) Histórico de Utilização — réplica ManWinWin: o que mudou na ficha
+# (operador, localização, centro de custo, sistema, situação) e quando. Só grava
+# se "Guardar alterações no Histórico Utilização" (info_compl.guardar_hist) está ligado.
+_HIST_UTIL_CAMPOS = ("operador_responsavel_id", "localizacao", "centro_custo", "sistema_codigo", "ativo")
+_HIST_UTIL_ROTULO = {"operador_responsavel_id": "Operador", "localizacao": "Localização",
+                     "centro_custo": "Centro de custo", "sistema_codigo": "Sistema", "ativo": "Situação"}
+
+
+async def _hist_util_snapshot(eq_id: str):
+    r = await ajard_query(
+        """SELECT operador_responsavel_id::text, localizacao, centro_custo, sistema_codigo, ativo,
+                  COALESCE((info_compl->>'guardar_hist')::boolean, true) AS guardar_hist
+           FROM operacional.equipamentos WHERE id=%s""", (eq_id,), fetch="one")
+    return dict(r) if r else None
+
+
+async def _hist_util_gravar(eq_id: str, antes: dict, d: dict, usuario_id):
+    guardar = antes.get("guardar_hist", True)
+    if "info_compl" in d:
+        guardar = (d["info_compl"] or {}).get("guardar_hist", guardar)
+    if guardar is False:
+        return
+    depois = await _hist_util_snapshot(eq_id)
+    if not depois:
+        return
+    for c in _HIST_UTIL_CAMPOS:
+        if c not in d:
+            continue
+        a, b = antes.get(c), depois.get(c)
+        a = None if a in (None, "") else str(a)
+        b = None if b in (None, "") else str(b)
+        if a == b:
+            continue
+        await ajard_query(
+            """INSERT INTO manutencao.equipamento_hist_utilizacao (equipamento_id, campo, valor_de, valor_para, usuario_id)
+               VALUES (%s, %s, %s, %s, %s)""", (eq_id, c, a, b, usuario_id), fetch="none")
+
+
+@router.get("/manutencao/api/equipamentos/{eq_id}/historico-utilizacao")
+async def equip_historico_utilizacao(eq_id: str, _auth=Depends(verificar_manutencao)):
+    """Linha do tempo das alterações de utilização do equipamento (mais recente primeiro)."""
+    await _garantir_ficha_cols()
+    rows = await ajard_query(
+        """SELECT h.campo, h.valor_de, h.valor_para, h.criado_em,
+                  (SELECT u.nome FROM public.usuarios_garra u WHERE u.id = h.usuario_id) AS usuario_nome,
+                  CASE WHEN h.campo='operador_responsavel_id' THEN (SELECT u.nome FROM public.usuarios_garra u WHERE u.id::text = h.valor_de)
+                       WHEN h.campo='centro_custo' THEN (SELECT cc.nome FROM manutencao.centros_custo cc WHERE cc.codigo = h.valor_de) END AS nome_de,
+                  CASE WHEN h.campo='operador_responsavel_id' THEN (SELECT u.nome FROM public.usuarios_garra u WHERE u.id::text = h.valor_para)
+                       WHEN h.campo='centro_custo' THEN (SELECT cc.nome FROM manutencao.centros_custo cc WHERE cc.codigo = h.valor_para) END AS nome_para
+           FROM manutencao.equipamento_hist_utilizacao h
+           WHERE h.equipamento_id = %s
+           ORDER BY h.criado_em DESC LIMIT 500""", (eq_id,))
+    def _v(campo, raw, nome):
+        if campo == "ativo":
+            return None if raw is None else ("Ativo" if raw == "true" else "Inativo")
+        if nome:
+            return nome if campo == "operador_responsavel_id" else f"{raw} — {nome}"
+        return raw
+    return [{"campo": r["campo"], "rotulo": _HIST_UTIL_ROTULO.get(r["campo"], r["campo"]),
+             "de": _v(r["campo"], r["valor_de"], r["nome_de"]), "para": _v(r["campo"], r["valor_para"], r["nome_para"]),
+             "data": r["criado_em"].isoformat() if r["criado_em"] else None, "usuario": r["usuario_nome"]}
+            for r in rows]
 
 
 _MO_OK = False
@@ -3089,6 +3156,18 @@ async def _garantir_ficha_cols():
     await _garantir_mao_obra()
     await ajard_query("ALTER TABLE manutencao.equipamento_documentos ADD COLUMN IF NOT EXISTS categoria TEXT", fetch="none")
     await ajard_query("ALTER TABLE manutencao.equipamento_documentos ADD COLUMN IF NOT EXISTS ot_id UUID", fetch="none")
+    # (26/11/2026) Histórico de Utilização (ManWinWin): troca de operador, localização,
+    # centro de custo, sistema e situação, com data — gravado ao salvar a ficha
+    await ajard_query("""
+        CREATE TABLE IF NOT EXISTS manutencao.equipamento_hist_utilizacao (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            equipamento_id UUID NOT NULL,
+            campo TEXT NOT NULL,
+            valor_de TEXT,
+            valor_para TEXT,
+            usuario_id UUID,
+            criado_em TIMESTAMPTZ DEFAULT now())""", fetch="none")
+    await ajard_query("CREATE INDEX IF NOT EXISTS ix_eqhist_eq ON manutencao.equipamento_hist_utilizacao (equipamento_id, criado_em DESC)", fetch="none")
     _FICHA_COLS_OK = True
 
 
@@ -5113,7 +5192,17 @@ async def _calcular_previsoes():
             item["status"] = "vencida" if rest < 0 else ("a_vencer" if rest <= 7 else "ok")
         else:
             if base_leitura is None:
+                # (26/11/2026) data informada sem leitura: sugerir o horímetro/km que o objeto
+                # tinha naquele dia (fonte única) — a pessoa confirma, nunca grava sozinho
                 item["status"] = "sem_base"
+                if u and u.get("dt"):
+                    try:
+                        s = await ajard_query(
+                            "SELECT leitura FROM operacional.v_leituras WHERE equipamento_id=%s AND data <= %s AND leitura > 0 ORDER BY data DESC LIMIT 1",
+                            (p["equipamento_id"], u["dt"]), fetch="one")
+                        item["leitura_sugerida"] = float(s["leitura"]) if s and s.get("leitura") is not None else None
+                    except Exception:
+                        item["leitura_sugerida"] = None
             else:
                 alvo = base_leitura + total
                 item["leitura_alvo"] = alvo
@@ -6455,12 +6544,12 @@ async def equip_artigos(eq_id: str, _auth=Depends(verificar_manutencao)):
     rows = await ajard_query(
         """SELECT m.tipo, m.quantidade, m.custo_unitario, m.criado_em,
                   p.codigo AS peca_codigo, p.descricao AS peca_descricao, p.unidade, p.custo_medio,
-                  o.numero AS ot_numero
+                  p.familia_codigo, o.numero AS ot_numero
            FROM manutencao.movimentacoes m
            JOIN manutencao.ot o ON o.id = m.ot_id AND o.equipamento_id = %s
            JOIN manutencao.pecas p ON p.id = m.peca_id
            WHERE m.tipo IN ('saida', 'entrada', 'aplicacao_direta')
-           ORDER BY m.criado_em DESC LIMIT 200""", (eq_id,))
+           ORDER BY m.criado_em DESC LIMIT 500""", (eq_id,))
     itens, total = [], 0.0
     for r in rows:
         custo = float(r["custo_unitario"]) if r["custo_unitario"] is not None \
@@ -6471,9 +6560,32 @@ async def equip_artigos(eq_id: str, _auth=Depends(verificar_manutencao)):
         total += linha
         itens.append({"tipo": r["tipo"], "data": (r["criado_em"].isoformat() if r["criado_em"] else None),
                       "peca_codigo": r["peca_codigo"], "peca_descricao": r["peca_descricao"],
+                      "familia": r["familia_codigo"] or "",
                       "unidade": r["unidade"] or "UN", "quantidade": qtd,
                       "custo_unitario": custo, "total": linha, "ot": r["ot_numero"]})
     return {"itens": itens, "total": round(total, 2)}
+
+
+@router.get("/manutencao/api/pecas/{codigo}/equipamentos-aplicados")
+async def peca_equipamentos_aplicados(codigo: str, _auth=Depends(verificar_manutencao)):
+    """(26/11/2026) Inverso de Itens aplicados: em quais equipamentos a peça foi
+    usada (saídas e aplicações diretas das OTs; devoluções abatem), por equipamento."""
+    rows = await ajard_query(
+        """SELECT e.id AS equipamento_id, e.codigo, e.descricao, e.localizacao, MAX(p.unidade) AS unidade,
+                  SUM(CASE WHEN m.tipo='entrada' THEN -m.quantidade ELSE m.quantidade END) AS quantidade,
+                  COUNT(DISTINCT o.id) AS n_ots, MAX(m.criado_em) AS ultima,
+                  STRING_AGG(DISTINCT o.numero, ', ') AS ots
+           FROM manutencao.movimentacoes m
+           JOIN manutencao.pecas p ON p.id = m.peca_id AND p.codigo = %s
+           JOIN manutencao.ot o ON o.id = m.ot_id
+           JOIN operacional.equipamentos e ON e.id = o.equipamento_id
+           WHERE m.tipo IN ('saida', 'entrada', 'aplicacao_direta')
+           GROUP BY e.id, e.codigo, e.descricao, e.localizacao
+           ORDER BY MAX(m.criado_em) DESC""", (codigo,))
+    return [{"equipamento_id": str(r["equipamento_id"]), "codigo": r["codigo"], "descricao": r["descricao"],
+             "local": r["localizacao"] or "", "unidade": r["unidade"] or "UN",
+             "quantidade": float(r["quantidade"] or 0), "n_ots": int(r["n_ots"] or 0), "ots": r["ots"] or "",
+             "ultima": r["ultima"].isoformat() if r["ultima"] else None} for r in rows]
 
 
 @router.get("/manutencao/api/equipamentos-basico")
