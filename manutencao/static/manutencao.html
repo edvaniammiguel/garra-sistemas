@@ -3616,7 +3616,7 @@ function xlsListaAtual(aba){
 // (estado guardado por computador), busca, recentes e o Painel. relatoriosJanela(nome) continua existindo
 // para os atalhos de contexto e os tours: só leva para a aba já no relatório pedido.
 let _indVista = 'painel', _indBusca = '', _indPainelDados = null;
-const _IND_ICO = { 'Custos':'💰', 'Trabalhos':'🔧', 'Preventivas':'📅', 'Disponibilidade':'⏱', 'Mão de obra':'👷', 'Materiais':'📦', 'Compras':'🛒', 'Entradas':'📥', 'Utilização':'🚜', 'Análises':'🔎' };
+const _IND_ICO = { 'Custos':'💰', 'Trabalhos':'🔧', 'Preventivas':'📅', 'Disponibilidade':'⏱', 'Mão de obra':'👷', 'Materiais':'📦', 'Compras':'🛒', 'Entradas':'📥', 'Utilização':'🚜', 'Subsistemas':'🛞', 'Análises':'🔎' };
 const _IND_ANALISES = [ { nome: '_abc', titulo: 'Análise ABC (peças)', sub: 'curva ABC do consumo de peças — onde está o dinheiro', fn: 'anABC()' },
                         { nome: '_carga', titulo: 'Carga de trabalhos', sub: 'horas planejadas por semana × capacidade da oficina', fn: 'cargaTrabalhos()' } ];
 function _indLS(k, v){ try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch(e){ return null; } }
@@ -3636,16 +3636,18 @@ async function _relPrep(){
   window._relDom = { setores, tipos: (_mntTiposTrab || []) };
   return true;
 }
+let _relAbrirGerado = false;
 async function relatoriosJanela(nome){
   // (14/11/2026) compatibilidade: atalhos e tours que chamavam a janela agora abrem a aba Indicadores
-  if (nome) { _indVista = 'rel'; _relAtual = nome; }
+  if (nome && _REL_APELIDOS[nome]) { const a = _REL_APELIDOS[nome]; nome = a[0]; (_relOpc[nome] || (_relOpc[nome] = { agrupar: '', grafico: '', medida: '' })).visao = (_relOpc[nome].visao || a[1]); }
+  if (nome) { _indVista = 'rel'; _relAtual = nome; _relAbrirGerado = true; }   // (26/11/2026) cartão do Painel e link direto já abrem gerados
   showModule('ind');
 }
 async function indAbrir(){
   if (!(await _relPrep())) return;
   await indCarregarFavs();
   indMontarNav();
-  if (_indVista === 'rel' && _relAtual) indRel(_relAtual); else indPainel();
+  if (_indVista === 'rel' && _relAtual) { const g = _relAbrirGerado; _relAbrirGerado = false; indRel(_relAtual, false, g); } else indPainel();
 }
 function _indTitulo(nome){ const c = _relCfg(nome); return c ? c.titulo : nome; }
 function indMontarNav(){
@@ -3672,7 +3674,7 @@ function indMontarNav(){
   if (q && !grupos.some(g => g.itens.some(casa))) h += '<div class="muted" style="padding:8px 10px;font-size:11px">Nenhum relatório com "' + _esc(_indBusca) + '".</div>';
   nav.innerHTML = h;
 }
-function indRel(nome, deFav){
+function indRel(nome, deFav, gerar){   // (26/11/2026) favorito, cartão do Painel e link já abrem gerados; clique no menu abre limpo
   _indVista = 'rel'; _relAtual = nome; _indRecente(nome);
   if (!deFav) _indFavAtual = null;
   const pane = document.getElementById('ind-pane'); if (!pane) return;
@@ -3680,7 +3682,7 @@ function indRel(nome, deFav){
     + '<div id="rel-filtros" style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-bottom:8px;padding:8px;background:#fff;border:1px solid #E2E8F0;border-radius:8px"></div>'
     + '<div id="rel-grade" style="flex:1;overflow:auto;background:#fff;border:1px solid #E2E8F0;border-radius:8px;min-height:200px"></div>';
   indMontarNav();
-  relEscolher(nome);
+  relEscolher(nome, !!deFav || !!gerar);
 }
 // ── Painel ──
 async function indPainel(){
@@ -3790,13 +3792,24 @@ function indPainelPDF(){
   w.document.close();
 }
 function _relCfg(nome){ for (const g of _relCat.grupos) for (const it of g.itens) if (it.nome === nome) return it; return null; }
-function relEscolher(nome){
-  _relAtual = nome; const cfg = _relCfg(nome); if (!cfg) return;
+// (26/11/2026) Tela limpa: clicar no relatório do menu mostra só os filtros; os números vêm no ▶ Gerar.
+// gerar=true (favorito, link, troca do campo "Mostrar" com o relatório já na tela) gera direto.
+let _relGerado = null;
+function relSeGerado(){ if (_relGerado === _relAtual) relGerar(); }   // opções só regeneram o que já está na tela
+function relEscolher(nome, gerar){
+  _relAtual = nome; let cfg = _relCfg(nome); if (!cfg) return;
   if (!_indFavAtual) document.querySelectorAll('#ind-nav .pn-item').forEach(x => x.classList.toggle('on', x.dataset.n === nome));
+  // (26/11/2026) campo "Mostrar": o mesmo relatório em mais de uma forma (ex.: média mensal · mês a mês · top 10).
+  // Vem primeiro porque decide os outros filtros, as colunas e o que dá para agrupar.
+  const O = _relOpc[nome] || (_relOpc[nome] = { agrupar: '', grafico: '', medida: '' });
+  const V = _relVisao(cfg, O);
+  if (V) cfg = Object.assign({}, cfg, { filtros: V.filtros || cfg.filtros, sub: V.sub || cfg.sub, agrupaveis: V.agrupaveis, medidas: V.medidas });
   const f = cfg.filtros || [], F = _relF, D = window._relDom || {};
   const fld = (rot, inner, w) => '<div class="mfield" style="width:' + (w || 150) + 'px">' + rot + inner + '</div>';
   const opt = (lista, val, vazio) => '<option value="">' + vazio + '</option>' + lista.map(x => '<option value="' + _esc(x.v) + '"' + (String(x.v) === String(val) ? ' selected' : '') + '>' + _esc(x.t) + '</option>').join('');
   let h = '';
+  if (V) h += fld('Mostrar', '<select id="rf-visao" onchange="relTrocarVisao(this.value)">' + _relCfg(nome).visoes.map(x => '<option value="' + _esc(x.v) + '"' + (x.v === V.v ? ' selected' : '') + '>' + _esc(x.t) + '</option>').join('') + '</select>', 190)
+    + '<span style="border-left:1px solid #CBD5E1;align-self:stretch;margin:0 2px"></span>';
   if (f.includes('periodo')) h += fld('De', '<input type="date" id="rf-de" min="2000-01-01" max="2100-12-31" value="' + F.de + '">', 130) + fld('Até', '<input type="date" id="rf-ate" min="2000-01-01" max="2100-12-31" value="' + F.ate + '">', 130)
     + '<div style="display:flex;gap:3px;padding-bottom:4px">' + [['30d',30],['90d',90],['12m',365],['Ano',0]].map(([t,n]) => '<button class="btn" style="padding:2px 6px;font-size:10px" onclick="relPeriodo(' + n + ')">' + t + '</button>').join('') + '</div>';
   if (f.includes('sistema')) h += fld('Sistema', '<select id="rf-sis">' + opt((_arvSistemas||[]).map(x => ({v: x.codigo, t: x.codigo + ' — ' + x.nome})), F.sistema, '— todos —') + '</select>', 200);
@@ -3810,22 +3823,33 @@ function relEscolher(nome){
   if (f.includes('documento')) h += fld('Documento', '<input id="rf-doc" value="' + _esc(F.documento||'') + '" placeholder="nº NF / cupom">', 120);
   if (f.includes('almox')) h += fld('Almoxarifado', '<select id="rf-almox">' + opt((_almList||[]).map(x => ({v: x.codigo, t: x.codigo + ' — ' + (x.nome||'')})), F.almox, '— todos —') + '</select>', 150);
   // (14/11/2026) agrupar por (subtotal por grupo) + gráfico — também no PDF e no Excel
-  const O = _relOpc[nome] || (_relOpc[nome] = { agrupar: '', grafico: '', medida: '' });
   if ((cfg.agrupaveis || []).length) h += '<span style="border-left:1px solid #CBD5E1;align-self:stretch;margin:0 2px"></span>'
-    + fld('Agrupar por', '<select id="rf-agr" onchange="relGerar()">' + opt(cfg.agrupaveis.map(a => ({v: a.k, t: a.t})), O.agrupar, '— sem agrupar —') + '</select>', 170);
-  h += '<label style="display:flex;gap:4px;align-items:center;font-size:11px;padding-bottom:6px;cursor:pointer" title="barras do agrupamento acima da tabela (e na 1ª página do PDF; aba Gráfico no Excel)"><input type="checkbox" id="rf-graf"' + (O.grafico ? ' checked' : '') + ' onchange="relGerar()"> com gráfico</label>';
-  h += fld('Medida do gráfico', '<select id="rf-med" onchange="relGerar()">' + (cfg.medidas || []).map(m => '<option value="' + m.k + '"' + (m.k === O.medida ? ' selected' : '') + '>' + _esc(m.t) + '</option>').join('') + '<option value="_n"' + (O.medida === '_n' ? ' selected' : '') + '>Nº de linhas</option></select>', 150);
+    + fld('Agrupar por', '<select id="rf-agr" onchange="relSeGerado()">' + opt(cfg.agrupaveis.map(a => ({v: a.k, t: a.t})), O.agrupar, '— sem agrupar —') + '</select>', 170);
+  h += '<label style="display:flex;gap:4px;align-items:center;font-size:11px;padding-bottom:6px;cursor:pointer" title="barras do agrupamento acima da tabela (e na 1ª página do PDF; aba Gráfico no Excel)"><input type="checkbox" id="rf-graf"' + (O.grafico ? ' checked' : '') + ' onchange="relGrafTroca()"> com gráfico</label>';
+  h += fld('Medida do gráfico', '<select id="rf-med" onchange="relSeGerado()">' + (cfg.medidas || []).map(m => '<option value="' + m.k + '"' + (m.k === O.medida ? ' selected' : '') + '>' + _esc(m.t) + '</option>').join('') + '<option value="_n"' + (O.medida === '_n' ? ' selected' : '') + '>Nº de linhas</option></select>', 150);
   h += '<div style="display:flex;gap:6px;margin-left:auto;padding-bottom:2px"><button class="btn p" onclick="relGerar()">▶ Gerar</button>'
     + '<button class="btn" onclick="relPDF()">📄 PDF</button><button class="btn" style="background:#107C41;color:#fff;border-color:#107C41" onclick="relExcel()">⬇ Excel</button></div>';
   document.getElementById('rel-filtros').innerHTML = h;
-  document.getElementById('rel-titulo').innerHTML = '<div><b style="color:#1A2A5E">' + _esc(cfg.titulo) + '</b> <span class="muted" style="font-size:10px">' + _esc(cfg.sub) + '</span></div>';
-  relGerar();
+  document.getElementById('rel-titulo').innerHTML = '<div><b style="color:#1A2A5E">' + _esc(cfg.titulo + (V ? ' — ' + V.t.toLowerCase() : '')) + '</b> <span class="muted" style="font-size:10px">' + _esc(cfg.sub) + '</span></div>';
+  if (gerar) { relGerar(); return; }
+  _relGerado = null; _relDados = null;
+  const mg = document.getElementById('rf-med'); if (mg) mg.closest('.mfield').style.display = O.grafico ? '' : 'none';
+  document.getElementById('rel-grade').innerHTML = '<div class="muted" style="padding:28px 14px;text-align:center">Escolha os filtros e clique em <b>▶ Gerar</b>.</div>';
 }
+// (26/11/2026) visão escolhida no campo "Mostrar" (a primeira é a padrão); null quando o relatório não tem visões
+function _relVisao(cfg, O){ const vs = (cfg && cfg.visoes) || []; if (!vs.length) return null; return vs.find(x => x.v === (O || {}).visao) || vs[0]; }
+function relTrocarVisao(v){
+  // as colunas mudam com a visão: o agrupamento e a medida da outra visão não valem mais
+  _relQuery();
+  const O = _relOpc[_relAtual] || (_relOpc[_relAtual] = {}); O.visao = v; O.agrupar = ''; O.medida = '';
+  relEscolher(_relAtual, _relGerado === _relAtual);
+}
+function relGrafTroca(){ if (_relGerado === _relAtual) relGerar(); else _relQuery(); }   // sem dados na tela: só mostra/esconde a "Medida do gráfico"
 function relPeriodo(dias){
   const h = new Date(); let d;
   if (dias === 0) d = new Date(h.getFullYear(), 0, 1); else { d = new Date(h); d.setDate(d.getDate() - dias); }
   const g = id => document.getElementById(id); if (g('rf-de')) g('rf-de').value = _isoLocal(d); if (g('rf-ate')) g('rf-ate').value = _isoLocal(h);
-  relGerar();
+  relSeGerado();
 }
 function _relQuery(){
   const g = id => (document.getElementById(id) || {}).value || '';
@@ -3833,7 +3857,8 @@ function _relQuery(){
   if (!anoOk(g('rf-de')) || !anoOk(g('rf-ate'))) { mostrarToast('⚠️ Data com ano inválido — digite o ano completo', 'warn'); return null; }
   Object.assign(_relF, { de: g('rf-de') || _relF.de, ate: g('rf-ate') || _relF.ate, sistema: g('rf-sis'), equipamento_id: g('rf-eq'), tipo_trabalho: g('rf-tt'), setor: g('rf-setor'), familia: g('rf-fam'),
                          item: g('rf-item'), fornecedor_id: g('rf-forn'), documento: g('rf-doc'), almox: g('rf-almox') });
-  const cfg = _relCfg(_relAtual) || {filtros: []}; const q = [];
+  let cfg = _relCfg(_relAtual) || {filtros: []}; const q = [];
+  { const V0 = _relVisao(cfg, _relOpc[_relAtual]); if (V0 && V0.filtros) cfg = Object.assign({}, cfg, { filtros: V0.filtros }); }   // (26/11/2026) filtros da visão que está na tela
   const add = (k, v) => { if (v) q.push(k + '=' + encodeURIComponent(v)); };
   if (cfg.filtros.includes('periodo')) { add('de', _relF.de); add('ate', _relF.ate); }
   if (cfg.filtros.includes('sistema')) add('sistema', _relF.sistema);
@@ -3851,6 +3876,7 @@ function _relQuery(){
   const O = _relOpc[_relAtual] || (_relOpc[_relAtual] = {});
   O.agrupar = g('rf-agr'); O.grafico = (document.getElementById('rf-graf') || {}).checked ? '1' : ''; O.medida = g('rf-med');
   const mg = document.getElementById('rf-med'); if (mg) mg.closest('.mfield').style.display = O.grafico ? '' : 'none';
+  const V = _relVisao(cfg, O); if (V) { O.visao = g('rf-visao') || V.v; add('visao', O.visao); }   // (26/11/2026) campo "Mostrar"
   add('agrupar', O.agrupar); if (O.grafico) { add('grafico', '1'); add('medida', O.medida); }
   return q.join('&');
 }
@@ -3860,6 +3886,7 @@ async function relGerar(){
   grade.innerHTML = '<div class="muted" style="padding:14px">Gerando…</div>';
   try { _relDados = await mntFetch('/manutencao/api/relatorios/' + _relAtual + (q ? '?' + q : '')); }
   catch(e){ grade.innerHTML = '<div style="padding:14px;color:#B91C1C">' + _esc(e.message) + '</div>'; return; }
+  _relGerado = _relAtual;
   const d = _relDados, cols = d.colunas;
   const num = t => ['int','num','moeda','pct'].includes(t);
   const linhaHtml = l => '<tr>' + cols.map(c => '<td' + (num(c.tipo) ? ' class="r mono" style="white-space:nowrap"' : (c.tipo === 'data' || c.tipo === 'datahora' || String(l[c.k] ?? '').length <= 22 ? ' style="white-space:nowrap"' : ' style="min-width:160px;max-width:320px"')) + '>' + _esc(_relFmt(l[c.k], c.tipo)) + '</td>').join('') + '</tr>';
@@ -3908,16 +3935,20 @@ function _relParamsAtuais(relativo){
   if (grp && grp.grupo === 'Compras' && p.setor && p.setor === _setorCompras) delete p.setor;   // o setor de compras é automático
   return p;
 }
+// (26/11/2026) relatórios que viraram opção do campo "Mostrar": nome antigo → [relatório, visão] (igual ao servidor)
+const _REL_APELIDOS = { 'top-custo': ['custo-objeto', 'top10'], 'custo-medio-mensal': ['custo-objeto', 'media'], 'custo-mensal': ['custo-objeto', 'mes'] };
 function _relAplicar(nome, p){
   p = p || {};
+  if (_REL_APELIDOS[nome]) { p = Object.assign({ visao: _REL_APELIDOS[nome][1] }, p); nome = _REL_APELIDOS[nome][0]; }
   if (p.rel_dias) { const h = new Date(), d = new Date(h); d.setDate(d.getDate() - parseInt(p.rel_dias, 10)); _relF.de = _isoLocal(d); _relF.ate = _isoLocal(h); }
   ['de','ate','sistema','equipamento_id','tipo_trabalho','setor','familia','item','fornecedor_id','documento','almox'].forEach(k => { if (p[k] !== undefined) _relF[k] = p[k]; });
-  _relOpc[nome] = { agrupar: p.agrupar || '', grafico: p.grafico ? '1' : '', medida: p.medida || '' };
+  _relOpc[nome] = { agrupar: p.agrupar || '', grafico: p.grafico ? '1' : '', medida: p.medida || '', visao: p.visao || '' };
 }
 async function relFavoritar(){
   const p = _relParamsAtuais(true); if (!p) return;
   const cfg = _relCfg(_relAtual) || {}, ag = (cfg.agrupaveis || []).find(a => a.k === p.agrupar);
-  const sug = cfg.titulo + (ag ? ' por ' + ag.t.toLowerCase() : '') + (p.rel_dias ? ' (últimos ' + p.rel_dias + ' dias)' : '');
+  const vf = _relVisao(cfg, _relOpc[_relAtual]);
+  const sug = cfg.titulo + (vf ? ' — ' + vf.t.toLowerCase() : '') + (ag ? ' por ' + ag.t.toLowerCase() : '') + (p.rel_dias ? ' (últimos ' + p.rel_dias + ' dias)' : '');
   const rot = prompt('Nome do favorito (aparece em ⭐ Favoritos):', sug); if (rot === null) return;
   try { await mntFetch('/manutencao/api/relatorios-favoritos', { method: 'POST', body: JSON.stringify({ relatorio: _relAtual, rotulo: rot.trim() || sug, params: p }) }); }
   catch(e){ mostrarToast('❌ ' + e.message, 'warn'); return; }
@@ -5183,7 +5214,6 @@ async function otPecasRender(){
         ? '<span style="cursor:pointer;width:16px" title="Editar este item" data-i="'+_esc(JSON.stringify({id:x.id,tipo:x.tipo,peca:x.peca_codigo,desc:x.peca_descricao||'',un:x.unidade||'UN',q:x.quantidade,v:x.custo_unitario,doc:x.documento||'',doctipo:x.documento_tipo||'',forn:x.fornecedor_nome||'',rub:x.rubrica||'',obs:x.observacao||'',alm:x.almox||''}))+'" onclick="otConsumoEditar(JSON.parse(this.dataset.i))">✏️</span>'
           + '<span style="cursor:pointer;color:#B91C1C;width:14px" title="Excluir este item" onclick="otConsumoExcluir(\''+x.id+'\',\''+_esc(x.peca_codigo)+'\')">✕</span>'
         : '<span style="width:30px"></span>')+'</div>';
-  const delta = cons.total - totPl;
   const podeBaixar = ['programada','aberta','em_andamento','aguardando_peca'].includes(o.status);
   c.innerHTML =
     '<div class="dsec" style="display:flex;justify-content:space-between;align-items:center"><span>Planejado <span class="muted">· peças previstas'+(origemPl ? ' — '+origemPl : '')+'</span></span>'
@@ -5206,8 +5236,7 @@ async function otPecasRender(){
     + (cons.itens.length
         ? cons.itens.map(linhaRe).join('') + '<div style="text-align:right;font-weight:700;padding:4px 6px;color:#1A2A5E">Total realizado: '+money(cons.total)+'</div>'
         : '<div class="muted" style="padding:8px 6px;font-size:11px">Nenhuma peça aplicada ainda — use ⊕ Inserir peça.</div>')
-    + (pl.length && cons.itens.length
-        ? '<div style="text-align:right;padding:2px 6px;font-size:11px;font-weight:700;color:'+(delta>0?'#B91C1C':'#15803D')+'">Δ realizado − previsto: '+money(delta)+'</div>' : '')
+    // (26/11/2026) a linha "Δ realizado − previsto" saiu daqui: a diferença já aparece na aba Custos (previsto × realizado)
     + (podeBaixar && pl.length
         ? '<div style="margin-top:8px;display:flex;gap:8px">'
           + '<button class="btn" title="Peças previstas que o estoque e as OCs abertas não cobrem → OC no Compras, amarrada a esta OT" onclick="ocDaOT()">🛒 Gerar OC (faltantes)</button>'

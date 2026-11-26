@@ -40,6 +40,9 @@ from routers.manutencao import (verificar_manutencao, _calcular_previsoes, _gara
 from routers.relatorios_custo_mensal import (rel_custo_mensal, COL_CUSTO_MENSAL,
                                              rel_custo_medio_mensal, COL_CUSTO_MEDIO_MENSAL)
 
+# (26/11/2026) subsistemas (pneus, motores, bombas…) — arquivo próprio
+from routers.relatorios_subsistemas import VISOES_SUBSISTEMAS
+
 router = APIRouter()
 
 
@@ -1093,13 +1096,18 @@ COL_POSICAO = [("situacao", "Situação", "txt"), ("item", "Item", "txt"), ("des
                ("em_pedido", "Em pedido", "num"), ("minimo", "Mínimo", "num"), ("custo_medio", "Custo médio (R$)", "moeda"), ("valor", "Valor em estoque (R$)", "moeda", "sum")]
 
 RELATORIOS = {
-    "custo-objeto":        {"grupo": "Custos", "titulo": "Custo de manutenção por objeto", "sub": "peças + mão de obra + outros das OTs abertas no período; R$ por hora/km operado", "fn": rel_custo_objeto, "cols": COL_CUSTO_OBJETO, "filtros": ["periodo", "sistema", "objeto", "tipo_trabalho", "setor"]},
+    # (26/11/2026) custo por máquina num item só — o campo "Mostrar" escolhe a forma (antes eram 4 itens no menu)
+    "custo-objeto":        {"grupo": "Custos", "titulo": "Custo por máquina", "sub": "manutenção, combustível e pneus de cada máquina", "filtros": ["periodo", "sistema", "objeto", "tipo_trabalho", "setor", "visao"],
+                            "visoes": [{"v": "total", "t": "Manutenção no período", "fn": rel_custo_objeto, "cols": COL_CUSTO_OBJETO, "filtros": ["periodo", "sistema", "objeto", "tipo_trabalho", "setor", "visao"],
+                                        "sub": "peças + mão de obra + outros das OTs abertas no período; R$ por hora/km operado"},
+                                       {"v": "top10", "t": "Top 10", "fn": rel_top_custo, "cols": COL_TOP_CUSTO, "filtros": ["periodo", "sistema", "tipo_trabalho", "visao"],
+                                        "sub": "Pareto: as 10 máquinas que concentram o gasto de manutenção"},
+                                       {"v": "media", "t": "Média mensal", "fn": rel_custo_medio_mensal, "cols": COL_CUSTO_MEDIO_MENSAL, "filtros": ["periodo", "sistema", "objeto", "visao"],
+                                        "sub": "quanto cada máquina gasta por mês, em média: combustível, manutenção e pneus"},
+                                       {"v": "mes", "t": "Mês a mês", "fn": rel_custo_mensal, "cols": COL_CUSTO_MENSAL, "filtros": ["periodo", "sistema", "objeto", "visao"],
+                                        "sub": "combustível, manutenção e pneus de cada máquina em cada mês"}]},
     "custo-sistema":       {"grupo": "Custos", "titulo": "Custo por sistema", "sub": "onde o dinheiro vai, por ramo da organização", "fn": rel_custo_sistema, "cols": COL_CUSTO_SISTEMA, "filtros": ["periodo", "sistema", "tipo_trabalho", "setor"]},
     "custo-conta":         {"grupo": "Custos", "titulo": "Custo por plano de contas", "sub": "para o financeiro: lançamentos de peças, MO e outros por conta", "fn": rel_custo_conta, "cols": COL_CUSTO_CONTA, "filtros": ["periodo", "sistema", "objeto"]},
-    "top-custo":           {"grupo": "Custos", "titulo": "Top 10 objetos por custo", "sub": "Pareto: quem concentra o gasto", "fn": rel_top_custo, "cols": COL_TOP_CUSTO, "filtros": ["periodo", "sistema", "tipo_trabalho"]},
-    # (26/11/2026) combustível + manutenção + pneus por máquina
-    "custo-medio-mensal":  {"grupo": "Custos", "titulo": "Custo médio mensal por máquina", "sub": "quanto cada máquina gasta por mês, em média: combustível, manutenção e pneus", "fn": rel_custo_medio_mensal, "cols": COL_CUSTO_MEDIO_MENSAL, "filtros": ["periodo", "sistema", "objeto"]},
-    "custo-mensal":        {"grupo": "Custos", "titulo": "Custo mensal por máquina (mês a mês)", "sub": "combustível, manutenção e pneus de cada máquina em cada mês", "fn": rel_custo_mensal, "cols": COL_CUSTO_MENSAL, "filtros": ["periodo", "sistema", "objeto"]},
     "backlog":             {"grupo": "Trabalhos", "titulo": "Backlog de OTs (em aberto)", "sub": "fotografia de hoje: tudo que não está encerrado, com idade e atraso", "fn": rel_backlog, "cols": COL_BACKLOG, "filtros": ["sistema", "objeto", "tipo_trabalho", "setor"]},
     "encerradas":          {"grupo": "Trabalhos", "titulo": "OTs encerradas no período", "sub": "produção da oficina: duração, TDM previsto × parada real, custo", "fn": rel_encerradas, "cols": COL_ENCERRADAS, "filtros": ["periodo", "sistema", "objeto", "tipo_trabalho", "setor"]},
     "corretiva-preventiva": {"grupo": "Trabalhos", "titulo": "Corretiva × Preventiva", "sub": "por objeto: a frota está sendo mantida ou apagando incêndio?", "fn": rel_corretiva_preventiva, "cols": COL_CXP, "filtros": ["periodo", "sistema", "objeto"]},
@@ -1125,9 +1133,30 @@ RELATORIOS = {
     "fornecedores-desempenho": {"grupo": "Compras", "titulo": "Desempenho de fornecedores", "sub": "no período: convites × respostas, vitórias, valor comprado, % entregas no prazo e atraso médio", "fn": rel_fornecedores_desempenho, "cols": COL_FORN_DESEMP, "filtros": ["periodo"]},
     "posicao-estoque":     {"grupo": "Compras", "titulo": "Posição de estoque valorizada", "sub": "hoje: saldo, comprometido com OTs, disponível, em pedido, mínimo e valor a custo médio", "fn": rel_posicao_estoque, "cols": COL_POSICAO, "filtros": ["familia", "item"]},
     "utilizacao":          {"grupo": "Utilização", "titulo": "Horas/km por objeto e mês", "sub": "quanto cada máquina rodou (base do R$/h e do FMD)", "fn": rel_utilizacao, "cols": COL_UTIL, "filtros": ["periodo", "sistema", "objeto"]},
+    # (26/11/2026) subsistemas num item só, com o campo "Mostrar"
+    "subsistemas":         {"grupo": "Subsistemas", "titulo": "Subsistemas", "sub": "pneus, motores, bombas e outros componentes montados nas máquinas",
+                            "filtros": ["sistema", "objeto", "visao"], "visoes": VISOES_SUBSISTEMAS},
     "pontos":              {"grupo": "Utilização", "titulo": "Pontos de leitura", "sub": "situação dos pontos com limiares 🟡🟠🔴", "fn": rel_pontos, "cols": COL_PONTOS, "filtros": ["sistema", "objeto"]},
 }
-_ORDEM_GRUPOS = ["Custos", "Trabalhos", "Preventivas", "Disponibilidade", "Mão de obra", "Materiais", "Compras", "Entradas", "Utilização"]
+# (26/11/2026) nome antigo → (relatório, visão): link ou favorito feito antes da unificação continua abrindo
+_REL_APELIDOS = {"top-custo": ("custo-objeto", "top10"), "custo-medio-mensal": ("custo-objeto", "media"), "custo-mensal": ("custo-objeto", "mes")}
+
+
+def _visao(cfg, v=None):
+    """(26/11/2026) Relatório com mais de uma forma de mostrar ("visoes"): devolve a escolhida
+    (ou a primeira, que é a padrão). Relatório comum devolve None."""
+    vs = cfg.get("visoes")
+    if not vs:
+        return None
+    return next((x for x in vs if x["v"] == (v or "").strip().lower()), vs[0])
+
+
+def _fn_cols(cfg, v=None):
+    x = _visao(cfg, v)
+    return (x["fn"], x["cols"]) if x else (cfg["fn"], cfg["cols"])
+
+
+_ORDEM_GRUPOS = ["Custos", "Trabalhos", "Preventivas", "Disponibilidade", "Mão de obra", "Materiais", "Compras", "Entradas", "Utilização", "Subsistemas"]
 
 
 # ═══ (14/11/2026) AGRUPAR POR + GRÁFICO — genéricos para todos os relatórios (tela, PDF e Excel) ═══
@@ -1406,7 +1435,16 @@ async def favoritos_listar(_auth=Depends(verificar_manutencao)):
     rows = await ajard_query("SELECT id, rotulo, relatorio, params FROM manutencao.relatorio_favoritos WHERE usuario_id=%s ORDER BY ordem, criado_em", (uid,)) or []
     import json as _json
     par = lambda v: (_json.loads(v) if isinstance(v, str) else (v or {}))
-    return [{"id": str(r["id"]), "rotulo": r["rotulo"], "relatorio": r["relatorio"], "params": par(r["params"])} for r in rows if r["relatorio"] in RELATORIOS]
+    # (26/11/2026) favorito salvo num relatório que virou opção do campo "Mostrar" continua valendo
+    out = []
+    for r in rows:
+        rel, prm = r["relatorio"], dict(par(r["params"]))
+        if rel in _REL_APELIDOS:
+            rel, vis = _REL_APELIDOS[rel]
+            prm.setdefault("visao", vis)
+        if rel in RELATORIOS:
+            out.append({"id": str(r["id"]), "rotulo": r["rotulo"], "relatorio": rel, "params": prm})
+    return out
 
 
 @router.post("/manutencao/api/relatorios-favoritos")
@@ -1443,8 +1481,17 @@ async def favoritos_excluir(fid: str, _auth=Depends(verificar_manutencao)):
 async def catalogo(_auth=Depends(verificar_manutencao)):
     grupos = []
     for g in _ORDEM_GRUPOS:
-        itens = [{"nome": k, "titulo": v["titulo"], "sub": v["sub"], "filtros": v["filtros"],
-                  "agrupaveis": _agrupaveis(v["cols"]), "medidas": _medidas(v["cols"])} for k, v in RELATORIOS.items() if v["grupo"] == g]
+        itens = []
+        for k, v in RELATORIOS.items():
+            if v["grupo"] != g:
+                continue
+            cols = _fn_cols(v)[1]
+            it = {"nome": k, "titulo": v["titulo"], "sub": v["sub"], "filtros": v["filtros"],
+                  "agrupaveis": _agrupaveis(cols), "medidas": _medidas(cols)}
+            if v.get("visoes"):   # (26/11/2026) cada visão tem as suas colunas: agrupar/medidas próprios
+                it["visoes"] = [{"v": x["v"], "t": x["t"], "sub": x.get("sub") or v["sub"], "filtros": x.get("filtros") or v["filtros"],
+                                 "agrupaveis": _agrupaveis(x["cols"]), "medidas": _medidas(x["cols"])} for x in v["visoes"]]
+            itens.append(it)
         if itens:
             grupos.append({"grupo": g, "itens": itens})
     return {"grupos": grupos}
@@ -1452,14 +1499,19 @@ async def catalogo(_auth=Depends(verificar_manutencao)):
 
 @router.get("/manutencao/api/relatorios/{nome}")
 async def relatorio(nome: str, request: Request, _auth=Depends(verificar_manutencao)):
+    qp = request.query_params
+    pedida = qp.get("visao")
+    if nome in _REL_APELIDOS:
+        nome, pedida = _REL_APELIDOS[nome][0], (pedida or _REL_APELIDOS[nome][1])
     cfg = RELATORIOS.get(nome)
     if not cfg:
         raise HTTPException(status_code=404, detail="Relatório desconhecido")
     await _prep()
     F = _F(request.query_params)
-    linhas = await cfg["fn"](F)
-    cols = cfg["cols"]
-    qp = request.query_params
+    vis = _visao(cfg, pedida)                     # (26/11/2026) campo "Mostrar"
+    fn, cols = _fn_cols(cfg, pedida)
+    titulo = cfg["titulo"] + (" — " + vis["t"].lower() if vis else "")
+    linhas = await fn(F)
     formato = (qp.get("formato") or "").lower()
     # (14/11/2026) agrupar por / gráfico — iguais na tela, no PDF e no Excel
     chave = (qp.get("agrupar") or "").strip()
@@ -1469,14 +1521,15 @@ async def relatorio(nome: str, request: Request, _auth=Depends(verificar_manuten
     if grupos:
         linhas = [l for _, ls, _ in grupos for l in ls]
     graf = _grafico(cols, linhas, chave, (qp.get("medida") or "").strip()) if qp.get("grafico") in ("1", "true", "sim") else None
-    rot = F.rotulo("periodo" in cfg["filtros"])
+    filtros_vis = (vis.get("filtros") if vis else None) or cfg["filtros"]   # (26/11/2026) cada visão diz se tem período
+    rot = F.rotulo("periodo" in filtros_vis)
     if chave:
         rot += " · agrupado por " + next((a["t"] for a in _agrupaveis(cols) if a["k"] == chave), chave)
     if formato == "xlsx":
-        return _xlsx_response(cfg["titulo"], rot, _cols_json(cols), linhas, nome, _emitente(_auth), grupos=grupos, grafico=graf)
+        return _xlsx_response(titulo, rot, _cols_json(cols), linhas, nome, _emitente(_auth), grupos=grupos, grafico=graf)
     if formato == "pdf":
-        return _pdf_response(cfg["titulo"], rot, _cols_json(cols), linhas, _totais(cols, linhas), nome, _emitente(_auth), grupos=grupos, grafico=graf)
-    return {"nome": nome, "titulo": cfg["titulo"], "sub": cfg["sub"], "filtros": rot,
+        return _pdf_response(titulo, rot, _cols_json(cols), linhas, _totais(cols, linhas), nome, _emitente(_auth), grupos=grupos, grafico=graf)
+    return {"nome": nome, "titulo": titulo, "sub": (vis.get("sub") if vis else None) or cfg["sub"], "filtros": rot, "visao": vis["v"] if vis else None,
             "colunas": _cols_json(cols), "linhas": [{k: _json_val(v) for k, v in l.items()} for l in linhas], "totais": _totais(cols, linhas),
             "grupos": [{"rotulo": r, "n": len(ls), "totais": t} for r, ls, t in grupos] if grupos else None, "grafico": graf}
 

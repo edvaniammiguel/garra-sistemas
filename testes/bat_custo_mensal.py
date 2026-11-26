@@ -34,7 +34,7 @@ def _rel(nome, extra=""):
     return status(chamar("admin", "GET", f"/manutencao/api/relatorios/{nome}?{PER}&equipamento_id={EST['eid']}{extra}"), 200, nome)
 
 
-@teste("Custo mensal", "relatório mês a mês separa combustível, manutenção e pneus sem contar duas vezes")
+@teste("Custo mensal", "visão mês a mês separa combustível, manutenção e pneus sem contar duas vezes")
 def mes_a_mes():
     eid = EST["eid"] = equipamento_bat(COD, "h")
     _limpar(eid)
@@ -59,7 +59,8 @@ def mes_a_mes():
     otc = _ot(eid, "2025-03-10 09:00-03", "cancelada")
     sql("insert into manutencao.ot_outros (ot_id, descricao, valor, ativo) values ($1::uuid,'Não conta',5000,true)", otc)
 
-    r = _rel("custo-mensal")
+    r = _rel("custo-objeto", "&visao=mes")
+    igual(r["visao"], "mes", "visão devolvida")
     por_mes = {l["mes"][:7]: l for l in r["linhas"]}
     igual(sorted(por_mes), ["2025-01", "2025-02", "2025-03"], "meses do relatório")
     j, f, m = por_mes["2025-01"], por_mes["2025-02"], por_mes["2025-03"]
@@ -71,10 +72,13 @@ def mes_a_mes():
     perto(r["totais"]["total"], 4070, "total geral do período")
 
 
-@teste("Custo mensal", "média mensal divide pelo tempo desde o primeiro lançamento e sai em Excel e PDF")
+@teste("Custo mensal", "média mensal (÷ meses desde o 1º lançamento) em Excel e PDF; custo por máquina é um item só no menu")
 def media():
-    r = _rel("custo-medio-mensal")
+    r = _rel("custo-objeto", "&visao=media")
+    igual(r["visao"], "media", "visão devolvida")
     igual(len(r["linhas"]), 1, "uma linha por máquina")
+    igual(_rel("custo-medio-mensal")["linhas"], r["linhas"], "o nome antigo continua abrindo a média")
+    igual(_rel("custo-mensal")["visao"], "mes", "o nome antigo do mês a mês continua abrindo")
     l = r["linhas"][0]
     igual(l["desde"][:10], "2025-01-10", "primeiro lançamento")
     meses = round(81 / 30.4375, 1)                     # 10/01 a 31/03 = 81 dias
@@ -84,12 +88,25 @@ def media():
     perto(l["combustivel_mes"] + l["manutencao_mes"] + l["pneus_mes"], l["total_mes"], "as três médias somam o total", tol=0.02)
     perto(l["pneus"], 1050, "pneus no período")
     for fmt, assinatura in (("xlsx", b"PK"), ("pdf", b"%PDF")):
-        req = urllib.request.Request(URL + f"/manutencao/api/relatorios/custo-medio-mensal?{PER}&equipamento_id={EST['eid']}&formato={fmt}",
+        req = urllib.request.Request(URL + f"/manutencao/api/relatorios/custo-objeto?{PER}&equipamento_id={EST['eid']}&visao=media&formato={fmt}",
                                      headers={"Authorization": "Bearer " + token("admin")})
         corpo = urllib.request.urlopen(req).read()
         assert corpo[:4].startswith(assinatura), f"arquivo {fmt} não veio no formato esperado"
+    # um item só no menu de Custos para tudo o que é "por máquina"; sem escolher, abre como abria antes (manutenção no período)
     cat = status(chamar("admin", "GET", "/manutencao/api/relatorios"), 200, "catálogo")
-    nomes = [i["nome"] for g in cat["grupos"] if g["grupo"] == "Custos" for i in g["itens"]]
-    assert "custo-medio-mensal" in nomes and "custo-mensal" in nomes, "relatórios novos fora do catálogo de Custos"
+    custos = {i["nome"]: i for g in cat["grupos"] if g["grupo"] == "Custos" for i in g["itens"]}
+    for antigo in ("top-custo", "custo-mensal", "custo-medio-mensal"):
+        assert antigo not in custos, f"{antigo} devia ser opção do campo Mostrar, não item do menu"
+    vis = {v["v"]: v for v in custos["custo-objeto"]["visoes"]}
+    igual(list(vis), ["total", "top10", "media", "mes"], "opções do campo Mostrar")
+    assert "tipo_trabalho" in vis["total"]["filtros"] and "tipo_trabalho" not in vis["media"]["filtros"], "cada opção tem os seus filtros"
+    assert "objeto" not in vis["top10"]["filtros"], "top 10 não filtra por objeto"
+    assert not custos["custo-sistema"].get("visoes"), "custo por sistema não tem campo Mostrar"
+    padrao = _rel("custo-objeto")
+    igual(padrao["visao"], "total", "visão padrão")
+    assert any(c["k"] == "n_corretivas" for c in padrao["colunas"]), "padrão devia ser o custo de manutenção no período"
+    top = _rel("top-custo")
+    igual(top["visao"], "top10", "o nome antigo do top 10 continua abrindo")
+    assert any(c["k"] == "acum" for c in top["colunas"]), "top 10 sem a coluna de % acumulado"
     _limpar(EST["eid"])
     sql("delete from manutencao.pecas where codigo in ('BAT.CM.FIL','BAT.CM.PN')")
