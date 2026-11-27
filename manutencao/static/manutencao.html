@@ -7758,9 +7758,34 @@ async function cotacaoMapa(id){
   try { _cot = await _fxCompras('/compras/api/cotacoes/'+id); } catch(e){ mostrarToast('❌ '+e.message,'warn'); return; }
   if (!_cotForns){ try { const f = await _fxCompras('/compras/api/fornecedores'); _cotForns = Array.isArray(f) ? f : (f.itens||f.fornecedores||[]); } catch(e){ _cotForns = []; } }
   document.querySelector('#eq-ficha .modal').classList.add('larga');
-  document.getElementById('eq-ficha-corpo').innerHTML = _cotHtml();
+  _cotDesenhar();
   // (20/11/2026) abre pela classe .show como as demais fichas; o style.display inline travava a janela invisível (Subsistemas depois da Cotação)
   const _ov = document.getElementById('eq-ficha'); _ov.style.display = ''; _ov.classList.add('show');
+}
+// (27/11/2026) Redesenho do mapa de cotação sem perder o lugar: a cada preço digitado a tabela voltava para o topo
+// e o cursor saía do campo. Agora guarda a rolagem (da tabela e da janela) e o campo em foco, e devolve depois.
+let _cotDesenhoId = null;
+function _cotDesenhar(){
+  const corpo = document.getElementById('eq-ficha-corpo'); if (!corpo) return;
+  const mesma = _cot && _cotDesenhoId === _cot.id;
+  const rol = document.getElementById('cot-mapa-rol'), modal = document.querySelector('#eq-ficha .modal');
+  const pos = (mesma && rol) ? { t: rol.scrollTop, l: rol.scrollLeft, m: modal ? modal.scrollTop : 0, c: corpo.scrollTop } : null;
+  const a = document.activeElement;
+  const foco = (mesma && a && corpo.contains(a) && a.tagName === 'INPUT' && a.dataset)
+    ? { cls: (a.className || '').split(' ')[0], it: a.dataset.it || '', cf: a.dataset.cf || '', id: a.id || '' } : null;
+  corpo.innerHTML = _cotHtml();
+  _cotDesenhoId = _cot ? _cot.id : null;
+  if (pos) {
+    const r2 = document.getElementById('cot-mapa-rol');
+    if (r2) { r2.scrollTop = pos.t; r2.scrollLeft = pos.l; }
+    if (modal) modal.scrollTop = pos.m;
+    corpo.scrollTop = pos.c;
+  }
+  if (foco) {
+    let el = foco.id ? document.getElementById(foco.id) : null;
+    if (!el && foco.cls) el = [...corpo.querySelectorAll('input.' + foco.cls)].find(i => (i.dataset.it || '') === foco.it && (i.dataset.cf || '') === foco.cf);
+    if (el) { try { el.focus({ preventScroll: true }); if (el.select) el.select(); } catch (e) {} }
+  }
 }
 function _cotHtml(){
   const c = _cot, aberta = c.status === 'aberta', money = v => (v == null ? '—' : 'R$ ' + (parseFloat(v)||0).toLocaleString('pt-BR',{minimumFractionDigits:2, maximumFractionDigits:2}));
@@ -7791,7 +7816,7 @@ function _cotHtml(){
   }
   h += '</div>';
   // mapa
-  h += '<div style="overflow:auto;max-height:420px"><table style="font-size:11px;min-width:600px"><thead><tr><th style="min-width:200px">Item</th><th class="r" style="width:60px">Qtd</th>'
+  h += '<div id="cot-mapa-rol" style="overflow:auto;max-height:420px"><table style="font-size:11px;min-width:600px"><thead><tr><th style="min-width:200px">Item</th><th class="r" style="width:60px">Qtd</th>'
     + c.fornecedores.map(f => '<th style="min-width:150px;text-align:center'+(aberta && sug.por_fornecedor===f.id?';background:#ECFDF5':'')+'">'+_esc(f.fornecedor_nome)+(aberta && sug.por_fornecedor===f.id?' <span class="chip ok" style="font-size:9px">sugestão</span>':'')
         + (aberta ? '<br><span class="muted" style="font-weight:400;font-size:9px;cursor:pointer" onclick="cotDelForn(\''+f.id+'\')">✕ remover</span>' : (f.oc_numero ? '<br><span class="chip tm" style="font-size:9px">'+_esc(f.oc_numero)+' · '+_esc(f.oc_status||'')+'</span>' : ''))
         + hist(f)+'</th>').join('')
@@ -7929,7 +7954,7 @@ function cotOfertaSalvar(itemId, cfId){
 async function cotDecidir(itemId, cfId, aceito){
   const inp = document.querySelector('.cot-preco[data-it="'+itemId+'"][data-cf="'+cfId+'"]'); if (inp) inp.dataset.aceito = aceito ? '1' : '0';
   if (!(await cotSalvar(true))) return;
-  try { _cot = await _fxCompras('/compras/api/cotacoes/'+_cot.id+'/celula', { method:'PUT', body: JSON.stringify({ item_id: itemId, cf_id: cfId, aceito }) }); document.getElementById('eq-ficha-corpo').innerHTML = _cotHtml(); } catch(e){ mostrarToast('❌ '+e.message,'warn'); }
+  try { _cot = await _fxCompras('/compras/api/cotacoes/'+_cot.id+'/celula', { method:'PUT', body: JSON.stringify({ item_id: itemId, cf_id: cfId, aceito }) }); _cotDesenhar(); } catch(e){ mostrarToast('❌ '+e.message,'warn'); }
 }
 function cotVerMudou(){
   // pedido original (itens) × o que cada fornecedor ofereceu de fato (células)
@@ -7954,7 +7979,7 @@ async function cotSaldo(){
   catch(e){ mostrarToast('❌ '+e.message,'warn'); }
 }
 async function cotQtd(itemId, v){
-  try { _cot = await _fxCompras('/compras/api/cotacoes/'+_cot.id+'/itens/'+itemId, { method:'PUT', body: JSON.stringify({ quantidade: v }) }); const r = _cotLerRespostas(); document.getElementById('eq-ficha-corpo').innerHTML = _cotHtml(); _cotRepor(r); }
+  try { _cot = await _fxCompras('/compras/api/cotacoes/'+_cot.id+'/itens/'+itemId, { method:'PUT', body: JSON.stringify({ quantidade: v }) }); const r = _cotLerRespostas(); _cotDesenhar(); _cotRepor(r); }
   catch(e){ mostrarToast('❌ '+e.message,'warn'); }
 }
 // devolve ao mapa redesenhado o que estava digitado e ainda não salvo
@@ -7975,13 +8000,13 @@ async function cotSalvar(silencio){
       _cot = await _fxCompras('/compras/api/cotacoes/'+_cot.id+'/fornecedores/'+cf, { method:'PUT', body: JSON.stringify(d) });
     }
     if (!silencio) mostrarToast('💾 Respostas salvas','ok');
-    document.getElementById('eq-ficha-corpo').innerHTML = _cotHtml();
+    _cotDesenhar();
     return true;
   } catch(e){ mostrarToast('❌ '+e.message,'warn'); return false; }
 }
-async function cotEditar(d){ await cotSalvar(true); try { _cot = await _fxCompras('/compras/api/cotacoes/'+_cot.id, { method:'PUT', body: JSON.stringify(d) }); document.getElementById('eq-ficha-corpo').innerHTML = _cotHtml(); } catch(e){ mostrarToast('❌ '+e.message,'warn'); } }
-async function cotAddForn(){ const id = document.getElementById('cot-add-forn').value; if (!id) return; await cotSalvar(true); try { _cot = await _fxCompras('/compras/api/cotacoes/'+_cot.id+'/fornecedores', { method:'POST', body: JSON.stringify({ fornecedor_id: id }) }); document.getElementById('eq-ficha-corpo').innerHTML = _cotHtml(); } catch(e){ mostrarToast('❌ '+e.message,'warn'); } }
-async function cotDelForn(cf){ if (!confirm('Remover este fornecedor da cotação?')) return; await cotSalvar(true); try { _cot = await _fxCompras('/compras/api/cotacoes/'+_cot.id+'/fornecedores/'+cf, { method:'DELETE' }); document.getElementById('eq-ficha-corpo').innerHTML = _cotHtml(); } catch(e){ mostrarToast('❌ '+e.message,'warn'); } }
+async function cotEditar(d){ await cotSalvar(true); try { _cot = await _fxCompras('/compras/api/cotacoes/'+_cot.id, { method:'PUT', body: JSON.stringify(d) }); _cotDesenhar(); } catch(e){ mostrarToast('❌ '+e.message,'warn'); } }
+async function cotAddForn(){ const id = document.getElementById('cot-add-forn').value; if (!id) return; await cotSalvar(true); try { _cot = await _fxCompras('/compras/api/cotacoes/'+_cot.id+'/fornecedores', { method:'POST', body: JSON.stringify({ fornecedor_id: id }) }); _cotDesenhar(); } catch(e){ mostrarToast('❌ '+e.message,'warn'); } }
+async function cotDelForn(cf){ if (!confirm('Remover este fornecedor da cotação?')) return; await cotSalvar(true); try { _cot = await _fxCompras('/compras/api/cotacoes/'+_cot.id+'/fornecedores/'+cf, { method:'DELETE' }); _cotDesenhar(); } catch(e){ mostrarToast('❌ '+e.message,'warn'); } }
 async function cotAddItem(){
   const cod = prompt('Código da peça (ou deixe vazio para item só por descrição):', ''); if (cod === null) return;
   let desc = '', un = 'UN';
@@ -7989,9 +8014,9 @@ async function cotAddItem(){
   else { desc = prompt('Descrição do item:', ''); if (!desc) return; }
   const q = prompt('Quantidade:', '1'); if (q === null) return; const n = parseFloat(String(q).replace(',','.')); if (!(n > 0)) return;
   await cotSalvar(true);
-  try { _cot = await _fxCompras('/compras/api/cotacoes/'+_cot.id+'/itens', { method:'POST', body: JSON.stringify({ peca_codigo: cod.trim()||null, descricao: desc, quantidade: n, unidade: un }) }); document.getElementById('eq-ficha-corpo').innerHTML = _cotHtml(); } catch(e){ mostrarToast('❌ '+e.message,'warn'); }
+  try { _cot = await _fxCompras('/compras/api/cotacoes/'+_cot.id+'/itens', { method:'POST', body: JSON.stringify({ peca_codigo: cod.trim()||null, descricao: desc, quantidade: n, unidade: un }) }); _cotDesenhar(); } catch(e){ mostrarToast('❌ '+e.message,'warn'); }
 }
-async function cotDelItem(id){ if (!confirm('Remover o item da cotação?')) return; await cotSalvar(true); try { _cot = await _fxCompras('/compras/api/cotacoes/'+_cot.id+'/itens/'+id, { method:'DELETE' }); document.getElementById('eq-ficha-corpo').innerHTML = _cotHtml(); } catch(e){ mostrarToast('❌ '+e.message,'warn'); } }
+async function cotDelItem(id){ if (!confirm('Remover o item da cotação?')) return; await cotSalvar(true); try { _cot = await _fxCompras('/compras/api/cotacoes/'+_cot.id+'/itens/'+id, { method:'DELETE' }); _cotDesenhar(); } catch(e){ mostrarToast('❌ '+e.message,'warn'); } }
 async function cotTexto(){
   let t; try { t = await _fxCompras('/compras/api/cotacoes/'+_cot.id+'/texto'); } catch(e){ mostrarToast('❌ '+e.message,'warn'); return; }
   const links = (t.fornecedores||[]).map(f => { const tel = String(f.whatsapp||'').replace(/\D/g,''); return tel ? '<a class="btn" style="font-size:10px" target="_blank" onclick="cotMarcarEnviada()" href="https://wa.me/'+(tel.length<=11?'55':'')+tel+'?text='+encodeURIComponent(t.texto)+'">WhatsApp → '+_esc(f.nome)+'</a>' : '<span class="muted" style="font-size:10px">'+_esc(f.nome)+' (sem telefone)</span>'; }).join(' ');
@@ -8013,7 +8038,7 @@ function cotCopiarTexto(){
 // (12/11/2026) pedido de cotação saiu (WhatsApp ou texto copiado) → fase "enviada"; grava só na 1ª vez
 async function cotMarcarEnviada(){
   if (!_cot || _cot.enviada_em) return;
-  try { _cot = await _fxCompras('/compras/api/cotacoes/'+_cot.id+'/enviar', { method:'POST' }); const r = _cotLerRespostas(); document.getElementById('eq-ficha-corpo').innerHTML = _cotHtml(); _cotRepor(r); } catch(e){}
+  try { _cot = await _fxCompras('/compras/api/cotacoes/'+_cot.id+'/enviar', { method:'POST' }); const r = _cotLerRespostas(); _cotDesenhar(); _cotRepor(r); } catch(e){}
 }
 async function cotEncerrar(){
   if (!(await cotSalvar(true))) return;
