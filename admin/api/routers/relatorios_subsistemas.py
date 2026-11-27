@@ -198,8 +198,9 @@ async def rel_sub_posicao(F):
     return out
 
 
-COL_SUB_POSICAO = [("maquina", "Máquina", "txt"), ("maquina_desc", "Descrição da máquina", "txt"), ("posicao", "Posição", "txt"),
-                   ("componente", "Componente", "txt"), ("descricao", "Descrição", "txt"), ("categoria", "Categoria", "txt"),
+# (27/11/2026) ordem pedida: Componente e Descrição vêm antes da Posição (posição atual, trocas e previsão)
+COL_SUB_POSICAO = [("maquina", "Máquina", "txt"), ("maquina_desc", "Descrição da máquina", "txt"), ("componente", "Componente", "txt"),
+                   ("descricao", "Descrição", "txt"), ("posicao", "Posição", "txt"), ("categoria", "Categoria", "txt"),
                    ("marca", "Marca", "txt"), ("modelo", "Modelo", "txt"), ("montado_em", "Montado em", "data"),
                    ("rodado", "Rodado nesta montagem", "num"), ("vida", "Vida acumulada", "num"), ("unidade", "Un.", "txt"),
                    ("ots_abertas", "OTs abertas", "int", "sum")]
@@ -271,8 +272,8 @@ async def rel_sub_trocas(F):
     return out
 
 
-COL_SUB_TROCAS = [("maquina", "Máquina", "txt"), ("maquina_desc", "Descrição da máquina", "txt"), ("posicao", "Posição", "txt"),
-                  ("componente", "Componente", "txt"), ("descricao", "Descrição", "txt"), ("marca", "Marca", "txt"), ("modelo", "Modelo", "txt"),
+COL_SUB_TROCAS = [("maquina", "Máquina", "txt"), ("maquina_desc", "Descrição da máquina", "txt"), ("componente", "Componente", "txt"),
+                  ("descricao", "Descrição", "txt"), ("posicao", "Posição", "txt"), ("marca", "Marca", "txt"), ("modelo", "Modelo", "txt"),
                   ("montado_em", "Montado em", "data"), ("desmontado_em", "Desmontado em", "data"), ("situacao", "Situação", "txt"),
                   ("leitura_montagem", "Leitura na montagem", "num"), ("leitura_desmontagem", "Leitura na desmontagem", "num"),
                   ("rodado", "Rodado", "num", "sum"), ("unidade", "Un.", "txt"), ("dias", "Dias montado", "int"),
@@ -385,7 +386,7 @@ async def rel_sub_previsao(F):
 
 
 COL_SUB_PREVISAO = [("situacao", "Situação", "txt"), ("maquina", "Máquina", "txt"), ("maquina_desc", "Descrição da máquina", "txt"),
-                    ("posicao", "Posição", "txt"), ("componente", "Componente", "txt"), ("descricao", "Descrição", "txt"),
+                    ("componente", "Componente", "txt"), ("descricao", "Descrição", "txt"), ("posicao", "Posição", "txt"),
                     ("marca", "Marca", "txt"), ("modelo", "Modelo", "txt"),
                     ("usado", "Já rodou", "num"), ("referencia", "Vida de referência", "num"), ("fonte", "De onde vem a referência", "txt"),
                     ("resta", "Falta", "num"), ("unidade", "Un.", "txt"), ("ritmo", "Ritmo da máquina (por dia)", "num"),

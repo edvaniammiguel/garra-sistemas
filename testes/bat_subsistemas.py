@@ -53,6 +53,8 @@ def posicao_vida_trocas():
 
     pos = _rel("posicao")
     igual(pos["visao"], "posicao", "visão devolvida")
+    ordem = [c["k"] for c in pos["colunas"]]      # (27/11/2026) Componente e Descrição antes da Posição
+    assert ordem.index("componente") < ordem.index("descricao") < ordem.index("posicao"), "ordem das colunas: " + ", ".join(ordem[:6])
     igual([l["componente"] for l in pos["linhas"]], [P2], "na máquina hoje só está o P2")
     l = pos["linhas"][0]
     igual(l["posicao"], "DE", "posição"); perto(l["rodado"], 200, "rodado nesta montagem"); igual(l["unidade"], "h", "unidade")
