@@ -5605,8 +5605,12 @@ async def ot_consumos(ot_id: str, _auth=Depends(verificar_manutencao)):
     await ajard_query(
         "ALTER TABLE manutencao.movimentacoes ADD COLUMN IF NOT EXISTS custo_unitario NUMERIC",
         fetch="none")
+    # (27/11/2026) data da nota também nas peças aplicadas na OT (várias notinhas, cada uma com a sua data)
+    await ajard_query(
+        "ALTER TABLE manutencao.movimentacoes ADD COLUMN IF NOT EXISTS data_documento DATE",
+        fetch="none")
     rows = await ajard_query(
-        """SELECT m.id, m.tipo, m.quantidade, m.custo_unitario, m.criado_em, m.observacao, m.rubrica,
+        """SELECT m.id, m.tipo, m.quantidade, m.custo_unitario, m.criado_em, m.data_documento, m.observacao, m.rubrica,
                   m.documento_numero, m.documento_tipo, fo.nome AS fornecedor_nome, m.fornecedor_id,
                   p.codigo AS peca_codigo, p.descricao AS peca_descricao, p.unidade,
                   p.custo_medio,
@@ -5619,7 +5623,7 @@ async def ot_consumos(ot_id: str, _auth=Depends(verificar_manutencao)):
            LEFT JOIN public.fornecedores fo ON fo.id = m.fornecedor_id
            LEFT JOIN public.usuarios_garra u ON u.id = m.usuario_id
            WHERE m.ot_id = %s AND m.tipo IN ('saida', 'entrada', 'aplicacao_direta')
-           ORDER BY m.criado_em""", (ot_id,))
+           ORDER BY COALESCE(m.data_documento, (m.criado_em AT TIME ZONE 'America/Sao_Paulo')::date), m.criado_em""", (ot_id,))
     itens, total = [], 0.0
     for r in rows:
         custo = float(r["custo_unitario"]) if r["custo_unitario"] is not None \
@@ -5630,7 +5634,10 @@ async def ot_consumos(ot_id: str, _auth=Depends(verificar_manutencao)):
         total += linha
         itens.append({
             "id": str(r["id"]), "tipo": r["tipo"],
-            "data": (r["criado_em"].isoformat() if r["criado_em"] else None),
+            # (27/11/2026) "data" = data da nota quando informada; senão o dia do lançamento. As duas seguem separadas.
+            "data": (r["data_documento"].isoformat() if r.get("data_documento") else (r["criado_em"].isoformat() if r["criado_em"] else None)),
+            "data_documento": (r["data_documento"].isoformat() if r.get("data_documento") else None),
+            "lancado_em": (r["criado_em"].isoformat() if r["criado_em"] else None),
             "peca_codigo": r["peca_codigo"], "peca_descricao": r["peca_descricao"],
             "unidade": r["unidade"] or "UN", "quantidade": qtd,
             "custo_unitario": custo, "total": linha,
@@ -5702,6 +5709,20 @@ async def ot_consumo_editar(ot_id: str, mov_id: str, request: Request, payload=D
         sets.append("rubrica=%s"); params.append((d.get("rubrica") or "").strip() or None)
     if "observacao" in d:
         sets.append("observacao=%s"); params.append((d.get("observacao") or "").strip() or None)
+    if "data_documento" in d:   # (27/11/2026) corrigir a data da nota de um item já lançado
+        _dd = str(d.get("data_documento") or "").strip()[:10]
+        if not _dd:
+            sets.append("data_documento=%s"); params.append(None)
+        else:
+            try:
+                _dn = _date_cls.fromisoformat(_dd)
+            except ValueError:
+                raise HTTPException(status_code=400, detail="Data da nota inválida")
+            if _dn > _hoje():
+                raise HTTPException(status_code=400, detail="A data da nota não pode ser no futuro")
+            if _dn.year < 2000:
+                raise HTTPException(status_code=400, detail="Data da nota inválida")
+            sets.append("data_documento=%s"); params.append(_dn)
     if not sets:
         return {"ok": True}
     params.append(mov_id)

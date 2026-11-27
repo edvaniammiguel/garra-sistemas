@@ -5312,18 +5312,25 @@ async function otPecasRender(){
   };
   const cons = _otPc.cons || { itens: [], total: 0 };
   const dd2 = v => { if(!v) return '—'; try{ return _fmtData(v); }catch(e){ return '—'; } };
+  // (27/11/2026) Realizado no padrão ManWinWin: Doc. Custo e Data em colunas próprias, com cabeçalho —
+  // OT com várias notinhas mostra cada uma com o seu número e a sua data.
+  const cabRe = '<div style="display:flex;gap:6px;padding:4px 6px;border-bottom:2px solid #1A2A5E;font-size:10px;font-weight:700;color:#1A2A5E;align-items:center">'
+    + '<span style="width:78px">Doc. Custo</span><span style="width:62px">Data</span><span style="width:96px">Origem · Conta</span><span style="width:92px">Código</span><span style="flex:1">Descrição</span>'
+    + '<span style="width:50px;text-align:right">Quant.</span><span style="width:35px">UN</span><span style="width:70px;text-align:right">Custo un.</span><span style="width:85px;text-align:right">Total</span>'
+    + '<span style="width:34px">Alm.</span><span style="width:36px"></span></div>';
   const linhaRe = x =>
     '<div style="display:flex;gap:6px;padding:4px 6px;border-bottom:1px solid #F1F5F9;font-size:11px;align-items:center">'
-    + '<span style="width:62px" class="muted">'+dd2(x.data)+'</span>'
-    + '<span class="chip '+(x.tipo==='saida'?'em':x.tipo==='aplicacao_direta'?'pr':'tm')+'" style="font-size:9px" title="'+(x.rubrica?'Conta '+_esc(x.rubrica):'')+'">'+(x.tipo==='saida'?'Estoque':x.tipo==='aplicacao_direta'?'Fornecedor':'Devolução')+(x.rubrica?' · '+_esc(x.rubrica):'')+'</span>'
-    + '<b style="width:100px">'+_esc(x.peca_codigo)+'</b><span style="flex:1">'+_esc(x.peca_descricao||'')+(x.documento||x.fornecedor_nome ? ' <span class="muted">· '+_esc([x.documento, x.fornecedor_nome].filter(Boolean).join(' · '))+'</span>' : '')+'</span>'
+    + '<span style="width:78px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+_esc(x.documento||'')+'">'+(x.documento ? '<b>'+_esc(x.documento)+'</b>' : '<span class="muted">—</span>')+'</span>'
+    + '<span style="width:62px" class="muted" title="'+(x.data_documento ? 'Data da nota' : 'Dia do lançamento (nota sem data informada)')+(x.lancado_em ? ' · lançado em '+dd2(x.lancado_em) : '')+'">'+dd2(x.data)+'</span>'
+    + '<span style="width:96px"><span class="chip '+(x.tipo==='saida'?'em':x.tipo==='aplicacao_direta'?'pr':'tm')+'" style="font-size:9px" title="'+(x.rubrica?'Conta '+_esc(x.rubrica):'')+'">'+(x.tipo==='saida'?'Estoque':x.tipo==='aplicacao_direta'?'Fornecedor':'Devolução')+(x.rubrica?' · '+_esc(x.rubrica):'')+'</span></span>'
+    + '<b style="width:92px">'+_esc(x.peca_codigo)+'</b><span style="flex:1">'+_esc(x.peca_descricao||'')+(x.fornecedor_nome ? ' <span class="muted">· '+_esc(x.fornecedor_nome)+'</span>' : '')+'</span>'
     + '<span style="width:50px;text-align:right">'+x.quantidade+'</span>'
     + '<span style="width:35px">'+_esc(x.unidade)+'</span>'
     + '<span style="width:70px;text-align:right">'+x.custo_unitario.toFixed(2)+'</span>'
     + '<b style="width:85px;text-align:right;color:'+(x.total>=0?'#1A2A5E':'#15803D')+'">'+x.total.toFixed(2)+'</b>'
-    + '<span style="width:60px" class="muted">'+_esc(x.almox||'')+'</span>'
+    + '<span style="width:34px" class="muted">'+_esc(x.almox||'')+'</span>'
     + (['programada','aberta','em_andamento','aguardando_peca','concluida'].includes(o.status)
-        ? '<span style="cursor:pointer;width:16px" title="Editar este item" data-i="'+_esc(JSON.stringify({id:x.id,tipo:x.tipo,peca:x.peca_codigo,desc:x.peca_descricao||'',un:x.unidade||'UN',q:x.quantidade,v:x.custo_unitario,doc:x.documento||'',doctipo:x.documento_tipo||'',forn:x.fornecedor_nome||'',rub:x.rubrica||'',obs:x.observacao||'',alm:x.almox||''}))+'" onclick="otConsumoEditar(JSON.parse(this.dataset.i))">✏️</span>'
+        ? '<span style="cursor:pointer;width:16px" title="Editar este item" data-i="'+_esc(JSON.stringify({id:x.id,tipo:x.tipo,dtnota:(x.data_documento||x.lancado_em||'').slice(0,10),peca:x.peca_codigo,desc:x.peca_descricao||'',un:x.unidade||'UN',q:x.quantidade,v:x.custo_unitario,doc:x.documento||'',doctipo:x.documento_tipo||'',forn:x.fornecedor_nome||'',rub:x.rubrica||'',obs:x.observacao||'',alm:x.almox||''}))+'" onclick="otConsumoEditar(JSON.parse(this.dataset.i))">✏️</span>'
           + '<span style="cursor:pointer;color:#B91C1C;width:14px" title="Excluir este item" onclick="otConsumoExcluir(\''+x.id+'\',\''+_esc(x.peca_codigo)+'\')">✕</span>'
         : '<span style="width:30px"></span>')+'</div>';
   const podeBaixar = ['programada','aberta','em_andamento','aguardando_peca'].includes(o.status);
@@ -5346,7 +5353,7 @@ async function otPecasRender(){
     + '<div class="dsec" style="margin-top:10px;display:flex;justify-content:space-between;align-items:center"><span>Realizado <span class="muted">· peças aplicadas na OT (armazém ou compra directa)</span></span>'
     +   (podeBaixar ? '<button class="btn" style="font-size:11px;padding:2px 8px" onclick="otSaidaAbrir()">⊕ Inserir peça</button>' : '') + '</div>'
     + (cons.itens.length
-        ? cons.itens.map(linhaRe).join('') + '<div style="text-align:right;font-weight:700;padding:4px 6px;color:#1A2A5E">Total realizado: '+money(cons.total)+'</div>'
+        ? cabRe + cons.itens.map(linhaRe).join('') + '<div style="text-align:right;font-weight:700;padding:4px 6px;color:#1A2A5E">Total realizado: '+money(cons.total)+'</div>'
         : '<div class="muted" style="padding:8px 6px;font-size:11px">Nenhuma peça aplicada ainda — use ⊕ Inserir peça.</div>')
     // (26/11/2026) a linha "Δ realizado − previsto" saiu daqui: a diferença já aparece na aba Custos (previsto × realizado)
     + (podeBaixar && pl.length
@@ -5620,6 +5627,7 @@ function otSaidaAbrir(){
     + '<div class="panel doc-wrap"><div class="dsec" style="margin-top:0">Documento de custo</div><div style="display:flex;gap:8px;flex-wrap:wrap">'
     +   '<div class="mfield" style="width:150px">Tipo de documento<select class="doctipo">'+_tiposDocOpts('03')+'</select></div>'
     +   '<div class="mfield" style="width:130px">Nº documento<input class="ref" placeholder="ex.: 887" oninput="const d=this.parentNode.querySelector(\'.ref-dica\'); if(d) d.textContent=\'\'"><div class="ref-dica muted" style="font-size:10px;line-height:1.2;margin-top:2px"></div></div>'
+    +   '<div class="mfield" style="width:135px">Data da nota<input class="dtnota" type="date" value="'+_isoLocal(new Date())+'" max="'+_isoLocal(new Date())+'" title="Data que está na nota/cupom — pode ser anterior a hoje. Várias notinhas na mesma OT: lance uma de cada vez, cada uma com a sua data."></div>'
     +   '<div class="mfield" style="flex:1;min-width:220px">Fornecedor<select class="forn" onchange="otSaidaDocDoForn()">'+fornOpts+'</select></div>'
     + '</div></div>'
     + '<div class="panel alm-wrap" style="display:none"><div class="dsec" style="margin-top:0">Armazém</div>'
@@ -5698,9 +5706,13 @@ async function otSaidaOK(){
   const ref = (b.querySelector('.ref')||{}).value?.trim() || '', forn = (b.querySelector('.forn')||{}).value || null;
   // (24/11/2026) aplicação direta: fornecedor obrigatório (o servidor recusa também). Sem fornecedor do cadastro, usa-se Garra ou Diversos.
   if (modo === 'direta' && !forn) { mostrarToast('Escolha o fornecedor (se a compra não tem um, use Garra ou Diversos)', 'warn'); const sf = b.querySelector('select.forn'); if (sf) sf.focus(); return; }
+  // (27/11/2026) data da nota da aplicação direta (vazia = hoje, como o servidor já faz)
+  const dtNota = (b.querySelector('.dtnota')||{}).value || '';
+  if (modo === 'direta' && dtNota && dtNota > _isoLocal(new Date())) { mostrarToast('A data da nota não pode ser no futuro', 'warn'); return; }
   const aplicar = async (lista) => {
     const r = await mntFetch('/manutencao/api/entradas', { method:'POST', body: JSON.stringify({
       documento_tipo: ((b.querySelector('.doctipo')||{}).value || '03'), destino_tipo: 'ot', documento_numero: ref, fornecedor_id: forn, ot_id: _otAberta.id,
+      data_documento: dtNota || null,
       observacao: 'Aplicação direta OT '+_otAberta.numero + (ref ? ' · '+ref : ''),
       itens: lista.map(i => ({ peca: i.peca, descricao: i.descricao, quantidade: i.quantidade, un: i.un, custo_unitario: i.custo_unitario, conta: i.conta })) })});
     mostrarToast('⚡ '+lista.length+' item(ns) aplicado(s) na OT'+(r.total?' · R$ '+r.total.toFixed(2):''), 'ok');
@@ -5749,6 +5761,7 @@ async function otConsumoEditar(it){
     + '<div class="panel"><div class="dsec" style="margin-top:0">Documento de custo</div><div style="display:flex;gap:8px;flex-wrap:wrap">'
     + '<div class="mfield" style="width:160px">Tipo de documento<select id="ce-doctipo">'+_tiposDocOpts(it.doctipo||'03')+'</select></div>'
     + '<div class="mfield" style="width:130px">Nº documento<input id="ce-doc" value="'+_esc(it.doc)+'"></div>'
+    + '<div class="mfield" style="width:135px">Data da nota<input id="ce-dtnota" type="date" value="'+_esc(it.dtnota||'')+'" max="'+_isoLocal(new Date())+'"></div>'
     + '<div class="mfield" style="flex:1;min-width:200px">Fornecedor<select id="ce-forn">'+fornOpts+'</select></div>'
     + '</div></div>'
     // 2) Item
@@ -5772,6 +5785,7 @@ async function otConsumoSalvar(id){
   const g = i => (document.getElementById(i)||{}).value;
   const body = { peca: (g('ce-peca')||'').trim(), quantidade: g('ce-q'), custo_unitario: g('ce-v'), rubrica: g('ce-rub') || null,
                  documento_numero: g('ce-doc') || '', documento_tipo: g('ce-doctipo') || '', fornecedor_id: g('ce-forn') || null, observacao: g('ce-obs') || '' };
+  if (g('ce-dtnota')) body.data_documento = g('ce-dtnota');   // (27/11/2026) corrigir a data da nota
   try { await mntFetch('/manutencao/api/ots/'+_otAberta.id+'/consumos/'+id, {method:'PATCH', body: JSON.stringify(body)});
     document.getElementById('ot-cons-edit').style.display = 'none'; mostrarToast('✅ Item atualizado', 'ok'); otPecasRender();
   } catch(e){ mostrarToast('❌ '+e.message, 'warn'); }

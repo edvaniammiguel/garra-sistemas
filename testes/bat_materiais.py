@@ -145,6 +145,38 @@ def direta_exige_fornecedor():
     igual(sql1("select count(*) as n from manutencao.movimentacoes where documento_numero=$1", "BAT-SF-" + TAG)["n"], 0, "nada gravado nas recusas")
 
 
+@teste("Materiais", "peça aplicada na OT guarda a data de cada notinha, mostra na lista e deixa corrigir")
+def direta_data_da_nota():
+    # (27/11/2026) OT com várias notas de datas diferentes: cada item aparece com o nº e a data da sua nota
+    from datetime import date, timedelta
+    ot = sql1("select id::text as id from manutencao.ot where ativo and status in ('aberta','em_andamento','programada') order by criado_em desc limit 1")
+    if not ot or not EST.get("forn"):
+        raise Pular("sem OT aberta ou sem fornecedor no cenário")
+    hoje = date.today()
+    d1, d2 = (hoje - timedelta(days=9)).isoformat(), (hoje - timedelta(days=3)).isoformat()
+    base = {"documento_tipo": "03", "destino_tipo": "ot", "ot_id": ot["id"], "fornecedor_id": EST["forn"],
+            "itens": [{"peca": COD, "quantidade": 1, "custo_unitario": 10}], "acrescimos": 0, "desconto": 0}
+    n1, n2, n3 = "BAT-DN1-" + TAG, "BAT-DN2-" + TAG, "BAT-DN3-" + TAG
+    status(chamar("admin", "POST", "/manutencao/api/entradas", {**base, "documento_numero": n2, "data_documento": d2}), 200, "nota de 3 dias atrás")
+    status(chamar("admin", "POST", "/manutencao/api/entradas", {**base, "documento_numero": n1, "data_documento": d1}), 200, "nota de 9 dias atrás")
+    status(chamar("admin", "POST", "/manutencao/api/entradas", {**base, "documento_numero": n3}), 200, "nota sem data (vale hoje)")
+    status(chamar("admin", "POST", "/manutencao/api/entradas", {**base, "documento_numero": "BAT-DNF-" + TAG,
+                                                              "data_documento": (hoje + timedelta(days=1)).isoformat()}), 400, "nota com data futura")
+    lista = [i for i in status(chamar("admin", "GET", f"/manutencao/api/ots/{ot['id']}/consumos"), 200, "peças da OT")["itens"] if i["documento"] in (n1, n2, n3)]
+    igual([(i["documento"], i["data"][:10]) for i in lista], [(n1, d1), (n2, d2), (n3, hoje.isoformat())], "lista em ordem de data da nota, cada uma com a sua")
+    assert all(i.get("lancado_em") for i in lista), "o dia do lançamento continua guardado junto"
+    # corrigir a data de uma nota já lançada
+    alvo = [i for i in lista if i["documento"] == n2][0]
+    nova = (hoje - timedelta(days=20)).isoformat()
+    rota = f"/manutencao/api/ots/{ot['id']}/consumos/{alvo['id']}"
+    status(chamar("admin", "PATCH", rota, {"data_documento": nova}), 200, "corrigir a data da nota")
+    status(chamar("admin", "PATCH", rota, {"data_documento": (hoje + timedelta(days=2)).isoformat()}), 400, "corrigir para data futura")
+    depois = [i for i in status(chamar("admin", "GET", f"/manutencao/api/ots/{ot['id']}/consumos"), 200, "peças da OT")["itens"] if i["documento"] in (n1, n2, n3)]
+    igual([i["documento"] for i in depois], [n2, n1, n3], "depois da correção a nota vai para o lugar certo na ordem")
+    igual(depois[0]["data"][:10], nova, "data corrigida")
+    sql("delete from manutencao.movimentacoes where documento_numero like $1", "BAT-DN%-" + TAG)
+
+
 @teste("Materiais", "peça com barra no código (W950/26) abre 'em quais equipamentos foi aplicada' sem 'Rota não encontrada'")
 def peca_com_barra_equipamentos():
     # (26/11/2026) a rota nova nasceu sem :path — o código com barra quebrava o endereço e o servidor respondia 404
