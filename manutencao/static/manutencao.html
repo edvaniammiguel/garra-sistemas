@@ -201,6 +201,17 @@ tr.sel td{background:#FDBA74 !important;color:#1A2A5E;font-weight:600}
 .tbl td{padding:5px 6px;border-bottom:1px solid #F1F5F9;vertical-align:middle}
 .tbl tr:last-child td{border-bottom:0}
 .tbl .r{text-align:right}
+/* (27/11/2026) grade no modelo ManWinWin: uma linha por item, texto cortado com "…" e coluna que se alarga arrastando a borda do título */
+.tbl.grd{table-layout:fixed}
+.tbl.grd th,.tbl.grd td{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tbl.grd th{position:relative;border-right:1px solid #E2E8F0;user-select:none}
+.tbl.grd td{border-right:1px solid #F1F5F9}
+.tbl.grd th:last-child,.tbl.grd td:last-child{border-right:0}
+.tbl.grd .ac{text-align:right;text-overflow:clip}
+.tbl.grd tbody tr:hover td{background:#F8FAFC}
+.tbl.grd tfoot td{font-weight:700;color:#1A2A5E;background:#F8FAFC;border-top:1px solid #E2E8F0;border-right:0}
+.tbl.grd th .rz{position:absolute;right:-3px;top:0;bottom:0;width:7px;cursor:col-resize;z-index:1}
+.tbl.grd th .rz:hover{background:#E8820C55}
 .tbl tfoot td{background:#F8FAFC;font-weight:700;color:#1A2A5E;border-top:1px solid #E2E8F0}
 .panel{background:#F7FAFE;border:1px solid #D6E0EF;border-radius:6px;padding:10px 12px}
 
@@ -5300,39 +5311,43 @@ async function otPecasRender(){
   const origemPl = prevOT.origem === 'ot' ? 'previsão desta OT' : (_otPc.plano ? 'FMP '+_esc(_otPc.plano.codigo) : '');
   const podePrever = ['rascunho','programada','aberta','em_andamento','aguardando_peca'].includes(o.status);   // (16/11/2026) + em criação
   const totPl = pl.reduce((s,x) => s + nv(x.qtd) * nv(x.custo), 0);
+  // (27/11/2026) Peças no modelo ManWinWin: grade limpa (sem etiquetas coloridas), uma linha por item, colunas que se
+  // alargam arrastando a borda do título. Fornecedor, origem e almoxarifado não ocupam a lista — aparecem ao editar (lápis)
+  // e no balão ao parar o mouse sobre a linha.
+  const nf = v => (parseFloat(v)||0).toLocaleString('pt-BR', {minimumFractionDigits:2, maximumFractionDigits:2});
   const linhaPl = (x, i) => {
     const t = nv(x.qtd) * nv(x.custo);
-    return '<div style="display:flex;gap:6px;padding:4px 6px;border-bottom:1px solid #F1F5F9;font-size:11px;align-items:center">'
-      + '<b style="width:110px">'+_esc(x.peca||'—')+'</b><span style="flex:1">'+_esc(x.descricao||'')+'</span>'
-      + '<span style="width:55px;text-align:right">'+_esc(String(x.qtd??''))+'</span>'
-      + '<span style="width:35px">'+_esc(x.un||'UN')+'</span>'
-      + '<span style="width:80px;text-align:right">'+(nv(x.custo)?nv(x.custo).toFixed(2):'—')+'</span>'
-      + '<b style="width:85px;text-align:right;color:#1A2A5E">'+(t>0?t.toFixed(2):'—')+'</b>'
-      + (podePrever ? '<span style="cursor:pointer;color:#B91C1C;width:14px" title="Remover da previsão" onclick="otPrevRemover('+i+')">✕</span>' : '<span style="width:14px"></span>')+'</div>';
+    return '<tr><td class="muted">'+(prevOT.origem === 'ot' ? 'OT' : 'FMP')+'</td>'
+      + '<td><b>'+_esc(x.peca||'—')+'</b></td><td title="'+_esc(x.descricao||'')+'">'+_esc(x.descricao||'')+'</td>'
+      + '<td class="r">'+_esc(String(x.qtd??''))+'</td><td>'+_esc(x.un||'UN')+'</td>'
+      + '<td class="r" title="'+(nv(x.custo) ? _esc(String(x.qtd??''))+' × '+nf(x.custo) : '')+'">'+(t>0?nf(t):'—')+'</td>'
+      + '<td class="ac">'+(podePrever ? '<span style="cursor:pointer;color:#B91C1C" title="Remover da previsão" onclick="otPrevRemover('+i+')">✕</span>' : '')+'</td></tr>';
   };
+  const tabPl = '<table class="tbl grd" id="grd-pc-plan"><thead><tr><th style="width:62px">Origem</th><th style="width:104px">Código</th><th>Descrição</th>'
+    + '<th class="r" style="width:62px">Quant.</th><th style="width:36px">UN</th><th class="r" style="width:82px">Custo</th><th class="ac" style="width:24px"></th></tr></thead><tbody>'
+    + pl.map(linhaPl).join('') + '</tbody><tfoot><tr><td colspan="5" class="r">Custo total</td><td class="r">'+nf(totPl)+'</td><td></td></tr></tfoot></table>';
   const cons = _otPc.cons || { itens: [], total: 0 };
   const dd2 = v => { if(!v) return '—'; try{ return _fmtData(v); }catch(e){ return '—'; } };
-  // (27/11/2026) Realizado no padrão ManWinWin: Doc. Custo e Data em colunas próprias, com cabeçalho —
-  // OT com várias notinhas mostra cada uma com o seu número e a sua data.
-  const cabRe = '<div style="display:flex;gap:6px;padding:4px 6px;border-bottom:2px solid #1A2A5E;font-size:10px;font-weight:700;color:#1A2A5E;align-items:center">'
-    + '<span style="width:78px">Doc. Custo</span><span style="width:62px">Data</span><span style="width:96px">Origem · Conta</span><span style="width:92px">Código</span><span style="flex:1">Descrição</span>'
-    + '<span style="width:50px;text-align:right">Quant.</span><span style="width:35px">UN</span><span style="width:70px;text-align:right">Custo un.</span><span style="width:85px;text-align:right">Total</span>'
-    + '<span style="width:34px">Alm.</span><span style="width:36px"></span></div>';
-  const linhaRe = x =>
-    '<div style="display:flex;gap:6px;padding:4px 6px;border-bottom:1px solid #F1F5F9;font-size:11px;align-items:center">'
-    + '<span style="width:78px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+_esc(x.documento||'')+'">'+(x.documento ? '<b>'+_esc(x.documento)+'</b>' : '<span class="muted">—</span>')+'</span>'
-    + '<span style="width:62px" class="muted" title="'+(x.data_documento ? 'Data da nota' : 'Dia do lançamento (nota sem data informada)')+(x.lancado_em ? ' · lançado em '+dd2(x.lancado_em) : '')+'">'+dd2(x.data)+'</span>'
-    + '<span style="width:96px"><span class="chip '+(x.tipo==='saida'?'em':x.tipo==='aplicacao_direta'?'pr':'tm')+'" style="font-size:9px" title="'+(x.rubrica?'Conta '+_esc(x.rubrica):'')+'">'+(x.tipo==='saida'?'Estoque':x.tipo==='aplicacao_direta'?'Fornecedor':'Devolução')+(x.rubrica?' · '+_esc(x.rubrica):'')+'</span></span>'
-    + '<b style="width:92px">'+_esc(x.peca_codigo)+'</b><span style="flex:1">'+_esc(x.peca_descricao||'')+(x.fornecedor_nome ? ' <span class="muted">· '+_esc(x.fornecedor_nome)+'</span>' : '')+'</span>'
-    + '<span style="width:50px;text-align:right">'+x.quantidade+'</span>'
-    + '<span style="width:35px">'+_esc(x.unidade)+'</span>'
-    + '<span style="width:70px;text-align:right">'+x.custo_unitario.toFixed(2)+'</span>'
-    + '<b style="width:85px;text-align:right;color:'+(x.total>=0?'#1A2A5E':'#15803D')+'">'+x.total.toFixed(2)+'</b>'
-    + '<span style="width:34px" class="muted">'+_esc(x.almox||'')+'</span>'
-    + (['programada','aberta','em_andamento','aguardando_peca','concluida'].includes(o.status)
-        ? '<span style="cursor:pointer;width:16px" title="Editar este item" data-i="'+_esc(JSON.stringify({id:x.id,tipo:x.tipo,dtnota:(x.data_documento||x.lancado_em||'').slice(0,10),peca:x.peca_codigo,desc:x.peca_descricao||'',un:x.unidade||'UN',q:x.quantidade,v:x.custo_unitario,doc:x.documento||'',doctipo:x.documento_tipo||'',forn:x.fornecedor_nome||'',rub:x.rubrica||'',obs:x.observacao||'',alm:x.almox||''}))+'" onclick="otConsumoEditar(JSON.parse(this.dataset.i))">✏️</span>'
-          + '<span style="cursor:pointer;color:#B91C1C;width:14px" title="Excluir este item" onclick="otConsumoExcluir(\''+x.id+'\',\''+_esc(x.peca_codigo)+'\')">✕</span>'
-        : '<span style="width:30px"></span>')+'</div>';
+  const podeMexer = ['programada','aberta','em_andamento','aguardando_peca','concluida'].includes(o.status);
+  const linhaRe = x => {
+    const origem = x.tipo==='saida' ? 'Saída do armazém'+(x.almox ? ' '+x.almox : '') : x.tipo==='aplicacao_direta' ? 'Compra direta'+(x.fornecedor_nome ? ' · '+x.fornecedor_nome : '') : 'Devolução ao armazém'+(x.almox ? ' '+x.almox : '');
+    const balao = origem + (x.lancado_em ? ' · lançado em '+dd2(x.lancado_em) : '') + (x.usuario ? ' por '+x.usuario : '');
+    return '<tr title="'+_esc(balao)+'">'
+      + '<td>'+(x.documento ? _esc(x.documento) : '<span class="muted">'+(x.tipo==='saida' ? 'armazém' : x.tipo==='entrada' ? 'devolução' : '—')+'</span>')+'</td>'
+      + '<td><b>'+_esc(x.peca_codigo)+'</b></td><td title="'+_esc(x.peca_descricao||'')+'">'+_esc(x.peca_descricao||'')+'</td>'
+      + '<td>'+_esc(x.unidade)+'</td>'
+      + '<td title="'+(x.data_documento ? 'Data da nota' : 'Dia do lançamento')+'">'+dd2(x.data)+'</td>'
+      + '<td class="r">'+x.quantidade+'</td>'
+      + '<td class="r" title="'+x.quantidade+' × '+nf(x.custo_unitario)+'"'+(x.total<0?' style="color:#15803D"':'')+'>'+nf(x.total)+'</td>'
+      + '<td class="muted">'+_esc(x.rubrica||'')+'</td>'
+      + '<td class="ac">'+(podeMexer
+          ? '<span style="cursor:pointer;margin-right:6px" title="Editar este item (fornecedor, nota, data, quantidade, custo, conta)" data-i="'+_esc(JSON.stringify({id:x.id,tipo:x.tipo,dtnota:(x.data_documento||x.lancado_em||'').slice(0,10),peca:x.peca_codigo,desc:x.peca_descricao||'',un:x.unidade||'UN',q:x.quantidade,v:x.custo_unitario,doc:x.documento||'',doctipo:x.documento_tipo||'',forn:x.fornecedor_nome||'',rub:x.rubrica||'',obs:x.observacao||'',alm:x.almox||''}))+'" onclick="otConsumoEditar(JSON.parse(this.dataset.i))">✏️</span>'
+            + '<span style="cursor:pointer;color:#B91C1C" title="Excluir este item" onclick="otConsumoExcluir(\''+x.id+'\',\''+_esc(x.peca_codigo)+'\')">✕</span>'
+          : '')+'</td></tr>';
+  };
+  const tabRe = '<table class="tbl grd" id="grd-pc-real"><thead><tr><th style="width:92px">Doc. Custo</th><th style="width:104px">Código</th><th>Descrição</th><th style="width:36px">UN</th>'
+    + '<th style="width:74px">Data</th><th class="r" style="width:62px">Quant.</th><th class="r" style="width:82px">Custo</th><th style="width:58px">Conta</th><th class="ac" style="width:42px"></th></tr></thead><tbody>'
+    + cons.itens.map(linhaRe).join('') + '</tbody><tfoot><tr><td colspan="6" class="r">Custo total</td><td class="r">'+nf(cons.total)+'</td><td colspan="2"></td></tr></tfoot></table>';
   const podeBaixar = ['programada','aberta','em_andamento','aguardando_peca'].includes(o.status);
   c.innerHTML =
     '<div class="dsec" style="display:flex;justify-content:space-between;align-items:center"><span>Planejado <span class="muted">· peças previstas'+(origemPl ? ' — '+origemPl : '')+'</span></span>'
@@ -5348,12 +5363,12 @@ async function otPecasRender(){
     +   '<button class="btn p" onclick="otPrevInserir()">💾 Inserir</button><button class="btn" onclick="otPrevForm()">Cancelar</button></div>'
     +   '<div class="muted" style="font-size:10px;margin-top:4px">A previsão comprometeu o estoque (Dispon. = saldo − comprometido). Peça sem saldo: 🛒 Gerar OC (faltantes) abaixo.</div></div>'
     + (pl.length
-        ? pl.map(linhaPl).join('') + '<div style="text-align:right;font-weight:700;padding:4px 6px;color:#1A2A5E">Total previsto: '+money(totPl)+'</div>'
+        ? tabPl
         : '<div class="muted" style="padding:8px 6px;font-size:11px">'+(_otPc.plano ? 'FMP sem peças detalhadas.' : 'Sem peças previstas — use ⊕ Inserir peça para prever (corretiva) ou vincule uma FMP.')+'</div>')
     + '<div class="dsec" style="margin-top:10px;display:flex;justify-content:space-between;align-items:center"><span>Realizado <span class="muted">· peças aplicadas na OT (armazém ou compra directa)</span></span>'
     +   (podeBaixar ? '<button class="btn" style="font-size:11px;padding:2px 8px" onclick="otSaidaAbrir()">⊕ Inserir peça</button>' : '') + '</div>'
     + (cons.itens.length
-        ? cabRe + cons.itens.map(linhaRe).join('') + '<div style="text-align:right;font-weight:700;padding:4px 6px;color:#1A2A5E">Total realizado: '+money(cons.total)+'</div>'
+        ? tabRe
         : '<div class="muted" style="padding:8px 6px;font-size:11px">Nenhuma peça aplicada ainda — use ⊕ Inserir peça.</div>')
     // (26/11/2026) a linha "Δ realizado − previsto" saiu daqui: a diferença já aparece na aba Custos (previsto × realizado)
     + (podeBaixar && pl.length
@@ -5362,6 +5377,7 @@ async function otPecasRender(){
           + '<button class="btn" title="Cotar os faltantes em vários fornecedores antes de gerar a OC (amarrada a esta OT)" onclick="ocDaOT(true)">📋 Cotar (faltantes)</button>'
           + '</div>'
         : '');
+  _grdAtivar('grd-pc-plan'); _grdAtivar('grd-pc-real');   // (27/11/2026) colunas que se alargam
 }
 // (22/10/2026) Previsão de peças da OT (quadro Planejado editável)
 function otPrevForm(){
@@ -5555,6 +5571,27 @@ function otSaidaModo(m){
 }
 // (26/11/2026) Saída do armazém: o preço não se digita — vale o custo médio da peça no estoque (o servidor grava assim).
 // Aplicação direta continua com o preço livre (é o valor da nota). Peça sem custo médio no catálogo avisa na linha.
+// (27/11/2026) Colunas que se alargam arrastando a borda do título (como no ManWinWin). A largura escolhida fica
+// guardada neste navegador para a próxima vez; a coluna sem largura fixa (Descrição) ocupa o que sobrar.
+function _grdAtivar(id){
+  const t = document.getElementById(id); if (!t) return;
+  const ths = [...t.querySelectorAll('thead th')];
+  let salvo = {}; try { salvo = JSON.parse(localStorage.getItem('garra_grd_'+id) || '{}') || {}; } catch(e){ salvo = {}; }
+  ths.forEach((th, i) => {
+    if (salvo[i] && th.style.width) th.style.width = salvo[i] + 'px';
+    if (!th.style.width || i === ths.length - 1) return;          // Descrição e a coluna dos botões não se arrastam
+    const rz = document.createElement('span'); rz.className = 'rz'; rz.title = 'Arraste para alargar a coluna'; th.appendChild(rz);
+    rz.addEventListener('mousedown', ev => {
+      ev.preventDefault(); const x0 = ev.clientX, w0 = th.offsetWidth;
+      const mover = e => { th.style.width = Math.max(36, Math.min(520, w0 + e.clientX - x0)) + 'px'; };
+      const soltar = () => {
+        document.removeEventListener('mousemove', mover); document.removeEventListener('mouseup', soltar);
+        salvo[i] = th.offsetWidth; try { localStorage.setItem('garra_grd_'+id, JSON.stringify(salvo)); } catch(e){}
+      };
+      document.addEventListener('mousemove', mover); document.addEventListener('mouseup', soltar);
+    });
+  });
+}
 function otSaidaCustoTrava(row){
   const b = document.getElementById('ot-saida'); if (!b || !row) return;
   const direta = ((b.querySelector('input[name="sai-modo"]')||{}).value || 'direta') === 'direta';
