@@ -5592,6 +5592,14 @@ function _grdAtivar(id){
     });
   });
 }
+// (27/11/2026) compra sem nota: o nº do documento fica sendo a data (a do campo "Data da nota"; vazio = hoje)
+function otSaidaDocData(){
+  const b = document.getElementById('ot-saida'); if (!b) return;
+  const iso = (b.querySelector('.dtnota')||{}).value || _isoLocal(new Date());
+  const r = b.querySelector('input.ref'); if (!r) return;
+  r.value = iso.slice(8,10) + '/' + iso.slice(5,7) + '/' + iso.slice(0,4);
+  const d = b.querySelector('.ref-dica'); if (d) d.textContent = '';
+}
 function otSaidaCustoTrava(row){
   const b = document.getElementById('ot-saida'); if (!b || !row) return;
   const direta = ((b.querySelector('input[name="sai-modo"]')||{}).value || 'direta') === 'direta';
@@ -5663,7 +5671,8 @@ function otSaidaAbrir(){
     + '</div>'
     + '<div class="panel doc-wrap"><div class="dsec" style="margin-top:0">Documento de custo</div><div style="display:flex;gap:8px;flex-wrap:wrap">'
     +   '<div class="mfield" style="width:150px">Tipo de documento<select class="doctipo">'+_tiposDocOpts('03')+'</select></div>'
-    +   '<div class="mfield" style="width:130px">Nº documento<input class="ref" placeholder="ex.: 887" oninput="const d=this.parentNode.querySelector(\'.ref-dica\'); if(d) d.textContent=\'\'"><div class="ref-dica muted" style="font-size:10px;line-height:1.2;margin-top:2px"></div></div>'
+    +   '<div class="mfield" style="width:130px">Nº documento *<input class="ref" placeholder="ex.: 887" oninput="const d=this.parentNode.querySelector(\'.ref-dica\'); if(d) d.textContent=\'\'"><div class="ref-dica muted" style="font-size:10px;line-height:1.2;margin-top:2px"></div>'
+    +     '<div style="font-size:10px;line-height:1.2;margin-top:2px"><span class="muted">sem nota?</span> <span style="cursor:pointer;color:#1A2A5E;text-decoration:underline" title="Compra sem nota: o número do documento fica sendo a data" onclick="otSaidaDocData()">usar a data</span></div></div>'
     +   '<div class="mfield" style="width:135px">Data da nota<input class="dtnota" type="date" value="'+_isoLocal(new Date())+'" max="'+_isoLocal(new Date())+'" title="Data que está na nota/cupom — pode ser anterior a hoje. Várias notinhas na mesma OT: lance uma de cada vez, cada uma com a sua data."></div>'
     +   '<div class="mfield" style="flex:1;min-width:220px">Fornecedor<select class="forn" onchange="otSaidaDocDoForn()">'+fornOpts+'</select></div>'
     + '</div></div>'
@@ -5742,6 +5751,8 @@ async function otSaidaOK(){
   if (!itens.length) { mostrarToast('Informe ao menos um item', 'warn'); return; }
   const ref = (b.querySelector('.ref')||{}).value?.trim() || '', forn = (b.querySelector('.forn')||{}).value || null;
   // (24/11/2026) aplicação direta: fornecedor obrigatório (o servidor recusa também). Sem fornecedor do cadastro, usa-se Garra ou Diversos.
+  // (27/11/2026) aplicação direta não grava sem número de documento (o servidor recusa também). Sem nota: a data do dia.
+  if (modo === 'direta' && !ref) { mostrarToast('Informe o nº do documento — sem nota, use a data do dia (link "usar a data")', 'warn'); const ir = b.querySelector('input.ref'); if (ir) ir.focus(); return; }
   if (modo === 'direta' && !forn) { mostrarToast('Escolha o fornecedor (se a compra não tem um, use Garra ou Diversos)', 'warn'); const sf = b.querySelector('select.forn'); if (sf) sf.focus(); return; }
   // (27/11/2026) data da nota da aplicação direta (vazia = hoje, como o servidor já faz)
   const dtNota = (b.querySelector('.dtnota')||{}).value || '';
@@ -5789,6 +5800,7 @@ async function otConsumoEditar(it){
   let b = document.getElementById('ot-cons-edit');
   if (!b){ b = document.createElement('div'); b.id = 'ot-cons-edit'; b.style.cssText = 'position:fixed;inset:0;z-index:9999;background:rgba(15,23,42,.45);display:none;align-items:center;justify-content:center'; document.body.appendChild(b); }
   const direta = it.tipo === 'aplicacao_direta';
+  b._direta = direta;   // (27/11/2026) compra direta não fica sem nº de documento
   const fornSel = (_mntFornList||[]).find(f => f.nome === it.forn);
   const fornOpts = '<option value="">— fornecedor —</option>' + (_mntFornList||[]).map(f => '<option value="'+f.id+'"'+(fornSel && String(f.id)===String(fornSel.id)?' selected':'')+'>'+_esc(f.nome)+'</option>').join('');
   b.innerHTML = '<div class="plf-pc-row" style="background:#fff;border-radius:10px;box-shadow:0 12px 32px rgba(15,23,42,.3);padding:16px;width:640px;max-width:94vw">'
@@ -5823,6 +5835,7 @@ async function otConsumoSalvar(id){
   const body = { peca: (g('ce-peca')||'').trim(), quantidade: g('ce-q'), custo_unitario: g('ce-v'), rubrica: g('ce-rub') || null,
                  documento_numero: g('ce-doc') || '', documento_tipo: g('ce-doctipo') || '', fornecedor_id: g('ce-forn') || null, observacao: g('ce-obs') || '' };
   if (g('ce-dtnota')) body.data_documento = g('ce-dtnota');   // (27/11/2026) corrigir a data da nota
+  if (document.getElementById('ot-cons-edit')._direta && !String(body.documento_numero).trim()) { mostrarToast('Informe o nº do documento — sem nota, use a data do dia', 'warn'); const ie = document.getElementById('ce-doc'); if (ie) ie.focus(); return; }
   try { await mntFetch('/manutencao/api/ots/'+_otAberta.id+'/consumos/'+id, {method:'PATCH', body: JSON.stringify(body)});
     document.getElementById('ot-cons-edit').style.display = 'none'; mostrarToast('✅ Item atualizado', 'ok'); otPecasRender();
   } catch(e){ mostrarToast('❌ '+e.message, 'warn'); }

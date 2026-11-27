@@ -160,6 +160,11 @@ def direta_data_da_nota():
     status(chamar("admin", "POST", "/manutencao/api/entradas", {**base, "documento_numero": n2, "data_documento": d2}), 200, "nota de 3 dias atrás")
     status(chamar("admin", "POST", "/manutencao/api/entradas", {**base, "documento_numero": n1, "data_documento": d1}), 200, "nota de 9 dias atrás")
     status(chamar("admin", "POST", "/manutencao/api/entradas", {**base, "documento_numero": n3}), 200, "nota sem data (vale hoje)")
+    # (27/11/2026) compra direta não grava sem número de documento (sem nota, a tela usa a data do dia como número)
+    r = chamar("admin", "POST", "/manutencao/api/entradas", {**base, "documento_numero": "  "})
+    status(r, 400, "aplicação direta sem número de documento")
+    assert "documento" in str(r[1]).lower(), f"a recusa não explica que falta o documento: {r[1]}"
+    status(chamar("admin", "POST", "/manutencao/api/entradas", {**base, "documento_numero": hoje.strftime("%d/%m/%Y") + " BAT-DN4-" + TAG}), 200, "a data do dia como documento")
     status(chamar("admin", "POST", "/manutencao/api/entradas", {**base, "documento_numero": "BAT-DNF-" + TAG,
                                                               "data_documento": (hoje + timedelta(days=1)).isoformat()}), 400, "nota com data futura")
     lista = [i for i in status(chamar("admin", "GET", f"/manutencao/api/ots/{ot['id']}/consumos"), 200, "peças da OT")["itens"] if i["documento"] in (n1, n2, n3)]
@@ -171,10 +176,12 @@ def direta_data_da_nota():
     rota = f"/manutencao/api/ots/{ot['id']}/consumos/{alvo['id']}"
     status(chamar("admin", "PATCH", rota, {"data_documento": nova}), 200, "corrigir a data da nota")
     status(chamar("admin", "PATCH", rota, {"data_documento": (hoje + timedelta(days=2)).isoformat()}), 400, "corrigir para data futura")
+    status(chamar("admin", "PATCH", rota, {"documento_numero": ""}), 400, "apagar o número do documento de uma compra direta")
     depois = [i for i in status(chamar("admin", "GET", f"/manutencao/api/ots/{ot['id']}/consumos"), 200, "peças da OT")["itens"] if i["documento"] in (n1, n2, n3)]
     igual([i["documento"] for i in depois], [n2, n1, n3], "depois da correção a nota vai para o lugar certo na ordem")
     igual(depois[0]["data"][:10], nova, "data corrigida")
     sql("delete from manutencao.movimentacoes where documento_numero like $1", "BAT-DN%-" + TAG)
+    sql("delete from manutencao.movimentacoes where documento_numero like $1", "%BAT-DN4-" + TAG)
 
 
 @teste("Materiais", "peça com barra no código (W950/26) abre 'em quais equipamentos foi aplicada' sem 'Rota não encontrada'")

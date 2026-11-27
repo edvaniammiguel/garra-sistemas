@@ -5700,6 +5700,9 @@ async def ot_consumo_editar(ot_id: str, mov_id: str, request: Request, payload=D
     if "custo_unitario" in d:
         sets.append("custo_unitario=%s"); params.append(_num(d["custo_unitario"]))
     if "documento_numero" in d:
+        # (27/11/2026) compra direta não fica sem número de documento (sem nota: a data do dia)
+        if m["tipo"] == "aplicacao_direta" and not (d.get("documento_numero") or "").strip():
+            raise HTTPException(status_code=400, detail="Informe o número do documento. Sem nota? Use a data do dia como número.")
         sets.append("documento_numero=%s"); params.append((d.get("documento_numero") or "").strip() or None)
     if "documento_tipo" in d and (d.get("documento_tipo") or "").strip():   # (21/10/2026) código do domínio Tipos de documento
         sets.append("documento_tipo=%s"); params.append(str(d["documento_tipo"]).strip())
@@ -6005,6 +6008,10 @@ async def _entrada_core(d, payload):
     doc_num = (d.get("documento_numero") or "").strip()
     if destino_tipo == "almox" and not doc_num:
         raise HTTPException(status_code=400, detail="Informe o número do documento")
+    # (27/11/2026) Aplicação direta na OT: número do documento OBRIGATÓRIO (regra no servidor, não só na tela).
+    # Compra sem nota: usa-se a data do dia como número do documento.
+    if destino_tipo == "ot" and not doc_num:
+        raise HTTPException(status_code=400, detail="Informe o número do documento. Sem nota? Use a data do dia como número.")
     # (24/11/2026) Aplicação direta na OT: fornecedor OBRIGATÓRIO (regra no servidor, não só na tela).
     # Quando a compra não tem um fornecedor do cadastro, usa-se o fornecedor genérico (ex.: Garra ou Diversos).
     if destino_tipo == "ot":
